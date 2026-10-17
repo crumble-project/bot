@@ -14,6 +14,7 @@ import {
 } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { AppError, type Agent } from "./domain";
+import { meliousProvider } from "./providers";
 import {
   prepareReply,
   readResponse,
@@ -64,6 +65,7 @@ export type RuntimeSnapshot = {
 export type RuntimeWatch = (snapshot: RuntimeSnapshot) => void | Promise<void>;
 type HarnessRecord = {
   harness: Harness;
+  models: Models;
   choices: { agent: Agent };
   memory: ReturnType<typeof defineTool>;
   registry: ReturnType<typeof createRegistry>;
@@ -114,6 +116,7 @@ export function providerModels(credentials?: RuntimeCallbacks["credentials"]) {
       },
     },
   });
+  models.setProvider(meliousProvider());
   return models;
 }
 
@@ -233,7 +236,7 @@ export class AgentRuntime {
         BACKGROUND_CONTEXT,
       );
       if (agent.enabled) harness.resume();
-      return { harness, choices, memory, registry, extensions };
+      return { harness, models, choices, memory, registry, extensions };
     } catch (error) {
       await storage.close(BACKGROUND_CONTEXT);
       throw error;
@@ -246,6 +249,9 @@ export class AgentRuntime {
     conversationId: string,
   ) {
     record.choices.agent = agent;
+    // Dynamic catalogs (Melious) list models only after a refresh with the saved key.
+    if (!record.models.getModel(agent.provider, agent.model))
+      await record.models.refresh({ providers: [agent.provider] });
     const next = (await this.callbacks.extensions?.(agent)) ?? [];
     for (const previous of record.extensions)
       if (!next.some((extension) => extension.name === previous.name))

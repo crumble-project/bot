@@ -220,11 +220,16 @@ export function createAPI(
       ),
     ),
   );
-  app.get("/v1/models", (c) => {
+  // Dynamic providers list their models only after a refresh with the saved key.
+  const refreshed = async (name: string | undefined) => {
+    await authenticatedModels.refresh(name ? { providers: [name] } : {});
+    return authenticatedModels.getModels(name);
+  };
+  app.get("/v1/models", async (c) => {
     const name = c.req.query("provider");
     if (name) provider.parse(name);
     return c.json(
-      catalog.getModels(name).map((model) => ({
+      (await refreshed(name)).map((model) => ({
         provider: model.provider,
         id: model.id,
         name: model.name,

@@ -83,6 +83,10 @@ curl -H "Authorization: Bearer $CRUMBLE_TOKEN" http://127.0.0.1:7337/v1/agents
 
 Live provider execution is not verified by the automated tests because this repository does not include provider credentials. Use a test provider account before accepting a live deployment.
 
+## Providers
+
+The server registers every Pi built-in provider plus [Melious](https://melious.ai/docs/reference/models), an OpenAI-compatible API at `https://api.melious.ai/v1`. Melious has no fixed catalog: after you save a Melious key, `GET /v1/models?provider=melious` loads the models your account can use. Melious does not report context windows or prices in that list, so the server assumes a 128,000-token context window, 16,384 output tokens, and no cost tracking.
+
 ## Bot chat API
 
 Each bot has one continuous chat. These routes live under `/v1/agents/:id`:
