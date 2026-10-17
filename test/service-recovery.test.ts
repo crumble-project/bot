@@ -47,7 +47,7 @@ describe("scheduled admission recovery", () => {
     const conversationId = `${agent.id}:1`;
     let submissions = 0;
     const fakeRuntime = {
-      createConversation: async () => conversationId,
+      openChat: async () => conversationId,
       submit: async () => {
         submissions += 1;
         if (submissions === 1) throw new Error("temporary runtime failure");

@@ -36,10 +36,7 @@ const agent = store.createAgent(
 );
 const runtime = new AgentRuntime(dir, { models });
 const service = new CrumbleService(store, runtime);
-const conversation = await service.createConversation(
-  agent.id,
-  "Crash session",
-);
+const conversation = await service.chat(agent.id);
 const execution = await service.send(
   conversation.id,
   "recover this",

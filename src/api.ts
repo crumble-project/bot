@@ -65,56 +65,46 @@ export function createAPI(
     await service.deleteAgent(c.req.param("id"));
     return c.body(null, 204);
   });
-  app.get("/v1/agents/:id/conversations", (c) => {
-    service.agent(c.req.param("id"));
-    return c.json(store.listConversations(c.req.param("id"), c.req.query('includeArchived') === 'true'));
-  });
-  app.post("/v1/agents/:id/conversations", async (c) => {
+  app.get("/v1/agents/:id/chat", async (c) =>
+    c.json(await service.chatSnapshot(c.req.param("id"))),
+  );
+  app.get("/v1/agents/:id/chat/history", async (c) => {
     const input = z
       .object({
-        title: z.string().trim().min(1).max(200).default("New conversation"),
+        before: z.string().min(1).max(200).optional(),
+        limit: z.coerce.number().int().min(1).max(200).optional(),
+      })
+      .parse(c.req.query());
+    return c.json(await service.history(c.req.param("id"), input));
+  });
+  app.post("/v1/agents/:id/messages", async (c) => {
+    const input = z
+      .object({
+        content: text,
+        requestId: z.string().uuid(),
+        replyTo: z.string().min(1).max(200).optional(),
       })
       .parse(await c.req.json());
     return c.json(
-      await service.createConversation(c.req.param("id"), input.title),
-      201,
-    );
-  });
-  app.get("/v1/conversations/:id", async (c) =>
-    c.json(await service.snapshot(c.req.param("id"))),
-  );
-  app.patch("/v1/conversations/:id", async (c) => {
-    service.conversation(c.req.param("id"));
-    const input = z
-      .object({ title: z.string().trim().min(1).max(200) })
-      .parse(await c.req.json());
-    return c.json(store.updateConversation(c.req.param("id"), input));
-  });
-  app.delete("/v1/conversations/:id", async (c) => {
-    await service.archiveConversation(c.req.param("id"));
-    return c.body(null, 204);
-  });
-  app.post('/v1/conversations/:id/restore', c => {
-    const conversation = store.getConversation(c.req.param('id'));
-    if (!conversation) throw new AppError(404,'Conversation not found');
-    service.agent(conversation.agentId);
-    return c.json(store.restoreConversation(conversation.id));
-  });
-  app.post("/v1/conversations/:id/messages", async (c) => {
-    const input = z
-      .object({ content: text, requestId: z.string().uuid() })
-      .parse(await c.req.json());
-    return c.json(
-      await service.send(c.req.param("id"), input.content, input.requestId),
+      await service.sendChat(
+        c.req.param("id"),
+        input.content,
+        input.requestId,
+        input.replyTo,
+      ),
       202,
     );
   });
-  app.post("/v1/conversations/:id/abort", async (c) => {
-    await service.abort(c.req.param("id"));
+  app.post("/v1/agents/:id/abort", async (c) => {
+    await service.abortChat(c.req.param("id"));
     return c.body(null, 204);
   });
-  app.get("/v1/conversations/:id/events", async (c) => {
-    const { agent, conversation } = service.conversation(c.req.param("id"));
+  app.post("/v1/agents/:id/compact", async (c) =>
+    c.json({ taskId: await service.compact(c.req.param("id")) }, 202),
+  );
+  app.get("/v1/agents/:id/events", async (c) => {
+    const agent = service.agent(c.req.param("id"));
+    const chat = await service.chat(agent.id);
     return streamSSE(c, async (stream) => {
       let finish!: () => void;
       const finished = new Promise<void>((resolve) => {
@@ -125,15 +115,15 @@ export function createAPI(
         if (!stream.aborted)
           await stream.writeSSE({
             event: "snapshot",
-            data: JSON.stringify(await service.snapshot(conversation.id)),
+            data: JSON.stringify(await service.snapshot(chat.id)),
           });
       };
-      const unsubscribe = service.subscribe(conversation.id, () => {
+      const unsubscribe = service.subscribe(chat.id, () => {
         void sendSnapshot().catch(finish);
       });
       let stop: (() => Promise<void>) | undefined;
       try {
-        stop = await runtime.watch(agent, conversation.id, sendSnapshot);
+        stop = await runtime.watch(agent, chat.id, sendSnapshot);
       } catch (error) {
         unsubscribe();
         throw error;
@@ -234,15 +224,13 @@ export function createAPI(
     const name = c.req.query("provider");
     if (name) provider.parse(name);
     return c.json(
-      catalog
-        .getModels(name)
-        .map((model) => ({
-          provider: model.provider,
-          id: model.id,
-          name: model.name,
-          contextWindow: model.contextWindow,
-          reasoning: model.reasoning,
-        })),
+      catalog.getModels(name).map((model) => ({
+        provider: model.provider,
+        id: model.id,
+        name: model.name,
+        contextWindow: model.contextWindow,
+        reasoning: model.reasoning,
+      })),
     );
   });
   app.put("/v1/providers/:provider", async (c) => {

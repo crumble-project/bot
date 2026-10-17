@@ -1,4 +1,5 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { JsonValue } from "@earendil-works/chord";
 import { Type, type Models } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { rm } from "node:fs/promises";
@@ -12,7 +13,14 @@ import {
   watchEvents,
 } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
-import type { Agent } from "./domain";
+import { AppError, type Agent } from "./domain";
+import {
+  prepareReply,
+  readResponse,
+  readTranscript,
+  type MessageOrigin,
+  type TranscriptMessage,
+} from "./transcript";
 
 export type MemoryRecord = {
   id: string;
@@ -41,19 +49,15 @@ export type RuntimeCallbacks = {
   deleteMemory?: (agentId: string, id: string) => void | Promise<void>;
   extensions?: (agent: Agent) => Extension[] | Promise<Extension[]>;
 };
-export type RuntimeMessage = {
-  role: string;
-  content: string;
-  blocks?: unknown;
-  entryId?: string;
-  timestamp?: number;
-};
+export type RuntimeMessage = TranscriptMessage;
 export type RuntimeSnapshot = {
   conversationId: string;
   messages: RuntimeMessage[];
   live: unknown;
   partial: string;
   usage: unknown;
+  hasMore: boolean;
+  oldestEntryId: string | null;
   status: "idle" | "running" | "failed";
   updatedAt: number;
 };
@@ -282,25 +286,66 @@ export class AgentRuntime {
     return reference;
   }
 
-  async submit(
-    agent: Agent,
-    conversationId: string,
-    text: string,
-    requestId?: string,
-  ): Promise<string> {
+  async openChat(agent: Agent): Promise<string> {
+    const record = await this.open(agent);
+    const root = await record.harness.root(BACKGROUND_CONTEXT);
+    const reference = conversationReference(agent.id, Number(root.id));
+    await this.configure(record, agent, reference);
+    return reference;
+  }
+
+  async compact(agent: Agent, conversationId: string): Promise<string> {
     const conversation = await this.configure(
       await this.open(agent),
       agent,
       conversationId,
     );
-    return String(
-      (
-        await conversation.submit(
-          { type: "input", content: text, requestId },
-          BACKGROUND_CONTEXT,
-        )
-      ).id,
+    return String(await conversation.compact(undefined, BACKGROUND_CONTEXT));
+  }
+
+  async submit(
+    agent: Agent,
+    conversationId: string,
+    text: string,
+    requestId?: string,
+    options: { replyTo?: string; origin?: MessageOrigin } = {},
+  ): Promise<string> {
+    const record = await this.open(agent);
+    let prepared: { modelContent: string; data: Record<string, JsonValue> } = {
+      modelContent: text,
+      data: { text },
+    };
+    if (options.replyTo)
+      try {
+        prepared = await prepareReply(
+          record.harness,
+          agent.id,
+          options.replyTo,
+          text,
+        );
+      } catch (error) {
+        throw new AppError(
+          400,
+          error instanceof Error ? error.message : "Invalid reply target",
+        );
+      }
+    const conversation = await this.configure(record, agent, conversationId);
+    const submission = await conversation.submit(
+      {
+        type: "input",
+        content: prepared.modelContent,
+        requestId,
+        entry: {
+          kind: "crumble.message",
+          data: {
+            ...prepared.data,
+            ...(options.origin ? { origin: options.origin } : {}),
+          },
+        },
+      },
+      BACKGROUND_CONTEXT,
     );
+    return String(submission.id);
   }
 
   async wait(submissionId: string, agent: Agent) {
@@ -315,29 +360,19 @@ export class AgentRuntime {
     agent: Agent,
     conversationId: string,
   ): Promise<RuntimeSnapshot> {
-    const conversation = await (
-      await this.open(agent)
-    ).harness.conversation(
+    const { harness } = await this.open(agent);
+    const conversation = await harness.conversation(
       localConversationId(agent.id, conversationId),
       BACKGROUND_CONTEXT,
     );
     if (!conversation) throw new Error("Conversation not found");
     const view = await conversation.viewState(BACKGROUND_CONTEXT);
     try {
-      const messages: RuntimeMessage[] = [];
-      for (const entry of view.value.entries)
-        for (const message of entry.model ?? [])
-          messages.push({
-            role: message.role,
-            content: contentText(message.content),
-            blocks: message.content,
-            entryId: String(entry.id),
-          });
       const live = view.value.docs["pi.live"] as unknown as
         LiveState | undefined;
       return {
         conversationId,
-        messages,
+        ...(await readTranscript(harness, agent.id)),
         live,
         partial: contentText(live?.generation?.message?.content),
         usage: view.value.docs["pi.usage"],
@@ -347,6 +382,44 @@ export class AgentRuntime {
     } finally {
       view.dispose();
     }
+  }
+
+  async history(
+    agent: Agent,
+    options: { before?: string; limit?: number } = {},
+  ) {
+    try {
+      return await readTranscript(
+        (await this.open(agent)).harness,
+        agent.id,
+        options,
+      );
+    } catch (error) {
+      throw new AppError(
+        400,
+        error instanceof Error ? error.message : "Invalid history cursor",
+      );
+    }
+  }
+
+  /** Assistant text answering one submission; later chat turns stay out of view. */
+  async response(
+    agent: Agent,
+    conversationId: string,
+    submissionId: string,
+  ): Promise<string[]> {
+    const { harness } = await this.open(agent);
+    const submission = await harness.submission(
+      numericId(submissionId),
+      BACKGROUND_CONTEXT,
+    );
+    const status = await submission?.status(BACKGROUND_CONTEXT);
+    const conversation = await harness.conversation(
+      localConversationId(agent.id, conversationId),
+      BACKGROUND_CONTEXT,
+    );
+    if (!status?.entry || !conversation) return [];
+    return readResponse(conversation, Number(status.entry));
   }
 
   async watch(

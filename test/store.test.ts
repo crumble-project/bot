@@ -92,7 +92,13 @@ describe("Store", () => {
       prompt: "go",
       status: "pending",
       error: null,
+      replyTo: "assistant@example.com",
     });
+    expect((execution as any).replyTo).toBe("assistant@example.com");
+    expect(
+      (store.updateExecution(execution.id, { replyTo: null } as any) as any)
+        .replyTo,
+    ).toBeNull();
     expect(store.getExecutionByRequest(conversation.id, "req-1")?.id).toBe(
       execution.id,
     );

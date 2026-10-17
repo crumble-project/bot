@@ -1,10 +1,9 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import type { Agent } from "./domain";
-import { conversationReference } from "./runtime";
-import type { CrumbleService } from "./service";
+import { delegationRequest, type CrumbleService } from "./service";
 
-/** A delegated session cannot delegate again. Private memory never crosses the boundary. */
+/** Delegated work runs in the target bot's chat and cannot delegate again. Private memory never crosses the boundary. */
 export function coordinationExtension(agent: Agent, service: CrumbleService) {
   const delegate = defineTool({
     name: "delegate",
@@ -25,15 +24,19 @@ export function coordinationExtension(agent: Agent, service: CrumbleService) {
           "This agent has no permission to delegate to that agent",
         );
       if (
-        service.store.getSetting(
-          `delegation:${conversationReference(source.id, Number(api.conversationId))}`,
-        )
+        service.store
+          .listExecutions(source.id)
+          .some(
+            (e) =>
+              e.requestId.startsWith("delegate:") &&
+              ["pending", "running"].includes(e.status),
+          )
       )
         throw new Error("Delegated tasks cannot start further delegations");
       const target = service.agent(args.agentId);
       if (!target.enabled || target.id === source.id)
         throw new Error("Choose another enabled agent");
-      const requestId = `delegate:${source.id}:${api.taskId}`;
+      const requestId = delegationRequest(source.id, String(api.taskId));
       let execution = service.store
         .listExecutions(target.id)
         .find((e) => e.requestId === requestId);
@@ -45,18 +48,8 @@ export function coordinationExtension(agent: Agent, service: CrumbleService) {
           throw new Error(
             "This agent already has four active tasks; try again later",
           );
-        const key = `delegation-session:${source.id}:${api.taskId}`;
-        let conversationId = service.store.getSetting<string>(key);
-        if (!conversationId) {
-          conversationId = (
-            await service.createConversation(target.id, `From ${source.name}`)
-          ).id;
-          service.store.setSetting(key, conversationId);
-          service.store.setSetting(`delegation:${conversationId}`, {
-            sourceAgentId: source.id,
-          });
-        }
-        execution = await service.send(conversationId, args.task, requestId);
+        const chat = await service.chat(target.id);
+        execution = await service.send(chat.id, args.task, requestId);
       }
       service.store.setSetting(`delegation-receipt:${execution.id}`, {
         sourceAgentId: source.id,
@@ -79,7 +72,7 @@ export function coordinationExtension(agent: Agent, service: CrumbleService) {
   const status = defineTool({
     name: "delegation_status",
     description:
-      "Read the status and response of a task this agent delegated. Other conversations and private memory remain inaccessible.",
+      "Read the status and response of a task this agent delegated. The rest of that agent's chat and its private memory remain inaccessible.",
     parameters: Type.Object({ executionId: Type.String() }),
     replay: "safe",
     execute: async (args) => {
@@ -96,10 +89,13 @@ export function coordinationExtension(agent: Agent, service: CrumbleService) {
         throw new Error("Delegation receipt not found");
       const execution = service.store.getExecution(args.executionId);
       if (!execution) throw new Error("Delegation execution not found");
-      const snapshot = await service.runtime.snapshot(
-        service.agent(execution.agentId),
-        execution.conversationId,
-      );
+      const response = execution.submissionId
+        ? await service.runtime.response(
+            service.agent(execution.agentId),
+            execution.conversationId,
+            execution.submissionId,
+          )
+        : [];
       return {
         output: [
           {
@@ -107,9 +103,7 @@ export function coordinationExtension(agent: Agent, service: CrumbleService) {
             text: JSON.stringify({
               status: execution.status,
               error: execution.error,
-              response: snapshot.messages.filter(
-                (message) => message.role === "assistant",
-              ),
+              response,
             }),
           },
         ],

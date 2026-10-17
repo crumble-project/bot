@@ -30,8 +30,7 @@ function setup() {
   dirs.push(dir);
   let sequence = 0;
   const runtime: any = {
-    createConversation: async () =>
-      `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`,
+    openChat: async (agent: { id: string }) => `${agent.id}:${++sequence}`,
     submit: async (_a: unknown, _c: string, _text: string, requestId: string) =>
       `submission-${requestId}`,
     wait: async () => ({ status: "done" }),
@@ -80,7 +79,7 @@ describe("HTTP API", () => {
     store.close();
   });
 
-  test("CRUDs agents and conversations, enforces idempotency and disabled agents", async () => {
+  test("CRUDs agents, keeps one chat per bot, enforces idempotency and disabled agents", async () => {
     const { app, store } = setup();
     const created = await req(app, "/v1/agents", {
       method: "POST",
@@ -92,17 +91,18 @@ describe("HTTP API", () => {
       method: "POST",
     });
     expect(duplicate.status).toBe(201);
-    const conversationResponse = await req(
-      app,
-      `/v1/agents/${agent.id}/conversations`,
-      { method: "POST", body: JSON.stringify({ title: "Chat" }) },
-    );
-    expect(conversationResponse.status).toBe(201);
-    const conversation = await conversationResponse.json();
+    const chat = await req(app, `/v1/agents/${agent.id}/chat`);
+    expect(chat.status).toBe(200);
+    const snapshot = await chat.json();
+    expect(snapshot.agentId).toBe(agent.id);
+    expect(
+      (await req(app, `/v1/agents/${agent.id}/chat`).then((r: Response) => r.json()))
+        .conversationId,
+    ).toBe(snapshot.conversationId);
     const requestId = "00000000-0000-4000-8000-000000000099";
     expect(
       (
-        await req(app, `/v1/conversations/${conversation.id}/messages`, {
+        await req(app, `/v1/agents/${agent.id}/messages`, {
           method: "POST",
           body: JSON.stringify({ content: "hello", requestId }),
         })
@@ -110,7 +110,7 @@ describe("HTTP API", () => {
     ).toBe(202);
     expect(
       (
-        await req(app, `/v1/conversations/${conversation.id}/messages`, {
+        await req(app, `/v1/agents/${agent.id}/messages`, {
           method: "POST",
           body: JSON.stringify({ content: "hello", requestId }),
         })
@@ -118,7 +118,7 @@ describe("HTTP API", () => {
     ).toBe(202);
     expect(
       (
-        await req(app, `/v1/conversations/${conversation.id}/messages`, {
+        await req(app, `/v1/agents/${agent.id}/messages`, {
           method: "POST",
           body: JSON.stringify({ content: "different", requestId }),
         })
@@ -131,7 +131,7 @@ describe("HTTP API", () => {
     expect(disabled.status).toBe(200);
     expect(
       (
-        await req(app, `/v1/conversations/${conversation.id}/messages`, {
+        await req(app, `/v1/agents/${agent.id}/messages`, {
           method: "POST",
           body: JSON.stringify({
             content: "again",

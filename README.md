@@ -83,6 +83,21 @@ curl -H "Authorization: Bearer $CRUMBLE_TOKEN" http://127.0.0.1:7337/v1/agents
 
 Live provider execution is not verified by the automated tests because this repository does not include provider credentials. Use a test provider account before accepting a live deployment.
 
+## Bot chat API
+
+Each bot has one continuous chat. These routes live under `/v1/agents/:id`:
+
+| Route | Description |
+| --- | --- |
+| `GET /chat` | Snapshot of the newest transcript page, live generation state, and usage. |
+| `GET /chat/history?before=&limit=` | Older transcript pages. Pass the previous page's `oldestEntryId` as `before`; `limit` is at most 200. |
+| `POST /messages` | Send `{ content, requestId, replyTo? }`. `requestId` is a UUID that makes retries idempotent. `replyTo` is a message `entryId`. |
+| `GET /events` | Server-sent `snapshot` events for the chat. |
+| `POST /abort` | Stop the running response. |
+| `POST /compact` | Summarize older working context. The transcript keeps every original message. |
+
+Scheduled tasks and delegated work from other bots post into the same chat. Their messages carry an `origin`.
+
 ## Protect and back up data
 
 The server creates these protected files in the data directory:
@@ -98,7 +113,7 @@ Do not expose the loopback server directly to a network. If remote access is req
 
 ## Current scope and limitations
 
-The repository contains working persistence, authenticated API routes, agent conversations, streaming events, scheduling, memory, MCP configuration, approvals, and delegation paths. The macOS client is the intended configuration surface for provider credentials and integrations.
+The repository contains working persistence, authenticated API routes, continuous bot chats, streaming events, scheduling, memory, MCP configuration, approvals, and delegation paths. The macOS client is the intended configuration surface for provider credentials and integrations.
 
 The project is still under active development. Hermes Agent and Grok Bot parity remains an acceptance target, not a completed claim. Review [`docs/product-parity.md`](docs/product-parity.md) for the reference capability matrix and [`docs/architecture.md`](docs/architecture.md) for boundaries and milestones.
 

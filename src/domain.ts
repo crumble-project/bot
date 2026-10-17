@@ -89,6 +89,7 @@ export type Execution = {
   submissionId: string | null;
   requestId: string;
   prompt: string;
+  replyTo?: string | null;
   status: "pending" | "running" | "done" | "failed" | "cancelled";
   error: string | null;
   createdAt: string;

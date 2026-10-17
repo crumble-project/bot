@@ -59,7 +59,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, title TEXT NOT NULL, archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, content TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS schedules (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, name TEXT NOT NULL, prompt TEXT NOT NULL, cron TEXT, timezone TEXT NOT NULL, run_at TEXT, enabled INTEGER NOT NULL, next_run_at TEXT, created_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS executions (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, schedule_id TEXT REFERENCES schedules(id) ON DELETE SET NULL, submission_id TEXT, request_id TEXT NOT NULL, prompt TEXT, status TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS executions (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, schedule_id TEXT REFERENCES schedules(id) ON DELETE SET NULL, submission_id TEXT, request_id TEXT NOT NULL, prompt TEXT, reply_to TEXT, status TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS credentials (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS mcp_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, enabled INTEGER NOT NULL);`);
@@ -82,6 +82,8 @@ export class Store {
     const cols = this.db.query("PRAGMA table_info(executions)").all() as any[];
     if (!cols.some((c) => c.name === "prompt"))
       this.db.exec("ALTER TABLE executions ADD COLUMN prompt TEXT");
+    if (!cols.some((c) => c.name === "reply_to"))
+      this.db.exec("ALTER TABLE executions ADD COLUMN reply_to TEXT");
     this.db.exec(
       "CREATE UNIQUE INDEX IF NOT EXISTS executions_conversation_request ON executions(conversation_id, request_id)",
     );
@@ -411,6 +413,7 @@ export class Store {
       createdAt: r.created_at,
       updatedAt: r.updated_at,
       prompt: r.prompt ?? "",
+      replyTo: r.reply_to ?? null,
     };
   }
   getExecution(id: Id) {
@@ -431,13 +434,14 @@ export class Store {
   createExecution(
     input: Omit<Execution, "id" | "createdAt" | "updatedAt"> & {
       prompt?: string;
+      replyTo?: string | null;
     },
     executionId: string = id(),
   ) {
     const t = now();
     this.db
       .query(
-        "INSERT INTO executions (id,agent_id,conversation_id,schedule_id,submission_id,request_id,prompt,status,error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO executions (id,agent_id,conversation_id,schedule_id,submission_id,request_id,prompt,reply_to,status,error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
       )
       .run(
         executionId,
@@ -447,6 +451,7 @@ export class Store {
         input.submissionId,
         input.requestId,
         input.prompt ?? null,
+        input.replyTo ?? null,
         input.status,
         input.error,
         t,
@@ -460,9 +465,17 @@ export class Store {
     const x = { ...e, ...patch };
     this.db
       .query(
-        "UPDATE executions SET status=?,error=?,submission_id=?,request_id=?,updated_at=? WHERE id=?",
+        "UPDATE executions SET status=?,error=?,submission_id=?,request_id=?,reply_to=?,updated_at=? WHERE id=?",
       )
-      .run(x.status, x.error, x.submissionId, x.requestId, now(), id);
+      .run(
+        x.status,
+        x.error,
+        x.submissionId,
+        x.requestId,
+        (x as typeof x & { replyTo?: string | null }).replyTo ?? null,
+        now(),
+        id,
+      );
     return this.getExecution(id);
   }
   deleteExecution(id: Id) {

@@ -32,7 +32,7 @@ function setup() {
   dirs.push(dir);
   let conversationNumber = 500;
   const runtime: any = {
-    createConversation: async (agent: { id: string }) =>
+    openChat: async (agent: { id: string }) =>
       `${agent.id}:${++conversationNumber}`,
     submit: async (
       _agent: unknown,
@@ -40,14 +40,9 @@ function setup() {
       _prompt: string,
       requestId: string,
     ) => `submission:${requestId}`,
-    wait: async () => ({ status: "done" }),
-    snapshot: async () => ({
-      conversationId: "x",
-      messages: [{ role: "assistant", content: "result" }],
-      live: null,
-      status: "idle",
-      updatedAt: Date.now(),
-    }),
+    // Delegated work stays running so recursion checks see it in flight.
+    wait: () => new Promise(() => {}),
+    response: async () => ["result"],
   };
   const store = new Store(dir);
   const service = new CrumbleService(store, runtime);
@@ -106,14 +101,14 @@ describe("coordination extension", () => {
     expect(secondReceipt.executionId).toBe(firstReceipt.executionId);
     expect(store.listExecutions(target.id)).toHaveLength(1);
     store.updateAgent(target.id, { delegates: [source.id] });
-    const setting = store.getSetting<string>(
-      `delegation-session:${source.id}:same-task`,
-    )!;
+    expect(store.listExecutions(target.id)[0]!.conversationId).toBe(
+      (await service.chat(target.id)).id,
+    );
     await expect(
       invoke(
         tool(service, target.id, 0),
         { agentId: source.id, task: "nested" },
-        Number(setting.split(":").at(-1)),
+        uuid(903),
         "nested-task",
       ),
     ).rejects.toThrow("further delegations");

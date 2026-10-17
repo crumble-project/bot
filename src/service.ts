@@ -1,11 +1,21 @@
 import { Store } from "./store";
 import { AgentRuntime } from "./runtime";
-import { AppError, type Agent, type Execution } from "./domain";
+import {
+  AppError,
+  type Agent,
+  type Conversation,
+  type Execution,
+} from "./domain";
+import type { MessageOrigin } from "./transcript";
+
+export const delegationRequest = (sourceAgentId: string, taskId: string) =>
+  `delegate:${sourceAgentId}:${taskId}`;
 
 export class CrumbleService {
   private monitoring = new Map<string, Promise<void>>();
   private closing = false;
   private listeners = new Map<string, Set<() => void>>();
+  private chatOpening = new Map<string, Promise<Conversation>>();
   constructor(
     readonly store: Store,
     readonly runtime: AgentRuntime,
@@ -19,7 +29,8 @@ export class CrumbleService {
 
   conversation(id: string) {
     const conversation = this.store.getConversation(id);
-    if (!conversation || conversation.archived) throw new AppError(404, "Conversation not found");
+    if (!conversation || conversation.archived)
+      throw new AppError(404, "Conversation not found");
     return { conversation, agent: this.agent(conversation.agentId) };
   }
 
@@ -45,53 +56,115 @@ export class CrumbleService {
       .find((execution) => execution.conversationId === conversationId);
     return {
       ...snapshot,
+      agentId: agent.id,
       conversation,
       error: latest?.status === "failed" ? latest.error : null,
     };
   }
 
-  async createConversation(agentId: string, title = "New conversation") {
-    const agent = this.agent(agentId);
-    const id = await this.runtime.createConversation(agent);
-    return this.store.createConversation({ agentId, title }, id);
+  /** The bot's one continuous chat, created on first use and stable across restarts. */
+  async chat(agentId: string): Promise<Conversation> {
+    const opening = this.chatOpening.get(agentId);
+    if (opening) return opening;
+    const promise = (async () => {
+      const agent = this.agent(agentId);
+      const saved = this.store.getSetting<string>(`chat:${agentId}`);
+      const existing = saved ? this.store.getConversation(saved) : undefined;
+      if (existing?.agentId === agentId)
+        return existing.archived
+          ? this.store.restoreConversation(existing.id)!
+          : existing;
+      // Upgrades from session-based installs continue the most recent session's working context.
+      const legacy = this.store.listConversations(agentId, true)[0];
+      const chat = legacy
+        ? legacy.archived
+          ? this.store.restoreConversation(legacy.id)!
+          : legacy
+        : this.store.createConversation(
+            { agentId, title: agent.name },
+            await this.runtime.openChat(agent),
+          );
+      this.store.setSetting(`chat:${agentId}`, chat.id);
+      return chat;
+    })();
+    this.chatOpening.set(agentId, promise);
+    try {
+      return await promise;
+    } finally {
+      this.chatOpening.delete(agentId);
+    }
+  }
+
+  async chatSnapshot(agentId: string) {
+    return this.snapshot((await this.chat(agentId)).id);
+  }
+
+  async history(agentId: string, options: { before?: string; limit?: number }) {
+    return this.runtime.history(this.agent(agentId), options);
+  }
+
+  async sendChat(
+    agentId: string,
+    content: string,
+    requestId: string,
+    replyTo?: string,
+  ) {
+    return this.send((await this.chat(agentId)).id, content, requestId, {
+      replyTo,
+    });
   }
 
   async send(
     conversationId: string,
     content: string,
     requestId: string,
-    scheduleId: string | null = null,
+    options: { scheduleId?: string; replyTo?: string } = {},
   ) {
-    const { conversation, agent } = this.conversation(conversationId);
+    const { agent } = this.conversation(conversationId);
     if (!agent.enabled)
       throw new AppError(409, "Enable this agent before starting work");
+    const replyTo = options.replyTo ?? null;
     let execution = this.store.findExecution(conversationId, requestId);
-    if (execution && execution.prompt !== content)
+    if (
+      execution &&
+      (execution.prompt !== content || (execution.replyTo ?? null) !== replyTo)
+    )
       throw new AppError(
         409,
         "Request ID already used for a different message",
       );
-    if (!execution) {
-      execution = this.store.createExecution({
-        agentId: agent.id,
-        conversationId,
-        scheduleId,
-        requestId,
-        prompt: content,
-        submissionId: null,
-        status: "pending",
-        error: null,
-      });
-    }
-    await this.admit(execution);
-    this.store.updateConversation(conversationId, {
-      title:
-        conversation.title === "New conversation"
-          ? content.slice(0, 80)
-          : conversation.title,
+    execution ??= this.store.createExecution({
+      agentId: agent.id,
+      conversationId,
+      scheduleId: options.scheduleId ?? null,
+      requestId,
+      prompt: content,
+      replyTo,
+      submissionId: null,
+      status: "pending",
+      error: null,
     });
+    await this.admit(execution);
     this.changed(conversationId);
     return this.store.getExecution(execution.id)!;
+  }
+
+  private origin(execution: Execution): MessageOrigin {
+    if (execution.scheduleId)
+      return {
+        kind: "task",
+        name:
+          this.store.getSchedule(execution.scheduleId)?.name ??
+          "Scheduled task",
+      };
+    const [prefix, sourceAgentId] = execution.requestId.split(":");
+    if (prefix === "delegate" && sourceAgentId)
+      return {
+        kind: "bot",
+        agentId: sourceAgentId,
+        name: this.store.getAgent(sourceAgentId)?.name ?? "Another bot",
+      };
+    return { kind: "owner" };
   }
 
   private async admit(execution: Execution) {
@@ -114,6 +187,10 @@ export class CrumbleService {
           execution.conversationId,
           execution.prompt,
           execution.requestId,
+          {
+            replyTo: execution.replyTo ?? undefined,
+            origin: this.origin(execution),
+          },
         ));
       this.store.updateExecution(execution.id, {
         submissionId,
@@ -172,11 +249,8 @@ export class CrumbleService {
       await this.admit(existing);
       return existing;
     }
-    const conversation = await this.createConversation(
-      agentId,
-      this.store.getSchedule(scheduleId)?.name ?? "Scheduled task",
-    );
-    return this.send(conversation.id, prompt, requestId, scheduleId);
+    const chat = await this.chat(agentId);
+    return this.send(chat.id, prompt, requestId, { scheduleId });
   }
 
   async recover() {
@@ -189,6 +263,18 @@ export class CrumbleService {
         console.error("Execution recovery failed", execution.id, error);
       }
     }
+  }
+
+  async compact(agentId: string) {
+    const agent = this.agent(agentId);
+    const chat = await this.chat(agentId);
+    const taskId = await this.runtime.compact(agent, chat.id);
+    this.changed(chat.id);
+    return taskId;
+  }
+
+  async abortChat(agentId: string) {
+    await this.abort((await this.chat(agentId)).id);
   }
 
   async abort(conversationId: string) {
@@ -214,12 +300,6 @@ export class CrumbleService {
       await this.abort(conversation.id);
     await this.runtime.deleteAgent(id);
     this.store.deleteAgent(id);
-  }
-
-  async archiveConversation(id: string) {
-    await this.abort(id);
-    this.store.archiveConversation(id);
-    this.changed(id);
   }
 
   async close() {

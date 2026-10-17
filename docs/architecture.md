@@ -4,7 +4,7 @@ Crumble is a single-owner, self-hosted personal agent server and an independent 
 
 ## Boundaries
 
-- Product metadata lives in a SQLite database: agent profiles, session names, memory, schedules, execution history, integrations, and settings.
+- Product metadata lives in a SQLite database: agent profiles, the canonical chat record per bot, memory, schedules, execution history, integrations, and settings.
 - Each agent owns a separate Pi Durable SQLite database. Pi owns conversation entries, model requests, tool calls, checkpoints, cancellation, retries, and stream state. Product code does not recreate its agent loop.
 - Providers run on the server. Credentials are encrypted at rest using an installation key with owner-only permissions. Backups must include the key; encryption does not protect against a compromised server account.
 - The API requires a bearer token, including for streams. The server binds loopback by default. Remote deployments require TLS through a trusted reverse proxy.

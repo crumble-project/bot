@@ -18,7 +18,7 @@ const agentId = "00000000-0000-4000-8000-000000000201";
 const requestId = "00000000-0000-4000-8000-000000000202";
 
 describe("HTTP/runtime persistence", () => {
-  test("submits through the real faux runtime and reopens the session", async () => {
+  test("submits through the real faux runtime and reopens the same chat", async () => {
     const dir = mkdtempSync(join(tmpdir(), "bot-e2e-"));
     const faux = fauxProvider({
       provider: "faux",
@@ -56,14 +56,8 @@ describe("HTTP/runtime persistence", () => {
         authorization: `Bearer ${token}`,
         "content-type": "application/json",
       };
-      const conversationResponse = await app.request(
-        `/v1/agents/${agent.id}/conversations`,
-        { method: "POST", headers, body: JSON.stringify({ title: "Session" }) },
-      );
-      expect(conversationResponse.status).toBe(201);
-      const conversation: any = await conversationResponse.json();
       const response = await app.request(
-        `/v1/conversations/${conversation.id}/messages`,
+        `/v1/agents/${agent.id}/messages`,
         {
           method: "POST",
           headers,
@@ -81,7 +75,7 @@ describe("HTTP/runtime persistence", () => {
       const reopenedRuntime = new AgentRuntime(dir, { models });
       const reopenedApp = makeApp(reopenedStore, reopenedRuntime);
       const snapshotResponse = await reopenedApp.request(
-        `/v1/conversations/${conversation.id}`,
+        `/v1/agents/${agent.id}/chat`,
         { headers },
       );
       expect(snapshotResponse.status).toBe(200);
