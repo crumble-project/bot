@@ -81,6 +81,10 @@ function contentText(content: unknown): string {
     .join("\n");
 }
 
+// The owner wants plain replies; memory and tool use stay behind the scenes.
+const MEMORY_GUIDANCE =
+  "Use your persistent memory and tools silently. Do not mention your memory, what it contains, or that you loaded or checked it unless the owner asks. The memory below is already loaded; do not call the memory tool just to read it.";
+
 export const conversationReference = (agentId: string, localId: number) =>
   `${agentId}:${localId}`;
 function numericId(value: string): never {
@@ -272,7 +276,7 @@ export class AgentRuntime {
       {
         model: { provider: agent.provider, modelId: agent.model },
         thinkingLevel: agent.inference?.thinkingLevel ?? "off",
-        instructions: `${agent.instructions}${agent.skills.map((skill) => `\n\n## ${skill.name}\n${skill.instructions}`).join("")}\n\nPersistent memory:\n${memory.map((item) => `- ${item.content}`).join("\n")}`,
+        instructions: `${agent.instructions}${agent.skills.map((skill) => `\n\n## ${skill.name}\n${skill.instructions}`).join("")}\n\n${MEMORY_GUIDANCE}\n\nPersistent memory:\n${memory.map((item) => `- ${item.content}`).join("\n")}`,
         tools,
         modelTools: tools,
       },
