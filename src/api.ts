@@ -1,0 +1,313 @@
+import { Hono } from "hono";
+import { bearerAuth } from "hono/bearer-auth";
+import { bodyLimit } from "hono/body-limit";
+import { streamSSE } from "hono/streaming";
+import { HTTPException } from "hono/http-exception";
+import { z } from "zod";
+import { agentInput, scheduleInput, AppError } from "./domain";
+import type { CrumbleService } from "./service";
+import type { Scheduler } from "./scheduler";
+import type { MCPIntegrations } from "./integrations";
+import { providerModels } from "./runtime";
+
+const text = z.string().trim().min(1).max(32000);
+const catalog = providerModels();
+const provider = z
+  .string()
+  .refine((value) => Boolean(catalog.getProvider(value)), "Unknown provider");
+
+export function createAPI(
+  service: CrumbleService,
+  scheduler: Scheduler,
+  token: string,
+  integrations?: MCPIntegrations,
+) {
+  if (token.length < 32)
+    throw new Error("Server token must contain at least 32 characters");
+  const { store, runtime } = service;
+  const app = new Hono();
+  app.use("*", bodyLimit({ maxSize: 1024 * 1024 }));
+  app.get("/health", (c) => c.json({ status: "ok", apiVersion: 1 }));
+  app.use("/v1/*", bearerAuth({ token }));
+  app.onError((error, c) => {
+    if (error instanceof HTTPException) return error.getResponse();
+    if (error instanceof z.ZodError)
+      return c.json({ error: "Invalid request", details: error.issues }, 400);
+    if (error instanceof AppError)
+      return c.json({ error: error.message }, error.status as 400);
+    if (error instanceof SyntaxError)
+      return c.json({ error: "Invalid JSON" }, 400);
+    console.error(error);
+    return c.json({ error: "The server could not complete this request" }, 500);
+  });
+
+  app.get("/v1/agents", (c) => c.json(store.listAgents()));
+  app.post("/v1/agents", async (c) => {
+    const input = agentInput.parse(await c.req.json());
+    provider.parse(input.provider);
+    return c.json(store.createAgent(input), 201);
+  });
+  app.get("/v1/agents/:id", (c) => c.json(service.agent(c.req.param("id"))));
+  app.patch("/v1/agents/:id", async (c) => {
+    const old = service.agent(c.req.param("id"));
+    const input = agentInput.parse({ ...old, ...(await c.req.json()) });
+    provider.parse(input.provider);
+    if (!input.enabled && old.enabled)
+      for (const conversation of store.listConversations(old.id))
+        await service.abort(conversation.id);
+    return c.json(store.updateAgent(old.id, input));
+  });
+  app.post("/v1/agents/:id/duplicate", (c) => {
+    service.agent(c.req.param("id"));
+    return c.json(store.duplicateAgent(c.req.param("id")), 201);
+  });
+  app.delete("/v1/agents/:id", async (c) => {
+    await service.deleteAgent(c.req.param("id"));
+    return c.body(null, 204);
+  });
+  app.get("/v1/agents/:id/conversations", (c) => {
+    service.agent(c.req.param("id"));
+    return c.json(store.listConversations(c.req.param("id"), c.req.query('includeArchived') === 'true'));
+  });
+  app.post("/v1/agents/:id/conversations", async (c) => {
+    const input = z
+      .object({
+        title: z.string().trim().min(1).max(200).default("New conversation"),
+      })
+      .parse(await c.req.json());
+    return c.json(
+      await service.createConversation(c.req.param("id"), input.title),
+      201,
+    );
+  });
+  app.get("/v1/conversations/:id", async (c) =>
+    c.json(await service.snapshot(c.req.param("id"))),
+  );
+  app.patch("/v1/conversations/:id", async (c) => {
+    service.conversation(c.req.param("id"));
+    const input = z
+      .object({ title: z.string().trim().min(1).max(200) })
+      .parse(await c.req.json());
+    return c.json(store.updateConversation(c.req.param("id"), input));
+  });
+  app.delete("/v1/conversations/:id", async (c) => {
+    await service.archiveConversation(c.req.param("id"));
+    return c.body(null, 204);
+  });
+  app.post('/v1/conversations/:id/restore', c => {
+    const conversation = store.getConversation(c.req.param('id'));
+    if (!conversation) throw new AppError(404,'Conversation not found');
+    service.agent(conversation.agentId);
+    return c.json(store.restoreConversation(conversation.id));
+  });
+  app.post("/v1/conversations/:id/messages", async (c) => {
+    const input = z
+      .object({ content: text, requestId: z.string().uuid() })
+      .parse(await c.req.json());
+    return c.json(
+      await service.send(c.req.param("id"), input.content, input.requestId),
+      202,
+    );
+  });
+  app.post("/v1/conversations/:id/abort", async (c) => {
+    await service.abort(c.req.param("id"));
+    return c.body(null, 204);
+  });
+  app.get("/v1/conversations/:id/events", async (c) => {
+    const { agent, conversation } = service.conversation(c.req.param("id"));
+    return streamSSE(c, async (stream) => {
+      let finish!: () => void;
+      const finished = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      stream.onAbort(finish);
+      const sendSnapshot = async () => {
+        if (!stream.aborted)
+          await stream.writeSSE({
+            event: "snapshot",
+            data: JSON.stringify(await service.snapshot(conversation.id)),
+          });
+      };
+      const unsubscribe = service.subscribe(conversation.id, () => {
+        void sendSnapshot().catch(finish);
+      });
+      let stop: (() => Promise<void>) | undefined;
+      try {
+        stop = await runtime.watch(agent, conversation.id, sendSnapshot);
+      } catch (error) {
+        unsubscribe();
+        throw error;
+      }
+      const timer = setInterval(() => {
+        stream.writeSSE({ event: "heartbeat", data: "{}" }).catch(finish);
+      }, 15000);
+      try {
+        await finished;
+      } finally {
+        clearInterval(timer);
+        unsubscribe();
+        await stop?.();
+      }
+    });
+  });
+
+  app.get("/v1/agents/:id/memories", (c) => {
+    service.agent(c.req.param("id"));
+    return c.json(store.listMemories(c.req.param("id")));
+  });
+  app.post("/v1/agents/:id/memories", async (c) => {
+    service.agent(c.req.param("id"));
+    const input = z.object({ content: text }).parse(await c.req.json());
+    return c.json(
+      store.createMemory({
+        agentId: c.req.param("id"),
+        content: input.content,
+      }),
+      201,
+    );
+  });
+  app.patch("/v1/agents/:id/memories/:memoryId", async (c) => {
+    const memory = store.getMemory(c.req.param("memoryId"));
+    if (!memory || memory.agentId !== c.req.param("id"))
+      throw new AppError(404, "Memory not found");
+    return c.json(
+      store.updateMemory(
+        memory.id,
+        z.object({ content: text }).parse(await c.req.json()),
+      ),
+    );
+  });
+  app.delete("/v1/agents/:id/memories/:memoryId", (c) => {
+    const memory = store.getMemory(c.req.param("memoryId"));
+    if (!memory || memory.agentId !== c.req.param("id"))
+      throw new AppError(404, "Memory not found");
+    store.deleteMemory(memory.id);
+    return c.body(null, 204);
+  });
+  app.get("/v1/schedules", (c) =>
+    c.json(store.listSchedules(c.req.query("agentId"))),
+  );
+  app.post("/v1/schedules", async (c) =>
+    c.json(
+      await scheduler.create(scheduleInput.parse(await c.req.json())),
+      201,
+    ),
+  );
+  app.patch("/v1/schedules/:id", async (c) => {
+    const old = store.getSchedule(c.req.param("id"));
+    if (!old) throw new AppError(404, "Schedule not found");
+    return c.json(
+      await scheduler.update(
+        old.id,
+        scheduleInput.parse({ ...old, ...(await c.req.json()) }),
+      ),
+    );
+  });
+  app.delete("/v1/schedules/:id", (c) => {
+    if (!store.deleteSchedule(c.req.param("id")))
+      throw new AppError(404, "Schedule not found");
+    return c.body(null, 204);
+  });
+  app.post("/v1/schedules/:id/run", async (c) =>
+    c.json(await scheduler.runNow(c.req.param("id")), 202),
+  );
+  app.get("/v1/executions", (c) =>
+    c.json(store.listExecutions(c.req.query("agentId"))),
+  );
+  const authenticatedModels = providerModels((name) =>
+    store.getCredential(name),
+  );
+  app.get("/v1/providers", async (c) =>
+    c.json(
+      await Promise.all(
+        catalog.getProviders().map(async (item) => ({
+          provider: item.id,
+          name: item.name,
+          configured: Boolean(
+            await authenticatedModels.checkAuth(item.id).catch(() => undefined),
+          ),
+        })),
+      ),
+    ),
+  );
+  app.get("/v1/models", (c) => {
+    const name = c.req.query("provider");
+    if (name) provider.parse(name);
+    return c.json(
+      catalog
+        .getModels(name)
+        .map((model) => ({
+          provider: model.provider,
+          id: model.id,
+          name: model.name,
+          contextWindow: model.contextWindow,
+          reasoning: model.reasoning,
+        })),
+    );
+  });
+  app.put("/v1/providers/:provider", async (c) => {
+    const name = provider.parse(c.req.param("provider"));
+    const input = z
+      .object({ apiKey: z.string().trim().min(1).max(16000) })
+      .parse(await c.req.json());
+    store.setCredential(name, input.apiKey);
+    return c.json({ provider: name, configured: true });
+  });
+  app.delete("/v1/providers/:provider", (c) => {
+    store.deleteCredential(provider.parse(c.req.param("provider")));
+    return c.body(null, 204);
+  });
+  app.get("/v1/mcp-servers", (c) =>
+    c.json(
+      store.listMCPServers().map((server) => ({
+        ...server,
+        authenticated: Boolean(store.getCredential(`mcp:${server.id}`)),
+      })),
+    ),
+  );
+  const mcpInput = z.object({
+    name: z.string().trim().min(1).max(100),
+    url: z
+      .url()
+      .refine(
+        (value) => ["http:", "https:"].includes(new URL(value).protocol),
+        "Use an HTTP or HTTPS URL",
+      ),
+    enabled: z.boolean().default(true),
+    token: z.string().max(16000).optional(),
+  });
+  app.post("/v1/mcp-servers", async (c) => {
+    const input = mcpInput.parse(await c.req.json());
+    const server = store.createMCPServer(input);
+    if (input.token) store.setCredential(`mcp:${server.id}`, input.token);
+    return c.json(server, 201);
+  });
+  app.patch("/v1/mcp-servers/:id", async (c) => {
+    const old = store.getMCPServer(c.req.param("id"));
+    if (!old) throw new AppError(404, "MCP server not found");
+    const input = mcpInput.parse({ ...old, ...(await c.req.json()) });
+    if (input.token !== undefined)
+      input.token
+        ? store.setCredential(`mcp:${old.id}`, input.token)
+        : store.deleteCredential(`mcp:${old.id}`);
+    return c.json(store.updateMCPServer(old.id, input));
+  });
+  app.delete("/v1/mcp-servers/:id", (c) => {
+    if (!store.deleteMCPServer(c.req.param("id")))
+      throw new AppError(404, "MCP server not found");
+    store.deleteCredential(`mcp:${c.req.param("id")}`);
+    return c.body(null, 204);
+  });
+  app.get("/v1/approvals", (c) =>
+    c.json(integrations?.approvals.list(c.req.query("agentId")) ?? []),
+  );
+  app.post("/v1/approvals/:id", async (c) => {
+    const { decision } = z
+      .object({ decision: z.enum(["approved", "denied"]) })
+      .parse(await c.req.json());
+    const record = integrations?.approvals.decide(c.req.param("id"), decision);
+    if (!record) throw new AppError(404, "Approval not found");
+    return c.json(record);
+  });
+  return app;
+}
