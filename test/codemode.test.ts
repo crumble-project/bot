@@ -15,7 +15,8 @@ import { AgentRuntime } from "../src/runtime";
 import { CrumbleService } from "../src/service";
 import { Store } from "../src/store";
 
-const cleanups: (() => unknown)[] = [];
+const cleanups: (() => void | Promise<void>)[] = [];
+
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
 });
@@ -27,15 +28,18 @@ test("code mode offers one tool whose scripts call the agent's other tools", asy
   cleanups.push(() => sandbox.close());
 
   const echoed: string[] = [];
+
   const echo = defineTool({
     name: "echo",
     description: "Repeat the text",
     parameters: Type.Object({ text: Type.String() }),
     execute: async (args: { text: string }) => {
       echoed.push(args.text);
+
       return { output: [{ type: "text" as const, text: `echo:${args.text}` }] };
     },
   });
+
   const offered: string[][] = [];
   let toolResult = "";
   const faux = fauxProvider({ provider: "faux", models: [{ id: "chat" }] });
@@ -49,6 +53,7 @@ test("code mode offers one tool whose scripts call the agent's other tools", asy
             : [],
         ),
       );
+
       return fauxAssistantMessage(
         fauxToolCall("codemode", {
           code: 'const reply = await tools.echo({ text: "hi" });\ntext(reply);',
@@ -58,12 +63,14 @@ test("code mode offers one tool whose scripts call the agent's other tools", asy
     },
     (context) => {
       toolResult = JSON.stringify(context.messages.at(-1));
+
       return fauxAssistantMessage("The tool said hi.");
     },
   ]);
   const models = createModels();
   models.setProvider(faux.provider);
   const store = new Store(dir);
+
   const service = new CrumbleService(
     store,
     new AgentRuntime(dir, {
@@ -74,7 +81,9 @@ test("code mode offers one tool whose scripts call the agent's other tools", asy
       ],
     }),
   );
+
   cleanups.push(() => service.close());
+
   const agent = store.createAgent({
     name: "Scripter",
     avatar: "bot",
@@ -97,6 +106,7 @@ test("code mode offers one tool whose scripts call the agent's other tools", asy
   );
   // The submission settles when the model answers; the tool call and the final reply follow it.
   let reply = "";
+
   for (let i = 0; i < 500 && !reply; i++) {
     const { messages } = await service.chatSnapshot(agent.id);
     reply =
@@ -105,8 +115,10 @@ test("code mode offers one tool whose scripts call the agent's other tools", asy
           message.role === "assistant" &&
           !message.content.startsWith("Tool call"),
       )?.content ?? "";
+
     if (!reply) await new Promise((resolve) => setTimeout(resolve, 20));
   }
+
   expect(reply).toBe("The tool said hi.");
   expect(offered[0]).toEqual(["codemode"]);
   expect(echoed).toEqual(["hi"]);

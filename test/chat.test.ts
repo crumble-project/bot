@@ -13,6 +13,7 @@ import { CrumbleService } from "../src/service";
 import { Store } from "../src/store";
 
 const dirs: string[] = [];
+
 afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
@@ -29,11 +30,13 @@ function open(
     provider: "faux",
     models: [{ id: "chat", input }],
   });
+
   faux.setResponses(responses);
   const models = createModels();
   models.setProvider(faux.provider);
   const store = new Store(dir);
   const service = new CrumbleService(store, new AgentRuntime(dir, { models }));
+
   return { store, service };
 }
 
@@ -41,6 +44,7 @@ function setup(responses: FauxResponseStep[], input?: ("text" | "image")[]) {
   const dir = mkdtempSync(join(tmpdir(), "bot-chat-"));
   dirs.push(dir);
   const opened = open(dir, responses, input);
+
   const agent = opened.store.createAgent({
     name: "Chat",
     avatar: "bot",
@@ -55,15 +59,18 @@ function setup(responses: FauxResponseStep[], input?: ("text" | "image")[]) {
     mcpServers: [],
     delegates: [],
   });
+
   return { ...opened, dir, agent };
 }
 
 async function settle(service: CrumbleService, executionId: string) {
   for (let i = 0; i < 200; i++) {
     const status = service.store.getExecution(executionId)?.status;
+
     if (status !== "pending" && status !== "running") return status;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
+
   throw new Error("Execution did not settle");
 }
 
@@ -74,8 +81,10 @@ describe("continuous bot chat", () => {
       fauxAssistantMessage("second answer"),
       fauxAssistantMessage("Summary of earlier work"),
     ]);
+
     // Pi keeps the newest 20k tokens verbatim, so only a long latest turn leaves older turns to summarize.
     const long = `second question ${"word ".repeat(25000)}`;
+
     for (const [index, text] of ["first question", long].entries())
       await settle(
         service,
@@ -83,10 +92,12 @@ describe("continuous bot chat", () => {
       );
     await service.compact(agent.id);
     let transcript = (await service.chatSnapshot(agent.id)).messages;
+
     for (let i = 0; i < 200 && transcript.at(-1)?.kind !== "compaction"; i++) {
       await new Promise((resolve) => setTimeout(resolve, 10));
       transcript = (await service.chatSnapshot(agent.id)).messages;
     }
+
     expect(transcript.at(-1)?.kind).toBe("compaction");
     expect(transcript.at(-1)?.content).toContain("Summary of earlier work");
     expect(transcript.map((message) => message.content)).toEqual([
@@ -103,6 +114,7 @@ describe("continuous bot chat", () => {
     const { service, agent } = setup(
       Array.from({ length: 3 }, (_, i) => fauxAssistantMessage(`answer ${i}`)),
     );
+
     for (let i = 0; i < 3; i++)
       await settle(
         service,
@@ -111,6 +123,7 @@ describe("continuous bot chat", () => {
     const seen: string[] = [];
     let page = await service.history(agent.id, { limit: 2 });
     seen.unshift(...page.messages.map((message) => message.id));
+
     while (page.hasMore && page.oldestEntryId) {
       page = await service.history(agent.id, {
         before: page.oldestEntryId,
@@ -118,6 +131,7 @@ describe("continuous bot chat", () => {
       });
       seen.unshift(...page.messages.map((message) => message.id));
     }
+
     const all = (await service.history(agent.id, { limit: 200 })).messages;
     expect(seen).toEqual(all.map((message) => message.id));
     expect(all.filter((message) => message.role === "user")).toHaveLength(3);
@@ -126,14 +140,17 @@ describe("continuous bot chat", () => {
 
   test("a reply sends bounded context once and displays the original text", async () => {
     const requests: string[] = [];
+
     const record: FauxResponseStep = (context) => {
       requests.push(
         JSON.stringify(
           context.messages.findLast((message) => message.role === "user"),
         ),
       );
+
       return fauxAssistantMessage("noted");
     };
+
     const { service, agent } = setup([record, record, record]);
     await settle(
       service,
@@ -143,22 +160,27 @@ describe("continuous bot chat", () => {
       service,
       (await service.sendChat(agent.id, "unrelated", uuid(2))).id,
     );
+
     const target = (await service.chatSnapshot(agent.id)).messages.find(
       (message) => message.role === "user" && message.content.startsWith("x"),
     )!;
+
     const reply = await service.sendChat(
       agent.id,
       "expand on this",
       uuid(3),
       target.entryId,
     );
+
     await settle(service, reply.id);
     expect(requests[2]).toContain("reply_context");
     expect(requests[2]).toContain("expand on this");
     expect(requests[2]!.length).toBeLessThan(14000);
+
     const shown = (await service.chatSnapshot(agent.id)).messages.find(
       (message) => message.replyTo === target.entryId,
     )!;
+
     expect(shown.content).toBe("expand on this");
     expect(shown.replyPreview).toBe("x".repeat(240));
     await expect(
@@ -177,9 +199,11 @@ describe("continuous bot chat", () => {
     expect((await reopened.service.chat(agent.id)).id).toBe(chat.id);
     const again = await reopened.service.sendChat(agent.id, "hello", uuid(1));
     expect(again.id).toBe(first.id);
+
     const users = (
       await reopened.service.chatSnapshot(agent.id)
     ).messages.filter((message) => message.role === "user");
+
     expect(users.map((message) => message.content)).toEqual(["hello"]);
     expect(users[0]?.requestId).toBe(uuid(1));
     await reopened.service.close();
@@ -189,6 +213,7 @@ describe("continuous bot chat", () => {
 // A 1×1 PNG.
 const png =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+
 const notes = Buffer.from("Buy oat milk").toString("base64");
 
 describe("activity", () => {
@@ -196,12 +221,14 @@ describe("activity", () => {
     const { service, agent } = setup([
       fauxAssistantMessage("All done, two meetings tomorrow."),
     ]);
+
     const events: unknown[] = [];
     service.onActivity((event) => events.push(event));
     await settle(
       service,
       (await service.sendChat(agent.id, "check", uuid(1))).id,
     );
+
     for (let i = 0; i < 100 && !events.length; i++)
       await new Promise((resolve) => setTimeout(resolve, 10));
     expect(events.filter((event: any) => event.type === "reply")).toEqual([
@@ -227,11 +254,15 @@ describe("activity", () => {
 describe("attachments", () => {
   test("reach the model as content blocks and stay out of snapshots", async () => {
     const seen: unknown[] = [];
+
     const record: FauxResponseStep = (context) => {
       seen.push(context.messages.at(-1)?.content);
+
       return fauxAssistantMessage("got them");
     };
+
     const { service, store, agent } = setup([record]);
+
     const execution = await service.sendChat(
       agent.id,
       "what is this?",
@@ -242,6 +273,7 @@ describe("attachments", () => {
         { name: "notes.txt", mimeType: "text/plain", data: notes },
       ],
     );
+
     await settle(service, execution.id);
     expect(seen[0]).toEqual([
       { type: "text", text: "what is this?" },
@@ -252,9 +284,11 @@ describe("attachments", () => {
       },
     ]);
     expect(store.executionAttachments(execution.id)).toEqual([]);
+
     const shown = (await service.chatSnapshot(agent.id)).messages.find(
       (message) => message.role === "user",
     )!;
+
     expect(shown.content).toBe("what is this?");
     expect(shown.attachments).toEqual([
       { name: "dot.png", mimeType: "image/png", size: 70, kind: "image" },
@@ -280,9 +314,11 @@ describe("attachments", () => {
         ])
       ).id,
     );
+
     const users = (await service.chatSnapshot(agent.id)).messages.filter(
       (message) => message.role === "user",
     );
+
     expect(users).toHaveLength(1);
     expect(users[0]!.attachments?.[0]?.name).toBe("dot.png");
     await service.close();
@@ -311,9 +347,11 @@ describe("attachments", () => {
 
   test("a request ID retried with other files is refused", async () => {
     const { service, agent } = setup([fauxAssistantMessage("ok")]);
+
     const first = await service.sendChat(agent.id, "see", uuid(1), undefined, [
       { name: "notes.txt", mimeType: "text/plain", data: notes },
     ]);
+
     await settle(service, first.id);
     await expect(service.sendChat(agent.id, "see", uuid(1))).rejects.toThrow(
       "different message",
@@ -339,12 +377,15 @@ describe("attachments", () => {
       error: null,
     });
     await service.close();
+
     const reopened = open(dir, [
       (context) => {
         seen.push(context.messages.at(-1)?.content);
+
         return fauxAssistantMessage("recovered");
       },
     ]);
+
     await reopened.service.recover();
     const execution = reopened.store.listExecutions(agent.id)[0]!;
     await settle(reopened.service, execution.id);

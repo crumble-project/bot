@@ -14,9 +14,11 @@ import { Scheduler } from "../src/scheduler";
 import { createAPI } from "../src/api";
 
 const dirs: string[] = [];
+
 afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
+
 const id = () => crypto.randomUUID();
 
 describe("push registration and durable delivery", () => {
@@ -33,6 +35,7 @@ describe("push registration and durable delivery", () => {
       },
       "s",
     );
+
     expect(event).toEqual({
       type: "reply",
       eventId: "e",
@@ -50,6 +53,7 @@ describe("push registration and durable delivery", () => {
     dirs.push(dir);
     const token = "t".repeat(40);
     const store = new Store(dir);
+
     const runtime: any = {
       openChat: async () => "chat",
       history: async () => ({ messages: [] }),
@@ -64,27 +68,33 @@ describe("push registration and durable delivery", () => {
       abort: async () => {},
       deleteAgent: async () => {},
     };
+
     const service = new CrumbleService(store, runtime);
     const scheduler = new Scheduler(store, async () => {});
     const pushStore = new PushStore(dir);
+
     const push = new PushManager(pushStore, {
       apns: undefined,
       fcm: { send: async () => "delivered" },
     });
+
     const app = createAPI(service, scheduler, token, undefined, {}, push);
     const installationId = id();
+
     const request = (path: string, init: RequestInit = {}) =>
       app.request(path, {
         ...init,
         headers: {
           authorization: `Bearer ${token}`,
           "content-type": "application/json",
-          ...(init.headers ?? {}),
+          ...init.headers,
         },
       });
+
     expect((await app.request("/v1/push")).status).toBe(401);
     const info = await request("/v1/push");
     expect(info.status).toBe(200);
+    // SAFETY: The endpoint response is the PushInfo object under test.
     expect(((await info.json()) as any).serverId).toBe(push.serverId);
     expect(
       (
@@ -185,18 +195,22 @@ describe("push registration and durable delivery", () => {
     expect(store.setPresence(installationId, true, agentId)).toBe(true);
     const sent: string[] = [];
     let failures = 1;
+
     const transport = {
       send: async (_d: PushDevice, event: ReplyPushEvent) => {
         if (failures--) throw new Error("temporary");
         sent.push(event.eventId);
+
         return "delivered" as const;
       },
     };
+
     const manager = new PushManager(
       store,
       { fcm: transport, apns: undefined },
       () => now,
     );
+
     const service = {
       onActivity: (callback: (event: any) => void) => {
         callback({
@@ -209,9 +223,11 @@ describe("push registration and durable delivery", () => {
           preview: "hi",
           createdAt: new Date(now).toISOString(),
         });
+
         return () => {};
       },
     };
+
     manager.attach(service);
     await manager.drain();
     expect(sent).toHaveLength(0);
@@ -258,6 +274,7 @@ describe("push registration and durable delivery", () => {
       environment: "production",
       enabled: true,
     });
+
     const manager = new PushManager(
       store,
       {
@@ -270,6 +287,7 @@ describe("push registration and durable delivery", () => {
       },
       () => now,
     );
+
     store.enqueue(
       {
         type: "reply",
@@ -289,6 +307,7 @@ describe("push registration and durable delivery", () => {
     expect(store.getDevice(installationId)?.enabled).toBe(true);
     let rotationAttempts = 0;
     let deliveredToken = "";
+
     const rotatingManager = new PushManager(
       store,
       {
@@ -302,9 +321,11 @@ describe("push registration and durable delivery", () => {
               environment: "production",
               enabled: true,
             });
+
             if (rotationAttempts === 1)
               throw Object.assign(new Error("invalid"), { permanent: true });
             deliveredToken = device.token;
+
             return "delivered";
           },
         },
@@ -312,6 +333,7 @@ describe("push registration and durable delivery", () => {
       },
       () => now,
     );
+
     store.enqueue({
       type: "reply",
       eventId: id(),
@@ -346,6 +368,7 @@ describe("push registration and durable delivery", () => {
       enabled: true,
     });
     let attempts = 0;
+
     const manager = new PushManager(
       store,
       {
@@ -353,13 +376,16 @@ describe("push registration and durable delivery", () => {
         fcm: {
           send: async () => {
             attempts++;
+
             if (attempts === 1) throw new Error("temporary");
+
             return "delivered";
           },
         },
       },
       () => now,
     );
+
     store.enqueue({
       type: "reply",
       eventId: id(),
@@ -386,6 +412,7 @@ describe("push registration and durable delivery", () => {
     const dir = mkdtempSync(join("/tmp", "crumble-push-service-"));
     dirs.push(dir);
     const store = new Store(dir);
+
     const agent = store.createAgent({
       name: "Bot",
       avatar: "bot",
@@ -400,6 +427,7 @@ describe("push registration and durable delivery", () => {
       mcpServers: [],
       delegates: [],
     });
+
     const runtime: any = {
       openChat: async () => "runtime-chat",
       submit: async () => "submission",
@@ -417,6 +445,7 @@ describe("push registration and durable delivery", () => {
       deleteAgent: async () => {},
       close: async () => {},
     };
+
     const service = new CrumbleService(store, runtime);
     const pushStore = new PushStore(dir);
     const installationId = id();
@@ -428,15 +457,18 @@ describe("push registration and durable delivery", () => {
       enabled: true,
     });
     let delivered: ReplyPushEvent | undefined;
+
     const manager = new PushManager(pushStore, {
       apns: undefined,
       fcm: {
         send: async (_device, event) => {
           delivered = event;
+
           return "delivered";
         },
       },
     });
+
     manager.attach(service);
     const chat = await service.chat(agent.id);
     await service.send(chat.id, "question", id());

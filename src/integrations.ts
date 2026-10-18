@@ -8,10 +8,13 @@ import {
   type CallToolResult,
   type McpRequestOptions,
   type McpTransport,
+  type InitializeResult,
   type Tool,
 } from "@earendil-works/pi-mcp";
 import { McpOAuthAuthorizationRequiredError } from "@earendil-works/pi-mcp/oauth";
 import { Type } from "@earendil-works/pi-ai";
+import type { JsonValue } from "@earendil-works/chord";
+import { z } from "zod";
 import {
   defineExtension,
   defineTool,
@@ -25,21 +28,24 @@ import type { CodemodeNamespace } from "@earendil-works/pi-durable/codemode";
 
 /** The part of pi-mcp's `McpClient` Crumble uses, so tests can stand in for a server. */
 export type MCPClient = {
-  connect(transport: McpTransport): Promise<unknown>;
+  connect(transport: McpTransport): Promise<InitializeResult | void>;
   listTools(options?: McpRequestOptions): Promise<Tool[]>;
   callTool(
     name: string,
-    args?: Record<string, unknown>,
+    args?: McpArguments,
     options?: McpRequestOptions,
   ): Promise<CallToolResult>;
   close(): Promise<void>;
 };
+
+type McpArguments = Record<string, JsonValue>;
 
 export type MCPClientFactory = (
   server: MCPServer,
   headers: Record<string, string>,
   authProvider?: AuthProvider,
 ) => { client: MCPClient; transport: McpTransport };
+
 export type IntegrationsOptions = {
   requestTimeoutMs?: number;
   clientFactory?: MCPClientFactory;
@@ -48,19 +54,25 @@ export type IntegrationsOptions = {
 /** Every tool of one MCP server starts with this, which also groups them in code mode. */
 export const mcpToolPrefix = (serverId: string) =>
   `mcp_${serverId.replaceAll("-", "").slice(0, 8)}_`;
-const now = () => new Date().toISOString();
-const stable = (value: unknown): string => {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
+
+const stable = (value: JsonValue): string => {
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
-  return `{${Object.keys(value as Record<string, unknown>)
+
+  if (!isJsonObject(value)) return JSON.stringify(value);
+
+  return `{${Object.keys(value)
     .sort()
-    .map(
-      (k) =>
-        `${JSON.stringify(k)}:${stable((value as Record<string, unknown>)[k])}`,
-    )
+    .map((k) => `${JSON.stringify(k)}:${stable(value[k] ?? null)}`)
     .join(",")}}`;
 };
-const digest = (value: unknown) =>
+
+const jsonObject = z.record(z.string(), z.json());
+
+function isJsonObject(value: JsonValue): value is { [key: string]: JsonValue } {
+  return jsonObject.safeParse(value).success;
+}
+
+const digest = (value: JsonValue) =>
   createHash("sha256").update(stable(value)).digest("hex").slice(0, 24);
 
 function defaultClientFactory(
@@ -69,15 +81,23 @@ function defaultClientFactory(
   authProvider?: AuthProvider,
 ) {
   const url = new URL(server.url);
+
   if (url.protocol !== "https:" && url.protocol !== "http:")
     throw new Error(`Unsupported MCP URL protocol: ${url.protocol}`);
-  const transport = new StreamableHttpTransport({
+
+  const transportOptions: ConstructorParameters<
+    typeof StreamableHttpTransport
+  >[0] = {
     url,
     headers,
-    ...(authProvider ? { authProvider } : {}),
     // Credentials never follow a redirect to another host.
     fetch: (input, init) => fetch(input, { ...init, redirect: "error" }),
-  });
+  };
+
+  if (authProvider) transportOptions.authProvider = authProvider;
+
+  const transport = new StreamableHttpTransport(transportOptions);
+
   return {
     client: new McpClient({ name: "crumble", version: "1.0.0" }),
     transport,
@@ -85,32 +105,49 @@ function defaultClientFactory(
 }
 
 /** Turns an authentication failure into what the owner should do about it. */
-function explainAuthFailure(server: MCPServer, error: unknown): unknown {
-  if (error instanceof McpOAuthAuthorizationRequiredError)
-    return new Error(
+function throwAuthFailure(server: MCPServer, cause: unknown): never {
+  if (cause instanceof McpOAuthAuthorizationRequiredError)
+    throw new Error(
       `Sign in to ${server.name} again under Integrations to use its tools`,
     );
-  if (error instanceof McpAuthRequiredError)
-    return new Error(
+
+  if (cause instanceof McpAuthRequiredError)
+    throw new Error(
       `${server.name} rejected Crumble's credentials. Check its token, or sign in under Integrations`,
     );
-  return error;
+
+  throw cause;
 }
 
-function credentials(store: Store, server: MCPServer): Record<string, string> {
+type CredentialHeaders = { readonly [header: string]: string };
+
+const credentialPayload = z.object({
+  headers: z.record(z.string(), z.string()).optional(),
+  token: z.string().optional(),
+});
+
+function credentials(store: Store, server: MCPServer) {
   const raw = store.getCredential(`mcp:${server.id}`);
+
   if (!raw) return {};
+
   try {
-    const parsed = JSON.parse(raw) as {
-      headers?: Record<string, string>;
-      token?: string;
-    };
-    if (parsed.headers) return { ...parsed.headers };
-    if (parsed.token) return { Authorization: `Bearer ${parsed.token}` };
+    const parsed = credentialPayload.safeParse(JSON.parse(raw));
+
+    if (parsed.success) {
+      if (parsed.data.headers)
+        return { ...parsed.data.headers } satisfies CredentialHeaders;
+
+      if (parsed.data.token)
+        return {
+          Authorization: `Bearer ${parsed.data.token}`,
+        } satisfies CredentialHeaders;
+    }
   } catch {
     /* Treat a legacy credential as a bearer token. */
   }
-  return { Authorization: `Bearer ${raw}` };
+
+  return { Authorization: `Bearer ${raw}` } satisfies CredentialHeaders;
 }
 
 export class MCPIntegrations {
@@ -137,6 +174,7 @@ export class MCPIntegrations {
     ms = this.timeout,
   ): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
+
     try {
       return await Promise.race([
         promise,
@@ -160,42 +198,51 @@ export class MCPIntegrations {
   private async callToolWithTimeout(
     client: MCPClient,
     name: string,
-    args: Record<string, unknown>,
+    args: McpArguments,
     parent: AbortSignal | undefined,
   ): Promise<CallToolResult> {
     const controller = new AbortController();
+
     const parentReason = () =>
       parent?.reason ?? new Error("MCP request aborted");
-    let parentAbortReject: ((reason: unknown) => void) | undefined;
+
+    let parentAbortReject: ((cause: unknown) => void) | undefined;
+
     const parentAborted = new Promise<CallToolResult>((_, reject) => {
       parentAbortReject = reject;
     });
+
     const abortFromParent = () => {
       const reason = parentReason();
       controller.abort(reason);
       parentAbortReject?.(reason);
     };
+
     if (parent?.aborted) {
       parent.throwIfAborted();
     } else parent?.addEventListener("abort", abortFromParent, { once: true });
 
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let deadline: ((reason: Error) => void) | undefined;
+    let deadline: ((cause: unknown) => void) | undefined;
+
     const deadlineReached = new Promise<CallToolResult>((_, reject) => {
       deadline = (reason) => reject(reason);
       timer = setTimeout(() => {
         const error = new Error(
           `MCP request timed out after ${this.timeout}ms`,
         );
+
         controller.abort(error);
         deadline?.(error);
       }, this.timeout);
     });
+
     try {
       const call = client.callTool(name, args, {
         signal: controller.signal,
         timeoutMs: this.timeout,
       });
+
       return await Promise.race([call, deadlineReached, parentAborted]);
     } finally {
       if (timer) clearTimeout(timer);
@@ -209,44 +256,54 @@ export class MCPIntegrations {
     const headers = oauth ? {} : credentials(this.store, server);
     const fingerprint = digest({ url: server.url, headers, oauth });
     const existing = this.connections.get(server.id);
+
     if (existing?.fingerprint === fingerprint) return existing;
+
     if (existing) {
       await existing.client.close().catch(() => undefined);
       await existing.transport.close().catch(() => undefined);
       this.connections.delete(server.id);
     }
+
     const value = this.factory(
       server,
       headers,
       oauth ? connectionAuth(this.store, server) : undefined,
     );
+
     try {
       await this.withTimeout(value.client.connect(value.transport));
       const cached = { ...value, fingerprint };
       this.connections.set(server.id, cached);
+
       return cached;
     } catch (error) {
       await value.client.close().catch(() => undefined);
       await value.transport.close().catch(() => undefined);
-      throw explainAuthFailure(server, error);
+      throwAuthFailure(server, error);
     }
   }
 
   async extensionsForAgent(agent: Agent) {
     const tools: ToolRegistration[] = [];
+
     for (const serverId of agent.mcpServers) {
       const server = this.store.usableMCPServer(agent.id, serverId);
+
       if (!server) continue;
       const connection = await this.connection(server);
+
       const listed = await this.withTimeout(
         connection.client.listTools({ timeoutMs: this.timeout }),
       ).catch(async (error) => {
         this.connections.delete(server.id);
         await connection.client.close().catch(() => undefined);
-        throw explainAuthFailure(server, error);
+        throwAuthFailure(server, error);
       });
+
       for (const remote of listed) {
         const name = `${mcpToolPrefix(server.id)}${remote.name.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+
         const tool = defineTool({
           name,
           description:
@@ -258,14 +315,11 @@ export class MCPIntegrations {
             properties: remote.inputSchema.properties ?? {},
           }),
           replay: "unsafe",
-          execute: async (
-            args: Record<string, unknown>,
-            _api: any,
-            context: Context,
-          ) => {
+          execute: async (args: McpArguments, _api: any, context: Context) => {
             const assertAllowed = () => {
               const current = this.store.usableMCPServer(agent.id, server.id);
               const owner = this.store.getAgent(agent.id);
+
               if (
                 !current ||
                 !owner?.enabled ||
@@ -274,28 +328,35 @@ export class MCPIntegrations {
                 throw new Error(
                   `MCP server ${server.name} is no longer enabled for this agent`,
                 );
+
               if (current.url !== server.url)
                 throw new Error("MCP server address changed; retry this task");
+
               return current;
             };
+
             const currentServer = assertAllowed();
             const activeConnection = await this.connection(currentServer);
             assertAllowed();
             const signal = context.abortSignal;
+
             const result = await this.callToolWithTimeout(
               activeConnection.client,
               remote.name,
               args,
               signal,
             ).catch((error) => {
-              throw explainAuthFailure(server, error);
+              throwAuthFailure(server, error);
             });
+
             return { output: toLlmContent(result), isError: result.isError };
           },
         });
+
         tools.push(tool);
       }
     }
+
     return [defineExtension({ name: `mcp:${agent.id}`, tools })];
   }
 
@@ -303,6 +364,7 @@ export class MCPIntegrations {
   codemodeNamespaces(agent: Agent): CodemodeNamespace[] {
     return agent.mcpServers.flatMap((serverId) => {
       const server = this.store.usableMCPServer(agent.id, serverId);
+
       return server
         ? [
             {

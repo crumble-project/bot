@@ -7,6 +7,19 @@ import { Scheduler } from "../src/scheduler";
 import { createAPI } from "../src/api";
 
 const token = "t".repeat(40);
+
+type RuntimeAgent = { id: string };
+
+type SnapshotOptions = { limit?: number };
+
+type EventCallback = (event: { type: string }) => void;
+
+type RequestBody = {
+  content?: string;
+  requestId?: string;
+  attachments?: { name: string; mimeType: string; data: string }[];
+};
+
 const agentInput = (name: string, enabled = true) => ({
   name,
   enabled,
@@ -20,7 +33,9 @@ const agentInput = (name: string, enabled = true) => ({
   skills: [],
   mcpServers: [],
 });
+
 const dirs: string[] = [];
+
 afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
@@ -29,12 +44,17 @@ function setup() {
   const dir = mkdtempSync(join("/tmp", "bot-api-"));
   dirs.push(dir);
   let sequence = 0;
+
   const runtime: any = {
     openChat: async (agent: { id: string }) => `${agent.id}:${++sequence}`,
-    submit: async (_a: unknown, _c: string, _text: string, requestId: string) =>
-      `submission-${requestId}`,
+    submit: async (
+      _a: RuntimeAgent,
+      _c: string,
+      _text: string,
+      requestId: string,
+    ) => `submission-${requestId}`,
     wait: async () => ({ status: "done" }),
-    snapshot: async (_a: unknown, conversationId: string) => ({
+    snapshot: async (_a: RuntimeAgent, conversationId: string) => ({
       conversationId,
       messages: [],
       live: null,
@@ -45,20 +65,24 @@ function setup() {
     deleteAgent: async () => {},
     history: async () => ({ messages: [] }),
   };
+
   const store = new Store(dir);
   const service = new CrumbleService(store, runtime);
+
   const scheduler = new Scheduler(store, (a, p, r, s) =>
     service.dispatch(a, p, r, s),
   );
+
   return { app: createAPI(service, scheduler, token), store, runtime };
 }
+
 const req = (app: any, path: string, init: RequestInit = {}) =>
   app.request(path, {
     ...init,
     headers: {
       authorization: `Bearer ${token}`,
       "content-type": "application/json",
-      ...(init.headers ?? {}),
+      ...init.headers,
     },
   });
 
@@ -67,11 +91,12 @@ describe("HTTP API", () => {
     const dir = mkdtempSync(join("/tmp", "bot-api-common-"));
     dirs.push(dir);
     let sequence = 0;
+
     const runtime: any = {
       openChat: async (agent: { id: string }) => `${agent.id}:${++sequence}`,
       submit: async () => "submission",
       wait: async () => ({ status: "done" }),
-      snapshot: async (_a: unknown, conversationId: string) => ({
+      snapshot: async (_a: RuntimeAgent, conversationId: string) => ({
         conversationId,
         messages: [],
         live: null,
@@ -81,11 +106,14 @@ describe("HTTP API", () => {
       abort: async () => {},
       deleteAgent: async () => {},
     };
+
     const store = new Store(dir);
     const service = new CrumbleService(store, runtime);
+
     const scheduler = new Scheduler(store, (a, p, r, s) =>
       service.dispatch(a, p, r, s),
     );
+
     const app = createAPI(service, scheduler, token, undefined, {
       commonSkills: [
         {
@@ -96,6 +124,7 @@ describe("HTTP API", () => {
         },
       ],
     });
+
     const response = await req(app, "/v1/skills");
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual([
@@ -107,10 +136,12 @@ describe("HTTP API", () => {
         source: "bundled",
       },
     ]);
+
     const mutation = await req(app, "/v1/skills/common:tasks%2FSKILL.md", {
       method: "PATCH",
       body: JSON.stringify({ name: "Nope", instructions: "Nope" }),
     });
+
     expect(mutation.status).toBe(405);
     store.close();
   });
@@ -134,15 +165,19 @@ describe("HTTP API", () => {
 
   test("CRUDs agents, keeps one chat per bot, enforces idempotency and disabled agents", async () => {
     const { app, store } = setup();
+
     const created = await req(app, "/v1/agents", {
       method: "POST",
       body: JSON.stringify(agentInput("One")),
     });
+
     expect(created.status).toBe(201);
     const agent = await created.json();
+
     const duplicate = await req(app, `/v1/agents/${agent.id}/duplicate`, {
       method: "POST",
     });
+
     expect(duplicate.status).toBe(201);
     const chat = await req(app, `/v1/agents/${agent.id}/chat`);
     expect(chat.status).toBe(200);
@@ -180,10 +215,12 @@ describe("HTTP API", () => {
         })
       ).status,
     ).toBe(409);
+
     const disabled = await req(app, `/v1/agents/${agent.id}`, {
       method: "PATCH",
       body: JSON.stringify({ enabled: false }),
     });
+
     expect(disabled.status).toBe(200);
     expect(
       (
@@ -201,17 +238,20 @@ describe("HTTP API", () => {
 
   test("accepts a bounded chat snapshot limit and rejects invalid limits", async () => {
     const { app, store, runtime } = setup();
+
     const agent = await req(app, "/v1/agents", {
       method: "POST",
       body: JSON.stringify(agentInput("Limited")),
     }).then((r: Response) => r.json());
+
     let received: unknown;
     runtime.snapshot = async (
-      _agent: unknown,
+      _agent: RuntimeAgent,
       conversationId: string,
-      options: unknown,
+      options: SnapshotOptions,
     ) => {
       received = options;
+
       return {
         conversationId,
         messages: [],
@@ -220,6 +260,7 @@ describe("HTTP API", () => {
         updatedAt: Date.now(),
       };
     };
+
     const limited = await req(app, `/v1/agents/${agent.id}/chat?limit=5`);
     expect(limited.status).toBe(200);
     expect(received).toEqual({ limit: 5 });
@@ -234,12 +275,17 @@ describe("HTTP API", () => {
 
   test("forwards the bounded limit to agent event snapshots", async () => {
     const { app, store, runtime } = setup();
+
     const agent = await req(app, "/v1/agents", {
       method: "POST",
       body: JSON.stringify(agentInput("Event Limit")),
     }).then((r: Response) => r.json());
+
     let received: unknown;
-    runtime.snapshot = async (_agent: unknown, conversationId: string) => ({
+    runtime.snapshot = async (
+      _agent: RuntimeAgent,
+      conversationId: string,
+    ) => ({
       conversationId,
       messages: [],
       live: null,
@@ -247,14 +293,16 @@ describe("HTTP API", () => {
       updatedAt: Date.now(),
     });
     runtime.watch = async (
-      _agent: unknown,
+      _agent: RuntimeAgent,
       _conversationId: string,
-      _callback: unknown,
-      options: unknown,
+      _callback: EventCallback,
+      options: SnapshotOptions,
     ) => {
       received = options;
+
       return async () => {};
     };
+
     const response = await req(app, `/v1/agents/${agent.id}/events?limit=5`);
     expect(response.status).toBe(200);
     expect(received).toEqual({ limit: 5 });
@@ -264,15 +312,18 @@ describe("HTTP API", () => {
 
   test("accepts attachments on messages only, within their limits", async () => {
     const { app } = setup();
+
     const agent = await req(app, "/v1/agents", {
       method: "POST",
       body: JSON.stringify(agentInput("Files")),
     }).then((r: Response) => r.json());
-    const send = (body: unknown) =>
+
+    const send = (body: RequestBody) =>
       req(app, `/v1/agents/${agent.id}/messages`, {
         method: "POST",
         body: JSON.stringify(body),
       });
+
     const image = Buffer.alloc(2 * 1024 * 1024, 7).toString("base64");
     expect(
       (
@@ -288,6 +339,7 @@ describe("HTTP API", () => {
     expect(
       (await send({ content: " ", requestId: crypto.randomUUID() })).status,
     ).toBe(400);
+
     const pdf = await send({
       content: "read",
       requestId: crypto.randomUUID(),
@@ -295,21 +347,26 @@ describe("HTTP API", () => {
         { name: "doc.pdf", mimeType: "application/pdf", data: "AAAA" },
       ],
     });
+
     expect(pdf.status).toBe(400);
     expect((await pdf.json()).error).toContain("only images");
+
     const memory = await req(app, `/v1/agents/${agent.id}/memories`, {
       method: "POST",
       body: JSON.stringify({ content: "x".repeat(2 * 1024 * 1024) }),
     });
+
     expect(memory.status).toBe(413);
   });
 
   test("streams server-wide activity", async () => {
     const { app } = setup();
+
     const agent = await req(app, "/v1/agents", {
       method: "POST",
       body: JSON.stringify(agentInput("Notifier")),
     }).then((r: Response) => r.json());
+
     const response: Response = await req(app, "/v1/events");
     expect(response.headers.get("content-type")).toContain("text/event-stream");
     const reader = response.body!.getReader();
@@ -326,10 +383,12 @@ describe("HTTP API", () => {
 
   test("includes durable latest message in agent summaries and replays chat previews", async () => {
     const { app, runtime } = setup();
+
     const agent = await req(app, "/v1/agents", {
       method: "POST",
       body: JSON.stringify(agentInput("Preview Bot")),
     }).then((r: Response) => r.json());
+
     await req(app, `/v1/agents/${agent.id}/messages`, {
       method: "POST",
       body: JSON.stringify({
@@ -358,6 +417,7 @@ describe("HTTP API", () => {
 
   test("describes how each MCP server signs in", async () => {
     const { app } = setup();
+
     const created = await req(app, "/v1/mcp-servers", {
       method: "POST",
       body: JSON.stringify({
@@ -367,45 +427,57 @@ describe("HTTP API", () => {
         token: "secret",
       }),
     }).then((r: Response) => r.json());
+
     const list = await req(app, "/v1/mcp-servers").then((r: Response) =>
       r.json(),
     );
+
     expect(list[0]).toMatchObject({
       id: created.id,
       auth: "token",
       authenticated: true,
     });
     expect(JSON.stringify(list)).not.toContain("secret");
+
     const bad = await req(app, `/v1/mcp-servers/${created.id}/oauth`, {
       method: "POST",
       body: JSON.stringify({ redirectUri: "not a uri" }),
     });
+
     expect(bad.status).toBe(400);
+
     const missing = await req(app, "/v1/mcp-servers/nope/oauth/callback", {
       method: "POST",
       body: JSON.stringify({ code: "c", state: "s" }),
     });
+
     expect(missing.status).toBe(404);
+
     const signedOut = await req(app, `/v1/mcp-servers/${created.id}/oauth`, {
       method: "DELETE",
     });
+
     expect((await signedOut.json()).auth).toBe("token");
   });
 
   test("isolates memories and never returns provider secrets", async () => {
     const { app, store } = setup();
+
     const a = await req(app, "/v1/agents", {
       method: "POST",
       body: JSON.stringify(agentInput("A")),
     }).then((r: Response) => r.json());
+
     const b = await req(app, "/v1/agents", {
       method: "POST",
       body: JSON.stringify(agentInput("B")),
     }).then((r: Response) => r.json());
+
     const memory = await req(app, `/v1/agents/${a.id}/memories`, {
       method: "POST",
       body: JSON.stringify({ content: "private" }),
     }).then((r: Response) => r.json());
+
     expect(
       (
         await req(app, `/v1/agents/${b.id}/memories/${memory.id}`, {
@@ -428,10 +500,12 @@ describe("HTTP API", () => {
 
   test("creates and runs schedules through the scheduler API", async () => {
     const { app, store } = setup();
+
     const agent = await req(app, "/v1/agents", {
       method: "POST",
       body: JSON.stringify(agentInput("Scheduled")),
     }).then((r: Response) => r.json());
+
     const schedule = await req(app, "/v1/schedules", {
       method: "POST",
       body: JSON.stringify({
@@ -444,6 +518,7 @@ describe("HTTP API", () => {
         enabled: true,
       }),
     });
+
     expect(schedule.status).toBe(201);
     const value = await schedule.json();
     expect(

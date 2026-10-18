@@ -8,11 +8,14 @@ import { Scheduler } from "../src/scheduler";
 import { Store } from "../src/store";
 
 const dirs: string[] = [];
+
 afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
+
 const uuid = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+
 const input = (
   name: string,
   tools: string[],
@@ -38,6 +41,7 @@ function setup() {
   dirs.push(dir);
   const store = new Store(dir);
   const scheduler = new Scheduler(store, async () => ({ id: "exec-1" }));
+
   return { store, schedules: new BotSchedules(store, scheduler), scheduler };
 }
 
@@ -48,11 +52,15 @@ describe("bot schedules", () => {
     const { store } = setup();
     const self = store.createAgent(input("Self", ["schedule"]), uuid(1));
     const calls: unknown[][] = [];
+
     const scheduler = new Scheduler(store, async (...args) => {
       calls.push(args);
     });
+
     const schedules = new BotSchedules(store, scheduler);
+    // SAFETY: Schedule extensions expose their registered tool list.
     const tool = (scheduleExtension(self, schedules) as any).tools[0];
+
     try {
       const saved = await tool.execute({
         action: "create",
@@ -61,6 +69,7 @@ describe("bot schedules", () => {
         runAt: "2026-10-18T12:10:00+02:00",
         timezone: "Europe/Berlin",
       });
+
       const task = JSON.parse(saved.output[0].text);
       expect(task.runAt).toBe("2026-10-18T10:10:00.000Z");
       expect(task.nextRunAt).toBe(task.runAt);
@@ -80,6 +89,7 @@ describe("bot schedules", () => {
   test("a bot schedules work for itself and can change an owner task that targets it", async () => {
     const { store, schedules, scheduler } = setup();
     const self = store.createAgent(input("Self", ["schedule"]), uuid(1));
+
     const owner = scheduler.create({
       agentId: self.id,
       name: "Digest",
@@ -89,6 +99,7 @@ describe("bot schedules", () => {
       runAt: later(),
       enabled: true,
     });
+
     expect(owner.createdByAgentId).toBeNull();
 
     const created = schedules.create(self.id, {
@@ -97,6 +108,7 @@ describe("bot schedules", () => {
       cron: "0 9 * * 1-5",
       timezone: "Europe/Berlin",
     });
+
     expect(created.agentId).toBe(self.id);
     expect(created.createdByAgentId).toBe(self.id);
     expect(created.agentName).toBe("Self");
@@ -117,10 +129,12 @@ describe("bot schedules", () => {
   test("targets another permitted bot and hides everyone else's tasks", () => {
     const { store, schedules } = setup();
     const target = store.createAgent(input("Target", ["schedule"]), uuid(2));
+
     const source = store.createAgent(
       input("Source", ["schedule", "delegate"], [target.id]),
       uuid(1),
     );
+
     const other = store.createAgent(input("Other", ["schedule"]), uuid(3));
     const denied = store.createAgent(input("Denied", []), uuid(4));
 
@@ -130,6 +144,7 @@ describe("bot schedules", () => {
       prompt: "Check the inbox",
       runAt: later(),
     });
+
     expect(task.agentId).toBe(target.id);
     expect(store.getSchedule(task.id)?.agentId).toBe(target.id);
     expect(schedules.list(target.id).map((item) => item.id)).toEqual([task.id]);
@@ -175,6 +190,7 @@ describe("bot schedules", () => {
       }),
     ).toThrow(/Scheduling is turned off/);
     expect(
+      // SAFETY: Schedule extensions expose their registered tool list.
       (scheduleExtension(store.getAgent(quiet.id)!, schedules) as any).tools,
     ).toEqual([]);
     store.close();
@@ -183,7 +199,9 @@ describe("bot schedules", () => {
   test("the schedule tool saves a task for the calling bot", async () => {
     const { store, schedules } = setup();
     const self = store.createAgent(input("Self", ["schedule"]), uuid(1));
+    // SAFETY: Schedule extensions expose their registered tool list.
     const tool = (scheduleExtension(self, schedules) as any).tools[0];
+
     const saved = await tool.execute(
       {
         action: "create",
@@ -193,6 +211,7 @@ describe("bot schedules", () => {
       },
       { taskId: "t1" },
     );
+
     const body = JSON.parse(saved.output[0].text);
     expect(body.agentId).toBe(self.id);
     expect(body.createdByAgentId).toBe(self.id);

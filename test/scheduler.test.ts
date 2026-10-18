@@ -6,11 +6,14 @@ import { Scheduler } from "../src/scheduler";
 import { Store } from "../src/store";
 
 const dirs: string[] = [];
+
 const make = () => {
   const d = mkdtempSync(join(tmpdir(), "bot-scheduler-"));
   dirs.push(d);
+
   return d;
 };
+
 afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
@@ -35,10 +38,13 @@ describe("Scheduler", () => {
     const store = new Store(make());
     const agent = store.createAgent(agentInput);
     const calls: string[] = [];
+
     const scheduler = new Scheduler(store, async (_a, _p, requestId) => {
       calls.push(requestId);
     });
+
     const due = new Date(Date.now() - 1_000).toISOString();
+
     const schedule = scheduler.create({
       agentId: agent.id,
       name: "once",
@@ -48,6 +54,7 @@ describe("Scheduler", () => {
       runAt: due,
       enabled: true,
     });
+
     await scheduler.tick(new Date());
     await scheduler.tick(new Date());
     expect(calls).toEqual([`schedule:${schedule.id}:${due}`]);
@@ -59,9 +66,11 @@ describe("Scheduler", () => {
     const store = new Store(make());
     const agent = store.createAgent(agentInput);
     const calls: string[] = [];
+
     const scheduler = new Scheduler(store, async (_a, _p, requestId) => {
       calls.push(requestId);
     });
+
     const schedule = scheduler.create({
       agentId: agent.id,
       name: "cron",
@@ -71,6 +80,7 @@ describe("Scheduler", () => {
       runAt: null,
       enabled: true,
     });
+
     store.updateNextRunAt(
       schedule.id,
       new Date(Date.now() - 3 * 60_000).toISOString(),
@@ -120,11 +130,15 @@ describe("Scheduler", () => {
     const agent = store.createAgent(agentInput);
     const calls: string[] = [];
     let attempts = 0;
+
     const scheduler = new Scheduler(store, async (_a, _p, requestId) => {
       calls.push(requestId);
+
       if (++attempts === 1) throw new Error("temporary");
     });
+
     const due = new Date("2026-10-17T00:00:00.000Z");
+
     const schedule = scheduler.create({
       agentId: agent.id,
       name: "retry",
@@ -134,6 +148,7 @@ describe("Scheduler", () => {
       runAt: due.toISOString(),
       enabled: true,
     });
+
     await scheduler.tick(due);
     await scheduler.tick(new Date(due.valueOf() + 10_000));
     await scheduler.tick(new Date(due.valueOf() + 31_000));

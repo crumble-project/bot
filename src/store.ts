@@ -1,3 +1,4 @@
+import type { JsonValue } from "@earendil-works/chord";
 import { Database } from "bun:sqlite";
 import {
   mkdirSync,
@@ -22,7 +23,19 @@ import type {
 import type { AttachmentInput } from "./attachments";
 
 type Id = string;
+
+type AttachmentRow = { attachments: string | null };
+
+type SettingRow = { value: string };
+
+type SettingsEntryRow = { key: string; value: string };
+
+type CredentialRow = { value: string };
+
+type KeyRow = { key: string };
+
 type Patch<T> = Partial<Omit<T, "id" | "createdAt" | "updatedAt">>;
+
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 
@@ -37,10 +50,16 @@ export class Store {
     this.db = new Database(join(dataDir, "store.sqlite"));
     this.db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
     this.migrate();
+
     if (
       !keyExists &&
       Number(
-        (this.db.query("SELECT COUNT(*) AS n FROM credentials").get() as any).n,
+        // SAFETY: SQLite returns the selected COUNT(*) row with the declared `n` column.
+        (
+          this.db.query("SELECT COUNT(*) AS n FROM credentials").get() as {
+            n: number;
+          }
+        ).n,
       ) > 0
     ) {
       this.db.close();
@@ -48,7 +67,9 @@ export class Store {
         "Credential encryption key is missing; refusing to overwrite it",
       );
     }
+
     if (!keyExists) writeFileSync(keyPath, this.key, { mode: 0o600 });
+
     try {
       chmodSync(keyPath, 0o600);
     } catch {
@@ -66,27 +87,38 @@ export class Store {
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS credentials (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS mcp_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, enabled INTEGER NOT NULL, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE);`);
-    const agentCols = this.db.query("PRAGMA table_info(agents)").all() as any[];
+
+    // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
+    const agentCols = this.db
+      .query("PRAGMA table_info(agents)")
+      .all() as Array<{ name: string }>;
+
     if (!agentCols.some((c) => c.name === "delegates"))
       this.db.exec(
         "ALTER TABLE agents ADD COLUMN delegates TEXT NOT NULL DEFAULT '[]'",
       );
+
     if (!agentCols.some((c) => c.name === "inference"))
       this.db.exec(
         "ALTER TABLE agents ADD COLUMN inference TEXT NOT NULL DEFAULT '{}'",
       );
+
     if (!agentCols.some((c) => c.name === "shared_skills"))
       this.db.exec(
         "ALTER TABLE agents ADD COLUMN shared_skills TEXT NOT NULL DEFAULT '[]'",
       );
+
     if (!agentCols.some((c) => c.name === "shared_memory"))
       this.db.exec(
         "ALTER TABLE agents ADD COLUMN shared_memory INTEGER NOT NULL DEFAULT 0",
       );
+
     // Shared memories have no bot, and SQLite cannot drop NOT NULL in place.
+    // SAFETY: PRAGMA table_info returns rows with a `name` and numeric `notnull` column.
     const memoryCols = this.db
       .query("PRAGMA table_info(memories)")
-      .all() as any[];
+      .all() as Array<{ name: string; notnull: number }>;
+
     if (memoryCols.find((c) => c.name === "agent_id")?.notnull)
       this.db.transaction(() => {
         this.db
@@ -95,32 +127,49 @@ export class Store {
           DROP TABLE memories;
           ALTER TABLE memories_next RENAME TO memories;`);
       })();
+
+    // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
     const serverCols = this.db
       .query("PRAGMA table_info(mcp_servers)")
-      .all() as any[];
+      .all() as Array<{ name: string }>;
+
     if (!serverCols.some((c) => c.name === "agent_id"))
       this.db.exec(
         "ALTER TABLE mcp_servers ADD COLUMN agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE",
       );
+
+    // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
     const conversationCols = this.db
       .query("PRAGMA table_info(conversations)")
-      .all() as any[];
+      .all() as Array<{ name: string }>;
+
     if (!conversationCols.some((c) => c.name === "archived"))
       this.db.exec(
         "ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
       );
+
+    // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
     const scheduleCols = this.db
       .query("PRAGMA table_info(schedules)")
-      .all() as any[];
+      .all() as Array<{ name: string }>;
+
     if (!scheduleCols.some((c) => c.name === "created_by_agent_id"))
       this.db.exec("ALTER TABLE schedules ADD COLUMN created_by_agent_id TEXT");
-    const cols = this.db.query("PRAGMA table_info(executions)").all() as any[];
+
+    // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
+    const cols = this.db.query("PRAGMA table_info(executions)").all() as Array<{
+      name: string;
+    }>;
+
     if (!cols.some((c) => c.name === "prompt"))
       this.db.exec("ALTER TABLE executions ADD COLUMN prompt TEXT");
+
     if (!cols.some((c) => c.name === "reply_to"))
       this.db.exec("ALTER TABLE executions ADD COLUMN reply_to TEXT");
+
     if (!cols.some((c) => c.name === "attachments"))
       this.db.exec("ALTER TABLE executions ADD COLUMN attachments TEXT");
+
     if (!cols.some((c) => c.name === "attachments_digest"))
       this.db.exec("ALTER TABLE executions ADD COLUMN attachments_digest TEXT");
     this.db.exec(
@@ -130,10 +179,10 @@ export class Store {
   close() {
     this.db.close();
   }
-  private j(v: unknown) {
+  private j<T>(v: T) {
     return JSON.stringify(v);
   }
-  private b(v: unknown) {
+  private b(v: boolean | null | undefined) {
     return v ? 1 : 0;
   }
   private agent(r: any): Agent {
@@ -166,6 +215,7 @@ export class Store {
   }
   getAgent(agentId: Id) {
     const r = this.db.query("SELECT * FROM agents WHERE id=?").get(agentId);
+
     return r ? this.agent(r) : null;
   }
   createAgent(input: AgentInput, agentId: string = id()): Agent {
@@ -190,14 +240,16 @@ export class Store {
         this.b(input.sharedMemory),
         this.j(input.mcpServers),
         this.j(input.delegates ?? []),
-        this.j((input as AgentInput & { inference?: unknown }).inference ?? {}),
+        this.j(input.inference ?? {}),
         t,
         t,
       );
+
     return this.getAgent(agentId)!;
   }
   updateAgent(agentId: Id, patch: Patch<AgentInput>) {
     const old = this.getAgent(agentId);
+
     if (!old) return null;
     const x = { ...old, ...patch };
     const t = now();
@@ -220,10 +272,11 @@ export class Store {
         this.b(x.sharedMemory),
         this.j(x.mcpServers),
         this.j(x.delegates ?? []),
-        this.j((x as Agent & { inference?: unknown }).inference ?? {}),
+        this.j(x.inference ?? {}),
         t,
         agentId,
       );
+
     return this.getAgent(agentId);
   }
   deleteAgent(agentId: Id) {
@@ -233,11 +286,14 @@ export class Store {
   }
   duplicateAgent(agentId: Id, name?: string) {
     const a = this.getAgent(agentId);
+
     if (!a) return null;
+
     // Personal servers keep belonging to the original bot.
     const mcpServers = a.mcpServers.filter(
       (serverId) => !this.getMCPServer(serverId)?.agentId,
     );
+
     return this.createAgent({
       ...a,
       mcpServers,
@@ -257,6 +313,7 @@ export class Store {
   }
   listConversations(agentId?: Id, includeArchived = false) {
     const filter = includeArchived ? "" : " AND archived=0";
+
     const q = agentId
       ? this.db
           .query(
@@ -268,10 +325,12 @@ export class Store {
             `SELECT * FROM conversations${filter ? " WHERE archived=0" : ""} ORDER BY updated_at DESC`,
           )
           .all();
+
     return q.map((r) => this.convo(r));
   }
   getConversation(id: Id) {
     const r = this.db.query("SELECT * FROM conversations WHERE id=?").get(id);
+
     return r ? this.convo(r) : null;
   }
   createConversation(
@@ -284,10 +343,12 @@ export class Store {
         "INSERT INTO conversations (id,agent_id,title,archived,created_at,updated_at) VALUES (?,?,?,?,?,?)",
       )
       .run(conversationId, input.agentId, input.title, 0, t, t);
+
     return this.getConversation(conversationId)!;
   }
   updateConversation(id: Id, patch: Patch<Conversation>) {
     const c = this.getConversation(id);
+
     if (!c) return null;
     this.db
       .query(
@@ -295,10 +356,11 @@ export class Store {
       )
       .run(
         patch.title ?? c.title,
-        this.b((patch as any).archived ?? (c as any).archived),
+        this.b(patch.archived ?? c.archived),
         now(),
         id,
       );
+
     return this.getConversation(id);
   }
   archiveConversation(id: Id) {
@@ -312,6 +374,7 @@ export class Store {
     this.db
       .query("UPDATE conversations SET archived=?,updated_at=? WHERE id=?")
       .run(this.b(archived), now(), id);
+
     return this.getConversation(id);
   }
   deleteConversation(id: Id) {
@@ -340,10 +403,12 @@ export class Store {
             "SELECT * FROM memories WHERE agent_id IS NULL ORDER BY created_at",
           )
           .all();
+
     return q.map((r) => this.memory(r));
   }
   getMemory(id: Id) {
     const r = this.db.query("SELECT * FROM memories WHERE id=?").get(id);
+
     return r ? this.memory(r) : null;
   }
   createMemory(
@@ -354,14 +419,17 @@ export class Store {
     this.db
       .query("INSERT INTO memories VALUES (?,?,?,?,?)")
       .run(memoryId, input.agentId, input.content, t, t);
+
     return this.getMemory(memoryId)!;
   }
   updateMemory(id: Id, patch: Patch<Memory>) {
     const m = this.getMemory(id);
+
     if (!m) return null;
     this.db
       .query("UPDATE memories SET content=?,updated_at=? WHERE id=?")
       .run(patch.content ?? m.content, now(), id);
+
     return this.getMemory(id);
   }
   deleteMemory(id: Id) {
@@ -389,10 +457,12 @@ export class Store {
           .query("SELECT * FROM schedules WHERE agent_id=? ORDER BY created_at")
           .all(agentId)
       : this.db.query("SELECT * FROM schedules ORDER BY created_at").all();
+
     return q.map((r) => this.schedule(r));
   }
   getSchedule(id: Id) {
     const r = this.db.query("SELECT * FROM schedules WHERE id=?").get(id);
+
     return r ? this.schedule(r) : null;
   }
   createSchedule(
@@ -402,6 +472,7 @@ export class Store {
   ) {
     const t = now(),
       next = input.runAt;
+
     this.db
       .query(
         "INSERT INTO schedules (id,agent_id,name,prompt,cron,timezone,run_at,enabled,next_run_at,created_at,created_by_agent_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -419,10 +490,12 @@ export class Store {
         t,
         createdByAgentId,
       );
+
     return this.getSchedule(scheduleId)!;
   }
   updateSchedule(id: Id, patch: Partial<ScheduleInput>) {
     const s = this.getSchedule(id);
+
     if (!s) return null;
     const x = { ...s, ...patch };
     this.db
@@ -440,6 +513,7 @@ export class Store {
         x.runAt,
         id,
       );
+
     return this.getSchedule(id);
   }
   deleteSchedule(id: Id) {
@@ -452,6 +526,7 @@ export class Store {
     this.db
       .query("UPDATE schedules SET next_run_at=? WHERE id=?")
       .run(nextRunAt, id);
+
     return this.getSchedule(id);
   }
 
@@ -465,6 +540,7 @@ export class Store {
       : this.db
           .query("SELECT * FROM executions ORDER BY created_at DESC")
           .all();
+
     return q.map(this.execution);
   }
   private execution(r: any) {
@@ -486,9 +562,11 @@ export class Store {
   }
   /** Uploads waiting for admission; cleared once Pi holds them, so they are not stored twice. */
   executionAttachments(id: Id): AttachmentInput[] {
+    // SAFETY: The query selects the nullable `attachments` column by name.
     const r = this.db
       .query("SELECT attachments FROM executions WHERE id=?")
-      .get(id) as { attachments: string | null } | null;
+      .get(id) as AttachmentRow | null;
+
     return r?.attachments ? JSON.parse(r.attachments) : [];
   }
   clearExecutionAttachments(id: Id) {
@@ -496,6 +574,7 @@ export class Store {
   }
   getExecution(id: Id) {
     const r = this.db.query("SELECT * FROM executions WHERE id=?").get(id);
+
     return r ? this.execution(r) : null;
   }
   getExecutionByRequest(conversationId: Id, requestId: string) {
@@ -504,6 +583,7 @@ export class Store {
         "SELECT * FROM executions WHERE conversation_id=? AND request_id=?",
       )
       .get(conversationId, requestId);
+
     return r ? this.execution(r) : null;
   }
   findExecution(conversationId: Id, requestId: string) {
@@ -538,10 +618,12 @@ export class Store {
         t,
         t,
       );
+
     return this.getExecution(executionId)!;
   }
   updateExecution(id: Id, patch: Partial<Execution>) {
     const e = this.getExecution(id);
+
     if (!e) return null;
     const x = { ...e, ...patch };
     this.db
@@ -553,10 +635,11 @@ export class Store {
         x.error,
         x.submissionId,
         x.requestId,
-        (x as typeof x & { replyTo?: string | null }).replyTo ?? null,
+        x.replyTo ?? null,
         now(),
         id,
       );
+
     return this.getExecution(id);
   }
   deleteExecution(id: Id) {
@@ -566,17 +649,20 @@ export class Store {
   }
 
   getSetting<T = unknown>(key: string): T | undefined {
+    // SAFETY: The query selects the JSON setting value by its known `value` column.
     const r = this.db
       .query("SELECT value FROM settings WHERE key=?")
-      .get(key) as any;
+      .get(key) as SettingRow | null;
+
     return r ? JSON.parse(r.value) : undefined;
   }
-  setSetting(key: string, value: unknown) {
+  setSetting<T>(key: string, value: T) {
     this.db
       .query(
         "INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
       )
       .run(key, this.j(value));
+
     return value;
   }
   deleteSetting(key: string) {
@@ -585,20 +671,27 @@ export class Store {
     );
   }
   listSettings() {
-    const out: Record<string, unknown> = {};
-    for (const r of this.db
+    const out: Record<string, JsonValue> = {};
+
+    // SAFETY: The query selects exactly the `key` and JSON `value` columns.
+    const rows = this.db
       .query("SELECT key,value FROM settings")
-      .all() as any[])
-      out[r.key] = JSON.parse(r.value);
+      .all() as SettingsEntryRow[];
+
+    for (const r of rows) out[r.key] = JSON.parse(r.value);
+
     return out;
   }
   setCredential(key: string, value: string) {
     const iv = randomBytes(12),
       c = createCipheriv("aes-256-gcm", this.key, iv);
+
     const data = Buffer.concat([c.update(value, "utf8"), c.final()]);
+
     const packed = [iv, c.getAuthTag(), data]
       .map((x) => x.toString("base64"))
       .join(":");
+
     this.db
       .query(
         "INSERT INTO credentials(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -606,15 +699,21 @@ export class Store {
       .run(key, packed);
   }
   getCredential(key: string) {
+    // SAFETY: The query selects the encrypted credential value by its known `value` column.
     const r = this.db
       .query("SELECT value FROM credentials WHERE key=?")
-      .get(key) as any;
+      .get(key) as CredentialRow | null;
+
     if (!r) return undefined;
+
+    // SAFETY: setCredential always stores exactly three base64 segments: IV, auth tag, and ciphertext.
     const [iv, tag, data] = r.value
       .split(":")
-      .map((x: string) => Buffer.from(x, "base64"));
+      .map((x: string) => Buffer.from(x, "base64")) as [Buffer, Buffer, Buffer];
+
     const d = createDecipheriv("aes-256-gcm", this.key, iv);
     d.setAuthTag(tag);
+
     return Buffer.concat([d.update(data), d.final()]).toString("utf8");
   }
   deleteCredential(key: string) {
@@ -623,9 +722,12 @@ export class Store {
     );
   }
   listCredentials() {
-    return (
-      this.db.query("SELECT key FROM credentials ORDER BY key").all() as any[]
-    ).map((r) => r.key);
+    // SAFETY: The query selects exactly the credential `key` column.
+    const rows = this.db
+      .query("SELECT key FROM credentials ORDER BY key")
+      .all() as KeyRow[];
+
+    return rows.map((r) => r.key);
   }
 
   private mcpServer(r: any): MCPServer {
@@ -638,19 +740,20 @@ export class Store {
     };
   }
   listMCPServers() {
-    return (
-      this.db.query("SELECT * FROM mcp_servers ORDER BY name").all() as any[]
-    ).map((r) => this.mcpServer(r));
+    return this.db
+      .query("SELECT * FROM mcp_servers ORDER BY name")
+      .all()
+      .map((r) => this.mcpServer(r));
   }
   getMCPServer(id: Id) {
-    const r = this.db
-      .query("SELECT * FROM mcp_servers WHERE id=?")
-      .get(id) as any;
+    const r = this.db.query("SELECT * FROM mcp_servers WHERE id=?").get(id);
+
     return r ? this.mcpServer(r) : null;
   }
   /** A server the bot may use: enabled, and shared or its own. */
   usableMCPServer(agentId: Id, serverId: Id) {
     const server = this.getMCPServer(serverId);
+
     return server?.enabled && (!server.agentId || server.agentId === agentId)
       ? server
       : null;
@@ -670,16 +773,19 @@ export class Store {
         this.b(input.enabled),
         input.agentId ?? null,
       );
+
     return this.getMCPServer(serverId)!;
   }
   /** Changes a server's settings; which bot it belongs to is fixed at creation. */
   updateMCPServer(id: Id, patch: Partial<Omit<MCPServer, "id" | "agentId">>) {
     const s = this.getMCPServer(id);
+
     if (!s) return null;
     const x = { ...s, ...patch };
     this.db
       .query("UPDATE mcp_servers SET name=?,url=?,enabled=? WHERE id=?")
       .run(x.name, x.url, this.b(x.enabled), id);
+
     return this.getMCPServer(id);
   }
   deleteMCPServer(id: Id) {
@@ -705,6 +811,7 @@ export class Store {
   }
   getSkill(id: Id) {
     const r = this.db.query("SELECT * FROM skills WHERE id=?").get(id);
+
     return r ? this.skill(r) : null;
   }
   createSkill(
@@ -715,15 +822,18 @@ export class Store {
     this.db
       .query("INSERT INTO skills VALUES (?,?,?,?,?)")
       .run(skillId, input.name, input.instructions, t, t);
+
     return this.getSkill(skillId)!;
   }
   updateSkill(id: Id, patch: Patch<Skill>) {
     const old = this.getSkill(id);
+
     if (!old) return null;
     const x = { ...old, ...patch };
     this.db
       .query("UPDATE skills SET name=?,instructions=?,updated_at=? WHERE id=?")
       .run(x.name, x.instructions, now(), id);
+
     return this.getSkill(id);
   }
   deleteSkill(id: Id) {

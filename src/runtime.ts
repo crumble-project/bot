@@ -38,10 +38,11 @@ export type MemoryRecord = {
   createdAt?: string;
   updatedAt?: string;
 };
+
 export type RuntimeCallbacks = {
   models?:
     | Models
-    | ((agent: Agent, credentials?: unknown) => Models | Promise<Models>);
+    | ((agent: Agent, credentials?: string) => Models | Promise<Models>);
   credentials?: (
     provider: Agent["provider"],
   ) => string | undefined | Promise<string | undefined>;
@@ -64,19 +65,23 @@ export type RuntimeCallbacks = {
   commonSkills?: () => Agent["skills"];
   extensions?: (agent: Agent) => Extension[] | Promise<Extension[]>;
 };
+
 export type RuntimeMessage = TranscriptMessage;
+
 export type RuntimeSnapshot = {
   conversationId: string;
   messages: RuntimeMessage[];
-  live: unknown;
+  live: ReturnType<typeof publicLive>;
   partial: string;
-  usage: unknown;
+  usage: JsonValue | undefined;
   hasMore: boolean;
   oldestEntryId: string | null;
   status: "idle" | "running" | "failed";
   updatedAt: number;
 };
+
 export type RuntimeWatch = (snapshot: RuntimeSnapshot) => void | Promise<void>;
+
 type HarnessRecord = {
   harness: Harness;
   models: Models;
@@ -92,15 +97,56 @@ type HarnessRecord = {
  * together with run completion; clients should render that committed entry
  * only after the run has ended.
  */
-function publicLive(live: LiveState | undefined): unknown {
+function publicLive(live: LiveState | undefined) {
   if (!live) return live;
+
   if (!live.generation) return live;
   const { message: _message, ...generation } = live.generation;
+
   return { ...live, generation };
 }
 
+type InferenceOptions = { temperature?: number; maxTokens?: number };
+
+function inferenceOptions(inference: Agent["inference"]): InferenceOptions {
+  const options: InferenceOptions = {};
+
+  if (inference?.temperature !== undefined)
+    options.temperature = inference.temperature;
+
+  if (inference?.maxOutputTokens !== undefined)
+    options.maxTokens = inference.maxOutputTokens;
+
+  return options;
+}
+
+type EntryMetadata = {
+  requestId?: string;
+  origin?: MessageOrigin;
+  attachments?: Array<{ kind: string; [key: string]: JsonValue }>;
+};
+
+function entryMetadata(
+  requestId: string | undefined,
+  origin: MessageOrigin | undefined,
+  attachments: Array<{ kind: string; [key: string]: JsonValue }>,
+) {
+  const metadata: EntryMetadata = {};
+
+  if (requestId) metadata.requestId = requestId;
+
+  if (origin) metadata.origin = origin;
+
+  if (attachments.length) metadata.attachments = attachments;
+
+  return metadata;
+}
+
+type PreparedReply = { modelContent: string; data: Record<string, JsonValue> };
+
 function entryNumber(entryId: string): number {
   const value = Number(entryId.slice(entryId.lastIndexOf(":") + 1));
+
   return Number.isSafeInteger(value) ? value : -1;
 }
 
@@ -113,6 +159,7 @@ type HistoryOptions = {
 
 function hideActiveAssistant(messages: TranscriptMessage[], cutoffs: number[]) {
   const cutoff = cutoffs.length ? Math.min(...cutoffs) : -1;
+
   return cutoff < 0
     ? messages
     : messages.filter(
@@ -136,15 +183,21 @@ const MEMORY_GUIDANCE =
 
 export const conversationReference = (agentId: string, localId: number) =>
   `${agentId}:${localId}`;
+
 function numericId(value: string): never {
   if (!/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(Number(value)))
     throw new Error("Invalid durable record ID");
+
+  // SAFETY: validated decimal IDs are branded by pi-durable at this boundary.
   return Number(value) as never;
 }
+
 function localConversationId(agentId: string, reference: string): never {
   const prefix = `${agentId}:`;
+
   if (!reference.startsWith(prefix))
     throw new Error("Conversation belongs to a different agent");
+
   return numericId(reference.slice(prefix.length));
 }
 
@@ -153,7 +206,8 @@ export function providerModels(credentials?: RuntimeCallbacks["credentials"]) {
   const models = builtinModels({
     credentials: {
       read: async (providerId) => {
-        const key = await credentials?.(providerId as Agent["provider"]);
+        const key = await credentials?.(providerId);
+
         return key ? { type: "api_key" as const, key } : undefined;
       },
       list: async () => [],
@@ -169,7 +223,9 @@ export function providerModels(credentials?: RuntimeCallbacks["credentials"]) {
       },
     },
   });
+
   models.setProvider(meliousProvider());
+
   return models;
 }
 
@@ -184,9 +240,11 @@ export class AgentRuntime {
   private async open(agent: Agent): Promise<HarnessRecord> {
     if (this.closed) throw new Error("Runtime is closed");
     const existing = this.records.get(agent.id);
+
     if (existing) return existing;
     const opening = this.openRecord(agent);
     this.records.set(agent.id, opening);
+
     try {
       return await opening;
     } catch (error) {
@@ -199,15 +257,17 @@ export class AgentRuntime {
     const storage = await openNodeSqliteStorage(
       `${this.dataDir}/${agent.id}.sqlite`,
     );
+
     try {
       const models =
-        typeof this.callbacks.models === "function"
+        this.callbacks.models instanceof Function
           ? await this.callbacks.models(
               agent,
               await this.callbacks.credentials?.(agent.provider),
             )
           : (this.callbacks.models ??
             providerModels(this.callbacks.credentials));
+
       const memory = defineTool({
         name: "memory",
         description:
@@ -231,9 +291,11 @@ export class AgentRuntime {
           const current = this.callbacks.currentAgent
             ? this.callbacks.currentAgent(agent.id)
             : agent;
+
           if (!current?.enabled || !current.tools.includes("memory"))
             throw new Error("Memory access is disabled for this agent");
-          let result: unknown;
+          let result: MemoryRecord[] | MemoryRecord | { deleted: true };
+
           if (args.action === "list")
             result = (await this.callbacks.listMemory?.(agent.id)) ?? [];
           else if (args.action === "create") {
@@ -262,39 +324,46 @@ export class AgentRuntime {
             await this.callbacks.deleteMemory(agent.id, args.id);
             result = { deleted: true };
           }
+
           return { output: [{ type: "text", text: JSON.stringify(result) }] };
         },
       });
+
       const registry = createRegistry();
       registry.install(defineExtension({ name: "memory", tools: [memory] }));
       const extensions = (await this.callbacks.extensions?.(agent)) ?? [];
+
       for (const extension of extensions) registry.install(extension);
       const choices = { agent };
+
       const configuredModels = new Proxy(models, {
         get(target, property) {
           if (property === "streamSimple")
             return (...args: Parameters<Models["streamSimple"]>) => {
               const inference = choices.agent.inference;
+
               return target.streamSimple(args[0], args[1], {
                 ...args[2],
-                ...(inference?.temperature !== undefined
-                  ? { temperature: inference.temperature }
-                  : {}),
-                ...(inference?.maxOutputTokens !== undefined
-                  ? { maxTokens: inference.maxOutputTokens }
-                  : {}),
+                ...inferenceOptions(inference),
               });
             };
-          const value = Reflect.get(target, property, target);
-          return typeof value === "function" ? value.bind(target) : value;
+
+          // SAFETY: Proxy properties are the keys of the Models instance; the
+          // special streamSimple branch above handles the only replaced method.
+          const value = target[property as keyof Models];
+
+          return value instanceof Function ? value.bind(target) : value;
         },
       });
+
       const harness = await Harness.open(
         storage,
         { models: configuredModels, registry },
         BACKGROUND_CONTEXT,
       );
+
       if (agent.enabled) harness.resume();
+
       return { harness, models, choices, memory, registry, extensions };
     } catch (error) {
       await storage.close(BACKGROUND_CONTEXT);
@@ -308,35 +377,46 @@ export class AgentRuntime {
     conversationId: string,
   ) {
     record.choices.agent = agent;
+
     // Dynamic catalogs (Melious) list models only after a refresh with the saved key.
     if (!record.models.getModel(agent.provider, agent.model))
       await record.models.refresh({ providers: [agent.provider] });
     const next = (await this.callbacks.extensions?.(agent)) ?? [];
+
     for (const previous of record.extensions)
       if (!next.some((extension) => extension.name === previous.name))
         record.registry.uninstall(previous);
+
     for (const extension of next) record.registry.install(extension);
     record.extensions = next;
+
     const tools = [
       ...(agent.tools.includes("memory") ? [record.memory] : []),
       ...next.flatMap((extension) => extension.tools ?? []),
     ];
+
     // With code mode the model writes one script that calls the other tools, instead of calling them itself.
     const codemode = tools.find((tool) => tool.name === CODEMODE_TOOL_NAME);
+
     const conversation = await record.harness.conversation(
       localConversationId(agent.id, conversationId),
       BACKGROUND_CONTEXT,
     );
+
     if (!conversation) throw new Error("Conversation not found");
     const memory = (await this.callbacks.listMemory?.(agent.id)) ?? [];
+
     const lines = (items: MemoryRecord[]) =>
       items.map((item) => `- ${item.content}`).join("\n");
+
     const shared = memory.filter((item) => item.shared);
+
     const skills = [
       ...(this.callbacks.commonSkills?.() ?? []),
       ...(this.callbacks.sharedSkills?.(agent) ?? []),
       ...agent.skills,
     ];
+
     const now = new Date();
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const clock = `Current server time (UTC): ${now.toISOString()}\nServer timezone: ${timezone}\nServer local time: ${now.toLocaleString("sv-SE", { timeZone: timezone, hour12: false })}\nUse this fresh clock for dates and relative times. The owner's timezone may differ from the server or external tools; use their known timezone, or ask if it is unknown. For one-time schedules, runAt must include Z (UTC) or an explicit offset such as +02:00. The timezone field controls recurring cron schedules; it does not reinterpret a one-time runAt timestamp.`;
@@ -350,17 +430,21 @@ export class AgentRuntime {
       },
       BACKGROUND_CONTEXT,
     );
+
     return conversation;
   }
 
   async createConversation(agent: Agent): Promise<string> {
     const record = await this.open(agent);
+
     const conversation = await record.harness.createConversation(
       { ownership: { kind: "ownerless" } },
       BACKGROUND_CONTEXT,
     );
+
     const reference = conversationReference(agent.id, conversation.id);
     await this.configure(record, agent, reference);
+
     return reference;
   }
 
@@ -369,6 +453,7 @@ export class AgentRuntime {
     const root = await record.harness.root(BACKGROUND_CONTEXT);
     const reference = conversationReference(agent.id, Number(root.id));
     await this.configure(record, agent, reference);
+
     return reference;
   }
 
@@ -378,6 +463,7 @@ export class AgentRuntime {
       agent,
       conversationId,
     );
+
     return String(await conversation.compact(undefined, BACKGROUND_CONTEXT));
   }
 
@@ -394,10 +480,12 @@ export class AgentRuntime {
   ): Promise<string> {
     const record = await this.open(agent);
     const attached = prepareAttachments(options.attachments ?? []);
-    let prepared: { modelContent: string; data: Record<string, JsonValue> } = {
+
+    let prepared: PreparedReply = {
       modelContent: text,
       data: { text },
     };
+
     if (options.replyTo)
       try {
         prepared = await prepareReply(
@@ -412,8 +500,10 @@ export class AgentRuntime {
           error instanceof Error ? error.message : "Invalid reply target",
         );
       }
+
     const conversation = await this.configure(record, agent, conversationId);
     const model = record.models.getModel(agent.provider, agent.model);
+
     // Catalogs that list no modalities are trusted; the provider reports anything it refuses.
     if (
       attached.info.some((item) => item.kind === "image") &&
@@ -424,9 +514,11 @@ export class AgentRuntime {
         400,
         `${agent.model} can't read images. Choose a model that accepts images in the agent's profile.`,
       );
+
     if (options.origin?.kind === "bot") {
       prepared.modelContent = `Message from bot ${JSON.stringify(options.origin.name ?? "Another bot")} (${options.origin.agentId ?? "unknown"}):\n\n${prepared.modelContent}\n\nReply to this bot's message. Your answer will be returned to the requesting bot.`;
     }
+
     const content = attached.blocks.length
       ? [
           ...(prepared.modelContent.trim()
@@ -435,6 +527,7 @@ export class AgentRuntime {
           ...attached.blocks,
         ]
       : prepared.modelContent;
+
     const submission = await conversation.submit(
       {
         type: "input",
@@ -444,14 +537,13 @@ export class AgentRuntime {
           kind: "crumble.message",
           data: {
             ...prepared.data,
-            ...(requestId ? { requestId } : {}),
-            ...(options.origin ? { origin: options.origin } : {}),
-            ...(attached.info.length ? { attachments: attached.info } : {}),
+            ...entryMetadata(requestId, options.origin, attached.info),
           },
         },
       },
       BACKGROUND_CONTEXT,
     );
+
     return String(submission.id);
   }
 
@@ -468,6 +560,7 @@ export class AgentRuntime {
       localConversationId(agent.id, conversationId),
       BACKGROUND_CONTEXT,
     );
+
     if (!conversation) throw new Error("Conversation not found");
     await conversation.submit(
       {
@@ -485,6 +578,7 @@ export class AgentRuntime {
   /** The bytes of an attached image, read back from the input entry that carries it. */
   async attachment(agent: Agent, entryId: string, index: number) {
     const record = await this.open(agent);
+
     try {
       return await readAttachment(record.harness, agent.id, entryId, index);
     } catch (error) {
@@ -503,7 +597,9 @@ export class AgentRuntime {
     const submission = await (
       await this.open(agent)
     ).harness.submission(numericId(submissionId), context);
+
     if (!submission) throw new Error("Submission not found");
+
     return submission.wait(context);
   }
 
@@ -513,21 +609,25 @@ export class AgentRuntime {
     options: { limit?: number } = {},
   ): Promise<RuntimeSnapshot> {
     const { harness } = await this.open(agent);
+
     const conversation = await harness.conversation(
       localConversationId(agent.id, conversationId),
       BACKGROUND_CONTEXT,
     );
+
     if (!conversation) throw new Error("Conversation not found");
     // Read transcript before attaching the live view. A run may commit an
     // intermediate assistant entry while the view is being attached; the
     // active-run guard below then filters it from this snapshot.
     const transcript = await readTranscript(harness, agent.id, options);
     const view = await conversation.viewState(BACKGROUND_CONTEXT);
+
     try {
-      const live = view.value.docs["pi.live"] as unknown as
-        | LiveState
-        | undefined;
+      // SAFETY: pi-durable owns this document key and serializes it as LiveState.
+      const live = view.value.docs["pi.live"] as LiveState | undefined;
+
       let messages = hideIncompleteAssistant(transcript.messages);
+
       if (live?.run) {
         // A model can commit a tool-calling assistant entry before its tool
         // round completes. Hide assistant entries after the active input until
@@ -539,14 +639,18 @@ export class AgentRuntime {
             ),
           ),
         );
+
         const activeEntries = activeInputEntries.flatMap((status) =>
           status && "entry" in status && status.entry !== undefined
             ? [Number(status.entry)]
             : [],
         );
+
         const cutoff = activeEntries.length ? Math.min(...activeEntries) : -1;
+
         if (cutoff >= 0) messages = hideActiveAssistant(messages, [cutoff]);
       }
+
       return {
         conversationId,
         ...transcript,
@@ -569,9 +673,11 @@ export class AgentRuntime {
         agent.id,
         options,
       );
+
       if (options.includeActiveAssistant) return transcript;
       const harness = (await this.open(agent)).harness;
       const inspection = await harness.inspect(BACKGROUND_CONTEXT);
+
       const cutoffs = inspection.submissions.flatMap((submission) =>
         submission.type === "input" &&
         submission.status === "placed" &&
@@ -579,6 +685,7 @@ export class AgentRuntime {
           ? [Number(submission.entry)]
           : [],
       );
+
       return {
         ...transcript,
         messages: hideActiveAssistant(
@@ -601,16 +708,21 @@ export class AgentRuntime {
     submissionId: string,
   ): Promise<string[]> {
     const { harness } = await this.open(agent);
+
     const submission = await harness.submission(
       numericId(submissionId),
       BACKGROUND_CONTEXT,
     );
+
     const status = await submission?.status(BACKGROUND_CONTEXT);
+
     const conversation = await harness.conversation(
       localConversationId(agent.id, conversationId),
       BACKGROUND_CONTEXT,
     );
+
     if (!status?.entry || !conversation) return [];
+
     return readResponse(conversation, Number(status.entry));
   }
 
@@ -625,11 +737,13 @@ export class AgentRuntime {
       localConversationId(agent.id, conversationId),
       BACKGROUND_CONTEXT,
     );
+
     try {
       await callback(await this.snapshot(agent, conversationId, options));
       stream.start(async () =>
         callback(await this.snapshot(agent, conversationId, options)),
       );
+
       return async () => {
         await stream.stop();
       };
@@ -646,13 +760,16 @@ export class AgentRuntime {
       localConversationId(agent.id, conversationId),
       BACKGROUND_CONTEXT,
     );
+
     await conversation?.abort(BACKGROUND_CONTEXT);
   }
 
   async deleteAgent(agentId: string): Promise<void> {
     const pending = this.records.get(agentId);
     this.records.delete(agentId);
+
     if (pending) await (await pending).harness.close(BACKGROUND_CONTEXT);
+
     for (const suffix of ["", "-wal", "-shm"])
       await rm(`${this.dataDir}/${agentId}.sqlite${suffix}`, { force: true });
   }

@@ -9,6 +9,7 @@ test.serial(
   async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-"));
     const port = 18000 + Math.floor(Math.random() * 1000);
+
     try {
       const running = await startServer({ dataDir, port });
       expect((await fetch(new URL("/health", running.server.url))).status).toBe(
@@ -29,12 +30,15 @@ test.serial(
 test.serial("loads the workspace skills directory by default", async () => {
   const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-skills-"));
   const port = 19000 + Math.floor(Math.random() * 1000);
+
   try {
     const token = "s".repeat(40);
     const running = await startServer({ dataDir, port, token });
+
     const response = await fetch(new URL("/v1/skills", running.server.url), {
       headers: { authorization: `Bearer ${token}` },
     });
+
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(
       expect.arrayContaining([
@@ -61,13 +65,16 @@ test.serial(
   async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-push-startup-"));
     let unexpected: Awaited<ReturnType<typeof startServer>> | undefined;
+
     try {
       let failure: unknown;
+
       try {
         unexpected = await startServer({ dataDir, port: 65536 });
       } catch (error) {
         failure = error;
       }
+
       await unexpected?.close();
       expect(failure).toBeDefined();
       const running = await startServer({ dataDir, port: 0 });

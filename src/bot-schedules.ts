@@ -34,6 +34,7 @@ export class BotSchedules {
 
   list(sourceId: string) {
     const source = this.source(sourceId);
+
     return this.store
       .listSchedules()
       .filter((schedule) => this.visible(source, schedule))
@@ -44,9 +45,11 @@ export class BotSchedules {
     const source = this.source(sourceId);
     const name = draft.name?.trim() ?? "";
     const prompt = draft.prompt?.trim() ?? "";
+
     if (!name || !prompt)
       throw new AppError(400, "Task name and prompt are required");
     const agentId = this.target(source, draft.agentId);
+
     const schedule = this.scheduler.create(
       {
         agentId,
@@ -58,6 +61,7 @@ export class BotSchedules {
       },
       source.id,
     );
+
     return this.present(schedule);
   }
 
@@ -65,11 +69,14 @@ export class BotSchedules {
     const source = this.source(sourceId);
     const existing = this.manageable(source, id);
     const requested = draft.agentId?.trim();
+
     const agentId =
       requested && requested !== existing.agentId
         ? this.target(source, requested)
         : requested || existing.agentId;
+
     const timing = this.when(draft, existing.cron, existing.runAt);
+
     const schedule = this.scheduler.update(existing.id, {
       agentId,
       name: draft.name?.trim() || existing.name,
@@ -78,15 +85,19 @@ export class BotSchedules {
       enabled: draft.enabled ?? existing.enabled,
       ...timing,
     });
+
     if (!schedule) throw new AppError(404, "Task not found");
+
     return this.present(schedule);
   }
 
   delete(sourceId: string, id: string) {
     const source = this.source(sourceId);
     const existing = this.manageable(source, id);
+
     if (!this.store.deleteSchedule(existing.id))
       throw new AppError(404, "Task not found");
+
     return { deleted: true, id: existing.id };
   }
 
@@ -94,10 +105,9 @@ export class BotSchedules {
     const source = this.source(sourceId);
     const existing = this.manageable(source, id);
     const ran = await this.scheduler.runNow(existing.id);
-    const execution =
-      ran.result && typeof ran.result === "object"
-        ? (ran.result as { id?: unknown; status?: unknown })
-        : null;
+
+    const execution = ran.result;
+
     return {
       admitted: ran.admitted,
       executionId: execution?.id != null ? String(execution.id) : null,
@@ -107,14 +117,17 @@ export class BotSchedules {
 
   private source(id: string) {
     const agent = this.store.getAgent(id);
+
     if (!agent?.enabled || !agent.tools.includes("schedule"))
       throw new AppError(403, "Scheduling is turned off for this bot");
+
     return agent;
   }
 
   /** A bot may assign work to itself, or to a bot it is allowed to message. */
   private target(source: Agent, agentId: string | undefined) {
     const id = agentId?.trim() || source.id;
+
     if (
       id !== source.id &&
       !(source.tools.includes("delegate") && source.delegates.includes(id))
@@ -124,9 +137,12 @@ export class BotSchedules {
         "You can schedule a task for yourself, or for a bot you are allowed to message",
       );
     const target = this.store.getAgent(id);
+
     if (!target) throw new AppError(404, "Bot not found");
+
     if (id !== source.id && !target.enabled)
       throw new AppError(409, "That bot is disabled");
+
     return target.id;
   }
 
@@ -138,8 +154,10 @@ export class BotSchedules {
 
   private manageable(source: Agent, id: string) {
     const schedule = this.store.getSchedule(id);
+
     if (!schedule || !this.visible(source, schedule))
       throw new AppError(404, "Task not found");
+
     return schedule;
   }
 
@@ -150,16 +168,22 @@ export class BotSchedules {
   ): Pick<ScheduleInput, "cron" | "runAt"> {
     const nextCron = draft.cron?.trim() ?? "";
     const nextRun = draft.runAt?.trim() ?? "";
+
     if (nextCron && nextRun)
       throw new AppError(400, "Choose a recurring cron or a one-time date");
+
     if (nextCron) return { cron: nextCron, runAt: null };
+
     if (nextRun) return { cron: null, runAt: nextRun };
+
     const kept = {
       cron: draft.cron !== undefined ? null : cron,
       runAt: draft.runAt !== undefined ? null : runAt,
     };
+
     if (!kept.cron && !kept.runAt)
       throw new AppError(400, "Choose a recurring cron or a one-time date");
+
     return kept;
   }
 
@@ -214,18 +238,25 @@ export function scheduleExtension(agent: Agent, schedules: BotSchedules) {
         timezone: args.timezone,
         enabled: args.enabled,
       };
+
       if (args.action === "list") return output(schedules.list(agent.id));
+
       if (!args.id && args.action !== "create")
         throw new AppError(400, "Task ID is required");
+
       if (args.action === "create")
         return output(schedules.create(agent.id, draft));
+
       if (args.action === "update")
         return output(schedules.update(agent.id, args.id!, draft));
+
       if (args.action === "delete")
         return output(schedules.delete(agent.id, args.id!));
+
       return output(await schedules.run(agent.id, args.id!));
     },
   });
+
   return defineExtension({
     name: "schedule",
     tools: agent.tools.includes("schedule") ? [schedule] : [],

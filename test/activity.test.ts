@@ -17,6 +17,7 @@ import { createAPI } from "../src/api";
 import { operationalActivity, sortActivity } from "../src/activity";
 
 const dirs: string[] = [];
+
 afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
@@ -34,6 +35,7 @@ describe("operational activity", () => {
     ]);
     const models = createModels();
     models.setProvider(faux.provider);
+
     const lookup = defineTool({
       name: "lookup",
       description: "Lookup",
@@ -42,7 +44,9 @@ describe("operational activity", () => {
         output: [{ type: "text" as const, text: "found" }],
       }),
     });
+
     const store = new Store(dir);
+
     const service = new CrumbleService(
       store,
       new AgentRuntime(dir, {
@@ -52,13 +56,16 @@ describe("operational activity", () => {
         ],
       }),
     );
+
     const scheduler = new Scheduler(
       store,
       (agent, prompt, requestId, scheduleId) =>
         service.dispatch(agent, prompt, requestId, scheduleId),
     );
+
     const token = "t".repeat(40);
     const app = createAPI(service, scheduler, token);
+
     const agent = store.createAgent({
       name: "Helper",
       avatar: "bot",
@@ -73,15 +80,19 @@ describe("operational activity", () => {
       mcpServers: [],
       delegates: [],
     });
+
     const execution = await service.sendChat(
       agent.id,
       "find x",
       "00000000-0000-4000-8000-000000000001",
     );
+
     await service.runtime.wait(execution.submissionId!, agent);
+
     const response = await app.request("/v1/activity/feed", {
       headers: { authorization: `Bearer ${token}` },
     });
+
     expect(response.status).toBe(200);
     const body: any = await response.json();
     expect(body.activities.map((item: any) => item.kind)).toEqual([
@@ -153,6 +164,7 @@ describe("operational activity", () => {
         },
       },
     ]);
+
     expect(result.map(({ kind }) => kind)).toEqual([
       "tool-call",
       "mcp-call",
@@ -187,6 +199,7 @@ describe("operational activity", () => {
         blocks: [{ type: "toolCall", name: "y" }],
       },
     ]);
+
     const sorted = sortActivity(events);
     expect(sorted.map((event) => event.entryId)).toEqual(["a:2", "a:1"]);
     expect(sorted[1]?.id).toBe("a:a:1:0:block-0");
@@ -220,6 +233,7 @@ describe("operational activity", () => {
         },
       },
     ]);
+
     expect(
       events
         .filter((event) => event.id.includes("nested-"))

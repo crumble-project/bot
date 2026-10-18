@@ -6,6 +6,7 @@ import { loadCommonSkills } from "../src/common-skills";
 
 test("loads frontmatter and body skills in deterministic directory order", async () => {
   const root = mkdtempSync(join(tmpdir(), "crumble-common-skills-"));
+
   try {
     for (const name of ["z-last", "a-first"]) mkdirSync(join(root, name));
     await Bun.write(join(root, "z-last", "SKILL.md"), "Body only");
@@ -29,6 +30,7 @@ test("loads frontmatter and body skills in deterministic directory order", async
 
 test("rejects malformed or empty skill documents and tolerates an empty catalog", async () => {
   const root = mkdtempSync(join(tmpdir(), "crumble-common-skills-"));
+
   try {
     expect(loadCommonSkills(join(root, "missing"))).toEqual([]);
     mkdirSync(join(root, "empty"));

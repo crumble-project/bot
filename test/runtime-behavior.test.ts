@@ -15,34 +15,50 @@ import { agentInput, type Agent } from "../src/domain";
 
 const directories: string[] = [];
 const runtimes: AgentRuntime[] = [];
+
 afterEach(async () => {
   await Promise.all(runtimes.splice(0).map((runtime) => runtime.close()));
+
   for (const directory of directories.splice(0))
     rmSync(directory, { recursive: true, force: true });
 });
+
 const makeAgent = (): Agent => ({
   ...agentInput.parse({ name: "Test" }),
   id: crypto.randomUUID(),
+  // SAFETY: The faux provider is registered in the test model registry.
   provider: "faux" as never,
   model: "test",
   createdAt: "",
   updatedAt: "",
 });
+
 function setup(
   options: ConstructorParameters<typeof AgentRuntime>[1] = {},
   slow = false,
 ) {
   const directory = mkdtempSync(join(tmpdir(), "crumble-runtime-"));
   directories.push(directory);
-  const faux = fauxProvider({
+
+  const fauxOptions = {
     provider: "faux",
     models: [{ id: "test" }],
-    ...(slow ? { tokensPerSecond: 60, tokenSize: { min: 1, max: 1 } } : {}),
-  });
+  };
+
+  if (slow) {
+    Object.assign(fauxOptions, {
+      tokensPerSecond: 60,
+      tokenSize: { min: 1, max: 1 },
+    });
+  }
+
+  const faux = fauxProvider(fauxOptions);
+
   const models = createModels();
   models.setProvider(faux.provider);
   const runtime = new AgentRuntime(directory, { ...options, models });
   runtimes.push(runtime);
+
   return { runtime, faux };
 }
 
@@ -59,27 +75,36 @@ test("each chat turn receives a fresh server clock and timezone", async () => {
   const agent = makeAgent();
   const conversation = await runtime.createConversation(agent);
   const requests: string[] = [];
+
   const capture = (context: { messages: unknown[] }) => {
     requests.push(JSON.stringify(context.messages));
+
     return fauxAssistantMessage("ok");
   };
+
   faux.setResponses([capture, capture]);
   const boundaries: [number, number][] = [];
+
   for (const requestId of ["one", "two"]) {
     const earliest = Date.now();
+
     const result = await runtime.wait(
       await runtime.submit(agent, conversation, "What time is it?", requestId),
       agent,
     );
+
     expect(result.status).toBe("done");
     boundaries.push([earliest, Date.now()]);
     await Bun.sleep(5);
   }
+
   expect(requests).toHaveLength(2);
+
   for (const [index, prompt] of requests.entries()) {
     const times = [
       ...prompt.matchAll(/Current server time \(UTC\): ([\dT:.Z-]+)/g),
     ];
+
     expect(times.length).toBeGreaterThan(0);
     const timestamp = Date.parse(times.at(-1)![1]!);
     expect(timestamp).toBeGreaterThanOrEqual(boundaries[index]![0]);
@@ -90,18 +115,25 @@ test("each chat turn receives a fresh server clock and timezone", async () => {
 
 test("profile edits, skills and memory reach the next request without leaking between agents", async () => {
   const requests: string[] = [];
+
   const { runtime, faux } = setup({
     listMemory: (id) => [{ id: "memory", content: `private:${id}` }],
   });
+
   const a = makeAgent(),
     b = makeAgent();
-  const response = (context: unknown) => {
+
+  const response = (context: { messages: unknown[] }) => {
     requests.push(JSON.stringify(context));
+
     return fauxAssistantMessage("ok");
   };
+
   faux.setResponses([response, response, response]);
+
   const ca = await runtime.createConversation(a),
     cb = await runtime.createConversation(b);
+
   await runtime.wait(await runtime.submit(a, ca, "first", "one"), a);
   await runtime.wait(
     await runtime.submit(
@@ -143,17 +175,21 @@ test("loads bounded common skills and applies them before shared and personal sk
     instructions: "Common task rules",
   });
   const requests: string[] = [];
+
   const { runtime, faux } = setup({
     commonSkills: () => common,
     sharedSkills: () => [{ name: "Shared", instructions: "Shared rules" }],
   });
+
   const agent = {
     ...makeAgent(),
     skills: [{ name: "Personal", instructions: "Personal rules" }],
   };
+
   faux.setResponses([
     (context) => {
       requests.push(JSON.stringify(context));
+
       return fauxAssistantMessage("ok");
     },
   ]);
@@ -174,26 +210,30 @@ test("loads bounded common skills and applies them before shared and personal sk
 test("registered extension tools are offered, executed, recorded and revoked", async () => {
   let enabled = true,
     calls = 0;
+
   const tool = defineTool({
     name: "example",
     description: "Read example",
     parameters: Type.Object({}),
     execute: async () => {
       calls++;
+
       return { output: [{ type: "text", text: "tool result" }] };
     },
   });
+
   const extension = defineExtension({ name: "example", tools: [tool] });
+
   const { runtime, faux } = setup({
     extensions: () => (enabled ? [extension] : []),
   });
+
   const a = makeAgent();
   const conversation = await runtime.createConversation(a);
   faux.setResponses([
     (context) => {
-      expect(JSON.stringify(context.messages)).toContain(
-        '\"name\":\"example\"',
-      );
+      expect(JSON.stringify(context.messages)).toContain('"name":"example"');
+
       return fauxAssistantMessage(fauxToolCall("example", {}), {
         stopReason: "toolUse",
       });
@@ -201,13 +241,16 @@ test("registered extension tools are offered, executed, recorded and revoked", a
     fauxAssistantMessage("finished"),
     (context) => {
       expect(JSON.stringify(context.messages.at(-2))).toContain("toolsRemoved");
+
       return fauxAssistantMessage("revoked");
     },
   ]);
+
   const settled = await runtime.wait(
     await runtime.submit(a, conversation, "use tool", "first"),
     a,
   );
+
   expect(settled.status).toBe("done");
   expect(calls).toBe(1);
   expect(
@@ -230,9 +273,11 @@ test("hides in-flight assistant text and cancellation settles the submission", a
     ),
   ]);
   const snapshots: Awaited<ReturnType<typeof runtime.snapshot>>[] = [];
+
   const stop = await runtime.watch(a, conversation, (snapshot) => {
     snapshots.push(snapshot);
   });
+
   const submission = await runtime.submit(a, conversation, "go", "cancel-test");
   await Bun.sleep(180);
   const running = await runtime.snapshot(a, conversation);
@@ -267,9 +312,11 @@ test("publishes the complete assistant entry only after the run ends", async () 
   const answer = "The complete answer arrives at the turn boundary.";
   faux.setResponses([fauxAssistantMessage(answer)]);
   const snapshots: Awaited<ReturnType<typeof runtime.snapshot>>[] = [];
+
   const stop = await runtime.watch(a, conversation, (snapshot) => {
     snapshots.push(snapshot);
   });
+
   const submission = await runtime.submit(a, conversation, "go", "complete");
   const settled = await runtime.wait(submission, a);
   expect(settled.status).toBe("done");
@@ -290,18 +337,22 @@ test("publishes the complete assistant entry only after the run ends", async () 
 test("hides text from an assistant tool round until the whole turn completes", async () => {
   let release!: () => void;
   const toolDone = new Promise<void>((resolve) => (release = resolve));
+
   const tool = defineTool({
     name: "blocked",
     description: "Wait for the test",
     parameters: Type.Object({}),
     execute: async () => {
       await toolDone;
+
       return { output: [{ type: "text", text: "tool finished" }] };
     },
   });
+
   const { runtime, faux } = setup({
     extensions: () => [defineExtension({ name: "blocked", tools: [tool] })],
   });
+
   const a = makeAgent();
   const conversation = await runtime.createConversation(a);
   const intermediate = "I need to check that tool first.";
@@ -314,10 +365,12 @@ test("hides text from an assistant tool round until the whole turn completes", a
   ]);
   const submission = await runtime.submit(a, conversation, "go", "tool-round");
   let running = await runtime.snapshot(a, conversation);
+
   for (let attempt = 0; attempt < 20 && !running.live; attempt++) {
     await Bun.sleep(10);
     running = await runtime.snapshot(a, conversation);
   }
+
   await Bun.sleep(80);
   running = await runtime.snapshot(a, conversation);
   expect(running.status).toBe("running");
@@ -356,6 +409,7 @@ test("inference overrides reach provider options and deleting an agent removes i
     (_context, options) => {
       expect(options?.temperature).toBe(0.3);
       expect(options?.maxTokens).toBe(500);
+
       return fauxAssistantMessage("configured");
     },
   ]);

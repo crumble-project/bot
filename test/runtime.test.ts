@@ -13,6 +13,7 @@ const agent = (id: string, model = "test-model"): Agent => ({
   avatar: "sparkles",
   description: "",
   instructions: `You are ${id}`,
+  // SAFETY: The faux provider is registered in the test model registry below.
   provider: "faux" as any,
   model,
   enabled: true,
@@ -28,10 +29,12 @@ const agent = (id: string, model = "test-model"): Agent => ({
 describe("AgentRuntime", () => {
   test("submits through a real durable harness and reopens", async () => {
     const dir = await Bun.$`mktemp -d`.text();
+
     const faux = fauxProvider({
       provider: "faux",
       models: [{ id: "test-model" }],
     });
+
     faux.setResponses([fauxAssistantMessage("hello")]);
     const models = createModels();
     models.setProvider(faux.provider);
@@ -57,19 +60,24 @@ describe("AgentRuntime", () => {
   test("isolates memory callbacks by agent", async () => {
     const dir = await Bun.$`mktemp -d`.text();
     const models = createModels();
+
     const faux = fauxProvider({
       provider: "faux",
       models: [{ id: "test-model" }],
     });
+
     models.setProvider(faux.provider);
     const seen: string[] = [];
+
     const rt = new AgentRuntime(dir.trim(), {
       models,
       listMemory: async (id) => {
         seen.push(id);
+
         return [{ id: "m", content: id }];
       },
     });
+
     for (const id of [
       "00000000-0000-4000-8000-000000000002",
       "00000000-0000-4000-8000-000000000003",

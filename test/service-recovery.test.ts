@@ -7,11 +7,14 @@ import { CrumbleService } from "../src/service";
 import { Store } from "../src/store";
 
 const dirs: string[] = [];
+
 const make = () => {
   const dir = mkdtempSync(join(tmpdir(), "bot-recovery-"));
   dirs.push(dir);
+
   return dir;
 };
+
 afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
@@ -35,6 +38,7 @@ describe("scheduled admission recovery", () => {
   test("retries a failed admission after reopening while preserving one execution", async () => {
     const store = new Store(make());
     const agent = store.createAgent(agentInput);
+
     const schedule = store.createSchedule({
       agentId: agent.id,
       name: "Recovery task",
@@ -44,18 +48,28 @@ describe("scheduled admission recovery", () => {
       runAt: new Date(Date.now() + 60_000).toISOString(),
       enabled: true,
     });
+
     const conversationId = `${agent.id}:1`;
     let submissions = 0;
-    const fakeRuntime = {
+
+    const runtimeFixture = {
       openChat: async () => conversationId,
       submit: async () => {
         submissions += 1;
+
         if (submissions === 1) throw new Error("temporary runtime failure");
+
         return "1";
       },
       wait: async () => ({ status: "done" }),
       close: async () => undefined,
-    } as unknown as AgentRuntime;
+    };
+
+    // SAFETY: The prototype supplies AgentRuntime identity; the fixture overrides dispatch methods used here.
+    const fakeRuntime = Object.assign(
+      Object.create(AgentRuntime.prototype),
+      runtimeFixture,
+    ) as AgentRuntime;
 
     const first = new CrumbleService(store, fakeRuntime);
     await expect(
@@ -68,7 +82,8 @@ describe("scheduled admission recovery", () => {
     ).rejects.toThrow("temporary runtime failure");
 
     const second = new CrumbleService(store, fakeRuntime);
-    const execution = await second.dispatch(
+
+    await second.dispatch(
       agent.id,
       schedule.prompt,
       `schedule:${schedule.id}:occurrence`,

@@ -19,8 +19,12 @@ const credentialKey = (serverId: string) => `mcp-oauth:${serverId}`;
 
 function read(store: Store, serverId: string): SavedOAuth | undefined {
   const raw = store.getCredential(credentialKey(serverId));
+
   if (!raw) return undefined;
+
   try {
+    // SAFETY: write() serializes SavedOAuth under this private credential key;
+    // only this module writes that key, and malformed JSON is rejected below.
     return JSON.parse(raw) as SavedOAuth;
   } catch {
     return undefined;
@@ -49,6 +53,7 @@ function provider(
     load: () => read(store, server.id)?.state,
     save: (state) => write(store, server.id, { redirectUrl, state }),
   };
+
   return new McpOAuthProvider({
     serverUrl: server.url,
     redirectUrl,
@@ -72,7 +77,9 @@ export function connectionAuth(
   server: MCPServer,
 ): AuthProvider | undefined {
   const saved = read(store, server.id);
+
   if (!saved?.state.tokens?.access_token) return undefined;
+
   return adaptOAuthProvider(
     provider(store, server, saved.redirectUrl, () => undefined),
   );
@@ -80,11 +87,11 @@ export function connectionAuth(
 
 function unavailable(
   server: MCPServer,
-  error: unknown,
+  cause: unknown,
   step: "start" | "finish" = "start",
 ): never {
-  if (error instanceof AppError) throw error;
-  const reason = error instanceof Error ? error.message : String(error);
+  if (cause instanceof AppError) throw cause;
+  const reason = cause instanceof Error ? cause.message : String(cause);
   throw new AppError(
     400,
     `${server.name} could not ${step} OAuth sign-in: ${reason}`,
@@ -101,6 +108,7 @@ export async function startAuthorization(
   redirectUrl: string,
 ): Promise<{ authorizationUrl: string } | { authorized: true }> {
   const saved = read(store, server.id);
+
   // A registration names its redirect URL and server, so a change of either starts over.
   if (
     !saved ||
@@ -109,17 +117,23 @@ export async function startAuthorization(
   )
     write(store, server.id, { redirectUrl, state: { serverUrl: server.url } });
   let authorizationUrl: URL | undefined;
+
   const oauth = provider(store, server, redirectUrl, (url) => {
     authorizationUrl = url;
   });
+
   let result;
+
   try {
     result = await authorizeMcp(oauth, { serverUrl: server.url });
   } catch (error) {
     unavailable(server, error);
   }
+
   if (result === "AUTHORIZED") return { authorized: true };
+
   if (!authorizationUrl) unavailable(server, "no authorization URL");
+
   return { authorizationUrl: authorizationUrl.toString() };
 }
 
@@ -135,10 +149,12 @@ export async function finishAuthorization(
   iss?: string,
 ) {
   const saved = read(store, server.id);
+
   if (!saved?.state.oauthState || saved.state.oauthState !== state)
     throw new AppError(400, "This sign-in has expired; start again");
   const oauth = provider(store, server, saved.redirectUrl, () => undefined);
   let result;
+
   try {
     result = await authorizeMcp(oauth, {
       serverUrl: server.url,
@@ -148,6 +164,7 @@ export async function finishAuthorization(
   } catch (error) {
     unavailable(server, error, "finish");
   }
+
   if (result !== "AUTHORIZED")
     throw new AppError(400, `${server.name} did not accept the sign-in`);
   // The state and verifier answer one attempt only.

@@ -44,12 +44,15 @@ export const agentInput = z.object({
     })
     .optional(),
 });
+
 export type AgentInput = z.infer<typeof agentInput>;
+
 export type Agent = AgentInput & {
   id: string;
   createdAt: string;
   updatedAt: string;
 };
+
 export type Conversation = {
   id: string;
   agentId: string;
@@ -58,6 +61,7 @@ export type Conversation = {
   updatedAt: string;
   archived?: boolean;
 };
+
 /** A memory belongs to one bot, or is shared when `agentId` is null. */
 export type Memory = {
   id: string;
@@ -66,6 +70,7 @@ export type Memory = {
   createdAt: string;
   updatedAt: string;
 };
+
 export const scheduleInput = z
   .object({
     agentId: z.string().uuid(),
@@ -85,7 +90,9 @@ export const scheduleInput = z
     (v) => Boolean(v.cron) !== Boolean(v.runAt),
     "Choose a recurring cron or one-time date",
   );
+
 export type ScheduleInput = z.infer<typeof scheduleInput>;
+
 export type Schedule = ScheduleInput & {
   id: string;
   nextRunAt: string | null;
@@ -93,6 +100,7 @@ export type Schedule = ScheduleInput & {
   /** The bot that saved this task, or null when the owner saved it. */
   createdByAgentId: string | null;
 };
+
 export type Execution = {
   id: string;
   agentId: string;
@@ -109,6 +117,7 @@ export type Execution = {
   createdAt: string;
   updatedAt: string;
 };
+
 /** An MCP server is shared, or belongs to the one bot in `agentId` with its own credentials. */
 export type MCPServer = {
   id: string;
@@ -117,16 +126,19 @@ export type MCPServer = {
   enabled: boolean;
   agentId: string | null;
 };
+
 export const skillInput = z.object({
   name: z.string().trim().min(1).max(100),
   instructions: z.string().max(32000),
 });
+
 /** A shared skill in the library, used by the bots that list it in `sharedSkills`. */
 export type Skill = z.infer<typeof skillInput> & {
   id: string;
   createdAt: string;
   updatedAt: string;
 };
+
 export class AppError extends Error {
   constructor(
     public status: number,

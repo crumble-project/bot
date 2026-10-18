@@ -13,6 +13,7 @@ const output = (value: JsonValue) => ({
 /** Model tools adapt the bot-messaging interface; addressing and exchange policy live there. */
 export function coordinationExtension(agent: Agent, service: CrumbleService) {
   const messaging = new BotMessaging(service);
+
   const delegate = defineTool({
     name: "delegate",
     description:
@@ -35,6 +36,7 @@ export function coordinationExtension(agent: Agent, service: CrumbleService) {
         ),
       ),
   });
+
   const status = defineTool({
     name: "delegation_status",
     description:
@@ -52,6 +54,7 @@ export function coordinationExtension(agent: Agent, service: CrumbleService) {
         }),
       ),
   });
+
   const list = defineTool({
     name: "list_bots",
     description:
@@ -60,6 +63,7 @@ export function coordinationExtension(agent: Agent, service: CrumbleService) {
     replay: "safe",
     execute: async () => output(messaging.recipients(agent.id)),
   });
+
   const ask = defineTool({
     name: "ask_bot",
     description:
@@ -71,6 +75,7 @@ export function coordinationExtension(agent: Agent, service: CrumbleService) {
     replay: "safe",
     execute: async (args, api, context) => {
       context.abortSignal?.throwIfAborted();
+
       const sent = await messaging.send(
         agent.id,
         {
@@ -80,6 +85,7 @@ export function coordinationExtension(agent: Agent, service: CrumbleService) {
         },
         context,
       );
+
       return output(
         await messaging.result(agent.id, sent.executionId, {
           waitMs: 60000,
@@ -88,6 +94,7 @@ export function coordinationExtension(agent: Agent, service: CrumbleService) {
       );
     },
   });
+
   return defineExtension({
     name: "coordination",
     tools: agent.tools.includes("delegate")

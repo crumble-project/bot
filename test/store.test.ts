@@ -6,11 +6,14 @@ import { Database } from "bun:sqlite";
 import { Store } from "../src/store";
 
 const dirs: string[] = [];
+
 const make = () => {
   const d = mkdtempSync(join(tmpdir(), "bot-store-"));
   dirs.push(d);
+
   return d;
 };
+
 afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
@@ -35,10 +38,12 @@ describe("Store", () => {
     const dir = make();
     const first = new Store(dir);
     const agent = first.createAgent(input);
+
     const convo = first.createConversation({
       agentId: agent.id,
       title: "Chat",
     });
+
     first.createMemory({ agentId: agent.id, content: "fact" });
     first.close();
     const reopened = new Store(dir);
@@ -67,10 +72,12 @@ describe("Store", () => {
   test("supports schedules, idempotent executions, and MCP lifecycle", () => {
     const store = new Store(make());
     const agent = store.createAgent(input);
+
     const conversation = store.createConversation({
       agentId: agent.id,
       title: "Run",
     });
+
     const schedule = store.createSchedule(
       {
         agentId: agent.id,
@@ -84,10 +91,12 @@ describe("Store", () => {
       undefined,
       agent.id,
     );
+
     expect(schedule.createdByAgentId).toBe(agent.id);
     expect(
       store.updateNextRunAt(schedule.id, "2026-01-01T00:00:00.000Z")?.nextRunAt,
     ).toBe("2026-01-01T00:00:00.000Z");
+
     const execution = store.createExecution({
       agentId: agent.id,
       conversationId: conversation.id,
@@ -99,7 +108,10 @@ describe("Store", () => {
       error: null,
       replyTo: "assistant@example.com",
     });
+
+    // SAFETY: The execution row includes the optional replyTo field.
     expect((execution as any).replyTo).toBe("assistant@example.com");
+    // SAFETY: The update payload intentionally exercises the nullable field.
     expect(
       (store.updateExecution(execution.id, { replyTo: null } as any) as any)
         .replyTo,
@@ -119,11 +131,13 @@ describe("Store", () => {
         error: null,
       }),
     ).toThrow();
+
     const server = store.createMCPServer({
       name: "Tools",
       url: "https://example.test/mcp",
       enabled: true,
     });
+
     expect(store.updateMCPServer(server.id, { enabled: false })?.enabled).toBe(
       false,
     );
@@ -157,12 +171,15 @@ describe("Store", () => {
     const store = new Store(dir);
     expect(store.getAgent("legacy")?.name).toBe("Legacy");
     expect(store.getAgent("legacy")?.delegates).toEqual([]);
+    // SAFETY: Migration adds the optional inference field to legacy agents.
     expect((store.getAgent("legacy") as any)?.inference).toEqual({});
     store.close();
   });
 
   test("persists inference settings through updates and duplication", () => {
     const store = new Store(make());
+
+    // SAFETY: This fixture supplies the inference extension accepted by the store schema.
     const agent = store.createAgent({
       ...input,
       inference: {
@@ -171,15 +188,22 @@ describe("Store", () => {
         maxOutputTokens: 400,
       },
     } as any);
+
+    // SAFETY: The created agent includes the persisted inference field.
     expect((agent as any).inference).toEqual({
       thinkingLevel: "max",
       temperature: 0.2,
       maxOutputTokens: 400,
     });
+
+    // SAFETY: This fixture supplies the inference extension accepted by the store schema.
     const updated = store.updateAgent(agent.id, {
       inference: { thinkingLevel: "minimal" },
     } as any)!;
+
+    // SAFETY: The updated agent includes the persisted inference field.
     expect((updated as any).inference).toEqual({ thinkingLevel: "minimal" });
+    // SAFETY: Duplicated agents preserve the persisted inference field.
     expect((store.duplicateAgent(agent.id) as any).inference).toEqual({
       thinkingLevel: "minimal",
     });
@@ -190,16 +214,20 @@ describe("Store", () => {
     const dir = make();
     const store = new Store(dir);
     const agent = store.createAgent(input);
+
     const conversation = store.createConversation({
       agentId: agent.id,
       title: "Archive me",
     });
+
+    // SAFETY: Conversations expose the optional archived field.
     expect((conversation as any).archived).toBe(false);
     expect(store.archiveConversation(conversation.id)?.archived).toBe(true);
     expect(store.listConversations(agent.id)).toHaveLength(0);
     expect(store.listConversations(agent.id, true)).toHaveLength(1);
     store.close();
     const reopened = new Store(dir);
+    // SAFETY: Reopened conversations expose the optional archived field.
     expect((reopened.getConversation(conversation.id) as any)?.archived).toBe(
       true,
     );

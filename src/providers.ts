@@ -4,8 +4,20 @@ import {
   type Model,
 } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { z } from "zod";
 
 const MELIOUS_URL = "https://api.melious.ai/v1";
+
+const modelCatalog = z.object({
+  data: z
+    .array(
+      z.object({
+        id: z.string().optional().catch(undefined),
+        name: z.string().optional().catch(undefined),
+      }),
+    )
+    .nullish(),
+});
 
 /**
  * Melious exposes an OpenAI-compatible API whose catalog changes per account, so models
@@ -22,23 +34,26 @@ export function meliousProvider() {
     api: openAICompletionsApi(),
     fetchModels: async ({ credential, signal, baseUrl }) => {
       const key = credential?.type === "api_key" ? credential.key : undefined;
+
       if (!key) return [];
+
       const response = await fetch(`${baseUrl ?? MELIOUS_URL}/models`, {
         headers: { authorization: `Bearer ${key}` },
         signal,
       });
+
       if (!response.ok)
         throw new Error(`Melious model list failed with ${response.status}`);
-      const body = (await response.json()) as {
-        data?: { id?: unknown; name?: unknown }[];
-      };
+
+      const body = modelCatalog.parse(await response.json());
+
       return (body.data ?? []).flatMap(
         (entry): Model<"openai-completions">[] =>
-          typeof entry.id === "string"
+          entry.id !== undefined
             ? [
                 {
                   id: entry.id,
-                  name: typeof entry.name === "string" ? entry.name : entry.id,
+                  name: entry.name ?? entry.id,
                   api: "openai-completions",
                   provider: "melious",
                   baseUrl: baseUrl ?? MELIOUS_URL,

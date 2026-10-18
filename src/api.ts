@@ -12,6 +12,7 @@ import {
   type MCPServer,
 } from "./domain";
 import type { CrumbleService } from "./service";
+import type { ChatPreviewActivity, ReplyActivity } from "./service";
 import type { Scheduler } from "./scheduler";
 import type { MCPIntegrations } from "./integrations";
 import { providerModels } from "./runtime";
@@ -37,6 +38,7 @@ import {
 
 const text = z.string().trim().min(1).max(32000);
 const catalog = providerModels();
+
 const provider = z
   .string()
   .refine((value) => Boolean(catalog.getProvider(value)), "Unknown provider");
@@ -66,13 +68,19 @@ export function createAPI(
   app.use("/v1/*", bearerAuth({ token }));
   app.onError((error, c) => {
     if (error instanceof HTTPException) return error.getResponse();
+
     if (error instanceof z.ZodError)
       return c.json({ error: "Invalid request", details: error.issues }, 400);
-    if (error instanceof AppError)
+
+    if (error instanceof AppError) {
+      // SAFETY: AppError status codes are constructed from the server's known HTTP responses.
       return c.json({ error: error.message }, error.status as 400);
+    }
+
     if (error instanceof SyntaxError)
       return c.json({ error: "Invalid JSON" }, 400);
     console.error(error);
+
     return c.json({ error: "The server could not complete this request" }, 500);
   });
 
@@ -92,12 +100,14 @@ export function createAPI(
           path: ["transport"],
           message: "FCM is only valid for Android",
         });
+
       if (value.transport === "apns" && value.platform === "android")
         ctx.addIssue({
           code: "custom",
           path: ["transport"],
           message: "APNs is only valid for macOS or iOS",
         });
+
       if (value.transport === "apns" && !value.bundleId)
         ctx.addIssue({
           code: "custom",
@@ -105,6 +115,7 @@ export function createAPI(
           message: "APNs requires bundleId",
         });
     });
+
   app.get("/v1/push", (c) =>
     c.json({
       serverId: push?.serverId ?? "",
@@ -116,25 +127,32 @@ export function createAPI(
   );
   app.put("/v1/push/devices/:installationId", async (c) => {
     if (!push) throw new AppError(503, "Push delivery is unavailable");
+
     const installationId = z
       .string()
       .uuid()
       .parse(c.req.param("installationId"));
-    const input = pushInput.parse(await c.req.json()) as PushDeviceInput;
+
+    const input: PushDeviceInput = pushInput.parse(await c.req.json());
+
     return c.json(push.device(installationId, input));
   });
   app.delete("/v1/push/devices/:installationId", (c) => {
     push?.remove(z.string().uuid().parse(c.req.param("installationId")));
+
     return c.body(null, 204);
   });
   app.put("/v1/push/devices/:installationId/presence", async (c) => {
     if (!push) throw new AppError(503, "Push delivery is unavailable");
     const id = z.string().uuid().parse(c.req.param("installationId"));
+
     const input = z
       .object({ active: z.boolean(), agentId: z.string().uuid().nullable() })
       .parse(await c.req.json());
+
     if (!push.presence(id, input.active, input.agentId))
       throw new AppError(404, "Push device not found");
+
     return c.body(null, 204);
   });
 
@@ -142,22 +160,24 @@ export function createAPI(
   const checkServers = (agentId: string | null, serverIds: string[]) => {
     for (const serverId of serverIds) {
       const owner = store.getMCPServer(serverId)?.agentId;
+
       if (owner && owner !== agentId)
         throw new AppError(400, "That MCP server belongs to another bot");
     }
   };
+
   app.get("/v1/agents", async (c) =>
     c.json(
-      (await service.agentPreviews()).map(({ agent, lastMessage }) => ({
-        ...agent,
-        ...(lastMessage ? { lastMessage } : {}),
-      })),
+      (await service.agentPreviews()).map(({ agent, lastMessage }) => {
+        return lastMessage ? { ...agent, lastMessage } : agent;
+      }),
     ),
   );
   app.post("/v1/agents", async (c) => {
     const input = agentInput.parse(await c.req.json());
     provider.parse(input.provider);
     checkServers(null, input.mcpServers);
+
     return c.json(store.createAgent(input), 201);
   });
   app.get("/v1/agents/:id", (c) => c.json(service.agent(c.req.param("id"))));
@@ -166,32 +186,40 @@ export function createAPI(
     const input = agentInput.parse({ ...old, ...(await c.req.json()) });
     provider.parse(input.provider);
     checkServers(old.id, input.mcpServers);
+
     if (!input.enabled && old.enabled)
       for (const conversation of store.listConversations(old.id))
         await service.abort(conversation.id);
+
     return c.json(store.updateAgent(old.id, input));
   });
   app.post("/v1/agents/:id/duplicate", (c) => {
     service.agent(c.req.param("id"));
+
     return c.json(store.duplicateAgent(c.req.param("id")), 201);
   });
   app.delete("/v1/agents/:id", async (c) => {
     const personal = store
       .listMCPServers()
       .filter((server) => server.agentId === c.req.param("id"));
+
     await service.deleteAgent(c.req.param("id"));
+
     // The bot's personal servers went with it; their credentials and connections go too.
     for (const server of personal) {
       store.deleteCredential(`mcp:${server.id}`);
       signOut(store, server.id);
       await integrations?.disconnect(server.id);
     }
+
     return c.body(null, 204);
   });
+
   const snapshotQuery = (c: { req: { query: () => Record<string, string> } }) =>
     z
       .object({ limit: z.coerce.number().int().min(1).max(200).optional() })
       .parse(c.req.query());
+
   app.get("/v1/agents/:id/chat", async (c) =>
     c.json(await service.chatSnapshot(c.req.param("id"), snapshotQuery(c))),
   );
@@ -202,6 +230,7 @@ export function createAPI(
         limit: z.coerce.number().int().min(1).max(200).optional(),
       })
       .parse(c.req.query());
+
     return c.json(await service.history(c.req.param("id"), input));
   });
   app.post("/v1/agents/:id/messages", async (c) => {
@@ -217,6 +246,7 @@ export function createAPI(
         path: ["content"],
       })
       .parse(await c.req.json());
+
     return c.json(
       await service.sendChat(
         c.req.param("id"),
@@ -235,11 +265,13 @@ export function createAPI(
       .min(0)
       .max(MAX_ATTACHMENTS - 1)
       .parse(c.req.param("index"));
+
     const image = await runtime.attachment(
       service.agent(c.req.param("id")),
       c.req.param("entryId"),
       index,
     );
+
     return c.body(new Uint8Array(image.data), 200, {
       "Content-Type": image.mimeType,
       "Cache-Control": "private, max-age=31536000, immutable",
@@ -247,6 +279,7 @@ export function createAPI(
   });
   app.post("/v1/agents/:id/abort", async (c) => {
     await service.abortChat(c.req.param("id"));
+
     return c.body(null, 204);
   });
   app.post("/v1/agents/:id/compact", async (c) =>
@@ -256,12 +289,16 @@ export function createAPI(
     const options = snapshotQuery(c);
     const agent = service.agent(c.req.param("id"));
     const chat = await service.chat(agent.id);
+
     return streamSSE(c, async (stream) => {
       let finish!: () => void;
+
       const finished = new Promise<void>((resolve) => {
         finish = resolve;
       });
+
       stream.onAbort(finish);
+
       const sendSnapshot = async () => {
         if (!stream.aborted)
           await stream.writeSSE({
@@ -269,19 +306,24 @@ export function createAPI(
             data: JSON.stringify(await service.snapshot(chat.id, options)),
           });
       };
+
       const unsubscribe = service.subscribe(chat.id, () => {
         void sendSnapshot().catch(finish);
       });
+
       let stop: (() => Promise<void>) | undefined;
+
       try {
         stop = await runtime.watch(agent, chat.id, sendSnapshot, options);
       } catch (error) {
         unsubscribe();
         throw error;
       }
+
       const timer = setInterval(() => {
         stream.writeSSE({ event: "heartbeat", data: "{}" }).catch(finish);
       }, 15000);
+
       try {
         await finished;
       } finally {
@@ -296,40 +338,36 @@ export function createAPI(
   app.get("/v1/events", (c) =>
     streamSSE(c, async (stream) => {
       let finish!: () => void;
+
       const finished = new Promise<void>((resolve) => {
         finish = resolve;
       });
+
       stream.onAbort(finish);
-      const send = (data: unknown) => {
-        const activity = data as {
-          type?: string;
-          executionId?: string;
-          eventId?: string;
-          serverId?: string;
-          agentId: string;
-          agentName: string;
-          entryId?: string | null;
-          origin: string;
-          preview: string;
-          createdAt: string;
-        };
+
+      const send = (data: ReplyActivity | ChatPreviewActivity) => {
+        const activity = data;
+
         const canonical =
           activity.type === "reply" && push
             ? canonicalReplyEvent(activity, push.serverId)
             : activity.type === "reply"
               ? {
                   ...activity,
-                  eventId: activity.eventId ?? activity.executionId,
+                  eventId: activity.executionId,
                   serverId: "",
                   entryId: activity.entryId ?? null,
                 }
               : data;
+
         if (!stream.aborted)
           stream
             .writeSSE({ event: "activity", data: JSON.stringify(canonical) })
             .catch(finish);
       };
+
       const unsubscribers = [service.onActivity(send)];
+
       // Replay current previews on every connection so a sidebar can recover missed events.
       try {
         for (const { agent, lastMessage } of await service.agentPreviews())
@@ -343,13 +381,16 @@ export function createAPI(
         for (const unsubscribe of unsubscribers) unsubscribe?.();
         throw error;
       }
+
       const timer = setInterval(() => {
         stream.writeSSE({ event: "heartbeat", data: "{}" }).catch(finish);
       }, 15000);
+
       try {
         await finished;
       } finally {
         clearInterval(timer);
+
         for (const unsubscribe of unsubscribers) unsubscribe?.();
       }
     }),
@@ -357,11 +398,13 @@ export function createAPI(
 
   app.get("/v1/agents/:id/memories", (c) => {
     service.agent(c.req.param("id"));
+
     return c.json(store.listMemories(c.req.param("id")));
   });
   app.post("/v1/agents/:id/memories", async (c) => {
     service.agent(c.req.param("id"));
     const input = z.object({ content: text }).parse(await c.req.json());
+
     return c.json(
       store.createMemory({
         agentId: c.req.param("id"),
@@ -372,8 +415,10 @@ export function createAPI(
   });
   app.patch("/v1/agents/:id/memories/:memoryId", async (c) => {
     const memory = store.getMemory(c.req.param("memoryId"));
+
     if (!memory || memory.agentId !== c.req.param("id"))
       throw new AppError(404, "Memory not found");
+
     return c.json(
       store.updateMemory(
         memory.id,
@@ -383,20 +428,27 @@ export function createAPI(
   });
   app.delete("/v1/agents/:id/memories/:memoryId", (c) => {
     const memory = store.getMemory(c.req.param("memoryId"));
+
     if (!memory || memory.agentId !== c.req.param("id"))
       throw new AppError(404, "Memory not found");
     store.deleteMemory(memory.id);
+
     return c.body(null, 204);
   });
+
   const sharedMemory = (id: string) => {
     const memory = store.getMemory(id);
+
     if (!memory || memory.agentId !== null)
       throw new AppError(404, "Memory not found");
+
     return memory;
   };
+
   app.get("/v1/memories", (c) => c.json(store.listMemories(null)));
   app.post("/v1/memories", async (c) => {
     const input = z.object({ content: text }).parse(await c.req.json());
+
     return c.json(
       store.createMemory({ agentId: null, content: input.content }),
       201,
@@ -404,6 +456,7 @@ export function createAPI(
   });
   app.patch("/v1/memories/:id", async (c) => {
     const memory = sharedMemory(c.req.param("id"));
+
     return c.json(
       store.updateMemory(
         memory.id,
@@ -413,19 +466,24 @@ export function createAPI(
   });
   app.delete("/v1/memories/:id", (c) => {
     store.deleteMemory(sharedMemory(c.req.param("id")).id);
+
     return c.body(null, 204);
   });
   app.get("/v1/skills", (c) =>
     c.json([
       ...(options.commonSkills ?? []).map(
-        ({ id, name, description, instructions, path }) => ({
-          id,
-          name,
-          ...(description ? { description } : {}),
-          instructions,
-          path,
-          source: "bundled" as const,
-        }),
+        ({ id, name, description, instructions, path }) => {
+          const skill = {
+            id,
+            name,
+            description,
+            instructions,
+            path,
+            source: "bundled" as const,
+          };
+
+          return skill;
+        },
       ),
       ...store
         .listSkills()
@@ -439,7 +497,9 @@ export function createAPI(
     if (options.commonSkills?.some((skill) => skill.id === c.req.param("id")))
       throw new AppError(405, "Bundled skills are read-only");
     const old = store.getSkill(c.req.param("id"));
+
     if (!old) throw new AppError(404, "Skill not found");
+
     return c.json(
       store.updateSkill(
         old.id,
@@ -449,14 +509,18 @@ export function createAPI(
   });
   app.delete("/v1/skills/:id", (c) => {
     const skillId = c.req.param("id");
+
     if (options.commonSkills?.some((skill) => skill.id === skillId))
       throw new AppError(405, "Bundled skills are read-only");
+
     if (!store.deleteSkill(skillId)) throw new AppError(404, "Skill not found");
+
     for (const agent of store.listAgents())
       if (agent.sharedSkills?.includes(skillId))
         store.updateAgent(agent.id, {
           sharedSkills: agent.sharedSkills.filter((id) => id !== skillId),
         });
+
     return c.body(null, 204);
   });
   app.get("/v1/schedules", (c) =>
@@ -470,7 +534,9 @@ export function createAPI(
   );
   app.patch("/v1/schedules/:id", async (c) => {
     const old = store.getSchedule(c.req.param("id"));
+
     if (!old) throw new AppError(404, "Schedule not found");
+
     return c.json(
       await scheduler.update(
         old.id,
@@ -481,6 +547,7 @@ export function createAPI(
   app.delete("/v1/schedules/:id", (c) => {
     if (!store.deleteSchedule(c.req.param("id")))
       throw new AppError(404, "Schedule not found");
+
     return c.body(null, 204);
   });
   app.post("/v1/schedules/:id/run", async (c) =>
@@ -496,53 +563,69 @@ export function createAPI(
         limit: z.coerce.number().int().min(1).max(200).default(100),
       })
       .parse(c.req.query());
+
     const agents = input.agentId
       ? [service.agent(input.agentId)]
       : store.listAgents();
+
     // History is durable per agent; skip bots that have never opened a conversation so
     // this read-only feed does not initialize empty chats.
     const existing = agents.filter(
       (agent) => store.listConversations(agent.id, true).length,
     );
+
     const histories: {
       agent: (typeof existing)[number];
       messages: TranscriptMessage[];
     }[] = [];
+
     let historyHasMore = false;
+
     for (const agent of existing) {
       let before: string | undefined;
       const collected: TranscriptMessage[] = [];
       let pageHasMore = false;
+
       // Walk a bounded number of pages so a text-heavy transcript does not hide
       // older operational events while keeping this feed a cheap read.
       for (let pageNumber = 0; pageNumber < 5; pageNumber++) {
-        const page = await runtime.history(agent, {
+        const historyOptions = {
           limit: 200,
           includeActiveAssistant: true,
-          ...(before ? { before } : {}),
-        });
+          before,
+        };
+
+        const page = await runtime.history(agent, historyOptions);
+
         collected.push(...page.messages);
         pageHasMore = Boolean(page.hasMore);
+
         if (!page.hasMore || !page.oldestEntryId) break;
+
         if (operationalActivity(agent, collected).length >= input.limit) break;
         before = page.oldestEntryId;
       }
+
       historyHasMore ||= pageHasMore;
       histories.push({ agent, messages: collected });
     }
+
     const activities = sortActivity(
       histories.flatMap(({ agent, messages }) =>
         operationalActivity(agent, messages),
       ),
     );
+
     return c.json({
       activities: activities.slice(0, input.limit),
       hasMore: activities.length > input.limit || historyHasMore,
     });
   });
+
   const authenticatedModels = providerModels((name) =>
     store.getCredential(name),
   );
+
   app.get("/v1/providers", async (c) =>
     c.json(
       await Promise.all(
@@ -556,14 +639,19 @@ export function createAPI(
       ),
     ),
   );
+
   // Dynamic providers list their models only after a refresh with the saved key.
   const refreshed = async (name: string | undefined) => {
     await authenticatedModels.refresh(name ? { providers: [name] } : {});
+
     return authenticatedModels.getModels(name);
   };
+
   app.get("/v1/models", async (c) => {
     const name = c.req.query("provider");
+
     if (name) provider.parse(name);
+
     return c.json(
       (await refreshed(name)).map((model) => ({
         provider: model.provider,
@@ -576,29 +664,39 @@ export function createAPI(
   });
   app.put("/v1/providers/:provider", async (c) => {
     const name = provider.parse(c.req.param("provider"));
+
     const input = z
       .object({ apiKey: z.string().trim().min(1).max(16000) })
       .parse(await c.req.json());
+
     store.setCredential(name, input.apiKey);
+
     return c.json({ provider: name, configured: true });
   });
   app.delete("/v1/providers/:provider", (c) => {
     store.deleteCredential(provider.parse(c.req.param("provider")));
+
     return c.body(null, 204);
   });
+
   const describeServer = (server: MCPServer) => {
     const auth = hasOAuthTokens(store, server.id)
       ? "oauth"
       : store.getCredential(`mcp:${server.id}`)
         ? "token"
         : "none";
+
     return { ...server, auth, authenticated: auth !== "none" };
   };
+
   const mcpServer = (id: string) => {
     const server = store.getMCPServer(id);
+
     if (!server) throw new AppError(404, "MCP server not found");
+
     return server;
   };
+
   app.get("/v1/mcp-servers", (c) =>
     c.json(store.listMCPServers().map(describeServer)),
   );
@@ -612,6 +710,7 @@ export function createAPI(
           .regex(/^[a-z][a-z0-9+.-]*:\S+$/i, "Use an absolute redirect URI"),
       })
       .parse(await c.req.json());
+
     return c.json(
       await startAuthorization(
         store,
@@ -628,17 +727,21 @@ export function createAPI(
         iss: z.string().min(1).max(500).optional(),
       })
       .parse(await c.req.json());
+
     const server = mcpServer(c.req.param("id"));
     await finishAuthorization(store, server, code, state, iss);
     await integrations?.disconnect(server.id);
+
     return c.json(describeServer(server));
   });
   app.delete("/v1/mcp-servers/:id/oauth", async (c) => {
     const server = mcpServer(c.req.param("id"));
     signOut(store, server.id);
     await integrations?.disconnect(server.id);
+
     return c.json(describeServer(server));
   });
+
   const mcpInput = z.object({
     name: z.string().trim().min(1).max(100),
     url: z
@@ -650,30 +753,39 @@ export function createAPI(
     enabled: z.boolean().default(true),
     token: z.string().max(16000).optional(),
   });
+
   // A server added with `agentId` belongs to that bot, which starts using it right away.
   app.post("/v1/mcp-servers", async (c) => {
     const input = mcpInput
       .extend({ agentId: z.string().uuid().nullable().default(null) })
       .parse(await c.req.json());
+
     const owner = input.agentId ? service.agent(input.agentId) : null;
+
     if (owner && owner.mcpServers.length >= 30)
       throw new AppError(400, `${owner.name} already uses 30 MCP servers`);
     const server = store.createMCPServer(input);
+
     if (input.token) store.setCredential(`mcp:${server.id}`, input.token);
+
     if (owner)
       store.updateAgent(owner.id, {
         mcpServers: [...owner.mcpServers, server.id],
       });
+
     return c.json(server, 201);
   });
   app.patch("/v1/mcp-servers/:id", async (c) => {
     const old = store.getMCPServer(c.req.param("id"));
+
     if (!old) throw new AppError(404, "MCP server not found");
     const input = mcpInput.parse({ ...old, ...(await c.req.json()) });
-    if (input.token !== undefined)
-      input.token
-        ? store.setCredential(`mcp:${old.id}`, input.token)
-        : store.deleteCredential(`mcp:${old.id}`);
+
+    if (input.token !== undefined) {
+      if (input.token) store.setCredential(`mcp:${old.id}`, input.token);
+      else store.deleteCredential(`mcp:${old.id}`);
+    }
+
     return c.json(store.updateMCPServer(old.id, input));
   });
   app.delete("/v1/mcp-servers/:id", (c) => {
@@ -681,7 +793,9 @@ export function createAPI(
       throw new AppError(404, "MCP server not found");
     store.deleteCredential(`mcp:${c.req.param("id")}`);
     signOut(store, c.req.param("id"));
+
     return c.body(null, 204);
   });
+
   return app;
 }

@@ -31,6 +31,7 @@ export type ReplyActivity = {
   preview: string;
   createdAt: string;
 };
+
 export type ChatPreviewActivity = {
   type: "chat-preview";
   agentId: string;
@@ -53,14 +54,18 @@ export class CrumbleService {
 
   agent(id: string): Agent {
     const agent = this.store.getAgent(id);
+
     if (!agent) throw new AppError(404, "Agent not found");
+
     return agent;
   }
 
   conversation(id: string) {
     const conversation = this.store.getConversation(id);
+
     if (!conversation || conversation.archived)
       throw new AppError(404, "Conversation not found");
+
     return { conversation, agent: this.agent(conversation.agentId) };
   }
 
@@ -68,14 +73,17 @@ export class CrumbleService {
     const listeners = this.listeners.get(conversationId) ?? new Set();
     listeners.add(callback);
     this.listeners.set(conversationId, listeners);
+
     return () => {
       listeners.delete(callback);
+
       if (!listeners.size) this.listeners.delete(conversationId);
     };
   }
 
   onActivity(callback: (event: ReplyActivity | ChatPreviewActivity) => void) {
     this.activityListeners.add(callback);
+
     return () => {
       this.activityListeners.delete(callback);
     };
@@ -86,8 +94,10 @@ export class CrumbleService {
     return Promise.all(
       this.store.listAgents().map(async (agent) => {
         const conversation = this.store.listConversations(agent.id, true)[0];
+
         if (!conversation) return { agent, lastMessage: "" };
         const history = await this.runtime.history(agent, { limit: 200 });
+
         return { agent, lastMessage: latestMessagePreview(history.messages) };
       }),
     );
@@ -96,15 +106,18 @@ export class CrumbleService {
   private async announcePreview(agentId: string, conversationId: string) {
     if (!this.activityListeners.size) return;
     const agent = this.store.getAgent(agentId);
+
     if (!agent) return;
     const { messages } = await this.snapshot(conversationId);
     const lastMessage = latestMessagePreview(messages);
+
     const event: ChatPreviewActivity = {
       type: "chat-preview",
       agentId: agent.id,
       agentName: agent.name,
       lastMessage,
     };
+
     for (const listener of this.activityListeners) listener(event);
   }
 
@@ -112,9 +125,11 @@ export class CrumbleService {
   private async announceReply(execution: Execution) {
     if (!this.activityListeners.size) return;
     const agent = this.store.getAgent(execution.agentId);
+
     if (!agent) return;
     const { messages } = await this.snapshot(execution.conversationId);
     const lastMessage = latestMessagePreview(messages);
+
     for (const listener of this.activityListeners)
       listener({
         type: "chat-preview",
@@ -122,9 +137,11 @@ export class CrumbleService {
         agentName: agent.name,
         lastMessage,
       });
+
     const reply = messages.findLast(
       (message) => message.role === "assistant" && message.content.trim(),
     );
+
     const event: ReplyActivity = {
       type: "reply",
       executionId: execution.id,
@@ -135,6 +152,7 @@ export class CrumbleService {
       preview: reply?.content.trim().slice(0, 240) ?? "",
       createdAt: execution.createdAt,
     };
+
     for (const listener of this.activityListeners) listener(event);
   }
 
@@ -144,14 +162,17 @@ export class CrumbleService {
 
   async snapshot(conversationId: string, options: { limit?: number } = {}) {
     const { agent, conversation } = this.conversation(conversationId);
+
     const snapshot = await this.runtime.snapshot(
       agent,
       conversationId,
       options,
     );
+
     const latest = this.store
       .listExecutions(agent.id)
       .find((execution) => execution.conversationId === conversationId);
+
     return {
       ...snapshot,
       agentId: agent.id,
@@ -163,17 +184,21 @@ export class CrumbleService {
   /** The bot's one continuous chat, created on first use and stable across restarts. */
   async chat(agentId: string): Promise<Conversation> {
     const opening = this.chatOpening.get(agentId);
+
     if (opening) return opening;
+
     const promise = (async () => {
       const agent = this.agent(agentId);
       const saved = this.store.getSetting<string>(`chat:${agentId}`);
       const existing = saved ? this.store.getConversation(saved) : undefined;
+
       if (existing?.agentId === agentId)
         return existing.archived
           ? this.store.restoreConversation(existing.id)!
           : existing;
       // Upgrades from session-based installs continue the most recent session's working context.
       const legacy = this.store.listConversations(agentId, true)[0];
+
       const chat = legacy
         ? legacy.archived
           ? this.store.restoreConversation(legacy.id)!
@@ -182,10 +207,14 @@ export class CrumbleService {
             { agentId, title: agent.name },
             await this.runtime.openChat(agent),
           );
+
       this.store.setSetting(`chat:${agentId}`, chat.id);
+
       return chat;
     })();
+
     this.chatOpening.set(agentId, promise);
+
     try {
       return await promise;
     } finally {
@@ -243,6 +272,7 @@ export class CrumbleService {
     } = {},
   ) {
     const { agent } = this.conversation(conversationId);
+
     if (!agent.enabled)
       throw new AppError(409, "Enable this agent before starting work");
     const replyTo = options.replyTo ?? null;
@@ -251,6 +281,7 @@ export class CrumbleService {
     prepareAttachments(attachments);
     const attachmentsDigest = attachmentDigest(attachments);
     let execution = this.store.findExecution(conversationId, requestId);
+
     if (
       execution &&
       (execution.prompt !== content ||
@@ -280,6 +311,7 @@ export class CrumbleService {
       (error) =>
         console.error("Chat preview announcement failed", execution.id, error),
     );
+
     return this.store.getExecution(execution.id)!;
   }
 
@@ -292,27 +324,33 @@ export class CrumbleService {
           "Scheduled task",
       };
     const [prefix, sourceAgentId] = execution.requestId.split(":");
+
     if (prefix === "delegate" && sourceAgentId)
       return {
         kind: "bot",
         agentId: sourceAgentId,
         name: this.store.getAgent(sourceAgentId)?.name ?? "Another bot",
       };
+
     return { kind: "owner" };
   }
 
   private async admit(execution: Execution) {
     if (["done", "cancelled"].includes(execution.status)) return;
+
     // Admission can fail after Pi has committed but before the host gets its ID.
     // Reuse the durable request ID; never create another user turn to recover it.
     if (execution.status === "failed" && execution.submissionId) return;
     const agent = this.agent(execution.agentId);
+
     if (!agent.enabled) {
       await this.runtime.abort(agent, execution.conversationId);
       this.store.updateExecution(execution.id, { status: "cancelled" });
       this.changed(execution.conversationId);
+
       return;
     }
+
     try {
       const submissionId =
         execution.submissionId ??
@@ -327,17 +365,20 @@ export class CrumbleService {
             attachments: this.store.executionAttachments(execution.id),
           },
         ));
+
       this.store.updateExecution(execution.id, {
         submissionId,
         status: "running",
       });
       this.store.clearExecutionAttachments(execution.id);
+
       if (!this.monitoring.has(execution.id)) {
         const monitor = this.runtime
           .wait(submissionId, agent)
           .then((result) => {
             if (this.closing) return;
             const current = this.store.getExecution(execution.id);
+
             if (!current || current.status === "cancelled") return;
             this.store.updateExecution(execution.id, {
               status: result.status === "done" ? "done" : "failed",
@@ -349,6 +390,7 @@ export class CrumbleService {
                     : "The agent could not answer this input",
             });
             this.changed(execution.conversationId);
+
             if (result.status === "done")
               void this.announceReply(execution).catch((error) =>
                 console.error("Reply announcement failed", execution.id, error),
@@ -356,6 +398,7 @@ export class CrumbleService {
           })
           .catch((error) => {
             if (this.closing) return;
+
             if (this.store.getExecution(execution.id))
               this.store.updateExecution(execution.id, {
                 status: "failed",
@@ -364,6 +407,7 @@ export class CrumbleService {
             this.changed(execution.conversationId);
           })
           .finally(() => this.monitoring.delete(execution.id));
+
         this.monitoring.set(execution.id, monitor);
       }
     } catch (error) {
@@ -385,11 +429,15 @@ export class CrumbleService {
     const existing = this.store
       .listExecutions(agentId)
       .find((e) => e.requestId === requestId);
+
     if (existing) {
       await this.admit(existing);
+
       return existing;
     }
+
     const chat = await this.chat(agentId);
+
     return this.send(chat.id, prompt, requestId, { scheduleId });
   }
 
@@ -410,6 +458,7 @@ export class CrumbleService {
     const chat = await this.chat(agentId);
     const taskId = await this.runtime.compact(agent, chat.id);
     this.changed(chat.id);
+
     return taskId;
   }
 
@@ -419,6 +468,7 @@ export class CrumbleService {
 
   async abort(conversationId: string) {
     const { agent } = this.conversation(conversationId);
+
     const active = this.store
       .listExecutions(agent.id)
       .filter(
@@ -426,16 +476,20 @@ export class CrumbleService {
           execution.conversationId === conversationId &&
           ["pending", "running"].includes(execution.status),
       );
+
     await this.runtime.abort(agent, conversationId);
+
     for (const execution of active) {
       if (this.store.getExecution(execution.id)?.status !== "done")
         this.store.updateExecution(execution.id, { status: "cancelled" });
     }
+
     this.changed(conversationId);
   }
 
   async deleteAgent(id: string) {
     this.agent(id);
+
     for (const conversation of this.store.listConversations(id))
       await this.abort(conversation.id);
     await this.runtime.deleteAgent(id);

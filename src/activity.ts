@@ -1,11 +1,17 @@
+import type { JsonValue } from "@earendil-works/chord";
+import { z } from "zod";
 import type { Agent } from "./domain";
-import type { TranscriptMessage } from "./transcript";
+import type { BotCommunication, TranscriptMessage } from "./transcript";
 
 export type ActivityKind =
   | "tool-call"
   | "tool-result"
   | "mcp-call"
   | "bot-message";
+
+export type ActivityDetail = JsonValue | BotCommunication;
+
+export type ActivityDetails = Record<string, ActivityDetail | undefined>;
 
 export type OperationalActivity = {
   id: string;
@@ -14,13 +20,30 @@ export type OperationalActivity = {
   entryId: string;
   timestamp?: number;
   kind: ActivityKind;
-  details: Record<string, unknown>;
+  details: ActivityDetails;
 };
 
-const object = (value: unknown): Record<string, unknown> | undefined =>
-  value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
+const jsonValue: z.ZodType<JsonValue> = z.json();
+const toolDetailsInput = z.object({ calls: z.unknown().optional() });
+
+const nestedCallInput = z.object({
+  id: z.unknown().optional(),
+  name: z.unknown().optional(),
+  args: z.unknown().optional(),
+  status: z.unknown().optional(),
+  durationMs: z.unknown().optional(),
+  error: z.unknown().optional(),
+});
+
+const blockInput = z.object({
+  type: z.unknown().optional(),
+  id: z.unknown().optional(),
+  name: z.unknown().optional(),
+  arguments: z.unknown().optional(),
+  toolCallId: z.unknown().optional(),
+  content: z.unknown().optional(),
+  isError: z.unknown().optional(),
+});
 
 const isMcpTool = (name: string) => /^(mcp(?:[_:/-]|$))/i.test(name);
 
@@ -30,125 +53,155 @@ export function operationalActivity(
   messages: TranscriptMessage[],
 ): OperationalActivity[] {
   const result: OperationalActivity[] = [];
+
   for (const message of messages) {
+    const activity = (
+      id: string,
+      kind: ActivityKind,
+      details: ActivityDetails,
+    ): OperationalActivity => {
+      const item: OperationalActivity = {
+        id,
+        agentId: agent.id,
+        agentName: agent.name,
+        entryId: message.entryId,
+        kind,
+        details,
+      };
+
+      if (message.timestamp !== undefined) item.timestamp = message.timestamp;
+
+      return item;
+    };
+
     if (message.kind === "bot-message" && message.communication) {
-      result.push({
-        id: `${agent.id}:${message.id}:bot-message`,
-        agentId: agent.id,
-        agentName: agent.name,
-        entryId: message.entryId,
-        ...(message.timestamp === undefined
-          ? {}
-          : { timestamp: message.timestamp }),
-        kind: "bot-message",
-        details: {
-          content: message.content,
-          communication: message.communication,
-        },
-      });
+      const details = {
+        content: message.content,
+        communication: message.communication,
+      } satisfies ActivityDetails;
+
+      result.push(
+        activity(
+          `${agent.id}:${message.id}:bot-message`,
+          "bot-message",
+          details,
+        ),
+      );
     }
+
     if (message.role === "toolResult" || message.toolCallId) {
-      result.push({
-        id: `${agent.id}:${message.id}:tool-result`,
-        agentId: agent.id,
-        agentName: agent.name,
-        entryId: message.entryId,
-        ...(message.timestamp === undefined
-          ? {}
-          : { timestamp: message.timestamp }),
-        kind: "tool-result",
-        details: {
-          ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
-          ...(message.toolName ? { toolName: message.toolName } : {}),
-          ...(message.isError === undefined
-            ? {}
-            : { isError: message.isError }),
-          ...(message.content ? { content: message.content } : {}),
-        },
-      });
+      const details = {
+        toolCallId: message.toolCallId,
+        toolName: message.toolName,
+        isError: message.isError,
+        content: message.content || undefined,
+      } satisfies ActivityDetails;
+
+      result.push(
+        activity(
+          `${agent.id}:${message.id}:tool-result`,
+          "tool-result",
+          details,
+        ),
+      );
     }
-    const nested = object(message.toolDetails)?.calls;
-    if (Array.isArray(nested))
+
+    const toolDetails = toolDetailsInput.safeParse(message.toolDetails).data;
+    const nested = z.array(z.unknown()).safeParse(toolDetails?.calls).data;
+
+    if (nested)
       nested.forEach((rawCall, index) => {
-        const call = object(rawCall);
-        if (!call || typeof call.name !== "string") return;
+        const call = nestedCallInput.safeParse(rawCall).data;
+
+        if (!call) return;
+        const name = z.string().safeParse(call.name).data;
+
+        if (name === undefined) return;
         const callId = String(call.id ?? index);
-        result.push({
-          id: `${agent.id}:${message.id}:nested-${callId}`,
-          agentId: agent.id,
-          agentName: agent.name,
-          entryId: message.entryId,
-          ...(message.timestamp === undefined
-            ? {}
-            : { timestamp: message.timestamp }),
-          kind: isMcpTool(call.name) ? "mcp-call" : "tool-call",
-          details: {
-            parentToolCallId: message.toolCallId,
-            name: call.name,
-            ...(typeof call.args === "string" ? { args: call.args } : {}),
-            ...(typeof call.status === "string" ? { status: call.status } : {}),
-            ...(typeof call.durationMs === "number"
-              ? { durationMs: call.durationMs }
-              : {}),
-            ...(typeof call.error === "string" ? { error: call.error } : {}),
-          },
-        });
+        const args = z.string().safeParse(call.args).data;
+        const status = z.string().safeParse(call.status).data;
+        const durationMs = z.number().safeParse(call.durationMs).data;
+        const error = z.string().safeParse(call.error).data;
+
+        const details = {
+          parentToolCallId: message.toolCallId,
+          name,
+          args,
+          status,
+          durationMs,
+          error,
+        } satisfies ActivityDetails;
+
+        result.push(
+          activity(
+            `${agent.id}:${message.id}:nested-${callId}`,
+            isMcpTool(name) ? "mcp-call" : "tool-call",
+            details,
+          ),
+        );
       });
-    if (!Array.isArray(message.blocks)) continue;
-    message.blocks.forEach((rawBlock, index) => {
-      const block = object(rawBlock);
-      if (!block || typeof block.type !== "string") return;
-      if (block.type === "toolCall" && typeof block.name === "string") {
-        const kind = isMcpTool(block.name) ? "mcp-call" : "tool-call";
-        result.push({
-          id: `${agent.id}:${message.id}:block-${index}`,
-          agentId: agent.id,
-          agentName: agent.name,
-          entryId: message.entryId,
-          ...(message.timestamp === undefined
-            ? {}
-            : { timestamp: message.timestamp }),
-          kind,
-          details: {
-            ...(typeof block.id === "string" ? { id: block.id } : {}),
-            name: block.name,
-            ...(block.arguments === undefined
-              ? {}
-              : { arguments: block.arguments }),
-          },
-        });
-      } else if (block.type === "toolResult") {
-        result.push({
-          id: `${agent.id}:${message.id}:block-${index}`,
-          agentId: agent.id,
-          agentName: agent.name,
-          entryId: message.entryId,
-          ...(message.timestamp === undefined
-            ? {}
-            : { timestamp: message.timestamp }),
-          kind: "tool-result",
-          details: {
-            ...(typeof block.toolCallId === "string"
-              ? { toolCallId: block.toolCallId }
-              : {}),
-            ...(block.content === undefined ? {} : { content: block.content }),
-            ...(typeof block.isError === "boolean"
-              ? { isError: block.isError }
-              : {}),
-          },
-        });
+
+    const blocks = z.array(z.unknown()).safeParse(message.blocks).data;
+
+    if (!blocks) continue;
+    blocks.forEach((rawBlock, index) => {
+      const block = blockInput.safeParse(rawBlock).data;
+      const type = z.string().safeParse(block?.type).data;
+
+      if (!block || !type) return;
+
+      if (type === "toolCall") {
+        const name = z.string().safeParse(block.name).data;
+
+        if (name === undefined) return;
+        const id = z.string().safeParse(block.id).data;
+
+        const details = {
+          id,
+          name,
+          arguments: jsonValue.safeParse(block.arguments).data,
+        } satisfies ActivityDetails;
+
+        result.push(
+          activity(
+            `${agent.id}:${message.id}:block-${index}`,
+            isMcpTool(name) ? "mcp-call" : "tool-call",
+            details,
+          ),
+        );
+      } else if (type === "toolResult") {
+        const toolCallId = z.string().safeParse(block.toolCallId).data;
+        const isError = z.boolean().safeParse(block.isError).data;
+
+        const details = {
+          toolCallId,
+          content: jsonValue.safeParse(block.content).data,
+          isError,
+        } satisfies ActivityDetails;
+
+        result.push(
+          activity(
+            `${agent.id}:${message.id}:block-${index}`,
+            "tool-result",
+            details,
+          ),
+        );
       }
     });
   }
+
   return result;
 }
 
 export function sortActivity(items: OperationalActivity[]) {
   return items.sort((a, b) => {
     const timestamp = (b.timestamp ?? 0) - (a.timestamp ?? 0);
+
     if (timestamp) return timestamp;
+
     const entry = (id: string) =>
       Number(id.slice(id.lastIndexOf(":") + 1)) || 0;
+
     return entry(b.entryId) - entry(a.entryId) || b.id.localeCompare(a.id);
   });
 }

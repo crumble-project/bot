@@ -18,7 +18,9 @@ const ids = {
   disabled: "00000000-0000-4000-8000-000000000103",
   other: "00000000-0000-4000-8000-000000000104",
 };
+
 const dirs: string[] = [];
+
 const input = (name: string, delegates: string[] = [], enabled = true) => ({
   name,
   avatar: "sparkles",
@@ -47,6 +49,7 @@ function setup(
   const dir = mkdtempSync(join(tmpdir(), "bot-messaging-"));
   dirs.push(dir);
   let conversation = 0;
+
   const runtime: any = {
     openChat: async (agent: Agent) => `${agent.id}:${++conversation}`,
     submit: async (
@@ -69,12 +72,14 @@ function setup(
     close: async () => {},
     recordBotMessage: async () => {},
   };
+
   const store = new Store(dir);
   const service = new CrumbleService(store, runtime);
   const source = store.createAgent(input("Source", [ids.target]), ids.source);
   const target = store.createAgent(input("Bot2"), ids.target);
   store.createAgent(input("Disabled", [ids.target], false), ids.disabled);
   store.createAgent(input("Other", [ids.target]), ids.other);
+
   return {
     store,
     service,
@@ -122,16 +127,19 @@ test("rejects disabled and ambiguous name recipients", async () => {
 
 test("send resolves IDs, exact names, and @mentions and deduplicates task requests", async () => {
   const { messaging, store } = setup();
+
   const first = await messaging.send(ids.source, {
     recipient: "@Bot2",
     message: "How do you feel?",
     requestId: "ask-1",
   });
+
   const duplicate = await messaging.send(ids.source, {
     recipient: ids.target,
     message: "How do you feel?",
     requestId: "ask-1",
   });
+
   expect(duplicate.executionId).toBe(first.executionId);
   expect(first).toMatchObject({ agentId: ids.target, agent: "Bot2" });
   await expect(
@@ -146,19 +154,23 @@ test("send resolves IDs, exact names, and @mentions and deduplicates task reques
 
 test("a replay keeps the original bot after its name changes", async () => {
   const { messaging, store } = setup();
+
   const first = await messaging.send(ids.source, {
     recipient: "@Bot2",
     message: "hello",
     requestId: "renamed",
   });
+
   store.updateAgent(ids.target, { name: "Renamed" });
   store.updateAgent(ids.other, { name: "Bot2" });
   store.updateAgent(ids.source, { delegates: [ids.target, ids.other] });
+
   const replay = await messaging.send(ids.source, {
     recipient: "@bot2",
     message: "hello",
     requestId: "renamed",
   });
+
   expect(replay.executionId).toBe(first.executionId);
   expect(replay.agentId).toBe(ids.target);
   expect(store.listExecutions(ids.other)).toHaveLength(0);
@@ -167,16 +179,20 @@ test("a replay keeps the original bot after its name changes", async () => {
 
 test("rejects reusing one source request for a different authorized recipient", async () => {
   const { messaging, store } = setup();
+
   const secondTarget = store.createAgent(
     input("Bot3"),
     "00000000-0000-4000-8000-000000000106",
   );
+
   store.updateAgent(ids.source, { delegates: [ids.target, secondTarget.id] });
+
   const first = await messaging.send(ids.source, {
     recipient: ids.target,
     message: "same request",
     requestId: "cross-target-1",
   });
+
   await expect(
     messaging.send(ids.source, {
       recipient: secondTarget.id,
@@ -192,21 +208,27 @@ test("rejects reusing one source request for a different authorized recipient", 
 
 test("result waits for completion and rejects revoked or foreign receipts", async () => {
   let resolveWait!: (value: { status: "done" }) => void;
+
   const pending = new Promise<{ status: "done" }>(
     (resolve) => (resolveWait = resolve),
   );
+
   const { messaging, service, store } = setup(() => pending);
+
   const sent = await messaging.send(ids.source, {
     recipient: "Bot2",
     message: "Tell me how you feel",
     requestId: "ask-2",
   });
+
   const immediate = await messaging.result(ids.source, sent.executionId);
   expect(immediate.status).toMatch(/pending|running/);
   resolveWait({ status: "done" });
+
   const result = await messaging.result(ids.source, sent.executionId, {
     waitMs: 1000,
   });
+
   expect(result).toMatchObject({
     executionId: sent.executionId,
     agentId: ids.target,
@@ -226,37 +248,50 @@ test("result waits for completion and rejects revoked or foreign receipts", asyn
 });
 
 test("result returns durable failure and cancellation states", async () => {
-  const { messaging, service, store } = setup(async () => ({
+  const {
+    messaging,
+    service: _service,
+    store,
+  } = setup(async () => ({
     status: "unanswered",
     reason: "target failed",
     detail: "target failed",
   }));
+
   const failed = await messaging.send(ids.source, {
     recipient: "Bot2",
     message: "fail",
     requestId: "ask-3",
   });
+
   const failure = await messaging.result(ids.source, failed.executionId, {
     waitMs: 1000,
   });
+
   expect(failure).toMatchObject({ status: "failed", error: "target failed" });
 
   let resolveCancelled!: (value: { status: "done" }) => void;
+
   const cancelledWait = new Promise<{ status: "done" }>(
     (resolve) => (resolveCancelled = resolve),
   );
+
   const cancelledMessaging = setup(async () => cancelledWait);
+
   const cancelled = await cancelledMessaging.messaging.send(ids.source, {
     recipient: "Bot2",
     message: "cancel",
     requestId: "ask-4",
   });
+
   const cancelledService = cancelledMessaging.service;
   await cancelledService.abort((await cancelledService.chat(ids.target)).id);
+
   const cancellation = await cancelledMessaging.messaging.result(
     ids.source,
     cancelled.executionId,
   );
+
   expect(cancellation.status).toBe("cancelled");
   resolveCancelled({ status: "done" });
   await cancelledService.close();
@@ -265,41 +300,54 @@ test("result returns durable failure and cancellation states", async () => {
 
 test("timeout and caller cancellation stop only the waiter", async () => {
   let resolveWait!: (value: { status: "done" }) => void;
+
   const pending = new Promise<{ status: "done" }>(
     (resolve) => (resolveWait = resolve),
   );
+
   const { messaging, store } = setup(async () => pending);
+
   const sent = await messaging.send(ids.source, {
     recipient: "Bot2",
     message: "wait",
     requestId: "ask-5",
   });
+
   const timed = await messaging.result(ids.source, sent.executionId, {
     waitMs: 10,
   });
+
   expect(timed.status).toMatch(/pending|running/);
   const controller = new AbortController();
+
   const waiter = messaging.result(ids.source, sent.executionId, {
     waitMs: 1000,
+    // SAFETY: The result API accepts this minimal context fixture.
     context: { abortSignal: controller.signal } as Context,
   });
+
   controller.abort();
   await expect(waiter).rejects.toThrow();
   resolveWait({ status: "done" });
+
   const finished = await messaging.result(ids.source, sent.executionId, {
     waitMs: 1000,
   });
+
   expect(finished.status).toBe("done");
   store.close();
 });
 
 test("concurrent opposing asks cannot admit a delegation cycle", async () => {
   let resolveWait!: (value: { status: "done" }) => void;
+
   const pending = new Promise<{ status: "done" }>(
     (resolve) => (resolveWait = resolve),
   );
+
   const { messaging, service, store } = setup(async () => pending);
   store.updateAgent(ids.target, { delegates: [ids.source] });
+
   const results = await Promise.allSettled([
     messaging.send(ids.source, {
       recipient: ids.target,
@@ -312,6 +360,7 @@ test("concurrent opposing asks cannot admit a delegation cycle", async () => {
       requestId: "cycle-b",
     }),
   ]);
+
   expect(
     results.filter((result) => result.status === "fulfilled"),
   ).toHaveLength(1);
