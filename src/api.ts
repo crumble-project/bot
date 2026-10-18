@@ -118,8 +118,12 @@ export function createAPI(
     }
     return c.body(null, 204);
   });
+  const snapshotQuery = (c: { req: { query: () => Record<string, string> } }) =>
+    z
+      .object({ limit: z.coerce.number().int().min(1).max(200).optional() })
+      .parse(c.req.query());
   app.get("/v1/agents/:id/chat", async (c) =>
-    c.json(await service.chatSnapshot(c.req.param("id"))),
+    c.json(await service.chatSnapshot(c.req.param("id"), snapshotQuery(c))),
   );
   app.get("/v1/agents/:id/chat/history", async (c) => {
     const input = z
@@ -179,6 +183,7 @@ export function createAPI(
     c.json({ taskId: await service.compact(c.req.param("id")) }, 202),
   );
   app.get("/v1/agents/:id/events", async (c) => {
+    const options = snapshotQuery(c);
     const agent = service.agent(c.req.param("id"));
     const chat = await service.chat(agent.id);
     return streamSSE(c, async (stream) => {
@@ -191,7 +196,7 @@ export function createAPI(
         if (!stream.aborted)
           await stream.writeSSE({
             event: "snapshot",
-            data: JSON.stringify(await service.snapshot(chat.id)),
+            data: JSON.stringify(await service.snapshot(chat.id, options)),
           });
       };
       const unsubscribe = service.subscribe(chat.id, () => {
@@ -199,7 +204,7 @@ export function createAPI(
       });
       let stop: (() => Promise<void>) | undefined;
       try {
-        stop = await runtime.watch(agent, chat.id, sendSnapshot);
+        stop = await runtime.watch(agent, chat.id, sendSnapshot, options);
       } catch (error) {
         unsubscribe();
         throw error;

@@ -113,6 +113,25 @@ describe("durable transcript helpers", () => {
     expect(older.messages.map((m) => m.content)).toEqual(["one"]);
   });
 
+  test("limits the newest page and paginates older messages without loss", async () => {
+    const harness = fakeHarness({
+      1: [user(4, "four"), user(3, "three"), user(2, "two"), user(1, "one")],
+    });
+    const pages: string[] = [];
+    let page = await readTranscript(harness, "a", { limit: 2 });
+    pages.push(...page.messages.map((message) => message.content));
+    expect(pages).toEqual(["three", "four"]);
+    expect(page.hasMore).toBe(true);
+    while (page.hasMore) {
+      page = await readTranscript(harness, "a", {
+        before: page.oldestEntryId!,
+        limit: 2,
+      });
+      pages.unshift(...page.messages.map((message) => message.content));
+    }
+    expect(pages).toEqual(["one", "two", "three", "four"]);
+  });
+
   test("prepares bounded historical context while preserving the original display text", async () => {
     const long = "x".repeat(9000);
     const harness = fakeHarness({

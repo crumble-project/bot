@@ -475,6 +475,7 @@ export class AgentRuntime {
   async snapshot(
     agent: Agent,
     conversationId: string,
+    options: { limit?: number } = {},
   ): Promise<RuntimeSnapshot> {
     const { harness } = await this.open(agent);
     const conversation = await harness.conversation(
@@ -488,7 +489,7 @@ export class AgentRuntime {
         LiveState | undefined;
       return {
         conversationId,
-        ...(await readTranscript(harness, agent.id)),
+        ...(await readTranscript(harness, agent.id, options)),
         live,
         partial: contentText(live?.generation?.message?.content),
         usage: view.value.docs["pi.usage"],
@@ -542,6 +543,7 @@ export class AgentRuntime {
     agent: Agent,
     conversationId: string,
     callback: RuntimeWatch,
+    options: { limit?: number } = {},
   ): Promise<() => Promise<void>> {
     const stream = await watchEvents(
       (await this.open(agent)).harness,
@@ -549,9 +551,9 @@ export class AgentRuntime {
       BACKGROUND_CONTEXT,
     );
     try {
-      await callback(await this.snapshot(agent, conversationId));
+      await callback(await this.snapshot(agent, conversationId, options));
       stream.start(async () =>
-        callback(await this.snapshot(agent, conversationId)),
+        callback(await this.snapshot(agent, conversationId, options)),
       );
       return async () => {
         await stream.stop();

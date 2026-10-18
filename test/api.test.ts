@@ -199,6 +199,69 @@ describe("HTTP API", () => {
     store.close();
   });
 
+  test("accepts a bounded chat snapshot limit and rejects invalid limits", async () => {
+    const { app, store, runtime } = setup();
+    const agent = await req(app, "/v1/agents", {
+      method: "POST",
+      body: JSON.stringify(agentInput("Limited")),
+    }).then((r: Response) => r.json());
+    let received: unknown;
+    runtime.snapshot = async (
+      _agent: unknown,
+      conversationId: string,
+      options: unknown,
+    ) => {
+      received = options;
+      return {
+        conversationId,
+        messages: [],
+        live: null,
+        status: "idle",
+        updatedAt: Date.now(),
+      };
+    };
+    const limited = await req(app, `/v1/agents/${agent.id}/chat?limit=5`);
+    expect(limited.status).toBe(200);
+    expect(received).toEqual({ limit: 5 });
+    expect((await req(app, `/v1/agents/${agent.id}/chat?limit=0`)).status).toBe(
+      400,
+    );
+    expect(
+      (await req(app, `/v1/agents/${agent.id}/chat?limit=201`)).status,
+    ).toBe(400);
+    store.close();
+  });
+
+  test("forwards the bounded limit to agent event snapshots", async () => {
+    const { app, store, runtime } = setup();
+    const agent = await req(app, "/v1/agents", {
+      method: "POST",
+      body: JSON.stringify(agentInput("Event Limit")),
+    }).then((r: Response) => r.json());
+    let received: unknown;
+    runtime.snapshot = async (_agent: unknown, conversationId: string) => ({
+      conversationId,
+      messages: [],
+      live: null,
+      status: "idle",
+      updatedAt: Date.now(),
+    });
+    runtime.watch = async (
+      _agent: unknown,
+      _conversationId: string,
+      _callback: unknown,
+      options: unknown,
+    ) => {
+      received = options;
+      return async () => {};
+    };
+    const response = await req(app, `/v1/agents/${agent.id}/events?limit=5`);
+    expect(response.status).toBe(200);
+    expect(received).toEqual({ limit: 5 });
+    await response.body?.cancel();
+    store.close();
+  });
+
   test("accepts attachments on messages only, within their limits", async () => {
     const { app } = setup();
     const agent = await req(app, "/v1/agents", {

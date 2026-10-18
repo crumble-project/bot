@@ -138,9 +138,13 @@ export class CrumbleService {
     for (const listener of this.listeners.get(conversationId) ?? []) listener();
   }
 
-  async snapshot(conversationId: string) {
+  async snapshot(conversationId: string, options: { limit?: number } = {}) {
     const { agent, conversation } = this.conversation(conversationId);
-    const snapshot = await this.runtime.snapshot(agent, conversationId);
+    const snapshot = await this.runtime.snapshot(
+      agent,
+      conversationId,
+      options,
+    );
     const latest = this.store
       .listExecutions(agent.id)
       .find((execution) => execution.conversationId === conversationId);
@@ -203,8 +207,8 @@ export class CrumbleService {
     );
   }
 
-  async chatSnapshot(agentId: string) {
-    return this.snapshot((await this.chat(agentId)).id);
+  async chatSnapshot(agentId: string, options: { limit?: number } = {}) {
+    return this.snapshot((await this.chat(agentId)).id, options);
   }
 
   async history(agentId: string, options: { before?: string; limit?: number }) {
