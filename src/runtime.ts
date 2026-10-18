@@ -15,8 +15,10 @@ import {
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { AppError, type Agent } from "./domain";
 import { meliousProvider } from "./providers";
+import { prepareAttachments, type AttachmentInput } from "./attachments";
 import {
   prepareReply,
+  readAttachment,
   readResponse,
   readTranscript,
   type MessageOrigin,
@@ -318,9 +320,14 @@ export class AgentRuntime {
     conversationId: string,
     text: string,
     requestId?: string,
-    options: { replyTo?: string; origin?: MessageOrigin } = {},
+    options: {
+      replyTo?: string;
+      origin?: MessageOrigin;
+      attachments?: AttachmentInput[];
+    } = {},
   ): Promise<string> {
     const record = await this.open(agent);
+    const attached = prepareAttachments(options.attachments ?? []);
     let prepared: { modelContent: string; data: Record<string, JsonValue> } = {
       modelContent: text,
       data: { text },
@@ -340,22 +347,55 @@ export class AgentRuntime {
         );
       }
     const conversation = await this.configure(record, agent, conversationId);
+    const model = record.models.getModel(agent.provider, agent.model);
+    // Catalogs that list no modalities are trusted; the provider reports anything it refuses.
+    if (
+      attached.info.some((item) => item.kind === "image") &&
+      model?.input &&
+      !model.input.includes("image")
+    )
+      throw new AppError(
+        400,
+        `${agent.model} can't read images. Choose a model that accepts images in the agent's profile.`,
+      );
+    const content = attached.blocks.length
+      ? [
+          ...(prepared.modelContent.trim()
+            ? [{ type: "text" as const, text: prepared.modelContent }]
+            : []),
+          ...attached.blocks,
+        ]
+      : prepared.modelContent;
     const submission = await conversation.submit(
       {
         type: "input",
-        content: prepared.modelContent,
+        content,
         requestId,
         entry: {
           kind: "crumble.message",
           data: {
             ...prepared.data,
             ...(options.origin ? { origin: options.origin } : {}),
+            ...(attached.info.length ? { attachments: attached.info } : {}),
           },
         },
       },
       BACKGROUND_CONTEXT,
     );
     return String(submission.id);
+  }
+
+  /** The bytes of an attached image, read back from the input entry that carries it. */
+  async attachment(agent: Agent, entryId: string, index: number) {
+    const record = await this.open(agent);
+    try {
+      return await readAttachment(record.harness, agent.id, entryId, index);
+    } catch (error) {
+      throw new AppError(
+        404,
+        error instanceof Error ? error.message : "Attachment not found",
+      );
+    }
   }
 
   async wait(submissionId: string, agent: Agent) {

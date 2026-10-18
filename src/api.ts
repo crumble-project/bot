@@ -9,6 +9,11 @@ import type { CrumbleService } from "./service";
 import type { Scheduler } from "./scheduler";
 import type { MCPIntegrations } from "./integrations";
 import { providerModels } from "./runtime";
+import {
+  attachmentInput,
+  MAX_ATTACHMENTS,
+  MAX_MESSAGE_BODY,
+} from "./attachments";
 
 const text = z.string().trim().min(1).max(32000);
 const catalog = providerModels();
@@ -26,7 +31,15 @@ export function createAPI(
     throw new Error("Server token must contain at least 32 characters");
   const { store, runtime } = service;
   const app = new Hono();
-  app.use("*", bodyLimit({ maxSize: 1024 * 1024 }));
+  // Messages may carry attachments; every other request stays small.
+  const messageBodyLimit = bodyLimit({ maxSize: MAX_MESSAGE_BODY });
+  const defaultBodyLimit = bodyLimit({ maxSize: 1024 * 1024 });
+  app.use("*", (c, next) =>
+    c.req.method === "POST" &&
+    /^\/v1\/agents\/[^/]+\/messages$/.test(c.req.path)
+      ? messageBodyLimit(c, next)
+      : defaultBodyLimit(c, next),
+  );
   app.get("/health", (c) => c.json({ status: "ok", apiVersion: 1 }));
   app.use("/v1/*", bearerAuth({ token }));
   app.onError((error, c) => {
@@ -80,9 +93,14 @@ export function createAPI(
   app.post("/v1/agents/:id/messages", async (c) => {
     const input = z
       .object({
-        content: text,
+        content: z.string().trim().max(32000),
         requestId: z.string().uuid(),
         replyTo: z.string().min(1).max(200).optional(),
+        attachments: z.array(attachmentInput).max(MAX_ATTACHMENTS).default([]),
+      })
+      .refine((value) => value.content || value.attachments.length, {
+        message: "Write a message or attach a file",
+        path: ["content"],
       })
       .parse(await c.req.json());
     return c.json(
@@ -91,9 +109,27 @@ export function createAPI(
         input.content,
         input.requestId,
         input.replyTo,
+        input.attachments,
       ),
       202,
     );
+  });
+  app.get("/v1/agents/:id/attachments/:entryId/:index", async (c) => {
+    const index = z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(MAX_ATTACHMENTS - 1)
+      .parse(c.req.param("index"));
+    const image = await runtime.attachment(
+      service.agent(c.req.param("id")),
+      c.req.param("entryId"),
+      index,
+    );
+    return c.body(new Uint8Array(image.data), 200, {
+      "Content-Type": image.mimeType,
+      "Cache-Control": "private, max-age=31536000, immutable",
+    });
   });
   app.post("/v1/agents/:id/abort", async (c) => {
     await service.abortChat(c.req.param("id"));

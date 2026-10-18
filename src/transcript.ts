@@ -9,6 +9,8 @@ import type {
   Harness,
 } from "@earendil-works/pi-durable";
 
+import type { AttachmentInfo } from "./attachments";
+
 export type MessageOrigin = { kind: string; name?: string; agentId?: string };
 export type TranscriptMessage = {
   id: string;
@@ -21,6 +23,7 @@ export type TranscriptMessage = {
   replyTo?: string;
   replyPreview?: string;
   origin?: MessageOrigin;
+  attachments?: AttachmentInfo[];
 };
 export type TranscriptPage = {
   messages: TranscriptMessage[];
@@ -87,6 +90,36 @@ function originOf(value: JsonValue | undefined): MessageOrigin | undefined {
   };
 }
 
+function attachmentsOf(value: JsonValue | undefined): AttachmentInfo[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const info = record(item);
+    return typeof info?.name === "string" &&
+      typeof info.mimeType === "string" &&
+      typeof info.size === "number" &&
+      (info.kind === "image" || info.kind === "text")
+      ? [
+          {
+            name: info.name,
+            mimeType: info.mimeType,
+            size: info.size,
+            kind: info.kind,
+          },
+        ]
+      : [];
+  });
+}
+
+/** Image bytes stay out of snapshots and pages; clients fetch them by attachment index instead. */
+function withoutImageData(content: unknown): unknown {
+  if (!Array.isArray(content)) return content;
+  return content.map((block) =>
+    block?.type === "image"
+      ? { type: "image", mimeType: block.mimeType }
+      : block,
+  );
+}
+
 function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
   const entryId = entryRef(agentId, Number(entry.id));
   if (entry.kind === "pi.compaction" || entry.kind === "pi.reset") {
@@ -109,20 +142,22 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
   const data = record(entry.data);
   const replyTo = typeof data?.replyTo === "string" ? data.replyTo : undefined;
   const origin = originOf(data?.origin);
+  const attachments = attachmentsOf(data?.attachments);
   return (entry.model ?? []).flatMap((message, index) => {
     // Reply inputs carry a quoted context block for the model; owners see the text they wrote.
     const content =
       entry.kind === "crumble.message" && typeof data?.text === "string"
         ? data.text
         : textOf(message.content) || blockHint(message.content);
-    if (!content) return [];
+    const attached = message.role === "user" ? attachments : [];
+    if (!content && !attached.length) return [];
     return [
       {
         id: `${entryId}:${index}`,
         entryId,
         role: message.role,
         content,
-        blocks: message.content,
+        blocks: withoutImageData(message.content),
         timestamp: message.timestamp,
         kind: entry.kind,
         ...(replyTo ? { replyTo } : {}),
@@ -130,6 +165,7 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
           ? { replyPreview: data.replyPreview }
           : {}),
         ...(origin ? { origin } : {}),
+        ...(attached.length ? { attachments: attached } : {}),
       },
     ];
   });
@@ -283,6 +319,46 @@ export async function prepareReply(
       contextEntryIds: [...new Set(quoted.map((item) => item.id))],
     },
   };
+}
+
+/** The image at `index` of an input's attachments, read from the model message that carries it. */
+export async function readAttachment(
+  harness: Harness,
+  agentId: string,
+  entryRef: string,
+  index: number,
+): Promise<{ mimeType: string; data: Buffer }> {
+  const target = parseEntryRef(agentId, entryRef, "attachment entry");
+  const owner = await findOwner(harness, target);
+  const page = await owner?.entries(
+    {
+      order: "ascending",
+      minEntryId: target as EntryId,
+      maxEntryId: target as EntryId,
+    },
+    1,
+    undefined,
+    BACKGROUND_CONTEXT,
+  );
+  const entry = page?.items[0];
+  if (!entry) throw new Error("Attachment not found");
+  const attachments = attachmentsOf(record(entry.data)?.attachments);
+  if (attachments[index]?.kind !== "image")
+    throw new Error("Attachment not found");
+  // Image blocks follow the attachment order, so the nth image is the nth image attachment.
+  const imageIndex = attachments
+    .slice(0, index)
+    .filter((item) => item.kind === "image").length;
+  const content = entry.model?.[0]?.content;
+  const images = Array.isArray(content)
+    ? content.filter(
+        (block) => block?.type === "image" && typeof block.data === "string",
+      )
+    : [];
+  const image = images[imageIndex] as
+    { data: string; mimeType: string } | undefined;
+  if (!image) throw new Error("Attachment not found");
+  return { mimeType: image.mimeType, data: Buffer.from(image.data, "base64") };
 }
 
 /** Assistant output after one input, stopping at the next input so unrelated chat stays private. */

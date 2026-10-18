@@ -96,8 +96,11 @@ describe("HTTP API", () => {
     const snapshot = await chat.json();
     expect(snapshot.agentId).toBe(agent.id);
     expect(
-      (await req(app, `/v1/agents/${agent.id}/chat`).then((r: Response) => r.json()))
-        .conversationId,
+      (
+        await req(app, `/v1/agents/${agent.id}/chat`).then((r: Response) =>
+          r.json(),
+        )
+      ).conversationId,
     ).toBe(snapshot.conversationId);
     const requestId = "00000000-0000-4000-8000-000000000099";
     expect(
@@ -141,6 +144,48 @@ describe("HTTP API", () => {
       ).status,
     ).toBe(409);
     store.close();
+  });
+
+  test("accepts attachments on messages only, within their limits", async () => {
+    const { app } = setup();
+    const agent = await req(app, "/v1/agents", {
+      method: "POST",
+      body: JSON.stringify(agentInput("Files")),
+    }).then((r: Response) => r.json());
+    const send = (body: unknown) =>
+      req(app, `/v1/agents/${agent.id}/messages`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    const image = Buffer.alloc(2 * 1024 * 1024, 7).toString("base64");
+    expect(
+      (
+        await send({
+          content: "",
+          requestId: crypto.randomUUID(),
+          attachments: [
+            { name: "big.png", mimeType: "image/png", data: image },
+          ],
+        })
+      ).status,
+    ).toBe(202);
+    expect(
+      (await send({ content: " ", requestId: crypto.randomUUID() })).status,
+    ).toBe(400);
+    const pdf = await send({
+      content: "read",
+      requestId: crypto.randomUUID(),
+      attachments: [
+        { name: "doc.pdf", mimeType: "application/pdf", data: "AAAA" },
+      ],
+    });
+    expect(pdf.status).toBe(400);
+    expect((await pdf.json()).error).toContain("only images");
+    const memory = await req(app, `/v1/agents/${agent.id}/memories`, {
+      method: "POST",
+      body: JSON.stringify({ content: "x".repeat(2 * 1024 * 1024) }),
+    });
+    expect(memory.status).toBe(413);
   });
 
   test("isolates memories and never returns provider secrets", async () => {

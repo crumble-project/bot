@@ -90,6 +90,8 @@ export type Execution = {
   requestId: string;
   prompt: string;
   replyTo?: string | null;
+  /** Identifies the message's attachments, so a retried request ID must carry the same files. */
+  attachmentsDigest?: string | null;
   status: "pending" | "running" | "done" | "failed" | "cancelled";
   error: string | null;
   createdAt: string;

@@ -95,12 +95,23 @@ Each bot has one continuous chat. These routes live under `/v1/agents/:id`:
 | --- | --- |
 | `GET /chat` | Snapshot of the newest transcript page, live generation state, and usage. |
 | `GET /chat/history?before=&limit=` | Older transcript pages. Pass the previous page's `oldestEntryId` as `before`; `limit` is at most 200. |
-| `POST /messages` | Send `{ content, requestId, replyTo? }`. `requestId` is a UUID that makes retries idempotent. `replyTo` is a message `entryId`. |
+| `POST /messages` | Send `{ content, requestId, replyTo?, attachments? }`. `requestId` is a UUID that makes retries idempotent. `replyTo` is a message `entryId`. `content` may be empty when the message has attachments. |
+| `GET /attachments/:entryId/:index` | The bytes of an attached image, by its position in the message's `attachments`. |
 | `GET /events` | Server-sent `snapshot` events for the chat. |
 | `POST /abort` | Stop the running response. |
 | `POST /compact` | Summarize older working context. The transcript keeps every original message. |
 
 Scheduled tasks and delegated work from other bots post into the same chat. Their messages carry an `origin`.
+
+### Attachments
+
+`attachments` is a list of up to eight `{ name, mimeType, data }` objects, with `data` in base64:
+
+- Images (`image/png`, `image/jpeg`, `image/gif`, `image/webp`) of up to 5 MB reach the model as image input. A model whose catalog entry lacks image input refuses them with a `400`.
+- Text files (`text/*`, and JSON, XML, YAML, TOML, JavaScript, TypeScript, shell and SQL) of up to 512 KB of UTF-8 reach the model as text, wrapped in an `<attachment name="…">` block.
+- Other types, such as PDFs, are refused with a `400`.
+
+The message endpoint accepts bodies of up to 32 MB; every other endpoint keeps a 1 MB limit. Transcript messages list their files as `attachments: [{ name, mimeType, size, kind }]`, and image bytes stay out of snapshots and history pages.
 
 ## Protect and back up data
 

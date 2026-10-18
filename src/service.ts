@@ -7,6 +7,11 @@ import {
   type Execution,
 } from "./domain";
 import type { MessageOrigin } from "./transcript";
+import {
+  attachmentDigest,
+  prepareAttachments,
+  type AttachmentInput,
+} from "./attachments";
 
 export const delegationRequest = (sourceAgentId: string, taskId: string) =>
   `delegate:${sourceAgentId}:${taskId}`;
@@ -108,9 +113,11 @@ export class CrumbleService {
     content: string,
     requestId: string,
     replyTo?: string,
+    attachments: AttachmentInput[] = [],
   ) {
     return this.send((await this.chat(agentId)).id, content, requestId, {
       replyTo,
+      attachments,
     });
   }
 
@@ -118,16 +125,26 @@ export class CrumbleService {
     conversationId: string,
     content: string,
     requestId: string,
-    options: { scheduleId?: string; replyTo?: string } = {},
+    options: {
+      scheduleId?: string;
+      replyTo?: string;
+      attachments?: AttachmentInput[];
+    } = {},
   ) {
     const { agent } = this.conversation(conversationId);
     if (!agent.enabled)
       throw new AppError(409, "Enable this agent before starting work");
     const replyTo = options.replyTo ?? null;
+    const attachments = options.attachments ?? [];
+    // Validate before anything is stored, so a bad file never leaves a failed execution behind.
+    prepareAttachments(attachments);
+    const attachmentsDigest = attachmentDigest(attachments);
     let execution = this.store.findExecution(conversationId, requestId);
     if (
       execution &&
-      (execution.prompt !== content || (execution.replyTo ?? null) !== replyTo)
+      (execution.prompt !== content ||
+        (execution.replyTo ?? null) !== replyTo ||
+        (execution.attachmentsDigest ?? null) !== attachmentsDigest)
     )
       throw new AppError(
         409,
@@ -140,6 +157,8 @@ export class CrumbleService {
       requestId,
       prompt: content,
       replyTo,
+      attachments,
+      attachmentsDigest,
       submissionId: null,
       status: "pending",
       error: null,
@@ -190,12 +209,14 @@ export class CrumbleService {
           {
             replyTo: execution.replyTo ?? undefined,
             origin: this.origin(execution),
+            attachments: this.store.executionAttachments(execution.id),
           },
         ));
       this.store.updateExecution(execution.id, {
         submissionId,
         status: "running",
       });
+      this.store.clearExecutionAttachments(execution.id);
       if (!this.monitoring.has(execution.id)) {
         const monitor = this.runtime
           .wait(submissionId, agent)

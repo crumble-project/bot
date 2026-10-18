@@ -20,23 +20,27 @@ afterEach(() => {
 const uuid = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
-function open(dir: string, responses: FauxResponseStep[]) {
-  const faux = fauxProvider({ provider: "faux", models: [{ id: "chat" }] });
+function open(
+  dir: string,
+  responses: FauxResponseStep[],
+  input: ("text" | "image")[] = ["text", "image"],
+) {
+  const faux = fauxProvider({
+    provider: "faux",
+    models: [{ id: "chat", input }],
+  });
   faux.setResponses(responses);
   const models = createModels();
   models.setProvider(faux.provider);
   const store = new Store(dir);
-  const service = new CrumbleService(
-    store,
-    new AgentRuntime(dir, { models }),
-  );
+  const service = new CrumbleService(store, new AgentRuntime(dir, { models }));
   return { store, service };
 }
 
-function setup(responses: FauxResponseStep[]) {
+function setup(responses: FauxResponseStep[], input?: ("text" | "image")[]) {
   const dir = mkdtempSync(join(tmpdir(), "bot-chat-"));
   dirs.push(dir);
-  const opened = open(dir, responses);
+  const opened = open(dir, responses, input);
   const agent = opened.store.createAgent({
     name: "Chat",
     avatar: "bot",
@@ -169,10 +173,144 @@ describe("continuous bot chat", () => {
     expect((await reopened.service.chat(agent.id)).id).toBe(chat.id);
     const again = await reopened.service.sendChat(agent.id, "hello", uuid(1));
     expect(again.id).toBe(first.id);
-    const users = (await reopened.service.chatSnapshot(agent.id)).messages.filter(
+    const users = (
+      await reopened.service.chatSnapshot(agent.id)
+    ).messages.filter((message) => message.role === "user");
+    expect(users.map((message) => message.content)).toEqual(["hello"]);
+    await reopened.service.close();
+  });
+});
+
+// A 1×1 PNG.
+const png =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+const notes = Buffer.from("Buy oat milk").toString("base64");
+
+describe("attachments", () => {
+  test("reach the model as content blocks and stay out of snapshots", async () => {
+    const seen: unknown[] = [];
+    const record: FauxResponseStep = (context) => {
+      seen.push(context.messages.at(-1)?.content);
+      return fauxAssistantMessage("got them");
+    };
+    const { service, store, agent } = setup([record]);
+    const execution = await service.sendChat(
+      agent.id,
+      "what is this?",
+      uuid(1),
+      undefined,
+      [
+        { name: "dot.png", mimeType: "image/png", data: png },
+        { name: "notes.txt", mimeType: "text/plain", data: notes },
+      ],
+    );
+    await settle(service, execution.id);
+    expect(seen[0]).toEqual([
+      { type: "text", text: "what is this?" },
+      { type: "image", data: png, mimeType: "image/png" },
+      {
+        type: "text",
+        text: '<attachment name="notes.txt">\nBuy oat milk\n</attachment>',
+      },
+    ]);
+    expect(store.executionAttachments(execution.id)).toEqual([]);
+    const shown = (await service.chatSnapshot(agent.id)).messages.find(
+      (message) => message.role === "user",
+    )!;
+    expect(shown.content).toBe("what is this?");
+    expect(shown.attachments).toEqual([
+      { name: "dot.png", mimeType: "image/png", size: 70, kind: "image" },
+      { name: "notes.txt", mimeType: "text/plain", size: 12, kind: "text" },
+    ]);
+    expect(JSON.stringify(shown.blocks)).not.toContain(png);
+    const image = await service.runtime.attachment(agent, shown.entryId, 0);
+    expect(image.mimeType).toBe("image/png");
+    expect(image.data.toString("base64")).toBe(png);
+    await expect(
+      service.runtime.attachment(agent, shown.entryId, 1),
+    ).rejects.toThrow("Attachment not found");
+    await service.close();
+  });
+
+  test("an image alone is a message", async () => {
+    const { service, agent } = setup([fauxAssistantMessage("a dot")]);
+    await settle(
+      service,
+      (
+        await service.sendChat(agent.id, "", uuid(1), undefined, [
+          { name: "dot.png", mimeType: "image/png", data: png },
+        ])
+      ).id,
+    );
+    const users = (await service.chatSnapshot(agent.id)).messages.filter(
       (message) => message.role === "user",
     );
-    expect(users.map((message) => message.content)).toEqual(["hello"]);
+    expect(users).toHaveLength(1);
+    expect(users[0]!.attachments?.[0]?.name).toBe("dot.png");
+    await service.close();
+  });
+
+  test("models without image input refuse images before answering", async () => {
+    const { service, agent } = setup([fauxAssistantMessage("never")], ["text"]);
+    await expect(
+      service.sendChat(agent.id, "look", uuid(1), undefined, [
+        { name: "dot.png", mimeType: "image/png", data: png },
+      ]),
+    ).rejects.toThrow("can't read images");
+    await service.close();
+  });
+
+  test("unsupported files are refused without leaving an execution", async () => {
+    const { service, store, agent } = setup([]);
+    await expect(
+      service.sendChat(agent.id, "read", uuid(1), undefined, [
+        { name: "doc.pdf", mimeType: "application/pdf", data: notes },
+      ]),
+    ).rejects.toThrow("only images");
+    expect(store.listExecutions(agent.id)).toEqual([]);
+    await service.close();
+  });
+
+  test("a request ID retried with other files is refused", async () => {
+    const { service, agent } = setup([fauxAssistantMessage("ok")]);
+    const first = await service.sendChat(agent.id, "see", uuid(1), undefined, [
+      { name: "notes.txt", mimeType: "text/plain", data: notes },
+    ]);
+    await settle(service, first.id);
+    await expect(service.sendChat(agent.id, "see", uuid(1))).rejects.toThrow(
+      "different message",
+    );
+    await service.close();
+  });
+
+  test("recovery resubmits attachments that were stored before a crash", async () => {
+    const seen: unknown[] = [];
+    const { service, store, agent, dir } = setup([]);
+    const chat = await service.chat(agent.id);
+    store.createExecution({
+      agentId: agent.id,
+      conversationId: chat.id,
+      scheduleId: null,
+      submissionId: null,
+      requestId: uuid(1),
+      prompt: "after the crash",
+      replyTo: null,
+      attachments: [{ name: "notes.txt", mimeType: "text/plain", data: notes }],
+      attachmentsDigest: "digest",
+      status: "pending",
+      error: null,
+    });
+    await service.close();
+    const reopened = open(dir, [
+      (context) => {
+        seen.push(context.messages.at(-1)?.content);
+        return fauxAssistantMessage("recovered");
+      },
+    ]);
+    await reopened.service.recover();
+    const execution = reopened.store.listExecutions(agent.id)[0]!;
+    await settle(reopened.service, execution.id);
+    expect(JSON.stringify(seen[0])).toContain("Buy oat milk");
     await reopened.service.close();
   });
 });

@@ -18,6 +18,7 @@ import type {
   Execution,
   MCPServer,
 } from "./domain";
+import type { AttachmentInput } from "./attachments";
 
 type Id = string;
 type Patch<T> = Partial<Omit<T, "id" | "createdAt" | "updatedAt">>;
@@ -84,6 +85,10 @@ export class Store {
       this.db.exec("ALTER TABLE executions ADD COLUMN prompt TEXT");
     if (!cols.some((c) => c.name === "reply_to"))
       this.db.exec("ALTER TABLE executions ADD COLUMN reply_to TEXT");
+    if (!cols.some((c) => c.name === "attachments"))
+      this.db.exec("ALTER TABLE executions ADD COLUMN attachments TEXT");
+    if (!cols.some((c) => c.name === "attachments_digest"))
+      this.db.exec("ALTER TABLE executions ADD COLUMN attachments_digest TEXT");
     this.db.exec(
       "CREATE UNIQUE INDEX IF NOT EXISTS executions_conversation_request ON executions(conversation_id, request_id)",
     );
@@ -414,7 +419,18 @@ export class Store {
       updatedAt: r.updated_at,
       prompt: r.prompt ?? "",
       replyTo: r.reply_to ?? null,
+      attachmentsDigest: r.attachments_digest ?? null,
     };
+  }
+  /** Uploads waiting for admission; cleared once Pi holds them, so they are not stored twice. */
+  executionAttachments(id: Id): AttachmentInput[] {
+    const r = this.db
+      .query("SELECT attachments FROM executions WHERE id=?")
+      .get(id) as { attachments: string | null } | null;
+    return r?.attachments ? JSON.parse(r.attachments) : [];
+  }
+  clearExecutionAttachments(id: Id) {
+    this.db.query("UPDATE executions SET attachments=NULL WHERE id=?").run(id);
   }
   getExecution(id: Id) {
     const r = this.db.query("SELECT * FROM executions WHERE id=?").get(id);
@@ -435,13 +451,14 @@ export class Store {
     input: Omit<Execution, "id" | "createdAt" | "updatedAt"> & {
       prompt?: string;
       replyTo?: string | null;
+      attachments?: AttachmentInput[];
     },
     executionId: string = id(),
   ) {
     const t = now();
     this.db
       .query(
-        "INSERT INTO executions (id,agent_id,conversation_id,schedule_id,submission_id,request_id,prompt,reply_to,status,error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO executions (id,agent_id,conversation_id,schedule_id,submission_id,request_id,prompt,reply_to,attachments,attachments_digest,status,error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       )
       .run(
         executionId,
@@ -452,6 +469,8 @@ export class Store {
         input.requestId,
         input.prompt ?? null,
         input.replyTo ?? null,
+        input.attachments?.length ? JSON.stringify(input.attachments) : null,
+        input.attachmentsDigest ?? null,
         input.status,
         input.error,
         t,
