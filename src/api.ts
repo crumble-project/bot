@@ -4,11 +4,17 @@ import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
-import { agentInput, scheduleInput, AppError } from "./domain";
+import { agentInput, scheduleInput, AppError, type MCPServer } from "./domain";
 import type { CrumbleService } from "./service";
 import type { Scheduler } from "./scheduler";
 import type { MCPIntegrations } from "./integrations";
 import { providerModels } from "./runtime";
+import {
+  finishAuthorization,
+  hasOAuthTokens,
+  signOut,
+  startAuthorization,
+} from "./mcp-oauth";
 import {
   attachmentInput,
   MAX_ATTACHMENTS,
@@ -177,6 +183,44 @@ export function createAPI(
     });
   });
 
+  // Server-wide activity for notifications: finished replies from every bot and new approvals.
+  app.get("/v1/events", (c) =>
+    streamSSE(c, async (stream) => {
+      let finish!: () => void;
+      const finished = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      stream.onAbort(finish);
+      const send = (data: unknown) => {
+        if (!stream.aborted)
+          stream
+            .writeSSE({ event: "activity", data: JSON.stringify(data) })
+            .catch(finish);
+      };
+      const unsubscribers = [
+        service.onActivity(send),
+        integrations?.approvals.onRequest((record) =>
+          send({
+            type: "approval",
+            approvalId: record.id,
+            agentId: record.agentId,
+            agentName: store.getAgent(record.agentId)?.name ?? "A bot",
+            toolName: record.toolName,
+          }),
+        ),
+      ];
+      const timer = setInterval(() => {
+        stream.writeSSE({ event: "heartbeat", data: "{}" }).catch(finish);
+      }, 15000);
+      try {
+        await finished;
+      } finally {
+        clearInterval(timer);
+        for (const unsubscribe of unsubscribers) unsubscribe?.();
+      }
+    }),
+  );
+
   app.get("/v1/agents/:id/memories", (c) => {
     service.agent(c.req.param("id"));
     return c.json(store.listMemories(c.req.param("id")));
@@ -286,14 +330,58 @@ export function createAPI(
     store.deleteCredential(provider.parse(c.req.param("provider")));
     return c.body(null, 204);
   });
+  const describeServer = (server: MCPServer) => {
+    const auth = hasOAuthTokens(store, server.id)
+      ? "oauth"
+      : store.getCredential(`mcp:${server.id}`)
+        ? "token"
+        : "none";
+    return { ...server, auth, authenticated: auth !== "none" };
+  };
+  const mcpServer = (id: string) => {
+    const server = store.getMCPServer(id);
+    if (!server) throw new AppError(404, "MCP server not found");
+    return server;
+  };
   app.get("/v1/mcp-servers", (c) =>
-    c.json(
-      store.listMCPServers().map((server) => ({
-        ...server,
-        authenticated: Boolean(store.getCredential(`mcp:${server.id}`)),
-      })),
-    ),
+    c.json(store.listMCPServers().map(describeServer)),
   );
+  // OAuth sign-in: the client opens the returned URL, then posts back the code and state it receives.
+  app.post("/v1/mcp-servers/:id/oauth", async (c) => {
+    const { redirectUri } = z
+      .object({
+        redirectUri: z
+          .string()
+          .max(500)
+          .regex(/^[a-z][a-z0-9+.-]*:\S+$/i, "Use an absolute redirect URI"),
+      })
+      .parse(await c.req.json());
+    return c.json(
+      await startAuthorization(
+        store,
+        mcpServer(c.req.param("id")),
+        redirectUri,
+      ),
+    );
+  });
+  app.post("/v1/mcp-servers/:id/oauth/callback", async (c) => {
+    const { code, state } = z
+      .object({
+        code: z.string().min(1).max(4000),
+        state: z.string().min(1).max(200),
+      })
+      .parse(await c.req.json());
+    const server = mcpServer(c.req.param("id"));
+    await finishAuthorization(store, server, code, state);
+    await integrations?.disconnect(server.id);
+    return c.json(describeServer(server));
+  });
+  app.delete("/v1/mcp-servers/:id/oauth", async (c) => {
+    const server = mcpServer(c.req.param("id"));
+    signOut(store, server.id);
+    await integrations?.disconnect(server.id);
+    return c.json(describeServer(server));
+  });
   const mcpInput = z.object({
     name: z.string().trim().min(1).max(100),
     url: z
@@ -325,6 +413,7 @@ export function createAPI(
     if (!store.deleteMCPServer(c.req.param("id")))
       throw new AppError(404, "MCP server not found");
     store.deleteCredential(`mcp:${c.req.param("id")}`);
+    signOut(store, c.req.param("id"));
     return c.body(null, 204);
   });
   app.get("/v1/approvals", (c) =>

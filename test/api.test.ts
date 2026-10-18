@@ -188,6 +188,62 @@ describe("HTTP API", () => {
     expect(memory.status).toBe(413);
   });
 
+  test("streams server-wide activity", async () => {
+    const { app } = setup();
+    const agent = await req(app, "/v1/agents", {
+      method: "POST",
+      body: JSON.stringify(agentInput("Notifier")),
+    }).then((r: Response) => r.json());
+    const response: Response = await req(app, "/v1/events");
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    const reader = response.body!.getReader();
+    await req(app, `/v1/agents/${agent.id}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ content: "hi", requestId: crypto.randomUUID() }),
+    });
+    const { value } = await reader.read();
+    const text = new TextDecoder().decode(value);
+    expect(text).toContain("event: activity");
+    expect(text).toContain(`"agentId":"${agent.id}"`);
+    await reader.cancel();
+  });
+
+  test("describes how each MCP server signs in", async () => {
+    const { app } = setup();
+    const created = await req(app, "/v1/mcp-servers", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Docs",
+        url: "https://docs.example.com/mcp",
+        enabled: true,
+        token: "secret",
+      }),
+    }).then((r: Response) => r.json());
+    const list = await req(app, "/v1/mcp-servers").then((r: Response) =>
+      r.json(),
+    );
+    expect(list[0]).toMatchObject({
+      id: created.id,
+      auth: "token",
+      authenticated: true,
+    });
+    expect(JSON.stringify(list)).not.toContain("secret");
+    const bad = await req(app, `/v1/mcp-servers/${created.id}/oauth`, {
+      method: "POST",
+      body: JSON.stringify({ redirectUri: "not a uri" }),
+    });
+    expect(bad.status).toBe(400);
+    const missing = await req(app, "/v1/mcp-servers/nope/oauth/callback", {
+      method: "POST",
+      body: JSON.stringify({ code: "c", state: "s" }),
+    });
+    expect(missing.status).toBe(404);
+    const signedOut = await req(app, `/v1/mcp-servers/${created.id}/oauth`, {
+      method: "DELETE",
+    });
+    expect((await signedOut.json()).auth).toBe("token");
+  });
+
   test("isolates memories and never returns provider secrets", async () => {
     const { app, store } = setup();
     const a = await req(app, "/v1/agents", {

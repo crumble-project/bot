@@ -1,6 +1,16 @@
 import { createHash } from "node:crypto";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import {
+  McpAuthRequiredError,
+  McpClient,
+  StreamableHttpTransport,
+  toLlmContent,
+  type AuthProvider,
+  type CallToolResult,
+  type McpRequestOptions,
+  type McpTransport,
+  type Tool,
+} from "@earendil-works/pi-mcp";
+import { McpOAuthAuthorizationRequiredError } from "@earendil-works/pi-mcp/oauth";
 import { Type } from "@earendil-works/pi-ai";
 import {
   defineExtension,
@@ -11,6 +21,7 @@ import type { Context } from "@earendil-works/chord/context";
 import type { Agent, MCPServer } from "./domain";
 import { Store } from "./store";
 import { conversationReference } from "./runtime";
+import { connectionAuth, hasOAuthTokens } from "./mcp-oauth";
 
 export type ApprovalStatus = "pending" | "approved" | "denied";
 export type ApprovalRecord = {
@@ -26,36 +37,23 @@ export type ApprovalRecord = {
   updatedAt: string;
 };
 
+/** The part of pi-mcp's `McpClient` Crumble uses, so tests can stand in for a server. */
 export type MCPClient = {
-  connect(transport: unknown, options?: unknown): Promise<void>;
-  listTools(params?: unknown, options?: unknown): Promise<{ tools: MCPTool[] }>;
+  connect(transport: McpTransport): Promise<unknown>;
+  listTools(options?: McpRequestOptions): Promise<Tool[]>;
   callTool(
-    params: { name: string; arguments?: Record<string, unknown> },
-    resultSchema?: unknown,
-    options?: { signal?: AbortSignal; timeout?: number },
-  ): Promise<MCPResult>;
+    name: string,
+    args?: Record<string, unknown>,
+    options?: McpRequestOptions,
+  ): Promise<CallToolResult>;
   close(): Promise<void>;
-};
-export type MCPTool = {
-  name: string;
-  description?: string;
-  inputSchema: Record<string, unknown>;
-  annotations?: {
-    readOnlyHint?: boolean;
-    destructiveHint?: boolean;
-    idempotentHint?: boolean;
-  };
-};
-export type MCPResult = {
-  content?: Array<Record<string, unknown>>;
-  structuredContent?: unknown;
-  isError?: boolean;
 };
 
 export type MCPClientFactory = (
   server: MCPServer,
   headers: Record<string, string>,
-) => { client: MCPClient; transport: { close?: () => Promise<void> } };
+  authProvider?: AuthProvider,
+) => { client: MCPClient; transport: McpTransport };
 export type IntegrationsOptions = {
   requestTimeoutMs?: number;
   clientFactory?: MCPClientFactory;
@@ -83,7 +81,18 @@ export class ApprovalManager {
     string,
     Set<(status: ApprovalStatus) => void>
   >();
+  private readonly requestListeners = new Set<
+    (record: ApprovalRecord) => void
+  >();
   constructor(private readonly store: Store) {}
+
+  /** Called once for each new pending approval, not for a repeated request of the same call. */
+  onRequest(callback: (record: ApprovalRecord) => void) {
+    this.requestListeners.add(callback);
+    return () => {
+      this.requestListeners.delete(callback);
+    };
+  }
 
   list(agentId?: string): ApprovalRecord[] {
     const records = this.store.getSetting<ApprovalRecord[]>(approvalsKey) ?? [];
@@ -122,6 +131,7 @@ export class ApprovalManager {
       updatedAt: t,
     };
     this.save([...this.list(), record]);
+    for (const listener of this.requestListeners) listener(record);
     return record;
   }
 
@@ -190,18 +200,35 @@ export class ApprovalManager {
 function defaultClientFactory(
   server: MCPServer,
   headers: Record<string, string>,
+  authProvider?: AuthProvider,
 ) {
   const url = new URL(server.url);
   if (url.protocol !== "https:" && url.protocol !== "http:")
     throw new Error(`Unsupported MCP URL protocol: ${url.protocol}`);
-  const transport = new StreamableHTTPClientTransport(url, {
-    requestInit: { headers, redirect: "error" },
+  const transport = new StreamableHttpTransport({
+    url,
+    headers,
+    ...(authProvider ? { authProvider } : {}),
+    // Credentials never follow a redirect to another host.
+    fetch: (input, init) => fetch(input, { ...init, redirect: "error" }),
   });
-  const client = new Client({
-    name: "crumble",
-    version: "1.0.0",
-  }) as unknown as MCPClient;
-  return { client, transport };
+  return {
+    client: new McpClient({ name: "crumble", version: "1.0.0" }),
+    transport,
+  };
+}
+
+/** Turns an authentication failure into what the owner should do about it. */
+function explainAuthFailure(server: MCPServer, error: unknown): unknown {
+  if (error instanceof McpOAuthAuthorizationRequiredError)
+    return new Error(
+      `Sign in to ${server.name} again under Integrations to use its tools`,
+    );
+  if (error instanceof McpAuthRequiredError)
+    return new Error(
+      `${server.name} rejected Crumble's credentials. Check its token, or sign in under Integrations`,
+    );
+  return error;
 }
 
 function credentials(store: Store, server: MCPServer): Record<string, string> {
@@ -220,40 +247,13 @@ function credentials(store: Store, server: MCPServer): Record<string, string> {
   return { Authorization: `Bearer ${raw}` };
 }
 
-function output(
-  result: MCPResult,
-): Array<
-  | { type: "text"; text: string }
-  | { type: "image"; data: string; mimeType: string }
-> {
-  if (result.content?.length)
-    return result.content.map((item) => {
-      if (
-        item.type === "image" &&
-        typeof item.data === "string" &&
-        typeof item.mimeType === "string"
-      )
-        return {
-          type: "image" as const,
-          data: item.data,
-          mimeType: item.mimeType,
-        };
-      if (item.type === "text" && typeof item.text === "string")
-        return { type: "text" as const, text: item.text };
-      return { type: "text" as const, text: JSON.stringify(item) };
-    });
-  if (result.structuredContent !== undefined)
-    return [{ type: "text", text: JSON.stringify(result.structuredContent) }];
-  return [{ type: "text", text: "" }];
-}
-
 export class MCPIntegrations {
   private readonly connections = new Map<
     string,
     {
       fingerprint: string;
       client: MCPClient;
-      transport: { close?: () => Promise<void> };
+      transport: McpTransport;
     }
   >();
   private readonly timeout: number;
@@ -289,16 +289,22 @@ export class MCPIntegrations {
   }
 
   private async connection(server: MCPServer) {
-    const headers = credentials(this.store, server);
-    const fingerprint = digest({ url: server.url, headers });
+    // A signed-in server authenticates through OAuth, which refreshes its own access token.
+    const oauth = hasOAuthTokens(this.store, server.id);
+    const headers = oauth ? {} : credentials(this.store, server);
+    const fingerprint = digest({ url: server.url, headers, oauth });
     const existing = this.connections.get(server.id);
     if (existing?.fingerprint === fingerprint) return existing;
     if (existing) {
       await existing.client.close().catch(() => undefined);
-      await existing.transport.close?.().catch(() => undefined);
+      await existing.transport.close().catch(() => undefined);
       this.connections.delete(server.id);
     }
-    const value = this.factory(server, headers);
+    const value = this.factory(
+      server,
+      headers,
+      oauth ? connectionAuth(this.store, server) : undefined,
+    );
     try {
       await this.withTimeout(value.client.connect(value.transport));
       const cached = { ...value, fingerprint };
@@ -306,8 +312,8 @@ export class MCPIntegrations {
       return cached;
     } catch (error) {
       await value.client.close().catch(() => undefined);
-      await value.transport.close?.().catch(() => undefined);
-      throw error;
+      await value.transport.close().catch(() => undefined);
+      throw explainAuthFailure(server, error);
     }
   }
 
@@ -318,20 +324,25 @@ export class MCPIntegrations {
       if (!server?.enabled) continue;
       const connection = await this.connection(server);
       const listed = await this.withTimeout(
-        connection.client.listTools(undefined, { timeout: this.timeout }),
+        connection.client.listTools({ timeoutMs: this.timeout }),
       ).catch(async (error) => {
         this.connections.delete(server.id);
         await connection.client.close().catch(() => undefined);
-        throw error;
+        throw explainAuthFailure(server, error);
       });
-      for (const remote of listed.tools) {
+      for (const remote of listed) {
         const name = `mcp_${server.id.replaceAll("-", "").slice(0, 8)}_${remote.name.replace(/[^a-zA-Z0-9_]/g, "_")}`;
         const destructive = remote.annotations?.readOnlyHint !== true;
         const tool = defineTool({
           name,
           description:
             remote.description ?? `MCP tool ${remote.name} (${server.name})`,
-          parameters: Type.Unsafe(remote.inputSchema as any),
+          // Providers need an object schema, and some reject one without `properties`.
+          parameters: Type.Unsafe({
+            ...remote.inputSchema,
+            type: "object",
+            properties: remote.inputSchema.properties ?? {},
+          }),
           replay: "unsafe",
           execute: async (
             args: Record<string, unknown>,
@@ -373,12 +384,15 @@ export class MCPIntegrations {
             const currentServer = assertAllowed();
             const activeConnection = await this.connection(currentServer);
             const signal = context.abortSignal;
-            const result = await activeConnection.client.callTool(
-              { name: remote.name, arguments: args },
-              undefined,
-              { signal, timeout: this.timeout },
-            );
-            return { output: output(result), isError: result.isError };
+            const result = await activeConnection.client
+              .callTool(remote.name, args, {
+                signal,
+                timeoutMs: this.timeout,
+              })
+              .catch((error) => {
+                throw explainAuthFailure(server, error);
+              });
+            return { output: toLlmContent(result), isError: result.isError };
           },
         });
         tools.push(tool);
@@ -387,13 +401,21 @@ export class MCPIntegrations {
     return [defineExtension({ name: `mcp:${agent.id}`, tools })];
   }
 
+  /** Drops a server's open connection, so the next use picks up new credentials. */
+  async disconnect(serverId: string) {
+    const existing = this.connections.get(serverId);
+    this.connections.delete(serverId);
+    await existing?.client.close().catch(() => undefined);
+    await existing?.transport.close().catch(() => undefined);
+  }
+
   async close() {
     const values = [...this.connections.values()];
     this.connections.clear();
     await Promise.all(
       values.map(async ({ client, transport }) => {
         await client.close().catch(() => undefined);
-        await transport.close?.().catch(() => undefined);
+        await transport.close().catch(() => undefined);
       }),
     );
   }

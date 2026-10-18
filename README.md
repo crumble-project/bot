@@ -113,6 +113,27 @@ Scheduled tasks and delegated work from other bots post into the same chat. Thei
 
 The message endpoint accepts bodies of up to 32 MB; every other endpoint keeps a 1 MB limit. Transcript messages list their files as `attachments: [{ name, mimeType, size, kind }]`, and image bytes stay out of snapshots and history pages.
 
+## Activity events
+
+`GET /v1/events` is a server-wide stream of `activity` events for notifications:
+
+- `{ type: "reply", agentId, agentName, entryId, origin, preview }` when any bot finishes a reply, from a chat, a scheduled task, or delegated work. `origin` is `owner`, `task`, or `bot`.
+- `{ type: "approval", approvalId, agentId, agentName, toolName }` when an MCP tool call waits for approval.
+
+Like the chat stream, it sends a `heartbeat` event every 15 seconds.
+
+## MCP servers
+
+An MCP server authenticates with a static token, saved with the server, or with OAuth. `GET /v1/mcp-servers` reports each server's `auth` as `token`, `oauth`, or `none`.
+
+MCP connections and OAuth sign-in use `@earendil-works/pi-mcp`, following the MCP authorization spec. The server discovers the authorization server, registers itself as a client, and keeps the tokens encrypted with other credentials, refreshing them as needed:
+
+1. `POST /v1/mcp-servers/:id/oauth` with `{ redirectUri }` returns `{ authorizationUrl }`, or `{ authorized: true }` when saved tokens still work.
+2. The client opens `authorizationUrl` in a browser. The authorization server redirects to `redirectUri` with `code` and `state`.
+3. `POST /v1/mcp-servers/:id/oauth/callback` with `{ code, state }` exchanges the code for tokens.
+
+`DELETE /v1/mcp-servers/:id/oauth` signs out. When a refresh fails during a chat, the tool call fails with a message asking the owner to sign in again; it never waits for a browser.
+
 ## Protect and back up data
 
 The server creates these protected files in the data directory:

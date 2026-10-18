@@ -186,6 +186,32 @@ const png =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
 const notes = Buffer.from("Buy oat milk").toString("base64");
 
+describe("activity", () => {
+  test("announces each finished reply with the start of its text", async () => {
+    const { service, agent } = setup([
+      fauxAssistantMessage("All done, two meetings tomorrow."),
+    ]);
+    const events: unknown[] = [];
+    service.onActivity((event) => events.push(event));
+    await settle(
+      service,
+      (await service.sendChat(agent.id, "check", uuid(1))).id,
+    );
+    for (let i = 0; i < 100 && !events.length; i++)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "reply",
+        agentId: agent.id,
+        agentName: "Chat",
+        origin: "owner",
+        preview: "All done, two meetings tomorrow.",
+      }),
+    ]);
+    await service.close();
+  });
+});
+
 describe("attachments", () => {
   test("reach the model as content blocks and stay out of snapshots", async () => {
     const seen: unknown[] = [];

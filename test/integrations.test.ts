@@ -7,6 +7,7 @@ import {
   type MCPClient,
 } from "../src/integrations";
 import { Store } from "../src/store";
+import type { McpTransport } from "@earendil-works/pi-mcp";
 
 const agent = (id: string, mcpServers: string[]): Agent => ({
   id,
@@ -26,6 +27,9 @@ const agent = (id: string, mcpServers: string[]): Agent => ({
   updatedAt: new Date().toISOString(),
 });
 
+/** The fake clients never use their transport. */
+const unusedTransport = { close: async () => {} } as unknown as McpTransport;
+
 function tempDir() {
   return Bun.$`mktemp -d`.text();
 }
@@ -44,19 +48,17 @@ describe("MCP integrations", () => {
       async connect() {},
       async close() {},
       async listTools() {
-        return {
-          tools: [
-            {
-              name: "echo",
-              inputSchema: {
-                type: "object",
-                properties: { text: { type: "string" } },
-                required: ["text"],
-              },
-              annotations: { readOnlyHint: true },
+        return [
+          {
+            name: "echo",
+            inputSchema: {
+              type: "object",
+              properties: { text: { type: "string" } },
+              required: ["text"],
             },
-          ],
-        };
+            annotations: { readOnlyHint: true },
+          },
+        ];
       },
       async callTool() {
         called++;
@@ -64,7 +66,7 @@ describe("MCP integrations", () => {
       },
     };
     const integrations = new MCPIntegrations(store, {
-      clientFactory: () => ({ client, transport: {} }),
+      clientFactory: () => ({ client, transport: unusedTransport }),
     });
     const agentId = "00000000-0000-4000-8000-000000000001";
     const extensions = await integrations.extensionsForAgent(
@@ -88,6 +90,24 @@ describe("MCP integrations", () => {
     store.close();
   });
 
+  test("announces each new approval once", async () => {
+    const dir = (await tempDir()).trim();
+    const approvals = new ApprovalManager(new Store(dir));
+    const announced: string[] = [];
+    approvals.onRequest((record) => announced.push(record.toolName));
+    const call = {
+      agentId: "a1",
+      conversationId: "a1:1",
+      serverId: "s1",
+      toolName: "send_email",
+      arguments: { to: "sam@example.com" },
+      taskId: "t1",
+    };
+    const first = approvals.request(call);
+    expect(approvals.request(call).id).toBe(first.id);
+    expect(announced).toEqual(["send_email"]);
+  });
+
   test("persists a side-effect approval, waits, and resumes after decision", async () => {
     const dir = (await tempDir()).trim();
     const store = new Store(dir);
@@ -101,7 +121,7 @@ describe("MCP integrations", () => {
       async connect() {},
       async close() {},
       async listTools() {
-        return { tools: [{ name: "send", inputSchema: { type: "object" } }] };
+        return [{ name: "send", inputSchema: { type: "object" } }];
       },
       async callTool() {
         called++;
@@ -109,7 +129,7 @@ describe("MCP integrations", () => {
       },
     };
     const integrations = new MCPIntegrations(store, {
-      clientFactory: () => ({ client, transport: {} }),
+      clientFactory: () => ({ client, transport: unusedTransport }),
     });
     const agentId = "00000000-0000-4000-8000-000000000002";
     const [extension] = await integrations.extensionsForAgent(

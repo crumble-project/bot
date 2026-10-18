@@ -16,10 +16,21 @@ import {
 export const delegationRequest = (sourceAgentId: string, taskId: string) =>
   `delegate:${sourceAgentId}:${taskId}`;
 
+/** A finished reply anywhere on the server, for clients that notify their owner. */
+export type ReplyActivity = {
+  type: "reply";
+  agentId: string;
+  agentName: string;
+  entryId: string | null;
+  origin: string;
+  preview: string;
+};
+
 export class CrumbleService {
   private monitoring = new Map<string, Promise<void>>();
   private closing = false;
   private listeners = new Map<string, Set<() => void>>();
+  private activityListeners = new Set<(event: ReplyActivity) => void>();
   private chatOpening = new Map<string, Promise<Conversation>>();
   constructor(
     readonly store: Store,
@@ -47,6 +58,33 @@ export class CrumbleService {
       listeners.delete(callback);
       if (!listeners.size) this.listeners.delete(conversationId);
     };
+  }
+
+  onActivity(callback: (event: ReplyActivity) => void) {
+    this.activityListeners.add(callback);
+    return () => {
+      this.activityListeners.delete(callback);
+    };
+  }
+
+  /** Tells activity listeners which bot answered and how its reply begins. */
+  private async announceReply(execution: Execution) {
+    if (!this.activityListeners.size) return;
+    const agent = this.store.getAgent(execution.agentId);
+    if (!agent) return;
+    const { messages } = await this.snapshot(execution.conversationId);
+    const reply = messages.findLast(
+      (message) => message.role === "assistant" && message.content.trim(),
+    );
+    const event: ReplyActivity = {
+      type: "reply",
+      agentId: agent.id,
+      agentName: agent.name,
+      entryId: reply?.entryId ?? null,
+      origin: this.origin(execution).kind,
+      preview: reply?.content.trim().slice(0, 240) ?? "",
+    };
+    for (const listener of this.activityListeners) listener(event);
   }
 
   private changed(conversationId: string) {
@@ -234,6 +272,10 @@ export class CrumbleService {
                     : "The agent could not answer this input",
             });
             this.changed(execution.conversationId);
+            if (result.status === "done")
+              void this.announceReply(execution).catch((error) =>
+                console.error("Reply announcement failed", execution.id, error),
+              );
           })
           .catch((error) => {
             if (this.closing) return;
