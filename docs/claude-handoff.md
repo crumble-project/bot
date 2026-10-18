@@ -7,12 +7,12 @@ Continue in `/Users/leonhardbreuer/Developer/crumble-project`. There are two ind
 - Each bot has **one continuous chat**, like a WhatsApp DM. Remove sessions, new-chat controls, and conversation management from the product.
 - Keep the entire transcript visible while Pi Durable compacts the smaller working context sent to the model.
 - Replying to an old message must recall that message and bounded surrounding context. Persist the reply relationship and original display text.
-- Use **DiceBear Critters** avatars. This works offline through the official Go generator, with stable seeds and a **New critter** profile control.
+- Bot avatars are generated in native Go (`desktop/botavatar.go`): seeded, lit 3D shapes with live faces that blink, glance, hop while working, and sleep while paused. They replaced DiceBear Critters on 2026-10-18.
 - Commit incrementally and **push both repositories** so the user can follow progress.
 
 ## Implemented
 
-Server: Pi Durable 1.3.0, isolated SQLite stores per bot, authenticated API, encrypted provider keys, memory, schedules, execution history, MCP approvals, and bounded delegation. Desktop: native workspace, streaming, profiles, memory/task editors, integrations, and Critters avatars. The overall production-quality/parity goal remains unfinished; live providers have not been tested because no API keys are configured.
+Server: Pi Durable 1.3.0, isolated SQLite stores per bot, authenticated API, encrypted provider keys, memory, schedules, execution history, MCP approvals, and bounded delegation. Desktop: native workspace, streaming, profiles, memory/task editors, integrations, and generated bot avatars. The overall production-quality/parity goal remains unfinished; live providers have not been tested because no API keys are configured.
 
 Pushed checkpoints: server `0e3c751`, `26827fd`, `6b615d9`, `7340298` (continuous chat); desktop `014cde2`, `af79a14`, `a97bba0` (continuous chat).
 

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const agentInput = z.object({
   name: z.string().trim().min(1).max(80),
-  avatar: z.string().max(100).default("critters"),
+  avatar: z.string().max(100).default("bot"),
   description: z.string().max(1000).default(""),
   instructions: z
     .string()

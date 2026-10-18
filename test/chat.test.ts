@@ -39,7 +39,7 @@ function setup(responses: FauxResponseStep[]) {
   const opened = open(dir, responses);
   const agent = opened.store.createAgent({
     name: "Chat",
-    avatar: "critters",
+    avatar: "bot",
     description: "",
     instructions: "Answer",
     provider: "faux",
