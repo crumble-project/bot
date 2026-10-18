@@ -220,7 +220,7 @@ test("registered extension tools are offered, executed, recorded and revoked", a
   );
 });
 
-test("committed partial responses stream and cancellation settles the submission", async () => {
+test("hides in-flight assistant text and cancellation settles the submission", async () => {
   const { runtime, faux } = setup({}, true);
   const a = makeAgent();
   const conversation = await runtime.createConversation(a);
@@ -229,19 +229,119 @@ test("committed partial responses stream and cancellation settles the submission
       "A deliberately long response that can be cancelled before it finishes.",
     ),
   ]);
-  const snapshots: string[] = [];
+  const snapshots: Awaited<ReturnType<typeof runtime.snapshot>>[] = [];
   const stop = await runtime.watch(a, conversation, (snapshot) => {
-    snapshots.push(JSON.stringify(snapshot.live));
+    snapshots.push(snapshot);
   });
   const submission = await runtime.submit(a, conversation, "go", "cancel-test");
   await Bun.sleep(180);
-  expect((await runtime.snapshot(a, conversation)).status).toBe("running");
+  const running = await runtime.snapshot(a, conversation);
+  expect(running.status).toBe("running");
+  expect(running.partial).toBe("");
+  expect(JSON.stringify(running.live)).not.toContain(
+    "A deliberately long response",
+  );
   await runtime.abort(a, conversation);
   const settled = await runtime.wait(submission, a);
   expect(settled.status).not.toBe("done");
-  expect((await runtime.snapshot(a, conversation)).status).toBe("idle");
+  const cancelled = await runtime.snapshot(a, conversation);
+  expect(cancelled.status).toBe("idle");
+  expect(
+    cancelled.messages.some((message) =>
+      message.content.includes("A deliberately long response"),
+    ),
+  ).toBe(false);
+  expect(
+    (await runtime.history(a)).messages.some((message) =>
+      message.content.includes("A deliberately long response"),
+    ),
+  ).toBe(false);
   expect(snapshots.length).toBeGreaterThan(1);
   await stop();
+});
+
+test("publishes the complete assistant entry only after the run ends", async () => {
+  const { runtime, faux } = setup({}, true);
+  const a = makeAgent();
+  const conversation = await runtime.createConversation(a);
+  const answer = "The complete answer arrives at the turn boundary.";
+  faux.setResponses([fauxAssistantMessage(answer)]);
+  const snapshots: Awaited<ReturnType<typeof runtime.snapshot>>[] = [];
+  const stop = await runtime.watch(a, conversation, (snapshot) => {
+    snapshots.push(snapshot);
+  });
+  const submission = await runtime.submit(a, conversation, "go", "complete");
+  const settled = await runtime.wait(submission, a);
+  expect(settled.status).toBe("done");
+  const final = await runtime.snapshot(a, conversation);
+  expect(final.status).toBe("idle");
+  expect(final.partial).toBe("");
+  expect(final.messages.some((message) => message.content === answer)).toBe(
+    true,
+  );
+  expect(
+    snapshots
+      .filter((snapshot) => snapshot.status === "running")
+      .every((snapshot) => snapshot.partial === ""),
+  ).toBe(true);
+  await stop();
+});
+
+test("hides text from an assistant tool round until the whole turn completes", async () => {
+  let release!: () => void;
+  const toolDone = new Promise<void>((resolve) => (release = resolve));
+  const tool = defineTool({
+    name: "blocked",
+    description: "Wait for the test",
+    parameters: Type.Object({}),
+    execute: async () => {
+      await toolDone;
+      return { output: [{ type: "text", text: "tool finished" }] };
+    },
+  });
+  const { runtime, faux } = setup({
+    extensions: () => [defineExtension({ name: "blocked", tools: [tool] })],
+  });
+  const a = makeAgent();
+  const conversation = await runtime.createConversation(a);
+  const intermediate = "I need to check that tool first.";
+  faux.setResponses([
+    fauxAssistantMessage(
+      [{ type: "text", text: intermediate }, fauxToolCall("blocked", {})],
+      { stopReason: "toolUse" },
+    ),
+    fauxAssistantMessage("The complete answer after the tool."),
+  ]);
+  const submission = await runtime.submit(a, conversation, "go", "tool-round");
+  let running = await runtime.snapshot(a, conversation);
+  for (let attempt = 0; attempt < 20 && !running.live; attempt++) {
+    await Bun.sleep(10);
+    running = await runtime.snapshot(a, conversation);
+  }
+  await Bun.sleep(80);
+  running = await runtime.snapshot(a, conversation);
+  expect(running.status).toBe("running");
+  expect(
+    running.messages.some((message) => message.content.includes(intermediate)),
+  ).toBe(false);
+  expect(
+    (await runtime.history(a)).messages.some((message) =>
+      message.content.includes(intermediate),
+    ),
+  ).toBe(false);
+  expect(
+    (await runtime.history(a, { includeActiveAssistant: true })).messages.some(
+      (message) => message.content.includes(intermediate),
+    ),
+  ).toBe(true);
+  release();
+  expect((await runtime.wait(submission, a)).status).toBe("done");
+  const final = await runtime.snapshot(a, conversation);
+  expect(
+    final.messages.some((message) =>
+      message.content.includes("complete answer"),
+    ),
+  ).toBe(true);
 });
 
 test("inference overrides reach provider options and deleting an agent removes its durable files", async () => {

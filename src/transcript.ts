@@ -32,6 +32,8 @@ export type TranscriptMessage = {
   role: string;
   content: string;
   blocks?: unknown;
+  /** Provider terminal reason, used to hide aborted/error partials from chat views. */
+  stopReason?: string;
   timestamp?: number;
   kind?: string;
   replyTo?: string;
@@ -39,6 +41,12 @@ export type TranscriptMessage = {
   origin?: MessageOrigin;
   communication?: BotCommunication;
   attachments?: AttachmentInfo[];
+  /** Tool result metadata is carried on the model message, rather than its content blocks. */
+  toolCallId?: string;
+  toolName?: string;
+  isError?: boolean;
+  /** Provider-specific details, including codemode nested tool calls. */
+  toolDetails?: unknown;
 };
 export type TranscriptPage = {
   messages: TranscriptMessage[];
@@ -216,7 +224,15 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
         ? data.text
         : textOf(message.content) || blockHint(message.content);
     const attached = message.role === "user" ? attachments : [];
-    if (!content && !attached.length) return [];
+    const metadata = message as unknown as Record<string, unknown>;
+    if (
+      !content &&
+      !attached.length &&
+      message.role !== "toolResult" &&
+      typeof metadata.toolCallId !== "string" &&
+      metadata.details === undefined
+    )
+      return [];
     return [
       {
         id: `${entryId}:${index}`,
@@ -224,6 +240,9 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
         role: message.role,
         content,
         blocks: withoutImageData(message.content),
+        ...(message.role === "assistant" && typeof message.stopReason === "string"
+          ? { stopReason: message.stopReason }
+          : {}),
         timestamp: message.timestamp,
         kind: entry.kind,
         ...(requestId ? { requestId } : {}),
@@ -233,6 +252,18 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
           : {}),
         ...(origin ? { origin } : {}),
         ...(attached.length ? { attachments: attached } : {}),
+        ...(typeof metadata.toolCallId === "string"
+          ? { toolCallId: metadata.toolCallId }
+          : {}),
+        ...(typeof metadata.toolName === "string"
+          ? { toolName: metadata.toolName }
+          : {}),
+        ...(typeof metadata.isError === "boolean"
+          ? { isError: metadata.isError }
+          : {}),
+        ...(metadata.details === undefined
+          ? {}
+          : { toolDetails: metadata.details }),
       },
     ];
   });

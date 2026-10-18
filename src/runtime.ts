@@ -86,13 +86,48 @@ type HarnessRecord = {
   extensions: Extension[];
 };
 
-function contentText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((block) => block?.type === "text" && typeof block.text === "string")
-    .map((block) => block.text)
-    .join("\n");
+/**
+ * Keep run/tool progress available to clients without exposing the provider's
+ * in-flight assistant message. The durable harness commits the final answer
+ * together with run completion; clients should render that committed entry
+ * only after the run has ended.
+ */
+function publicLive(live: LiveState | undefined): unknown {
+  if (!live) return live;
+  if (!live.generation) return live;
+  const { message: _message, ...generation } = live.generation;
+  return { ...live, generation };
+}
+
+function entryNumber(entryId: string): number {
+  const value = Number(entryId.slice(entryId.lastIndexOf(":") + 1));
+  return Number.isSafeInteger(value) ? value : -1;
+}
+
+type HistoryOptions = {
+  before?: string;
+  limit?: number;
+  /** Operational consumers may need committed tool-call blocks mid-run. */
+  includeActiveAssistant?: boolean;
+};
+
+function hideActiveAssistant(messages: TranscriptMessage[], cutoffs: number[]) {
+  const cutoff = cutoffs.length ? Math.min(...cutoffs) : -1;
+  return cutoff < 0
+    ? messages
+    : messages.filter(
+        (message) =>
+          message.role !== "assistant" ||
+          entryNumber(message.entryId) <= cutoff,
+      );
+}
+
+function hideIncompleteAssistant(messages: TranscriptMessage[]) {
+  return messages.filter(
+    (message) =>
+      message.role !== "assistant" ||
+      (message.stopReason !== "aborted" && message.stopReason !== "error"),
+  );
 }
 
 // The owner wants plain replies; memory and tool use stay behind the scenes.
@@ -483,15 +518,40 @@ export class AgentRuntime {
       BACKGROUND_CONTEXT,
     );
     if (!conversation) throw new Error("Conversation not found");
+    // Read transcript before attaching the live view. A run may commit an
+    // intermediate assistant entry while the view is being attached; the
+    // active-run guard below then filters it from this snapshot.
+    const transcript = await readTranscript(harness, agent.id, options);
     const view = await conversation.viewState(BACKGROUND_CONTEXT);
     try {
       const live = view.value.docs["pi.live"] as unknown as
         LiveState | undefined;
+      let messages = hideIncompleteAssistant(transcript.messages);
+      if (live?.run) {
+        // A model can commit a tool-calling assistant entry before its tool
+        // round completes. Hide assistant entries after the active input until
+        // the run settles, so a text segment never leaks mid-turn.
+        const activeInputEntries = await Promise.all(
+          live.run.inputs.map(async (id) =>
+            (await harness.submission(id, BACKGROUND_CONTEXT))?.status(
+              BACKGROUND_CONTEXT,
+            ),
+          ),
+        );
+        const activeEntries = activeInputEntries.flatMap((status) =>
+          status && "entry" in status && status.entry !== undefined
+            ? [Number(status.entry)]
+            : [],
+        );
+        const cutoff = activeEntries.length ? Math.min(...activeEntries) : -1;
+        if (cutoff >= 0) messages = hideActiveAssistant(messages, [cutoff]);
+      }
       return {
         conversationId,
-        ...(await readTranscript(harness, agent.id, options)),
-        live,
-        partial: contentText(live?.generation?.message?.content),
+        ...transcript,
+        messages,
+        live: publicLive(live),
+        partial: "",
         usage: view.value.docs["pi.usage"],
         status: live?.run ? "running" : "idle",
         updatedAt: Date.now(),
@@ -501,16 +561,30 @@ export class AgentRuntime {
     }
   }
 
-  async history(
-    agent: Agent,
-    options: { before?: string; limit?: number } = {},
-  ) {
+  async history(agent: Agent, options: HistoryOptions = {}) {
     try {
-      return await readTranscript(
+      const transcript = await readTranscript(
         (await this.open(agent)).harness,
         agent.id,
         options,
       );
+      if (options.includeActiveAssistant) return transcript;
+      const harness = (await this.open(agent)).harness;
+      const inspection = await harness.inspect(BACKGROUND_CONTEXT);
+      const cutoffs = inspection.submissions.flatMap((submission) =>
+        submission.type === "input" &&
+        submission.status === "placed" &&
+        submission.entry !== undefined
+          ? [Number(submission.entry)]
+          : [],
+      );
+      return {
+        ...transcript,
+        messages: hideActiveAssistant(
+          hideIncompleteAssistant(transcript.messages),
+          cutoffs,
+        ),
+      };
     } catch (error) {
       throw new AppError(
         400,

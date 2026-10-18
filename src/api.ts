@@ -27,6 +27,8 @@ import {
   MAX_ATTACHMENTS,
   MAX_MESSAGE_BODY,
 } from "./attachments";
+import { operationalActivity, sortActivity } from "./activity";
+import type { TranscriptMessage } from "./transcript";
 
 const text = z.string().trim().min(1).max(32000);
 const catalog = providerModels();
@@ -396,6 +398,57 @@ export function createAPI(
   app.get("/v1/executions", (c) =>
     c.json(store.listExecutions(c.req.query("agentId"))),
   );
+  app.get("/v1/activity/feed", async (c) => {
+    const input = z
+      .object({
+        agentId: z.string().uuid().optional(),
+        limit: z.coerce.number().int().min(1).max(200).default(100),
+      })
+      .parse(c.req.query());
+    const agents = input.agentId
+      ? [service.agent(input.agentId)]
+      : store.listAgents();
+    // History is durable per agent; skip bots that have never opened a conversation so
+    // this read-only feed does not initialize empty chats.
+    const existing = agents.filter(
+      (agent) => store.listConversations(agent.id, true).length,
+    );
+    const histories: {
+      agent: (typeof existing)[number];
+      messages: TranscriptMessage[];
+    }[] = [];
+    let historyHasMore = false;
+    for (const agent of existing) {
+      let before: string | undefined;
+      const collected: TranscriptMessage[] = [];
+      let pageHasMore = false;
+      // Walk a bounded number of pages so a text-heavy transcript does not hide
+      // older operational events while keeping this feed a cheap read.
+      for (let pageNumber = 0; pageNumber < 5; pageNumber++) {
+        const page = await runtime.history(agent, {
+          limit: 200,
+          includeActiveAssistant: true,
+          ...(before ? { before } : {}),
+        });
+        collected.push(...page.messages);
+        pageHasMore = Boolean(page.hasMore);
+        if (!page.hasMore || !page.oldestEntryId) break;
+        if (operationalActivity(agent, collected).length >= input.limit) break;
+        before = page.oldestEntryId;
+      }
+      historyHasMore ||= pageHasMore;
+      histories.push({ agent, messages: collected });
+    }
+    const activities = sortActivity(
+      histories.flatMap(({ agent, messages }) =>
+        operationalActivity(agent, messages),
+      ),
+    );
+    return c.json({
+      activities: activities.slice(0, input.limit),
+      hasMore: activities.length > input.limit || historyHasMore,
+    });
+  });
   const authenticatedModels = providerModels((name) =>
     store.getCredential(name),
   );
