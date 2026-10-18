@@ -1,4 +1,7 @@
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import {
+  BACKGROUND_CONTEXT,
+  type Context,
+} from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord";
 import { Type, type Models } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
@@ -23,6 +26,7 @@ import {
   readResponse,
   readTranscript,
   type MessageOrigin,
+  type BotMessageEvent,
   type TranscriptMessage,
 } from "./transcript";
 
@@ -382,6 +386,9 @@ export class AgentRuntime {
         400,
         `${agent.model} can't read images. Choose a model that accepts images in the agent's profile.`,
       );
+    if (options.origin?.kind === "bot") {
+      prepared.modelContent = `Message from bot ${JSON.stringify(options.origin.name ?? "Another bot")} (${options.origin.agentId ?? "unknown"}):\n\n${prepared.modelContent}\n\nReply to this bot's message. Your answer will be returned to the requesting bot.`;
+    }
     const content = attached.blocks.length
       ? [
           ...(prepared.modelContent.trim()
@@ -409,6 +416,33 @@ export class AgentRuntime {
     return String(submission.id);
   }
 
+  /** Data-only writes make exchanges visible without starting another model turn. */
+  async recordBotMessage(
+    agent: Agent,
+    conversationId: string,
+    event: BotMessageEvent,
+    requestId: string,
+  ) {
+    const conversation = await (
+      await this.open(agent)
+    ).harness.conversation(
+      localConversationId(agent.id, conversationId),
+      BACKGROUND_CONTEXT,
+    );
+    if (!conversation) throw new Error("Conversation not found");
+    await conversation.submit(
+      {
+        type: "write",
+        requestId,
+        entry: {
+          kind: "crumble.bot-message",
+          data: { ...event, timestamp: Date.now() },
+        },
+      },
+      BACKGROUND_CONTEXT,
+    );
+  }
+
   /** The bytes of an attached image, read back from the input entry that carries it. */
   async attachment(agent: Agent, entryId: string, index: number) {
     const record = await this.open(agent);
@@ -422,12 +456,16 @@ export class AgentRuntime {
     }
   }
 
-  async wait(submissionId: string, agent: Agent) {
+  async wait(
+    submissionId: string,
+    agent: Agent,
+    context: Context = BACKGROUND_CONTEXT,
+  ) {
     const submission = await (
       await this.open(agent)
-    ).harness.submission(numericId(submissionId), BACKGROUND_CONTEXT);
+    ).harness.submission(numericId(submissionId), context);
     if (!submission) throw new Error("Submission not found");
-    return submission.wait(BACKGROUND_CONTEXT);
+    return submission.wait(context);
   }
 
   async snapshot(

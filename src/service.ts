@@ -6,7 +6,7 @@ import {
   type Conversation,
   type Execution,
 } from "./domain";
-import type { MessageOrigin } from "./transcript";
+import type { BotMessageEvent, MessageOrigin } from "./transcript";
 import {
   attachmentDigest,
   prepareAttachments,
@@ -136,6 +136,21 @@ export class CrumbleService {
     } finally {
       this.chatOpening.delete(agentId);
     }
+  }
+
+  async recordBotMessage(
+    agentId: string,
+    event: BotMessageEvent,
+    requestId: string,
+  ) {
+    const chat = await this.chat(agentId);
+    await this.runtime.recordBotMessage(
+      this.agent(agentId),
+      chat.id,
+      event,
+      requestId,
+    );
+    this.changed(chat.id);
   }
 
   async chatSnapshot(agentId: string) {

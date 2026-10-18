@@ -12,6 +12,18 @@ import type {
 import type { AttachmentInfo } from "./attachments";
 
 export type MessageOrigin = { kind: string; name?: string; agentId?: string };
+export type BotCommunication = {
+  executionId: string;
+  fromAgentId: string;
+  fromName: string;
+  toAgentId: string;
+  toName: string;
+  status: "sent" | "done" | "failed" | "cancelled";
+};
+export type BotMessageEvent = {
+  content: string;
+  communication: BotCommunication;
+};
 export type TranscriptMessage = {
   id: string;
   entryId: string;
@@ -23,6 +35,7 @@ export type TranscriptMessage = {
   replyTo?: string;
   replyPreview?: string;
   origin?: MessageOrigin;
+  communication?: BotCommunication;
   attachments?: AttachmentInfo[];
 };
 export type TranscriptPage = {
@@ -140,6 +153,33 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
     ];
   }
   const data = record(entry.data);
+  if (entry.kind === "crumble.bot-message") {
+    const communication = record(data?.communication);
+    if (
+      !communication ||
+      typeof data?.content !== "string" ||
+      !["executionId", "fromAgentId", "fromName", "toAgentId", "toName"].every(
+        (key) => typeof communication[key] === "string",
+      ) ||
+      !["sent", "done", "failed", "cancelled"].includes(
+        String(communication.status),
+      )
+    )
+      return [];
+    return [
+      {
+        id: `${entryId}:0`,
+        entryId,
+        role: "event",
+        kind: "bot-message",
+        content: data.content,
+        ...(typeof data.timestamp === "number"
+          ? { timestamp: data.timestamp }
+          : {}),
+        communication: communication as BotCommunication,
+      },
+    ];
+  }
   const replyTo = typeof data?.replyTo === "string" ? data.replyTo : undefined;
   const origin = originOf(data?.origin);
   const attachments = attachmentsOf(data?.attachments);

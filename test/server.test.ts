@@ -36,13 +36,20 @@ test.serial("loads the workspace skills directory by default", async () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual([
-      expect.objectContaining({
-        id: "common:tasks/SKILL.md",
-        source: "bundled",
-        name: "tasks",
-      }),
-    ]);
+    expect(await response.json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "common:tasks/SKILL.md",
+          source: "bundled",
+          name: "tasks",
+        }),
+        expect.objectContaining({
+          id: "common:bot-messaging/SKILL.md",
+          source: "bundled",
+          name: "bot-messaging",
+        }),
+      ]),
+    );
     await running.close();
   } finally {
     rmSync(dataDir, { recursive: true, force: true });

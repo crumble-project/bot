@@ -75,4 +75,41 @@ describe("durable transcript helpers", () => {
     expect(result.modelContent.length).toBeLessThan(12000 + 100);
     await expect(prepareReply(harness, "b", "a:1", "x")).rejects.toThrow();
   });
+
+  test("normalizes bot communication cards and ignores malformed or model-less entries", async () => {
+    const event = {
+      id: 3,
+      conversationId: 1,
+      kind: "crumble.bot-message",
+      data: {
+        content: "How do you feel?",
+        communication: {
+          executionId: "execution-1",
+          fromAgentId: "source",
+          fromName: "Source",
+          toAgentId: "target",
+          toName: "Bot2",
+          status: "sent",
+        },
+      },
+    };
+    const malformed = {
+      id: 2,
+      conversationId: 1,
+      kind: "crumble.bot-message",
+      data: { content: "missing communication" },
+    };
+    const modelLess = { id: 1, conversationId: 1, kind: "pi.user" };
+    const result = await readTranscript(
+      fakeHarness({ 1: [event, malformed, modelLess] }),
+      "source",
+    );
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0]).toMatchObject({
+      role: "event",
+      kind: "bot-message",
+      content: "How do you feel?",
+      communication: event.data.communication,
+    });
+  });
 });

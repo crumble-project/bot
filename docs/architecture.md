@@ -11,6 +11,16 @@ Crumble is a single-owner, self-hosted personal agent server and an independent 
 - An agent's enabled tools and MCP servers are explicit capabilities. No general host shell or unrestricted filesystem access is implied by an agent's instructions.
 - One server process owns the data directory. Clients can reconnect and retrieve committed state without owning execution.
 
+## Bot messaging
+
+`BotMessaging` is the seam for communication between bots. Its interface has three operations: list permitted recipients, send a message with a stable request ID, and retrieve its result with an optional bounded wait. It owns exact-name resolution, ambiguity errors, current permissions, capacity limits, receipt ownership, and replay deduplication. `coordinationExtension` adapts this interface into model tools; it contains no dispatch policy.
+
+Messages use the existing `CrumbleService.send` execution transport and the recipient's continuous chat. `ask_bot` waits on the durable submission, with a caller cancellation context and a 60-second limit. Cancelling the caller stops its waiter; the recipient's already admitted work continues. A timeout returns a pending receipt for a later check. Existing `delegate` and `delegation_status` tools use the same messaging module. Bot requests cannot initiate another delegation, preventing cycles between waiting bots.
+
+Only the message and sender identity enter the recipient's model context. Only the completed response to that execution returns to the sender. Per-bot permission lists remain authoritative at dispatch and result access. A name collision requires an explicit bot ID rather than guessing.
+
+Source chats store sent messages and observed terminal replies as data-only Pi transcript entries. These writes use stable request IDs, survive reconnects, and do not start extra model turns. The desktop renders them as bot communication cards with explicit sender, recipient, and status. The recipient's chat marks the incoming message with the sender's identity. Delivery is not a separate inbox or a second conversation system.
+
 ## Verifiable milestones
 
 1. Persistent agent lifecycle and actual Pi Durable conversation submission, cancellation, streaming, reopen, and isolation tests.

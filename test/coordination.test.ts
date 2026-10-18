@@ -32,6 +32,7 @@ function setup() {
   dirs.push(dir);
   let conversationNumber = 500;
   const runtime: any = {
+    recordBotMessage: async () => {},
     openChat: async (agent: { id: string }) =>
       `${agent.id}:${++conversationNumber}`,
     submit: async (
@@ -131,7 +132,10 @@ describe("coordination extension", () => {
       invoke(tool(service, other.id, 1), { executionId }),
     ).rejects.toThrow("receipt");
     const status = await invoke(tool(service, source.id, 1), { executionId });
-    expect(status.output[0].text).toContain("result");
+    expect(JSON.parse(status.output[0].text)).toMatchObject({
+      status: "running",
+      response: [],
+    });
     store.updateAgent(source.id, { delegates: [] });
     await expect(
       invoke(tool(service, source.id, 1), { executionId }),

@@ -173,3 +173,13 @@ Known limitations include:
 - The initial deployment model is one authenticated owner, not multi-tenant hosting.
 - Pi Durable and the surrounding API are pinned to experimental package versions. Validate migrations before upgrading.
 - Native client and server feature work continues. Treat unimplemented parity rows as pending work.
+
+## Ask another bot
+
+Enable **Message other bots** in the requesting bot’s desktop profile and select the bots it may contact. Then send a normal chat message, such as “Can you ask @Bot2 how he feels?”
+
+The model can discover permitted recipients with `list_bots` and call `ask_bot` with a bot ID, exact name, or `@Name`. Name matching ignores case; duplicate names require an ID. The ask waits up to 60 seconds and returns the answer or a pending receipt. `delegation_status` can check that receipt later. Existing `delegate` calls still start bounded work without waiting.
+
+The source chat records explicit sender-to-recipient communication cards for the sent question and observed answer or failure. The target chat identifies the incoming bot. Private chat history and memory are not automatically forwarded. Cancelling the source run stops its wait while the target’s admitted execution continues.
+
+See [Bot messaging architecture](docs/architecture.md#bot-messaging) for the module seams and execution flow.
