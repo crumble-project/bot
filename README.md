@@ -34,12 +34,12 @@ The server listens on `127.0.0.1:7337` by default. Check the terminal output for
 
 Use these environment variables when you need a different configuration:
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `CRUMBLE_DATA_DIR` | `./data` | Directory for SQLite databases, the server token, and the encryption key. |
-| `CRUMBLE_HOST` | `127.0.0.1` | Bind address. Keep the loopback default unless a trusted reverse proxy provides TLS and access control. |
-| `CRUMBLE_PORT` | `7337` | HTTP port. |
-| `CRUMBLE_TOKEN` | Generated in `server-token` | Bearer token override. The token must contain at least 32 characters. |
+| Variable           | Default                     | Description                                                                                             |
+| ------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `CRUMBLE_DATA_DIR` | `./data`                    | Directory for SQLite databases, the server token, and the encryption key.                               |
+| `CRUMBLE_HOST`     | `127.0.0.1`                 | Bind address. Keep the loopback default unless a trusted reverse proxy provides TLS and access control. |
+| `CRUMBLE_PORT`     | `7337`                      | HTTP port.                                                                                              |
+| `CRUMBLE_TOKEN`    | Generated in `server-token` | Bearer token override. The token must contain at least 32 characters.                                   |
 
 For example:
 
@@ -91,15 +91,15 @@ The server registers every Pi built-in provider plus [Melious](https://melious.a
 
 Each bot has one continuous chat. These routes live under `/v1/agents/:id`:
 
-| Route | Description |
-| --- | --- |
-| `GET /chat` | Snapshot of the newest transcript page, live generation state, and usage. |
-| `GET /chat/history?before=&limit=` | Older transcript pages. Pass the previous page's `oldestEntryId` as `before`; `limit` is at most 200. |
-| `POST /messages` | Send `{ content, requestId, replyTo?, attachments? }`. `requestId` is a UUID that makes retries idempotent. `replyTo` is a message `entryId`. `content` may be empty when the message has attachments. |
-| `GET /attachments/:entryId/:index` | The bytes of an attached image, by its position in the message's `attachments`. |
-| `GET /events` | Server-sent `snapshot` events for the chat. |
-| `POST /abort` | Stop the running response. |
-| `POST /compact` | Summarize older working context. The transcript keeps every original message. |
+| Route                              | Description                                                                                                                                                                                            |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /chat`                        | Snapshot of the newest transcript page, live generation state, and usage.                                                                                                                              |
+| `GET /chat/history?before=&limit=` | Older transcript pages. Pass the previous page's `oldestEntryId` as `before`; `limit` is at most 200.                                                                                                  |
+| `POST /messages`                   | Send `{ content, requestId, replyTo?, attachments? }`. `requestId` is a UUID that makes retries idempotent. `replyTo` is a message `entryId`. `content` may be empty when the message has attachments. |
+| `GET /attachments/:entryId/:index` | The bytes of an attached image, by its position in the message's `attachments`.                                                                                                                        |
+| `GET /events`                      | Server-sent `snapshot` events for the chat.                                                                                                                                                            |
+| `POST /abort`                      | Stop the running response.                                                                                                                                                                             |
+| `POST /compact`                    | Summarize older working context. The transcript keeps every original message.                                                                                                                          |
 
 Scheduled tasks and delegated work from other bots post into the same chat. Their messages carry an `origin`.
 
@@ -122,15 +122,23 @@ The message endpoint accepts bodies of up to 32 MB; every other endpoint keeps a
 
 Like the chat stream, it sends a `heartbeat` event every 15 seconds.
 
+## Shared and personal memory, skills, and MCP servers
+
+Memory, skills, and MCP servers are either shared or belong to one bot.
+
+- **Memory:** `/v1/agents/:id/memories` holds a bot's own memories, and `/v1/memories` holds shared ones (`agentId: null`). A bot recalls shared memories only when its `sharedMemory` is `true`. Its `memory` tool then lists them marked `shared`, can update or delete them, and saves a new one as shared with `shared: true`.
+- **Skills:** repository-backed common skills are loaded from the workspace `skills` directory by default (override with `CRUMBLE_SKILLS_DIR` or `skillsDir` in `startServer`). Each immediate subdirectory containing `SKILL.md` is applied to every bot before opt-in shared skills and the bot's own inline skills. Bundled defaults and editable shared skills appear together at `/v1/skills`; bundled entries have `source: "bundled"`, stable `common:` IDs, and are read-only. They are never copied into SQLite. A missing default directory is treated as an empty catalog and logged; an explicitly configured missing directory fails startup. A file may begin with simple `name:` and `description:` YAML frontmatter; without it, the directory name is used. Shared skills use `source: "shared"`, and a bot uses those whose IDs are in its `sharedSkills`. Deleting a shared skill removes it from every bot. Skills are loaded at server startup, so restart after changing files.
+- **MCP servers:** `POST /v1/mcp-servers` with `agentId` creates a server that belongs to that bot. The bot starts using it right away, and no other bot can use it. Its token or OAuth sign-in is separate from any shared server for the same service. Which bot a server belongs to cannot change. Deleting the bot deletes its servers and their credentials, and duplicating the bot leaves them with the original.
+
 ## MCP servers
 
-An MCP server authenticates with a static token, saved with the server, or with OAuth. `GET /v1/mcp-servers` reports each server's `auth` as `token`, `oauth`, or `none`.
+An MCP server authenticates with a static token, saved with the server, or with OAuth. `GET /v1/mcp-servers` reports each server's `auth` as `token`, `oauth`, or `none`, and its `agentId` (`null` for a shared server).
 
 MCP connections and OAuth sign-in use `@earendil-works/pi-mcp`, following the MCP authorization spec. The server discovers the authorization server, registers itself as a client, and keeps the tokens encrypted with other credentials, refreshing them as needed:
 
 1. `POST /v1/mcp-servers/:id/oauth` with `{ redirectUri }` returns `{ authorizationUrl }`, or `{ authorized: true }` when saved tokens still work.
 2. The client opens `authorizationUrl` in a browser. The authorization server redirects to `redirectUri` with `code` and `state`.
-3. `POST /v1/mcp-servers/:id/oauth/callback` with `{ code, state }` exchanges the code for tokens.
+3. `POST /v1/mcp-servers/:id/oauth/callback` with `{ code, state, iss? }` exchanges the code for tokens. Send `iss` whenever the callback URL carries it; servers that promise one (RFC 9207) reject the sign-in without it.
 
 `DELETE /v1/mcp-servers/:id/oauth` signs out. When a refresh fails during a chat, the tool call fails with a message asking the owner to sign in again; it never waits for a browser.
 

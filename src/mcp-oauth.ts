@@ -78,12 +78,16 @@ export function connectionAuth(
   );
 }
 
-function unavailable(server: MCPServer, error: unknown): never {
+function unavailable(
+  server: MCPServer,
+  error: unknown,
+  step: "start" | "finish" = "start",
+): never {
   if (error instanceof AppError) throw error;
   const reason = error instanceof Error ? error.message : String(error);
   throw new AppError(
     400,
-    `${server.name} could not start OAuth sign-in: ${reason}`,
+    `${server.name} could not ${step} OAuth sign-in: ${reason}`,
   );
 }
 
@@ -119,12 +123,16 @@ export async function startAuthorization(
   return { authorizationUrl: authorizationUrl.toString() };
 }
 
-/** Exchanges the code from the owner's sign-in for tokens, after checking it answers this attempt. */
+/**
+ * Exchanges the code from the owner's sign-in for tokens, after checking it answers this attempt.
+ * `iss` is the issuer the callback carried, which servers that promise one must send (RFC 9207).
+ */
 export async function finishAuthorization(
   store: Store,
   server: MCPServer,
   code: string,
   state: string,
+  iss?: string,
 ) {
   const saved = read(store, server.id);
   if (!saved?.state.oauthState || saved.state.oauthState !== state)
@@ -135,9 +143,10 @@ export async function finishAuthorization(
     result = await authorizeMcp(oauth, {
       serverUrl: server.url,
       authorizationCode: code,
+      iss,
     });
   } catch (error) {
-    unavailable(server, error);
+    unavailable(server, error, "finish");
   }
   if (result !== "AUTHORIZED")
     throw new AppError(400, `${server.name} did not accept the sign-in`);

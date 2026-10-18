@@ -17,6 +17,7 @@ import type {
   ScheduleInput,
   Execution,
   MCPServer,
+  Skill,
 } from "./domain";
 import type { AttachmentInput } from "./attachments";
 
@@ -58,12 +59,13 @@ export class Store {
     this.db
       .exec(`CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, avatar TEXT NOT NULL, description TEXT NOT NULL, instructions TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, enabled INTEGER NOT NULL, folder TEXT NOT NULL, tools TEXT NOT NULL, skills TEXT NOT NULL, mcp_servers TEXT NOT NULL, delegates TEXT NOT NULL DEFAULT '[]', inference TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, title TEXT NOT NULL, archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, content TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE, content TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS skills (id TEXT PRIMARY KEY, name TEXT NOT NULL, instructions TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS schedules (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, name TEXT NOT NULL, prompt TEXT NOT NULL, cron TEXT, timezone TEXT NOT NULL, run_at TEXT, enabled INTEGER NOT NULL, next_run_at TEXT, created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS executions (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, schedule_id TEXT REFERENCES schedules(id) ON DELETE SET NULL, submission_id TEXT, request_id TEXT NOT NULL, prompt TEXT, reply_to TEXT, status TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS credentials (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS mcp_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, enabled INTEGER NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS mcp_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, enabled INTEGER NOT NULL, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE);`);
     const agentCols = this.db.query("PRAGMA table_info(agents)").all() as any[];
     if (!agentCols.some((c) => c.name === "delegates"))
       this.db.exec(
@@ -72,6 +74,33 @@ export class Store {
     if (!agentCols.some((c) => c.name === "inference"))
       this.db.exec(
         "ALTER TABLE agents ADD COLUMN inference TEXT NOT NULL DEFAULT '{}'",
+      );
+    if (!agentCols.some((c) => c.name === "shared_skills"))
+      this.db.exec(
+        "ALTER TABLE agents ADD COLUMN shared_skills TEXT NOT NULL DEFAULT '[]'",
+      );
+    if (!agentCols.some((c) => c.name === "shared_memory"))
+      this.db.exec(
+        "ALTER TABLE agents ADD COLUMN shared_memory INTEGER NOT NULL DEFAULT 0",
+      );
+    // Shared memories have no bot, and SQLite cannot drop NOT NULL in place.
+    const memoryCols = this.db
+      .query("PRAGMA table_info(memories)")
+      .all() as any[];
+    if (memoryCols.find((c) => c.name === "agent_id")?.notnull)
+      this.db.transaction(() => {
+        this.db
+          .exec(`CREATE TABLE memories_next (id TEXT PRIMARY KEY, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE, content TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+          INSERT INTO memories_next SELECT id, agent_id, content, created_at, updated_at FROM memories;
+          DROP TABLE memories;
+          ALTER TABLE memories_next RENAME TO memories;`);
+      })();
+    const serverCols = this.db
+      .query("PRAGMA table_info(mcp_servers)")
+      .all() as any[];
+    if (!serverCols.some((c) => c.name === "agent_id"))
+      this.db.exec(
+        "ALTER TABLE mcp_servers ADD COLUMN agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE",
       );
     const conversationCols = this.db
       .query("PRAGMA table_info(conversations)")
@@ -115,6 +144,8 @@ export class Store {
       folder: r.folder,
       tools: JSON.parse(r.tools),
       skills: JSON.parse(r.skills),
+      sharedSkills: JSON.parse(r.shared_skills ?? "[]"),
+      sharedMemory: !!r.shared_memory,
       mcpServers: JSON.parse(r.mcp_servers),
       delegates: JSON.parse(r.delegates ?? "[]"),
       inference: JSON.parse(r.inference ?? "{}"),
@@ -136,7 +167,7 @@ export class Store {
     const t = now();
     this.db
       .query(
-        "INSERT INTO agents (id,name,avatar,description,instructions,provider,model,enabled,folder,tools,skills,mcp_servers,delegates,inference,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO agents (id,name,avatar,description,instructions,provider,model,enabled,folder,tools,skills,shared_skills,shared_memory,mcp_servers,delegates,inference,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       )
       .run(
         agentId,
@@ -150,6 +181,8 @@ export class Store {
         input.folder,
         this.j(input.tools),
         this.j(input.skills),
+        this.j(input.sharedSkills ?? []),
+        this.b(input.sharedMemory),
         this.j(input.mcpServers),
         this.j(input.delegates ?? []),
         this.j((input as AgentInput & { inference?: unknown }).inference ?? {}),
@@ -165,7 +198,7 @@ export class Store {
     const t = now();
     this.db
       .query(
-        "UPDATE agents SET name=?,avatar=?,description=?,instructions=?,provider=?,model=?,enabled=?,folder=?,tools=?,skills=?,mcp_servers=?,delegates=?,inference=?,updated_at=? WHERE id=?",
+        "UPDATE agents SET name=?,avatar=?,description=?,instructions=?,provider=?,model=?,enabled=?,folder=?,tools=?,skills=?,shared_skills=?,shared_memory=?,mcp_servers=?,delegates=?,inference=?,updated_at=? WHERE id=?",
       )
       .run(
         x.name,
@@ -178,6 +211,8 @@ export class Store {
         x.folder,
         this.j(x.tools),
         this.j(x.skills),
+        this.j(x.sharedSkills ?? []),
+        this.b(x.sharedMemory),
         this.j(x.mcpServers),
         this.j(x.delegates ?? []),
         this.j((x as Agent & { inference?: unknown }).inference ?? {}),
@@ -194,7 +229,15 @@ export class Store {
   duplicateAgent(agentId: Id, name?: string) {
     const a = this.getAgent(agentId);
     if (!a) return null;
-    return this.createAgent({ ...a, name: name ?? `${a.name} Copy` });
+    // Personal servers keep belonging to the original bot.
+    const mcpServers = a.mcpServers.filter(
+      (serverId) => !this.getMCPServer(serverId)?.agentId,
+    );
+    return this.createAgent({
+      ...a,
+      mcpServers,
+      name: name ?? `${a.name} Copy`,
+    });
   }
 
   private convo(r: any): Conversation {
@@ -281,12 +324,17 @@ export class Store {
       updatedAt: r.updated_at,
     };
   }
-  listMemories(agentId?: Id) {
+  /** One bot's memories, or the shared ones for `null`. */
+  listMemories(agentId: Id | null) {
     const q = agentId
       ? this.db
           .query("SELECT * FROM memories WHERE agent_id=? ORDER BY created_at")
           .all(agentId)
-      : this.db.query("SELECT * FROM memories ORDER BY created_at").all();
+      : this.db
+          .query(
+            "SELECT * FROM memories WHERE agent_id IS NULL ORDER BY created_at",
+          )
+          .all();
     return q.map((r) => this.memory(r));
   }
   getMemory(id: Id) {
@@ -294,7 +342,7 @@ export class Store {
     return r ? this.memory(r) : null;
   }
   createMemory(
-    input: { agentId: string; content: string },
+    input: { agentId: string | null; content: string },
     memoryId: string = id(),
   ) {
     const t = now();
@@ -566,39 +614,52 @@ export class Store {
     ).map((r) => r.key);
   }
 
+  private mcpServer(r: any): MCPServer {
+    return {
+      id: r.id,
+      name: r.name,
+      url: r.url,
+      enabled: !!r.enabled,
+      agentId: r.agent_id ?? null,
+    };
+  }
   listMCPServers() {
     return (
       this.db.query("SELECT * FROM mcp_servers ORDER BY name").all() as any[]
-    ).map(
-      (r) =>
-        ({
-          id: r.id,
-          name: r.name,
-          url: r.url,
-          enabled: !!r.enabled,
-        }) as MCPServer,
-    );
+    ).map((r) => this.mcpServer(r));
   }
   getMCPServer(id: Id) {
     const r = this.db
       .query("SELECT * FROM mcp_servers WHERE id=?")
       .get(id) as any;
-    return r
-      ? ({
-          id: r.id,
-          name: r.name,
-          url: r.url,
-          enabled: !!r.enabled,
-        } as MCPServer)
+    return r ? this.mcpServer(r) : null;
+  }
+  /** A server the bot may use: enabled, and shared or its own. */
+  usableMCPServer(agentId: Id, serverId: Id) {
+    const server = this.getMCPServer(serverId);
+    return server?.enabled && (!server.agentId || server.agentId === agentId)
+      ? server
       : null;
   }
-  createMCPServer(input: Omit<MCPServer, "id">, serverId: string = id()) {
+  createMCPServer(
+    input: Omit<MCPServer, "id" | "agentId"> & { agentId?: string | null },
+    serverId: string = id(),
+  ) {
     this.db
-      .query("INSERT INTO mcp_servers VALUES (?,?,?,?)")
-      .run(serverId, input.name, input.url, this.b(input.enabled));
+      .query(
+        "INSERT INTO mcp_servers (id,name,url,enabled,agent_id) VALUES (?,?,?,?,?)",
+      )
+      .run(
+        serverId,
+        input.name,
+        input.url,
+        this.b(input.enabled),
+        input.agentId ?? null,
+      );
     return this.getMCPServer(serverId)!;
   }
-  updateMCPServer(id: Id, patch: Partial<Omit<MCPServer, "id">>) {
+  /** Changes a server's settings; which bot it belongs to is fixed at creation. */
+  updateMCPServer(id: Id, patch: Partial<Omit<MCPServer, "id" | "agentId">>) {
     const s = this.getMCPServer(id);
     if (!s) return null;
     const x = { ...s, ...patch };
@@ -611,5 +672,47 @@ export class Store {
     return (
       this.db.query("DELETE FROM mcp_servers WHERE id=?").run(id).changes > 0
     );
+  }
+
+  private skill(r: any): Skill {
+    return {
+      id: r.id,
+      name: r.name,
+      instructions: r.instructions,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    };
+  }
+  listSkills() {
+    return this.db
+      .query("SELECT * FROM skills ORDER BY name")
+      .all()
+      .map((r) => this.skill(r));
+  }
+  getSkill(id: Id) {
+    const r = this.db.query("SELECT * FROM skills WHERE id=?").get(id);
+    return r ? this.skill(r) : null;
+  }
+  createSkill(
+    input: { name: string; instructions: string },
+    skillId: string = id(),
+  ) {
+    const t = now();
+    this.db
+      .query("INSERT INTO skills VALUES (?,?,?,?,?)")
+      .run(skillId, input.name, input.instructions, t, t);
+    return this.getSkill(skillId)!;
+  }
+  updateSkill(id: Id, patch: Patch<Skill>) {
+    const old = this.getSkill(id);
+    if (!old) return null;
+    const x = { ...old, ...patch };
+    this.db
+      .query("UPDATE skills SET name=?,instructions=?,updated_at=? WHERE id=?")
+      .run(x.name, x.instructions, now(), id);
+    return this.getSkill(id);
+  }
+  deleteSkill(id: Id) {
+    return this.db.query("DELETE FROM skills WHERE id=?").run(id).changes > 0;
   }
 }

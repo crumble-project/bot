@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { Agent } from "../src/domain";
+import type { Agent, MCPServer } from "../src/domain";
 import type { McpTransport } from "@earendil-works/pi-mcp";
 import { MCPIntegrations, type MCPClient } from "../src/integrations";
 import {
@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 /** An MCP server's OAuth side: resource metadata, authorization server metadata, registration and tokens. */
-function fakeAuthorizationServer() {
+function fakeAuthorizationServer({ issParameter = false } = {}) {
   const tokenRequests: URLSearchParams[] = [];
   let refreshRefused = false;
   const server = Bun.serve({
@@ -43,6 +43,7 @@ function fakeAuthorizationServer() {
           grant_types_supported: ["authorization_code", "refresh_token"],
           code_challenge_methods_supported: ["S256"],
           token_endpoint_auth_methods_supported: ["none"],
+          authorization_response_iss_parameter_supported: issParameter,
         });
       if (url.pathname === "/register" && request.method === "POST")
         return Response.json(
@@ -78,6 +79,7 @@ function fakeAuthorizationServer() {
   cleanups.push(() => server.stop(true));
   return {
     url: `http://127.0.0.1:${server.port}/mcp`,
+    issuer: `http://127.0.0.1:${server.port}`,
     tokenRequests,
     refuseRefresh: () => {
       refreshRefused = true;
@@ -85,10 +87,10 @@ function fakeAuthorizationServer() {
   };
 }
 
-function setup() {
+function setup(options?: { issParameter?: boolean }) {
   const dir = mkdtempSync(join(tmpdir(), "bot-oauth-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
-  const fake = fakeAuthorizationServer();
+  const fake = fakeAuthorizationServer(options);
   const store = new Store(dir);
   const server = store.createMCPServer({
     name: "Linear",
@@ -98,10 +100,7 @@ function setup() {
   return { store, server, fake };
 }
 
-async function signIn(
-  store: Store,
-  server: { id: string; name: string; url: string; enabled: boolean },
-) {
+async function signIn(store: Store, server: MCPServer) {
   const started = await startAuthorization(store, server, redirect);
   if (!("authorizationUrl" in started))
     throw new Error("expected a sign-in URL");
@@ -143,6 +142,19 @@ describe("MCP OAuth", () => {
 
     signOut(store, server.id);
     expect(hasOAuthTokens(store, server.id)).toBe(false);
+  });
+
+  test("checks the issuer a server returns with the code (RFC 9207)", async () => {
+    const { store, server, fake } = setup({ issParameter: true });
+    const started = await startAuthorization(store, server, redirect);
+    if (!("authorizationUrl" in started))
+      throw new Error("expected a sign-in URL");
+    const state = new URL(started.authorizationUrl).searchParams.get("state")!;
+    await expect(
+      finishAuthorization(store, server, "code-1", state, "https://evil.test"),
+    ).rejects.toThrow("Linear could not finish OAuth sign-in");
+    await finishAuthorization(store, server, "code-1", state, fake.issuer);
+    expect(hasOAuthTokens(store, server.id)).toBe(true);
   });
 
   test("servers without OAuth metadata explain that they can't sign in", async () => {

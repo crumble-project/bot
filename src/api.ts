@@ -4,11 +4,18 @@ import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
-import { agentInput, scheduleInput, AppError, type MCPServer } from "./domain";
+import {
+  agentInput,
+  scheduleInput,
+  skillInput,
+  AppError,
+  type MCPServer,
+} from "./domain";
 import type { CrumbleService } from "./service";
 import type { Scheduler } from "./scheduler";
 import type { MCPIntegrations } from "./integrations";
 import { providerModels } from "./runtime";
+import type { CommonSkill } from "./common-skills";
 import {
   finishAuthorization,
   hasOAuthTokens,
@@ -32,6 +39,7 @@ export function createAPI(
   scheduler: Scheduler,
   token: string,
   integrations?: MCPIntegrations,
+  options: { commonSkills?: CommonSkill[] } = {},
 ) {
   if (token.length < 32)
     throw new Error("Server token must contain at least 32 characters");
@@ -60,10 +68,19 @@ export function createAPI(
     return c.json({ error: "The server could not complete this request" }, 500);
   });
 
+  // A bot may use shared servers and its own, never another bot's.
+  const checkServers = (agentId: string | null, serverIds: string[]) => {
+    for (const serverId of serverIds) {
+      const owner = store.getMCPServer(serverId)?.agentId;
+      if (owner && owner !== agentId)
+        throw new AppError(400, "That MCP server belongs to another bot");
+    }
+  };
   app.get("/v1/agents", (c) => c.json(store.listAgents()));
   app.post("/v1/agents", async (c) => {
     const input = agentInput.parse(await c.req.json());
     provider.parse(input.provider);
+    checkServers(null, input.mcpServers);
     return c.json(store.createAgent(input), 201);
   });
   app.get("/v1/agents/:id", (c) => c.json(service.agent(c.req.param("id"))));
@@ -71,6 +88,7 @@ export function createAPI(
     const old = service.agent(c.req.param("id"));
     const input = agentInput.parse({ ...old, ...(await c.req.json()) });
     provider.parse(input.provider);
+    checkServers(old.id, input.mcpServers);
     if (!input.enabled && old.enabled)
       for (const conversation of store.listConversations(old.id))
         await service.abort(conversation.id);
@@ -81,7 +99,16 @@ export function createAPI(
     return c.json(store.duplicateAgent(c.req.param("id")), 201);
   });
   app.delete("/v1/agents/:id", async (c) => {
+    const personal = store
+      .listMCPServers()
+      .filter((server) => server.agentId === c.req.param("id"));
     await service.deleteAgent(c.req.param("id"));
+    // The bot's personal servers went with it; their credentials and connections go too.
+    for (const server of personal) {
+      store.deleteCredential(`mcp:${server.id}`);
+      signOut(store, server.id);
+      await integrations?.disconnect(server.id);
+    }
     return c.body(null, 204);
   });
   app.get("/v1/agents/:id/chat", async (c) =>
@@ -254,6 +281,77 @@ export function createAPI(
     store.deleteMemory(memory.id);
     return c.body(null, 204);
   });
+  const sharedMemory = (id: string) => {
+    const memory = store.getMemory(id);
+    if (!memory || memory.agentId !== null)
+      throw new AppError(404, "Memory not found");
+    return memory;
+  };
+  app.get("/v1/memories", (c) => c.json(store.listMemories(null)));
+  app.post("/v1/memories", async (c) => {
+    const input = z.object({ content: text }).parse(await c.req.json());
+    return c.json(
+      store.createMemory({ agentId: null, content: input.content }),
+      201,
+    );
+  });
+  app.patch("/v1/memories/:id", async (c) => {
+    const memory = sharedMemory(c.req.param("id"));
+    return c.json(
+      store.updateMemory(
+        memory.id,
+        z.object({ content: text }).parse(await c.req.json()),
+      ),
+    );
+  });
+  app.delete("/v1/memories/:id", (c) => {
+    store.deleteMemory(sharedMemory(c.req.param("id")).id);
+    return c.body(null, 204);
+  });
+  app.get("/v1/skills", (c) =>
+    c.json([
+      ...(options.commonSkills ?? []).map(
+        ({ id, name, description, instructions, path }) => ({
+          id,
+          name,
+          ...(description ? { description } : {}),
+          instructions,
+          path,
+          source: "bundled" as const,
+        }),
+      ),
+      ...store
+        .listSkills()
+        .map((skill) => ({ ...skill, source: "shared" as const })),
+    ]),
+  );
+  app.post("/v1/skills", async (c) =>
+    c.json(store.createSkill(skillInput.parse(await c.req.json())), 201),
+  );
+  app.patch("/v1/skills/:id", async (c) => {
+    if (options.commonSkills?.some((skill) => skill.id === c.req.param("id")))
+      throw new AppError(405, "Bundled skills are read-only");
+    const old = store.getSkill(c.req.param("id"));
+    if (!old) throw new AppError(404, "Skill not found");
+    return c.json(
+      store.updateSkill(
+        old.id,
+        skillInput.parse({ ...old, ...(await c.req.json()) }),
+      ),
+    );
+  });
+  app.delete("/v1/skills/:id", (c) => {
+    const skillId = c.req.param("id");
+    if (options.commonSkills?.some((skill) => skill.id === skillId))
+      throw new AppError(405, "Bundled skills are read-only");
+    if (!store.deleteSkill(skillId)) throw new AppError(404, "Skill not found");
+    for (const agent of store.listAgents())
+      if (agent.sharedSkills?.includes(skillId))
+        store.updateAgent(agent.id, {
+          sharedSkills: agent.sharedSkills.filter((id) => id !== skillId),
+        });
+    return c.body(null, 204);
+  });
   app.get("/v1/schedules", (c) =>
     c.json(store.listSchedules(c.req.query("agentId"))),
   );
@@ -346,7 +444,7 @@ export function createAPI(
   app.get("/v1/mcp-servers", (c) =>
     c.json(store.listMCPServers().map(describeServer)),
   );
-  // OAuth sign-in: the client opens the returned URL, then posts back the code and state it receives.
+  // OAuth sign-in: the client opens the returned URL, then posts back the code, state and issuer it receives.
   app.post("/v1/mcp-servers/:id/oauth", async (c) => {
     const { redirectUri } = z
       .object({
@@ -365,14 +463,15 @@ export function createAPI(
     );
   });
   app.post("/v1/mcp-servers/:id/oauth/callback", async (c) => {
-    const { code, state } = z
+    const { code, state, iss } = z
       .object({
         code: z.string().min(1).max(4000),
         state: z.string().min(1).max(200),
+        iss: z.string().min(1).max(500).optional(),
       })
       .parse(await c.req.json());
     const server = mcpServer(c.req.param("id"));
-    await finishAuthorization(store, server, code, state);
+    await finishAuthorization(store, server, code, state, iss);
     await integrations?.disconnect(server.id);
     return c.json(describeServer(server));
   });
@@ -393,10 +492,20 @@ export function createAPI(
     enabled: z.boolean().default(true),
     token: z.string().max(16000).optional(),
   });
+  // A server added with `agentId` belongs to that bot, which starts using it right away.
   app.post("/v1/mcp-servers", async (c) => {
-    const input = mcpInput.parse(await c.req.json());
+    const input = mcpInput
+      .extend({ agentId: z.string().uuid().nullable().default(null) })
+      .parse(await c.req.json());
+    const owner = input.agentId ? service.agent(input.agentId) : null;
+    if (owner && owner.mcpServers.length >= 30)
+      throw new AppError(400, `${owner.name} already uses 30 MCP servers`);
     const server = store.createMCPServer(input);
     if (input.token) store.setCredential(`mcp:${server.id}`, input.token);
+    if (owner)
+      store.updateAgent(owner.id, {
+        mcpServers: [...owner.mcpServers, server.id],
+      });
     return c.json(server, 201);
   });
   app.patch("/v1/mcp-servers/:id", async (c) => {

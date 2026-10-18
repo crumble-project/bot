@@ -28,6 +28,10 @@ export const agentInput = z.object({
     )
     .max(30)
     .default([]),
+  /** Shared skills from the skill library this bot uses, besides its own `skills`. */
+  sharedSkills: z.array(z.string().uuid()).max(100).optional(),
+  /** Whether this bot recalls and manages shared memories, besides its own. */
+  sharedMemory: z.boolean().optional(),
   mcpServers: z.array(z.string().uuid()).max(30).default([]),
   delegates: z.array(z.string().uuid()).max(30).default([]),
   inference: z
@@ -54,9 +58,10 @@ export type Conversation = {
   updatedAt: string;
   archived?: boolean;
 };
+/** A memory belongs to one bot, or is shared when `agentId` is null. */
 export type Memory = {
   id: string;
-  agentId: string;
+  agentId: string | null;
   content: string;
   createdAt: string;
   updatedAt: string;
@@ -97,11 +102,23 @@ export type Execution = {
   createdAt: string;
   updatedAt: string;
 };
+/** An MCP server is shared, or belongs to the one bot in `agentId` with its own credentials. */
 export type MCPServer = {
   id: string;
   name: string;
   url: string;
   enabled: boolean;
+  agentId: string | null;
+};
+export const skillInput = z.object({
+  name: z.string().trim().min(1).max(100),
+  instructions: z.string().max(32000),
+});
+/** A shared skill in the library, used by the bots that list it in `sharedSkills`. */
+export type Skill = z.infer<typeof skillInput> & {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
 };
 export class AppError extends Error {
   constructor(

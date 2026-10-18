@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createModels, Type } from "@earendil-works/pi-ai";
@@ -10,6 +10,7 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { AgentRuntime, providerModels } from "../src/runtime";
+import { loadCommonSkills } from "../src/common-skills";
 import { agentInput, type Agent } from "../src/domain";
 
 const directories: string[] = [];
@@ -90,6 +91,52 @@ test("profile edits, skills and memory reach the next request without leaking be
   await expect(runtime.snapshot(b, ca)).rejects.toThrow();
 });
 
+test("loads bounded common skills and applies them before shared and personal skills", async () => {
+  const skillsRoot = mkdtempSync(join(tmpdir(), "crumble-skills-"));
+  directories.push(skillsRoot);
+  const taskDir = join(skillsRoot, "tasks");
+  mkdirSync(taskDir);
+  await Bun.write(
+    join(taskDir, "SKILL.md"),
+    "---\nname: Tasks\ndescription: Handle tasks\n---\nCommon task rules",
+  );
+  const common = loadCommonSkills(skillsRoot);
+  expect(common).toHaveLength(1);
+  expect(common[0]).toMatchObject({
+    id: "common:tasks/SKILL.md",
+    name: "Tasks",
+    description: "Handle tasks",
+    instructions: "Common task rules",
+  });
+  const requests: string[] = [];
+  const { runtime, faux } = setup({
+    commonSkills: () => common,
+    sharedSkills: () => [{ name: "Shared", instructions: "Shared rules" }],
+  });
+  const agent = {
+    ...makeAgent(),
+    skills: [{ name: "Personal", instructions: "Personal rules" }],
+  };
+  faux.setResponses([
+    (context) => {
+      requests.push(JSON.stringify(context));
+      return fauxAssistantMessage("ok");
+    },
+  ]);
+  const conversation = await runtime.createConversation(agent);
+  await runtime.wait(
+    await runtime.submit(agent, conversation, "go", "one"),
+    agent,
+  );
+  const prompt = requests[0] ?? "";
+  expect(prompt.indexOf("Common task rules")).toBeLessThan(
+    prompt.indexOf("Shared rules"),
+  );
+  expect(prompt.indexOf("Shared rules")).toBeLessThan(
+    prompt.indexOf("Personal rules"),
+  );
+});
+
 test("registered extension tools are offered, executed, recorded and revoked", async () => {
   let enabled = true,
     calls = 0;
@@ -163,16 +210,32 @@ test("committed partial responses stream and cancellation settles the submission
   await stop();
 });
 
-test('inference overrides reach provider options and deleting an agent removes its durable files', async () => {
- const {runtime,faux}=setup();
- const agent=makeAgent();
- agent.inference={thinkingLevel:'low',temperature:0.3,maxOutputTokens:500};
- faux.setResponses([(_context, options)=>{
-  expect(options?.temperature).toBe(0.3);expect(options?.maxTokens).toBe(500);
-  return fauxAssistantMessage('configured');
- }]);
- const conversation=await runtime.createConversation(agent);
- expect((await runtime.wait(await runtime.submit(agent,conversation,'hello','inference'),agent)).status).toBe('done');
- await runtime.deleteAgent(agent.id);
- expect(await Bun.file(join(directories.at(-1)!,agent.id+'.sqlite')).exists()).toBe(false);
+test("inference overrides reach provider options and deleting an agent removes its durable files", async () => {
+  const { runtime, faux } = setup();
+  const agent = makeAgent();
+  agent.inference = {
+    thinkingLevel: "low",
+    temperature: 0.3,
+    maxOutputTokens: 500,
+  };
+  faux.setResponses([
+    (_context, options) => {
+      expect(options?.temperature).toBe(0.3);
+      expect(options?.maxTokens).toBe(500);
+      return fauxAssistantMessage("configured");
+    },
+  ]);
+  const conversation = await runtime.createConversation(agent);
+  expect(
+    (
+      await runtime.wait(
+        await runtime.submit(agent, conversation, "hello", "inference"),
+        agent,
+      )
+    ).status,
+  ).toBe("done");
+  await runtime.deleteAgent(agent.id);
+  expect(
+    await Bun.file(join(directories.at(-1)!, agent.id + ".sqlite")).exists(),
+  ).toBe(false);
 });

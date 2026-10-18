@@ -4,19 +4,46 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startServer } from "../src/server";
 
-test("server owns its data directory exclusively and releases it after graceful shutdown", async () => {
-  const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-"));
+test.serial(
+  "server owns its data directory exclusively and releases it after graceful shutdown",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-"));
+    const port = 18000 + Math.floor(Math.random() * 1000);
+    try {
+      const running = await startServer({ dataDir, port });
+      expect((await fetch(new URL("/health", running.server.url))).status).toBe(
+        200,
+      );
+      await expect(startServer({ dataDir, port })).rejects.toThrow(
+        "already being held",
+      );
+      await running.close();
+      const reopened = await startServer({ dataDir, port });
+      await reopened.close();
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.serial("loads the workspace skills directory by default", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-skills-"));
+  const port = 19000 + Math.floor(Math.random() * 1000);
   try {
-    const running = await startServer({ dataDir, port: 0 });
-    expect((await fetch(new URL("/health", running.server.url))).status).toBe(
-      200,
-    );
-    await expect(startServer({ dataDir, port: 0 })).rejects.toThrow(
-      "already being held",
-    );
+    const token = "s".repeat(40);
+    const running = await startServer({ dataDir, port, token });
+    const response = await fetch(new URL("/v1/skills", running.server.url), {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([
+      expect.objectContaining({
+        id: "common:tasks/SKILL.md",
+        source: "bundled",
+        name: "tasks",
+      }),
+    ]);
     await running.close();
-    const reopened = await startServer({ dataDir, port: 0 });
-    await reopened.close();
   } finally {
     rmSync(dataDir, { recursive: true, force: true });
   }

@@ -56,14 +56,11 @@ describe("HTTP/runtime persistence", () => {
         authorization: `Bearer ${token}`,
         "content-type": "application/json",
       };
-      const response = await app.request(
-        `/v1/agents/${agent.id}/messages`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ content: "hello", requestId }),
-        },
-      );
+      const response = await app.request(`/v1/agents/${agent.id}/messages`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ content: "hello", requestId }),
+      });
       expect(response.status).toBe(202);
       await new Promise((resolve) => setTimeout(resolve, 30));
       const execution: any = await response.json();

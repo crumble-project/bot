@@ -18,6 +18,7 @@ import { MCPIntegrations } from "./integrations";
 import { coordinationExtension } from "./coordination";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
+import { loadCommonSkills } from "./common-skills";
 
 export async function startServer(
   options: {
@@ -25,6 +26,7 @@ export async function startServer(
     hostname?: string;
     port?: number;
     token?: string;
+    skillsDir?: string;
   } = {},
 ) {
   const dataDir = resolve(
@@ -38,6 +40,22 @@ export async function startServer(
     retries: 0,
   });
   try {
+    const explicitSkillsDir =
+      options.skillsDir ?? process.env.CRUMBLE_SKILLS_DIR;
+    const skillsDir = resolve(
+      // `skills` is part of the workspace next to bot; import.meta.dir keeps
+      // this independent of the process working directory.
+      explicitSkillsDir ?? resolve(import.meta.dir, "../../skills"),
+    );
+    if (explicitSkillsDir && !existsSync(skillsDir))
+      throw new Error(
+        `Configured common skills directory does not exist: ${skillsDir}`,
+      );
+    if (!existsSync(skillsDir))
+      console.warn(
+        `Common skills directory not found; continuing with no common skills: ${skillsDir}`,
+      );
+    const commonSkills = loadCommonSkills(skillsDir);
     const tokenFile = join(dataDir, "server-token");
     if (!existsSync(tokenFile))
       writeFileSync(tokenFile, randomBytes(32).toString("hex"), {
@@ -55,8 +73,19 @@ export async function startServer(
     const codemodeSandbox = new CodemodeSandbox({
       memoryLimitBytes: 256 * 1024 * 1024,
     });
+    const usesSharedMemory = (agentId: string) =>
+      store.getAgent(agentId)?.sharedMemory === true;
+    // A bot reaches its own memories, and the shared ones while it uses shared memory.
+    const reachableMemory = (agentId: string, id: string) => {
+      const memory = store.getMemory(id);
+      return memory?.agentId === agentId ||
+        (memory?.agentId === null && usesSharedMemory(agentId))
+        ? memory
+        : null;
+    };
     let service!: CrumbleService;
     const runtime = new AgentRuntime(join(dataDir, "agents"), {
+      commonSkills: () => commonSkills,
       credentials: (provider) => store.getCredential(provider),
       currentAgent: (id) => store.getAgent(id),
       extensions: async (agent) => [
@@ -71,31 +100,51 @@ export async function startServer(
             ]
           : []),
       ],
-      listMemory: (agentId) => store.listMemories(agentId),
-      createMemory: (agentId, content) => {
+      listMemory: (agentId) => [
+        ...store.listMemories(agentId),
+        ...(usesSharedMemory(agentId)
+          ? store
+              .listMemories(null)
+              .map((memory) => ({ ...memory, shared: true }))
+          : []),
+      ],
+      createMemory: (agentId, content, shared) => {
         if (!content.trim() || content.length > 32000)
           throw new AppError(400, "Memory must contain 1–32000 characters");
-        return store.createMemory({ agentId, content });
+        if (shared && !usesSharedMemory(agentId))
+          throw new AppError(400, "Shared memory is off for this agent");
+        return store.createMemory({
+          agentId: shared ? null : agentId,
+          content,
+        });
       },
       updateMemory: (agentId, id, content) => {
-        const memory = store.getMemory(id);
-        if (!memory || memory.agentId !== agentId)
+        if (!reachableMemory(agentId, id))
           throw new AppError(404, "Memory not found");
         if (!content.trim() || content.length > 32000)
           throw new AppError(400, "Memory must contain 1–32000 characters");
         return store.updateMemory(id, { content })!;
       },
       deleteMemory: (agentId, id) => {
-        if (store.getMemory(id)?.agentId !== agentId)
+        if (!reachableMemory(agentId, id))
           throw new AppError(404, "Memory not found");
         store.deleteMemory(id);
       },
+      sharedSkills: (agent) =>
+        (agent.sharedSkills ?? []).flatMap((id) => {
+          const skill = store.getSkill(id);
+          return skill
+            ? [{ name: skill.name, instructions: skill.instructions }]
+            : [];
+        }),
     });
     service = new CrumbleService(store, runtime);
     const scheduler = new Scheduler(store, (a, p, r, s) =>
       service.dispatch(a, p, r, s),
     );
-    const app = createAPI(service, scheduler, token, integrations);
+    const app = createAPI(service, scheduler, token, integrations, {
+      commonSkills,
+    });
     const server = Bun.serve({
       fetch: app.fetch,
       hostname: options.hostname ?? process.env.CRUMBLE_HOST ?? "127.0.0.1",

@@ -29,6 +29,8 @@ import {
 export type MemoryRecord = {
   id: string;
   content: string;
+  /** Shared memories are also seen by the other bots that use shared memory. */
+  shared?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -44,6 +46,7 @@ export type RuntimeCallbacks = {
   createMemory?: (
     agentId: string,
     content: string,
+    shared: boolean,
   ) => MemoryRecord | Promise<MemoryRecord>;
   updateMemory?: (
     agentId: string,
@@ -51,6 +54,10 @@ export type RuntimeCallbacks = {
     content: string,
   ) => MemoryRecord | Promise<MemoryRecord>;
   deleteMemory?: (agentId: string, id: string) => void | Promise<void>;
+  /** Shared skills from the library the agent uses, added after its own skills. */
+  sharedSkills?: (agent: Agent) => Agent["skills"];
+  /** Repository-backed skills applied to every agent before shared and personal skills. */
+  commonSkills?: () => Agent["skills"];
   extensions?: (agent: Agent) => Extension[] | Promise<Extension[]>;
 };
 export type RuntimeMessage = TranscriptMessage;
@@ -164,7 +171,8 @@ export class AgentRuntime {
             providerModels(this.callbacks.credentials));
       const memory = defineTool({
         name: "memory",
-        description: "Read and manage this agent’s persistent memory.",
+        description:
+          "Read and manage this agent’s persistent memory. When the agent uses shared memory, `list` also returns shared memories (marked `shared`), which other agents see too; create one with `shared: true` only for what every agent should know.",
         parameters: Type.Object({
           action: Type.Union([
             Type.Literal("list"),
@@ -176,6 +184,7 @@ export class AgentRuntime {
           content: Type.Optional(
             Type.String({ minLength: 1, maxLength: 32000 }),
           ),
+          shared: Type.Optional(Type.Boolean()),
         }),
         // Writes are not replay-safe: interrupted calls report an interruption instead of duplicating a memory.
         replay: "unsafe",
@@ -191,7 +200,11 @@ export class AgentRuntime {
           else if (args.action === "create") {
             if (!args.content?.trim() || !this.callbacks.createMemory)
               throw new Error("Memory content is required");
-            result = await this.callbacks.createMemory(agent.id, args.content);
+            result = await this.callbacks.createMemory(
+              agent.id,
+              args.content,
+              args.shared === true,
+            );
           } else if (args.action === "update") {
             if (
               !args.id ||
@@ -277,11 +290,19 @@ export class AgentRuntime {
     );
     if (!conversation) throw new Error("Conversation not found");
     const memory = (await this.callbacks.listMemory?.(agent.id)) ?? [];
+    const lines = (items: MemoryRecord[]) =>
+      items.map((item) => `- ${item.content}`).join("\n");
+    const shared = memory.filter((item) => item.shared);
+    const skills = [
+      ...(this.callbacks.commonSkills?.() ?? []),
+      ...(this.callbacks.sharedSkills?.(agent) ?? []),
+      ...agent.skills,
+    ];
     await conversation.configure(
       {
         model: { provider: agent.provider, modelId: agent.model },
         thinkingLevel: agent.inference?.thinkingLevel ?? "off",
-        instructions: `${agent.instructions}${agent.skills.map((skill) => `\n\n## ${skill.name}\n${skill.instructions}`).join("")}\n\n${MEMORY_GUIDANCE}\n\nPersistent memory:\n${memory.map((item) => `- ${item.content}`).join("\n")}`,
+        instructions: `${agent.instructions}${skills.map((skill) => `\n\n## ${skill.name}\n${skill.instructions}`).join("")}\n\n${MEMORY_GUIDANCE}\n\nPersistent memory:\n${lines(memory.filter((item) => !item.shared))}${shared.length ? `\n\nShared memory (other agents see it too):\n${lines(shared)}` : ""}`,
         tools,
         modelTools: codemode ? [codemode] : tools,
       },

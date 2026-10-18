@@ -62,6 +62,58 @@ const req = (app: any, path: string, init: RequestInit = {}) =>
   });
 
 describe("HTTP API", () => {
+  test("lists bundled and editable shared skills in one catalog", async () => {
+    const dir = mkdtempSync(join("/tmp", "bot-api-common-"));
+    dirs.push(dir);
+    let sequence = 0;
+    const runtime: any = {
+      openChat: async (agent: { id: string }) => `${agent.id}:${++sequence}`,
+      submit: async () => "submission",
+      wait: async () => ({ status: "done" }),
+      snapshot: async (_a: unknown, conversationId: string) => ({
+        conversationId,
+        messages: [],
+        live: null,
+        status: "idle",
+        updatedAt: Date.now(),
+      }),
+      abort: async () => {},
+      deleteAgent: async () => {},
+    };
+    const store = new Store(dir);
+    const service = new CrumbleService(store, runtime);
+    const scheduler = new Scheduler(store, (a, p, r, s) =>
+      service.dispatch(a, p, r, s),
+    );
+    const app = createAPI(service, scheduler, token, undefined, {
+      commonSkills: [
+        {
+          id: "common:tasks/SKILL.md",
+          name: "Tasks",
+          instructions: "Use tasks",
+          path: "tasks/SKILL.md",
+        },
+      ],
+    });
+    const response = await req(app, "/v1/skills");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([
+      {
+        id: "common:tasks/SKILL.md",
+        name: "Tasks",
+        instructions: "Use tasks",
+        path: "tasks/SKILL.md",
+        source: "bundled",
+      },
+    ]);
+    const mutation = await req(app, "/v1/skills/common:tasks%2FSKILL.md", {
+      method: "PATCH",
+      body: JSON.stringify({ name: "Nope", instructions: "Nope" }),
+    });
+    expect(mutation.status).toBe(405);
+    store.close();
+  });
+
   test("requires bearer auth and validates malformed requests", async () => {
     const { app, store } = setup();
     expect((await app.request("/v1/agents")).status).toBe(401);

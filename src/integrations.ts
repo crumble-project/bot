@@ -324,8 +324,8 @@ export class MCPIntegrations {
   async extensionsForAgent(agent: Agent) {
     const tools: ToolRegistration[] = [];
     for (const serverId of agent.mcpServers) {
-      const server = this.store.getMCPServer(serverId);
-      if (!server?.enabled) continue;
+      const server = this.store.usableMCPServer(agent.id, serverId);
+      if (!server) continue;
       const connection = await this.connection(server);
       const listed = await this.withTimeout(
         connection.client.listTools({ timeoutMs: this.timeout }),
@@ -354,10 +354,10 @@ export class MCPIntegrations {
             context: Context,
           ) => {
             const assertAllowed = () => {
-              const current = this.store.getMCPServer(server.id);
+              const current = this.store.usableMCPServer(agent.id, server.id);
               const owner = this.store.getAgent(agent.id);
               if (
-                !current?.enabled ||
+                !current ||
                 !owner?.enabled ||
                 !owner.mcpServers.includes(server.id)
               )
@@ -408,8 +408,8 @@ export class MCPIntegrations {
   /** The agent's MCP servers as code mode namespaces, so scripts see each server's tools together. */
   codemodeNamespaces(agent: Agent): CodemodeNamespace[] {
     return agent.mcpServers.flatMap((serverId) => {
-      const server = this.store.getMCPServer(serverId);
-      return server?.enabled
+      const server = this.store.usableMCPServer(agent.id, serverId);
+      return server
         ? [
             {
               name: server.name,
