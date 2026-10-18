@@ -4,9 +4,11 @@
   "private": true,
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",
+    "@oxlint/plugins": "1.88.0",
     "@types/bun": "latest",
     "@types/node": "^26.6.5",
     "@types/proper-lockfile": "^4.1.4",
+    "oxlint": "1.88.0",
     "prettier": "^3.9.10",
     "typescript": "7.0.2"
   },
@@ -27,6 +29,7 @@
     "start": "bun src/server.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
     "format": "prettier --write src test",
     "check": "bun run typecheck && bun test"
   }

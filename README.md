@@ -69,6 +69,12 @@ Run type checking:
 bun run typecheck
 ```
 
+Run the Oxlint rules, including the vendored anti-slop plugin in `tools/oxlint/anti-slop/`:
+
+```bash
+bun run lint
+```
+
 After starting the server, check the unauthenticated health endpoint:
 
 ```bash
