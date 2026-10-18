@@ -13,6 +13,7 @@ import {
   watchEvents,
 } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+import { CODEMODE_TOOL_NAME } from "@earendil-works/pi-durable/codemode";
 import { AppError, type Agent } from "./domain";
 import { meliousProvider } from "./providers";
 import { prepareAttachments, type AttachmentInput } from "./attachments";
@@ -268,6 +269,8 @@ export class AgentRuntime {
       ...(agent.tools.includes("memory") ? [record.memory] : []),
       ...next.flatMap((extension) => extension.tools ?? []),
     ];
+    // With code mode the model writes one script that calls the other tools, instead of calling them itself.
+    const codemode = tools.find((tool) => tool.name === CODEMODE_TOOL_NAME);
     const conversation = await record.harness.conversation(
       localConversationId(agent.id, conversationId),
       BACKGROUND_CONTEXT,
@@ -280,7 +283,7 @@ export class AgentRuntime {
         thinkingLevel: agent.inference?.thinkingLevel ?? "off",
         instructions: `${agent.instructions}${agent.skills.map((skill) => `\n\n## ${skill.name}\n${skill.instructions}`).join("")}\n\n${MEMORY_GUIDANCE}\n\nPersistent memory:\n${memory.map((item) => `- ${item.content}`).join("\n")}`,
         tools,
-        modelTools: tools,
+        modelTools: codemode ? [codemode] : tools,
       },
       BACKGROUND_CONTEXT,
     );

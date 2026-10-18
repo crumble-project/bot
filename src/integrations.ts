@@ -22,6 +22,7 @@ import type { Agent, MCPServer } from "./domain";
 import { Store } from "./store";
 import { conversationReference } from "./runtime";
 import { connectionAuth, hasOAuthTokens } from "./mcp-oauth";
+import type { CodemodeNamespace } from "@earendil-works/pi-durable/codemode";
 
 export type ApprovalStatus = "pending" | "approved" | "denied";
 export type ApprovalRecord = {
@@ -60,6 +61,9 @@ export type IntegrationsOptions = {
 };
 
 const approvalsKey = "mcp.approvals";
+/** Every tool of one MCP server starts with this, which also groups them in code mode. */
+export const mcpToolPrefix = (serverId: string) =>
+  `mcp_${serverId.replaceAll("-", "").slice(0, 8)}_`;
 const now = () => new Date().toISOString();
 const stable = (value: unknown): string => {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -331,7 +335,7 @@ export class MCPIntegrations {
         throw explainAuthFailure(server, error);
       });
       for (const remote of listed) {
-        const name = `mcp_${server.id.replaceAll("-", "").slice(0, 8)}_${remote.name.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+        const name = `${mcpToolPrefix(server.id)}${remote.name.replace(/[^a-zA-Z0-9_]/g, "_")}`;
         const destructive = remote.annotations?.readOnlyHint !== true;
         const tool = defineTool({
           name,
@@ -399,6 +403,22 @@ export class MCPIntegrations {
       }
     }
     return [defineExtension({ name: `mcp:${agent.id}`, tools })];
+  }
+
+  /** The agent's MCP servers as code mode namespaces, so scripts see each server's tools together. */
+  codemodeNamespaces(agent: Agent): CodemodeNamespace[] {
+    return agent.mcpServers.flatMap((serverId) => {
+      const server = this.store.getMCPServer(serverId);
+      return server?.enabled
+        ? [
+            {
+              name: server.name,
+              description: `Tools of the ${server.name} MCP server`,
+              prefix: mcpToolPrefix(server.id),
+            },
+          ]
+        : [];
+    });
   }
 
   /** Drops a server's open connection, so the next use picks up new credentials. */

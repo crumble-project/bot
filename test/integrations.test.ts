@@ -4,6 +4,7 @@ import type { Agent, MCPServer } from "../src/domain";
 import {
   ApprovalManager,
   MCPIntegrations,
+  mcpToolPrefix,
   type MCPClient,
 } from "../src/integrations";
 import { Store } from "../src/store";
@@ -87,6 +88,32 @@ describe("MCP integrations", () => {
     expect((result.output as any)[0].text).toBe("ok");
     expect(called).toBe(1);
     await integrations.close();
+    store.close();
+  });
+
+  test("groups each enabled server's tools for code mode", async () => {
+    const store = new Store((await tempDir()).trim());
+    const linear = store.createMCPServer({
+      name: "Linear",
+      url: "https://mcp.linear.app/mcp",
+      enabled: true,
+    });
+    const off = store.createMCPServer({
+      name: "Off",
+      url: "https://off.example.test",
+      enabled: false,
+    });
+    const integrations = new MCPIntegrations(store);
+    const namespaces = integrations.codemodeNamespaces(
+      agent("a1", [linear.id, off.id]),
+    );
+    expect(namespaces).toEqual([
+      {
+        name: "Linear",
+        description: "Tools of the Linear MCP server",
+        prefix: mcpToolPrefix(linear.id),
+      },
+    ]);
     store.close();
   });
 

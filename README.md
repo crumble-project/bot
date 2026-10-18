@@ -134,6 +134,12 @@ MCP connections and OAuth sign-in use `@earendil-works/pi-mcp`, following the MC
 
 `DELETE /v1/mcp-servers/:id/oauth` signs out. When a refresh fails during a chat, the tool call fails with a message asking the owner to sign in again; it never waits for a browser.
 
+## Code mode
+
+An agent with the `codemode` capability uses Pi Durable's code mode (`@earendil-works/pi-durable/codemode`). The model is offered one `codemode` tool and writes JavaScript that calls the agent's other tools, such as memory, delegation, and MCP tools, as `await tools.<name>(args)`. Only the script's output reaches the model, so a task that needs many tool calls takes one step. Each MCP server's tools are grouped under the server's name.
+
+Scripts run in a QuickJS sandbox from `@earendil-works/pi-codemode`, one worker per script, with a 256 MB memory limit. Their only capability is calling the agent's tools, and approvals still apply to each call. A script survives a server restart and resumes without repeating finished calls.
+
 ## Protect and back up data
 
 The server creates these protected files in the data directory:

@@ -16,6 +16,8 @@ import { createAPI } from "./api";
 import { AppError } from "./domain";
 import { MCPIntegrations } from "./integrations";
 import { coordinationExtension } from "./coordination";
+import { CodemodeSandbox } from "@earendil-works/pi-codemode";
+import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 
 export async function startServer(
   options: {
@@ -49,6 +51,10 @@ export async function startServer(
       readFileSync(tokenFile, "utf8").trim();
     const store = new Store(dataDir);
     const integrations = new MCPIntegrations(store);
+    // One sandbox runs every agent's code mode scripts, each in a worker of its own.
+    const codemodeSandbox = new CodemodeSandbox({
+      memoryLimitBytes: 256 * 1024 * 1024,
+    });
     let service!: CrumbleService;
     const runtime = new AgentRuntime(join(dataDir, "agents"), {
       credentials: (provider) => store.getCredential(provider),
@@ -56,6 +62,14 @@ export async function startServer(
       extensions: async (agent) => [
         ...(await integrations.extensionsForAgent(agent)),
         coordinationExtension(agent, service),
+        ...(agent.tools.includes("codemode")
+          ? [
+              createCodemodeExtension({
+                sandbox: codemodeSandbox,
+                namespaces: integrations.codemodeNamespaces(agent),
+              }),
+            ]
+          : []),
       ],
       listMemory: (agentId) => store.listMemories(agentId),
       createMemory: (agentId, content) => {
@@ -103,6 +117,7 @@ export async function startServer(
         await server.stop(true);
         await service.close();
         await integrations.close();
+        await codemodeSandbox.close();
         await release();
       },
     };
