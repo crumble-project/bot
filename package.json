@@ -8,8 +8,8 @@
     "@types/bun": "latest",
     "@types/node": "^26.6.5",
     "@types/proper-lockfile": "^4.1.4",
+    "oxfmt": "0.73.0",
     "oxlint": "1.88.0",
-    "prettier": "^3.9.10",
     "typescript": "7.0.2"
   },
   "dependencies": {
@@ -30,7 +30,8 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
-    "format": "prettier --write src test",
-    "check": "bun run typecheck && bun test"
+    "format": "oxfmt src test",
+    "format:check": "oxfmt --check src test",
+    "check": "bun run lint && bun run format:check && bun run typecheck && bun test"
   }
 }

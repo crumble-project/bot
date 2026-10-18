@@ -240,7 +240,8 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
         role: message.role,
         content,
         blocks: withoutImageData(message.content),
-        ...(message.role === "assistant" && typeof message.stopReason === "string"
+        ...(message.role === "assistant" &&
+        typeof message.stopReason === "string"
           ? { stopReason: message.stopReason }
           : {}),
         timestamp: message.timestamp,
@@ -454,7 +455,8 @@ export async function readAttachment(
       )
     : [];
   const image = images[imageIndex] as
-    { data: string; mimeType: string } | undefined;
+    | { data: string; mimeType: string }
+    | undefined;
   if (!image) throw new Error("Attachment not found");
   return { mimeType: image.mimeType, data: Buffer.from(image.data, "base64") };
 }

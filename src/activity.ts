@@ -2,7 +2,10 @@ import type { Agent } from "./domain";
 import type { TranscriptMessage } from "./transcript";
 
 export type ActivityKind =
-  "tool-call" | "tool-result" | "mcp-call" | "bot-message";
+  | "tool-call"
+  | "tool-result"
+  | "mcp-call"
+  | "bot-message";
 
 export type OperationalActivity = {
   id: string;

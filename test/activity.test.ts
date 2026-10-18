@@ -193,20 +193,41 @@ describe("operational activity", () => {
   });
 
   test("exposes nested codemode calls, including MCP calls", () => {
-    const events = operationalActivity(
-      { id: "a", name: "A" },
-      [{
-        id: "a:9:0", entryId: "a:9", role: "toolResult", content: "",
+    const events = operationalActivity({ id: "a", name: "A" }, [
+      {
+        id: "a:9:0",
+        entryId: "a:9",
+        role: "toolResult",
+        content: "",
         toolCallId: "codemode-1",
         toolDetails: {
           calls: [
-            { id: 1, name: "echo", args: '{"text":"hi"}', status: "ok", durationMs: 4 },
-            { id: 2, name: "mcp_1234abcd_lookup", args: "{}", status: "error", error: "down" },
+            {
+              id: 1,
+              name: "echo",
+              args: '{"text":"hi"}',
+              status: "ok",
+              durationMs: 4,
+            },
+            {
+              id: 2,
+              name: "mcp_1234abcd_lookup",
+              args: "{}",
+              status: "error",
+              error: "down",
+            },
           ],
         },
-      }],
-    );
-    expect(events.filter((event) => event.id.includes("nested-")).map((event) => event.kind)).toEqual(["tool-call", "mcp-call"]);
-    expect(events[2]?.details).toMatchObject({ status: "error", error: "down" });
+      },
+    ]);
+    expect(
+      events
+        .filter((event) => event.id.includes("nested-"))
+        .map((event) => event.kind),
+    ).toEqual(["tool-call", "mcp-call"]);
+    expect(events[2]?.details).toMatchObject({
+      status: "error",
+      error: "down",
+    });
   });
 });

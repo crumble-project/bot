@@ -525,7 +525,8 @@ export class AgentRuntime {
     const view = await conversation.viewState(BACKGROUND_CONTEXT);
     try {
       const live = view.value.docs["pi.live"] as unknown as
-        LiveState | undefined;
+        | LiveState
+        | undefined;
       let messages = hideIncompleteAssistant(transcript.messages);
       if (live?.run) {
         // A model can commit a tool-calling assistant entry before its tool

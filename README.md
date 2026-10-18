@@ -51,7 +51,7 @@ The server permits one process to own a data directory. A second process exits i
 
 ## Verify the server
 
-Run the complete server checks:
+Run the complete server checks (lint, format check, type checking, and tests):
 
 ```bash
 bun run check
@@ -73,6 +73,13 @@ Run the Oxlint rules, including the vendored anti-slop plugin in `tools/oxlint/a
 
 ```bash
 bun run lint
+```
+
+Format `src` and `test` with oxfmt, or only check formatting:
+
+```bash
+bun run format
+bun run format:check
 ```
 
 After starting the server, check the unauthenticated health endpoint:

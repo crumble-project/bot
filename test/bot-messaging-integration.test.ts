@@ -123,7 +123,9 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
       name: "Source",
     });
     expect(
-      targetHistory.messages.filter((message) => message.kind === "bot-message"),
+      targetHistory.messages.filter(
+        (message) => message.kind === "bot-message",
+      ),
     ).toEqual([
       expect.objectContaining({
         content: "How do you feel?",
