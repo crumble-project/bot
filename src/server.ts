@@ -20,6 +20,7 @@ import { coordinationExtension } from "./coordination";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { loadCommonSkills } from "./common-skills";
+import { PushManager, PushStore } from "./push";
 
 export async function startServer(
   options: {
@@ -40,6 +41,7 @@ export async function startServer(
     update: 10000,
     retries: 0,
   });
+  let push: PushManager | undefined;
   try {
     const explicitSkillsDir =
       options.skillsDir ?? process.env.CRUMBLE_SKILLS_DIR;
@@ -146,9 +148,18 @@ export async function startServer(
       service.dispatch(a, p, r, s),
     );
     schedules = new BotSchedules(store, scheduler);
-    const app = createAPI(service, scheduler, token, integrations, {
-      commonSkills,
-    });
+    push = new PushManager(new PushStore(dataDir));
+    push.attach(service);
+    const app = createAPI(
+      service,
+      scheduler,
+      token,
+      integrations,
+      {
+        commonSkills,
+      },
+      push,
+    );
     const server = Bun.serve({
       fetch: app.fetch,
       hostname: options.hostname ?? process.env.CRUMBLE_HOST ?? "127.0.0.1",
@@ -169,12 +180,14 @@ export async function startServer(
         await scheduler.stop();
         await server.stop(true);
         await service.close();
+        await push?.close();
         await integrations.close();
         await codemodeSandbox.close();
         await release();
       },
     };
   } catch (error) {
+    await push?.close();
     await release();
     throw error;
   }

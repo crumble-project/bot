@@ -29,6 +29,11 @@ import {
 } from "./attachments";
 import { operationalActivity, sortActivity } from "./activity";
 import type { TranscriptMessage } from "./transcript";
+import {
+  canonicalReplyEvent,
+  type PushManager,
+  type PushDeviceInput,
+} from "./push";
 
 const text = z.string().trim().min(1).max(32000);
 const catalog = providerModels();
@@ -42,6 +47,7 @@ export function createAPI(
   token: string,
   integrations?: MCPIntegrations,
   options: { commonSkills?: CommonSkill[] } = {},
+  push?: PushManager,
 ) {
   if (token.length < 32)
     throw new Error("Server token must contain at least 32 characters");
@@ -68,6 +74,68 @@ export function createAPI(
       return c.json({ error: "Invalid JSON" }, 400);
     console.error(error);
     return c.json({ error: "The server could not complete this request" }, 500);
+  });
+
+  const pushInput = z
+    .object({
+      platform: z.enum(["macos", "ios", "android"]),
+      transport: z.enum(["apns", "fcm"]),
+      token: z.string().trim().min(1).max(4096),
+      environment: z.enum(["development", "production"]),
+      bundleId: z.string().trim().min(1).max(255).optional(),
+      enabled: z.boolean(),
+    })
+    .superRefine((value, ctx) => {
+      if (value.transport === "fcm" && value.platform !== "android")
+        ctx.addIssue({
+          code: "custom",
+          path: ["transport"],
+          message: "FCM is only valid for Android",
+        });
+      if (value.transport === "apns" && value.platform === "android")
+        ctx.addIssue({
+          code: "custom",
+          path: ["transport"],
+          message: "APNs is only valid for macOS or iOS",
+        });
+      if (value.transport === "apns" && !value.bundleId)
+        ctx.addIssue({
+          code: "custom",
+          path: ["bundleId"],
+          message: "APNs requires bundleId",
+        });
+    });
+  app.get("/v1/push", (c) =>
+    c.json({
+      serverId: push?.serverId ?? "",
+      transports: {
+        apns: !!push?.transports.apns,
+        fcm: !!push?.transports.fcm,
+      },
+    }),
+  );
+  app.put("/v1/push/devices/:installationId", async (c) => {
+    if (!push) throw new AppError(503, "Push delivery is unavailable");
+    const installationId = z
+      .string()
+      .uuid()
+      .parse(c.req.param("installationId"));
+    const input = pushInput.parse(await c.req.json()) as PushDeviceInput;
+    return c.json(push.device(installationId, input));
+  });
+  app.delete("/v1/push/devices/:installationId", (c) => {
+    push?.remove(z.string().uuid().parse(c.req.param("installationId")));
+    return c.body(null, 204);
+  });
+  app.put("/v1/push/devices/:installationId/presence", async (c) => {
+    if (!push) throw new AppError(503, "Push delivery is unavailable");
+    const id = z.string().uuid().parse(c.req.param("installationId"));
+    const input = z
+      .object({ active: z.boolean(), agentId: z.string().uuid().nullable() })
+      .parse(await c.req.json());
+    if (!push.presence(id, input.active, input.agentId))
+      throw new AppError(404, "Push device not found");
+    return c.body(null, 204);
   });
 
   // A bot may use shared servers and its own, never another bot's.
@@ -233,9 +301,32 @@ export function createAPI(
       });
       stream.onAbort(finish);
       const send = (data: unknown) => {
+        const activity = data as {
+          type?: string;
+          executionId?: string;
+          eventId?: string;
+          serverId?: string;
+          agentId: string;
+          agentName: string;
+          entryId?: string | null;
+          origin: string;
+          preview: string;
+          createdAt: string;
+        };
+        const canonical =
+          activity.type === "reply" && push
+            ? canonicalReplyEvent(activity, push.serverId)
+            : activity.type === "reply"
+              ? {
+                  ...activity,
+                  eventId: activity.eventId ?? activity.executionId,
+                  serverId: "",
+                  entryId: activity.entryId ?? null,
+                }
+              : data;
         if (!stream.aborted)
           stream
-            .writeSSE({ event: "activity", data: JSON.stringify(data) })
+            .writeSSE({ event: "activity", data: JSON.stringify(canonical) })
             .catch(finish);
       };
       const unsubscribers = [service.onActivity(send)];

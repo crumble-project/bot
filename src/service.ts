@@ -23,11 +23,13 @@ export const delegationRequest = (sourceAgentId: string, taskId: string) =>
 /** A finished reply anywhere on the server, for clients that notify their owner. */
 export type ReplyActivity = {
   type: "reply";
+  executionId: string;
   agentId: string;
   agentName: string;
   entryId: string | null;
   origin: string;
   preview: string;
+  createdAt: string;
 };
 export type ChatPreviewActivity = {
   type: "chat-preview";
@@ -125,11 +127,13 @@ export class CrumbleService {
     );
     const event: ReplyActivity = {
       type: "reply",
+      executionId: execution.id,
       agentId: agent.id,
       agentName: agent.name,
       entryId: reply?.entryId ?? null,
       origin: this.origin(execution).kind,
       preview: reply?.content.trim().slice(0, 240) ?? "",
+      createdAt: execution.createdAt,
     };
     for (const listener of this.activityListeners) listener(event);
   }

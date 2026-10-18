@@ -55,3 +55,26 @@ test.serial("loads the workspace skills directory by default", async () => {
     rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+test.serial(
+  "failed listener startup releases the push worker and data lock",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-push-startup-"));
+    let unexpected: Awaited<ReturnType<typeof startServer>> | undefined;
+    try {
+      let failure: unknown;
+      try {
+        unexpected = await startServer({ dataDir, port: 65536 });
+      } catch (error) {
+        failure = error;
+      }
+      await unexpected?.close();
+      expect(failure).toBeDefined();
+      const running = await startServer({ dataDir, port: 0 });
+      await running.close();
+    } finally {
+      await unexpected?.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
