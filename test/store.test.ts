@@ -71,15 +71,20 @@ describe("Store", () => {
       agentId: agent.id,
       title: "Run",
     });
-    const schedule = store.createSchedule({
-      agentId: agent.id,
-      name: "Routine",
-      prompt: "go",
-      cron: "0 * * * *",
-      timezone: "UTC",
-      runAt: null,
-      enabled: true,
-    });
+    const schedule = store.createSchedule(
+      {
+        agentId: agent.id,
+        name: "Routine",
+        prompt: "go",
+        cron: "0 * * * *",
+        timezone: "UTC",
+        runAt: null,
+        enabled: true,
+      },
+      undefined,
+      agent.id,
+    );
+    expect(schedule.createdByAgentId).toBe(agent.id);
     expect(
       store.updateNextRunAt(schedule.id, "2026-01-01T00:00:00.000Z")?.nextRunAt,
     ).toBe("2026-01-01T00:00:00.000Z");

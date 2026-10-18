@@ -302,11 +302,14 @@ export class AgentRuntime {
       ...(this.callbacks.sharedSkills?.(agent) ?? []),
       ...agent.skills,
     ];
+    const now = new Date();
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const clock = `Current server time (UTC): ${now.toISOString()}\nServer timezone: ${timezone}\nServer local time: ${now.toLocaleString("sv-SE", { timeZone: timezone, hour12: false })}\nUse this fresh clock for dates and relative times. The owner's timezone may differ from the server or external tools; use their known timezone, or ask if it is unknown. For one-time schedules, runAt must include Z (UTC) or an explicit offset such as +02:00. The timezone field controls recurring cron schedules; it does not reinterpret a one-time runAt timestamp.`;
     await conversation.configure(
       {
         model: { provider: agent.provider, modelId: agent.model },
         thinkingLevel: agent.inference?.thinkingLevel ?? "off",
-        instructions: `${agent.instructions}${skills.map((skill) => `\n\n## ${skill.name}\n${skill.instructions}`).join("")}\n\n${MEMORY_GUIDANCE}\n\nPersistent memory:\n${lines(memory.filter((item) => !item.shared))}${shared.length ? `\n\nShared memory (other agents see it too):\n${lines(shared)}` : ""}`,
+        instructions: `${agent.instructions}${skills.map((skill) => `\n\n## ${skill.name}\n${skill.instructions}`).join("")}\n\n${clock}\n\n${MEMORY_GUIDANCE}\n\nPersistent memory:\n${lines(memory.filter((item) => !item.shared))}${shared.length ? `\n\nShared memory (other agents see it too):\n${lines(shared)}` : ""}`,
         tools,
         modelTools: codemode ? [codemode] : tools,
       },

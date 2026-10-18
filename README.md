@@ -148,6 +148,12 @@ An agent with the `codemode` capability uses Pi Durable's code mode (`@earendil-
 
 Scripts run in a QuickJS sandbox from `@earendil-works/pi-codemode`, one worker per script, with a 256 MB memory limit. Their only capability is calling the agent's tools, and approvals still apply to each call. A script survives a server restart and resumes without repeating finished calls.
 
+## Scheduled tasks
+
+`POST /v1/schedules` creates a task for one bot. `agentId` is the bot whose chat runs the prompt, either once at `runAt` or on a `cron` schedule. Update that field to move the task to another bot.
+
+A bot with the `schedule` capability gets a `schedule` tool (`list`, `create`, `update`, `delete`, `run`). Omitting `agentId` targets the bot itself. It can target another bot only when **Message other bots** is on and that bot is in its permitted list. It can change tasks that run on it, including ones the owner saved, and tasks it created for someone else. A task it did not create for another bot stays hidden.
+
 ## Protect and back up data
 
 The server creates these protected files in the data directory:

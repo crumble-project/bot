@@ -30,11 +30,18 @@ export class Scheduler {
     private readonly intervalMs = 1000,
   ) {}
 
-  create(input: ScheduleInput): Schedule {
+  create(
+    input: ScheduleInput,
+    createdByAgentId: string | null = null,
+  ): Schedule {
     const value = this.validate(input);
     if (!this.store.getAgent(value.agentId))
       throw new AppError(404, "Agent not found");
-    const schedule = this.store.createSchedule(value);
+    const schedule = this.store.createSchedule(
+      value,
+      undefined,
+      createdByAgentId,
+    );
     return this.setInitialNext(schedule);
   }
 

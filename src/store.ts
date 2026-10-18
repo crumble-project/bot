@@ -61,7 +61,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, title TEXT NOT NULL, archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE, content TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS skills (id TEXT PRIMARY KEY, name TEXT NOT NULL, instructions TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS schedules (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, name TEXT NOT NULL, prompt TEXT NOT NULL, cron TEXT, timezone TEXT NOT NULL, run_at TEXT, enabled INTEGER NOT NULL, next_run_at TEXT, created_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS schedules (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, name TEXT NOT NULL, prompt TEXT NOT NULL, cron TEXT, timezone TEXT NOT NULL, run_at TEXT, enabled INTEGER NOT NULL, next_run_at TEXT, created_at TEXT NOT NULL, created_by_agent_id TEXT);
       CREATE TABLE IF NOT EXISTS executions (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, schedule_id TEXT REFERENCES schedules(id) ON DELETE SET NULL, submission_id TEXT, request_id TEXT NOT NULL, prompt TEXT, reply_to TEXT, status TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS credentials (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -109,6 +109,11 @@ export class Store {
       this.db.exec(
         "ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
       );
+    const scheduleCols = this.db
+      .query("PRAGMA table_info(schedules)")
+      .all() as any[];
+    if (!scheduleCols.some((c) => c.name === "created_by_agent_id"))
+      this.db.exec("ALTER TABLE schedules ADD COLUMN created_by_agent_id TEXT");
     const cols = this.db.query("PRAGMA table_info(executions)").all() as any[];
     if (!cols.some((c) => c.name === "prompt"))
       this.db.exec("ALTER TABLE executions ADD COLUMN prompt TEXT");
@@ -375,6 +380,7 @@ export class Store {
       enabled: !!r.enabled,
       nextRunAt: r.next_run_at,
       createdAt: r.created_at,
+      createdByAgentId: r.created_by_agent_id ?? null,
     };
   }
   listSchedules(agentId?: Id) {
@@ -389,11 +395,17 @@ export class Store {
     const r = this.db.query("SELECT * FROM schedules WHERE id=?").get(id);
     return r ? this.schedule(r) : null;
   }
-  createSchedule(input: ScheduleInput, scheduleId: string = id()) {
+  createSchedule(
+    input: ScheduleInput,
+    scheduleId: string = id(),
+    createdByAgentId: string | null = null,
+  ) {
     const t = now(),
       next = input.runAt;
     this.db
-      .query("INSERT INTO schedules VALUES (?,?,?,?,?,?,?,?,?,?)")
+      .query(
+        "INSERT INTO schedules (id,agent_id,name,prompt,cron,timezone,run_at,enabled,next_run_at,created_at,created_by_agent_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+      )
       .run(
         scheduleId,
         input.agentId,
@@ -405,6 +417,7 @@ export class Store {
         this.b(input.enabled),
         next,
         t,
+        createdByAgentId,
       );
     return this.getSchedule(scheduleId)!;
   }
@@ -414,9 +427,10 @@ export class Store {
     const x = { ...s, ...patch };
     this.db
       .query(
-        "UPDATE schedules SET name=?,prompt=?,cron=?,timezone=?,run_at=?,enabled=?,next_run_at=? WHERE id=?",
+        "UPDATE schedules SET agent_id=?,name=?,prompt=?,cron=?,timezone=?,run_at=?,enabled=?,next_run_at=? WHERE id=?",
       )
       .run(
+        x.agentId,
         x.name,
         x.prompt,
         x.cron,

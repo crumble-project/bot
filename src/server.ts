@@ -15,6 +15,7 @@ import { Scheduler } from "./scheduler";
 import { createAPI } from "./api";
 import { AppError } from "./domain";
 import { MCPIntegrations } from "./integrations";
+import { BotSchedules, scheduleExtension } from "./bot-schedules";
 import { coordinationExtension } from "./coordination";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
@@ -84,6 +85,7 @@ export async function startServer(
         : null;
     };
     let service!: CrumbleService;
+    let schedules!: BotSchedules;
     const runtime = new AgentRuntime(join(dataDir, "agents"), {
       commonSkills: () => commonSkills,
       credentials: (provider) => store.getCredential(provider),
@@ -91,6 +93,7 @@ export async function startServer(
       extensions: async (agent) => [
         ...(await integrations.extensionsForAgent(agent)),
         coordinationExtension(agent, service),
+        scheduleExtension(agent, schedules),
         ...(agent.tools.includes("codemode")
           ? [
               createCodemodeExtension({
@@ -142,6 +145,7 @@ export async function startServer(
     const scheduler = new Scheduler(store, (a, p, r, s) =>
       service.dispatch(a, p, r, s),
     );
+    schedules = new BotSchedules(store, scheduler);
     const app = createAPI(service, scheduler, token, integrations, {
       commonSkills,
     });

@@ -127,7 +127,11 @@ describe("continuous bot chat", () => {
   test("a reply sends bounded context once and displays the original text", async () => {
     const requests: string[] = [];
     const record: FauxResponseStep = (context) => {
-      requests.push(JSON.stringify(context.messages.at(-1)));
+      requests.push(
+        JSON.stringify(
+          context.messages.findLast((message) => message.role === "user"),
+        ),
+      );
       return fauxAssistantMessage("noted");
     };
     const { service, agent } = setup([record, record, record]);

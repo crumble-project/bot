@@ -54,6 +54,40 @@ test("saved credentials rotate without opening a new runtime", async () => {
   expect((await models.getAuth("openai"))?.auth.apiKey).toBe(key);
 });
 
+test("each chat turn receives a fresh server clock and timezone", async () => {
+  const { runtime, faux } = setup();
+  const agent = makeAgent();
+  const conversation = await runtime.createConversation(agent);
+  const requests: string[] = [];
+  const capture = (context: { messages: unknown[] }) => {
+    requests.push(JSON.stringify(context.messages));
+    return fauxAssistantMessage("ok");
+  };
+  faux.setResponses([capture, capture]);
+  const boundaries: [number, number][] = [];
+  for (const requestId of ["one", "two"]) {
+    const earliest = Date.now();
+    const result = await runtime.wait(
+      await runtime.submit(agent, conversation, "What time is it?", requestId),
+      agent,
+    );
+    expect(result.status).toBe("done");
+    boundaries.push([earliest, Date.now()]);
+    await Bun.sleep(5);
+  }
+  expect(requests).toHaveLength(2);
+  for (const [index, prompt] of requests.entries()) {
+    const times = [
+      ...prompt.matchAll(/Current server time \(UTC\): ([\dT:.Z-]+)/g),
+    ];
+    expect(times.length).toBeGreaterThan(0);
+    const timestamp = Date.parse(times.at(-1)![1]!);
+    expect(timestamp).toBeGreaterThanOrEqual(boundaries[index]![0]);
+    expect(timestamp).toBeLessThanOrEqual(boundaries[index]![1]);
+    expect(prompt).toContain(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  }
+});
+
 test("profile edits, skills and memory reach the next request without leaking between agents", async () => {
   const requests: string[] = [];
   const { runtime, faux } = setup({

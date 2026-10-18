@@ -73,7 +73,12 @@ export const scheduleInput = z
     prompt: z.string().trim().min(1).max(32000),
     cron: z.string().max(100).nullable().default(null),
     timezone: z.string().max(100).default("UTC"),
-    runAt: z.string().datetime().nullable().default(null),
+    runAt: z
+      .string()
+      .datetime({ offset: true })
+      .transform((value) => new Date(value).toISOString())
+      .nullable()
+      .default(null),
     enabled: z.boolean().default(true),
   })
   .refine(
@@ -85,6 +90,8 @@ export type Schedule = ScheduleInput & {
   id: string;
   nextRunAt: string | null;
   createdAt: string;
+  /** The bot that saved this task, or null when the owner saved it. */
+  createdByAgentId: string | null;
 };
 export type Execution = {
   id: string;

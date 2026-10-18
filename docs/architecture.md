@@ -21,6 +21,10 @@ Only the message and sender identity enter the recipient's model context. Only t
 
 Source chats store sent messages and observed terminal replies as data-only Pi transcript entries. These writes use stable request IDs, survive reconnects, and do not start extra model turns. The desktop renders them as bot communication cards with explicit sender, recipient, and status. The recipient's chat marks the incoming message with the sender's identity. Delivery is not a separate inbox or a second conversation system.
 
+## Bot schedules
+
+`BotSchedules` lets a bot list, create, update, delete, and run tasks. Every schedule targets one bot (`agentId`): the bot whose chat runs the prompt. The owner API and the desktop task form set that target explicitly. A bot with the `schedule` capability can target itself, or a bot it is allowed to message. It can change tasks that run on it and tasks it created. Owner-created tasks have no creator bot. `scheduleExtension` is the model tool; the scheduler still owns cron validation, next-run times, and dispatch.
+
 ## Verifiable milestones
 
 1. Persistent agent lifecycle and actual Pi Durable conversation submission, cancellation, streaming, reopen, and isolation tests.
