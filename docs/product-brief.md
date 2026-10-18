@@ -11,7 +11,7 @@ The project consists of two independent Git repositories:
 
 The server is responsible for agent execution, persistence, scheduling, integrations, and orchestration.
 
-The desktop client must be built using **mygo** (https://mygo.egoist.dev/) and target macOS exclusively. It should feel like a first-class native macOS application, embracing Liquid Glass and modern macOS design conventions.
+The desktop client is a native SwiftUI app and targets macOS exclusively. It was first built with mygo (https://mygo.egoist.dev/), then moved to SwiftUI for native controls. It should feel like a first-class native macOS application, embracing Liquid Glass and modern macOS design conventions.
 
 Both repositories must remain independently maintainable.
 
