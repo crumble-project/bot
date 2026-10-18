@@ -1,9 +1,30 @@
-import { Hono } from "hono";
+import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
+import {
+  routes,
+  contractApp,
+  memoryInput,
+  snapshotInput,
+  historyInput,
+  messageInput,
+  activityInput,
+  pushInput,
+  presenceInput,
+  providerKeyInput,
+  oauthInput,
+  oauthCallbackInput,
+  mcpInput,
+  mcpCreateInput,
+  attachmentIndex,
+} from "./api-contract";
 import { bearerAuth } from "hono/bearer-auth";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
+import type {
+  activityFeedResponse,
+  chatSnapshotResponse,
+} from "./api-responses";
 import {
   agentInput,
   scheduleInput,
@@ -23,11 +44,7 @@ import {
   signOut,
   startAuthorization,
 } from "./mcp-oauth";
-import {
-  attachmentInput,
-  MAX_ATTACHMENTS,
-  MAX_MESSAGE_BODY,
-} from "./attachments";
+import { MAX_MESSAGE_BODY } from "./attachments";
 import { operationalActivity, sortActivity } from "./activity";
 import type { TranscriptMessage } from "./transcript";
 import {
@@ -36,7 +53,6 @@ import {
   type PushDeviceInput,
 } from "./push";
 
-const text = z.string().trim().min(1).max(32000);
 const catalog = providerModels();
 
 const provider = z
@@ -54,7 +70,17 @@ export function createAPI(
   if (token.length < 32)
     throw new Error("Server token must contain at least 32 characters");
   const { store, runtime } = service;
-  const app = new Hono();
+  const app = contractApp();
+
+  const register = <R extends RouteConfig>(
+    definition: R & { getRoutingPath: () => string },
+    handler: RouteHandler<R>,
+  ) => {
+    // Keep merge-before-validation PATCH semantics and existing JSON error handling.
+    app.openAPIRegistry.registerPath(definition);
+    app.on(definition.method, definition.getRoutingPath(), handler);
+  };
+
   // Messages may carry attachments; every other request stays small.
   const messageBodyLimit = bodyLimit({ maxSize: MAX_MESSAGE_BODY });
   const defaultBodyLimit = bodyLimit({ maxSize: 1024 * 1024 });
@@ -64,7 +90,9 @@ export function createAPI(
       ? messageBodyLimit(c, next)
       : defaultBodyLimit(c, next),
   );
-  app.get("/health", (c) => c.json({ status: "ok", apiVersion: 1 }));
+  register(routes.health, (c) =>
+    c.json({ status: "ok", apiVersion: 1 } as const, 200),
+  );
   app.use("/v1/*", bearerAuth({ token }));
   app.onError((error, c) => {
     if (error instanceof HTTPException) return error.getResponse();
@@ -84,48 +112,19 @@ export function createAPI(
     return c.json({ error: "The server could not complete this request" }, 500);
   });
 
-  const pushInput = z
-    .object({
-      platform: z.enum(["macos", "ios", "android"]),
-      transport: z.enum(["apns", "fcm"]),
-      token: z.string().trim().min(1).max(4096),
-      environment: z.enum(["development", "production"]),
-      bundleId: z.string().trim().min(1).max(255).optional(),
-      enabled: z.boolean(),
-    })
-    .superRefine((value, ctx) => {
-      if (value.transport === "fcm" && value.platform !== "android")
-        ctx.addIssue({
-          code: "custom",
-          path: ["transport"],
-          message: "FCM is only valid for Android",
-        });
-
-      if (value.transport === "apns" && value.platform === "android")
-        ctx.addIssue({
-          code: "custom",
-          path: ["transport"],
-          message: "APNs is only valid for macOS or iOS",
-        });
-
-      if (value.transport === "apns" && !value.bundleId)
-        ctx.addIssue({
-          code: "custom",
-          path: ["bundleId"],
-          message: "APNs requires bundleId",
-        });
-    });
-
-  app.get("/v1/push", (c) =>
-    c.json({
-      serverId: push?.serverId ?? "",
-      transports: {
-        apns: !!push?.transports.apns,
-        fcm: !!push?.transports.fcm,
+  register(routes.pushStatus, (c) =>
+    c.json(
+      {
+        serverId: push?.serverId ?? "",
+        transports: {
+          apns: !!push?.transports.apns,
+          fcm: !!push?.transports.fcm,
+        },
       },
-    }),
+      200,
+    ),
   );
-  app.put("/v1/push/devices/:installationId", async (c) => {
+  register(routes.putDevice, async (c) => {
     if (!push) throw new AppError(503, "Push delivery is unavailable");
 
     const installationId = z
@@ -135,20 +134,18 @@ export function createAPI(
 
     const input: PushDeviceInput = pushInput.parse(await c.req.json());
 
-    return c.json(push.device(installationId, input));
+    return c.json(push.device(installationId, input), 200);
   });
-  app.delete("/v1/push/devices/:installationId", (c) => {
+  register(routes.deleteDevice, (c) => {
     push?.remove(z.string().uuid().parse(c.req.param("installationId")));
 
     return c.body(null, 204);
   });
-  app.put("/v1/push/devices/:installationId/presence", async (c) => {
+  register(routes.putPresence, async (c) => {
     if (!push) throw new AppError(503, "Push delivery is unavailable");
     const id = z.string().uuid().parse(c.req.param("installationId"));
 
-    const input = z
-      .object({ active: z.boolean(), agentId: z.string().uuid().nullable() })
-      .parse(await c.req.json());
+    const input = presenceInput.parse(await c.req.json());
 
     if (!push.presence(id, input.active, input.agentId))
       throw new AppError(404, "Push device not found");
@@ -166,22 +163,25 @@ export function createAPI(
     }
   };
 
-  app.get("/v1/agents", async (c) =>
+  register(routes.listAgents, async (c) =>
     c.json(
       (await service.agentPreviews()).map(({ agent, lastMessage }) => {
         return lastMessage ? { ...agent, lastMessage } : agent;
       }),
+      200,
     ),
   );
-  app.post("/v1/agents", async (c) => {
+  register(routes.createAgent, async (c) => {
     const input = agentInput.parse(await c.req.json());
     provider.parse(input.provider);
     checkServers(null, input.mcpServers);
 
     return c.json(store.createAgent(input), 201);
   });
-  app.get("/v1/agents/:id", (c) => c.json(service.agent(c.req.param("id"))));
-  app.patch("/v1/agents/:id", async (c) => {
+  register(routes.getAgent, (c) =>
+    c.json(service.agent(c.req.param("id")), 200),
+  );
+  register(routes.updateAgent, async (c) => {
     const old = service.agent(c.req.param("id"));
     const input = agentInput.parse({ ...old, ...(await c.req.json()) });
     provider.parse(input.provider);
@@ -191,14 +191,14 @@ export function createAPI(
       for (const conversation of store.listConversations(old.id))
         await service.abort(conversation.id);
 
-    return c.json(store.updateAgent(old.id, input));
+    return c.json(store.updateAgent(old.id, input), 200);
   });
-  app.post("/v1/agents/:id/duplicate", (c) => {
+  register(routes.duplicateAgent, (c) => {
     service.agent(c.req.param("id"));
 
     return c.json(store.duplicateAgent(c.req.param("id")), 201);
   });
-  app.delete("/v1/agents/:id", async (c) => {
+  register(routes.deleteAgent, async (c) => {
     const personal = store
       .listMCPServers()
       .filter((server) => server.agentId === c.req.param("id"));
@@ -216,36 +216,21 @@ export function createAPI(
   });
 
   const snapshotQuery = (c: { req: { query: () => Record<string, string> } }) =>
-    z
-      .object({ limit: z.coerce.number().int().min(1).max(200).optional() })
-      .parse(c.req.query());
+    snapshotInput.parse(c.req.query());
 
-  app.get("/v1/agents/:id/chat", async (c) =>
-    c.json(await service.chatSnapshot(c.req.param("id"), snapshotQuery(c))),
-  );
-  app.get("/v1/agents/:id/chat/history", async (c) => {
-    const input = z
-      .object({
-        before: z.string().min(1).max(200).optional(),
-        limit: z.coerce.number().int().min(1).max(200).optional(),
-      })
-      .parse(c.req.query());
+  register(routes.chat, async (c) => {
+    const snapshot: z.output<typeof chatSnapshotResponse> =
+      await service.chatSnapshot(c.req.param("id"), snapshotQuery(c));
 
-    return c.json(await service.history(c.req.param("id"), input));
+    return c.json(snapshot, 200);
   });
-  app.post("/v1/agents/:id/messages", async (c) => {
-    const input = z
-      .object({
-        content: z.string().trim().max(32000),
-        requestId: z.string().uuid(),
-        replyTo: z.string().min(1).max(200).optional(),
-        attachments: z.array(attachmentInput).max(MAX_ATTACHMENTS).default([]),
-      })
-      .refine((value) => value.content || value.attachments.length, {
-        message: "Write a message or attach a file",
-        path: ["content"],
-      })
-      .parse(await c.req.json());
+  register(routes.history, async (c) => {
+    const input = historyInput.parse(c.req.query());
+
+    return c.json(await service.history(c.req.param("id"), input), 200);
+  });
+  register(routes.sendMessage, async (c) => {
+    const input = messageInput.parse(await c.req.json());
 
     return c.json(
       await service.sendChat(
@@ -258,13 +243,8 @@ export function createAPI(
       202,
     );
   });
-  app.get("/v1/agents/:id/attachments/:entryId/:index", async (c) => {
-    const index = z.coerce
-      .number()
-      .int()
-      .min(0)
-      .max(MAX_ATTACHMENTS - 1)
-      .parse(c.req.param("index"));
+  register(routes.attachment, async (c) => {
+    const index = attachmentIndex.parse(c.req.param("index"));
 
     const image = await runtime.attachment(
       service.agent(c.req.param("id")),
@@ -277,15 +257,15 @@ export function createAPI(
       "Cache-Control": "private, max-age=31536000, immutable",
     });
   });
-  app.post("/v1/agents/:id/abort", async (c) => {
+  register(routes.abort, async (c) => {
     await service.abortChat(c.req.param("id"));
 
     return c.body(null, 204);
   });
-  app.post("/v1/agents/:id/compact", async (c) =>
+  register(routes.compact, async (c) =>
     c.json({ taskId: await service.compact(c.req.param("id")) }, 202),
   );
-  app.get("/v1/agents/:id/events", async (c) => {
+  register(routes.chatEvents, async (c) => {
     const options = snapshotQuery(c);
     const agent = service.agent(c.req.param("id"));
     const chat = await service.chat(agent.id);
@@ -335,7 +315,7 @@ export function createAPI(
   });
 
   // Server-wide activity for notifications: finished replies from every bot.
-  app.get("/v1/events", (c) =>
+  register(routes.events, (c) =>
     streamSSE(c, async (stream) => {
       let finish!: () => void;
 
@@ -396,14 +376,14 @@ export function createAPI(
     }),
   );
 
-  app.get("/v1/agents/:id/memories", (c) => {
+  register(routes.agentMemories, (c) => {
     service.agent(c.req.param("id"));
 
-    return c.json(store.listMemories(c.req.param("id")));
+    return c.json(store.listMemories(c.req.param("id")), 200);
   });
-  app.post("/v1/agents/:id/memories", async (c) => {
+  register(routes.createAgentMemory, async (c) => {
     service.agent(c.req.param("id"));
-    const input = z.object({ content: text }).parse(await c.req.json());
+    const input = memoryInput.parse(await c.req.json());
 
     return c.json(
       store.createMemory({
@@ -413,20 +393,18 @@ export function createAPI(
       201,
     );
   });
-  app.patch("/v1/agents/:id/memories/:memoryId", async (c) => {
+  register(routes.updateAgentMemory, async (c) => {
     const memory = store.getMemory(c.req.param("memoryId"));
 
     if (!memory || memory.agentId !== c.req.param("id"))
       throw new AppError(404, "Memory not found");
 
     return c.json(
-      store.updateMemory(
-        memory.id,
-        z.object({ content: text }).parse(await c.req.json()),
-      ),
+      store.updateMemory(memory.id, memoryInput.parse(await c.req.json())),
+      200,
     );
   });
-  app.delete("/v1/agents/:id/memories/:memoryId", (c) => {
+  register(routes.deleteAgentMemory, (c) => {
     const memory = store.getMemory(c.req.param("memoryId"));
 
     if (!memory || memory.agentId !== c.req.param("id"))
@@ -445,55 +423,56 @@ export function createAPI(
     return memory;
   };
 
-  app.get("/v1/memories", (c) => c.json(store.listMemories(null)));
-  app.post("/v1/memories", async (c) => {
-    const input = z.object({ content: text }).parse(await c.req.json());
+  register(routes.memories, (c) => c.json(store.listMemories(null), 200));
+  register(routes.createMemory, async (c) => {
+    const input = memoryInput.parse(await c.req.json());
 
     return c.json(
       store.createMemory({ agentId: null, content: input.content }),
       201,
     );
   });
-  app.patch("/v1/memories/:id", async (c) => {
+  register(routes.updateMemory, async (c) => {
     const memory = sharedMemory(c.req.param("id"));
 
     return c.json(
-      store.updateMemory(
-        memory.id,
-        z.object({ content: text }).parse(await c.req.json()),
-      ),
+      store.updateMemory(memory.id, memoryInput.parse(await c.req.json())),
+      200,
     );
   });
-  app.delete("/v1/memories/:id", (c) => {
+  register(routes.deleteMemory, (c) => {
     store.deleteMemory(sharedMemory(c.req.param("id")).id);
 
     return c.body(null, 204);
   });
-  app.get("/v1/skills", (c) =>
-    c.json([
-      ...(options.commonSkills ?? []).map(
-        ({ id, name, description, instructions, path }) => {
-          const skill = {
-            id,
-            name,
-            description,
-            instructions,
-            path,
-            source: "bundled" as const,
-          };
+  register(routes.skills, (c) =>
+    c.json(
+      [
+        ...(options.commonSkills ?? []).map(
+          ({ id, name, description, instructions, path }) => {
+            const skill = {
+              id,
+              name,
+              description,
+              instructions,
+              path,
+              source: "bundled" as const,
+            };
 
-          return skill;
-        },
-      ),
-      ...store
-        .listSkills()
-        .map((skill) => ({ ...skill, source: "shared" as const })),
-    ]),
+            return skill;
+          },
+        ),
+        ...store
+          .listSkills()
+          .map((skill) => ({ ...skill, source: "shared" as const })),
+      ],
+      200,
+    ),
   );
-  app.post("/v1/skills", async (c) =>
+  register(routes.createSkill, async (c) =>
     c.json(store.createSkill(skillInput.parse(await c.req.json())), 201),
   );
-  app.patch("/v1/skills/:id", async (c) => {
+  register(routes.updateSkill, async (c) => {
     if (options.commonSkills?.some((skill) => skill.id === c.req.param("id")))
       throw new AppError(405, "Bundled skills are read-only");
     const old = store.getSkill(c.req.param("id"));
@@ -505,9 +484,10 @@ export function createAPI(
         old.id,
         skillInput.parse({ ...old, ...(await c.req.json()) }),
       ),
+      200,
     );
   });
-  app.delete("/v1/skills/:id", (c) => {
+  register(routes.deleteSkill, (c) => {
     const skillId = c.req.param("id");
 
     if (options.commonSkills?.some((skill) => skill.id === skillId))
@@ -523,16 +503,16 @@ export function createAPI(
 
     return c.body(null, 204);
   });
-  app.get("/v1/schedules", (c) =>
-    c.json(store.listSchedules(c.req.query("agentId"))),
+  register(routes.schedules, (c) =>
+    c.json(store.listSchedules(c.req.query("agentId")), 200),
   );
-  app.post("/v1/schedules", async (c) =>
+  register(routes.createSchedule, async (c) =>
     c.json(
       await scheduler.create(scheduleInput.parse(await c.req.json())),
       201,
     ),
   );
-  app.patch("/v1/schedules/:id", async (c) => {
+  register(routes.updateSchedule, async (c) => {
     const old = store.getSchedule(c.req.param("id"));
 
     if (!old) throw new AppError(404, "Schedule not found");
@@ -542,27 +522,25 @@ export function createAPI(
         old.id,
         scheduleInput.parse({ ...old, ...(await c.req.json()) }),
       ),
+      200,
     );
   });
-  app.delete("/v1/schedules/:id", (c) => {
+  register(routes.deleteSchedule, (c) => {
     if (!store.deleteSchedule(c.req.param("id")))
       throw new AppError(404, "Schedule not found");
 
     return c.body(null, 204);
   });
-  app.post("/v1/schedules/:id/run", async (c) =>
-    c.json(await scheduler.runNow(c.req.param("id")), 202),
+  register(routes.runSchedule, async (c) => {
+    const run = await scheduler.runNow(c.req.param("id"));
+
+    return c.json({ ...run, result: run.result ?? undefined }, 202);
+  });
+  register(routes.executions, (c) =>
+    c.json(store.listExecutions(c.req.query("agentId")), 200),
   );
-  app.get("/v1/executions", (c) =>
-    c.json(store.listExecutions(c.req.query("agentId"))),
-  );
-  app.get("/v1/activity/feed", async (c) => {
-    const input = z
-      .object({
-        agentId: z.string().uuid().optional(),
-        limit: z.coerce.number().int().min(1).max(200).default(100),
-      })
-      .parse(c.req.query());
+  register(routes.activity, async (c) => {
+    const input = activityInput.parse(c.req.query());
 
     const agents = input.agentId
       ? [service.agent(input.agentId)]
@@ -616,17 +594,19 @@ export function createAPI(
       ),
     );
 
-    return c.json({
+    const feed: z.output<typeof activityFeedResponse> = {
       activities: activities.slice(0, input.limit),
       hasMore: activities.length > input.limit || historyHasMore,
-    });
+    };
+
+    return c.json(feed, 200);
   });
 
   const authenticatedModels = providerModels((name) =>
     store.getCredential(name),
   );
 
-  app.get("/v1/providers", async (c) =>
+  register(routes.providers, async (c) =>
     c.json(
       await Promise.all(
         catalog.getProviders().map(async (item) => ({
@@ -637,6 +617,7 @@ export function createAPI(
           ),
         })),
       ),
+      200,
     ),
   );
 
@@ -647,7 +628,7 @@ export function createAPI(
     return authenticatedModels.getModels(name);
   };
 
-  app.get("/v1/models", async (c) => {
+  register(routes.models, async (c) => {
     const name = c.req.query("provider");
 
     if (name) provider.parse(name);
@@ -660,20 +641,19 @@ export function createAPI(
         contextWindow: model.contextWindow,
         reasoning: model.reasoning,
       })),
+      200,
     );
   });
-  app.put("/v1/providers/:provider", async (c) => {
+  register(routes.putProvider, async (c) => {
     const name = provider.parse(c.req.param("provider"));
 
-    const input = z
-      .object({ apiKey: z.string().trim().min(1).max(16000) })
-      .parse(await c.req.json());
+    const input = providerKeyInput.parse(await c.req.json());
 
     store.setCredential(name, input.apiKey);
 
-    return c.json({ provider: name, configured: true });
+    return c.json({ provider: name, configured: true }, 200);
   });
-  app.delete("/v1/providers/:provider", (c) => {
+  register(routes.deleteProvider, (c) => {
     store.deleteCredential(provider.parse(c.req.param("provider")));
 
     return c.body(null, 204);
@@ -686,7 +666,7 @@ export function createAPI(
         ? "token"
         : "none";
 
-    return { ...server, auth, authenticated: auth !== "none" };
+    return { ...server, auth, authenticated: auth !== "none" } as const;
   };
 
   const mcpServer = (id: string) => {
@@ -697,19 +677,12 @@ export function createAPI(
     return server;
   };
 
-  app.get("/v1/mcp-servers", (c) =>
-    c.json(store.listMCPServers().map(describeServer)),
+  register(routes.mcpServers, (c) =>
+    c.json(store.listMCPServers().map(describeServer), 200),
   );
   // OAuth sign-in: the client opens the returned URL, then posts back the code, state and issuer it receives.
-  app.post("/v1/mcp-servers/:id/oauth", async (c) => {
-    const { redirectUri } = z
-      .object({
-        redirectUri: z
-          .string()
-          .max(500)
-          .regex(/^[a-z][a-z0-9+.-]*:\S+$/i, "Use an absolute redirect URI"),
-      })
-      .parse(await c.req.json());
+  register(routes.oauth, async (c) => {
+    const { redirectUri } = oauthInput.parse(await c.req.json());
 
     return c.json(
       await startAuthorization(
@@ -717,48 +690,29 @@ export function createAPI(
         mcpServer(c.req.param("id")),
         redirectUri,
       ),
+      200,
     );
   });
-  app.post("/v1/mcp-servers/:id/oauth/callback", async (c) => {
-    const { code, state, iss } = z
-      .object({
-        code: z.string().min(1).max(4000),
-        state: z.string().min(1).max(200),
-        iss: z.string().min(1).max(500).optional(),
-      })
-      .parse(await c.req.json());
+  register(routes.oauthCallback, async (c) => {
+    const { code, state, iss } = oauthCallbackInput.parse(await c.req.json());
 
     const server = mcpServer(c.req.param("id"));
     await finishAuthorization(store, server, code, state, iss);
     await integrations?.disconnect(server.id);
 
-    return c.json(describeServer(server));
+    return c.json(describeServer(server), 200);
   });
-  app.delete("/v1/mcp-servers/:id/oauth", async (c) => {
+  register(routes.deleteOauth, async (c) => {
     const server = mcpServer(c.req.param("id"));
     signOut(store, server.id);
     await integrations?.disconnect(server.id);
 
-    return c.json(describeServer(server));
-  });
-
-  const mcpInput = z.object({
-    name: z.string().trim().min(1).max(100),
-    url: z
-      .url()
-      .refine(
-        (value) => ["http:", "https:"].includes(new URL(value).protocol),
-        "Use an HTTP or HTTPS URL",
-      ),
-    enabled: z.boolean().default(true),
-    token: z.string().max(16000).optional(),
+    return c.json(describeServer(server), 200);
   });
 
   // A server added with `agentId` belongs to that bot, which starts using it right away.
-  app.post("/v1/mcp-servers", async (c) => {
-    const input = mcpInput
-      .extend({ agentId: z.string().uuid().nullable().default(null) })
-      .parse(await c.req.json());
+  register(routes.createMcpServer, async (c) => {
+    const input = mcpCreateInput.parse(await c.req.json());
 
     const owner = input.agentId ? service.agent(input.agentId) : null;
 
@@ -775,7 +729,7 @@ export function createAPI(
 
     return c.json(server, 201);
   });
-  app.patch("/v1/mcp-servers/:id", async (c) => {
+  register(routes.updateMcpServer, async (c) => {
     const old = store.getMCPServer(c.req.param("id"));
 
     if (!old) throw new AppError(404, "MCP server not found");
@@ -786,9 +740,9 @@ export function createAPI(
       else store.deleteCredential(`mcp:${old.id}`);
     }
 
-    return c.json(store.updateMCPServer(old.id, input));
+    return c.json(store.updateMCPServer(old.id, input), 200);
   });
-  app.delete("/v1/mcp-servers/:id", (c) => {
+  register(routes.deleteMcpServer, (c) => {
     if (!store.deleteMCPServer(c.req.param("id")))
       throw new AppError(404, "MCP server not found");
     store.deleteCredential(`mcp:${c.req.param("id")}`);

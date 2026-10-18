@@ -51,7 +51,7 @@ The server permits one process to own a data directory. A second process exits i
 
 ## Verify the server
 
-Run the complete server checks (lint, format check, type checking, and tests):
+Run the complete server checks (lint, format check, type checking, OpenAPI drift detection, and tests):
 
 ```bash
 bun run check
@@ -99,6 +99,27 @@ Live provider execution is not verified by the automated tests because this repo
 ## Providers
 
 The server registers every Pi built-in provider plus [Melious](https://melious.ai/docs/reference/models), an OpenAI-compatible API at `https://api.melious.ai/v1`. Melious has no fixed catalog: after you save a Melious key, `GET /v1/models?provider=melious` loads the models your account can use. Melious does not report context windows or prices in that list, so the server assumes a 128,000-token context window, 16,384 output tokens, and no cost tracking.
+
+## Shared API contract
+
+[`openapi/openapi.json`](openapi/openapi.json) is the generated OpenAPI 3.1 contract for all HTTP endpoints.
+Client repositories can consume this file from a pinned server revision or release to generate models and clients.
+Generation runs offline without starting the server, opening a database, or reading credentials.
+
+After changing API schemas or route definitions, regenerate the contract:
+
+```bash
+bun run openapi:generate
+```
+
+Check that the generated contract matches the source:
+
+```bash
+bun run openapi:check
+```
+
+`bun run check` includes this check for CI. Include the generated JSON in the same change as the server code.
+Do not edit the generated file directly. See [API contract maintenance](docs/api-contract.md) for schema ownership and streaming limitations.
 
 ## Bot chat API
 
