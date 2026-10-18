@@ -122,12 +122,46 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
       agentId: sourceId,
       name: "Source",
     });
+    expect(
+      targetHistory.messages.filter((message) => message.kind === "bot-message"),
+    ).toEqual([
+      expect.objectContaining({
+        content: "How do you feel?",
+        communication: expect.objectContaining({
+          fromAgentId: sourceId,
+          toAgentId: targetId,
+          status: "sent",
+        }),
+      }),
+    ]);
     const snapshot = await runtime.snapshot(source, execution.conversationId);
     expect(JSON.stringify(snapshot.messages)).toContain(
       "Bot2 says it feels fine.",
     );
     const targetExecution = store.listExecutions(targetId)[0]!;
     const messaging = new BotMessaging(service);
+    const targetChat = await service.chat(targetId);
+    let targetChanges = 0;
+    const unsubscribeTarget = service.subscribe(targetChat.id, () => {
+      targetChanges++;
+    });
+    const retryRequestId = targetExecution.requestId.replace(
+      `delegate:${sourceId}:`,
+      "",
+    );
+    const retried = await messaging.send(source.id, {
+      recipient: targetId,
+      message: "How do you feel?",
+      requestId: retryRequestId,
+    });
+    expect(retried.executionId).toBe(targetExecution.id);
+    expect(targetChanges).toBeGreaterThan(0);
+    expect(
+      (await runtime.history(store.getAgent(targetId)!)).messages.filter(
+        (message) => message.kind === "bot-message",
+      ),
+    ).toHaveLength(1);
+    unsubscribeTarget();
     const answer = await messaging.result(source.id, targetExecution.id, {
       waitMs: 1000,
     });
@@ -170,6 +204,15 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
         fromName: "Bot2",
         toName: "Source",
         status: "done",
+      });
+      const persistedTarget = (
+        await reopened.history(store.getAgent(targetId)!)
+      ).messages.filter((message) => message.kind === "bot-message");
+      expect(persistedTarget).toHaveLength(1);
+      expect(persistedTarget[0]?.communication).toMatchObject({
+        fromName: "Source",
+        toName: "Bot2",
+        status: "sent",
       });
     } finally {
       await reopened.close();

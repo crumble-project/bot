@@ -76,7 +76,14 @@ export function createAPI(
         throw new AppError(400, "That MCP server belongs to another bot");
     }
   };
-  app.get("/v1/agents", (c) => c.json(store.listAgents()));
+  app.get("/v1/agents", async (c) =>
+    c.json(
+      (await service.agentPreviews()).map(({ agent, lastMessage }) => ({
+        ...agent,
+        ...(lastMessage ? { lastMessage } : {}),
+      })),
+    ),
+  );
   app.post("/v1/agents", async (c) => {
     const input = agentInput.parse(await c.req.json());
     provider.parse(input.provider);
@@ -236,6 +243,19 @@ export function createAPI(
           }),
         ),
       ];
+      // Replay current previews on every connection so a sidebar can recover missed events.
+      try {
+        for (const { agent, lastMessage } of await service.agentPreviews())
+          send({
+            type: "chat-preview",
+            agentId: agent.id,
+            agentName: agent.name,
+            lastMessage,
+          });
+      } catch (error) {
+        for (const unsubscribe of unsubscribers) unsubscribe?.();
+        throw error;
+      }
       const timer = setInterval(() => {
         stream.writeSSE({ event: "heartbeat", data: "{}" }).catch(finish);
       }, 15000);

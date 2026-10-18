@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { prepareReply, readTranscript } from "../src/transcript";
+import {
+  latestMessagePreview,
+  prepareReply,
+  readTranscript,
+} from "../src/transcript";
 
 function fakeHarness(entries: Record<number, any[]>) {
   const conversations = Object.keys(entries).map((id) => ({ id: Number(id) }));
@@ -43,6 +47,51 @@ const user = (id: number, text: string, kind = "pi.user") => ({
 });
 
 describe("durable transcript helpers", () => {
+  test("chooses the latest visible text and skips structural output", () => {
+    expect(
+      latestMessagePreview([
+        {
+          id: "1",
+          entryId: "a:1",
+          role: "assistant",
+          content: "Tool call: search",
+        },
+        {
+          id: "2",
+          entryId: "a:2",
+          role: "assistant",
+          content: "Earlier answer",
+        },
+        { id: "3", entryId: "a:3", role: "assistant", content: "Thinking" },
+        {
+          id: "4",
+          entryId: "a:4",
+          role: "user",
+          content: "",
+          attachments: [
+            {
+              name: "brief.pdf",
+              mimeType: "application/pdf",
+              size: 12,
+              kind: "text",
+            },
+          ],
+        },
+      ]),
+    ).toBe("Attachment: brief.pdf");
+    expect(
+      latestMessagePreview([
+        {
+          id: "1",
+          entryId: "a:1",
+          role: "assistant",
+          content: "Tool call: search",
+        },
+        { id: "2", entryId: "a:2", role: "assistant", content: "Answer" },
+      ]),
+    ).toBe("Answer");
+  });
+
   test("pages in stable chronological order and keeps structural events", async () => {
     const harness = fakeHarness({
       1: [

@@ -44,6 +44,28 @@ export type TranscriptPage = {
   oldestEntryId: string | null;
 };
 
+/** Short, user-facing text for an agent list/sidebar. Structural tool and thinking blocks are excluded. */
+export function latestMessagePreview(messages: TranscriptMessage[]): string {
+  for (const message of [...messages].reverse()) {
+    if (message.kind === "bot-message") {
+      const text = message.content.trim();
+      if (text) return text.slice(0, 240);
+    }
+    if (message.role !== "user" && message.role !== "assistant") continue;
+    const text = message.content.trim();
+    // Structural-only model output has no text block; normalize() puts a hint in content for chat display.
+    const hasTextBlock = Array.isArray(message.blocks)
+      ? message.blocks.some(
+          (block) => block?.type === "text" && typeof block.text === "string",
+        )
+      : Boolean(text);
+    if (text && hasTextBlock) return text.slice(0, 240);
+    const attachment = message.attachments?.[0];
+    if (attachment) return `Attachment: ${attachment.name}`;
+  }
+  return "";
+}
+
 const MAX_LIMIT = 200;
 const DEFAULT_LIMIT = 100;
 const REPLY_WINDOW = 20;

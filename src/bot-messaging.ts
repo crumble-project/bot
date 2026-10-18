@@ -96,7 +96,8 @@ export class BotMessaging {
       sourceAgentId: source.id,
       targetAgentId: target.id,
     });
-    await this.record(source.id, execution, "sent", message);
+    await this.record(source.id, source.id, execution, "sent", message);
+    await this.record(target.id, source.id, execution, "sent", message);
     return this.receipt(execution);
   }
 
@@ -144,6 +145,7 @@ export class BotMessaging {
     if (!active(execution)) {
       await this.record(
         sourceId,
+        sourceId,
         execution,
         execution.status as "done" | "failed" | "cancelled",
         response.join("\n\n") ||
@@ -158,6 +160,7 @@ export class BotMessaging {
   }
 
   private async record(
+    transcriptAgentId: string,
     sourceId: string,
     execution: Execution,
     status: "sent" | "done" | "failed" | "cancelled",
@@ -167,7 +170,7 @@ export class BotMessaging {
     const target = this.service.agent(execution.agentId);
     const [from, to] = status === "done" ? [target, source] : [source, target];
     await this.service.recordBotMessage(
-      sourceId,
+      transcriptAgentId,
       {
         content,
         communication: {

@@ -203,7 +203,7 @@ describe("activity", () => {
     );
     for (let i = 0; i < 100 && !events.length; i++)
       await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(events).toEqual([
+    expect(events.filter((event: any) => event.type === "reply")).toEqual([
       expect.objectContaining({
         type: "reply",
         agentId: agent.id,
@@ -212,6 +212,13 @@ describe("activity", () => {
         preview: "All done, two meetings tomorrow.",
       }),
     ]);
+    expect(
+      events.some(
+        (event: any) =>
+          event.type === "chat-preview" &&
+          event.lastMessage === "All done, two meetings tomorrow.",
+      ),
+    ).toBe(true);
     await service.close();
   });
 });

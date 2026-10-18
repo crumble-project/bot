@@ -6,7 +6,11 @@ import {
   type Conversation,
   type Execution,
 } from "./domain";
-import type { BotMessageEvent, MessageOrigin } from "./transcript";
+import {
+  latestMessagePreview,
+  type BotMessageEvent,
+  type MessageOrigin,
+} from "./transcript";
 import {
   attachmentDigest,
   prepareAttachments,
@@ -25,12 +29,20 @@ export type ReplyActivity = {
   origin: string;
   preview: string;
 };
+export type ChatPreviewActivity = {
+  type: "chat-preview";
+  agentId: string;
+  agentName: string;
+  lastMessage: string;
+};
 
 export class CrumbleService {
   private monitoring = new Map<string, Promise<void>>();
   private closing = false;
   private listeners = new Map<string, Set<() => void>>();
-  private activityListeners = new Set<(event: ReplyActivity) => void>();
+  private activityListeners = new Set<
+    (event: ReplyActivity | ChatPreviewActivity) => void
+  >();
   private chatOpening = new Map<string, Promise<Conversation>>();
   constructor(
     readonly store: Store,
@@ -60,11 +72,38 @@ export class CrumbleService {
     };
   }
 
-  onActivity(callback: (event: ReplyActivity) => void) {
+  onActivity(callback: (event: ReplyActivity | ChatPreviewActivity) => void) {
     this.activityListeners.add(callback);
     return () => {
       this.activityListeners.delete(callback);
     };
+  }
+
+  /** Reads existing durable history for sidebar summaries without creating a chat. */
+  async agentPreviews() {
+    return Promise.all(
+      this.store.listAgents().map(async (agent) => {
+        const conversation = this.store.listConversations(agent.id, true)[0];
+        if (!conversation) return { agent, lastMessage: "" };
+        const history = await this.runtime.history(agent, { limit: 200 });
+        return { agent, lastMessage: latestMessagePreview(history.messages) };
+      }),
+    );
+  }
+
+  private async announcePreview(agentId: string, conversationId: string) {
+    if (!this.activityListeners.size) return;
+    const agent = this.store.getAgent(agentId);
+    if (!agent) return;
+    const { messages } = await this.snapshot(conversationId);
+    const lastMessage = latestMessagePreview(messages);
+    const event: ChatPreviewActivity = {
+      type: "chat-preview",
+      agentId: agent.id,
+      agentName: agent.name,
+      lastMessage,
+    };
+    for (const listener of this.activityListeners) listener(event);
   }
 
   /** Tells activity listeners which bot answered and how its reply begins. */
@@ -73,6 +112,14 @@ export class CrumbleService {
     const agent = this.store.getAgent(execution.agentId);
     if (!agent) return;
     const { messages } = await this.snapshot(execution.conversationId);
+    const lastMessage = latestMessagePreview(messages);
+    for (const listener of this.activityListeners)
+      listener({
+        type: "chat-preview",
+        agentId: agent.id,
+        agentName: agent.name,
+        lastMessage,
+      });
     const reply = messages.findLast(
       (message) => message.role === "assistant" && message.content.trim(),
     );
@@ -151,6 +198,9 @@ export class CrumbleService {
       requestId,
     );
     this.changed(chat.id);
+    void this.announcePreview(agentId, chat.id).catch((error) =>
+      console.error("Chat preview announcement failed", agentId, error),
+    );
   }
 
   async chatSnapshot(agentId: string) {
@@ -218,6 +268,10 @@ export class CrumbleService {
     });
     await this.admit(execution);
     this.changed(conversationId);
+    void this.announcePreview(execution.agentId, conversationId).catch(
+      (error) =>
+        console.error("Chat preview announcement failed", execution.id, error),
+    );
     return this.store.getExecution(execution.id)!;
   }
 

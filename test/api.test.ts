@@ -43,13 +43,14 @@ function setup() {
     }),
     abort: async () => {},
     deleteAgent: async () => {},
+    history: async () => ({ messages: [] }),
   };
   const store = new Store(dir);
   const service = new CrumbleService(store, runtime);
   const scheduler = new Scheduler(store, (a, p, r, s) =>
     service.dispatch(a, p, r, s),
   );
-  return { app: createAPI(service, scheduler, token), store };
+  return { app: createAPI(service, scheduler, token), store, runtime };
 }
 const req = (app: any, path: string, init: RequestInit = {}) =>
   app.request(path, {
@@ -257,6 +258,38 @@ describe("HTTP API", () => {
     const text = new TextDecoder().decode(value);
     expect(text).toContain("event: activity");
     expect(text).toContain(`"agentId":"${agent.id}"`);
+    await reader.cancel();
+  });
+
+  test("includes durable latest message in agent summaries and replays chat previews", async () => {
+    const { app, runtime } = setup();
+    const agent = await req(app, "/v1/agents", {
+      method: "POST",
+      body: JSON.stringify(agentInput("Preview Bot")),
+    }).then((r: Response) => r.json());
+    await req(app, `/v1/agents/${agent.id}/messages`, {
+      method: "POST",
+      body: JSON.stringify({
+        content: "hello sidebar",
+        requestId: crypto.randomUUID(),
+      }),
+    });
+    runtime.history = async () => ({
+      messages: [{ role: "user", content: "hello sidebar" }],
+    });
+    const listed = await req(app, "/v1/agents").then((r: Response) => r.json());
+    expect(listed[0]).toMatchObject({
+      name: "Preview Bot",
+      lastMessage: "hello sidebar",
+    });
+
+    const response = await req(app, "/v1/events");
+    const reader = response.body!.getReader();
+    const { value } = await reader.read();
+    const text = new TextDecoder().decode(value);
+    expect(text).toContain('"type":"chat-preview"');
+    expect(text).toContain(`"agentName":"Preview Bot"`);
+    expect(text).toContain('"lastMessage":"hello sidebar"');
     await reader.cancel();
   });
 
