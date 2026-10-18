@@ -118,7 +118,6 @@ The message endpoint accepts bodies of up to 32 MB; every other endpoint keeps a
 `GET /v1/events` is a server-wide stream of `activity` events for notifications:
 
 - `{ type: "reply", agentId, agentName, entryId, origin, preview }` when any bot finishes a reply, from a chat, a scheduled task, or delegated work. `origin` is `owner`, `task`, or `bot`.
-- `{ type: "approval", approvalId, agentId, agentName, toolName }` when an MCP tool call waits for approval.
 
 Like the chat stream, it sends a `heartbeat` event every 15 seconds.
 
@@ -146,7 +145,7 @@ MCP connections and OAuth sign-in use `@earendil-works/pi-mcp`, following the MC
 
 An agent with the `codemode` capability uses Pi Durable's code mode (`@earendil-works/pi-durable/codemode`). The model is offered one `codemode` tool and writes JavaScript that calls the agent's other tools, such as memory, delegation, and MCP tools, as `await tools.<name>(args)`. Only the script's output reaches the model, so a task that needs many tool calls takes one step. Each MCP server's tools are grouped under the server's name.
 
-Scripts run in a QuickJS sandbox from `@earendil-works/pi-codemode`, one worker per script, with a 256 MB memory limit. Their only capability is calling the agent's tools, and approvals still apply to each call. A script survives a server restart and resumes without repeating finished calls.
+Scripts run in a QuickJS sandbox from `@earendil-works/pi-codemode`, one worker per script, with a 256 MB memory limit. Their only capability is calling the agent's tools, and permitted MCP tools execute directly after the same server and agent checks as normal tool calls. A script survives a server restart and resumes without repeating finished calls.
 
 ## Scheduled tasks
 
@@ -169,7 +168,7 @@ Do not expose the loopback server directly to a network. If remote access is req
 
 ## Current scope and limitations
 
-The repository contains working persistence, authenticated API routes, continuous bot chats, streaming events, scheduling, memory, MCP configuration, approvals, and delegation paths. The macOS client is the intended configuration surface for provider credentials and integrations.
+The repository contains working persistence, authenticated API routes, continuous bot chats, streaming events, scheduling, memory, MCP configuration, and delegation paths. The macOS client is the intended configuration surface for provider credentials and integrations.
 
 The project is still under active development. Hermes Agent and Grok Bot parity remains an acceptance target, not a completed claim. Review [`docs/product-parity.md`](docs/product-parity.md) for the reference capability matrix and [`docs/architecture.md`](docs/architecture.md) for boundaries and milestones.
 

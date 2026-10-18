@@ -27,6 +27,8 @@ export type BotMessageEvent = {
 export type TranscriptMessage = {
   id: string;
   entryId: string;
+  /** Stable admission ID copied from the durable input metadata for optimistic reconciliation. */
+  requestId?: string;
   role: string;
   content: string;
   blocks?: unknown;
@@ -203,6 +205,8 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
     ];
   }
   const replyTo = typeof data?.replyTo === "string" ? data.replyTo : undefined;
+  const requestId =
+    typeof data?.requestId === "string" ? data.requestId : undefined;
   const origin = originOf(data?.origin);
   const attachments = attachmentsOf(data?.attachments);
   return (entry.model ?? []).flatMap((message, index) => {
@@ -222,6 +226,7 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
         blocks: withoutImageData(message.content),
         timestamp: message.timestamp,
         kind: entry.kind,
+        ...(requestId ? { requestId } : {}),
         ...(replyTo ? { replyTo } : {}),
         ...(replyTo && typeof data?.replyPreview === "string"
           ? { replyPreview: data.replyPreview }

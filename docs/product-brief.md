@@ -31,7 +31,7 @@ The platform should support:
 - **Memory and context:** Persistent agent memory, configurable context, and continuity across conversations and executions.
 - **Model configuration:** Flexible providers, models, credentials, inference parameters, and per-agent overrides.
 - **Agent autonomy:** Long-running tasks, resumable execution, recovery from interruptions, and proactive behavior.
-- **Permissions and isolation:** Explicit capabilities, appropriate access boundaries, approval workflows, and secure handling of credentials.
+- **Permissions and isolation:** Explicit capabilities, appropriate access boundaries, and secure handling of credentials.
 - **Observability:** Agent status, active executions, logs, errors, task history, and useful execution diagnostics.
 - **Multi-agent workflows:** Multiple independently configured agents operating concurrently, with appropriate coordination where useful.
 - **Settings:** Comprehensive global settings and per-agent configuration.

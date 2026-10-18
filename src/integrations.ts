@@ -20,23 +20,8 @@ import {
 import type { Context } from "@earendil-works/chord/context";
 import type { Agent, MCPServer } from "./domain";
 import { Store } from "./store";
-import { conversationReference } from "./runtime";
 import { connectionAuth, hasOAuthTokens } from "./mcp-oauth";
 import type { CodemodeNamespace } from "@earendil-works/pi-durable/codemode";
-
-export type ApprovalStatus = "pending" | "approved" | "denied";
-export type ApprovalRecord = {
-  id: string;
-  agentId: string;
-  conversationId: string;
-  serverId: string;
-  toolName: string;
-  arguments: Record<string, unknown>;
-  taskId: string;
-  status: ApprovalStatus;
-  createdAt: string;
-  updatedAt: string;
-};
 
 /** The part of pi-mcp's `McpClient` Crumble uses, so tests can stand in for a server. */
 export type MCPClient = {
@@ -60,7 +45,6 @@ export type IntegrationsOptions = {
   clientFactory?: MCPClientFactory;
 };
 
-const approvalsKey = "mcp.approvals";
 /** Every tool of one MCP server starts with this, which also groups them in code mode. */
 export const mcpToolPrefix = (serverId: string) =>
   `mcp_${serverId.replaceAll("-", "").slice(0, 8)}_`;
@@ -78,128 +62,6 @@ const stable = (value: unknown): string => {
 };
 const digest = (value: unknown) =>
   createHash("sha256").update(stable(value)).digest("hex").slice(0, 24);
-
-/** Durable approval state. Pending decisions survive a process restart in Store settings. */
-export class ApprovalManager {
-  private readonly waiters = new Map<
-    string,
-    Set<(status: ApprovalStatus) => void>
-  >();
-  private readonly requestListeners = new Set<
-    (record: ApprovalRecord) => void
-  >();
-  constructor(private readonly store: Store) {}
-
-  /** Called once for each new pending approval, not for a repeated request of the same call. */
-  onRequest(callback: (record: ApprovalRecord) => void) {
-    this.requestListeners.add(callback);
-    return () => {
-      this.requestListeners.delete(callback);
-    };
-  }
-
-  list(agentId?: string): ApprovalRecord[] {
-    const records = this.store.getSetting<ApprovalRecord[]>(approvalsKey) ?? [];
-    return agentId ? records.filter((r) => r.agentId === agentId) : records;
-  }
-
-  private save(records: ApprovalRecord[]) {
-    this.store.setSetting(approvalsKey, records);
-  }
-
-  request(
-    input: Omit<ApprovalRecord, "id" | "status" | "createdAt" | "updatedAt">,
-  ): ApprovalRecord {
-    const existing = this.list().find(
-      (r) =>
-        r.taskId === input.taskId &&
-        r.agentId === input.agentId &&
-        r.serverId === input.serverId &&
-        r.toolName === input.toolName &&
-        stable(r.arguments) === stable(input.arguments),
-    );
-    if (existing) return existing;
-    const t = now();
-    const record: ApprovalRecord = {
-      ...input,
-      id: digest({
-        agentId: input.agentId,
-        conversationId: input.conversationId,
-        serverId: input.serverId,
-        toolName: input.toolName,
-        arguments: input.arguments,
-        taskId: input.taskId,
-      }),
-      status: "pending",
-      createdAt: t,
-      updatedAt: t,
-    };
-    this.save([...this.list(), record]);
-    for (const listener of this.requestListeners) listener(record);
-    return record;
-  }
-
-  decide(
-    id: string,
-    status: Exclude<ApprovalStatus, "pending">,
-  ): ApprovalRecord | undefined {
-    const records = this.list();
-    const index = records.findIndex((r) => r.id === id);
-    if (index < 0) return undefined;
-    const current = records[index]!;
-    if (current.status !== "pending") return current;
-    const updated = { ...current, status, updatedAt: now() };
-    records[index] = updated;
-    this.save(records);
-    for (const resolve of this.waiters.get(id) ?? []) resolve(status);
-    this.waiters.delete(id);
-    return updated;
-  }
-
-  async wait(
-    record: ApprovalRecord,
-    context: Context,
-  ): Promise<Exclude<ApprovalStatus, "pending">> {
-    const latest = this.list().find((item) => item.id === record.id);
-    if (latest?.status !== "pending")
-      return (latest?.status ?? record.status) as Exclude<
-        ApprovalStatus,
-        "pending"
-      >;
-    const status = await new Promise<ApprovalStatus>((resolve, reject) => {
-      const listeners = this.waiters.get(record.id) ?? new Set();
-      const completed = (value: ApprovalStatus) => {
-        cleanup();
-        resolve(value);
-      };
-      listeners.add(completed);
-      this.waiters.set(record.id, listeners);
-      const signal = context.abortSignal;
-      let onAbort: (() => void) | undefined;
-      const cleanup = () => {
-        listeners.delete(completed);
-        if (!listeners.size) this.waiters.delete(record.id);
-        if (onAbort) signal?.removeEventListener("abort", onAbort);
-      };
-      onAbort = () => {
-        cleanup();
-        reject(signal?.reason ?? new Error("approval wait cancelled"));
-      };
-      if (signal?.aborted) {
-        onAbort();
-        return;
-      }
-      signal?.addEventListener("abort", onAbort, { once: true });
-      const decided = this.list().find((item) => item.id === record.id);
-      if (decided?.status !== "pending") {
-        cleanup();
-        resolve(decided?.status ?? "denied");
-      }
-    });
-    if (status === "pending") throw new Error("approval remained pending");
-    return status;
-  }
-}
 
 function defaultClientFactory(
   server: MCPServer,
@@ -262,14 +124,12 @@ export class MCPIntegrations {
   >();
   private readonly timeout: number;
   private readonly factory: MCPClientFactory;
-  readonly approvals: ApprovalManager;
   constructor(
     private readonly store: Store,
     options: IntegrationsOptions = {},
   ) {
     this.timeout = options.requestTimeoutMs ?? 30_000;
     this.factory = options.clientFactory ?? defaultClientFactory;
-    this.approvals = new ApprovalManager(store);
   }
 
   private async withTimeout<T>(
@@ -289,6 +149,57 @@ export class MCPIntegrations {
       ]);
     } finally {
       if (timer) clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Bound the whole MCP call, including clients that ignore timeoutMs. The durable
+   * tool is unsafe to replay, so a deadline only aborts and reports the one call;
+   * it must never transparently retry it.
+   */
+  private async callToolWithTimeout(
+    client: MCPClient,
+    name: string,
+    args: Record<string, unknown>,
+    parent: AbortSignal | undefined,
+  ): Promise<CallToolResult> {
+    const controller = new AbortController();
+    const parentReason = () =>
+      parent?.reason ?? new Error("MCP request aborted");
+    let parentAbortReject: ((reason: unknown) => void) | undefined;
+    const parentAborted = new Promise<CallToolResult>((_, reject) => {
+      parentAbortReject = reject;
+    });
+    const abortFromParent = () => {
+      const reason = parentReason();
+      controller.abort(reason);
+      parentAbortReject?.(reason);
+    };
+    if (parent?.aborted) {
+      parent.throwIfAborted();
+    } else parent?.addEventListener("abort", abortFromParent, { once: true });
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let deadline: ((reason: Error) => void) | undefined;
+    const deadlineReached = new Promise<CallToolResult>((_, reject) => {
+      deadline = (reason) => reject(reason);
+      timer = setTimeout(() => {
+        const error = new Error(
+          `MCP request timed out after ${this.timeout}ms`,
+        );
+        controller.abort(error);
+        deadline?.(error);
+      }, this.timeout);
+    });
+    try {
+      const call = client.callTool(name, args, {
+        signal: controller.signal,
+        timeoutMs: this.timeout,
+      });
+      return await Promise.race([call, deadlineReached, parentAborted]);
+    } finally {
+      if (timer) clearTimeout(timer);
+      parent?.removeEventListener("abort", abortFromParent);
     }
   }
 
@@ -336,7 +247,6 @@ export class MCPIntegrations {
       });
       for (const remote of listed) {
         const name = `${mcpToolPrefix(server.id)}${remote.name.replace(/[^a-zA-Z0-9_]/g, "_")}`;
-        const destructive = remote.annotations?.readOnlyHint !== true;
         const tool = defineTool({
           name,
           description:
@@ -350,7 +260,7 @@ export class MCPIntegrations {
           replay: "unsafe",
           execute: async (
             args: Record<string, unknown>,
-            api: any,
+            _api: any,
             context: Context,
           ) => {
             const assertAllowed = () => {
@@ -368,34 +278,18 @@ export class MCPIntegrations {
                 throw new Error("MCP server address changed; retry this task");
               return current;
             };
-            assertAllowed();
-            if (destructive) {
-              const record = this.approvals.request({
-                agentId: agent.id,
-                conversationId: conversationReference(
-                  agent.id,
-                  Number(api.conversationId),
-                ),
-                serverId: server.id,
-                toolName: remote.name,
-                arguments: args,
-                taskId: String(api.taskId),
-              });
-              const status = await this.approvals.wait(record, context);
-              if (status === "denied")
-                throw new Error(`MCP tool ${remote.name} was denied`);
-            }
             const currentServer = assertAllowed();
             const activeConnection = await this.connection(currentServer);
+            assertAllowed();
             const signal = context.abortSignal;
-            const result = await activeConnection.client
-              .callTool(remote.name, args, {
-                signal,
-                timeoutMs: this.timeout,
-              })
-              .catch((error) => {
-                throw explainAuthFailure(server, error);
-              });
+            const result = await this.callToolWithTimeout(
+              activeConnection.client,
+              remote.name,
+              args,
+              signal,
+            ).catch((error) => {
+              throw explainAuthFailure(server, error);
+            });
             return { output: toLlmContent(result), isError: result.isError };
           },
         });

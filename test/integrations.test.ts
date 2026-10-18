@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import {
+  BACKGROUND_CONTEXT,
+  withAbortSignal,
+} from "@earendil-works/chord/context";
 import type { Agent, MCPServer } from "../src/domain";
 import {
-  ApprovalManager,
   MCPIntegrations,
   mcpToolPrefix,
   type MCPClient,
@@ -117,25 +119,7 @@ describe("MCP integrations", () => {
     store.close();
   });
 
-  test("announces each new approval once", async () => {
-    const dir = (await tempDir()).trim();
-    const approvals = new ApprovalManager(new Store(dir));
-    const announced: string[] = [];
-    approvals.onRequest((record) => announced.push(record.toolName));
-    const call = {
-      agentId: "a1",
-      conversationId: "a1:1",
-      serverId: "s1",
-      toolName: "send_email",
-      arguments: { to: "sam@example.com" },
-      taskId: "t1",
-    };
-    const first = approvals.request(call);
-    expect(approvals.request(call).id).toBe(first.id);
-    expect(announced).toEqual(["send_email"]);
-  });
-
-  test("persists a side-effect approval, waits, and resumes after decision", async () => {
+  test("executes side-effect tools directly after the final permission check", async () => {
     const dir = (await tempDir()).trim();
     const store = new Store(dir);
     const server: MCPServer = store.createMCPServer({
@@ -166,23 +150,159 @@ describe("MCP integrations", () => {
     const tools = (extension as any).tools as any[];
     const tool: any = tools[0];
     if (!tool) throw new Error("missing tool");
-    const pending = tool.execute(
+    const result = await tool.execute(
       { to: "user@example.test" },
       { taskId: "durable-task-1", conversationId: "conversation-a" },
       BACKGROUND_CONTEXT,
     );
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    const approval = integrations.approvals.list(agentId)[0]!;
-    expect(approval.status).toBe("pending");
-    expect(called).toBe(0);
-    const restarted = new ApprovalManager(store);
-    expect(restarted.list(agentId)[0]!.status).toBe("pending");
-    integrations.approvals.decide(approval.id, "approved");
-    expect(((await pending).output as any)[0].text).toBe("sent");
+    expect((result.output as any)[0].text).toBe("sent");
     expect(called).toBe(1);
-    expect(integrations.approvals.decide(approval.id, "denied")!.status).toBe(
-      "approved",
+    await integrations.close();
+    store.close();
+  });
+
+  test("bounds a client that ignores timeoutMs", async () => {
+    const dir = (await tempDir()).trim();
+    const store = new Store(dir);
+    const server = store.createMCPServer({
+      name: "hung",
+      url: "https://mcp.example.test",
+      enabled: true,
+    });
+    const integrations = new MCPIntegrations(store, {
+      requestTimeoutMs: 20,
+      clientFactory: () => ({
+        transport: unusedTransport,
+        client: {
+          async connect() {},
+          async close() {},
+          async listTools() {
+            return [{ name: "hang", inputSchema: { type: "object" } }];
+          },
+          async callTool() {
+            return await new Promise<never>(() => {});
+          },
+        },
+      }),
+    });
+    const agentId = "00000000-0000-4000-8000-000000000003";
+    const [extension] = await integrations.extensionsForAgent(
+      store.createAgent(agent(agentId, [server.id]), agentId),
     );
+    const tool = ((extension as any).tools as any[])[0];
+    const started = performance.now();
+    await expect(
+      tool.execute(
+        {},
+        { taskId: "hung", conversationId: "conversation-a" },
+        BACKGROUND_CONTEXT,
+      ),
+    ).rejects.toThrow("MCP request timed out after 20ms");
+    expect(performance.now() - started).toBeLessThan(500);
+    await integrations.close();
+    store.close();
+  });
+
+  test("does not invoke a client after caller cancellation", async () => {
+    const dir = (await tempDir()).trim();
+    const store = new Store(dir);
+    const server = store.createMCPServer({
+      name: "cancelled",
+      url: "https://mcp.example.test",
+      enabled: true,
+    });
+    let called = 0;
+    const integrations = new MCPIntegrations(store, {
+      requestTimeoutMs: 1_000,
+      clientFactory: () => ({
+        transport: unusedTransport,
+        client: {
+          async connect() {},
+          async close() {},
+          async listTools() {
+            return [{ name: "send", inputSchema: { type: "object" } }];
+          },
+          async callTool() {
+            called++;
+            return { content: [{ type: "text", text: "sent" }] };
+          },
+        },
+      }),
+    });
+    const agentId = "00000000-0000-4000-8000-000000000004";
+    const [extension] = await integrations.extensionsForAgent(
+      store.createAgent(agent(agentId, [server.id]), agentId),
+    );
+    const tool = ((extension as any).tools as any[])[0];
+    const controller = new AbortController();
+    const reason = new Error("caller cancelled");
+    controller.abort(reason);
+    await expect(
+      tool.execute(
+        {},
+        { taskId: "cancelled", conversationId: "conversation-a" },
+        withAbortSignal(controller.signal, BACKGROUND_CONTEXT),
+      ),
+    ).rejects.toBe(reason);
+    expect(called).toBe(0);
+    await integrations.close();
+    store.close();
+  });
+
+  test("propagates caller cancellation while a client is pending", async () => {
+    const dir = (await tempDir()).trim();
+    const store = new Store(dir);
+    const server = store.createMCPServer({
+      name: "cancelled-pending",
+      url: "https://mcp.example.test",
+      enabled: true,
+    });
+    let called = 0;
+    const integrations = new MCPIntegrations(store, {
+      requestTimeoutMs: 1_000,
+      clientFactory: () => ({
+        transport: unusedTransport,
+        client: {
+          async connect() {},
+          async close() {},
+          async listTools() {
+            return [{ name: "send", inputSchema: { type: "object" } }];
+          },
+          async callTool(
+            _name: string,
+            _args: Record<string, unknown>,
+            options?: { signal?: AbortSignal },
+          ) {
+            called++;
+            return await new Promise<never>((_, reject) => {
+              options?.signal?.addEventListener(
+                "abort",
+                () => reject(options.signal?.reason),
+                { once: true },
+              );
+            });
+          },
+        },
+      }),
+    });
+    const agentId = "00000000-0000-4000-8000-000000000005";
+    const [extension] = await integrations.extensionsForAgent(
+      store.createAgent(agent(agentId, [server.id]), agentId),
+    );
+    const tool = ((extension as any).tools as any[])[0];
+    const controller = new AbortController();
+    const context = withAbortSignal(controller.signal, BACKGROUND_CONTEXT);
+    const pending = tool.execute(
+      {},
+      { taskId: "cancelled-pending", conversationId: "conversation-a" },
+      context,
+    );
+    for (let i = 0; i < 50 && called === 0; i++)
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    const reason = new Error("caller cancelled while pending");
+    controller.abort(reason);
+    await expect(pending).rejects.toBe(reason);
+    expect(called).toBe(1);
     await integrations.close();
     store.close();
   });

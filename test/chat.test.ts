@@ -181,6 +181,7 @@ describe("continuous bot chat", () => {
       await reopened.service.chatSnapshot(agent.id)
     ).messages.filter((message) => message.role === "user");
     expect(users.map((message) => message.content)).toEqual(["hello"]);
+    expect(users[0]?.requestId).toBe(uuid(1));
     await reopened.service.close();
   });
 });

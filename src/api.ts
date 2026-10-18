@@ -217,7 +217,7 @@ export function createAPI(
     });
   });
 
-  // Server-wide activity for notifications: finished replies from every bot and new approvals.
+  // Server-wide activity for notifications: finished replies from every bot.
   app.get("/v1/events", (c) =>
     streamSSE(c, async (stream) => {
       let finish!: () => void;
@@ -231,18 +231,7 @@ export function createAPI(
             .writeSSE({ event: "activity", data: JSON.stringify(data) })
             .catch(finish);
       };
-      const unsubscribers = [
-        service.onActivity(send),
-        integrations?.approvals.onRequest((record) =>
-          send({
-            type: "approval",
-            approvalId: record.id,
-            agentId: record.agentId,
-            agentName: store.getAgent(record.agentId)?.name ?? "A bot",
-            toolName: record.toolName,
-          }),
-        ),
-      ];
+      const unsubscribers = [service.onActivity(send)];
       // Replay current previews on every connection so a sidebar can recover missed events.
       try {
         for (const { agent, lastMessage } of await service.agentPreviews())
@@ -544,17 +533,6 @@ export function createAPI(
     store.deleteCredential(`mcp:${c.req.param("id")}`);
     signOut(store, c.req.param("id"));
     return c.body(null, 204);
-  });
-  app.get("/v1/approvals", (c) =>
-    c.json(integrations?.approvals.list(c.req.query("agentId")) ?? []),
-  );
-  app.post("/v1/approvals/:id", async (c) => {
-    const { decision } = z
-      .object({ decision: z.enum(["approved", "denied"]) })
-      .parse(await c.req.json());
-    const record = integrations?.approvals.decide(c.req.param("id"), decision);
-    if (!record) throw new AppError(404, "Approval not found");
-    return c.json(record);
   });
   return app;
 }

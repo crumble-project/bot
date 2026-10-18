@@ -409,6 +409,7 @@ export class AgentRuntime {
           kind: "crumble.message",
           data: {
             ...prepared.data,
+            ...(requestId ? { requestId } : {}),
             ...(options.origin ? { origin: options.origin } : {}),
             ...(attached.info.length ? { attachments: attached.info } : {}),
           },

@@ -30,7 +30,7 @@ Source chats store sent messages and observed terminal replies as data-only Pi t
 1. Persistent agent lifecycle and actual Pi Durable conversation submission, cancellation, streaming, reopen, and isolation tests.
 2. Native SwiftUI macOS client: connection setup, agents, conversation history, streamed chat, settings, memory and tasks. Build and exercise against the real server.
 3. Persistent one-time and cron schedules, background execution history, failure and restart recovery, capability-configured skills and MCP tools.
-4. Approval lifecycle, inter-agent delegation, diagnostics and parity acceptance tests. Refine empty, loading, offline, keyboard and accessibility behavior.
+4. Inter-agent delegation, diagnostics and parity acceptance tests. Refine empty, loading, offline, keyboard and accessibility behavior.
 5. Product hardening: realistic crash/reconnect tests, native visual inspection, installation/backup documentation and an honest parity audit.
 
 ## Constraints

@@ -12,7 +12,7 @@ Continue in `/Users/leonhardbreuer/Developer/crumble-project`. There are two ind
 
 ## Implemented
 
-Server: Pi Durable 1.3.0, isolated SQLite stores per bot, authenticated API, encrypted provider keys, memory, schedules, execution history, MCP approvals, and bounded delegation. Desktop: native workspace, streaming, profiles, memory/task editors, integrations, and generated bot avatars. The overall production-quality/parity goal remains unfinished; live providers have not been tested because no API keys are configured.
+Server: Pi Durable 1.3.0, isolated SQLite stores per bot, authenticated API, encrypted provider keys, memory, schedules, execution history, MCP integrations, and bounded delegation. Desktop: native workspace, streaming, profiles, memory/task editors, integrations, and generated bot avatars. The overall production-quality/parity goal remains unfinished; live providers have not been tested because no API keys are configured.
 
 Pushed checkpoints: server `0e3c751`, `26827fd`, `6b615d9`, `7340298` (continuous chat); desktop `014cde2`, `af79a14`, `a97bba0` (continuous chat).
 

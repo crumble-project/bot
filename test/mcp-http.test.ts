@@ -84,7 +84,7 @@ async function startMcp() {
 }
 
 describe("real Streamable HTTP MCP integration", () => {
-  test("discovers and executes read-only and approved side-effect tools", async () => {
+  test("discovers and executes read-only and side-effect tools directly", async () => {
     const mcp = await startMcp();
     const dir = (await Bun.$`mktemp -d`.text()).trim();
     const store = new Store(dir);
@@ -111,17 +111,11 @@ describe("real Streamable HTTP MCP integration", () => {
       BACKGROUND_CONTEXT,
     );
     expect((read.output as any)[0].text).toBe("echo:hello");
-    const pending = send.execute(
+    const sent = await send.execute(
       { text: "hello" },
       { taskId: "http-send", conversationId: "c-http" },
       BACKGROUND_CONTEXT,
     );
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    const approval = integrations.approvals.list(id)[0]!;
-    expect(approval.status).toBe("pending");
-    expect(mcp.calls()).toBe(0);
-    integrations.approvals.decide(approval.id, "approved");
-    const sent = await pending;
     expect((sent.output as any)[0].text).toBe("sent:hello");
     expect(mcp.calls()).toBe(1);
     await integrations.close();
@@ -129,7 +123,7 @@ describe("real Streamable HTTP MCP integration", () => {
     await mcp.stop();
   });
 
-  test("revalidates a revoked server before an approved call", async () => {
+  test("revalidates a revoked server before a direct call", async () => {
     const mcp = await startMcp();
     const dir = (await Bun.$`mktemp -d`.text()).trim();
     const store = new Store(dir);
@@ -149,15 +143,12 @@ describe("real Streamable HTTP MCP integration", () => {
     const send = ((extension as any).tools as any[]).find((tool) =>
       tool.name.endsWith("_send"),
     );
+    store.updateMCPServer(server.id, { enabled: false });
     const pending = send.execute(
       { text: "revoked" },
       { taskId: "http-revoked", conversationId: "c-revoke" },
       BACKGROUND_CONTEXT,
     );
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    const approval = integrations.approvals.list(id)[0]!;
-    store.updateMCPServer(server.id, { enabled: false });
-    integrations.approvals.decide(approval.id, "approved");
     await expect(pending).rejects.toThrow("no longer enabled");
     expect(mcp.calls()).toBe(0);
     await integrations.close();
