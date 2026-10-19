@@ -37,7 +37,7 @@ A `chart` is [TanStack Charts](https://tanstack.com/charts) code in the module f
 
 ## Coding jobs
 
-`codingExtensions` gives a bot with the `coding` capability the `coding` tool: start, message, stop, and check named coding jobs. A job is a child conversation of the bot's chat, built on Pi Durable's background subagent pattern. A background anchor task owns it, so it outlives the bot's turn and cancellation. For each message, a background reporter task delivers it and posts the job's answer back to the chat as a follow-up input. The answer is a `crumble.message` with origin `coding`. Request IDs and a per-job record of reported answers keep a restart from delivering or reporting twice.
+`codingExtensions` gives a bot with the `coding` capability the `coding` tool: start, message, stop, and check named coding jobs. A job is a child conversation of the bot's chat, built on Pi Durable's background subagent pattern. A background anchor task owns it, so it outlives the bot's turn and cancellation. For each message, a background reporter task delivers it and posts the job's answer back to the chat as a follow-up input. The answer is a `crumble.message` with origin `coding`. A successful start or send returns the job in `details` and ends the bot's turn (`control: { terminate: true }`), as `show` does, so clients render a job card instead of a message describing the job. Request IDs and a per-job record of reported answers keep a restart from delivering or reporting twice.
 
 A job selects only the `coding-job` extension: Pi's `read`, `write`, `edit`, and `bash` tools. It has no memory, delegation, scheduling, integrations, or job tool of its own. That extension is installed through `taskExtensions`, so the chat is never offered it. `codingEnv` gives an execution environment only to conversations marked as jobs. The bot's chat has none, so no shell is reachable from it.
 
@@ -47,6 +47,7 @@ Clients read jobs through `GET /v1/agents/{id}/coding-jobs` (name, public conver
 
 - Each bot's disk is a qcow2 overlay of the configured image. A journal is added when the disk is created, because Gondolin's image has none. The image's build ID is recorded, and a mismatch fails clearly.
 - Pi's file and shell operations run through pi-env's daemon inside the guest. Gondolin runs guest commands only from the process that owns the VM, so pi-env's `Connection` starts `gondolin-bridge.ts`, which relays the protocol over a Unix socket to that process.
+- QEMU keeps running when the server crashes or is killed, and holds the bot's disk locked. Each workspace records its QEMU process ID next to the disk, and the next boot stops that process if its command line names this disk.
 - Closing a Gondolin VM does not flush the guest's page cache. Jobs therefore sync after every `write`, `edit`, and `bash` call, and a VM always syncs before it stops.
 - Outbound HTTP(S) requests pass through a `WorkspaceNetworkPolicy` before they leave the VM. Gondolin intercepts TLS with its own CA, which the guest trusts, and holds each request until the policy decides. The default, `allowAllRequests`, trusts the whole internet; an owner-approval flow can replace it without changing the VM code. Other protocols and private address ranges are blocked. Hardware acceleration is required explicitly, so a host without it fails instead of silently emulating.
 

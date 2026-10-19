@@ -138,6 +138,23 @@ describe("durable transcript helpers", () => {
         { id: "2", entryId: "a:2", role: "assistant", content: "Answer" },
       ]),
     ).toBe("Answer");
+    expect(
+      latestMessagePreview([
+        { id: "1", entryId: "a:1", role: "user", content: "Build it" },
+        {
+          id: "2",
+          entryId: "a:2",
+          role: "toolResult",
+          content: "Started demo.",
+          toolName: "coding",
+          toolDetails: {
+            name: "demo",
+            status: "working",
+            conversationId: "a:3",
+          },
+        },
+      ]),
+    ).toBe("Coding job demo");
   });
 
   test("pages in stable chronological order and keeps structural events", async () => {

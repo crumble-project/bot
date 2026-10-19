@@ -12,6 +12,7 @@ import type {
 } from "@earendil-works/pi-durable";
 
 import type { AttachmentInfo } from "./attachments";
+import { codingJobOf } from "./coding";
 import { reactionOf } from "./reaction";
 
 type ModelContent = NonNullable<EntryRecord["model"]>[number]["content"];
@@ -127,6 +128,9 @@ export function latestMessagePreview(messages: TranscriptMessage[]): string {
     const reaction = reactionOf(message);
 
     if (reaction) return `Reacted ${reaction}`;
+    const job = codingJobOf(message);
+
+    if (job) return `Coding job ${job}`;
 
     if (message.role !== "user" && message.role !== "assistant") continue;
     const text = message.content.trim();

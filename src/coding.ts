@@ -22,8 +22,28 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { createCodingTools } from "@earendil-works/pi-durable/tools";
 import { conversationReference, type Agent } from "./domain";
 import { WORKSPACE_PATH, type Workspaces } from "./workspace";
+import { z } from "zod";
 
 export const CODING_TOOL_NAME = "coding";
+
+const jobCard = z.object({ name: z.string().min(1) });
+
+/** The job a successful `coding` result shows as a card; a listing or a failed call shows none. */
+export function codingJobOf(message: {
+  role: string;
+  toolName?: string;
+  isError?: boolean;
+  toolDetails?: unknown;
+}): string | undefined {
+  if (
+    message.role !== "toolResult" ||
+    message.toolName !== CODING_TOOL_NAME ||
+    message.isError
+  )
+    return undefined;
+
+  return jobCard.safeParse(message.toolDetails).data?.name;
+}
 
 const JOB_INSTRUCTIONS = `You are a coding job for another bot. Do the task you are given with your read, write, edit, and bash tools, working in ${WORKSPACE_PATH}, a persistent workspace that earlier jobs of this bot also used. Verify your work by running it. Finish with a short report: what you did, what you verified, and what is left.`;
 
@@ -285,6 +305,7 @@ export function codingExtensions(
     description:
       `Run coding jobs: background agents that read, write, edit files and run shell commands in your persistent workspace (${WORKSPACE_PATH}), which survives restarts and is shared by all your jobs. ` +
       "Actions: start (name, message: the full task, since the job knows nothing else), send (name, message; followUp: true queues it after the current answer instead of steering), stop (name: aborts its current work), status (name, or all jobs without one). " +
+      "Starting a job or sending it a message ends your turn, and the owner sees the job as a card, so write anything else the owner needs before the call and do not describe the job. " +
       "Jobs keep working after your turn ends. Their final answer arrives later as a message from the job; then tell the owner the outcome. Do not wait or poll for it.",
     parameters: Type.Object({
       action: Type.Union([
@@ -431,7 +452,10 @@ export function codingExtensions(
         };
       }, callContext);
 
-      return reply(result.text, result.found);
+      // The card shows the started or messaged job, so the turn ends with it, as after `show`.
+      return result.found
+        ? { ...reply(result.text, result.found), control: { terminate: true } }
+        : reply(result.text);
     },
   });
 

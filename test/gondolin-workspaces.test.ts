@@ -166,6 +166,39 @@ describe.skipIf(!vmTests)("Gondolin VM workspaces", () => {
     }
   }, 120_000);
 
+  test("a machine left running by a killed server is stopped before the next boot", async () => {
+    const module = path.join(import.meta.dir, "../src/gondolin-workspaces.ts");
+
+    const owner = Bun.spawn(
+      [
+        process.execPath,
+        "-e",
+        `const { GondolinWorkspaces } = await import(${JSON.stringify(module)});
+         const workspaces = new GondolinWorkspaces(${JSON.stringify(root)}, ${JSON.stringify(IMAGE)});
+         const result = await workspaces.env("orphaned").exec("true", {}, (await import("@earendil-works/chord/context")).BACKGROUND_CONTEXT);
+         console.log(result.ok ? "ready" : "failed");
+         setInterval(() => {}, 1000);`,
+      ],
+      { stdout: "pipe", stderr: "inherit" },
+    );
+
+    const reader = owner.stdout.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain(
+      "ready",
+    );
+    // A crash or SIGKILL skips every shutdown handler, so the machine outlives its server.
+    owner.kill("SIGKILL");
+    await owner.exited;
+
+    const next = new GondolinWorkspaces(root, IMAGE ?? "");
+
+    try {
+      expect((await sh(next.env("orphaned"), "echo ok")).output).toBe("ok");
+    } finally {
+      await next.close();
+    }
+  }, 180_000);
+
   test("an image path relative to the working directory boots", async () => {
     const relative = new GondolinWorkspaces(
       root,
