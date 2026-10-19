@@ -8,6 +8,7 @@ import {
 } from "./domain";
 import {
   latestMessagePreview,
+  latestReply,
   type BotMessageEvent,
   type MessageOrigin,
 } from "./transcript";
@@ -151,9 +152,10 @@ export class CrumbleService {
         lastMessage,
       });
 
-    const reply = messages.findLast(
-      (message) => message.role === "assistant" && message.content.trim(),
-    );
+    const { reply, reaction } = latestReply(messages);
+
+    // A reaction acknowledges the input without an answer worth a notification.
+    if (!reply && reaction) return;
 
     const event: ReplyActivity = {
       type: "reply",

@@ -27,7 +27,11 @@ Source chats store sent messages and observed terminal replies as data-only Pi t
 
 ## Inline visuals
 
-`displayExtension` gives every bot the `show` tool. It validates one component (`stats`, `table`, or `chart`) and returns it as the tool result's `details`, which the transcript exposes as `toolDetails`. Clients render successful `show` results inline in chat; other tool results stay hidden. The tool is model-only (`callers: ["model"]`), so code mode offers it beside the code mode tool instead of to scripts.
+`displayExtension` gives every bot the `show` tool. It validates one component (`stats`, `table`, or `chart`) and returns it as the tool result's `details`, which the transcript exposes as `toolDetails`. Clients render successful `show` results inline in chat; other tool results stay hidden. The tool is model-only (`callers: ["model"]`), so code mode offers it beside the code mode tool instead of to scripts. A successful `show` ends the turn (`control: { terminate: true }`), so the bot writes any text before the call and sends no message after the visual.
+
+## Reactions
+
+`reactionExtension` gives every bot the `react` tool. It takes exactly one emoji, returns it as the tool result's `details`, and ends the turn, so a message that needs no answer gets an acknowledgement instead of a reply. A reaction belongs to the latest input before it; clients attach it to that message and hide the result row. A reaction-only turn updates the chat preview ("Reacted 👍") but emits no `reply` activity, so it sends no notification. A bot that asked the reacting bot receives "Reacted 👍" as the response.
 
 A `chart` is [TanStack Charts](https://tanstack.com/charts) code in the module form of its docs. `ChartCompiler` (`charts.ts`) strips TypeScript, rewrites imports from the bundled packages, and runs the code in a QuickJS sandbox with no I/O. Inside, `chart-runtime.ts` (built once with `Bun.build`) compiles the definition at each of `CHART_WIDTHS` and flattens the scene into absolute drawing primitives: lines, paths of M/L/Q/C/Z commands, circles, rectangles, and text, with inherited paint and clip rectangles resolved. Each hover point carries its finished tooltip. The `chartLayout` zod schema validates that output and resolves CSS colors to theme tokens (`foreground`, `background`, `series-1` to `series-8`) or hex, so clients only draw and pick colors for their appearance. Upgrading `@tanstack/charts` changes no client: `test/charts.test.ts` guards the compile path, and `chart_docs` serves the installed package's docs.
 

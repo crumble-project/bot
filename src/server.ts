@@ -19,6 +19,7 @@ import { BotSchedules, scheduleExtension } from "./bot-schedules";
 import { coordinationExtension } from "./coordination";
 import { ChartCompiler } from "./charts";
 import { displayExtension } from "./display";
+import { reactionExtension } from "./reaction";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { loadCommonSkills } from "./common-skills";
@@ -118,6 +119,7 @@ export async function startServer(
         coordinationExtension(agent, service),
         scheduleExtension(agent, schedules),
         displayExtension(charts),
+        reactionExtension(),
         ...(agent.tools.includes("codemode")
           ? [
               createCodemodeExtension({

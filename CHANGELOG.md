@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add the `react` tool: a bot can acknowledge a message with one emoji instead of replying. The reaction ends the turn, shows as "Reacted 👍" in chat previews and bot responses, and sends no reply notification.
+- End the turn after a successful `show`, so a visual is not followed by a message restating it. Reply notifications now preview only text written after the latest input.
 - Add the `show` tool: every bot can show the owner headline numbers, a table, or a chart inline. Charts are TanStack Charts code that `ChartCompiler` runs in a QuickJS sandbox and compiles into themed drawing primitives at two widths; clients never run code. Payloads are validated, and errors return to the model so it can fix them. Clients render the tool result's `toolDetails`. Model-only tools stay direct under code mode.
 - Add the `chart_docs` tool, which serves the installed TanStack Charts examples and mark references.
 - Accept an optional IANA `timezone` with chat messages, remember the latest valid one for the owner, and add the owner's timezone and local time to the bot clock.

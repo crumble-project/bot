@@ -11,6 +11,7 @@ import type {
 } from "@earendil-works/pi-durable";
 
 import type { AttachmentInfo } from "./attachments";
+import { reactionOf } from "./reaction";
 
 type ModelContent = NonNullable<EntryRecord["model"]>[number]["content"];
 
@@ -106,6 +107,13 @@ export type TranscriptPage = {
   oldestEntryId: string | null;
 };
 
+// Structural-only model output has no text block; normalize() puts a hint in content for chat display.
+function hasTextBlock(message: TranscriptMessage) {
+  return Array.isArray(message.blocks)
+    ? message.blocks.some((block) => textBlock.safeParse(block).success)
+    : Boolean(message.content.trim());
+}
+
 /** Short, user-facing text for an agent list/sidebar. Structural tool and thinking blocks are excluded. */
 export function latestMessagePreview(messages: TranscriptMessage[]): string {
   for (const message of [...messages].reverse()) {
@@ -115,21 +123,33 @@ export function latestMessagePreview(messages: TranscriptMessage[]): string {
       if (text) return text.slice(0, 240);
     }
 
+    const reaction = reactionOf(message);
+
+    if (reaction) return `Reacted ${reaction}`;
+
     if (message.role !== "user" && message.role !== "assistant") continue;
     const text = message.content.trim();
 
-    // Structural-only model output has no text block; normalize() puts a hint in content for chat display.
-    const hasTextBlock = Array.isArray(message.blocks)
-      ? message.blocks.some((block) => textBlock.safeParse(block).success)
-      : Boolean(text);
-
-    if (text && hasTextBlock) return text.slice(0, 240);
+    if (text && hasTextBlock(message)) return text.slice(0, 240);
     const attachment = message.attachments?.[0];
 
     if (attachment) return `Attachment: ${attachment.name}`;
   }
 
   return "";
+}
+
+/** The bot's output after the latest input: its last text reply, and the emoji it reacted with, if any. */
+export function latestReply(messages: TranscriptMessage[]) {
+  const input = messages.findLastIndex((message) => message.role === "user");
+  const output = messages.slice(input + 1);
+
+  return {
+    reply: output.findLast(
+      (message) => message.role === "assistant" && hasTextBlock(message),
+    ),
+    reaction: output.map(reactionOf).findLast(Boolean),
+  };
 }
 
 const MAX_LIMIT = 200;
@@ -562,12 +582,24 @@ export async function readResponse(
   for (const entry of page.items) {
     if (INPUT_KINDS.has(entry.kind)) break;
 
-    for (const message of entry.model ?? [])
+    for (const message of entry.model ?? []) {
       if (message.role === "assistant") {
         const text = textOf(message.content);
 
         if (text) output.push(text);
       }
+
+      const { toolName, isError, details } = toolMetadata.parse(message);
+
+      const reaction = reactionOf({
+        role: message.role,
+        toolName,
+        isError,
+        toolDetails: details,
+      });
+
+      if (reaction) output.push(`Reacted ${reaction}`);
+    }
   }
 
   return output;

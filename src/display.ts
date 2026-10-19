@@ -92,7 +92,7 @@ for (const topic of chartTopics.keys())
 export function displayExtension(charts: ChartCompiler) {
   const show = defineTool({
     name: DISPLAY_TOOL_NAME,
-    description: `Show the owner a visual inline in your reply. Use it when a visual reads faster than prose, not for one or two plain facts. Do not restate the shown data in your text; add only interpretation the visual lacks.
+    description: `Show the owner a visual inline in your reply. Use it when a visual reads faster than prose, not for one or two plain facts. Your turn ends once it is shown, so call it last and write any text before the call. Do not restate the shown data in that text; add only interpretation the visual lacks, or nothing.
 - "stats": one to six headline numbers. Give values formatted for display (e.g. "€1.2M", "+4.3%").
 - "table": rows to compare.
 - "chart": TanStack Charts code, TypeScript allowed, the same module form as its docs: import from "@tanstack/charts", "@tanstack/charts/polar", "@tanstack/charts/hierarchy/treemap", "@tanstack/charts/hierarchy/sunburst", "@tanstack/charts/network/sankey", "@tanstack/charts/scales/{linear,band,point,ordinal}", or "d3-scale" (scaleUtc, scaleTime, scaleLog, scaleSqrt), and "export default defineChart({...})". Nothing else is importable and there is no I/O: put the data inline. Omit colors and sizes so the chart follows the app theme; set a tooltip "format" for non-Cartesian charts. Example:
@@ -116,6 +116,7 @@ Read chart_docs before using a mark or chart family you are unsure of.`,
         return {
           output: [{ type: "text" as const, text: "Shown to the owner." }],
           details: component,
+          control: { terminate: true as const },
         };
 
       // Clients receive the compiled layouts, never the code.
@@ -129,6 +130,7 @@ Read chart_docs before using a mark or chart family you are unsure of.`,
       return {
         output: [{ type: "text" as const, text: "Shown to the owner." }],
         details,
+        control: { terminate: true as const },
       };
     },
   });
