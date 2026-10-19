@@ -20,7 +20,8 @@ ENV NODE_ENV=production \
     CRUMBLE_HOST=0.0.0.0 \
     CRUMBLE_PORT=7337 \
     CRUMBLE_DATA_DIR=/var/lib/crumble/data \
-    CRUMBLE_SKILLS_DIR=/opt/crumble/skills
+    CRUMBLE_SKILLS_DIR=/opt/crumble/skills \
+    MSB_HOME=/var/lib/crumble/microsandbox
 
 COPY --from=deps /app/node_modules node_modules
 COPY package.json tsconfig.json ./
