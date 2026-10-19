@@ -23,7 +23,7 @@ import { displayExtension } from "./display";
 import { reactionExtension } from "./reaction";
 import { codingEnv, codingExtensions } from "./coding";
 import type { Workspaces } from "./workspace";
-import { gondolinWorkspacesFromEnv } from "./gondolin-workspaces";
+import { microsandboxWorkspacesFromEnv } from "./microsandbox-workspaces";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { loadCommonSkills } from "./common-skills";
@@ -37,7 +37,7 @@ export async function startServer(
     token?: string;
     skillsDir?: string;
     /**
-     * Backs the `coding` tool; defaults to Gondolin workspaces when `CRUMBLE_WORKSPACE_IMAGE` is set. Without it no bot
+     * Backs the `coding` tool; defaults to Microsandbox workspaces when `CRUMBLE_WORKSPACE_IMAGE` is set. Without it no bot
      * is offered the tool. The server closes it on shutdown.
      */
     workspaces?: Workspaces;
@@ -115,9 +115,7 @@ export async function startServer(
         : null;
     };
 
-    const workspaces =
-      options.workspaces ??
-      gondolinWorkspacesFromEnv(join(dataDir, "workspaces"));
+    const workspaces = options.workspaces ?? microsandboxWorkspacesFromEnv();
 
     const coding = (agent: Agent) =>
       workspaces && agent.tools.includes("coding")

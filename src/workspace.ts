@@ -4,12 +4,12 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 /** The guest path where a bot's workspace lives; coding jobs start here. */
 export const WORKSPACE_PATH = "/workspace";
 
-/** An outbound HTTP(S) request from a bot's workspace. */
-export type WorkspaceRequest = { agentId: string; method: string; url: string };
+/** An outbound connection from a bot's workspace, named by its TLS server name or HTTP `Host`. */
+export type WorkspaceRequest = { agentId: string; host: string; port: number };
 
 /**
- * Decides a workspace's outbound requests before they leave the machine. A request waits while the policy does, so an
- * owner-approval flow can replace the default.
+ * Decides a workspace's outbound connections before they leave the machine. A connection waits while the policy does,
+ * so an owner-approval flow can replace the default.
  */
 export type WorkspaceNetworkPolicy = (
   request: WorkspaceRequest,
