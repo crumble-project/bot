@@ -223,11 +223,15 @@ export class GondolinWorkspaces implements Workspaces {
   private readonly imagePath: string;
   private closed = false;
 
+  private readonly root: string;
+
   constructor(
-    private readonly root: string,
+    root: string,
     imagePath: string,
     options: GondolinWorkspacesOptions = {},
   ) {
+    // Absolute, so the disk path matches the one in a leftover machine's command line.
+    this.root = path.resolve(root);
     this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     this.network = options.network ?? allowAllRequests;
     // qemu-img resolves a relative backing file against the disk's directory, not the working directory.
@@ -293,11 +297,17 @@ export class GondolinWorkspaces implements Workspaces {
     if (this.closed) throw new Error("Workspaces are closed");
 
     const diskPath = await this.prepareDisk(agentId);
+    const pidPath = path.join(path.dirname(diskPath), "machine.pid");
+
+    await stopLeftoverMachine(pidPath, diskPath);
+
     const vm = await this.createVm(diskPath, agentId);
     let relay: Relay | undefined;
 
     try {
       await prepareGuest(vm, this.image.daemon);
+      // QEMU outlives a server that crashed or was killed, and keeps the disk locked.
+      await writeFile(pidPath, String(vm.getHostPid() ?? ""));
       relay = await startRelay(vm);
 
       return {
@@ -394,6 +404,54 @@ export class GondolinWorkspaces implements Workspaces {
 
     await writeFile(identityPath, this.image.buildId);
     await rename(partial, diskPath);
+  }
+}
+
+/** Stops the bot's machine if a previous server process left it running; another process's machine is left alone. */
+async function stopLeftoverMachine(pidPath: string, diskPath: string) {
+  const pid = Number(await readFile(pidPath, "utf8").catch(() => ""));
+
+  if (!Number.isSafeInteger(pid) || pid <= 0) return;
+
+  if (!(await commandLine(pid)).includes(diskPath)) return;
+
+  // SIGTERM lets QEMU close the disk cleanly; the journal covers what the guest had not synced.
+  signal(pid, "SIGTERM");
+
+  for (let waited = 0; isRunning(pid); waited += 100) {
+    if (waited === 5000) signal(pid, "SIGKILL");
+    await Bun.sleep(100);
+  }
+}
+
+async function commandLine(pid: number) {
+  const proc = await readFile(`/proc/${pid}/cmdline`, "utf8").catch(
+    () => undefined,
+  );
+
+  if (proc !== undefined) return proc.replaceAll("\0", " ");
+
+  return execFileAsync("ps", ["-o", "command=", "-p", String(pid)]).then(
+    (result) => result.stdout,
+    () => "",
+  );
+}
+
+function isRunning(pid: number) {
+  try {
+    process.kill(pid, 0);
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function signal(pid: number, name: NodeJS.Signals) {
+  try {
+    process.kill(pid, name);
+  } catch {
+    // Already gone.
   }
 }
 

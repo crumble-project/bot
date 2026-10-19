@@ -208,6 +208,8 @@ test("a coding job works in the workspace and reports to the bot's chat once", a
   );
 
   expect(contents).not.toContain("Create the files.");
+  // Starting a job ends the bot's turn: the card says it, so no message follows.
+  expect(contents).not.toContain("Started.");
   expect(
     contents.filter((content) => content === "Wrote hello.txt and notes.txt."),
   ).toHaveLength(1);
