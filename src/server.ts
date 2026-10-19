@@ -17,6 +17,7 @@ import { AppError } from "./domain";
 import { MCPIntegrations } from "./integrations";
 import { BotSchedules, scheduleExtension } from "./bot-schedules";
 import { coordinationExtension } from "./coordination";
+import { ChartCompiler } from "./charts";
 import { displayExtension } from "./display";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
@@ -89,6 +90,8 @@ export async function startServer(
       memoryLimitBytes: 256 * 1024 * 1024,
     });
 
+    const charts = new ChartCompiler();
+
     const usesSharedMemory = (agentId: string) =>
       store.getAgent(agentId)?.sharedMemory === true;
 
@@ -114,7 +117,7 @@ export async function startServer(
         ...(await integrations.extensionsForAgent(agent)),
         coordinationExtension(agent, service),
         scheduleExtension(agent, schedules),
-        displayExtension(),
+        displayExtension(charts),
         ...(agent.tools.includes("codemode")
           ? [
               createCodemodeExtension({
@@ -214,6 +217,7 @@ export async function startServer(
         await push?.close();
         await integrations.close();
         await codemodeSandbox.close();
+        await charts.close();
         await release();
       },
     };

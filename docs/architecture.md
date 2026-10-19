@@ -29,6 +29,8 @@ Source chats store sent messages and observed terminal replies as data-only Pi t
 
 `displayExtension` gives every bot the `show` tool. It validates one component (`stats`, `table`, or `chart`) and returns it as the tool result's `details`, which the transcript exposes as `toolDetails`. Clients render successful `show` results inline in chat; other tool results stay hidden. The tool is model-only (`callers: ["model"]`), so code mode offers it beside the code mode tool instead of to scripts.
 
+A `chart` is [TanStack Charts](https://tanstack.com/charts) code in the module form of its docs. `ChartCompiler` (`charts.ts`) strips TypeScript, rewrites imports from the bundled packages, and runs the code in a QuickJS sandbox with no I/O. Inside, `chart-runtime.ts` (built once with `Bun.build`) compiles the definition at each of `CHART_WIDTHS` and flattens the scene into absolute drawing primitives: lines, paths of M/L/Q/C/Z commands, circles, rectangles, and text, with inherited paint and clip rectangles resolved. Each hover point carries its finished tooltip. The `chartLayout` zod schema validates that output and resolves CSS colors to theme tokens (`foreground`, `background`, `series-1` to `series-8`) or hex, so clients only draw and pick colors for their appearance. Upgrading `@tanstack/charts` changes no client: `test/charts.test.ts` guards the compile path, and `chart_docs` serves the installed package's docs.
+
 ## Verifiable milestones
 
 1. Persistent agent lifecycle and actual Pi Durable conversation submission, cancellation, streaming, reopen, and isolation tests.
