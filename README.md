@@ -65,10 +65,26 @@ To bundle a local skills checkout instead, override the `skills` build stage:
 docker build --build-context skills=../skills -t crumble-server .
 ```
 
-- State lives in the `crumble` volume at `/var/lib/crumble`, which holds the data directory and its lock. Run one container per volume, and use a local disk rather than a network filesystem.
+- State lives in the `crumble` volume at `/var/lib/crumble`, which holds the data directory, its lock, and Microsandbox state. Run one container per volume, and use a local disk rather than a network filesystem.
 - Compose publishes the port on the host's loopback only. For remote clients, use a private network such as Tailscale or a TLS reverse proxy.
 - To set your own token, pass `CRUMBLE_TOKEN` through an env file. For native push, mount the APNs key or FCM service account read-only and set the `CRUMBLE_APNS_*` or `CRUMBLE_FCM_SERVICE_ACCOUNT_PATH` variables (see [Native push](docs/native-push.md)).
 - Back up the volume, including `data/.secret.key`. Stop the container first, or copy the SQLite files with `sqlite3 .backup`.
+
+### Enable coding workspaces on Linux
+
+Build and save the guest image as described in [Coding workspaces](#coding-workspaces). Import it inside the server container: the host's Microsandbox cache is separate from the container's volume.
+
+```bash
+export CRUMBLE_KVM_GID=$(getent group kvm | cut -d: -f3)
+export CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:dev
+docker compose -f compose.yaml -f compose.kvm.yaml build
+docker compose -f compose.yaml -f compose.kvm.yaml run --rm \
+  -v /tmp/crumble-workspace.tar:/tmp/workspace.tar:ro \
+  crumble bun -e 'import { Image } from "microsandbox"; await Image.load("/tmp/workspace.tar", { tag: process.env.CRUMBLE_WORKSPACE_IMAGE })'
+docker compose -f compose.yaml -f compose.kvm.yaml up -d
+```
+
+The override grants access to `/dev/kvm` and the host's KVM group. It does not require privileged mode.
 
 ## Develop
 
