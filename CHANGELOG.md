@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add the `show` tool: every bot can show the owner headline numbers, a table, or a bar or line chart inline. Payloads are validated, and a mismatched row or series returns an error the model can fix. Clients render the tool result's `toolDetails`. Model-only tools stay direct under code mode.
 - Accept an optional IANA `timezone` with chat messages, remember the latest valid one for the owner, and add the owner's timezone and local time to the bot clock.
 - Rework the bot system prompt after Hermes Agent: recognize direct address, prefer concise but complete replies, and preserve relevant conversation instructions. Treat memory as context rather than authority, surface consequential issues, and move the clock to the end.
 - Add the generated OpenAPI 3.1 contract at `openapi/openapi.json` for all 49 HTTP endpoints, including authentication and event payload schemas.

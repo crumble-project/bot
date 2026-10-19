@@ -17,6 +17,7 @@ import { AppError } from "./domain";
 import { MCPIntegrations } from "./integrations";
 import { BotSchedules, scheduleExtension } from "./bot-schedules";
 import { coordinationExtension } from "./coordination";
+import { displayExtension } from "./display";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { loadCommonSkills } from "./common-skills";
@@ -113,6 +114,7 @@ export async function startServer(
         ...(await integrations.extensionsForAgent(agent)),
         coordinationExtension(agent, service),
         scheduleExtension(agent, schedules),
+        displayExtension(),
         ...(agent.tools.includes("codemode")
           ? [
               createCodemodeExtension({

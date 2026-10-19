@@ -404,7 +404,12 @@ export class AgentRuntime {
     ];
 
     // With code mode the model writes one script that calls the other tools, instead of calling them itself.
+    // Model-only tools, such as code mode itself, stay direct.
     const codemode = tools.find((tool) => tool.name === CODEMODE_TOOL_NAME);
+
+    const modelOnly = tools.filter(
+      (tool) => tool.callers !== undefined && !tool.callers.includes("tools"),
+    );
 
     const conversation = await record.harness.conversation(
       localConversationId(agent.id, conversationId),
@@ -454,7 +459,7 @@ export class AgentRuntime {
           .filter((part) => part.trim())
           .join("\n\n"),
         tools,
-        modelTools: codemode ? [codemode] : tools,
+        modelTools: codemode ? modelOnly : tools,
       },
       BACKGROUND_CONTEXT,
     );
