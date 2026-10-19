@@ -17,7 +17,6 @@ const agent = (id: string, model = "test-model"): Agent => ({
   provider: "faux" as any,
   model,
   enabled: true,
-  folder: "Personal",
   tools: ["memory"],
   skills: [],
   mcpServers: [],

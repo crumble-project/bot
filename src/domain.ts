@@ -17,7 +17,6 @@ export const agentInput = z.object({
     .default("openai"),
   model: z.string().trim().min(1).max(200).default("gpt-4.1"),
   enabled: z.boolean().default(true),
-  folder: z.string().max(80).default("Personal"),
   tools: z.array(z.string().min(1).max(200)).max(100).default(["memory"]),
   skills: z
     .array(

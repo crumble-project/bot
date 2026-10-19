@@ -90,7 +90,6 @@ describe("crash recovery", () => {
           provider: "faux" as any,
           model: "crash-model",
           enabled: true,
-          folder: "Personal",
           tools: [],
           skills: [],
           mcpServers: [],

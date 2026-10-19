@@ -92,7 +92,6 @@ test("code mode offers one tool whose scripts call the agent's other tools", asy
     provider: "faux",
     model: "chat",
     enabled: true,
-    folder: "Personal",
     tools: ["codemode"],
     skills: [],
     mcpServers: [],

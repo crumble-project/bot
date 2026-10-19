@@ -23,7 +23,6 @@ const input = (name: string, delegates: string[] = [], enabled = true) => ({
   provider: "openai" as const,
   model: "gpt-4.1",
   enabled,
-  folder: "Personal",
   tools: ["delegate"],
   skills: [],
   mcpServers: [],
