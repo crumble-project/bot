@@ -20,9 +20,33 @@ Copy the server token from the path printed at startup into your client's connec
 | `CRUMBLE_HOST` | `127.0.0.1` |
 | `CRUMBLE_PORT` | `7337` |
 | `CRUMBLE_TOKEN` | Generated; overrides require at least 32 characters |
+| `CRUMBLE_WORKSPACE_IMAGE` | Unset: no bot is offered the `coding` tool. See [Coding workspaces](#coding-workspaces) |
 
 Keep the server on loopback unless you provide TLS and access control.
 Back up the entire data directory, including `.secret.key`, which is required to decrypt stored credentials.
+
+## Coding workspaces
+
+A bot with the `coding` tool runs coding jobs in its own workspace: a [Gondolin](https://github.com/earendil-works/gondolin) micro-VM on a persistent disk in `<data dir>/workspaces/<bot id>/`. Jobs can make HTTP and HTTPS requests to the internet, for example to clone repositories or install packages. Other protocols, including SSH, and private address ranges, such as the host's network and cloud metadata, are blocked. The VM starts on first use and stops after 10 minutes without a request; the disk keeps its files.
+
+Requirements:
+
+- QEMU, including `qemu-img`, with hardware acceleration: HVF on macOS, or read-write access to `/dev/kvm` on Linux. Without it, the VM fails to start.
+- A guest image with git and build tools, built from `workspace-image/gondolin.json`. The build runs in Docker:
+
+  ```bash
+  bunx gondolin build --config workspace-image/gondolin.json --arch aarch64 --output <image dir>
+  ```
+
+  Use `--arch x86_64` on an x86-64 host. Set `CRUMBLE_WORKSPACE_IMAGE` to the output directory.
+
+A workspace disk only boots with the image it was created from. Changing the image makes existing workspaces fail with an error; migration is not supported yet.
+
+Gondolin's VM tests are skipped by default. To run them:
+
+```bash
+CRUMBLE_VM_TESTS=1 CRUMBLE_WORKSPACE_IMAGE=<image dir> bun test test/gondolin-workspaces.test.ts
+```
 
 ## Run with Docker
 

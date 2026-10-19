@@ -346,7 +346,8 @@ async function conversations(harness: Harness): Promise<ConversationRecord[]> {
       BACKGROUND_CONTEXT,
     );
 
-    records.push(...page.items);
+    // Task-owned conversations, such as coding jobs, are the bot's internal work, not part of its chat.
+    records.push(...page.items.filter((record) => !record.owner));
     cursor = page.next;
   } while (cursor);
 
@@ -354,7 +355,7 @@ async function conversations(harness: Harness): Promise<ConversationRecord[]> {
 }
 
 /**
- * Newest-first page of every conversation in the bot's store, so legacy sessions and the
+ * Newest-first page of every chat conversation in the bot's store, so legacy sessions and the
  * canonical chat read as one transcript. Entry IDs are global, which makes them a shared cursor.
  */
 export async function readTranscript(
