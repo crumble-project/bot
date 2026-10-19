@@ -20,32 +20,34 @@ Copy the server token from the path printed at startup into your client's connec
 | `CRUMBLE_HOST` | `127.0.0.1` |
 | `CRUMBLE_PORT` | `7337` |
 | `CRUMBLE_TOKEN` | Generated; overrides require at least 32 characters |
-| `CRUMBLE_WORKSPACE_IMAGE` | Unset: no bot is offered the `coding` tool. See [Coding workspaces](#coding-workspaces) |
+| `CRUMBLE_WORKSPACE_IMAGE` | Unset: no bot is offered the `coding` tool. An OCI image reference; see [Coding workspaces](#coding-workspaces) |
 
 Keep the server on loopback unless you provide TLS and access control.
 Back up the entire data directory, including `.secret.key`, which is required to decrypt stored credentials.
 
 ## Coding workspaces
 
-A bot with the `coding` tool runs coding jobs in its own workspace: a [Gondolin](https://github.com/earendil-works/gondolin) micro-VM on a persistent disk in `<data dir>/workspaces/<bot id>/`. Jobs can make HTTP and HTTPS requests to the internet, for example to clone repositories or install packages. Other protocols, including SSH, and private address ranges, such as the host's network and cloud metadata, are blocked. The VM starts on first use and stops after 10 minutes without a request; the disk keeps its files.
+A bot with the `coding` tool runs coding jobs in its own workspace: a [Microsandbox](https://github.com/superradcompany/microsandbox) microVM with the bot's files on a persistent disk volume named `crumble-<bot id>`. Jobs can make HTTP and HTTPS requests to the internet, for example to clone repositories or install packages. Other protocols, including SSH, and private address ranges, such as the host's network and cloud metadata, are blocked. The VM starts on first use and stops after 10 minutes without a request; the volume keeps its files, also when the image changes.
 
 Requirements:
 
-- QEMU, including `qemu-img`, with hardware acceleration: HVF on macOS, or read-write access to `/dev/kvm` on Linux. Without it, the VM fails to start.
-- A guest image with git and build tools, built from `workspace-image/gondolin.json`. The build runs in Docker:
+- Hardware virtualization: Apple silicon on macOS, or read-write access to `/dev/kvm` on Linux. In Docker, use `compose.kvm.yaml`, which passes `/dev/kvm` and the host's kvm group to the container.
+- A guest image with git and build tools, built from `workspace-image/Dockerfile` and imported into Microsandbox:
 
   ```bash
-  bunx gondolin build --config workspace-image/gondolin.json --arch aarch64 --output <image dir>
+  docker build -t crumble-workspace:dev workspace-image
+  docker save crumble-workspace:dev -o /tmp/crumble-workspace.tar
+  bun -e 'import { Image } from "microsandbox"; await Image.load("/tmp/crumble-workspace.tar", { tag: "crumble-workspace:dev" })'
   ```
 
-  Use `--arch x86_64` on an x86-64 host. Set `CRUMBLE_WORKSPACE_IMAGE` to the output directory.
+  Set `CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:dev`. Any OCI image reference from a registry also works.
 
-A workspace disk only boots with the image it was created from. Changing the image makes existing workspaces fail with an error; migration is not supported yet.
+Microsandbox keeps images, sandboxes, and volumes in `MSB_HOME` (default `~/.microsandbox`; `/var/lib/crumble/microsandbox` in the Docker image). Back it up with the data directory.
 
-Gondolin's VM tests are skipped by default. To run them:
+The VM tests are skipped by default. To run them:
 
 ```bash
-CRUMBLE_VM_TESTS=1 CRUMBLE_WORKSPACE_IMAGE=<image dir> bun test test/gondolin-workspaces.test.ts
+CRUMBLE_VM_TESTS=1 CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:dev bun test test/microsandbox-workspaces.test.ts
 ```
 
 ## Run with Docker
