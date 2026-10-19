@@ -3,6 +3,7 @@ import type { JsonValue } from "@earendil-works/chord";
 import { z } from "zod";
 import type {
   Conversation,
+  ConversationId,
   ConversationRecord,
   Cursor,
   EntryId,
@@ -354,14 +355,13 @@ async function conversations(harness: Harness): Promise<ConversationRecord[]> {
   return records;
 }
 
-/**
- * Newest-first page of every chat conversation in the bot's store, so legacy sessions and the
- * canonical chat read as one transcript. Entry IDs are global, which makes them a shared cursor.
- */
-export async function readTranscript(
-  harness: Harness,
+type PageOptions = { before?: string; limit?: number };
+
+/** Newest-first page over the given conversations. Entry IDs are global, which makes them a shared cursor. */
+async function readPage(
   agentId: string,
-  options: { before?: string; limit?: number } = {},
+  sources: Conversation[],
+  options: PageOptions,
 ): Promise<TranscriptPage> {
   const limit = Math.min(
     Math.max(options.limit ?? DEFAULT_LIMIT, 1),
@@ -376,14 +376,7 @@ export async function readTranscript(
   const raw = new Map<number, EntryRecord>();
   let truncated = false;
 
-  for (const item of await conversations(harness)) {
-    const conversation = await harness.conversation(
-      item.id,
-      BACKGROUND_CONTEXT,
-    );
-
-    if (!conversation) continue;
-
+  for (const conversation of sources) {
     const query: TranscriptEntryQuery = { order: "descending" };
 
     if (before !== undefined) {
@@ -421,6 +414,41 @@ export async function readTranscript(
     hasMore: truncated || consumed < entries.length,
     oldestEntryId: oldest === null ? null : entryRef(agentId, oldest),
   };
+}
+
+/** Newest-first page of every chat conversation, so legacy sessions and the canonical chat read as one transcript. */
+export async function readTranscript(
+  harness: Harness,
+  agentId: string,
+  options: PageOptions = {},
+): Promise<TranscriptPage> {
+  const sources: Conversation[] = [];
+
+  for (const item of await conversations(harness)) {
+    const conversation = await harness.conversation(
+      item.id,
+      BACKGROUND_CONTEXT,
+    );
+
+    if (conversation) sources.push(conversation);
+  }
+
+  return readPage(agentId, sources, options);
+}
+
+/** Newest-first page of one conversation, such as a coding job, which the chat transcript leaves out. */
+export async function readConversationTranscript(
+  harness: Harness,
+  agentId: string,
+  conversationId: ConversationId,
+  options: PageOptions = {},
+): Promise<TranscriptPage> {
+  const conversation = await harness.conversation(
+    conversationId,
+    BACKGROUND_CONTEXT,
+  );
+
+  return readPage(agentId, conversation ? [conversation] : [], options);
 }
 
 async function findOwner(

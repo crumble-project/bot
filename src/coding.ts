@@ -1,4 +1,5 @@
 import type { Context } from "@earendil-works/chord";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { Type, type AssistantMessage } from "@earendil-works/pi-ai";
 import {
   AssistantEntry,
@@ -11,14 +12,15 @@ import {
   hook,
   LiveDoc,
   type ConversationId,
+  type DocumentReader,
   type EntryId,
   type EnvTarget,
   type Extension,
+  type Harness,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { createCodingTools } from "@earendil-works/pi-durable/tools";
-import type { Agent } from "./domain";
-import { conversationReference } from "./runtime";
+import { conversationReference, type Agent } from "./domain";
 import { WORKSPACE_PATH, type Workspaces } from "./workspace";
 
 export const CODING_TOOL_NAME = "coding";
@@ -191,6 +193,39 @@ const Reporter = defineTask<ReporterInput, ReporterState, null>({
     ),
 });
 
+export type CodingJobInfo = {
+  name: string;
+  conversationId: ConversationId;
+  status: "working" | "idle";
+};
+
+// A conversation is busy while it has a run: from an input until its final answer.
+const statusOf = async (reader: DocumentReader, job: Job, context: Context) =>
+  (await reader.snapshot(LiveDoc, job.conversationId, context))?.run
+    ? ("working" as const)
+    : ("idle" as const);
+
+/** The jobs of a bot's chat, oldest first: conversation IDs only grow, whereas record keys reorder numeric names. */
+export async function codingJobs(
+  harness: Harness,
+  chatId: ConversationId,
+): Promise<CodingJobInfo[]> {
+  const jobs =
+    (await harness.snapshot(Jobs, chatId, BACKGROUND_CONTEXT))?.jobs ?? {};
+
+  const found = await Promise.all(
+    Object.entries(jobs).map(async ([name, job]) => ({
+      name,
+      conversationId: job.conversationId,
+      status: await statusOf(harness, job, BACKGROUND_CONTEXT),
+    })),
+  );
+
+  return found.sort(
+    (a, b) => Number(a.conversationId) - Number(b.conversationId),
+  );
+}
+
 /**
  * A coding job's environment is its bot's workspace. Any other conversation, such as the bot's chat, gets none, so
  * a tool that wrongly reached for a shell would fail instead of touching the workspace.
@@ -296,12 +331,6 @@ export function codingExtensions(
       const jobs =
         (await api.snapshot(Jobs, api.conversationId, callContext))?.jobs ?? {};
 
-      // A conversation is busy while it has a run: from an input until its final answer.
-      const statusOf = async (job: Job) =>
-        (await api.snapshot(LiveDoc, job.conversationId, callContext))?.run
-          ? ("working" as const)
-          : ("idle" as const);
-
       if (action === "status") {
         const names = name === undefined ? Object.keys(jobs) : [name];
         const found: Found[] = [];
@@ -313,7 +342,7 @@ export function codingExtensions(
             found.push({
               name: each,
               conversationId: job.conversationId,
-              status: await statusOf(job),
+              status: await statusOf(api, job, callContext),
             });
         }
 

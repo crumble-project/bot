@@ -41,6 +41,8 @@ A `chart` is [TanStack Charts](https://tanstack.com/charts) code in the module f
 
 A job selects only the `coding-job` extension: Pi's `read`, `write`, `edit`, and `bash` tools. It has no memory, delegation, scheduling, integrations, or job tool of its own. That extension is installed through `taskExtensions`, so the chat is never offered it. `codingEnv` gives an execution environment only to conversations marked as jobs. The bot's chat has none, so no shell is reachable from it.
 
+Clients read jobs through `GET /v1/agents/{id}/coding-jobs` (name, public conversation ID, and working or idle status, oldest job first) and `GET /v1/agents/{id}/coding-jobs/{name}/history`, which pages one job's transcript newest-first like chat history. `GET /v1/capabilities` tells them whether the server has a `Workspaces` backend at all.
+
 `Workspaces` (`workspace.ts`) is the seam between jobs and the machine they run on. `GondolinWorkspaces` implements it with one QEMU micro-VM per bot:
 
 - Each bot's disk is a qcow2 overlay of the configured image. A journal is added when the disk is created, because Gondolin's image has none. The image's build ID is recorded, and a mismatch fails clearly.
