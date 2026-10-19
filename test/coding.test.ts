@@ -16,7 +16,11 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { codingEnv, codingExtensions } from "../src/coding";
 import type { Agent } from "../src/domain";
+import { createAPI } from "../src/api";
+import { codingJobsResponse, historyResponse } from "../src/api-responses";
 import { AgentRuntime } from "../src/runtime";
+import { Scheduler } from "../src/scheduler";
+import { CrumbleService } from "../src/service";
 import { Store } from "../src/store";
 import type { Workspaces } from "../src/workspace";
 
@@ -309,4 +313,123 @@ test("a restart while a job works does not report twice", async () => {
 
   expect(await reports(second.runtime, agent, chat)).toHaveLength(1);
   expect(readFileSync(join(workspace, "notes.txt"), "utf8")).toBe("notes");
+});
+
+const token = "t".repeat(40);
+
+function serve(store: Store, runtime: AgentRuntime) {
+  const service = new CrumbleService(store, runtime);
+
+  const scheduler = new Scheduler(store, (a, p, r, s) =>
+    service.dispatch(a, p, r, s),
+  );
+
+  const app = createAPI(service, scheduler, token);
+
+  return (path: string) =>
+    app.request(path, { headers: { authorization: `Bearer ${token}` } });
+}
+
+test("clients list a bot's coding jobs and page through a job's work", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bot-coding-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const workspace = join(dir, "workspace");
+  await Bun.write(join(workspace, ".keep"), "");
+  const { store, agent } = setup(dir);
+
+  const { runtime } = open(
+    dir,
+    new DirectoryWorkspaces(workspace),
+    script(),
+    agent,
+  );
+
+  cleanups.push(() => runtime.close());
+  const get = serve(store, runtime);
+  const chat = await runtime.openChat(agent);
+
+  expect(
+    await (await get(`/v1/agents/${agent.id}/coding-jobs`)).json(),
+  ).toEqual({ jobs: [] });
+
+  await runtime.submit(agent, chat, "Build it", "req-1");
+  await until(async () => (await reports(runtime, agent, chat)).length === 1);
+
+  const started = (await runtime.snapshot(agent, chat)).messages.find(
+    (message) => message.toolName === "coding",
+  );
+
+  const list = async () =>
+    codingJobsResponse.parse(
+      await (await get(`/v1/agents/${agent.id}/coding-jobs`)).json(),
+    );
+
+  await until(async () => (await list()).jobs[0]?.status === "idle");
+
+  const { jobs } = await list();
+
+  expect(jobs).toEqual([
+    { name: "builder", conversationId: expect.any(String), status: "idle" },
+  ]);
+
+  expect(started?.toolDetails).toMatchObject({
+    conversationId: jobs[0]!.conversationId,
+  });
+
+  const history = async (query = "") =>
+    historyResponse.parse(
+      await (
+        await get(`/v1/agents/${agent.id}/coding-jobs/builder/history${query}`)
+      ).json(),
+    );
+
+  const all = await history();
+  expect(all.hasMore).toBe(false);
+
+  expect(all.messages[0]).toMatchObject({
+    role: "user",
+    content: "Create the files.",
+  });
+
+  expect(
+    all.messages
+      .filter((message) => message.role === "toolResult")
+      .map((message) => message.toolName),
+  ).toEqual(["bash", "write"]);
+
+  expect(all.messages.at(-1)).toMatchObject({
+    role: "assistant",
+    content: "Wrote hello.txt and notes.txt.",
+  });
+
+  const newest = await history("?limit=2");
+  expect(newest.hasMore).toBe(true);
+  expect(newest.messages.at(-1)).toEqual(all.messages.at(-1)!);
+
+  const older = await history(
+    `?limit=100&before=${encodeURIComponent(newest.oldestEntryId!)}`,
+  );
+
+  expect([...older.messages, ...newest.messages]).toEqual(all.messages);
+
+  // The chat transcript still leaves the job's work out.
+  const chatHistory = historyResponse.parse(
+    await (await get(`/v1/agents/${agent.id}/chat/history`)).json(),
+  );
+
+  expect(
+    chatHistory.messages.some(
+      (message) => message.content === "Create the files.",
+    ),
+  ).toBe(false);
+
+  expect(
+    (await get(`/v1/agents/${agent.id}/coding-jobs/missing/history`)).status,
+  ).toBe(404);
+
+  expect((await get(`/v1/agents/nobody/coding-jobs`)).status).toBe(404);
+
+  expect(
+    (await get(`/v1/agents/nobody/coding-jobs/builder/history`)).status,
+  ).toBe(404);
 });

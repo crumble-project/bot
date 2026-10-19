@@ -191,6 +191,12 @@ export const routes = {
     security: [],
     responses: { 200: json(response.healthResponse) },
   }),
+  capabilities: define({
+    method: "get",
+    path: "/v1/capabilities",
+    operationId: "getCapabilities",
+    responses: { 200: json(response.capabilitiesResponse) },
+  }),
   pushStatus: define({
     method: "get",
     path: "/v1/push",
@@ -271,6 +277,20 @@ export const routes = {
     path: "/v1/agents/{id}/chat/history",
     operationId: "getChatHistory",
     request: { params: id, query: historyInput },
+    responses: { 200: json(response.historyResponse) },
+  }),
+  codingJobs: define({
+    method: "get",
+    path: "/v1/agents/{id}/coding-jobs",
+    operationId: "listCodingJobs",
+    request: { params: id },
+    responses: { 200: json(response.codingJobsResponse) },
+  }),
+  codingJobHistory: define({
+    method: "get",
+    path: "/v1/agents/{id}/coding-jobs/{name}/history",
+    operationId: "getCodingJobHistory",
+    request: { params: id.extend({ name: z.string() }), query: historyInput },
     responses: { 200: json(response.historyResponse) },
   }),
   sendMessage: define({

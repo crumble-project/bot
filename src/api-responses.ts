@@ -14,6 +14,14 @@ export const healthResponse = z
   .object({ status: z.literal("ok"), apiVersion: z.literal(1) })
   .openapi("Health");
 
+export const capabilitiesResponse = z
+  .object({
+    coding: z.boolean().openapi({
+      description: "Whether bots can be given the coding tool on this server.",
+    }),
+  })
+  .openapi("Capabilities");
+
 export const pushStatusResponse = z
   .object({
     serverId: z.string(),
@@ -125,6 +133,22 @@ export const historyResponse = z
     oldestEntryId: z.string().nullable(),
   })
   .openapi("TranscriptPage");
+
+export const codingJobsResponse = z
+  .object({
+    jobs: z
+      .array(
+        z
+          .object({
+            name: z.string(),
+            conversationId: z.string(),
+            status: z.enum(["working", "idle"]),
+          })
+          .openapi("CodingJob"),
+      )
+      .openapi({ description: "Oldest job first." }),
+  })
+  .openapi("CodingJobs");
 
 export const chatSnapshotResponse = historyResponse
   .extend({

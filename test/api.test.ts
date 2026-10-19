@@ -86,6 +86,25 @@ const req = (app: any, path: string, init: RequestInit = {}) =>
   });
 
 describe("HTTP API", () => {
+  test("reports whether the server can run coding jobs", async () => {
+    const { app, store, runtime } = setup();
+    const service = new CrumbleService(store, runtime);
+
+    const scheduler = new Scheduler(store, (a, p, r, s) =>
+      service.dispatch(a, p, r, s),
+    );
+
+    const withCoding = createAPI(service, scheduler, token, undefined, {
+      coding: true,
+    });
+
+    const without = await req(app, "/v1/capabilities");
+    expect(await without.json()).toEqual({ coding: false });
+    expect(await (await req(withCoding, "/v1/capabilities")).json()).toEqual({
+      coding: true,
+    });
+  });
+
   test("lists bundled and editable shared skills in one catalog", async () => {
     const dir = mkdtempSync(join("/tmp", "bot-api-common-"));
     dirs.push(dir);

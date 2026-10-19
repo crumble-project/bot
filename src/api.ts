@@ -64,7 +64,11 @@ export function createAPI(
   scheduler: Scheduler,
   token: string,
   integrations?: MCPIntegrations,
-  options: { commonSkills?: CommonSkill[] } = {},
+  options: {
+    commonSkills?: CommonSkill[];
+    /** Whether the server can give bots the coding tool. */
+    coding?: boolean;
+  } = {},
   push?: PushManager,
 ) {
   if (token.length < 32)
@@ -112,6 +116,9 @@ export function createAPI(
     return c.json({ error: "The server could not complete this request" }, 500);
   });
 
+  register(routes.capabilities, (c) =>
+    c.json({ coding: options.coding === true }, 200),
+  );
   register(routes.pushStatus, (c) =>
     c.json(
       {
@@ -229,6 +236,19 @@ export function createAPI(
 
     return c.json(await service.history(c.req.param("id"), input), 200);
   });
+  register(routes.codingJobs, async (c) =>
+    c.json({ jobs: await service.codingJobs(c.req.param("id")) }, 200),
+  );
+  register(routes.codingJobHistory, async (c) =>
+    c.json(
+      await service.codingJobHistory(
+        c.req.param("id"),
+        c.req.param("name"),
+        historyInput.parse(c.req.query()),
+      ),
+      200,
+    ),
+  );
   register(routes.sendMessage, async (c) => {
     const input = messageInput.parse(await c.req.json());
 

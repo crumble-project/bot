@@ -214,6 +214,7 @@ export async function startServer(
       integrations,
       {
         commonSkills,
+        coding: workspaces !== undefined,
       },
       push,
     );
