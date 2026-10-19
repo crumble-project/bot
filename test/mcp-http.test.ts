@@ -17,7 +17,6 @@ const agent = (id: string, mcpServers: string[]): Agent => ({
   provider: "openai",
   model: "test",
   enabled: true,
-  folder: "Personal",
   tools: [],
   skills: [],
   mcpServers,

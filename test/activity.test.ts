@@ -74,7 +74,6 @@ describe("operational activity", () => {
       provider: "faux",
       model: "chat",
       enabled: true,
-      folder: "Personal",
       tools: [],
       skills: [],
       mcpServers: [],

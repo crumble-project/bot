@@ -28,7 +28,6 @@ const agentInput = (name: string, enabled = true) => ({
   instructions: "help",
   provider: "openai" as const,
   model: "gpt-4.1",
-  folder: "Personal",
   tools: [],
   skills: [],
   mcpServers: [],

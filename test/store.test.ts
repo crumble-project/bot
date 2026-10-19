@@ -26,7 +26,6 @@ const input = {
   provider: "openai" as const,
   model: "gpt-4.1",
   enabled: true,
-  folder: "Personal",
   tools: ["memory"],
   skills: [],
   mcpServers: [],
@@ -149,7 +148,7 @@ describe("Store", () => {
     const dir = make();
     const db = new Database(join(dir, "store.sqlite"));
     db.exec(
-      "CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT, avatar TEXT, description TEXT, instructions TEXT, provider TEXT, model TEXT, enabled INTEGER, folder TEXT, tools TEXT, skills TEXT, mcp_servers TEXT, created_at TEXT, updated_at TEXT)",
+      "CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT, avatar TEXT, description TEXT, instructions TEXT, provider TEXT, model TEXT, enabled INTEGER, folder TEXT NOT NULL, tools TEXT, skills TEXT, mcp_servers TEXT, created_at TEXT, updated_at TEXT)",
     );
     db.query("INSERT INTO agents VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(
       "legacy",
@@ -173,6 +172,8 @@ describe("Store", () => {
     expect(store.getAgent("legacy")?.delegates).toEqual([]);
     // SAFETY: Migration adds the optional inference field to legacy agents.
     expect((store.getAgent("legacy") as any)?.inference).toEqual({});
+    expect(store.getAgent("legacy")).not.toHaveProperty("folder");
+    expect(store.createAgent(input).name).toBe(input.name);
     store.close();
   });
 

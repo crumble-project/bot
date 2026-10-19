@@ -244,9 +244,6 @@
           "enabled": {
             "type": "boolean"
           },
-          "folder": {
-            "type": "string"
-          },
           "tools": {
             "type": "array",
             "items": {
@@ -331,7 +328,6 @@
           "provider",
           "model",
           "enabled",
-          "folder",
           "tools",
           "skills",
           "mcpServers",
@@ -1779,11 +1775,6 @@
                     "type": "boolean",
                     "default": true
                   },
-                  "folder": {
-                    "type": "string",
-                    "maxLength": 80,
-                    "default": "Personal"
-                  },
                   "tools": {
                     "type": "array",
                     "items": {
@@ -2143,10 +2134,6 @@
                   },
                   "enabled": {
                     "type": "boolean"
-                  },
-                  "folder": {
-                    "type": "string",
-                    "maxLength": 80
                   },
                   "tools": {
                     "type": "array",

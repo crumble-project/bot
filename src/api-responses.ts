@@ -35,7 +35,6 @@ export const agentResponse = z
     provider: z.string(),
     model: z.string(),
     enabled: z.boolean(),
-    folder: z.string(),
     tools: strings,
     skills: z.array(z.object({ name: z.string(), instructions: z.string() })),
     sharedSkills: strings.optional(),

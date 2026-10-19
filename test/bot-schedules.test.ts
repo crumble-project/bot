@@ -29,7 +29,6 @@ const input = (
   provider: "openai" as const,
   model: "gpt-4.1",
   enabled,
-  folder: "Personal",
   tools,
   skills: [],
   mcpServers: [],

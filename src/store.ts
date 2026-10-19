@@ -78,7 +78,7 @@ export class Store {
   }
   private migrate() {
     this.db
-      .exec(`CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, avatar TEXT NOT NULL, description TEXT NOT NULL, instructions TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, enabled INTEGER NOT NULL, folder TEXT NOT NULL, tools TEXT NOT NULL, skills TEXT NOT NULL, mcp_servers TEXT NOT NULL, delegates TEXT NOT NULL DEFAULT '[]', inference TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+      .exec(`CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, avatar TEXT NOT NULL, description TEXT NOT NULL, instructions TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, enabled INTEGER NOT NULL, tools TEXT NOT NULL, skills TEXT NOT NULL, mcp_servers TEXT NOT NULL, delegates TEXT NOT NULL DEFAULT '[]', inference TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, title TEXT NOT NULL, archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE, content TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS skills (id TEXT PRIMARY KEY, name TEXT NOT NULL, instructions TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -112,6 +112,9 @@ export class Store {
       this.db.exec(
         "ALTER TABLE agents ADD COLUMN shared_memory INTEGER NOT NULL DEFAULT 0",
       );
+
+    if (agentCols.some((c) => c.name === "folder"))
+      this.db.exec("ALTER TABLE agents DROP COLUMN folder");
 
     // Shared memories have no bot, and SQLite cannot drop NOT NULL in place.
     // SAFETY: PRAGMA table_info returns rows with a `name` and numeric `notnull` column.
@@ -195,7 +198,6 @@ export class Store {
       provider: r.provider,
       model: r.model,
       enabled: !!r.enabled,
-      folder: r.folder,
       tools: JSON.parse(r.tools),
       skills: JSON.parse(r.skills),
       sharedSkills: JSON.parse(r.shared_skills ?? "[]"),
@@ -222,7 +224,7 @@ export class Store {
     const t = now();
     this.db
       .query(
-        "INSERT INTO agents (id,name,avatar,description,instructions,provider,model,enabled,folder,tools,skills,shared_skills,shared_memory,mcp_servers,delegates,inference,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO agents (id,name,avatar,description,instructions,provider,model,enabled,tools,skills,shared_skills,shared_memory,mcp_servers,delegates,inference,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       )
       .run(
         agentId,
@@ -233,7 +235,6 @@ export class Store {
         input.provider,
         input.model,
         this.b(input.enabled),
-        input.folder,
         this.j(input.tools),
         this.j(input.skills),
         this.j(input.sharedSkills ?? []),
@@ -255,7 +256,7 @@ export class Store {
     const t = now();
     this.db
       .query(
-        "UPDATE agents SET name=?,avatar=?,description=?,instructions=?,provider=?,model=?,enabled=?,folder=?,tools=?,skills=?,shared_skills=?,shared_memory=?,mcp_servers=?,delegates=?,inference=?,updated_at=? WHERE id=?",
+        "UPDATE agents SET name=?,avatar=?,description=?,instructions=?,provider=?,model=?,enabled=?,tools=?,skills=?,shared_skills=?,shared_memory=?,mcp_servers=?,delegates=?,inference=?,updated_at=? WHERE id=?",
       )
       .run(
         x.name,
@@ -265,7 +266,6 @@ export class Store {
         x.provider,
         x.model,
         this.b(x.enabled),
-        x.folder,
         this.j(x.tools),
         this.j(x.skills),
         this.j(x.sharedSkills ?? []),

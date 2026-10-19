@@ -52,7 +52,6 @@ describe("HTTP/runtime persistence", () => {
         provider: "faux" as any,
         model: "test-model",
         enabled: true,
-        folder: "Personal",
         tools: [],
         skills: [],
         mcpServers: [],

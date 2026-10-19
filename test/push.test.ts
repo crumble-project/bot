@@ -421,7 +421,6 @@ describe("push registration and durable delivery", () => {
       provider: "openai",
       model: "gpt-4.1",
       enabled: true,
-      folder: "Personal",
       tools: [],
       skills: [],
       mcpServers: [],
