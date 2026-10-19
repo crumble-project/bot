@@ -2889,6 +2889,11 @@
                     },
                     "maxItems": 8,
                     "default": []
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   }
                 },
                 "required": [

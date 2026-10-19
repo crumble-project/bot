@@ -47,6 +47,7 @@ export type RuntimeCallbacks = {
     provider: Agent["provider"],
   ) => string | undefined | Promise<string | undefined>;
   currentAgent?: (agentId: string) => Agent | null;
+  ownerTimezone?: () => string | undefined;
   listMemory?: (agentId: string) => MemoryRecord[] | Promise<MemoryRecord[]>;
   createMemory?: (
     agentId: string,
@@ -426,7 +427,13 @@ export class AgentRuntime {
 
     const now = new Date();
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const clock = `Current server time (UTC): ${now.toISOString()}\nServer timezone: ${timezone}\nServer local time: ${now.toLocaleString("sv-SE", { timeZone: timezone, hour12: false })}\nUse this fresh clock for dates and relative times. The owner's timezone may differ from the server or external tools; use their known timezone, or ask if it is unknown. For one-time schedules, runAt must include Z (UTC) or an explicit offset such as +02:00. The timezone field controls recurring cron schedules; it does not reinterpret a one-time runAt timestamp.`;
+    const ownerTimezone = this.callbacks.ownerTimezone?.();
+
+    const owner = ownerTimezone
+      ? `\nOwner timezone: ${ownerTimezone}\nOwner local time: ${now.toLocaleString("sv-SE", { timeZone: ownerTimezone, hour12: false })}`
+      : "";
+
+    const clock = `Current server time (UTC): ${now.toISOString()}\nServer timezone: ${timezone}\nServer local time: ${now.toLocaleString("sv-SE", { timeZone: timezone, hour12: false })}${owner}\nUse this fresh clock for dates and relative times. The owner's timezone may differ from the server or external tools; use their known timezone, or ask if it is unknown. For one-time schedules, runAt must include Z (UTC) or an explicit offset such as +02:00. The timezone field controls recurring cron schedules; it does not reinterpret a one-time runAt timestamp.`;
     await conversation.configure(
       {
         model: { provider: agent.provider, modelId: agent.model },

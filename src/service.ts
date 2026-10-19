@@ -20,6 +20,19 @@ import {
 export const delegationRequest = (sourceAgentId: string, taskId: string) =>
   `delegate:${sourceAgentId}:${taskId}`;
 
+/** The IANA timezone the owner's client last reported with a chat message. */
+export const OWNER_TIMEZONE = "owner-timezone";
+
+const isTimezone = (timezone: string) => {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /** A finished reply anywhere on the server, for clients that notify their owner. */
 export type ReplyActivity = {
   type: "reply";
@@ -254,7 +267,11 @@ export class CrumbleService {
     requestId: string,
     replyTo?: string,
     attachments: AttachmentInput[] = [],
+    timezone?: string,
   ) {
+    if (timezone && isTimezone(timezone))
+      this.store.setSetting(OWNER_TIMEZONE, timezone);
+
     return this.send((await this.chat(agentId)).id, content, requestId, {
       replyTo,
       attachments,

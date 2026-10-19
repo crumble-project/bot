@@ -10,7 +10,7 @@ import { randomBytes } from "node:crypto";
 import lockfile from "proper-lockfile";
 import { Store } from "./store";
 import { AgentRuntime } from "./runtime";
-import { CrumbleService } from "./service";
+import { CrumbleService, OWNER_TIMEZONE } from "./service";
 import { Scheduler } from "./scheduler";
 import { createAPI } from "./api";
 import { AppError } from "./domain";
@@ -108,6 +108,7 @@ export async function startServer(
       commonSkills: () => commonSkills,
       credentials: (provider) => store.getCredential(provider),
       currentAgent: (id) => store.getAgent(id),
+      ownerTimezone: () => store.getSetting<string>(OWNER_TIMEZONE),
       extensions: async (agent) => [
         ...(await integrations.extensionsForAgent(agent)),
         coordinationExtension(agent, service),

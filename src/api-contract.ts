@@ -26,6 +26,7 @@ export const messageInput = z
     requestId: z.string().uuid(),
     replyTo: z.string().min(1).max(200).optional(),
     attachments: z.array(attachmentInput).max(MAX_ATTACHMENTS).default([]),
+    timezone: z.string().min(1).max(100).optional(),
   })
   .refine((value) => value.content || value.attachments.length, {
     message: "Write a message or attach a file",
