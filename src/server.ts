@@ -7,19 +7,23 @@ import {
 } from "node:fs";
 import { resolve, join } from "node:path";
 import { randomBytes } from "node:crypto";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import lockfile from "proper-lockfile";
 import { Store } from "./store";
 import { AgentRuntime } from "./runtime";
 import { CrumbleService, OWNER_TIMEZONE } from "./service";
 import { Scheduler } from "./scheduler";
 import { createAPI } from "./api";
-import { AppError } from "./domain";
+import { AppError, type Agent } from "./domain";
 import { MCPIntegrations } from "./integrations";
 import { BotSchedules, scheduleExtension } from "./bot-schedules";
 import { coordinationExtension } from "./coordination";
 import { ChartCompiler } from "./charts";
 import { displayExtension } from "./display";
 import { reactionExtension } from "./reaction";
+import { codingEnv, codingExtensions } from "./coding";
+import type { Workspaces } from "./workspace";
+import { gondolinWorkspacesFromEnv } from "./gondolin-workspaces";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { loadCommonSkills } from "./common-skills";
@@ -32,6 +36,11 @@ export async function startServer(
     port?: number;
     token?: string;
     skillsDir?: string;
+    /**
+     * Backs the `coding` tool; defaults to Gondolin workspaces when `CRUMBLE_WORKSPACE_IMAGE` is set. Without it no bot
+     * is offered the tool. The server closes it on shutdown.
+     */
+    workspaces?: Workspaces;
   } = {},
 ) {
   const dataDir = resolve(
@@ -106,6 +115,15 @@ export async function startServer(
         : null;
     };
 
+    const workspaces =
+      options.workspaces ??
+      gondolinWorkspacesFromEnv(join(dataDir, "workspaces"));
+
+    const coding = (agent: Agent) =>
+      workspaces && agent.tools.includes("coding")
+        ? codingExtensions(agent, workspaces)
+        : { chat: [], job: [] };
+
     let service!: CrumbleService;
     let schedules!: BotSchedules;
 
@@ -120,6 +138,7 @@ export async function startServer(
         scheduleExtension(agent, schedules),
         displayExtension(charts),
         reactionExtension(),
+        ...coding(agent).chat,
         ...(agent.tools.includes("codemode")
           ? [
               createCodemodeExtension({
@@ -129,6 +148,11 @@ export async function startServer(
             ]
           : []),
       ],
+      taskExtensions: (agent) => coding(agent).job,
+      env: (agentId, target, context) =>
+        workspaces
+          ? codingEnv(workspaces, agentId, target, context)
+          : undefined,
       listMemory: (agentId) => [
         ...store.listMemories(agentId),
         ...(usesSharedMemory(agentId)
@@ -216,6 +240,7 @@ export async function startServer(
         await scheduler.stop();
         await server.stop(true);
         await service.close();
+        await workspaces?.close(BACKGROUND_CONTEXT);
         await push?.close();
         await integrations.close();
         await codemodeSandbox.close();

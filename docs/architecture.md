@@ -35,6 +35,21 @@ Source chats store sent messages and observed terminal replies as data-only Pi t
 
 A `chart` is [TanStack Charts](https://tanstack.com/charts) code in the module form of its docs. `ChartCompiler` (`charts.ts`) strips TypeScript, rewrites imports from the bundled packages, and runs the code in a QuickJS sandbox with no I/O. Inside, `chart-runtime.ts` (built once with `Bun.build`) compiles the definition at each of `CHART_WIDTHS` and flattens the scene into absolute drawing primitives: lines, paths of M/L/Q/C/Z commands, circles, rectangles, and text, with inherited paint and clip rectangles resolved. Each hover point carries its finished tooltip. The `chartLayout` zod schema validates that output and resolves CSS colors to theme tokens (`foreground`, `background`, `series-1` to `series-8`) or hex, so clients only draw and pick colors for their appearance. Upgrading `@tanstack/charts` changes no client: `test/charts.test.ts` guards the compile path, and `chart_docs` serves the installed package's docs.
 
+## Coding jobs
+
+`codingExtensions` gives a bot with the `coding` capability the `coding` tool: start, message, stop, and check named coding jobs. A job is a child conversation of the bot's chat, built on Pi Durable's background subagent pattern. A background anchor task owns it, so it outlives the bot's turn and cancellation. For each message, a background reporter task delivers it and posts the job's answer back to the chat as a follow-up input. The answer is a `crumble.message` with origin `coding`. Request IDs and a per-job record of reported answers keep a restart from delivering or reporting twice.
+
+A job selects only the `coding-job` extension: Pi's `read`, `write`, `edit`, and `bash` tools. It has no memory, delegation, scheduling, integrations, or job tool of its own. That extension is installed through `taskExtensions`, so the chat is never offered it. `codingEnv` gives an execution environment only to conversations marked as jobs. The bot's chat has none, so no shell is reachable from it.
+
+`Workspaces` (`workspace.ts`) is the seam between jobs and the machine they run on. `GondolinWorkspaces` implements it with one QEMU micro-VM per bot:
+
+- Each bot's disk is a qcow2 overlay of the configured image. A journal is added when the disk is created, because Gondolin's image has none. The image's build ID is recorded, and a mismatch fails clearly.
+- Pi's file and shell operations run through pi-env's daemon inside the guest. Gondolin runs guest commands only from the process that owns the VM, so pi-env's `Connection` starts `gondolin-bridge.ts`, which relays the protocol over a Unix socket to that process.
+- Closing a Gondolin VM does not flush the guest's page cache. Jobs therefore sync after every `write`, `edit`, and `bash` call, and a VM always syncs before it stops.
+- Outbound HTTP(S) requests pass through a `WorkspaceNetworkPolicy` before they leave the VM. Gondolin intercepts TLS with its own CA, which the guest trusts, and holds each request until the policy decides. The default, `allowAllRequests`, trusts the whole internet; an owner-approval flow can replace it without changing the VM code. Other protocols and private address ranges are blocked. Hardware acceleration is required explicitly, so a host without it fails instead of silently emulating.
+
+A workspace in a host directory mounted into the VM was rejected. In Gondolin 0.13.0, operations on many small files were 70 to 160 times slower than on the VM's disk, and `rm -rf` skipped about half the entries of larger directories.
+
 ## Verifiable milestones
 
 1. Persistent agent lifecycle and actual Pi Durable conversation submission, cancellation, streaming, reopen, and isolation tests.

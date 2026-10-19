@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add coding jobs. A bot with the `coding` tool can start, message, stop, and check named jobs that read, write, edit, and run commands in its workspace. Each job's answer returns to the bot's chat once, including after a restart. Jobs have no memory, delegation, scheduling, integrations, or jobs of their own, and the bot's chat never gets a shell.
+- Add Gondolin workspaces: one micro-VM per bot on a persistent, journaled disk. Jobs can make HTTP(S) requests to the internet through a replaceable network policy, which allows everything by default. Other protocols and private address ranges are blocked. The VM starts on first use and stops when idle. Set `CRUMBLE_WORKSPACE_IMAGE` to an image built from `workspace-image/gondolin.json` to enable them; without it, no bot is offered the `coding` tool.
 - Remove the unused agent `folder` field from the API and drop its column from existing databases. Requests that still send `folder` are accepted and the value is ignored.
 - Add a Docker image and Compose file. The build fetches and bundles the shared skills from GitHub at a configurable ref, runs as a non-root user, keeps the data directory and its lock on one volume, and checks `/health`.
 - Teach the `show` tool to draw Sankey links as translucent bump curves with labels beside the nodes. TanStack's `link` mark is straight without a `curve`, so flows drew as overlapping slanted bars.

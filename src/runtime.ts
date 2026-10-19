@@ -11,10 +11,12 @@ import {
   createRegistry,
   defineExtension,
   defineTool,
+  type EnvTarget,
   type Extension,
   type LiveState,
   watchEvents,
 } from "@earendil-works/pi-durable";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CODEMODE_TOOL_NAME } from "@earendil-works/pi-durable/codemode";
 import { AppError, type Agent } from "./domain";
@@ -65,6 +67,14 @@ export type RuntimeCallbacks = {
   /** Repository-backed skills applied to every agent before shared and personal skills. */
   commonSkills?: () => Agent["skills"];
   extensions?: (agent: Agent) => Extension[] | Promise<Extension[]>;
+  /** Installed but never offered in the bot's chat: tasks select them for the conversations they own. */
+  taskExtensions?: (agent: Agent) => Extension[] | Promise<Extension[]>;
+  /** The execution environment of one of the bot's conversations; none for conversations that run no shell tools. */
+  env?: (
+    agentId: string,
+    target: EnvTarget,
+    context: Context,
+  ) => ExecutionEnv | undefined | Promise<ExecutionEnv | undefined>;
 };
 
 export type RuntimeMessage = TranscriptMessage;
@@ -89,6 +99,7 @@ type HarnessRecord = {
   choices: { agent: Agent };
   memory: ReturnType<typeof defineTool>;
   registry: ReturnType<typeof createRegistry>;
+  /** Everything installed in the registry: the offered extensions, then the task extensions. */
   extensions: Extension[];
 };
 
@@ -339,7 +350,11 @@ export class AgentRuntime {
 
       const registry = createRegistry();
       registry.install(defineExtension({ name: "memory", tools: [memory] }));
-      const extensions = (await this.callbacks.extensions?.(agent)) ?? [];
+
+      const extensions = [
+        ...((await this.callbacks.extensions?.(agent)) ?? []),
+        ...((await this.callbacks.taskExtensions?.(agent)) ?? []),
+      ];
 
       for (const extension of extensions) registry.install(extension);
       const choices = { agent };
@@ -366,7 +381,14 @@ export class AgentRuntime {
 
       const harness = await Harness.open(
         storage,
-        { models: configuredModels, registry },
+        {
+          models: configuredModels,
+          registry,
+          ...(this.callbacks.env && {
+            env: (target, context) =>
+              this.callbacks.env!(agent.id, target, context),
+          }),
+        },
         BACKGROUND_CONTEXT,
       );
 
@@ -391,12 +413,17 @@ export class AgentRuntime {
       await record.models.refresh({ providers: [agent.provider] });
     const next = (await this.callbacks.extensions?.(agent)) ?? [];
 
+    const installed = [
+      ...next,
+      ...((await this.callbacks.taskExtensions?.(agent)) ?? []),
+    ];
+
     for (const previous of record.extensions)
-      if (!next.some((extension) => extension.name === previous.name))
+      if (!installed.some((extension) => extension.name === previous.name))
         record.registry.uninstall(previous);
 
-    for (const extension of next) record.registry.install(extension);
-    record.extensions = next;
+    for (const extension of installed) record.registry.install(extension);
+    record.extensions = installed;
 
     const tools = [
       ...(agent.tools.includes("memory") ? [record.memory] : []),

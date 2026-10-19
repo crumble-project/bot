@@ -27,3 +27,11 @@ _Avoid_: Deleting history, starting a new chat
 **Reply**:
 A new message linked to an earlier transcript message, recalling that message and bounded surrounding context for the bot.
 _Avoid_: Fork, branch, session
+
+**Coding job**:
+Background work a bot hands to a separate agent that edits files and runs commands in the bot's workspace. The job's answer returns to the bot's chat.
+_Avoid_: Subagent, session, sub-chat
+
+**Workspace**:
+A bot's persistent files for coding jobs, on a disk only that bot's jobs can reach. The machine running them starts and stops as needed.
+_Avoid_: Sandbox, container, VM (in product language)
