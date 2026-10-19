@@ -101,6 +101,9 @@ import { scaleBand } from "@tanstack/charts/scales/band"
 import { scaleLinear } from "@tanstack/charts/scales/linear"
 const rows = [{ id: "de", country: "Germany", people: 84 }, { id: "fr", country: "France", people: 68 }]
 export default defineChart({ marks: [barY(rows, { x: "country", y: "people" })], scales: { x: { scale: () => scaleBand<string>().padding(0.2) }, y: { scale: scaleLinear, nice: true, grid: true, axis: { label: "Population (M)" } } } })
+Sankey links are straight unless you pass a curve. Bend them with a bump curve, keep them translucent, and label nodes beside their bars:
+const bumpX = { line: ([[x0, y0], [x1, y1]]) => "M" + x0 + "," + y0 + "C" + (x0 + x1) / 2 + "," + y0 + " " + (x0 + x1) / 2 + "," + y1 + " " + x1 + "," + y1, area: () => "" }
+link(layoutLinks, { x1: "x1", y1: "y1", x2: "x2", y2: "y2", key: "key", curve: bumpX, strokeWidth: (flow) => Math.max(1, flow.width), strokeOpacity: 0.4, lineCap: "butt" }) and text(layoutNodes, { x: "x1", y: "y", dx: 6, anchor: "start", ... }).
 Read chart_docs before using a mark or chart family you are unsure of.`,
     parameters: Type.Object({ component }),
     // Scripts cannot render to the owner, so code mode keeps this as a direct model tool.
