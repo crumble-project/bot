@@ -51,6 +51,10 @@ Clients read jobs through `GET /v1/agents/{id}/coding-jobs` (name, public conver
 
 Gondolin (QEMU) backed this seam first and was replaced: it needed a hand-built image without git, did not kill guest processes on abort, tied each disk to the image it was created from, and its host-directory mounts were 70 to 160 times slower and lost entries during `rm -rf`. Host-directory mounts are not used here either; Microsandbox's are 15 to 50 times slower than its disk volumes.
 
+## Group chats
+
+`GroupChats` (`group-chats.ts`) owns group chats between the owner and two to six bots: validation, membership, and change notifications for the event stream. Groups and their members are rows in the product database; deleting a bot removes it from its groups. Each group's shared transcript is its own Pi Durable store, `groups/<group id>.sqlite`, managed by `GroupTranscripts`. The store holds only `crumble.group-message` data entries and never calls a model. Each entry records its sender, so the transcript reader shows the owner's messages as `user` and a bot's as `assistant`, with `origin` naming the bot. Writes carry the client's request ID, which Pi deduplicates; a reused ID with different content is rejected. Group snapshots are an HTTP response component, not an exported event schema file, until the contract release tooling accepts added event schemas. Bots do not take turns in group chats yet. See [ADR 0002](adr/0002-group-chats.md) for the design.
+
 ## Verifiable milestones
 
 1. Persistent agent lifecycle and actual Pi Durable conversation submission, cancellation, streaming, reopen, and isolation tests.

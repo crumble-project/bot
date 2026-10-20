@@ -14,6 +14,8 @@ import { AgentRuntime } from "./runtime";
 import { CrumbleService, OWNER_TIMEZONE } from "./service";
 import { Scheduler } from "./scheduler";
 import { createAPI } from "./api";
+import { GroupChats } from "./group-chats";
+import { GroupTranscripts } from "./group-transcripts";
 import { AppError, type Agent } from "./domain";
 import { MCPIntegrations } from "./integrations";
 import { BotSchedules, scheduleExtension } from "./bot-schedules";
@@ -202,6 +204,12 @@ export async function startServer(
     );
 
     schedules = new BotSchedules(store, scheduler);
+
+    const groupChats = new GroupChats(
+      store,
+      new GroupTranscripts(join(dataDir, "groups")),
+    );
+
     push = new PushManager(new PushStore(dataDir));
     push.attach(service);
 
@@ -213,6 +221,7 @@ export async function startServer(
       {
         commonSkills,
         coding: workspaces !== undefined,
+        groupChats,
       },
       push,
     );
@@ -238,6 +247,7 @@ export async function startServer(
         closed = true;
         await scheduler.stop();
         await server.stop(true);
+        await groupChats.close();
         await service.close();
         await workspaces?.close(BACKGROUND_CONTEXT);
         await push?.close();
