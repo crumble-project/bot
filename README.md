@@ -91,7 +91,10 @@ The override grants access to `/dev/kvm` and the host's KVM group. It does not r
 ```bash
 bun run check             # Lint, formatting, types, contract drift, and tests
 bun run format            # Format source and tests
-bun run openapi:generate  # Regenerate the shared API contract
+bun run openapi:generate  # Regenerate OpenAPI and three event JSON Schemas
+bun run contract:validate # Validate OpenAPI and JSON Schema offline
+bun run contract:compatibility # Compare with the latest stable contract release
+bun run contract:bundle   # Export a checksummed bundle after committing changes
 ```
 
 ## API and docs
@@ -99,6 +102,7 @@ bun run openapi:generate  # Regenerate the shared API contract
 `/v1` endpoints require bearer authentication. `GET /health` is unauthenticated.
 
 - [OpenAPI contract](openapi/openapi.json): generated specification for client models and API clients.
+- [Contract releases](https://github.com/crumble-project/bot/releases?q=contract-v): independently versioned `contract-vX.Y.Z` bundles with event schemas, checksums, changelog, and source provenance.
 - [Contract maintenance](docs/api-contract.md): schema ownership, generation, and streaming conventions.
 - [Architecture](docs/architecture.md)
 - [Native push](docs/native-push.md)

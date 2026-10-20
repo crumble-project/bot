@@ -334,4 +334,8 @@ export const chatPreviewEvent = z
   })
   .openapi("ChatPreviewEvent");
 
+export const activityEvent = z
+  .discriminatedUnion("type", [replyEvent, chatPreviewEvent])
+  .openapi("ActivityEvent");
+
 export const heartbeatEvent = z.object({}).openapi("HeartbeatEvent");
