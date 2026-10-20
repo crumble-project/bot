@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Describe execution fields on schedule admission results so generated clients preserve the bot and conversation needed after starting a task.
+
 - Export and validate versioned HTTP and event contracts, check release compatibility, and publish immutable contract bundles from CI.
 
 - Correct nullable resource response schemas and mark attachment index path parameters as required for generated clients.
