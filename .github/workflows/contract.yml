@@ -16,6 +16,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/contract-tools
+      - name: Check out shared skills next to bot
+        run: git clone --depth 1 https://github.com/crumble-project/skills.git ../skills
       - run: bun run check
       - run: bun run contract:validate
       - name: Validate HTTP document with oasdiff
