@@ -36,6 +36,8 @@ Android currently uses an injectable `HttpTransport` backed by `HttpURLConnectio
 
 OpenAPI Generator's Kotlin generator `7.26.0` was considered with custom transport templates. Its official feature table marks null, unrestricted values, and union composition unsupported. This contract uses all three. Templates cannot reliably recover schema semantics discarded by the generator's model. A small generator for the contract's supported subset avoids adding OkHttp or Ktor and preserves nullable and event-union behavior. The cost is maintaining and reviewing that generator when the contract introduces new schema constructs.
 
+Fabrikt `28.1.1` was run against this contract with kotlinx.serialization models and `ANY_AS_JSONELEMENT`. It aborts on objects that declare properties and allow additional ones (`Error.details` items, `ScheduleRunResult`, `OperationalActivity.details`). With those removed, the discriminated `ActivityEvent` union is correct, but `ListedSkill` becomes a sealed interface without implementations and the `string | number` error path becomes an empty object. Its clients target OkHttp with Jackson or Ktor. Revisit when a generator handles these constructs with kotlinx.serialization; until then, keep the repository-owned generator.
+
 Commit output and regenerate explicitly. Reuse the same schema projection for SSE payload types. Keep frame parsing and stream lifetime in the existing transport adapter. Preserve cancellation, attachment timeouts, bearer authentication, and error mapping.
 
 ## Pin and update consumers
@@ -62,6 +64,7 @@ No contract is published to spec. No deployment, live server, signing key, or pr
 - [Swift OpenAPI Generator](https://github.com/apple/swift-openapi-generator) provides the CLI and generated operations. A build plugin would violate the committed-output decision.
 - [Swift OpenAPI Runtime](https://github.com/apple/swift-openapi-runtime) supplies generated-client support. [Apple's URLSession transport](https://github.com/apple/swift-openapi-urlsession) was evaluated but cannot retain the required per-operation timeout behavior. Apfelkern's source-controlled adapter retains Foundation networking and the injected session.
 - [Kotlin generator options and supported features](https://openapi-generator.tech/docs/generators/kotlin/) document the unsupported null and union constructs. Custom templates were rejected because they cannot repair unsupported model semantics. Default Ktor or OkHttp output would also add an unnecessary networking migration.
+- [Fabrikt](https://github.com/fabrikt-io/fabrikt) supports kotlinx.serialization models but not this contract's open objects or non-discriminated unions; see above.
 - [Zod JSON Schema conversion](https://zod.dev/json-schema) avoids introducing a separate Zod-to-schema library.
 - [oasdiff](https://github.com/oasdiff/oasdiff) provides direction-aware response compatibility checks. Raw schema text diffs cannot establish compatibility.
 - [GitHub workflow triggers](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow) currently document approval-required runs for some PR events created with `GITHUB_TOKEN`. Updaters run their own checks regardless.
