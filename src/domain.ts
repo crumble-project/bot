@@ -138,6 +138,28 @@ export type Skill = z.infer<typeof skillInput> & {
   updatedAt: string;
 };
 
+export const MIN_GROUP_MEMBERS = 2;
+export const MAX_GROUP_MEMBERS = 6;
+
+export const groupChatInput = z.object({
+  name: z.string().trim().min(1).max(80),
+  /** Member bots in the order they joined. */
+  memberIds: z
+    .array(z.string().uuid())
+    .min(MIN_GROUP_MEMBERS)
+    .max(MAX_GROUP_MEMBERS)
+    .refine((ids) => new Set(ids).size === ids.length, "List each bot once"),
+});
+
+export type GroupChatInput = z.infer<typeof groupChatInput>;
+
+/** A conversation between the owner and several bots, with one shared transcript. */
+export type GroupChat = GroupChatInput & {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 /** The public ID of one of an agent's conversations; a client passes it back as given. */
 export const conversationReference = (agentId: string, localId: number) =>
   `${agentId}:${localId}`;
