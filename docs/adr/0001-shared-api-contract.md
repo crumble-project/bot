@@ -20,7 +20,11 @@ Keep additional response properties open for forward compatibility within a majo
 
 ## Generate the Swift client once
 
-Use Apple's Swift OpenAPI Generator CLI `1.14.2` in apfelkern, Swift OpenAPI Runtime `1.13.2`, and URLSession transport `1.3.2`. Commit generated types and operations. Generation is an explicit maintenance command, not a SwiftPM build plugin. Desktop and iOS consume apfelkern; neither runs a generator.
+Use Apple's Swift OpenAPI Generator CLI `1.14.2` in apfelkern, Swift OpenAPI Runtime `1.13.2`, and HTTPTypes `1.7.0`. Use apfelkern's repository-owned URLSession `ClientTransport`, versioned with the library source. Commit generated types and operations. Generation is an explicit maintenance command, not a SwiftPM build plugin. Desktop and iOS consume apfelkern; neither runs a generator.
+
+Apple's URLSession transport `1.3.2` was tested and rejected because it cannot set per-operation `URLRequest.timeoutInterval`. Its default request timeout would change attachment and event-stream behavior. The small repository-owned transport uses the injected URLSession directly and preserves request deadlines, cancellation, streaming, and error limits. It requires no unused transport dependency or session subclass.
+
+The generator also cannot represent the exported nullable reference union directly. Its input projection expands exactly `anyOf: [named object reference, null]` into an equivalent inline nullable object. Pinned contract assets remain unchanged; unsupported shapes fail generation rather than silently dropping response bodies.
 
 Keep `APIClient` as the app-facing boundary. Generated operations handle path parameters, requests, and typed responses. The boundary retains runtime connection settings, bearer authentication, cancellation, timeouts, bounded error bodies, and user-facing error mapping. Domain and presentation helpers remain separate from generated wire models.
 
@@ -56,7 +60,7 @@ No contract is published to spec. No deployment, live server, signing key, or pr
 ## Sources and alternatives
 
 - [Swift OpenAPI Generator](https://github.com/apple/swift-openapi-generator) provides the CLI and generated operations. A build plugin would violate the committed-output decision.
-- [Swift OpenAPI Runtime](https://github.com/apple/swift-openapi-runtime) and [URLSession transport](https://github.com/apple/swift-openapi-urlsession) retain Foundation networking.
+- [Swift OpenAPI Runtime](https://github.com/apple/swift-openapi-runtime) supplies generated-client support. [Apple's URLSession transport](https://github.com/apple/swift-openapi-urlsession) was evaluated but cannot retain the required per-operation timeout behavior. Apfelkern's source-controlled adapter retains Foundation networking and the injected session.
 - [Kotlin generator options and supported features](https://openapi-generator.tech/docs/generators/kotlin/) document the unsupported null and union constructs. Custom templates were rejected because they cannot repair unsupported model semantics. Default Ktor or OkHttp output would also add an unnecessary networking migration.
 - [Zod JSON Schema conversion](https://zod.dev/json-schema) avoids introducing a separate Zod-to-schema library.
 - [oasdiff](https://github.com/oasdiff/oasdiff) provides direction-aware response compatibility checks. Raw schema text diffs cannot establish compatibility.
