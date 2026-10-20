@@ -106,4 +106,4 @@ bun run contract:bundle   # Export a checksummed bundle after committing changes
 - [Contract maintenance](docs/api-contract.md): schema ownership, generation, and streaming conventions.
 - [Architecture](docs/architecture.md)
 - [Native push](docs/native-push.md)
-- [Feature parity](docs/product-parity.md)
+- [Feature parity](https://github.com/crumble-project/spec/blob/main/product/parity.md)

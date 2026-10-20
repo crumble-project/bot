@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Move the product brief and parity research to the spec repository, remove the outdated Claude handoff, and replace the local glossary with a link to the canonical glossary there.
 - Describe execution fields on schedule admission results so generated clients preserve the bot and conversation needed after starting a task.
 
 - Export and validate versioned HTTP and event contracts, check release compatibility, and publish immutable contract bundles from CI.
