@@ -1,24 +1,150 @@
+import { createHash } from "node:crypto";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { z } from "zod";
 import { openAPIDocument } from "./api-contract";
+import {
+  activityEvent,
+  chatSnapshotResponse,
+  heartbeatEvent,
+} from "./api-responses";
 
-const target = new URL("../openapi/openapi.json", import.meta.url);
-const generated = `${JSON.stringify(openAPIDocument(), null, 2)}\n`;
-const args = Bun.argv.slice(2);
+export const eventSchemas = {
+  "chat-snapshot.schema.json": chatSnapshotResponse,
+  "activity-event.schema.json": activityEvent,
+  "heartbeat.schema.json": heartbeatEvent,
+};
 
-if (args.length === 0) {
-  await Bun.write(target, generated);
-  console.log("Generated openapi/openapi.json");
-} else if (args.length === 1 && args[0] === "--check") {
-  const file = Bun.file(target);
+type ContractArtifacts = Record<string, string>;
 
-  if (!(await file.exists()) || (await file.text()) !== generated) {
-    console.error(
-      "OpenAPI contract is stale. Run bun run openapi:generate and include openapi/openapi.json in your change.",
-    );
-    process.exitCode = 1;
-  } else {
-    console.log("OpenAPI contract is current");
+export function contractArtifacts() {
+  const artifacts: ContractArtifacts = {};
+  artifacts["openapi.json"] = `${JSON.stringify(openAPIDocument(), null, 2)}\n`;
+
+  for (const [name, schema] of Object.entries(eventSchemas)) {
+    const document = z.toJSONSchema(schema, {
+      target: "draft-2020-12",
+      io: "output",
+      override: ({ jsonSchema }) => {
+        if (
+          jsonSchema.type === "object" &&
+          jsonSchema.additionalProperties === false
+        )
+          jsonSchema.additionalProperties = true;
+      },
+    });
+
+    artifacts[name] = `${JSON.stringify(document, null, 2)}\n`;
   }
-} else {
-  console.error("Usage: bun src/openapi.ts [--check]");
-  process.exitCode = 1;
+
+  return artifacts;
+}
+
+export async function exportBundle(directory?: string) {
+  const status = Bun.spawnSync([
+    "git",
+    "status",
+    "--porcelain",
+    "--",
+    "src",
+    "openapi",
+    "CHANGELOG.md",
+    "package.json",
+    "bun.lock",
+  ]);
+
+  if (status.exitCode !== 0) throw new Error(status.stderr.toString());
+
+  if (status.stdout.toString().trim())
+    throw new Error(
+      "Commit contract sources and artifacts before exporting a provenance bundle",
+    );
+
+  const output = directory
+    ? resolve(directory)
+    : await mkdtemp(join(tmpdir(), "crumble-contract-"));
+
+  const artifacts = contractArtifacts();
+  const source = Bun.spawnSync(["git", "rev-parse", "HEAD"]);
+
+  if (source.exitCode !== 0) throw new Error(source.stderr.toString());
+
+  const changelog = await Bun.file(
+    new URL("../CHANGELOG.md", import.meta.url),
+  ).text();
+
+  const version = openAPIDocument().info.version;
+
+  const section = changelog
+    .split(`## Contract ${version}\n`)[1]
+    ?.split("\n## ")[0];
+
+  if (!section?.trim())
+    throw new Error(`Missing CHANGELOG.md section: Contract ${version}`);
+
+  artifacts["CHANGELOG.md"] = `# Contract ${version}\n\n${section.trim()}\n`;
+  artifacts["source-commit.txt"] = `${source.stdout.toString().trim()}\n`;
+
+  const checksums = Object.entries(artifacts)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(
+      ([name, content]) =>
+        `${createHash("sha256").update(content).digest("hex")}  ${name}\n`,
+    )
+    .join("");
+
+  artifacts["SHA256SUMS"] = checksums;
+
+  for (const name of Object.keys(artifacts)) {
+    const target = join(output, name);
+
+    if (await Bun.file(target).exists())
+      throw new Error(`Refusing to overwrite ${target}`);
+  }
+
+  for (const [name, content] of Object.entries(artifacts)) {
+    await Bun.write(join(output, name), content);
+  }
+
+  console.log(output);
+
+  return output;
+}
+
+if (import.meta.main) {
+  const args = Bun.argv.slice(2);
+
+  if (args[0] === "--bundle" && args.length <= 2) {
+    await exportBundle(args[1]);
+  } else if (
+    args.length === 0 ||
+    (args.length === 1 && args[0] === "--check")
+  ) {
+    let stale = false;
+
+    for (const [name, content] of Object.entries(contractArtifacts())) {
+      const target = new URL(`../openapi/${name}`, import.meta.url);
+
+      if (args[0] === "--check") {
+        if (
+          !(await Bun.file(target).exists()) ||
+          (await Bun.file(target).text()) !== content
+        ) {
+          console.error(
+            `Stale contract artifact: openapi/${name}. Run bun run openapi:generate.`,
+          );
+          stale = true;
+        }
+      } else {
+        await Bun.write(target, content);
+        console.log(`Generated openapi/${name}`);
+      }
+    }
+
+    if (stale) process.exitCode = 1;
+  } else {
+    console.error("Usage: bun src/openapi.ts [--check | --bundle [DIRECTORY]]");
+    process.exitCode = 1;
+  }
 }

@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "messages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "blocks": {},
+          "stopReason": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "number"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "replyTo": {
+            "type": "string"
+          },
+          "replyPreview": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "agentId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": true
+          },
+          "communication": {
+            "type": "object",
+            "properties": {
+              "executionId": {
+                "type": "string"
+              },
+              "fromAgentId": {
+                "type": "string"
+              },
+              "fromName": {
+                "type": "string"
+              },
+              "toAgentId": {
+                "type": "string"
+              },
+              "toName": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "sent",
+                  "done",
+                  "failed",
+                  "cancelled"
+                ]
+              }
+            },
+            "required": [
+              "executionId",
+              "fromAgentId",
+              "fromName",
+              "toAgentId",
+              "toName",
+              "status"
+            ],
+            "additionalProperties": true
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "mimeType": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "number"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "image",
+                    "text"
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "mimeType",
+                "size",
+                "kind"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "toolCallId": {
+            "type": "string"
+          },
+          "toolName": {
+            "type": "string"
+          },
+          "isError": {
+            "type": "boolean"
+          },
+          "toolDetails": {}
+        },
+        "required": [
+          "id",
+          "entryId",
+          "role",
+          "content"
+        ],
+        "additionalProperties": true
+      }
+    },
+    "hasMore": {
+      "type": "boolean"
+    },
+    "oldestEntryId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "conversationId": {
+      "type": "string"
+    },
+    "agentId": {
+      "type": "string"
+    },
+    "conversation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "archived": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "agentId",
+        "title",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": true
+    },
+    "live": {},
+    "partial": {
+      "type": "string"
+    },
+    "usage": {},
+    "status": {
+      "type": "string",
+      "enum": [
+        "idle",
+        "running",
+        "failed"
+      ]
+    },
+    "updatedAt": {
+      "type": "number"
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "messages",
+    "hasMore",
+    "oldestEntryId",
+    "conversationId",
+    "agentId",
+    "conversation",
+    "partial",
+    "status",
+    "updatedAt",
+    "error"
+  ],
+  "additionalProperties": true
+}

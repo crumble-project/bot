@@ -1,4 +1,5 @@
 # dependencies (bun install)
+contract-reports/
 node_modules
 
 # output

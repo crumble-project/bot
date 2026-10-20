@@ -95,6 +95,23 @@
         "type": "object",
         "properties": {}
       },
+      "ActivityEvent": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ReplyEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ChatPreviewEvent"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "reply": "#/components/schemas/ReplyEvent",
+            "chat-preview": "#/components/schemas/ChatPreviewEvent"
+          }
+        }
+      },
       "Health": {
         "type": "object",
         "properties": {
@@ -2384,15 +2401,12 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "allOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/Agent"
                     },
                     {
-                      "type": [
-                        "object",
-                        "null"
-                      ]
+                      "type": "null"
                     }
                   ]
                 }
@@ -2609,15 +2623,12 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "allOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/Agent"
                     },
                     {
-                      "type": [
-                        "object",
-                        "null"
-                      ]
+                      "type": "null"
                     }
                   ]
                 }
@@ -3423,7 +3434,7 @@
               "minimum": 0,
               "maximum": 7
             },
-            "required": false,
+            "required": true,
             "name": "index",
             "in": "path"
           }
@@ -3884,14 +3895,7 @@
         "operationId": "streamActivityEvents",
         "x-sse-events": {
           "activity": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ReplyEvent"
-              },
-              {
-                "$ref": "#/components/schemas/ChatPreviewEvent"
-              }
-            ]
+            "$ref": "#/components/schemas/ActivityEvent"
           },
           "heartbeat": {
             "$ref": "#/components/schemas/HeartbeatEvent"
@@ -4294,15 +4298,12 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "allOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/Memory"
                     },
                     {
-                      "type": [
-                        "object",
-                        "null"
-                      ]
+                      "type": "null"
                     }
                   ]
                 }
@@ -4772,15 +4773,12 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "allOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/Memory"
                     },
                     {
-                      "type": [
-                        "object",
-                        "null"
-                      ]
+                      "type": "null"
                     }
                   ]
                 }
@@ -5248,15 +5246,12 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "allOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/Skill"
                     },
                     {
-                      "type": [
-                        "object",
-                        "null"
-                      ]
+                      "type": "null"
                     }
                   ]
                 }
@@ -5791,15 +5786,12 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "allOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/Schedule"
                     },
                     {
-                      "type": [
-                        "object",
-                        "null"
-                      ]
+                      "type": "null"
                     }
                   ]
                 }
@@ -7481,15 +7473,12 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "allOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/McpServer"
                     },
                     {
-                      "type": [
-                        "object",
-                        "null"
-                      ]
+                      "type": "null"
                     }
                   ]
                 }

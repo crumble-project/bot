@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Export and validate versioned HTTP and event contracts, check release compatibility, and publish immutable contract bundles from CI.
+
+- Correct nullable resource response schemas and mark attachment index path parameters as required for generated clients.
+
 - Add `GET /v1/capabilities`, `GET /v1/agents/{id}/coding-jobs`, and `GET /v1/agents/{id}/coding-jobs/{name}/history`, so clients can tell whether coding is available, list a bot's jobs with their status, and page through a job's messages and tool calls.
 - Add coding jobs. A bot with the `coding` tool can start, message, stop, and check named jobs that read, write, edit, and run commands in its workspace. Starting a job or messaging it ends the bot's turn, because clients show the job as a card; the chat preview reads "Coding job <name>". Each job's answer returns to the bot's chat once, including after a restart. Jobs have no memory, delegation, scheduling, integrations, or jobs of their own, and the bot's chat never gets a shell.
 - Add Microsandbox workspaces: one microVM per bot with its files on a persistent, journaled disk volume that survives image changes. Jobs can make HTTP(S) requests to the internet through a replaceable network policy, which allows everything by default and now sees each connection's host and port. Other protocols and private address ranges are blocked. The VM starts on first use and stops when idle. Set `CRUMBLE_WORKSPACE_IMAGE` to an image built from `workspace-image/Dockerfile` to enable them; without it, no bot is offered the `coding` tool. On Linux in Docker, add `compose.kvm.yaml`.
@@ -17,3 +21,9 @@
 - Add the generated OpenAPI 3.1 contract at `openapi/openapi.json` for all 49 HTTP endpoints, including authentication and event payload schemas.
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
+
+## Contract 1.0.0
+
+- Publish the initial independently versioned HTTP API and snapshot, activity, and heartbeat event schemas.
+- Include checksums, this contract changelog excerpt, and the source commit in every contract bundle.
+- Encode nullable resource responses as unions and require every path parameter.

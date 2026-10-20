@@ -3,12 +3,14 @@
   "type": "module",
   "private": true,
   "devDependencies": {
+    "@apidevtools/swagger-parser": "13.1.0",
     "@modelcontextprotocol/sdk": "1.32.1",
     "@oxlint/plugins": "1.88.0",
     "@types/bun": "latest",
     "@types/d3-scale": "4.0.9",
     "@types/node": "^26.6.5",
     "@types/proper-lockfile": "^4.1.4",
+    "ajv": "8.20.0",
     "oxfmt": "0.73.0",
     "oxlint": "1.88.0",
     "typescript": "7.0.2"
@@ -41,6 +43,9 @@
     "format:check": "oxfmt --check src test",
     "openapi:generate": "bun src/openapi.ts",
     "openapi:check": "bun src/openapi.ts --check",
+    "contract:bundle": "bun src/openapi.ts --bundle",
+    "contract:validate": "bun src/contract-release.ts validate",
+    "contract:compatibility": "bun src/contract-release.ts compatibility",
     "check": "bun run lint && bun run format:check && bun run typecheck && bun run openapi:check && bun test"
   }
 }

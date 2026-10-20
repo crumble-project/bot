@@ -249,14 +249,14 @@ export const routes = {
     path: "/v1/agents/{id}",
     operationId: "updateAgent",
     request: { params: id, body: body(patchInput(agentInput)) },
-    responses: { 200: json(response.agentResponse.nullable()) },
+    responses: { 200: json(z.union([response.agentResponse, z.null()])) },
   }),
   duplicateAgent: define({
     method: "post",
     path: "/v1/agents/{id}/duplicate",
     operationId: "duplicateAgent",
     request: { params: id },
-    responses: { 201: json(response.agentResponse.nullable()) },
+    responses: { 201: json(z.union([response.agentResponse, z.null()])) },
   }),
   deleteAgent: define({
     method: "delete",
@@ -305,7 +305,12 @@ export const routes = {
     path: "/v1/agents/{id}/attachments/{entryId}/{index}",
     operationId: "getAttachment",
     request: {
-      params: id.extend({ entryId: z.string(), index: attachmentIndex }),
+      params: id.extend({
+        entryId: z.string(),
+        index: attachmentIndex.openapi({
+          param: { name: "index", in: "path", required: true },
+        }),
+      }),
     },
     responses: {
       200: {
@@ -360,12 +365,7 @@ export const routes = {
     path: "/v1/events",
     operationId: "streamActivityEvents",
     "x-sse-events": {
-      activity: {
-        oneOf: [
-          { $ref: "#/components/schemas/ReplyEvent" },
-          { $ref: "#/components/schemas/ChatPreviewEvent" },
-        ],
-      },
+      activity: { $ref: "#/components/schemas/ActivityEvent" },
       heartbeat: { $ref: "#/components/schemas/HeartbeatEvent" },
     },
     description:
@@ -396,7 +396,7 @@ export const routes = {
     path: "/v1/agents/{id}/memories/{memoryId}",
     operationId: "updateAgentMemory",
     request: { params: memoryParams, body: body(memoryInput) },
-    responses: { 200: json(response.memoryResponse.nullable()) },
+    responses: { 200: json(z.union([response.memoryResponse, z.null()])) },
   }),
   deleteAgentMemory: define({
     method: "delete",
@@ -423,7 +423,7 @@ export const routes = {
     path: "/v1/memories/{id}",
     operationId: "updateSharedMemory",
     request: { params: id, body: body(memoryInput) },
-    responses: { 200: json(response.memoryResponse.nullable()) },
+    responses: { 200: json(z.union([response.memoryResponse, z.null()])) },
   }),
   deleteMemory: define({
     method: "delete",
@@ -450,7 +450,7 @@ export const routes = {
     path: "/v1/skills/{id}",
     operationId: "updateSkill",
     request: { params: id, body: body(patchInput(skillInput)) },
-    responses: { 200: json(response.skillResponse.nullable()) },
+    responses: { 200: json(z.union([response.skillResponse, z.null()])) },
   }),
   deleteSkill: define({
     method: "delete",
@@ -481,7 +481,7 @@ export const routes = {
       params: id,
       body: body(patchInput(z.object(scheduleInput.shape))),
     },
-    responses: { 200: json(response.scheduleResponse.nullable()) },
+    responses: { 200: json(z.union([response.scheduleResponse, z.null()])) },
   }),
   deleteSchedule: define({
     method: "delete",
@@ -580,7 +580,7 @@ export const routes = {
     path: "/v1/mcp-servers/{id}",
     operationId: "updateMcpServer",
     request: { params: id, body: body(patchInput(mcpInput)) },
-    responses: { 200: json(response.mcpServerResponse.nullable()) },
+    responses: { 200: json(z.union([response.mcpServerResponse, z.null()])) },
   }),
   deleteMcpServer: define({
     method: "delete",
@@ -600,6 +600,7 @@ export function contractApp() {
   app.openAPIRegistry.register("ReplyEvent", response.replyEvent);
   app.openAPIRegistry.register("ChatPreviewEvent", response.chatPreviewEvent);
   app.openAPIRegistry.register("HeartbeatEvent", response.heartbeatEvent);
+  app.openAPIRegistry.register("ActivityEvent", response.activityEvent);
 
   return app;
 }
