@@ -63,4 +63,4 @@ Gondolin (QEMU) backed this seam first and was replaced: it needed a hand-built 
 
 Pi Durable is experimental. Pin its package versions and validate migrations before upgrading. Initial scope is one authenticated owner, not multi-tenant hosting. Metadata and Pi stores have separate transactions; durable request IDs bridge dispatch/recovery so retrying admission does not duplicate a user turn.
 
-See [product-parity.md](product-parity.md) for researched reference capabilities and acceptance criteria. A milestone being implemented does not imply the overall production-quality goal has been met.
+See the [parity research](https://github.com/crumble-project/spec/blob/main/product/parity.md) for researched reference capabilities and acceptance criteria. A milestone being implemented does not imply the overall production-quality goal has been met.
