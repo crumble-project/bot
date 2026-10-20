@@ -938,21 +938,72 @@
             "type": "boolean"
           },
           "result": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "status": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": {}
+            "$ref": "#/components/schemas/ScheduleRunResult"
           }
         },
         "required": [
           "admitted"
         ]
+      },
+      "ScheduleRunResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "conversationId": {
+            "type": "string"
+          },
+          "scheduleId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "submissionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "replyTo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attachmentsDigest": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": {}
       },
       "ActivityFeed": {
         "type": "object",

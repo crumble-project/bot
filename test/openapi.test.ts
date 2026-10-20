@@ -28,6 +28,34 @@ describe("exported response and parameter schemas", () => {
     }
   });
 
+  test("schedule admission results describe execution fields without requiring them", () => {
+    const document = openAPIDocument();
+    const result = document.components?.schemas?.ScheduleRunResult;
+
+    expect(result).toMatchObject({
+      properties: {
+        agentId: { type: "string" },
+        conversationId: { type: "string" },
+        prompt: { type: "string" },
+        createdAt: { type: "string" },
+        updatedAt: { type: "string" },
+      },
+    });
+    const ajv = new Ajv2020({ strict: false, validateFormats: false });
+
+    ajv.addSchema(document, "contract");
+
+    const validate = ajv.compile({
+      $ref: "contract#/components/schemas/ScheduleRun",
+    });
+
+    expect(validate({ admitted: false })).toBe(true);
+    expect(
+      validate({ admitted: true, result: { id: "e1", status: "pending" } }),
+    ).toBe(true);
+    expect(validate({ admitted: true, result: { agentId: 123 } })).toBe(false);
+  });
+
   test("all path parameters are required", () => {
     const document = openAPIDocument();
 

@@ -192,8 +192,12 @@ export const scheduleRunResponse = z
   .object({
     admitted: z.boolean(),
     result: z
-      .object({ id: z.string().optional(), status: z.string().optional() })
+      .object({
+        ...executionResponse.partial().shape,
+        status: z.string().optional(),
+      })
       .loose()
+      .openapi("ScheduleRunResult")
       .optional(),
   })
   .openapi("ScheduleRun");
