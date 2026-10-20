@@ -170,6 +170,26 @@ export const chatSnapshotResponse = historyResponse
   })
   .openapi("ChatSnapshot");
 
+export const groupChatResponse = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    memberIds: strings.openapi({
+      description: "Member bots in the order they joined.",
+    }),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .openapi("GroupChat");
+
+export const groupChatSnapshotResponse = historyResponse
+  .extend({ groupChat: groupChatResponse, updatedAt: z.number() })
+  .openapi("GroupChatSnapshot");
+
+export const groupMessageReceiptResponse = z
+  .object({ requestId: z.string(), entryId: z.string() })
+  .openapi("GroupMessageReceipt");
+
 export const executionResponse = z
   .object({
     id: z.string(),

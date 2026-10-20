@@ -4,7 +4,12 @@ import {
   z,
   type RouteConfig,
 } from "@hono/zod-openapi";
-import { agentInput, scheduleInput, skillInput } from "./domain";
+import {
+  agentInput,
+  groupChatInput,
+  scheduleInput,
+  skillInput,
+} from "./domain";
 import { attachmentInput, MAX_ATTACHMENTS } from "./attachments";
 import * as response from "./api-responses";
 
@@ -32,6 +37,11 @@ export const messageInput = z
     message: "Write a message or attach a file",
     path: ["content"],
   });
+
+export const groupMessageInput = z.object({
+  content: z.string().trim().min(1).max(32000),
+  requestId: z.string().uuid(),
+});
 
 export const activityInput = z.object({
   agentId: z.string().uuid().optional(),
@@ -377,6 +387,79 @@ export const routes = {
       },
     },
   }),
+  listGroupChats: define({
+    method: "get",
+    path: "/v1/group-chats",
+    operationId: "listGroupChats",
+    responses: { 200: json(z.array(response.groupChatResponse)) },
+  }),
+  createGroupChat: define({
+    method: "post",
+    path: "/v1/group-chats",
+    operationId: "createGroupChat",
+    request: { body: body(groupChatInput) },
+    responses: { 201: json(response.groupChatResponse) },
+  }),
+  getGroupChat: define({
+    method: "get",
+    path: "/v1/group-chats/{id}",
+    operationId: "getGroupChat",
+    request: { params: id },
+    responses: { 200: json(response.groupChatResponse) },
+  }),
+  updateGroupChat: define({
+    method: "patch",
+    path: "/v1/group-chats/{id}",
+    operationId: "updateGroupChat",
+    request: { params: id, body: body(patchInput(groupChatInput)) },
+    responses: { 200: json(response.groupChatResponse) },
+  }),
+  deleteGroupChat: define({
+    method: "delete",
+    path: "/v1/group-chats/{id}",
+    operationId: "deleteGroupChat",
+    request: { params: id },
+    responses: { 204: empty },
+  }),
+  groupChatSnapshot: define({
+    method: "get",
+    path: "/v1/group-chats/{id}/chat",
+    operationId: "getGroupChatSnapshot",
+    request: { params: id, query: snapshotInput },
+    responses: { 200: json(response.groupChatSnapshotResponse) },
+  }),
+  groupChatHistory: define({
+    method: "get",
+    path: "/v1/group-chats/{id}/history",
+    operationId: "getGroupChatHistory",
+    request: { params: id, query: historyInput },
+    responses: { 200: json(response.historyResponse) },
+  }),
+  sendGroupMessage: define({
+    method: "post",
+    path: "/v1/group-chats/{id}/messages",
+    operationId: "sendGroupMessage",
+    request: { params: id, body: body(groupMessageInput) },
+    responses: { 201: json(response.groupMessageReceiptResponse) },
+  }),
+  groupChatEvents: define({
+    method: "get",
+    path: "/v1/group-chats/{id}/events",
+    operationId: "streamGroupChatEvents",
+    "x-sse-events": {
+      snapshot: { $ref: "#/components/schemas/GroupChatSnapshot" },
+      heartbeat: { $ref: "#/components/schemas/HeartbeatEvent" },
+    },
+    description:
+      "Server-sent events. Each snapshot event carries a GroupChatSnapshot JSON object in data, sent on connection and after every change. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. Reconnect by fetching the current snapshot; there is no Last-Event-ID replay.",
+    request: { params: id, query: snapshotInput },
+    responses: {
+      200: {
+        description: "SSE stream, not a JSON array",
+        content: { "text/event-stream": { schema: z.string() } },
+      },
+    },
+  }),
   agentMemories: define({
     method: "get",
     path: "/v1/agents/{id}/memories",
@@ -615,7 +698,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "1.0.0",
+      version: "1.1.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },

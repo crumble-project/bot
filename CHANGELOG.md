@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add group chats: the owner can create, rename, change, and delete group chats of two to six bots, and post messages into a shared transcript that keeps each message's sender. Each group's transcript is its own Pi store. Bots do not answer in group chats yet.
 - Move the product brief and parity research to the spec repository, remove the outdated Claude handoff, and replace the local glossary with a link to the canonical glossary there.
 - Describe execution fields on schedule admission results so generated clients preserve the bot and conversation needed after starting a task.
 
@@ -24,6 +25,10 @@
 - Add the generated OpenAPI 3.1 contract at `openapi/openapi.json` for all 49 HTTP endpoints, including authentication and event payload schemas.
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
+
+## Contract 1.1.0
+
+- Add group chat endpoints under `/v1/group-chats`: list, create, read, update, and delete groups; read a `GroupChatSnapshot` and paged history; post owner messages, which return a `GroupMessageReceipt`; and stream `GroupChatSnapshot` events.
 
 ## Contract 1.0.0
 

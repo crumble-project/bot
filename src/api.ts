@@ -15,6 +15,7 @@ import {
   mcpInput,
   mcpCreateInput,
   attachmentIndex,
+  groupMessageInput,
 } from "./api-contract";
 import { bearerAuth } from "hono/bearer-auth";
 import { bodyLimit } from "hono/body-limit";
@@ -29,12 +30,14 @@ import {
   agentInput,
   scheduleInput,
   skillInput,
+  groupChatInput,
   AppError,
   type MCPServer,
 } from "./domain";
 import type { CrumbleService } from "./service";
 import type { ChatPreviewActivity, ReplyActivity } from "./service";
 import type { Scheduler } from "./scheduler";
+import type { GroupChats } from "./group-chats";
 import type { MCPIntegrations } from "./integrations";
 import { providerModels } from "./runtime";
 import type { CommonSkill } from "./common-skills";
@@ -68,6 +71,8 @@ export function createAPI(
     commonSkills?: CommonSkill[];
     /** Whether the server can give bots the coding tool. */
     coding?: boolean;
+    /** Group chats; their routes answer 503 without it. */
+    groupChats?: GroupChats;
   } = {},
   push?: PushManager,
 ) {
@@ -396,6 +401,105 @@ export function createAPI(
       }
     }),
   );
+
+  const groupChats = () => {
+    if (!options.groupChats)
+      throw new AppError(503, "Group chats are unavailable");
+
+    return options.groupChats;
+  };
+
+  register(routes.listGroupChats, (c) => c.json(groupChats().list(), 200));
+  register(routes.createGroupChat, async (c) =>
+    c.json(groupChats().create(groupChatInput.parse(await c.req.json())), 201),
+  );
+  register(routes.getGroupChat, (c) =>
+    c.json(groupChats().get(c.req.param("id")), 200),
+  );
+  register(routes.updateGroupChat, async (c) => {
+    const current = groupChats().get(c.req.param("id"));
+
+    // Merge before validation, as agent updates do.
+    const input = groupChatInput.parse({
+      name: current.name,
+      memberIds: current.memberIds,
+      ...(await c.req.json()),
+    });
+
+    return c.json(groupChats().update(current.id, input), 200);
+  });
+  register(routes.deleteGroupChat, async (c) => {
+    await groupChats().delete(c.req.param("id"));
+
+    return c.body(null, 204);
+  });
+  register(routes.groupChatSnapshot, async (c) =>
+    c.json(
+      await groupChats().snapshot(c.req.param("id"), snapshotQuery(c)),
+      200,
+    ),
+  );
+  register(routes.groupChatHistory, async (c) =>
+    c.json(
+      await groupChats().history(
+        c.req.param("id"),
+        historyInput.parse(c.req.query()),
+      ),
+      200,
+    ),
+  );
+  register(routes.sendGroupMessage, async (c) => {
+    const input = groupMessageInput.parse(await c.req.json());
+
+    return c.json(
+      await groupChats().post(
+        c.req.param("id"),
+        input.content,
+        input.requestId,
+      ),
+      201,
+    );
+  });
+  register(routes.groupChatEvents, async (c) => {
+    const query = snapshotQuery(c);
+    const groups = groupChats();
+    const groupId = groups.get(c.req.param("id")).id;
+
+    return streamSSE(c, async (stream) => {
+      let finish!: () => void;
+
+      const finished = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+
+      stream.onAbort(finish);
+
+      const sendSnapshot = async () => {
+        if (!stream.aborted)
+          await stream.writeSSE({
+            event: "snapshot",
+            data: JSON.stringify(await groups.snapshot(groupId, query)),
+          });
+      };
+
+      // A deleted group fails its next snapshot, which ends the stream.
+      const unsubscribe = groups.subscribe(groupId, () => {
+        void sendSnapshot().catch(finish);
+      });
+
+      const timer = setInterval(() => {
+        stream.writeSSE({ event: "heartbeat", data: "{}" }).catch(finish);
+      }, 15000);
+
+      try {
+        await sendSnapshot();
+        await finished;
+      } finally {
+        clearInterval(timer);
+        unsubscribe();
+      }
+    });
+  });
 
   register(routes.agentMemories, (c) => {
     service.agent(c.req.param("id"));
