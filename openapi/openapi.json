@@ -901,7 +901,14 @@
             "type": "string"
           },
           "source": {
-            "$ref": "#/components/schemas/MemorySource"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemorySource"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "createdAt": {
             "type": "string"
@@ -920,106 +927,39 @@
         ]
       },
       "MemorySource": {
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "chat"
-                ]
-              }
-            },
-            "required": [
-              "kind"
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "chat",
+              "owner",
+              "task",
+              "bot",
+              "group"
             ]
           },
-          {
-            "type": "object",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "owner"
-                ]
-              }
-            },
-            "required": [
-              "kind"
-            ]
+          "name": {
+            "type": "string",
+            "description": "The task, bot, or group chat, as named when the memory was saved."
           },
-          {
-            "type": "object",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "task"
-                ]
-              },
-              "scheduleId": {
-                "type": "string"
-              },
-              "name": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "kind",
-              "scheduleId",
-              "name"
-            ]
+          "scheduleId": {
+            "type": "string",
+            "description": "For `task`."
           },
-          {
-            "type": "object",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "bot"
-                ]
-              },
-              "agentId": {
-                "type": "string"
-              },
-              "name": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "kind",
-              "agentId",
-              "name"
-            ]
+          "agentId": {
+            "type": "string",
+            "description": "For `bot`."
           },
-          {
-            "type": "object",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "group"
-                ]
-              },
-              "groupId": {
-                "type": "string"
-              },
-              "name": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "kind",
-              "groupId",
-              "name"
-            ]
-          },
-          {
-            "type": "null"
+          "groupId": {
+            "type": "string",
+            "description": "For `group`."
           }
+        },
+        "required": [
+          "kind"
         ],
-        "description": "Null for memories saved before sources were recorded."
+        "description": "Where the memory was saved: the owner's bot chat, the owner directly, a scheduled task, another bot's request, or a group chat."
       },
       "ListedSkill": {
         "oneOf": [

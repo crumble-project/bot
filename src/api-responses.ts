@@ -249,29 +249,21 @@ export const scheduleRunResponse = z
   })
   .openapi("ScheduleRun");
 
+// One object with optional fields rather than a union, so client generators keep it.
 const memorySourceResponse = z
-  .discriminatedUnion("kind", [
-    z.object({ kind: z.literal("chat") }),
-    z.object({ kind: z.literal("owner") }),
-    z.object({
-      kind: z.literal("task"),
-      scheduleId: z.string(),
-      name: z.string(),
+  .object({
+    kind: z.enum(["chat", "owner", "task", "bot", "group"]),
+    name: z.string().optional().openapi({
+      description:
+        "The task, bot, or group chat, as named when the memory was saved.",
     }),
-    z.object({
-      kind: z.literal("bot"),
-      agentId: z.string(),
-      name: z.string(),
-    }),
-    z.object({
-      kind: z.literal("group"),
-      groupId: z.string(),
-      name: z.string(),
-    }),
-  ])
+    scheduleId: z.string().optional().openapi({ description: "For `task`." }),
+    agentId: z.string().optional().openapi({ description: "For `bot`." }),
+    groupId: z.string().optional().openapi({ description: "For `group`." }),
+  })
   .openapi("MemorySource", {
     description:
-      "Where the memory was saved: the owner's bot chat, the owner directly, a scheduled task, another bot's request, or a group chat. Names are the ones current at the time.",
+      "Where the memory was saved: the owner's bot chat, the owner directly, a scheduled task, another bot's request, or a group chat.",
   });
 
 export const memoryResponse = z
@@ -279,9 +271,8 @@ export const memoryResponse = z
     id: z.string(),
     agentId: z.string().nullable(),
     content: z.string(),
-    source: memorySourceResponse.nullable().openapi({
-      description: "Null for memories saved before sources were recorded.",
-    }),
+    // Null for memories saved before sources were recorded. A bare nullable union keeps generators' projection simple.
+    source: z.union([memorySourceResponse, z.null()]),
     createdAt: z.string(),
     updatedAt: z.string(),
   })
