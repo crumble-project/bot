@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 const makeAgent = (): Agent => ({
-  ...agentInput.parse({ name: "Test" }),
+  ...agentInput.omit({ desktopModel: true }).parse({ name: "Test" }),
   id: crypto.randomUUID(),
   // SAFETY: The faux provider is registered in the test model registry.
   provider: "faux" as never,

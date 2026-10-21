@@ -128,10 +128,31 @@ describe("HTTP API", () => {
       }),
     });
 
-    expect((await created.json()).desktopModel).toEqual({
+    const agent = await created.json();
+
+    expect(agent.desktopModel).toEqual({
       provider: "opencode-go",
       model: "gpt-6-luna",
     });
+
+    // Omitting it keeps the override; null clears it, so jobs use the bot's model again.
+    const kept = await req(app, `/v1/agents/${agent.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name: "Desk 2" }),
+    });
+
+    expect((await kept.json()).desktopModel).toEqual({
+      provider: "opencode-go",
+      model: "gpt-6-luna",
+    });
+
+    const cleared = await req(app, `/v1/agents/${agent.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ desktopModel: null }),
+    });
+
+    expect(cleared.status).toBe(200);
+    expect((await cleared.json()).desktopModel).toBeUndefined();
   });
 
   test("gaining or losing the desktop tool restarts the bot's workspace", async () => {

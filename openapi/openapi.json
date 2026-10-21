@@ -2325,7 +2325,10 @@
                     }
                   },
                   "desktopModel": {
-                    "type": "object",
+                    "type": [
+                      "object",
+                      "null"
+                    ],
                     "properties": {
                       "provider": {
                         "type": "string",
@@ -2699,7 +2702,10 @@
                     }
                   },
                   "desktopModel": {
-                    "type": "object",
+                    "type": [
+                      "object",
+                      "null"
+                    ],
                     "properties": {
                       "provider": {
                         "type": "string",

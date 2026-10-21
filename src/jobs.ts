@@ -19,6 +19,7 @@ import {
   type Extension,
   type Harness,
   type ModelRef,
+  type TaskId,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { z } from "zod";
@@ -58,6 +59,11 @@ type Job = {
   reported: EntryId[];
   /** Times the job was stopped; a delivery created before the latest stop is dropped. Unset means zero. */
   stops?: number;
+  /**
+   * Deliveries not yet admitted to the job, by reporter task ID: waiting for their turn, or submitting right now. A job
+   * with any counts as working, and stop waits for submitting ones so its abort covers their work.
+   */
+  deliveries?: Record<string, "waiting" | "submitting">;
 };
 
 /** The job an exclusive kind's screen belongs to, and how many of its deliveries are in flight. */
@@ -82,6 +88,10 @@ type ReporterState =
 const jobCard = z.object({ name: z.string().min(1) });
 
 const WAIT_MS = 1000;
+const STOP_POLL_MS = 50;
+// A delivery that crashed while submitting stays marked; stop aborts after this long anyway.
+
+const STOP_WAIT_MS = 10_000;
 
 const textOf = (message: AssistantMessage | undefined) =>
   (message?.content ?? [])
@@ -95,8 +105,13 @@ const releaseHolder = (state: JobsState, name: string) => {
   if (state.holder.deliveries <= 0) delete state.holder;
 };
 
-// A conversation is busy while it has a run: from an input until its final answer.
+const settleDelivery = (job: Job | undefined, reporterId: TaskId<null>) => {
+  if (job?.deliveries) delete job.deliveries[String(reporterId)];
+};
+
+// A job is busy while it has a run, from an input until its final answer, or a delivery that will start one.
 const statusOf = async (reader: DocumentReader, job: Job, context: Context) =>
+  Object.keys(job.deliveries ?? {}).length > 0 ||
   (await reader.snapshot(LiveDoc, job.conversationId, context))?.run
     ? ("working" as const)
     : ("idle" as const);
@@ -167,11 +182,14 @@ export function defineJobKind(options: JobKindOptions) {
             const state = await tx.doc(Jobs, runtime.conversationId);
             const job = state.jobs[name];
 
-            if (!job || (job.stops ?? 0) !== stops)
+            if (!job || (job.stops ?? 0) !== stops) {
+              settleDelivery(job, reporter.id);
+
               return {
                 status: "terminal",
                 outcome: { status: "completed", result: null },
               };
+            }
 
             if (options.exclusive) {
               if (state.holder && state.holder.name !== name) {
@@ -197,8 +215,34 @@ export function defineJobKind(options: JobKindOptions) {
           );
         }
       },
+      // Admission checks the stop count and marks the delivery as submitting in one commit; stop waits for submitting
+      // deliveries before it aborts. So work is either never submitted, or submitted before the abort that cancels it.
       deliver: async (reporter, runtime, taskContext) => {
         const { name, conversationId, message, followUp } = reporter.input;
+        let admitted = false;
+
+        await runtime.commit(async (tx) => {
+          const state = await tx.doc(Jobs, runtime.conversationId);
+          const job = state.jobs[name];
+
+          if (!job || (job.stops ?? 0) !== (reporter.input.stops ?? 0)) {
+            settleDelivery(job, reporter.id);
+            releaseHolder(state, name);
+
+            return { status: "running", checkpoint: { phase: "report" } };
+          }
+
+          job.deliveries = {
+            ...job.deliveries,
+            [String(reporter.id)]: "submitting",
+          };
+          admitted = true;
+
+          return undefined;
+        }, taskContext);
+
+        if (!admitted) return;
+
         const job = (await runtime.conversation(conversationId, taskContext))!;
 
         const submission = await job.submit(
@@ -210,6 +254,13 @@ export function defineJobKind(options: JobKindOptions) {
           },
           taskContext,
         );
+
+        await runtime.commit(async (tx) => {
+          settleDelivery(
+            (await tx.doc(Jobs, runtime.conversationId)).jobs[name],
+            reporter.id,
+          );
+        }, taskContext);
 
         const settled = await submission.wait(taskContext);
 
@@ -285,12 +336,13 @@ export function defineJobKind(options: JobKindOptions) {
     },
     abort: (reporter, runtime, taskContext) =>
       runtime.commit(async (tx) => {
+        const state = await tx.doc(Jobs, runtime.conversationId);
+
+        settleDelivery(state.jobs[reporter.input.name], reporter.id);
+
         // An aborted delivery that held the screen frees it.
         if (reporter.state.checkpoint.phase === "deliver")
-          releaseHolder(
-            await tx.doc(Jobs, runtime.conversationId),
-            reporter.input.name,
-          );
+          releaseHolder(state, reporter.input.name);
 
         return { status: "terminal", outcome: { status: "aborted" } };
       }, taskContext),
@@ -455,6 +507,22 @@ export function defineJobKind(options: JobKindOptions) {
 
               if (job) job.stops = (job.stops ?? 0) + 1;
             }, callContext);
+
+            // A delivery admitted before the stop count changed finishes submitting first, so the abort covers it.
+            for (
+              let waited = 0;
+              waited < STOP_WAIT_MS &&
+              Object.values(
+                (await api.snapshot(Jobs, api.conversationId, callContext))
+                  ?.jobs[name]?.deliveries ?? {},
+              ).includes("submitting");
+              waited += STOP_POLL_MS
+            )
+              await awaitWithContext(
+                new Promise((resolve) => setTimeout(resolve, STOP_POLL_MS)),
+                callContext,
+              );
+
             await (await api.conversation(
               existing!.conversationId,
               callContext,
@@ -506,19 +574,25 @@ export function defineJobKind(options: JobKindOptions) {
               state.jobs[name] = { conversationId: child.id, reported: [] };
             }
 
-            const conversationId = state.jobs[name]!.conversationId;
+            const record = state.jobs[name]!;
+            const conversationId = record.conversationId;
 
-            await tx.createTask(
+            const reporter = await tx.createTask(
               Reporter,
               {
                 name,
                 conversationId,
                 message,
                 followUp: action === "send" && followUp === true,
-                stops: state.jobs[name]!.stops ?? 0,
+                stops: record.stops ?? 0,
               },
               background,
             );
+
+            record.deliveries = {
+              ...record.deliveries,
+              [String(reporter)]: "waiting",
+            };
 
             return {
               text: action === "send" ? `Sent to ${name}.` : `Started ${name}.`,

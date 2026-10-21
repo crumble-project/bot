@@ -168,7 +168,13 @@ async function open(kind: typeof exclusiveKind) {
     await Bun.sleep(200);
   };
 
-  return { gates, say };
+  // The bot's latest job tool result, such as a status listing.
+  const lastToolResult = async () =>
+    (await runtime.snapshot(agent, chat)).messages.findLast(
+      (message) => message.toolName === "errand",
+    )?.content;
+
+  return { gates, say, lastToolResult };
 }
 
 async function until(check: () => boolean) {
@@ -214,6 +220,20 @@ test("waiting jobs start one at a time when the screen frees up", async () => {
   gates.release(second);
   await until(() => gates.started.length === 3);
   gates.release(gates.started[2]!);
+});
+
+test("a job waiting for the screen reports as working", async () => {
+  const { gates, say, lastToolResult } = await open(exclusiveKind);
+
+  await say("start a");
+  await until(() => gates.started.includes("a"));
+  await say("start b");
+  await say("status b");
+
+  expect(await lastToolResult()).toBe("b: working");
+  gates.release("a");
+  await until(() => gates.started.includes("b"));
+  gates.release("b");
 });
 
 test("stopping a waiting job cancels its delivery", async () => {

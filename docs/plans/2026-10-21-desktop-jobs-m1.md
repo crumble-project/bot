@@ -59,7 +59,7 @@ No behavior changes. `test/coding.test.ts` is the safety net; it must pass uncha
 
 **Files:** create `src/jobs.ts`; replace the body of `src/coding.ts` (lines 1-469); create `test/jobs.test.ts`.
 
-**Design:** an exclusive kind keeps a `holder` in its jobs document: the job the screen belongs to and its deliveries in flight. A reporter's first phase, `wait`, takes it in the same commit that checks it, so two waiting deliveries cannot both pass; the answer, or an abort, releases it. `stop` increments the job's `stops` counter, and a delivery created before the latest stop ends without delivering. Coding jobs are not exclusive and only use the stop counter.
+**Design:** an exclusive kind keeps a `holder` in its jobs document: the job the screen belongs to and its deliveries in flight. A reporter's first phase, `wait`, takes it in the same commit that checks it, so two waiting deliveries cannot both pass; the answer, or an abort, releases it. `stop` increments the job's `stops` counter, and a delivery created before the latest stop ends without delivering. Each job also records its pending deliveries (waiting or submitting) and counts as working while it has any. Admission checks the stop count and marks the delivery submitting in one commit; `stop` waits for submitting deliveries before it aborts, so stopped work never runs after `stop` returns. Coding jobs are not exclusive and use the stop counter and delivery records.
 
 **Interfaces produced:**
 - `defineJobKind(options: JobKindOptions): JobKind`
@@ -95,6 +95,7 @@ import {
   type Extension,
   type Harness,
   type ModelRef,
+  type TaskId,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { z } from "zod";
@@ -134,6 +135,11 @@ type Job = {
   reported: EntryId[];
   /** Times the job was stopped; a delivery created before the latest stop is dropped. Unset means zero. */
   stops?: number;
+  /**
+   * Deliveries not yet admitted to the job, by reporter task ID: waiting for their turn, or submitting right now. A job
+   * with any counts as working, and stop waits for submitting ones so its abort covers their work.
+   */
+  deliveries?: Record<string, "waiting" | "submitting">;
 };
 
 /** The job an exclusive kind's screen belongs to, and how many of its deliveries are in flight. */
@@ -158,6 +164,10 @@ type ReporterState =
 const jobCard = z.object({ name: z.string().min(1) });
 
 const WAIT_MS = 1000;
+const STOP_POLL_MS = 50;
+// A delivery that crashed while submitting stays marked; stop aborts after this long anyway.
+
+const STOP_WAIT_MS = 10_000;
 
 const textOf = (message: AssistantMessage | undefined) =>
   (message?.content ?? [])
@@ -171,8 +181,13 @@ const releaseHolder = (state: JobsState, name: string) => {
   if (state.holder.deliveries <= 0) delete state.holder;
 };
 
-// A conversation is busy while it has a run: from an input until its final answer.
+const settleDelivery = (job: Job | undefined, reporterId: TaskId<null>) => {
+  if (job?.deliveries) delete job.deliveries[String(reporterId)];
+};
+
+// A job is busy while it has a run, from an input until its final answer, or a delivery that will start one.
 const statusOf = async (reader: DocumentReader, job: Job, context: Context) =>
+  Object.keys(job.deliveries ?? {}).length > 0 ||
   (await reader.snapshot(LiveDoc, job.conversationId, context))?.run
     ? ("working" as const)
     : ("idle" as const);
@@ -243,11 +258,14 @@ export function defineJobKind(options: JobKindOptions) {
             const state = await tx.doc(Jobs, runtime.conversationId);
             const job = state.jobs[name];
 
-            if (!job || (job.stops ?? 0) !== stops)
+            if (!job || (job.stops ?? 0) !== stops) {
+              settleDelivery(job, reporter.id);
+
               return {
                 status: "terminal",
                 outcome: { status: "completed", result: null },
               };
+            }
 
             if (options.exclusive) {
               if (state.holder && state.holder.name !== name) {
@@ -273,8 +291,34 @@ export function defineJobKind(options: JobKindOptions) {
           );
         }
       },
+      // Admission checks the stop count and marks the delivery as submitting in one commit; stop waits for submitting
+      // deliveries before it aborts. So work is either never submitted, or submitted before the abort that cancels it.
       deliver: async (reporter, runtime, taskContext) => {
         const { name, conversationId, message, followUp } = reporter.input;
+        let admitted = false;
+
+        await runtime.commit(async (tx) => {
+          const state = await tx.doc(Jobs, runtime.conversationId);
+          const job = state.jobs[name];
+
+          if (!job || (job.stops ?? 0) !== (reporter.input.stops ?? 0)) {
+            settleDelivery(job, reporter.id);
+            releaseHolder(state, name);
+
+            return { status: "running", checkpoint: { phase: "report" } };
+          }
+
+          job.deliveries = {
+            ...job.deliveries,
+            [String(reporter.id)]: "submitting",
+          };
+          admitted = true;
+
+          return undefined;
+        }, taskContext);
+
+        if (!admitted) return;
+
         const job = (await runtime.conversation(conversationId, taskContext))!;
 
         const submission = await job.submit(
@@ -286,6 +330,13 @@ export function defineJobKind(options: JobKindOptions) {
           },
           taskContext,
         );
+
+        await runtime.commit(async (tx) => {
+          settleDelivery(
+            (await tx.doc(Jobs, runtime.conversationId)).jobs[name],
+            reporter.id,
+          );
+        }, taskContext);
 
         const settled = await submission.wait(taskContext);
 
@@ -361,12 +412,13 @@ export function defineJobKind(options: JobKindOptions) {
     },
     abort: (reporter, runtime, taskContext) =>
       runtime.commit(async (tx) => {
+        const state = await tx.doc(Jobs, runtime.conversationId);
+
+        settleDelivery(state.jobs[reporter.input.name], reporter.id);
+
         // An aborted delivery that held the screen frees it.
         if (reporter.state.checkpoint.phase === "deliver")
-          releaseHolder(
-            await tx.doc(Jobs, runtime.conversationId),
-            reporter.input.name,
-          );
+          releaseHolder(state, reporter.input.name);
 
         return { status: "terminal", outcome: { status: "aborted" } };
       }, taskContext),
@@ -531,6 +583,22 @@ export function defineJobKind(options: JobKindOptions) {
 
               if (job) job.stops = (job.stops ?? 0) + 1;
             }, callContext);
+
+            // A delivery admitted before the stop count changed finishes submitting first, so the abort covers it.
+            for (
+              let waited = 0;
+              waited < STOP_WAIT_MS &&
+              Object.values(
+                (await api.snapshot(Jobs, api.conversationId, callContext))
+                  ?.jobs[name]?.deliveries ?? {},
+              ).includes("submitting");
+              waited += STOP_POLL_MS
+            )
+              await awaitWithContext(
+                new Promise((resolve) => setTimeout(resolve, STOP_POLL_MS)),
+                callContext,
+              );
+
             await (await api.conversation(
               existing!.conversationId,
               callContext,
@@ -582,19 +650,25 @@ export function defineJobKind(options: JobKindOptions) {
               state.jobs[name] = { conversationId: child.id, reported: [] };
             }
 
-            const conversationId = state.jobs[name]!.conversationId;
+            const record = state.jobs[name]!;
+            const conversationId = record.conversationId;
 
-            await tx.createTask(
+            const reporter = await tx.createTask(
               Reporter,
               {
                 name,
                 conversationId,
                 message,
                 followUp: action === "send" && followUp === true,
-                stops: state.jobs[name]!.stops ?? 0,
+                stops: record.stops ?? 0,
               },
               background,
             );
+
+            record.deliveries = {
+              ...record.deliveries,
+              [String(reporter)]: "waiting",
+            };
 
             return {
               text: action === "send" ? `Sent to ${name}.` : `Started ${name}.`,
@@ -879,7 +953,13 @@ async function open(kind: typeof exclusiveKind) {
     await Bun.sleep(200);
   };
 
-  return { gates, say };
+  // The bot's latest job tool result, such as a status listing.
+  const lastToolResult = async () =>
+    (await runtime.snapshot(agent, chat)).messages.findLast(
+      (message) => message.toolName === "errand",
+    )?.content;
+
+  return { gates, say, lastToolResult };
 }
 
 async function until(check: () => boolean) {
@@ -925,6 +1005,20 @@ test("waiting jobs start one at a time when the screen frees up", async () => {
   gates.release(second);
   await until(() => gates.started.length === 3);
   gates.release(gates.started[2]!);
+});
+
+test("a job waiting for the screen reports as working", async () => {
+  const { gates, say, lastToolResult } = await open(exclusiveKind);
+
+  await say("start a");
+  await until(() => gates.started.includes("a"));
+  await say("start b");
+  await say("status b");
+
+  expect(await lastToolResult()).toBe("b: working");
+  gates.release("a");
+  await until(() => gates.started.includes("b"));
+  gates.release("b");
 });
 
 test("stopping a waiting job cancels its delivery", async () => {
@@ -1576,11 +1670,12 @@ const CALL =
 
 /**
  * A bot desktop that runs only cua-driver and xdotool, answering each cua-driver tool from a queue of scripted replies.
- * The last reply of a queue repeats. The focused window is 101.
+ * The last reply of a queue repeats. The focused window is 101. Screenshots convert to JPEG unless `failConvert` is set.
  */
 export function scriptedGuest(replies: Record<string, GuestReply[]>) {
   const files = new Map<string, Uint8Array | string>();
   const calls: GuestCall[] = [];
+  const state = { failConvert: false };
 
   const shell: DesktopShell = {
     async writeFile(path, content) {
@@ -1600,6 +1695,26 @@ export function scriptedGuest(replies: Record<string, GuestReply[]>) {
 
       const out = (output: string) =>
         options?.onOutput?.(output, BACKGROUND_CONTEXT, { stream: "stdout" });
+
+      const convert = /^convert (\S+) -quality 75 (\S+)$/.exec(text);
+
+      if (convert) {
+        const [, png = "", jpg = ""] = convert;
+
+        if (state.failConvert || !files.has(png))
+          return { ok: true, value: { exitCode: 1 } };
+
+        files.set(jpg, new Uint8Array([0xff, 0xd8, 0xff]));
+
+        return { ok: true, value: { exitCode: 0 } };
+      }
+
+      if (text.startsWith("rm -f ")) {
+        for (const path of text.slice("rm -f ".length).split(" "))
+          files.delete(path);
+
+        return { ok: true, value: { exitCode: 0 } };
+      }
 
       if (text.includes("xdotool getactivewindow")) {
         out("101\n");
@@ -1624,12 +1739,10 @@ export function scriptedGuest(replies: Record<string, GuestReply[]>) {
       const queue = replies[tool] ?? [];
       const reply = (queue.length > 1 ? queue.shift() : queue[0]) ?? {};
 
-      // The tool converts the screenshot to JPEG next to it.
-      if (screenshot)
-        files.set(
-          screenshot.replace(/\.png$/, ".jpg"),
-          new Uint8Array([0xff, 0xd8, 0xff]),
-        );
+      if (screenshot) files.set(screenshot, new Uint8Array([0x89, 0x50]));
+
+      // The tool removes its arguments file in the same command.
+      files.delete(argsFile);
 
       out(JSON.stringify(reply));
 
@@ -1637,7 +1750,7 @@ export function scriptedGuest(replies: Record<string, GuestReply[]>) {
     },
   };
 
-  return { shell, calls };
+  return { shell, calls, files, state };
 }
 ```
 
@@ -1841,6 +1954,63 @@ test("acting before any capture asks for one", async () => {
   expect(result.isError).toBe(true);
   expect(text(result)).toContain("capture first");
 });
+
+test("a screenshot that fails to convert attaches no image, and no files are left behind", async () => {
+  const guest = scriptedGuest({
+    list_windows: [windows],
+    get_window_state: [
+      {
+        snapshot_id: "s1",
+        tree_markdown: "- [0] frame",
+        screenshot_width: 1280,
+        screenshot_height: 770,
+      },
+    ],
+  });
+
+  const tool = createComputerUse(guest.shell);
+
+  const first = await tool.run(
+    { action: "capture", mode: "vision" },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(first.content.some((c) => c.type === "image")).toBe(true);
+
+  guest.state.failConvert = true;
+
+  const second = await tool.run(
+    { action: "capture", mode: "vision" },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(second.content.some((c) => c.type === "image")).toBe(false);
+  expect([...guest.files.keys()]).toEqual([]);
+});
+
+test("set_value with an empty value clears the field", async () => {
+  const { shell, calls } = scriptedGuest({
+    list_windows: [windows],
+    get_window_state: [
+      { snapshot_id: "s1", tree_markdown: '- [2] entry "Name"' },
+    ],
+    set_value: [{ effect: "confirmed", summary: "Cleared [2]" }],
+  });
+
+  const tool = createComputerUse(shell);
+
+  await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+
+  const result = await tool.run(
+    { action: "set_value", element: 2, value: "" },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(result.isError).toBe(false);
+  expect(calls.find((c) => c.tool === "set_value")?.args).toMatchObject({
+    value: "",
+  });
+});
 ```
 
 - [ ] **Step 2: Run them.** `bun test test/computer-use.test.ts` — expected: FAIL, cannot resolve `../src/computer-use`.
@@ -1851,6 +2021,7 @@ test("acting before any capture asks for one", async () => {
 // Ported from Hermes Agent's computer_use tool (tools/computer_use/schema.py, MIT, Nous Research). Changes, measured in
 // the bot desktop spike: captures default to the accessibility tree with diff reads instead of screenshots, input
 // climbs from background to foreground on its own (the bot owns its display), and there is no per-action approval.
+import { randomUUID } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import {
   StringEnum,
@@ -2115,8 +2286,11 @@ function normalize(raw: ComputerUseArgs): ComputerUseArgs {
 
   if (!args.seconds) delete args.seconds;
 
-  for (const key of ["keys", "value", "name", "mode"] as const)
+  for (const key of ["keys", "name", "mode"] as const)
     if (args[key] === "") delete args[key];
+
+  // An empty set_value clears a field.
+  if (args.value === "" && args.action !== "set_value") delete args.value;
 
   if (args.text === "" && args.action !== "type") delete args.text;
 
@@ -2133,7 +2307,6 @@ type Pointer = { element_token: string } | { x: number; y: number };
 export function createComputerUse(shell: DesktopShell) {
   // Latest snapshot per window: element tokens are `${snapshot}:${N}`, and the next capture diffs against it.
   const snapshots = new Map<number, string>();
-  let calls = 0;
 
   async function sh(command: string, context: Context) {
     let output = "";
@@ -2155,11 +2328,11 @@ export function createComputerUse(shell: DesktopShell) {
     context: Context,
     screenshot = false,
   ) {
-    calls += 1;
-
-    const argsFile = `/tmp/computer-use-${calls}.json`;
-    const png = `/tmp/computer-use-${calls}.png`;
-    const jpg = `/tmp/computer-use-${calls}.jpg`;
+    // Unique per call: a file left by another job's call can never stand in for this one's.
+    const id = randomUUID();
+    const argsFile = `/tmp/computer-use-${id}.json`;
+    const png = `/tmp/computer-use-${id}.png`;
+    const jpg = `/tmp/computer-use-${id}.jpg`;
 
     const written = await shell.writeFile(
       argsFile,
@@ -2171,25 +2344,35 @@ export function createComputerUse(shell: DesktopShell) {
 
     const shot = screenshot ? ` --screenshot-out-file ${png}` : "";
 
-    const convert = screenshot
-      ? `; convert ${png} -quality 75 ${jpg} 2>/dev/null; rm -f ${png}`
-      : "";
-
     const reply = parseReply(
       await sh(
-        `cua-driver call ${tool}${shot} "$(cat ${argsFile})"; rm -f ${argsFile}${convert}`,
+        `cua-driver call ${tool}${shot} "$(cat ${argsFile})"; rm -f ${argsFile}`,
         context,
       ),
     );
 
     if (!screenshot) return { reply };
 
-    const image = await shell.readBinaryFile(jpg, context);
+    try {
+      const converted = await shell.exec(
+        `convert ${png} -quality 75 ${jpg}`,
+        undefined,
+        context,
+      );
 
-    return {
-      reply,
-      image: image.ok ? Buffer.from(image.value).toString("base64") : undefined,
-    };
+      if (!converted.ok || converted.value.exitCode !== 0) return { reply };
+
+      const image = await shell.readBinaryFile(jpg, context);
+
+      return {
+        reply,
+        image: image.ok
+          ? Buffer.from(image.value).toString("base64")
+          : undefined,
+      };
+    } finally {
+      await shell.exec(`rm -f ${png} ${jpg}`, undefined, context);
+    }
   }
 
   async function windows(context: Context) {

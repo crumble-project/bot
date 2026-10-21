@@ -1,6 +1,7 @@
 // Ported from Hermes Agent's computer_use tool (tools/computer_use/schema.py, MIT, Nous Research). Changes, measured in
 // the bot desktop spike: captures default to the accessibility tree with diff reads instead of screenshots, input
 // climbs from background to foreground on its own (the bot owns its display), and there is no per-action approval.
+import { randomUUID } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import {
   StringEnum,
@@ -265,8 +266,11 @@ function normalize(raw: ComputerUseArgs): ComputerUseArgs {
 
   if (!args.seconds) delete args.seconds;
 
-  for (const key of ["keys", "value", "name", "mode"] as const)
+  for (const key of ["keys", "name", "mode"] as const)
     if (args[key] === "") delete args[key];
+
+  // An empty set_value clears a field.
+  if (args.value === "" && args.action !== "set_value") delete args.value;
 
   if (args.text === "" && args.action !== "type") delete args.text;
 
@@ -283,7 +287,6 @@ type Pointer = { element_token: string } | { x: number; y: number };
 export function createComputerUse(shell: DesktopShell) {
   // Latest snapshot per window: element tokens are `${snapshot}:${N}`, and the next capture diffs against it.
   const snapshots = new Map<number, string>();
-  let calls = 0;
 
   async function sh(command: string, context: Context) {
     let output = "";
@@ -305,11 +308,11 @@ export function createComputerUse(shell: DesktopShell) {
     context: Context,
     screenshot = false,
   ) {
-    calls += 1;
-
-    const argsFile = `/tmp/computer-use-${calls}.json`;
-    const png = `/tmp/computer-use-${calls}.png`;
-    const jpg = `/tmp/computer-use-${calls}.jpg`;
+    // Unique per call: a file left by another job's call can never stand in for this one's.
+    const id = randomUUID();
+    const argsFile = `/tmp/computer-use-${id}.json`;
+    const png = `/tmp/computer-use-${id}.png`;
+    const jpg = `/tmp/computer-use-${id}.jpg`;
 
     const written = await shell.writeFile(
       argsFile,
@@ -321,25 +324,35 @@ export function createComputerUse(shell: DesktopShell) {
 
     const shot = screenshot ? ` --screenshot-out-file ${png}` : "";
 
-    const convert = screenshot
-      ? `; convert ${png} -quality 75 ${jpg} 2>/dev/null; rm -f ${png}`
-      : "";
-
     const reply = parseReply(
       await sh(
-        `cua-driver call ${tool}${shot} "$(cat ${argsFile})"; rm -f ${argsFile}${convert}`,
+        `cua-driver call ${tool}${shot} "$(cat ${argsFile})"; rm -f ${argsFile}`,
         context,
       ),
     );
 
     if (!screenshot) return { reply };
 
-    const image = await shell.readBinaryFile(jpg, context);
+    try {
+      const converted = await shell.exec(
+        `convert ${png} -quality 75 ${jpg}`,
+        undefined,
+        context,
+      );
 
-    return {
-      reply,
-      image: image.ok ? Buffer.from(image.value).toString("base64") : undefined,
-    };
+      if (!converted.ok || converted.value.exitCode !== 0) return { reply };
+
+      const image = await shell.readBinaryFile(jpg, context);
+
+      return {
+        reply,
+        image: image.ok
+          ? Buffer.from(image.value).toString("base64")
+          : undefined,
+      };
+    } finally {
+      await shell.exec(`rm -f ${png} ${jpg}`, undefined, context);
+    }
   }
 
   async function windows(context: Context) {

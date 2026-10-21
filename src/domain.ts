@@ -42,7 +42,7 @@ export const agentInput = z.object({
       maxOutputTokens: z.number().int().min(1).max(1000000).optional(),
     })
     .optional(),
-  /** The model for this bot's desktop jobs; unset, they use the bot's own model. */
+  /** The model for this bot's desktop jobs; unset or null, they use the bot's own model. Null clears it in a patch. */
   desktopModel: z
     .object({
       provider: z
@@ -53,12 +53,15 @@ export const agentInput = z.object({
         .regex(/^[a-z0-9-]+$/),
       model: z.string().trim().min(1).max(200),
     })
+    .nullable()
     .optional(),
 });
 
 export type AgentInput = z.infer<typeof agentInput>;
 
-export type Agent = AgentInput & {
+/** A stored bot: a cleared desktop model is absent, never null. */
+export type Agent = Omit<AgentInput, "desktopModel"> & {
+  desktopModel?: NonNullable<AgentInput["desktopModel"]>;
   id: string;
   createdAt: string;
   updatedAt: string;

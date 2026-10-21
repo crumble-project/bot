@@ -195,3 +195,60 @@ test("acting before any capture asks for one", async () => {
   expect(result.isError).toBe(true);
   expect(text(result)).toContain("capture first");
 });
+
+test("a screenshot that fails to convert attaches no image, and no files are left behind", async () => {
+  const guest = scriptedGuest({
+    list_windows: [windows],
+    get_window_state: [
+      {
+        snapshot_id: "s1",
+        tree_markdown: "- [0] frame",
+        screenshot_width: 1280,
+        screenshot_height: 770,
+      },
+    ],
+  });
+
+  const tool = createComputerUse(guest.shell);
+
+  const first = await tool.run(
+    { action: "capture", mode: "vision" },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(first.content.some((c) => c.type === "image")).toBe(true);
+
+  guest.state.failConvert = true;
+
+  const second = await tool.run(
+    { action: "capture", mode: "vision" },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(second.content.some((c) => c.type === "image")).toBe(false);
+  expect([...guest.files.keys()]).toEqual([]);
+});
+
+test("set_value with an empty value clears the field", async () => {
+  const { shell, calls } = scriptedGuest({
+    list_windows: [windows],
+    get_window_state: [
+      { snapshot_id: "s1", tree_markdown: '- [2] entry "Name"' },
+    ],
+    set_value: [{ effect: "confirmed", summary: "Cleared [2]" }],
+  });
+
+  const tool = createComputerUse(shell);
+
+  await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+
+  const result = await tool.run(
+    { action: "set_value", element: 2, value: "" },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(result.isError).toBe(false);
+  expect(calls.find((c) => c.tool === "set_value")?.args).toMatchObject({
+    value: "",
+  });
+});
