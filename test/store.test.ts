@@ -297,4 +297,115 @@ describe("Store group chats", () => {
     });
     db.close();
   });
+
+  test("upgrades a milestone 1 database and keeps its groups", () => {
+    const dir = make();
+    const first = new Store(dir);
+    const a = first.createAgent({ ...input, name: "A" });
+    const b = first.createAgent({ ...input, name: "B" });
+
+    const group = first.createGroupChat({
+      name: "Trip",
+      memberIds: [a.id, b.id],
+    });
+
+    first.close();
+
+    const db = new Database(join(dir, "store.sqlite"));
+    db.exec(`DROP TABLE group_turns;
+      ALTER TABLE group_chats DROP COLUMN bot_turns;
+      ALTER TABLE group_chats DROP COLUMN paused;
+      ALTER TABLE group_members DROP COLUMN conversation_id;
+      ALTER TABLE group_members DROP COLUMN cursor;
+      ALTER TABLE group_members DROP COLUMN pending;
+      ALTER TABLE group_members DROP COLUMN pending_bot_started;`);
+    db.close();
+
+    const second = new Store(dir);
+    expect(second.getGroupChat(group.id)?.memberIds).toEqual([a.id, b.id]);
+    expect(second.groupMember(group.id, a.id)).toEqual({
+      groupId: group.id,
+      agentId: a.id,
+      conversationId: null,
+      cursor: 0,
+      pending: false,
+      pendingBotStarted: false,
+    });
+    expect(second.groupActivity(group.id)).toEqual({
+      botTurns: 0,
+      paused: false,
+    });
+    second.close();
+  });
+
+  test("keeps member progress, group activity, and turns across reopen", () => {
+    const dir = make();
+    const first = new Store(dir);
+    const a = first.createAgent({ ...input, name: "A" });
+    const b = first.createAgent({ ...input, name: "B" });
+
+    const group = first.createGroupChat({
+      name: "Trip",
+      memberIds: [a.id, b.id],
+    });
+
+    const conversation = first.createConversation(
+      { agentId: a.id, title: "Trip" },
+      `${a.id}:2`,
+    );
+
+    const execution = first.createExecution({
+      agentId: a.id,
+      conversationId: conversation.id,
+      scheduleId: null,
+      requestId: "group-turn:1",
+      prompt: "",
+      submissionId: null,
+      status: "pending",
+      error: null,
+    });
+
+    first.setGroupMember(group.id, a.id, {
+      conversationId: conversation.id,
+      cursor: 3,
+      pending: true,
+      pendingBotStarted: true,
+    });
+    first.setGroupActivity(group.id, { botTurns: 5, paused: true });
+    first.createGroupTurn({
+      executionId: execution.id,
+      groupId: group.id,
+      agentId: a.id,
+      through: 3,
+      botStarted: true,
+      status: "running",
+    });
+    first.close();
+
+    const second = new Store(dir);
+    expect(second.groupMember(group.id, a.id)).toMatchObject({
+      conversationId: conversation.id,
+      cursor: 3,
+      pending: true,
+      pendingBotStarted: true,
+    });
+    expect(second.groupActivity(group.id)).toEqual({
+      botTurns: 5,
+      paused: true,
+    });
+    expect(second.activeGroupTurn(group.id, a.id)).toMatchObject({
+      executionId: execution.id,
+      through: 3,
+      botStarted: true,
+      status: "running",
+    });
+    second.updateGroupTurn(execution.id, { status: "settled" });
+    expect(second.activeGroupTurn(group.id, a.id)).toBeUndefined();
+    expect(
+      second.listGroupTurns({ groupId: group.id, status: ["settled"] }),
+    ).toHaveLength(1);
+    second.deleteGroupChat(group.id);
+    expect(second.listGroupTurns()).toEqual([]);
+    second.close();
+  });
 });
