@@ -250,6 +250,59 @@ describe("activity", () => {
   });
 });
 
+describe("group turns", () => {
+  test("announce nothing and report when they settle", async () => {
+    const { service, store, agent } = setup([
+      fauxAssistantMessage("For the group."),
+    ]);
+
+    const reference = await service.runtime.openGroupConversation(
+      agent,
+      "group-1",
+    );
+
+    store.createConversation({ agentId: agent.id, title: "Group" }, reference);
+    const events: unknown[] = [];
+    const settled: string[] = [];
+    service.onActivity((event) => events.push(event));
+    service.onSettled((execution) => {
+      settled.push(execution.status);
+    });
+
+    const execution = await service.send(reference, "hello", "group-turn:1");
+
+    expect(await settle(service, execution.id)).toBe("done");
+
+    for (let i = 0; i < 100 && !settled.length; i++)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(settled).toContain("done");
+    expect(events).toEqual([]);
+    await service.close();
+  });
+
+  test("report a cancelled execution as settled", async () => {
+    const { service, store, agent } = setup([() => new Promise(() => {})]);
+
+    const reference = await service.runtime.openGroupConversation(
+      agent,
+      "group-1",
+    );
+
+    store.createConversation({ agentId: agent.id, title: "Group" }, reference);
+    const settled: string[] = [];
+    service.onSettled((execution) => {
+      settled.push(execution.status);
+    });
+
+    const execution = await service.send(reference, "hello", "group-turn:1");
+
+    await service.abort(reference);
+    expect(store.getExecution(execution.id)?.status).toBe("cancelled");
+    expect(settled).toContain("cancelled");
+    await service.close();
+  });
+});
+
 describe("attachments", () => {
   test("reach the model as content blocks and stay out of snapshots", async () => {
     const seen: unknown[] = [];
