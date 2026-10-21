@@ -272,37 +272,69 @@ export class MicrosandboxWorkspaces implements Workspaces {
     return workspace;
   }
 
-  /** Boots the bot's machine with the daemon uploaded and a relay for it; called by `Workspace`, serialized per bot. */
+  /**
+   * Boots the bot's machine with the daemon uploaded and a relay for it; called by `Workspace`, serialized per bot.
+   * It restarts the bot's existing machine, so programs installed outside `/workspace` survive, and creates a new one
+   * when the image changed, the machine does not start, or its proxy port is taken.
+   */
   async boot(agentId: string): Promise<Running> {
     if (this.closed) throw new Error("Workspaces are closed");
 
     const name = this.name(agentId);
+    const image = this.image;
 
     await ensureVolume(name);
 
-    const proxy = await startWorkspaceProxy({
-      decide: ({ host, port }) => this.network({ agentId, host, port }),
-    });
+    const decide = ({ host, port }: { host: string; port: number }) =>
+      this.network({ agentId, host, port });
 
     let sandbox: Sandbox | undefined;
+    let proxy: WorkspaceProxy | undefined;
     let relay: Relay | undefined;
 
     try {
-      // replace() also takes over the sandbox of a server that crashed or was killed.
-      sandbox = await Sandbox.builder(name)
-        .image(this.image)
-        .cpus(CPUS)
-        .memory(MEMORY_MIB)
-        .volume(WORKSPACE_PATH, (mount) => mount.named(name))
-        .proxy((outbound) => outbound.httpConnect(proxy.address))
-        .replace()
-        .create();
-      await sandbox.fs().write(GUEST_DAEMON, await readFile(this.daemon));
-      await run(sandbox, `chmod 755 ${GUEST_DAEMON}`);
-      relay = await startRelay(sandbox);
+      // A machine's network settings are fixed at creation, so a restarted one needs its proxy at the same port.
+      sandbox = await resume(name);
+      const record = sandbox && (await readMachineRecord(sandbox));
+
+      if (sandbox && record?.image === image)
+        proxy = await startWorkspaceProxy({
+          decide,
+          port: record.proxyPort,
+        }).catch(() => undefined);
+
+      if (!proxy) {
+        await sandbox?.stop().catch(() => undefined);
+        proxy = await startWorkspaceProxy({ decide });
+        const address = proxy.address;
+
+        // replace() also takes over a machine that could not be resumed.
+        sandbox = await Sandbox.builder(name)
+          .image(image)
+          .cpus(CPUS)
+          .memory(MEMORY_MIB)
+          .volume(WORKSPACE_PATH, (mount) => mount.named(name))
+          .proxy((outbound) => outbound.httpConnect(address))
+          .replace()
+          .create();
+
+        const record: MachineRecord = {
+          image,
+          proxyPort: Number(address.split(":")[1]),
+        };
+
+        await sandbox.fs().write(MACHINE_FILE, JSON.stringify(record));
+        await flush(sandbox);
+      }
+
+      const machine = sandbox!;
+
+      await machine.fs().write(GUEST_DAEMON, await readFile(this.daemon));
+      await run(machine, `chmod 755 ${GUEST_DAEMON}`);
+      relay = await startRelay(machine);
 
       return {
-        sandbox,
+        sandbox: machine,
         relay,
         proxy,
         command: [process.execPath, BRIDGE_PATH, relay.socketPath],
@@ -310,7 +342,7 @@ export class MicrosandboxWorkspaces implements Workspaces {
     } catch (error) {
       await relay?.close();
       await sandbox?.stop().catch(() => undefined);
-      await proxy.close();
+      await proxy?.close();
       throw error;
     }
   }
@@ -324,6 +356,48 @@ async function ensureVolume(name: string) {
     if (!(error instanceof VolumeNotFoundError)) throw error;
 
     await Volume.builder(name).disk().size(DISK_MIB).create();
+  }
+}
+
+/** Where a machine records what it was created from, on its own root disk. */
+const MACHINE_FILE = "/etc/crumble-workspace.json";
+const STOP_TIMEOUT_MS = 10_000;
+
+const machineRecord = z.object({
+  image: z.string(),
+  proxyPort: z.number().int(),
+});
+
+type MachineRecord = z.infer<typeof machineRecord>;
+
+/**
+ * Starts the bot's existing machine, first stopping it if a server that died left it running. Undefined when there is
+ * none or it does not start: the caller then creates a new one.
+ */
+async function resume(name: string): Promise<Sandbox | undefined> {
+  try {
+    const handle = await Sandbox.get(name);
+
+    if (handle.status !== "stopped" && handle.status !== "created")
+      await handle.stopWithTimeout(STOP_TIMEOUT_MS).catch(() => handle.kill());
+
+    return await (await Sandbox.get(name)).start();
+  } catch {
+    return undefined;
+  }
+}
+
+async function readMachineRecord(
+  sandbox: Sandbox,
+): Promise<MachineRecord | undefined> {
+  try {
+    const text = Buffer.from(await sandbox.fs().read(MACHINE_FILE)).toString(
+      "utf8",
+    );
+
+    return machineRecord.safeParse(JSON.parse(text)).data;
+  } catch {
+    return undefined;
   }
 }
 

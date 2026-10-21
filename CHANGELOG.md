@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Keep each bot's workspace machine between boots instead of replacing it: programs installed outside `/workspace` now survive idle stops and server restarts, until the workspace image changes. A machine left running by a server that died is taken over with its installs.
 - Confirm group messages after storing the message and pending turns, without waiting for bot startup. Pending turns survive restarts; the API response is unchanged.
 
 - Add group chats: the owner can create, rename, change, and delete group chats of two to six bots, and post messages into a shared transcript that keeps each message's sender. Each group's transcript is its own Pi store.

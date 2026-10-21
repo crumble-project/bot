@@ -8,6 +8,8 @@ export type WorkspaceProxyOptions = {
   lookup?: (host: string) => Promise<string[]>;
   isPublicAddress?: (address: string) => boolean;
   firstByteTimeoutMs?: number;
+  /** Listen on this port, so a restarted machine finds its proxy at the address it was created with. */
+  port?: number;
 };
 
 export type WorkspaceProxy = { address: string; close(): Promise<void> };
@@ -232,7 +234,7 @@ export async function startWorkspaceProxy(
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+    server.listen(options.port ?? 0, "127.0.0.1", resolve);
   });
   // SAFETY: listen completed on a TCP port, not a Unix socket.
   const address = server.address() as net.AddressInfo;

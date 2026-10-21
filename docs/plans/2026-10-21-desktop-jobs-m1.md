@@ -1047,7 +1047,7 @@ and change the listen call to `server.listen(options.port ?? 0, "127.0.0.1", res
   }, 180_000);
 ```
 
-Before running, load the base image a second time under another tag, as the README's load step does: `Image.load("/tmp/crumble-workspace.tar", { tag: "crumble-workspace:other" })`.
+As built, the orphan case extends the existing test "a machine left behind by a killed server…" (now "…is taken over on the next boot") with a marker in `/usr/local/bin`, instead of a new test, and the image change test reads `CRUMBLE_WORKSPACE_IMAGE_OTHER` and is skipped without it. The second tag needs no Docker: `Image.save("crumble-workspace:dev", { outputPath })` then `Image.load(outputPath, { tag: "crumble-workspace:other" })` (README).
 
 - [ ] **Step 6: Run them.** `CRUMBLE_VM_TESTS=1 CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:dev CRUMBLE_WORKSPACE_IMAGE_OTHER=crumble-workspace:other bun test test/microsandbox-workspaces.test.ts` — expected: FAIL in the first test, `cat: /usr/local/bin/marker: No such file or directory`, because each boot replaces the machine.
 
