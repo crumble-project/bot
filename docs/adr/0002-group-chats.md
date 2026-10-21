@@ -15,4 +15,4 @@ The turn queue, the one-turn-per-bot rule, the turn budget, and the paused state
 
 ## Consequences
 
-- Group snapshots are an HTTP response component, not a separately exported event schema. The contract release tooling requires every release to carry the same event schema files, so adding one would fail compatibility against `contract-v1.0.0`. Teaching it to accept added event schemas is a separate change.
+- Group snapshots started as an HTTP response component only, because the contract release tooling required every release to carry the same event schema files. Since contract 1.5.0 the tooling accepts added event schemas, and `group-chat-snapshot.schema.json` is exported.

@@ -8,6 +8,7 @@
 - Notify the owner of the first bot answer to their newest group message and of every bot message that mentions `@owner`, through the activity stream and push notifications. Group notifications are titled with the bot and the group, carry the group's ID, and are not suppressed while that bot's chat is open.
 - Let the owner attach images and text files to group messages. Each member turn receives the attachments of the messages it has not seen, newest first up to eight; a model that cannot read images gets their names instead.
 - Record where every new memory was saved: the owner's bot chat, the owner directly, a scheduled task, another bot's request, or a group chat. A group turn can change only the bot's own memory, not shared memory.
+- Contract bundles may add event schemas in a minor release; removing one requires a new major version.
 - Add the `group_chats` tool to bot chats: a bot can list its group chats and read their recent messages when the owner asks about them. Group turns don't get it.
 - Move the product brief and parity research to the spec repository, remove the outdated Claude handoff, and replace the local glossary with a link to the canonical glossary there.
 - Describe execution fields on schedule admission results so generated clients preserve the bot and conversation needed after starting a task.
@@ -31,6 +32,10 @@
 - Add the generated OpenAPI 3.1 contract at `openapi/openapi.json` for all 49 HTTP endpoints, including authentication and event payload schemas.
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
+
+## Contract 1.5.0
+
+- Export `group-chat-snapshot.schema.json`, the JSON Schema of each `snapshot` event on the group chat stream, so clients can generate and validate group snapshots as they do bot chat snapshots.
 
 ## Contract 1.4.0
 
