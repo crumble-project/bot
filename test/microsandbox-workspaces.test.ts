@@ -47,6 +47,32 @@ describe("workspace configuration", () => {
     expect(microsandboxWorkspacesFromEnv({})).toBeUndefined();
   });
 
+  test("desktop bots boot the desktop image when one is configured", () => {
+    const desktopBots = new Set(["desk"]);
+
+    const workspaces = microsandboxWorkspacesFromEnv(
+      {
+        CRUMBLE_WORKSPACE_IMAGE: "crumble-workspace:dev",
+        CRUMBLE_WORKSPACE_DESKTOP_IMAGE: "crumble-workspace-desktop:dev",
+      },
+      { wantsDesktop: (agentId) => desktopBots.has(agentId) },
+    )!;
+
+    expect(workspaces.desktop).toBe(true);
+    expect(workspaces.imageFor("desk")).toBe("crumble-workspace-desktop:dev");
+    expect(workspaces.imageFor("plain")).toBe("crumble-workspace:dev");
+  });
+
+  test("without a desktop image no bot gets a bot desktop", () => {
+    const workspaces = microsandboxWorkspacesFromEnv(
+      { CRUMBLE_WORKSPACE_IMAGE: "crumble-workspace:dev" },
+      { wantsDesktop: () => true },
+    )!;
+
+    expect(workspaces.desktop).toBe(false);
+    expect(workspaces.imageFor("desk")).toBe("crumble-workspace:dev");
+  });
+
   test("agent ids cannot name another machine", () => {
     const workspaces = new MicrosandboxWorkspaces("crumble-workspace:dev");
 

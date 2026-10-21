@@ -34,6 +34,7 @@ afterEach(async () => {
 class DirectoryWorkspaces implements Workspaces {
   readonly synced: string[] = [];
   readonly environments: ExecutionEnv[] = [];
+  readonly desktop = false;
 
   constructor(readonly dir: string) {}
 
@@ -47,6 +48,8 @@ class DirectoryWorkspaces implements Workspaces {
   async sync(agentId: string, _context: Context) {
     this.synced.push(agentId);
   }
+
+  async restart(_agentId: string, _context: Context) {}
 
   async close(_context: Context) {}
 }

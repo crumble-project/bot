@@ -35,7 +35,13 @@ export type MicrosandboxWorkspacesOptions = {
   network?: WorkspaceNetworkPolicy;
   /** Prefix of sandbox and volume names, which are global to the Microsandbox home. */
   namePrefix?: string;
+  /** The image for bots with a bot desktop: the base image plus the desktop. */
+  desktopImage?: string;
+  /** Whether the bot needs its bot desktop; read at each boot. */
+  wantsDesktop?: (agentId: string) => boolean;
 };
+
+const DESKTOP_START = "/opt/crumble/desktop-start.sh";
 
 const DAEMON_DIRECTORY: Partial<Record<NodeJS.Architecture, string>> = {
   arm64: "arm64",
@@ -46,15 +52,22 @@ const relayRequest = z.array(z.string());
 
 /**
  * The workspaces when `CRUMBLE_WORKSPACE_IMAGE` (an OCI image reference) is set, otherwise undefined: without an image
- * there is no machine to run, so callers leave coding out rather than fail on first use.
+ * there is no machine to run, so callers leave coding out rather than fail on first use. `CRUMBLE_WORKSPACE_DESKTOP_IMAGE`
+ * adds the image for bots with a bot desktop.
  */
 export function microsandboxWorkspacesFromEnv(
   env: Record<string, string | undefined> = process.env,
   options: MicrosandboxWorkspacesOptions = {},
 ) {
   const image = env.CRUMBLE_WORKSPACE_IMAGE;
+  const desktopImage = env.CRUMBLE_WORKSPACE_DESKTOP_IMAGE;
 
-  return image ? new MicrosandboxWorkspaces(image, options) : undefined;
+  return image
+    ? new MicrosandboxWorkspaces(image, {
+        ...options,
+        ...(desktopImage && { desktopImage }),
+      })
+    : undefined;
 }
 
 type Running = {
@@ -62,6 +75,7 @@ type Running = {
   relay: Relay;
   proxy: WorkspaceProxy;
   command: readonly string[];
+  image: string;
 };
 
 type Relay = {
@@ -137,7 +151,14 @@ class Workspace {
 
   ensureStarted() {
     return this.exclusive(async () => {
-      if (this.running && (await isAlive(this.running.sandbox)))
+      // A bot that gained or lost its bot desktop needs the other image.
+      const image = this.owner.imageFor(this.agentId);
+
+      if (
+        this.running &&
+        this.running.image === image &&
+        (await isAlive(this.running.sandbox))
+      )
         return this.running.command;
 
       if (this.running) await this.teardown();
@@ -156,13 +177,13 @@ class Workspace {
     });
   }
 
-  /** Stops only an idle workspace unless forced. */
-  stop(force: boolean) {
+  /** Stops only an idle workspace unless forced. A restart keeps the connection, which reconnects on next use. */
+  stop(force: boolean, keepConnection = false) {
     clearTimeout(this.idleTimer);
 
     return this.exclusive(async () => {
       // pi-env's Connection reconnects after losing its bridge but not after close(), so only the last stop closes it.
-      if (force) this.connection.close();
+      if (force && !keepConnection) this.connection.close();
 
       if (!this.running || (!force && this.inflight > 0)) return;
 
@@ -208,6 +229,8 @@ export class MicrosandboxWorkspaces implements Workspaces {
   private readonly network: WorkspaceNetworkPolicy;
   private readonly namePrefix: string;
   private readonly daemon: string;
+  private readonly desktopImage: string | undefined;
+  private readonly wantsDesktop: (agentId: string) => boolean;
   private closed = false;
 
   constructor(
@@ -217,6 +240,8 @@ export class MicrosandboxWorkspaces implements Workspaces {
     this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     this.network = options.network ?? allowAllRequests;
     this.namePrefix = options.namePrefix ?? "crumble";
+    this.desktopImage = options.desktopImage;
+    this.wantsDesktop = options.wantsDesktop ?? (() => false);
 
     const directory = DAEMON_DIRECTORY[process.arch];
 
@@ -244,8 +269,23 @@ export class MicrosandboxWorkspaces implements Workspaces {
     return `${this.namePrefix}-${agentId}`;
   }
 
+  get desktop() {
+    return this.desktopImage !== undefined;
+  }
+
+  /** The image the bot's machine boots now: the desktop image while the bot needs its bot desktop. */
+  imageFor(agentId: string) {
+    return this.desktopImage && this.wantsDesktop(agentId)
+      ? this.desktopImage
+      : this.image;
+  }
+
   env(agentId: string) {
     return this.workspace(agentId).env;
+  }
+
+  async restart(agentId: string, _context?: Context) {
+    await this.workspaces.get(agentId)?.stop(true, true);
   }
 
   async sync(agentId: string, _context?: Context) {
@@ -281,7 +321,7 @@ export class MicrosandboxWorkspaces implements Workspaces {
     if (this.closed) throw new Error("Workspaces are closed");
 
     const name = this.name(agentId);
-    const image = this.image;
+    const image = this.imageFor(agentId);
 
     await ensureVolume(name);
 
@@ -333,11 +373,15 @@ export class MicrosandboxWorkspaces implements Workspaces {
       await run(machine, `chmod 755 ${GUEST_DAEMON}`);
       relay = await startRelay(machine);
 
+      // Started here, not through pi-env: its daemon kills what it started when the connection closes.
+      if (image === this.desktopImage) await run(machine, DESKTOP_START);
+
       return {
         sandbox: machine,
         relay,
         proxy,
         command: [process.execPath, BRIDGE_PATH, relay.socketPath],
+        image,
       };
     } catch (error) {
       await relay?.close();
