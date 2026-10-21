@@ -18,6 +18,10 @@ import {
   groupMessageInput,
 } from "./api-contract";
 import { bearerAuth } from "hono/bearer-auth";
+import { registerDesktopRoutes } from "./desktop-api";
+import { DesktopControl } from "./desktop-control";
+import { ViewerTickets } from "./desktop-viewer";
+import type { DesktopStream } from "./workspace";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import { HTTPException } from "hono/http-exception";
@@ -77,6 +81,12 @@ export function createAPI(
     restartWorkspace?: (agentId: string) => Promise<void>;
     /** Group chats; their routes answer 503 without it. */
     groupChats?: GroupChats;
+    /** Who operates each bot desktop. */
+    desktopControl?: DesktopControl;
+    /** Single-use viewer links. */
+    viewerTickets?: ViewerTickets;
+    /** Connects to a bot desktop's VNC server, for viewers. */
+    openDesktop?: (agentId: string) => Promise<DesktopStream>;
   } = {},
   push?: PushManager,
 ) {
@@ -125,6 +135,15 @@ export function createAPI(
     return c.json({ error: "The server could not complete this request" }, 500);
   });
 
+  registerDesktopRoutes({
+    app,
+    register,
+    service,
+    desktop: options.desktop === true,
+    control: options.desktopControl ?? new DesktopControl(store),
+    tickets: options.viewerTickets ?? new ViewerTickets(),
+    ...(options.openDesktop && { openDesktop: options.openDesktop }),
+  });
   register(routes.capabilities, (c) =>
     c.json(
       { coding: options.coding === true, desktop: options.desktop === true },

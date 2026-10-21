@@ -27,7 +27,9 @@ import { displayExtension } from "./display";
 import { reactionExtension } from "./reaction";
 import { codingEnv, codingExtensions } from "./coding";
 import { DESKTOP_TOOL_NAME, desktopEnv, desktopExtensions } from "./desktop";
-import { DesktopControl } from "./desktop-control";
+import { DesktopControl, type ControlState } from "./desktop-control";
+import { ViewerTickets } from "./desktop-viewer";
+import { websocket } from "hono/bun";
 import type { Workspaces } from "./workspace";
 import { microsandboxWorkspacesFromEnv } from "./microsandbox-workspaces";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
@@ -253,12 +255,39 @@ export async function startServer(
         restartWorkspace: async (agentId) =>
           workspaces?.restart(agentId, BACKGROUND_CONTEXT),
         groupChats,
+        desktopControl,
+        viewerTickets: new ViewerTickets(),
+        ...(workspaces && {
+          openDesktop: (agentId: string) =>
+            workspaces.openDesktop(agentId, BACKGROUND_CONTEXT),
+        }),
       },
       push,
     );
 
+    // A bot desktop the owner holds control of stays awake, also after a restart.
+    const awake = new Map<string, () => void>();
+
+    const holdAwake = (agentId: string, state: ControlState) => {
+      if (!workspaces) return;
+
+      if (state.holder === "owner" && !awake.has(agentId))
+        awake.set(agentId, workspaces.keepAwake(agentId));
+      else if (state.holder === "bot") {
+        awake.get(agentId)?.();
+        awake.delete(agentId);
+      }
+    };
+
+    desktopControl.subscribeAll(holdAwake);
+
+    for (const agent of store.listAgents())
+      holdAwake(agent.id, desktopControl.get(agent.id));
+
     const server = Bun.serve({
       fetch: app.fetch,
+      // Viewer connections to bot desktops.
+      websocket,
       hostname: options.hostname ?? process.env.CRUMBLE_HOST ?? "127.0.0.1",
       port: options.port ?? Number(process.env.CRUMBLE_PORT ?? 7337),
       idleTimeout: 60,

@@ -25,6 +25,10 @@ export const historyInput = snapshotInput.extend({
   before: z.string().min(1).max(200).optional(),
 });
 
+export const desktopControlInput = z.object({
+  holder: z.enum(["bot", "owner"]),
+});
+
 export const messageInput = z
   .object({
     content: z.string().trim().max(32000),
@@ -317,6 +321,49 @@ export const routes = {
     operationId: "listDesktopJobs",
     request: { params: id },
     responses: { 200: json(response.desktopJobsResponse) },
+  }),
+  desktopControl: define({
+    method: "get",
+    path: "/v1/agents/{id}/desktop/control",
+    operationId: "getDesktopControl",
+    request: { params: id },
+    responses: { 200: json(response.desktopControlResponse) },
+  }),
+  putDesktopControl: define({
+    method: "put",
+    path: "/v1/agents/{id}/desktop/control",
+    operationId: "putDesktopControl",
+    description:
+      "Take control of the bot desktop (holder owner) or hand it back (holder bot). 409 when the bot has no bot desktop.",
+    request: { params: id, body: body(desktopControlInput) },
+    responses: { 200: json(response.desktopControlResponse) },
+  }),
+  desktopEvents: define({
+    method: "get",
+    path: "/v1/agents/{id}/desktop/events",
+    operationId: "streamDesktopEvents",
+    "x-sse-events": {
+      control: { $ref: "#/components/schemas/DesktopControl" },
+      heartbeat: { $ref: "#/components/schemas/HeartbeatEvent" },
+    },
+    description:
+      "Server-sent events. A control event carries the DesktopControl JSON object in data, once on connect and on every change. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header.",
+    request: { params: id },
+    responses: {
+      200: {
+        description: "SSE stream, not a JSON array",
+        content: { "text/event-stream": { schema: z.string() } },
+      },
+    },
+  }),
+  createDesktopViewer: define({
+    method: "post",
+    path: "/v1/agents/{id}/desktop/viewer",
+    operationId: "createDesktopViewer",
+    description:
+      "Issue a single-use viewer link for the bot desktop. The page and its WebSocket live outside /v1 and need no Authorization header: the link is the credential. 409 when the bot has no bot desktop.",
+    request: { params: id },
+    responses: { 201: json(response.desktopViewerResponse) },
   }),
   desktopJobHistory: define({
     method: "get",
@@ -757,7 +804,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "1.4.0",
+      version: "1.5.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },

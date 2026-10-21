@@ -16,6 +16,9 @@ type Listener = (state: ControlState) => void;
 /** The control lease of each bot desktop: durable in the store, with listeners for live updates. */
 export class DesktopControl {
   private readonly listeners = new Map<string, Set<Listener>>();
+  private readonly everyBot = new Set<
+    (agentId: string, state: ControlState) => void
+  >();
 
   constructor(private readonly store: Store) {}
 
@@ -44,6 +47,8 @@ export class DesktopControl {
 
     for (const listener of this.listeners.get(agentId) ?? []) listener(next);
 
+    for (const listener of this.everyBot) listener(agentId, next);
+
     return next;
   }
 
@@ -54,6 +59,13 @@ export class DesktopControl {
     this.listeners.set(agentId, set);
 
     return () => void set.delete(listener);
+  }
+
+  /** Hears every bot's changes, such as to keep a bot desktop awake while the owner holds it. */
+  subscribeAll(listener: (agentId: string, state: ControlState) => void) {
+    this.everyBot.add(listener);
+
+    return () => void this.everyBot.delete(listener);
   }
 
   /** Resolves once the bot holds control: at once, or when the owner hands it back. */

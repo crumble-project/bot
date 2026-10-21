@@ -2,6 +2,8 @@ import { describe, expect, test, afterEach } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { Store } from "../src/store";
+import { DesktopControl } from "../src/desktop-control";
+import { ViewerTickets } from "../src/desktop-viewer";
 import { CrumbleService } from "../src/service";
 import { Scheduler } from "../src/scheduler";
 import { createAPI } from "../src/api";
@@ -698,5 +700,167 @@ describe("HTTP API", () => {
     ).toBe(202);
     expect((await req(app, "/v1/executions")).status).toBe(200);
     store.close();
+  });
+});
+
+describe("bot desktop control and viewer", () => {
+  function desktopApp(tools = ["desktop"]) {
+    const { store, runtime } = setup();
+    const service = new CrumbleService(store, runtime);
+
+    const scheduler = new Scheduler(store, (a, p, r, s) =>
+      service.dispatch(a, p, r, s),
+    );
+
+    const desktopControl = new DesktopControl(store);
+    const viewerTickets = new ViewerTickets();
+
+    const app = createAPI(service, scheduler, token, undefined, {
+      desktop: true,
+      desktopControl,
+      viewerTickets,
+    });
+
+    const agent = store.createAgent({
+      name: "Desk",
+      avatar: "bot",
+      description: "",
+      instructions: "",
+      provider: "openai",
+      model: "gpt-4.1",
+      enabled: true,
+      tools,
+      skills: [],
+      mcpServers: [],
+      delegates: [],
+    });
+
+    return { app, agent, desktopControl, viewerTickets };
+  }
+
+  test("the owner takes control and hands it back", async () => {
+    const { app, agent } = desktopApp();
+    const url = `/v1/agents/${agent.id}/desktop/control`;
+
+    expect(await (await req(app, url)).json()).toMatchObject({
+      holder: "bot",
+      changes: 0,
+    });
+
+    const taken = await req(app, url, {
+      method: "PUT",
+      body: JSON.stringify({ holder: "owner" }),
+    });
+
+    expect(taken.status).toBe(200);
+    expect(await taken.json()).toMatchObject({ holder: "owner", changes: 1 });
+
+    const back = await req(app, url, {
+      method: "PUT",
+      body: JSON.stringify({ holder: "bot" }),
+    });
+
+    expect(await back.json()).toMatchObject({ holder: "bot", changes: 2 });
+  });
+
+  test("a bot without its bot desktop cannot be controlled or watched", async () => {
+    const { app, agent } = desktopApp([]);
+
+    const put = await req(app, `/v1/agents/${agent.id}/desktop/control`, {
+      method: "PUT",
+      body: JSON.stringify({ holder: "owner" }),
+    });
+
+    expect(put.status).toBe(409);
+    expect(
+      (
+        await req(app, `/v1/agents/${agent.id}/desktop/viewer`, {
+          method: "POST",
+        })
+      ).status,
+    ).toBe(409);
+  });
+
+  test("a viewer link loads its page until its connection spends it", async () => {
+    const { app, agent, viewerTickets } = desktopApp();
+
+    const created = await req(app, `/v1/agents/${agent.id}/desktop/viewer`, {
+      method: "POST",
+    });
+
+    expect(created.status).toBe(201);
+
+    const { path } = await created.json();
+
+    expect(path).toStartWith("/desktop-viewer/");
+
+    const page = await app.request(path);
+
+    expect(page.status).toBe(200);
+    expect(page.headers.get("cache-control")).toBe("no-store");
+    expect(await page.text()).toContain(`${path}/websockify`);
+
+    // The WebSocket redeems the ticket; afterwards the link is dead.
+    expect(viewerTickets.redeem(path.split("/").at(-1))).toBe(agent.id);
+    expect((await app.request(path)).status).toBe(404);
+    expect((await app.request(`${path}/websockify`)).status).toBe(404);
+  });
+
+  test("only noVNC's core and vendored files are served", async () => {
+    const { app } = desktopApp();
+    const rfb = await app.request("/desktop-viewer/novnc/core/rfb.js");
+
+    expect(rfb.status).toBe(200);
+    expect(rfb.headers.get("content-type")).toContain("javascript");
+    expect(
+      (
+        await app.request(
+          "/desktop-viewer/novnc/vendor/pako/lib/zlib/inflate.js",
+        )
+      ).status,
+    ).toBe(200);
+    expect((await app.request("/desktop-viewer/novnc/app/ui.js")).status).toBe(
+      404,
+    );
+    expect(
+      (await app.request("/desktop-viewer/novnc/core/../package.json")).status,
+    ).toBe(404);
+    expect(
+      (
+        await app.request(
+          "/desktop-viewer/novnc/core/%2e%2e/%2e%2e/LICENSE.txt",
+        )
+      ).status,
+    ).toBe(404);
+  });
+
+  test("viewer links and control need the owner's token", async () => {
+    const { app, agent } = desktopApp();
+
+    const viewer = await app.request(`/v1/agents/${agent.id}/desktop/viewer`, {
+      method: "POST",
+    });
+
+    expect(viewer.status).toBe(401);
+  });
+
+  test("desktop events start with the current control and follow each change", async () => {
+    const { app, agent, desktopControl } = desktopApp();
+    const res = await req(app, `/v1/agents/${agent.id}/desktop/events`);
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let received = "";
+
+    const readUntil = async (text: string) => {
+      while (!received.includes(text))
+        received += decoder.decode((await reader.read()).value);
+    };
+
+    await readUntil('"holder":"bot"');
+    expect(received).toContain("event: control");
+
+    desktopControl.set(agent.id, "owner");
+    await readUntil('"holder":"owner"');
+    await reader.cancel();
   });
 });
