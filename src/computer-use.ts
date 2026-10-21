@@ -11,6 +11,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
+import type { ControlState } from "./desktop-control";
 import { z } from "zod";
 
 export const COMPUTER_USE_TOOL_NAME = "computer_use";
@@ -286,7 +287,21 @@ type Invalid = { invalid: string };
 
 type Pointer = { element_token: string } | { x: number; y: number };
 
-export function createComputerUse(shell: DesktopShell) {
+/** The bot's turn on its desktop: resolves once the bot holds control. */
+export type ControlGate = {
+  untilBot(context: Context): Promise<ControlState>;
+};
+
+// Actions that only look; they stay allowed right after control changed hands.
+const OBSERVE = new Set(["capture", "list_windows", "wait"]);
+
+const STALE =
+  "Control changed hands: the owner used the bot desktop and handed it back. The screen may have changed and element numbers are stale. Capture before acting.";
+
+export function createComputerUse(shell: DesktopShell, gate?: ControlGate) {
+  // The lease's change count at this job's last call: a different one means the owner had control in between.
+  let lastChanges: number | undefined;
+
   // Latest snapshot per window: element tokens are `${snapshot}:${N}`, and the next capture diffs against it.
   const snapshots = new Map<number, string>();
   const newSession = () => `crumble-desktop-${randomUUID()}`;
@@ -634,12 +649,28 @@ export function createComputerUse(shell: DesktopShell) {
     raw: ComputerUseArgs,
     context: Context,
   ): Promise<ComputerUseResult> {
-    const args = normalize(raw);
-
     const text = (value: string, isError = false): ComputerUseResult => ({
       content: [{ type: "text", text: value }],
       isError,
     });
+
+    if (gate) {
+      // A paused job waits here, without a time limit, while the owner has control.
+      const state = await gate.untilBot(context);
+
+      const changed =
+        lastChanges !== undefined && state.changes !== lastChanges;
+
+      lastChanges = state.changes;
+
+      if (changed) {
+        snapshots.clear();
+
+        if (!OBSERVE.has(raw.action)) return text(STALE, true);
+      }
+    }
+
+    const args = normalize(raw);
 
     try {
       if (args.action === "list_windows")
@@ -702,7 +733,9 @@ export function createComputerUse(shell: DesktopShell) {
 }
 
 /** The tool for a desktop job, over the job's environment. One instance per job conversation keeps its snapshots. */
-export function computerUseTool() {
+export function computerUseTool(
+  gateFor?: (conversationId: string) => ControlGate,
+) {
   const instances = new Map<string, ReturnType<typeof createComputerUse>>();
 
   return defineTool({
@@ -736,7 +769,7 @@ export function computerUseTool() {
       let computer = instances.get(key);
 
       if (!computer) {
-        computer = createComputerUse(env);
+        computer = createComputerUse(env, gateFor?.(key));
         instances.set(key, computer);
       }
 

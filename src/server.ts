@@ -27,6 +27,7 @@ import { displayExtension } from "./display";
 import { reactionExtension } from "./reaction";
 import { codingEnv, codingExtensions } from "./coding";
 import { DESKTOP_TOOL_NAME, desktopEnv, desktopExtensions } from "./desktop";
+import { DesktopControl } from "./desktop-control";
 import type { Workspaces } from "./workspace";
 import { microsandboxWorkspacesFromEnv } from "./microsandbox-workspaces";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
@@ -133,9 +134,11 @@ export async function startServer(
         ? codingExtensions(agent, workspaces)
         : { chat: [], job: [] };
 
+    const desktopControl = new DesktopControl(store);
+
     const desktop = (agent: Agent) =>
       workspaces?.desktop && agent.tools.includes(DESKTOP_TOOL_NAME)
-        ? desktopExtensions(agent)
+        ? desktopExtensions(agent, desktopControl)
         : { chat: [], job: [] };
 
     let service!: CrumbleService;

@@ -418,9 +418,11 @@ export function desktopExtensions(
 
 In `src/server.ts`, construct `const desktopControl = new DesktopControl(store);` next to `workspaces` and call `desktopExtensions(agent, desktopControl)`.
 
-- [ ] **Step 4: Run.** `bun test test/computer-use.test.ts test/desktop.test.ts && bun run typecheck` — expected: pass.
+- [ ] **Step 4: Keep one tool per bot.** The runtime rebuilds a bot's extensions whenever it reconfigures the bot (for example on each owner message), which would give a running job a fresh `computer_use` and forget its snapshots and the change count it last saw. As built, `desktop.ts` caches the tool per bot and lease (`toolFor`), and `test/desktop.test.ts` checks that rebuilding returns the same tool.
 
-- [ ] **Step 5: Commit.** `git add src/computer-use.ts src/desktop.ts src/server.ts test/computer-use.test.ts && git commit -m "feat(desktop): pause desktop jobs while the owner has control"`
+- [ ] **Step 5: Run.** `bun test test/computer-use.test.ts test/desktop.test.ts && bun run typecheck` — expected: pass.
+
+- [ ] **Step 6: Commit.** `git add src/computer-use.ts src/desktop.ts src/server.ts test/computer-use.test.ts test/desktop.test.ts && git commit -m "feat(desktop): pause desktop jobs while the owner has control"`
 
 ## Task 3: The RFB input filter
 

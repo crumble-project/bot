@@ -241,3 +241,11 @@ test("the desktop job list reports each job's token usage", async () => {
   // Only the job's own requests: the bot's model does not appear.
   expect(job?.usage?.models["faux/chat"]).toBeUndefined();
 });
+
+test("rebuilding a bot's extensions keeps the same computer_use tool", () => {
+  const agent = { id: "00000000-0000-4000-8000-000000000501" };
+  const toolOf = () => desktopExtensions(agent).job[0]?.tools?.[0];
+
+  // A running job's snapshots and the lease count it last saw live in that tool.
+  expect(toolOf()).toBe(toolOf());
+});
