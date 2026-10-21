@@ -1548,66 +1548,106 @@ Expected: the existing VM tests still pass. The desktop boot is covered in Task 
 
 Ported from Hermes Agent's `tools/computer_use/schema.py` (MIT, Nous Research) and the spike's `den/computer-use.mts`, with the three measured changes: tree-first captures with diffs, background-then-foreground delivery, no per-action approval.
 
-**Files:** create `src/computer-use.ts`, `test/computer-use.test.ts`.
+**Files:** create `src/computer-use.ts`, `test/computer-use.test.ts`, `test/fixtures/scripted-guest.ts`.
 
 **Interfaces produced:**
 - `COMPUTER_USE_TOOL_NAME = "computer_use"`
 - `type DesktopShell = Pick<ExecutionEnv, "exec" | "writeFile" | "readBinaryFile">`
-- `computerUseTool(shell: (context: Context) => DesktopShell): ToolRegistration` — a Pi Durable tool for a job extension.
+- `computerUseTool(): ToolRegistration` — a Pi Durable tool for a job extension; it uses the job's environment (`api.env`).
 - `createComputerUse(shell: DesktopShell): { run(args: ComputerUseArgs, context: Context): Promise<ComputerUseResult>; reset(): void }`
 - `type ComputerUseResult = { content: (TextContent | ImageContent)[]; isError: boolean }`
 
-- [ ] **Step 1: Write the failing tests.** Create `test/computer-use.test.ts`. The scripted guest answers `cua-driver call` commands from a table keyed by tool name and records every call.
+- [ ] **Step 1: Write the failing tests.** Create `test/computer-use.test.ts`. The scripted guest (`test/fixtures/scripted-guest.ts`, shared with Task 6) answers `cua-driver call` commands from a queue per tool name and records every call:
 
 ```ts
-import { expect, test } from "bun:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
-import { createComputerUse, type DesktopShell } from "../src/computer-use";
+import { ExecutionError, FileError } from "@earendil-works/pi-durable/env";
+import { z } from "zod";
+import type { DesktopShell } from "../../src/computer-use";
 
-type Reply = Record<string, unknown> | ((args: Record<string, unknown>) => Record<string, unknown>);
+const jsonObject = z.record(z.string(), z.json());
 
-/** A guest that runs only cua-driver and xdotool, answering from scripted replies. */
-function scriptedGuest(replies: Record<string, Reply[]>) {
+export type GuestReply = z.infer<typeof jsonObject>;
+
+export type GuestCall = { tool: string; args: GuestReply };
+
+const CALL =
+  /cua-driver call (\w+)( --screenshot-out-file (\S+))? "\$\(cat (\S+)\)"/;
+
+/**
+ * A bot desktop that runs only cua-driver and xdotool, answering each cua-driver tool from a queue of scripted replies.
+ * The last reply of a queue repeats. The focused window is 101.
+ */
+export function scriptedGuest(replies: Record<string, GuestReply[]>) {
   const files = new Map<string, Uint8Array | string>();
-  const calls: { tool: string; args: Record<string, unknown> }[] = [];
+  const calls: GuestCall[] = [];
 
   const shell: DesktopShell = {
     async writeFile(path, content) {
       files.set(path, content);
+
       return { ok: true, value: undefined };
     },
     async readBinaryFile(path) {
       const content = files.get(path);
+
       return content instanceof Uint8Array
         ? { ok: true, value: content }
-        : { ok: false, error: new Error(`no ${path}`) as never };
+        : { ok: false, error: new FileError("not_found", `no ${path}`, path) };
     },
     async exec(command, options) {
       const text = Array.isArray(command) ? command.join(" ") : String(command);
-      const out = (s: string) => options?.onOutput?.(s, BACKGROUND_CONTEXT, { stream: "stdout" } as never);
+
+      const out = (output: string) =>
+        options?.onOutput?.(output, BACKGROUND_CONTEXT, { stream: "stdout" });
 
       if (text.includes("xdotool getactivewindow")) {
         out("101\n");
+
         return { ok: true, value: { exitCode: 0 } };
       }
 
-      const match = /cua-driver call (\w+)(?: --screenshot-out-file (\S+))? "\$\(cat (\S+)\)"/.exec(text);
-      if (!match) throw new Error(`unexpected command: ${text}`);
-      const [, tool, shot, argsFile] = match;
-      const args = JSON.parse(String(files.get(argsFile!)));
-      calls.push({ tool: tool!, args });
-      const queue = replies[tool!] ?? [];
-      const next = queue.length > 1 ? queue.shift()! : queue[0];
-      const reply = typeof next === "function" ? next(args) : (next ?? {});
-      if (shot) files.set(shot.replace(/\.png$/, ".jpg"), new Uint8Array([0xff, 0xd8, 0xff]));
+      const match = CALL.exec(text);
+
+      if (!match)
+        return {
+          ok: false,
+          error: new ExecutionError("unknown", `unexpected command: ${text}`),
+        };
+
+      const [, tool = "", , screenshot, argsFile = ""] = match;
+
+      const args = jsonObject.parse(JSON.parse(String(files.get(argsFile))));
+
+      calls.push({ tool, args });
+
+      const queue = replies[tool] ?? [];
+      const reply = (queue.length > 1 ? queue.shift() : queue[0]) ?? {};
+
+      // The tool converts the screenshot to JPEG next to it.
+      if (screenshot)
+        files.set(
+          screenshot.replace(/\.png$/, ".jpg"),
+          new Uint8Array([0xff, 0xd8, 0xff]),
+        );
+
       out(JSON.stringify(reply));
+
       return { ok: true, value: { exitCode: 0 } };
     },
   };
 
-  return { shell: shell as DesktopShell & Partial<ExecutionEnv>, calls };
+  return { shell, calls };
 }
+```
+
+The tests:
+
+```ts
+import { expect, test } from "bun:test";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { createComputerUse } from "../src/computer-use";
+import { scriptedGuest } from "./fixtures/scripted-guest";
 
 const windows = {
   windows: [
@@ -1623,10 +1663,20 @@ test("capture returns the focused window's tree, then a diff", async () => {
   const { shell, calls } = scriptedGuest({
     list_windows: [windows],
     get_window_state: [
-      { snapshot_id: "s1", tree_markdown: '- [0] frame "Form"\n  - [1] panel "￼￼" [actions=[doDefault,showContextMenu]]\n  - [2] entry "Name" [actions=[activate]]' },
-      { snapshot_id: "s2", tree_diff: 'since s1: 0 added, 1 changed\n~ [2] entry "Name" value "Ada"', since_status: "diff" },
+      {
+        snapshot_id: "s1",
+        tree_markdown:
+          '- [0] frame "Form"\n  - [1] panel "￼￼" [actions=[doDefault,showContextMenu]]\n  - [2] entry "Name" [actions=[activate]]',
+      },
+      {
+        snapshot_id: "s2",
+        tree_diff:
+          'since s1: 0 added, 1 changed\n~ [2] entry "Name" value "Ada"',
+        since_status: "diff",
+      },
     ],
   });
+
   const cu = createComputerUse(shell);
 
   const first = await cu.run({ action: "capture" }, BACKGROUND_CONTEXT);
@@ -1638,28 +1688,44 @@ test("capture returns the focused window's tree, then a diff", async () => {
 
   const second = await cu.run({ action: "capture" }, BACKGROUND_CONTEXT);
   expect(text(second)).toContain('~ [2] entry "Name" value "Ada"');
-  expect(calls.filter((c) => c.tool === "get_window_state")[1]!.args).toMatchObject({ since: "s1" });
+  expect(
+    calls.filter((c) => c.tool === "get_window_state")[1]!.args,
+  ).toMatchObject({ since: "s1" });
 });
 
 test("input tries background first, then foreground when cua-driver asks for it", async () => {
   const { shell, calls } = scriptedGuest({
     list_windows: [windows],
-    get_window_state: [{ snapshot_id: "s1", tree_markdown: '- [2] entry "Name"' }],
+    get_window_state: [
+      { snapshot_id: "s1", tree_markdown: '- [2] entry "Name"' },
+    ],
     type_text: [
-      { code: "background_unavailable", escalation: { recommended: "foreground" } },
+      {
+        code: "background_unavailable",
+        escalation: { recommended: "foreground" },
+      },
       { effect: "unverifiable", summary: "Typed 3 characters" },
     ],
   });
+
   const cu = createComputerUse(shell);
 
   await cu.run({ action: "capture" }, BACKGROUND_CONTEXT);
-  const result = await cu.run({ action: "type", element: 2, text: "Ada" }, BACKGROUND_CONTEXT);
+
+  const result = await cu.run(
+    { action: "type", element: 2, text: "Ada" },
+    BACKGROUND_CONTEXT,
+  );
 
   expect(result.isError).toBe(false);
   expect(text(result)).toContain("delivery: foreground");
   const typed = calls.filter((c) => c.tool === "type_text");
   expect(typed[0]!.args.delivery_mode).toBeUndefined();
-  expect(typed[1]!.args).toMatchObject({ delivery_mode: "foreground", element_token: "s1:2", session: expect.any(String) });
+  expect(typed[1]!.args).toMatchObject({
+    delivery_mode: "foreground",
+    element_token: "s1:2",
+    session: expect.any(String),
+  });
 });
 
 test("placeholder arguments count as unset", async () => {
@@ -1667,32 +1733,70 @@ test("placeholder arguments count as unset", async () => {
     list_windows: [windows],
     get_window_state: [{ snapshot_id: "s1", tree_markdown: "- [0] frame" }],
   });
+
   const cu = createComputerUse(shell);
 
   const result = await cu.run(
-    { action: "capture", window_id: 0, element: 0, coordinate: [0, 0], text: "", keys: "", value: "", seconds: 0, name: "" },
+    {
+      action: "capture",
+      window_id: 0,
+      element: 0,
+      coordinate: [0, 0],
+      text: "",
+      keys: "",
+      value: "",
+      seconds: 0,
+      name: "",
+    },
     BACKGROUND_CONTEXT,
   );
 
   expect(result.isError).toBe(false);
-  expect(calls.find((c) => c.tool === "get_window_state")!.args).toMatchObject({ window_id: 101 });
+  expect(calls.find((c) => c.tool === "get_window_state")!.args).toMatchObject({
+    window_id: 101,
+  });
 });
 
 test("a refused action is an error with cua-driver's reason, and hints name only our actions", async () => {
   const { shell } = scriptedGuest({
     list_windows: [windows],
-    get_window_state: [{ snapshot_id: "s1", tree_markdown: '- [3] combo box "City"' }],
-    set_value: [{ status: "refused", refusal: { code: "no_activation", message: 'option "Berlin" advertises no activation action' } }],
-    click: [{ effect: "unverifiable", summary: "Clicked element [3]", hint: "Read what changed with get_window_state. Three single actions in a row: send them as one run_steps call." }],
+    get_window_state: [
+      { snapshot_id: "s1", tree_markdown: '- [3] combo box "City"' },
+    ],
+    set_value: [
+      {
+        status: "refused",
+        refusal: {
+          code: "no_activation",
+          message: 'option "Berlin" advertises no activation action',
+        },
+      },
+    ],
+    click: [
+      {
+        effect: "unverifiable",
+        summary: "Clicked element [3]",
+        hint: "Read what changed with get_window_state. Three single actions in a row: send them as one run_steps call.",
+      },
+    ],
   });
+
   const cu = createComputerUse(shell);
   await cu.run({ action: "capture" }, BACKGROUND_CONTEXT);
 
-  const refused = await cu.run({ action: "set_value", element: 3, value: "Berlin" }, BACKGROUND_CONTEXT);
+  const refused = await cu.run(
+    { action: "set_value", element: 3, value: "Berlin" },
+    BACKGROUND_CONTEXT,
+  );
+
   expect(refused.isError).toBe(true);
   expect(text(refused)).toContain("advertises no activation action");
 
-  const clicked = await cu.run({ action: "click", element: 3 }, BACKGROUND_CONTEXT);
+  const clicked = await cu.run(
+    { action: "click", element: 3 },
+    BACKGROUND_CONTEXT,
+  );
+
   expect(text(clicked)).toContain("Read what changed with capture.");
   expect(text(clicked)).not.toContain("run_steps");
 });
@@ -1700,13 +1804,28 @@ test("a refused action is an error with cua-driver's reason, and hints name only
 test("vision captures attach a JPEG screenshot", async () => {
   const { shell } = scriptedGuest({
     list_windows: [windows],
-    get_window_state: [{ snapshot_id: "s1", tree_markdown: "- [0] frame", screenshot_width: 1280, screenshot_height: 770 }],
+    get_window_state: [
+      {
+        snapshot_id: "s1",
+        tree_markdown: "- [0] frame",
+        screenshot_width: 1280,
+        screenshot_height: 770,
+      },
+    ],
   });
+
   const cu = createComputerUse(shell);
 
-  const result = await cu.run({ action: "capture", mode: "vision" }, BACKGROUND_CONTEXT);
+  const result = await cu.run(
+    { action: "capture", mode: "vision" },
+    BACKGROUND_CONTEXT,
+  );
 
-  expect(result.content.some((c) => c.type === "image" && c.mimeType === "image/jpeg")).toBe(true);
+  expect(
+    result.content.some(
+      (c) => c.type === "image" && c.mimeType === "image/jpeg",
+    ),
+  ).toBe(true);
   expect(text(result)).toContain("screenshot 1280x770");
 });
 
@@ -1714,7 +1833,10 @@ test("acting before any capture asks for one", async () => {
   const { shell } = scriptedGuest({ list_windows: [windows] });
   const cu = createComputerUse(shell);
 
-  const result = await cu.run({ action: "click", element: 4 }, BACKGROUND_CONTEXT);
+  const result = await cu.run(
+    { action: "click", element: 4 },
+    BACKGROUND_CONTEXT,
+  );
 
   expect(result.isError).toBe(true);
   expect(text(result)).toContain("capture first");
@@ -1743,7 +1865,10 @@ import { z } from "zod";
 export const COMPUTER_USE_TOOL_NAME = "computer_use";
 
 /** The part of a job's environment the tool needs. */
-export type DesktopShell = Pick<ExecutionEnv, "exec" | "writeFile" | "readBinaryFile">;
+export type DesktopShell = Pick<
+  ExecutionEnv,
+  "exec" | "writeFile" | "readBinaryFile"
+>;
 
 export type ComputerUseResult = {
   content: (TextContent | ImageContent)[];
@@ -1759,23 +1884,91 @@ const point = (description: string) =>
 
 export const computerUseParameters = Type.Object({
   action: StringEnum(
-    ["capture", "click", "double_click", "right_click", "drag", "scroll", "type", "key", "set_value", "wait", "list_windows", "focus_window"],
-    { description: "Which action to perform. `capture` has no side effects. Use `set_value` for text fields and select or combo boxes when the element supports it." },
+    [
+      "capture",
+      "click",
+      "double_click",
+      "right_click",
+      "drag",
+      "scroll",
+      "type",
+      "key",
+      "set_value",
+      "wait",
+      "list_windows",
+      "focus_window",
+    ],
+    {
+      description:
+        "Which action to perform. `capture` has no side effects. Use `set_value` for text fields and select or combo boxes when the element supports it.",
+    },
   ),
-  mode: Type.Optional(StringEnum(["ax", "vision"], { description: "Capture mode. `ax` (default): accessibility tree only, as a diff after the first read. `vision`: full tree plus a screenshot." })),
-  full: Type.Optional(Type.Boolean({ description: "capture: return the whole tree instead of a diff." })),
-  window_id: Type.Optional(Type.Integer({ description: "Target window (from list_windows). Omit for the focused window." })),
-  element: Type.Optional(Type.Integer({ minimum: 1, description: "Element index [N] from the latest capture of the target window. Omit when unused." })),
-  coordinate: Type.Optional(point("[x, y] in pixels of the latest vision screenshot. Only when no element index fits.")),
+  mode: Type.Optional(
+    StringEnum(["ax", "vision"], {
+      description:
+        "Capture mode. `ax` (default): accessibility tree only, as a diff after the first read. `vision`: full tree plus a screenshot.",
+    }),
+  ),
+  full: Type.Optional(
+    Type.Boolean({
+      description: "capture: return the whole tree instead of a diff.",
+    }),
+  ),
+  window_id: Type.Optional(
+    Type.Integer({
+      description:
+        "Target window (from list_windows). Omit for the focused window.",
+    }),
+  ),
+  element: Type.Optional(
+    Type.Integer({
+      minimum: 1,
+      description:
+        "Element index [N] from the latest capture of the target window. Omit when unused.",
+    }),
+  ),
+  coordinate: Type.Optional(
+    point(
+      "[x, y] in pixels of the latest vision screenshot. Only when no element index fits.",
+    ),
+  ),
   from_coordinate: Type.Optional(point("drag: source [x, y].")),
   to_coordinate: Type.Optional(point("drag: target [x, y].")),
-  direction: Type.Optional(StringEnum(["up", "down", "left", "right"], { description: "scroll direction." })),
-  amount: Type.Optional(Type.Integer({ description: "scroll: wheel steps, default 3." })),
-  text: Type.Optional(Type.String({ description: "type: text typed at the focus, or into `element`. Typing appends; use set_value to replace." })),
-  keys: Type.Optional(Type.String({ description: "key: a key or combo, such as 'return', 'escape', 'tab', 'ctrl+l'." })),
-  value: Type.Optional(Type.String({ description: "set_value: the value, or the option label for a select or combo box." })),
-  seconds: Type.Optional(Type.Number({ description: "wait: seconds to pause, at most 30." })),
-  capture_after: Type.Optional(Type.Boolean({ description: "After the action, include a capture (diff) of the target window. Saves a round trip." })),
+  direction: Type.Optional(
+    StringEnum(["up", "down", "left", "right"], {
+      description: "scroll direction.",
+    }),
+  ),
+  amount: Type.Optional(
+    Type.Integer({ description: "scroll: wheel steps, default 3." }),
+  ),
+  text: Type.Optional(
+    Type.String({
+      description:
+        "type: text typed at the focus, or into `element`. Typing appends; use set_value to replace.",
+    }),
+  ),
+  keys: Type.Optional(
+    Type.String({
+      description:
+        "key: a key or combo, such as 'return', 'escape', 'tab', 'ctrl+l'.",
+    }),
+  ),
+  value: Type.Optional(
+    Type.String({
+      description:
+        "set_value: the value, or the option label for a select or combo box.",
+    }),
+  ),
+  seconds: Type.Optional(
+    Type.Number({ description: "wait: seconds to pause, at most 30." }),
+  ),
+  capture_after: Type.Optional(
+    Type.Boolean({
+      description:
+        "After the action, include a capture (diff) of the target window. Saves a round trip.",
+    }),
+  ),
 });
 
 export type ComputerUseArgs = {
@@ -1797,72 +1990,145 @@ export type ComputerUseArgs = {
   capture_after?: boolean;
 };
 
-const windowList = z.object({
-  windows: z
-    .array(z.object({ pid: z.number(), window_id: z.number(), app_name: z.string(), title: z.string() }))
-    .default([]),
+const loose = <T extends z.ZodType>(schema: T) =>
+  schema.optional().catch(undefined);
+
+const window = z.object({
+  pid: z.number(),
+  window_id: z.number(),
+  app_name: z.string(),
+  title: z.string(),
 });
 
-type Window = z.infer<typeof windowList>["windows"][number];
-type Reply = Record<string, unknown>;
+type Window = z.infer<typeof window>;
+
+// cua-driver reports refusals in several shapes; an error is a message or an object with a code.
+const driverError = z.union([
+  z.string().transform((message) => ({ code: undefined, message })),
+  z.object({ code: loose(z.string()), message: loose(z.string()) }),
+]);
+
+/** A cua-driver tool result: the fields this tool reads, each dropped when its shape is unexpected. */
+const driverReply = z.object({
+  status: loose(z.string()),
+  effect: loose(z.string()),
+  code: loose(z.string()),
+  summary: loose(z.string()),
+  message: loose(z.string()),
+  detail: loose(z.string()),
+  hint: loose(z.string()),
+  error: loose(driverError),
+  refusal: loose(
+    z.object({ code: loose(z.string()), message: loose(z.string()) }),
+  ),
+  escalation: loose(z.object({ recommended: loose(z.string()) })),
+  snapshot_id: loose(z.string()),
+  tree_markdown: loose(z.string()),
+  tree_diff: loose(z.string()),
+  degraded: loose(z.boolean()),
+  degraded_reason: loose(z.string()),
+  truncated: loose(z.boolean()),
+  screenshot_width: loose(z.number()),
+  screenshot_height: loose(z.number()),
+  windows: loose(z.array(window)),
+});
+
+type DriverReply = z.infer<typeof driverReply>;
+
+/** Arguments for a cua-driver tool. */
+type DriverArgs = Record<string, string | number | boolean | string[]>;
+
+function parseReply(output: string): DriverReply {
+  try {
+    const parsed = driverReply.safeParse(JSON.parse(output));
+
+    if (parsed.success) return parsed.data;
+  } catch {
+    // Not JSON: cua-driver printed an error.
+  }
+
+  return {
+    error: {
+      code: undefined,
+      message: output.trim().slice(0, 500) || "cua-driver returned nothing",
+    },
+  };
+}
 
 // Chromium names container panels with U+FFFC placeholders and gives every node showContextMenu: tokens, no meaning.
 const compact = (tree: string) =>
   tree.replace(/￼+/g, "").replace(/,showContextMenu|showContextMenu,?/g, "");
 
 // cua-driver's hints sometimes name its own tools (run_steps, get_window_state); keep only advice that fits ours.
-const cleanHint = (hint: unknown) =>
-  typeof hint === "string"
-    ? hint.replace(/\s*Three single actions in a row:.*$/s, "").replace(/get_window_state/g, "capture").trim()
-    : "";
+const cleanHint = (hint = "") =>
+  hint
+    .replace(/\s*Three single actions in a row:.*$/s, "")
+    .replace(/get_window_state/g, "capture")
+    .trim();
 
-const codeOf = (j: Reply) => {
-  const nested = (key: string) => {
-    const value = j[key];
-    return value && typeof value === "object" && "code" in value ? String(value.code) : undefined;
-  };
-  return typeof j.code === "string" ? j.code : (nested("refusal") ?? nested("error"));
-};
+const codeOf = (reply: DriverReply) =>
+  reply.code ?? reply.refusal?.code ?? reply.error?.code;
 
-const refusalOf = (j: Reply) => {
-  const code = codeOf(j);
+const refusalOf = (reply: DriverReply) => {
+  const code = codeOf(reply);
+
   const refused =
-    j.status === "refused" || j.effect === "refused" || j.effect === "none" || typeof j.error === "string" || Boolean(code?.endsWith("_unavailable"));
+    reply.status === "refused" ||
+    reply.effect === "refused" ||
+    reply.effect === "none" ||
+    reply.error !== undefined ||
+    Boolean(code?.endsWith("_unavailable"));
+
   return refused ? (code ?? "refused") : undefined;
 };
 
-const wantsForeground = (j: Reply) => {
-  const escalation = j.escalation;
-  return (
-    Boolean(codeOf(j)?.endsWith("_unavailable")) ||
-    (typeof escalation === "object" && escalation !== null && "recommended" in escalation && escalation.recommended === "foreground")
-  );
-};
+const wantsForeground = (reply: DriverReply) =>
+  Boolean(codeOf(reply)?.endsWith("_unavailable")) ||
+  reply.escalation?.recommended === "foreground";
 
-const messageOf = (j: Reply) => {
-  const refusal = j.refusal;
-  const nested = typeof refusal === "object" && refusal !== null && "message" in refusal ? String(refusal.message) : undefined;
-  for (const value of [j.summary, nested, j.message, j.detail, j.error])
-    if (typeof value === "string" && value) return value;
-  return undefined;
-};
+const messageOf = (reply: DriverReply) =>
+  [
+    reply.summary,
+    reply.refusal?.message,
+    reply.message,
+    reply.detail,
+    reply.error?.message,
+  ].find(Boolean);
 
 /** Normalizes placeholder arguments: some models (gpt-6-luna) fill every optional field with 0, "", or [0, 0]. */
 function normalize(raw: ComputerUseArgs): ComputerUseArgs {
-  const a = { ...raw };
+  const args = { ...raw };
   const unsetPoint = (p?: number[]) => !p || (p[0] === 0 && p[1] === 0);
-  if (!a.window_id) delete a.window_id;
+
+  if (!args.window_id) delete args.window_id;
+
   // Element [0] is the window frame itself, never a useful target.
-  if (!a.element) delete a.element;
-  if (unsetPoint(a.coordinate)) delete a.coordinate;
-  if (unsetPoint(a.from_coordinate)) delete a.from_coordinate;
-  if (unsetPoint(a.to_coordinate)) delete a.to_coordinate;
-  if (!a.amount) delete a.amount;
-  if (!a.seconds) delete a.seconds;
-  for (const key of ["keys", "value", "name", "mode"] as const) if (a[key] === "") delete a[key];
-  if (a.text === "" && a.action !== "type") delete a.text;
-  return a;
+  if (!args.element) delete args.element;
+
+  if (unsetPoint(args.coordinate)) delete args.coordinate;
+
+  if (unsetPoint(args.from_coordinate)) delete args.from_coordinate;
+
+  if (unsetPoint(args.to_coordinate)) delete args.to_coordinate;
+
+  if (!args.amount) delete args.amount;
+
+  if (!args.seconds) delete args.seconds;
+
+  for (const key of ["keys", "value", "name", "mode"] as const)
+    if (args[key] === "") delete args[key];
+
+  if (args.text === "" && args.action !== "type") delete args.text;
+
+  return args;
 }
+
+type Acted = { reply: DriverReply; route: "background" | "foreground" };
+
+/** An action the tool refused before reaching cua-driver, such as a missing argument. */
+type Invalid = { invalid: string };
+
+type Pointer = { element_token: string } | { x: number; y: number };
 
 export function createComputerUse(shell: DesktopShell) {
   // Latest snapshot per window: element tokens are `${snapshot}:${N}`, and the next capture diffs against it.
@@ -1871,179 +2137,374 @@ export function createComputerUse(shell: DesktopShell) {
 
   async function sh(command: string, context: Context) {
     let output = "";
-    const result = await shell.exec(`. ${ENV_FILE}; ${command}`, { onOutput: (text) => (output += text) }, context);
-    if (!result.ok) throw result.error;
-    return { exitCode: result.value.exitCode, output };
-  }
 
-  async function driver(tool: string, args: Reply, context: Context, screenshot = false) {
-    const n = ++calls;
-    const argsFile = `/tmp/computer-use-${n}.json`;
-    const png = `/tmp/computer-use-${n}.png`;
-    const jpg = `/tmp/computer-use-${n}.jpg`;
-    const written = await shell.writeFile(argsFile, JSON.stringify({ session: SESSION, ...args }), context);
-    if (!written.ok) throw written.error;
-
-    const shot = screenshot ? ` --screenshot-out-file ${png}` : "";
-    const { output } = await sh(
-      `cua-driver call ${tool}${shot} "$(cat ${argsFile})"; rm -f ${argsFile}` +
-        (screenshot ? `; convert ${png} -quality 75 ${jpg} 2>/dev/null; rm -f ${png}` : ""),
+    const result = await shell.exec(
+      `. ${ENV_FILE}; ${command}`,
+      { onOutput: (text) => (output += text) },
       context,
     );
 
-    let json: Reply;
-    try {
-      json = JSON.parse(output);
-    } catch {
-      json = { error: output.trim().slice(0, 500) || "cua-driver returned nothing" };
-    }
+    if (!result.ok) throw result.error;
 
-    if (!screenshot) return { json };
+    return output;
+  }
+
+  async function driver(
+    tool: string,
+    args: DriverArgs,
+    context: Context,
+    screenshot = false,
+  ) {
+    calls += 1;
+
+    const argsFile = `/tmp/computer-use-${calls}.json`;
+    const png = `/tmp/computer-use-${calls}.png`;
+    const jpg = `/tmp/computer-use-${calls}.jpg`;
+
+    const written = await shell.writeFile(
+      argsFile,
+      JSON.stringify({ session: SESSION, ...args }),
+      context,
+    );
+
+    if (!written.ok) throw written.error;
+
+    const shot = screenshot ? ` --screenshot-out-file ${png}` : "";
+
+    const convert = screenshot
+      ? `; convert ${png} -quality 75 ${jpg} 2>/dev/null; rm -f ${png}`
+      : "";
+
+    const reply = parseReply(
+      await sh(
+        `cua-driver call ${tool}${shot} "$(cat ${argsFile})"; rm -f ${argsFile}${convert}`,
+        context,
+      ),
+    );
+
+    if (!screenshot) return { reply };
+
     const image = await shell.readBinaryFile(jpg, context);
-    return { json, image: image.ok ? Buffer.from(image.value).toString("base64") : undefined };
+
+    return {
+      reply,
+      image: image.ok ? Buffer.from(image.value).toString("base64") : undefined,
+    };
   }
 
-  async function windows(context: Context): Promise<Window[]> {
-    const list = windowList.safeParse((await driver("list_windows", {}, context)).json);
-    return (list.data?.windows ?? []).filter((w) => w.app_name !== "Tint2");
+  async function windows(context: Context) {
+    const { reply } = await driver("list_windows", {}, context);
+
+    return (reply.windows ?? []).filter((each) => each.app_name !== "Tint2");
   }
 
-  async function target(windowId: number | undefined, context: Context): Promise<Window> {
+  async function target(windowId: number | undefined, context: Context) {
     const list = await windows(context);
+
     if (windowId !== undefined) {
-      const found = list.find((w) => w.window_id === windowId);
+      const found = list.find((each) => each.window_id === windowId);
+
       if (!found) throw new Error(`no window ${windowId}; call list_windows`);
+
       return found;
     }
-    const active = Number((await sh("xdotool getactivewindow 2>/dev/null", context)).output.trim());
-    const found = list.find((w) => w.window_id === active) ?? list[0];
+
+    const active = Number(
+      (await sh("xdotool getactivewindow 2>/dev/null", context)).trim(),
+    );
+
+    const found = list.find((each) => each.window_id === active) ?? list[0];
+
     if (!found) throw new Error("no windows are open");
+
     return found;
   }
 
   // Background first, then foreground: GTK apps need background accessibility actions, Chromium foreground keys.
-  async function act(tool: string, args: Reply, context: Context) {
-    const background = (await driver(tool, args, context)).json;
-    if (!refusalOf(background) || !wantsForeground(background)) return { json: background, route: "background" };
-    const foreground = (await driver(tool, { ...args, delivery_mode: "foreground" }, context)).json;
-    return { json: foreground, route: "foreground" };
+  async function act(
+    tool: string,
+    args: DriverArgs,
+    context: Context,
+  ): Promise<Acted> {
+    const background = (await driver(tool, args, context)).reply;
+
+    if (!refusalOf(background) || !wantsForeground(background))
+      return { reply: background, route: "background" };
+
+    const foreground = (
+      await driver(tool, { ...args, delivery_mode: "foreground" }, context)
+    ).reply;
+
+    return { reply: foreground, route: "foreground" };
   }
 
-  function verdict(j: Reply, route: string) {
-    const code = refusalOf(j);
-    const hint = cleanHint(j.hint);
-    const parts = [code ? `REFUSED (${code})` : `effect: ${typeof j.effect === "string" ? j.effect : "ok"}`, `delivery: ${route}`, messageOf(j), hint ? `hint: ${hint}` : undefined];
+  function verdict({ reply, route }: Acted) {
+    const code = refusalOf(reply);
+    const hint = cleanHint(reply.hint);
+
+    const parts = [
+      code ? `REFUSED (${code})` : `effect: ${reply.effect ?? "ok"}`,
+      `delivery: ${route}`,
+      messageOf(reply),
+      hint ? `hint: ${hint}` : undefined,
+    ];
+
     return { text: parts.filter(Boolean).join(" | "), error: Boolean(code) };
   }
 
-  async function capture(w: Window, mode: string, full: boolean, context: Context): Promise<(TextContent | ImageContent)[]> {
-    const since = mode === "ax" && !full ? snapshots.get(w.window_id) : undefined;
+  async function capture(
+    target: Window,
+    mode: string,
+    full: boolean,
+    context: Context,
+  ): Promise<(TextContent | ImageContent)[]> {
+    const since =
+      mode === "ax" && !full ? snapshots.get(target.window_id) : undefined;
+
     const vision = mode === "vision";
-    const { json, image } = await driver(
+
+    const { reply, image } = await driver(
       "get_window_state",
-      { pid: w.pid, window_id: w.window_id, include_screenshot: vision, ...(since && { since }) },
+      {
+        pid: target.pid,
+        window_id: target.window_id,
+        include_screenshot: vision,
+        ...(since && { since }),
+      },
       context,
       vision,
     );
-    if (refusalOf(json)) return [{ type: "text", text: `capture failed: ${messageOf(json) ?? JSON.stringify(json).slice(0, 400)}` }];
-    if (typeof json.snapshot_id === "string") snapshots.set(w.window_id, json.snapshot_id);
 
-    const others = (await windows(context)).filter((x) => x.window_id !== w.window_id).map((x) => `${x.window_id} ${x.app_name} "${x.title}"`);
-    const rawTree = typeof json.tree_diff === "string" ? json.tree_diff : typeof json.tree_markdown === "string" ? json.tree_markdown : "";
-    let tree = compact(rawTree);
-    if (tree.length > MAX_TREE_CHARS) tree = `${tree.slice(0, MAX_TREE_CHARS)}\n[tree cut at ${MAX_TREE_CHARS} characters; scroll or capture a smaller window]`;
+    if (refusalOf(reply))
+      return [
+        {
+          type: "text",
+          text: `capture failed: ${messageOf(reply) ?? codeOf(reply) ?? "unknown error"}`,
+        },
+      ];
+
+    if (reply.snapshot_id) snapshots.set(target.window_id, reply.snapshot_id);
+
+    const others = (await windows(context))
+      .filter((each) => each.window_id !== target.window_id)
+      .map((each) => `${each.window_id} ${each.app_name} "${each.title}"`);
+
+    let tree = compact(reply.tree_diff ?? reply.tree_markdown ?? "");
+
+    if (tree.length > MAX_TREE_CHARS)
+      tree = `${tree.slice(0, MAX_TREE_CHARS)}\n[tree cut at ${MAX_TREE_CHARS} characters; scroll or capture a smaller window]`;
 
     const header = [
-      `window ${w.window_id} ${w.app_name} "${w.title}" (snapshot ${String(json.snapshot_id)}${since ? `, changes since ${since}` : ""})`,
+      `window ${target.window_id} ${target.app_name} "${target.title}" (snapshot ${reply.snapshot_id ?? "none"}${since ? `, changes since ${since}` : ""})`,
       others.length ? `other windows: ${others.join("; ")}` : undefined,
-      json.degraded ? `degraded: ${String(json.degraded_reason)}` : undefined,
-      json.truncated ? "tree truncated: capture with full=true or narrow the window" : undefined,
-    ].filter(Boolean).join("\n");
+      reply.degraded ? `degraded: ${reply.degraded_reason ?? ""}` : undefined,
+      reply.truncated
+        ? "tree truncated: capture with full=true or narrow the window"
+        : undefined,
+    ]
+      .filter(Boolean)
+      .join("\n");
 
-    const content: (TextContent | ImageContent)[] = [{ type: "text", text: `${header}\n${tree}` }];
+    const content: (TextContent | ImageContent)[] = [
+      { type: "text", text: `${header}\n${tree}` },
+    ];
+
     if (image)
       content.push(
-        { type: "text", text: `screenshot ${String(json.screenshot_width)}x${String(json.screenshot_height)}, coordinates are pixels of this image` },
+        {
+          type: "text",
+          text: `screenshot ${reply.screenshot_width ?? "?"}x${reply.screenshot_height ?? "?"}, coordinates are pixels of this image`,
+        },
         { type: "image", data: image, mimeType: "image/jpeg" },
       );
+
     return content;
   }
 
-  const tokenFor = (w: Window, element: number) => {
-    const snapshot = snapshots.get(w.window_id);
-    if (!snapshot) throw new Error("no capture of this window yet; capture first");
+  const tokenFor = (target: Window, element: number) => {
+    const snapshot = snapshots.get(target.window_id);
+
+    if (!snapshot)
+      throw new Error("no capture of this window yet; capture first");
+
     return `${snapshot}:${element}`;
   };
 
-  const pointer = (w: Window, a: ComputerUseArgs) =>
-    a.element !== undefined ? { element_token: tokenFor(w, a.element) } : a.coordinate ? { x: a.coordinate[0], y: a.coordinate[1] } : undefined;
+  const pointer = (
+    target: Window,
+    args: ComputerUseArgs,
+  ): Pointer | undefined => {
+    if (args.element !== undefined)
+      return { element_token: tokenFor(target, args.element) };
 
-  async function run(raw: ComputerUseArgs, context: Context): Promise<ComputerUseResult> {
-    const a = normalize(raw);
-    const ok = (text: string): ComputerUseResult => ({ content: [{ type: "text", text }], isError: false });
-    const fail = (text: string): ComputerUseResult => ({ content: [{ type: "text", text }], isError: true });
+    const [x, y] = args.coordinate ?? [];
+
+    return x === undefined || y === undefined ? undefined : { x, y };
+  };
+
+  async function perform(
+    args: ComputerUseArgs,
+    target: Window,
+    context: Context,
+  ): Promise<Acted | Invalid> {
+    const base = { pid: target.pid, window_id: target.window_id };
+
+    switch (args.action) {
+      case "focus_window":
+        return {
+          reply: (await driver("bring_to_front", base, context)).reply,
+          route: "foreground",
+        };
+      case "click":
+      case "double_click":
+      case "right_click": {
+        const at = pointer(target, args);
+
+        if (!at)
+          return { invalid: `${args.action} needs element or coordinate` };
+
+        return act(args.action, { ...base, ...at }, context);
+      }
+
+      case "drag": {
+        const [fromX, fromY] = args.from_coordinate ?? [];
+        const [toX, toY] = args.to_coordinate ?? [];
+
+        if (
+          fromX === undefined ||
+          fromY === undefined ||
+          toX === undefined ||
+          toY === undefined
+        )
+          return { invalid: "drag needs from_coordinate and to_coordinate" };
+
+        return act(
+          "drag",
+          { ...base, from_x: fromX, from_y: fromY, to_x: toX, to_y: toY },
+          context,
+        );
+      }
+
+      case "scroll":
+        return act(
+          "scroll",
+          {
+            ...base,
+            ...pointer(target, args),
+            direction: args.direction ?? "down",
+            amount: args.amount ?? 3,
+          },
+          context,
+        );
+      case "type":
+        if (args.text === undefined) return { invalid: "type needs text" };
+
+        return act(
+          "type_text",
+          {
+            ...base,
+            ...(args.element !== undefined && {
+              element_token: tokenFor(target, args.element),
+            }),
+            text: args.text,
+          },
+          context,
+        );
+      case "key": {
+        if (!args.keys) return { invalid: "key needs keys" };
+
+        const keys = args.keys
+          .split("+")
+          .map((key) => key.trim().toLowerCase());
+
+        return keys.length > 1
+          ? act("hotkey", { ...base, keys }, context)
+          : act("press_key", { ...base, key: keys[0] ?? "" }, context);
+      }
+
+      case "set_value":
+        if (args.element === undefined || args.value === undefined)
+          return { invalid: "set_value needs element and value" };
+
+        return act(
+          "set_value",
+          {
+            ...base,
+            element_token: tokenFor(target, args.element),
+            value: args.value,
+          },
+          context,
+        );
+      default:
+        return { invalid: `unknown action ${args.action}` };
+    }
+  }
+
+  async function run(
+    raw: ComputerUseArgs,
+    context: Context,
+  ): Promise<ComputerUseResult> {
+    const args = normalize(raw);
+
+    const text = (value: string, isError = false): ComputerUseResult => ({
+      content: [{ type: "text", text: value }],
+      isError,
+    });
 
     try {
-      if (a.action === "list_windows") {
-        const list = await windows(context);
-        return ok(list.map((w) => `${w.window_id} ${w.app_name} "${w.title}"`).join("\n") || "no windows");
-      }
-      if (a.action === "wait") {
-        const seconds = Math.min(Math.max(a.seconds ?? 1, 0), 30);
+      if (args.action === "list_windows")
+        return text(
+          (await windows(context))
+            .map((each) => `${each.window_id} ${each.app_name} "${each.title}"`)
+            .join("\n") || "no windows",
+        );
+
+      if (args.action === "wait") {
+        const seconds = Math.min(Math.max(args.seconds ?? 1, 0), 30);
+
         await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
-        return ok(`waited ${seconds}s`);
-      }
-      if (a.action === "capture") {
-        const w = await target(a.window_id, context);
-        return { content: await capture(w, a.mode ?? "ax", a.full === true, context), isError: false };
+
+        return text(`waited ${seconds}s`);
       }
 
-      const w = await target(a.window_id, context);
-      const base = { pid: w.pid, window_id: w.window_id };
-      let result: { json: Reply; route: string };
+      const window = await target(args.window_id, context);
 
-      switch (a.action) {
-        case "focus_window":
-          result = { json: (await driver("bring_to_front", base, context)).json, route: "foreground" };
-          break;
-        case "click":
-        case "double_click":
-        case "right_click": {
-          const at = pointer(w, a);
-          if (!at) return fail(`${a.action} needs element or coordinate`);
-          result = await act(a.action, { ...base, ...at }, context);
-          break;
-        }
-        case "drag":
-          if (!a.from_coordinate || !a.to_coordinate) return fail("drag needs from_coordinate and to_coordinate");
-          result = await act("drag", { ...base, from_x: a.from_coordinate[0], from_y: a.from_coordinate[1], to_x: a.to_coordinate[0], to_y: a.to_coordinate[1] }, context);
-          break;
-        case "scroll":
-          result = await act("scroll", { ...base, ...(pointer(w, a) ?? {}), direction: a.direction ?? "down", amount: a.amount ?? 3 }, context);
-          break;
-        case "type":
-          if (a.text === undefined) return fail("type needs text");
-          result = await act("type_text", { ...base, ...(a.element !== undefined && { element_token: tokenFor(w, a.element) }), text: a.text }, context);
-          break;
-        case "key": {
-          if (!a.keys) return fail("key needs keys");
-          const keys = a.keys.split("+").map((k) => k.trim().toLowerCase());
-          result = keys.length > 1 ? await act("hotkey", { ...base, keys }, context) : await act("press_key", { ...base, key: keys[0] }, context);
-          break;
-        }
-        case "set_value":
-          if (a.element === undefined || a.value === undefined) return fail("set_value needs element and value");
-          result = await act("set_value", { ...base, element_token: tokenFor(w, a.element), value: a.value }, context);
-          break;
-        default:
-          return fail(`unknown action ${a.action}`);
-      }
+      if (args.action === "capture")
+        return {
+          content: await capture(
+            window,
+            args.mode ?? "ax",
+            args.full === true,
+            context,
+          ),
+          isError: false,
+        };
 
-      const v = verdict(result.json, result.route);
-      const after = a.capture_after && !v.error ? await capture(await target(a.window_id, context), "ax", false, context) : [];
-      return { content: [{ type: "text", text: v.text }, ...after], isError: v.error };
+      const acted = await perform(args, window, context);
+
+      if ("invalid" in acted) return text(acted.invalid, true);
+
+      const { text: summary, error } = verdict(acted);
+
+      const after =
+        args.capture_after && !error
+          ? await capture(
+              await target(args.window_id, context),
+              "ax",
+              false,
+              context,
+            )
+          : [];
+
+      return {
+        content: [{ type: "text", text: summary }, ...after],
+        isError: error,
+      };
     } catch (error) {
-      return fail(`error: ${error instanceof Error ? error.message : String(error)}`);
+      return text(
+        `error: ${error instanceof Error ? error.message : String(error)}`,
+        true,
+      );
     }
   }
 
@@ -2051,7 +2512,7 @@ export function createComputerUse(shell: DesktopShell) {
 }
 
 /** The tool for a desktop job, over the job's environment. One instance per job conversation keeps its snapshots. */
-export function computerUseTool(shellFor: (conversationId: string) => DesktopShell) {
+export function computerUseTool() {
   const instances = new Map<string, ReturnType<typeof createComputerUse>>();
 
   return defineTool({
@@ -2068,20 +2529,36 @@ export function computerUseTool(shellFor: (conversationId: string) => DesktopShe
     // Input already sent cannot be taken back; after a crash the job captures and decides.
     replay: "unsafe",
     execute: async (args, api, callContext) => {
+      const env = api.env;
+
+      if (!env)
+        return {
+          output: [
+            {
+              type: "text" as const,
+              text: "No bot desktop is available here.",
+            },
+          ],
+          isError: true,
+        };
+
       const key = String(api.conversationId);
-      let cu = instances.get(key);
-      if (!cu) {
-        cu = createComputerUse(shellFor(key));
-        instances.set(key, cu);
+      let computer = instances.get(key);
+
+      if (!computer) {
+        computer = createComputerUse(env);
+        instances.set(key, computer);
       }
-      const result = await cu.run(args, callContext);
-      return { output: result.content, ...(result.isError && { isError: true }) };
+
+      const result = await computer.run(args, callContext);
+
+      return { output: result.content, isError: result.isError };
     },
   });
 }
 ```
 
-Check how Pi Durable tools return errors and images before Step 4: open `node_modules/@earendil-works/pi-durable/dist/harness/types.d.ts`, find the tool `execute` result type, and adapt the last `return` (the field may be `isError`, or errors may be thrown). Also check whether `api` exposes the conversation's environment directly (search for `env` on the tool API type); if it does, use it instead of `shellFor`, and change `computerUseTool()` to take no argument.
+cua-driver's replies are parsed once with a Zod schema (`driverReply`); each field is dropped when its shape is unexpected, as the repository's lint rules require parsing at the boundary.
 
 - [ ] **Step 4: Run.** `bun test test/computer-use.test.ts && bun run typecheck` — expected: pass.
 
@@ -2220,7 +2697,7 @@ export function desktopExtensions(
 ): JobExtensions {
   const job = defineExtension({
     name: "desktop-job",
-    tools: [computerUseTool(() => workspaces.env(agent.id))],
+    tools: [computerUseTool()],
   });
 
   return desktop.extensions({
