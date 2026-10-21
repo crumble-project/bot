@@ -22,4 +22,5 @@
 - [ ] Implement: the report phase waits for its submission to settle, reads the answer's text in a commit, and moves to `announce` only when there is text; `announce` calls the listeners, then ends the task.
 - [ ] Wire `codingAnswers` and `desktopAnswers` to `service.announceJobAnswer` in `startServer`, and unsubscribe on close.
 - [ ] Contract 1.6.0, `bun run openapi:generate`, changelog with the contract section, architecture note.
+- [ ] Carry `jobName` through `canonicalReplyEvent` and the APNs and FCM payloads: the activity stream and push rebuild reply events field by field, and a real run showed it dropped. Test in `test/push.test.ts`.
 - [ ] `bun run check`, `bun src/contract-release.ts validate`, and the release bundle export pass.
