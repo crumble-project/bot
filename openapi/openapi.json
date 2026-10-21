@@ -683,6 +683,9 @@
               "working",
               "idle"
             ]
+          },
+          "usage": {
+            "description": "Pi Durable usage document of the job's own conversation: tokens and cost per model and tool. Absent before its first request."
           }
         },
         "required": [
@@ -721,6 +724,9 @@
               "working",
               "idle"
             ]
+          },
+          "usage": {
+            "description": "Pi Durable usage document of the job's own conversation: tokens and cost per model and tool. Absent before its first request."
           }
         },
         "required": [

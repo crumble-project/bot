@@ -947,6 +947,7 @@ export class AgentRuntime {
         Number(job.conversationId),
       ),
       status: job.status,
+      ...(job.usage && { usage: job.usage }),
     }));
   }
 
@@ -987,6 +988,7 @@ export class AgentRuntime {
         Number(job.conversationId),
       ),
       status: job.status,
+      ...(job.usage && { usage: job.usage }),
     }));
   }
 

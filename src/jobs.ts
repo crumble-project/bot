@@ -12,6 +12,7 @@ import {
   defineTask,
   defineTool,
   LiveDoc,
+  UsageDoc,
   type ConversationId,
   type DocumentReader,
   type EntryId,
@@ -20,6 +21,7 @@ import {
   type Harness,
   type ModelRef,
   type TaskId,
+  type UsageState,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { z } from "zod";
@@ -45,6 +47,9 @@ export type JobInfo = {
   conversationId: ConversationId;
   status: "working" | "idle";
 };
+
+/** A job in a listing, with what its own model requests and tools spent; none before its first request. */
+export type ListedJob = JobInfo & { usage?: UsageState };
 
 export type JobExtensions = {
   /** Offered in the bot's chat: the job tool. */
@@ -369,7 +374,7 @@ export function defineJobKind(options: JobKindOptions) {
     },
 
     /** The jobs of a bot's chat, oldest first: conversation IDs only grow, whereas record keys reorder numeric names. */
-    async list(harness: Harness, chatId: ConversationId): Promise<JobInfo[]> {
+    async list(harness: Harness, chatId: ConversationId): Promise<ListedJob[]> {
       const jobs =
         (await harness.snapshot(Jobs, chatId, BACKGROUND_CONTEXT))?.jobs ?? {};
 
@@ -378,6 +383,11 @@ export function defineJobKind(options: JobKindOptions) {
           name,
           conversationId: job.conversationId,
           status: await statusOf(harness, job, BACKGROUND_CONTEXT),
+          usage: await harness.snapshot(
+            UsageDoc,
+            job.conversationId,
+            BACKGROUND_CONTEXT,
+          ),
         })),
       );
 

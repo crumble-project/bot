@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Report each job's own token usage and cost in `GET /v1/agents/{id}/coding-jobs` and `GET /v1/agents/{id}/desktop-jobs`, as the `usage` field the chat snapshot already has for the bot's chat. Jobs run in their own conversations, so their spend was not visible before.
 - Add `GET /v1/agents/{id}/desktop-jobs`, `GET /v1/agents/{id}/desktop-jobs/{name}/history`, and the `desktop` capability. Bots get the `desktop` tool only when the server has a desktop workspace image (`CRUMBLE_WORKSPACE_DESKTOP_IMAGE`). Adding or removing a bot's `desktop` tool restarts its workspace machine with the image it needs. Group turns cannot start desktop jobs.
 - Add desktop jobs. A bot with the `desktop` tool hands work to desktop jobs: background agents that operate its bot desktop with the `computer_use` tool, one job at a time, and report to its chat like coding jobs. They have no shell, memory, delegation, scheduling, or integrations. A job runs on the bot's new `desktopModel`, or on the bot's own model when it is unset. The chat preview reads "Desktop job <name>". Contract 1.4.0 adds `desktopModel` to agents.
 - Keep each bot's workspace machine between boots instead of replacing it: programs installed outside `/workspace` now survive idle stops and server restarts, until the workspace image changes. A machine left running by a server that died is taken over with its installs.

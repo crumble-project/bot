@@ -374,7 +374,13 @@ test("clients list a bot's coding jobs and page through a job's work", async () 
   const { jobs } = await list();
 
   expect(jobs).toEqual([
-    { name: "builder", conversationId: expect.any(String), status: "idle" },
+    {
+      name: "builder",
+      conversationId: expect.any(String),
+      status: "idle",
+      // The job's own spend, apart from the bot's chat.
+      usage: { models: { "faux/chat": expect.any(Object) }, tools: {} },
+    },
   ]);
 
   expect(started?.toolDetails).toMatchObject({

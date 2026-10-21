@@ -63,7 +63,7 @@ A desktop job runs on the bot's `desktopModel` when it is set, through the job c
 
 `MicrosandboxWorkspaces` boots `CRUMBLE_WORKSPACE_DESKTOP_IMAGE` instead of the base image for a bot with the `desktop` tool, and runs `/opt/crumble/desktop-start.sh` from the host after boot. The desktop session is started there, not through pi-env, because pi-env's daemon kills every process it started when its connection closes. Adding or removing the `desktop` tool stops the bot's machine; its next use boots the other image and replaces the machine, keeping `/workspace`.
 
-Clients read desktop jobs through `GET /v1/agents/{id}/desktop-jobs` and `GET /v1/agents/{id}/desktop-jobs/{name}/history`, shaped like the coding job routes, and `GET /v1/capabilities` reports `desktop`.
+Job listings carry each job's `usage`: Pi Durable's usage document for the job's own conversation, which the bot chat's snapshot does not include. Clients read desktop jobs through `GET /v1/agents/{id}/desktop-jobs` and `GET /v1/agents/{id}/desktop-jobs/{name}/history`, shaped like the coding job routes, and `GET /v1/capabilities` reports `desktop`.
 
 ## Group chats
 

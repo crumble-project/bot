@@ -232,3 +232,12 @@ test("without a desktop model, desktop jobs use the bot's model", async () => {
 
   expect(used.get("job")).toBe("chat");
 });
+
+test("the desktop job list reports each job's token usage", async () => {
+  const { runtime, agent } = await open({ provider: "faux", model: "desk" });
+  const [job] = await runtime.desktopJobs(agent);
+
+  expect(job?.usage?.models["faux/desk"]?.totalTokens).toBeGreaterThan(0);
+  // Only the job's own requests: the bot's model does not appear.
+  expect(job?.usage?.models["faux/chat"]).toBeUndefined();
+});
