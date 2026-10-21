@@ -60,11 +60,29 @@ const textOf = (message: Message) =>
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("");
 
-/** The bot starts the errand its message names; a job records that its model was asked, and waits for release. */
-function script(
-  started: string[],
-  release: Promise<void>,
-): FauxResponseFactory {
+/** Each job's model call waits until the test releases that job. */
+class Gates {
+  readonly started: string[] = [];
+  private readonly gates = new Map<string, () => void>();
+  private readonly waits = new Map<string, Promise<void>>();
+
+  wait(name: string) {
+    this.started.push(name);
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => (open = resolve));
+    this.gates.set(name, open);
+    this.waits.set(name, gate);
+
+    return gate;
+  }
+
+  release(name: string) {
+    this.gates.get(name)?.();
+  }
+}
+
+/** The bot starts or stops the errand its message names; a job's model waits at its gate. */
+function script(gates: Gates): FauxResponseFactory {
   return async (context) => {
     const tools = context.messages.flatMap((message) =>
       message.role === "system"
@@ -79,29 +97,29 @@ function script(
     const text = textOf(last);
 
     if (!tools.includes("errand")) {
-      started.push(text);
-      await release;
+      const name = text.replace("errand ", "");
+      await gates.wait(name);
 
-      return fauxAssistantMessage([fauxText(`${text} done`)]);
+      return fauxAssistantMessage([fauxText(`${name} done`)]);
     }
 
-    if (text.startsWith("[errand"))
+    if (text.startsWith("[errand") || last.role === "toolResult")
       return fauxAssistantMessage([fauxText("Noted.")]);
 
-    const name = text.replace("start ", "");
+    const [action, name] = text.split(" ");
 
     return fauxAssistantMessage(
       fauxToolCall("errand", {
-        action: "start",
-        name,
-        message: `errand ${name}`,
+        action: action!,
+        name: name!,
+        ...(action === "start" && { message: `errand ${name}` }),
       }),
       { stopReason: "toolUse" },
     );
   };
 }
 
-async function run(kind: typeof exclusiveKind) {
+async function open(kind: typeof exclusiveKind) {
   const dir = mkdtempSync(join(tmpdir(), "bot-jobs-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   const store = new Store(dir);
@@ -121,14 +139,9 @@ async function run(kind: typeof exclusiveKind) {
     delegates: [],
   });
 
-  const started: string[] = [];
-  let release!: () => void;
-  const released = new Promise<void>((resolve) => (release = resolve));
-
+  const gates = new Gates();
   const faux = fauxProvider({ provider: "faux", models: [{ id: "chat" }] });
-  faux.setResponses(
-    Array.from({ length: 40 }, () => script(started, released)),
-  );
+  faux.setResponses(Array.from({ length: 60 }, () => script(gates)));
   const models = createModels();
   models.setProvider(faux.provider);
 
@@ -147,11 +160,15 @@ async function run(kind: typeof exclusiveKind) {
   cleanups.push(() => runtime.close());
 
   const chat = await runtime.openChat(agent);
-  await runtime.submit(agent, chat, "start a", "req-a");
-  await until(() => started.includes("errand a"));
-  await runtime.submit(agent, chat, "start b", "req-b");
+  let requests = 0;
 
-  return { started, release };
+  // Each bot message runs one turn; the next waits until the chat is idle again.
+  const say = async (text: string) => {
+    await runtime.submit(agent, chat, text, `req-${++requests}`);
+    await Bun.sleep(200);
+  };
+
+  return { gates, say };
 }
 
 async function until(check: () => boolean) {
@@ -161,21 +178,63 @@ async function until(check: () => boolean) {
   expect(check()).toBe(true);
 }
 
+// Long enough for a job that did not wait to reach its model.
+const SETTLE_MS = 1500;
+
 test("an exclusive job waits while another job of its kind works", async () => {
-  const { started, release } = await run(exclusiveKind);
+  const { gates, say } = await open(exclusiveKind);
 
-  // Long enough for errand b to reach its model if it did not wait.
-  await Bun.sleep(1500);
-  expect(started).toEqual(["errand a"]);
+  await say("start a");
+  await until(() => gates.started.includes("a"));
+  await say("start b");
 
-  release();
-  await until(() => started.includes("errand b"));
-  expect(started).toEqual(["errand a", "errand b"]);
+  await Bun.sleep(SETTLE_MS);
+  expect(gates.started).toEqual(["a"]);
+
+  gates.release("a");
+  await until(() => gates.started.includes("b"));
+  gates.release("b");
+});
+
+test("waiting jobs start one at a time when the screen frees up", async () => {
+  const { gates, say } = await open(exclusiveKind);
+
+  await say("start a");
+  await until(() => gates.started.includes("a"));
+  await say("start b");
+  await say("start c");
+
+  gates.release("a");
+  await until(() => gates.started.length === 2);
+  await Bun.sleep(SETTLE_MS);
+  // Only one of b and c holds the screen.
+  expect(gates.started).toHaveLength(2);
+
+  const second = gates.started[1]!;
+  gates.release(second);
+  await until(() => gates.started.length === 3);
+  gates.release(gates.started[2]!);
+});
+
+test("stopping a waiting job cancels its delivery", async () => {
+  const { gates, say } = await open(exclusiveKind);
+
+  await say("start a");
+  await until(() => gates.started.includes("a"));
+  await say("start b");
+  await say("stop b");
+
+  gates.release("a");
+  await Bun.sleep(SETTLE_MS);
+  expect(gates.started).toEqual(["a"]);
 });
 
 test("jobs of other kinds run side by side", async () => {
-  const { started, release } = await run(parallelKind);
+  const { gates, say } = await open(parallelKind);
 
-  await until(() => started.includes("errand b"));
-  release();
+  await say("start a");
+  await say("start b");
+  await until(() => gates.started.includes("b"));
+  gates.release("a");
+  gates.release("b");
 });

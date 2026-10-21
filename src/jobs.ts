@@ -56,16 +56,26 @@ type Job = {
   conversationId: ConversationId;
   /** Answers already reported to the bot: several messages can end in one answer, reported once. */
   reported: EntryId[];
+  /** Times the job was stopped; a delivery created before the latest stop is dropped. Unset means zero. */
+  stops?: number;
 };
+
+/** The job an exclusive kind's screen belongs to, and how many of its deliveries are in flight. */
+type Holder = { name: string; deliveries: number };
+
+type JobsState = { jobs: Record<string, Job>; holder?: Holder };
 
 type ReporterInput = {
   name: string;
   conversationId: ConversationId;
   message: string;
   followUp: boolean;
+  /** The job's stop count when this delivery was created. Unset means zero. */
+  stops?: number;
 };
 
 type ReporterState =
+  | { phase: "wait" }
   | { phase: "deliver" }
   | { phase: "report"; report?: string };
 
@@ -77,6 +87,13 @@ const textOf = (message: AssistantMessage | undefined) =>
   (message?.content ?? [])
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("");
+
+const releaseHolder = (state: JobsState, name: string) => {
+  if (state.holder?.name !== name) return;
+  state.holder.deliveries -= 1;
+
+  if (state.holder.deliveries <= 0) delete state.holder;
+};
 
 // A conversation is busy while it has a run: from an input until its final answer.
 const statusOf = async (reader: DocumentReader, job: Job, context: Context) =>
@@ -100,7 +117,7 @@ export function defineJobKind(options: JobKindOptions) {
     initial: () => ({ job: false }),
   });
 
-  const Jobs = defineDoc<{ jobs: Record<string, Job> }>({
+  const Jobs = defineDoc<JobsState>({
     kind: `crumble.${kind}-jobs`,
     version: 1,
     scope: "conversation",
@@ -131,50 +148,57 @@ export function defineJobKind(options: JobKindOptions) {
       ),
   });
 
-  /** Another job of this kind is working; an exclusive kind waits for it. */
-  const othersWorking = async (
-    reader: DocumentReader,
-    chatId: ConversationId,
-    name: string,
-    context: Context,
-  ) => {
-    const jobs = (await reader.snapshot(Jobs, chatId, context))?.jobs ?? {};
-
-    for (const [other, job] of Object.entries(jobs))
-      if (
-        other !== name &&
-        (await statusOf(reader, job, context)) === "working"
-      )
-        return true;
-
-    return false;
-  };
-
   // Delivers one message to a job and reports its answer to the bot. Request IDs keep a restart from delivering the
   // message or the report twice.
   const Reporter = defineTask<ReporterInput, ReporterState, null>({
     name: `crumble.${kind}-reporter`,
     version: 1,
-    initial: () => ({ phase: "deliver" }),
+    initial: () => ({ phase: "wait" }),
     phases: {
-      deliver: async (reporter, runtime, taskContext) => {
-        const { name, conversationId, message, followUp } = reporter.input;
+      // Drops a delivery whose job was stopped since, and for an exclusive kind takes the screen in the same commit,
+      // so two waiting deliveries cannot both pass. A restart re-enters this phase and waits again.
+      wait: async (reporter, runtime, taskContext) => {
+        const { name, stops = 0 } = reporter.input;
 
-        // Polling instead of a queue document: a restart re-enters this phase and simply waits again.
-        while (
-          options.exclusive &&
-          (await othersWorking(
-            runtime,
-            runtime.conversationId,
-            name,
-            taskContext,
-          ))
-        )
+        for (;;) {
+          let waiting = false;
+
+          await runtime.commit(async (tx) => {
+            const state = await tx.doc(Jobs, runtime.conversationId);
+            const job = state.jobs[name];
+
+            if (!job || (job.stops ?? 0) !== stops)
+              return {
+                status: "terminal",
+                outcome: { status: "completed", result: null },
+              };
+
+            if (options.exclusive) {
+              if (state.holder && state.holder.name !== name) {
+                waiting = true;
+
+                return undefined;
+              }
+
+              state.holder = {
+                name,
+                deliveries: (state.holder?.deliveries ?? 0) + 1,
+              };
+            }
+
+            return { status: "running", checkpoint: { phase: "deliver" } };
+          }, taskContext);
+
+          if (!waiting) return;
+
           await awaitWithContext(
             new Promise((resolve) => setTimeout(resolve, WAIT_MS)),
             taskContext,
           );
-
+        }
+      },
+      deliver: async (reporter, runtime, taskContext) => {
+        const { name, conversationId, message, followUp } = reporter.input;
         const job = (await runtime.conversation(conversationId, taskContext))!;
 
         const submission = await job.submit(
@@ -190,6 +214,11 @@ export function defineJobKind(options: JobKindOptions) {
         const settled = await submission.wait(taskContext);
 
         await runtime.commit(async (tx) => {
+          const state = await tx.doc(Jobs, runtime.conversationId);
+
+          // The answer frees the screen for the next job, whether it reports or not.
+          releaseHolder(state, name);
+
           const next = (report?: string) =>
             ({
               status: "running",
@@ -205,7 +234,6 @@ export function defineJobKind(options: JobKindOptions) {
             );
 
           if (settled.type !== "input") return next();
-          const state = await tx.doc(Jobs, runtime.conversationId);
           const job = state.jobs[name];
 
           if (!job || job.reported.includes(settled.answer)) return next();
@@ -255,11 +283,17 @@ export function defineJobKind(options: JobKindOptions) {
         );
       },
     },
-    abort: (_reporter, runtime, taskContext) =>
-      runtime.commit(
-        () => ({ status: "terminal", outcome: { status: "aborted" } }),
-        taskContext,
-      ),
+    abort: (reporter, runtime, taskContext) =>
+      runtime.commit(async (tx) => {
+        // An aborted delivery that held the screen frees it.
+        if (reporter.state.checkpoint.phase === "deliver")
+          releaseHolder(
+            await tx.doc(Jobs, runtime.conversationId),
+            reporter.input.name,
+          );
+
+        return { status: "terminal", outcome: { status: "aborted" } };
+      }, taskContext),
   });
 
   return {
@@ -414,7 +448,13 @@ export function defineJobKind(options: JobKindOptions) {
             return reply(`No ${label} named ${name}.`);
 
           if (action === "stop") {
-            // Aborts the job's current answer and tools and drops its queued messages. It stays usable.
+            // Drops deliveries still waiting for the screen, then aborts the job's current answer and tools and its
+            // queued messages. It stays usable.
+            await api.commit(async (tx) => {
+              const job = (await tx.doc(Jobs, api.conversationId)).jobs[name];
+
+              if (job) job.stops = (job.stops ?? 0) + 1;
+            }, callContext);
             await (await api.conversation(
               existing!.conversationId,
               callContext,
@@ -475,6 +515,7 @@ export function defineJobKind(options: JobKindOptions) {
                 conversationId,
                 message,
                 followUp: action === "send" && followUp === true,
+                stops: state.jobs[name]!.stops ?? 0,
               },
               background,
             );
