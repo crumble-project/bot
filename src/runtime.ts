@@ -13,6 +13,7 @@ import {
   defineTool,
   type EnvTarget,
   type Extension,
+  LiveDoc,
   type LiveState,
   watchEvents,
 } from "@earendil-works/pi-durable";
@@ -52,6 +53,9 @@ export type MemoryRecord = {
   updatedAt?: string;
 };
 
+/** Where the memory tool runs: a group turn names its group; another conversation's run names its inputs, oldest first. */
+export type MemoryContext = { groupId: string | null; submissionIds: string[] };
+
 export type RuntimeCallbacks = {
   models?:
     | Models
@@ -66,13 +70,19 @@ export type RuntimeCallbacks = {
     agentId: string,
     content: string,
     shared: boolean,
+    context: MemoryContext,
   ) => MemoryRecord | Promise<MemoryRecord>;
   updateMemory?: (
     agentId: string,
     id: string,
     content: string,
+    context: MemoryContext,
   ) => MemoryRecord | Promise<MemoryRecord>;
-  deleteMemory?: (agentId: string, id: string) => void | Promise<void>;
+  deleteMemory?: (
+    agentId: string,
+    id: string,
+    context: MemoryContext,
+  ) => void | Promise<void>;
   /** Shared skills from the library the agent uses, added after its own skills. */
   sharedSkills?: (agent: Agent) => Agent["skills"];
   /** Repository-backed skills applied to every agent before shared and personal skills. */
@@ -303,7 +313,7 @@ export class AgentRuntime {
       const memory = defineTool({
         name: "memory",
         description:
-          "Read and manage this agent’s persistent memory. When the agent uses shared memory, `list` also returns shared memories (marked `shared`), which other agents see too; create one with `shared: true` only for what every agent should know.",
+          "Read and manage this agent’s persistent memory. When the agent uses shared memory, `list` also returns shared memories (marked `shared`), which other agents see too; create one with `shared: true` only for what every agent should know. In a group chat only your own memory can be changed.",
         parameters: Type.Object({
           action: Type.Union([
             Type.Literal("list"),
@@ -319,7 +329,25 @@ export class AgentRuntime {
         }),
         // Writes are not replay-safe: interrupted calls report an interruption instead of duplicating a memory.
         replay: "unsafe",
-        execute: async (args) => {
+        execute: async (args, api, callContext) => {
+          const live = await api.snapshot(
+            LiveDoc,
+            api.conversationId,
+            callContext,
+          );
+
+          const context: MemoryContext = {
+            groupId:
+              (
+                await api.snapshot(
+                  GroupConversation,
+                  api.conversationId,
+                  callContext,
+                )
+              )?.groupId ?? null,
+            submissionIds: (live?.run?.inputs ?? []).map(String),
+          };
+
           const current = this.callbacks.currentAgent
             ? this.callbacks.currentAgent(agent.id)
             : agent;
@@ -337,6 +365,7 @@ export class AgentRuntime {
               agent.id,
               args.content,
               args.shared === true,
+              context,
             );
           } else if (args.action === "update") {
             if (
@@ -349,11 +378,12 @@ export class AgentRuntime {
               agent.id,
               args.id,
               args.content,
+              context,
             );
           } else {
             if (!args.id || !this.callbacks.deleteMemory)
               throw new Error("Memory ID is required");
-            await this.callbacks.deleteMemory(agent.id, args.id);
+            await this.callbacks.deleteMemory(agent.id, args.id, context);
             result = { deleted: true };
           }
 

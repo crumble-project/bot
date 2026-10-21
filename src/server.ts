@@ -15,6 +15,7 @@ import { CrumbleService, OWNER_TIMEZONE } from "./service";
 import { Scheduler } from "./scheduler";
 import { createAPI } from "./api";
 import { GroupChats } from "./group-chats";
+import { assertOwnMemoryInGroup, memorySourceOf } from "./memory-sources";
 import { GroupTranscripts } from "./group-transcripts";
 import { AppError, type Agent } from "./domain";
 import { MCPIntegrations } from "./integrations";
@@ -161,9 +162,10 @@ export async function startServer(
               .map((memory) => ({ ...memory, shared: true }))
           : []),
       ],
-      createMemory: (agentId, content, shared) => {
+      createMemory: (agentId, content, shared, context) => {
         if (!content.trim() || content.length > 32000)
           throw new AppError(400, "Memory must contain 1–32000 characters");
+        assertOwnMemoryInGroup(context, shared);
 
         if (shared && !usesSharedMemory(agentId))
           throw new AppError(400, "Shared memory is off for this agent");
@@ -171,20 +173,25 @@ export async function startServer(
         return store.createMemory({
           agentId: shared ? null : agentId,
           content,
+          source: memorySourceOf(store, agentId, context),
         });
       },
-      updateMemory: (agentId, id, content) => {
-        if (!reachableMemory(agentId, id))
-          throw new AppError(404, "Memory not found");
+      updateMemory: (agentId, id, content, context) => {
+        const memory = reachableMemory(agentId, id);
+
+        if (!memory) throw new AppError(404, "Memory not found");
+        assertOwnMemoryInGroup(context, memory.agentId === null);
 
         if (!content.trim() || content.length > 32000)
           throw new AppError(400, "Memory must contain 1–32000 characters");
 
         return store.updateMemory(id, { content })!;
       },
-      deleteMemory: (agentId, id) => {
-        if (!reachableMemory(agentId, id))
-          throw new AppError(404, "Memory not found");
+      deleteMemory: (agentId, id, context) => {
+        const memory = reachableMemory(agentId, id);
+
+        if (!memory) throw new AppError(404, "Memory not found");
+        assertOwnMemoryInGroup(context, memory.agentId === null);
         store.deleteMemory(id);
       },
       sharedSkills: (agent) =>

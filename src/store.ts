@@ -687,6 +687,13 @@ export class Store {
 
     return r ? this.execution(r) : null;
   }
+  findExecutionBySubmission(agentId: Id, submissionId: string) {
+    const r = this.db
+      .query("SELECT * FROM executions WHERE agent_id=? AND submission_id=?")
+      .get(agentId, submissionId);
+
+    return r ? this.execution(r) : null;
+  }
   findExecution(conversationId: Id, requestId: string) {
     return this.getExecutionByRequest(conversationId, requestId);
   }
