@@ -438,7 +438,12 @@ Port of the spike's `den/viewer-server.mjs` filter, with the noVNC fixes (negati
 import { expect, test } from "bun:test";
 import { rfbFilter, RfbProtocolError } from "../src/rfb-filter";
 
-const handshake = new Uint8Array([...new TextEncoder().encode("RFB 003.008\n"), 1, 1]);
+const handshake = new Uint8Array([
+  ...new TextEncoder().encode("RFB 003.008\n"),
+  1,
+  1,
+]);
+
 const pointer = new Uint8Array([5, 0, 0, 10, 0, 20]);
 const key = new Uint8Array([4, 1, 0, 0, 0, 0, 0, 0x61]);
 const update = new Uint8Array([3, 1, 0, 0, 0, 0, 5, 0, 3, 32]);
@@ -449,10 +454,12 @@ const clipboardCaps = () => {
   const view = new DataView(m.buffer);
   m[0] = 6;
   view.setInt32(4, -8);
+
   return m;
 };
 
-const concat = (...parts: Uint8Array[]) => new Uint8Array(parts.flatMap((p) => [...p]));
+const concat = (...parts: Uint8Array[]) =>
+  new Uint8Array(parts.flatMap((p) => [...p]));
 
 test("the handshake passes, input is dropped unless allowed, and updates always pass", () => {
   let allowed = false;
@@ -494,7 +501,9 @@ test("an unknown message type is a protocol error", () => {
   const filter = rfbFilter(() => true);
   filter.push(handshake);
 
-  expect(() => filter.push(new Uint8Array([99, 0, 0]))).toThrow(RfbProtocolError);
+  expect(() => filter.push(new Uint8Array([99, 0, 0]))).toThrow(
+    RfbProtocolError,
+  );
 });
 ```
 
@@ -512,56 +521,92 @@ const HANDSHAKE_BYTES = 14;
 // KeyEvent, PointerEvent, ClientCutText, xvp (power operations), SetDesktopSize, QEMU extended key event.
 const INPUT = new Set([4, 5, 6, 250, 251, 255]);
 
-/** Length of the client message at the start of `b`; 0 when more bytes are needed. */
-function messageLength(b: Uint8Array): number {
-  if (b.length < 1) return 0;
+/** Length of the client message at the start of `bytes`; 0 when more bytes are needed to tell. */
+function messageLength(bytes: Uint8Array): number {
+  if (bytes.length < 1) return 0;
 
-  const view = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
-  switch (b[0]) {
+  switch (bytes[0]) {
+    // SetPixelFormat
     case 0:
-      return 20; // SetPixelFormat
+      return 20;
+
+    // SetEncodings
     case 2:
-      return b.length < 4 ? 0 : 4 + 4 * view.getUint16(2); // SetEncodings
+      return bytes.length < 4 ? 0 : 4 + 4 * view.getUint16(2);
+
+    // FramebufferUpdateRequest
     case 3:
-      return 10; // FramebufferUpdateRequest
+      return 10;
+
+    // KeyEvent
     case 4:
-      return 8; // KeyEvent
+      return 8;
+
+    // PointerEvent
     case 5:
-      return 6; // PointerEvent
+      return 6;
+
+    // ClientCutText. The extended clipboard (noVNC, TigerVNC) sends a negative length: the payload is its absolute value.
     case 6:
-      // ClientCutText; the extended clipboard (noVNC, TigerVNC) sends a negative length.
-      return b.length < 8 ? 0 : 8 + Math.abs(view.getInt32(4));
+      return bytes.length < 8 ? 0 : 8 + Math.abs(view.getInt32(4));
+
+    // EnableContinuousUpdates
     case 150:
-      return 10; // EnableContinuousUpdates
+      return 10;
+
+    // ClientFence
     case 248:
-      return b.length < 9 ? 0 : 9 + (b[8] ?? 0); // ClientFence
+      return bytes.length < 9 ? 0 : 9 + (bytes[8] ?? 0);
+
+    // xvp
     case 250:
-      return 4; // xvp
+      return 4;
+
+    // SetDesktopSize
     case 251:
-      return b.length < 7 ? 0 : 8 + 16 * (b[6] ?? 0); // SetDesktopSize
+      return bytes.length < 7 ? 0 : 8 + 16 * (bytes[6] ?? 0);
+
+    // QEMU client message; only the extended key event is known.
     case 255:
-      if (b.length < 2) return 0;
+      if (bytes.length < 2) return 0;
 
-      // QEMU client message; only the extended key event is known.
-      if (b[1] === 0) return 12;
+      if (bytes[1] === 0) return 12;
 
-      throw new RfbProtocolError(`unknown QEMU client message ${b[1]}`);
+      throw new RfbProtocolError(`unknown QEMU client message ${bytes[1]}`);
+
     default:
-      throw new RfbProtocolError(`unknown RFB client message ${b[0]}`);
+      throw new RfbProtocolError(`unknown RFB client message ${bytes[0]}`);
   }
 }
 
-/** Filters the viewer's client-to-server RFB stream: input passes only while `allowInput()` is true. */
+function concat(parts: Uint8Array[]) {
+  const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let offset = 0;
+
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+
+  return out;
+}
+
+/**
+ * Filters a viewer's client-to-server RFB stream: input passes only while `allowInput()` is true, everything else
+ * passes. Watching thereby never lets input through; the bot desktop's control lease decides.
+ */
 export function rfbFilter(allowInput: () => boolean) {
   let handshake = HANDSHAKE_BYTES;
-  let buffer = new Uint8Array();
+  let buffer: Uint8Array = new Uint8Array();
   const stats = { passed: 0, dropped: 0 };
 
   return {
     stats,
     push(chunk: Uint8Array): Uint8Array {
-      buffer = buffer.length ? new Uint8Array([...buffer, ...chunk]) : chunk;
+      buffer = buffer.length ? concat([buffer, chunk]) : chunk;
+
       const out: Uint8Array[] = [];
 
       if (handshake > 0) {
@@ -583,6 +628,7 @@ export function rfbFilter(allowInput: () => boolean) {
 
         if (INPUT.has(message[0] ?? -1) && !allowInput()) {
           stats.dropped += 1;
+
           continue;
         }
 
@@ -590,13 +636,13 @@ export function rfbFilter(allowInput: () => boolean) {
         out.push(message);
       }
 
-      return new Uint8Array(out.flatMap((part) => [...part]));
+      return concat(out);
     },
   };
 }
 ```
 
-Replace the array spreads with a single preallocated copy if `bun test` shows the throughput test from Task 7 to be slow; correctness first.
+As built, chunks are joined with one preallocated copy (`concat`) instead of array spreads, since the stream carries every pointer move.
 
 - [ ] **Step 4: Run.** `bun test test/rfb-filter.test.ts` — expected: pass.
 
