@@ -224,6 +224,44 @@ export class GroupChats {
     return this.transcripts.attachment(groupId, entryId, index);
   }
 
+  /** The groups a bot belongs to, with their members' names and newest message time, for its lookup tool. */
+  async forMember(agentId: string) {
+    return Promise.all(
+      this.list()
+        .filter((group) => group.memberIds.includes(agentId))
+        .map(async (group) => {
+          const latest = (
+            await this.transcripts.history(group.id, { limit: 1 })
+          ).messages[0];
+
+          return {
+            id: group.id,
+            name: group.name,
+            members: group.memberIds.map(
+              (id) => this.store.getAgent(id)?.name ?? "A deleted bot",
+            ),
+            latestAt: latest?.timestamp
+              ? new Date(latest.timestamp).toISOString()
+              : null,
+          };
+        }),
+    );
+  }
+
+  /** A page of a group's transcript, for a bot that is one of its members. */
+  async readAsMember(
+    agentId: string,
+    groupId: string,
+    options: { before?: string; limit?: number },
+  ) {
+    const group = this.store.getGroupChat(groupId);
+
+    if (!group?.memberIds.includes(agentId))
+      throw new AppError(404, "Group chat not found");
+
+    return this.transcripts.history(groupId, options);
+  }
+
   history(groupId: string, options: { before?: string; limit?: number }) {
     this.get(groupId);
 

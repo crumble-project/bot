@@ -15,6 +15,7 @@ import { CrumbleService, OWNER_TIMEZONE } from "./service";
 import { Scheduler } from "./scheduler";
 import { createAPI } from "./api";
 import { GroupChats } from "./group-chats";
+import { groupLookupExtension } from "./group-lookup";
 import { assertOwnMemoryInGroup, memorySourceOf } from "./memory-sources";
 import { GroupTranscripts } from "./group-transcripts";
 import { AppError, type Agent } from "./domain";
@@ -127,6 +128,7 @@ export async function startServer(
 
     let service!: CrumbleService;
     let schedules!: BotSchedules;
+    let groupChats!: GroupChats;
 
     const runtime = new AgentRuntime(join(dataDir, "agents"), {
       commonSkills: () => commonSkills,
@@ -136,6 +138,7 @@ export async function startServer(
       extensions: async (agent) => [
         ...(await integrations.extensionsForAgent(agent)),
         coordinationExtension(agent, service),
+        groupLookupExtension(agent, groupChats),
         scheduleExtension(agent, schedules),
         displayExtension(charts),
         reactionExtension(),
@@ -212,7 +215,7 @@ export async function startServer(
 
     schedules = new BotSchedules(store, scheduler);
 
-    const groupChats = new GroupChats(
+    groupChats = new GroupChats(
       store,
       new GroupTranscripts(join(dataDir, "groups")),
       service,
