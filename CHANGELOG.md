@@ -4,6 +4,9 @@
 
 - Add group chats: the owner can create, rename, change, and delete group chats of two to six bots, and post messages into a shared transcript that keeps each message's sender. Each group's transcript is its own Pi store.
 - Let bots answer in group chats. An owner message wakes the bots it mentions, or every member without a mention; a bot message wakes only the bots it mentions, and a reply wakes the bot it answers. Each bot runs one turn per group at a time, in its own working conversation for the group; mentions that arrive meanwhile start one follow-up turn. A bot answers, reacts with an emoji, or calls the new `pass` tool to stay silent, and cannot delegate or start coding jobs from a group. After eight bot-started turns since the owner's last message the group pauses until the owner writes again, and the owner can stop every turn at once. Answers are posted exactly once across restarts. Group turns send no bot chat notifications.
+- A bot added to a group after its first message gets a short summary of the earlier conversation, written once by its own model, on its first turn.
+- Notify the owner of the first bot answer to their newest group message and of every bot message that mentions `@owner`, through the activity stream and push notifications. Group notifications are titled with the bot and the group, carry the group's ID, and are not suppressed while that bot's chat is open.
+- Let the owner attach images and text files to group messages. Each member turn receives the attachments of the messages it has not seen, newest first up to eight; a model that cannot read images gets their names instead.
 - Move the product brief and parity research to the spec repository, remove the outdated Claude handoff, and replace the local glossary with a link to the canonical glossary there.
 - Describe execution fields on schedule admission results so generated clients preserve the bot and conversation needed after starting a task.
 
@@ -26,6 +29,11 @@
 - Add the generated OpenAPI 3.1 contract at `openapi/openapi.json` for all 49 HTTP endpoints, including authentication and event payload schemas.
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
+
+## Contract 1.3.0
+
+- Accept `attachments` on group messages, which may then have empty content, and add `GET /v1/group-chats/{id}/attachments/{entryId}/{index}`. Group messages list their attachments in `attachments`.
+- Add optional `groupId` and `groupName` to `ReplyEvent` for bot answers in group chats.
 
 ## Contract 1.2.0
 

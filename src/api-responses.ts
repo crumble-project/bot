@@ -373,6 +373,11 @@ export const replyEvent = z
     preview: z.string(),
     createdAt: z.string(),
     executionId: z.string().optional(),
+    groupId: z.string().optional().openapi({
+      description:
+        "Set when a bot answered in a group chat; open the group rather than the bot chat.",
+    }),
+    groupName: z.string().optional(),
   })
   .openapi("ReplyEvent");
 

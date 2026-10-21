@@ -44,7 +44,7 @@ The milestone 2 plan grouped memory with this work. Memory needs its own design 
 | `src/service.ts` | `announce(event)` for group reply activity |
 | `src/push.ts` | `groupId` and `groupName` in push events and payloads |
 | `src/api-contract.ts`, `src/api-responses.ts`, `src/api.ts` | Contract 1.3.0: `attachments` on group messages, `GET /v1/group-chats/{id}/attachments/{entryId}/{index}`, `groupId` and `groupName` on `ReplyEvent` |
-| `openapi/`, `CHANGELOG.md`, `docs/architecture.md`, `docs/adr/0002-group-chats.md` | Contract and docs; the ADR records the milestone split |
+| `openapi/`, `CHANGELOG.md`, `docs/architecture.md` | Contract and docs |
 
 ## Tasks
 
@@ -108,7 +108,7 @@ acceptsImages(agent: Agent): Promise<boolean>
 
 ### Task 4: API, contract 1.3.0, and docs
 
-**Files:** `src/api-contract.ts`, `src/api-responses.ts`, `src/api.ts`, `openapi/`, `CHANGELOG.md`, `docs/architecture.md`, `docs/adr/0002-group-chats.md`, `test/group-chats-api.test.ts`.
+**Files:** `src/api-contract.ts`, `src/api-responses.ts`, `src/api.ts`, `openapi/`, `CHANGELOG.md`, `docs/architecture.md`, `test/group-chats-api.test.ts`.
 
 - `sendGroupMessage` accepts `attachments`, like `sendChat`, within the same body size limit, and allows empty content when there is an attachment.
 - `getGroupAttachment`: `GET /v1/group-chats/{id}/attachments/{entryId}/{index}` returns the bytes with their content type.

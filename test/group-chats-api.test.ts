@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import type { JsonValue } from "@earendil-works/chord";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAPI } from "../src/api";
 import {
+  activityEvent,
   groupChatResponse,
   groupChatSnapshotResponse,
   groupMessageReceiptResponse,
@@ -61,6 +63,7 @@ function setup() {
 
   return {
     app,
+    service,
     transcripts,
     ids: bots.map((bot) => bot.id),
     close: async () => {
@@ -87,7 +90,7 @@ const req = (
 const post = (
   app: ReturnType<typeof createAPI>,
   path: string,
-  body: Record<string, string | string[]>,
+  body: Record<string, JsonValue>,
 ) => req(app, path, { method: "POST", body: JSON.stringify(body) });
 
 describe("group chat API", () => {
@@ -281,6 +284,99 @@ describe("group chat API", () => {
         toolDetails: { emoji: "👍" },
         replyTo: receipt.entryId,
         origin: { kind: "bot", agentId: ids[0] },
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  test("accepts attachments and serves their bytes", async () => {
+    const { app, ids, close } = setup();
+
+    // A 1×1 PNG.
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+
+    try {
+      const group = groupChatResponse.parse(
+        await (
+          await post(app, "/v1/group-chats", {
+            name: "Trip",
+            memberIds: [ids[0]!, ids[1]!],
+          })
+        ).json(),
+      );
+
+      const sent = await post(app, `/v1/group-chats/${group.id}/messages`, {
+        content: "",
+        requestId: crypto.randomUUID(),
+        attachments: [{ name: "map.png", mimeType: "image/png", data: png }],
+      });
+
+      expect(sent.status).toBe(201);
+      const { entryId } = groupMessageReceiptResponse.parse(await sent.json());
+
+      const file = await req(
+        app,
+        `/v1/group-chats/${group.id}/attachments/${entryId}/0`,
+      );
+
+      expect(file.status).toBe(200);
+      expect(file.headers.get("content-type")).toBe("image/png");
+      expect(Buffer.from(await file.arrayBuffer()).toString("base64")).toBe(
+        png,
+      );
+      expect(
+        (await req(app, `/v1/group-chats/${group.id}/attachments/${entryId}/1`))
+          .status,
+      ).toBe(404);
+
+      const empty = await post(app, `/v1/group-chats/${group.id}/messages`, {
+        content: " ",
+        requestId: crypto.randomUUID(),
+      });
+
+      expect(empty.status).toBe(400);
+    } finally {
+      await close();
+    }
+  });
+
+  test("streams group answers as reply events", async () => {
+    const { app, service, close } = setup();
+
+    try {
+      const events = await req(app, "/v1/events");
+      const reader = events.body!.getReader();
+
+      service.announce({
+        type: "reply",
+        executionId: "execution-1",
+        agentId: "agent-1",
+        agentName: "Planner",
+        entryId: "group-1:3",
+        origin: "group",
+        preview: "Booked.",
+        createdAt: new Date().toISOString(),
+        groupId: "group-1",
+        groupName: "Trip",
+      });
+
+      let text = "";
+
+      while (!text.includes("Booked."))
+        text += new TextDecoder().decode((await reader.read()).value);
+      await reader.cancel();
+
+      const data = text
+        .split("\n")
+        .find((line) => line.startsWith("data: ") && line.includes("Booked."))
+        ?.slice("data: ".length);
+
+      expect(activityEvent.parse(JSON.parse(data!))).toMatchObject({
+        type: "reply",
+        groupId: "group-1",
+        groupName: "Trip",
       });
     } finally {
       await close();
