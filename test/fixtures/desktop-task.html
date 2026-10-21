@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Den task</title>
+    <style>
+      body {
+        font: 16px sans-serif;
+        margin: 40px;
+      }
+      label {
+        display: block;
+        margin: 12px 0;
+      }
+      #out {
+        margin-top: 20px;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Den task</h1>
+    <form
+      id="f"
+      onsubmit="
+        event.preventDefault();
+        document.getElementById('out').textContent = [
+          name.value,
+          city.value,
+          agree.checked ? 'yes' : 'no',
+        ].join('|');
+      "
+    >
+      <label>Name <input id="name" name="name" /></label>
+      <label
+        >City
+        <select id="city">
+          <option value="">Choose…</option>
+          <option>Hamburg</option>
+          <option>Berlin</option>
+          <option>Munich</option>
+        </select></label
+      >
+      <label><input type="checkbox" id="agree" /> Agree</label>
+      <button type="submit">Submit</button>
+    </form>
+    <div id="out" role="status"></div>
+    <details id="more">
+      <summary>More</summary>
+      <button
+        id="show"
+        onclick="
+          document.getElementById('code').textContent =
+            'CODE-' + Math.floor(1000 + Math.random() * 9000)
+        "
+      >
+        Show code
+      </button>
+    </details>
+    <p>Code: <span id="code" role="status"></span></p>
+  </body>
+</html>

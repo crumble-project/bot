@@ -69,6 +69,12 @@ bun -e 'import { Image } from "microsandbox"; await Image.save("crumble-workspac
 CRUMBLE_VM_TESTS=1 CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:dev CRUMBLE_WORKSPACE_IMAGE_OTHER=crumble-workspace:other bun test test/microsandbox-workspaces.test.ts
 ```
 
+The bot desktop tests also need the desktop image:
+
+```bash
+CRUMBLE_VM_TESTS=1 CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:dev CRUMBLE_WORKSPACE_DESKTOP_IMAGE=crumble-workspace-desktop:dev bun test test/desktop-vm.test.ts
+```
+
 ## Run with Docker
 
 The build fetches the shared skills from [crumble-project/skills](https://github.com/crumble-project/skills) and bundles them into the image. It uses `main` by default; set `CRUMBLE_SKILLS_REF` (Compose) or the `SKILLS_REF` build argument to a tag or commit to pin them.
