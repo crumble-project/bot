@@ -643,7 +643,11 @@ export class AgentRuntime {
   }
 
   /** A short summary of a group conversation, written by the bot's own model for its first turn after joining. */
-  async summarize(agent: Agent, transcript: string): Promise<string> {
+  async summarize(
+    agent: Agent,
+    transcript: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const { models } = await this.open(agent);
 
     if (!models.getModel(agent.provider, agent.model))
@@ -660,7 +664,7 @@ export class AgentRuntime {
           { role: "user", content: transcript, timestamp: Date.now() },
         ],
       },
-      inferenceOptions(agent.inference),
+      { ...inferenceOptions(agent.inference), signal },
     );
 
     const summary = answer.content

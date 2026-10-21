@@ -356,7 +356,7 @@ describe("Store group chats", () => {
     db.exec(`DROP TABLE group_turns;
       ALTER TABLE group_chats DROP COLUMN bot_turns;
       ALTER TABLE group_chats DROP COLUMN paused;
-      ALTER TABLE group_chats DROP COLUMN awaiting_answer;
+      ALTER TABLE group_chats DROP COLUMN awaiting_answers;
       ALTER TABLE group_members DROP COLUMN conversation_id;
       ALTER TABLE group_members DROP COLUMN cursor;
       ALTER TABLE group_members DROP COLUMN pending;
@@ -374,11 +374,12 @@ describe("Store group chats", () => {
       pending: false,
       pendingBotStarted: false,
       summary: null,
+      joinedAt: expect.any(String),
     });
     expect(second.groupActivity(group.id)).toEqual({
       botTurns: 0,
       paused: false,
-      awaitingAnswer: 0,
+      awaitingAnswers: {},
     });
     second.close();
   });
@@ -420,7 +421,7 @@ describe("Store group chats", () => {
     first.setGroupActivity(group.id, {
       botTurns: 5,
       paused: true,
-      awaitingAnswer: 2,
+      awaitingAnswers: { "2": [a.id] },
     });
     first.createGroupTurn({
       executionId: execution.id,
@@ -443,7 +444,7 @@ describe("Store group chats", () => {
     expect(second.groupActivity(group.id)).toEqual({
       botTurns: 5,
       paused: true,
-      awaitingAnswer: 2,
+      awaitingAnswers: { "2": [a.id] },
     });
     expect(second.activeGroupTurn(group.id, a.id)).toMatchObject({
       executionId: execution.id,

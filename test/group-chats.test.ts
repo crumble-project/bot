@@ -464,6 +464,71 @@ describe("owner notifications", () => {
     ]);
   });
 
+  test("a second bot answer to the same message does not notify", async () => {
+    const held = gate();
+
+    const { groups, group, service } = setup({
+      Ada: () => say("Friday."),
+      Grace: async () => {
+        await held.opened;
+
+        return say("Saturday works too.");
+      },
+    });
+
+    const events = replies(service);
+    await groups.post(group.id, "When do we leave?", "r-1");
+    await until(async () => (await botMessages(groups, group.id)).length === 1);
+    held.open();
+    await quiet(groups, group.id);
+    expect(events.map((event) => event.preview)).toEqual(["Friday."]);
+  });
+
+  test("each of two overlapping owner messages notifies for its first answer", async () => {
+    const held = gate();
+
+    const { groups, group, service } = setup({
+      Ada: async () => {
+        await held.opened;
+
+        return say("Tent is packed.");
+      },
+      Grace: () => say("Stove is packed."),
+    });
+
+    const events = replies(service);
+    await groups.post(group.id, "@Ada pack the tent", "r-1");
+    await groups.post(group.id, "@Grace pack the stove", "r-2");
+    await until(async () => (await botMessages(groups, group.id)).length === 1);
+    held.open();
+    await quiet(groups, group.id);
+    expect(events.map((event) => event.preview).sort()).toEqual([
+      "Stove is packed.",
+      "Tent is packed.",
+    ]);
+  });
+
+  test("retrying an owner message does not notify again", async () => {
+    const held = gate();
+
+    const { groups, group, service } = setup({
+      Ada: () => say("Friday."),
+      Grace: async () => {
+        await held.opened;
+
+        return say("Saturday.");
+      },
+    });
+
+    const events = replies(service);
+    await groups.post(group.id, "When do we leave?", "r-1");
+    await until(async () => events.length === 1);
+    await groups.post(group.id, "When do we leave?", "r-1");
+    held.open();
+    await quiet(groups, group.id);
+    expect(events.map((event) => event.preview)).toEqual(["Friday."]);
+  });
+
   test("a bot mentioning the owner notifies; other bot messages don't", async () => {
     const { groups, group, service } = setup({
       Ada: () => say("@Grace can you check the trains?"),
@@ -533,6 +598,72 @@ describe("joining members", () => {
     expect(first).toContain("Owner: @Hopper can you drive?");
     expect(first).not.toContain("Bring the tent");
     expect(second).not.toContain("Summary of the conversation");
+  });
+
+  test("a member that leaves and rejoins gets a summary of what it missed", async () => {
+    const { groups, group, store, inputs } = setup({
+      Ada: () => say("Noted."),
+      summary: () => say("While you were away, the group chose Friday."),
+    });
+
+    const [ada, grace] = group.memberIds;
+    await groups.post(group.id, "@Ada hello", "r-1");
+    await quiet(groups, group.id);
+    await groups.update(group.id, {
+      name: "Trip",
+      memberIds: [grace!, store.createAgent(bot("Hopper")).id],
+    });
+    await groups.post(group.id, "We leave on Friday", "r-2");
+    await quiet(groups, group.id);
+    await groups.update(group.id, { name: "Trip", memberIds: [grace!, ada!] });
+    await groups.post(group.id, "@Ada are you in?", "r-3");
+    await quiet(groups, group.id);
+
+    // Hopper's summary comes first; Ada's, when she rejoins, covers the message she missed.
+    expect(inputs.get("summary")?.at(-1)).toContain("We leave on Friday");
+    expect(inputs.get("Ada")!.at(-1)).toContain(
+      "While you were away, the group chose Friday.",
+    );
+  });
+
+  test("a stalled summary does not hold up stopping the group", async () => {
+    const held = gate();
+
+    const { groups, group, store, service } = setup({
+      Ada: hang,
+      summary: async () => {
+        await held.opened;
+
+        return say("Summary.");
+      },
+    });
+
+    await groups.post(group.id, "@Ada think it over", "r-1");
+    await until(
+      () => groups.activity(group.id).members[0]?.status === "running",
+    );
+    const hopper = store.createAgent(bot("Hopper"));
+
+    await groups.update(group.id, {
+      name: "Trip",
+      memberIds: [...group.memberIds, hopper.id],
+    });
+    await groups.post(group.id, "@Hopper welcome", "r-2");
+
+    const stopped = await Promise.race([
+      groups.stop(group.id).then(() => true),
+      new Promise((resolve) => setTimeout(() => resolve(false), 1000)),
+    ]);
+
+    held.open();
+    expect(stopped).toBe(true);
+    await quiet(groups, group.id);
+    expect(
+      store
+        .listExecutions(hopper.id)
+        .filter((execution) => execution.requestId.startsWith("group-turn:")),
+    ).toEqual([]);
+    void service;
   });
 
   test("a founding member gets no summary", async () => {
@@ -659,6 +790,31 @@ describe("attachments", () => {
       }),
     ).rejects.toThrow("only images");
     expect((await groups.snapshot(group.id, {})).messages).toEqual([]);
+  });
+});
+
+describe("admission failures", () => {
+  test("a turn that fails to start does not leave its member running", async () => {
+    const { groups, group, service, inputs } = setup({
+      Ada: () => say("Back."),
+    });
+
+    const submit = service.runtime.submit.bind(service.runtime);
+
+    service.runtime.submit = async () => {
+      throw new Error("disk full");
+    };
+
+    await groups.post(group.id, "@Ada first", "r-1");
+    expect(groups.activity(group.id).members[0]).toMatchObject({
+      status: "idle",
+      error: "disk full",
+    });
+
+    service.runtime.submit = submit;
+    await groups.post(group.id, "@Ada second", "r-2");
+    await quiet(groups, group.id);
+    expect(inputs.get("Ada")).toHaveLength(1);
   });
 });
 

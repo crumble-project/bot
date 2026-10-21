@@ -69,11 +69,16 @@ export class GroupTranscripts {
   }
 
   /** Appends one message; a retried request ID returns the entry it already wrote. */
-  async post(
+  async post(groupId: string, message: GroupPost, requestId: string) {
+    return (await this.write(groupId, message, requestId)).entryId;
+  }
+
+  /** Like `post`, and tells whether this call wrote the entry or found it from an earlier one. */
+  async write(
     groupId: string,
     message: GroupPost,
     requestId: string,
-  ): Promise<string> {
+  ): Promise<{ entryId: string; created: boolean }> {
     const root = await (await this.open(groupId)).root(BACKGROUND_CONTEXT);
 
     const data: GroupMessageData = {
@@ -121,7 +126,11 @@ export class GroupTranscripts {
         "Request ID already used for a different message",
       );
 
-    return `${groupId}:${Number(settled.entry)}`;
+    return {
+      entryId: `${groupId}:${Number(settled.entry)}`,
+      // An earlier call's entry carries that call's time.
+      created: written.data.timestamp === data.timestamp,
+    };
   }
 
   /** Messages after entry number `cursor`, oldest first. */

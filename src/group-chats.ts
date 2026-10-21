@@ -41,6 +41,12 @@ export type GroupChatSnapshot = TranscriptPage & {
 
 export type GroupMessageReceipt = { requestId: string; entryId: string };
 
+/** Owner messages a group remembers as awaiting their first answer; older ones stop notifying. */
+const AWAITING_ANSWERS = 50;
+
+/** How long a joining member's summary may take before its turn starts without one. */
+const SUMMARY_TIMEOUT_MS = 60_000;
+
 /** Characters of earlier messages a joining member's summary is written from, newest first. */
 const SUMMARY_INPUT_CHARACTERS = 40_000;
 
@@ -52,6 +58,8 @@ export class GroupChats {
   private readonly listeners = new Map<string, Set<() => void>>();
   /** Turn state changes run one at a time per group, so a member never gets two turns. */
   private readonly queues = new Map<string, Promise<void>>();
+  /** Members whose joining summary is being written, as `group:agent`. */
+  private readonly summarizing = new Set<string>();
 
   constructor(
     private readonly store: Store,
@@ -142,7 +150,7 @@ export class GroupChats {
     if (options.replyTo && !target)
       throw new AppError(400, "Reply to a message in this group chat");
 
-    const entryId = await this.transcripts.post(
+    const { entryId, created } = await this.transcripts.write(
       groupId,
       {
         text: content,
@@ -158,15 +166,34 @@ export class GroupChats {
 
     await this.serial(groupId, async () => {
       const group = this.get(groupId);
-      this.store.setGroupActivity(groupId, {
-        botTurns: 0,
-        paused: false,
-        awaitingAnswer: Number(entryId.slice(groupId.length + 1)),
-      });
       const mentioned = this.mentions(group, content, undefined, target);
+      const woken = mentioned.length ? mentioned : group.memberIds;
 
-      for (const agentId of mentioned.length ? mentioned : group.memberIds)
-        await this.wake(groupId, agentId, false);
+      // A retried post routes again, which starts nothing new, but neither resumes the bots nor re-arms its notification.
+      if (created) {
+        const { awaitingAnswers } = this.store.groupActivity(groupId);
+
+        const entries = Object.keys(awaitingAnswers)
+          .map(Number)
+          .sort((a, b) => a - b);
+
+        for (const entry of entries.slice(
+          0,
+          Math.max(0, entries.length - AWAITING_ANSWERS + 1),
+        ))
+          delete awaitingAnswers[entry];
+
+        awaitingAnswers[entryId.slice(groupId.length + 1)] = woken.filter(
+          (agentId) => this.store.getAgent(agentId)?.enabled,
+        );
+        this.store.setGroupActivity(groupId, {
+          botTurns: 0,
+          paused: false,
+          awaitingAnswers,
+        });
+      }
+
+      for (const agentId of woken) await this.wake(groupId, agentId, false);
       this.changed(groupId);
     });
 
@@ -412,6 +439,26 @@ export class GroupChats {
     );
 
     if (!unseen.length) return;
+
+    const first = !this.store
+      .listGroupTurns({ groupId })
+      .some(
+        (turn) => turn.agentId === agentId && turn.createdAt >= member.joinedAt,
+      );
+
+    // A member that joined after the first message waits, queued, for a summary of what came before.
+    if (first && member.cursor > 0 && member.summary === null) {
+      this.store.setGroupMember(groupId, agentId, {
+        pending: true,
+        pendingBotStarted: member.pending
+          ? member.pendingBotStarted && botStarted
+          : botStarted,
+      });
+      this.startSummary(groupId, agentId, member.cursor);
+
+      return;
+    }
+
     const activity = this.store.groupActivity(groupId);
 
     if (botStarted) {
@@ -427,22 +474,10 @@ export class GroupChats {
       });
     }
 
-    const first = !this.store
-      .listGroupTurns({ groupId })
-      .some((turn) => turn.agentId === agentId);
-
-    // A member that joined after the first message gets a summary of what came before, on its first turn only.
-    if (first && member.cursor > 0 && member.summary === null)
-      this.store.setGroupMember(groupId, agentId, {
-        summary: await this.summarize(groupId, agent, member.cursor),
-      });
-
     const conversationId =
       member.conversationId ?? (await this.openConversation(group, agentId));
 
-    const summary = first
-      ? this.store.groupMember(groupId, agentId)?.summary
-      : null;
+    const summary = first ? member.summary : null;
 
     const through = unseen.at(-1)!.entry;
     const requestId = `${GROUP_TURN_PREFIX}${groupId}:${agentId}:${through}`;
@@ -473,6 +508,47 @@ export class GroupChats {
         botStarted,
         status: "running",
       });
+
+    // An execution that failed to start settled before its turn existed, so its settlement found nothing.
+    if (!["pending", "running"].includes(execution.status))
+      await this.finish(execution.id);
+  }
+
+  /**
+   * Writes a joining member's summary outside the group's queue, so a slow model holds up nothing else, then starts
+   * the turn it waited for unless the group was stopped or the member left meanwhile.
+   */
+  private startSummary(groupId: string, agentId: string, cursor: number) {
+    const key = `${groupId}:${agentId}`;
+
+    if (this.summarizing.has(key)) return;
+    this.summarizing.add(key);
+
+    void (async () => {
+      const agent = this.store.getAgent(agentId);
+
+      const summary = agent
+        ? await this.summarize(groupId, agent, cursor)
+        : null;
+
+      await this.serial(groupId, async () => {
+        const member = this.store.groupMember(groupId, agentId);
+
+        if (!member || summary === null) return;
+        this.store.setGroupMember(groupId, agentId, {
+          summary,
+          pending: false,
+        });
+
+        if (member.pending)
+          await this.wake(groupId, agentId, member.pendingBotStarted);
+        this.changed(groupId);
+      });
+    })()
+      .catch((error) =>
+        console.error("Group summary failed", groupId, agentId, error),
+      )
+      .finally(() => this.summarizing.delete(key));
   }
 
   private async openConversation(group: GroupChat, agentId: string) {
@@ -512,7 +588,11 @@ export class GroupChats {
     }
 
     try {
-      return await this.service.runtime.summarize(agent, lines.join("\n\n"));
+      return await this.service.runtime.summarize(
+        agent,
+        lines.join("\n\n"),
+        AbortSignal.timeout(SUMMARY_TIMEOUT_MS),
+      );
     } catch (error) {
       console.error("Group summary failed", groupId, agent.id, error);
 
@@ -671,12 +751,20 @@ export class GroupChats {
     entryId: string,
     text: string,
   ) {
-    const { awaitingAnswer } = this.store.groupActivity(group.id);
-    const answers = awaitingAnswer > 0 && turn.through >= awaitingAnswer;
+    const { awaitingAnswers } = this.store.groupActivity(group.id);
 
-    if (answers) this.store.setGroupActivity(group.id, { awaitingAnswer: 0 });
+    // The first answer from a bot an owner message woke, in a turn that saw it, answers that message.
+    const answered = Object.entries(awaitingAnswers).filter(
+      ([entry, targets]) =>
+        Number(entry) <= turn.through && targets.includes(agent.id),
+    );
 
-    if (!answers && !mentionsOwner(text)) return;
+    for (const [entry] of answered) delete awaitingAnswers[entry];
+
+    if (answered.length)
+      this.store.setGroupActivity(group.id, { awaitingAnswers });
+
+    if (!answered.length && !mentionsOwner(text)) return;
     this.service.announce({
       type: "reply",
       executionId: turn.executionId,

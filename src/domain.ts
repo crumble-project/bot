@@ -194,6 +194,7 @@ export type GroupMember = {
   pendingBotStarted: boolean;
   /** Summary of the messages before the member joined, written once for its first turn. */
   summary: string | null;
+  joinedAt: string;
 };
 
 export type GroupTurnStatus = "running" | "posting" | "settled";

@@ -27,7 +27,11 @@ import type {
   MemorySource,
 } from "./domain";
 import { memorySource } from "./domain";
+import { z } from "zod";
 import type { AttachmentInput } from "./attachments";
+
+/** Owner messages, by entry number, whose first bot answer has not notified, with the bots they woke. */
+const awaitingAnswers = z.record(z.string(), z.array(z.string()));
 
 type Id = string;
 
@@ -58,12 +62,13 @@ type GroupMemberStateRow = {
   pending: number;
   pending_bot_started: number;
   summary: string | null;
+  joined_at: string;
 };
 
 type GroupActivityRow = {
   bot_turns: number;
   paused: number;
-  awaiting_answer: number;
+  awaiting_answers: string;
 };
 
 type GroupTurnRow = {
@@ -129,7 +134,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS credentials (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS mcp_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, enabled INTEGER NOT NULL, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE);
-      CREATE TABLE IF NOT EXISTS group_chats (id TEXT PRIMARY KEY, name TEXT NOT NULL, bot_turns INTEGER NOT NULL DEFAULT 0, paused INTEGER NOT NULL DEFAULT 0, awaiting_answer INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS group_chats (id TEXT PRIMARY KEY, name TEXT NOT NULL, bot_turns INTEGER NOT NULL DEFAULT 0, paused INTEGER NOT NULL DEFAULT 0, awaiting_answers TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS group_members (group_id TEXT NOT NULL REFERENCES group_chats(id) ON DELETE CASCADE, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, joined_at TEXT NOT NULL, conversation_id TEXT, cursor INTEGER NOT NULL DEFAULT 0, pending INTEGER NOT NULL DEFAULT 0, pending_bot_started INTEGER NOT NULL DEFAULT 0, summary TEXT, PRIMARY KEY (group_id, agent_id));
       CREATE TABLE IF NOT EXISTS group_turns (execution_id TEXT PRIMARY KEY REFERENCES executions(id) ON DELETE CASCADE, group_id TEXT NOT NULL REFERENCES group_chats(id) ON DELETE CASCADE, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, through INTEGER NOT NULL, bot_started INTEGER NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL);`);
 
@@ -222,9 +227,9 @@ export class Store {
         "ALTER TABLE group_chats ADD COLUMN paused INTEGER NOT NULL DEFAULT 0",
       );
 
-    if (!groupCols.some((c) => c.name === "awaiting_answer"))
+    if (!groupCols.some((c) => c.name === "awaiting_answers"))
       this.db.exec(
-        "ALTER TABLE group_chats ADD COLUMN awaiting_answer INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE group_chats ADD COLUMN awaiting_answers TEXT NOT NULL DEFAULT '{}'",
       );
 
     // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
@@ -1052,6 +1057,7 @@ export class Store {
           pending: r.pending === 1,
           pendingBotStarted: r.pending_bot_started === 1,
           summary: r.summary,
+          joinedAt: r.joined_at,
         }
       : undefined;
   }
@@ -1090,15 +1096,17 @@ export class Store {
   groupActivity(groupId: Id) {
     const r = this.db
       .query<GroupActivityRow, [string]>(
-        "SELECT bot_turns,paused,awaiting_answer FROM group_chats WHERE id=?",
+        "SELECT bot_turns,paused,awaiting_answers FROM group_chats WHERE id=?",
       )
       .get(groupId);
 
     return {
       botTurns: r?.bot_turns ?? 0,
       paused: r?.paused === 1,
-      /** The newest owner message whose first bot answer has not notified yet; 0 for none. */
-      awaitingAnswer: r?.awaiting_answer ?? 0,
+      /** Owner messages, by entry number, whose first bot answer has not notified yet, with the bots they woke. */
+      awaitingAnswers:
+        awaitingAnswers.safeParse(JSON.parse(r?.awaiting_answers ?? "{}"))
+          .data ?? {},
     };
   }
   setGroupActivity(
@@ -1106,15 +1114,20 @@ export class Store {
     change: Partial<{
       botTurns: number;
       paused: boolean;
-      awaitingAnswer: number;
+      awaitingAnswers: Record<string, string[]>;
     }>,
   ) {
     const next = { ...this.groupActivity(groupId), ...change };
     this.db
       .query(
-        "UPDATE group_chats SET bot_turns=?,paused=?,awaiting_answer=? WHERE id=?",
+        "UPDATE group_chats SET bot_turns=?,paused=?,awaiting_answers=? WHERE id=?",
       )
-      .run(next.botTurns, next.paused ? 1 : 0, next.awaitingAnswer, groupId);
+      .run(
+        next.botTurns,
+        next.paused ? 1 : 0,
+        JSON.stringify(next.awaitingAnswers),
+        groupId,
+      );
   }
   private groupTurn(r: GroupTurnRow): GroupTurn {
     return {
