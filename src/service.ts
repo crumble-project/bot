@@ -21,6 +21,12 @@ import {
 export const delegationRequest = (sourceAgentId: string, taskId: string) =>
   `delegate:${sourceAgentId}:${taskId}`;
 
+/** Group turns run as executions too, but their output belongs to the group, not the bot chat. */
+export const GROUP_TURN_PREFIX = "group-turn:";
+
+const isGroupTurn = (execution: Execution) =>
+  execution.requestId.startsWith(GROUP_TURN_PREFIX);
+
 /** The IANA timezone the owner's client last reported with a chat message. */
 export const OWNER_TIMEZONE = "owner-timezone";
 
@@ -61,6 +67,9 @@ export class CrumbleService {
     (event: ReplyActivity | ChatPreviewActivity) => void
   >();
   private chatOpening = new Map<string, Promise<Conversation>>();
+  private settledListeners = new Set<
+    (execution: Execution) => void | Promise<void>
+  >();
   constructor(
     readonly store: Store,
     readonly runtime: AgentRuntime,
@@ -101,6 +110,26 @@ export class CrumbleService {
     return () => {
       this.activityListeners.delete(callback);
     };
+  }
+
+  /** Runs when an execution is done, failed, or cancelled; it may run more than once for one execution. */
+  onSettled(callback: (execution: Execution) => void | Promise<void>) {
+    this.settledListeners.add(callback);
+
+    return () => {
+      this.settledListeners.delete(callback);
+    };
+  }
+
+  private settled(executionId: string) {
+    const execution = this.store.getExecution(executionId);
+
+    if (!execution || ["pending", "running"].includes(execution.status)) return;
+
+    for (const listener of this.settledListeners)
+      void Promise.resolve(listener(execution)).catch((error) =>
+        console.error("Settled execution handler failed", executionId, error),
+      );
   }
 
   /** Reads existing durable history for sidebar summaries without creating a chat. */
@@ -338,6 +367,8 @@ export class CrumbleService {
     });
     await this.admit(execution);
     this.changed(conversationId);
+
+    if (isGroupTurn(execution)) return this.store.getExecution(execution.id)!;
     void this.announcePreview(execution.agentId, conversationId).catch(
       (error) =>
         console.error("Chat preview announcement failed", execution.id, error),
@@ -347,6 +378,8 @@ export class CrumbleService {
   }
 
   private origin(execution: Execution): MessageOrigin {
+    if (isGroupTurn(execution)) return { kind: "group" };
+
     if (execution.scheduleId)
       return {
         kind: "task",
@@ -378,6 +411,7 @@ export class CrumbleService {
       await this.runtime.abort(agent, execution.conversationId);
       this.store.updateExecution(execution.id, { status: "cancelled" });
       this.changed(execution.conversationId);
+      this.settled(execution.id);
 
       return;
     }
@@ -410,7 +444,8 @@ export class CrumbleService {
             if (this.closing) return;
             const current = this.store.getExecution(execution.id);
 
-            if (!current || current.status === "cancelled") return;
+            if (!current || current.status === "cancelled")
+              return this.settled(execution.id);
             this.store.updateExecution(execution.id, {
               status: result.status === "done" ? "done" : "failed",
               error:
@@ -421,8 +456,9 @@ export class CrumbleService {
                     : "The agent could not answer this input",
             });
             this.changed(execution.conversationId);
+            this.settled(execution.id);
 
-            if (result.status === "done")
+            if (result.status === "done" && !isGroupTurn(execution))
               void this.announceReply(execution).catch((error) =>
                 console.error("Reply announcement failed", execution.id, error),
               );
@@ -436,6 +472,7 @@ export class CrumbleService {
                 error: String(error.message ?? error),
               });
             this.changed(execution.conversationId);
+            this.settled(execution.id);
           })
           .finally(() => this.monitoring.delete(execution.id));
 
@@ -447,6 +484,7 @@ export class CrumbleService {
         error: String(error instanceof Error ? error.message : error),
       });
       this.changed(execution.conversationId);
+      this.settled(execution.id);
       throw error;
     }
   }
@@ -516,6 +554,8 @@ export class CrumbleService {
     }
 
     this.changed(conversationId);
+
+    for (const execution of active) this.settled(execution.id);
   }
 
   async deleteAgent(id: string) {

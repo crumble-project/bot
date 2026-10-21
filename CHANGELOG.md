@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Add group chats: the owner can create, rename, change, and delete group chats of two to six bots, and post messages into a shared transcript that keeps each message's sender. Each group's transcript is its own Pi store. Bots do not answer in group chats yet.
+- Add group chats: the owner can create, rename, change, and delete group chats of two to six bots, and post messages into a shared transcript that keeps each message's sender. Each group's transcript is its own Pi store.
+- Let bots answer in group chats. An owner message wakes the bots it mentions, or every member without a mention; a bot message wakes only the bots it mentions, and a reply wakes the bot it answers. Each bot runs one turn per group at a time, in its own working conversation for the group; mentions that arrive meanwhile start one follow-up turn. A bot answers, reacts with an emoji, or calls the new `pass` tool to stay silent, and cannot delegate or start coding jobs from a group. After eight bot-started turns since the owner's last message the group pauses until the owner writes again, and the owner can stop every turn at once. Answers are posted exactly once across restarts. Group turns send no bot chat notifications.
 - Move the product brief and parity research to the spec repository, remove the outdated Claude handoff, and replace the local glossary with a link to the canonical glossary there.
 - Describe execution fields on schedule admission results so generated clients preserve the bot and conversation needed after starting a task.
 
@@ -25,6 +26,11 @@
 - Add the generated OpenAPI 3.1 contract at `openapi/openapi.json` for all 49 HTTP endpoints, including authentication and event payload schemas.
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
+
+## Contract 1.2.0
+
+- Accept an optional `replyTo` on group messages, and add `POST /v1/group-chats/{id}/stop`.
+- Add `GroupActivity` to `GroupChatSnapshot`: whether the group is paused, the bot-started turn count, and each member's status and latest turn error. Group messages carry `replyTo` and `replyPreview`, and a bot's reaction is a `toolResult` message with `toolName` `react` and the emoji in `toolDetails`.
 
 ## Contract 1.1.0
 

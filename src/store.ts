@@ -21,6 +21,9 @@ import type {
   Skill,
   GroupChat,
   GroupChatInput,
+  GroupMember,
+  GroupTurn,
+  GroupTurnStatus,
 } from "./domain";
 import type { AttachmentInput } from "./attachments";
 
@@ -44,6 +47,27 @@ type GroupChatRow = {
 };
 
 type GroupMemberRow = { agent_id: string };
+
+type GroupMemberStateRow = {
+  group_id: string;
+  agent_id: string;
+  conversation_id: string | null;
+  cursor: number;
+  pending: number;
+  pending_bot_started: number;
+};
+
+type GroupActivityRow = { bot_turns: number; paused: number };
+
+type GroupTurnRow = {
+  execution_id: string;
+  group_id: string;
+  agent_id: string;
+  through: number;
+  bot_started: number;
+  status: GroupTurnStatus;
+  created_at: string;
+};
 
 type Patch<T> = Partial<Omit<T, "id" | "createdAt" | "updatedAt">>;
 
@@ -98,8 +122,9 @@ export class Store {
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS credentials (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS mcp_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, enabled INTEGER NOT NULL, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE);
-      CREATE TABLE IF NOT EXISTS group_chats (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS group_members (group_id TEXT NOT NULL REFERENCES group_chats(id) ON DELETE CASCADE, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, joined_at TEXT NOT NULL, PRIMARY KEY (group_id, agent_id));`);
+      CREATE TABLE IF NOT EXISTS group_chats (id TEXT PRIMARY KEY, name TEXT NOT NULL, bot_turns INTEGER NOT NULL DEFAULT 0, paused INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS group_members (group_id TEXT NOT NULL REFERENCES group_chats(id) ON DELETE CASCADE, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, joined_at TEXT NOT NULL, conversation_id TEXT, cursor INTEGER NOT NULL DEFAULT 0, pending INTEGER NOT NULL DEFAULT 0, pending_bot_started INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (group_id, agent_id));
+      CREATE TABLE IF NOT EXISTS group_turns (execution_id TEXT PRIMARY KEY REFERENCES executions(id) ON DELETE CASCADE, group_id TEXT NOT NULL REFERENCES group_chats(id) ON DELETE CASCADE, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, through INTEGER NOT NULL, bot_started INTEGER NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL);`);
 
     // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
     const agentCols = this.db
@@ -171,6 +196,35 @@ export class Store {
 
     if (!scheduleCols.some((c) => c.name === "created_by_agent_id"))
       this.db.exec("ALTER TABLE schedules ADD COLUMN created_by_agent_id TEXT");
+
+    // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
+    const groupCols = this.db
+      .query("PRAGMA table_info(group_chats)")
+      .all() as Array<{ name: string }>;
+
+    if (!groupCols.some((c) => c.name === "bot_turns"))
+      this.db.exec(
+        "ALTER TABLE group_chats ADD COLUMN bot_turns INTEGER NOT NULL DEFAULT 0",
+      );
+
+    if (!groupCols.some((c) => c.name === "paused"))
+      this.db.exec(
+        "ALTER TABLE group_chats ADD COLUMN paused INTEGER NOT NULL DEFAULT 0",
+      );
+
+    // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
+    const memberCols = this.db
+      .query("PRAGMA table_info(group_members)")
+      .all() as Array<{ name: string }>;
+
+    if (!memberCols.some((c) => c.name === "conversation_id"))
+      this.db.exec("ALTER TABLE group_members ADD COLUMN conversation_id TEXT");
+
+    for (const column of ["cursor", "pending", "pending_bot_started"])
+      if (!memberCols.some((c) => c.name === column))
+        this.db.exec(
+          `ALTER TABLE group_members ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0`,
+        );
 
     // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
     const cols = this.db.query("PRAGMA table_info(executions)").all() as Array<{
@@ -939,5 +993,134 @@ export class Store {
       this.db.query("DELETE FROM group_chats WHERE id=?").run(groupId).changes >
       0
     );
+  }
+
+  groupMember(groupId: Id, agentId: Id): GroupMember | undefined {
+    const r = this.db
+      .query<GroupMemberStateRow, [string, string]>(
+        "SELECT * FROM group_members WHERE group_id=? AND agent_id=?",
+      )
+      .get(groupId, agentId);
+
+    return r
+      ? {
+          groupId: r.group_id,
+          agentId: r.agent_id,
+          conversationId: r.conversation_id,
+          cursor: r.cursor,
+          pending: r.pending === 1,
+          pendingBotStarted: r.pending_bot_started === 1,
+        }
+      : undefined;
+  }
+  setGroupMember(
+    groupId: Id,
+    agentId: Id,
+    change: Partial<
+      Pick<
+        GroupMember,
+        "conversationId" | "cursor" | "pending" | "pendingBotStarted"
+      >
+    >,
+  ) {
+    const current = this.groupMember(groupId, agentId);
+
+    if (!current) return;
+    const next = { ...current, ...change };
+    this.db
+      .query(
+        "UPDATE group_members SET conversation_id=?,cursor=?,pending=?,pending_bot_started=? WHERE group_id=? AND agent_id=?",
+      )
+      .run(
+        next.conversationId,
+        next.cursor,
+        next.pending ? 1 : 0,
+        next.pendingBotStarted ? 1 : 0,
+        groupId,
+        agentId,
+      );
+  }
+  groupActivity(groupId: Id) {
+    const r = this.db
+      .query<GroupActivityRow, [string]>(
+        "SELECT bot_turns,paused FROM group_chats WHERE id=?",
+      )
+      .get(groupId);
+
+    return { botTurns: r?.bot_turns ?? 0, paused: r?.paused === 1 };
+  }
+  setGroupActivity(
+    groupId: Id,
+    change: Partial<{ botTurns: number; paused: boolean }>,
+  ) {
+    const next = { ...this.groupActivity(groupId), ...change };
+    this.db
+      .query("UPDATE group_chats SET bot_turns=?,paused=? WHERE id=?")
+      .run(next.botTurns, next.paused ? 1 : 0, groupId);
+  }
+  private groupTurn(r: GroupTurnRow): GroupTurn {
+    return {
+      executionId: r.execution_id,
+      groupId: r.group_id,
+      agentId: r.agent_id,
+      through: r.through,
+      botStarted: r.bot_started === 1,
+      status: r.status,
+      createdAt: r.created_at,
+    };
+  }
+  createGroupTurn(turn: Omit<GroupTurn, "createdAt">) {
+    this.db
+      .query(
+        "INSERT INTO group_turns (execution_id,group_id,agent_id,through,bot_started,status,created_at) VALUES (?,?,?,?,?,?,?)",
+      )
+      .run(
+        turn.executionId,
+        turn.groupId,
+        turn.agentId,
+        turn.through,
+        turn.botStarted ? 1 : 0,
+        turn.status,
+        now(),
+      );
+
+    return this.getGroupTurn(turn.executionId)!;
+  }
+  getGroupTurn(executionId: Id) {
+    const r = this.db
+      .query<GroupTurnRow, [string]>(
+        "SELECT * FROM group_turns WHERE execution_id=?",
+      )
+      .get(executionId);
+
+    return r ? this.groupTurn(r) : undefined;
+  }
+  updateGroupTurn(executionId: Id, change: { status: GroupTurnStatus }) {
+    this.db
+      .query("UPDATE group_turns SET status=? WHERE execution_id=?")
+      .run(change.status, executionId);
+  }
+  /** The member's unsettled turn in the group; there is at most one. */
+  activeGroupTurn(groupId: Id, agentId: Id) {
+    const r = this.db
+      .query<GroupTurnRow, [string, string]>(
+        "SELECT * FROM group_turns WHERE group_id=? AND agent_id=? AND status!='settled' ORDER BY created_at DESC, rowid DESC",
+      )
+      .get(groupId, agentId);
+
+    return r ? this.groupTurn(r) : undefined;
+  }
+  listGroupTurns(filter: { groupId?: Id; status?: GroupTurnStatus[] } = {}) {
+    return this.db
+      .query<GroupTurnRow, []>(
+        "SELECT * FROM group_turns ORDER BY created_at, rowid",
+      )
+      .all()
+      .map((r) => this.groupTurn(r))
+      .filter(
+        (turn) =>
+          (!filter.groupId || turn.groupId === filter.groupId) &&
+          (!filter.status || filter.status.includes(turn.status)),
+      );
   }
 }

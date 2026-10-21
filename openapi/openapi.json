@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Crumble API",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime."
   },
   "components": {
@@ -795,15 +795,72 @@
               "groupChat": {
                 "$ref": "#/components/schemas/GroupChat"
               },
+              "activity": {
+                "$ref": "#/components/schemas/GroupActivity"
+              },
               "updatedAt": {
                 "type": "number"
               }
             },
             "required": [
               "groupChat",
+              "activity",
               "updatedAt"
             ]
           }
+        ]
+      },
+      "GroupActivity": {
+        "type": "object",
+        "properties": {
+          "paused": {
+            "type": "boolean",
+            "description": "Bot-started turns used up the turn budget; the owner's next message resumes the group."
+          },
+          "botTurns": {
+            "type": "number",
+            "description": "Bot-started turns since the owner's last message."
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GroupMemberActivity"
+            }
+          }
+        },
+        "required": [
+          "paused",
+          "botTurns",
+          "members"
+        ]
+      },
+      "GroupMemberActivity": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "queued",
+              "running",
+              "disabled"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the member's latest turn failed."
+          }
+        },
+        "required": [
+          "agentId",
+          "status",
+          "error"
         ]
       },
       "GroupMessageReceipt": {
@@ -4993,6 +5050,11 @@
                   "requestId": {
                     "type": "string",
                     "format": "uuid"
+                  },
+                  "replyTo": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
                   }
                 },
                 "required": [
@@ -5013,6 +5075,112 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/group-chats/{id}/stop": {
+      "post": {
+        "operationId": "stopGroupChat",
+        "description": "Ends every running bot turn in the group and drops the queued ones. The group is not paused; the next message starts turns again.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success, no response body"
           },
           "400": {
             "description": "Invalid request or operation",

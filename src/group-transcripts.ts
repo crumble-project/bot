@@ -1,6 +1,10 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai";
-import { Harness, createRegistry } from "@earendil-works/pi-durable";
+import {
+  Harness,
+  createRegistry,
+  type EntryId,
+} from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { mkdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -11,9 +15,13 @@ import {
   groupMessageData,
   readTranscript,
   type GroupMessageData,
-  type MessageOrigin,
   type TranscriptPage,
 } from "./transcript";
+
+export type GroupPost = Omit<GroupMessageData, "requestId" | "timestamp">;
+
+/** A group message with its place in the transcript. */
+export type GroupEntry = GroupMessageData & { entry: number; entryId: string };
 
 /** Each group chat's shared transcript: a Pi store of data entries that never calls a model. */
 export class GroupTranscripts {
@@ -62,14 +70,13 @@ export class GroupTranscripts {
   /** Appends one message; a retried request ID returns the entry it already wrote. */
   async post(
     groupId: string,
-    message: { text: string; sender: MessageOrigin },
+    message: GroupPost,
     requestId: string,
   ): Promise<string> {
     const root = await (await this.open(groupId)).root(BACKGROUND_CONTEXT);
 
     const data: GroupMessageData = {
-      text: message.text,
-      sender: message.sender,
+      ...message,
       requestId,
       timestamp: Date.now(),
     };
@@ -102,7 +109,9 @@ export class GroupTranscripts {
       !written.success ||
       written.data.text !== message.text ||
       written.data.sender.kind !== message.sender.kind ||
-      written.data.sender.agentId !== message.sender.agentId
+      written.data.sender.agentId !== message.sender.agentId ||
+      written.data.replyTo !== message.replyTo ||
+      written.data.reaction !== message.reaction
     )
       throw new AppError(
         409,
@@ -110,6 +119,84 @@ export class GroupTranscripts {
       );
 
     return `${groupId}:${Number(settled.entry)}`;
+  }
+
+  /** Messages after entry number `cursor`, oldest first. */
+  async after(groupId: string, cursor: number): Promise<GroupEntry[]> {
+    const root = await (await this.open(groupId)).root(BACKGROUND_CONTEXT);
+    const found: GroupEntry[] = [];
+    let page = undefined;
+
+    do {
+      page = await root.entries(
+        // SAFETY: entry numbers are Pi entry IDs; the successor of the cursor starts the range.
+        { order: "ascending", minEntryId: (cursor + 1) as EntryId },
+        256,
+        page?.next,
+        BACKGROUND_CONTEXT,
+      );
+
+      for (const item of page.items) {
+        const parsed = groupMessageData.safeParse(item.data);
+
+        if (item.kind === GROUP_MESSAGE_KIND && parsed.success)
+          found.push({
+            ...parsed.data,
+            entry: Number(item.id),
+            entryId: `${groupId}:${Number(item.id)}`,
+          });
+      }
+    } while (page.next);
+
+    return found;
+  }
+
+  /** One message by its entry ID, or undefined when the group has no such message. */
+  async message(groupId: string, entryId: string) {
+    const prefix = `${groupId}:`;
+    const entry = Number(entryId.slice(prefix.length));
+
+    if (
+      !entryId.startsWith(prefix) ||
+      !Number.isSafeInteger(entry) ||
+      entry < 1
+    )
+      return undefined;
+
+    const root = await (await this.open(groupId)).root(BACKGROUND_CONTEXT);
+
+    const page = await root.entries(
+      // SAFETY: a positive safe integer names a Pi entry ID.
+      {
+        order: "ascending",
+        minEntryId: entry as EntryId,
+        maxEntryId: entry as EntryId,
+      },
+      1,
+      undefined,
+      BACKGROUND_CONTEXT,
+    );
+
+    const item = page.items[0];
+    const parsed = groupMessageData.safeParse(item?.data);
+
+    return item?.kind === GROUP_MESSAGE_KIND && parsed.success
+      ? { ...parsed.data, entry, entryId }
+      : undefined;
+  }
+
+  /** The number of the newest entry, or 0 for an empty transcript. */
+  async latest(groupId: string) {
+    const root = await (await this.open(groupId)).root(BACKGROUND_CONTEXT);
+
+    const page = await root.entries(
+      { order: "descending" },
+      1,
+      undefined,
+      BACKGROUND_CONTEXT,
+    );
+
+    return page.items[0] ? Number(page.items[0].id) : 0;
   }
 
   async history(

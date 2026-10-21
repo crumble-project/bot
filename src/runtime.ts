@@ -20,6 +20,13 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CODEMODE_TOOL_NAME } from "@earendil-works/pi-durable/codemode";
 import { codingJobs } from "./coding";
+import {
+  GROUP_EXCLUDED_EXTENSIONS,
+  GROUP_INSTRUCTIONS,
+  GroupAnchor,
+  GroupConversation,
+  groupTurnExtension,
+} from "./group-turns";
 import { AppError, conversationReference, type Agent } from "./domain";
 import { meliousProvider } from "./providers";
 import { prepareAttachments, type AttachmentInput } from "./attachments";
@@ -29,6 +36,7 @@ import {
   readResponse,
   readConversationTranscript,
   readTranscript,
+  readTurnOutcome,
   type MessageOrigin,
   type BotMessageEvent,
   type TranscriptMessage,
@@ -101,6 +109,8 @@ type HarnessRecord = {
   models: Models;
   choices: { agent: Agent };
   memory: ReturnType<typeof defineTool>;
+  memoryExtension: Extension;
+  groupExtension: Extension;
   registry: ReturnType<typeof createRegistry>;
   /** Everything installed in the registry: the offered extensions, then the task extensions. */
   extensions: Extension[];
@@ -349,7 +359,15 @@ export class AgentRuntime {
       });
 
       const registry = createRegistry();
-      registry.install(defineExtension({ name: "memory", tools: [memory] }));
+
+      const memoryExtension = defineExtension({
+        name: "memory",
+        tools: [memory],
+      });
+
+      const groupExtension = groupTurnExtension();
+      registry.install(memoryExtension);
+      registry.install(groupExtension);
 
       const extensions = [
         ...((await this.callbacks.extensions?.(agent)) ?? []),
@@ -394,7 +412,16 @@ export class AgentRuntime {
 
       if (agent.enabled) harness.resume();
 
-      return { harness, models, choices, memory, registry, extensions };
+      return {
+        harness,
+        models,
+        choices,
+        memory,
+        memoryExtension,
+        groupExtension,
+        registry,
+        extensions,
+      };
     } catch (error) {
       await storage.close(BACKGROUND_CONTEXT);
       throw error;
@@ -425,9 +452,29 @@ export class AgentRuntime {
     for (const extension of installed) record.registry.install(extension);
     record.extensions = installed;
 
+    const localId = localConversationId(agent.id, conversationId);
+
+    const group = Boolean(
+      (
+        await record.harness.snapshot(
+          GroupConversation,
+          localId,
+          BACKGROUND_CONTEXT,
+        )
+      )?.groupId,
+    );
+
+    // A group turn can neither delegate nor start coding jobs, and may pass instead of answering.
+    const offered = group
+      ? next.filter(
+          (extension) => !GROUP_EXCLUDED_EXTENSIONS.has(extension.name),
+        )
+      : next;
+
     const tools = [
       ...(agent.tools.includes("memory") ? [record.memory] : []),
-      ...next.flatMap((extension) => extension.tools ?? []),
+      ...offered.flatMap((extension) => extension.tools ?? []),
+      ...(group ? (record.groupExtension.tools ?? []) : []),
     ];
 
     // With code mode the model writes one script that calls the other tools, instead of calling them itself.
@@ -439,7 +486,7 @@ export class AgentRuntime {
     );
 
     const conversation = await record.harness.conversation(
-      localConversationId(agent.id, conversationId),
+      localId,
       BACKGROUND_CONTEXT,
     );
 
@@ -470,11 +517,19 @@ export class AgentRuntime {
       {
         model: { provider: agent.provider, modelId: agent.model },
         thinkingLevel: agent.inference?.thinkingLevel ?? "off",
+        ...(group && {
+          extensions: [
+            record.memoryExtension,
+            ...offered,
+            record.groupExtension,
+          ],
+        }),
         // Stable parts first and the clock last, following Hermes Agent's prompt order.
         instructions: [
           identity(agent.name),
           agent.instructions,
           CONTEXT_GUIDANCE,
+          group ? GROUP_INSTRUCTIONS : "",
           ...skills.map((skill) => `## ${skill.name}\n${skill.instructions}`),
           MEMORY_GUIDANCE,
           `Persistent memory:\n${lines(memory.filter((item) => !item.shared))}`,
@@ -515,6 +570,63 @@ export class AgentRuntime {
     await this.configure(record, agent, reference);
 
     return reference;
+  }
+
+  /** A new working conversation for the bot in one group chat, owned by a background task of its chat. */
+  async openGroupConversation(agent: Agent, groupId: string): Promise<string> {
+    const record = await this.open(agent);
+    const root = await record.harness.root(BACKGROUND_CONTEXT);
+
+    const id = await root.commit(async (tx) => {
+      const anchor = await tx.createTask(GroupAnchor, null, {
+        ownership: { kind: "conversation" },
+        background: true,
+      });
+
+      const child = await tx.createConversation({
+        ownership: { kind: "task", taskId: anchor },
+      });
+
+      (await tx.doc(GroupConversation, child.id)).groupId = groupId;
+
+      return child.id;
+    }, BACKGROUND_CONTEXT);
+
+    const reference = conversationReference(agent.id, Number(id));
+    await this.configure(record, agent, reference);
+
+    return reference;
+  }
+
+  /** What a settled group turn leaves for the group: its final answer, a reaction, or nothing. */
+  async turnOutcome(
+    agent: Agent,
+    conversationId: string,
+    submissionId: string,
+  ) {
+    const { harness } = await this.open(agent);
+
+    const submission = await harness.submission(
+      numericId(submissionId),
+      BACKGROUND_CONTEXT,
+    );
+
+    const status = await submission?.status(BACKGROUND_CONTEXT);
+
+    const conversation = await harness.conversation(
+      localConversationId(agent.id, conversationId),
+      BACKGROUND_CONTEXT,
+    );
+
+    if (
+      !status ||
+      !("entry" in status) ||
+      status.entry === undefined ||
+      !conversation
+    )
+      return { kind: "pass" as const };
+
+    return readTurnOutcome(conversation, Number(status.entry));
   }
 
   async compact(agent: Agent, conversationId: string): Promise<string> {

@@ -426,7 +426,7 @@ export function createAPI(
       ...(await c.req.json()),
     });
 
-    return c.json(groupChats().update(current.id, input), 200);
+    return c.json(await groupChats().update(current.id, input), 200);
   });
   register(routes.deleteGroupChat, async (c) => {
     await groupChats().delete(c.req.param("id"));
@@ -456,9 +456,15 @@ export function createAPI(
         c.req.param("id"),
         input.content,
         input.requestId,
+        { replyTo: input.replyTo },
       ),
       201,
     );
+  });
+  register(routes.stopGroupChat, async (c) => {
+    await groupChats().stop(c.req.param("id"));
+
+    return c.body(null, 204);
   });
   register(routes.groupChatEvents, async (c) => {
     const query = snapshotQuery(c);

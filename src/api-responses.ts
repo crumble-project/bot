@@ -182,8 +182,35 @@ export const groupChatResponse = z
   })
   .openapi("GroupChat");
 
+export const groupActivityResponse = z
+  .object({
+    paused: z.boolean().openapi({
+      description:
+        "Bot-started turns used up the turn budget; the owner's next message resumes the group.",
+    }),
+    botTurns: z.number().openapi({
+      description: "Bot-started turns since the owner's last message.",
+    }),
+    members: z.array(
+      z
+        .object({
+          agentId: z.string(),
+          status: z.enum(["idle", "queued", "running", "disabled"]),
+          error: z.string().nullable().openapi({
+            description: "Why the member's latest turn failed.",
+          }),
+        })
+        .openapi("GroupMemberActivity"),
+    ),
+  })
+  .openapi("GroupActivity");
+
 export const groupChatSnapshotResponse = historyResponse
-  .extend({ groupChat: groupChatResponse, updatedAt: z.number() })
+  .extend({
+    groupChat: groupChatResponse,
+    activity: groupActivityResponse,
+    updatedAt: z.number(),
+  })
   .openapi("GroupChatSnapshot");
 
 export const groupMessageReceiptResponse = z

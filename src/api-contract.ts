@@ -41,6 +41,8 @@ export const messageInput = z
 export const groupMessageInput = z.object({
   content: z.string().trim().min(1).max(32000),
   requestId: z.string().uuid(),
+  /** A message in the same group; replying to a bot's message also wakes that bot. */
+  replyTo: z.string().min(1).max(200).optional(),
 });
 
 export const activityInput = z.object({
@@ -442,6 +444,15 @@ export const routes = {
     request: { params: id, body: body(groupMessageInput) },
     responses: { 201: json(response.groupMessageReceiptResponse) },
   }),
+  stopGroupChat: define({
+    method: "post",
+    path: "/v1/group-chats/{id}/stop",
+    operationId: "stopGroupChat",
+    description:
+      "Ends every running bot turn in the group and drops the queued ones. The group is not paused; the next message starts turns again.",
+    request: { params: id },
+    responses: { 204: empty },
+  }),
   groupChatEvents: define({
     method: "get",
     path: "/v1/group-chats/{id}/events",
@@ -698,7 +709,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "1.1.0",
+      version: "1.2.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },

@@ -160,6 +160,37 @@ export type GroupChat = GroupChatInput & {
   updatedAt: string;
 };
 
+/** Bot-started turns a group allows since the owner's last message before it pauses. */
+export const GROUP_TURN_BUDGET = 8;
+
+/** A member's place in a group: its working conversation and the group messages it has seen. */
+export type GroupMember = {
+  groupId: string;
+  agentId: string;
+  /** The member's task-owned conversation for this group, created on its first turn. */
+  conversationId: string | null;
+  /** Number of the last group entry the member's turns have included. */
+  cursor: number;
+  /** Woken while busy: one more turn starts when the current one settles. */
+  pending: boolean;
+  /** Every wake behind the pending turn came from a bot message. */
+  pendingBotStarted: boolean;
+};
+
+export type GroupTurnStatus = "running" | "posting" | "settled";
+
+/** One member's turn in a group, carried out by an execution in its group conversation. */
+export type GroupTurn = {
+  executionId: string;
+  groupId: string;
+  agentId: string;
+  /** Number of the last group entry the turn's input included. */
+  through: number;
+  botStarted: boolean;
+  status: GroupTurnStatus;
+  createdAt: string;
+};
+
 /** The public ID of one of an agent's conversations; a client passes it back as given. */
 export const conversationReference = (agentId: string, localId: number) =>
   `${agentId}:${localId}`;
