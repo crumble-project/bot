@@ -21,6 +21,7 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CODEMODE_TOOL_NAME } from "@earendil-works/pi-durable/codemode";
 import { codingJobs } from "./coding";
+import { desktopJobs } from "./desktop";
 import {
   GROUP_EXCLUDED_EXTENSIONS,
   GROUP_INSTRUCTIONS,
@@ -963,6 +964,46 @@ export class AgentRuntime {
     );
 
     if (!job) throw new AppError(404, "Coding job not found");
+
+    return this.visible(harness, options, () =>
+      readConversationTranscript(
+        harness,
+        agent.id,
+        job.conversationId,
+        options,
+      ),
+    );
+  }
+
+  /** The desktop jobs the bot started from its chat, oldest first; none for a bot that never ran one. */
+  async desktopJobs(agent: Agent) {
+    const { harness } = await this.open(agent);
+    const root = await harness.root(BACKGROUND_CONTEXT);
+
+    return (await desktopJobs(harness, root.id)).map((job) => ({
+      name: job.name,
+      conversationId: conversationReference(
+        agent.id,
+        Number(job.conversationId),
+      ),
+      status: job.status,
+    }));
+  }
+
+  /** One desktop job's transcript, paged like the chat's. */
+  async desktopJobHistory(
+    agent: Agent,
+    name: string,
+    options: HistoryOptions = {},
+  ) {
+    const { harness } = await this.open(agent);
+    const root = await harness.root(BACKGROUND_CONTEXT);
+
+    const job = (await desktopJobs(harness, root.id)).find(
+      (each) => each.name === name,
+    );
+
+    if (!job) throw new AppError(404, "Desktop job not found");
 
     return this.visible(harness, options, () =>
       readConversationTranscript(

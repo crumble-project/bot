@@ -312,6 +312,18 @@ export class CrumbleService {
     return this.runtime.codingJobHistory(this.agent(agentId), name, options);
   }
 
+  async desktopJobs(agentId: string) {
+    return this.runtime.desktopJobs(this.agent(agentId));
+  }
+
+  async desktopJobHistory(
+    agentId: string,
+    name: string,
+    options: { before?: string; limit?: number },
+  ) {
+    return this.runtime.desktopJobHistory(this.agent(agentId), name, options);
+  }
+
   async sendChat(
     agentId: string,
     content: string,

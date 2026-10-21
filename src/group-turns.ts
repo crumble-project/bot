@@ -15,6 +15,8 @@ export const GROUP_EXCLUDED_EXTENSIONS = new Set([
   "coordination",
   "coding",
   "coding-job",
+  "desktop",
+  "desktop-job",
   "group-lookup",
 ]);
 

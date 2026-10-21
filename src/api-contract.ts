@@ -311,6 +311,20 @@ export const routes = {
     request: { params: id.extend({ name: z.string() }), query: historyInput },
     responses: { 200: json(response.historyResponse) },
   }),
+  desktopJobs: define({
+    method: "get",
+    path: "/v1/agents/{id}/desktop-jobs",
+    operationId: "listDesktopJobs",
+    request: { params: id },
+    responses: { 200: json(response.desktopJobsResponse) },
+  }),
+  desktopJobHistory: define({
+    method: "get",
+    path: "/v1/agents/{id}/desktop-jobs/{name}/history",
+    operationId: "getDesktopJobHistory",
+    request: { params: id.extend({ name: z.string() }), query: historyInput },
+    responses: { 200: json(response.historyResponse) },
+  }),
   sendMessage: define({
     method: "post",
     path: "/v1/agents/{id}/messages",

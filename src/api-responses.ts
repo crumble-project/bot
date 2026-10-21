@@ -19,6 +19,10 @@ export const capabilitiesResponse = z
     coding: z.boolean().openapi({
       description: "Whether bots can be given the coding tool on this server.",
     }),
+    desktop: z.boolean().openapi({
+      description:
+        "Whether bots can be given the desktop tool, and with it a bot desktop, on this server.",
+    }),
   })
   .openapi("Capabilities");
 
@@ -156,6 +160,22 @@ export const codingJobsResponse = z
       .openapi({ description: "Oldest job first." }),
   })
   .openapi("CodingJobs");
+
+export const desktopJobsResponse = z
+  .object({
+    jobs: z
+      .array(
+        z
+          .object({
+            name: z.string(),
+            conversationId: z.string(),
+            status: z.enum(["working", "idle"]),
+          })
+          .openapi("DesktopJob"),
+      )
+      .openapi({ description: "Oldest job first." }),
+  })
+  .openapi("DesktopJobs");
 
 export const chatSnapshotResponse = historyResponse
   .extend({
