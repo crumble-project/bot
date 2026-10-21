@@ -3057,7 +3057,7 @@ In `src/api-contract.ts`, after `codingJobHistory`:
   }),
 ```
 
-and set `version: "1.4.0"`.
+(Task 6 already set `version: "1.4.0"`.)
 
 - [ ] **Step 4: Runtime and service.** In `src/runtime.ts`, import `desktopJobs` from `./desktop` and add after `codingJobHistory`:
 
@@ -3164,7 +3164,7 @@ Add `...desktop(agent).chat` to `extensions` after `...coding(agent).chat`; set 
 
 Pass `desktop: workspaces?.desktop === true` and `restartWorkspace: (agentId) => workspaces?.restart(agentId, BACKGROUND_CONTEXT) ?? Promise.resolve()` to `createAPI`.
 
-Group turns: add the desktop extension's name (`"desktop"`) to `GROUP_EXCLUDED_EXTENSIONS` in `src/runtime.ts`, so group turns cannot start desktop jobs, matching coding (feature 0002, Out of scope).
+Group turns: add `"desktop"` and `"desktop-job"` to `GROUP_EXCLUDED_EXTENSIONS` in `src/group-turns.ts`, so group turns cannot start desktop jobs, matching coding (feature 0002, Out of scope).
 
 - [ ] **Step 7: Regenerate and run.** `bun run openapi:generate && bun run check` — expected: pass; `openapi/openapi.json` gains the two routes, `DesktopJob`, `DesktopJobs`, `desktopModel`, and `desktop` on `Capabilities`.
 
