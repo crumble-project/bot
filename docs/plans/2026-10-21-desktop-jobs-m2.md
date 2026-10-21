@@ -871,7 +871,7 @@ test("the bridge filters the viewer's input and forwards the desktop's output", 
 
 **Files:** modify `test/desktop-vm.test.ts`; reuse the spike's RFB client from `den/takeover.mjs` as a test helper in `test/fixtures/rfb-client.ts` (handshake, `pointer`, `qemuKey`, `clipboardCaps`, `smallUpdate`).
 
-Start a real server (`startServer` from `src/server.ts`, as `test/e2e.test.ts` does) with both images and a bot with the `desktop` tool, then:
+As built: `test/desktop-vm.test.ts` "watching and taking control" starts a real server (`startServer`) with both images, creates a bot with the `desktop` tool over HTTP, and drives the viewer with `test/fixtures/rfb-client.ts` (a minimal RFB client sending noVNC's messages). `startServer` takes no model, so the paused-job check runs `computer_use` against the real guest with a gate that polls `GET …/desktop/control`, rather than a scripted model. Keys are checked through a focused GTK entry (zenity), and the idle check uses a server whose workspaces stop after 1.5 s. Checks:
 
 - [ ] **Watching:** issue a viewer link, load the page (200), connect a WebSocket to its `websockify` path with the RFB client: the handshake completes and a framebuffer update arrives after noVNC's clipboard message.
 - [ ] **Watching blocks input:** with the bot holding control, a pointer event to (300, 300) leaves `xdotool getmouselocation` unchanged.
