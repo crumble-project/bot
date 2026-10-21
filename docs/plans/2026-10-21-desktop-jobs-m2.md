@@ -765,7 +765,7 @@ As built, `openDesktop` takes its hold before booting, so a viewer that connects
 **Interfaces consumed:** `DesktopControl` (Task 1), `rfbFilter` (Task 3), `Workspaces.openDesktop` (Task 4).
 
 **Interfaces produced:**
-- `class ViewerTickets` with `issue(agentId: string): { ticket: string; expiresAt: string }` and `redeem(ticket: string): string | undefined` (the agent ID, once, before expiry). Tickets are 32 random bytes, base64url, valid 60 s, and in memory only.
+- `class ViewerTickets` with `issue(agentId: string): { ticket: string; expiresAt: string }`, `peek(ticket): string | undefined` (valid, not spent: for loading the page), and `redeem(ticket: string): string | undefined` (the agent ID, once, before expiry; spent either way). Tickets are 32 random bytes, base64url, valid 60 s, and in memory only.
 - `viewerPage(ticket: string): string` — HTML loading noVNC from `/desktop-viewer/novnc/core/rfb.js` and connecting to `/desktop-viewer/{ticket}/websockify`; the RFB view scales to the window, has no own controls, and is `viewOnly` false (the server filter decides).
 - `bridgeDesktop(options: { stream: DesktopStream; allowInput: () => boolean; send: (data: Uint8Array) => void; close: () => void })` returning `{ receive(data: Uint8Array): void; close(): Promise<void> }`.
 
@@ -827,7 +827,7 @@ test("the bridge filters the viewer's input and forwards the desktop's output", 
 
 - [ ] **Step 3: Implement `src/desktop-viewer.ts`.** Tickets: a `Map<string, { agentId: string; expires: number }>` and an injectable clock. Page: a static HTML string; the spike's `den/viewer.html` without its buttons, with `rfb.scaleViewport = true` and `rfb.background = "#000"`. Bridge: a `rfbFilter(allowInput)` on `receive`, writes chained in order (as the relay does), a loop forwarding `stream.output` to `send`, and `close` on any `RfbProtocolError` or when the output ends.
 
-- [ ] **Step 4: Add noVNC.** `bun add @novnc/novnc@1.7.0`. In `THIRD_PARTY_NOTICES.md` (create it if missing, following the desktop repository's format: a heading, a paragraph naming the project, license, and copyright, then the license text), add a `## noVNC` section: served unmodified to the viewer from `node_modules/@novnc/novnc`, MPL-2.0, Copyright (C) the noVNC authors, source at https://github.com/novnc/noVNC.
+- [ ] **Step 4: Add noVNC.** `bun add @novnc/novnc@1.7.0`. As built, `THIRD_PARTY_NOTICES.md` is new in bot, in the desktop repository's format, with `## noVNC` (MPL-2.0, full text from the package's `docs/LICENSE.MPL-2.0`) and `## pako` (MIT), since the noVNC core imports its bundled `vendor/pako`. Only `core/` and `vendor/` are served (Task 6).
 
 - [ ] **Step 5: Run.** `bun test test/desktop-viewer.test.ts && bun run check` — expected: pass.
 
