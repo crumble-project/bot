@@ -11,7 +11,7 @@
 ## Global constraints
 
 - [Feature 0001](https://github.com/crumble-project/spec/blob/main/features/0001-group-chats.md) is the source of behavior. Terms follow `spec/GLOSSARY.md`.
-- Contract 1.1.0 is not released yet; this milestone extends it. `bun run check` regenerates nothing: run `bun run openapi:generate` and commit `openapi/openapi.json`.
+- Merging a contract change into main publishes it: `contract-v1.1.0` went out with milestone 1, so this milestone is contract 1.2.0. `bun run check` regenerates nothing: run `bun run openapi:generate` and commit `openapi/openapi.json`.
 - No delegation and no coding jobs from a group turn.
 - Group turns never send bot chat notifications or chat previews. Group notifications are milestone 3.
 - Tests fake only the model provider, as the existing service tests do.
@@ -41,7 +41,7 @@ These fill gaps the specification leaves to the implementation.
 | `src/group-chats.ts` | Routing, queue, budget, stop, posting turn outcomes, restart reconciliation |
 | `src/transcript.ts` | Group message `replyTo`, group reactions |
 | `src/group-transcripts.ts` | Post reactions; read entries after a cursor |
-| `src/api-contract.ts`, `src/api-responses.ts`, `src/api.ts` | `replyTo` on group messages, `POST /v1/group-chats/{id}/stop`, activity in group snapshots |
+| `src/api-contract.ts`, `src/api-responses.ts`, `src/api.ts` | Contract 1.2.0: `replyTo` on group messages, `POST /v1/group-chats/{id}/stop`, activity in group snapshots |
 | `openapi/openapi.json`, `CHANGELOG.md`, `docs/architecture.md` | Contract and docs |
 
 ## Tasks
@@ -169,7 +169,7 @@ A turn's request ID is derived from the cursor, so a retry after a crash reuses 
 - New `stopGroupChat`: `POST /v1/group-chats/{id}/stop`, answering `204`.
 - `GroupChatSnapshot` gains `activity`, the shape of `GroupChats.activity`. Group messages may carry `replyTo` and `replyPreview`. Reactions appear as `toolResult` messages with `toolName: "react"`, `toolDetails: { emoji }`, `replyTo`, and the reacting bot as `origin`.
 - The SSE stream sends a snapshot whenever turns start or settle.
-- CHANGELOG: extend the `## Contract 1.1.0` section and the Unreleased entry.
+- CHANGELOG: add a `## Contract 1.2.0` section and extend the Unreleased entry.
 
 **Tests:** stop answers 204 and 404 for an unknown group; snapshots validate against `GroupChatSnapshot`, including activity and a reaction; a `replyTo` outside the group is a 400.
 
@@ -180,4 +180,4 @@ A turn's request ID is derived from the cursor, so a retry after a crash reuses 
 ## Later milestones
 
 3. **Members, memory, and notifications.** As planned in milestone 1, plus attachments on group messages, which no milestone covered yet.
-4. **Contract release.** Unchanged.
+4. **Group snapshot event schema.** Merging to main already publishes each contract version, so this milestone only teaches the release tooling to accept added event schemas and exports a group snapshot event schema.

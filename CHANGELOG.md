@@ -27,11 +27,14 @@
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
 
+## Contract 1.2.0
+
+- Accept an optional `replyTo` on group messages, and add `POST /v1/group-chats/{id}/stop`.
+- Add `GroupActivity` to `GroupChatSnapshot`: whether the group is paused, the bot-started turn count, and each member's status and latest turn error. Group messages carry `replyTo` and `replyPreview`, and a bot's reaction is a `toolResult` message with `toolName` `react` and the emoji in `toolDetails`.
+
 ## Contract 1.1.0
 
 - Add group chat endpoints under `/v1/group-chats`: list, create, read, update, and delete groups; read a `GroupChatSnapshot` and paged history; post owner messages, which return a `GroupMessageReceipt`; and stream `GroupChatSnapshot` events.
-- Accept an optional `replyTo` on group messages, and add `POST /v1/group-chats/{id}/stop`.
-- Add `GroupActivity` to `GroupChatSnapshot`: whether the group is paused, the bot-started turn count, and each member's status and latest turn error. Group messages carry `replyTo` and `replyPreview`, and a bot's reaction is a `toolResult` message with `toolName` `react` and the emoji in `toolDetails`.
 
 ## Contract 1.0.0
 
