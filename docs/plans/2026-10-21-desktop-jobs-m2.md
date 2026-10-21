@@ -54,62 +54,101 @@
 - [ ] **Step 1: Write the failing tests.** `test/desktop-control.test.ts`:
 
 ```ts
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { DesktopControl } from "../src/desktop-control";
+import { agentInput } from "../src/domain";
 import { Store } from "../src/store";
 
-const open = () => {
+const dirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of dirs.splice(0))
+    rmSync(dir, { recursive: true, force: true });
+});
+
+function open() {
   const dir = mkdtempSync(join(tmpdir(), "bot-control-"));
 
-  return { dir, store: new Store(dir), done: () => rmSync(dir, { recursive: true, force: true }) };
-};
+  dirs.push(dir);
+
+  const store = new Store(dir);
+  const agent = store.createAgent(agentInput.parse({ name: "Desk" }));
+
+  return { dir, store, agentId: agent.id };
+}
 
 test("the bot holds control until the owner takes it, and every change counts", () => {
-  const { store, done } = open();
+  const { store, agentId } = open();
   const control = new DesktopControl(store);
 
-  expect(control.get("a")).toMatchObject({ holder: "bot", changes: 0 });
-  expect(control.set("a", "owner")).toMatchObject({ holder: "owner", changes: 1 });
+  expect(control.get(agentId)).toMatchObject({ holder: "bot", changes: 0 });
+  expect(control.set(agentId, "owner")).toMatchObject({
+    holder: "owner",
+    changes: 1,
+  });
+
   // Setting the current holder again changes nothing.
-  expect(control.set("a", "owner")).toMatchObject({ holder: "owner", changes: 1 });
-  expect(control.set("a", "bot")).toMatchObject({ holder: "bot", changes: 2 });
+  expect(control.set(agentId, "owner")).toMatchObject({
+    holder: "owner",
+    changes: 1,
+  });
+  expect(control.set(agentId, "bot")).toMatchObject({
+    holder: "bot",
+    changes: 2,
+  });
   store.close();
-  done();
 });
 
 test("the lease survives a restart", () => {
-  const { dir, store, done } = open();
-  new DesktopControl(store).set("a", "owner");
+  const { dir, store, agentId } = open();
+
+  new DesktopControl(store).set(agentId, "owner");
   store.close();
 
   const reopened = new Store(dir);
-  expect(new DesktopControl(reopened).get("a")).toMatchObject({ holder: "owner", changes: 1 });
+
+  expect(new DesktopControl(reopened).get(agentId)).toMatchObject({
+    holder: "owner",
+    changes: 1,
+  });
   reopened.close();
-  done();
 });
 
 test("waiting for the bot's turn resolves on hand-back, and listeners hear each change", async () => {
-  const { store, done } = open();
+  const { store, agentId } = open();
   const control = new DesktopControl(store);
   const heard: string[] = [];
-  const stop = control.subscribe("a", (state) => heard.push(state.holder));
+  const stop = control.subscribe(agentId, (state) => heard.push(state.holder));
 
-  control.set("a", "owner");
+  control.set(agentId, "owner");
+
   let resolved = false;
-  const waiting = control.untilBot("a", BACKGROUND_CONTEXT).then(() => (resolved = true));
+
+  const waiting = control
+    .untilBot(agentId, BACKGROUND_CONTEXT)
+    .then(() => (resolved = true));
 
   await Bun.sleep(50);
   expect(resolved).toBe(false);
-  control.set("a", "bot");
+
+  control.set(agentId, "bot");
   await waiting;
   expect(heard).toEqual(["owner", "bot"]);
   stop();
   store.close();
-  done();
+});
+
+test("deleting a bot deletes its lease", () => {
+  const { store, agentId } = open();
+
+  new DesktopControl(store).set(agentId, "owner");
+  store.deleteAgent(agentId);
+  expect(store.getDesktopControl(agentId)).toBeNull();
+  store.close();
 });
 ```
 
@@ -228,7 +267,7 @@ export class DesktopControl {
 }
 ```
 
-- [ ] **Step 5: Store test.** Append to `test/store.test.ts`: `getDesktopControl` returns `null` for an unknown bot, and `setDesktopControl` then `getDesktopControl` round-trips across reopen.
+- [ ] **Step 5: Store coverage.** As built, `test/desktop-control.test.ts` covers the store: the lease round-trips across reopen, and deleting a bot deletes its lease (the table cascades like the other per-agent tables).
 
 - [ ] **Step 6: Run.** `bun test test/desktop-control.test.ts test/store.test.ts && bun run typecheck` — expected: pass.
 
