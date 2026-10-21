@@ -20,7 +20,7 @@
 - A removed schema needs a major version.
 - A bundle verifies against the schemas it carries.
 
-### Task 2: Export the group snapshot schema as contract 1.5.0
+### Task 2: Export the group snapshot schema
 
 **Files:** `src/openapi.ts`, `src/api-contract.ts`, `openapi/`, `CHANGELOG.md`, `docs/architecture.md`, `docs/adr/0002-group-chats.md`.
 

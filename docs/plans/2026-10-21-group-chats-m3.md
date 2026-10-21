@@ -11,7 +11,7 @@
 ## Global constraints
 
 - [Feature 0001](https://github.com/crumble-project/spec/blob/main/features/0001-group-chats.md) is the source of behavior. Terms follow `spec/GLOSSARY.md`.
-- Merging a contract change into main publishes it, so this milestone is contract 1.3.0 with its own CHANGELOG section. Run `bun run openapi:generate` and commit `openapi/openapi.json` and the event schemas.
+- Merging a contract change into main publishes it, so milestones 3 to 5 release together as contract 1.3.0: they are built locally and merged at once. Run `bun run openapi:generate` and commit `openapi/openapi.json` and the event schemas.
 - Changes to `openapi/activity-event.schema.json` must stay compatible: add optional fields only.
 - Tests fake only the model provider and push transports, as the existing tests do.
 

@@ -11,7 +11,7 @@
 ## Global constraints
 
 - [Feature 0001](https://github.com/crumble-project/spec/blob/main/features/0001-group-chats.md) is the source of behavior. Terms follow `spec/GLOSSARY.md`.
-- Contract 1.4.0, with its own CHANGELOG section.
+- Part of contract 1.3.0, which milestones 3 to 5 release together.
 - Memories saved before this milestone have no source; the API reports `null`, never a guess.
 
 ## Behavior decisions
@@ -63,10 +63,10 @@ export function groupLookupExtension(agent: Pick<Agent, "id">, groups: GroupChat
 - A group the bot is not in reads as not found.
 - The tool is offered in the bot chat and not in a group turn.
 
-### Task 4: API, contract 1.4.0, and docs
+### Task 4: API, contract, and docs
 
 - `Memory` gains `source`, a nullable `MemorySource` union. Owner-created memories through `POST /v1/agents/{id}/memories` and `POST /v1/memories` record `{ kind: "owner" }`.
-- CHANGELOG `## Contract 1.4.0` and an Unreleased entry; `docs/architecture.md`.
+- The `## Contract 1.3.0` CHANGELOG section and an Unreleased entry; `docs/architecture.md`.
 
 **Tests:** memory responses validate with each source kind, including `null`.
 
