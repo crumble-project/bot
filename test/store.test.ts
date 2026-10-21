@@ -462,3 +462,26 @@ describe("Store group chats", () => {
     second.close();
   });
 });
+
+test("an agent keeps its desktop job model across reopen", () => {
+  const dir = make();
+  const first = new Store(dir);
+
+  const agent = first.createAgent({
+    ...input,
+    desktopModel: { provider: "opencode-go", model: "gpt-6-luna" },
+  });
+
+  first.close();
+
+  const second = new Store(dir);
+
+  expect(second.getAgent(agent.id)?.desktopModel).toEqual({
+    provider: "opencode-go",
+    model: "gpt-6-luna",
+  });
+  expect(
+    second.updateAgent(agent.id, { desktopModel: undefined })?.desktopModel,
+  ).toBeUndefined();
+  second.close();
+});

@@ -42,6 +42,18 @@ export const agentInput = z.object({
       maxOutputTokens: z.number().int().min(1).max(1000000).optional(),
     })
     .optional(),
+  /** The model for this bot's desktop jobs; unset, they use the bot's own model. */
+  desktopModel: z
+    .object({
+      provider: z
+        .string()
+        .trim()
+        .min(1)
+        .max(80)
+        .regex(/^[a-z0-9-]+$/),
+      model: z.string().trim().min(1).max(200),
+    })
+    .optional(),
 });
 
 export type AgentInput = z.infer<typeof agentInput>;

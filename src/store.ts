@@ -158,6 +158,9 @@ export class Store {
         "ALTER TABLE agents ADD COLUMN shared_skills TEXT NOT NULL DEFAULT '[]'",
       );
 
+    if (!agentCols.some((c) => c.name === "desktop_model"))
+      this.db.exec("ALTER TABLE agents ADD COLUMN desktop_model TEXT");
+
     if (!agentCols.some((c) => c.name === "shared_memory"))
       this.db.exec(
         "ALTER TABLE agents ADD COLUMN shared_memory INTEGER NOT NULL DEFAULT 0",
@@ -295,6 +298,7 @@ export class Store {
       mcpServers: JSON.parse(r.mcp_servers),
       delegates: JSON.parse(r.delegates ?? "[]"),
       inference: JSON.parse(r.inference ?? "{}"),
+      ...(r.desktop_model && { desktopModel: JSON.parse(r.desktop_model) }),
       createdAt: r.created_at,
       updatedAt: r.updated_at,
     };
@@ -314,7 +318,7 @@ export class Store {
     const t = now();
     this.db
       .query(
-        "INSERT INTO agents (id,name,avatar,description,instructions,provider,model,enabled,tools,skills,shared_skills,shared_memory,mcp_servers,delegates,inference,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO agents (id,name,avatar,description,instructions,provider,model,enabled,tools,skills,shared_skills,shared_memory,mcp_servers,delegates,inference,desktop_model,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       )
       .run(
         agentId,
@@ -332,6 +336,7 @@ export class Store {
         this.j(input.mcpServers),
         this.j(input.delegates ?? []),
         this.j(input.inference ?? {}),
+        input.desktopModel ? this.j(input.desktopModel) : null,
         t,
         t,
       );
@@ -346,7 +351,7 @@ export class Store {
     const t = now();
     this.db
       .query(
-        "UPDATE agents SET name=?,avatar=?,description=?,instructions=?,provider=?,model=?,enabled=?,tools=?,skills=?,shared_skills=?,shared_memory=?,mcp_servers=?,delegates=?,inference=?,updated_at=? WHERE id=?",
+        "UPDATE agents SET name=?,avatar=?,description=?,instructions=?,provider=?,model=?,enabled=?,tools=?,skills=?,shared_skills=?,shared_memory=?,mcp_servers=?,delegates=?,inference=?,desktop_model=?,updated_at=? WHERE id=?",
       )
       .run(
         x.name,
@@ -363,6 +368,7 @@ export class Store {
         this.j(x.mcpServers),
         this.j(x.delegates ?? []),
         this.j(x.inference ?? {}),
+        x.desktopModel ? this.j(x.desktopModel) : null,
         t,
         agentId,
       );

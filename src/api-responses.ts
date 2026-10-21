@@ -50,6 +50,13 @@ export const agentResponse = z
     mcpServers: strings,
     delegates: strings,
     inference: inference.optional(),
+    desktopModel: z
+      .object({ provider: z.string(), model: z.string() })
+      .optional()
+      .openapi({
+        description:
+          "The model for this bot's desktop jobs; unset, they use the bot's own model.",
+      }),
     createdAt: z.string(),
     updatedAt: z.string(),
   })

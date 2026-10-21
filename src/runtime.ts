@@ -471,6 +471,12 @@ export class AgentRuntime {
     // Dynamic catalogs (Melious) list models only after a refresh with the saved key.
     if (!record.models.getModel(agent.provider, agent.model))
       await record.models.refresh({ providers: [agent.provider] });
+
+    // The desktop job model may come from another provider with a dynamic catalog.
+    const desktop = agent.desktopModel;
+
+    if (desktop && !record.models.getModel(desktop.provider, desktop.model))
+      await record.models.refresh({ providers: [desktop.provider] });
     const next = (await this.callbacks.extensions?.(agent)) ?? [];
 
     const installed = [

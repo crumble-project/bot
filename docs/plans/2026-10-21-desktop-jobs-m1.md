@@ -2572,7 +2572,8 @@ cua-driver's replies are parsed once with a Zod schema (`driverReply`); each fie
 
 **Interfaces produced:**
 - `DESKTOP_TOOL_NAME = "desktop"`
-- `desktopJobOf(message): string | undefined`, `desktopJobs(harness, chatId): Promise<JobInfo[]>`, `desktopEnv(workspaces, agentId, target, context)`, `desktopExtensions(agent: Pick<Agent, "id" | "desktopModel" | "inference">, workspaces: Workspaces): JobExtensions`
+- As built: `desktopExtensions(agent)` takes no workspaces, since `computer_use` uses the job's `api.env`; `desktopModel` is also added to `agentResponse`, with contract 1.4.0 and a regenerated `openapi/openapi.json` in this task, because `bun run check` fails on contract drift otherwise.
+- `desktopJobOf(message): string | undefined`, `desktopJobs(harness, chatId): Promise<JobInfo[]>`, `desktopEnv(workspaces, agentId, target, context)`, `desktopExtensions(agent: Pick<Agent, "id" | "desktopModel">): JobExtensions`
 - `agentInput.desktopModel?: { provider: string; model: string }`
 
 - [ ] **Step 1: Write the failing store test.** Append to `test/store.test.ts`:
@@ -2620,28 +2621,244 @@ Add `desktop_model` to the `INSERT` column list and values (`input.desktopModel 
 
 - [ ] **Step 4: Run.** `bun test test/store.test.ts` — expected: pass.
 
-- [ ] **Step 5: Write the failing desktop job test.** Create `test/desktop.test.ts`. Copy the setup of `test/coding.test.ts` (runtime, store, `script()`, the helper that sends a chat message and waits for the job report) and change it as follows:
-
-  - The bot calls `desktop` with `{ action: "start", name: "form", message: "Fill the form" }`.
-  - The job is told apart by `computer_use` among its offered tools. It calls `computer_use` with `{ action: "capture" }`, then `{ action: "set_value", element: 2, value: "Ada" }`, then answers "Filled in Ada".
-  - Workspaces are a fake whose `env()` returns the scripted guest from `test/computer-use.test.ts` (move `scriptedGuest` into `test/fixtures/scripted-guest.ts` and import it in both files), with `desktop = true`.
-
-Assertions:
+- [ ] **Step 5: Write the desktop job tests.** Create `test/desktop.test.ts`. A fake workspace serves the scripted guest from Task 5 as the job's environment; one faux model plays bot and job, told apart by the offered tools:
 
 ```ts
-  // The job offered exactly the computer_use tool: no shell, memory, delegation, or jobs.
-  expect(offered.get("job")).toEqual(["computer_use"]);
-  // The bot chat never gets computer_use or a shell.
-  expect(offered.get("bot")).not.toContain("computer_use");
-  expect(offered.get("bot")).not.toContain("bash");
-  // The report reached the chat with the desktop origin and a "Desktop job" preview.
-  expect(report.origin).toEqual({ kind: "desktop", name: "form" });
-  expect(latestMessagePreview([cardMessage])).toBe("Desktop job form");
-  // The scripted guest saw the set_value call on the captured snapshot.
-  expect(calls.find((c) => c.tool === "set_value")!.args).toMatchObject({ element_token: "s1:2", value: "Ada" });
-```
+import { afterEach, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import type { Context } from "@earendil-works/chord";
+import { createModels, type Message } from "@earendil-works/pi-ai";
+import {
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxText,
+  fauxToolCall,
+  type FauxResponseFactory,
+} from "@earendil-works/pi-ai/providers/faux";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
+import { desktopEnv, desktopExtensions } from "../src/desktop";
+import type { Agent } from "../src/domain";
+import { AgentRuntime } from "../src/runtime";
+import { Store } from "../src/store";
+import { latestMessagePreview } from "../src/transcript";
+import type { Workspaces } from "../src/workspace";
+import { scriptedGuest, type GuestCall } from "./fixtures/scripted-guest";
 
-A second test sets `desktopModel` to a second faux model (`fauxProvider({ provider: "faux-desktop" })`) and asserts that the job's requests went to that model and the bot's to its own.
+const cleanups: (() => void | Promise<void>)[] = [];
+
+afterEach(async () => {
+  while (cleanups.length) await cleanups.pop()!();
+});
+
+/** The workspace is a scripted bot desktop: cua-driver answers from replies, nothing runs. */
+class GuestWorkspaces implements Workspaces {
+  readonly desktop = true;
+  readonly calls: GuestCall[];
+  private readonly guest: ReturnType<typeof scriptedGuest>;
+
+  constructor(readonly dir: string) {
+    this.guest = scriptedGuest({
+      list_windows: [
+        {
+          windows: [
+            {
+              pid: 7,
+              window_id: 101,
+              app_name: "Chromium",
+              title: "Form - Chromium",
+            },
+          ],
+        },
+      ],
+      get_window_state: [
+        { snapshot_id: "s1", tree_markdown: '- [2] entry "Name"' },
+      ],
+      set_value: [{ effect: "confirmed", summary: "Set value of [2]" }],
+    });
+    this.calls = this.guest.calls;
+  }
+
+  env(_agentId: string) {
+    return Object.assign(new NodeExecutionEnv({ cwd: this.dir }), {
+      exec: this.guest.shell.exec,
+      writeFile: this.guest.shell.writeFile,
+      readBinaryFile: this.guest.shell.readBinaryFile,
+    });
+  }
+
+  async sync(_agentId: string, _context: Context) {}
+
+  async restart(_agentId: string, _context: Context) {}
+
+  async close(_context: Context) {}
+}
+
+const textOf = (message: Message) =>
+  (Array.isArray(message.content)
+    ? message.content
+    : [{ type: "text" as const, text: message.content }]
+  )
+    .flatMap((block) => (block.type === "text" ? [block.text] : []))
+    .join("");
+
+type Role = "bot" | "job";
+
+/** One scripted model plays the bot and its desktop job; the tools it was offered tell them apart. */
+function script(
+  offered: Map<Role, string[]>,
+  models: Map<Role, string>,
+): FauxResponseFactory {
+  return async (context, _options, _state, model) => {
+    const tools = context.messages.flatMap((message) =>
+      message.role === "system"
+        ? (message.toolsAdded ?? []).map((tool) => tool.name)
+        : [],
+    );
+
+    const role: Role = tools.includes("computer_use") ? "job" : "bot";
+
+    offered.set(role, tools);
+    models.set(role, model.id);
+
+    const last = context.messages.findLast(
+      (message) => message.role !== "system",
+    )!;
+
+    const call = (name: string, args: Record<string, string | number>) =>
+      fauxAssistantMessage(fauxToolCall(name, args), {
+        stopReason: "toolUse",
+      });
+
+    if (role === "job") {
+      if (last.role === "user")
+        return call("computer_use", { action: "capture" });
+
+      if (last.role === "toolResult" && textOf(last).includes("window 101"))
+        return call("computer_use", {
+          action: "set_value",
+          element: 2,
+          value: "Ada",
+        });
+
+      return fauxAssistantMessage([fauxText("Filled in Ada.")]);
+    }
+
+    if (textOf(last).startsWith("[desktop job"))
+      return fauxAssistantMessage([fauxText("The form is filled.")]);
+
+    return call("desktop", {
+      action: "start",
+      name: "form",
+      message: "Fill the form with Ada.",
+    });
+  };
+}
+
+async function open(desktopModel?: Agent["desktopModel"]) {
+  const dir = mkdtempSync(join(tmpdir(), "bot-desktop-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const store = new Store(dir);
+  cleanups.push(() => store.close());
+
+  const agent = store.createAgent({
+    name: "Desk",
+    avatar: "bot",
+    description: "",
+    instructions: "",
+    provider: "faux",
+    model: "chat",
+    enabled: true,
+    tools: ["desktop"],
+    skills: [],
+    mcpServers: [],
+    delegates: [],
+    ...(desktopModel && { desktopModel }),
+  });
+
+  const offered = new Map<Role, string[]>();
+  const used = new Map<Role, string>();
+
+  const faux = fauxProvider({
+    provider: "faux",
+    models: [{ id: "chat" }, { id: "desk" }],
+  });
+
+  faux.setResponses(Array.from({ length: 40 }, () => script(offered, used)));
+  const models = createModels();
+  models.setProvider(faux.provider);
+
+  const workspaces = new GuestWorkspaces(dir);
+  const extensions = desktopExtensions(agent);
+
+  const runtime = new AgentRuntime(dir, {
+    models,
+    extensions: () => extensions.chat,
+    taskExtensions: () => extensions.job,
+    env: (agentId, target, context) =>
+      desktopEnv(workspaces, agentId, target, context),
+  });
+
+  cleanups.push(() => runtime.close());
+
+  const chat = await runtime.openChat(agent);
+
+  await runtime.submit(agent, chat, "Fill in the form", "req-1");
+
+  await until(async () =>
+    (await runtime.snapshot(agent, chat)).messages.some(
+      (message) => message.content === "The form is filled.",
+    ),
+  );
+
+  return { runtime, agent, chat, offered, used, calls: workspaces.calls };
+}
+
+async function until(check: () => Promise<boolean>) {
+  for (let i = 0; i < 500 && !(await check()); i++)
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+  expect(await check()).toBe(true);
+}
+
+test("a desktop job operates the bot desktop and reports to the bot's chat", async () => {
+  const { runtime, agent, chat, offered, calls } = await open();
+  const messages = (await runtime.snapshot(agent, chat)).messages;
+
+  // The job has exactly computer_use: no shell, memory, delegation, or jobs. The chat never gets computer_use.
+  expect(offered.get("job")).toEqual(["computer_use"]);
+  expect(offered.get("bot")).toEqual(["desktop"]);
+
+  const report = messages.find((message) => message.origin?.kind === "desktop");
+
+  expect(report?.content).toBe("Filled in Ada.");
+  expect(report?.origin?.name).toBe("form");
+
+  const card = messages.find((message) => message.toolName === "desktop")!;
+
+  expect(latestMessagePreview([card])).toBe("Desktop job form");
+
+  // The job's set_value went to the element of the snapshot it captured.
+  expect(calls.find((each) => each.tool === "set_value")?.args).toMatchObject({
+    element_token: "s1:2",
+    value: "Ada",
+  });
+});
+
+test("desktop jobs run on the bot's desktop model", async () => {
+  const { used } = await open({ provider: "faux", model: "desk" });
+
+  expect(used.get("bot")).toBe("chat");
+  expect(used.get("job")).toBe("desk");
+});
+
+test("without a desktop model, desktop jobs use the bot's model", async () => {
+  const { used } = await open();
+
+  expect(used.get("job")).toBe("chat");
+});
+```
 
 - [ ] **Step 6: Run.** `bun test test/desktop.test.ts` — expected: FAIL, cannot resolve `../src/desktop`.
 
@@ -2649,7 +2866,12 @@ A second test sets `desktopModel` to a second faux model (`fauxProvider({ provid
 
 ```ts
 import type { Context } from "@earendil-works/chord";
-import { defineExtension, type ConversationId, type EnvTarget, type Harness } from "@earendil-works/pi-durable";
+import {
+  defineExtension,
+  type ConversationId,
+  type EnvTarget,
+  type Harness,
+} from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { computerUseTool } from "./computer-use";
 import type { Agent } from "./domain";
@@ -2679,21 +2901,23 @@ const desktop = defineJobKind({
   ].join(" "),
 });
 
+/** The job a successful `desktop` result shows as a card; a listing or a failed call shows none. */
 export const desktopJobOf = desktop.jobOf;
 
-export const desktopJobs = (harness: Harness, chatId: ConversationId) => desktop.list(harness, chatId);
+export const desktopJobs = (harness: Harness, chatId: ConversationId) =>
+  desktop.list(harness, chatId);
 
 export const desktopEnv = (
   workspaces: Workspaces,
   agentId: string,
   target: EnvTarget,
   context: Context,
-): Promise<ExecutionEnv | undefined> => desktop.env(workspaces, agentId, target, context);
+): Promise<ExecutionEnv | undefined> =>
+  desktop.env(workspaces, agentId, target, context);
 
 /** Lets a bot run desktop jobs: child conversations with the computer_use tool on its bot desktop. */
 export function desktopExtensions(
-  agent: Pick<Agent, "id" | "desktopModel" | "inference">,
-  workspaces: Workspaces,
+  agent: Pick<Agent, "id" | "desktopModel">,
 ): JobExtensions {
   const job = defineExtension({
     name: "desktop-job",
@@ -2704,7 +2928,10 @@ export function desktopExtensions(
     agentId: agent.id,
     job,
     ...(agent.desktopModel && {
-      model: { provider: agent.desktopModel.provider, modelId: agent.desktopModel.model },
+      model: {
+        provider: agent.desktopModel.provider,
+        modelId: agent.desktopModel.model,
+      },
     }),
   });
 }

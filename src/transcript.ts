@@ -13,6 +13,7 @@ import type {
 
 import { attachmentInput, type AttachmentInfo } from "./attachments";
 import { codingJobOf } from "./coding";
+import { desktopJobOf } from "./desktop";
 import { REACTION_TOOL_NAME, reactionOf } from "./reaction";
 import { PASS_TOOL_NAME } from "./group-turns";
 
@@ -152,6 +153,9 @@ export function latestMessagePreview(messages: TranscriptMessage[]): string {
     const job = codingJobOf(message);
 
     if (job) return `Coding job ${job}`;
+    const desktopJob = desktopJobOf(message);
+
+    if (desktopJob) return `Desktop job ${desktopJob}`;
 
     if (message.role !== "user" && message.role !== "assistant") continue;
     const text = message.content.trim();
