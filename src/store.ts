@@ -24,7 +24,9 @@ import type {
   GroupMember,
   GroupTurn,
   GroupTurnStatus,
+  MemorySource,
 } from "./domain";
+import { memorySource } from "./domain";
 import type { AttachmentInput } from "./attachments";
 
 type Id = string;
@@ -120,7 +122,7 @@ export class Store {
     this.db
       .exec(`CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, avatar TEXT NOT NULL, description TEXT NOT NULL, instructions TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, enabled INTEGER NOT NULL, tools TEXT NOT NULL, skills TEXT NOT NULL, mcp_servers TEXT NOT NULL, delegates TEXT NOT NULL DEFAULT '[]', inference TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, title TEXT NOT NULL, archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE, content TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE, content TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, source TEXT);
       CREATE TABLE IF NOT EXISTS skills (id TEXT PRIMARY KEY, name TEXT NOT NULL, instructions TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS schedules (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, name TEXT NOT NULL, prompt TEXT NOT NULL, cron TEXT, timezone TEXT NOT NULL, run_at TEXT, enabled INTEGER NOT NULL, next_run_at TEXT, created_at TEXT NOT NULL, created_by_agent_id TEXT);
       CREATE TABLE IF NOT EXISTS executions (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, schedule_id TEXT REFERENCES schedules(id) ON DELETE SET NULL, submission_id TEXT, request_id TEXT NOT NULL, prompt TEXT, reply_to TEXT, status TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -173,6 +175,9 @@ export class Store {
           DROP TABLE memories;
           ALTER TABLE memories_next RENAME TO memories;`);
       })();
+
+    if (!memoryCols.some((c) => c.name === "source"))
+      this.db.exec("ALTER TABLE memories ADD COLUMN source TEXT");
 
     // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
     const serverCols = this.db
@@ -468,6 +473,9 @@ export class Store {
       id: r.id,
       agentId: r.agent_id,
       content: r.content,
+      source: r.source
+        ? (memorySource.safeParse(JSON.parse(r.source)).data ?? null)
+        : null,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
     };
@@ -492,13 +500,26 @@ export class Store {
     return r ? this.memory(r) : null;
   }
   createMemory(
-    input: { agentId: string | null; content: string },
+    input: {
+      agentId: string | null;
+      content: string;
+      source?: MemorySource | null;
+    },
     memoryId: string = id(),
   ) {
     const t = now();
     this.db
-      .query("INSERT INTO memories VALUES (?,?,?,?,?)")
-      .run(memoryId, input.agentId, input.content, t, t);
+      .query(
+        "INSERT INTO memories (id,agent_id,content,created_at,updated_at,source) VALUES (?,?,?,?,?,?)",
+      )
+      .run(
+        memoryId,
+        input.agentId,
+        input.content,
+        t,
+        t,
+        input.source ? JSON.stringify(input.source) : null,
+      );
 
     return this.getMemory(memoryId)!;
   }

@@ -238,6 +238,47 @@ describe("Store", () => {
   });
 });
 
+describe("Store memory sources", () => {
+  test("keeps a memory's source and reports older memories without one", () => {
+    const dir = make();
+    const first = new Store(dir);
+    const agent = first.createAgent(input);
+    const older = first.createMemory({ agentId: agent.id, content: "older" });
+
+    const sourced = first.createMemory({
+      agentId: agent.id,
+      content: "Leaves Friday",
+      source: { kind: "group", groupId: "group-1", name: "Trip" },
+    });
+
+    first.close();
+
+    const db = new Database(join(dir, "store.sqlite"));
+    db.exec("ALTER TABLE memories DROP COLUMN source");
+    db.close();
+
+    const upgraded = new Store(dir);
+    expect(upgraded.getMemory(sourced.id)?.source).toBeNull();
+
+    const again = upgraded.createMemory({
+      agentId: agent.id,
+      content: "Leaves Friday",
+      source: { kind: "task", scheduleId: "schedule-1", name: "Morning" },
+    });
+
+    upgraded.close();
+
+    const reopened = new Store(dir);
+    expect(reopened.getMemory(older.id)?.source).toBeNull();
+    expect(reopened.getMemory(again.id)?.source).toEqual({
+      kind: "task",
+      scheduleId: "schedule-1",
+      name: "Morning",
+    });
+    reopened.close();
+  });
+});
+
 describe("Store group chats", () => {
   test("keeps members in join order, replaces them, and survives reopen", () => {
     const dir = make();
