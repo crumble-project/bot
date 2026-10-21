@@ -25,8 +25,13 @@ import { coordinationExtension } from "./coordination";
 import { ChartCompiler } from "./charts";
 import { displayExtension } from "./display";
 import { reactionExtension } from "./reaction";
-import { codingEnv, codingExtensions } from "./coding";
-import { DESKTOP_TOOL_NAME, desktopEnv, desktopExtensions } from "./desktop";
+import { codingAnswers, codingEnv, codingExtensions } from "./coding";
+import {
+  DESKTOP_TOOL_NAME,
+  desktopAnswers,
+  desktopEnv,
+  desktopExtensions,
+} from "./desktop";
 import { DesktopControl, type ControlState } from "./desktop-control";
 import { ViewerTickets } from "./desktop-viewer";
 import { websocket } from "hono/bun";
@@ -228,6 +233,11 @@ export async function startServer(
 
     service = new CrumbleService(store, runtime);
 
+    // The bot's answer to a job's report notifies the owner, like any other reply.
+    const stopJobAnswers = [codingAnswers, desktopAnswers].map((listen) =>
+      listen((answer) => service.announceJobAnswer(answer)),
+    );
+
     const scheduler = new Scheduler(store, (a, p, r, s) =>
       service.dispatch(a, p, r, s),
     );
@@ -306,6 +316,9 @@ export async function startServer(
       async close() {
         if (closed) return;
         closed = true;
+
+        for (const stop of stopJobAnswers) stop();
+
         await scheduler.stop();
         await server.stop(true);
         await groupChats.close();

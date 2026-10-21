@@ -34,6 +34,8 @@ export type ReplyPushEvent = {
   /** Present for a bot's answer in a group chat. */
   groupId?: string;
   groupName?: string;
+  /** Present for a bot's answer to a coding or desktop job's report. */
+  jobName?: string;
 };
 
 /** The notification title: the bot, and the group when the answer came from one. */
@@ -55,12 +57,14 @@ export function canonicalReplyEvent(
     createdAt: string;
     groupId?: string;
     groupName?: string;
+    jobName?: string;
   },
   serverId: string,
 ): ReplyPushEvent {
   return {
     ...(event.groupId && { groupId: event.groupId }),
     ...(event.groupName && { groupName: event.groupName }),
+    ...(event.jobName && { jobName: event.jobName }),
     type: "reply",
     eventId: event.eventId ?? event.executionId!,
     serverId: event.serverId ?? serverId,
@@ -523,6 +527,7 @@ class APNsTransport implements PushTransport {
                 groupId: event.groupId,
                 groupName: event.groupName,
               }),
+              ...(event.jobName && { jobName: event.jobName }),
             }),
           );
         },
@@ -613,6 +618,7 @@ class FCMTransport implements PushTransport {
         groupId: event.groupId,
         groupName: event.groupName ?? "",
       }),
+      ...(event.jobName && { jobName: event.jobName }),
     } satisfies Record<string, string>;
 
     const response = await fetch(

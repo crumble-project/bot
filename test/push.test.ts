@@ -543,3 +543,21 @@ describe("push registration and durable delivery", () => {
     await service.close();
   });
 });
+
+test("a reply to a job report keeps its job name on the stream and in push payloads", () => {
+  const event = canonicalReplyEvent(
+    {
+      executionId: "desktop-report:9",
+      agentId: "a",
+      agentName: "Desk",
+      entryId: "a:3",
+      origin: "desktop",
+      jobName: "github-login",
+      preview: "Please log in.",
+      createdAt: "2026-10-21T00:00:00.000Z",
+    },
+    "server",
+  );
+
+  expect(event).toMatchObject({ origin: "desktop", jobName: "github-login" });
+});

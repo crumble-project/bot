@@ -33,6 +33,9 @@ const coding = defineJobKind({
 /** The job a successful `coding` result shows as a card; a listing or a failed call shows none. */
 export const codingJobOf = coding.jobOf;
 
+/** Hears the bot's answer to each coding job report, for notifications. */
+export const codingAnswers = coding.onAnswer;
+
 export type CodingJobInfo = JobInfo;
 
 export type CodingExtensions = JobExtensions;
