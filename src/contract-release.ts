@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import SwaggerParser from "@apidevtools/swagger-parser";
@@ -10,14 +10,19 @@ import { openAPIDocument } from "./api-contract";
 
 const schemaNames = Object.keys(eventSchemas);
 
-const payloadNames = [
-  "openapi.json",
-  ...schemaNames,
-  "CHANGELOG.md",
-  "source-commit.txt",
-].sort();
+/** Every bundle carries these; its event schemas vary, because later contracts may add some. */
+const fixedPayloadNames = ["openapi.json", "CHANGELOG.md", "source-commit.txt"];
 
-const assetNames = [...payloadNames, "SHA256SUMS"];
+const isEventSchema = (name: string) => name.endsWith(".schema.json");
+
+/** The event schema files a contract directory carries, sorted. */
+export async function eventSchemaNames(directory: string) {
+  return (await readdir(directory)).filter(isEventSchema).sort();
+}
+
+const payloadNamesOf = (names: string[]) =>
+  [...fixedPayloadNames, ...names].sort();
+
 const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 const releaseSchema = z.object({
@@ -81,6 +86,7 @@ async function documentVersion(directory: string) {
 
 export async function validateContract(directory: string) {
   await documentVersion(directory);
+  const names = await eventSchemaNames(directory);
   await SwaggerParser.validate(join(directory, "openapi.json"), {
     resolve: { external: false },
   });
@@ -91,7 +97,7 @@ export async function validateContract(directory: string) {
     allErrors: true,
   });
 
-  for (const name of schemaNames) {
+  for (const name of names) {
     const schema = jsonSchema.parse(
       await Bun.file(join(directory, name)).json(),
     );
@@ -108,7 +114,7 @@ export async function validateContract(directory: string) {
   console.log(`Validated OpenAPI and JSON Schemas in ${directory}`);
 }
 
-async function verifyBundle(directory: string) {
+export async function verifyBundle(directory: string) {
   const lines = (await Bun.file(join(directory, "SHA256SUMS")).text())
     .trim()
     .split("\n");
@@ -122,6 +128,8 @@ async function verifyBundle(directory: string) {
       throw new Error("Malformed or duplicate checksum entry");
     checksums.set(match[2]!, match[1]!);
   }
+
+  const payloadNames = payloadNamesOf(await eventSchemaNames(directory));
 
   if (
     JSON.stringify([...checksums.keys()].sort()) !==
@@ -175,7 +183,13 @@ function latestContract(releases: Release[]) {
 async function downloadRelease(repo: string, release: Release) {
   const directory = await mkdtemp(join(tmpdir(), "crumble-baseline-"));
 
-  for (const name of assetNames) {
+  const names = [
+    ...fixedPayloadNames,
+    "SHA256SUMS",
+    ...release.assets.map((asset) => asset.name).filter(isEventSchema),
+  ];
+
+  for (const name of names) {
     if (!release.assets.some((asset) => asset.name === name))
       throw new Error(`Missing released asset: ${name}`);
     gh([
@@ -204,7 +218,7 @@ async function projectEvents(directory: string, destination: string) {
   const schemas: Record<string, z.infer<typeof jsonSchema>> = {};
   const paths: ReturnType<typeof openAPIDocument>["paths"] = {};
 
-  for (const name of schemaNames) {
+  for (const name of await eventSchemaNames(directory)) {
     const key = name.replace(".schema.json", "");
     const raw = await Bun.file(join(directory, name)).text();
     schemas[key] = jsonSchema.parse(
@@ -296,9 +310,17 @@ export async function compareContracts(
 
   const before = await documentVersion(baseline);
   const after = await documentVersion(current);
-  let changed = false;
+  const baseNames = await eventSchemaNames(baseline);
+  const currentNames = await eventSchemaNames(current);
 
-  for (const name of ["openapi.json", ...schemaNames]) {
+  // A removed event payload breaks clients that read it; an added one is a compatible change.
+  if (baseNames.some((name) => !currentNames.includes(name))) breaking = true;
+  let changed = currentNames.some((name) => !baseNames.includes(name));
+
+  for (const name of [
+    "openapi.json",
+    ...baseNames.filter((name) => currentNames.includes(name)),
+  ]) {
     if (
       (await Bun.file(join(baseline, name)).text()) !==
       (await Bun.file(join(current, name)).text())
@@ -438,7 +460,7 @@ async function publish(repo: string, current: string, reports: string) {
 
   const downloaded = await mkdtemp(join(tmpdir(), "crumble-draft-"));
 
-  for (const name of assetNames) {
+  for (const name of [...payloadNamesOf(schemaNames), "SHA256SUMS"]) {
     if (existing.assets.some((asset) => asset.name === name)) {
       gh([
         "release",
