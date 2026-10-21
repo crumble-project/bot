@@ -64,6 +64,7 @@ function setup() {
     abort: async () => {},
     deleteAgent: async () => {},
     history: async () => ({ messages: [] }),
+    desktopJobs: async () => [],
   };
 
   const store = new Store(dir);
@@ -99,11 +100,123 @@ describe("HTTP API", () => {
       coding: true,
     });
 
+    const withDesktop = createAPI(service, scheduler, token, undefined, {
+      coding: true,
+      desktop: true,
+    });
+
     const without = await req(app, "/v1/capabilities");
-    expect(await without.json()).toEqual({ coding: false });
+    expect(await without.json()).toEqual({ coding: false, desktop: false });
     expect(await (await req(withCoding, "/v1/capabilities")).json()).toEqual({
       coding: true,
+      desktop: false,
     });
+    expect(await (await req(withDesktop, "/v1/capabilities")).json()).toEqual({
+      coding: true,
+      desktop: true,
+    });
+  });
+
+  test("agents keep a desktop job model", async () => {
+    const { app } = setup();
+
+    const created = await req(app, "/v1/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Desk",
+        desktopModel: { provider: "opencode-go", model: "gpt-6-luna" },
+      }),
+    });
+
+    const agent = await created.json();
+
+    expect(agent.desktopModel).toEqual({
+      provider: "opencode-go",
+      model: "gpt-6-luna",
+    });
+
+    // Omitting it keeps the override; null clears it, so jobs use the bot's model again.
+    const kept = await req(app, `/v1/agents/${agent.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name: "Desk 2" }),
+    });
+
+    expect((await kept.json()).desktopModel).toEqual({
+      provider: "opencode-go",
+      model: "gpt-6-luna",
+    });
+
+    const cleared = await req(app, `/v1/agents/${agent.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ desktopModel: null }),
+    });
+
+    expect(cleared.status).toBe(200);
+    expect((await cleared.json()).desktopModel).toBeUndefined();
+  });
+
+  test("gaining or losing the desktop tool restarts the bot's workspace", async () => {
+    const { store, runtime } = setup();
+    const service = new CrumbleService(store, runtime);
+
+    const scheduler = new Scheduler(store, (a, p, r, s) =>
+      service.dispatch(a, p, r, s),
+    );
+
+    const restarted: string[] = [];
+
+    const app = createAPI(service, scheduler, token, undefined, {
+      restartWorkspace: async (agentId) => void restarted.push(agentId),
+    });
+
+    const agent = store.createAgent({
+      name: "Desk",
+      avatar: "bot",
+      description: "",
+      instructions: "",
+      provider: "openai",
+      model: "gpt-4.1",
+      enabled: true,
+      tools: [],
+      skills: [],
+      mcpServers: [],
+      delegates: [],
+    });
+
+    const patch = (tools: string[]) =>
+      req(app, `/v1/agents/${agent.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ tools }),
+      });
+
+    await patch(["desktop"]);
+    await patch(["desktop", "memory"]);
+    await patch(["memory"]);
+
+    expect(restarted).toEqual([agent.id, agent.id]);
+  });
+
+  test("lists a bot's desktop jobs", async () => {
+    const { app, store } = setup();
+
+    const agent = store.createAgent({
+      name: "Desk",
+      avatar: "bot",
+      description: "",
+      instructions: "",
+      provider: "openai",
+      model: "gpt-4.1",
+      enabled: true,
+      tools: ["desktop"],
+      skills: [],
+      mcpServers: [],
+      delegates: [],
+    });
+
+    const res = await req(app, `/v1/agents/${agent.id}/desktop-jobs`);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ jobs: [] });
   });
 
   test("lists bundled and editable shared skills in one catalog", async () => {

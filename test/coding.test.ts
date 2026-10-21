@@ -34,6 +34,7 @@ afterEach(async () => {
 class DirectoryWorkspaces implements Workspaces {
   readonly synced: string[] = [];
   readonly environments: ExecutionEnv[] = [];
+  readonly desktop = false;
 
   constructor(readonly dir: string) {}
 
@@ -47,6 +48,8 @@ class DirectoryWorkspaces implements Workspaces {
   async sync(agentId: string, _context: Context) {
     this.synced.push(agentId);
   }
+
+  async restart(_agentId: string, _context: Context) {}
 
   async close(_context: Context) {}
 }
@@ -371,7 +374,13 @@ test("clients list a bot's coding jobs and page through a job's work", async () 
   const { jobs } = await list();
 
   expect(jobs).toEqual([
-    { name: "builder", conversationId: expect.any(String), status: "idle" },
+    {
+      name: "builder",
+      conversationId: expect.any(String),
+      status: "idle",
+      // The job's own spend, apart from the bot's chat.
+      usage: { models: { "faux/chat": expect.any(Object) }, tools: {} },
+    },
   ]);
 
   expect(started?.toolDetails).toMatchObject({

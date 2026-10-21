@@ -32,15 +32,27 @@ A bot with the `coding` tool runs coding jobs in its own workspace: a [Microsand
 Requirements:
 
 - Hardware virtualization: Apple silicon on macOS, or read-write access to `/dev/kvm` on Linux. In Docker, use `compose.kvm.yaml`, which passes `/dev/kvm` and the host's kvm group to the container.
-- A guest image with git and build tools, built from `workspace-image/Dockerfile` and imported into Microsandbox:
+- A guest image with git and build tools, built from the `base` target of `workspace-image/Dockerfile` and imported into Microsandbox:
 
   ```bash
-  docker build -t crumble-workspace:dev workspace-image
+  docker build --target base -t crumble-workspace:dev workspace-image
   docker save crumble-workspace:dev -o /tmp/crumble-workspace.tar
   bun -e 'import { Image } from "microsandbox"; await Image.load("/tmp/crumble-workspace.tar", { tag: "crumble-workspace:dev" })'
   ```
 
   Set `CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:dev`. Any OCI image reference from a registry also works.
+
+- For desktop jobs, the `desktop` target: the base image plus a bot desktop (Xvnc, Openbox, tint2, Chromium, and a pinned cua-driver with telemetry off). Bots with the `desktop` tool boot it instead of the base image:
+
+  ```bash
+  docker build --target desktop -t crumble-workspace-desktop:dev workspace-image
+  docker save crumble-workspace-desktop:dev -o /tmp/crumble-workspace-desktop.tar
+  bun -e 'import { Image } from "microsandbox"; await Image.load("/tmp/crumble-workspace-desktop.tar", { tag: "crumble-workspace-desktop:dev" })'
+  ```
+
+  Set `CRUMBLE_WORKSPACE_DESKTOP_IMAGE=crumble-workspace-desktop:dev`. Without it, no bot is offered the `desktop` tool.
+
+Published images, built for amd64 and arm64 by the Workspace images workflow (run it manually, or push a `workspace-image-v*` tag): `ghcr.io/crumble-project/crumble-workspace` and `ghcr.io/crumble-project/crumble-workspace-desktop`.
 
 Microsandbox keeps images, sandboxes, and volumes in `MSB_HOME` (default `~/.microsandbox`; `/var/lib/crumble/microsandbox` in the Docker image). Back it up with the data directory.
 
@@ -48,6 +60,19 @@ The VM tests are skipped by default. To run them:
 
 ```bash
 CRUMBLE_VM_TESTS=1 CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:dev bun test test/microsandbox-workspaces.test.ts
+```
+
+The image change test also needs the same image under a second tag, which it treats as another image:
+
+```bash
+bun -e 'import { Image } from "microsandbox"; await Image.save("crumble-workspace:dev", { outputPath: "/tmp/crumble-workspace-other.tar" }); await Image.load("/tmp/crumble-workspace-other.tar", { tag: "crumble-workspace:other" })'
+CRUMBLE_VM_TESTS=1 CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:dev CRUMBLE_WORKSPACE_IMAGE_OTHER=crumble-workspace:other bun test test/microsandbox-workspaces.test.ts
+```
+
+The bot desktop tests also need the desktop image:
+
+```bash
+CRUMBLE_VM_TESTS=1 CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:dev CRUMBLE_WORKSPACE_DESKTOP_IMAGE=crumble-workspace-desktop:dev bun test test/desktop-vm.test.ts
 ```
 
 ## Run with Docker

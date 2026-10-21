@@ -19,6 +19,10 @@ export const capabilitiesResponse = z
     coding: z.boolean().openapi({
       description: "Whether bots can be given the coding tool on this server.",
     }),
+    desktop: z.boolean().openapi({
+      description:
+        "Whether bots can be given the desktop tool, and with it a bot desktop, on this server.",
+    }),
   })
   .openapi("Capabilities");
 
@@ -50,6 +54,13 @@ export const agentResponse = z
     mcpServers: strings,
     delegates: strings,
     inference: inference.optional(),
+    desktopModel: z
+      .object({ provider: z.string(), model: z.string() })
+      .optional()
+      .openapi({
+        description:
+          "The model for this bot's desktop jobs; unset, they use the bot's own model.",
+      }),
     createdAt: z.string(),
     updatedAt: z.string(),
   })
@@ -143,12 +154,36 @@ export const codingJobsResponse = z
             name: z.string(),
             conversationId: z.string(),
             status: z.enum(["working", "idle"]),
+            usage: z.unknown().optional().openapi({
+              description:
+                "Pi Durable usage document of the job's own conversation: tokens and cost per model and tool. Absent before its first request.",
+            }),
           })
           .openapi("CodingJob"),
       )
       .openapi({ description: "Oldest job first." }),
   })
   .openapi("CodingJobs");
+
+export const desktopJobsResponse = z
+  .object({
+    jobs: z
+      .array(
+        z
+          .object({
+            name: z.string(),
+            conversationId: z.string(),
+            status: z.enum(["working", "idle"]),
+            usage: z.unknown().optional().openapi({
+              description:
+                "Pi Durable usage document of the job's own conversation: tokens and cost per model and tool. Absent before its first request.",
+            }),
+          })
+          .openapi("DesktopJob"),
+      )
+      .openapi({ description: "Oldest job first." }),
+  })
+  .openapi("DesktopJobs");
 
 export const chatSnapshotResponse = historyResponse
   .extend({

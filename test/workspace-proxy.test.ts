@@ -234,3 +234,17 @@ describe("request parsing", () => {
     ).toBeNull();
   });
 });
+
+test("the proxy listens on a requested port, and refuses a taken one", async () => {
+  const first = await startWorkspaceProxy({ decide: () => true });
+  const port = Number(first.address.split(":")[1]);
+  await first.close();
+
+  const again = await startWorkspaceProxy({ decide: () => true, port });
+  expect(again.address).toBe(`127.0.0.1:${port}`);
+
+  await expect(
+    startWorkspaceProxy({ decide: () => true, port }),
+  ).rejects.toThrow("EADDRINUSE");
+  await again.close();
+});

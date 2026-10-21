@@ -26,6 +26,7 @@ import { ChartCompiler } from "./charts";
 import { displayExtension } from "./display";
 import { reactionExtension } from "./reaction";
 import { codingEnv, codingExtensions } from "./coding";
+import { DESKTOP_TOOL_NAME, desktopEnv, desktopExtensions } from "./desktop";
 import type { Workspaces } from "./workspace";
 import { microsandboxWorkspacesFromEnv } from "./microsandbox-workspaces";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
@@ -41,8 +42,9 @@ export async function startServer(
     token?: string;
     skillsDir?: string;
     /**
-     * Backs the `coding` tool; defaults to Microsandbox workspaces when `CRUMBLE_WORKSPACE_IMAGE` is set. Without it no bot
-     * is offered the tool. The server closes it on shutdown.
+     * Backs the `coding` and `desktop` tools; defaults to Microsandbox workspaces when `CRUMBLE_WORKSPACE_IMAGE` is set,
+     * with bot desktops when `CRUMBLE_WORKSPACE_DESKTOP_IMAGE` is set too. Without it no bot is offered either tool. The
+     * server closes it on shutdown.
      */
     workspaces?: Workspaces;
   } = {},
@@ -119,11 +121,21 @@ export async function startServer(
         : null;
     };
 
-    const workspaces = options.workspaces ?? microsandboxWorkspacesFromEnv();
+    const workspaces =
+      options.workspaces ??
+      microsandboxWorkspacesFromEnv(process.env, {
+        wantsDesktop: (agentId) =>
+          store.getAgent(agentId)?.tools.includes(DESKTOP_TOOL_NAME) === true,
+      });
 
     const coding = (agent: Agent) =>
       workspaces && agent.tools.includes("coding")
         ? codingExtensions(agent, workspaces)
+        : { chat: [], job: [] };
+
+    const desktop = (agent: Agent) =>
+      workspaces?.desktop && agent.tools.includes(DESKTOP_TOOL_NAME)
+        ? desktopExtensions(agent)
         : { chat: [], job: [] };
 
     let service!: CrumbleService;
@@ -143,6 +155,7 @@ export async function startServer(
         displayExtension(charts),
         reactionExtension(),
         ...coding(agent).chat,
+        ...desktop(agent).chat,
         ...(agent.tools.includes("codemode")
           ? [
               createCodemodeExtension({
@@ -152,10 +165,11 @@ export async function startServer(
             ]
           : []),
       ],
-      taskExtensions: (agent) => coding(agent).job,
-      env: (agentId, target, context) =>
+      taskExtensions: (agent) => [...coding(agent).job, ...desktop(agent).job],
+      env: async (agentId, target, context) =>
         workspaces
-          ? codingEnv(workspaces, agentId, target, context)
+          ? ((await codingEnv(workspaces, agentId, target, context)) ??
+            (await desktopEnv(workspaces, agentId, target, context)))
           : undefined,
       listMemory: (agentId) => [
         ...store.listMemories(agentId),
@@ -232,6 +246,9 @@ export async function startServer(
       {
         commonSkills,
         coding: workspaces !== undefined,
+        desktop: workspaces?.desktop === true,
+        restartWorkspace: async (agentId) =>
+          workspaces?.restart(agentId, BACKGROUND_CONTEXT),
         groupChats,
       },
       push,

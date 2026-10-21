@@ -311,6 +311,20 @@ export const routes = {
     request: { params: id.extend({ name: z.string() }), query: historyInput },
     responses: { 200: json(response.historyResponse) },
   }),
+  desktopJobs: define({
+    method: "get",
+    path: "/v1/agents/{id}/desktop-jobs",
+    operationId: "listDesktopJobs",
+    request: { params: id },
+    responses: { 200: json(response.desktopJobsResponse) },
+  }),
+  desktopJobHistory: define({
+    method: "get",
+    path: "/v1/agents/{id}/desktop-jobs/{name}/history",
+    operationId: "getDesktopJobHistory",
+    request: { params: id.extend({ name: z.string() }), query: historyInput },
+    responses: { 200: json(response.historyResponse) },
+  }),
   sendMessage: define({
     method: "post",
     path: "/v1/agents/{id}/messages",
@@ -743,7 +757,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "1.3.0",
+      version: "1.4.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },

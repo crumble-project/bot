@@ -71,6 +71,10 @@ export function createAPI(
     commonSkills?: CommonSkill[];
     /** Whether the server can give bots the coding tool. */
     coding?: boolean;
+    /** Whether the server can give bots the desktop tool. */
+    desktop?: boolean;
+    /** Stops a bot's workspace machine, so its next use boots the image its tools need now. */
+    restartWorkspace?: (agentId: string) => Promise<void>;
     /** Group chats; their routes answer 503 without it. */
     groupChats?: GroupChats;
   } = {},
@@ -122,7 +126,10 @@ export function createAPI(
   });
 
   register(routes.capabilities, (c) =>
-    c.json({ coding: options.coding === true }, 200),
+    c.json(
+      { coding: options.coding === true, desktop: options.desktop === true },
+      200,
+    ),
   );
   register(routes.pushStatus, (c) =>
     c.json(
@@ -203,7 +210,13 @@ export function createAPI(
       for (const conversation of store.listConversations(old.id))
         await service.abort(conversation.id);
 
-    return c.json(store.updateAgent(old.id, input), 200);
+    const updated = store.updateAgent(old.id, input);
+
+    // The desktop tool picks the workspace image; a bot that gains or loses it needs a fresh boot.
+    if (old.tools.includes("desktop") !== input.tools.includes("desktop"))
+      await options.restartWorkspace?.(old.id);
+
+    return c.json(updated, 200);
   });
   register(routes.duplicateAgent, (c) => {
     service.agent(c.req.param("id"));
@@ -247,6 +260,19 @@ export function createAPI(
   register(routes.codingJobHistory, async (c) =>
     c.json(
       await service.codingJobHistory(
+        c.req.param("id"),
+        c.req.param("name"),
+        historyInput.parse(c.req.query()),
+      ),
+      200,
+    ),
+  );
+  register(routes.desktopJobs, async (c) =>
+    c.json({ jobs: await service.desktopJobs(c.req.param("id")) }, 200),
+  );
+  register(routes.desktopJobHistory, async (c) =>
+    c.json(
+      await service.desktopJobHistory(
         c.req.param("id"),
         c.req.param("name"),
         historyInput.parse(c.req.query()),
