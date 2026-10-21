@@ -39,6 +39,13 @@
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
 
+## Contract 1.4.0
+
+- Add `GET /v1/agents/{id}/desktop-jobs` and `GET /v1/agents/{id}/desktop-jobs/{name}/history`, shaped like the coding job routes.
+- Add `desktop` to `Capabilities`.
+- Add optional `desktopModel` to `Agent`; requests may send `null` to clear it.
+- Add optional `usage` to `CodingJob` and `DesktopJob`: the Pi Durable usage document of the job's own conversation.
+
 ## Contract 1.3.0
 
 - Accept `attachments` on group messages, which may then have empty content, and add `GET /v1/group-chats/{id}/attachments/{entryId}/{index}`. Group messages list their attachments in `attachments`.
