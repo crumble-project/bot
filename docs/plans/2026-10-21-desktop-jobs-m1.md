@@ -1400,10 +1400,10 @@ jobs:
       matrix:
         target: [base, desktop]
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -1414,7 +1414,7 @@ jobs:
           name=crumble-workspace; [ "${{ matrix.target }}" = desktop ] && name=crumble-workspace-desktop
           version=${GITHUB_REF_NAME#workspace-image-v}; [ "$GITHUB_REF_TYPE" = tag ] || version=sha-${GITHUB_SHA::12}
           echo "ref=ghcr.io/${{ github.repository_owner }}/$name:$version" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: workspace-image
           target: ${{ matrix.target }}
@@ -1423,7 +1423,7 @@ jobs:
           tags: ${{ steps.tag.outputs.ref }}
 ```
 
-It is not a push or pull request workflow, so the two-minute unit-test limit does not apply. Check the action versions against the ones already used in `.github/workflows/contract.yml` and match them.
+It is not a push or pull request workflow, so the two-minute unit-test limit does not apply. Actions are pinned to commit SHAs, as in `.github/workflows/contract.yml`.
 
 - [ ] **Step 7: Document.** In `README.md`, replace the workspace image steps (lines 35-43) so they build both targets as in Step 4, load both, and set `CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:dev` and `CRUMBLE_WORKSPACE_DESKTOP_IMAGE=crumble-workspace-desktop:dev`. Add: "Published images: `ghcr.io/crumble-project/crumble-workspace` and `ghcr.io/crumble-project/crumble-workspace-desktop`, built by the Workspace images workflow on `workspace-image-v*` tags."
 
