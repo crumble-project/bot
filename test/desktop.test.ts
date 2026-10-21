@@ -12,7 +12,8 @@ import {
   type FauxResponseFactory,
 } from "@earendil-works/pi-ai/providers/faux";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
-import { desktopEnv, desktopExtensions } from "../src/desktop";
+import { desktopAnswers, desktopEnv, desktopExtensions } from "../src/desktop";
+import type { JobAnswer } from "../src/jobs";
 import type { Agent } from "../src/domain";
 import { AgentRuntime } from "../src/runtime";
 import { Store } from "../src/store";
@@ -259,4 +260,29 @@ test("rebuilding a bot's extensions keeps the same computer_use tool", () => {
 
   // A running job's snapshots and the lease count it last saw live in that tool.
   expect(toolOf()).toBe(toolOf());
+});
+
+test("the bot's answer to a desktop job's report is announced once, for notifications", async () => {
+  const heard: JobAnswer[] = [];
+  const stop = desktopAnswers((answer) => heard.push(answer));
+
+  try {
+    const { agent } = await open();
+
+    await until(async () => heard.length > 0);
+    await Bun.sleep(200);
+
+    expect(heard).toEqual([
+      {
+        agentId: agent.id,
+        kind: "desktop",
+        name: "form",
+        entryId: expect.any(String),
+        preview: "The form is filled.",
+        eventId: expect.stringMatching(/^desktop-report:/),
+      },
+    ]);
+  } finally {
+    stop();
+  }
 });

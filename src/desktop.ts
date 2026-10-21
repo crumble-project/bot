@@ -38,6 +38,9 @@ const desktop = defineJobKind({
 /** The job a successful `desktop` result shows as a card; a listing or a failed call shows none. */
 export const desktopJobOf = desktop.jobOf;
 
+/** Hears the bot's answer to each desktop job report, for notifications. */
+export const desktopAnswers = desktop.onAnswer;
+
 export const desktopJobs = (harness: Harness, chatId: ConversationId) =>
   desktop.list(harness, chatId);
 

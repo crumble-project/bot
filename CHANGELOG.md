@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Notify the owner of the bot's answer to a coding or desktop job's report. Reports reach the bot's chat without an execution, so these answers sent no reply event before; a desktop job asking for a login only reached the owner if they opened the chat. The job reporter now waits for the bot's answer and announces it once as a `reply` event with origin `coding` or `desktop` and the new `jobName`, through the activity stream and push. Reactions and tool calls without text announce nothing.
 - Let the owner watch and take control of a bot desktop. `POST /v1/agents/{id}/desktop/viewer` issues a single-use link to a server-hosted noVNC page whose WebSocket reaches the bot desktop's VNC server through an exec stream; the link expires after a minute and is spent when its WebSocket connects. `PUT /v1/agents/{id}/desktop/control` takes control (`owner`) or hands it back (`bot`), and `GET /v1/agents/{id}/desktop/events` streams each change. The viewer's keyboard, pointer, and clipboard input reaches the bot desktop only while the owner holds control. Meanwhile the bot's desktop job waits at its next `computer_use` call, without a time limit; after hand-back it refuses actions it planned before and captures first. The lease is stored, so the owner keeps control across server restarts and client disconnects. An open viewer or an owner holding control keeps the bot's machine from its idle stop.
 - Report each job's own token usage and cost in `GET /v1/agents/{id}/coding-jobs` and `GET /v1/agents/{id}/desktop-jobs`, as the `usage` field the chat snapshot already has for the bot's chat. Jobs run in their own conversations, so their spend was not visible before.
 - Add `GET /v1/agents/{id}/desktop-jobs`, `GET /v1/agents/{id}/desktop-jobs/{name}/history`, and the `desktop` capability. Bots get the `desktop` tool only when the server has a desktop workspace image (`CRUMBLE_WORKSPACE_DESKTOP_IMAGE`). Adding or removing a bot's `desktop` tool restarts its workspace machine with the image it needs. Group turns cannot start desktop jobs.
@@ -39,6 +40,11 @@
 - Add the generated OpenAPI 3.1 contract at `openapi/openapi.json` for all 49 HTTP endpoints, including authentication and event payload schemas.
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
+
+## Contract 1.6.0
+
+- Add optional `jobName` to `ReplyEvent`, set when the bot answered a coding or desktop job's report.
+- Document the `ReplyEvent.origin` values, now including `coding` and `desktop`.
 
 ## Contract 1.5.0
 

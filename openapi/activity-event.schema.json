@@ -38,6 +38,9 @@
         "executionId": {
           "type": "string"
         },
+        "jobName": {
+          "type": "string"
+        },
         "groupId": {
           "type": "string"
         },

@@ -65,6 +65,8 @@ A desktop job runs on the bot's `desktopModel` when it is set, through the job c
 
 Job listings carry each job's `usage`: Pi Durable's usage document for the job's own conversation, which the bot chat's snapshot does not include. Clients read desktop jobs through `GET /v1/agents/{id}/desktop-jobs` and `GET /v1/agents/{id}/desktop-jobs/{name}/history`, shaped like the coding job routes, and `GET /v1/capabilities` reports `desktop`.
 
+A job's reporter waits for the bot's answer to the report and announces it once through its kind's `onAnswer` listeners; the server turns each into a `reply` activity (origin `coding` or `desktop`, with `jobName`) through `CrumbleService.announceJobAnswer`. Job reports reach the chat without an execution, so the execution-based reply announcements never covered them.
+
 ### Watching and taking control
 
 `DesktopControl` (`desktop-control.ts`) is each bot desktop's control lease: who holds it, `bot` or `owner`, and how often it changed hands, stored in the `desktop_control` table so it survives restarts. `computer_use` waits for the bot's turn before every call; when the change count differs from the one it saw last, it drops its snapshots and refuses anything but a look (`capture`, `list_windows`, `wait`) until the job captures again. `desktop.ts` keeps one `computer_use` tool per bot, because the runtime rebuilds a bot's extensions whenever it reconfigures the bot, and a running job must keep what it saw.

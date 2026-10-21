@@ -1,7 +1,9 @@
 import { Store } from "./store";
 import { AgentRuntime } from "./runtime";
+import type { JobAnswer } from "./jobs";
 import {
   AppError,
+  conversationReference,
   type Agent,
   type Conversation,
   type Execution,
@@ -52,6 +54,8 @@ export type ReplyActivity = {
   createdAt: string;
   /** Set for a bot's answer in a group chat; clients open the group instead of the bot chat. */
   groupId?: string;
+  /** Set for a bot's answer to a coding or desktop job's report (origin `coding` or `desktop`): the job's name. */
+  jobName?: string;
   groupName?: string;
 };
 
@@ -201,6 +205,29 @@ export class CrumbleService {
     };
 
     for (const listener of this.activityListeners) listener(event);
+  }
+
+  /**
+   * Tells activity listeners about the bot's answer to a job's report, such as a desktop job asking for the owner. Job
+   * reports reach the chat without an execution, so `announceReply` never sees them. Bots of another server in the same
+   * process are ignored.
+   */
+  announceJobAnswer(answer: JobAnswer) {
+    const agent = this.store.getAgent(answer.agentId);
+
+    if (!agent) return;
+
+    this.announce({
+      type: "reply",
+      executionId: answer.eventId,
+      agentId: agent.id,
+      agentName: agent.name,
+      entryId: conversationReference(agent.id, Number(answer.entryId)),
+      origin: answer.kind,
+      jobName: answer.name,
+      preview: answer.preview,
+      createdAt: new Date().toISOString(),
+    });
   }
 
   /** Tells activity listeners, such as push delivery, about a reply that did not come from a bot chat execution. */

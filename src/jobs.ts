@@ -76,7 +76,22 @@ type Holder = { name: string; deliveries: number };
 
 type JobsState = { jobs: Record<string, Job>; holder?: Holder };
 
+/** The bot's answer to a job's report: what a notification about the job shows. */
+export type JobAnswer = {
+  agentId: string;
+  /** The job kind, such as `coding` or `desktop`. */
+  kind: string;
+  /** The job's name. */
+  name: string;
+  entryId: string;
+  preview: string;
+  /** Stable per report, so a repeated announcement can be recognized. */
+  eventId: string;
+};
+
 type ReporterInput = {
+  /** The bot, for announcing its answer to the report. Unset in deliveries created before announcements existed. */
+  agentId?: string;
   name: string;
   conversationId: ConversationId;
   message: string;
@@ -88,7 +103,8 @@ type ReporterInput = {
 type ReporterState =
   | { phase: "wait" }
   | { phase: "deliver" }
-  | { phase: "report"; report?: string };
+  | { phase: "report"; report?: string }
+  | { phase: "announce"; entryId: string; preview: string };
 
 const jobCard = z.object({ name: z.string().min(1) });
 
@@ -126,6 +142,7 @@ export type JobKind = ReturnType<typeof defineJobKind>;
 /** Background jobs a bot hands work to: child conversations of its chat, built on Pi Durable's background subagent pattern. */
 export function defineJobKind(options: JobKindOptions) {
   const { kind, toolName, label } = options;
+  const answerListeners = new Set<(answer: JobAnswer) => void>();
 
   /** Marks a conversation as a job of this kind; its environment is the bot's workspace. */
   const Marker = defineDoc<{ job: boolean }>({
@@ -306,29 +323,82 @@ export function defineJobKind(options: JobKindOptions) {
       report: async (reporter, runtime, taskContext) => {
         const { report } = reporter.state.checkpoint;
 
-        if (report !== undefined) {
-          const chat = (await runtime.conversation(
-            runtime.conversationId,
-            taskContext,
-          ))!;
-
-          // The model reads the framed report; the owner sees the job's words, labelled with their origin.
-          const text = report.replace(/^\[[^\]]*\] ?/, "");
-
-          await chat.submit(
-            {
-              type: "input",
-              content: report,
-              whenBusy: "followUp",
-              requestId: `${kind}-report:${reporter.id}`,
-              entry: {
-                kind: "crumble.message",
-                data: { text, origin: { kind, name: reporter.input.name } },
-              },
-            },
+        if (report === undefined)
+          return runtime.commit(
+            () => ({
+              status: "terminal",
+              outcome: { status: "completed", result: null },
+            }),
             taskContext,
           );
-        }
+
+        const chat = (await runtime.conversation(
+          runtime.conversationId,
+          taskContext,
+        ))!;
+
+        // The model reads the framed report; the owner sees the job's words, labelled with their origin.
+        const text = report.replace(/^\[[^\]]*\] ?/, "");
+
+        const submission = await chat.submit(
+          {
+            type: "input",
+            content: report,
+            whenBusy: "followUp",
+            requestId: `${kind}-report:${reporter.id}`,
+            entry: {
+              kind: "crumble.message",
+              data: { text, origin: { kind, name: reporter.input.name } },
+            },
+          },
+          taskContext,
+        );
+
+        // The bot's answer to the report is what the owner is notified about, such as a job asking for them.
+        const settled = await submission.wait(taskContext);
+
+        await runtime.commit(async (tx) => {
+          const done = {
+            status: "terminal",
+            outcome: { status: "completed", result: null },
+          } as const;
+
+          if (settled.status === "unanswered" || settled.type !== "input")
+            return done;
+
+          const answer = (await tx.entry(AssistantEntry, settled.answer))
+            ?.model?.[0];
+
+          const preview =
+            answer?.role === "assistant" ? textOf(answer).trim() : "";
+
+          // A reaction or a tool call alone is no answer worth a notification.
+          if (!preview) return done;
+
+          return {
+            status: "running",
+            checkpoint: {
+              phase: "announce",
+              entryId: String(settled.answer),
+              preview: preview.slice(0, 240),
+            },
+          };
+        }, taskContext);
+      },
+      announce: async (reporter, runtime, taskContext) => {
+        const { entryId, preview } = reporter.state.checkpoint;
+        const { agentId, name } = reporter.input;
+
+        if (agentId)
+          for (const listener of answerListeners)
+            listener({
+              agentId,
+              kind,
+              name,
+              entryId,
+              preview,
+              eventId: `${kind}-report:${reporter.id}`,
+            });
 
         await runtime.commit(
           () => ({
@@ -355,6 +425,13 @@ export function defineJobKind(options: JobKindOptions) {
 
   return {
     toolName,
+
+    /** Hears the bot's answer to each report of a job of this kind, from every bot in this process. */
+    onAnswer(listener: (answer: JobAnswer) => void) {
+      answerListeners.add(listener);
+
+      return () => void answerListeners.delete(listener);
+    },
 
     /** The job a successful tool result shows as a card; a listing or a failed call shows none. */
     jobOf(message: {
@@ -590,6 +667,7 @@ export function defineJobKind(options: JobKindOptions) {
             const reporter = await tx.createTask(
               Reporter,
               {
+                agentId,
                 name,
                 conversationId,
                 message,

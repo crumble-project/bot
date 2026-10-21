@@ -864,3 +864,60 @@ describe("bot desktop control and viewer", () => {
     await reader.cancel();
   });
 });
+
+describe("job answer notifications", () => {
+  test("the bot's answer to a job report becomes a reply event with the job's origin and name", () => {
+    const { store, runtime } = setup();
+    const service = new CrumbleService(store, runtime);
+    const heard: unknown[] = [];
+
+    const agent = store.createAgent({
+      name: "Desk",
+      avatar: "bot",
+      description: "",
+      instructions: "",
+      provider: "openai",
+      model: "gpt-4.1",
+      enabled: true,
+      tools: ["desktop"],
+      skills: [],
+      mcpServers: [],
+      delegates: [],
+    });
+
+    service.onActivity((event) => heard.push(event));
+
+    service.announceJobAnswer({
+      agentId: agent.id,
+      kind: "desktop",
+      name: "github-login",
+      entryId: "7",
+      preview: "The job needs you to log in to GitHub.",
+      eventId: "desktop-report:42",
+    });
+
+    // A bot of another server in the same process is not ours to announce.
+    service.announceJobAnswer({
+      agentId: "00000000-0000-4000-8000-000000000999",
+      kind: "desktop",
+      name: "x",
+      entryId: "1",
+      preview: "x",
+      eventId: "desktop-report:1",
+    });
+
+    expect(heard).toEqual([
+      {
+        type: "reply",
+        executionId: "desktop-report:42",
+        agentId: agent.id,
+        agentName: "Desk",
+        entryId: `${agent.id}:7`,
+        origin: "desktop",
+        jobName: "github-login",
+        preview: "The job needs you to log in to GitHub.",
+        createdAt: expect.any(String),
+      },
+    ]);
+  });
+});
