@@ -7,6 +7,12 @@ import {
   type GroupChatInput,
   type GroupTurn,
 } from "./domain";
+import {
+  MAX_ATTACHMENTS,
+  attachmentKind,
+  prepareAttachments,
+  type AttachmentInput,
+} from "./attachments";
 import { mentionedMembers, mentionsOwner } from "./group-mentions";
 import type { GroupEntry, GroupTranscripts } from "./group-transcripts";
 import { GROUP_TURN_PREFIX, type CrumbleService } from "./service";
@@ -122,9 +128,12 @@ export class GroupChats {
     groupId: string,
     content: string,
     requestId: string,
-    options: { replyTo?: string } = {},
+    options: { replyTo?: string; attachments?: AttachmentInput[] } = {},
   ): Promise<GroupMessageReceipt> {
     this.get(groupId);
+    const attachments = options.attachments ?? [];
+    // Validate before anything is written, so a bad file never leaves a message behind.
+    const { info } = prepareAttachments(attachments);
 
     const target = options.replyTo
       ? await this.transcripts.message(groupId, options.replyTo)
@@ -138,6 +147,7 @@ export class GroupChats {
       {
         text: content,
         sender: { kind: "owner" },
+        ...(attachments.length && { attachments, files: info }),
         ...(target && {
           replyTo: target.entryId,
           replyPreview: target.text.slice(0, 240),
@@ -206,6 +216,12 @@ export class GroupChats {
         };
       }),
     };
+  }
+
+  attachment(groupId: string, entryId: string, index: number) {
+    this.get(groupId);
+
+    return this.transcripts.attachment(groupId, entryId, index);
   }
 
   history(groupId: string, options: { before?: string; limit?: number }) {
@@ -393,12 +409,16 @@ export class GroupChats {
     const through = unseen.at(-1)!.entry;
     const requestId = `${GROUP_TURN_PREFIX}${groupId}:${agentId}:${through}`;
 
-    const input = `${summary ? `Summary of the conversation before you joined:\n\n${summary}\n\n` : ""}${this.turnInput(group, agent.name, unseen)}`;
+    const { attachments, omitted } = await this.turnAttachments(agent, unseen);
+
+    const input = `${summary ? `Summary of the conversation before you joined:\n\n${summary}\n\n` : ""}${this.turnInput(group, agent.name, unseen)}${omitted.length ? `\n\nYour model cannot read images, so these were left out: ${omitted.join(", ")}.` : ""}`;
     let execution = this.store.findExecution(conversationId, requestId);
 
     if (!execution)
       try {
-        execution = await this.service.send(conversationId, input, requestId);
+        execution = await this.service.send(conversationId, input, requestId, {
+          attachments,
+        });
       } catch (error) {
         // A failed admission still leaves its execution; its settlement reports the failure.
         execution = this.store.findExecution(conversationId, requestId);
@@ -462,6 +482,26 @@ export class GroupChats {
     }
   }
 
+  /**
+   * The uploads of a turn's unseen messages, newest messages first up to the attachment limit, in message order.
+   * Images are left out, by name, for a model that cannot read them.
+   */
+  private async turnAttachments(agent: Agent, unseen: GroupEntry[]) {
+    const images = await this.service.runtime.acceptsImages(agent);
+    const attachments: AttachmentInput[] = [];
+    const omitted: string[] = [];
+
+    for (const entry of unseen.toReversed())
+      for (const item of (entry.attachments ?? []).toReversed()) {
+        if (!images && attachmentKind(item.mimeType) === "image")
+          omitted.unshift(item.name);
+        else if (attachments.length < MAX_ATTACHMENTS)
+          attachments.unshift(item);
+      }
+
+    return { attachments, omitted };
+  }
+
   private turnInput(group: GroupChat, name: string, unseen: GroupEntry[]) {
     const members = group.memberIds
       .map((agentId) => this.store.getAgent(agentId)?.name)
@@ -473,7 +513,11 @@ export class GroupChats {
           ? ""
           : ` (replying to "${entry.replyPreview.slice(0, 120)}")`;
 
-      return `${senderName(entry)}${reply}: ${entry.text}`;
+      const files = entry.files?.length
+        ? ` [attached: ${entry.files.map((file) => file.name).join(", ")}]`
+        : "";
+
+      return `${senderName(entry)}${reply}: ${entry.text}${files}`;
     });
 
     return `Group chat ${JSON.stringify(group.name)}. You are ${name}; the other members are the owner and ${members.join(", ") || "no other bots"}.\n\nNew messages:\n\n${messages.join("\n\n")}`;

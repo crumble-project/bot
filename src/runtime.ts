@@ -601,6 +601,17 @@ export class AgentRuntime {
     return reference;
   }
 
+  /** Whether the bot's model reads images; catalogs that list no modalities are trusted, as for chat uploads. */
+  async acceptsImages(agent: Agent) {
+    const { models } = await this.open(agent);
+
+    if (!models.getModel(agent.provider, agent.model))
+      await models.refresh({ providers: [agent.provider] });
+    const input = models.getModel(agent.provider, agent.model)?.input;
+
+    return !input || input.includes("image");
+  }
+
   /** A short summary of a group conversation, written by the bot's own model for its first turn after joining. */
   async summarize(agent: Agent, transcript: string): Promise<string> {
     const { models } = await this.open(agent);

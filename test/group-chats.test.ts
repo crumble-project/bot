@@ -57,6 +57,7 @@ const call = (name: string, args: Record<string, string> = {}) =>
 function script(
   bots: Record<string, Bot>,
   inputs: Map<string, string[]>,
+  contents: Map<string, Message["content"][]>,
 ): FauxResponseFactory {
   return async (context, options) => {
     const system = context.messages
@@ -77,18 +78,19 @@ function script(
     if (last.role === "toolResult") return say("Done.");
     const input = textOf(last);
     inputs.set(name, [...(inputs.get(name) ?? []), input]);
+    contents.set(name, [...(contents.get(name) ?? []), last.content]);
 
     return (bots[name] ?? (() => call("pass")))(input, options?.signal);
   };
 }
 
-const bot = (name: string, enabled = true) => ({
+const bot = (name: string, enabled = true, model = "chat") => ({
   name,
   avatar: "bot",
   description: "",
   instructions: "Answer",
   provider: "faux",
-  model: "chat",
+  model,
   enabled,
   tools: [],
   skills: [],
@@ -98,8 +100,19 @@ const bot = (name: string, enabled = true) => ({
 
 function open(dir: string, bots: Record<string, Bot>) {
   const inputs = new Map<string, string[]>();
-  const faux = fauxProvider({ provider: "faux", models: [{ id: "chat" }] });
-  faux.setResponses(Array.from({ length: 200 }, () => script(bots, inputs)));
+  const contents = new Map<string, Message["content"][]>();
+
+  const faux = fauxProvider({
+    provider: "faux",
+    models: [
+      { id: "chat", input: ["text", "image"] },
+      { id: "text", input: ["text"] },
+    ],
+  });
+
+  faux.setResponses(
+    Array.from({ length: 200 }, () => script(bots, inputs, contents)),
+  );
   const models = createModels();
   models.setProvider(faux.provider);
   const store = new Store(dir);
@@ -129,7 +142,7 @@ function open(dir: string, bots: Record<string, Bot>) {
 
   cleanups.push(close);
 
-  return { store, service, groups, inputs, close };
+  return { store, service, groups, inputs, contents, close };
 }
 
 function setup(bots: Record<string, Bot> = {}, names = ["Ada", "Grace"]) {
@@ -544,6 +557,108 @@ describe("joining members", () => {
     expect(inputs.get("Hopper")![0]).toContain(
       "The earlier conversation could not be summarized.",
     );
+  });
+});
+
+describe("attachments", () => {
+  // A 1×1 PNG.
+  const png =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+
+  const image = { name: "map.png", mimeType: "image/png", data: png };
+
+  const note = (n: number) => ({
+    name: `note-${n}.txt`,
+    mimeType: "text/plain",
+    data: Buffer.from(`note ${n}`).toString("base64"),
+  });
+
+  const blocks = (content: Message["content"] | undefined) =>
+    Array.isArray(content) ? content : [];
+
+  test("an owner image reaches each member and pages show it without bytes", async () => {
+    const { groups, group, contents } = setup();
+
+    await groups.post(group.id, "Here is the route", "r-1", {
+      attachments: [image],
+    });
+    await quiet(groups, group.id);
+
+    for (const name of ["Ada", "Grace"])
+      expect(blocks(contents.get(name)?.[0])).toContainEqual({
+        type: "image",
+        data: png,
+        mimeType: "image/png",
+      });
+
+    const [message] = (await groups.snapshot(group.id, {})).messages;
+
+    expect(message?.attachments).toEqual([
+      { name: "map.png", mimeType: "image/png", size: 70, kind: "image" },
+    ]);
+    expect(JSON.stringify(message)).not.toContain(png);
+    expect(
+      (await groups.attachment(group.id, message!.entryId, 0)).mimeType,
+    ).toBe("image/png");
+  });
+
+  test("a text-only model gets the image's name instead", async () => {
+    const { groups, group, store, inputs, contents, agents } = setup();
+
+    store.updateAgent(agents[1]!.id, { model: "text" });
+    await groups.post(group.id, "@Grace look", "r-1", { attachments: [image] });
+    await quiet(groups, group.id);
+    expect(inputs.get("Grace")![0]).toContain("left out: map.png");
+    expect(
+      blocks(contents.get("Grace")?.[0]).some(
+        (block) => block.type === "image",
+      ),
+    ).toBe(false);
+  });
+
+  test("coalesced messages send their newest eight attachments", async () => {
+    const held = gate();
+
+    const { groups, group, contents } = setup({
+      Ada: async (input) => {
+        if (input.includes("first")) await held.opened;
+
+        return say("Read them.");
+      },
+    });
+
+    await groups.post(group.id, "@Ada first", "r-1");
+    await groups.post(group.id, "@Ada older", "r-2", {
+      attachments: [1, 2, 3, 4, 5].map(note),
+    });
+    await groups.post(group.id, "@Ada newer", "r-3", {
+      attachments: [6, 7, 8, 9].map(note),
+    });
+    held.open();
+    await quiet(groups, group.id);
+
+    const names = blocks(contents.get("Ada")?.[1]).flatMap((block) =>
+      block.type === "text"
+        ? [...block.text.matchAll(/<attachment name="(.+?)">/g)].map(
+            (match) => match[1],
+          )
+        : [],
+    );
+
+    expect(names).toEqual([2, 3, 4, 5, 6, 7, 8, 9].map((n) => `note-${n}.txt`));
+  });
+
+  test("an invalid attachment writes nothing", async () => {
+    const { groups, group } = setup();
+
+    await expect(
+      groups.post(group.id, "Look", "r-1", {
+        attachments: [
+          { name: "a.zip", mimeType: "application/zip", data: png },
+        ],
+      }),
+    ).rejects.toThrow("only images");
+    expect((await groups.snapshot(group.id, {})).messages).toEqual([]);
   });
 });
 

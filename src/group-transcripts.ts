@@ -9,6 +9,7 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { mkdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
+import { attachmentDigest } from "./attachments";
 import { AppError } from "./domain";
 import {
   GROUP_MESSAGE_KIND,
@@ -111,7 +112,9 @@ export class GroupTranscripts {
       written.data.sender.kind !== message.sender.kind ||
       written.data.sender.agentId !== message.sender.agentId ||
       written.data.replyTo !== message.replyTo ||
-      written.data.reaction !== message.reaction
+      written.data.reaction !== message.reaction ||
+      attachmentDigest(written.data.attachments ?? []) !==
+        attachmentDigest(message.attachments ?? [])
     )
       throw new AppError(
         409,
@@ -183,6 +186,15 @@ export class GroupTranscripts {
     return item?.kind === GROUP_MESSAGE_KIND && parsed.success
       ? { ...parsed.data, entry, entryId }
       : undefined;
+  }
+
+  /** The bytes of one of a message's attachments. */
+  async attachment(groupId: string, entryId: string, index: number) {
+    const item = (await this.message(groupId, entryId))?.attachments?.[index];
+
+    if (!item) throw new AppError(404, "Attachment not found");
+
+    return { mimeType: item.mimeType, data: Buffer.from(item.data, "base64") };
   }
 
   /** The number of the newest entry, or 0 for an empty transcript. */
