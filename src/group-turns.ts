@@ -1,0 +1,75 @@
+import { Type } from "@earendil-works/pi-ai";
+import {
+  defineDoc,
+  defineExtension,
+  defineTask,
+  defineTool,
+} from "@earendil-works/pi-durable";
+
+export const PASS_TOOL_NAME = "pass";
+
+export const GROUP_TURN_EXTENSION = "group-turn";
+
+/** Extensions a group turn leaves out: no delegation and no coding jobs from a group. */
+export const GROUP_EXCLUDED_EXTENSIONS = new Set([
+  "coordination",
+  "coding",
+  "coding-job",
+]);
+
+export const GROUP_INSTRUCTIONS =
+  "This conversation is your private working context for a group chat between the owner and several bots. Each input names the group and its members and lists the group messages you have not seen, each with its sender. Your final answer is posted to the group as your message; the owner and every member read it. Your tool calls, tool results, and memory stay private, so share only what the group needs. Mentioning a member with @ and their exact name wakes them, so mention a bot only when you need it to respond, and never to thank or acknowledge it. Answer when you are addressed or have something the others have not said. React with one emoji to acknowledge a message without answering. Otherwise call `pass` to stay silent; silence is often right when other bots have answered.";
+
+/** Marks a bot's conversation as its working context for one group chat. */
+export const GroupConversation = defineDoc<{ groupId: string | null }>({
+  kind: "crumble.group-conversation",
+  version: 1,
+  scope: "conversation",
+  history: "latest",
+  fork: "initial",
+  initial: () => ({ groupId: null }),
+});
+
+// Owns a member's group conversation, so it outlives the bot chat's turns and Esc, like a coding job's anchor.
+export const GroupAnchor = defineTask<null, { phase: "done" }, null>({
+  name: "crumble.group-anchor",
+  version: 1,
+  initial: () => ({ phase: "done" }),
+  phases: {
+    done: (_anchor, runtime, taskContext) =>
+      runtime.commit(
+        () => ({
+          status: "terminal",
+          outcome: { status: "completed", result: null },
+        }),
+        taskContext,
+      ),
+  },
+  abort: (_anchor, runtime, taskContext) =>
+    runtime.commit(
+      () => ({ status: "terminal", outcome: { status: "aborted" } }),
+      taskContext,
+    ),
+});
+
+/** The `pass` tool and the anchor task; installed for every bot and offered only in group conversations. */
+export function groupTurnExtension() {
+  const pass = defineTool({
+    name: PASS_TOOL_NAME,
+    description:
+      "Stay silent in the group chat: nothing is posted for this turn. Use it when the new messages need nothing from you. Finish any other tool calls, such as saving memory, first. Your turn ends here, so do not write a reply.",
+    parameters: Type.Object({}),
+    callers: ["model"],
+    replay: "safe",
+    execute: async () => ({
+      output: [{ type: "text" as const, text: "Passed." }],
+      control: { terminate: true },
+    }),
+  });
+
+  return defineExtension({
+    name: GROUP_TURN_EXTENSION,
+    tools: [pass],
+    tasks: [GroupAnchor],
+  });
+}

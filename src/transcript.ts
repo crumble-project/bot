@@ -14,6 +14,7 @@ import type {
 import type { AttachmentInfo } from "./attachments";
 import { codingJobOf } from "./coding";
 import { reactionOf } from "./reaction";
+import { PASS_TOOL_NAME } from "./group-turns";
 
 type ModelContent = NonNullable<EntryRecord["model"]>[number]["content"];
 
@@ -668,4 +669,49 @@ export async function readResponse(
   }
 
   return output;
+}
+
+export type TurnOutcome =
+  | { kind: "message"; text: string }
+  | { kind: "reaction"; emoji: string }
+  | { kind: "pass" };
+
+/** A group turn's result after its input: a pass or reaction wins, else the final answer, else nothing. */
+export async function readTurnOutcome(
+  conversation: Conversation,
+  inputEntryId: number,
+): Promise<TurnOutcome> {
+  // SAFETY: inputEntryId is the persisted input entry; its successor starts the response range.
+  const page = await conversation.entries(
+    { order: "ascending", minEntryId: (inputEntryId + 1) as EntryId },
+    MAX_LIMIT,
+    undefined,
+    BACKGROUND_CONTEXT,
+  );
+
+  let text = "";
+
+  for (const entry of page.items) {
+    if (INPUT_KINDS.has(entry.kind)) break;
+
+    for (const message of entry.model ?? []) {
+      if (message.role === "assistant") text = textOf(message.content).trim();
+      const { toolName, isError, details } = toolMetadata.parse(message);
+
+      if (message.role !== "toolResult" || isError) continue;
+
+      if (toolName === PASS_TOOL_NAME) return { kind: "pass" };
+
+      const emoji = reactionOf({
+        role: message.role,
+        toolName,
+        isError,
+        toolDetails: details,
+      });
+
+      if (emoji) return { kind: "reaction", emoji };
+    }
+  }
+
+  return text ? { kind: "message", text } : { kind: "pass" };
 }
