@@ -5,6 +5,7 @@ import { Store } from "../src/store";
 import { CrumbleService } from "../src/service";
 import { Scheduler } from "../src/scheduler";
 import { createAPI } from "../src/api";
+import { memoryResponse } from "../src/api-responses";
 
 const token = "t".repeat(40);
 
@@ -513,6 +514,45 @@ describe("HTTP API", () => {
         await req(app, "/v1/providers").then((r: Response) => r.json()),
       ),
     ).not.toContain("secret");
+    store.close();
+  });
+
+  test("reports each memory's source", async () => {
+    const { app, store } = setup();
+
+    const agent = await req(app, "/v1/agents", {
+      method: "POST",
+      body: JSON.stringify(agentInput("A")),
+    }).then((r: Response) => r.json());
+
+    await req(app, `/v1/agents/${agent.id}/memories`, {
+      method: "POST",
+      body: JSON.stringify({ content: "from the owner" }),
+    });
+    store.createMemory({ agentId: agent.id, content: "older" });
+    store.createMemory({
+      agentId: agent.id,
+      content: "from a group",
+      source: { kind: "group", groupId: "group-1", name: "Trip" },
+    });
+
+    const memories = memoryResponse
+      .array()
+      .parse(
+        await req(app, `/v1/agents/${agent.id}/memories`).then((r: Response) =>
+          r.json(),
+        ),
+      );
+
+    // Memories saved in the same millisecond have no defined order.
+    expect(memories).toHaveLength(3);
+    expect(memories.map((memory) => memory.source)).toEqual(
+      expect.arrayContaining([
+        { kind: "owner" },
+        null,
+        { kind: "group", groupId: "group-1", name: "Trip" },
+      ]),
+    );
     store.close();
   });
 

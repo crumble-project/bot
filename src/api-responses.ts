@@ -249,11 +249,39 @@ export const scheduleRunResponse = z
   })
   .openapi("ScheduleRun");
 
+const memorySourceResponse = z
+  .discriminatedUnion("kind", [
+    z.object({ kind: z.literal("chat") }),
+    z.object({ kind: z.literal("owner") }),
+    z.object({
+      kind: z.literal("task"),
+      scheduleId: z.string(),
+      name: z.string(),
+    }),
+    z.object({
+      kind: z.literal("bot"),
+      agentId: z.string(),
+      name: z.string(),
+    }),
+    z.object({
+      kind: z.literal("group"),
+      groupId: z.string(),
+      name: z.string(),
+    }),
+  ])
+  .openapi("MemorySource", {
+    description:
+      "Where the memory was saved: the owner's bot chat, the owner directly, a scheduled task, another bot's request, or a group chat. Names are the ones current at the time.",
+  });
+
 export const memoryResponse = z
   .object({
     id: z.string(),
     agentId: z.string().nullable(),
     content: z.string(),
+    source: memorySourceResponse.nullable().openapi({
+      description: "Null for memories saved before sources were recorded.",
+    }),
     createdAt: z.string(),
     updatedAt: z.string(),
   })

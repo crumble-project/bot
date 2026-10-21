@@ -534,6 +534,7 @@ export function createAPI(
       store.createMemory({
         agentId: c.req.param("id"),
         content: input.content,
+        source: { kind: "owner" },
       }),
       201,
     );
@@ -573,7 +574,11 @@ export function createAPI(
     const input = memoryInput.parse(await c.req.json());
 
     return c.json(
-      store.createMemory({ agentId: null, content: input.content }),
+      store.createMemory({
+        agentId: null,
+        content: input.content,
+        source: { kind: "owner" },
+      }),
       201,
     );
   });

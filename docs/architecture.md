@@ -59,6 +59,8 @@ Bots answer in turns. `GroupChats` routes each message: an owner message wakes t
 
 A member added after the group's first message gets a summary on its first turn: `AgentRuntime.summarize` asks the bot's own model once, and the result is stored on the membership so a retried turn sends the same input. The owner's attachments are stored in the transcript entry with their metadata; a turn passes those of its unseen messages to the execution, leaving images out by name for models that cannot read them. A bot's group message notifies the owner when it is the first answer to the owner's newest message or mentions `@owner`: `GroupChats` calls `CrumbleService.announce` with a reply event carrying `groupId`, keyed by the turn's execution, so push delivery deduplicates a retried post.
 
+Every memory records its source. The memory tool passes where it runs to the server's memory callbacks: the group of a group conversation, or the input submissions of the chat's active run. `memorySourceOf` resolves the newest submission to its execution, and from there to a scheduled task, another bot's request, or the owner's chat; memories the owner writes through the API are `owner`. A group turn cannot create, change, or delete shared memories. Bot chats get the `group_chats` tool (`group-lookup.ts`), which lists the bot's groups and pages through their transcripts through `GroupChats`; group turns don't.
+
 ## Verifiable milestones
 
 1. Persistent agent lifecycle and actual Pi Durable conversation submission, cancellation, streaming, reopen, and isolation tests.
