@@ -208,6 +208,7 @@ export async function startServer(
     const groupChats = new GroupChats(
       store,
       new GroupTranscripts(join(dataDir, "groups")),
+      service,
     );
 
     push = new PushManager(new PushStore(dataDir));
@@ -234,6 +235,7 @@ export async function startServer(
     });
 
     await service.recover();
+    await groupChats.recover();
     scheduler.start();
     let closed = false;
 

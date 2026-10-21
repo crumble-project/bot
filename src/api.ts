@@ -426,7 +426,7 @@ export function createAPI(
       ...(await c.req.json()),
     });
 
-    return c.json(groupChats().update(current.id, input), 200);
+    return c.json(await groupChats().update(current.id, input), 200);
   });
   register(routes.deleteGroupChat, async (c) => {
     await groupChats().delete(c.req.param("id"));

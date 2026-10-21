@@ -40,6 +40,7 @@ function setup() {
   const groupChats = new GroupChats(
     store,
     new GroupTranscripts(join(dir, "groups")),
+    service,
   );
 
   const app = createAPI(service, scheduler, token, undefined, { groupChats });
@@ -52,7 +53,8 @@ function setup() {
       instructions: "Answer",
       provider: "openai",
       model: "gpt-4.1",
-      enabled: true,
+      // These tests cover the API; turns have their own tests.
+      enabled: false,
       tools: [],
       skills: [],
       mcpServers: [],

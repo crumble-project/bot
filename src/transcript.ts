@@ -13,7 +13,7 @@ import type {
 
 import type { AttachmentInfo } from "./attachments";
 import { codingJobOf } from "./coding";
-import { reactionOf } from "./reaction";
+import { REACTION_TOOL_NAME, reactionOf } from "./reaction";
 import { PASS_TOOL_NAME } from "./group-turns";
 
 type ModelContent = NonNullable<EntryRecord["model"]>[number]["content"];
@@ -51,12 +51,16 @@ const botMessage = z.object({
 
 export const GROUP_MESSAGE_KIND = "crumble.group-message";
 
-/** A group chat message: the owner's or a bot's words, written once under its request ID. */
+/** A group chat message: the owner's or a bot's words, or a bot's reaction, written once under its request ID. */
 export const groupMessageData = z.object({
   text: z.string(),
   sender: messageOrigin,
   requestId: z.string(),
   timestamp: z.number(),
+  replyTo: z.string().optional(),
+  replyPreview: z.string().optional(),
+  /** The emoji of a reaction to `replyTo`; a reaction has no text. */
+  reaction: z.string().optional(),
 });
 
 export type GroupMessageData = z.infer<typeof groupMessageData>;
@@ -297,20 +301,41 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
     const parsed = groupMessageData.safeParse(entry.data);
 
     if (!parsed.success) return [];
-    const { text, sender, requestId, timestamp } = parsed.data;
 
-    return [
-      {
-        id: `${entryId}:0`,
-        entryId,
-        requestId,
-        role: sender.kind === "owner" ? "user" : "assistant",
-        content: text,
-        timestamp,
-        kind: entry.kind,
-        origin: sender,
-      },
-    ];
+    const { text, sender, requestId, timestamp, replyTo, replyPreview } =
+      parsed.data;
+
+    // Reactions take the shape of a bot chat's `react` result, attached to the message they answer.
+    const message: TranscriptMessage =
+      parsed.data.reaction === undefined
+        ? {
+            id: `${entryId}:0`,
+            entryId,
+            requestId,
+            role: sender.kind === "owner" ? "user" : "assistant",
+            content: text,
+            timestamp,
+            kind: entry.kind,
+            origin: sender,
+          }
+        : {
+            id: `${entryId}:0`,
+            entryId,
+            requestId,
+            role: "toolResult",
+            content: `Reacted ${parsed.data.reaction}`,
+            timestamp,
+            kind: entry.kind,
+            origin: sender,
+            toolName: REACTION_TOOL_NAME,
+            toolDetails: { emoji: parsed.data.reaction },
+          };
+
+    if (replyTo !== undefined) message.replyTo = replyTo;
+
+    if (replyPreview !== undefined) message.replyPreview = replyPreview;
+
+    return [message];
   }
 
   const input = inputMetadata.parse(data ?? {});
