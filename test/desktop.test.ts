@@ -17,7 +17,7 @@ import type { Agent } from "../src/domain";
 import { AgentRuntime } from "../src/runtime";
 import { Store } from "../src/store";
 import { latestMessagePreview } from "../src/transcript";
-import type { Workspaces } from "../src/workspace";
+import type { DesktopStream, Workspaces } from "../src/workspace";
 import { scriptedGuest, type GuestCall } from "./fixtures/scripted-guest";
 
 const cleanups: (() => void | Promise<void>)[] = [];
@@ -65,6 +65,17 @@ class GuestWorkspaces implements Workspaces {
   async sync(_agentId: string, _context: Context) {}
 
   async restart(_agentId: string, _context: Context) {}
+
+  async openDesktop(
+    _agentId: string,
+    _context: Context,
+  ): Promise<DesktopStream> {
+    throw new Error("No bot desktop in this test");
+  }
+
+  keepAwake(_agentId: string) {
+    return () => {};
+  }
 
   async close(_context: Context) {}
 }
@@ -240,4 +251,12 @@ test("the desktop job list reports each job's token usage", async () => {
   expect(job?.usage?.models["faux/desk"]?.totalTokens).toBeGreaterThan(0);
   // Only the job's own requests: the bot's model does not appear.
   expect(job?.usage?.models["faux/chat"]).toBeUndefined();
+});
+
+test("rebuilding a bot's extensions keeps the same computer_use tool", () => {
+  const agent = { id: "00000000-0000-4000-8000-000000000501" };
+  const toolOf = () => desktopExtensions(agent).job[0]?.tools?.[0];
+
+  // A running job's snapshots and the lease count it last saw live in that tool.
+  expect(toolOf()).toBe(toolOf());
 });

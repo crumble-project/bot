@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "holder": {
+      "type": "string",
+      "enum": [
+        "bot",
+        "owner"
+      ]
+    },
+    "changes": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "updatedAt": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "holder",
+    "changes",
+    "updatedAt"
+  ],
+  "additionalProperties": true
+}

@@ -185,6 +185,30 @@ export const desktopJobsResponse = z
   })
   .openapi("DesktopJobs");
 
+export const desktopControlResponse = z
+  .object({
+    holder: z.enum(["bot", "owner"]).openapi({
+      description:
+        "Who operates the bot desktop. While the owner holds control, the bot's desktop job pauses and only the owner's viewer input reaches the bot desktop.",
+    }),
+    changes: z.number().int().openapi({
+      description:
+        "How often control changed hands. A desktop job refuses actions it planned before a change.",
+    }),
+    updatedAt: z.string(),
+  })
+  .openapi("DesktopControl");
+
+export const desktopViewerResponse = z
+  .object({
+    path: z.string().openapi({
+      description:
+        "Server-relative URL of the viewer page, a noVNC client of the bot desktop. Load it in a web view; it works once and expires at expiresAt unless its connection has started by then.",
+    }),
+    expiresAt: z.string(),
+  })
+  .openapi("DesktopViewer");
+
 export const chatSnapshotResponse = historyResponse
   .extend({
     conversationId: z.string(),

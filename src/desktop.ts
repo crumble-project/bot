@@ -7,6 +7,7 @@ import {
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { computerUseTool } from "./computer-use";
+import type { DesktopControl } from "./desktop-control";
 import type { Agent } from "./domain";
 import { defineJobKind, type JobExtensions } from "./jobs";
 import type { Workspaces } from "./workspace";
@@ -48,13 +49,42 @@ export const desktopEnv = (
 ): Promise<ExecutionEnv | undefined> =>
   desktop.env(workspaces, agentId, target, context);
 
+type ComputerUseTool = ReturnType<typeof computerUseTool>;
+
+const UNCONTROLLED = {};
+
+// One tool per bot and lease: the runtime rebuilds a bot's extensions whenever it reconfigures the bot, and a running
+// job must keep its snapshots and the lease change count it last saw.
+const tools = new WeakMap<object, Map<string, ComputerUseTool>>();
+
+function toolFor(agentId: string, control: DesktopControl | undefined) {
+  const scope = control ?? UNCONTROLLED;
+  const byAgent = tools.get(scope) ?? new Map<string, ComputerUseTool>();
+  let tool = byAgent.get(agentId);
+
+  if (!tool) {
+    // While the owner has control, every computer_use call waits for hand-back.
+    tool = computerUseTool(
+      control &&
+        (() => ({
+          untilBot: (context) => control.untilBot(agentId, context),
+        })),
+    );
+    byAgent.set(agentId, tool);
+    tools.set(scope, byAgent);
+  }
+
+  return tool;
+}
+
 /** Lets a bot run desktop jobs: child conversations with the computer_use tool on its bot desktop. */
 export function desktopExtensions(
   agent: Pick<Agent, "id" | "desktopModel">,
+  control?: DesktopControl,
 ): JobExtensions {
   const job = defineExtension({
     name: "desktop-job",
-    tools: [computerUseTool()],
+    tools: [toolFor(agent.id, control)],
   });
 
   return desktop.extensions({

@@ -7,6 +7,7 @@ import { openAPIDocument } from "./api-contract";
 import {
   activityEvent,
   chatSnapshotResponse,
+  desktopControlResponse,
   groupChatSnapshotResponse,
   heartbeatEvent,
 } from "./api-responses";
@@ -16,6 +17,7 @@ export const eventSchemas = {
   "group-chat-snapshot.schema.json": groupChatSnapshotResponse,
   "activity-event.schema.json": activityEvent,
   "heartbeat.schema.json": heartbeatEvent,
+  "desktop-control.schema.json": desktopControlResponse,
 };
 
 type ContractArtifacts = Record<string, string>;

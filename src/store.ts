@@ -1,4 +1,5 @@
 import type { JsonValue } from "@earendil-works/chord";
+import type { ControlState } from "./desktop-control";
 import { Database } from "bun:sqlite";
 import {
   mkdirSync,
@@ -160,6 +161,10 @@ export class Store {
 
     if (!agentCols.some((c) => c.name === "desktop_model"))
       this.db.exec("ALTER TABLE agents ADD COLUMN desktop_model TEXT");
+
+    this.db.exec(
+      "CREATE TABLE IF NOT EXISTS desktop_control (agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE, holder TEXT NOT NULL, changes INTEGER NOT NULL, updated_at TEXT NOT NULL)",
+    );
 
     if (!agentCols.some((c) => c.name === "shared_memory"))
       this.db.exec(
@@ -374,6 +379,29 @@ export class Store {
       );
 
     return this.getAgent(agentId);
+  }
+  /** The bot desktop's control lease; null until control first changes. */
+  getDesktopControl(agentId: Id): ControlState | null {
+    const row = this.db
+      .query<{ holder: string; changes: number; updated_at: string }, [string]>(
+        "SELECT holder, changes, updated_at FROM desktop_control WHERE agent_id=?",
+      )
+      .get(agentId);
+
+    return row
+      ? {
+          holder: row.holder === "owner" ? "owner" : "bot",
+          changes: row.changes,
+          updatedAt: row.updated_at,
+        }
+      : null;
+  }
+  setDesktopControl(agentId: Id, state: ControlState) {
+    this.db
+      .query(
+        "INSERT INTO desktop_control (agent_id, holder, changes, updated_at) VALUES (?,?,?,?) ON CONFLICT(agent_id) DO UPDATE SET holder=excluded.holder, changes=excluded.changes, updated_at=excluded.updated_at",
+      )
+      .run(agentId, state.holder, state.changes, state.updatedAt);
   }
   deleteAgent(agentId: Id) {
     return (

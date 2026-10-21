@@ -1,0 +1,213 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
+import { upgradeWebSocket } from "hono/bun";
+import { streamSSE } from "hono/streaming";
+import type { WSContext, WSMessageReceive } from "hono/ws";
+import { desktopControlInput, routes, type contractApp } from "./api-contract";
+import type { DesktopControl } from "./desktop-control";
+import {
+  bridgeDesktop,
+  VIEWER_PREFIX,
+  viewerPage,
+  type ViewerTickets,
+} from "./desktop-viewer";
+import { AppError } from "./domain";
+import type { CrumbleService } from "./service";
+import type { DesktopStream } from "./workspace";
+
+export type Register = <R extends RouteConfig>(
+  definition: R & { getRoutingPath: () => string },
+  handler: RouteHandler<R>,
+) => void;
+
+const NOVNC = path.dirname(
+  fileURLToPath(import.meta.resolve("@novnc/novnc/package.json")),
+);
+
+// The viewer page imports only noVNC's core library and the zlib port it bundles.
+const SERVED = ["core/", "vendor/"];
+
+const HEARTBEAT_MS = 15_000;
+
+/** A noVNC file under the package's core or vendor directory, or undefined for any other path. */
+function novncFile(requested: string) {
+  const relative = path.posix.normalize(decodeURIComponent(requested));
+
+  if (
+    !relative.endsWith(".js") ||
+    !SERVED.some((prefix) => relative.startsWith(prefix))
+  )
+    return undefined;
+
+  const file = path.resolve(NOVNC, relative);
+
+  return file.startsWith(`${NOVNC}${path.sep}`) ? file : undefined;
+}
+
+const bytesOf = async (data: WSMessageReceive) => {
+  if (data instanceof Uint8Array) return data;
+
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+
+  if (data instanceof Blob) return new Uint8Array(await data.arrayBuffer());
+
+  return undefined;
+};
+
+/**
+ * Routes for watching and taking control of a bot desktop. Control and viewer links are owner API; the viewer page,
+ * its noVNC files, and its WebSocket live outside `/v1`, because a web view cannot send the bearer token there: the
+ * single-use link is the credential.
+ */
+export function registerDesktopRoutes(options: {
+  app: ReturnType<typeof contractApp>;
+  register: Register;
+  service: CrumbleService;
+  /** Whether the server has a desktop workspace image. */
+  desktop: boolean;
+  control: DesktopControl;
+  tickets: ViewerTickets;
+  openDesktop?: (agentId: string) => Promise<DesktopStream>;
+}) {
+  const { app, register, service, control, tickets } = options;
+  // The bot of each viewer connection, from its redeemed ticket to its WebSocket.
+  const viewers = new WeakMap<Request, string>();
+
+  const desktopAgent = (id: string) => {
+    const agent = service.agent(id);
+
+    if (!options.desktop || !agent.tools.includes("desktop"))
+      throw new AppError(409, "This bot has no bot desktop");
+
+    return agent;
+  };
+
+  register(routes.desktopControl, (c) =>
+    c.json(control.get(service.agent(c.req.param("id")).id), 200),
+  );
+
+  register(routes.putDesktopControl, async (c) => {
+    const agent = desktopAgent(c.req.param("id"));
+    const input = desktopControlInput.parse(await c.req.json());
+
+    return c.json(control.set(agent.id, input.holder), 200);
+  });
+
+  register(routes.desktopEvents, (c) => {
+    const agent = service.agent(c.req.param("id"));
+
+    return streamSSE(c, async (stream) => {
+      let finish!: () => void;
+
+      const finished = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+
+      stream.onAbort(finish);
+
+      const send = (state: ReturnType<DesktopControl["get"]>) =>
+        stream
+          .writeSSE({ event: "control", data: JSON.stringify(state) })
+          .catch(finish);
+
+      const unsubscribe = control.subscribe(agent.id, (state) => {
+        void send(state);
+      });
+
+      const timer = setInterval(() => {
+        stream.writeSSE({ event: "heartbeat", data: "{}" }).catch(finish);
+      }, HEARTBEAT_MS);
+
+      try {
+        await send(control.get(agent.id));
+        await finished;
+      } finally {
+        clearInterval(timer);
+        unsubscribe();
+      }
+    });
+  });
+
+  register(routes.createDesktopViewer, (c) => {
+    const agent = desktopAgent(c.req.param("id"));
+    const { ticket, expiresAt } = tickets.issue(agent.id);
+
+    return c.json({ path: `${VIEWER_PREFIX}/${ticket}`, expiresAt }, 201);
+  });
+
+  app.get(`${VIEWER_PREFIX}/novnc/*`, async (c) => {
+    const file = novncFile(c.req.path.slice(`${VIEWER_PREFIX}/novnc/`.length));
+
+    if (!file) return c.notFound();
+
+    const content = await readFile(file).catch(() => undefined);
+
+    if (!content) return c.notFound();
+
+    return c.body(new Uint8Array(content), 200, {
+      "Content-Type": "text/javascript; charset=utf-8",
+    });
+  });
+
+  app.get(`${VIEWER_PREFIX}/:ticket`, (c) => {
+    const ticket = c.req.param("ticket");
+
+    if (!tickets.peek(ticket)) return c.notFound();
+
+    return c.html(viewerPage(ticket), 200, { "Cache-Control": "no-store" });
+  });
+
+  app.get(
+    `${VIEWER_PREFIX}/:ticket/websockify`,
+    async (c, next) => {
+      // Spent here, before the upgrade: a link opens one connection.
+      const agentId = tickets.redeem(c.req.param("ticket"));
+
+      if (!agentId || !options.openDesktop) return c.notFound();
+
+      viewers.set(c.req.raw, agentId);
+      await next();
+    },
+    upgradeWebSocket((c) => {
+      const agentId = viewers.get(c.req.raw) ?? "";
+      const pending: Uint8Array[] = [];
+      let bridge: ReturnType<typeof bridgeDesktop> | undefined;
+      let closed = false;
+
+      return {
+        onOpen: (_event, ws: WSContext) => {
+          void options.openDesktop!(agentId)
+            .then((stream) => {
+              if (closed) return void stream.close();
+
+              bridge = bridgeDesktop({
+                stream,
+                // Watching never lets input through; only the owner holding control does.
+                allowInput: () => control.get(agentId).holder === "owner",
+                // A copy: the WebSocket takes only bytes backed by a plain ArrayBuffer.
+                send: (data) => ws.send(new Uint8Array(data)),
+                close: () => ws.close(),
+              });
+
+              for (const data of pending.splice(0)) bridge.receive(data);
+            })
+            .catch(() => ws.close(1011, "The bot desktop is unavailable"));
+        },
+        onMessage: async (event) => {
+          const data = await bytesOf(event.data);
+
+          if (!data) return;
+
+          if (bridge) bridge.receive(data);
+          else pending.push(data);
+        },
+        onClose: () => {
+          closed = true;
+          void bridge?.close();
+        },
+      };
+    }),
+  );
+}

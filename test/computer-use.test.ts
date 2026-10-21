@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createComputerUse } from "../src/computer-use";
+import type { ControlState } from "../src/desktop-control";
 import { scriptedGuest } from "./fixtures/scripted-guest";
 
 const windows = {
@@ -289,4 +290,93 @@ test("a failed window listing reports cua-driver's error, not an empty desktop",
 
   expect(result.isError).toBe(true);
   expect(text(result)).toContain("cua-driver daemon is not running");
+});
+
+/** A control lease the test hands between bot and owner. */
+class FakeGate {
+  state: ControlState = { holder: "bot", changes: 0, updatedAt: "" };
+  private readonly waiting: (() => void)[] = [];
+
+  untilBot = async () => {
+    while (this.state.holder !== "bot")
+      await new Promise<void>((resume) => this.waiting.push(resume));
+
+    return this.state;
+  };
+
+  set(holder: ControlState["holder"]) {
+    this.state = { ...this.state, holder, changes: this.state.changes + 1 };
+
+    for (const resume of this.waiting.splice(0)) resume();
+  }
+}
+
+test("actions wait while the owner holds control, and a plan from before is refused", async () => {
+  const gate = new FakeGate();
+
+  const { shell, calls } = scriptedGuest({
+    list_windows: [windows],
+    get_window_state: [
+      { snapshot_id: "s1", tree_markdown: '- [2] entry "Name"' },
+    ],
+    set_value: [{ effect: "confirmed" }],
+  });
+
+  const tool = createComputerUse(shell, gate);
+
+  await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+  gate.set("owner");
+
+  let done = false;
+
+  const pending = tool
+    .run({ action: "set_value", element: 2, value: "Ada" }, BACKGROUND_CONTEXT)
+    .then((result) => {
+      done = true;
+
+      return result;
+    });
+
+  await Bun.sleep(50);
+  expect(done).toBe(false);
+
+  gate.set("bot");
+
+  const result = await pending;
+
+  expect(result.isError).toBe(true);
+  expect(text(result)).toContain("Capture before acting");
+  expect(calls.some((c) => c.tool === "set_value")).toBe(false);
+
+  // The old snapshot is gone: the next capture is a full read, not a diff.
+  const fresh = await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+
+  expect(fresh.isError).toBe(false);
+  expect(
+    calls.filter((c) => c.tool === "get_window_state").at(-1)?.args.since,
+  ).toBeUndefined();
+});
+
+test("without a change of control, actions run as before", async () => {
+  const gate = new FakeGate();
+
+  const { shell, calls } = scriptedGuest({
+    list_windows: [windows],
+    get_window_state: [
+      { snapshot_id: "s1", tree_markdown: '- [2] entry "Name"' },
+    ],
+    set_value: [{ effect: "confirmed" }],
+  });
+
+  const tool = createComputerUse(shell, gate);
+
+  await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+
+  const result = await tool.run(
+    { action: "set_value", element: 2, value: "Ada" },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(result.isError).toBe(false);
+  expect(calls.some((c) => c.tool === "set_value")).toBe(true);
 });

@@ -15,6 +15,7 @@ import { z } from "zod";
 import {
   WORKSPACE_PATH,
   allowAllRequests,
+  type DesktopStream,
   type WorkspaceNetworkPolicy,
   type Workspaces,
 } from "./workspace";
@@ -113,6 +114,8 @@ class Workspace {
   readonly env: ExecutionEnv;
   running: Running | undefined;
   private inflight = 0;
+  // Viewers and an owner holding control: the machine stays up while any hold.
+  private holds = 0;
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private queue: Promise<unknown> = Promise.resolve();
 
@@ -185,16 +188,75 @@ class Workspace {
       // pi-env's Connection reconnects after losing its bridge but not after close(), so only the last stop closes it.
       if (force && !keepConnection) this.connection.close();
 
-      if (!this.running || (!force && this.inflight > 0)) return;
+      if (!this.running || (!force && (this.inflight > 0 || this.holds > 0)))
+        return;
 
       await this.teardown();
     });
   }
 
+  /** Keeps the machine from its idle stop until released. */
+  hold() {
+    this.holds += 1;
+    clearTimeout(this.idleTimer);
+
+    let released = false;
+
+    return () => {
+      if (released) return;
+
+      released = true;
+      this.holds -= 1;
+      this.armIdleTimer();
+    };
+  }
+
+  /** A stream to Xvnc in the guest, through socat on an exec stream like the pi-env relay: no guest port. */
+  async openDesktop(): Promise<DesktopStream> {
+    const release = this.hold();
+
+    try {
+      await this.ensureStarted();
+
+      const running = this.running;
+
+      if (!running || running.image !== this.owner.desktopImageName())
+        throw new Error("This bot has no bot desktop");
+
+      const exec = await running.sandbox.execStreamWith("socat", (options) =>
+        options.args(["-", "TCP:127.0.0.1:5900"]).stdinPipe(),
+      );
+
+      const stdin = await exec.takeStdin();
+
+      if (!stdin) throw new Error("The desktop stream has no stdin");
+
+      // Writes to the guest are async; chaining keeps them in order.
+      let writes = Promise.resolve();
+
+      async function* output() {
+        for await (const event of exec)
+          if (event.kind === "stdout") yield new Uint8Array(event.data);
+      }
+
+      return {
+        write: (data) => (writes = writes.then(() => stdin.write(data))),
+        output: output(),
+        close: async () => {
+          release();
+          await stdin.close().catch(() => undefined);
+        },
+      };
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+
   private armIdleTimer() {
     clearTimeout(this.idleTimer);
 
-    if (!this.running || this.inflight > 0) return;
+    if (!this.running || this.inflight > 0 || this.holds > 0) return;
 
     this.idleTimer = setTimeout(
       () => void this.stop(false).catch(() => undefined),
@@ -267,6 +329,19 @@ export class MicrosandboxWorkspaces implements Workspaces {
       throw new Error(`Invalid agent id: ${agentId}`);
 
     return `${this.namePrefix}-${agentId}`;
+  }
+
+  /** The desktop image, if any; a machine booted from it has a bot desktop. */
+  desktopImageName() {
+    return this.desktopImage;
+  }
+
+  openDesktop(agentId: string, _context?: Context) {
+    return this.workspace(agentId).openDesktop();
+  }
+
+  keepAwake(agentId: string) {
+    return this.workspace(agentId).hold();
   }
 
   get desktop() {
