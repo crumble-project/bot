@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Confirm group messages after storing the message and pending turns, without waiting for bot startup. Pending turns survive restarts; the API response is unchanged.
+
 - Add group chats: the owner can create, rename, change, and delete group chats of two to six bots, and post messages into a shared transcript that keeps each message's sender. Each group's transcript is its own Pi store.
 - Let bots answer in group chats. An owner message wakes the bots it mentions, or every member without a mention; a bot message wakes only the bots it mentions, and a reply wakes the bot it answers. Each bot runs one turn per group at a time, in its own working conversation for the group; mentions that arrive meanwhile start one follow-up turn. A bot answers, reacts with an emoji, or calls the new `pass` tool to stay silent, and cannot delegate or start coding jobs from a group. After eight bot-started turns since the owner's last message the group pauses until the owner writes again, and the owner can stop every turn at once. Answers are posted exactly once across restarts. Group turns send no bot chat notifications.
 - A bot added to a group after its first message, or added again after leaving, gets a short summary of the earlier conversation on its first turn. Its own model writes the summary once, outside the group's queue, so a slow summary never holds up the other bots or Stop; the bot waits as queued meanwhile.

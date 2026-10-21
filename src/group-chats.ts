@@ -60,6 +60,7 @@ export class GroupChats {
   private readonly queues = new Map<string, Promise<void>>();
   /** Members whose joining summary is being written, as `group:agent`. */
   private readonly summarizing = new Set<string>();
+  private readonly pendingVersions = new Map<string, symbol>();
 
   constructor(
     private readonly store: Store,
@@ -164,38 +165,64 @@ export class GroupChats {
       requestId,
     );
 
-    await this.serial(groupId, async () => {
-      const group = this.get(groupId);
-      const mentioned = this.mentions(group, content, undefined, target);
-      const woken = mentioned.length ? mentioned : group.memberIds;
+    const group = this.get(groupId);
+    const mentioned = this.mentions(group, content, undefined, target);
+    const woken = mentioned.length ? mentioned : group.memberIds;
 
-      // A retried post routes again, which starts nothing new, but neither resumes the bots nor re-arms its notification.
-      if (created) {
-        const { awaitingAnswers } = this.store.groupActivity(groupId);
+    // A retried post routes again, but neither resumes the bots nor re-arms its notification.
+    if (created) {
+      const { awaitingAnswers } = this.store.groupActivity(groupId);
 
-        const entries = Object.keys(awaitingAnswers)
-          .map(Number)
-          .sort((a, b) => a - b);
+      const entries = Object.keys(awaitingAnswers)
+        .map(Number)
+        .sort((a, b) => a - b);
 
-        for (const entry of entries.slice(
-          0,
-          Math.max(0, entries.length - AWAITING_ANSWERS + 1),
-        ))
-          delete awaitingAnswers[entry];
+      for (const entry of entries.slice(
+        0,
+        Math.max(0, entries.length - AWAITING_ANSWERS + 1),
+      ))
+        delete awaitingAnswers[entry];
 
-        awaitingAnswers[entryId.slice(groupId.length + 1)] = woken.filter(
-          (agentId) => this.store.getAgent(agentId)?.enabled,
-        );
-        this.store.setGroupActivity(groupId, {
-          botTurns: 0,
-          paused: false,
-          awaitingAnswers,
-        });
+      awaitingAnswers[entryId.slice(groupId.length + 1)] = woken.filter(
+        (agentId) => this.store.getAgent(agentId)?.enabled,
+      );
+      this.store.setGroupActivity(groupId, {
+        botTurns: 0,
+        paused: false,
+        awaitingAnswers,
+      });
+    }
+
+    const through = Number(entryId.slice(groupId.length + 1));
+
+    for (const agentId of woken) {
+      const member = this.store.groupMember(groupId, agentId);
+      const active = this.store.activeGroupTurn(groupId, agentId);
+
+      if (
+        member &&
+        this.store.getAgent(agentId)?.enabled &&
+        member.cursor < through &&
+        (created || !member.pending) &&
+        (!active || active.through < through)
+      )
+        this.queueMember(groupId, agentId, false);
+    }
+
+    this.changed(groupId);
+
+    void this.serial(groupId, async () => {
+      for (const agentId of woken) {
+        const member = this.store.groupMember(groupId, agentId);
+
+        if (member?.pending && !this.store.activeGroupTurn(groupId, agentId))
+          await this.wake(groupId, agentId, member.pendingBotStarted);
       }
 
-      for (const agentId of woken) await this.wake(groupId, agentId, false);
       this.changed(groupId);
-    });
+    }).catch((error) =>
+      console.error("Group turns could not start", groupId, error),
+    );
 
     return { requestId, entryId };
   }
@@ -342,15 +369,15 @@ export class GroupChats {
             member?.pending &&
             !this.store.activeGroupTurn(group.id, agentId)
           ) {
-            this.store.setGroupMember(group.id, agentId, { pending: false });
             await this.wake(group.id, agentId, member.pendingBotStarted);
           }
         }
       });
   }
 
-  close() {
-    return this.transcripts.close();
+  async close() {
+    while (this.queues.size) await Promise.all(this.queues.values());
+    await this.transcripts.close();
   }
 
   private serial<T>(groupId: string, work: () => Promise<T>): Promise<T> {
@@ -397,20 +424,33 @@ export class GroupChats {
     return found;
   }
 
+  private queueMember(groupId: string, agentId: string, botStarted: boolean) {
+    const member = this.store.groupMember(groupId, agentId);
+
+    if (!member) return;
+    this.pendingVersions.set(`${groupId}:${agentId}`, Symbol());
+    this.store.setGroupMember(groupId, agentId, {
+      pending: true,
+      pendingBotStarted: member.pending
+        ? member.pendingBotStarted && botStarted
+        : botStarted,
+    });
+  }
+
   private async wake(groupId: string, agentId: string, botStarted: boolean) {
     const member = this.store.groupMember(groupId, agentId);
 
     if (!member || !this.store.getAgent(agentId)?.enabled) return;
 
-    if (botStarted && this.store.groupActivity(groupId).paused) return;
+    if (botStarted && this.store.groupActivity(groupId).paused) {
+      if (member.pendingBotStarted)
+        this.store.setGroupMember(groupId, agentId, { pending: false });
+
+      return;
+    }
 
     if (this.store.activeGroupTurn(groupId, agentId)) {
-      this.store.setGroupMember(groupId, agentId, {
-        pending: true,
-        pendingBotStarted: member.pending
-          ? member.pendingBotStarted && botStarted
-          : botStarted,
-      });
+      this.queueMember(groupId, agentId, botStarted);
 
       return;
     }
@@ -430,6 +470,16 @@ export class GroupChats {
     const group = this.get(groupId);
     const member = this.store.groupMember(groupId, agentId)!;
     const agent = this.service.agent(agentId);
+    const key = `${groupId}:${agentId}`;
+    const pendingVersion = this.pendingVersions.get(key);
+
+    const consumePending = () => {
+      // A message accepted during startup must keep its follow-up queued.
+      if (this.pendingVersions.get(key) === pendingVersion) {
+        this.store.setGroupMember(groupId, agentId, { pending: false });
+        this.pendingVersions.delete(key);
+      }
+    };
 
     const unseen = (
       await this.transcripts.after(groupId, member.cursor)
@@ -438,7 +488,11 @@ export class GroupChats {
         entry.sender.agentId !== agentId && entry.reaction === undefined,
     );
 
-    if (!unseen.length) return;
+    if (!unseen.length) {
+      consumePending();
+
+      return;
+    }
 
     const first = !this.store
       .listGroupTurns({ groupId })
@@ -448,12 +502,7 @@ export class GroupChats {
 
     // A member that joined after the first message waits, queued, for a summary of what came before.
     if (first && member.cursor > 0 && member.summary === null) {
-      this.store.setGroupMember(groupId, agentId, {
-        pending: true,
-        pendingBotStarted: member.pending
-          ? member.pendingBotStarted && botStarted
-          : botStarted,
-      });
+      this.queueMember(groupId, agentId, botStarted);
       this.startSummary(groupId, agentId, member.cursor);
 
       return;
@@ -464,6 +513,7 @@ export class GroupChats {
     if (botStarted) {
       if (activity.botTurns >= GROUP_TURN_BUDGET) {
         this.store.setGroupActivity(groupId, { paused: true });
+        consumePending();
 
         return;
       }
@@ -509,6 +559,8 @@ export class GroupChats {
         status: "running",
       });
 
+    consumePending();
+
     // An execution that failed to start settled before its turn existed, so its settlement found nothing.
     if (!["pending", "running"].includes(execution.status))
       await this.finish(execution.id);
@@ -535,10 +587,7 @@ export class GroupChats {
         const member = this.store.groupMember(groupId, agentId);
 
         if (!member || summary === null) return;
-        this.store.setGroupMember(groupId, agentId, {
-          summary,
-          pending: false,
-        });
+        this.store.setGroupMember(groupId, agentId, { summary });
 
         if (member.pending)
           await this.wake(groupId, agentId, member.pendingBotStarted);
@@ -685,7 +734,6 @@ export class GroupChats {
     const current = this.store.groupMember(group.id, turn.agentId)!;
 
     if (current.pending) {
-      this.store.setGroupMember(group.id, turn.agentId, { pending: false });
       await this.wake(group.id, turn.agentId, current.pendingBotStarted);
     }
 

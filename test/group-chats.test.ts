@@ -235,6 +235,94 @@ describe("group chat membership and transcript", () => {
 });
 
 describe("group turns", () => {
+  test("confirms stored messages while a member's turn is still starting", async () => {
+    const { groups, group, service, store, inputs } = setup({
+      Ada: hang,
+      Grace: hang,
+    });
+
+    const starting = gate();
+    const release = gate();
+    const submit = service.runtime.submit.bind(service.runtime);
+    service.runtime.submit = async (...args) => {
+      starting.open();
+      await release.opened;
+
+      return submit(...args);
+    };
+
+    let accepted = false;
+
+    const first = groups.post(group.id, "@Ada first", "r-1").then((receipt) => {
+      accepted = true;
+
+      return receipt;
+    });
+
+    await starting.opened;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    try {
+      expect(accepted).toBe(true);
+      const receipt = await first;
+      expect(receipt.requestId).toBe("r-1");
+      expect(store.groupMember(group.id, group.memberIds[0]!)?.pending).toBe(
+        true,
+      );
+      const second = await groups.post(group.id, "@Grace second", "r-2");
+      expect(second.requestId).toBe("r-2");
+      expect(store.groupMember(group.id, group.memberIds[1]!)?.pending).toBe(
+        true,
+      );
+      expect((await groups.snapshot(group.id, {})).messages).toHaveLength(2);
+    } finally {
+      release.open();
+      await first;
+      await until(() => inputs.has("Ada"));
+      await groups.stop(group.id);
+    }
+  });
+
+  test("messages accepted during startup get one follow-up and retries add none", async () => {
+    const response = gate();
+    const starting = gate();
+    const release = gate();
+    let calls = 0;
+
+    const { groups, group, service, inputs } = setup({
+      Ada: async () => {
+        if (++calls === 1) await response.opened;
+
+        return say("Reply.");
+      },
+    });
+
+    const submit = service.runtime.submit.bind(service.runtime);
+    service.runtime.submit = async (...args) => {
+      starting.open();
+      await release.opened;
+
+      return submit(...args);
+    };
+
+    try {
+      const first = await groups.post(group.id, "@Ada first", "r-1");
+      await starting.opened;
+      expect(await groups.post(group.id, "@Ada first", "r-1")).toEqual(first);
+      await groups.post(group.id, "@Ada second", "r-2");
+      release.open();
+      await until(() => inputs.has("Ada"));
+      response.open();
+      await quiet(groups, group.id);
+      expect(inputs.get("Ada")).toHaveLength(2);
+      expect(inputs.get("Ada")![1]).toContain("@Ada second");
+      expect(inputs.get("Ada")![1]).not.toContain("@Ada first");
+    } finally {
+      release.open();
+      response.open();
+    }
+  });
+
   test("an unmentioned owner message reaches every member", async () => {
     const { groups, group, inputs } = setup({
       Ada: () => say("Ada here."),
@@ -301,6 +389,7 @@ describe("group turns", () => {
     });
 
     await groups.post(group.id, "@Ada first", "r-1");
+    await until(() => inputs.has("Ada"));
     await groups.post(group.id, "@Ada second", "r-2");
     await groups.post(group.id, "@Ada third", "r-3");
     expect(groups.activity(group.id).members[0]?.status).toBe("running");
@@ -344,6 +433,9 @@ describe("group turns", () => {
     });
 
     await groups.post(group.id, "Think hard", "r-1");
+    await until(() =>
+      groups.activity(group.id).members.every((m) => m.status === "running"),
+    );
     await groups.post(group.id, "@Ada and then this", "r-2");
     expect(groups.activity(group.id).members.map((m) => m.status)).toEqual([
       "running",
@@ -806,6 +898,7 @@ describe("admission failures", () => {
     };
 
     await groups.post(group.id, "@Ada first", "r-1");
+    await quiet(groups, group.id);
     expect(groups.activity(group.id).members[0]).toMatchObject({
       status: "idle",
       error: "disk full",
@@ -819,6 +912,43 @@ describe("admission failures", () => {
 });
 
 describe("group turns across restarts", () => {
+  test("an accepted message with no started turn is recovered after reopening", async () => {
+    const { dir, groups, group, service, store, close } = setup();
+    let attempted = false;
+    service.runtime.openGroupConversation = async () => {
+      attempted = true;
+      throw new Error("workspace unavailable");
+    };
+
+    const receipt = await groups.post(group.id, "@Ada plan", "r-1");
+    await until(() => attempted);
+    expect(store.listGroupTurns({ groupId: group.id })).toHaveLength(0);
+    expect(store.groupMember(group.id, group.memberIds[0]!)?.pending).toBe(
+      true,
+    );
+
+    await close();
+    const reopened = open(dir, { Ada: () => say("Planned.") });
+    expect(reopened.store.listGroupTurns({ groupId: group.id })).toHaveLength(
+      0,
+    );
+    expect(
+      reopened.store.groupMember(group.id, group.memberIds[0]!)?.pending,
+    ).toBe(true);
+    await reopened.service.recover();
+    await reopened.groups.recover();
+    await quiet(reopened.groups, group.id);
+    expect(
+      (await reopened.groups.snapshot(group.id, {})).messages[0]?.entryId,
+    ).toBe(receipt.entryId);
+    expect(
+      (await botMessages(reopened.groups, group.id)).map((m) => m.content),
+    ).toEqual(["Planned."]);
+    expect(
+      reopened.store.groupMember(group.id, group.memberIds[0]!)?.pending,
+    ).toBe(false);
+  });
+
   test("a turn running at shutdown posts its answer once after reopening", async () => {
     const { dir, groups, group, close } = setup({
       Ada: hang,
