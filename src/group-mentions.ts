@@ -43,3 +43,10 @@ export function mentionedMembers(
 
   return found;
 }
+
+const ownerMention = /(?<![\p{L}\p{N}_])@owner(?![\p{L}\p{N}_])/iu;
+
+/** Whether a bot's group message mentions the owner, which notifies the owner and wakes no bot. */
+export function mentionsOwner(text: string) {
+  return ownerMention.test(text.normalize("NFKC"));
+}

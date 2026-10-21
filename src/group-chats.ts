@@ -7,7 +7,7 @@ import {
   type GroupChatInput,
   type GroupTurn,
 } from "./domain";
-import { mentionedMembers } from "./group-mentions";
+import { mentionedMembers, mentionsOwner } from "./group-mentions";
 import type { GroupEntry, GroupTranscripts } from "./group-transcripts";
 import { GROUP_TURN_PREFIX, type CrumbleService } from "./service";
 import type { Store } from "./store";
@@ -148,7 +148,11 @@ export class GroupChats {
 
     await this.serial(groupId, async () => {
       const group = this.get(groupId);
-      this.store.setGroupActivity(groupId, { botTurns: 0, paused: false });
+      this.store.setGroupActivity(groupId, {
+        botTurns: 0,
+        paused: false,
+        awaitingAnswer: Number(entryId.slice(groupId.length + 1)),
+      });
       const mentioned = this.mentions(group, content, undefined, target);
 
       for (const agentId of mentioned.length ? mentioned : group.memberIds)
@@ -561,15 +565,48 @@ export class GroupChats {
       return;
     }
 
-    await this.transcripts.post(
+    const entryId = await this.transcripts.post(
       group.id,
       { text: outcome.text, sender },
       requestId,
     );
+
     this.changed(group.id);
+    this.notify(group, turn, agent, entryId, outcome.text);
 
     for (const agentId of this.mentions(group, outcome.text, agent.id))
       await this.wake(group.id, agentId, true);
+  }
+
+  /**
+   * Notifies the owner of the first bot answer to their newest message, if this turn saw it, and of any `@owner`.
+   * The event ID is the turn's execution, so a retried post notifies once.
+   */
+  private notify(
+    group: GroupChat,
+    turn: GroupTurn,
+    agent: Agent,
+    entryId: string,
+    text: string,
+  ) {
+    const { awaitingAnswer } = this.store.groupActivity(group.id);
+    const answers = awaitingAnswer > 0 && turn.through >= awaitingAnswer;
+
+    if (answers) this.store.setGroupActivity(group.id, { awaitingAnswer: 0 });
+
+    if (!answers && !mentionsOwner(text)) return;
+    this.service.announce({
+      type: "reply",
+      executionId: turn.executionId,
+      agentId: agent.id,
+      agentName: agent.name,
+      entryId,
+      origin: "group",
+      preview: text.trim().slice(0, 240),
+      createdAt: new Date().toISOString(),
+      groupId: group.id,
+      groupName: group.name,
+    });
   }
 
   /** Stops the member's turn and drops its queued one; a stopped turn posts nothing. Reports whether there was any. */

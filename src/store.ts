@@ -58,7 +58,11 @@ type GroupMemberStateRow = {
   summary: string | null;
 };
 
-type GroupActivityRow = { bot_turns: number; paused: number };
+type GroupActivityRow = {
+  bot_turns: number;
+  paused: number;
+  awaiting_answer: number;
+};
 
 type GroupTurnRow = {
   execution_id: string;
@@ -123,7 +127,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS credentials (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS mcp_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, enabled INTEGER NOT NULL, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE);
-      CREATE TABLE IF NOT EXISTS group_chats (id TEXT PRIMARY KEY, name TEXT NOT NULL, bot_turns INTEGER NOT NULL DEFAULT 0, paused INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS group_chats (id TEXT PRIMARY KEY, name TEXT NOT NULL, bot_turns INTEGER NOT NULL DEFAULT 0, paused INTEGER NOT NULL DEFAULT 0, awaiting_answer INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS group_members (group_id TEXT NOT NULL REFERENCES group_chats(id) ON DELETE CASCADE, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, joined_at TEXT NOT NULL, conversation_id TEXT, cursor INTEGER NOT NULL DEFAULT 0, pending INTEGER NOT NULL DEFAULT 0, pending_bot_started INTEGER NOT NULL DEFAULT 0, summary TEXT, PRIMARY KEY (group_id, agent_id));
       CREATE TABLE IF NOT EXISTS group_turns (execution_id TEXT PRIMARY KEY REFERENCES executions(id) ON DELETE CASCADE, group_id TEXT NOT NULL REFERENCES group_chats(id) ON DELETE CASCADE, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, through INTEGER NOT NULL, bot_started INTEGER NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL);`);
 
@@ -211,6 +215,11 @@ export class Store {
     if (!groupCols.some((c) => c.name === "paused"))
       this.db.exec(
         "ALTER TABLE group_chats ADD COLUMN paused INTEGER NOT NULL DEFAULT 0",
+      );
+
+    if (!groupCols.some((c) => c.name === "awaiting_answer"))
+      this.db.exec(
+        "ALTER TABLE group_chats ADD COLUMN awaiting_answer INTEGER NOT NULL DEFAULT 0",
       );
 
     // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
@@ -1053,20 +1062,31 @@ export class Store {
   groupActivity(groupId: Id) {
     const r = this.db
       .query<GroupActivityRow, [string]>(
-        "SELECT bot_turns,paused FROM group_chats WHERE id=?",
+        "SELECT bot_turns,paused,awaiting_answer FROM group_chats WHERE id=?",
       )
       .get(groupId);
 
-    return { botTurns: r?.bot_turns ?? 0, paused: r?.paused === 1 };
+    return {
+      botTurns: r?.bot_turns ?? 0,
+      paused: r?.paused === 1,
+      /** The newest owner message whose first bot answer has not notified yet; 0 for none. */
+      awaitingAnswer: r?.awaiting_answer ?? 0,
+    };
   }
   setGroupActivity(
     groupId: Id,
-    change: Partial<{ botTurns: number; paused: boolean }>,
+    change: Partial<{
+      botTurns: number;
+      paused: boolean;
+      awaitingAnswer: number;
+    }>,
   ) {
     const next = { ...this.groupActivity(groupId), ...change };
     this.db
-      .query("UPDATE group_chats SET bot_turns=?,paused=? WHERE id=?")
-      .run(next.botTurns, next.paused ? 1 : 0, groupId);
+      .query(
+        "UPDATE group_chats SET bot_turns=?,paused=?,awaiting_answer=? WHERE id=?",
+      )
+      .run(next.botTurns, next.paused ? 1 : 0, next.awaitingAnswer, groupId);
   }
   private groupTurn(r: GroupTurnRow): GroupTurn {
     return {

@@ -412,6 +412,75 @@ describe("group turns", () => {
   });
 });
 
+describe("owner notifications", () => {
+  const replies = (service: CrumbleService) => {
+    const events: Array<{ preview: string; groupId?: string }> = [];
+
+    service.onActivity((event) => {
+      if (event.type === "reply") events.push(event);
+    });
+
+    return events;
+  };
+
+  test("only the first bot answer to an owner message notifies", async () => {
+    const held = gate();
+
+    const { groups, group, service } = setup({
+      Ada: () => call("react", { emoji: "👍" }),
+      Grace: async () => {
+        await held.opened;
+
+        return say("Friday works.");
+      },
+    });
+
+    const events = replies(service);
+    await groups.post(group.id, "When do we leave?", "r-1");
+    await until(async () => (await botMessages(groups, group.id)).length === 1);
+    held.open();
+    await quiet(groups, group.id);
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        preview: "Friday works.",
+        groupId: group.id,
+        groupName: "Trip",
+        origin: "group",
+      }),
+    ]);
+  });
+
+  test("a bot mentioning the owner notifies; other bot messages don't", async () => {
+    const { groups, group, service } = setup({
+      Ada: () => say("@Grace can you check the trains?"),
+      Grace: () => say("@owner the 9:10 train is booked."),
+    });
+
+    const events = replies(service);
+    await groups.post(group.id, "@Ada sort out travel", "r-1");
+    await quiet(groups, group.id);
+
+    expect(events.map((event) => event.preview)).toEqual([
+      "@Grace can you check the trains?",
+      "@owner the 9:10 train is booked.",
+    ]);
+  });
+
+  test("a pause and bot-to-bot turns don't notify", async () => {
+    const { groups, group, service } = setup({
+      Ada: () => say("@Grace your turn"),
+      Grace: () => say("@Ada your turn"),
+    });
+
+    const events = replies(service);
+    await groups.post(group.id, "@Ada start", "r-1");
+    await until(() => groups.activity(group.id).paused);
+    await quiet(groups, group.id);
+    expect(events).toHaveLength(1);
+  });
+});
+
 describe("joining members", () => {
   async function joinHopper(bots: Record<string, Bot>) {
     const opened = setup({ Ada: () => call("pass"), ...bots });
