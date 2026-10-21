@@ -252,3 +252,41 @@ test("set_value with an empty value clears the field", async () => {
     value: "",
   });
 });
+
+test("an ended cua-driver session is replaced and the call retried", async () => {
+  const ended = {
+    error:
+      "session has ended; tool call 'list_windows' was rejected. Call start_session with session 'x' to start it again, or use a new session label.",
+  };
+
+  const { shell, calls } = scriptedGuest({
+    list_windows: [ended, windows],
+    get_window_state: [{ snapshot_id: "s1", tree_markdown: "- [0] frame" }],
+  });
+
+  const tool = createComputerUse(shell);
+  const result = await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+
+  expect(result.isError).toBe(false);
+  expect(text(result)).toContain("window 101");
+
+  const sessions = calls
+    .filter((c) => c.tool === "list_windows")
+    .map((c) => c.args.session);
+
+  expect(sessions[0]).not.toBe(sessions[1]);
+});
+
+test("a failed window listing reports cua-driver's error, not an empty desktop", async () => {
+  const { shell } = scriptedGuest({
+    list_windows: [{ error: "cua-driver daemon is not running" }],
+  });
+
+  const result = await createComputerUse(shell).run(
+    { action: "list_windows" },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(result.isError).toBe(true);
+  expect(text(result)).toContain("cua-driver daemon is not running");
+});

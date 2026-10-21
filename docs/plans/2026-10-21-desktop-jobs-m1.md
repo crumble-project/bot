@@ -2011,6 +2011,44 @@ test("set_value with an empty value clears the field", async () => {
     value: "",
   });
 });
+
+test("an ended cua-driver session is replaced and the call retried", async () => {
+  const ended = {
+    error:
+      "session has ended; tool call 'list_windows' was rejected. Call start_session with session 'x' to start it again, or use a new session label.",
+  };
+
+  const { shell, calls } = scriptedGuest({
+    list_windows: [ended, windows],
+    get_window_state: [{ snapshot_id: "s1", tree_markdown: "- [0] frame" }],
+  });
+
+  const tool = createComputerUse(shell);
+  const result = await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+
+  expect(result.isError).toBe(false);
+  expect(text(result)).toContain("window 101");
+
+  const sessions = calls
+    .filter((c) => c.tool === "list_windows")
+    .map((c) => c.args.session);
+
+  expect(sessions[0]).not.toBe(sessions[1]);
+});
+
+test("a failed window listing reports cua-driver's error, not an empty desktop", async () => {
+  const { shell } = scriptedGuest({
+    list_windows: [{ error: "cua-driver daemon is not running" }],
+  });
+
+  const result = await createComputerUse(shell).run(
+    { action: "list_windows" },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(result.isError).toBe(true);
+  expect(text(result)).toContain("cua-driver daemon is not running");
+});
 ```
 
 - [ ] **Step 2: Run them.** `bun test test/computer-use.test.ts` — expected: FAIL, cannot resolve `../src/computer-use`.
@@ -2047,7 +2085,9 @@ export type ComputerUseResult = {
 };
 
 const ENV_FILE = "/run/crumble-desktop.env";
-const SESSION = "crumble-desktop-job";
+// cua-driver ends idle sessions; a call on an ended one is rejected with this message.
+
+const ENDED_SESSION = /session has ended/i;
 const MAX_TREE_CHARS = 12_000;
 
 const point = (description: string) =>
@@ -2307,6 +2347,8 @@ type Pointer = { element_token: string } | { x: number; y: number };
 export function createComputerUse(shell: DesktopShell) {
   // Latest snapshot per window: element tokens are `${snapshot}:${N}`, and the next capture diffs against it.
   const snapshots = new Map<number, string>();
+  const newSession = () => `crumble-desktop-${randomUUID()}`;
+  let session = newSession();
 
   async function sh(command: string, context: Context) {
     let output = "";
@@ -2322,11 +2364,28 @@ export function createComputerUse(shell: DesktopShell) {
     return output;
   }
 
+  /** One cua-driver call; an ended session is replaced, its snapshots dropped, and the call retried once. */
   async function driver(
     tool: string,
     args: DriverArgs,
     context: Context,
     screenshot = false,
+  ) {
+    const first = await call(tool, args, context, screenshot);
+
+    if (!ENDED_SESSION.test(messageOf(first.reply) ?? "")) return first;
+
+    session = newSession();
+    snapshots.clear();
+
+    return call(tool, args, context, screenshot);
+  }
+
+  async function call(
+    tool: string,
+    args: DriverArgs,
+    context: Context,
+    screenshot: boolean,
   ) {
     // Unique per call: a file left by another job's call can never stand in for this one's.
     const id = randomUUID();
@@ -2336,7 +2395,7 @@ export function createComputerUse(shell: DesktopShell) {
 
     const written = await shell.writeFile(
       argsFile,
-      JSON.stringify({ session: SESSION, ...args }),
+      JSON.stringify({ session, ...args }),
       context,
     );
 
@@ -2377,6 +2436,12 @@ export function createComputerUse(shell: DesktopShell) {
 
   async function windows(context: Context) {
     const { reply } = await driver("list_windows", {}, context);
+
+    // A refused listing is not an empty desktop.
+    if (!reply.windows && refusalOf(reply))
+      throw new Error(
+        messageOf(reply) ?? codeOf(reply) ?? "list_windows failed",
+      );
 
     return (reply.windows ?? []).filter((each) => each.app_name !== "Tint2");
   }

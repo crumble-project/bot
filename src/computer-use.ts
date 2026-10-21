@@ -27,7 +27,9 @@ export type ComputerUseResult = {
 };
 
 const ENV_FILE = "/run/crumble-desktop.env";
-const SESSION = "crumble-desktop-job";
+// cua-driver ends idle sessions; a call on an ended one is rejected with this message.
+
+const ENDED_SESSION = /session has ended/i;
 const MAX_TREE_CHARS = 12_000;
 
 const point = (description: string) =>
@@ -287,6 +289,8 @@ type Pointer = { element_token: string } | { x: number; y: number };
 export function createComputerUse(shell: DesktopShell) {
   // Latest snapshot per window: element tokens are `${snapshot}:${N}`, and the next capture diffs against it.
   const snapshots = new Map<number, string>();
+  const newSession = () => `crumble-desktop-${randomUUID()}`;
+  let session = newSession();
 
   async function sh(command: string, context: Context) {
     let output = "";
@@ -302,11 +306,28 @@ export function createComputerUse(shell: DesktopShell) {
     return output;
   }
 
+  /** One cua-driver call; an ended session is replaced, its snapshots dropped, and the call retried once. */
   async function driver(
     tool: string,
     args: DriverArgs,
     context: Context,
     screenshot = false,
+  ) {
+    const first = await call(tool, args, context, screenshot);
+
+    if (!ENDED_SESSION.test(messageOf(first.reply) ?? "")) return first;
+
+    session = newSession();
+    snapshots.clear();
+
+    return call(tool, args, context, screenshot);
+  }
+
+  async function call(
+    tool: string,
+    args: DriverArgs,
+    context: Context,
+    screenshot: boolean,
   ) {
     // Unique per call: a file left by another job's call can never stand in for this one's.
     const id = randomUUID();
@@ -316,7 +337,7 @@ export function createComputerUse(shell: DesktopShell) {
 
     const written = await shell.writeFile(
       argsFile,
-      JSON.stringify({ session: SESSION, ...args }),
+      JSON.stringify({ session, ...args }),
       context,
     );
 
@@ -357,6 +378,12 @@ export function createComputerUse(shell: DesktopShell) {
 
   async function windows(context: Context) {
     const { reply } = await driver("list_windows", {}, context);
+
+    // A refused listing is not an empty desktop.
+    if (!reply.windows && refusalOf(reply))
+      throw new Error(
+        messageOf(reply) ?? codeOf(reply) ?? "list_windows failed",
+      );
 
     return (reply.windows ?? []).filter((each) => each.app_name !== "Tint2");
   }
