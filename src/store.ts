@@ -19,6 +19,8 @@ import type {
   Execution,
   MCPServer,
   Skill,
+  GroupChat,
+  GroupChatInput,
 } from "./domain";
 import type { AttachmentInput } from "./attachments";
 
@@ -33,6 +35,15 @@ type SettingsEntryRow = { key: string; value: string };
 type CredentialRow = { value: string };
 
 type KeyRow = { key: string };
+
+type GroupChatRow = {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type GroupMemberRow = { agent_id: string };
 
 type Patch<T> = Partial<Omit<T, "id" | "createdAt" | "updatedAt">>;
 
@@ -86,7 +97,9 @@ export class Store {
       CREATE TABLE IF NOT EXISTS executions (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, schedule_id TEXT REFERENCES schedules(id) ON DELETE SET NULL, submission_id TEXT, request_id TEXT NOT NULL, prompt TEXT, reply_to TEXT, status TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS credentials (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS mcp_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, enabled INTEGER NOT NULL, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE);`);
+      CREATE TABLE IF NOT EXISTS mcp_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, enabled INTEGER NOT NULL, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE);
+      CREATE TABLE IF NOT EXISTS group_chats (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS group_members (group_id TEXT NOT NULL REFERENCES group_chats(id) ON DELETE CASCADE, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, joined_at TEXT NOT NULL, PRIMARY KEY (group_id, agent_id));`);
 
     // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
     const agentCols = this.db
@@ -838,5 +851,93 @@ export class Store {
   }
   deleteSkill(id: Id) {
     return this.db.query("DELETE FROM skills WHERE id=?").run(id).changes > 0;
+  }
+
+  private groupChat(r: GroupChatRow): GroupChat {
+    const members = this.db
+      .query<GroupMemberRow, [string]>(
+        "SELECT agent_id FROM group_members WHERE group_id=? ORDER BY joined_at, rowid",
+      )
+      .all(r.id);
+
+    return {
+      id: r.id,
+      name: r.name,
+      memberIds: members.map((member) => member.agent_id),
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    };
+  }
+  listGroupChats() {
+    return this.db
+      .query<GroupChatRow, []>(
+        "SELECT * FROM group_chats ORDER BY created_at, rowid",
+      )
+      .all()
+      .map((r) => this.groupChat(r));
+  }
+  getGroupChat(groupId: Id) {
+    const r = this.db
+      .query<GroupChatRow, [string]>("SELECT * FROM group_chats WHERE id=?")
+      .get(groupId);
+
+    return r ? this.groupChat(r) : null;
+  }
+  createGroupChat(input: GroupChatInput, groupId: string = id()) {
+    const t = now();
+
+    this.db.transaction(() => {
+      this.db
+        .query(
+          "INSERT INTO group_chats (id,name,created_at,updated_at) VALUES (?,?,?,?)",
+        )
+        .run(groupId, input.name, t, t);
+      this.insertGroupMembers(groupId, input.memberIds, t);
+    })();
+
+    return this.getGroupChat(groupId)!;
+  }
+  /** Replaces name and members; members that stay keep their place in the join order. */
+  updateGroupChat(groupId: Id, input: GroupChatInput) {
+    const current = this.getGroupChat(groupId);
+
+    if (!current) return null;
+    const t = now();
+    const kept = new Set(input.memberIds);
+
+    this.db.transaction(() => {
+      this.db
+        .query("UPDATE group_chats SET name=?,updated_at=? WHERE id=?")
+        .run(input.name, t, groupId);
+
+      for (const agentId of current.memberIds)
+        if (!kept.has(agentId))
+          this.db
+            .query("DELETE FROM group_members WHERE group_id=? AND agent_id=?")
+            .run(groupId, agentId);
+
+      this.insertGroupMembers(
+        groupId,
+        input.memberIds.filter(
+          (agentId) => !current.memberIds.includes(agentId),
+        ),
+        t,
+      );
+    })();
+
+    return this.getGroupChat(groupId);
+  }
+  private insertGroupMembers(groupId: Id, agentIds: Id[], joinedAt: string) {
+    const insert = this.db.query(
+      "INSERT INTO group_members (group_id,agent_id,joined_at) VALUES (?,?,?)",
+    );
+
+    for (const agentId of agentIds) insert.run(groupId, agentId, joinedAt);
+  }
+  deleteGroupChat(groupId: Id) {
+    return (
+      this.db.query("DELETE FROM group_chats WHERE id=?").run(groupId).changes >
+      0
+    );
   }
 }

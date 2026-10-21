@@ -48,6 +48,18 @@ const botMessage = z.object({
   }),
 });
 
+export const GROUP_MESSAGE_KIND = "crumble.group-message";
+
+/** A group chat message: the owner's or a bot's words, written once under its request ID. */
+export const groupMessageData = z.object({
+  text: z.string(),
+  sender: messageOrigin,
+  requestId: z.string(),
+  timestamp: z.number(),
+});
+
+export type GroupMessageData = z.infer<typeof groupMessageData>;
+
 const inputMetadata = z.object({
   text: z.string().optional().catch(undefined),
   replyTo: z.string().optional().catch(undefined),
@@ -276,6 +288,26 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
         content: parsed.data.content,
         timestamp: parsed.data.timestamp,
         communication: parsed.data.communication,
+      },
+    ];
+  }
+
+  if (entry.kind === GROUP_MESSAGE_KIND) {
+    const parsed = groupMessageData.safeParse(entry.data);
+
+    if (!parsed.success) return [];
+    const { text, sender, requestId, timestamp } = parsed.data;
+
+    return [
+      {
+        id: `${entryId}:0`,
+        entryId,
+        requestId,
+        role: sender.kind === "owner" ? "user" : "assistant",
+        content: text,
+        timestamp,
+        kind: entry.kind,
+        origin: sender,
       },
     ];
   }
