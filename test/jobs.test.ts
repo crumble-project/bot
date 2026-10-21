@@ -16,7 +16,7 @@ import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { defineJobKind, type JobKindOptions } from "../src/jobs";
 import { AgentRuntime } from "../src/runtime";
 import { Store } from "../src/store";
-import type { Workspaces } from "../src/workspace";
+import type { DesktopStream, Workspaces } from "../src/workspace";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -36,6 +36,17 @@ class DirectoryWorkspaces implements Workspaces {
   async sync(_agentId: string, _context: Context) {}
 
   async restart(_agentId: string, _context: Context) {}
+
+  async openDesktop(
+    _agentId: string,
+    _context: Context,
+  ): Promise<DesktopStream> {
+    throw new Error("No bot desktop in this test");
+  }
+
+  keepAwake(_agentId: string) {
+    return () => {};
+  }
 
   async close(_context: Context) {}
 }

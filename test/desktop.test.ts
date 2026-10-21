@@ -17,7 +17,7 @@ import type { Agent } from "../src/domain";
 import { AgentRuntime } from "../src/runtime";
 import { Store } from "../src/store";
 import { latestMessagePreview } from "../src/transcript";
-import type { Workspaces } from "../src/workspace";
+import type { DesktopStream, Workspaces } from "../src/workspace";
 import { scriptedGuest, type GuestCall } from "./fixtures/scripted-guest";
 
 const cleanups: (() => void | Promise<void>)[] = [];
@@ -65,6 +65,17 @@ class GuestWorkspaces implements Workspaces {
   async sync(_agentId: string, _context: Context) {}
 
   async restart(_agentId: string, _context: Context) {}
+
+  async openDesktop(
+    _agentId: string,
+    _context: Context,
+  ): Promise<DesktopStream> {
+    throw new Error("No bot desktop in this test");
+  }
+
+  keepAwake(_agentId: string) {
+    return () => {};
+  }
 
   async close(_context: Context) {}
 }

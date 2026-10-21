@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { Sandbox } from "microsandbox";
 import { createComputerUse } from "../src/computer-use";
 import { MicrosandboxWorkspaces } from "../src/microsandbox-workspaces";
 
@@ -165,5 +166,36 @@ describe.skipIf(!vmTests)("bot desktop in a VM", () => {
         BACKGROUND_CONTEXT,
       );
     expect(out.trim()).toBe("none");
+  }, 120_000);
+
+  test("a desktop stream speaks RFB and keeps the machine awake until closed", async () => {
+    const idle = new MicrosandboxWorkspaces(IMAGE, {
+      namePrefix,
+      idleTimeoutMs: 500,
+      desktopImage: DESKTOP_IMAGE,
+      wantsDesktop: () => true,
+    });
+
+    try {
+      const stream = await idle.openDesktop("stream", BACKGROUND_CONTEXT);
+      const first = await stream.output[Symbol.asyncIterator]().next();
+
+      expect(new TextDecoder().decode(first.value)).toStartWith("RFB 003.");
+
+      await Bun.sleep(3000);
+      expect((await Sandbox.get(idle.name("stream"))).status).toBe("running");
+
+      await stream.close();
+      await Bun.sleep(5000);
+      expect((await Sandbox.get(idle.name("stream"))).status).toBe("stopped");
+    } finally {
+      await idle.close(BACKGROUND_CONTEXT);
+    }
+  }, 120_000);
+
+  test("a bot without its bot desktop gets no desktop stream", async () => {
+    await expect(
+      workspaces.openDesktop("plain-stream", BACKGROUND_CONTEXT),
+    ).rejects.toThrow("no bot desktop");
   }, 120_000);
 });

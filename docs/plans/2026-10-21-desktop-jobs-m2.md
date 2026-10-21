@@ -713,6 +713,8 @@ Import `Sandbox` from `microsandbox` in that file.
 
 and `armIdleTimer` returns early when `this.holds > 0`, alongside `this.inflight > 0`; `stop(false)` also returns early when `holds > 0`.
 
+As built, `openDesktop` takes its hold before booting, so a viewer that connects to a stopped machine keeps it up from the start, and writes to the guest are chained to keep their order. A second VM test checks that a bot without its bot desktop gets no stream.
+
 `Workspace.openDesktop()`:
 
 ```ts
