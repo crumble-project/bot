@@ -179,5 +179,7 @@ A turn's request ID is derived from the cursor, so a retry after a crash reuses 
 
 ## Later milestones
 
+Superseded by the split in the [milestone 3 plan](2026-10-21-group-chats-m3.md#milestone-split).
+
 3. **Members, memory, and notifications.** As planned in milestone 1, plus attachments on group messages, which no milestone covered yet.
 4. **Group snapshot event schema.** Merging to main already publishes each contract version, so this milestone only teaches the release tooling to accept added event schemas and exports a group snapshot event schema.

@@ -11,7 +11,7 @@ import type {
   Harness,
 } from "@earendil-works/pi-durable";
 
-import type { AttachmentInfo } from "./attachments";
+import { attachmentInput, type AttachmentInfo } from "./attachments";
 import { codingJobOf } from "./coding";
 import { REACTION_TOOL_NAME, reactionOf } from "./reaction";
 import { PASS_TOOL_NAME } from "./group-turns";
@@ -61,6 +61,10 @@ export const groupMessageData = z.object({
   replyPreview: z.string().optional(),
   /** The emoji of a reaction to `replyTo`; a reaction has no text. */
   reaction: z.string().optional(),
+  /** The owner's uploads, kept with the message so every member turn can include them. */
+  attachments: z.array(attachmentInput).optional(),
+  /** What pages show for each upload, without its bytes. */
+  files: z.array(attachmentInfo).optional(),
 });
 
 export type GroupMessageData = z.infer<typeof groupMessageData>;
@@ -334,6 +338,8 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
     if (replyTo !== undefined) message.replyTo = replyTo;
 
     if (replyPreview !== undefined) message.replyPreview = replyPreview;
+
+    if (parsed.data.files?.length) message.attachments = parsed.data.files;
 
     return [message];
   }

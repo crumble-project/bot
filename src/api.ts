@@ -95,7 +95,7 @@ export function createAPI(
   const defaultBodyLimit = bodyLimit({ maxSize: 1024 * 1024 });
   app.use("*", (c, next) =>
     c.req.method === "POST" &&
-    /^\/v1\/agents\/[^/]+\/messages$/.test(c.req.path)
+    /^\/v1\/(agents|group-chats)\/[^/]+\/messages$/.test(c.req.path)
       ? messageBodyLimit(c, next)
       : defaultBodyLimit(c, next),
   );
@@ -456,10 +456,24 @@ export function createAPI(
         c.req.param("id"),
         input.content,
         input.requestId,
-        { replyTo: input.replyTo },
+        { replyTo: input.replyTo, attachments: input.attachments },
       ),
       201,
     );
+  });
+  register(routes.groupAttachment, async (c) => {
+    const index = attachmentIndex.parse(c.req.param("index"));
+
+    const file = await groupChats().attachment(
+      c.req.param("id"),
+      c.req.param("entryId"),
+      index,
+    );
+
+    return c.body(new Uint8Array(file.data), 200, {
+      "Content-Type": file.mimeType,
+      "Cache-Control": "private, max-age=31536000, immutable",
+    });
   });
   register(routes.stopGroupChat, async (c) => {
     await groupChats().stop(c.req.param("id"));
@@ -520,6 +534,7 @@ export function createAPI(
       store.createMemory({
         agentId: c.req.param("id"),
         content: input.content,
+        source: { kind: "owner" },
       }),
       201,
     );
@@ -559,7 +574,11 @@ export function createAPI(
     const input = memoryInput.parse(await c.req.json());
 
     return c.json(
-      store.createMemory({ agentId: null, content: input.content }),
+      store.createMemory({
+        agentId: null,
+        content: input.content,
+        source: { kind: "owner" },
+      }),
       201,
     );
   });

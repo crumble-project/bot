@@ -38,12 +38,18 @@ export const messageInput = z
     path: ["content"],
   });
 
-export const groupMessageInput = z.object({
-  content: z.string().trim().min(1).max(32000),
-  requestId: z.string().uuid(),
-  /** A message in the same group; replying to a bot's message also wakes that bot. */
-  replyTo: z.string().min(1).max(200).optional(),
-});
+export const groupMessageInput = z
+  .object({
+    content: z.string().trim().max(32000),
+    requestId: z.string().uuid(),
+    /** A message in the same group; replying to a bot's message also wakes that bot. */
+    replyTo: z.string().min(1).max(200).optional(),
+    attachments: z.array(attachmentInput).max(MAX_ATTACHMENTS).default([]),
+  })
+  .refine((value) => value.content || value.attachments.length, {
+    message: "Write a message or attach a file",
+    path: ["content"],
+  });
 
 export const activityInput = z.object({
   agentId: z.string().uuid().optional(),
@@ -444,6 +450,34 @@ export const routes = {
     request: { params: id, body: body(groupMessageInput) },
     responses: { 201: json(response.groupMessageReceiptResponse) },
   }),
+  groupAttachment: define({
+    method: "get",
+    path: "/v1/group-chats/{id}/attachments/{entryId}/{index}",
+    operationId: "getGroupAttachment",
+    request: {
+      params: id.extend({
+        entryId: z.string(),
+        index: attachmentIndex.openapi({
+          param: { name: "index", in: "path", required: true },
+        }),
+      }),
+    },
+    responses: {
+      200: {
+        description:
+          "Attachment bytes; Content-Type identifies the image or text format",
+        content: {
+          "*/*": { schema: z.string().openapi({ format: "binary" }) },
+        },
+        headers: {
+          "Cache-Control": {
+            schema: { type: "string" },
+            description: "private, max-age=31536000, immutable",
+          },
+        },
+      },
+    },
+  }),
   stopGroupChat: define({
     method: "post",
     path: "/v1/group-chats/{id}/stop",
@@ -709,7 +743,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "1.2.0",
+      version: "1.3.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },

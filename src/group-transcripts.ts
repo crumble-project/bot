@@ -9,6 +9,7 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { mkdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
+import { attachmentDigest } from "./attachments";
 import { AppError } from "./domain";
 import {
   GROUP_MESSAGE_KIND,
@@ -68,11 +69,16 @@ export class GroupTranscripts {
   }
 
   /** Appends one message; a retried request ID returns the entry it already wrote. */
-  async post(
+  async post(groupId: string, message: GroupPost, requestId: string) {
+    return (await this.write(groupId, message, requestId)).entryId;
+  }
+
+  /** Like `post`, and tells whether this call wrote the entry or found it from an earlier one. */
+  async write(
     groupId: string,
     message: GroupPost,
     requestId: string,
-  ): Promise<string> {
+  ): Promise<{ entryId: string; created: boolean }> {
     const root = await (await this.open(groupId)).root(BACKGROUND_CONTEXT);
 
     const data: GroupMessageData = {
@@ -111,14 +117,20 @@ export class GroupTranscripts {
       written.data.sender.kind !== message.sender.kind ||
       written.data.sender.agentId !== message.sender.agentId ||
       written.data.replyTo !== message.replyTo ||
-      written.data.reaction !== message.reaction
+      written.data.reaction !== message.reaction ||
+      attachmentDigest(written.data.attachments ?? []) !==
+        attachmentDigest(message.attachments ?? [])
     )
       throw new AppError(
         409,
         "Request ID already used for a different message",
       );
 
-    return `${groupId}:${Number(settled.entry)}`;
+    return {
+      entryId: `${groupId}:${Number(settled.entry)}`,
+      // An earlier call's entry carries that call's time.
+      created: written.data.timestamp === data.timestamp,
+    };
   }
 
   /** Messages after entry number `cursor`, oldest first. */
@@ -183,6 +195,15 @@ export class GroupTranscripts {
     return item?.kind === GROUP_MESSAGE_KIND && parsed.success
       ? { ...parsed.data, entry, entryId }
       : undefined;
+  }
+
+  /** The bytes of one of a message's attachments. */
+  async attachment(groupId: string, entryId: string, index: number) {
+    const item = (await this.message(groupId, entryId))?.attachments?.[index];
+
+    if (!item) throw new AppError(404, "Attachment not found");
+
+    return { mimeType: item.mimeType, data: Buffer.from(item.data, "base64") };
   }
 
   /** The number of the newest entry, or 0 for an empty transcript. */

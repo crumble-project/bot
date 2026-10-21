@@ -57,6 +57,7 @@ const call = (name: string, args: Record<string, string> = {}) =>
 function script(
   bots: Record<string, Bot>,
   inputs: Map<string, string[]>,
+  contents: Map<string, Message["content"][]>,
 ): FauxResponseFactory {
   return async (context, options) => {
     const system = context.messages
@@ -64,7 +65,10 @@ function script(
       .map((message) => JSON.stringify(message))
       .join("\n");
 
-    const name = /You are (.+?), a bot on Crumble/.exec(system)?.[1] ?? "";
+    // Summaries for joining members are requests of their own, answered by the `summary` entry.
+    const name = system.includes("Summarize this group chat")
+      ? "summary"
+      : (/You are (.+?), a bot on Crumble/.exec(system)?.[1] ?? "");
 
     const last = context.messages.findLast(
       (message) => message.role !== "system",
@@ -74,18 +78,19 @@ function script(
     if (last.role === "toolResult") return say("Done.");
     const input = textOf(last);
     inputs.set(name, [...(inputs.get(name) ?? []), input]);
+    contents.set(name, [...(contents.get(name) ?? []), last.content]);
 
     return (bots[name] ?? (() => call("pass")))(input, options?.signal);
   };
 }
 
-const bot = (name: string, enabled = true) => ({
+const bot = (name: string, enabled = true, model = "chat") => ({
   name,
   avatar: "bot",
   description: "",
   instructions: "Answer",
   provider: "faux",
-  model: "chat",
+  model,
   enabled,
   tools: [],
   skills: [],
@@ -95,8 +100,19 @@ const bot = (name: string, enabled = true) => ({
 
 function open(dir: string, bots: Record<string, Bot>) {
   const inputs = new Map<string, string[]>();
-  const faux = fauxProvider({ provider: "faux", models: [{ id: "chat" }] });
-  faux.setResponses(Array.from({ length: 200 }, () => script(bots, inputs)));
+  const contents = new Map<string, Message["content"][]>();
+
+  const faux = fauxProvider({
+    provider: "faux",
+    models: [
+      { id: "chat", input: ["text", "image"] },
+      { id: "text", input: ["text"] },
+    ],
+  });
+
+  faux.setResponses(
+    Array.from({ length: 200 }, () => script(bots, inputs, contents)),
+  );
   const models = createModels();
   models.setProvider(faux.provider);
   const store = new Store(dir);
@@ -126,7 +142,7 @@ function open(dir: string, bots: Record<string, Bot>) {
 
   cleanups.push(close);
 
-  return { store, service, groups, inputs, close };
+  return { store, service, groups, inputs, contents, close };
 }
 
 function setup(bots: Record<string, Bot> = {}, names = ["Ada", "Grace"]) {
@@ -406,6 +422,399 @@ describe("group turns", () => {
     held.open();
     await quiet(groups, group.id);
     expect(await botMessages(groups, group.id)).toEqual([]);
+  });
+});
+
+describe("owner notifications", () => {
+  const replies = (service: CrumbleService) => {
+    const events: Array<{ preview: string; groupId?: string }> = [];
+
+    service.onActivity((event) => {
+      if (event.type === "reply") events.push(event);
+    });
+
+    return events;
+  };
+
+  test("only the first bot answer to an owner message notifies", async () => {
+    const held = gate();
+
+    const { groups, group, service } = setup({
+      Ada: () => call("react", { emoji: "👍" }),
+      Grace: async () => {
+        await held.opened;
+
+        return say("Friday works.");
+      },
+    });
+
+    const events = replies(service);
+    await groups.post(group.id, "When do we leave?", "r-1");
+    await until(async () => (await botMessages(groups, group.id)).length === 1);
+    held.open();
+    await quiet(groups, group.id);
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        preview: "Friday works.",
+        groupId: group.id,
+        groupName: "Trip",
+        origin: "group",
+      }),
+    ]);
+  });
+
+  test("a second bot answer to the same message does not notify", async () => {
+    const held = gate();
+
+    const { groups, group, service } = setup({
+      Ada: () => say("Friday."),
+      Grace: async () => {
+        await held.opened;
+
+        return say("Saturday works too.");
+      },
+    });
+
+    const events = replies(service);
+    await groups.post(group.id, "When do we leave?", "r-1");
+    await until(async () => (await botMessages(groups, group.id)).length === 1);
+    held.open();
+    await quiet(groups, group.id);
+    expect(events.map((event) => event.preview)).toEqual(["Friday."]);
+  });
+
+  test("each of two overlapping owner messages notifies for its first answer", async () => {
+    const held = gate();
+
+    const { groups, group, service } = setup({
+      Ada: async () => {
+        await held.opened;
+
+        return say("Tent is packed.");
+      },
+      Grace: () => say("Stove is packed."),
+    });
+
+    const events = replies(service);
+    await groups.post(group.id, "@Ada pack the tent", "r-1");
+    await groups.post(group.id, "@Grace pack the stove", "r-2");
+    await until(async () => (await botMessages(groups, group.id)).length === 1);
+    held.open();
+    await quiet(groups, group.id);
+    expect(events.map((event) => event.preview).sort()).toEqual([
+      "Stove is packed.",
+      "Tent is packed.",
+    ]);
+  });
+
+  test("retrying an owner message does not notify again", async () => {
+    const held = gate();
+
+    const { groups, group, service } = setup({
+      Ada: () => say("Friday."),
+      Grace: async () => {
+        await held.opened;
+
+        return say("Saturday.");
+      },
+    });
+
+    const events = replies(service);
+    await groups.post(group.id, "When do we leave?", "r-1");
+    await until(async () => events.length === 1);
+    await groups.post(group.id, "When do we leave?", "r-1");
+    held.open();
+    await quiet(groups, group.id);
+    expect(events.map((event) => event.preview)).toEqual(["Friday."]);
+  });
+
+  test("a bot mentioning the owner notifies; other bot messages don't", async () => {
+    const { groups, group, service } = setup({
+      Ada: () => say("@Grace can you check the trains?"),
+      Grace: () => say("@owner the 9:10 train is booked."),
+    });
+
+    const events = replies(service);
+    await groups.post(group.id, "@Ada sort out travel", "r-1");
+    await quiet(groups, group.id);
+
+    expect(events.map((event) => event.preview)).toEqual([
+      "@Grace can you check the trains?",
+      "@owner the 9:10 train is booked.",
+    ]);
+  });
+
+  test("a pause and bot-to-bot turns don't notify", async () => {
+    const { groups, group, service } = setup({
+      Ada: () => say("@Grace your turn"),
+      Grace: () => say("@Ada your turn"),
+    });
+
+    const events = replies(service);
+    await groups.post(group.id, "@Ada start", "r-1");
+    await until(() => groups.activity(group.id).paused);
+    await quiet(groups, group.id);
+    expect(events).toHaveLength(1);
+  });
+});
+
+describe("joining members", () => {
+  async function joinHopper(bots: Record<string, Bot>) {
+    const opened = setup({ Ada: () => call("pass"), ...bots });
+    const { groups, group, store } = opened;
+    await groups.post(group.id, "We leave on Friday", "r-1");
+    await groups.post(group.id, "Bring the tent", "r-2");
+    await quiet(groups, group.id);
+    const hopper = store.createAgent(bot("Hopper"));
+
+    await groups.update(group.id, {
+      name: "Trip",
+      memberIds: [...group.memberIds, hopper.id],
+    });
+
+    return opened;
+  }
+
+  test("a member added later gets one summary on its first turn", async () => {
+    const { groups, group, inputs } = await joinHopper({
+      summary: () => say("The group leaves Friday and needs a tent."),
+      Hopper: () => say("Got it."),
+    });
+
+    expect(inputs.has("summary")).toBe(false);
+    await groups.post(group.id, "@Hopper can you drive?", "r-3");
+    await quiet(groups, group.id);
+    await groups.post(group.id, "@Hopper and the snacks?", "r-4");
+    await quiet(groups, group.id);
+
+    expect(inputs.get("summary")).toHaveLength(1);
+    expect(inputs.get("summary")![0]).toContain("Owner: We leave on Friday");
+    const [first, second] = inputs.get("Hopper")!;
+
+    expect(first).toStartWith(
+      "Summary of the conversation before you joined:\n\nThe group leaves Friday and needs a tent.",
+    );
+    expect(first).toContain("Owner: @Hopper can you drive?");
+    expect(first).not.toContain("Bring the tent");
+    expect(second).not.toContain("Summary of the conversation");
+  });
+
+  test("a member that leaves and rejoins gets a summary of what it missed", async () => {
+    const { groups, group, store, inputs } = setup({
+      Ada: () => say("Noted."),
+      summary: () => say("While you were away, the group chose Friday."),
+    });
+
+    const [ada, grace] = group.memberIds;
+    await groups.post(group.id, "@Ada hello", "r-1");
+    await quiet(groups, group.id);
+    await groups.update(group.id, {
+      name: "Trip",
+      memberIds: [grace!, store.createAgent(bot("Hopper")).id],
+    });
+    await groups.post(group.id, "We leave on Friday", "r-2");
+    await quiet(groups, group.id);
+    await groups.update(group.id, { name: "Trip", memberIds: [grace!, ada!] });
+    await groups.post(group.id, "@Ada are you in?", "r-3");
+    await quiet(groups, group.id);
+
+    // Hopper's summary comes first; Ada's, when she rejoins, covers the message she missed.
+    expect(inputs.get("summary")?.at(-1)).toContain("We leave on Friday");
+    expect(inputs.get("Ada")!.at(-1)).toContain(
+      "While you were away, the group chose Friday.",
+    );
+  });
+
+  test("a stalled summary does not hold up stopping the group", async () => {
+    const held = gate();
+
+    const { groups, group, store, service } = setup({
+      Ada: hang,
+      summary: async () => {
+        await held.opened;
+
+        return say("Summary.");
+      },
+    });
+
+    await groups.post(group.id, "@Ada think it over", "r-1");
+    await until(
+      () => groups.activity(group.id).members[0]?.status === "running",
+    );
+    const hopper = store.createAgent(bot("Hopper"));
+
+    await groups.update(group.id, {
+      name: "Trip",
+      memberIds: [...group.memberIds, hopper.id],
+    });
+    await groups.post(group.id, "@Hopper welcome", "r-2");
+
+    const stopped = await Promise.race([
+      groups.stop(group.id).then(() => true),
+      new Promise((resolve) => setTimeout(() => resolve(false), 1000)),
+    ]);
+
+    held.open();
+    expect(stopped).toBe(true);
+    await quiet(groups, group.id);
+    expect(
+      store
+        .listExecutions(hopper.id)
+        .filter((execution) => execution.requestId.startsWith("group-turn:")),
+    ).toEqual([]);
+    void service;
+  });
+
+  test("a founding member gets no summary", async () => {
+    const { groups, group, inputs } = setup({ Ada: () => say("Hi.") });
+
+    await groups.post(group.id, "@Ada hello", "r-1");
+    await quiet(groups, group.id);
+    await groups.post(group.id, "@Ada again", "r-2");
+    await quiet(groups, group.id);
+    expect(inputs.has("summary")).toBe(false);
+  });
+
+  test("a failed summary still starts the turn", async () => {
+    const { groups, group, inputs } = await joinHopper({
+      summary: () =>
+        fauxAssistantMessage([], { stopReason: "error", errorMessage: "down" }),
+      Hopper: () => say("Got it."),
+    });
+
+    await groups.post(group.id, "@Hopper can you drive?", "r-3");
+    await quiet(groups, group.id);
+    expect(inputs.get("Hopper")![0]).toContain(
+      "The earlier conversation could not be summarized.",
+    );
+  });
+});
+
+describe("attachments", () => {
+  // A 1×1 PNG.
+  const png =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+
+  const image = { name: "map.png", mimeType: "image/png", data: png };
+
+  const note = (n: number) => ({
+    name: `note-${n}.txt`,
+    mimeType: "text/plain",
+    data: Buffer.from(`note ${n}`).toString("base64"),
+  });
+
+  const blocks = (content: Message["content"] | undefined) =>
+    Array.isArray(content) ? content : [];
+
+  test("an owner image reaches each member and pages show it without bytes", async () => {
+    const { groups, group, contents } = setup();
+
+    await groups.post(group.id, "Here is the route", "r-1", {
+      attachments: [image],
+    });
+    await quiet(groups, group.id);
+
+    for (const name of ["Ada", "Grace"])
+      expect(blocks(contents.get(name)?.[0])).toContainEqual({
+        type: "image",
+        data: png,
+        mimeType: "image/png",
+      });
+
+    const [message] = (await groups.snapshot(group.id, {})).messages;
+
+    expect(message?.attachments).toEqual([
+      { name: "map.png", mimeType: "image/png", size: 70, kind: "image" },
+    ]);
+    expect(JSON.stringify(message)).not.toContain(png);
+    expect(
+      (await groups.attachment(group.id, message!.entryId, 0)).mimeType,
+    ).toBe("image/png");
+  });
+
+  test("a text-only model gets the image's name instead", async () => {
+    const { groups, group, store, inputs, contents, agents } = setup();
+
+    store.updateAgent(agents[1]!.id, { model: "text" });
+    await groups.post(group.id, "@Grace look", "r-1", { attachments: [image] });
+    await quiet(groups, group.id);
+    expect(inputs.get("Grace")![0]).toContain("left out: map.png");
+    expect(
+      blocks(contents.get("Grace")?.[0]).some(
+        (block) => block.type === "image",
+      ),
+    ).toBe(false);
+  });
+
+  test("coalesced messages send their newest eight attachments", async () => {
+    const held = gate();
+
+    const { groups, group, contents } = setup({
+      Ada: async (input) => {
+        if (input.includes("first")) await held.opened;
+
+        return say("Read them.");
+      },
+    });
+
+    await groups.post(group.id, "@Ada first", "r-1");
+    await groups.post(group.id, "@Ada older", "r-2", {
+      attachments: [1, 2, 3, 4, 5].map(note),
+    });
+    await groups.post(group.id, "@Ada newer", "r-3", {
+      attachments: [6, 7, 8, 9].map(note),
+    });
+    held.open();
+    await quiet(groups, group.id);
+
+    const names = blocks(contents.get("Ada")?.[1]).flatMap((block) =>
+      block.type === "text"
+        ? [...block.text.matchAll(/<attachment name="(.+?)">/g)].map(
+            (match) => match[1],
+          )
+        : [],
+    );
+
+    expect(names).toEqual([2, 3, 4, 5, 6, 7, 8, 9].map((n) => `note-${n}.txt`));
+  });
+
+  test("an invalid attachment writes nothing", async () => {
+    const { groups, group } = setup();
+
+    await expect(
+      groups.post(group.id, "Look", "r-1", {
+        attachments: [
+          { name: "a.zip", mimeType: "application/zip", data: png },
+        ],
+      }),
+    ).rejects.toThrow("only images");
+    expect((await groups.snapshot(group.id, {})).messages).toEqual([]);
+  });
+});
+
+describe("admission failures", () => {
+  test("a turn that fails to start does not leave its member running", async () => {
+    const { groups, group, service, inputs } = setup({
+      Ada: () => say("Back."),
+    });
+
+    const submit = service.runtime.submit.bind(service.runtime);
+
+    service.runtime.submit = async () => {
+      throw new Error("disk full");
+    };
+
+    await groups.post(group.id, "@Ada first", "r-1");
+    expect(groups.activity(group.id).members[0]).toMatchObject({
+      status: "idle",
+      error: "disk full",
+    });
+
+    service.runtime.submit = submit;
+    await groups.post(group.id, "@Ada second", "r-2");
+    await quiet(groups, group.id);
+    expect(inputs.get("Ada")).toHaveLength(1);
   });
 });
 

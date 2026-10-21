@@ -238,6 +238,47 @@ describe("Store", () => {
   });
 });
 
+describe("Store memory sources", () => {
+  test("keeps a memory's source and reports older memories without one", () => {
+    const dir = make();
+    const first = new Store(dir);
+    const agent = first.createAgent(input);
+    const older = first.createMemory({ agentId: agent.id, content: "older" });
+
+    const sourced = first.createMemory({
+      agentId: agent.id,
+      content: "Leaves Friday",
+      source: { kind: "group", groupId: "group-1", name: "Trip" },
+    });
+
+    first.close();
+
+    const db = new Database(join(dir, "store.sqlite"));
+    db.exec("ALTER TABLE memories DROP COLUMN source");
+    db.close();
+
+    const upgraded = new Store(dir);
+    expect(upgraded.getMemory(sourced.id)?.source).toBeNull();
+
+    const again = upgraded.createMemory({
+      agentId: agent.id,
+      content: "Leaves Friday",
+      source: { kind: "task", scheduleId: "schedule-1", name: "Morning" },
+    });
+
+    upgraded.close();
+
+    const reopened = new Store(dir);
+    expect(reopened.getMemory(older.id)?.source).toBeNull();
+    expect(reopened.getMemory(again.id)?.source).toEqual({
+      kind: "task",
+      scheduleId: "schedule-1",
+      name: "Morning",
+    });
+    reopened.close();
+  });
+});
+
 describe("Store group chats", () => {
   test("keeps members in join order, replaces them, and survives reopen", () => {
     const dir = make();
@@ -315,10 +356,12 @@ describe("Store group chats", () => {
     db.exec(`DROP TABLE group_turns;
       ALTER TABLE group_chats DROP COLUMN bot_turns;
       ALTER TABLE group_chats DROP COLUMN paused;
+      ALTER TABLE group_chats DROP COLUMN awaiting_answers;
       ALTER TABLE group_members DROP COLUMN conversation_id;
       ALTER TABLE group_members DROP COLUMN cursor;
       ALTER TABLE group_members DROP COLUMN pending;
-      ALTER TABLE group_members DROP COLUMN pending_bot_started;`);
+      ALTER TABLE group_members DROP COLUMN pending_bot_started;
+      ALTER TABLE group_members DROP COLUMN summary;`);
     db.close();
 
     const second = new Store(dir);
@@ -330,10 +373,13 @@ describe("Store group chats", () => {
       cursor: 0,
       pending: false,
       pendingBotStarted: false,
+      summary: null,
+      joinedAt: expect.any(String),
     });
     expect(second.groupActivity(group.id)).toEqual({
       botTurns: 0,
       paused: false,
+      awaitingAnswers: {},
     });
     second.close();
   });
@@ -370,8 +416,13 @@ describe("Store group chats", () => {
       cursor: 3,
       pending: true,
       pendingBotStarted: true,
+      summary: "Earlier: packing list.",
     });
-    first.setGroupActivity(group.id, { botTurns: 5, paused: true });
+    first.setGroupActivity(group.id, {
+      botTurns: 5,
+      paused: true,
+      awaitingAnswers: { "2": [a.id] },
+    });
     first.createGroupTurn({
       executionId: execution.id,
       groupId: group.id,
@@ -388,10 +439,12 @@ describe("Store group chats", () => {
       cursor: 3,
       pending: true,
       pendingBotStarted: true,
+      summary: "Earlier: packing list.",
     });
     expect(second.groupActivity(group.id)).toEqual({
       botTurns: 5,
       paused: true,
+      awaitingAnswers: { "2": [a.id] },
     });
     expect(second.activeGroupTurn(group.id, a.id)).toMatchObject({
       executionId: execution.id,

@@ -31,7 +31,16 @@ export type ReplyPushEvent = {
   origin: string;
   preview: string;
   createdAt: string;
+  /** Present for a bot's answer in a group chat. */
+  groupId?: string;
+  groupName?: string;
 };
+
+/** The notification title: the bot, and the group when the answer came from one. */
+export const notificationTitle = (event: ReplyPushEvent) =>
+  event.groupName
+    ? `${event.agentName} in ${event.groupName}`
+    : event.agentName;
 
 export function canonicalReplyEvent(
   event: {
@@ -44,10 +53,14 @@ export function canonicalReplyEvent(
     origin: string;
     preview: string;
     createdAt: string;
+    groupId?: string;
+    groupName?: string;
   },
   serverId: string,
 ): ReplyPushEvent {
   return {
+    ...(event.groupId && { groupId: event.groupId }),
+    ...(event.groupName && { groupName: event.groupName }),
     type: "reply",
     eventId: event.eventId ?? event.executionId!,
     serverId: event.serverId ?? serverId,
@@ -492,7 +505,7 @@ class APNsTransport implements PushTransport {
             JSON.stringify({
               aps: {
                 alert: {
-                  title: event.agentName,
+                  title: notificationTitle(event),
                   body: notificationPreview(event.preview),
                 },
                 sound: "default",
@@ -506,6 +519,10 @@ class APNsTransport implements PushTransport {
               preview: event.preview,
               origin: event.origin,
               createdAt: event.createdAt,
+              ...(event.groupId && {
+                groupId: event.groupId,
+                groupName: event.groupName,
+              }),
             }),
           );
         },
@@ -592,6 +609,10 @@ class FCMTransport implements PushTransport {
       origin: event.origin,
       preview: event.preview,
       createdAt: event.createdAt,
+      ...(event.groupId && {
+        groupId: event.groupId,
+        groupName: event.groupName ?? "",
+      }),
     } satisfies Record<string, string>;
 
     const response = await fetch(
@@ -706,7 +727,11 @@ export class PushManager {
       // SAFETY: Outbox entries are written exclusively from ReplyPushEvent values.
       const event = JSON.parse(row.event_json) as ReplyPushEvent;
 
-      if (this.store.isSuppressed(d.installationId, event.agentId)) {
+      // Presence names the bot chat a client shows; a group answer is not in it.
+      if (
+        !event.groupId &&
+        this.store.isSuppressed(d.installationId, event.agentId)
+      ) {
         this.store.markDelivered(row.outbox_id, d.installationId);
         continue;
       }

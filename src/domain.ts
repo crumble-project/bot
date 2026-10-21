@@ -62,10 +62,27 @@ export type Conversation = {
 };
 
 /** A memory belongs to one bot, or is shared when `agentId` is null. */
+/** Where a memory was saved; names are the ones current at the time. */
+export const memorySource = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("chat") }),
+  z.object({ kind: z.literal("owner") }),
+  z.object({
+    kind: z.literal("task"),
+    scheduleId: z.string(),
+    name: z.string(),
+  }),
+  z.object({ kind: z.literal("bot"), agentId: z.string(), name: z.string() }),
+  z.object({ kind: z.literal("group"), groupId: z.string(), name: z.string() }),
+]);
+
+export type MemorySource = z.infer<typeof memorySource>;
+
 export type Memory = {
   id: string;
   agentId: string | null;
   content: string;
+  /** Null for memories saved before sources were recorded. */
+  source: MemorySource | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -175,6 +192,9 @@ export type GroupMember = {
   pending: boolean;
   /** Every wake behind the pending turn came from a bot message. */
   pendingBotStarted: boolean;
+  /** Summary of the messages before the member joined, written once for its first turn. */
+  summary: string | null;
+  joinedAt: string;
 };
 
 export type GroupTurnStatus = "running" | "posting" | "settled";

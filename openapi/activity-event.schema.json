@@ -37,6 +37,12 @@
         },
         "executionId": {
           "type": "string"
+        },
+        "groupId": {
+          "type": "string"
+        },
+        "groupName": {
+          "type": "string"
         }
       },
       "required": [

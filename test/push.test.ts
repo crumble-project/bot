@@ -5,6 +5,7 @@ import {
   PushManager,
   PushStore,
   canonicalReplyEvent,
+  notificationTitle,
   type PushDevice,
   type ReplyPushEvent,
 } from "../src/push";
@@ -176,6 +177,69 @@ describe("push registration and durable delivery", () => {
     expect(second.serverId()).toBe(serverId);
     expect(second.getDevice(installationId)?.token).toBe("new");
     second.close();
+  });
+
+  test("delivers a group answer even while its bot's chat is visible", async () => {
+    const dir = mkdtempSync(join("/tmp", "crumble-push-"));
+    dirs.push(dir);
+    const now = 1_000_000;
+    const store = new PushStore(dir, () => now);
+    const installationId = id();
+    const agentId = id();
+    store.upsertDevice(installationId, {
+      platform: "android",
+      transport: "fcm",
+      token: "token",
+      environment: "production",
+      enabled: true,
+    });
+    store.setPresence(installationId, true, agentId);
+    const sent: ReplyPushEvent[] = [];
+
+    const manager = new PushManager(
+      store,
+      {
+        fcm: {
+          send: async (_d: PushDevice, event: ReplyPushEvent) => {
+            sent.push(event);
+
+            return "delivered" as const;
+          },
+        },
+        apns: undefined,
+      },
+      () => now,
+    );
+
+    manager.attach({
+      onActivity: (callback: (event: any) => void) => {
+        callback({
+          type: "reply",
+          executionId: id(),
+          agentId,
+          agentName: "Ada",
+          entryId: "group-1:4",
+          origin: "group",
+          preview: "Booked.",
+          createdAt: new Date(now).toISOString(),
+          groupId: "group-1",
+          groupName: "Trip",
+        });
+
+        return () => {};
+      },
+    });
+    await manager.drain();
+
+    expect(sent).toEqual([
+      expect.objectContaining({
+        groupId: "group-1",
+        groupName: "Trip",
+        origin: "group",
+      }),
+    ]);
+    expect(notificationTitle(sent[0]!)).toBe("Ada in Trip");
+    await manager.close();
   });
 
   test("suppresses visible-agent replies and retries failed transport", async () => {

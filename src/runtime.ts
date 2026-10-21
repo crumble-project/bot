@@ -13,6 +13,7 @@ import {
   defineTool,
   type EnvTarget,
   type Extension,
+  LiveDoc,
   type LiveState,
   watchEvents,
 } from "@earendil-works/pi-durable";
@@ -52,6 +53,9 @@ export type MemoryRecord = {
   updatedAt?: string;
 };
 
+/** Where the memory tool runs: a group turn names its group; another conversation's run names its inputs, oldest first. */
+export type MemoryContext = { groupId: string | null; submissionIds: string[] };
+
 export type RuntimeCallbacks = {
   models?:
     | Models
@@ -66,13 +70,19 @@ export type RuntimeCallbacks = {
     agentId: string,
     content: string,
     shared: boolean,
+    context: MemoryContext,
   ) => MemoryRecord | Promise<MemoryRecord>;
   updateMemory?: (
     agentId: string,
     id: string,
     content: string,
+    context: MemoryContext,
   ) => MemoryRecord | Promise<MemoryRecord>;
-  deleteMemory?: (agentId: string, id: string) => void | Promise<void>;
+  deleteMemory?: (
+    agentId: string,
+    id: string,
+    context: MemoryContext,
+  ) => void | Promise<void>;
   /** Shared skills from the library the agent uses, added after its own skills. */
   sharedSkills?: (agent: Agent) => Agent["skills"];
   /** Repository-backed skills applied to every agent before shared and personal skills. */
@@ -207,6 +217,9 @@ function hideIncompleteAssistant(messages: TranscriptMessage[]) {
 const identity = (name: string) =>
   `You are ${name}, a bot on Crumble. The owner and other bots may address you as ${JSON.stringify(name)}. Recognize direct address to your name, but distinguish it from third-person mentions. Give the shortest complete answer: correctness, necessary context, and honest uncertainty come before brevity. Expand when the user asks for detail or an explanation, or when complexity or stakes require it. Lead with the answer, result, blocker, or necessary question. Skip filler, restating the request, repeated summaries, and routine tool narration. Assess the user's premise independently; correct material errors and state uncertainty plainly. Ask when missing information would materially change the answer or make acting costly or risky; otherwise proceed with a reasonable, reversible assumption. Report finished work briefly: what changed, what was actually verified, and any remaining limitations. Surface consequential assumptions, failures, and blockers. Warn before destructive or irreversible actions and obtain required confirmation. Follow explicit requests for depth, tone, and format.`;
 
+const SUMMARY_INSTRUCTIONS =
+  "Summarize this group chat for a bot that is joining it, in under 200 words. Keep decisions, open questions, who asked whom for what, and facts the group relies on. Name senders. Write plain prose without a heading.";
+
 const CONTEXT_GUIDANCE =
   "Answer the current message on its own terms and draw on your general knowledge when relevant. Preserve applicable instructions and decisions from the conversation. Use earlier messages and memory when they help, without forcing unrelated history into the answer or commenting on the owner's patterns unless asked.";
 
@@ -300,7 +313,7 @@ export class AgentRuntime {
       const memory = defineTool({
         name: "memory",
         description:
-          "Read and manage this agent’s persistent memory. When the agent uses shared memory, `list` also returns shared memories (marked `shared`), which other agents see too; create one with `shared: true` only for what every agent should know.",
+          "Read and manage this agent’s persistent memory. When the agent uses shared memory, `list` also returns shared memories (marked `shared`), which other agents see too; create one with `shared: true` only for what every agent should know. In a group chat only your own memory can be changed.",
         parameters: Type.Object({
           action: Type.Union([
             Type.Literal("list"),
@@ -316,7 +329,25 @@ export class AgentRuntime {
         }),
         // Writes are not replay-safe: interrupted calls report an interruption instead of duplicating a memory.
         replay: "unsafe",
-        execute: async (args) => {
+        execute: async (args, api, callContext) => {
+          const live = await api.snapshot(
+            LiveDoc,
+            api.conversationId,
+            callContext,
+          );
+
+          const context: MemoryContext = {
+            groupId:
+              (
+                await api.snapshot(
+                  GroupConversation,
+                  api.conversationId,
+                  callContext,
+                )
+              )?.groupId ?? null,
+            submissionIds: (live?.run?.inputs ?? []).map(String),
+          };
+
           const current = this.callbacks.currentAgent
             ? this.callbacks.currentAgent(agent.id)
             : agent;
@@ -334,6 +365,7 @@ export class AgentRuntime {
               agent.id,
               args.content,
               args.shared === true,
+              context,
             );
           } else if (args.action === "update") {
             if (
@@ -346,11 +378,12 @@ export class AgentRuntime {
               agent.id,
               args.id,
               args.content,
+              context,
             );
           } else {
             if (!args.id || !this.callbacks.deleteMemory)
               throw new Error("Memory ID is required");
-            await this.callbacks.deleteMemory(agent.id, args.id);
+            await this.callbacks.deleteMemory(agent.id, args.id, context);
             result = { deleted: true };
           }
 
@@ -596,6 +629,55 @@ export class AgentRuntime {
     await this.configure(record, agent, reference);
 
     return reference;
+  }
+
+  /** Whether the bot's model reads images; catalogs that list no modalities are trusted, as for chat uploads. */
+  async acceptsImages(agent: Agent) {
+    const { models } = await this.open(agent);
+
+    if (!models.getModel(agent.provider, agent.model))
+      await models.refresh({ providers: [agent.provider] });
+    const input = models.getModel(agent.provider, agent.model)?.input;
+
+    return !input || input.includes("image");
+  }
+
+  /** A short summary of a group conversation, written by the bot's own model for its first turn after joining. */
+  async summarize(
+    agent: Agent,
+    transcript: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const { models } = await this.open(agent);
+
+    if (!models.getModel(agent.provider, agent.model))
+      await models.refresh({ providers: [agent.provider] });
+    const model = models.getModel(agent.provider, agent.model);
+
+    if (!model) throw new Error(`${agent.model} is not available`);
+
+    const answer = await models.completeSimple(
+      model,
+      {
+        systemPrompt: SUMMARY_INSTRUCTIONS,
+        messages: [
+          { role: "user", content: transcript, timestamp: Date.now() },
+        ],
+      },
+      { ...inferenceOptions(agent.inference), signal },
+    );
+
+    const summary = answer.content
+      .flatMap((block) => (block.type === "text" ? [block.text] : []))
+      .join("")
+      .trim();
+
+    if (answer.stopReason === "error" || answer.stopReason === "aborted")
+      throw new Error(answer.errorMessage ?? "The summary failed");
+
+    if (!summary) throw new Error("The summary was empty");
+
+    return summary;
   }
 
   /** What a settled group turn leaves for the group: its final answer, a reaction, or nothing. */

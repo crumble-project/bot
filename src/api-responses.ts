@@ -249,11 +249,30 @@ export const scheduleRunResponse = z
   })
   .openapi("ScheduleRun");
 
+// One object with optional fields rather than a union, so client generators keep it.
+const memorySourceResponse = z
+  .object({
+    kind: z.enum(["chat", "owner", "task", "bot", "group"]),
+    name: z.string().optional().openapi({
+      description:
+        "The task, bot, or group chat, as named when the memory was saved.",
+    }),
+    scheduleId: z.string().optional().openapi({ description: "For `task`." }),
+    agentId: z.string().optional().openapi({ description: "For `bot`." }),
+    groupId: z.string().optional().openapi({ description: "For `group`." }),
+  })
+  .openapi("MemorySource", {
+    description:
+      "Where the memory was saved: the owner's bot chat, the owner directly, a scheduled task, another bot's request, or a group chat.",
+  });
+
 export const memoryResponse = z
   .object({
     id: z.string(),
     agentId: z.string().nullable(),
     content: z.string(),
+    // Null for memories saved before sources were recorded. A bare nullable union keeps generators' projection simple.
+    source: z.union([memorySourceResponse, z.null()]),
     createdAt: z.string(),
     updatedAt: z.string(),
   })
@@ -373,6 +392,11 @@ export const replyEvent = z
     preview: z.string(),
     createdAt: z.string(),
     executionId: z.string().optional(),
+    groupId: z.string().optional().openapi({
+      description:
+        "Set when a bot answered in a group chat; open the group rather than the bot chat.",
+    }),
+    groupName: z.string().optional(),
   })
   .openapi("ReplyEvent");
 

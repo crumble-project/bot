@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mentionedMembers } from "../src/group-mentions";
+import { mentionedMembers, mentionsOwner } from "../src/group-mentions";
 
 const members = [
   { id: "ada", name: "Ada" },
@@ -31,5 +31,13 @@ describe("mentionedMembers", () => {
     expect(mentionedMembers("@Grace @Grace @Ada", members, "ada")).toEqual([
       "grace",
     ]);
+  });
+});
+
+describe("mentionsOwner", () => {
+  test("finds @owner at word boundaries only", () => {
+    expect(mentionsOwner("@Owner, the tickets are booked")).toBe(true);
+    expect(mentionsOwner("Done (@owner)")).toBe(true);
+    expect(mentionsOwner("@owners and mail@owner.com")).toBe(false);
   });
 });

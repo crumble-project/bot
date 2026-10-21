@@ -50,6 +50,9 @@ export type ReplyActivity = {
   origin: string;
   preview: string;
   createdAt: string;
+  /** Set for a bot's answer in a group chat; clients open the group instead of the bot chat. */
+  groupId?: string;
+  groupName?: string;
 };
 
 export type ChatPreviewActivity = {
@@ -197,6 +200,11 @@ export class CrumbleService {
       createdAt: execution.createdAt,
     };
 
+    for (const listener of this.activityListeners) listener(event);
+  }
+
+  /** Tells activity listeners, such as push delivery, about a reply that did not come from a bot chat execution. */
+  announce(event: ReplyActivity) {
     for (const listener of this.activityListeners) listener(event);
   }
 
