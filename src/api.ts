@@ -456,9 +456,15 @@ export function createAPI(
         c.req.param("id"),
         input.content,
         input.requestId,
+        { replyTo: input.replyTo },
       ),
       201,
     );
+  });
+  register(routes.stopGroupChat, async (c) => {
+    await groupChats().stop(c.req.param("id"));
+
+    return c.body(null, 204);
   });
   register(routes.groupChatEvents, async (c) => {
     const query = snapshotQuery(c);

@@ -37,11 +37,8 @@ function setup() {
     service.dispatch(a, p, r, s),
   );
 
-  const groupChats = new GroupChats(
-    store,
-    new GroupTranscripts(join(dir, "groups")),
-    service,
-  );
+  const transcripts = new GroupTranscripts(join(dir, "groups"));
+  const groupChats = new GroupChats(store, transcripts, service);
 
   const app = createAPI(service, scheduler, token, undefined, { groupChats });
 
@@ -64,6 +61,7 @@ function setup() {
 
   return {
     app,
+    transcripts,
     ids: bots.map((bot) => bot.id),
     close: async () => {
       await groupChats.close();
@@ -206,6 +204,84 @@ describe("group chat API", () => {
 
       expect(snapshot.groupChat.id).toBe(group.id);
       expect(snapshot.messages).toHaveLength(1);
+    } finally {
+      await close();
+    }
+  });
+
+  test("stops a group, rejects foreign replies, and reports activity and reactions", async () => {
+    const { app, ids, transcripts, close } = setup();
+
+    try {
+      const group = groupChatResponse.parse(
+        await (
+          await post(app, "/v1/group-chats", {
+            name: "Trip",
+            memberIds: [ids[0]!, ids[1]!],
+          })
+        ).json(),
+      );
+
+      const stopped = await req(app, `/v1/group-chats/${group.id}/stop`, {
+        method: "POST",
+      });
+
+      expect(stopped.status).toBe(204);
+      expect(
+        (
+          await req(app, `/v1/group-chats/${crypto.randomUUID()}/stop`, {
+            method: "POST",
+          })
+        ).status,
+      ).toBe(404);
+
+      const foreign = await post(app, `/v1/group-chats/${group.id}/messages`, {
+        content: "Me too",
+        requestId: crypto.randomUUID(),
+        replyTo: `${crypto.randomUUID()}:1`,
+      });
+
+      expect(foreign.status).toBe(400);
+
+      const receipt = groupMessageReceiptResponse.parse(
+        await (
+          await post(app, `/v1/group-chats/${group.id}/messages`, {
+            content: "Pack light",
+            requestId: crypto.randomUUID(),
+          })
+        ).json(),
+      );
+
+      await transcripts.post(
+        group.id,
+        {
+          text: "",
+          sender: { kind: "bot", agentId: ids[0]!, name: "Planner" },
+          reaction: "👍",
+          replyTo: receipt.entryId,
+        },
+        "reaction-1",
+      );
+
+      const snapshot = groupChatSnapshotResponse.parse(
+        await (await req(app, `/v1/group-chats/${group.id}/chat`)).json(),
+      );
+
+      expect(snapshot.activity).toEqual({
+        paused: false,
+        botTurns: 0,
+        members: [
+          { agentId: ids[0]!, status: "disabled", error: null },
+          { agentId: ids[1]!, status: "disabled", error: null },
+        ],
+      });
+      expect(snapshot.messages.at(-1)).toMatchObject({
+        role: "toolResult",
+        toolName: "react",
+        toolDetails: { emoji: "👍" },
+        replyTo: receipt.entryId,
+        origin: { kind: "bot", agentId: ids[0] },
+      });
     } finally {
       await close();
     }
