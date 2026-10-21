@@ -62,7 +62,7 @@ No behavior changes. `test/coding.test.ts` is the safety net; it must pass uncha
 **Interfaces produced:**
 - `defineJobKind(options: JobKindOptions): JobKind`
 - `type JobKindOptions = { kind: string; toolName: string; label: string; description: string; instructions: string; exclusive?: boolean }`
-- `JobKind.jobOf(message): string | undefined`, `JobKind.list(harness, chatId): Promise<JobInfo[]>`, `JobKind.env(workspaces, agentId, target, context): Promise<ExecutionEnv | undefined>`, `JobKind.extensions(input: { agentId: string; job: Extension; model?: ModelRef; thinkingLevel?: ModelThinkingLevel }): JobExtensions`
+- `JobKind.jobOf(message): string | undefined`, `JobKind.list(harness, chatId): Promise<JobInfo[]>`, `JobKind.env(workspaces, agentId, target, context): Promise<ExecutionEnv | undefined>`, `JobKind.extensions(input: { agentId: string; job: Extension; model?: ModelRef }): JobExtensions`, `JobKind.isJob(reader, conversationId, context): Promise<boolean>`
 - `type JobInfo = { name: string; conversationId: ConversationId; status: "working" | "idle" }`
 - `type JobExtensions = { chat: Extension[]; job: Extension[] }`
 - `coding.ts` keeps `CODING_TOOL_NAME`, `codingJobOf`, `codingJobs`, `codingEnv`, `codingExtensions`, `CodingJobInfo`, `CodingExtensions`.
@@ -73,7 +73,10 @@ No behavior changes. `test/coding.test.ts` is the safety net; it must pass uncha
 
 ```ts
 import type { Context } from "@earendil-works/chord";
-import { BACKGROUND_CONTEXT, awaitWithContext } from "@earendil-works/chord/context";
+import {
+  BACKGROUND_CONTEXT,
+  awaitWithContext,
+} from "@earendil-works/chord/context";
 import { Type, type AssistantMessage } from "@earendil-works/pi-ai";
 import {
   AssistantEntry,
@@ -90,7 +93,6 @@ import {
   type Extension,
   type Harness,
   type ModelRef,
-  type ModelThinkingLevel,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { z } from "zod";
@@ -151,11 +153,7 @@ const textOf = (message: AssistantMessage | undefined) =>
     .join("");
 
 // A conversation is busy while it has a run: from an input until its final answer.
-const statusOf = async (
-  reader: DocumentReader,
-  job: Job,
-  context: Context,
-) =>
+const statusOf = async (reader: DocumentReader, job: Job, context: Context) =>
   (await reader.snapshot(LiveDoc, job.conversationId, context))?.run
     ? ("working" as const)
     : ("idle" as const);
@@ -217,7 +215,10 @@ export function defineJobKind(options: JobKindOptions) {
     const jobs = (await reader.snapshot(Jobs, chatId, context))?.jobs ?? {};
 
     for (const [other, job] of Object.entries(jobs))
-      if (other !== name && (await statusOf(reader, job, context)) === "working")
+      if (
+        other !== name &&
+        (await statusOf(reader, job, context)) === "working"
+      )
         return true;
 
     return false;
@@ -236,7 +237,12 @@ export function defineJobKind(options: JobKindOptions) {
         // Polling instead of a queue document: a restart re-enters this phase and simply waits again.
         while (
           options.exclusive &&
-          (await othersWorking(runtime, runtime.conversationId, name, taskContext))
+          (await othersWorking(
+            runtime,
+            runtime.conversationId,
+            name,
+            taskContext,
+          ))
         )
           await awaitWithContext(
             new Promise((resolve) => setTimeout(resolve, WAIT_MS)),
@@ -369,8 +375,14 @@ export function defineJobKind(options: JobKindOptions) {
     },
 
     /** Whether the conversation is a job of this kind. */
-    async isJob(reader: DocumentReader, conversationId: ConversationId, context: Context) {
-      return (await reader.snapshot(Marker, conversationId, context))?.job === true;
+    async isJob(
+      reader: DocumentReader,
+      conversationId: ConversationId,
+      context: Context,
+    ) {
+      return (
+        (await reader.snapshot(Marker, conversationId, context))?.job === true
+      );
     },
 
     /**
@@ -398,7 +410,6 @@ export function defineJobKind(options: JobKindOptions) {
       job: Extension;
       /** The job's model; unset, a job starts with the bot's model. */
       model?: ModelRef;
-      thinkingLevel?: ModelThinkingLevel;
     }): JobExtensions {
       const { agentId, job } = input;
 
@@ -413,7 +424,9 @@ export function defineJobKind(options: JobKindOptions) {
             Type.Literal("status"),
           ]),
           name: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
-          message: Type.Optional(Type.String({ minLength: 1, maxLength: 32000 })),
+          message: Type.Optional(
+            Type.String({ minLength: 1, maxLength: 32000 }),
+          ),
           followUp: Type.Optional(Type.Boolean()),
         }),
         callers: ["model"],
@@ -522,7 +535,6 @@ export function defineJobKind(options: JobKindOptions) {
                 instructions: options.instructions,
                 cwd: WORKSPACE_PATH,
                 ...(input.model && { model: input.model }),
-                ...(input.thinkingLevel && { thinkingLevel: input.thinkingLevel }),
               });
               (await tx.doc(Marker, child.id)).job = true;
               state.jobs[name] = { conversationId: child.id, reported: [] };
@@ -549,7 +561,10 @@ export function defineJobKind(options: JobKindOptions) {
 
           // The card shows the started or messaged job, so the turn ends with it, as after `show`.
           return result.found
-            ? { ...reply(result.text, result.found), control: { terminate: true } }
+            ? {
+                ...reply(result.text, result.found),
+                control: { terminate: true },
+              }
             : reply(result.text);
         },
       });
@@ -605,6 +620,7 @@ const coding = defineJobKind({
 export const codingJobOf = coding.jobOf;
 
 export type CodingJobInfo = JobInfo;
+
 export type CodingExtensions = JobExtensions;
 
 export const codingJobs = (harness: Harness, chatId: ConversationId) =>
@@ -645,9 +661,9 @@ export function codingExtensions(
 }
 ```
 
-- [ ] **Step 4: Run the safety net.** `bun test test/coding.test.ts && bun run typecheck` — expected: all pass, no type errors. If `ModelRef` or `ModelThinkingLevel` are not exported from `@earendil-works/pi-durable`'s root, import them from where `harness/types.d.ts` re-exports them (`grep -n "ModelRef" node_modules/@earendil-works/pi-durable/dist/index.d.ts`).
+- [ ] **Step 4: Run the safety net.** `bun test test/coding.test.ts && bun run typecheck` — expected: all pass, no type errors.
 
-- [ ] **Step 5: Write the failing test for exclusive kinds.** Create `test/jobs.test.ts`. It runs a scripted model as both bot and jobs. Job `a`'s model call blocks until released; job `b` must not get a model call before `a` answers.
+- [ ] **Step 5: Write the failing test for exclusive kinds.** Create `test/jobs.test.ts`. It runs a scripted model as both bot and jobs. Job `a`'s model call blocks until released; job `b` must not get a model call before `a` answers. A second, non-exclusive kind shows that only exclusive kinds wait.
 
 ```ts
 import { afterEach, expect, test } from "bun:test";
@@ -655,16 +671,17 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Context } from "@earendil-works/chord";
-import { defineExtension } from "@earendil-works/pi-durable";
-import { createModels } from "@earendil-works/pi-ai";
+import { createModels, type Message } from "@earendil-works/pi-ai";
 import {
   fauxAssistantMessage,
   fauxProvider,
   fauxText,
   fauxToolCall,
+  type FauxResponseFactory,
 } from "@earendil-works/pi-ai/providers/faux";
+import { defineExtension } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
-import { defineJobKind } from "../src/jobs";
+import { defineJobKind, type JobKindOptions } from "../src/jobs";
 import { AgentRuntime } from "../src/runtime";
 import { Store } from "../src/store";
 import type { Workspaces } from "../src/workspace";
@@ -675,97 +692,164 @@ afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
 });
 
-const kind = defineJobKind({
-  kind: "test-exclusive",
-  toolName: "exclusive",
-  label: "exclusive job",
-  description: "Run exclusive jobs.",
-  instructions: "You are an exclusive job.",
-  exclusive: true,
-});
-
 class DirectoryWorkspaces implements Workspaces {
   readonly desktop = false;
+
   constructor(readonly dir: string) {}
+
   env(_agentId: string) {
     return new NodeExecutionEnv({ cwd: this.dir });
   }
+
   async sync(_agentId: string, _context: Context) {}
+
   async restart(_agentId: string, _context: Context) {}
+
   async close(_context: Context) {}
 }
 
-test("an exclusive job waits while another job of its kind works", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "crumble-jobs-"));
+const kindOptions = (exclusive: boolean): JobKindOptions => ({
+  kind: exclusive ? "test-exclusive" : "test-parallel",
+  toolName: "errand",
+  label: "errand",
+  description: "Run errands.",
+  instructions: "You run one errand.",
+  exclusive,
+});
+
+const exclusiveKind = defineJobKind(kindOptions(true));
+const parallelKind = defineJobKind(kindOptions(false));
+
+const textOf = (message: Message) =>
+  (Array.isArray(message.content)
+    ? message.content
+    : [{ type: "text" as const, text: message.content }]
+  )
+    .flatMap((block) => (block.type === "text" ? [block.text] : []))
+    .join("");
+
+/** The bot starts the errand its message names; a job records that its model was asked, and waits for release. */
+function script(
+  started: string[],
+  release: Promise<void>,
+): FauxResponseFactory {
+  return async (context) => {
+    const tools = context.messages.flatMap((message) =>
+      message.role === "system"
+        ? (message.toolsAdded ?? []).map((tool) => tool.name)
+        : [],
+    );
+
+    const last = context.messages.findLast(
+      (message) => message.role !== "system",
+    )!;
+
+    const text = textOf(last);
+
+    if (!tools.includes("errand")) {
+      started.push(text);
+      await release;
+
+      return fauxAssistantMessage([fauxText(`${text} done`)]);
+    }
+
+    if (text.startsWith("[errand"))
+      return fauxAssistantMessage([fauxText("Noted.")]);
+
+    const name = text.replace("start ", "");
+
+    return fauxAssistantMessage(
+      fauxToolCall("errand", {
+        action: "start",
+        name,
+        message: `errand ${name}`,
+      }),
+      { stopReason: "toolUse" },
+    );
+  };
+}
+
+async function run(kind: typeof exclusiveKind) {
+  const dir = mkdtempSync(join(tmpdir(), "bot-jobs-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   const store = new Store(dir);
   cleanups.push(() => store.close());
-  const workspaces = new DirectoryWorkspaces(dir);
-
-  let releaseA!: () => void;
-  const aBlocked = new Promise<void>((resolve) => (releaseA = resolve));
-  const jobCalls: string[] = [];
-
-  const faux = fauxProvider();
-  faux.setResponses([]);
-  faux.appendResponses([
-    // Bot: start a, then start b.
-    fauxAssistantMessage(fauxToolCall("exclusive", { action: "start", name: "a", message: "task a" }), { stopReason: "toolUse" }),
-  ]);
-
-  const models = createModels();
-  models.setProvider(faux.provider);
-  const model = faux.getModel();
-
-  const responder = async (context: { messages: { role: string; content: unknown }[] }) => {
-    const last = JSON.stringify(context.messages.at(-1)?.content ?? "");
-    if (last.includes("task a")) {
-      jobCalls.push("a");
-      await aBlocked;
-      return fauxAssistantMessage(fauxText("a done"));
-    }
-    if (last.includes("task b")) {
-      jobCalls.push("b");
-      return fauxAssistantMessage(fauxText("b done"));
-    }
-    return fauxAssistantMessage(fauxText("ok"));
-  };
-  faux.setResponses([responder, responder, responder, responder, responder, responder]);
 
   const agent = store.createAgent({
-    name: "Desk",
-    provider: model.provider,
-    model: model.id,
-    tools: ["exclusive"],
+    name: "Runner",
+    avatar: "bot",
+    description: "",
+    instructions: "",
+    provider: "faux",
+    model: "chat",
+    enabled: true,
+    tools: ["errand"],
+    skills: [],
+    mcpServers: [],
+    delegates: [],
   });
 
-  const job = defineExtension({ name: "exclusive-job", tools: [] });
+  const started: string[] = [];
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+
+  const faux = fauxProvider({ provider: "faux", models: [{ id: "chat" }] });
+  faux.setResponses(
+    Array.from({ length: 40 }, () => script(started, released)),
+  );
+  const models = createModels();
+  models.setProvider(faux.provider);
+
+  const workspaces = new DirectoryWorkspaces(dir);
+  const job = defineExtension({ name: "errand-job" });
   const extensions = kind.extensions({ agentId: agent.id, job });
 
-  const runtime = new AgentRuntime(join(dir, "agents"), {
-    models: () => models,
-    currentAgent: (id) => store.getAgent(id),
-    extensions: async () => extensions.chat,
+  const runtime = new AgentRuntime(dir, {
+    models,
+    extensions: () => extensions.chat,
     taskExtensions: () => extensions.job,
-    env: (agentId, target, context) => kind.env(workspaces, agentId, target, context),
+    env: (agentId, target, context) =>
+      kind.env(workspaces, agentId, target, context),
   });
+
   cleanups.push(() => runtime.close());
 
-  await runtime.chat(agent, "start a");
-  await runtime.chat(agent, "start b");
+  const chat = await runtime.openChat(agent);
+  await runtime.submit(agent, chat, "start a", "req-a");
+  await until(() => started.includes("errand a"));
+  await runtime.submit(agent, chat, "start b", "req-b");
 
+  return { started, release };
+}
+
+async function until(check: () => boolean) {
+  for (let i = 0; i < 500 && !check(); i++)
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+  expect(check()).toBe(true);
+}
+
+test("an exclusive job waits while another job of its kind works", async () => {
+  const { started, release } = await run(exclusiveKind);
+
+  // Long enough for errand b to reach its model if it did not wait.
   await Bun.sleep(1500);
-  expect(jobCalls).toEqual(["a"]);
+  expect(started).toEqual(["errand a"]);
 
-  releaseA();
-  await Bun.sleep(2500);
-  expect(jobCalls).toEqual(["a", "b"]);
+  release();
+  await until(() => started.includes("errand b"));
+  expect(started).toEqual(["errand a", "errand b"]);
+});
+
+test("jobs of other kinds run side by side", async () => {
+  const { started, release } = await run(parallelKind);
+
+  await until(() => started.includes("errand b"));
+  release();
 });
 ```
 
-Before writing this test, open `test/coding.test.ts` lines 90-200 and copy its runtime construction and chat helpers exactly (the `AgentRuntime` callbacks, how it starts a chat turn, and how it waits for jobs). Replace the `runtime.chat` calls above with that file's helper. The scripted bot must answer "start a" with `exclusive start a` and "start b" with `exclusive start b`, following that file's `script()` pattern, which tells bot and job apart by their offered tools.
-
-- [ ] **Step 6: Run it.** `bun test test/jobs.test.ts` — expected before the `exclusive` wait exists: FAIL with `["a", "b"]` at the first assertion. With Step 2's code it passes; to see red, temporarily set `exclusive: false` in the test's kind and confirm the failure, then restore it.
+- [ ] **Step 6: Run it.** `bun test test/jobs.test.ts` — expected: 2 pass. To see red, temporarily replace `options.exclusive &&` in the reporter's wait loop with `false &&`: the exclusive test fails with `errand b` started early. Restore it.
 
 - [ ] **Step 7: Full check.** `bun run check` — expected: pass.
 
