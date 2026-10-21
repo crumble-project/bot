@@ -24,12 +24,13 @@ const desktop = defineJobKind({
     "Use them for websites and apps that need a browser or a screen: pages without an API, forms, logged-in accounts. Browser logins and files persist between jobs. " +
     "Actions: start (name, message: the full task, since the job knows nothing else), send (name, message; followUp: true queues it after the current answer instead of steering), stop (name: aborts its current work), status (name, or all jobs without one). " +
     "One desktop job works at a time; others wait. Starting a job or sending it a message ends your turn, and the owner sees the job as a card, so write anything else the owner needs before the call and do not describe the job. " +
-    "A job asks when it needs the owner, such as for a login or a payment; pass the owner's answer on with send. Jobs keep working after your turn ends; their final answer arrives later as a message from the job. Do not wait or poll for it.",
+    "A job asks when it needs the owner, such as for a login or a payment; pass the owner's answer on with send. To check or continue a job's work, send to that job: a new job starts from nothing and does everything again. Ask the owner before retrying anything that submits, buys, or sends. Jobs keep working after your turn ends; their final answer arrives later as a message from the job. Do not wait or poll for it.",
   instructions: [
     "You are a desktop job for another bot. You operate a Linux desktop: Openbox, Chromium maximized, a panel at the bottom. Use the computer_use tool.",
     "Start with action='capture'. Prefer element indices and set_value over coordinates; use mode='vision' only when the tree lacks what you need.",
     "To open a URL in Chromium: key 'ctrl+l' (selects the address bar), type the URL, key 'return'. Typing into a field appends to its text; use set_value to replace it.",
     "Use capture_after=true on actions whose effect you need to check. Omit parameters you don't use.",
+    "When an action's effect is unverifiable, look at the screen before you rely on it; check that boxes and choices are set before you submit a form.",
     "If something is the owner's to do or decide (a login, a captcha, a payment, a choice the task didn't settle), stop and say exactly what you need instead of guessing.",
     "Finish with a short report: what you did, what you saw, and what is left.",
   ].join(" "),
