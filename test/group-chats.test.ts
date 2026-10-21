@@ -64,7 +64,10 @@ function script(
       .map((message) => JSON.stringify(message))
       .join("\n");
 
-    const name = /You are (.+?), a bot on Crumble/.exec(system)?.[1] ?? "";
+    // Summaries for joining members are requests of their own, answered by the `summary` entry.
+    const name = system.includes("Summarize this group chat")
+      ? "summary"
+      : (/You are (.+?), a bot on Crumble/.exec(system)?.[1] ?? "");
 
     const last = context.messages.findLast(
       (message) => message.role !== "system",
@@ -406,6 +409,72 @@ describe("group turns", () => {
     held.open();
     await quiet(groups, group.id);
     expect(await botMessages(groups, group.id)).toEqual([]);
+  });
+});
+
+describe("joining members", () => {
+  async function joinHopper(bots: Record<string, Bot>) {
+    const opened = setup({ Ada: () => call("pass"), ...bots });
+    const { groups, group, store } = opened;
+    await groups.post(group.id, "We leave on Friday", "r-1");
+    await groups.post(group.id, "Bring the tent", "r-2");
+    await quiet(groups, group.id);
+    const hopper = store.createAgent(bot("Hopper"));
+
+    await groups.update(group.id, {
+      name: "Trip",
+      memberIds: [...group.memberIds, hopper.id],
+    });
+
+    return opened;
+  }
+
+  test("a member added later gets one summary on its first turn", async () => {
+    const { groups, group, inputs } = await joinHopper({
+      summary: () => say("The group leaves Friday and needs a tent."),
+      Hopper: () => say("Got it."),
+    });
+
+    expect(inputs.has("summary")).toBe(false);
+    await groups.post(group.id, "@Hopper can you drive?", "r-3");
+    await quiet(groups, group.id);
+    await groups.post(group.id, "@Hopper and the snacks?", "r-4");
+    await quiet(groups, group.id);
+
+    expect(inputs.get("summary")).toHaveLength(1);
+    expect(inputs.get("summary")![0]).toContain("Owner: We leave on Friday");
+    const [first, second] = inputs.get("Hopper")!;
+
+    expect(first).toStartWith(
+      "Summary of the conversation before you joined:\n\nThe group leaves Friday and needs a tent.",
+    );
+    expect(first).toContain("Owner: @Hopper can you drive?");
+    expect(first).not.toContain("Bring the tent");
+    expect(second).not.toContain("Summary of the conversation");
+  });
+
+  test("a founding member gets no summary", async () => {
+    const { groups, group, inputs } = setup({ Ada: () => say("Hi.") });
+
+    await groups.post(group.id, "@Ada hello", "r-1");
+    await quiet(groups, group.id);
+    await groups.post(group.id, "@Ada again", "r-2");
+    await quiet(groups, group.id);
+    expect(inputs.has("summary")).toBe(false);
+  });
+
+  test("a failed summary still starts the turn", async () => {
+    const { groups, group, inputs } = await joinHopper({
+      summary: () =>
+        fauxAssistantMessage([], { stopReason: "error", errorMessage: "down" }),
+      Hopper: () => say("Got it."),
+    });
+
+    await groups.post(group.id, "@Hopper can you drive?", "r-3");
+    await quiet(groups, group.id);
+    expect(inputs.get("Hopper")![0]).toContain(
+      "The earlier conversation could not be summarized.",
+    );
   });
 });
 

@@ -318,7 +318,8 @@ describe("Store group chats", () => {
       ALTER TABLE group_members DROP COLUMN conversation_id;
       ALTER TABLE group_members DROP COLUMN cursor;
       ALTER TABLE group_members DROP COLUMN pending;
-      ALTER TABLE group_members DROP COLUMN pending_bot_started;`);
+      ALTER TABLE group_members DROP COLUMN pending_bot_started;
+      ALTER TABLE group_members DROP COLUMN summary;`);
     db.close();
 
     const second = new Store(dir);
@@ -330,6 +331,7 @@ describe("Store group chats", () => {
       cursor: 0,
       pending: false,
       pendingBotStarted: false,
+      summary: null,
     });
     expect(second.groupActivity(group.id)).toEqual({
       botTurns: 0,
@@ -370,6 +372,7 @@ describe("Store group chats", () => {
       cursor: 3,
       pending: true,
       pendingBotStarted: true,
+      summary: "Earlier: packing list.",
     });
     first.setGroupActivity(group.id, { botTurns: 5, paused: true });
     first.createGroupTurn({
@@ -388,6 +391,7 @@ describe("Store group chats", () => {
       cursor: 3,
       pending: true,
       pendingBotStarted: true,
+      summary: "Earlier: packing list.",
     });
     expect(second.groupActivity(group.id)).toEqual({
       botTurns: 5,

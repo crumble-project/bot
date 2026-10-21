@@ -175,6 +175,8 @@ export type GroupMember = {
   pending: boolean;
   /** Every wake behind the pending turn came from a bot message. */
   pendingBotStarted: boolean;
+  /** Summary of the messages before the member joined, written once for its first turn. */
+  summary: string | null;
 };
 
 export type GroupTurnStatus = "running" | "posting" | "settled";

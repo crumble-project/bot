@@ -55,6 +55,7 @@ type GroupMemberStateRow = {
   cursor: number;
   pending: number;
   pending_bot_started: number;
+  summary: string | null;
 };
 
 type GroupActivityRow = { bot_turns: number; paused: number };
@@ -123,7 +124,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS credentials (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS mcp_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, enabled INTEGER NOT NULL, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE);
       CREATE TABLE IF NOT EXISTS group_chats (id TEXT PRIMARY KEY, name TEXT NOT NULL, bot_turns INTEGER NOT NULL DEFAULT 0, paused INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS group_members (group_id TEXT NOT NULL REFERENCES group_chats(id) ON DELETE CASCADE, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, joined_at TEXT NOT NULL, conversation_id TEXT, cursor INTEGER NOT NULL DEFAULT 0, pending INTEGER NOT NULL DEFAULT 0, pending_bot_started INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (group_id, agent_id));
+      CREATE TABLE IF NOT EXISTS group_members (group_id TEXT NOT NULL REFERENCES group_chats(id) ON DELETE CASCADE, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, joined_at TEXT NOT NULL, conversation_id TEXT, cursor INTEGER NOT NULL DEFAULT 0, pending INTEGER NOT NULL DEFAULT 0, pending_bot_started INTEGER NOT NULL DEFAULT 0, summary TEXT, PRIMARY KEY (group_id, agent_id));
       CREATE TABLE IF NOT EXISTS group_turns (execution_id TEXT PRIMARY KEY REFERENCES executions(id) ON DELETE CASCADE, group_id TEXT NOT NULL REFERENCES group_chats(id) ON DELETE CASCADE, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, through INTEGER NOT NULL, bot_started INTEGER NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL);`);
 
     // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
@@ -219,6 +220,9 @@ export class Store {
 
     if (!memberCols.some((c) => c.name === "conversation_id"))
       this.db.exec("ALTER TABLE group_members ADD COLUMN conversation_id TEXT");
+
+    if (!memberCols.some((c) => c.name === "summary"))
+      this.db.exec("ALTER TABLE group_members ADD COLUMN summary TEXT");
 
     for (const column of ["cursor", "pending", "pending_bot_started"])
       if (!memberCols.some((c) => c.name === column))
@@ -1010,6 +1014,7 @@ export class Store {
           cursor: r.cursor,
           pending: r.pending === 1,
           pendingBotStarted: r.pending_bot_started === 1,
+          summary: r.summary,
         }
       : undefined;
   }
@@ -1019,7 +1024,11 @@ export class Store {
     change: Partial<
       Pick<
         GroupMember,
-        "conversationId" | "cursor" | "pending" | "pendingBotStarted"
+        | "conversationId"
+        | "cursor"
+        | "pending"
+        | "pendingBotStarted"
+        | "summary"
       >
     >,
   ) {
@@ -1029,13 +1038,14 @@ export class Store {
     const next = { ...current, ...change };
     this.db
       .query(
-        "UPDATE group_members SET conversation_id=?,cursor=?,pending=?,pending_bot_started=? WHERE group_id=? AND agent_id=?",
+        "UPDATE group_members SET conversation_id=?,cursor=?,pending=?,pending_bot_started=?,summary=? WHERE group_id=? AND agent_id=?",
       )
       .run(
         next.conversationId,
         next.cursor,
         next.pending ? 1 : 0,
         next.pendingBotStarted ? 1 : 0,
+        next.summary,
         groupId,
         agentId,
       );

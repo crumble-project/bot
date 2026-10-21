@@ -1,6 +1,7 @@
 import {
   AppError,
   GROUP_TURN_BUDGET,
+  type Agent,
   type Execution,
   type GroupChat,
   type GroupChatInput,
@@ -33,6 +34,9 @@ export type GroupChatSnapshot = TranscriptPage & {
 };
 
 export type GroupMessageReceipt = { requestId: string; entryId: string };
+
+/** Characters of earlier messages a joining member's summary is written from, newest first. */
+const SUMMARY_INPUT_CHARACTERS = 40_000;
 
 const senderName = (entry: GroupEntry) =>
   entry.sender.kind === "owner" ? "Owner" : (entry.sender.name ?? "A bot");
@@ -365,12 +369,27 @@ export class GroupChats {
       });
     }
 
+    const first = !this.store
+      .listGroupTurns({ groupId })
+      .some((turn) => turn.agentId === agentId);
+
+    // A member that joined after the first message gets a summary of what came before, on its first turn only.
+    if (first && member.cursor > 0 && member.summary === null)
+      this.store.setGroupMember(groupId, agentId, {
+        summary: await this.summarize(groupId, agent, member.cursor),
+      });
+
     const conversationId =
       member.conversationId ?? (await this.openConversation(group, agentId));
 
+    const summary = first
+      ? this.store.groupMember(groupId, agentId)?.summary
+      : null;
+
     const through = unseen.at(-1)!.entry;
     const requestId = `${GROUP_TURN_PREFIX}${groupId}:${agentId}:${through}`;
-    const input = this.turnInput(group, agent.name, unseen);
+
+    const input = `${summary ? `Summary of the conversation before you joined:\n\n${summary}\n\n` : ""}${this.turnInput(group, agent.name, unseen)}`;
     let execution = this.store.findExecution(conversationId, requestId);
 
     if (!execution)
@@ -411,6 +430,32 @@ export class GroupChats {
     this.store.setGroupMember(group.id, agentId, { conversationId });
 
     return conversationId;
+  }
+
+  /** The messages up to `cursor`, newest first until the summary budget, summarized by the joining bot's model. */
+  private async summarize(groupId: string, agent: Agent, cursor: number) {
+    const earlier = (await this.transcripts.after(groupId, 0)).filter(
+      (entry) => entry.entry <= cursor && entry.reaction === undefined,
+    );
+
+    const lines: string[] = [];
+    let length = 0;
+
+    for (const entry of earlier.toReversed()) {
+      const line = `${senderName(entry)}: ${entry.text}`;
+
+      if (length + line.length > SUMMARY_INPUT_CHARACTERS) break;
+      lines.unshift(line);
+      length += line.length;
+    }
+
+    try {
+      return await this.service.runtime.summarize(agent, lines.join("\n\n"));
+    } catch (error) {
+      console.error("Group summary failed", groupId, agent.id, error);
+
+      return "The earlier conversation could not be summarized.";
+    }
   }
 
   private turnInput(group: GroupChat, name: string, unseen: GroupEntry[]) {
