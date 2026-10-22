@@ -393,9 +393,99 @@ export const activityFeedResponse = z
   .object({ activities: z.array(operationalActivity), hasMore: z.boolean() })
   .openapi("ActivityFeed");
 
+const authType = z.enum(["api_key", "oauth"]);
+
+export const loginMethod = z
+  .object({
+    type: authType,
+    label: z.string(),
+    subscription: z.boolean(),
+  })
+  .openapi("ProviderLoginMethod");
+
 export const providerResponse = z
-  .object({ provider: z.string(), name: z.string(), configured: z.boolean() })
+  .object({
+    provider: z.string(),
+    name: z.string(),
+    /** Saved or ambient credentials make the provider usable. */
+    configured: z.boolean(),
+    authMethods: z.array(loginMethod),
+    /** The provider's saved credential; ambient credentials have none. */
+    credentialType: authType.nullable(),
+    activeLoginId: z.string().nullable(),
+  })
   .openapi("Provider");
+
+const promptBase = { id: z.string(), message: z.string() };
+
+export const loginPrompt = z
+  .discriminatedUnion("type", [
+    z.object({
+      ...promptBase,
+      type: z.enum(["text", "secret", "manual_code"]),
+      placeholder: z.string().optional(),
+    }),
+    z.object({
+      ...promptBase,
+      type: z.literal("select"),
+      options: z.array(
+        z.object({
+          id: z.string(),
+          label: z.string(),
+          description: z.string().optional(),
+        }),
+      ),
+    }),
+  ])
+  .openapi("ProviderLoginPrompt");
+
+export const loginEvent = z
+  .discriminatedUnion("type", [
+    z.object({
+      type: z.literal("info"),
+      message: z.string(),
+      links: z
+        .array(z.object({ url: z.string(), label: z.string().optional() }))
+        .optional(),
+    }),
+    z.object({
+      type: z.literal("auth_url"),
+      url: z.string(),
+      instructions: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal("device_code"),
+      userCode: z.string(),
+      verificationUri: z.string(),
+      intervalSeconds: z.number().optional(),
+      expiresInSeconds: z.number().optional(),
+    }),
+    z.object({ type: z.literal("progress"), message: z.string() }),
+  ])
+  .openapi("ProviderLoginEvent");
+
+export const loginSessionResponse = z
+  .object({
+    id: z.string(),
+    provider: z.string(),
+    method: authType,
+    status: z.enum(["pending", "succeeded", "failed", "cancelled", "expired"]),
+    createdAt: z.number(),
+    expiresAt: z.number(),
+    prompt: loginPrompt.nullable(),
+    events: z.array(loginEvent),
+    failure: z
+      .object({
+        code: z.enum([
+          "provider_failure",
+          "callback_unavailable",
+          "storage_failure",
+        ]),
+        message: z.string(),
+      })
+      .nullable(),
+  })
+  .openapi("ProviderLoginSession");
 
 export const modelResponse = z
   .object({

@@ -1,8 +1,10 @@
 import {
   createProvider,
   envApiKeyAuth,
+  type CredentialStore,
   type Model,
 } from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { z } from "zod";
 
@@ -68,4 +70,12 @@ export function meliousProvider() {
       );
     },
   });
+}
+
+/** Every provider Crumble offers. Without a store, Pi AI's in-memory default serves catalog-only callers. */
+export function providerModels(credentials?: CredentialStore) {
+  const models = builtinModels({ credentials });
+  models.setProvider(meliousProvider());
+
+  return models;
 }

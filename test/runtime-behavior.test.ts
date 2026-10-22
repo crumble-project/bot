@@ -9,7 +9,10 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { AgentRuntime, providerModels } from "../src/runtime";
+import { AgentRuntime } from "../src/runtime";
+import { providerModels } from "../src/providers";
+import { ProviderCredentials } from "../src/provider-credentials";
+import { Store } from "../src/store";
 import { loadCommonSkills } from "../src/common-skills";
 import { agentInput, type Agent } from "../src/domain";
 
@@ -63,11 +66,15 @@ function setup(
 }
 
 test("saved credentials rotate without opening a new runtime", async () => {
-  let key = "first-test-key";
-  const models = providerModels(() => key);
-  expect((await models.getAuth("openai"))?.auth.apiKey).toBe(key);
-  key = "second-test-key";
-  expect((await models.getAuth("openai"))?.auth.apiKey).toBe(key);
+  const directory = mkdtempSync(join(tmpdir(), "crumble-credentials-"));
+  directories.push(directory);
+  const credentials = new ProviderCredentials(new Store(directory));
+  const models = providerModels(credentials);
+
+  for (const key of ["first-test-key", "second-test-key"]) {
+    await credentials.modify("openai", async () => ({ type: "api_key", key }));
+    expect((await models.getAuth("openai"))?.auth.apiKey).toBe(key);
+  }
 });
 
 test("each chat turn receives a fresh server clock and timezone", async () => {

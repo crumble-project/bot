@@ -4,7 +4,6 @@ import {
 } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord";
 import { Type, type Models } from "@earendil-works/pi-ai";
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { rm } from "node:fs/promises";
 import {
   Harness,
@@ -30,7 +29,7 @@ import {
   groupTurnExtension,
 } from "./group-turns";
 import { AppError, conversationReference, type Agent } from "./domain";
-import { meliousProvider } from "./providers";
+import { providerModels } from "./providers";
 import { prepareAttachments, type AttachmentInput } from "./attachments";
 import {
   prepareReply,
@@ -58,12 +57,7 @@ export type MemoryRecord = {
 export type MemoryContext = { groupId: string | null; submissionIds: string[] };
 
 export type RuntimeCallbacks = {
-  models?:
-    | Models
-    | ((agent: Agent, credentials?: string) => Models | Promise<Models>);
-  credentials?: (
-    provider: Agent["provider"],
-  ) => string | undefined | Promise<string | undefined>;
+  models?: Models | ((agent: Agent) => Models | Promise<Models>);
   currentAgent?: (agentId: string) => Agent | null;
   ownerTimezone?: () => string | undefined;
   listMemory?: (agentId: string) => MemoryRecord[] | Promise<MemoryRecord[]>;
@@ -244,34 +238,6 @@ function localConversationId(agentId: string, reference: string): never {
   return numericId(reference.slice(prefix.length));
 }
 
-/** Dynamic reads let a newly saved or rotated API key take effect without restarting agents. */
-export function providerModels(credentials?: RuntimeCallbacks["credentials"]) {
-  const models = builtinModels({
-    credentials: {
-      read: async (providerId) => {
-        const key = await credentials?.(providerId);
-
-        return key ? { type: "api_key" as const, key } : undefined;
-      },
-      list: async () => [],
-      modify: async () => {
-        throw new Error(
-          "Provider credentials are managed through Crumble settings",
-        );
-      },
-      delete: async () => {
-        throw new Error(
-          "Provider credentials are managed through Crumble settings",
-        );
-      },
-    },
-  });
-
-  models.setProvider(meliousProvider());
-
-  return models;
-}
-
 export class AgentRuntime {
   private readonly records = new Map<string, Promise<HarnessRecord>>();
   private closed = false;
@@ -304,12 +270,8 @@ export class AgentRuntime {
     try {
       const models =
         this.callbacks.models instanceof Function
-          ? await this.callbacks.models(
-              agent,
-              await this.callbacks.credentials?.(agent.provider),
-            )
-          : (this.callbacks.models ??
-            providerModels(this.callbacks.credentials));
+          ? await this.callbacks.models(agent)
+          : (this.callbacks.models ?? providerModels());
 
       const memory = defineTool({
         name: "memory",
