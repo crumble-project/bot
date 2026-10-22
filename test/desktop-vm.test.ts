@@ -160,6 +160,26 @@ describe.skipIf(!vmTests)("bot desktop in a VM", () => {
     expect(out).toContain("profile");
   }, 120_000);
 
+  test("Chromium offers no session restore after a restart", async () => {
+    await cu().run({ action: "capture" }, BACKGROUND_CONTEXT);
+    // Chromium writes its profile some seconds after start; until then a stop leaves nothing to restore.
+    await env().exec(
+      "for i in $(seq 120); do test -f /workspace/.desktop/chromium/Default/Preferences && break; sleep 0.5; done",
+      undefined,
+      BACKGROUND_CONTEXT,
+    );
+    await workspaces.restart("desk", BACKGROUND_CONTEXT);
+    const tool = cu();
+    await Bun.sleep(3000);
+
+    const tree = text(
+      await tool.run({ action: "capture", full: true }, BACKGROUND_CONTEXT),
+    );
+
+    expect(tree).toContain("Chromium");
+    expect(tree).not.toContain("Restore pages");
+  }, 120_000);
+
   test("a bot without the desktop tool boots the base image", async () => {
     let out = "";
     await workspaces
