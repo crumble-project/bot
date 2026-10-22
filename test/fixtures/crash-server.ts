@@ -1,8 +1,5 @@
-import { createModels } from "@earendil-works/pi-ai";
-import {
-  fauxProvider,
-  fauxAssistantMessage,
-} from "@earendil-works/pi-ai/providers/faux";
+import { createModels, type AssistantMessage } from "@earendil-works/pi-ai";
+import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import { Store } from "../../src/store";
 import { AgentRuntime } from "../../src/runtime";
 import { CrumbleService } from "../../src/service";
@@ -16,7 +13,8 @@ const faux = fauxProvider({
   models: [{ id: "crash-model" }],
 });
 
-faux.setResponses([fauxAssistantMessage("child response")]);
+// Never answers, so the parent always kills this process mid-turn.
+faux.setResponses([() => new Promise<AssistantMessage>(() => {})]);
 
 const models = createModels();
 

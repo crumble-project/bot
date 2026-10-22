@@ -198,40 +198,51 @@ async function until(check: () => boolean) {
 // Long enough for a job that did not wait to reach its model.
 const SETTLE_MS = 1500;
 
-test("an exclusive job waits while another job of its kind works", async () => {
-  const { gates, say } = await open(exclusiveKind);
+// Tests that settle spend seconds in fixed sleeps; bun's 5 s default fails on slow CI runners.
+const SETTLING_TEST_MS = 15_000;
 
-  await say("start a");
-  await until(() => gates.started.includes("a"));
-  await say("start b");
+test(
+  "an exclusive job waits while another job of its kind works",
+  async () => {
+    const { gates, say } = await open(exclusiveKind);
 
-  await Bun.sleep(SETTLE_MS);
-  expect(gates.started).toEqual(["a"]);
+    await say("start a");
+    await until(() => gates.started.includes("a"));
+    await say("start b");
 
-  gates.release("a");
-  await until(() => gates.started.includes("b"));
-  gates.release("b");
-});
+    await Bun.sleep(SETTLE_MS);
+    expect(gates.started).toEqual(["a"]);
 
-test("waiting jobs start one at a time when the screen frees up", async () => {
-  const { gates, say } = await open(exclusiveKind);
+    gates.release("a");
+    await until(() => gates.started.includes("b"));
+    gates.release("b");
+  },
+  SETTLING_TEST_MS,
+);
 
-  await say("start a");
-  await until(() => gates.started.includes("a"));
-  await say("start b");
-  await say("start c");
+test(
+  "waiting jobs start one at a time when the screen frees up",
+  async () => {
+    const { gates, say } = await open(exclusiveKind);
 
-  gates.release("a");
-  await until(() => gates.started.length === 2);
-  await Bun.sleep(SETTLE_MS);
-  // Only one of b and c holds the screen.
-  expect(gates.started).toHaveLength(2);
+    await say("start a");
+    await until(() => gates.started.includes("a"));
+    await say("start b");
+    await say("start c");
 
-  const second = gates.started[1]!;
-  gates.release(second);
-  await until(() => gates.started.length === 3);
-  gates.release(gates.started[2]!);
-});
+    gates.release("a");
+    await until(() => gates.started.length === 2);
+    await Bun.sleep(SETTLE_MS);
+    // Only one of b and c holds the screen.
+    expect(gates.started).toHaveLength(2);
+
+    const second = gates.started[1]!;
+    gates.release(second);
+    await until(() => gates.started.length === 3);
+    gates.release(gates.started[2]!);
+  },
+  SETTLING_TEST_MS,
+);
 
 test("a job waiting for the screen reports as working", async () => {
   const { gates, say, lastToolResult } = await open(exclusiveKind);
@@ -247,18 +258,22 @@ test("a job waiting for the screen reports as working", async () => {
   gates.release("b");
 });
 
-test("stopping a waiting job cancels its delivery", async () => {
-  const { gates, say } = await open(exclusiveKind);
+test(
+  "stopping a waiting job cancels its delivery",
+  async () => {
+    const { gates, say } = await open(exclusiveKind);
 
-  await say("start a");
-  await until(() => gates.started.includes("a"));
-  await say("start b");
-  await say("stop b");
+    await say("start a");
+    await until(() => gates.started.includes("a"));
+    await say("start b");
+    await say("stop b");
 
-  gates.release("a");
-  await Bun.sleep(SETTLE_MS);
-  expect(gates.started).toEqual(["a"]);
-});
+    gates.release("a");
+    await Bun.sleep(SETTLE_MS);
+    expect(gates.started).toEqual(["a"]);
+  },
+  SETTLING_TEST_MS,
+);
 
 test("jobs of other kinds run side by side", async () => {
   const { gates, say } = await open(parallelKind);
