@@ -1496,7 +1496,56 @@
             "type": "number"
           },
           "prompt": {
-            "$ref": "#/components/schemas/ProviderLoginPrompt"
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "secret",
+                  "select",
+                  "manual_code"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "placeholder": {
+                "type": "string"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "message"
+            ]
           },
           "events": {
             "type": "array",
@@ -1538,84 +1587,6 @@
           "prompt",
           "events",
           "failure"
-        ]
-      },
-      "ProviderLoginPrompt": {
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "message": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "text",
-                  "secret",
-                  "manual_code"
-                ]
-              },
-              "placeholder": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id",
-              "message",
-              "type"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "message": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "select"
-                ]
-              },
-              "options": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "label": {
-                      "type": "string"
-                    },
-                    "description": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "label"
-                  ]
-                }
-              }
-            },
-            "required": [
-              "id",
-              "message",
-              "type",
-              "options"
-            ]
-          },
-          {
-            "type": "null"
-          }
         ]
       },
       "ProviderLoginEvent": {

@@ -416,28 +416,23 @@ export const providerResponse = z
   })
   .openapi("Provider");
 
-const promptBase = { id: z.string(), message: z.string() };
-
-export const loginPrompt = z
-  .discriminatedUnion("type", [
-    z.object({
-      ...promptBase,
-      type: z.enum(["text", "secret", "manual_code"]),
-      placeholder: z.string().optional(),
-    }),
-    z.object({
-      ...promptBase,
-      type: z.literal("select"),
-      options: z.array(
-        z.object({
-          id: z.string(),
-          label: z.string(),
-          description: z.string().optional(),
-        }),
-      ),
-    }),
-  ])
-  .openapi("ProviderLoginPrompt");
+/** One object rather than a union, so generated clients keep the nullable prompt. */
+export const loginPrompt = z.object({
+  id: z.string(),
+  type: z.enum(["text", "secret", "select", "manual_code"]),
+  message: z.string(),
+  placeholder: z.string().optional(),
+  /** Present exactly for `select`; answer with an option's `id`. */
+  options: z
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        description: z.string().optional(),
+      }),
+    )
+    .optional(),
+});
 
 export const loginEvent = z
   .discriminatedUnion("type", [

@@ -175,7 +175,7 @@ export class ProviderAuth {
 
     if (
       pending.prompt.type === "select" &&
-      !pending.prompt.options.some((option) => option.id === value)
+      !pending.prompt.options?.some((option) => option.id === value)
     )
       throw new AppError(400, "Choose one of the offered options");
     session.lastActivity = Date.now();
