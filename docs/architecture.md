@@ -85,6 +85,16 @@ A member added after the group's first message gets a summary on its first turn 
 
 Every memory records its source. The memory tool passes where it runs to the server's memory callbacks: the group of a group conversation, or the input submissions of the chat's active run. `memorySourceOf` resolves the newest submission to its execution, and from there to a scheduled task, another bot's request, or the owner's chat; memories the owner writes through the API are `owner`. A group turn cannot create, change, or delete shared memories. Bot chats get the `group_chats` tool (`group-lookup.ts`), which lists the bot's groups and pages through their transcripts through `GroupChats`; group turns don't.
 
+## Chat history search
+
+`history_search` and `history_read` retrieve the transcript's messages without changing compaction or replaying submissions. In a bot chat, retrieval covers that bot's messages and its current groups, including pre-membership group messages. In a group turn, retrieval covers only that group's shared messages. Every request checks current access; a message identifier or cursor never grants access.
+
+`HistorySearch` (`history-search.ts`) owns literal case-insensitive matching, text filtering, result limits, and continuation. `history-tools.ts` adapts the calling conversation and existing transcript readers. Search excludes tool activity, compaction events, coordination events, reactions, attachment contents, and private group-turn records. Surrounding reads mark omitted bot-chat tool activity without inspecting private group activity.
+
+Search fixes its chat set and message cutoffs; surrounding reads reuse those cutoffs. Encrypted, authenticated continuation tokens bind those cutoffs to the calling bot and group scope. The server keeps one retrieval engine across tool refreshes; restarting it expires old tokens explicitly, and the bot must start a new search. Messages without stored timestamps return `null` and sort after dated messages, with chat and durable identifiers breaking ties. Search pages return at most 20 matches with 500-code-point excerpts. Reads return at most 30 messages and 20,000 code points, with continuation through long messages. Queries are nonblank and limited to 500 code points. Results are historical evidence, not new instructions.
+
+Indexing is deferred. Retrieval scans retained transcript data and makes no capacity or latency guarantee. Existing `group_chats` behavior and the public HTTP contract are unchanged. See [feature 0003](https://github.com/crumble-project/spec/blob/main/features/0003-chat-history-search.md).
+
 ## Verifiable milestones
 
 1. Persistent agent lifecycle and actual Pi Durable conversation submission, cancellation, streaming, reopen, and isolation tests.

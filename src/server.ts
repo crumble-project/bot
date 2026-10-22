@@ -16,6 +16,8 @@ import { Scheduler } from "./scheduler";
 import { createAPI } from "./api";
 import { GroupChats } from "./group-chats";
 import { groupLookupExtension } from "./group-lookup";
+import { historySource, historyToolsExtension } from "./history-tools";
+import { HistorySearch } from "./history-search";
 import { assertOwnMemoryInGroup, memorySourceOf } from "./memory-sources";
 import { GroupTranscripts } from "./group-transcripts";
 import { AppError, type Agent } from "./domain";
@@ -151,6 +153,7 @@ export async function startServer(
     let service!: CrumbleService;
     let schedules!: BotSchedules;
     let groupChats!: GroupChats;
+    let historySearch!: HistorySearch;
 
     const runtime = new AgentRuntime(join(dataDir, "agents"), {
       commonSkills: () => commonSkills,
@@ -161,6 +164,7 @@ export async function startServer(
         ...(await integrations.extensionsForAgent(agent)),
         coordinationExtension(agent, service),
         groupLookupExtension(agent, groupChats),
+        historyToolsExtension(agent, historySearch),
         scheduleExtension(agent, schedules),
         displayExtension(charts),
         reactionExtension(),
@@ -248,6 +252,9 @@ export async function startServer(
       store,
       new GroupTranscripts(join(dataDir, "groups")),
       service,
+    );
+    historySearch = new HistorySearch(
+      historySource(runtime, store, groupChats),
     );
 
     push = new PushManager(new PushStore(dataDir));
