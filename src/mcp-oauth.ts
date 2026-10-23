@@ -142,9 +142,16 @@ function unavailable(
 }
 
 /** What to do when an authorization server registers no clients: CIMD needs a public address, or a token instead. */
-function registrationHint(document: ClientDocument | undefined) {
+function registrationHint(
+  document: ClientDocument | undefined,
+  redirectUrl: string,
+) {
   if (!document)
     return "If it supports client metadata documents, set CRUMBLE_PUBLIC_URL to the server's public https address; otherwise add the server with a token";
+
+  // The document already covered this sign-in, so the authorization server accepts neither registration method.
+  if (document.redirectUris.includes(redirectUrl))
+    return "It doesn't accept client metadata documents either, so add the server with a token";
 
   const web = document.redirectUris[0]!.replace(/\/oauth\/callback$/, "");
 
@@ -191,7 +198,10 @@ export async function startAuthorization(
       error instanceof Error &&
       error.message.includes("does not support dynamic client registration")
     )
-      unavailable(server, `${error.message}. ${registrationHint(document)}`);
+      unavailable(
+        server,
+        `${error.message}. ${registrationHint(document, redirectUrl)}`,
+      );
 
     unavailable(server, error);
   }
