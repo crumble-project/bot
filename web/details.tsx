@@ -13,7 +13,7 @@ import {
 import { BotAvatar } from "./avatar";
 import { useWorking } from "./live";
 import { sourceLabel } from "./memory";
-import { taskTiming } from "./tasks";
+import { finished, taskTiming } from "./tasks";
 
 function Routine({ schedule }: { schedule: Schedule }) {
   const toggle = useMutation({
@@ -57,14 +57,16 @@ function Routine({ schedule }: { schedule: Schedule }) {
   );
 }
 
-/** The bot inspector beside its chat: profile, routines, model, and memory. */
+/** The bot inspector beside its chat: profile, routines, and memory. */
 export function DetailsPanel({ bot }: { bot: Bot }) {
   const working = useWorking(bot.id);
   const schedules = useQuery(schedulesQuery);
   const memories = useQuery(botMemoriesQuery(bot.id));
 
   const routines =
-    schedules.data?.filter((schedule) => schedule.agentId === bot.id) ?? [];
+    schedules.data?.filter(
+      (schedule) => schedule.agentId === bot.id && !finished(schedule),
+    ) ?? [];
 
   return (
     <aside className="hidden w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l p-4 lg:flex">

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
@@ -53,12 +54,7 @@ import {
   send,
 } from "./api";
 import { BotAvatar } from "./avatar";
-import {
-  ConfirmDelete,
-  Section,
-  SectionEmpty,
-  WorkspacePage,
-} from "./workspace";
+import { ConfirmDelete, Section, WorkspacePage } from "./workspace";
 
 const LOCAL_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -85,8 +81,20 @@ export function describeCron(cron: string, timezone: string) {
   const zone = timezone !== LOCAL_ZONE ? ` (${timezone})` : "";
   const number = /^\d+$/;
 
-  if (rest.length || !minute || !hour || dayOfMonth !== "*" || month !== "*")
-    return `${cron}${zone}`;
+  if (rest.length || !minute || !hour || month !== "*") return `${cron}${zone}`;
+
+  if (dayOfMonth !== "*") {
+    if (
+      !dayOfMonth ||
+      !number.test(dayOfMonth) ||
+      !number.test(minute) ||
+      !number.test(hour) ||
+      weekday !== "*"
+    )
+      return `${cron}${zone}`;
+
+    return `Monthly on day ${dayOfMonth} at ${clock(hour, minute)}${zone}`;
+  }
 
   const every = /^\*\/(\d+)$/.exec(minute);
 
@@ -190,11 +198,75 @@ function inOneHour(zone: string) {
 
 type Editing = { schedule: Schedule | null; agentId: string };
 
+/** A one-off task that already ran; its result is in the bot's chat. */
+export const finished = (schedule: Schedule) =>
+  !schedule.cron && !schedule.nextRunAt;
+
+/** Upcoming tasks by the day they next run, then paused ones. */
+function agendaOf(schedules: Schedule[], now: Date) {
+  const upcoming = schedules
+    .filter((schedule) => schedule.enabled && schedule.nextRunAt)
+    .sort((a, b) => Date.parse(a.nextRunAt!) - Date.parse(b.nextRunAt!));
+
+  const days = new Map<string, Schedule[]>();
+
+  for (const schedule of upcoming) {
+    const label = dayLabel(new Date(schedule.nextRunAt!), now);
+
+    days.set(label, [...(days.get(label) ?? []), schedule]);
+  }
+
+  return [
+    ...[...days].map(([title, list]) => ({ title, list, upcoming: true })),
+    {
+      title: "Paused",
+      list: schedules.filter(
+        (schedule) => !schedule.enabled && !finished(schedule),
+      ),
+      upcoming: false,
+    },
+  ].filter((group) => group.list.length > 0);
+}
+
+function dayLabel(date: Date, now: Date) {
+  const midnight = (value: Date) =>
+    new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+
+  const days = Math.round((midnight(date) - midnight(now)) / 86_400_000);
+
+  if (days <= 0) return "Today";
+
+  if (days === 1) return "Tomorrow";
+
+  return date.toLocaleDateString(undefined, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+}
+
+const relative = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+
+/** How soon a run starts, for runs within the next day. */
+function soon(date: Date, now: Date) {
+  const minutes = Math.round((date.getTime() - now.getTime()) / 60_000);
+
+  if (minutes < 60) return relative.format(Math.max(minutes, 0), "minute");
+
+  return relative.format(Math.round(minutes / 60), "hour");
+}
+
 export function TasksPage() {
   const bots = useQuery(botsQuery);
   const schedules = useQuery(schedulesQuery);
   const [editing, setEditing] = useState<Editing | null>(null);
   const firstBot = bots.data?.[0];
+  const now = new Date();
+  const byId = new Map(bots.data?.map((bot) => [bot.id, bot]));
+  const shown = schedules.data?.filter((schedule) => !finished(schedule));
+
+  const create = () =>
+    firstBot && setEditing({ schedule: null, agentId: firstBot.id });
 
   return (
     <WorkspacePage
@@ -206,9 +278,7 @@ export function TasksPage() {
       }}
       newLabel="New task"
       newDisabled={!firstBot}
-      onNew={() =>
-        firstBot && setEditing({ schedule: null, agentId: firstBot.id })
-      }
+      onNew={create}
     >
       {bots.isPending || schedules.isPending ? (
         <Skeleton className="h-40" />
@@ -216,29 +286,52 @@ export function TasksPage() {
         <Alert variant="destructive">
           <AlertDescription>{schedules.error.message}</AlertDescription>
         </Alert>
-      ) : bots.data?.length === 0 ? (
+      ) : !shown?.length ? (
         <Empty>
           <EmptyHeader>
-            <EmptyTitle>No Tasks</EmptyTitle>
+            <EmptyTitle className="font-heading text-lg">
+              No tasks yet
+            </EmptyTitle>
             <EmptyDescription>
-              Create a bot, then give it a task to run once or on a schedule.
+              {firstBot
+                ? "A task sends a bot a message once or on a schedule, and the bot answers in its chat."
+                : "Create a bot, then give it a task to run once or on a schedule."}
             </EmptyDescription>
           </EmptyHeader>
+          {firstBot && (
+            <EmptyContent>
+              <Button onClick={create}>
+                <HugeiconsIcon icon={PlusSignIcon} data-icon="inline-start" />
+                New task
+              </Button>
+            </EmptyContent>
+          )}
         </Empty>
       ) : (
-        bots.data?.map((bot) => (
-          <BotTasks
-            key={bot.id}
-            bot={bot}
-            bots={bots.data ?? []}
-            schedules={(schedules.data ?? []).filter(
-              (schedule) => schedule.agentId === bot.id,
-            )}
-            onNew={() => setEditing({ schedule: null, agentId: bot.id })}
-            onEdit={(schedule) =>
-              setEditing({ schedule, agentId: schedule.agentId })
-            }
-          />
+        agendaOf(shown, now).map((group) => (
+          <Section key={group.title} title={group.title}>
+            {group.list.map((schedule) => {
+              const bot = byId.get(schedule.agentId);
+
+              return bot ? (
+                <TaskRow
+                  key={schedule.id}
+                  schedule={schedule}
+                  bot={bot}
+                  creator={
+                    schedule.createdByAgentId &&
+                    schedule.createdByAgentId !== schedule.agentId
+                      ? byId.get(schedule.createdByAgentId)
+                      : undefined
+                  }
+                  now={group.upcoming ? now : undefined}
+                  onEdit={() =>
+                    setEditing({ schedule, agentId: schedule.agentId })
+                  }
+                />
+              ) : null;
+            })}
+          </Section>
         ))
       )}
       {editing && (
@@ -252,63 +345,26 @@ export function TasksPage() {
   );
 }
 
-function BotTasks({
-  bot,
-  bots,
-  schedules,
-  onNew,
-  onEdit,
-}: {
-  bot: Bot;
-  bots: Bot[];
-  schedules: Schedule[];
-  onNew: () => void;
-  onEdit: (schedule: Schedule) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <Section
-        title={bot.name}
-        icon={<BotAvatar bot={bot} size={22} />}
-        footer={`Runs in ${bot.name}'s chat, once or on a schedule.`}
-      >
-        {schedules.length === 0 && <SectionEmpty>No tasks yet.</SectionEmpty>}
-        {schedules.map((schedule) => (
-          <TaskRow
-            key={schedule.id}
-            schedule={schedule}
-            bots={bots}
-            onEdit={() => onEdit(schedule)}
-          />
-        ))}
-      </Section>
-      <Button variant="ghost" size="sm" className="self-start" onClick={onNew}>
-        <HugeiconsIcon icon={PlusSignIcon} data-icon="inline-start" />
-        New Task
-      </Button>
-    </div>
-  );
-}
-
 const refresh = () =>
   queryClient.invalidateQueries({ queryKey: schedulesQuery.queryKey });
 
 function TaskRow({
   schedule,
-  bots,
+  bot,
+  creator,
+  now,
   onEdit,
 }: {
   schedule: Schedule;
-  bots: Bot[];
+  bot: Bot;
+  creator?: Bot;
+  /** Set for upcoming tasks, which lead with when they run next. */
+  now?: Date;
   onEdit: () => void;
 }) {
   const navigate = useNavigate();
   const path = `/v1/schedules/${encodeURIComponent(schedule.id)}`;
-
-  const creator =
-    schedule.createdByAgentId && schedule.createdByAgentId !== schedule.agentId
-      ? bots.find((bot) => bot.id === schedule.createdByAgentId)
-      : undefined;
+  const next = now && schedule.nextRunAt ? new Date(schedule.nextRunAt) : null;
 
   const toggle = useMutation({
     mutationFn: (enabled: boolean) => send(path, "PATCH", { enabled }),
@@ -333,51 +389,78 @@ function TaskRow({
   const failure = toggle.error ?? run.error ?? remove.error;
 
   return (
-    <div className="flex items-start gap-3 p-3">
+    <div className="group/task flex items-center gap-3 p-3">
+      {now && (
+        <div className="flex w-16 shrink-0 flex-col tabular-nums">
+          {next && (
+            <>
+              <span className="font-heading text-base font-semibold">
+                {next.toLocaleTimeString(undefined, {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+              {next.getTime() - now.getTime() < 86_400_000 && (
+                <span className="text-xs text-muted-foreground">
+                  {soon(next, now)}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      )}
+      <BotAvatar
+        bot={bot}
+        size={32}
+        state={schedule.enabled ? "idle" : "sleeping"}
+      />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-sm font-medium">{schedule.name}</span>
-        <p className="line-clamp-2 text-sm text-muted-foreground">
+        <span className="truncate text-sm font-medium">{schedule.name}</span>
+        <p className="line-clamp-1 text-sm text-muted-foreground">
           {schedule.prompt}
         </p>
-        <span className="text-xs text-muted-foreground">
-          {taskTiming(schedule)}
+        <span className="truncate text-xs text-muted-foreground">
+          {bot.name},{" "}
+          {next && !schedule.cron
+            ? "once"
+            : describeTiming(schedule).replace(/^\w/, (letter) =>
+                letter.toLowerCase(),
+              )}
+          {creator && `, scheduled by ${creator.name}`}
         </span>
-        {creator && (
-          <span className="text-xs text-muted-foreground">
-            Scheduled by {creator.name}
-          </span>
-        )}
         {failure && (
           <span className="text-xs text-destructive">{failure.message}</span>
         )}
+      </div>
+      <div className="flex gap-1 opacity-0 transition-opacity group-hover/task:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          title="Run now"
+          disabled={!schedule.enabled || run.isPending}
+          onClick={() => run.mutate()}
+        >
+          <HugeiconsIcon icon={PlayIcon} />
+        </Button>
+        <Button variant="ghost" size="icon-sm" title="Edit" onClick={onEdit}>
+          <HugeiconsIcon icon={PencilEdit01Icon} />
+        </Button>
+        <ConfirmDelete
+          title={`Delete ${schedule.name}?`}
+          description="The task stops running. This cannot be undone."
+          onConfirm={() => remove.mutate()}
+          trigger={
+            <Button variant="ghost" size="icon-sm" title="Delete">
+              <HugeiconsIcon icon={Delete02Icon} />
+            </Button>
+          }
+        />
       </div>
       <Switch
         aria-label={schedule.enabled ? "Pause task" : "Resume task"}
         checked={toggle.isPending ? toggle.variables : schedule.enabled}
         disabled={toggle.isPending}
         onCheckedChange={(enabled) => toggle.mutate(enabled)}
-      />
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        title="Run now"
-        disabled={!schedule.enabled || run.isPending}
-        onClick={() => run.mutate()}
-      >
-        <HugeiconsIcon icon={PlayIcon} />
-      </Button>
-      <Button variant="ghost" size="icon-sm" title="Edit" onClick={onEdit}>
-        <HugeiconsIcon icon={PencilEdit01Icon} />
-      </Button>
-      <ConfirmDelete
-        title={`Delete ${schedule.name}?`}
-        description="The task stops running. This cannot be undone."
-        onConfirm={() => remove.mutate()}
-        trigger={
-          <Button variant="ghost" size="icon-sm" title="Delete">
-            <HugeiconsIcon icon={Delete02Icon} />
-          </Button>
-        }
       />
     </div>
   );
