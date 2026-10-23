@@ -1,6 +1,4 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
-import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
@@ -82,14 +80,6 @@ export function DetailsPanel({ bot }: { bot: Bot }) {
         <span className="text-xs text-muted-foreground">
           {bot.description || (bot.enabled ? "Ready" : "Paused")}
         </span>
-        <Button
-          variant="link"
-          size="sm"
-          render={<Link to="/bots/$botId/edit" params={{ botId: bot.id }} />}
-          nativeButton={false}
-        >
-          Edit profile…
-        </Button>
       </div>
       <Tabs defaultValue="details">
         <TabsList className="w-full">
