@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Crumble API",
-    "version": "1.7.0",
+    "version": "1.8.0",
     "description": "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime."
   },
   "components": {
@@ -1711,12 +1711,25 @@
                   "none"
                 ]
               },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why the server's tools were left out of a bot's last turn, such as a missing sign-in; null once it connects again."
+              },
+              "hasOAuthClientSecret": {
+                "type": "boolean",
+                "description": "Whether the OAuth app's client secret is stored; it is never returned."
+              },
               "authenticated": {
                 "type": "boolean"
               }
             },
             "required": [
               "auth",
+              "error",
+              "hasOAuthClientSecret",
               "authenticated"
             ]
           }
@@ -1742,6 +1755,13 @@
               "string",
               "null"
             ]
+          },
+          "oauthClientId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The client ID of an OAuth app the owner registered with the server's authorization server, used instead of registering Crumble."
           }
         },
         "required": [
@@ -1749,7 +1769,8 @@
           "name",
           "url",
           "enabled",
-          "agentId"
+          "agentId",
+          "oauthClientId"
         ]
       },
       "McpOAuthStart": {
@@ -10235,6 +10256,18 @@
                     "type": "string",
                     "maxLength": 16000
                   },
+                  "oauthClientId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "oauthClientSecret": {
+                    "type": "string",
+                    "maxLength": 1000
+                  },
                   "agentId": {
                     "type": [
                       "string",
@@ -10771,6 +10804,18 @@
                   "token": {
                     "type": "string",
                     "maxLength": 16000
+                  },
+                  "oauthClientId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "oauthClientSecret": {
+                    "type": "string",
+                    "maxLength": 1000
                   }
                 }
               }

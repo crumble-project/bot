@@ -3,6 +3,7 @@ import {
   adaptOAuthProvider,
   authorizeMcp,
   McpOAuthProvider,
+  type McpOAuthProviderOptions,
   type McpOAuthState,
   type McpOAuthStateStore,
 } from "@earendil-works/pi-mcp/oauth";
@@ -13,9 +14,39 @@ import type { Store } from "./store";
  * A server's OAuth state as pi-mcp keeps it (client registration, tokens, PKCE verifier, state),
  * plus the redirect URL it was registered for. Stored with the encrypted credentials.
  */
-type SavedOAuth = { redirectUrl: string; state: McpOAuthState };
+type SavedOAuth = {
+  redirectUrl: string;
+  state: McpOAuthState;
+  /** The owner's OAuth app the state belongs to; null when Crumble registered or used its document. */
+  clientId?: string | null;
+};
 
 const credentialKey = (serverId: string) => `mcp-oauth:${serverId}`;
+
+/** Where the client secret of the owner's OAuth app for an MCP server is stored, encrypted. */
+export const clientSecretKey = (serverId: string) =>
+  `mcp-oauth-client:${serverId}`;
+
+/**
+ * Uses the owner's OAuth app as the client. It sends its secret in the token request body, which GitHub
+ * documents and every authorization server that takes client secrets accepts, rather than pi-mcp's default of HTTP Basic.
+ */
+class OwnerClientProvider extends McpOAuthProvider {
+  constructor(
+    options: McpOAuthProviderOptions,
+    private readonly client: {
+      client_id: string;
+      client_secret?: string;
+      token_endpoint_auth_method: "client_secret_post" | "none";
+    },
+  ) {
+    super(options);
+  }
+
+  override async clientInformation() {
+    return this.client;
+  }
+}
 
 const CLIENT_METADATA = {
   client_name: "Crumble",
@@ -91,10 +122,15 @@ function provider(
 ) {
   const stateStore: McpOAuthStateStore = {
     load: () => read(store, server.id)?.state,
-    save: (state) => write(store, server.id, { redirectUrl, state }),
+    save: (state) =>
+      write(store, server.id, {
+        redirectUrl,
+        state,
+        clientId: server.oauthClientId,
+      }),
   };
 
-  return new McpOAuthProvider({
+  const options: McpOAuthProviderOptions = {
     serverUrl: server.url,
     redirectUrl,
     clientMetadata: CLIENT_METADATA,
@@ -107,6 +143,16 @@ function provider(
         : undefined,
     store: stateStore,
     onRedirect,
+  };
+
+  if (!server.oauthClientId) return new McpOAuthProvider(options);
+
+  const secret = store.getCredential(clientSecretKey(server.id));
+
+  return new OwnerClientProvider(options, {
+    client_id: server.oauthClientId,
+    ...(secret && { client_secret: secret }),
+    token_endpoint_auth_method: secret ? "client_secret_post" : "none",
   });
 }
 
@@ -142,9 +188,16 @@ function unavailable(
 }
 
 /** What to do when an authorization server registers no clients: CIMD needs a public address, or a token instead. */
-function registrationHint(document: ClientDocument | undefined) {
+function registrationHint(
+  document: ClientDocument | undefined,
+  redirectUrl: string,
+) {
   if (!document)
     return "If it supports client metadata documents, set CRUMBLE_PUBLIC_URL to the server's public https address; otherwise add the server with a token";
+
+  // The document already covered this sign-in, so the authorization server accepts neither registration method.
+  if (document.redirectUris.includes(redirectUrl))
+    return "It doesn't accept client metadata documents either, so add the server with a token";
 
   const web = document.redirectUris[0]!.replace(/\/oauth\/callback$/, "");
 
@@ -167,9 +220,14 @@ export async function startAuthorization(
   if (
     !saved ||
     saved.redirectUrl !== redirectUrl ||
-    saved.state.serverUrl !== server.url
+    saved.state.serverUrl !== server.url ||
+    (saved.clientId ?? null) !== server.oauthClientId
   )
-    write(store, server.id, { redirectUrl, state: { serverUrl: server.url } });
+    write(store, server.id, {
+      redirectUrl,
+      state: { serverUrl: server.url },
+      clientId: server.oauthClientId,
+    });
   let authorizationUrl: URL | undefined;
 
   const oauth = provider(
@@ -191,7 +249,10 @@ export async function startAuthorization(
       error instanceof Error &&
       error.message.includes("does not support dynamic client registration")
     )
-      unavailable(server, `${error.message}. ${registrationHint(document)}`);
+      unavailable(
+        server,
+        `${error.message}. ${registrationHint(document, redirectUrl)}`,
+      );
 
     unavailable(server, error);
   }

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Link bare `https://…` and `<https://…>` addresses in bot replies in the web UI. Trailing punctuation stays outside the link, and addresses in code stay as written.
+- Keep a bot answering when one of its MCP servers can't connect, for example without a sign-in: that server's tools are left out of the turn instead of failing it, and Integrations shows why. A server without credentials now says it needs a sign-in or token, rather than that it rejected Crumble's credentials. Bots are told which MCP servers they have, by name with each server's tool prefix, and which were left out and why, since tool names carry only a server ID.
+- Sign in to MCP servers through an OAuth app the owner registered with the server's authorization server, for servers like GitHub's that accept neither dynamic registration nor client metadata documents. Set its client ID and secret on the MCP server; sign-in then uses them, sending the secret in the token request body. Changing either signs the server out, since its tokens belong to the old app.
 - Sign in to MCP servers whose authorization servers have no dynamic client registration but accept OAuth Client ID Metadata Documents. With the new `CRUMBLE_PUBLIC_URL` (the server's public https address), the server serves its document at `/oauth/client-metadata.json` and identifies itself with it when the authorization server advertises support. The "no dynamic client registration" error now says what to do.
 - Send a heartbeat as soon as `GET /v1/events` opens. Browsers expose a streamed response only after its first body chunk, so on a server without bots to replay previews for, web clients waited up to 15 seconds to connect.
 - Add a web UI at `/ui`, served by the server itself, with the macOS app's abilities: the native apps' drawn bot avatars, live in the sidebar, details, and editor; bot chats with live replies rendered as Markdown, including Mermaid diagrams drawn by Pele, which the server serves unbundled under `/ui-modules/pele` so each diagram type loads only when shown; attachments, replies, reactions, @mentions, display cards and charts, coding and desktop job details, and earlier-message loading; group chats; the full bot editor; a details panel with routines and memory; the bot desktop with take control and hand back; Memory, Tasks, and Activity pages; settings with General, Providers (account sign-in and API keys in one list), Integrations (including MCP OAuth), and Skills sections; and browser notifications for replies. It is built with React, TanStack Router, TanStack Query, Tailwind CSS, and shadcn/ui, bundled by Bun on first request, and keeps the server token in the browser's local storage.
@@ -50,6 +53,11 @@
 - Add the generated OpenAPI 3.1 contract at `openapi/openapi.json` for all 49 HTTP endpoints, including authentication and event payload schemas.
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
+
+## Contract 1.8.0
+
+- Add `oauthClientId` to `McpServer` and to the create and update bodies, where `null` removes it, and the write-only `oauthClientSecret`, where an empty string removes it.
+- Add `hasOAuthClientSecret` and `error` to `McpServerStatus`. `error` says why the server's tools were left out of a bot's last turn.
 
 ## Contract 1.7.0
 
