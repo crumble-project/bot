@@ -37,7 +37,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+import { cn, randomId } from "@/lib/utils";
 import {
   type Bot,
   type BotInput,
@@ -84,7 +84,7 @@ const DEFAULT_TOOLS = ["memory", "delegate", "schedule", "codemode"];
 const DEFAULT_INSTRUCTIONS =
   "You are a thoughtful, capable personal assistant.";
 
-const seedAvatar = () => `bot:${crypto.randomUUID()}`;
+const seedAvatar = () => `bot:${randomId()}`;
 
 function providerItems(providers: Provider[], current: string) {
   const sorted = [...providers].sort(

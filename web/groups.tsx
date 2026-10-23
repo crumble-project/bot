@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/message-scroller";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
+import { cn, randomId } from "@/lib/utils";
 import {
   Tooltip,
   TooltipContent,
@@ -214,7 +214,7 @@ export function GroupChatView({ groupId }: { groupId: string }) {
   const sendMessage = async (
     content: string,
     uploads: Upload[],
-    requestId: string = crypto.randomUUID(),
+    requestId: string = randomId(),
     target = replyTo?.entryId,
   ) => {
     setReplyTo(null);

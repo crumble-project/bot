@@ -19,6 +19,7 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { Skeleton } from "@/components/ui/skeleton";
+import { randomId } from "@/lib/utils";
 import {
   type HistoryPage,
   type Message,
@@ -184,7 +185,7 @@ export function Chat({ botId }: { botId: string }) {
   const sendMessage = async (
     content: string,
     uploads: Upload[],
-    requestId: string = crypto.randomUUID(),
+    requestId: string = randomId(),
     target = replyTo?.entryId,
   ) => {
     setReplyTo(null);
