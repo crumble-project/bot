@@ -1,4 +1,4 @@
-import { StrictMode, useState } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   QueryClientProvider,
@@ -7,7 +7,6 @@ import {
 } from "@tanstack/react-query";
 import {
   Link,
-  Outlet,
   RouterProvider,
   createRootRoute,
   createRoute,
@@ -15,9 +14,16 @@ import {
   redirect,
   useMatchRoute,
   useNavigate,
+  Outlet,
 } from "@tanstack/react-router";
-import { BotIcon, LogOutIcon, PlusIcon, SettingsIcon } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  ActivityIcon,
+  BotIcon,
+  BrainIcon,
+  CalendarClockIcon,
+  PlusIcon,
+  SettingsIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -43,6 +49,7 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
+  SidebarInput,
   SidebarInset,
   SidebarMenu,
   SidebarMenuButton,
@@ -52,10 +59,30 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { api, botsQuery, chatQuery, queryClient, token } from "./api";
+import { cn } from "@/lib/utils";
+import {
+  type Bot,
+  HttpError,
+  api,
+  botsQuery,
+  chatQuery,
+  groupChatQuery,
+  groupsQuery,
+  queryClient,
+  token,
+} from "./api";
+import { ActivityPage } from "./activity";
+import { BotAvatar } from "./avatar";
 import { BotForm } from "./bot-form";
 import { Chat } from "./chat";
-import { Settings } from "./settings";
+import { BotDesktop } from "./desktop";
+import { GroupChatView, GroupForm } from "./groups";
+import { IntegrationsPage, OAuthCallback } from "./integrations";
+import { followActivity, useConnectionStatus, useWorking } from "./live";
+import { MemoryPage } from "./memory";
+import { GeneralSettings, ProvidersSettings, SettingsLayout } from "./settings";
+import { SkillsPage } from "./skills";
+import { TasksPage } from "./tasks";
 
 const rootRoute = createRootRoute();
 
@@ -113,10 +140,130 @@ const editBotRoute = createRoute({
   },
 });
 
+const desktopRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/bots/$botId/desktop",
+  component: function DesktopPage() {
+    const { botId } = desktopRoute.useParams();
+
+    return <BotDesktop key={botId} botId={botId} />;
+  },
+});
+
+const newGroupRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/groups/new",
+  component: () => <GroupForm />,
+});
+
+const groupRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/groups/$groupId",
+  loader: ({ params }) =>
+    queryClient.ensureQueryData(groupChatQuery(params.groupId)),
+  component: function GroupPage() {
+    const { groupId } = groupRoute.useParams();
+
+    return <GroupChatView key={groupId} groupId={groupId} />;
+  },
+});
+
+const editGroupRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/groups/$groupId/edit",
+  loader: () => queryClient.ensureQueryData(groupsQuery),
+  component: function EditGroupPage() {
+    const { groupId } = editGroupRoute.useParams();
+
+    const group = useQuery(groupsQuery).data?.find(
+      (each) => each.id === groupId,
+    );
+
+    return group ? (
+      <GroupForm key={group.id} group={group} />
+    ) : (
+      <p className="m-auto text-muted-foreground">Group chat not found.</p>
+    );
+  },
+});
+
+const memoryRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/memory",
+  component: MemoryPage,
+});
+
+// Skills and integrations moved into settings; old links still land there.
+const skillsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/skills",
+  beforeLoad: () => {
+    throw redirect({ to: "/settings/skills", replace: true });
+  },
+});
+
+const tasksRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/tasks",
+  component: TasksPage,
+});
+
+const activityRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/activity",
+  component: ActivityPage,
+});
+
+const integrationsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/integrations",
+  beforeLoad: () => {
+    throw redirect({ to: "/settings/integrations", replace: true });
+  },
+});
+
+const oauthRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/oauth/callback",
+  component: OAuthCallback,
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/settings",
-  component: Settings,
+  component: SettingsLayout,
+});
+
+const settingsIndexRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/",
+  beforeLoad: () => {
+    throw redirect({ to: "/settings/general", replace: true });
+  },
+});
+
+const generalRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/general",
+  component: GeneralSettings,
+});
+
+const providersRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/providers",
+  component: ProvidersSettings,
+});
+
+const settingsIntegrationsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/integrations",
+  component: IntegrationsPage,
+});
+
+const settingsSkillsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/skills",
+  component: SkillsPage,
 });
 
 const router = createRouter({
@@ -127,13 +274,48 @@ const router = createRouter({
       newBotRoute,
       botRoute,
       editBotRoute,
-      settingsRoute,
+      desktopRoute,
+      newGroupRoute,
+      groupRoute,
+      editGroupRoute,
+      memoryRoute,
+      skillsRoute,
+      tasksRoute,
+      activityRoute,
+      integrationsRoute,
+      oauthRoute,
+      settingsRoute.addChildren([
+        settingsIndexRoute,
+        generalRoute,
+        providersRoute,
+        settingsIntegrationsRoute,
+        settingsSkillsRoute,
+      ]),
     ]),
   ]),
   basepath: "/ui",
   defaultPreload: "intent",
   // Query owns caching; the router only triggers loads.
   defaultPreloadStaleTime: 0,
+  defaultErrorComponent: ({ error }) => (
+    <Empty>
+      <EmptyHeader>
+        <EmptyTitle>
+          {error instanceof HttpError && error.status === 404
+            ? "Not found"
+            : "Something went wrong"}
+        </EmptyTitle>
+        <EmptyDescription>
+          {error instanceof Error ? error.message : null}
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <Button render={<Link to="/" />} nativeButton={false} variant="outline">
+          Go home
+        </Button>
+      </EmptyContent>
+    </Empty>
+  ),
 });
 
 declare module "@tanstack/react-router" {
@@ -189,9 +371,44 @@ function Connect() {
   );
 }
 
+const WORKSPACE = [
+  { to: "/memory", label: "Memory", icon: BrainIcon },
+  { to: "/tasks", label: "Tasks", icon: CalendarClockIcon },
+  { to: "/activity", label: "Activity", icon: ActivityIcon },
+] as const;
+
 function Shell() {
   const bots = useQuery(botsQuery);
+  const groups = useQuery(groupsQuery);
   const matchRoute = useMatchRoute();
+  const navigate = useNavigate();
+  const [search, setSearch] = useState("");
+  const needle = search.trim().toLowerCase();
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    followActivity(({ botId, groupId }) => {
+      if (groupId)
+        void navigate({ to: "/groups/$groupId", params: { groupId } });
+      else if (botId) void navigate({ to: "/bots/$botId", params: { botId } });
+    }, controller.signal);
+
+    return () => controller.abort();
+  }, [navigate]);
+
+  const shownBots = (bots.data ?? []).filter(
+    (bot) =>
+      !needle ||
+      bot.name.toLowerCase().includes(needle) ||
+      bot.lastMessage?.toLowerCase().includes(needle),
+  );
+
+  const shownGroups = (groups.data ?? []).filter(
+    (group) => !needle || group.name.toLowerCase().includes(needle),
+  );
+
+  const byId = new Map(bots.data?.map((bot) => [bot.id, bot]));
 
   return (
     <TooltipProvider>
@@ -199,6 +416,12 @@ function Shell() {
         <Sidebar>
           <SidebarHeader>
             <span className="px-2 font-heading font-semibold">Crumble</span>
+            <SidebarInput
+              placeholder="Search"
+              aria-label="Search bots and group chats"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
           </SidebarHeader>
           <SidebarContent>
             <SidebarGroup>
@@ -218,31 +441,24 @@ function Shell() {
                         <SidebarMenuSkeleton showIcon />
                       </SidebarMenuItem>
                     ))}
-                  {bots.data?.map((bot) => (
-                    <SidebarMenuItem key={bot.id}>
-                      <SidebarMenuButton
-                        isActive={Boolean(
-                          matchRoute({
-                            to: "/bots/$botId",
-                            params: { botId: bot.id },
-                            fuzzy: true,
-                          }),
-                        )}
-                        render={
-                          <Link to="/bots/$botId" params={{ botId: bot.id }} />
-                        }
-                      >
-                        <Avatar size="sm">
-                          <AvatarFallback>
-                            {bot.name.slice(0, 1)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className={bot.enabled ? "" : "opacity-50"}>
-                          {bot.name}
-                        </span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
+                  {shownBots.map((bot) => (
+                    <BotRow
+                      key={bot.id}
+                      bot={bot}
+                      active={Boolean(
+                        matchRoute({
+                          to: "/bots/$botId",
+                          params: { botId: bot.id },
+                          fuzzy: true,
+                        }),
+                      )}
+                    />
                   ))}
+                  {bots.data && shownBots.length === 0 && (
+                    <p className="px-2 text-xs text-muted-foreground">
+                      {needle ? "No results" : "No bots yet"}
+                    </p>
+                  )}
                 </SidebarMenu>
                 {bots.isError && (
                   <p className="px-2 text-xs text-destructive">
@@ -251,28 +467,110 @@ function Shell() {
                 )}
               </SidebarGroupContent>
             </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupLabel>Group chats</SidebarGroupLabel>
+              {(bots.data?.length ?? 0) >= 2 && (
+                <SidebarGroupAction
+                  title="New group chat"
+                  render={<Link to="/groups/new" />}
+                >
+                  <PlusIcon />
+                  <span className="sr-only">New group chat</span>
+                </SidebarGroupAction>
+              )}
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {shownGroups.map((group) => {
+                    const members = group.memberIds.flatMap((id) => {
+                      const member = byId.get(id);
+
+                      return member ? [member] : [];
+                    });
+
+                    return (
+                      <SidebarMenuItem key={group.id}>
+                        <SidebarMenuButton
+                          size="lg"
+                          isActive={Boolean(
+                            matchRoute({
+                              to: "/groups/$groupId",
+                              params: { groupId: group.id },
+                              fuzzy: true,
+                            }),
+                          )}
+                          render={
+                            <Link
+                              to="/groups/$groupId"
+                              params={{ groupId: group.id }}
+                            />
+                          }
+                        >
+                          <span className="flex shrink-0 -space-x-3">
+                            {members.slice(0, 2).map((member) => (
+                              <BotAvatar
+                                key={member.id}
+                                bot={member}
+                                size={26}
+                              />
+                            ))}
+                          </span>
+                          <span className="flex min-w-0 flex-col">
+                            <span className="truncate">{group.name}</span>
+                            <span className="truncate text-xs text-muted-foreground">
+                              {members.map((member) => member.name).join(", ")}
+                            </span>
+                          </span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                  {groups.data?.length === 0 && (
+                    <p className="px-2 text-xs text-muted-foreground">
+                      {(bots.data?.length ?? 0) >= 2
+                        ? "No group chats yet"
+                        : "Create two bots to start a group chat"}
+                    </p>
+                  )}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {WORKSPACE.map((item) => (
+                    <SidebarMenuItem key={item.to}>
+                      <SidebarMenuButton
+                        isActive={Boolean(matchRoute({ to: item.to }))}
+                        render={<Link to={item.to} />}
+                      >
+                        <item.icon />
+                        {item.label}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
           </SidebarContent>
           <SidebarFooter>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={Boolean(matchRoute({ to: "/settings" }))}
+                  isActive={Boolean(
+                    matchRoute({ to: "/settings", fuzzy: true }),
+                  )}
                   render={<Link to="/settings" />}
                 >
                   <SettingsIcon />
                   Settings
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton onClick={() => token.set(null)}>
-                  <LogOutIcon />
-                  Sign out
+                  <ConnectionStatus />
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarFooter>
         </Sidebar>
-        <SidebarInset className="h-dvh">
+        <SidebarInset className="h-dvh min-w-0">
           <header className="flex h-12 shrink-0 items-center px-2 md:hidden">
             <SidebarTrigger />
           </header>
@@ -280,6 +578,66 @@ function Shell() {
         </SidebarInset>
       </SidebarProvider>
     </TooltipProvider>
+  );
+}
+
+function ConnectionStatus() {
+  const status = useConnectionStatus();
+
+  if (status === "connected") return null;
+
+  return (
+    <span className="ml-auto text-xs text-destructive">
+      {status === "reconnecting" ? "Reconnecting…" : "Disconnected"}
+    </span>
+  );
+}
+
+function BotRow({ bot, active }: { bot: Bot; active: boolean }) {
+  const working = useWorking(bot.id);
+
+  const chip = !bot.enabled
+    ? "Paused"
+    : bot.description.length <= 24
+      ? bot.description
+      : "";
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        size="lg"
+        isActive={active}
+        render={<Link to="/bots/$botId" params={{ botId: bot.id }} />}
+      >
+        <BotAvatar
+          bot={bot}
+          size={36}
+          live
+          state={
+            working ? "working" : bot.enabled && active ? "idle" : "sleeping"
+          }
+        />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="flex items-center gap-1.5">
+            <span className={cn("truncate", !bot.enabled && "opacity-60")}>
+              {bot.name}
+            </span>
+            {chip && (
+              <span className="truncate text-[10px] text-muted-foreground">
+                {chip}
+              </span>
+            )}
+          </span>
+          <span className="truncate text-xs text-muted-foreground">
+            {working
+              ? "Working…"
+              : bot.lastMessage
+                ? bot.lastMessage.replace(/[*_`#>]/g, "").slice(0, 120)
+                : "No messages yet"}
+          </span>
+        </span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
   );
 }
 
@@ -293,18 +651,24 @@ function Home() {
         <EmptyMedia variant="icon">
           <BotIcon />
         </EmptyMedia>
-        <EmptyTitle>{empty ? "No bots yet" : "Choose a bot"}</EmptyTitle>
+        <EmptyTitle>
+          {bots.isPending
+            ? "Opening your workspace"
+            : empty
+              ? "A little help, always here."
+              : "Choose a bot"}
+        </EmptyTitle>
         <EmptyDescription>
           {empty
             ? "Create a bot to start chatting."
-            : "Pick a bot from the sidebar to open its chat."}
+            : "Pick a bot or group chat from the sidebar."}
         </EmptyDescription>
       </EmptyHeader>
       {empty && (
         <EmptyContent>
           <Button render={<Link to="/bots/new" />} nativeButton={false}>
             <PlusIcon data-icon="inline-start" />
-            New bot
+            Create a bot
           </Button>
         </EmptyContent>
       )}

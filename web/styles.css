@@ -188,6 +188,26 @@
     @apply border px-2 py-1;
   }
 
+  /* Pele diagrams take the app's theme, light and dark, without re-rendering. */
+  .markdown .diagram {
+    --pele-bg: transparent;
+    --pele-fg: var(--foreground);
+    --pele-muted: var(--muted-foreground);
+    --pele-line: var(--muted-foreground);
+    --pele-surface: var(--background);
+    --pele-surface-alt: var(--muted);
+    --pele-border: var(--border);
+    --pele-accent: var(--primary);
+    --pele-font: var(--font-sans);
+    --pele-radius: 6px;
+    --pele-series-1: var(--chart-1);
+    --pele-series-2: var(--chart-2);
+    --pele-series-3: var(--chart-3);
+    --pele-series-4: var(--chart-4);
+    --pele-series-5: var(--chart-5);
+    @apply w-xl max-w-full overflow-x-auto;
+  }
+
   .markdown hr {
     @apply border-border;
   }

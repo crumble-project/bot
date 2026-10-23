@@ -1,12 +1,28 @@
 import { QueryClient, queryOptions } from "@tanstack/react-query";
 import type { z } from "@hono/zod-openapi";
 import type {
+  activityEvent,
+  activityFeedResponse,
   agentPreviewResponse,
+  capabilitiesResponse,
   chatSnapshotResponse,
+  codingJobsResponse,
+  describedMcpServerResponse,
+  desktopControlResponse,
+  desktopJobsResponse,
+  desktopViewerResponse,
+  groupChatResponse,
+  groupChatSnapshotResponse,
+  historyResponse,
+  listedSkillResponse,
+  loginSessionResponse,
+  memoryResponse,
   modelResponse,
   providerResponse,
+  scheduleResponse,
 } from "../src/api-responses";
 import type { agentInput } from "../src/domain";
+import type { ChartLayout } from "../src/charts";
 
 export type Bot = z.infer<typeof agentPreviewResponse>;
 
@@ -14,9 +30,43 @@ export type BotInput = z.input<typeof agentInput>;
 
 export type Model = z.infer<typeof modelResponse>;
 
+export type LoginSession = z.infer<typeof loginSessionResponse>;
+
+export type Capabilities = z.infer<typeof capabilitiesResponse>;
+
 export type ChatSnapshot = z.infer<typeof chatSnapshotResponse>;
 
+export type HistoryPage = z.infer<typeof historyResponse>;
+
+export type Message = HistoryPage["messages"][number];
+
 export type Provider = z.infer<typeof providerResponse>;
+
+export type Memory = z.infer<typeof memoryResponse>;
+
+export type ListedSkill = z.infer<typeof listedSkillResponse>;
+
+export type Schedule = z.infer<typeof scheduleResponse>;
+
+export type McpServer = z.infer<typeof describedMcpServerResponse>;
+
+export type GroupChat = z.infer<typeof groupChatResponse>;
+
+export type GroupChatSnapshot = z.infer<typeof groupChatSnapshotResponse>;
+
+export type CodingJob = z.infer<typeof codingJobsResponse>["jobs"][number];
+
+export type DesktopJob = z.infer<typeof desktopJobsResponse>["jobs"][number];
+
+export type DesktopControl = z.infer<typeof desktopControlResponse>;
+
+export type DesktopViewer = z.infer<typeof desktopViewerResponse>;
+
+export type ActivityFeed = z.infer<typeof activityFeedResponse>;
+
+export type ActivityEvent = z.infer<typeof activityEvent>;
+
+export type { ChartLayout };
 
 const TOKEN_KEY = "crumble.token";
 const listeners = new Set<() => void>();
@@ -91,6 +141,18 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return (await request(path, init)).json();
 }
 
+/** Sends a JSON body with `method` and returns the parsed response. */
+export async function call<T, Body = undefined>(
+  path: string,
+  method: string,
+  body?: Body,
+): Promise<T> {
+  return api<T>(path, {
+    method,
+    ...(body !== undefined && { body: JSON.stringify(body) }),
+  });
+}
+
 /** Sends a mutation whose response body the UI does not need. */
 export async function send<Body>(path: string, method: string, body?: Body) {
   await request(path, {
@@ -98,6 +160,18 @@ export async function send<Body>(path: string, method: string, body?: Body) {
     ...(body !== undefined && { body: JSON.stringify(body) }),
   });
 }
+
+/** Fetches an authenticated binary, such as an attachment image, as an object URL. */
+export async function blobUrl(path: string, signal?: AbortSignal) {
+  const response = await request(path, { signal });
+
+  return URL.createObjectURL(await response.blob());
+}
+
+export const agentPath = (id: string) => `/v1/agents/${encodeURIComponent(id)}`;
+
+export const groupPath = (id: string) =>
+  `/v1/group-chats/${encodeURIComponent(id)}`;
 
 export const botsQuery = queryOptions({
   queryKey: ["bots"],
@@ -108,9 +182,19 @@ export const chatQuery = (id: string) =>
   queryOptions({
     queryKey: ["chat", id],
     queryFn: ({ signal }) =>
-      api<ChatSnapshot>(`/v1/agents/${encodeURIComponent(id)}/chat`, {
-        signal,
-      }),
+      api<ChatSnapshot>(`${agentPath(id)}/chat`, { signal }),
+  });
+
+export const groupsQuery = queryOptions({
+  queryKey: ["groups"],
+  queryFn: ({ signal }) => api<GroupChat[]>("/v1/group-chats", { signal }),
+});
+
+export const groupChatQuery = (id: string) =>
+  queryOptions({
+    queryKey: ["group-chat", id],
+    queryFn: ({ signal }) =>
+      api<GroupChatSnapshot>(`${groupPath(id)}/chat`, { signal }),
   });
 
 export const modelsQuery = (provider: string) =>
@@ -128,17 +212,97 @@ export const providersQuery = queryOptions({
   queryFn: ({ signal }) => api<Provider[]>("/v1/providers", { signal }),
 });
 
-/** Keeps a bot's chat query current from its event stream until `signal` aborts. */
-export async function followChat(id: string, signal: AbortSignal) {
+export const loginQuery = (id: string) =>
+  queryOptions({
+    queryKey: ["login", id],
+    queryFn: ({ signal }) =>
+      api<LoginSession>(`/v1/provider-logins/${encodeURIComponent(id)}`, {
+        signal,
+      }),
+    // Sign-ins advance on the server, so poll until they end.
+    refetchInterval: (query) =>
+      query.state.data?.status === "pending" ? 1000 : false,
+  });
+
+export const capabilitiesQuery = queryOptions({
+  queryKey: ["capabilities"],
+  queryFn: ({ signal }) => api<Capabilities>("/v1/capabilities", { signal }),
+  staleTime: Infinity,
+});
+
+export const schedulesQuery = queryOptions({
+  queryKey: ["schedules"],
+  queryFn: ({ signal }) => api<Schedule[]>("/v1/schedules", { signal }),
+});
+
+export const botMemoriesQuery = (id: string) =>
+  queryOptions({
+    queryKey: ["memories", id],
+    queryFn: ({ signal }) =>
+      api<Memory[]>(`${agentPath(id)}/memories`, { signal }),
+  });
+
+export const sharedMemoriesQuery = queryOptions({
+  queryKey: ["memories", "shared"],
+  queryFn: ({ signal }) => api<Memory[]>("/v1/memories", { signal }),
+});
+
+export const skillsQuery = queryOptions({
+  queryKey: ["skills"],
+  queryFn: ({ signal }) => api<ListedSkill[]>("/v1/skills", { signal }),
+});
+
+export const mcpServersQuery = queryOptions({
+  queryKey: ["mcp-servers"],
+  queryFn: ({ signal }) => api<McpServer[]>("/v1/mcp-servers", { signal }),
+});
+
+export const activityFeedQuery = queryOptions({
+  queryKey: ["activity-feed"],
+  queryFn: ({ signal }) => api<ActivityFeed>("/v1/activity/feed", { signal }),
+});
+
+/** `version` refetches when the chat's job messages change. */
+export const jobsQuery = (
+  id: string,
+  kind: "coding" | "desktop",
+  version = 0,
+) =>
+  queryOptions({
+    queryKey: ["jobs", id, kind, version],
+    queryFn: async ({ signal }) =>
+      (
+        await api<{ jobs: (CodingJob | DesktopJob)[] }>(
+          `${agentPath(id)}/${kind}-jobs`,
+          { signal },
+        )
+      ).jobs,
+  });
+
+type StreamHandlers = {
+  /** Each named event with its raw data; heartbeats are skipped. */
+  onEvent: (event: string, data: string) => void;
+  /** After every (re)connection, since streams have no replay. */
+  onOpen?: () => void;
+  onStatus?: (status: "connected" | "reconnecting") => void;
+  /** The resource is gone (404); the stream stops. */
+  onGone?: () => void;
+};
+
+/** Follows a server-sent event stream with the bearer token, reconnecting with backoff until `signal` aborts. */
+export async function follow(
+  path: string,
+  handlers: StreamHandlers,
+  signal: AbortSignal,
+) {
+  let delay = 500;
+
   while (!signal.aborted) {
     try {
-      const response = await request(
-        `/v1/agents/${encodeURIComponent(id)}/events`,
-        { signal },
-      );
-
-      // No Last-Event-ID replay, so every connection starts from a fresh snapshot.
-      void queryClient.invalidateQueries({ queryKey: ["chat", id] });
+      const response = await request(path, { signal });
+      handlers.onStatus?.("connected");
+      handlers.onOpen?.();
+      delay = 500;
 
       const reader = response
         .body!.pipeThrough(new TextDecoderStream())
@@ -156,9 +320,14 @@ export async function followChat(id: string, signal: AbortSignal) {
 
         for (const frame of frames) {
           const lines = frame.split("\n");
-          const event = lines.find((line) => line.startsWith("event:"));
 
-          if (event?.slice(6).trim() !== "snapshot") continue;
+          const event =
+            lines
+              .find((line) => line.startsWith("event:"))
+              ?.slice(6)
+              .trim() ?? "message";
+
+          if (event === "heartbeat") continue;
 
           const data = lines
             .flatMap((line) =>
@@ -166,13 +335,37 @@ export async function followChat(id: string, signal: AbortSignal) {
             )
             .join("\n");
 
-          queryClient.setQueryData(chatQuery(id).queryKey, JSON.parse(data));
+          handlers.onEvent(event, data);
         }
       }
     } catch (error) {
-      if (signal.aborted || error instanceof HttpError) return;
+      if (signal.aborted) return;
+
+      if (error instanceof HttpError) {
+        if (error.status === 404) handlers.onGone?.();
+
+        if (error.status === 401 || error.status === 404) return;
+      }
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    handlers.onStatus?.("reconnecting");
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    delay = Math.min(delay * 2, 8000);
   }
+}
+
+/** Keeps a bot's chat query current from its event stream until `signal` aborts. */
+export function followChat(id: string, signal: AbortSignal) {
+  return follow(
+    `${agentPath(id)}/events`,
+    {
+      onOpen: () =>
+        void queryClient.invalidateQueries({ queryKey: ["chat", id] }),
+      onEvent: (event, data) => {
+        if (event === "snapshot" || event === "message")
+          queryClient.setQueryData(chatQuery(id).queryKey, JSON.parse(data));
+      },
+    },
+    signal,
+  );
 }
