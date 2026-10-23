@@ -152,6 +152,7 @@ export function defineJobKind(options: JobKindOptions) {
     history: "latest",
     fork: "initial",
     initial: () => ({ job: false }),
+    checkpointWhen: () => false,
   });
 
   const Jobs = defineDoc<JobsState>({
@@ -161,6 +162,9 @@ export function defineJobKind(options: JobKindOptions) {
     history: "latest",
     fork: "initial",
     initial: () => ({ jobs: {} }),
+    // Every job's status change is a delta; a periodic full value bounds the replay on open.
+    checkpointWhen: (_value, _ops, { deltasSinceBase }) =>
+      deltasSinceBase >= 32,
   });
 
   // The job's conversation is owned by this task so it outlives the bot's turns and Esc.
