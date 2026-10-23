@@ -1,5 +1,4 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -81,32 +80,19 @@ export function DetailsPanel({ bot }: { bot: Bot }) {
           {bot.description || (bot.enabled ? "Ready" : "Paused")}
         </span>
       </div>
-      <Tabs defaultValue="details">
+      <Tabs defaultValue="routines">
         <TabsList className="w-full">
-          <TabsTrigger value="details">Details</TabsTrigger>
+          <TabsTrigger value="routines">Routines</TabsTrigger>
           <TabsTrigger value="memory">Memory</TabsTrigger>
         </TabsList>
-        <TabsContent value="details" className="flex flex-col gap-4 pt-3">
-          <section className="flex flex-col gap-3">
-            <h3 className="text-xs font-medium text-muted-foreground">
-              Routines
-            </h3>
-            {schedules.isPending && <Skeleton className="h-10" />}
-            {routines.map((schedule) => (
-              <Routine key={schedule.id} schedule={schedule} />
-            ))}
-            {schedules.isSuccess && routines.length === 0 && (
-              <p className="text-sm text-muted-foreground">No routines yet</p>
-            )}
-          </section>
-          <Separator />
-          <section className="flex flex-col gap-1">
-            <h3 className="text-xs font-medium text-muted-foreground">Model</h3>
-            <span className="text-sm">{bot.model || "Default"}</span>
-            <span className="text-xs text-muted-foreground">
-              {bot.provider}
-            </span>
-          </section>
+        <TabsContent value="routines" className="flex flex-col gap-3 pt-3">
+          {schedules.isPending && <Skeleton className="h-10" />}
+          {routines.map((schedule) => (
+            <Routine key={schedule.id} schedule={schedule} />
+          ))}
+          {schedules.isSuccess && routines.length === 0 && (
+            <p className="text-sm text-muted-foreground">No routines yet</p>
+          )}
         </TabsContent>
         <TabsContent value="memory" className="flex flex-col gap-3 pt-3">
           {memories.isPending && <Skeleton className="h-16" />}

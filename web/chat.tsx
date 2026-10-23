@@ -240,12 +240,12 @@ export function Chat({ botId }: { botId: string }) {
             {bot.tools.includes("desktop") && (
               <Button
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
+                title="Bot desktop"
                 render={<Link to="/bots/$botId/desktop" params={{ botId }} />}
                 nativeButton={false}
               >
-                <HugeiconsIcon icon={ComputerIcon} data-icon="inline-start" />
-                Bot desktop
+                <HugeiconsIcon icon={ComputerIcon} />
               </Button>
             )}
             <Button
