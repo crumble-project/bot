@@ -29,14 +29,10 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import {
-  type Provider,
-  capabilitiesQuery,
-  providersQuery,
-  send,
-  token,
-} from "./api";
-import { notifications } from "./live";
+import { type Provider, capabilitiesQuery, providersQuery, send } from "./api";
+import { authClient } from "./auth-client";
+import { clearUserData } from "./api";
+import { clearLiveStreams, notifications } from "./live";
 import { LoginDialog, refreshProviders } from "./provider-login";
 import { Section, WorkspacePage } from "./workspace";
 
@@ -117,6 +113,15 @@ function Notifications() {
 export function GeneralSettings() {
   const capabilities = useQuery(capabilitiesQuery);
 
+  const signOut = useMutation({
+    mutationFn: () => authClient.signOut(),
+    onSettled: () => {
+      clearLiveStreams();
+      clearUserData();
+      window.location.assign("/ui/connect");
+    },
+  });
+
   const features = [
     {
       name: "Coding jobs",
@@ -138,11 +143,15 @@ export function GeneralSettings() {
           <FieldContent>
             <FieldLabel>Sign out</FieldLabel>
             <FieldDescription>
-              Forgets the server token in this browser. Other clients stay
-              connected.
+              Sign out of this account on this device.
             </FieldDescription>
           </FieldContent>
-          <Button variant="outline" size="sm" onClick={() => token.set(null)}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={signOut.isPending}
+            onClick={() => signOut.mutate()}
+          >
             Sign out
           </Button>
         </Field>

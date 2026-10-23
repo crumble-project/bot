@@ -22,6 +22,7 @@ COPY package.json tsconfig.json bunfig.toml ./
 COPY src src
 COPY web web
 COPY skills skills
+COPY tools/assign-legacy-owner.ts tools/assign-legacy-owner.ts
 
 RUN mkdir -p /var/lib/crumble && chown bun:bun /var/lib/crumble
 USER bun

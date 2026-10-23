@@ -12,12 +12,16 @@ export type PluginHost = {
   env: NodeJS.ProcessEnv;
   workspaces: Workspaces | undefined;
   desktopControl: DesktopControl;
+  /** Disable host-level Claude Code authentication for tenant runtimes. */
+  claudeCode?: boolean;
 };
 
 /** Every plugin compiled into the server, in the order their contributions are listed. */
 export const builtinPlugins = (host: PluginHost): CrumblePlugin[] => [
   meliousPlugin(),
-  claudeCodePlugin(host.dataDir, host.env),
+  ...(host.claudeCode === false
+    ? []
+    : [claudeCodePlugin(host.dataDir, host.env)]),
   codingPlugin(host.workspaces),
   desktopPlugin(host.workspaces, host.desktopControl),
 ];

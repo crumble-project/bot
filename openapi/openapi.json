@@ -9,7 +9,14 @@
     "securitySchemes": {
       "BearerAuth": {
         "type": "http",
-        "scheme": "bearer"
+        "scheme": "bearer",
+        "description": "Better Auth session token from /api/auth/sign-in/email. The legacy server token is not accepted."
+      },
+      "SessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "better-auth.session_token",
+        "description": "Better Auth session cookie. HTTPS deployments use the __Secure- prefix. Cookie-authenticated writes require the configured Origin."
       }
     },
     "schemas": {
@@ -2319,6 +2326,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "responses": {
@@ -2343,7 +2353,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -2421,6 +2431,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "responses": {
@@ -2445,7 +2458,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -2523,6 +2536,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -2612,7 +2628,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -2688,6 +2704,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -2716,7 +2735,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -2794,6 +2813,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -2848,7 +2870,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -2926,6 +2948,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "responses": {
@@ -2953,7 +2978,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -3029,6 +3054,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "requestBody": {
@@ -3269,7 +3297,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -3347,6 +3375,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -3381,7 +3412,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -3457,6 +3488,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -3699,7 +3733,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -3775,6 +3809,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -3802,7 +3839,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -3880,6 +3917,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -3921,7 +3961,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -3999,6 +4039,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -4043,7 +4086,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -4121,6 +4164,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -4175,7 +4221,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -4253,6 +4299,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -4287,7 +4336,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -4365,6 +4414,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -4427,7 +4479,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -4505,6 +4557,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -4539,7 +4594,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -4617,6 +4672,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -4651,7 +4709,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -4728,6 +4786,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -4784,7 +4845,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -4871,6 +4932,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -4905,7 +4969,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -4984,6 +5048,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -5018,7 +5085,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -5096,6 +5163,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -5158,7 +5228,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -5236,6 +5306,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -5334,7 +5407,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -5412,6 +5485,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -5476,7 +5552,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -5554,6 +5630,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -5581,7 +5660,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -5659,6 +5738,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -5693,7 +5775,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -5780,6 +5862,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -5824,7 +5909,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -5914,6 +5999,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "responses": {
@@ -5938,7 +6026,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -6016,6 +6104,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "responses": {
@@ -6043,7 +6134,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -6119,6 +6210,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "requestBody": {
@@ -6173,7 +6267,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -6251,6 +6345,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -6285,7 +6382,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -6361,6 +6458,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -6421,7 +6521,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -6497,6 +6597,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -6524,7 +6627,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -6602,6 +6705,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -6646,7 +6752,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -6724,6 +6830,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -6778,7 +6887,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -6856,6 +6965,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -6949,7 +7061,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -7027,6 +7139,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -7091,7 +7206,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -7170,6 +7285,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -7197,7 +7315,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -7284,6 +7402,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -7328,7 +7449,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -7406,6 +7527,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -7443,7 +7567,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -7519,6 +7643,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -7573,7 +7700,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -7651,6 +7778,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -7720,7 +7850,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -7796,6 +7926,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -7831,7 +7964,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -7909,6 +8042,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "responses": {
@@ -7936,7 +8072,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -8012,6 +8148,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "requestBody": {
@@ -8056,7 +8195,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -8134,6 +8273,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -8195,7 +8337,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -8271,6 +8413,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -8298,7 +8443,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -8377,6 +8522,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -8414,7 +8562,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -8490,6 +8638,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -8577,7 +8728,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -8656,6 +8807,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -8763,7 +8917,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -8839,6 +8993,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -8874,7 +9031,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -8953,6 +9110,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -9001,7 +9161,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -9080,6 +9240,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -9149,7 +9312,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -9228,6 +9391,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -9262,7 +9428,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -9340,6 +9506,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "responses": {
@@ -9367,7 +9536,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -9443,6 +9612,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "requestBody": {
@@ -9520,7 +9692,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -9599,6 +9771,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -9633,7 +9808,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -9709,6 +9884,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -9797,7 +9975,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -9873,6 +10051,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -9900,7 +10081,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -9978,6 +10159,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -10015,7 +10199,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -10091,6 +10275,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "requestBody": {
@@ -10171,7 +10358,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -10249,6 +10436,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -10337,7 +10527,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -10413,6 +10603,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -10440,7 +10633,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -10518,6 +10711,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -10552,7 +10748,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -10630,6 +10826,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -10667,7 +10866,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -10746,6 +10945,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -10817,7 +11019,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -10895,6 +11097,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "responses": {
@@ -10922,7 +11127,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -11000,6 +11205,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -11037,7 +11245,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -11115,6 +11323,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -11169,7 +11380,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -11246,6 +11457,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -11273,7 +11487,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -11351,6 +11565,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -11407,7 +11624,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -11485,6 +11702,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -11519,7 +11739,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -11605,6 +11825,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -11639,7 +11862,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -11727,6 +11950,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -11785,7 +12011,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -11873,6 +12099,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "responses": {
@@ -11900,7 +12129,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -11976,6 +12205,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "requestBody": {
@@ -12053,7 +12285,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -12131,6 +12363,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -12185,7 +12420,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -12261,6 +12496,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -12295,7 +12533,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -12373,6 +12611,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -12438,7 +12679,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -12516,6 +12757,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -12597,7 +12841,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
@@ -12673,6 +12917,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
           }
         ],
         "parameters": [
@@ -12700,7 +12947,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid bearer token",
+            "description": "Missing, expired, or invalid account session",
             "content": {
               "text/plain": {
                 "schema": {
