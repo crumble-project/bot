@@ -14,6 +14,8 @@ bun run dev
 Use `bun run start` without file watching. The default address is `http://127.0.0.1:7337`.
 Copy the server token from the path printed at startup into your client's connection settings.
 
+The server also hosts a web UI at `http://127.0.0.1:7337/ui`. Enter the server token to connect; the browser keeps it in local storage until you sign out. The UI lives in `web/` and is bundled by Bun, with Tailwind through `bunfig.toml`, when the server starts serving it, so it needs no build step. Set `NODE_ENV=production` for the minified bundle. Add shadcn/ui components with `bunx --bun shadcn@latest add <component>`; they land in `web/components/ui`.
+
 | Variable | Default |
 | --- | --- |
 | `CRUMBLE_DATA_DIR` | `./data` |

@@ -46,6 +46,7 @@ import { PushManager, PushStore } from "./push";
 import { providerModels } from "./providers";
 import { ProviderCredentials } from "./provider-credentials";
 import { ProviderAuth } from "./provider-auth";
+import { webUIRoutes } from "./web-ui";
 
 export async function startServer(
   options: {
@@ -316,6 +317,10 @@ export async function startServer(
       holdAwake(agent.id, desktopControl.get(agent.id));
 
     const server = Bun.serve({
+      // The web UI is public; it reaches the API with the token the owner enters.
+      routes: webUIRoutes,
+      // Bun's HMR bundle breaks TanStack Router's circular imports at startup.
+      development: process.env.NODE_ENV !== "production" && { hmr: false },
       fetch: app.fetch,
       // Viewer connections to bot desktops.
       websocket,

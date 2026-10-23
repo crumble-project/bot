@@ -433,6 +433,9 @@ export function createAPI(
 
       const unsubscribers = [service.onActivity(send)];
 
+      // Browsers see the response only once a body chunk arrives, which without bots to preview could take 15 seconds.
+      await stream.writeSSE({ event: "heartbeat", data: "{}" });
+
       // Replay current previews on every connection so a sidebar can recover missed events.
       try {
         for (const { agent, lastMessage } of await service.agentPreviews())

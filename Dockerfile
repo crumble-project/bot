@@ -24,8 +24,9 @@ ENV NODE_ENV=production \
     MSB_HOME=/var/lib/crumble/microsandbox
 
 COPY --from=deps /app/node_modules node_modules
-COPY package.json tsconfig.json ./
+COPY package.json tsconfig.json bunfig.toml ./
 COPY src src
+COPY web web
 COPY --from=skills . /opt/crumble/skills
 
 RUN mkdir -p /var/lib/crumble && chown bun:bun /var/lib/crumble
