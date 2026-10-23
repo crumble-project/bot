@@ -188,6 +188,16 @@ if (env["FAKE_MODE"] === "hang") {
   }
 
   if (stopReason === "tool_use") {
+    // dontAsk mode denies the call before the turn limit, with `message` as a string.
+    emit({
+      type: "system",
+      subtype: "permission_denied",
+      tool_name: "mcp__crumble__lookup",
+      tool_use_id: "toolu_1",
+      decision_reason_type: "mode",
+      message:
+        "Permission to use mcp__crumble__lookup has been denied because Claude Code is running in don't ask mode.",
+    });
     emit({
       type: "result",
       subtype: "error_max_turns",

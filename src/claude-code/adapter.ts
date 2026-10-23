@@ -376,6 +376,7 @@ const streamJson = z.looseObject({
   error: z.string().nullish(),
   total_cost_usd: z.number().nullish(),
   usage: z.looseObject({}).nullish(),
+  // System events such as `permission_denied` carry `message` as plain text, which nothing reads.
   message: z
     .looseObject({
       error: z.json().optional(),
@@ -383,6 +384,7 @@ const streamJson = z.looseObject({
         .array(z.looseObject({ type: z.string(), text: z.string().optional() }))
         .optional(),
     })
+    .or(z.string().transform(() => undefined))
     .optional(),
   event: z
     .looseObject({
