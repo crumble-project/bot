@@ -79,6 +79,24 @@ function setup() {
   return { app: createAPI(service, scheduler, token), store, runtime };
 }
 
+/** Reads a stream until its text so far contains `text`, then returns that text. */
+async function readUntil(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  text: string,
+) {
+  const decoder = new TextDecoder();
+  let seen = "";
+
+  while (!seen.includes(text)) {
+    const { value, done } = await reader.read();
+
+    if (done) break;
+    seen += decoder.decode(value, { stream: true });
+  }
+
+  return seen;
+}
+
 const req = (app: any, path: string, init: RequestInit = {}) =>
   app.request(path, {
     ...init,
@@ -508,10 +526,23 @@ describe("HTTP API", () => {
       method: "POST",
       body: JSON.stringify({ content: "hi", requestId: crypto.randomUUID() }),
     });
-    const { value } = await reader.read();
-    const text = new TextDecoder().decode(value);
+    const text = await readUntil(reader, "event: activity");
     expect(text).toContain("event: activity");
     expect(text).toContain(`"agentId":"${agent.id}"`);
+    await reader.cancel();
+  });
+
+  test("opens the activity stream with a heartbeat, so browsers connect without waiting", async () => {
+    const { app } = setup();
+    const response: Response = await req(app, "/v1/events");
+    const reader = response.body!.getReader();
+
+    const first = await Promise.race([
+      reader.read().then(({ value }) => new TextDecoder().decode(value)),
+      Bun.sleep(1000).then(() => "nothing within a second"),
+    ]);
+
+    expect(first).toContain("event: heartbeat");
     await reader.cancel();
   });
 
@@ -541,8 +572,7 @@ describe("HTTP API", () => {
 
     const response = await req(app, "/v1/events");
     const reader = response.body!.getReader();
-    const { value } = await reader.read();
-    const text = new TextDecoder().decode(value);
+    const text = await readUntil(reader, '"lastMessage"');
     expect(text).toContain('"type":"chat-preview"');
     expect(text).toContain(`"agentName":"Preview Bot"`);
     expect(text).toContain('"lastMessage":"hello sidebar"');
