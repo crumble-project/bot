@@ -1,157 +1,70 @@
 # Crumble server
 
-Persistent agents with an authenticated HTTP API, built on Bun, SQLite, and Pi Durable.
+Self-hosted AI agent server and bundled web UI, built on Bun, SQLite, and Pi Durable.
 
 ## Run
 
-Requires Bun 1.4 or later. Configure a provider API key or account sign-in through the client or API for live model requests.
+Requires Bun 1.4 or later.
 
 ```bash
 bun install
-bun run dev
+bun run dev    # or `bun run start` without file watching
 ```
 
-Use `bun run start` without file watching. The default address is `http://127.0.0.1:7337`.
-Copy the server token from the path printed at startup into your client's connection settings.
+- **API:** `http://127.0.0.1:7337` (`/v1` requires the bearer token printed at startup; `GET /health` is public).
+- **Web UI:** `http://127.0.0.1:7337/ui` (bundled on demand by Bun with Tailwind CSS; set `NODE_ENV=production` to minify).
 
-The server also hosts a web UI at `http://127.0.0.1:7337/ui`. Enter the server token to connect; the browser keeps it in local storage until you sign out. The UI lives in `web/` and is bundled by Bun, with Tailwind through `bunfig.toml`, when the server starts serving it, so it needs no build step. Set `NODE_ENV=production` for the minified bundle. Add shadcn/ui components with `bunx --bun shadcn@latest add <component>`; they land in `web/components/ui`.
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CRUMBLE_DATA_DIR` | `./data` | SQLite databases, Pi Durable stores, and `.secret.key` |
+| `CRUMBLE_HOST` | `127.0.0.1` | Listen address (keep on loopback unless behind TLS) |
+| `CRUMBLE_PORT` | `7337` | Listen port |
+| `CRUMBLE_TOKEN` | Generated | Bearer token (overrides must be ≥ 32 characters) |
+| `CRUMBLE_PUBLIC_URL` | Unset | Public `https://` URL for OAuth Client ID Metadata Documents (`/oauth/client-metadata.json`) |
+| `CRUMBLE_SKILLS_DIR` | `./skills` | Directory of bundled default skills |
+| `CRUMBLE_WORKSPACE_IMAGE` | Unset | Microsandbox OCI image enabling the `coding` tool |
+| `CRUMBLE_WORKSPACE_DESKTOP_IMAGE` | Unset | Microsandbox OCI image enabling the `desktop` tool |
 
-| Variable | Default |
-| --- | --- |
-| `CRUMBLE_DATA_DIR` | `./data` |
-| `CRUMBLE_HOST` | `127.0.0.1` |
-| `CRUMBLE_PORT` | `7337` |
-| `CRUMBLE_TOKEN` | Generated; overrides require at least 32 characters |
-| `CRUMBLE_PUBLIC_URL` | Unset. The server's public https address, if it has one; see [MCP sign-in without registration](#mcp-sign-in-without-registration) |
-| `CRUMBLE_WORKSPACE_IMAGE` | Unset: no bot is offered the `coding` tool. An OCI image reference; see [Coding workspaces](#coding-workspaces) |
+Back up the entire `CRUMBLE_DATA_DIR` (including `.secret.key`, which decrypts stored provider and MCP credentials) and `MSB_HOME` (`~/.microsandbox`).
 
-Keep the server on loopback unless you provide TLS and access control.
-Back up the entire data directory, including `.secret.key`, which is required to decrypt stored credentials.
+## Workspaces (`coding` and `desktop`)
 
-## Provider sign-in
+Bots with the `coding` or `desktop` capability run jobs inside a per-bot [Microsandbox](https://github.com/superradcompany/microsandbox) microVM with a persistent disk volume (`crumble-<bot id>`). Requires Apple silicon on macOS or `/dev/kvm` on Linux.
 
-Each provider has one saved credential on the server, shared by every bot that uses the provider. Set an API key, or sign in with an account where the installed Pi AI provider offers it, such as ChatGPT, Codex, Claude, or GitHub Copilot. `GET /v1/providers` lists each provider's `authMethods`.
-
-Account sign-in runs on the server and relays its steps to the client: links to open, device codes, and prompts. It works when your browser is on another machine than the server, including Docker:
-
-- Device-code sign-in (Codex, GitHub Copilot, xAI, Meta, Kimi Coding, Radius) needs only the code shown in the client.
-- Browser sign-in that ends on a `127.0.0.1` or `localhost` page asks you to paste that page's full address into the client. OpenAI's ChatGPT sign-in also needs the server's internal port 1455 free; it doesn't need to be published.
-- Radius browser sign-in has no paste fallback. From another device, choose device code.
-
-An unfinished sign-in ends after 10 minutes without an answer or 30 minutes in total, and when the server restarts. A failed or cancelled sign-in keeps the previous credential. Signing out removes the saved credential; it doesn't revoke the provider's grant or remove environment credentials. Pi AI refreshes account tokens and the server saves them.
-
-Sign-in sends authorization data, and the server token, over the client connection. Across any untrusted network, use HTTPS or an encrypted private network; plain HTTP on a LAN isn't encrypted.
-
-Typed credentials live in a new table. Before upgrading, back up the data directory and `.secret.key`: older servers can't read account sign-ins, and the upgrade moves saved API keys into the new table.
-
-## MCP sign-in without registration
-
-MCP servers sign Crumble in with OAuth. Crumble registers itself with the server's authorization server through dynamic client registration. Authorization servers without it may accept an OAuth Client ID Metadata Document (CIMD) instead: an https address the authorization server fetches to identify the client.
-
-When `CRUMBLE_PUBLIC_URL` is set, the server serves its document at `/oauth/client-metadata.json` and signs in with it wherever the authorization server advertises `client_id_metadata_document_supported`. The authorization server must be able to reach that address, for example through a tunnel. The document lists the web UI's callback at that address, so sign in from the web UI opened there, or from the Mac or iOS app.
-
-Some authorization servers, such as GitHub's, support neither. For those, register an OAuth app with the authorization server yourself, with the callback URL `<web UI address>/ui/oauth/callback`, for example `http://127.0.0.1:7337/ui/oauth/callback`, and enter its client ID and secret on the MCP server under Settings › Integrations. Sign-in then uses your app, sending its secret in the token request body. Or add the server with a token instead.
-
-For GitHub, create the app under GitHub › Settings › Developer settings › OAuth Apps and use the MCP server URL `https://api.githubcopilot.com/mcp/`. Sign-in asks for every scope GitHub's MCP server lists.
-
-## Coding workspaces
-
-A bot with the `coding` tool runs coding jobs in its own workspace: a [Microsandbox](https://github.com/superradcompany/microsandbox) microVM with the bot's files on a persistent disk volume named `crumble-<bot id>`. Jobs can make HTTP and HTTPS requests to the internet, for example to clone repositories or install packages. Other protocols, including SSH, and private address ranges, such as the host's network and cloud metadata, are blocked. The VM starts on first use and stops after 10 minutes without a request; the volume keeps its files, also when the image changes.
-
-Requirements:
-
-- Hardware virtualization: Apple silicon on macOS, or read-write access to `/dev/kvm` on Linux. In Docker, use `compose.kvm.yaml`, which passes `/dev/kvm` and the host's kvm group to the container.
-- A guest image with git and build tools, built from the `base` target of `workspace-image/Dockerfile` and imported into Microsandbox:
-
-  ```bash
-  docker build --target base -t crumble-workspace:dev workspace-image
-  docker save crumble-workspace:dev -o /tmp/crumble-workspace.tar
-  bun -e 'import { Image } from "microsandbox"; await Image.load("/tmp/crumble-workspace.tar", { tag: "crumble-workspace:dev" })'
-  ```
-
-  Set `CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:dev`. Any OCI image reference from a registry also works.
-
-- For desktop jobs, the `desktop` target: the base image plus a bot desktop (Xvnc, Openbox, tint2, Chromium, and a pinned cua-driver with telemetry off). Bots with the `desktop` tool boot it instead of the base image:
-
-  ```bash
-  docker build --target desktop -t crumble-workspace-desktop:dev workspace-image
-  docker save crumble-workspace-desktop:dev -o /tmp/crumble-workspace-desktop.tar
-  bun -e 'import { Image } from "microsandbox"; await Image.load("/tmp/crumble-workspace-desktop.tar", { tag: "crumble-workspace-desktop:dev" })'
-  ```
-
-  Set `CRUMBLE_WORKSPACE_DESKTOP_IMAGE=crumble-workspace-desktop:dev`. Without it, no bot is offered the `desktop` tool.
-
-Published images, built for amd64 and arm64 by the Workspace images workflow (run it manually, or push a `workspace-image-v*` tag): `ghcr.io/crumble-project/crumble-workspace` and `ghcr.io/crumble-project/crumble-workspace-desktop`.
-
-Microsandbox keeps images, sandboxes, and volumes in `MSB_HOME` (default `~/.microsandbox`; `/var/lib/crumble/microsandbox` in the Docker image). Back it up with the data directory.
-
-The VM tests are skipped by default. To run them:
+Use the published images (`ghcr.io/crumble-project/crumble-workspace` and `ghcr.io/crumble-project/crumble-workspace-desktop`) or build and load locally from `workspace-image/Dockerfile`:
 
 ```bash
-CRUMBLE_VM_TESTS=1 CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:dev bun test test/microsandbox-workspaces.test.ts
+docker build --target base -t crumble-workspace:dev workspace-image
+docker save crumble-workspace:dev -o /tmp/crumble-workspace.tar
+bun -e 'import { Image } from "microsandbox"; await Image.load("/tmp/crumble-workspace.tar", { tag: "crumble-workspace:dev" })'
 ```
 
-The image change test also needs the same image under a second tag, which it treats as another image:
-
-```bash
-bun -e 'import { Image } from "microsandbox"; await Image.save("crumble-workspace:dev", { outputPath: "/tmp/crumble-workspace-other.tar" }); await Image.load("/tmp/crumble-workspace-other.tar", { tag: "crumble-workspace:other" })'
-CRUMBLE_VM_TESTS=1 CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:dev CRUMBLE_WORKSPACE_IMAGE_OTHER=crumble-workspace:other bun test test/microsandbox-workspaces.test.ts
-```
-
-The bot desktop tests also need the desktop image:
-
-```bash
-CRUMBLE_VM_TESTS=1 CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:dev CRUMBLE_WORKSPACE_DESKTOP_IMAGE=crumble-workspace-desktop:dev bun test test/desktop-vm.test.ts
-```
+Build `--target desktop` as `crumble-workspace-desktop:dev` to enable bot desktops (`CRUMBLE_WORKSPACE_DESKTOP_IMAGE`).
 
 ## Run with Docker
-
-The image bundles the default skills from [`skills/`](skills/README.md); set `CRUMBLE_SKILLS_DIR` to serve a different directory.
 
 ```bash
 docker compose up -d --build
 docker compose exec crumble cat /var/lib/crumble/data/server-token
 ```
 
-- State lives in the `crumble` volume at `/var/lib/crumble`, which holds the data directory, its lock, and Microsandbox state. Run one container per volume, and use a local disk rather than a network filesystem.
-- Compose publishes the port on the host's loopback only. For remote clients, use a private network such as Tailscale or a TLS reverse proxy.
-- To set your own token, pass `CRUMBLE_TOKEN` through an env file. For native push, mount the APNs key or FCM service account read-only and set the `CRUMBLE_APNS_*` or `CRUMBLE_FCM_SERVICE_ACCOUNT_PATH` variables (see [Native push](docs/native-push.md)).
-- Back up the volume, including `data/.secret.key`. Stop the container first, or copy the SQLite files with `sqlite3 .backup`.
-
-### Enable coding workspaces on Linux
-
-Build and save the guest image as described in [Coding workspaces](#coding-workspaces). Import it inside the server container: the host's Microsandbox cache is separate from the container's volume.
-
-```bash
-export CRUMBLE_KVM_GID=$(getent group kvm | cut -d: -f3)
-export CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:dev
-docker compose -f compose.yaml -f compose.kvm.yaml build
-docker compose -f compose.yaml -f compose.kvm.yaml run --rm \
-  -v /tmp/crumble-workspace.tar:/tmp/workspace.tar:ro \
-  crumble bun -e 'import { Image } from "microsandbox"; await Image.load("/tmp/workspace.tar", { tag: process.env.CRUMBLE_WORKSPACE_IMAGE })'
-docker compose -f compose.yaml -f compose.kvm.yaml up -d
-```
-
-The override grants access to `/dev/kvm` and the host's KVM group. It does not require privileged mode.
+On Linux with KVM workspaces, layer `compose.kvm.yaml` and pass `CRUMBLE_KVM_GID=$(getent group kvm | cut -d: -f3)` and `CRUMBLE_WORKSPACE_IMAGE`.
 
 ## Develop
 
 ```bash
-bun run check             # Lint, formatting, types, contract drift, and tests
-bun run format            # Format source and tests
-bun run openapi:generate  # Regenerate OpenAPI and three event JSON Schemas
-bun run contract:validate # Validate OpenAPI and JSON Schema offline
-bun run contract:compatibility # Compare with the latest stable contract release
-bun run contract:bundle   # Export a checksummed bundle after committing changes
+bun run check                  # Lint, format, typecheck, contract drift, and unit tests
+bun run format                 # Format source and tests
+bun run openapi:generate       # Regenerate OpenAPI and six SSE JSON Schemas
+bun run contract:validate      # Validate OpenAPI and JSON Schemas offline
+bun run contract:compatibility # Compare against the latest stable contract-vX.Y.Z release
+bun run contract:bundle        # Export a checksummed release bundle
 ```
 
-## API and docs
+## Documentation
 
-`/v1` endpoints require bearer authentication. `GET /health` is unauthenticated.
-
-- [OpenAPI contract](openapi/openapi.json): generated specification for client models and API clients.
-- [Contract releases](https://github.com/crumble-project/bot/releases?q=contract-v): independently versioned `contract-vX.Y.Z` bundles with event schemas, checksums, changelog, and source provenance.
-- [Contract maintenance](docs/api-contract.md): schema ownership, generation, and streaming conventions.
 - [Architecture](docs/architecture.md)
-- [Native push](docs/native-push.md)
-- [Feature parity](https://github.com/crumble-project/spec/blob/main/product/parity.md)
+- [API contract maintenance](docs/api-contract.md) and [generated OpenAPI spec](openapi/openapi.json)
+- [Native push notifications](docs/native-push.md)
+- [Bundled default skills](skills/README.md)
+- [Specifications and glossary](https://github.com/crumble-project/spec)
