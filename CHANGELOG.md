@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Link bare `https://…` and `<https://…>` addresses in bot replies in the web UI. Trailing punctuation stays outside the link, and addresses in code stay as written.
 - Keep a bot answering when one of its MCP servers can't connect, for example without a sign-in: that server's tools are left out of the turn instead of failing it, and Integrations shows why. A server without credentials now says it needs a sign-in or token, rather than that it rejected Crumble's credentials. Bots are told which MCP servers they have, by name with each server's tool prefix, and which were left out and why, since tool names carry only a server ID.
 - Sign in to MCP servers through an OAuth app the owner registered with the server's authorization server, for servers like GitHub's that accept neither dynamic registration nor client metadata documents. Set its client ID and secret on the MCP server; sign-in then uses them, sending the secret in the token request body. Changing either signs the server out, since its tokens belong to the old app.
 - Sign in to MCP servers whose authorization servers have no dynamic client registration but accept OAuth Client ID Metadata Documents. With the new `CRUMBLE_PUBLIC_URL` (the server's public https address), the server serves its document at `/oauth/client-metadata.json` and identifies itself with it when the authorization server advertises support. The "no dynamic client registration" error now says what to do.
