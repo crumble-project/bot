@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Give every bot the plainspeak voice guidance in its standing instructions on every chat and group turn. It was a default skill that bots saw only by name and rarely loaded, since no single task matches it. The `plainspeak` default skill is gone, and the bot identity no longer repeats its reply-style rules.
 - Give the web UI the bots' own look. Each bot's avatar color tints its chat: its replies, the composer, the send button, and its row in the sidebar; in group chats each reply takes its sender's color. Home shows every bot as a live avatar to open its chat, the content sits on an inset sheet beside the sidebar, Tasks and Memory head each bot's section with its avatar, and names and titles use the rounded system font where the browser has one (Safari).
 - Show the web UI's Tasks page as an agenda: upcoming tasks by the day they next run, each led by its time and its bot's avatar, then paused tasks. Monthly schedules read in words, and one-off tasks that already ran are hidden there and in a bot's details panel.
 - Draw the web UI's icons with Hugeicons instead of Lucide; `components.json` now sets `iconLibrary` to `hugeicons`, so shadcn components added later use them too.
