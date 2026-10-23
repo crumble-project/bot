@@ -50,6 +50,9 @@ import { ProviderCredentials } from "./provider-credentials";
 import { loginMethods, ProviderAuth } from "./provider-auth";
 import type { CommonSkill } from "./common-skills";
 import {
+  CLIENT_DOCUMENT_PATH,
+  type ClientDocument,
+  clientDocumentBody,
   finishAuthorization,
   hasOAuthTokens,
   signOut,
@@ -87,6 +90,8 @@ export function createAPI(
     openDesktop?: (agentId: string) => Promise<DesktopStream>;
     /** The server's provider sign-ins; API-only fixtures get one of their own. */
     providerAuth?: ProviderAuth;
+    /** The server's OAuth client metadata document, when it has a public address. */
+    oauthClient?: ClientDocument;
   } = {},
   push?: PushManager,
 ) {
@@ -129,6 +134,14 @@ export function createAPI(
   );
   register(routes.health, (c) =>
     c.json({ status: "ok", apiVersion: 1 } as const, 200),
+  );
+  // Public like /health: authorization servers fetch it to identify Crumble as an OAuth client.
+  app.get(CLIENT_DOCUMENT_PATH, (c) =>
+    options.oauthClient
+      ? c.json(clientDocumentBody(options.oauthClient), 200, {
+          "Cache-Control": "public, max-age=3600",
+        })
+      : c.notFound(),
   );
   app.use("/v1/*", bearerAuth({ token }));
   app.onError((error, c) => {
@@ -940,6 +953,7 @@ export function createAPI(
         store,
         mcpServer(c.req.param("id")),
         redirectUri,
+        options.oauthClient,
       ),
       200,
     );
@@ -948,7 +962,14 @@ export function createAPI(
     const { code, state, iss } = oauthCallbackInput.parse(await c.req.json());
 
     const server = mcpServer(c.req.param("id"));
-    await finishAuthorization(store, server, code, state, iss);
+    await finishAuthorization(
+      store,
+      server,
+      code,
+      state,
+      iss,
+      options.oauthClient,
+    );
     await integrations?.disconnect(server.id);
 
     return c.json(describeServer(server), 200);
