@@ -31,6 +31,7 @@ export const GroupConversation = defineDoc<{ groupId: string | null }>({
   history: "latest",
   fork: "initial",
   initial: () => ({ groupId: null }),
+  checkpointWhen: () => false,
 });
 
 // Owns a member's group conversation, so it outlives the bot chat's turns and Esc, like a coding job's anchor.
