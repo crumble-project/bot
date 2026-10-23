@@ -30,6 +30,7 @@ import type {
 import { memorySource } from "./domain";
 import { z } from "zod";
 import type { AttachmentInput } from "./attachments";
+import type { Credential, CredentialInfo } from "@earendil-works/pi-ai";
 
 /** Owner messages, by entry number, whose first bot answer has not notified, with the bots they woke. */
 const awaitingAnswers = z.record(z.string(), z.array(z.string()));
@@ -43,6 +44,27 @@ type SettingRow = { value: string };
 type SettingsEntryRow = { key: string; value: string };
 
 type CredentialRow = { value: string };
+
+type ProviderCredentialInfoRow = { provider: string; type: Credential["type"] };
+
+/** Typed provider credentials keep provider-specific fields such as account IDs and enterprise URLs. */
+const providerCredential = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("api_key"),
+      key: z.string().optional(),
+      env: z.record(z.string(), z.string()).optional(),
+    })
+    .loose(),
+  z
+    .object({
+      type: z.literal("oauth"),
+      refresh: z.string(),
+      access: z.string(),
+      expires: z.number(),
+    })
+    .loose(),
+]);
 
 type KeyRow = { key: string };
 
@@ -104,7 +126,11 @@ export class Store {
       Number(
         // SAFETY: SQLite returns the selected COUNT(*) row with the declared `n` column.
         (
-          this.db.query("SELECT COUNT(*) AS n FROM credentials").get() as {
+          this.db
+            .query(
+              "SELECT (SELECT COUNT(*) FROM credentials) + (SELECT COUNT(*) FROM provider_credentials) AS n",
+            )
+            .get() as {
             n: number;
           }
         ).n,
@@ -134,6 +160,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS executions (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, schedule_id TEXT REFERENCES schedules(id) ON DELETE SET NULL, submission_id TEXT, request_id TEXT NOT NULL, prompt TEXT, reply_to TEXT, status TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS credentials (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS provider_credentials (provider TEXT PRIMARY KEY, type TEXT NOT NULL CHECK (type IN ('api_key', 'oauth')), value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS mcp_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, enabled INTEGER NOT NULL, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE);
       CREATE TABLE IF NOT EXISTS group_chats (id TEXT PRIMARY KEY, name TEXT NOT NULL, bot_turns INTEGER NOT NULL DEFAULT 0, paused INTEGER NOT NULL DEFAULT 0, awaiting_answers TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS group_members (group_id TEXT NOT NULL REFERENCES group_chats(id) ON DELETE CASCADE, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, joined_at TEXT NOT NULL, conversation_id TEXT, cursor INTEGER NOT NULL DEFAULT 0, pending INTEGER NOT NULL DEFAULT 0, pending_bot_started INTEGER NOT NULL DEFAULT 0, summary TEXT, PRIMARY KEY (group_id, agent_id));
@@ -829,32 +856,19 @@ export class Store {
 
     return out;
   }
-  setCredential(key: string, value: string) {
+  private encrypt(value: string) {
     const iv = randomBytes(12),
       c = createCipheriv("aes-256-gcm", this.key, iv);
 
     const data = Buffer.concat([c.update(value, "utf8"), c.final()]);
 
-    const packed = [iv, c.getAuthTag(), data]
+    return [iv, c.getAuthTag(), data]
       .map((x) => x.toString("base64"))
       .join(":");
-
-    this.db
-      .query(
-        "INSERT INTO credentials(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-      )
-      .run(key, packed);
   }
-  getCredential(key: string) {
-    // SAFETY: The query selects the encrypted credential value by its known `value` column.
-    const r = this.db
-      .query("SELECT value FROM credentials WHERE key=?")
-      .get(key) as CredentialRow | null;
-
-    if (!r) return undefined;
-
-    // SAFETY: setCredential always stores exactly three base64 segments: IV, auth tag, and ciphertext.
-    const [iv, tag, data] = r.value
+  private decrypt(packed: string) {
+    // SAFETY: encrypt always stores exactly three base64 segments: IV, auth tag, and ciphertext.
+    const [iv, tag, data] = packed
       .split(":")
       .map((x: string) => Buffer.from(x, "base64")) as [Buffer, Buffer, Buffer];
 
@@ -862,6 +876,21 @@ export class Store {
     d.setAuthTag(tag);
 
     return Buffer.concat([d.update(data), d.final()]).toString("utf8");
+  }
+  setCredential(key: string, value: string) {
+    this.db
+      .query(
+        "INSERT INTO credentials(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+      )
+      .run(key, this.encrypt(value));
+  }
+  getCredential(key: string) {
+    // SAFETY: The query selects the encrypted credential value by its known `value` column.
+    const r = this.db
+      .query("SELECT value FROM credentials WHERE key=?")
+      .get(key) as CredentialRow | null;
+
+    return r ? this.decrypt(r.value) : undefined;
   }
   deleteCredential(key: string) {
     return (
@@ -875,6 +904,61 @@ export class Store {
       .all() as KeyRow[];
 
     return rows.map((r) => r.key);
+  }
+
+  getProviderCredential(providerId: string): Credential | undefined {
+    // SAFETY: The query selects the encrypted credential value by its known `value` column.
+    const r = this.db
+      .query("SELECT value FROM provider_credentials WHERE provider=?")
+      .get(providerId) as CredentialRow | null;
+
+    return r
+      ? providerCredential.parse(JSON.parse(this.decrypt(r.value)))
+      : undefined;
+  }
+  setProviderCredential(providerId: string, credential: Credential) {
+    const typed = providerCredential.parse(credential);
+
+    this.db
+      .query(
+        "INSERT INTO provider_credentials(provider,type,value) VALUES(?,?,?) ON CONFLICT(provider) DO UPDATE SET type=excluded.type, value=excluded.value",
+      )
+      .run(providerId, typed.type, this.encrypt(JSON.stringify(typed)));
+  }
+  deleteProviderCredential(providerId: string) {
+    return (
+      this.db
+        .query("DELETE FROM provider_credentials WHERE provider=?")
+        .run(providerId).changes > 0
+    );
+  }
+  /** Metadata only: listing never decrypts a credential. */
+  listProviderCredentials(): CredentialInfo[] {
+    // SAFETY: The query selects exactly the `provider` and constrained `type` columns.
+    const rows = this.db
+      .query("SELECT provider,type FROM provider_credentials ORDER BY provider")
+      .all() as ProviderCredentialInfoRow[];
+
+    return rows.map((r) => ({ providerId: r.provider, type: r.type }));
+  }
+  /** Moves API keys saved before typed credentials into the provider table; MCP keys never match a provider ID. */
+  migrateProviderCredentials(providerIds: readonly string[]) {
+    this.db.transaction(() => {
+      for (const providerId of providerIds) {
+        const key = this.getCredential(providerId);
+
+        if (key === undefined) continue;
+
+        if (!this.getProviderCredentialRow(providerId))
+          this.setProviderCredential(providerId, { type: "api_key", key });
+        this.deleteCredential(providerId);
+      }
+    })();
+  }
+  private getProviderCredentialRow(providerId: string) {
+    return this.db
+      .query("SELECT 1 FROM provider_credentials WHERE provider=?")
+      .get(providerId);
   }
 
   private mcpServer(r: any): MCPServer {

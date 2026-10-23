@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add provider account sign-in through Pi AI, such as ChatGPT, Codex, Claude, and GitHub Copilot ([feature 0004](https://github.com/crumble-project/spec/blob/main/features/0004-provider-account-login.md)). Clients start a sign-in session on the server and relay its steps: links, device codes, and text, secret, selection, and pasted-code prompts. Sessions end after 10 minutes without an answer, 30 minutes in total, or a server restart. Provider credentials are now typed and encrypted in a new `provider_credentials` table; saved API keys move there on startup, so back up the data directory before upgrading. Pi AI refreshes account tokens; the server serializes refreshes, sign-ins, key changes, and sign-out per provider. One credential store and model catalog now serve the API and every bot. `GET /v1/models` lists only models the saved or ambient credential can use.
+
 - Add `history_search` and `history_read` model tools for searching original message text and reading surrounding messages after compaction. Bot chats can retrieve their own messages and current groups; group turns can retrieve only their shared group messages. Results are bounded, reuse a fixed search cutoff, and recheck current access. Existing group lookup and the public HTTP contract are unchanged. Indexing is deferred.
 
 - Start the bot desktop's Chromium without the "Restore pages?" bubble. Stopping the machine kills Chromium, so it offered to restore pages after every boot, in front of the owner and the desktop job. Needs a rebuilt desktop image.
@@ -44,6 +46,12 @@
 - Add the generated OpenAPI 3.1 contract at `openapi/openapi.json` for all 49 HTTP endpoints, including authentication and event payload schemas.
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
+
+## Contract 1.7.0
+
+- Add `POST /v1/providers/{provider}/login`, `GET` and `DELETE /v1/provider-logins/{id}`, and `POST /v1/provider-logins/{id}/responses` with the `ProviderLoginSession`, `ProviderLoginPrompt`, and `ProviderLoginEvent` schemas. Unknown or expired sessions, including those lost on restart, return 410.
+- Add `authMethods`, `credentialType`, and `activeLoginId` to `Provider`.
+- `DELETE /v1/providers/{provider}` now removes an account sign-in as well as an API key. Clients that only set API keys keep working unchanged.
 
 ## Contract 1.6.0
 

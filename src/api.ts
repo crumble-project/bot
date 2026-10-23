@@ -10,6 +10,8 @@ import {
   pushInput,
   presenceInput,
   providerKeyInput,
+  providerLoginInput,
+  providerLoginAnswerInput,
   oauthInput,
   oauthCallbackInput,
   mcpInput,
@@ -43,7 +45,9 @@ import type { ChatPreviewActivity, ReplyActivity } from "./service";
 import type { Scheduler } from "./scheduler";
 import type { GroupChats } from "./group-chats";
 import type { MCPIntegrations } from "./integrations";
-import { providerModels } from "./runtime";
+import { providerModels } from "./providers";
+import { ProviderCredentials } from "./provider-credentials";
+import { loginMethods, ProviderAuth } from "./provider-auth";
 import type { CommonSkill } from "./common-skills";
 import {
   finishAuthorization,
@@ -59,12 +63,6 @@ import {
   type PushManager,
   type PushDeviceInput,
 } from "./push";
-
-const catalog = providerModels();
-
-const provider = z
-  .string()
-  .refine((value) => Boolean(catalog.getProvider(value)), "Unknown provider");
 
 export function createAPI(
   service: CrumbleService,
@@ -87,6 +85,8 @@ export function createAPI(
     viewerTickets?: ViewerTickets;
     /** Connects to a bot desktop's VNC server, for viewers. */
     openDesktop?: (agentId: string) => Promise<DesktopStream>;
+    /** The server's provider sign-ins; API-only fixtures get one of their own. */
+    providerAuth?: ProviderAuth;
   } = {},
   push?: PushManager,
 ) {
@@ -94,6 +94,20 @@ export function createAPI(
     throw new Error("Server token must contain at least 32 characters");
   const { store, runtime } = service;
   const app = contractApp();
+
+  const providerAuth =
+    options.providerAuth ??
+    (() => {
+      const credentials = new ProviderCredentials(store);
+
+      return new ProviderAuth(store, credentials, providerModels(credentials));
+    })();
+
+  const models = providerAuth.models;
+
+  const provider = z
+    .string()
+    .refine((value) => Boolean(models.getProvider(value)), "Unknown provider");
 
   const register = <R extends RouteConfig>(
     definition: R & { getRoutingPath: () => string },
@@ -797,30 +811,40 @@ export function createAPI(
     return c.json(feed, 200);
   });
 
-  const authenticatedModels = providerModels((name) =>
-    store.getCredential(name),
-  );
+  register(routes.providers, async (c) => {
+    const saved = new Map(
+      store
+        .listProviderCredentials()
+        .map((info) => [info.providerId, info.type]),
+    );
 
-  register(routes.providers, async (c) =>
-    c.json(
+    return c.json(
       await Promise.all(
-        catalog.getProviders().map(async (item) => ({
+        models.getProviders().map(async (item) => ({
           provider: item.id,
           name: item.name,
           configured: Boolean(
-            await authenticatedModels.checkAuth(item.id).catch(() => undefined),
+            await models.checkAuth(item.id).catch(() => undefined),
           ),
+          authMethods: loginMethods(item),
+          credentialType: saved.get(item.id) ?? null,
+          activeLoginId: providerAuth.activeLoginId(item.id),
         })),
       ),
       200,
-    ),
-  );
+    );
+  });
 
-  // Dynamic providers list their models only after a refresh with the saved key.
-  const refreshed = async (name: string | undefined) => {
-    await authenticatedModels.refresh(name ? { providers: [name] } : {});
+  // Dynamic providers list their models only after a refresh with the saved credential.
+  const available = async (name: string | undefined) => {
+    await models.refresh(name ? { providers: [name] } : {});
 
-    return authenticatedModels.getModels(name);
+    try {
+      return await models.getAvailable(name);
+    } catch {
+      // Pi AI errors can carry provider responses; keep them out of logs and clients.
+      throw new AppError(503, "Provider credentials could not be read");
+    }
   };
 
   register(routes.models, async (c) => {
@@ -829,7 +853,7 @@ export function createAPI(
     if (name) provider.parse(name);
 
     return c.json(
-      (await refreshed(name)).map((model) => ({
+      (await available(name)).map((model) => ({
         provider: model.provider,
         id: model.id,
         name: model.name,
@@ -844,15 +868,44 @@ export function createAPI(
 
     const input = providerKeyInput.parse(await c.req.json());
 
-    store.setCredential(name, input.apiKey);
+    await providerAuth.setApiKey(name, input.apiKey);
 
     return c.json({ provider: name, configured: true }, 200);
   });
-  register(routes.deleteProvider, (c) => {
-    store.deleteCredential(provider.parse(c.req.param("provider")));
+  register(routes.deleteProvider, async (c) => {
+    await providerAuth.signOut(provider.parse(c.req.param("provider")));
 
     return c.body(null, 204);
   });
+  register(routes.startProviderLogin, async (c) => {
+    const name = c.req.param("provider");
+
+    if (!models.getProvider(name)) throw new AppError(404, "Unknown provider");
+    const input = providerLoginInput.parse(await c.req.json());
+
+    return c.json(providerAuth.start(name, input.method), 202);
+  });
+  register(routes.getProviderLogin, (c) =>
+    c.json(providerAuth.get(c.req.param("id")), 200),
+  );
+  register(routes.answerProviderLogin, async (c) => {
+    const input = providerLoginAnswerInput.safeParse(await c.req.json());
+
+    // Answers can be secrets or callback URLs; never echo them in validation details.
+    if (!input.success) throw new AppError(400, "Invalid answer");
+
+    return c.json(
+      providerAuth.answer(
+        c.req.param("id"),
+        input.data.promptId,
+        input.data.value,
+      ),
+      200,
+    );
+  });
+  register(routes.cancelProviderLogin, (c) =>
+    c.json(providerAuth.cancel(c.req.param("id")), 200),
+  );
 
   const describeServer = (server: MCPServer) => {
     const auth = hasOAuthTokens(store, server.id)
