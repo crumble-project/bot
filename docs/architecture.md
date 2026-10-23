@@ -1,112 +1,61 @@
-# Crumble architecture and delivery
+# Crumble server architecture
 
-Crumble is a single-owner, self-hosted personal agent server and an independent macOS application. The authenticated HTTP API is versioned under `/v1`. The desktop never imports server implementation code.
+Crumble is a single-owner, self-hosted personal agent server with an authenticated `/v1` HTTP and SSE API, a bundled web UI (`/ui`), and native macOS, iOS, and Android clients.
 
-## Boundaries
+```mermaid
+flowchart TD
+  Clients["Clients\nWeb UI (/ui) · macOS · iOS · Android"] --> API["Hono HTTP & SSE API (/v1)"]
+  API --> Service["CrumbleService & AgentRuntime"]
+  Service --> Store["Product SQLite (store.ts)\nAgents, groups, skills, memories,\nschedules, credentials, changes"]
+  Service --> Pi["Pi Durable SQLite Stores\nPer-bot & per-group transcripts,\ncoding/desktop jobs, reviews"]
+  Pi --> Workspaces["MicrosandboxWorkspaces\nPer-bot Linux microVM +\nHTTP CONNECT proxy & Xvnc"]
+```
 
-- Product metadata lives in a SQLite database: agent profiles, the canonical chat record per bot, memory, schedules, execution history, integrations, and settings.
-- Each agent owns a separate Pi Durable SQLite database. Pi owns conversation entries, model requests, tool calls, checkpoints, cancellation, retries, and stream state. Product code does not recreate its agent loop.
-- Providers run on the server. Credentials are encrypted at rest using an installation key with owner-only permissions. Backups must include the key; encryption does not protect against a compromised server account.
-- Pi AI owns provider sign-in, token refresh, and request auth. `ProviderCredentials` implements its credential store over typed, encrypted rows and serializes every mutation per provider in this process, which the data-directory lock makes the only writer. One instance and one `Models` collection serve the API and every bot runtime, so concurrent requests refresh a token once.
-- `ProviderAuth` relays sign-in steps to clients through in-memory sessions. It writes a completed sign-in only if the session is still current when its turn in the credential queue comes, so cancellation, key replacement, and sign-out cannot be undone by a late result. Provider exceptions never reach clients or logs; they can contain token responses.
-- The API requires a bearer token, including for streams. The server binds loopback by default. Remote deployments require TLS through a trusted reverse proxy.
-- An agent's enabled tools and MCP servers are explicit capabilities. No general host shell or unrestricted filesystem access is implied by an agent's instructions.
-- One server process owns the data directory. Clients can reconnect and retrieve committed state without owning execution.
+## Core boundaries
 
-## Bot messaging
+- **Product store (`store.ts`) vs. Pi Durable (`runtime.ts`):** Product SQLite stores agent profiles, canonical chat references, group chats, memories, skill packages, learned-change logs, schedules, MCP servers, and encrypted credentials. Each bot owns a separate Pi Durable SQLite store that manages conversation entries, model calls, tool execution, compaction, and retries.
+- **Provider credentials (`provider-auth.ts`):** Encrypted at rest using `.secret.key`. Pi AI owns interactive sign-in, token refresh, and request authentication; `ProviderCredentials` serializes logins, refreshes, key updates, and sign-outs per provider across the server.
+- **MCP integrations:** Bots load tools only from enabled, permitted MCP servers. Unreachable or unauthenticated MCP servers are skipped for the turn with their error surfaced in status. OAuth supports dynamic client registration, Client ID Metadata Documents (`CRUMBLE_PUBLIC_URL`), and owner-registered OAuth client credentials.
+- **Bundled web UI (`web/`):** React, TanStack Router, TanStack Query, Tailwind CSS, and shadcn/ui served at `/ui` and bundled on demand by Bun.
 
-`BotMessaging` is the seam for communication between bots. Its interface has three operations: list permitted recipients, send a message with a stable request ID, and retrieve its result with an optional bounded wait. It owns exact-name resolution, ambiguity errors, current permissions, capacity limits, receipt ownership, and replay deduplication. `coordinationExtension` adapts this interface into model tools; it contains no dispatch policy.
+## Bot messaging and schedules
 
-Messages use the existing `CrumbleService.send` execution transport and the recipient's continuous chat. `ask_bot` waits on the durable submission, with a caller cancellation context and a 60-second limit. Cancelling the caller stops its waiter; the recipient's already admitted work continues. A timeout returns a pending receipt for a later check. Existing `delegate` and `delegation_status` tools use the same messaging module. Bot requests cannot initiate another delegation, preventing cycles between waiting bots.
+- **`BotMessaging` (`bot-messaging.ts`):** Exposes `ask_bot`, `delegate`, and `delegation_status` model tools over `CrumbleService.send`. Enforces per-bot permission allowlists, exact-name resolution, request-ID deduplication, and a one-hop delegation rule to prevent cycles. Sent messages and terminal replies are recorded as data-only transcript entries for client exchange cards.
+- **`BotSchedules` (`schedules.ts`):** One-time and cron tasks targeting a bot's continuous chat. Bots with the `schedule` capability can manage tasks targeting themselves or bots they are permitted to message.
 
-Only the message and sender identity enter the recipient's model context. Only the completed response to that execution returns to the sender. Per-bot permission lists remain authoritative at dispatch and result access. A name collision requires an explicit bot ID rather than guessing.
+## Inline visuals and reactions
 
-Source chats store sent messages and observed terminal replies as data-only Pi transcript entries. These writes use stable request IDs, survive reconnects, and do not start extra model turns. The desktop renders them as bot communication cards with explicit sender, recipient, and status. The recipient's chat marks the incoming message with the sender's identity. Delivery is not a separate inbox or a second conversation system.
+- **`show` (`display.ts`, `charts.ts`):** Model-only tool that validates `stats`, `table`, or `chart` payloads, attaches them as `toolDetails`, and terminates the turn. Charts use TanStack Charts code compiled inside a zero-I/O QuickJS sandbox into themed drawing primitives (`chartLayout`).
+- **`react` (`reaction.ts`):** Attaches a single emoji to the latest input message and terminates the turn without emitting a reply notification.
 
-## Bot schedules
+## Workspaces, coding jobs, and desktop jobs
 
-`BotSchedules` lets a bot list, create, update, delete, and run tasks. Every schedule targets one bot (`agentId`): the bot whose chat runs the prompt. The owner API and the desktop task form set that target explicitly. A bot with the `schedule` capability can target itself, or a bot it is allowed to message. It can change tasks that run on it and tasks it created. Owner-created tasks have no creator bot. `scheduleExtension` is the model tool; the scheduler still owns cron validation, next-run times, and dispatch.
+`jobs.ts` (`defineJobKind`) powers both **coding jobs** (`coding.ts`) and **desktop jobs** (`desktop.ts`) as child conversations in the bot's Pi store owned by background anchor and reporter tasks:
 
-## Inline visuals
-
-`displayExtension` gives every bot the `show` tool. It validates one component (`stats`, `table`, or `chart`) and returns it as the tool result's `details`, which the transcript exposes as `toolDetails`. Clients render successful `show` results inline in chat; other tool results stay hidden. The tool is model-only (`callers: ["model"]`), so code mode offers it beside the code mode tool instead of to scripts. A successful `show` ends the turn (`control: { terminate: true }`), so the bot writes any text before the call and sends no message after the visual.
-
-## Reactions
-
-`reactionExtension` gives every bot the `react` tool. It takes exactly one emoji, returns it as the tool result's `details`, and ends the turn, so a message that needs no answer gets an acknowledgement instead of a reply. A reaction belongs to the latest input before it; clients attach it to that message and hide the result row. A reaction-only turn updates the chat preview ("Reacted 👍") but emits no `reply` activity, so it sends no notification. A bot that asked the reacting bot receives "Reacted 👍" as the response.
-
-A `chart` is [TanStack Charts](https://tanstack.com/charts) code in the module form of its docs. `ChartCompiler` (`charts.ts`) strips TypeScript, rewrites imports from the bundled packages, and runs the code in a QuickJS sandbox with no I/O. Inside, `chart-runtime.ts` (built once with `Bun.build`) compiles the definition at each of `CHART_WIDTHS` and flattens the scene into absolute drawing primitives: lines, paths of M/L/Q/C/Z commands, circles, rectangles, and text, with inherited paint and clip rectangles resolved. Each hover point carries its finished tooltip. The `chartLayout` zod schema validates that output and resolves CSS colors to theme tokens (`foreground`, `background`, `series-1` to `series-8`) or hex, so clients only draw and pick colors for their appearance. Upgrading `@tanstack/charts` changes no client: `test/charts.test.ts` guards the compile path, and `chart_docs` serves the installed package's docs.
-
-## Coding jobs
-
-`codingExtensions` gives a bot with the `coding` capability the `coding` tool: start, message, stop, and check named coding jobs. A job is a child conversation of the bot's chat, built on Pi Durable's background subagent pattern. A background anchor task owns it, so it outlives the bot's turn and cancellation. For each message, a background reporter task delivers it and posts the job's answer back to the chat as a follow-up input. The answer is a `crumble.message` with origin `coding`. A successful start or send returns the job in `details` and ends the bot's turn (`control: { terminate: true }`), as `show` does, so clients render a job card instead of a message describing the job. Request IDs and a per-job record of reported answers keep a restart from delivering or reporting twice.
-
-A job selects only the `coding-job` extension: Pi's `read`, `write`, `edit`, and `bash` tools. It has no memory, delegation, scheduling, integrations, or job tool of its own. That extension is installed through `taskExtensions`, so the chat is never offered it. `codingEnv` gives an execution environment only to conversations marked as jobs. The bot's chat has none, so no shell is reachable from it.
-
-Clients read jobs through `GET /v1/agents/{id}/coding-jobs` (name, public conversation ID, and working or idle status, oldest job first) and `GET /v1/agents/{id}/coding-jobs/{name}/history`, which pages one job's transcript newest-first like chat history. `GET /v1/capabilities` tells them whether the server has a `Workspaces` (`workspace.ts`) is the seam between jobs and the machine they run on. `MicrosandboxWorkspaces` implements it with one Microsandbox microVM per bot (libkrun: HVF on macOS, KVM on Linux):
-
-- The guest boots from an OCI image. The bot's files live on a named disk volume, `crumble-<bot id>`, mounted at `/workspace`. The volume is ext4 with a journal and outlives the sandbox, so changing the image keeps the files; everything outside `/workspace` is reset when the machine is replaced. A boot restarts the bot's existing machine instead of replacing it, so programs installed outside `/workspace` survive idle stops and server restarts; a machine left running by a server that died is stopped and started again. The machine records its image and proxy port in `/etc/crumble-workspace.json`, because its network settings are fixed at creation: the server starts the bot's proxy at that port again. A boot replaces the machine when its image changed, it does not start, or its proxy port is taken.
-- Pi's file and shell operations run through pi-env's daemon inside the guest. Only the process that owns a sandbox can run commands in it, so pi-env's `Connection` starts `workspace-bridge.ts`, which relays the protocol over a Unix socket to that process.
-- A sandbox stops when the process that created it dies. The next boot stops it if it still runs and starts it again by name.
-- A killed machine loses guest writes that were not synced. Jobs therefore sync after every `write`, `edit`, and `bash` call, and a machine always syncs before it stops.
-- All outbound TCP goes through a per-workspace HTTP CONNECT proxy (`workspace-proxy.ts`). Microsandbox refuses private address ranges before the proxy and sends it only an IP, so the proxy reads the host from the TLS server name or the HTTP `Host` header, refuses traffic without one (such as SSH), resolves the name itself to a public address, and asks the `WorkspaceNetworkPolicy`. The connection waits while the policy decides. The default, `allowAllRequests`, trusts the whole internet; an owner-approval flow can replace it without changing the VM code. Because the proxy connects by name, a forged server name only reaches the host it names. DNS queries still leave through Microsandbox's resolver.
-
-Gondolin (QEMU) backed this seam first and was replaced: it needed a hand-built image without git, did not kill guest processes on abort, tied each disk to the image it was created from, and its host-directory mounts were 70 to 160 times slower and lost entries during `rm -rf`. Host-directory mounts are not used here either; Microsandbox's are 15 to 50 times slower than its disk volumes.
-
-## Desktop jobs
-
-Coding and desktop jobs are two kinds of the same job machinery (`jobs.ts`): `defineJobKind` gives each kind its marker and jobs documents, anchor and reporter tasks, job tool, listing, and environment. A kind's names are part of its stored data, so the coding kind keeps the names it had before the split.
-
-`desktopExtensions` gives a bot with the `desktop` tool desktop jobs: start, message, stop, and check named jobs that operate its bot desktop. A desktop job selects only the `desktop-job` extension, whose one tool is `computer_use` (`computer-use.ts`, ported from Hermes Agent). The tool reads the focused window's accessibility tree through cua-driver in the guest, as Markdown with numbered elements and then as diffs, and sends input by element or coordinate. It tries background delivery first and retries in the foreground when cua-driver reports that background delivery is unavailable: GTK apps need background accessibility actions, and Chromium needs foreground keyboard input. Screenshots are taken only when the job asks, under file names unique to each call, and attached only when their JPEG conversion succeeded; both files are removed afterwards. cua-driver's replies are parsed once with a schema. Placeholder arguments some models send for unused fields (`0`, `""`, `[0, 0]`) count as unset.
-
-The kind is exclusive: one desktop job works on a bot desktop at a time. A reporter's first phase takes the kind's `holder` in the same commit that checks it, and the job's answer or an abort releases it, so two waiting deliveries cannot both pass. Each job records its pending deliveries, waiting or submitting, and counts as working while it has any. Admission checks the job's stop count and marks the delivery as submitting in one commit. Stopping a job increments the count, waits for submitting deliveries to finish, and only then aborts the job, so work is either never submitted or submitted before the abort that cancels it; a waiting delivery created before the latest stop ends without delivering. Coding jobs use this too.
-
-A desktop job runs on the bot's `desktopModel` when it is set, through the job conversation's own model setting, and on the bot's model otherwise. `desktopEnv` gives desktop job conversations the bot's workspace environment, like `codingEnv`. Group turns get neither kind.
-
-`MicrosandboxWorkspaces` boots `CRUMBLE_WORKSPACE_DESKTOP_IMAGE` instead of the base image for a bot with the `desktop` tool, and runs `/opt/crumble/desktop-start.sh` from the host after boot. The desktop session is started there, not through pi-env, because pi-env's daemon kills every process it started when its connection closes. Adding or removing the `desktop` tool stops the bot's machine; its next use boots the other image and replaces the machine, keeping `/workspace`.
-
-Job listings carry each job's `usage`: Pi Durable's usage document for the job's own conversation, which the bot chat's snapshot does not include. Clients read desktop jobs through `GET /v1/agents/{id}/desktop-jobs` and `GET /v1/agents/{id}/desktop-jobs/{name}/history`, shaped like the coding job routes, and `GET /v1/capabilities` reports `desktop`.
-
-A job's reporter waits for the bot's answer to the report and announces it once through its kind's `onAnswer` listeners; the server turns each into a `reply` activity (origin `coding` or `desktop`, with `jobName`) through `CrumbleService.announceJobAnswer`. Job reports reach the chat without an execution, so the execution-based reply announcements never covered them.
-
-### Watching and taking control
-
-`DesktopControl` (`desktop-control.ts`) is each bot desktop's control lease: who holds it, `bot` or `owner`, and how often it changed hands, stored in the `desktop_control` table so it survives restarts. `computer_use` waits for the bot's turn before every call; when the change count differs from the one it saw last, it drops its snapshots and refuses anything but a look (`capture`, `list_windows`, `wait`) until the job captures again. `desktop.ts` keeps one `computer_use` tool per bot, because the runtime rebuilds a bot's extensions whenever it reconfigures the bot, and a running job must keep what it saw.
-
-The viewer is a server-hosted noVNC page (`desktop-viewer.ts`, `desktop-api.ts`) at `/desktop-viewer/{ticket}`, outside `/v1` because a web view cannot add the bearer token to a WebSocket. The owner gets the link from `POST /v1/agents/{id}/desktop/viewer`; the ticket is valid for a minute and spent when its WebSocket at `/desktop-viewer/{ticket}/websockify` connects. The WebSocket is bridged to Xvnc in the guest through `socat` on an exec stream (`Workspaces.openDesktop`), so the bot desktop exposes no port. `rfb-filter.ts` parses the viewer's RFB messages, including noVNC's extended clipboard with its negative length and QEMU key events, and drops keyboard, pointer, clipboard, resize, and power messages unless the owner holds control; an unknown message closes the connection. Only noVNC's `core/` and `vendor/` files are served.
-
-An open viewer stream holds its machine awake, and the server holds the machine of every bot whose lease the owner holds (`Workspaces.keepAwake`), also after a restart.
+- **Coding jobs (`coding` tool):** Run `read`, `write`, `edit`, and `bash` via `pi-env` inside the bot's Microsandbox microVM (`MicrosandboxWorkspaces`), backed by a persistent ext4 volume (`crumble-<bot id>`) mounted at `/workspace` and filtered by a per-workspace HTTP CONNECT proxy (`workspace-proxy.ts`).
+- **Desktop jobs (`desktop` tool):** Boot `CRUMBLE_WORKSPACE_DESKTOP_IMAGE` (adding Xvnc, Openbox, tint2, Chromium, and `cua-driver`) and run exclusively one job at a time on `desktopModel` (or the bot's model) using the `computer_use` tool (accessibility tree first, screenshots as fallback).
+- **Watching and taking control (`desktop-control.ts`, `desktop-viewer.ts`, `rfb-filter.ts`):** `POST /v1/agents/{id}/desktop/viewer` issues a single-use ticket for a server-hosted noVNC viewer bridged to the guest's Xvnc over an exec stream. The RFB filter drops pointer, keyboard, and clipboard events unless the owner holds the persistent control lease (`PUT /v1/agents/{id}/desktop/control`). While the owner holds control, `computer_use` pauses; when control returns, stale snapshots are discarded and the job must capture the screen first.
 
 ## Group chats
 
-`GroupChats` (`group-chats.ts`) owns group chats between the owner and two to six bots: validation, membership, and change notifications for the event stream. Groups and their members are rows in the product database; deleting a bot removes it from its groups. Each group's shared transcript is its own Pi Durable store, `groups/<group id>.sqlite`, managed by `GroupTranscripts`. The store holds only `crumble.group-message` data entries and never calls a model. Each entry records its sender, so the transcript reader shows the owner's messages as `user` and a bot's as `assistant`, with `origin` naming the bot. Writes carry the client's request ID, which Pi deduplicates; a reused ID with different content is rejected. Group snapshot events have their own exported schema, `group-chat-snapshot.schema.json`. See [ADR 0002](adr/0002-group-chats.md) for the design.
+`GroupChats` (`group-chats.ts`, [ADR 0002](adr/0002-group-chats.md)) manages conversations between the owner and 2–6 bots:
 
-Bots answer in turns. `GroupChats` routes each message: an owner message wakes the members it mentions (parsed by `group-mentions.ts`), or every enabled member; a bot's answer wakes only the members it mentions; a reply wakes the bot it answers. A member's first turn opens its group conversation (`group-turns.ts`): a conversation in the bot's own Pi store owned by a background anchor task of its chat, so it stays out of the bot chat transcript. The runtime configures it without the coordination and coding extensions, with group instructions and the `pass` tool. A turn is an execution in that conversation; its input is every group message the member has not seen, and its request ID is derived from the member's cursor, so a retry reuses it. `CrumbleService.onSettled` reports the settled execution, and `GroupChats` posts its final answer or reaction with a request ID derived from the execution, then advances the member's cursor. Turn rows, cursors, pending wakes, and the bot-started turn count live in the product database. Owner posts store the message and pending wakes before returning the existing receipt, without waiting for bot startup. One in-memory queue per group serializes turn startup and settlement. Posts record pending wakes outside that queue, so an earlier slow startup cannot delay confirmation. A startup clears its pending wake only if no newer wake arrived while it was starting. At startup `GroupChats.recover()` finishes turns that settled or were posting when the server stopped, then starts waiting ones.
-
-A member added after the group's first message gets a summary on its first turn since joining: `AgentRuntime.summarize` asks the bot's own model once, outside the group's queue and with a timeout, while the member waits as queued. The result is stored on the membership, so a retried turn sends the same input. The owner's attachments are stored in the transcript entry with their metadata; a turn passes those of its unseen messages to the execution, leaving images out by name for models that cannot read them. Each owner message remembers the bots it woke; a bot's group message notifies the owner when it is the first answer from one of them to a message its turn saw, or when it mentions `@owner`. A retried owner post neither resumes paused bots nor re-arms its notification: `GroupChats` calls `CrumbleService.announce` with a reply event carrying `groupId`, keyed by the turn's execution, so push delivery deduplicates a retried post.
-
-Every memory records its source. The memory tool passes where it runs to the server's memory callbacks: the group of a group conversation, or the input submissions of the chat's active run. `memorySourceOf` resolves the newest submission to its execution, and from there to a scheduled task, another bot's request, or the owner's chat; memories the owner writes through the API are `owner`. A group turn cannot create, change, or delete shared memories. Bot chats get the `group_chats` tool (`group-lookup.ts`), which lists the bot's groups and pages through their transcripts through `GroupChats`; group turns don't.
+- Each group's shared transcript lives in `groups/<group id>.sqlite` as `crumble.group-message` data entries.
+- Each member bot has a task-owned group conversation in its own Pi store (isolated from its private bot chat) with the `pass` tool and without delegation, coding, or desktop job tools.
+- Owner messages wake mentioned bots (or all enabled members); bot messages wake only mentioned bots. After 8 bot-started turns since the owner's last message, the group pauses until the owner writes again.
+- Members joining after the first message receive a one-time model summary of earlier messages. Group turns can write only to the bot's own memory (recording the group in `Memory.source`). Bot chats can inspect their groups with the `group_chats` tool.
 
 ## Chat history search
 
-`history_search` and `history_read` retrieve the transcript's messages without changing compaction or replaying submissions. In a bot chat, retrieval covers that bot's messages and its current groups, including pre-membership group messages. In a group turn, retrieval covers only that group's shared messages. Every request checks current access; a message identifier or cursor never grants access.
+`HistorySearch` (`history-search.ts`, `history-tools.ts`) provides `history_search` and `history_read` model tools over retained transcripts (including compacted messages):
 
-`HistorySearch` (`history-search.ts`) owns literal case-insensitive matching, text filtering, result limits, and continuation. `history-tools.ts` adapts the calling conversation and existing transcript readers. Search excludes tool activity, compaction events, coordination events, reactions, attachment contents, and private group-turn records. Surrounding reads mark omitted bot-chat tool activity without inspecting private group activity.
+- Bot chats can search their own chat and current groups; group turns can search only that group's shared transcript.
+- Uses case-insensitive literal substring matching over authored message bodies, newest-first, with an encrypted continuation token that fixes the search cutoff while rechecking current access on every page and surrounding read.
 
-Search fixes its chat set and message cutoffs; surrounding reads reuse those cutoffs. Encrypted, authenticated continuation tokens bind those cutoffs to the calling bot and group scope. The server keeps one retrieval engine across tool refreshes; restarting it expires old tokens explicitly, and the bot must start a new search. Messages without stored timestamps return `null` and sort after dated messages, with chat and durable identifiers breaking ties. Search pages return at most 20 matches with 500-code-point excerpts. Reads return at most 30 messages and 20,000 code points, with continuation through long messages. Queries are nonblank and limited to 500 code points. Results are historical evidence, not new instructions.
+## Learned skills
 
-Indexing is deferred. Retrieval scans retained transcript data and makes no capacity or latency guarantee. Existing `group_chats` behavior and the public HTTP contract are unchanged. See [feature 0003](https://github.com/crumble-project/spec/blob/main/features/0003-chat-history-search.md).
+Implemented in `skills.ts` and `review.ts` ([ADR 0003](adr/0003-learned-skills.md)):
 
-## Verifiable milestones
-
-1. Persistent agent lifecycle and actual Pi Durable conversation submission, cancellation, streaming, reopen, and isolation tests.
-2. Native SwiftUI macOS client: connection setup, agents, conversation history, streamed chat, settings, memory and tasks. Build and exercise against the real server.
-3. Persistent one-time and cron schedules, background execution history, failure and restart recovery, capability-configured skills and MCP tools.
-4. Inter-agent delegation, diagnostics and parity acceptance tests. Refine empty, loading, offline, keyboard and accessibility behavior.
-5. Product hardening: realistic crash/reconnect tests, native visual inspection, installation/backup documentation and an honest parity audit.
-
-## Constraints
-
-Pi Durable is experimental. Pin its package versions and validate migrations before upgrading. Initial scope is one authenticated owner, not multi-tenant hosting. Metadata and Pi stores have separate transactions; durable request IDs bridge dispatch/recovery so retrying admission does not duplicate a user turn.
-
-See the [parity research](https://github.com/crumble-project/spec/blob/main/product/parity.md) for researched reference capabilities and acceptance criteria. A milestone being implemented does not imply the overall production-quality goal has been met.
+- **Skill packages:** Stored in `skills` and `skill_documents` (plus read-only bundled defaults in `skills/`). Working context lists skills by name and description; bots load instructions and `references/*.md` on demand via `skill` and edit their own skills in atomic batches via `skill_manage`. `Agent.skills` remains a compatible `{ name, instructions }` view over the bot's skill rows.
+- **Post-turn review:** Tracks tool-activity rounds per bot in `review_counters`. When the skill or memory counter reaches its threshold (default 10), a background review conversation runs on `reviewModel` (or the bot's model) within a strict character/token budget and updates skills or memory.
+- **Change ledger and curator:** Every skill or memory mutation is logged in `learned_changes` with full before/after state for `GET /v1/changes` and `POST /v1/changes/{id}/revert`, and review changes emit a `learned` SSE event. A periodic curator marks bot-created skills `stale` after 14 unused days and `archived` after 30 days unless pinned or used by a scheduled task.

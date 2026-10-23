@@ -1,32 +1,20 @@
-# Shared skill defaults
+# Bundled default skills
 
-This directory contains the shared defaults that every Crumble bot follows. The server reads each immediate subdirectory's `SKILL.md` at startup. Defaults appear under **Shared** in the desktop app alongside optional skills from the database.
+Default skills available to every Crumble bot. The server loads each immediate subdirectory's `SKILL.md` (and optional `references/*.md` documents) at startup.
 
-## Add or edit a default
-
-1. Create a folder with a lowercase, hyphenated name.
-2. Add `SKILL.md` with instructions. Optional frontmatter supports single-line `name:` and `description:` values.
-3. Restart the server to load changes.
-
-For example:
+## Structure
 
 ```markdown
 ---
 name: example
-description: Explain when these instructions apply.
+description: One-line summary of when this skill applies.
 ---
 
 # Example
 
-Write the instructions here.
+Instructions loaded when a bot calls the `skill` tool.
 ```
 
-## Reference documents
-
-A default may carry depth that bots need only sometimes, such as a decision table or provider quirks, as Markdown files in a `references` directory next to `SKILL.md`, for example `references/cron.md`. The server lists them with the skill and a bot loads one only when it asks for it. Name files by topic in lowercase with hyphens, and keep at most 20 per skill.
-
-Bots see every default by name and description only and load its instructions when the task calls for it, so the description must say when the skill applies.
-
-Defaults apply automatically to existing and new bots. The app displays them as read-only entries marked **Default · Every bot**. Optional shared skills remain editable in the app and enabled per bot. Personal skills remain in each bot's profile.
-
-The server reads this directory by default and the Docker image bundles it. Set `CRUMBLE_SKILLS_DIR` to serve another directory; an explicitly configured missing directory prevents startup.
+- **On-demand loading:** Bots see defaults by `name` and `description` in their working context and load `SKILL.md` or `references/<topic>.md` (up to 20 per skill) through the `skill` tool when needed.
+- **Read-only:** Defaults are marked **Default · Every bot** and cannot be modified through the API or by bots; a bot refines a default by creating its own skill with the same name.
+- **Configuration:** Served from `skills/` by default and bundled into the Docker image. Override with `CRUMBLE_SKILLS_DIR`.
