@@ -1,5 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
-import { PlusIcon, RefreshCwIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { PlusSignIcon, RefreshIcon } from "@hugeicons/core-free-icons";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,8 +34,8 @@ export function WorkspacePage({
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-4">
-        <h1 className="font-medium">{title}</h1>
+      <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b px-4">
+        <h1 className="font-heading text-base font-semibold">{title}</h1>
         <div className="flex items-center gap-1">
           {onRefresh && (
             <Button
@@ -44,7 +45,8 @@ export function WorkspacePage({
               disabled={refreshing}
               onClick={onRefresh}
             >
-              <RefreshCwIcon
+              <HugeiconsIcon
+                icon={RefreshIcon}
                 className={refreshing ? "animate-spin" : undefined}
               />
             </Button>
@@ -57,7 +59,7 @@ export function WorkspacePage({
               disabled={newDisabled}
               onClick={onNew}
             >
-              <PlusIcon />
+              <HugeiconsIcon icon={PlusSignIcon} />
             </Button>
           )}
         </div>
@@ -105,16 +107,22 @@ export function ConfirmDelete({
 /** A titled group of rows, like a Mac settings section. */
 export function Section({
   title,
+  icon,
   footer,
   children,
 }: {
   title: string;
+  /** Shown before the title, such as the avatar of the bot a section belongs to. */
+  icon?: ReactNode;
   footer?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <section className="flex flex-col gap-2">
-      <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
+      <h2 className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+        {icon}
+        {title}
+      </h2>
       <div className="flex flex-col divide-y rounded-lg border">{children}</div>
       {footer && <p className="text-xs text-muted-foreground">{footer}</p>}
     </section>

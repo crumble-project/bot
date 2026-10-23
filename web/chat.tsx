@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { MonitorIcon, PanelRightIcon, PencilIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  ComputerIcon,
+  PencilEdit01Icon,
+  SidebarRightIcon,
+} from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,7 +35,7 @@ import {
   jobsQuery,
   send,
 } from "./api";
-import { BotAvatar } from "./avatar";
+import { BotAvatar, botColor, botStyle } from "./avatar";
 import { type Outgoing, confirm, deliver, useOutgoing } from "./delivery";
 import { DetailsPanel } from "./details";
 import { type JobRef, JobDialog } from "./jobs";
@@ -45,6 +50,8 @@ import {
   ToolResultRow,
   TypingDots,
   type Upload,
+  ARRIVAL,
+  useArrivals,
   jobOf,
   mergeMessages,
   reactionsOf,
@@ -83,6 +90,7 @@ export function Chat({ botId }: { botId: string }) {
   useChatStream(botId);
 
   const live = chat.data?.messages;
+  const { arrival, remember } = useArrivals(live);
 
   useEffect(() => {
     if (live)
@@ -122,12 +130,14 @@ export function Chat({ botId }: { botId: string }) {
       api<HistoryPage>(
         `${path}/chat/history?before=${encodeURIComponent(before)}&limit=100`,
       ),
-    onSuccess: (page) =>
+    onSuccess: (page) => {
+      remember(page.messages);
       setOlder({
         messages: mergeMessages(page.messages, older?.messages ?? []),
         hasMore: page.hasMore,
         oldestEntryId: page.oldestEntryId,
-      }),
+      });
+    },
   });
 
   const stop = useMutation({ mutationFn: () => send(`${path}/abort`, "POST") });
@@ -210,15 +220,22 @@ export function Chat({ botId }: { botId: string }) {
   const jobFor = (name?: string) => jobs.find((each) => each.name === name);
 
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="flex min-h-0 flex-1" style={botStyle(botColor(bot))}>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+        <header className="flex h-14 shrink-0 items-center gap-2.5 border-b px-4">
           <BotAvatar
             bot={bot}
-            size={28}
+            size={32}
             state={running ? "working" : bot.enabled ? "idle" : "sleeping"}
           />
-          <span className="truncate font-medium">{bot.name}</span>
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate font-heading font-semibold leading-tight">
+              {bot.name}
+            </span>
+            <span className="truncate text-xs text-muted-foreground">
+              {running ? "Working…" : bot.enabled ? bot.description : "Paused"}
+            </span>
+          </span>
           <div className="ml-auto flex gap-1">
             {bot.tools.includes("desktop") && (
               <Button
@@ -227,7 +244,7 @@ export function Chat({ botId }: { botId: string }) {
                 render={<Link to="/bots/$botId/desktop" params={{ botId }} />}
                 nativeButton={false}
               >
-                <MonitorIcon data-icon="inline-start" />
+                <HugeiconsIcon icon={ComputerIcon} data-icon="inline-start" />
                 Bot desktop
               </Button>
             )}
@@ -238,7 +255,7 @@ export function Chat({ botId }: { botId: string }) {
               render={<Link to="/bots/$botId/edit" params={{ botId }} />}
               nativeButton={false}
             >
-              <PencilIcon />
+              <HugeiconsIcon icon={PencilEdit01Icon} />
             </Button>
             <Button
               variant={details ? "secondary" : "ghost"}
@@ -248,7 +265,7 @@ export function Chat({ botId }: { botId: string }) {
               className="hidden lg:inline-flex"
               onClick={toggleDetails}
             >
-              <PanelRightIcon />
+              <HugeiconsIcon icon={SidebarRightIcon} />
             </Button>
           </div>
         </header>
@@ -291,6 +308,7 @@ export function Chat({ botId }: { botId: string }) {
                     <MessageScrollerItem
                       key={row.message.id}
                       messageId={row.message.id}
+                      className={arrival(row.message)}
                     >
                       {row.message.role === "user" ? (
                         <OwnerMessage
@@ -321,6 +339,7 @@ export function Chat({ botId }: { botId: string }) {
                   <MessageScrollerItem
                     key={message.requestId}
                     messageId={message.requestId}
+                    className={ARRIVAL}
                   >
                     <OwnerMessage
                       message={outgoingMessage(message)}
@@ -344,7 +363,7 @@ export function Chat({ botId }: { botId: string }) {
                   </MessageScrollerItem>
                 ))}
                 {running && (
-                  <MessageScrollerItem messageId="typing">
+                  <MessageScrollerItem messageId="typing" className={ARRIVAL}>
                     <TypingDots />
                   </MessageScrollerItem>
                 )}

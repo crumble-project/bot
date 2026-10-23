@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { PencilIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { PencilEdit01Icon } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -73,6 +74,8 @@ import {
   OwnerMessage,
   TimeMarker,
   TypingDots,
+  ARRIVAL,
+  useArrivals,
   type Upload,
   mergeMessages,
   reactionsOf,
@@ -127,6 +130,7 @@ export function GroupChatView({ groupId }: { groupId: string }) {
   }, [groupId, path, navigate]);
 
   const live = snapshot.data?.messages;
+  const { arrival, remember } = useArrivals(live);
 
   useEffect(() => {
     if (live)
@@ -141,12 +145,14 @@ export function GroupChatView({ groupId }: { groupId: string }) {
       api<HistoryPage>(
         `${path}/history?before=${encodeURIComponent(before)}&limit=100`,
       ),
-    onSuccess: (page) =>
+    onSuccess: (page) => {
+      remember(page.messages);
       setOlder({
         messages: mergeMessages(page.messages, older?.messages ?? []),
         hasMore: page.hasMore,
         oldestEntryId: page.oldestEntryId,
-      }),
+      });
+    },
   });
 
   const stop = useMutation({ mutationFn: () => send(`${path}/stop`, "POST") });
@@ -232,6 +238,14 @@ export function GroupChatView({ groupId }: { groupId: string }) {
     return failure === null;
   };
 
+  const colorOf = (message: Message) => {
+    const bot = message.origin?.agentId
+      ? byId.get(message.origin.agentId)
+      : undefined;
+
+    return bot ? botColor(bot) : undefined;
+  };
+
   const sender = (message: Message) => {
     const bot = message.origin?.agentId
       ? byId.get(message.origin.agentId)
@@ -249,8 +263,10 @@ export function GroupChatView({ groupId }: { groupId: string }) {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b px-4">
-        <span className="truncate font-medium">{groupChat.name}</span>
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
+        <span className="truncate font-heading font-semibold">
+          {groupChat.name}
+        </span>
         <div className="flex -space-x-1.5">
           {members.map((member) => {
             const status = statusOf(member.id)?.status ?? "idle";
@@ -280,7 +296,7 @@ export function GroupChatView({ groupId }: { groupId: string }) {
           render={<Link to="/groups/$groupId/edit" params={{ groupId }} />}
           nativeButton={false}
         >
-          <PencilIcon />
+          <HugeiconsIcon icon={PencilEdit01Icon} />
         </Button>
       </header>
       <MessageScrollerProvider autoScroll>
@@ -322,6 +338,7 @@ export function GroupChatView({ groupId }: { groupId: string }) {
                   <MessageScrollerItem
                     key={row.message.id}
                     messageId={row.message.id}
+                    className={arrival(row.message)}
                   >
                     {row.message.role === "user" ? (
                       <OwnerMessage
@@ -335,6 +352,7 @@ export function GroupChatView({ groupId }: { groupId: string }) {
                       <BotMessage
                         message={row.message}
                         sender={sender(row.message)}
+                        color={colorOf(row.message)}
                         reactions={reactions.get(row.message.entryId)}
                         onReply={setReplyTo}
                       />
@@ -346,6 +364,7 @@ export function GroupChatView({ groupId }: { groupId: string }) {
                 <MessageScrollerItem
                   key={message.requestId}
                   messageId={message.requestId}
+                  className={ARRIVAL}
                 >
                   <OwnerMessage
                     message={outgoingMessage(message)}
@@ -364,7 +383,7 @@ export function GroupChatView({ groupId }: { groupId: string }) {
                 </MessageScrollerItem>
               ))}
               {working.length > 0 && (
-                <MessageScrollerItem messageId="working">
+                <MessageScrollerItem messageId="working" className={ARRIVAL}>
                   <div className="flex items-center gap-2">
                     <div className="flex -space-x-1.5">
                       {working.flatMap((member) => {

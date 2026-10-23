@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useMatchRoute } from "@tanstack/react-router";
+import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  CopyIcon,
-  KeyRoundIcon,
-  PlugIcon,
-  SearchIcon,
+  Copy01Icon,
+  Key01Icon,
+  Plug01Icon,
+  Search01Icon,
   SlidersHorizontalIcon,
   SparklesIcon,
-} from "lucide-react";
+} from "@hugeicons/core-free-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,8 +45,8 @@ import { WorkspacePage } from "./workspace";
 
 const SECTIONS = [
   { to: "/settings/general", label: "General", icon: SlidersHorizontalIcon },
-  { to: "/settings/providers", label: "Providers", icon: KeyRoundIcon },
-  { to: "/settings/integrations", label: "Integrations", icon: PlugIcon },
+  { to: "/settings/providers", label: "Providers", icon: Key01Icon },
+  { to: "/settings/integrations", label: "Integrations", icon: Plug01Icon },
   { to: "/settings/skills", label: "Skills", icon: SparklesIcon },
 ] as const;
 
@@ -70,7 +71,7 @@ export function SettingsLayout() {
             render={<Link to={section.to} />}
             nativeButton={false}
           >
-            <section.icon data-icon="inline-start" />
+            <HugeiconsIcon icon={section.icon} data-icon="inline-start" />
             {section.label}
           </Button>
         ))}
@@ -363,7 +364,7 @@ function ExternalSignIn({
               title="Copy"
               onClick={() => void navigator.clipboard.writeText(command)}
             >
-              <CopyIcon />
+              <HugeiconsIcon icon={Copy01Icon} />
             </Button>
           </div>
         </div>
@@ -423,7 +424,10 @@ export function ProvidersSettings() {
         bot on the provider.
       </p>
       <div className="relative">
-        <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+        <HugeiconsIcon
+          icon={Search01Icon}
+          className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+        />
         <Input
           aria-label="Search providers"
           placeholder="Search providers"

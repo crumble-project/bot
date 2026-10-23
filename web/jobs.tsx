@@ -1,6 +1,7 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { MonitorIcon, RefreshCwIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ComputerIcon, RefreshIcon } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -220,7 +221,7 @@ export function JobDialog({
             size="sm"
             onClick={() => void history.refetch()}
           >
-            <RefreshCwIcon data-icon="inline-start" />
+            <HugeiconsIcon icon={RefreshIcon} data-icon="inline-start" />
             Refresh
           </Button>
           {job.kind === "desktop" && (
@@ -230,7 +231,7 @@ export function JobDialog({
               render={<Link to="/bots/$botId/desktop" params={{ botId }} />}
               nativeButton={false}
             >
-              <MonitorIcon data-icon="inline-start" />
+              <HugeiconsIcon icon={ComputerIcon} data-icon="inline-start" />
               Open bot desktop
             </Button>
           )}

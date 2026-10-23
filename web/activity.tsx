@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowDown01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -93,7 +94,7 @@ export function ActivityPage() {
 
 function ActivityRow({ activity }: { activity: Activity }) {
   const [open, setOpen] = useState(false);
-  const Icon = open ? ChevronDownIcon : ChevronRightIcon;
+  const Icon = open ? ArrowDown01Icon : ArrowRight01Icon;
 
   return (
     <div className="flex flex-col gap-2 p-3">
@@ -128,7 +129,7 @@ function ActivityRow({ activity }: { activity: Activity }) {
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <Icon className="size-3.5" />
+        <HugeiconsIcon icon={Icon} className="size-3.5" />
         Details
       </button>
       {open && (

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { type CSSProperties, useEffect, useLayoutEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import type { Bot } from "./api";
 import {
@@ -20,6 +20,12 @@ export type { BotState };
 /** A bot's accent color, the hue of its avatar body. */
 export function botColor(bot: Pick<Bot, "id" | "avatar">) {
   return new BotLook(avatarSeed(bot)).hex;
+}
+
+/** Sets `--bot`, the color the `bg-bot-*` utilities in styles.css read, on an element. */
+export function botStyle(color: string) {
+  // SAFETY: CSSProperties has no index for custom properties; `--bot` takes any color string.
+  return { "--bot": color } as CSSProperties;
 }
 
 const sprites = new Map<string, OffscreenCanvas>();

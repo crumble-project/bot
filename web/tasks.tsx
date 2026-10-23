@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { PencilIcon, PlayIcon, PlusIcon, TrashIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  Delete02Icon,
+  PencilEdit01Icon,
+  PlayIcon,
+  PlusSignIcon,
+} from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +52,7 @@ import {
   schedulesQuery,
   send,
 } from "./api";
+import { BotAvatar } from "./avatar";
 import {
   ConfirmDelete,
   Section,
@@ -262,6 +269,7 @@ function BotTasks({
     <div className="flex flex-col gap-2">
       <Section
         title={bot.name}
+        icon={<BotAvatar bot={bot} size={22} />}
         footer={`Runs in ${bot.name}'s chat, once or on a schedule.`}
       >
         {schedules.length === 0 && <SectionEmpty>No tasks yet.</SectionEmpty>}
@@ -275,7 +283,7 @@ function BotTasks({
         ))}
       </Section>
       <Button variant="ghost" size="sm" className="self-start" onClick={onNew}>
-        <PlusIcon data-icon="inline-start" />
+        <HugeiconsIcon icon={PlusSignIcon} data-icon="inline-start" />
         New Task
       </Button>
     </div>
@@ -356,10 +364,10 @@ function TaskRow({
         disabled={!schedule.enabled || run.isPending}
         onClick={() => run.mutate()}
       >
-        <PlayIcon />
+        <HugeiconsIcon icon={PlayIcon} />
       </Button>
       <Button variant="ghost" size="icon-sm" title="Edit" onClick={onEdit}>
-        <PencilIcon />
+        <HugeiconsIcon icon={PencilEdit01Icon} />
       </Button>
       <ConfirmDelete
         title={`Delete ${schedule.name}?`}
@@ -367,7 +375,7 @@ function TaskRow({
         onConfirm={() => remove.mutate()}
         trigger={
           <Button variant="ghost" size="icon-sm" title="Delete">
-            <TrashIcon />
+            <HugeiconsIcon icon={Delete02Icon} />
           </Button>
         }
       />

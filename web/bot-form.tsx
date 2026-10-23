@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { CopyIcon, ShuffleIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Copy01Icon, ShuffleIcon } from "@hugeicons/core-free-icons";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -373,7 +374,7 @@ export function BotForm({ bot }: { bot?: Bot }) {
                       setChoices(Array.from({ length: 6 }, seedAvatar))
                     }
                   >
-                    <ShuffleIcon />
+                    <HugeiconsIcon icon={ShuffleIcon} />
                   </Button>
                 </div>
               </div>
@@ -664,7 +665,7 @@ export function BotForm({ bot }: { bot?: Bot }) {
                 disabled={duplicate.isPending}
                 onClick={() => duplicate.mutate(bot.id)}
               >
-                <CopyIcon data-icon="inline-start" />
+                <HugeiconsIcon icon={Copy01Icon} data-icon="inline-start" />
                 Duplicate
               </Button>
             </>
