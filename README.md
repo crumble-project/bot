@@ -50,7 +50,9 @@ MCP servers sign Crumble in with OAuth. Crumble registers itself with the server
 
 When `CRUMBLE_PUBLIC_URL` is set, the server serves its document at `/oauth/client-metadata.json` and signs in with it wherever the authorization server advertises `client_id_metadata_document_supported`. The authorization server must be able to reach that address, for example through a tunnel. The document lists the web UI's callback at that address, so sign in from the web UI opened there, or from the Mac or iOS app.
 
-Some authorization servers, such as GitHub's, support neither. Add those MCP servers with a token instead.
+Some authorization servers, such as GitHub's, support neither. For those, register an OAuth app with the authorization server yourself, with the callback URL `<web UI address>/ui/oauth/callback`, for example `http://127.0.0.1:7337/ui/oauth/callback`, and enter its client ID and secret on the MCP server under Settings › Integrations. Sign-in then uses your app, sending its secret in the token request body. Or add the server with a token instead.
+
+For GitHub, create the app under GitHub › Settings › Developer settings › OAuth Apps and use the MCP server URL `https://api.githubcopilot.com/mcp/`. Sign-in asks for every scope GitHub's MCP server lists.
 
 ## Coding workspaces
 

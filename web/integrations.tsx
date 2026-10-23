@@ -18,6 +18,8 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
+  FieldLegend,
+  FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
@@ -255,6 +257,9 @@ function ServerDialog({
   const [url, setUrl] = useState(server?.url ?? "");
   const [tokenValue, setTokenValue] = useState("");
   const [enabled, setEnabled] = useState(server?.enabled ?? true);
+  const [clientId, setClientId] = useState(server?.oauthClientId ?? "");
+  const [clientSecret, setClientSecret] = useState("");
+  const callback = `${location.origin}/ui/oauth/callback`;
 
   const owners = [
     { label: "Every bot (shared)", value: SHARED },
@@ -268,6 +273,14 @@ function ServerDialog({
         url: url.trim(),
         enabled,
         ...(tokenValue.trim() && { token: tokenValue.trim() }),
+        ...((clientId.trim() || server?.oauthClientId) && {
+          oauthClientId: clientId.trim() || null,
+        }),
+        // Without an app, its secret has no use; clearing the client ID removes it too.
+        ...(clientSecret.trim()
+          ? { oauthClientSecret: clientSecret.trim() }
+          : !clientId.trim() &&
+            server?.hasOAuthClientSecret && { oauthClientSecret: "" }),
       };
 
       return server
@@ -279,6 +292,7 @@ function ServerDialog({
     },
     onSuccess: async () => {
       setTokenValue("");
+      setClientSecret("");
       await refresh();
       onClose();
     },
@@ -288,7 +302,7 @@ function ServerDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {server ? "Edit MCP Server" : "New MCP Server"}
@@ -366,6 +380,49 @@ function ServerDialog({
                 sign-in or use OAuth.
               </FieldDescription>
             </Field>
+            <FieldSet>
+              <FieldLegend variant="label">OAuth app</FieldLegend>
+              <FieldDescription>
+                Only for servers whose sign-in can't register Crumble, such as
+                GitHub&apos;s. Register an OAuth app there with the callback URL{" "}
+                <code className="rounded bg-muted px-1 py-0.5 text-xs break-all">
+                  {callback}
+                </code>{" "}
+                and enter its client ID and secret.
+              </FieldDescription>
+              <Field>
+                <FieldLabel htmlFor="mcp-client-id">Client ID</FieldLabel>
+                <Input
+                  id="mcp-client-id"
+                  autoComplete="off"
+                  placeholder="Optional"
+                  value={clientId}
+                  onChange={(event) => setClientId(event.target.value)}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="mcp-client-secret">
+                  Client secret
+                </FieldLabel>
+                <Input
+                  id="mcp-client-secret"
+                  type="password"
+                  autoComplete="off"
+                  disabled={!clientId.trim()}
+                  placeholder={
+                    server?.hasOAuthClientSecret
+                      ? "Replace the saved secret"
+                      : "Optional"
+                  }
+                  value={clientSecret}
+                  onChange={(event) => setClientSecret(event.target.value)}
+                />
+                <FieldDescription>
+                  Stored encrypted and never shown again. Changing the app signs
+                  the server out.
+                </FieldDescription>
+              </Field>
+            </FieldSet>
             <Field orientation="horizontal">
               <FieldContent>
                 <FieldLabel htmlFor="mcp-enabled">Enabled</FieldLabel>
