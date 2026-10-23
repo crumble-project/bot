@@ -1180,92 +1180,6 @@
         "description": "Where the memory was saved: the owner's bot chat, the owner directly, a scheduled task, another bot's request, or a group chat."
       },
       "SkillPackage": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/Skill"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "agentId": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "description": {
-                "type": "string"
-              },
-              "documents": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/SkillDocument"
-                }
-              },
-              "createdBy": {
-                "type": "string",
-                "enum": [
-                  "owner",
-                  "bot"
-                ]
-              },
-              "sourceExecutionId": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "useCount": {
-                "type": "integer"
-              },
-              "lastUsedAt": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "state": {
-                "type": "string",
-                "enum": [
-                  "active",
-                  "stale",
-                  "archived"
-                ]
-              },
-              "pinned": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "agentId",
-              "description",
-              "documents",
-              "createdBy",
-              "sourceExecutionId",
-              "useCount",
-              "lastUsedAt",
-              "state",
-              "pinned"
-            ]
-          }
-        ]
-      },
-      "SkillDocument": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string"
-          },
-          "content": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "path",
-          "content"
-        ]
-      },
-      "Skill": {
         "type": "object",
         "properties": {
           "id": {
@@ -1282,6 +1196,54 @@
           },
           "updatedAt": {
             "type": "string"
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillDocument"
+            }
+          },
+          "createdBy": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "bot"
+            ]
+          },
+          "sourceExecutionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "useCount": {
+            "type": "integer"
+          },
+          "lastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "stale",
+              "archived"
+            ]
+          },
+          "pinned": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1289,7 +1251,31 @@
           "name",
           "instructions",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "agentId",
+          "description",
+          "documents",
+          "createdBy",
+          "sourceExecutionId",
+          "useCount",
+          "lastUsedAt",
+          "state",
+          "pinned"
+        ]
+      },
+      "SkillDocument": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content"
         ]
       },
       "ReviewResult": {
@@ -1497,6 +1483,33 @@
               "source"
             ]
           }
+        ]
+      },
+      "Skill": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "instructions",
+          "createdAt",
+          "updatedAt"
         ]
       },
       "Schedule": {
@@ -9357,7 +9370,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SkillPackage"
+                  "$ref": "#/components/schemas/Skill"
                 }
               }
             }
@@ -9629,7 +9642,7 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/SkillPackage"
+                      "$ref": "#/components/schemas/Skill"
                     },
                     {
                       "type": "null"

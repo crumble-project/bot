@@ -64,7 +64,7 @@
 ## Contract 1.9.0
 
 - Add `GET` and `POST /v1/agents/{id}/skills` and `PATCH` and `DELETE /v1/agents/{id}/skills/{skillId}` for a bot's own skill packages, with the `SkillDocument` schema.
-- Add `SkillPackage`: `Skill` plus `agentId`, `description`, `documents`, `createdBy`, `sourceExecutionId`, `useCount`, `lastUsedAt`, `state`, and `pinned`. The skill routes return it, including the new `GET /v1/skills/{id}`; `Skill` and the `GET /v1/skills` item shapes are unchanged, and their entries carry the new fields as additional properties. Skill inputs accept `description` and `documents`.
+- Add `SkillPackage`: `Skill` plus `agentId`, `description`, `documents`, `createdBy`, `sourceExecutionId`, `useCount`, `lastUsedAt`, `state`, and `pinned`. The new routes return it, including `GET /v1/skills/{id}`; `Skill`, the `GET /v1/skills` item shapes, and the shared create and update responses are declared as before and carry the new fields as additional properties. Skill inputs accept `description` and `documents`.
 - An agent's inline `skills` accepts up to 100 entries, up from 30. Shared skill endpoints no longer reach a bot's own skills.
 - Add `GET /v1/changes` and `POST /v1/changes/{id}/revert` with the `LearnedChange` and `ChangeSource` schemas. A change's `actor` is `owner`, `bot`, `review`, or `curator`.
 - Add `review` and `reviewModel` to `Agent`, set like `desktopModel`. `PATCH /v1/agents/{id}/skills/{skillId}` also accepts `state` and `pinned`.

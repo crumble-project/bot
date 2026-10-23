@@ -372,9 +372,14 @@ export const skillResponse = z
   })
   .openapi("Skill");
 
-/** A skill as a full package, with its documents, provenance, usage, and lifecycle. */
-export const skillPackageResponse = skillResponse
-  .extend({
+/** A skill as a full package, with its documents, provenance, usage, and lifecycle. A plain object, not an extension of Skill, so generators see one typed object. */
+export const skillPackageResponse = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    instructions: z.string(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
     // The bot that owns the skill; null for a shared skill.
     agentId: z.string().nullable(),
     description: z.string(),

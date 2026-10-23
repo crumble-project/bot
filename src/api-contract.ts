@@ -742,7 +742,7 @@ export const routes = {
     path: "/v1/skills",
     operationId: "createSkill",
     request: { body: body(skillInput) },
-    responses: { 201: json(response.skillPackageResponse) },
+    responses: { 201: json(response.skillResponse) },
   }),
   updateSkill: define({
     method: "patch",
@@ -750,7 +750,7 @@ export const routes = {
     operationId: "updateSkill",
     request: { params: id, body: body(patchInput(skillInput)) },
     responses: {
-      200: json(z.union([response.skillPackageResponse, z.null()])),
+      200: json(z.union([response.skillResponse, z.null()])),
     },
   }),
   deleteSkill: define({
