@@ -477,8 +477,24 @@ const operationalActivity = z
   })
   .openapi("OperationalActivity");
 
+const changeActivity = z
+  .object({
+    id: z.string(),
+    // Null for a change to the shared library.
+    agentId: z.string().nullable(),
+    agentName: z.string().nullable(),
+    timestamp: z.number(),
+    kind: z.literal("change"),
+    change: learnedChangeResponse,
+  })
+  .openapi("ChangeActivity");
+
 export const activityFeedResponse = z
-  .object({ activities: z.array(operationalActivity), hasMore: z.boolean() })
+  .object({
+    activities: z.array(z.union([operationalActivity, changeActivity])),
+    hasMore: z.boolean(),
+    nextCursor: z.string().nullable(),
+  })
   .openapi("ActivityFeed");
 
 const authType = z.enum(["api_key", "oauth"]);

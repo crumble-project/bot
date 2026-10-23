@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Show skill and memory changes in the web UI's Activity page next to tool calls and bot messages ([feature 0005](https://github.com/crumble-project/spec/blob/main/features/0005-learned-skills.md)), and page through it with numbered pages of 50 instead of seeing only the newest 100 items. A filter shows one kind of item: tool calls, tool results, MCP calls, bot messages, or changes. A change says who made it and to what, opens into a line diff of before and after, and can be reverted after a confirmation. Every row leads with its bot's avatar, or a memory icon for the shared library.
+- Page and filter the activity feed: `GET /v1/activity/feed` takes the previous page's `nextCursor` as `cursor`, and `kind` for one kind of item, and walks each bot's whole transcript across requests, where it used to read only each bot's latest 1,000 messages.
 - Give every bot the plainspeak voice guidance in its standing instructions on every chat and group turn. It was a default skill that bots saw only by name and rarely loaded, since no single task matches it. The `plainspeak` default skill is gone, and the bot identity no longer repeats its reply-style rules.
 - Give the web UI the bots' own look. Each bot's avatar color tints its chat: its replies, the composer, the send button, and its row in the sidebar; in group chats each reply takes its sender's color. Home shows every bot as a live avatar to open its chat, the content sits on an inset sheet beside the sidebar, Tasks and Memory head each bot's section with its avatar, and names and titles use the rounded system font where the browser has one (Safari).
 - Show the web UI's Tasks page as an agenda: upcoming tasks by the day they next run, each led by its time and its bot's avatar, then paused tasks. Monthly schedules read in words, and one-off tasks that already ran are hidden there and in a bot's details panel.
@@ -71,6 +73,11 @@
 - Add the generated OpenAPI 3.1 contract at `openapi/openapi.json` for all 49 HTTP endpoints, including authentication and event payload schemas.
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
+
+## Contract 2.0.0
+
+- `GET /v1/activity/feed` returns skill and memory changes as `ChangeActivity` items (`kind: "change"`, nullable `agentId` and `agentName` for the shared library, `timestamp`, and the `LearnedChange` as `change`) among the `OperationalActivity` items. Clients that decode `activities` as `OperationalActivity` only must handle the new item.
+- Add `cursor` and `kind` (`tool-call`, `tool-result`, `mcp-call`, `bot-message`, or `change`) to `GET /v1/activity/feed`, and `nextCursor` (nullable) to `ActivityFeed`. A page may hold fewer than `limit` items while `hasMore` is true; an invalid cursor answers `400`.
 
 ## Contract 1.11.0
 
