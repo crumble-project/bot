@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Crumble API",
-    "version": "1.9.0",
+    "version": "1.10.0",
     "description": "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime."
   },
   "components": {
@@ -1742,6 +1742,9 @@
               "string",
               "null"
             ]
+          },
+          "externalAuth": {
+            "$ref": "#/components/schemas/ProviderExternalAuth"
           }
         },
         "required": [
@@ -1750,7 +1753,8 @@
           "configured",
           "authMethods",
           "credentialType",
-          "activeLoginId"
+          "activeLoginId",
+          "externalAuth"
         ]
       },
       "ProviderLoginMethod": {
@@ -1774,6 +1778,62 @@
           "type",
           "label",
           "subscription"
+        ]
+      },
+      "ProviderExternalAuth": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "signed_in",
+              "signed_out",
+              "cli_missing",
+              "unsupported_version",
+              "error"
+            ]
+          },
+          "cliVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "qualifiedVersions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "signInCommand": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "signOutCommand": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "cliVersion",
+          "qualifiedVersions",
+          "signInCommand",
+          "signOutCommand",
+          "message"
         ]
       },
       "Model": {
@@ -11082,6 +11142,7 @@
       },
       "delete": {
         "operationId": "deleteProviderKey",
+        "description": "Remove the provider's saved credential. 409 for a provider that signs in outside Crumble; the message names its sign-out command.",
         "security": [
           {
             "BearerAuth": []

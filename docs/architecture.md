@@ -18,6 +18,11 @@ flowchart TD
 - **MCP integrations:** Bots load tools only from enabled, permitted MCP servers. Unreachable or unauthenticated MCP servers are skipped for the turn with their error surfaced in status. OAuth supports dynamic client registration, Client ID Metadata Documents (`CRUMBLE_PUBLIC_URL`), and owner-registered OAuth client credentials.
 - **Bundled web UI (`web/`):** React, TanStack Router, TanStack Query, Tailwind CSS, and shadcn/ui served at `/ui` and bundled on demand by Bun.
 
+## Plugins and the Claude Code provider
+
+- **Plugins (`plugins.ts`, `builtin-plugins.ts`, [ADR 0004](adr/0004-plugin-interfaces.md)):** Compiled-in modules contribute Pi AI providers and job kinds. Melious, Claude Code, coding jobs, and desktop jobs are plugins; the server builds the model catalog, job extensions, job environments, and job-answer notifications from their contributions.
+- **Claude Code (`claude-code/`):** A Pi AI provider whose `ProviderStreams` run each model request through a fresh `claude -p` process (`adapter.ts`), ported from Hermes' Claude Subscription DirectSDK. Claude Code gets no built-in tools, only an inert MCP inventory of the turn's tools (`inert-mcp.ts`), and the working context replayed as stream-json frames, each acknowledged before the next. A loopback admission relay (`relay.ts`) forwards the CLI's first Messages request with its own authorization, refuses later attempts, captures the reply, and keeps cache prefixes stable. Status (`setup.ts`) comes from `claude --version` and `claude auth status`, cached for 30 seconds; only qualified versions run.
+
 ## Bot messaging and schedules
 
 - **`BotMessaging` (`bot-messaging.ts`):** Exposes `ask_bot`, `delegate`, and `delegation_status` model tools over `CrumbleService.send`. Enforces per-bot permission allowlists, exact-name resolution, request-ID deduplication, and a one-hop delegation rule to prevent cycles. Sent messages and terminal replies are recorded as data-only transcript entries for client exchange cards.

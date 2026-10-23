@@ -839,6 +839,8 @@ export const routes = {
     method: "delete",
     path: "/v1/providers/{provider}",
     operationId: "deleteProviderKey",
+    description:
+      "Remove the provider's saved credential. 409 for a provider that signs in outside Crumble; the message names its sign-out command.",
     request: { params: z.object({ provider: z.string() }) },
     responses: { 204: empty },
   }),
@@ -948,7 +950,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "1.9.0",
+      version: "1.10.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },

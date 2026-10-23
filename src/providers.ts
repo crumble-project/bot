@@ -7,6 +7,11 @@ import {
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { z } from "zod";
+import {
+  pluginProviders,
+  type CrumblePlugin,
+  type ProviderContribution,
+} from "./plugins";
 
 const MELIOUS_URL = "https://api.melious.ai/v1";
 
@@ -72,10 +77,25 @@ export function meliousProvider() {
   });
 }
 
-/** Every provider Crumble offers. Without a store, Pi AI's in-memory default serves catalog-only callers. */
-export function providerModels(credentials?: CredentialStore) {
+/** Melious as a plugin: an OpenAI-compatible provider whose catalog loads per account. */
+export const meliousPlugin = (): CrumblePlugin => ({
+  id: "melious",
+  providers: [{ provider: meliousProvider() }],
+});
+
+/**
+ * Pi AI's built-in providers plus the plugin providers. Without a store, Pi AI's in-memory default serves
+ * catalog-only callers; without contributions, only the providers that need no server configuration are offered.
+ */
+export function providerModels(
+  credentials?: CredentialStore,
+  contributions: readonly ProviderContribution[] = pluginProviders([
+    meliousPlugin(),
+  ]),
+) {
   const models = builtinModels({ credentials });
-  models.setProvider(meliousProvider());
+
+  for (const { provider } of contributions) models.setProvider(provider);
 
   return models;
 }

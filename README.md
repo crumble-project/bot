@@ -24,6 +24,9 @@ bun run dev    # or `bun run start` without file watching
 | `CRUMBLE_SKILLS_DIR` | `./skills` | Directory of bundled default skills |
 | `CRUMBLE_WORKSPACE_IMAGE` | Unset | Microsandbox OCI image enabling the `coding` tool |
 | `CRUMBLE_WORKSPACE_DESKTOP_IMAGE` | Unset | Microsandbox OCI image enabling the `desktop` tool |
+| `CRUMBLE_CLAUDE_COMMAND` | `claude` on `PATH` | Claude Code executable for the Claude Code provider |
+| `CRUMBLE_CLAUDE_CONFIG_DIR` | `$CRUMBLE_DATA_DIR/claude` | Claude Code's own config directory, holding its sign-in |
+| `CRUMBLE_CLAUDE_TELEMETRY` | On | `off` stops Claude Code's telemetry and feature flags; its model list may then shrink |
 
 Back up the entire `CRUMBLE_DATA_DIR` (including `.secret.key`, which decrypts stored provider and MCP credentials) and `MSB_HOME` (`~/.microsandbox`).
 
@@ -40,6 +43,28 @@ bun -e 'import { Image } from "microsandbox"; await Image.load("/tmp/crumble-wor
 ```
 
 Build `--target desktop` as `crumble-workspace-desktop:dev` to enable bot desktops (`CRUMBLE_WORKSPACE_DESKTOP_IMAGE`).
+
+## Claude subscription (Claude Code)
+
+The Claude Code provider runs bots on a Claude Pro or Max subscription through the official Claude Code CLI on the server ([feature 0006](https://github.com/crumble-project/spec/blob/main/features/0006-claude-code-provider.md)). Crumble does not ship Claude Code and never reads its sign-in; you install it and sign in with Claude Code's own flow. Only the versions in `QUALIFIED_VERSIONS` (`src/claude-code/setup.ts`) are accepted, currently 2.1.309.
+
+```bash
+CLAUDE_CONFIG_DIR="$CRUMBLE_DATA_DIR/claude" claude auth login   # sign in for Crumble
+CLAUDE_CONFIG_DIR="$CRUMBLE_DATA_DIR/claude" claude auth logout  # sign out
+```
+
+A plain `claude auth login` signs in a different directory. Provider settings show the exact commands for your server.
+
+With Docker, install Claude Code onto the data volume, where the image looks for it, and sign in inside the container:
+
+```bash
+docker compose exec crumble sh -c 'mkdir -p /var/lib/crumble/claude-code && cd /var/lib/crumble/claude-code && echo "{\"trustedDependencies\":[\"@anthropic-ai/claude-code\"]}" > package.json && bun add @anthropic-ai/claude-code@2.1.309'
+docker compose exec -it crumble sh -c 'CLAUDE_CONFIG_DIR=/var/lib/crumble/data/claude /var/lib/crumble/claude-code/node_modules/.bin/claude auth login'
+```
+
+To qualify another Claude Code version, run `bun tools/claude-code-qualify.ts /absolute/path/to/claude`. It drives the real CLI against a local fake upstream, with no account or inference, and exits non-zero on any failure.
+
+Anthropic has not confirmed that this arrangement is permitted under its terms; see the specification.
 
 ## Run with Docker
 

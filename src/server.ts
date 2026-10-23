@@ -29,20 +29,14 @@ import { SkillCurator } from "./skill-curator";
 import type { ChangeBy } from "./domain";
 import type { MemoryContext } from "./runtime";
 import { GroupTranscripts } from "./group-transcripts";
-import { AppError, type Agent } from "./domain";
+import { AppError } from "./domain";
 import { MCPIntegrations } from "./integrations";
 import { BotSchedules, scheduleExtension } from "./bot-schedules";
 import { coordinationExtension } from "./coordination";
 import { ChartCompiler } from "./charts";
 import { displayExtension } from "./display";
 import { reactionExtension } from "./reaction";
-import { codingAnswers, codingEnv, codingExtensions } from "./coding";
-import {
-  DESKTOP_TOOL_NAME,
-  desktopAnswers,
-  desktopEnv,
-  desktopExtensions,
-} from "./desktop";
+import { DESKTOP_TOOL_NAME } from "./desktop";
 import { DesktopControl, type ControlState } from "./desktop-control";
 import { ViewerTickets } from "./desktop-viewer";
 import { websocket } from "hono/bun";
@@ -53,6 +47,13 @@ import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { loadCommonSkills } from "./common-skills";
 import { PushManager, PushStore } from "./push";
 import { providerModels } from "./providers";
+import { builtinPlugins } from "./builtin-plugins";
+import {
+  jobEnv,
+  jobExtensions,
+  pluginJobKinds,
+  pluginProviders,
+} from "./plugins";
 import { ProviderCredentials } from "./provider-credentials";
 import { ProviderAuth } from "./provider-auth";
 import { webUIRoutes } from "./web-ui";
@@ -141,14 +142,34 @@ export async function startServer(
       readFileSync(tokenFile, "utf8").trim();
 
     const store = new Store(dataDir);
+
+    const workspaces =
+      options.workspaces ??
+      microsandboxWorkspacesFromEnv(process.env, {
+        wantsDesktop: (agentId) =>
+          store.getAgent(agentId)?.tools.includes(DESKTOP_TOOL_NAME) === true,
+      });
+
+    const desktopControl = new DesktopControl(store);
+
+    const plugins = builtinPlugins({
+      dataDir,
+      env: process.env,
+      workspaces,
+      desktopControl,
+    });
+
+    const providers = pluginProviders(plugins);
+    const jobKinds = pluginJobKinds(plugins);
+
     store.migrateProviderCredentials(
-      providerModels()
+      providerModels(undefined, providers)
         .getProviders()
         .map((provider) => provider.id),
     );
     // One credential store and catalog serve the API and every bot, so refreshes and sign-ins are serialized.
     const credentials = new ProviderCredentials(store);
-    const models = providerModels(credentials);
+    const models = providerModels(credentials, providers);
     providerAuth = new ProviderAuth(store, credentials, models);
     const publicUrl = options.publicUrl ?? process.env.CRUMBLE_PUBLIC_URL;
 
@@ -178,25 +199,6 @@ export async function startServer(
         : null;
     };
 
-    const workspaces =
-      options.workspaces ??
-      microsandboxWorkspacesFromEnv(process.env, {
-        wantsDesktop: (agentId) =>
-          store.getAgent(agentId)?.tools.includes(DESKTOP_TOOL_NAME) === true,
-      });
-
-    const coding = (agent: Agent) =>
-      workspaces && agent.tools.includes("coding")
-        ? codingExtensions(agent, workspaces)
-        : { chat: [], job: [] };
-
-    const desktopControl = new DesktopControl(store);
-
-    const desktop = (agent: Agent) =>
-      workspaces?.desktop && agent.tools.includes(DESKTOP_TOOL_NAME)
-        ? desktopExtensions(agent, desktopControl)
-        : { chat: [], job: [] };
-
     let service!: CrumbleService;
     let schedules!: BotSchedules;
     let groupChats!: GroupChats;
@@ -223,8 +225,7 @@ export async function startServer(
         scheduleExtension(agent, schedules),
         displayExtension(charts),
         reactionExtension(),
-        ...coding(agent).chat,
-        ...desktop(agent).chat,
+        ...jobExtensions(jobKinds, agent).chat,
         ...(agent.tools.includes("codemode")
           ? [
               createCodemodeExtension({
@@ -234,12 +235,9 @@ export async function startServer(
             ]
           : []),
       ],
-      taskExtensions: (agent) => [...coding(agent).job, ...desktop(agent).job],
-      env: async (agentId, target, context) =>
-        workspaces
-          ? ((await codingEnv(workspaces, agentId, target, context)) ??
-            (await desktopEnv(workspaces, agentId, target, context)))
-          : undefined,
+      taskExtensions: (agent) => jobExtensions(jobKinds, agent).job,
+      env: (agentId, target, context) =>
+        jobEnv(jobKinds, agentId, target, context),
       listMemory: (agentId) => [
         ...store.listMemories(agentId),
         ...(usesSharedMemory(agentId)
@@ -307,8 +305,8 @@ export async function startServer(
     curator.start();
 
     // The bot's answer to a job's report notifies the owner, like any other reply.
-    const stopJobAnswers = [codingAnswers, desktopAnswers].map((listen) =>
-      listen((answer) => service.announceJobAnswer(answer)),
+    const stopJobAnswers = jobKinds.map((kind) =>
+      kind.onAnswer((answer) => service.announceJobAnswer(answer)),
     );
 
     const scheduler = new Scheduler(store, (a, p, r, s) =>
@@ -343,6 +341,11 @@ export async function startServer(
         groupChats,
         desktopControl,
         viewerTickets: new ViewerTickets(),
+        externalAuth: new Map(
+          providers.flatMap(({ provider, externalAuth }) =>
+            externalAuth ? [[provider.id, externalAuth]] : [],
+          ),
+        ),
         ...(workspaces && {
           openDesktop: (agentId: string) =>
             workspaces.openDesktop(agentId, BACKGROUND_CONTEXT),
