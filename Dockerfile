@@ -1,11 +1,4 @@
 # syntax=docker/dockerfile:1
-ARG SKILLS_REF=main
-
-# Override with `--build-context skills=<dir>` to bundle a local checkout.
-FROM scratch AS skills
-ARG SKILLS_REF
-ADD https://github.com/crumble-project/skills.git#${SKILLS_REF} /
-
 FROM oven/bun:1.4 AS deps
 WORKDIR /app
 COPY package.json bun.lock ./
@@ -20,13 +13,13 @@ ENV NODE_ENV=production \
     CRUMBLE_HOST=0.0.0.0 \
     CRUMBLE_PORT=7337 \
     CRUMBLE_DATA_DIR=/var/lib/crumble/data \
-    CRUMBLE_SKILLS_DIR=/opt/crumble/skills \
+    CRUMBLE_SKILLS_DIR=/app/skills \
     MSB_HOME=/var/lib/crumble/microsandbox
 
 COPY --from=deps /app/node_modules node_modules
 COPY package.json tsconfig.json ./
 COPY src src
-COPY --from=skills . /opt/crumble/skills
+COPY skills skills
 
 RUN mkdir -p /var/lib/crumble && chown bun:bun /var/lib/crumble
 USER bun

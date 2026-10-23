@@ -93,17 +93,11 @@ CRUMBLE_VM_TESTS=1 CRUMBLE_WORKSPACE_IMAGE=crumble-workspace:dev CRUMBLE_WORKSPA
 
 ## Run with Docker
 
-The build fetches the shared skills from [crumble-project/skills](https://github.com/crumble-project/skills) and bundles them into the image. It uses `main` by default; set `CRUMBLE_SKILLS_REF` (Compose) or the `SKILLS_REF` build argument to a tag or commit to pin them.
+The image bundles the default skills from [`skills/`](skills/README.md); set `CRUMBLE_SKILLS_DIR` to serve a different directory.
 
 ```bash
 docker compose up -d --build
 docker compose exec crumble cat /var/lib/crumble/data/server-token
-```
-
-To bundle a local skills checkout instead, override the `skills` build stage:
-
-```bash
-docker build --build-context skills=../skills -t crumble-server .
 ```
 
 - State lives in the `crumble` volume at `/var/lib/crumble`, which holds the data directory, its lock, and Microsandbox state. Run one container per volume, and use a local disk rather than a network filesystem.

@@ -92,9 +92,9 @@ export async function startServer(
       options.skillsDir ?? process.env.CRUMBLE_SKILLS_DIR;
 
     const skillsDir = resolve(
-      // `skills` is part of the workspace next to bot; import.meta.dir keeps
+      // The default skills ship in this repository; import.meta.dir keeps
       // this independent of the process working directory.
-      explicitSkillsDir ?? resolve(import.meta.dir, "../../skills"),
+      explicitSkillsDir ?? resolve(import.meta.dir, "../skills"),
     );
 
     if (explicitSkillsDir && !existsSync(skillsDir))
