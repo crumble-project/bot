@@ -22,6 +22,7 @@ The server also hosts a web UI at `http://127.0.0.1:7337/ui`. Enter the server t
 | `CRUMBLE_HOST` | `127.0.0.1` |
 | `CRUMBLE_PORT` | `7337` |
 | `CRUMBLE_TOKEN` | Generated; overrides require at least 32 characters |
+| `CRUMBLE_PUBLIC_URL` | Unset. The server's public https address, if it has one; see [MCP sign-in without registration](#mcp-sign-in-without-registration) |
 | `CRUMBLE_WORKSPACE_IMAGE` | Unset: no bot is offered the `coding` tool. An OCI image reference; see [Coding workspaces](#coding-workspaces) |
 
 Keep the server on loopback unless you provide TLS and access control.
@@ -42,6 +43,14 @@ An unfinished sign-in ends after 10 minutes without an answer or 30 minutes in t
 Sign-in sends authorization data, and the server token, over the client connection. Across any untrusted network, use HTTPS or an encrypted private network; plain HTTP on a LAN isn't encrypted.
 
 Typed credentials live in a new table. Before upgrading, back up the data directory and `.secret.key`: older servers can't read account sign-ins, and the upgrade moves saved API keys into the new table.
+
+## MCP sign-in without registration
+
+MCP servers sign Crumble in with OAuth. Crumble registers itself with the server's authorization server through dynamic client registration. Authorization servers without it may accept an OAuth Client ID Metadata Document (CIMD) instead: an https address the authorization server fetches to identify the client.
+
+When `CRUMBLE_PUBLIC_URL` is set, the server serves its document at `/oauth/client-metadata.json` and signs in with it wherever the authorization server advertises `client_id_metadata_document_supported`. The authorization server must be able to reach that address, for example through a tunnel. The document lists the web UI's callback at that address, so sign in from the web UI opened there, or from the Mac or iOS app.
+
+Some authorization servers, such as GitHub's, support neither. Add those MCP servers with a token instead.
 
 ## Coding workspaces
 

@@ -23,7 +23,11 @@ import {
 import type { Context } from "@earendil-works/chord/context";
 import type { Agent, MCPServer } from "./domain";
 import { Store } from "./store";
-import { connectionAuth, hasOAuthTokens } from "./mcp-oauth";
+import {
+  type ClientDocument,
+  connectionAuth,
+  hasOAuthTokens,
+} from "./mcp-oauth";
 import type { CodemodeNamespace } from "@earendil-works/pi-durable/codemode";
 
 /** The part of pi-mcp's `McpClient` Crumble uses, so tests can stand in for a server. */
@@ -49,6 +53,8 @@ export type MCPClientFactory = (
 export type IntegrationsOptions = {
   requestTimeoutMs?: number;
   clientFactory?: MCPClientFactory;
+  /** The server's OAuth client metadata document, when it has a public address. */
+  oauthClient?: ClientDocument;
 };
 
 /** Every tool of one MCP server starts with this, which also groups them in code mode. */
@@ -167,7 +173,10 @@ export class MCPIntegrations {
   ) {
     this.timeout = options.requestTimeoutMs ?? 30_000;
     this.factory = options.clientFactory ?? defaultClientFactory;
+    this.oauthClient = options.oauthClient;
   }
+
+  private readonly oauthClient: ClientDocument | undefined;
 
   private async withTimeout<T>(
     promise: Promise<T>,
@@ -268,7 +277,7 @@ export class MCPIntegrations {
     const value = this.factory(
       server,
       headers,
-      oauth ? connectionAuth(this.store, server) : undefined,
+      oauth ? connectionAuth(this.store, server, this.oauthClient) : undefined,
     );
 
     try {
