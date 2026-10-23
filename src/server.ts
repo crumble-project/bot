@@ -42,6 +42,7 @@ import { ViewerTickets } from "./desktop-viewer";
 import { websocket } from "hono/bun";
 import type { Workspaces } from "./workspace";
 import { microsandboxWorkspacesFromEnv } from "./microsandbox-workspaces";
+import { railwayWorkspacesFromEnv } from "./railway-workspaces";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { loadCommonSkills } from "./common-skills";
@@ -143,12 +144,13 @@ export async function startServer(
 
     const store = new Store(dataDir);
 
+    const wantsDesktop = (agentId: string) =>
+      store.getAgent(agentId)?.tools.includes(DESKTOP_TOOL_NAME) === true;
+
     const workspaces =
       options.workspaces ??
-      microsandboxWorkspacesFromEnv(process.env, {
-        wantsDesktop: (agentId) =>
-          store.getAgent(agentId)?.tools.includes(DESKTOP_TOOL_NAME) === true,
-      });
+      railwayWorkspacesFromEnv(process.env, { dataDir, wantsDesktop }) ??
+      microsandboxWorkspacesFromEnv(process.env, { wantsDesktop });
 
     const desktopControl = new DesktopControl(store);
 
