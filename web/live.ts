@@ -196,8 +196,7 @@ export function followActivity(open: Open, signal: AbortSignal) {
 
         if (event.type === "chat-preview")
           preview(event.agentId, event.lastMessage);
-        else if (event.type === "reply") notify(event, open);
-        // Learned-change notices are shown by the chat view in a later change; nothing to do here yet.
+        else notify(event, open);
       },
     },
     signal,

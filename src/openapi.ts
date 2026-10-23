@@ -10,12 +10,14 @@ import {
   desktopControlResponse,
   groupChatSnapshotResponse,
   heartbeatEvent,
+  learnedEvent,
 } from "./api-responses";
 
 export const eventSchemas = {
   "chat-snapshot.schema.json": chatSnapshotResponse,
   "group-chat-snapshot.schema.json": groupChatSnapshotResponse,
   "activity-event.schema.json": activityEvent,
+  "learned-event.schema.json": learnedEvent,
   "heartbeat.schema.json": heartbeatEvent,
   "desktop-control.schema.json": desktopControlResponse,
 };

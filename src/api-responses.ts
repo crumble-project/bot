@@ -360,14 +360,24 @@ export const skillDocumentResponse = z
   .object({ path: z.string(), content: z.string() })
   .openapi("SkillDocument");
 
+// The published shape of a skill, kept as is: ListedSkill refers to it, and a changed member of that union would be
+// a breaking change. Responses permit additional properties, so handlers return the full package anyway.
 export const skillResponse = z
   .object({
     id: z.string(),
+    name: z.string(),
+    instructions: z.string(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .openapi("Skill");
+
+/** A skill as a full package, with its documents, provenance, usage, and lifecycle. */
+export const skillPackageResponse = skillResponse
+  .extend({
     // The bot that owns the skill; null for a shared skill.
     agentId: z.string().nullable(),
-    name: z.string(),
     description: z.string(),
-    instructions: z.string(),
     documents: z.array(skillDocumentResponse),
     createdBy: z.enum(["owner", "bot"]),
     sourceExecutionId: z.string().nullable(),
@@ -375,10 +385,8 @@ export const skillResponse = z
     lastUsedAt: z.string().nullable(),
     state: z.enum(["active", "stale", "archived"]),
     pinned: z.boolean(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
   })
-  .openapi("Skill");
+  .openapi("SkillPackage");
 
 export const listedSkillResponse = z
   .discriminatedUnion("source", [
@@ -388,7 +396,6 @@ export const listedSkillResponse = z
       name: z.string(),
       description: z.string().optional(),
       instructions: z.string(),
-      documents: z.array(skillDocumentResponse),
       path: z.string(),
       source: z.literal("bundled"),
     }),
@@ -412,8 +419,8 @@ export const learnedChangeResponse = z
     target: z.enum(["skill", "memory"]),
     targetId: z.string(),
     action: z.enum(["create", "update", "delete", "revert"]),
-    before: z.union([skillResponse, memoryResponse, z.null()]),
-    after: z.union([skillResponse, memoryResponse, z.null()]),
+    before: z.union([skillPackageResponse, memoryResponse, z.null()]),
+    after: z.union([skillPackageResponse, memoryResponse, z.null()]),
     source: z.union([changeSourceResponse, z.null()]),
     revertsId: z.string().nullable(),
     createdAt: z.string(),
@@ -659,11 +666,13 @@ export const learnedEvent = z
   })
   .openapi("LearnedEvent", {
     description:
-      "A bot's review of one of its turns changed its skills or memory. Clients show a short notice in the bot chat and link to the change record. Clients may receive other event types later.",
+      "A bot's review of one of its turns changed its skills or memory, sent as the `learned` event on /v1/events. Clients show a short notice in the bot chat and link to the change record.",
   });
 
+// LearnedEvent is its own `learned` SSE event, not a member of this union: adding a member would be a breaking
+// change for clients that read the union as closed, while a new event name is ignored by every client.
 export const activityEvent = z
-  .discriminatedUnion("type", [replyEvent, chatPreviewEvent, learnedEvent])
+  .discriminatedUnion("type", [replyEvent, chatPreviewEvent])
   .openapi("ActivityEvent");
 
 export const heartbeatEvent = z.object({}).openapi("HeartbeatEvent");

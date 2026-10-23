@@ -114,17 +114,13 @@
           },
           {
             "$ref": "#/components/schemas/ChatPreviewEvent"
-          },
-          {
-            "$ref": "#/components/schemas/LearnedEvent"
           }
         ],
         "discriminator": {
           "propertyName": "type",
           "mapping": {
             "reply": "#/components/schemas/ReplyEvent",
-            "chat-preview": "#/components/schemas/ChatPreviewEvent",
-            "learned": "#/components/schemas/LearnedEvent"
+            "chat-preview": "#/components/schemas/ChatPreviewEvent"
           }
         }
       },
@@ -194,7 +190,7 @@
           "changes",
           "createdAt"
         ],
-        "description": "A bot's review of one of its turns changed its skills or memory. Clients show a short notice in the bot chat and link to the change record. Clients may receive other event types later."
+        "description": "A bot's review of one of its turns changed its skills or memory, sent as the `learned` event on /v1/events. Clients show a short notice in the bot chat and link to the change record."
       },
       "Health": {
         "type": "object",
@@ -1183,88 +1179,75 @@
         ],
         "description": "Where the memory was saved: the owner's bot chat, the owner directly, a scheduled task, another bot's request, or a group chat."
       },
-      "Skill": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
+      "SkillPackage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Skill"
           },
-          "agentId": {
-            "type": [
-              "string",
-              "null"
+          {
+            "type": "object",
+            "properties": {
+              "agentId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "description": {
+                "type": "string"
+              },
+              "documents": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SkillDocument"
+                }
+              },
+              "createdBy": {
+                "type": "string",
+                "enum": [
+                  "owner",
+                  "bot"
+                ]
+              },
+              "sourceExecutionId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "useCount": {
+                "type": "integer"
+              },
+              "lastUsedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "stale",
+                  "archived"
+                ]
+              },
+              "pinned": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "agentId",
+              "description",
+              "documents",
+              "createdBy",
+              "sourceExecutionId",
+              "useCount",
+              "lastUsedAt",
+              "state",
+              "pinned"
             ]
-          },
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "instructions": {
-            "type": "string"
-          },
-          "documents": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SkillDocument"
-            }
-          },
-          "createdBy": {
-            "type": "string",
-            "enum": [
-              "owner",
-              "bot"
-            ]
-          },
-          "sourceExecutionId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "useCount": {
-            "type": "integer"
-          },
-          "lastUsedAt": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "state": {
-            "type": "string",
-            "enum": [
-              "active",
-              "stale",
-              "archived"
-            ]
-          },
-          "pinned": {
-            "type": "boolean"
-          },
-          "createdAt": {
-            "type": "string"
-          },
-          "updatedAt": {
-            "type": "string"
           }
-        },
-        "required": [
-          "id",
-          "agentId",
-          "name",
-          "description",
-          "instructions",
-          "documents",
-          "createdBy",
-          "sourceExecutionId",
-          "useCount",
-          "lastUsedAt",
-          "state",
-          "pinned",
-          "createdAt",
-          "updatedAt"
         ]
       },
       "SkillDocument": {
@@ -1280,6 +1263,33 @@
         "required": [
           "path",
           "content"
+        ]
+      },
+      "Skill": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "instructions",
+          "createdAt",
+          "updatedAt"
         ]
       },
       "ReviewResult": {
@@ -1351,7 +1361,7 @@
           "before": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Skill"
+                "$ref": "#/components/schemas/SkillPackage"
               },
               {
                 "$ref": "#/components/schemas/Memory"
@@ -1364,7 +1374,7 @@
           "after": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Skill"
+                "$ref": "#/components/schemas/SkillPackage"
               },
               {
                 "$ref": "#/components/schemas/Memory"
@@ -1469,12 +1479,6 @@
               "instructions": {
                 "type": "string"
               },
-              "documents": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/SkillDocument"
-                }
-              },
               "path": {
                 "type": "string"
               },
@@ -1489,7 +1493,6 @@
               "id",
               "name",
               "instructions",
-              "documents",
               "path",
               "source"
             ]
@@ -5753,11 +5756,14 @@
           "activity": {
             "$ref": "#/components/schemas/ActivityEvent"
           },
+          "learned": {
+            "$ref": "#/components/schemas/LearnedEvent"
+          },
           "heartbeat": {
             "$ref": "#/components/schemas/HeartbeatEvent"
           }
         },
-        "description": "Server-sent events. Each activity event carries a ReplyEvent or ChatPreviewEvent JSON object in data. Current chat previews replay on connection; finished replies are not replayed. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. No Last-Event-ID replay.",
+        "description": "Server-sent events. Each activity event carries a ReplyEvent or ChatPreviewEvent JSON object in data. Each learned event carries a LearnedEvent: what a bot's review of one turn changed; GET /v1/agents/{id}/reviews lists them durably. Current chat previews replay on connection; finished replies and learned events are not replayed. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. No Last-Event-ID replay.",
         "security": [
           {
             "BearerAuth": []
@@ -8244,7 +8250,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/Skill"
+                    "$ref": "#/components/schemas/SkillPackage"
                   }
                 }
               }
@@ -8408,7 +8414,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Skill"
+                  "$ref": "#/components/schemas/SkillPackage"
                 }
               }
             }
@@ -8589,7 +8595,7 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/Skill"
+                      "$ref": "#/components/schemas/SkillPackage"
                     },
                     {
                       "type": "null"
@@ -9351,7 +9357,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Skill"
+                  "$ref": "#/components/schemas/SkillPackage"
                 }
               }
             }
@@ -9440,6 +9446,117 @@
       }
     },
     "/v1/skills/{id}": {
+      "get": {
+        "operationId": "getSkill",
+        "description": "One shared skill as a full package. GET /v1/skills keeps its earlier item shapes; the full records are here and in the create and update responses.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillPackage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
       "patch": {
         "operationId": "updateSkill",
         "security": [
@@ -9512,7 +9629,7 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/Skill"
+                      "$ref": "#/components/schemas/SkillPackage"
                     },
                     {
                       "type": "null"

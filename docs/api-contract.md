@@ -32,6 +32,7 @@ bun run contract:validate
 | `openapi/openapi.json` | Shared route registry; OpenAPI 3.1 |
 | `openapi/chat-snapshot.schema.json` | `chatSnapshotResponse` |
 | `openapi/activity-event.schema.json` | `activityEvent`, the reply and chat-preview discriminated union |
+| `openapi/learned-event.schema.json` | `learnedEvent`, what a bot's review of one turn changed |
 | `openapi/heartbeat.schema.json` | `heartbeatEvent` |
 
 The three event artifacts use Zod 4's native `z.toJSONSchema`, the `draft-2020-12` target, and `io: "output"`.
@@ -101,6 +102,7 @@ The directory contains exactly these release assets:
 - `openapi.json`
 - `chat-snapshot.schema.json`
 - `activity-event.schema.json`
+- `learned-event.schema.json`
 - `heartbeat.schema.json`
 - `CHANGELOG.md`, containing only the current contract's changelog section
 - `source-commit.txt`, containing the full source commit
@@ -139,6 +141,7 @@ Generate event payload types from the standalone schemas and keep the streaming 
 | `/v1/agents/{id}/events` | `snapshot` | `chat-snapshot.schema.json` |
 | `/v1/agents/{id}/events` | `heartbeat` | `heartbeat.schema.json` |
 | `/v1/events` | `activity` | `activity-event.schema.json` |
+| `/v1/events` | `learned` | `learned-event.schema.json` |
 | `/v1/events` | `heartbeat` | `heartbeat.schema.json` |
 
 Each event uses a JSON-encoded `data` field and a blank line:

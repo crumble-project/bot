@@ -456,7 +456,10 @@ export function createAPI(
 
         if (!stream.aborted)
           stream
-            .writeSSE({ event: "activity", data: JSON.stringify(canonical) })
+            .writeSSE({
+              event: data.type === "learned" ? "learned" : "activity",
+              data: JSON.stringify(canonical),
+            })
             .catch(finish);
       };
 
@@ -787,6 +790,13 @@ export function createAPI(
       200,
     ),
   );
+  register(routes.getSkill, (c) => {
+    const skill = store.getSkill(c.req.param("id"));
+
+    if (!skill || skill.agentId) throw new AppError(404, "Skill not found");
+
+    return c.json(skill, 200);
+  });
   register(routes.createSkill, async (c) =>
     c.json(store.createSkill(skillInput.parse(await c.req.json())), 201),
   );

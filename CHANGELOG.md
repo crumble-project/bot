@@ -64,11 +64,11 @@
 ## Contract 1.9.0
 
 - Add `GET` and `POST /v1/agents/{id}/skills` and `PATCH` and `DELETE /v1/agents/{id}/skills/{skillId}` for a bot's own skill packages, with the `SkillDocument` schema.
-- Add `agentId`, `description`, `documents`, `createdBy`, `sourceExecutionId`, `useCount`, `lastUsedAt`, `state`, and `pinned` to `Skill`, and `documents` to bundled `ListedSkill` entries. Skill inputs accept `description` and `documents`.
+- Add `SkillPackage`: `Skill` plus `agentId`, `description`, `documents`, `createdBy`, `sourceExecutionId`, `useCount`, `lastUsedAt`, `state`, and `pinned`. The skill routes return it, including the new `GET /v1/skills/{id}`; `Skill` and the `GET /v1/skills` item shapes are unchanged, and their entries carry the new fields as additional properties. Skill inputs accept `description` and `documents`.
 - An agent's inline `skills` accepts up to 100 entries, up from 30. Shared skill endpoints no longer reach a bot's own skills.
 - Add `GET /v1/changes` and `POST /v1/changes/{id}/revert` with the `LearnedChange` and `ChangeSource` schemas. A change's `actor` is `owner`, `bot`, `review`, or `curator`.
 - Add `review` and `reviewModel` to `Agent`, set like `desktopModel`. `PATCH /v1/agents/{id}/skills/{skillId}` also accepts `state` and `pinned`.
-- Add the `LearnedEvent` activity event, type `learned`. Clients that only handle `reply` and `chat-preview` events keep working.
+- Add the `learned` event on `GET /v1/events`, carrying `LearnedEvent`, with the `learned-event.schema.json` asset. The `activity` event's union is unchanged, so clients that only read it keep working.
 - Add `GET /v1/agents/{id}/reviews` with the `ReviewResult` schema.
 
 ## Contract 1.8.0
