@@ -483,6 +483,27 @@ export const loginMethod = z
   })
   .openapi("ProviderLoginMethod");
 
+/** How a provider that signs in outside Crumble stands, such as Claude Code. */
+export const externalAuthResponse = z
+  .object({
+    status: z.enum([
+      "signed_in",
+      "signed_out",
+      "cli_missing",
+      "unsupported_version",
+      "error",
+    ]),
+    /** The installed command-line tool's version, when it reported one. */
+    cliVersion: z.string().nullable(),
+    /** Versions Crumble is qualified with; any other is refused. */
+    qualifiedVersions: z.array(z.string()),
+    /** The command the owner runs on the server to sign in. */
+    signInCommand: z.string().nullable(),
+    signOutCommand: z.string().nullable(),
+    message: z.string().nullable(),
+  })
+  .openapi("ProviderExternalAuth");
+
 export const providerResponse = z
   .object({
     provider: z.string(),
@@ -493,6 +514,8 @@ export const providerResponse = z
     /** The provider's saved credential; ambient credentials have none. */
     credentialType: authType.nullable(),
     activeLoginId: z.string().nullable(),
+    /** Set for providers whose sign-in happens outside Crumble; they have no `authMethods`. */
+    externalAuth: externalAuthResponse.nullable(),
   })
   .openapi("Provider");
 

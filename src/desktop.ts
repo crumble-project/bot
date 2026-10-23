@@ -10,6 +10,7 @@ import { computerUseTool } from "./computer-use";
 import type { DesktopControl } from "./desktop-control";
 import type { Agent } from "./domain";
 import { defineJobKind, type JobExtensions } from "./jobs";
+import type { CrumblePlugin } from "./plugins";
 import type { Workspaces } from "./workspace";
 
 export const DESKTOP_TOOL_NAME = "desktop";
@@ -102,3 +103,23 @@ export function desktopExtensions(
     }),
   });
 }
+
+/** Desktop jobs as a plugin: offered to bots with the `desktop` tool while workspaces have bot desktops. */
+export const desktopPlugin = (
+  workspaces: Workspaces | undefined,
+  control: DesktopControl,
+): CrumblePlugin => ({
+  id: "desktop",
+  jobKinds: workspaces?.desktop
+    ? [
+        {
+          kind: "desktop",
+          enabled: (agent) => agent.tools.includes(DESKTOP_TOOL_NAME),
+          extensions: (agent) => desktopExtensions(agent, control),
+          env: (agentId, target, context) =>
+            desktopEnv(workspaces, agentId, target, context),
+          onAnswer: desktopAnswers,
+        },
+      ]
+    : [],
+});

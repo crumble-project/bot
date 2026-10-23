@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useMatchRoute } from "@tanstack/react-router";
 import {
+  CopyIcon,
   KeyRoundIcon,
   PlugIcon,
   SearchIcon,
@@ -184,7 +185,18 @@ export function GeneralSettings() {
   );
 }
 
+const EXTERNAL_STATUS = {
+  signed_in: "Signed in",
+  signed_out: "Not signed in",
+  cli_missing: "Not installed",
+  unsupported_version: "Unsupported version",
+  error: "Unavailable",
+} as const;
+
 function status(provider: Provider) {
+  if (provider.externalAuth)
+    return EXTERNAL_STATUS[provider.externalAuth.status];
+
   if (provider.credentialType === "oauth") return "Signed in";
 
   if (provider.credentialType === "api_key") return "Key saved";
@@ -309,6 +321,53 @@ function ProviderRow({
         </form>
       )}
       {save.isError && <FieldError>{save.error.message}</FieldError>}
+      {provider.externalAuth && (
+        <ExternalSignIn external={provider.externalAuth} />
+      )}
+    </div>
+  );
+}
+
+/** A provider that signs in outside Crumble: why it is not ready, and the command to run on the server. */
+function ExternalSignIn({
+  external,
+}: {
+  external: NonNullable<Provider["externalAuth"]>;
+}) {
+  const signedIn = external.status === "signed_in";
+  const command = signedIn ? external.signOutCommand : external.signInCommand;
+
+  return (
+    <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+      {external.message && <p>{external.message}</p>}
+      {external.status === "unsupported_version" && (
+        <p>
+          Installed {external.cliVersion ?? "unknown"}; supported{" "}
+          {external.qualifiedVersions.join(", ")}.
+        </p>
+      )}
+      {command && external.status !== "cli_missing" && (
+        <div className="flex flex-col gap-1">
+          <span>
+            {signedIn
+              ? "To sign out, run on the server:"
+              : "To sign in, run on the server:"}
+          </span>
+          <div className="flex items-start gap-1">
+            <code className="flex-1 rounded bg-muted px-2 py-1 font-mono text-xs break-all">
+              {command}
+            </code>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              title="Copy"
+              onClick={() => void navigator.clipboard.writeText(command)}
+            >
+              <CopyIcon />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

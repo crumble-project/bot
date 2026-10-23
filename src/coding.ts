@@ -11,6 +11,7 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { createCodingTools } from "@earendil-works/pi-durable/tools";
 import type { Agent } from "./domain";
 import { defineJobKind, type JobExtensions, type JobInfo } from "./jobs";
+import type { CrumblePlugin } from "./plugins";
 import { WORKSPACE_PATH, type Workspaces } from "./workspace";
 
 export const CODING_TOOL_NAME = "coding";
@@ -76,3 +77,22 @@ export function codingExtensions(
 
   return coding.extensions({ agentId: agent.id, job });
 }
+
+/** Coding jobs as a plugin: offered to bots with the `coding` tool while workspaces are available. */
+export const codingPlugin = (
+  workspaces: Workspaces | undefined,
+): CrumblePlugin => ({
+  id: "coding",
+  jobKinds: workspaces
+    ? [
+        {
+          kind: "coding",
+          enabled: (agent) => agent.tools.includes(CODING_TOOL_NAME),
+          extensions: (agent) => codingExtensions(agent, workspaces),
+          env: (agentId, target, context) =>
+            codingEnv(workspaces, agentId, target, context),
+          onAnswer: codingAnswers,
+        },
+      ]
+    : [],
+});

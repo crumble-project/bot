@@ -63,6 +63,7 @@ import {
   signOut,
   startAuthorization,
 } from "./mcp-oauth";
+import type { ExternalAuth } from "./plugins";
 import { MAX_MESSAGE_BODY } from "./attachments";
 import { operationalActivity, sortActivity } from "./activity";
 import type { TranscriptMessage } from "./transcript";
@@ -97,6 +98,8 @@ export function createAPI(
     providerAuth?: ProviderAuth;
     /** The server's OAuth client metadata document, when it has a public address. */
     oauthClient?: ClientDocument;
+    /** Providers whose sign-in happens outside Crumble, by provider ID. */
+    externalAuth?: ReadonlyMap<string, () => Promise<ExternalAuth>>;
   } = {},
   push?: PushManager,
 ) {
@@ -949,6 +952,7 @@ export function createAPI(
           authMethods: loginMethods(item),
           credentialType: saved.get(item.id) ?? null,
           activeLoginId: providerAuth.activeLoginId(item.id),
+          externalAuth: (await options.externalAuth?.get(item.id)?.()) ?? null,
         })),
       ),
       200,
@@ -993,7 +997,16 @@ export function createAPI(
     return c.json({ provider: name, configured: true }, 200);
   });
   register(routes.deleteProvider, async (c) => {
-    await providerAuth.signOut(provider.parse(c.req.param("provider")));
+    const name = provider.parse(c.req.param("provider"));
+    const external = await options.externalAuth?.get(name)?.();
+
+    if (external)
+      throw new AppError(
+        409,
+        `This provider signs in outside Crumble. Sign out on the server: ${external.signOutCommand ?? "see its documentation"}`,
+      );
+
+    await providerAuth.signOut(name);
 
     return c.body(null, 204);
   });

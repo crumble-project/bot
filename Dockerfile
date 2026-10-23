@@ -14,6 +14,7 @@ ENV NODE_ENV=production \
     CRUMBLE_PORT=7337 \
     CRUMBLE_DATA_DIR=/var/lib/crumble/data \
     CRUMBLE_SKILLS_DIR=/app/skills \
+    CRUMBLE_CLAUDE_COMMAND=/var/lib/crumble/claude-code/node_modules/.bin/claude \
     MSB_HOME=/var/lib/crumble/microsandbox
 
 COPY --from=deps /app/node_modules node_modules
