@@ -935,6 +935,7 @@ export function createAPI(
       ...server,
       auth,
       authenticated: auth !== "none",
+      error: integrations?.failure(server.id) ?? null,
       hasOAuthClientSecret: Boolean(
         store.getCredential(clientSecretKey(server.id)),
       ),

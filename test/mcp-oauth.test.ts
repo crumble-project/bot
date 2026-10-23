@@ -203,14 +203,20 @@ describe("MCP OAuth", () => {
     );
   });
 
-  test("an expired sign-in fails with a request to sign in again", async () => {
+  test("an expired sign-in leaves the server out and asks to sign in again", async () => {
     const { store, server, fake } = setup();
     await signIn(store, server);
     fake.refuseRefresh();
     const integrations = new MCPIntegrations(store);
     // SAFETY: OAuth integration only reads these Agent fields in this fixture.
     const agent = { id: "a1", mcpServers: [server.id] } as Agent;
-    await expect(integrations.extensionsForAgent(agent)).rejects.toThrow(
+    const extensions = await integrations.extensionsForAgent(agent);
+
+    // SAFETY: MCP extensions expose their registered tool list.
+    expect(extensions.flatMap((extension) => (extension as any).tools)).toEqual(
+      [],
+    );
+    expect(integrations.failure(server.id)).toContain(
       "Sign in to Linear again under Integrations",
     );
     await integrations.close();

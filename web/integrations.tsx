@@ -202,6 +202,9 @@ function ServerRow({
         <span className="text-xs text-muted-foreground">
           {owner ? `Only ${owner.name}` : "Shared"} · {authLabel(server)}
         </span>
+        {server.error && (
+          <span className="text-xs text-destructive">{server.error}</span>
+        )}
         {failure && (
           <span className="text-xs text-destructive">{failure.message}</span>
         )}

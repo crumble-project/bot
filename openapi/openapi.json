@@ -1711,6 +1711,13 @@
                   "none"
                 ]
               },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why the server's tools were left out of a bot's last turn, such as a missing sign-in; null once it connects again."
+              },
               "hasOAuthClientSecret": {
                 "type": "boolean",
                 "description": "Whether the OAuth app's client secret is stored; it is never returned."
@@ -1721,6 +1728,7 @@
             },
             "required": [
               "auth",
+              "error",
               "hasOAuthClientSecret",
               "authenticated"
             ]

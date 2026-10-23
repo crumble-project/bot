@@ -513,6 +513,10 @@ export const mcpServerResponse = z
 export const describedMcpServerResponse = mcpServerResponse
   .extend({
     auth: z.enum(["oauth", "token", "none"]),
+    error: z.string().nullable().openapi({
+      description:
+        "Why the server's tools were left out of a bot's last turn, such as a missing sign-in; null once it connects again.",
+    }),
     hasOAuthClientSecret: z.boolean().openapi({
       description:
         "Whether the OAuth app's client secret is stored; it is never returned.",
