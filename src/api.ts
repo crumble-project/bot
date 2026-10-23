@@ -54,6 +54,10 @@ import { ProviderCredentials } from "./provider-credentials";
 import { loginMethods, ProviderAuth } from "./provider-auth";
 import type { CommonSkill } from "./common-skills";
 import {
+  CLIENT_DOCUMENT_PATH,
+  clientSecretKey,
+  type ClientDocument,
+  clientDocumentBody,
   finishAuthorization,
   hasOAuthTokens,
   signOut,
@@ -91,6 +95,8 @@ export function createAPI(
     openDesktop?: (agentId: string) => Promise<DesktopStream>;
     /** The server's provider sign-ins; API-only fixtures get one of their own. */
     providerAuth?: ProviderAuth;
+    /** The server's OAuth client metadata document, when it has a public address. */
+    oauthClient?: ClientDocument;
   } = {},
   push?: PushManager,
 ) {
@@ -133,6 +139,14 @@ export function createAPI(
   );
   register(routes.health, (c) =>
     c.json({ status: "ok", apiVersion: 1 } as const, 200),
+  );
+  // Public like /health: authorization servers fetch it to identify Crumble as an OAuth client.
+  app.get(CLIENT_DOCUMENT_PATH, (c) =>
+    options.oauthClient
+      ? c.json(clientDocumentBody(options.oauthClient), 200, {
+          "Cache-Control": "public, max-age=3600",
+        })
+      : c.notFound(),
   );
   app.use("/v1/*", bearerAuth({ token }));
   app.onError((error, c) => {
@@ -447,6 +461,9 @@ export function createAPI(
       };
 
       const unsubscribers = [service.onActivity(send)];
+
+      // Browsers see the response only once a body chunk arrives, which without bots to preview could take 15 seconds.
+      await stream.writeSSE({ event: "heartbeat", data: "{}" });
 
       // Replay current previews on every connection so a sidebar can recover missed events.
       try {
@@ -1007,7 +1024,15 @@ export function createAPI(
         ? "token"
         : "none";
 
-    return { ...server, auth, authenticated: auth !== "none" } as const;
+    return {
+      ...server,
+      auth,
+      authenticated: auth !== "none",
+      error: integrations?.failure(server.id) ?? null,
+      hasOAuthClientSecret: Boolean(
+        store.getCredential(clientSecretKey(server.id)),
+      ),
+    } as const;
   };
 
   const mcpServer = (id: string) => {
@@ -1030,6 +1055,7 @@ export function createAPI(
         store,
         mcpServer(c.req.param("id")),
         redirectUri,
+        options.oauthClient,
       ),
       200,
     );
@@ -1038,7 +1064,14 @@ export function createAPI(
     const { code, state, iss } = oauthCallbackInput.parse(await c.req.json());
 
     const server = mcpServer(c.req.param("id"));
-    await finishAuthorization(store, server, code, state, iss);
+    await finishAuthorization(
+      store,
+      server,
+      code,
+      state,
+      iss,
+      options.oauthClient,
+    );
     await integrations?.disconnect(server.id);
 
     return c.json(describeServer(server), 200);
@@ -1063,6 +1096,9 @@ export function createAPI(
 
     if (input.token) store.setCredential(`mcp:${server.id}`, input.token);
 
+    if (input.oauthClientSecret)
+      store.setCredential(clientSecretKey(server.id), input.oauthClientSecret);
+
     if (owner)
       store.updateAgent(owner.id, {
         mcpServers: [...owner.mcpServers, server.id],
@@ -1081,12 +1117,35 @@ export function createAPI(
       else store.deleteCredential(`mcp:${old.id}`);
     }
 
-    return c.json(store.updateMCPServer(old.id, input), 200);
+    const secretChanged =
+      input.oauthClientSecret !== undefined &&
+      input.oauthClientSecret !== store.getCredential(clientSecretKey(old.id));
+
+    if (input.oauthClientSecret !== undefined) {
+      if (input.oauthClientSecret)
+        store.setCredential(clientSecretKey(old.id), input.oauthClientSecret);
+      else store.deleteCredential(clientSecretKey(old.id));
+    }
+
+    // Tokens belong to the client that obtained them, so another client signs in again.
+    if (secretChanged || (input.oauthClientId ?? null) !== old.oauthClientId) {
+      signOut(store, old.id);
+      await integrations?.disconnect(old.id);
+    }
+
+    return c.json(
+      store.updateMCPServer(old.id, {
+        ...input,
+        oauthClientId: input.oauthClientId ?? null,
+      }),
+      200,
+    );
   });
   register(routes.deleteMcpServer, (c) => {
     if (!store.deleteMCPServer(c.req.param("id")))
       throw new AppError(404, "MCP server not found");
     store.deleteCredential(`mcp:${c.req.param("id")}`);
+    store.deleteCredential(clientSecretKey(c.req.param("id")));
     signOut(store, c.req.param("id"));
 
     return c.body(null, 204);

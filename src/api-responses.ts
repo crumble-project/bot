@@ -571,12 +571,24 @@ export const mcpServerResponse = z
     url: z.string(),
     enabled: z.boolean(),
     agentId: z.string().nullable(),
+    oauthClientId: z.string().nullable().openapi({
+      description:
+        "The client ID of an OAuth app the owner registered with the server's authorization server, used instead of registering Crumble.",
+    }),
   })
   .openapi("McpServer");
 
 export const describedMcpServerResponse = mcpServerResponse
   .extend({
     auth: z.enum(["oauth", "token", "none"]),
+    error: z.string().nullable().openapi({
+      description:
+        "Why the server's tools were left out of a bot's last turn, such as a missing sign-in; null once it connects again.",
+    }),
+    hasOAuthClientSecret: z.boolean().openapi({
+      description:
+        "Whether the OAuth app's client secret is stored; it is never returned.",
+    }),
     authenticated: z.boolean(),
   })
   .openapi("McpServerStatus");

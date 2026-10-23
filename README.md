@@ -14,12 +14,15 @@ bun run dev
 Use `bun run start` without file watching. The default address is `http://127.0.0.1:7337`.
 Copy the server token from the path printed at startup into your client's connection settings.
 
+The server also hosts a web UI at `http://127.0.0.1:7337/ui`. Enter the server token to connect; the browser keeps it in local storage until you sign out. The UI lives in `web/` and is bundled by Bun, with Tailwind through `bunfig.toml`, when the server starts serving it, so it needs no build step. Set `NODE_ENV=production` for the minified bundle. Add shadcn/ui components with `bunx --bun shadcn@latest add <component>`; they land in `web/components/ui`.
+
 | Variable | Default |
 | --- | --- |
 | `CRUMBLE_DATA_DIR` | `./data` |
 | `CRUMBLE_HOST` | `127.0.0.1` |
 | `CRUMBLE_PORT` | `7337` |
 | `CRUMBLE_TOKEN` | Generated; overrides require at least 32 characters |
+| `CRUMBLE_PUBLIC_URL` | Unset. The server's public https address, if it has one; see [MCP sign-in without registration](#mcp-sign-in-without-registration) |
 | `CRUMBLE_WORKSPACE_IMAGE` | Unset: no bot is offered the `coding` tool. An OCI image reference; see [Coding workspaces](#coding-workspaces) |
 
 Keep the server on loopback unless you provide TLS and access control.
@@ -40,6 +43,16 @@ An unfinished sign-in ends after 10 minutes without an answer or 30 minutes in t
 Sign-in sends authorization data, and the server token, over the client connection. Across any untrusted network, use HTTPS or an encrypted private network; plain HTTP on a LAN isn't encrypted.
 
 Typed credentials live in a new table. Before upgrading, back up the data directory and `.secret.key`: older servers can't read account sign-ins, and the upgrade moves saved API keys into the new table.
+
+## MCP sign-in without registration
+
+MCP servers sign Crumble in with OAuth. Crumble registers itself with the server's authorization server through dynamic client registration. Authorization servers without it may accept an OAuth Client ID Metadata Document (CIMD) instead: an https address the authorization server fetches to identify the client.
+
+When `CRUMBLE_PUBLIC_URL` is set, the server serves its document at `/oauth/client-metadata.json` and signs in with it wherever the authorization server advertises `client_id_metadata_document_supported`. The authorization server must be able to reach that address, for example through a tunnel. The document lists the web UI's callback at that address, so sign in from the web UI opened there, or from the Mac or iOS app.
+
+Some authorization servers, such as GitHub's, support neither. For those, register an OAuth app with the authorization server yourself, with the callback URL `<web UI address>/ui/oauth/callback`, for example `http://127.0.0.1:7337/ui/oauth/callback`, and enter its client ID and secret on the MCP server under Settings › Integrations. Sign-in then uses your app, sending its secret in the token request body. Or add the server with a token instead.
+
+For GitHub, create the app under GitHub › Settings › Developer settings › OAuth Apps and use the MCP server URL `https://api.githubcopilot.com/mcp/`. Sign-in asks for every scope GitHub's MCP server lists.
 
 ## Coding workspaces
 

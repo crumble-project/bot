@@ -242,6 +242,9 @@ export class Store {
         "ALTER TABLE mcp_servers ADD COLUMN agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE",
       );
 
+    if (!serverCols.some((c) => c.name === "oauth_client_id"))
+      this.db.exec("ALTER TABLE mcp_servers ADD COLUMN oauth_client_id TEXT");
+
     // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
     const conversationCols = this.db
       .query("PRAGMA table_info(conversations)")
@@ -1141,6 +1144,7 @@ export class Store {
       url: r.url,
       enabled: !!r.enabled,
       agentId: r.agent_id ?? null,
+      oauthClientId: r.oauth_client_id ?? null,
     };
   }
   listMCPServers() {
@@ -1163,12 +1167,15 @@ export class Store {
       : null;
   }
   createMCPServer(
-    input: Omit<MCPServer, "id" | "agentId"> & { agentId?: string | null },
+    input: Omit<MCPServer, "id" | "agentId" | "oauthClientId"> & {
+      agentId?: string | null;
+      oauthClientId?: string | null;
+    },
     serverId: string = id(),
   ) {
     this.db
       .query(
-        "INSERT INTO mcp_servers (id,name,url,enabled,agent_id) VALUES (?,?,?,?,?)",
+        "INSERT INTO mcp_servers (id,name,url,enabled,agent_id,oauth_client_id) VALUES (?,?,?,?,?,?)",
       )
       .run(
         serverId,
@@ -1176,6 +1183,7 @@ export class Store {
         input.url,
         this.b(input.enabled),
         input.agentId ?? null,
+        input.oauthClientId ?? null,
       );
 
     return this.getMCPServer(serverId)!;
@@ -1187,8 +1195,10 @@ export class Store {
     if (!s) return null;
     const x = { ...s, ...patch };
     this.db
-      .query("UPDATE mcp_servers SET name=?,url=?,enabled=? WHERE id=?")
-      .run(x.name, x.url, this.b(x.enabled), id);
+      .query(
+        "UPDATE mcp_servers SET name=?,url=?,enabled=?,oauth_client_id=? WHERE id=?",
+      )
+      .run(x.name, x.url, this.b(x.enabled), x.oauthClientId, id);
 
     return this.getMCPServer(id);
   }

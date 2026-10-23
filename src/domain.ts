@@ -181,6 +181,8 @@ export type MCPServer = {
   url: string;
   enabled: boolean;
   agentId: string | null;
+  /** A client the owner registered with the server's authorization server, for servers that register none themselves. */
+  oauthClientId: string | null;
 };
 
 export const MAX_SKILL_DOCUMENTS = 20;

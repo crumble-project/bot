@@ -55,6 +55,20 @@ import { PushManager, PushStore } from "./push";
 import { providerModels } from "./providers";
 import { ProviderCredentials } from "./provider-credentials";
 import { ProviderAuth } from "./provider-auth";
+import { webUIRoutes } from "./web-ui";
+import { clientDocument } from "./mcp-oauth";
+
+/** The server's public address, which authorization servers fetch Crumble's client document from. */
+function httpsUrl(value: string) {
+  const url = URL.canParse(value) ? new URL(value) : undefined;
+
+  if (url?.protocol !== "https:" || url.search || url.hash)
+    throw new Error(
+      `CRUMBLE_PUBLIC_URL must be an https address without a query, such as https://crumble.example.com: ${value}`,
+    );
+
+  return url;
+}
 
 export async function startServer(
   options: {
@@ -62,6 +76,11 @@ export async function startServer(
     hostname?: string;
     port?: number;
     token?: string;
+    /**
+     * The public https address the server is reachable at, e.g. through a tunnel. It lets MCP servers whose
+     * authorization servers lack dynamic registration sign in through Crumble's Client ID Metadata Document.
+     */
+    publicUrl?: string;
     skillsDir?: string;
     /**
      * Backs the `coding` and `desktop` tools; defaults to Microsandbox workspaces when `CRUMBLE_WORKSPACE_IMAGE` is set,
@@ -131,7 +150,13 @@ export async function startServer(
     const credentials = new ProviderCredentials(store);
     const models = providerModels(credentials);
     providerAuth = new ProviderAuth(store, credentials, models);
-    const integrations = new MCPIntegrations(store);
+    const publicUrl = options.publicUrl ?? process.env.CRUMBLE_PUBLIC_URL;
+
+    const oauthClient = publicUrl
+      ? clientDocument(httpsUrl(publicUrl))
+      : undefined;
+
+    const integrations = new MCPIntegrations(store, { oauthClient });
 
     // One sandbox runs every agent's code mode scripts, each in a worker of its own.
     const codemodeSandbox = new CodemodeSandbox({
@@ -323,6 +348,7 @@ export async function startServer(
             workspaces.openDesktop(agentId, BACKGROUND_CONTEXT),
         }),
         providerAuth,
+        oauthClient,
       },
       push,
     );
@@ -347,6 +373,10 @@ export async function startServer(
       holdAwake(agent.id, desktopControl.get(agent.id));
 
     const server = Bun.serve({
+      // The web UI is public; it reaches the API with the token the owner enters.
+      routes: webUIRoutes,
+      // Bun's HMR bundle breaks TanStack Router's circular imports at startup.
+      development: process.env.NODE_ENV !== "production" && { hmr: false },
       fetch: app.fetch,
       // Viewer connections to bot desktops.
       websocket,

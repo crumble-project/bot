@@ -23,7 +23,11 @@ import {
 import type { Context } from "@earendil-works/chord/context";
 import type { Agent, MCPServer } from "./domain";
 import { Store } from "./store";
-import { connectionAuth, hasOAuthTokens } from "./mcp-oauth";
+import {
+  type ClientDocument,
+  connectionAuth,
+  hasOAuthTokens,
+} from "./mcp-oauth";
 import type { CodemodeNamespace } from "@earendil-works/pi-durable/codemode";
 
 /** The part of pi-mcp's `McpClient` Crumble uses, so tests can stand in for a server. */
@@ -49,6 +53,8 @@ export type MCPClientFactory = (
 export type IntegrationsOptions = {
   requestTimeoutMs?: number;
   clientFactory?: MCPClientFactory;
+  /** The server's OAuth client metadata document, when it has a public address. */
+  oauthClient?: ClientDocument;
 };
 
 /** Every tool of one MCP server starts with this, which also groups them in code mode. */
@@ -105,7 +111,11 @@ function defaultClientFactory(
 }
 
 /** Turns an authentication failure into what the owner should do about it. */
-function throwAuthFailure(server: MCPServer, cause: unknown): never {
+function throwAuthFailure(
+  server: MCPServer,
+  cause: unknown,
+  hadCredentials: boolean,
+): never {
   if (cause instanceof McpOAuthAuthorizationRequiredError)
     throw new Error(
       `Sign in to ${server.name} again under Integrations to use its tools`,
@@ -113,7 +123,9 @@ function throwAuthFailure(server: MCPServer, cause: unknown): never {
 
   if (cause instanceof McpAuthRequiredError)
     throw new Error(
-      `${server.name} rejected Crumble's credentials. Check its token, or sign in under Integrations`,
+      hadCredentials
+        ? `${server.name} rejected Crumble's credentials. Check its token, or sign in under Integrations`
+        : `${server.name} needs a sign-in or token. Add one under Integrations to use its tools`,
     );
 
   throw cause;
@@ -151,6 +163,7 @@ function credentials(store: Store, server: MCPServer) {
 }
 
 export class MCPIntegrations {
+  private readonly failures = new Map<string, string>();
   private readonly connections = new Map<
     string,
     {
@@ -167,7 +180,10 @@ export class MCPIntegrations {
   ) {
     this.timeout = options.requestTimeoutMs ?? 30_000;
     this.factory = options.clientFactory ?? defaultClientFactory;
+    this.oauthClient = options.oauthClient;
   }
+
+  private readonly oauthClient: ClientDocument | undefined;
 
   private async withTimeout<T>(
     promise: Promise<T>,
@@ -254,6 +270,7 @@ export class MCPIntegrations {
     // A signed-in server authenticates through OAuth, which refreshes its own access token.
     const oauth = hasOAuthTokens(this.store, server.id);
     const headers = oauth ? {} : credentials(this.store, server);
+    const hadCredentials = oauth || Object.keys(headers).length > 0;
     const fingerprint = digest({ url: server.url, headers, oauth });
     const existing = this.connections.get(server.id);
 
@@ -268,7 +285,7 @@ export class MCPIntegrations {
     const value = this.factory(
       server,
       headers,
-      oauth ? connectionAuth(this.store, server) : undefined,
+      oauth ? connectionAuth(this.store, server, this.oauthClient) : undefined,
     );
 
     try {
@@ -280,17 +297,18 @@ export class MCPIntegrations {
     } catch (error) {
       await value.client.close().catch(() => undefined);
       await value.transport.close().catch(() => undefined);
-      throwAuthFailure(server, error);
+      throwAuthFailure(server, error, hadCredentials);
     }
   }
 
-  async extensionsForAgent(agent: Agent) {
-    const tools: ToolRegistration[] = [];
+  /** Why a server's tools were left out of a bot's last turn, until it connects again. */
+  failure(serverId: string) {
+    return this.failures.get(serverId) ?? null;
+  }
 
-    for (const serverId of agent.mcpServers) {
-      const server = this.store.usableMCPServer(agent.id, serverId);
-
-      if (!server) continue;
+  /** Connects and lists a server's tools; a server that fails is skipped and its reason kept, so the bot still answers. */
+  private async listedTools(server: MCPServer) {
+    try {
       const connection = await this.connection(server);
 
       const listed = await this.withTimeout(
@@ -298,8 +316,39 @@ export class MCPIntegrations {
       ).catch(async (error) => {
         this.connections.delete(server.id);
         await connection.client.close().catch(() => undefined);
-        throwAuthFailure(server, error);
+        throwAuthFailure(server, error, true);
       });
+
+      this.failures.delete(server.id);
+
+      return listed;
+    } catch (error) {
+      this.failures.set(
+        server.id,
+        error instanceof Error ? error.message : String(error),
+      );
+
+      return [];
+    }
+  }
+
+  async extensionsForAgent(agent: Agent) {
+    const tools: ToolRegistration[] = [];
+    const connected: string[] = [];
+    const leftOut: string[] = [];
+
+    for (const serverId of agent.mcpServers) {
+      const server = this.store.usableMCPServer(agent.id, serverId);
+
+      if (!server) continue;
+      const listed = await this.listedTools(server);
+      const failure = this.failure(server.id);
+
+      if (failure) leftOut.push(`- ${server.name}: ${failure}`);
+      else
+        connected.push(
+          `- ${server.name}: ${listed.length} tools named ${mcpToolPrefix(server.id)}*`,
+        );
 
       for (const remote of listed) {
         const name = `${mcpToolPrefix(server.id)}${remote.name.replace(/[^a-zA-Z0-9_]/g, "_")}`;
@@ -346,7 +395,7 @@ export class MCPIntegrations {
               args,
               signal,
             ).catch((error) => {
-              throwAuthFailure(server, error);
+              throwAuthFailure(server, error, true);
             });
 
             return { output: toLlmContent(result), isError: result.isError };
@@ -357,7 +406,25 @@ export class MCPIntegrations {
       }
     }
 
-    return [defineExtension({ name: `mcp:${agent.id}`, tools })];
+    // Tool names carry a server ID, not its name, so the bot learns which integration each belongs to here.
+    const summary = [
+      connected.length
+        ? `MCP servers the owner connected, with their tools:\n${connected.join("\n")}`
+        : "",
+      leftOut.length
+        ? `MCP servers left out of this turn; tell the owner why if they ask for them:\n${leftOut.join("\n")}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    return [
+      defineExtension({
+        name: `mcp:${agent.id}`,
+        tools,
+        sections: [{ key: "mcp_servers", render: () => summary || undefined }],
+      }),
+    ];
   }
 
   /** The agent's MCP servers as code mode namespaces, so scripts see each server's tools together. */
@@ -381,6 +448,7 @@ export class MCPIntegrations {
   async disconnect(serverId: string) {
     const existing = this.connections.get(serverId);
     this.connections.delete(serverId);
+    this.failures.delete(serverId);
     await existing?.client.close().catch(() => undefined);
     await existing?.transport.close().catch(() => undefined);
   }

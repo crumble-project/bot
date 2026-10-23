@@ -153,6 +153,10 @@ export const mcpInput = z.object({
     ),
   enabled: z.boolean().default(true),
   token: z.string().max(16000).optional(),
+  /** The client ID of an OAuth app the owner registered with the server's authorization server; null removes it. */
+  oauthClientId: z.string().trim().min(1).max(500).nullable().optional(),
+  /** Write-only; an empty string removes it. */
+  oauthClientSecret: z.string().max(1000).optional(),
 });
 
 export const mcpCreateInput = mcpInput.extend({
@@ -929,7 +933,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "1.8.0",
+      version: "1.9.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },

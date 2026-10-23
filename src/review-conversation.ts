@@ -29,6 +29,7 @@ export const ReviewConversation = defineDoc<{
     memory: false,
     budgetChars: 0,
   }),
+  checkpointWhen: () => false,
 });
 
 // Owns a review conversation, so it stays out of the bot chat transcript, like a group conversation's anchor.
