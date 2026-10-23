@@ -14,6 +14,7 @@ import type {
   groupChatResponse,
   groupChatSnapshotResponse,
   historyResponse,
+  learnedChangeResponse,
   listedSkillResponse,
   loginSessionResponse,
   memoryResponse,
@@ -43,6 +44,8 @@ export type Message = HistoryPage["messages"][number];
 export type Provider = z.infer<typeof providerResponse>;
 
 export type Memory = z.infer<typeof memoryResponse>;
+
+export type Change = z.infer<typeof learnedChangeResponse>;
 
 export type ListedSkill = z.infer<typeof listedSkillResponse>;
 
@@ -255,11 +258,6 @@ export const skillsQuery = queryOptions({
 export const mcpServersQuery = queryOptions({
   queryKey: ["mcp-servers"],
   queryFn: ({ signal }) => api<McpServer[]>("/v1/mcp-servers", { signal }),
-});
-
-export const activityFeedQuery = queryOptions({
-  queryKey: ["activity-feed"],
-  queryFn: ({ signal }) => api<ActivityFeed>("/v1/activity/feed", { signal }),
 });
 
 /** `version` refetches when the chat's job messages change. */

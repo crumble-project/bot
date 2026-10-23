@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Crumble API",
-    "version": "1.11.0",
+    "version": "2.0.0",
     "description": "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime."
   },
   "components": {
@@ -362,7 +362,8 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "The bot's tools; always includes `schedule` and `codemode`."
           },
           "skills": {
             "type": "array",
@@ -389,7 +390,8 @@
             }
           },
           "sharedMemory": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "True whenever `tools` includes `memory`; the server ignores it in input."
           },
           "mcpServers": {
             "type": "array",
@@ -401,7 +403,8 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Every other bot; with `delegate` in `tools` this bot may message any of them. The server ignores it in input."
           },
           "inference": {
             "type": "object",
@@ -1655,16 +1658,30 @@
           "activities": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/OperationalActivity"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/OperationalActivity"
+                },
+                {
+                  "$ref": "#/components/schemas/ChangeActivity"
+                }
+              ]
             }
           },
           "hasMore": {
             "type": "boolean"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
           "activities",
-          "hasMore"
+          "hasMore",
+          "nextCursor"
         ]
       },
       "OperationalActivity": {
@@ -1706,6 +1723,46 @@
           "entryId",
           "kind",
           "details"
+        ]
+      },
+      "ChangeActivity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "agentName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timestamp": {
+            "type": "number"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "change"
+            ]
+          },
+          "change": {
+            "$ref": "#/components/schemas/LearnedChange"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "agentName",
+          "timestamp",
+          "kind",
+          "change"
         ]
       },
       "Provider": {
@@ -10685,6 +10742,7 @@
     "/v1/activity/feed": {
       "get": {
         "operationId": "getActivityFeed",
+        "description": "Bots' tool calls, tool results, MCP calls, and bot messages, and skill and memory changes, newest first. Page with `cursor` set to the previous page's `nextCursor`. A page may hold fewer than `limit` items while `hasMore` is true.",
         "security": [
           {
             "BearerAuth": []
@@ -10709,6 +10767,31 @@
             },
             "required": false,
             "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "tool-call",
+                "tool-result",
+                "mcp-call",
+                "bot-message",
+                "change"
+              ]
+            },
+            "required": false,
+            "name": "kind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8000
+            },
+            "required": false,
+            "name": "cursor",
             "in": "query"
           }
         ],

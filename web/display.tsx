@@ -1,5 +1,10 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
-import { ArrowDownIcon, ArrowRightIcon, ArrowUpIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  ArrowDown02Icon,
+  ArrowRight02Icon,
+  ArrowUp02Icon,
+} from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 import type { ChartLayout, Message } from "./api";
 
@@ -48,7 +53,11 @@ export function DisplayCard({ display }: { display: Display }) {
   );
 }
 
-const TREND = { up: ArrowUpIcon, down: ArrowDownIcon, flat: ArrowRightIcon };
+const TREND = {
+  up: ArrowUp02Icon,
+  down: ArrowDown02Icon,
+  flat: ArrowRight02Icon,
+};
 
 function Stats({ items }: { items: Stat[] }) {
   return (
@@ -73,7 +82,7 @@ function Stats({ items }: { items: Stat[] }) {
                     "text-muted-foreground",
                 )}
               >
-                {Icon && <Icon className="size-3" />}
+                {Icon && <HugeiconsIcon icon={Icon} className="size-3" />}
                 {item.change}
               </span>
             )}

@@ -125,17 +125,16 @@ describe("bot schedules", () => {
     store.close();
   });
 
-  test("targets another permitted bot and hides everyone else's tasks", () => {
+  test("targets another bot only with messaging and hides everyone else's tasks", () => {
     const { store, schedules } = setup();
     const target = store.createAgent(input("Target", ["schedule"]), uuid(2));
 
     const source = store.createAgent(
-      input("Source", ["schedule", "delegate"], [target.id]),
+      input("Source", ["schedule", "delegate"]),
       uuid(1),
     );
 
     const other = store.createAgent(input("Other", ["schedule"]), uuid(3));
-    const denied = store.createAgent(input("Denied", []), uuid(4));
 
     const task = schedules.create(source.id, {
       agentId: target.id,
@@ -151,8 +150,8 @@ describe("bot schedules", () => {
     expect(schedules.list(other.id)).toEqual([]);
 
     expect(() =>
-      schedules.create(source.id, {
-        agentId: denied.id,
+      schedules.create(other.id, {
+        agentId: target.id,
         name: "Nope",
         prompt: "x",
         runAt: later(),
@@ -161,9 +160,6 @@ describe("bot schedules", () => {
     expect(() =>
       schedules.update(other.id, task.id, { name: "Stolen" }),
     ).toThrow(/Task not found/);
-    expect(() =>
-      schedules.update(source.id, task.id, { agentId: denied.id }),
-    ).toThrow(/allowed to message/);
 
     const moved = schedules.update(source.id, task.id, { agentId: source.id });
     expect(moved.agentId).toBe(source.id);
@@ -178,20 +174,26 @@ describe("bot schedules", () => {
     store.close();
   });
 
-  test("refuses scheduling when the capability is off and when the tool is absent", () => {
+  test("every bot can schedule, but a paused bot cannot", () => {
     const { store, schedules } = setup();
-    const quiet = store.createAgent(input("Quiet", ["memory"]), uuid(1));
+    const plain = store.createAgent(input("Plain", ["memory"]), uuid(1));
+    expect(
+      // SAFETY: Schedule extensions expose their registered tool list.
+      (scheduleExtension(store.getAgent(plain.id)!, schedules) as any).tools,
+    ).toHaveLength(1);
+
+    const paused = store.createAgent(
+      input("Paused", ["memory"], [], false),
+      uuid(2),
+    );
+
     expect(() =>
-      schedules.create(quiet.id, {
+      schedules.create(paused.id, {
         name: "Later",
         prompt: "Ping",
         runAt: later(),
       }),
     ).toThrow(/Scheduling is turned off/);
-    expect(
-      // SAFETY: Schedule extensions expose their registered tool list.
-      (scheduleExtension(store.getAgent(quiet.id)!, schedules) as any).tools,
-    ).toEqual([]);
     store.close();
   });
 

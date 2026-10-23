@@ -14,7 +14,14 @@ import { CrumbleService } from "../src/service";
 import { Scheduler } from "../src/scheduler";
 import { Store } from "../src/store";
 import { createAPI } from "../src/api";
-import { operationalActivity, sortActivity } from "../src/activity";
+import {
+  activityPage,
+  decodeCursor,
+  operationalActivity,
+  sortActivity,
+} from "../src/activity";
+import type { LearnedChange } from "../src/domain";
+import type { TranscriptMessage } from "../src/transcript";
 
 const dirs: string[] = [];
 
@@ -242,5 +249,108 @@ describe("operational activity", () => {
       status: "error",
       error: "down",
     });
+  });
+
+  test("pages bots and changes newest first without gaps or repeats", async () => {
+    // Text messages make some pages empty of activity; timestamps interleave the bots.
+    const transcript = (agentId: string, offset: number) =>
+      Array.from({ length: 45 }, (_, entry): TranscriptMessage => {
+        const base = {
+          id: `${agentId}:${entry}:0`,
+          entryId: `${agentId}:${entry}`,
+          content: "x",
+          timestamp: entry * 10 + offset,
+        };
+
+        return entry % 7 !== 0
+          ? { ...base, role: "assistant" }
+          : { ...base, role: "toolResult", toolCallId: `c${entry}` };
+      });
+
+    const transcripts = new Map([
+      ["a", transcript("a", 0)],
+      ["b", transcript("b", 5)],
+    ]);
+
+    const changes: LearnedChange[] = Array.from({ length: 7 }, (_, n) => ({
+      id: `change-${n}`,
+      agentId: n % 2 ? "a" : null,
+      actor: "review",
+      target: "memory",
+      targetId: `m${n}`,
+      action: "create",
+      before: null,
+      after: null,
+      source: null,
+      revertsId: null,
+      createdAt: new Date(n * 33 + 1).toISOString(),
+    }));
+
+    const options = {
+      agents: [
+        { id: "a", name: "A" },
+        { id: "b", name: "B" },
+      ],
+      // Two entries per page, so the five-page budget runs out mid-transcript.
+      history: async (agent: { id: string }, before: string | undefined) => {
+        const messages = transcripts.get(agent.id)!;
+        const end = before ? Number(before.split(":")[1]) : messages.length;
+        const page = messages.slice(Math.max(0, end - 2), end);
+
+        return {
+          messages: page,
+          hasMore: end > 2,
+          oldestEntryId: page[0]?.entryId ?? null,
+        };
+      },
+      changes: (limit: number, before: string | undefined) => {
+        const newest = changes.toReversed();
+        const start = before ? newest.findIndex((c) => c.id === before) + 1 : 0;
+
+        return newest.slice(start, start + limit);
+      },
+      agentName: (id: string) => id.toUpperCase(),
+      limit: 4,
+    };
+
+    const all = [
+      ...sortActivity([
+        ...operationalActivity({ id: "a", name: "A" }, transcripts.get("a")!),
+        ...operationalActivity({ id: "b", name: "B" }, transcripts.get("b")!),
+      ]).map((item) => ({ id: item.id, kind: item.kind, t: item.timestamp! })),
+      ...changes.map((c) => ({
+        id: c.id,
+        kind: "change" as const,
+        t: Date.parse(c.createdAt),
+      })),
+    ].sort((x, y) => y.t - x.t);
+
+    for (const kind of [undefined, "tool-result", "change"] as const) {
+      const seen: string[] = [];
+      let cursor: string | null = null;
+
+      for (let request = 0; request < 100; request++) {
+        const page: Awaited<ReturnType<typeof activityPage>> =
+          await activityPage({
+            ...options,
+            kind,
+            cursor: cursor ? decodeCursor(cursor) : null,
+          });
+
+        expect(page.activities.length).toBeLessThanOrEqual(4);
+        seen.push(...page.activities.map((item) => item.id));
+        cursor = page.nextCursor;
+
+        if (!page.hasMore) break;
+      }
+
+      expect(cursor).toBeNull();
+
+      const expected = all
+        .filter((item) => !kind || item.kind === kind)
+        .map((item) => item.id);
+
+      expect(seen).toEqual(expected);
+    }
   });
 });

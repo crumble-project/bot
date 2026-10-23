@@ -1,7 +1,4 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,7 +13,7 @@ import {
 import { BotAvatar } from "./avatar";
 import { useWorking } from "./live";
 import { sourceLabel } from "./memory";
-import { taskTiming } from "./tasks";
+import { finished, taskTiming } from "./tasks";
 
 function Routine({ schedule }: { schedule: Schedule }) {
   const toggle = useMutation({
@@ -60,14 +57,16 @@ function Routine({ schedule }: { schedule: Schedule }) {
   );
 }
 
-/** The bot inspector beside its chat: profile, routines, model, and memory. */
+/** The bot inspector beside its chat: profile, routines, and memory. */
 export function DetailsPanel({ bot }: { bot: Bot }) {
   const working = useWorking(bot.id);
   const schedules = useQuery(schedulesQuery);
   const memories = useQuery(botMemoriesQuery(bot.id));
 
   const routines =
-    schedules.data?.filter((schedule) => schedule.agentId === bot.id) ?? [];
+    schedules.data?.filter(
+      (schedule) => schedule.agentId === bot.id && !finished(schedule),
+    ) ?? [];
 
   return (
     <aside className="hidden w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l p-4 lg:flex">
@@ -82,41 +81,20 @@ export function DetailsPanel({ bot }: { bot: Bot }) {
         <span className="text-xs text-muted-foreground">
           {bot.description || (bot.enabled ? "Ready" : "Paused")}
         </span>
-        <Button
-          variant="link"
-          size="sm"
-          render={<Link to="/bots/$botId/edit" params={{ botId: bot.id }} />}
-          nativeButton={false}
-        >
-          Edit profile…
-        </Button>
       </div>
-      <Tabs defaultValue="details">
+      <Tabs defaultValue="routines">
         <TabsList className="w-full">
-          <TabsTrigger value="details">Details</TabsTrigger>
+          <TabsTrigger value="routines">Routines</TabsTrigger>
           <TabsTrigger value="memory">Memory</TabsTrigger>
         </TabsList>
-        <TabsContent value="details" className="flex flex-col gap-4 pt-3">
-          <section className="flex flex-col gap-3">
-            <h3 className="text-xs font-medium text-muted-foreground">
-              Routines
-            </h3>
-            {schedules.isPending && <Skeleton className="h-10" />}
-            {routines.map((schedule) => (
-              <Routine key={schedule.id} schedule={schedule} />
-            ))}
-            {schedules.isSuccess && routines.length === 0 && (
-              <p className="text-sm text-muted-foreground">No routines yet</p>
-            )}
-          </section>
-          <Separator />
-          <section className="flex flex-col gap-1">
-            <h3 className="text-xs font-medium text-muted-foreground">Model</h3>
-            <span className="text-sm">{bot.model || "Default"}</span>
-            <span className="text-xs text-muted-foreground">
-              {bot.provider}
-            </span>
-          </section>
+        <TabsContent value="routines" className="flex flex-col gap-3 pt-3">
+          {schedules.isPending && <Skeleton className="h-10" />}
+          {routines.map((schedule) => (
+            <Routine key={schedule.id} schedule={schedule} />
+          ))}
+          {schedules.isSuccess && routines.length === 0 && (
+            <p className="text-sm text-muted-foreground">No routines yet</p>
+          )}
         </TabsContent>
         <TabsContent value="memory" className="flex flex-col gap-3 pt-3">
           {memories.isPending && <Skeleton className="h-16" />}
