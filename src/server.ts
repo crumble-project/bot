@@ -41,6 +41,7 @@ import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { loadCommonSkills } from "./common-skills";
 import { PushManager, PushStore } from "./push";
+import webUI from "../web/index.html";
 
 export async function startServer(
   options: {
@@ -295,6 +296,10 @@ export async function startServer(
       holdAwake(agent.id, desktopControl.get(agent.id));
 
     const server = Bun.serve({
+      // The web UI is public; it reaches the API with the token the owner enters.
+      routes: { "/ui": webUI, "/ui/*": webUI },
+      // Bun's HMR bundle breaks TanStack Router's circular imports at startup.
+      development: process.env.NODE_ENV !== "production" && { hmr: false },
       fetch: app.fetch,
       // Viewer connections to bot desktops.
       websocket,

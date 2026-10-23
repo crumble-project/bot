@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add a web UI at `/ui`, served by the server itself: connect with the server token, create, edit, and delete bots, chat with a bot live with replies rendered as Markdown by `@tanstack/markdown`, stop a running reply, and set or remove provider API keys. It is built with React, TanStack Router, TanStack Query, Tailwind CSS, and shadcn/ui, bundled by Bun on first request, and keeps the token in the browser's local storage.
 - Start the bot desktop's Chromium without the "Restore pages?" bubble. Stopping the machine kills Chromium, so it offered to restore pages after every boot, in front of the owner and the desktop job. Needs a rebuilt desktop image.
 - Tell bots to send to an existing desktop job to check or continue its work, since a new job repeats everything, such as submitting a form, and to ask the owner before retrying anything that submits, buys, or sends. Tell desktop jobs to look at the screen after an unverifiable action and to check boxes and choices before submitting.
 - Notify the owner of the bot's answer to a coding or desktop job's report. Reports reach the bot's chat without an execution, so these answers sent no reply event before; a desktop job asking for a login only reached the owner if they opened the chat. The job reporter now waits for the bot's answer and announces it once as a `reply` event with origin `coding` or `desktop` and the new `jobName`, through the activity stream and push. Reactions and tool calls without text announce nothing.
