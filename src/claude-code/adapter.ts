@@ -1,5 +1,6 @@
 // Ported from Hermes' claude-subscription-directsdk directsdk.py (MIT, see THIRD_PARTY_NOTICES.md).
 import {
+  clampThinkingLevel,
   createAssistantMessageEventStream,
   getCurrentSystemPrompt,
   getCurrentTools,
@@ -336,7 +337,13 @@ function requestBody(
   options: SimpleStreamOptions | undefined,
 ) {
   const body: JsonObject = {};
-  const reasoning = options?.reasoning;
+
+  const level = options?.reasoning
+    ? clampThinkingLevel(model, options.reasoning)
+    : "off";
+
+  const reasoning = level === "off" ? undefined : level;
+
   let effort: Effort | undefined;
 
   if (reasoning === undefined) {

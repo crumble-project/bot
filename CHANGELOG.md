@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Pick a bot's reasoning level in the web UI, from a picker in the chat composer or in the bot editor. Both offer only the levels the bot's model takes, from the new `thinkingLevels` on `Model`, and the composer saves to the bot, so the next turn uses it. The composer is now one rounded field with attach, the picker, and send inside.
+- Give Claude Code models Pi AI's Anthropic thinking levels, without `minimal`, which `--effort` lacks, or `off` where thinking is mandatory; an unknown route keeps `xhigh` and `max`. A level a model doesn't take runs at the nearest one it does, as on Pi AI's own providers, instead of passing through to `--effort`.
 - Add the Claude Code provider ([feature 0006](https://github.com/crumble-project/spec/blob/main/features/0006-claude-code-provider.md)): bots run on the owner's Claude Pro or Max subscription through the official Claude Code CLI on the server, ported from Hermes Agent's Claude Subscription DirectSDK plugin. Each model request starts a fresh `claude -p` with no built-in tools and an inert MCP server listing the turn's tools, replays the working context as stream-json frames, and goes through a loopback relay that forwards exactly one Messages request and refuses the CLI's recovery attempts. Crumble keeps the agent loop, tools, compaction, and usage. The owner installs Claude Code (`CRUMBLE_CLAUDE_COMMAND`; the Docker image looks on the data volume) and signs in with `claude auth login` against Crumble's config directory (`CRUMBLE_CLAUDE_CONFIG_DIR`, default `claude` in the data directory); Crumble never reads that sign-in. Only qualified Claude Code versions are accepted, currently 2.1.309; `tools/claude-code-qualify.ts` qualifies another one against the real CLI offline. The CLI gets an allowlisted environment, so provider keys, base URLs, and Crumble's secrets never reach it.
 - Compose providers and job kinds from compiled-in plugins (`src/plugins.ts`, [ADR 0004](docs/adr/0004-plugin-interfaces.md)): Melious, Claude Code, coding jobs, and desktop jobs are plugin contributions, and the server reads providers, job extensions, job environments, and job answers from them instead of naming each module.
 
@@ -63,6 +65,10 @@
 - Add the generated OpenAPI 3.1 contract at `openapi/openapi.json` for all 49 HTTP endpoints, including authentication and event payload schemas.
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
+
+## Contract 1.11.0
+
+- Add `thinkingLevels` to `Model`: the thinking levels the model takes, from lowest to highest, as Pi AI reports them. Claude Code models take what both the model and `--effort` accept.
 
 ## Contract 1.10.0
 

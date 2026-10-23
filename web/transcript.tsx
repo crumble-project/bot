@@ -621,6 +621,7 @@ export function Composer({
   replyingTo,
   onCancelReply,
   mentionable = [],
+  actions,
   onSend,
   onStop,
 }: {
@@ -630,6 +631,8 @@ export function Composer({
   replyingTo?: string;
   onCancelReply?: () => void;
   mentionable?: Mentionable[];
+  /** Controls shown beside the send button. */
+  actions?: ReactNode;
   onSend: (content: string, uploads: Upload[]) => Promise<boolean>;
   onStop: () => void;
 }) {
@@ -797,7 +800,12 @@ export function Composer({
           </span>
         </div>
       )}
-      <div className="flex items-end gap-2">
+      <div
+        className={cn(
+          "flex items-end gap-1 rounded-3xl border border-input bg-transparent p-1.5 transition-colors focus-within:border-ring dark:bg-input/30",
+          disabled && "opacity-50",
+        )}
+      >
         <input
           ref={picker}
           type="file"
@@ -813,6 +821,7 @@ export function Composer({
           type="button"
           variant="ghost"
           size="icon"
+          className="rounded-full"
           title="Attach files"
           disabled={disabled || uploads.length >= MAX_FILES}
           onClick={() => picker.current?.click()}
@@ -824,7 +833,7 @@ export function Composer({
           aria-label="Message"
           placeholder={placeholder}
           disabled={disabled}
-          className="max-h-[40vh] min-h-10 resize-none"
+          className="max-h-[40vh] min-h-8 resize-none self-center border-0 bg-transparent px-1.5 py-1.5 focus-visible:ring-0 disabled:bg-transparent dark:bg-transparent dark:disabled:bg-transparent"
           value={draft}
           onChange={(event) => {
             setDraft(event.target.value);
@@ -859,11 +868,13 @@ export function Composer({
             }
           }}
         />
+        {actions}
         {running && (
           <Button
             type="button"
             size="icon"
             variant="secondary"
+            className="rounded-full"
             title="Stop"
             onClick={onStop}
           >
@@ -871,7 +882,13 @@ export function Composer({
           </Button>
         )}
         {(!running || canSend) && (
-          <Button type="submit" size="icon" title="Send" disabled={!canSend}>
+          <Button
+            type="submit"
+            size="icon"
+            className="rounded-full"
+            title="Send"
+            disabled={!canSend}
+          >
             <ArrowUpIcon />
           </Button>
         )}

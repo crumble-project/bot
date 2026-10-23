@@ -1,4 +1,5 @@
 import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import {
   routes,
   contractApp,
@@ -983,6 +984,7 @@ export function createAPI(
         name: model.name,
         contextWindow: model.contextWindow,
         reasoning: model.reasoning,
+        thinkingLevels: getSupportedThinkingLevels(model),
       })),
       200,
     );

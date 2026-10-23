@@ -2,10 +2,18 @@ import { z } from "@hono/zod-openapi";
 
 const strings = z.array(z.string());
 
+const thinkingLevel = z.enum([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+]);
+
 const inference = z.object({
-  thinkingLevel: z
-    .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
-    .optional(),
+  thinkingLevel: thinkingLevel.optional(),
   temperature: z.number().optional(),
   maxOutputTokens: z.number().optional(),
 });
@@ -592,6 +600,10 @@ export const modelResponse = z
     name: z.string(),
     contextWindow: z.number(),
     reasoning: z.boolean(),
+    thinkingLevels: z.array(thinkingLevel).openapi({
+      description:
+        "The thinking levels this model takes, from lowest to highest. A bot's level outside them runs at the nearest one.",
+    }),
   })
   .openapi("Model");
 

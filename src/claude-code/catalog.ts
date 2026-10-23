@@ -1,4 +1,6 @@
 // Ported from Hermes' claude-subscription-directsdk model_catalog.py (MIT, see THIRD_PARTY_NOTICES.md).
+import type { ThinkingLevelMap } from "@earendil-works/pi-ai";
+import { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models";
 
 /** Pinned native routes with their context windows; a loopback gateway needs explicit long-context selection. */
 export const CONTEXT_WINDOWS = new Map([
@@ -76,6 +78,24 @@ export const acceptsThinkingDisable = (model: string) =>
 
 export const supportsAdaptiveThinking = (model: string) =>
   !NO_ADAPTIVE_THINKING.has(canonicalOf(model));
+
+/**
+ * The levels a route takes: Pi AI's Anthropic catalog, minus `minimal`, which `--effort` lacks, and `off` where
+ * thinking is mandatory. Unknown routes keep `xhigh` and `max` so future models are not downgraded.
+ */
+export function thinkingLevelMap(model: string): ThinkingLevelMap {
+  const canonical = canonicalOf(model);
+
+  const known = Object.values(ANTHROPIC_MODELS).find(
+    (entry) => entry.id === canonical,
+  );
+
+  return {
+    ...(known ? known.thinkingLevelMap : { xhigh: "xhigh", max: "max" }),
+    minimal: null,
+    ...(!acceptsThinkingDisable(model) && { off: null }),
+  };
+}
 
 /**
  * The window to promise for a route: the pinned one, else the 200K native applies to a plain unknown id. An unknown

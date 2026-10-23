@@ -53,6 +53,12 @@ import {
   send,
 } from "./api";
 import { BotAvatar } from "./avatar";
+import {
+  type ThinkingLevel,
+  ReasoningSelect,
+  clampLevel,
+  levelsOf,
+} from "./reasoning";
 
 const CAPABILITIES = [
   { tool: "memory", label: "Memory", help: "Remembers facts across chats." },
@@ -212,6 +218,11 @@ export function BotForm({ bot }: { bot?: Bot }) {
   );
 
   const [model, setModel] = useState(bot?.model ?? "");
+
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(
+    bot?.inference?.thinkingLevel ?? "off",
+  );
+
   const [tools, setTools] = useState<string[]>(bot?.tools ?? DEFAULT_TOOLS);
   const [sharedMemory, setSharedMemory] = useState(bot?.sharedMemory ?? false);
 
@@ -228,6 +239,14 @@ export function BotForm({ bot }: { bot?: Bot }) {
   const [desktopModel, setDesktopModel] = useState(
     bot?.desktopModel?.model ?? "",
   );
+
+  const models = useQuery({
+    ...modelsQuery(provider),
+    enabled: provider !== "",
+  }).data;
+
+  const levels = levelsOf(models?.find((each) => each.id === model.trim()));
+  const level = clampLevel(thinkingLevel, levels);
 
   const has = (tool: string) => tools.includes(tool);
 
@@ -263,6 +282,7 @@ export function BotForm({ bot }: { bot?: Bot }) {
         enabled,
         provider,
         model: model.trim(),
+        inference: { ...bot?.inference, thinkingLevel: level },
         tools,
         sharedMemory,
         delegates: [...delegates].sort(),
@@ -420,6 +440,20 @@ export function BotForm({ bot }: { bot?: Bot }) {
                 onChange={setModel}
               />
             </Field>
+            {levels.length > 1 && (
+              <Field>
+                <FieldLabel htmlFor="thinking-level">Reasoning</FieldLabel>
+                <ReasoningSelect
+                  id="thinking-level"
+                  levels={levels}
+                  value={level}
+                  onChange={setThinkingLevel}
+                />
+                <FieldDescription>
+                  How much the model thinks before it answers.
+                </FieldDescription>
+              </Field>
+            )}
           </FieldGroup>
         </FieldSet>
 

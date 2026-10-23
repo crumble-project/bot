@@ -2,7 +2,12 @@ import { createProvider, type Model } from "@earendil-works/pi-ai";
 import { join } from "node:path";
 import type { CrumblePlugin, ExternalAuth } from "../plugins";
 import { CLAUDE_CODE_API, claudeCodeStreams } from "./adapter";
-import { catalogLabel, contextWindow, pinnedRoutes } from "./catalog";
+import {
+  catalogLabel,
+  contextWindow,
+  pinnedRoutes,
+  thinkingLevelMap,
+} from "./catalog";
 import {
   claudeCodeStatus,
   discoverModels,
@@ -54,6 +59,7 @@ function chatModel(id: string, name: string): Model<typeof CLAUDE_CODE_API> {
     provider: CLAUDE_CODE_PROVIDER,
     baseUrl: "process://claude-code",
     reasoning: true,
+    thinkingLevelMap: thinkingLevelMap(id),
     input: ["text", "image"],
     contextWindow: contextWindow(id),
     maxTokens: 64_000,

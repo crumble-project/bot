@@ -35,6 +35,7 @@ import { type Outgoing, confirm, deliver, useOutgoing } from "./delivery";
 import { DetailsPanel } from "./details";
 import { type JobRef, JobDialog } from "./jobs";
 import { useChatStream } from "./live";
+import { BotReasoning } from "./reasoning";
 import {
   BotMessage,
   Composer,
@@ -389,6 +390,7 @@ export function Chat({ botId }: { botId: string }) {
           }
           onCancelReply={() => setReplyTo(null)}
           mentionable={mentionable}
+          actions={<BotReasoning bot={bot} />}
           onSend={(content, uploads) => sendMessage(content, uploads)}
           onStop={() => stop.mutate()}
         />

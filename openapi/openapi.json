@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Crumble API",
-    "version": "1.10.0",
+    "version": "1.11.0",
     "description": "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime."
   },
   "components": {
@@ -1853,6 +1853,22 @@
           },
           "reasoning": {
             "type": "boolean"
+          },
+          "thinkingLevels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "off",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ]
+            },
+            "description": "The thinking levels this model takes, from lowest to highest. A bot's level outside them runs at the nearest one."
           }
         },
         "required": [
@@ -1860,7 +1876,8 @@
           "id",
           "name",
           "contextWindow",
-          "reasoning"
+          "reasoning",
+          "thinkingLevels"
         ]
       },
       "ProviderConfigured": {
