@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+/** Tools every bot has, whatever its saved `tools` say. */
+export const STANDARD_TOOLS = ["schedule", "codemode"];
+
 export const agentInput = z.object({
   name: z.string().trim().min(1).max(80),
   avatar: z.string().max(100).default("bot"),
@@ -30,9 +33,10 @@ export const agentInput = z.object({
     .default([]),
   /** Shared skills from the skill library this bot uses, besides its own `skills`. */
   sharedSkills: z.array(z.string().uuid()).max(100).optional(),
-  /** Whether this bot recalls and manages shared memories, besides its own. */
+  /** Ignored: a bot with memory always uses shared memory too. */
   sharedMemory: z.boolean().optional(),
   mcpServers: z.array(z.string().uuid()).max(30).default([]),
+  /** Ignored: a bot that may message other bots reaches every one of them. */
   delegates: z.array(z.string().uuid()).max(30).default([]),
   inference: z
     .object({

@@ -320,7 +320,9 @@ export function GroupChatView({ groupId }: { groupId: string }) {
                 <MessageScrollerItem messageId="empty">
                   <Empty>
                     <EmptyHeader>
-                      <EmptyTitle>Start the conversation</EmptyTitle>
+                      <EmptyTitle className="text-lg">
+                        Start the conversation
+                      </EmptyTitle>
                       <EmptyDescription>
                         Everyone here reads every message. Mention a bot with @
                         to ask only it.
@@ -564,7 +566,13 @@ export function GroupForm({ group }: { group?: GroupChat }) {
           {group && (
             <AlertDialog>
               <AlertDialogTrigger
-                render={<Button type="button" variant="destructive" />}
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  />
+                }
               >
                 Delete
               </AlertDialogTrigger>

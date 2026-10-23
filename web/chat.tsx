@@ -290,10 +290,11 @@ export function Chat({ botId }: { botId: string }) {
                   <MessageScrollerItem messageId="empty">
                     <Empty>
                       <EmptyHeader>
-                        <EmptyTitle>Say hello to {bot.name}</EmptyTitle>
+                        <EmptyTitle className="text-lg">
+                          Say hello to {bot.name}
+                        </EmptyTitle>
                         <EmptyDescription>
-                          {bot.description ||
-                            "It keeps its memory and work between visits."}
+                          It keeps its memory and work between visits.
                         </EmptyDescription>
                       </EmptyHeader>
                     </Empty>

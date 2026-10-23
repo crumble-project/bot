@@ -677,12 +677,6 @@ function ConnectionStatus() {
 function BotRow({ bot, active }: { bot: Bot; active: boolean }) {
   const working = useWorking(bot.id);
 
-  const chip = !bot.enabled
-    ? "Paused"
-    : bot.description.length <= 24
-      ? bot.description
-      : "";
-
   return (
     <SidebarMenuItem style={botStyle(botColor(bot))}>
       <SidebarMenuButton
@@ -700,27 +694,22 @@ function BotRow({ bot, active }: { bot: Bot; active: boolean }) {
           }
         />
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="flex items-center gap-1.5">
-            <span
-              className={cn(
-                "truncate font-heading font-medium",
-                !bot.enabled && "opacity-60",
-              )}
-            >
-              {bot.name}
-            </span>
-            {chip && (
-              <span className="truncate text-[10px] text-muted-foreground">
-                {chip}
-              </span>
+          <span
+            className={cn(
+              "truncate font-heading font-medium",
+              !bot.enabled && "opacity-60",
             )}
+          >
+            {bot.name}
           </span>
           <span className="truncate text-xs text-muted-foreground">
             {working
               ? "Working…"
-              : bot.lastMessage
-                ? bot.lastMessage.replace(/[*_`#>]/g, "").slice(0, 120)
-                : "No messages yet"}
+              : !bot.enabled
+                ? "Paused"
+                : bot.lastMessage
+                  ? bot.lastMessage.replace(/[*_`#>]/g, "").slice(0, 120)
+                  : bot.description || "No messages yet"}
           </span>
         </span>
       </SidebarMenuButton>

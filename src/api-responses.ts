@@ -55,12 +55,21 @@ export const agentResponse = z
     provider: z.string(),
     model: z.string(),
     enabled: z.boolean(),
-    tools: strings,
+    tools: strings.openapi({
+      description:
+        "The bot's tools; always includes `schedule` and `codemode`.",
+    }),
     skills: z.array(z.object({ name: z.string(), instructions: z.string() })),
     sharedSkills: strings.optional(),
-    sharedMemory: z.boolean().optional(),
+    sharedMemory: z.boolean().optional().openapi({
+      description:
+        "True whenever `tools` includes `memory`; the server ignores it in input.",
+    }),
     mcpServers: strings,
-    delegates: strings,
+    delegates: strings.openapi({
+      description:
+        "Every other bot; with `delegate` in `tools` this bot may message any of them. The server ignores it in input.",
+    }),
     inference: inference.optional(),
     desktopModel: z
       .object({ provider: z.string(), model: z.string() })

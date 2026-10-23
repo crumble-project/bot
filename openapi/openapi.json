@@ -362,7 +362,8 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "The bot's tools; always includes `schedule` and `codemode`."
           },
           "skills": {
             "type": "array",
@@ -389,7 +390,8 @@
             }
           },
           "sharedMemory": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "True whenever `tools` includes `memory`; the server ignores it in input."
           },
           "mcpServers": {
             "type": "array",
@@ -401,7 +403,8 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Every other bot; with `delegate` in `tools` this bot may message any of them. The server ignores it in input."
           },
           "inference": {
             "type": "object",

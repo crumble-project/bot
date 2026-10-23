@@ -22,6 +22,7 @@ export function WorkspacePage({
   onNew,
   newLabel,
   newDisabled,
+  actions,
   children,
 }: {
   title: string;
@@ -30,6 +31,7 @@ export function WorkspacePage({
   onNew?: () => void;
   newLabel?: string;
   newDisabled?: boolean;
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -62,6 +64,7 @@ export function WorkspacePage({
               <HugeiconsIcon icon={PlusSignIcon} />
             </Button>
           )}
+          {actions}
         </div>
       </header>
       <div className="flex-1 overflow-y-auto">

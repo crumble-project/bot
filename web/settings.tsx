@@ -23,10 +23,7 @@ import {
   FieldContent,
   FieldDescription,
   FieldError,
-  FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -41,7 +38,7 @@ import {
 } from "./api";
 import { notifications } from "./live";
 import { LoginDialog, refreshProviders } from "./provider-login";
-import { WorkspacePage } from "./workspace";
+import { Section, WorkspacePage } from "./workspace";
 
 const SECTIONS = [
   { to: "/settings/general", label: "General", icon: SlidersHorizontalIcon },
@@ -95,7 +92,7 @@ function Notifications() {
   const [permission, setPermission] = useState(notifications.permission);
 
   return (
-    <Field orientation="horizontal">
+    <Field orientation="horizontal" className="p-3">
       <FieldContent>
         <FieldLabel htmlFor="notifications">Notifications</FieldLabel>
         <FieldDescription>
@@ -135,53 +132,47 @@ export function GeneralSettings() {
 
   return (
     <WorkspacePage title="General">
-      <FieldSet>
-        <FieldLegend variant="label">This browser</FieldLegend>
-        <FieldGroup>
-          <Notifications />
-          <Field orientation="horizontal">
+      <Section title="This browser">
+        <Notifications />
+        <Field orientation="horizontal" className="p-3">
+          <FieldContent>
+            <FieldLabel>Sign out</FieldLabel>
+            <FieldDescription>
+              Forgets the server token in this browser. Other clients stay
+              connected.
+            </FieldDescription>
+          </FieldContent>
+          <Button variant="outline" size="sm" onClick={() => token.set(null)}>
+            Sign out
+          </Button>
+        </Field>
+      </Section>
+      <Section title="Server">
+        <Field orientation="horizontal" className="p-3">
+          <FieldContent>
+            <FieldLabel>Address</FieldLabel>
+            <FieldDescription>{location.origin}</FieldDescription>
+          </FieldContent>
+        </Field>
+        {features.map((feature) => (
+          <Field key={feature.name} orientation="horizontal" className="p-3">
             <FieldContent>
-              <FieldLabel>Sign out</FieldLabel>
-              <FieldDescription>
-                Forgets the server token in this browser. Other clients stay
-                connected.
-              </FieldDescription>
+              <FieldLabel>{feature.name}</FieldLabel>
+              <FieldDescription>{feature.help}</FieldDescription>
             </FieldContent>
-            <Button variant="outline" onClick={() => token.set(null)}>
-              Sign out
-            </Button>
+            {capabilities.isPending ? (
+              <Skeleton className="h-5 w-16" />
+            ) : (
+              <Badge variant={feature.on ? "secondary" : "outline"}>
+                {feature.on ? "Available" : "Off"}
+              </Badge>
+            )}
           </Field>
-        </FieldGroup>
-      </FieldSet>
-      <FieldSet>
-        <FieldLegend variant="label">Server</FieldLegend>
-        <FieldGroup>
-          <Field orientation="horizontal">
-            <FieldContent>
-              <FieldLabel>Address</FieldLabel>
-              <FieldDescription>{location.origin}</FieldDescription>
-            </FieldContent>
-          </Field>
-          {features.map((feature) => (
-            <Field key={feature.name} orientation="horizontal">
-              <FieldContent>
-                <FieldLabel>{feature.name}</FieldLabel>
-                <FieldDescription>{feature.help}</FieldDescription>
-              </FieldContent>
-              {capabilities.isPending ? (
-                <Skeleton className="h-5 w-16" />
-              ) : (
-                <Badge variant={feature.on ? "secondary" : "outline"}>
-                  {feature.on ? "Available" : "Off"}
-                </Badge>
-              )}
-            </Field>
-          ))}
-          {capabilities.isError && (
-            <FieldError>{capabilities.error.message}</FieldError>
-          )}
-        </FieldGroup>
-      </FieldSet>
+        ))}
+      </Section>
+      {capabilities.isError && (
+        <FieldError>{capabilities.error.message}</FieldError>
+      )}
     </WorkspacePage>
   );
 }

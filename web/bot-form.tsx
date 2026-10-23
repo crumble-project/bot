@@ -1,8 +1,14 @@
-import { useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Copy01Icon, ShuffleIcon } from "@hugeicons/core-free-icons";
+import {
+  ArrowDown01Icon,
+  ArrowRight01Icon,
+  Copy01Icon,
+  PencilEdit01Icon,
+  ShuffleIcon,
+} from "@hugeicons/core-free-icons";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,10 +30,14 @@ import {
   FieldGroup,
   FieldLabel,
   FieldLegend,
-  FieldSeparator,
   FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -54,6 +64,15 @@ import {
   send,
 } from "./api";
 import { BotAvatar } from "./avatar";
+import { WorkspacePage } from "./workspace";
+import {
+  type AvatarChoice,
+  PALETTE,
+  SILHOUETTES,
+  formatAvatar,
+  lookOf,
+  parseAvatar,
+} from "./bot-avatar";
 import {
   type ThinkingLevel,
   ReasoningSelect,
@@ -63,16 +82,10 @@ import {
 
 const CAPABILITIES = [
   { tool: "memory", label: "Memory", help: "Remembers facts across chats." },
-  { tool: "schedule", label: "Schedule tasks", help: "Plans its own tasks." },
   {
     tool: "delegate",
     label: "Message other bots",
-    help: "Asks the bots you allow for help.",
-  },
-  {
-    tool: "codemode",
-    label: "Code mode",
-    help: "Combines tool calls in code.",
+    help: "Asks the other bots for help.",
   },
   {
     tool: "coding",
@@ -86,7 +99,7 @@ const CAPABILITIES = [
   },
 ] as const;
 
-const DEFAULT_TOOLS = ["memory", "delegate", "schedule", "codemode"];
+const DEFAULT_TOOLS = ["memory", "delegate"];
 
 const DEFAULT_INSTRUCTIONS =
   "You are a thoughtful, capable personal assistant.";
@@ -191,20 +204,105 @@ function ModelField({
   );
 }
 
+/** One switch in an editor section; `nested` rows belong to the row above them. */
+function ToggleRow({
+  id,
+  label,
+  description,
+  icon,
+  checked,
+  disabled,
+  nested,
+  onChange,
+}: {
+  id: string;
+  label: ReactNode;
+  description?: string;
+  icon?: ReactNode;
+  checked: boolean;
+  disabled?: boolean;
+  nested?: boolean;
+  onChange: (on: boolean) => void;
+}) {
+  return (
+    <label
+      htmlFor={id}
+      className={cn(
+        "flex cursor-pointer items-center gap-3 px-3 py-2.5",
+        nested && "bg-muted/30 pl-8",
+        disabled && "cursor-not-allowed opacity-60",
+      )}
+    >
+      {icon}
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="flex items-center gap-2 text-sm">{label}</span>
+        {description && (
+          <span className="truncate text-xs text-muted-foreground">
+            {description}
+          </span>
+        )}
+      </span>
+      <Switch
+        id={id}
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={onChange}
+      />
+    </label>
+  );
+}
+
+function DisclosureRow({
+  title,
+  summary,
+  children,
+}: {
+  title: string;
+  summary: string;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div>
+      <button
+        type="button"
+        aria-expanded={open}
+        className={cn(
+          "flex w-full items-center justify-between gap-4 p-3 text-sm transition-colors hover:bg-muted/50",
+          open && "border-b bg-muted/30",
+        )}
+        onClick={() => setOpen(!open)}
+      >
+        <span className="font-medium">{title}</span>
+        <span className="flex items-center gap-1 text-muted-foreground">
+          {summary}
+          <HugeiconsIcon
+            icon={open ? ArrowDown01Icon : ArrowRight01Icon}
+            className="size-4"
+          />
+        </span>
+      </button>
+      {open && <div className="flex flex-col divide-y">{children}</div>}
+    </div>
+  );
+}
+
 /** Creates a bot, or edits `bot` when given. */
 export function BotForm({ bot }: { bot?: Bot }) {
   const navigate = useNavigate();
-  const bots = useQuery(botsQuery).data ?? [];
   const providers = useQuery(providersQuery).data ?? [];
   const capabilities = useQuery(capabilitiesQuery).data;
   const servers = useQuery(mcpServersQuery).data ?? [];
-  const others = bots.filter((each) => each.id !== bot?.id);
 
   const [avatar, setAvatar] = useState(bot?.avatar ?? seedAvatar());
 
-  const [choices, setChoices] = useState(() =>
-    Array.from({ length: 6 }, seedAvatar),
-  );
+  const avatarId = bot?.id ?? "";
+  const { seed, choice: picked } = parseAvatar({ id: avatarId, avatar });
+  const look = lookOf({ id: avatarId, avatar });
+
+  const pick = (change: AvatarChoice) =>
+    setAvatar(formatAvatar(seed, { ...picked, ...change }));
 
   const [name, setName] = useState(bot?.name ?? "");
   const [description, setDescription] = useState(bot?.description ?? "");
@@ -225,11 +323,6 @@ export function BotForm({ bot }: { bot?: Bot }) {
   );
 
   const [tools, setTools] = useState<string[]>(bot?.tools ?? DEFAULT_TOOLS);
-  const [sharedMemory, setSharedMemory] = useState(bot?.sharedMemory ?? false);
-
-  const [delegates, setDelegates] = useState<string[]>(
-    bot?.delegates ?? bots.map((each) => each.id),
-  );
 
   const [mcpServers, setMcpServers] = useState<string[]>(bot?.mcpServers ?? []);
 
@@ -285,8 +378,6 @@ export function BotForm({ bot }: { bot?: Bot }) {
         model: model.trim(),
         inference: { ...bot?.inference, thinkingLevel: level },
         tools,
-        sharedMemory,
-        delegates: [...delegates].sort(),
         mcpServers: [...mcpServers].sort(),
         desktopModel:
           desktopProvider && desktopModel.trim()
@@ -328,57 +419,133 @@ export function BotForm({ bot }: { bot?: Bot }) {
   const invalid = !name.trim() || !provider || !model.trim();
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <WorkspacePage
+      title={bot ? `Edit ${bot.name}` : "New bot"}
+      actions={
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              void (bot
+                ? navigate({ to: "/bots/$botId", params: { botId: bot.id } })
+                : navigate({ to: "/" }))
+            }
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form="bot-form"
+            size="sm"
+            disabled={invalid || save.isPending}
+          >
+            {bot ? "Save" : "Create bot"}
+          </Button>
+        </>
+      }
+    >
       <form
-        className="mx-auto flex w-full max-w-2xl flex-col gap-8 p-6"
+        id="bot-form"
+        className="flex flex-col gap-8"
         onSubmit={(event) => {
           event.preventDefault();
 
           if (!invalid) save.mutate();
         }}
       >
-        <FieldSet>
-          <FieldLegend>{bot ? `Edit ${bot.name}` : "New bot"}</FieldLegend>
-          <FieldGroup>
-            <Field>
-              <FieldLabel>Avatar</FieldLabel>
-              <div className="flex flex-col items-center gap-3">
-                <BotAvatar bot={{ id: bot?.id ?? "", avatar }} size={96} live />
-                <div className="flex flex-wrap items-center justify-center gap-1.5">
-                  {[avatar, ...choices.filter((each) => each !== avatar)]
-                    .slice(0, 7)
-                    .map((choice) => (
-                      <button
-                        key={choice}
-                        type="button"
-                        aria-label="Choose this avatar"
-                        aria-pressed={choice === avatar}
-                        className={cn(
-                          "rounded-lg border-2 border-transparent p-0.5",
-                          choice === avatar && "border-ring",
-                        )}
-                        onClick={() => setAvatar(choice)}
-                      >
-                        <BotAvatar
-                          bot={{ id: bot?.id ?? "", avatar: choice }}
-                          size={36}
-                        />
-                      </button>
-                    ))}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    title="More avatars"
-                    onClick={() =>
-                      setChoices(Array.from({ length: 6 }, seedAvatar))
-                    }
-                  >
-                    <HugeiconsIcon icon={ShuffleIcon} />
-                  </Button>
+        <div className="flex items-start gap-6">
+          <Popover>
+            <PopoverTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label="Change avatar"
+                  className="group relative shrink-0 rounded-3xl p-1 transition-[scale] outline-none active:scale-[0.96] focus-visible:ring-3 focus-visible:ring-ring/50"
+                />
+              }
+            >
+              <BotAvatar bot={{ id: avatarId, avatar }} size={96} live />
+              <span className="absolute -right-1 -bottom-1 grid size-8 place-items-center rounded-full bg-background text-muted-foreground shadow-sm ring-1 ring-foreground/10 transition-colors group-hover:text-foreground">
+                <HugeiconsIcon icon={PencilEdit01Icon} className="size-4" />
+              </span>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-auto">
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Body
+                </span>
+                <div className="flex gap-1">
+                  {SILHOUETTES.map((silhouette) => (
+                    <button
+                      key={silhouette}
+                      type="button"
+                      aria-label={`${silhouette} body`}
+                      aria-pressed={look.silhouette === silhouette}
+                      className={cn(
+                        "rounded-xl p-1 transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50",
+                        look.silhouette === silhouette &&
+                          "bg-muted ring-2 ring-ring",
+                      )}
+                      onClick={() => pick({ silhouette })}
+                    >
+                      <BotAvatar
+                        bot={{
+                          id: avatarId,
+                          avatar: formatAvatar(seed, {
+                            ...picked,
+                            silhouette,
+                          }),
+                        }}
+                        size={32}
+                      />
+                    </button>
+                  ))}
                 </div>
               </div>
-            </Field>
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Color
+                </span>
+                <div className="flex gap-2 px-1">
+                  {PALETTE.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      aria-label={`Color ${color}`}
+                      aria-pressed={look.hex === color}
+                      className={cn(
+                        "size-7 rounded-full ring-offset-2 ring-offset-popover transition-transform outline-none hover:scale-110 focus-visible:ring-2 focus-visible:ring-ring/50",
+                        look.hex === color && "ring-2 ring-ring",
+                      )}
+                      style={{ backgroundColor: color }}
+                      onClick={() => pick({ color })}
+                    />
+                  ))}
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="self-start"
+                onClick={() =>
+                  setAvatar(
+                    formatAvatar(randomId(), {
+                      silhouette: look.silhouette,
+                      color: look.hex,
+                    }),
+                  )
+                }
+              >
+                <HugeiconsIcon icon={ShuffleIcon} data-icon="inline-start" />
+                New face
+              </Button>
+            </PopoverContent>
+          </Popover>
+
+          <FieldGroup className="flex-1 gap-4">
             <Field data-invalid={(save.isError && !name.trim()) || undefined}>
               <FieldLabel htmlFor="name">Name</FieldLabel>
               <Input
@@ -394,30 +561,24 @@ export function BotForm({ bot }: { bot?: Bot }) {
               <Input
                 id="description"
                 maxLength={1000}
+                placeholder="What this bot is for"
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
               />
             </Field>
-            <Field orientation="horizontal">
-              <FieldContent>
-                <FieldLabel htmlFor="enabled">Enabled</FieldLabel>
-                <FieldDescription>
-                  A paused bot keeps its chat but takes no new work. Pausing
-                  stops what it is doing.
-                </FieldDescription>
-              </FieldContent>
-              <Switch
-                id="enabled"
-                checked={enabled}
-                onCheckedChange={setEnabled}
-              />
-            </Field>
           </FieldGroup>
-        </FieldSet>
+        </div>
 
         <FieldSet>
-          <FieldLegend variant="label">Model</FieldLegend>
-          <FieldGroup className="grid gap-4 sm:grid-cols-2">
+          <FieldLegend className="sr-only">Model</FieldLegend>
+          <FieldGroup
+            className={cn(
+              "grid gap-4",
+              levels.length > 1
+                ? "sm:grid-cols-[1fr_1fr_9rem]"
+                : "sm:grid-cols-2",
+            )}
+          >
             <Field>
               <FieldLabel htmlFor="provider">Provider</FieldLabel>
               <ProviderSelect
@@ -450,9 +611,6 @@ export function BotForm({ bot }: { bot?: Bot }) {
                   value={level}
                   onChange={setThinkingLevel}
                 />
-                <FieldDescription>
-                  How much the model thinks before it answers.
-                </FieldDescription>
               </Field>
             )}
           </FieldGroup>
@@ -469,66 +627,24 @@ export function BotForm({ bot }: { bot?: Bot }) {
           />
         </Field>
 
-        <FieldSet>
-          <FieldLegend variant="label">Capabilities</FieldLegend>
-          <FieldGroup>
+        <div className="flex flex-col divide-y rounded-lg border">
+          <DisclosureRow
+            title="Capabilities"
+            summary={`${shownCapabilities.filter(({ tool }) => has(tool)).length} of ${shownCapabilities.length} on`}
+          >
             {shownCapabilities.map((capability) => (
-              <div key={capability.tool} className="flex flex-col gap-3">
-                <Field orientation="horizontal">
-                  <FieldContent>
-                    <FieldLabel htmlFor={`tool-${capability.tool}`}>
-                      {capability.label}
-                    </FieldLabel>
-                    <FieldDescription>{capability.help}</FieldDescription>
-                  </FieldContent>
-                  <Switch
-                    id={`tool-${capability.tool}`}
-                    checked={has(capability.tool)}
-                    onCheckedChange={(on) =>
-                      setTools(toggle(tools, capability.tool, on))
-                    }
-                  />
-                </Field>
-                {capability.tool === "memory" && has("memory") && (
-                  <Field orientation="horizontal" className="pl-6">
-                    <FieldLabel htmlFor="shared-memory">
-                      Use shared memory
-                    </FieldLabel>
-                    <Switch
-                      id="shared-memory"
-                      size="sm"
-                      checked={sharedMemory}
-                      onCheckedChange={setSharedMemory}
-                    />
-                  </Field>
-                )}
-                {capability.tool === "delegate" &&
-                  has("delegate") &&
-                  others.map((other) => (
-                    <Field
-                      key={other.id}
-                      orientation="horizontal"
-                      className="pl-6"
-                    >
-                      <FieldLabel
-                        htmlFor={`delegate-${other.id}`}
-                        className="flex items-center gap-2"
-                      >
-                        <BotAvatar bot={other} size={22} />
-                        {other.name}
-                      </FieldLabel>
-                      <Switch
-                        id={`delegate-${other.id}`}
-                        size="sm"
-                        checked={delegates.includes(other.id)}
-                        onCheckedChange={(on) =>
-                          setDelegates(toggle(delegates, other.id, on))
-                        }
-                      />
-                    </Field>
-                  ))}
+              <Fragment key={capability.tool}>
+                <ToggleRow
+                  id={`tool-${capability.tool}`}
+                  label={capability.label}
+                  description={capability.help}
+                  checked={has(capability.tool)}
+                  onChange={(on) =>
+                    setTools(toggle(tools, capability.tool, on))
+                  }
+                />
                 {capability.tool === "desktop" && has("desktop") && (
-                  <div className="grid gap-4 pl-6 sm:grid-cols-2">
+                  <div className="grid gap-4 bg-muted/30 py-3 pr-3 pl-8 sm:grid-cols-2">
                     <Field>
                       <FieldLabel htmlFor="desktop-provider">
                         Desktop job provider
@@ -560,67 +676,73 @@ export function BotForm({ bot }: { bot?: Bot }) {
                     )}
                   </div>
                 )}
-              </div>
+              </Fragment>
             ))}
-          </FieldGroup>
-        </FieldSet>
-
-        <FieldSet>
-          <FieldLegend variant="label">Integrations</FieldLegend>
-          <FieldGroup>
+          </DisclosureRow>
+          <DisclosureRow
+            title="Integrations"
+            summary={
+              usableServers.length === 0
+                ? "None set up"
+                : `${usableServers.filter((server) => mcpServers.includes(server.id)).length} of ${usableServers.length} on`
+            }
+          >
             {usableServers.map((server) => (
-              <Field
+              <ToggleRow
                 key={server.id}
-                orientation="horizontal"
-                data-disabled={!server.enabled || undefined}
-              >
-                <FieldContent>
-                  <FieldLabel htmlFor={`mcp-${server.id}`}>
+                id={`mcp-${server.id}`}
+                label={
+                  <>
                     {server.name}
                     {server.agentId && (
                       <Badge variant="outline">Only this bot</Badge>
                     )}
                     {!server.enabled && <Badge variant="outline">Off</Badge>}
-                  </FieldLabel>
-                  <FieldDescription className="truncate">
-                    {server.url}
-                  </FieldDescription>
-                </FieldContent>
-                <Switch
-                  id={`mcp-${server.id}`}
-                  disabled={!server.enabled}
-                  checked={mcpServers.includes(server.id)}
-                  onCheckedChange={(on) =>
-                    setMcpServers(toggle(mcpServers, server.id, on))
-                  }
-                />
-              </Field>
+                  </>
+                }
+                description={server.url}
+                disabled={!server.enabled}
+                checked={mcpServers.includes(server.id)}
+                onChange={(on) =>
+                  setMcpServers(toggle(mcpServers, server.id, on))
+                }
+              />
             ))}
             {usableServers.length === 0 && (
-              <FieldDescription>
+              <p className="p-3 text-sm text-muted-foreground">
                 Add an MCP server under{" "}
                 <Link to="/settings/integrations" className="underline">
                   Integrations
                 </Link>{" "}
                 to give bots its tools.
-              </FieldDescription>
+              </p>
             )}
-          </FieldGroup>
-        </FieldSet>
-
-        <FieldSet>
-          <FieldLegend variant="label">Skills</FieldLegend>
-          <FieldDescription>
-            Skills teach bots how to do specific things. Manage shared and
-            personal skills in{" "}
-            <Link to="/settings/skills" className="underline">
-              Skills
-            </Link>
-            .
-          </FieldDescription>
-        </FieldSet>
-
-        <FieldSeparator />
+          </DisclosureRow>
+          <Link
+            to="/settings/skills"
+            className="flex items-center justify-between gap-4 p-3 text-sm transition-colors hover:bg-muted/50"
+          >
+            <span className="font-medium">Skills</span>
+            <span className="flex items-center gap-1 text-muted-foreground">
+              Manage in Settings
+              <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
+            </span>
+          </Link>
+          <Field orientation="horizontal" className="p-3">
+            <FieldContent>
+              <FieldLabel htmlFor="enabled">Enabled</FieldLabel>
+              <FieldDescription>
+                A paused bot keeps its chat but takes no new work. Pausing stops
+                what it is doing.
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="enabled"
+              checked={enabled}
+              onCheckedChange={setEnabled}
+            />
+          </Field>
+        </div>
 
         {save.isError && <FieldError>{save.error.message}</FieldError>}
         {duplicate.isError && (
@@ -632,7 +754,13 @@ export function BotForm({ bot }: { bot?: Bot }) {
             <>
               <AlertDialog>
                 <AlertDialogTrigger
-                  render={<Button type="button" variant="destructive" />}
+                  render={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    />
+                  }
                 >
                   Delete
                 </AlertDialogTrigger>
@@ -670,24 +798,8 @@ export function BotForm({ bot }: { bot?: Bot }) {
               </Button>
             </>
           )}
-          <div className="ml-auto flex gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() =>
-                void (bot
-                  ? navigate({ to: "/bots/$botId", params: { botId: bot.id } })
-                  : navigate({ to: "/" }))
-              }
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={invalid || save.isPending}>
-              {bot ? "Save" : "Create bot"}
-            </Button>
-          </div>
         </div>
       </form>
-    </div>
+    </WorkspacePage>
   );
 }
