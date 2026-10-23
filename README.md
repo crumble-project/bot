@@ -4,7 +4,7 @@ Persistent agents with an authenticated HTTP API, built on Bun, SQLite, and Pi D
 
 ## Run
 
-Requires Bun 1.4 or later. Configure a provider API key through the client or API for live model requests.
+Requires Bun 1.4 or later. Configure a provider API key or account sign-in through the client or API for live model requests.
 
 ```bash
 bun install
@@ -26,6 +26,22 @@ The server also hosts a web UI at `http://127.0.0.1:7337/ui`. Enter the server t
 
 Keep the server on loopback unless you provide TLS and access control.
 Back up the entire data directory, including `.secret.key`, which is required to decrypt stored credentials.
+
+## Provider sign-in
+
+Each provider has one saved credential on the server, shared by every bot that uses the provider. Set an API key, or sign in with an account where the installed Pi AI provider offers it, such as ChatGPT, Codex, Claude, or GitHub Copilot. `GET /v1/providers` lists each provider's `authMethods`.
+
+Account sign-in runs on the server and relays its steps to the client: links to open, device codes, and prompts. It works when your browser is on another machine than the server, including Docker:
+
+- Device-code sign-in (Codex, GitHub Copilot, xAI, Meta, Kimi Coding, Radius) needs only the code shown in the client.
+- Browser sign-in that ends on a `127.0.0.1` or `localhost` page asks you to paste that page's full address into the client. OpenAI's ChatGPT sign-in also needs the server's internal port 1455 free; it doesn't need to be published.
+- Radius browser sign-in has no paste fallback. From another device, choose device code.
+
+An unfinished sign-in ends after 10 minutes without an answer or 30 minutes in total, and when the server restarts. A failed or cancelled sign-in keeps the previous credential. Signing out removes the saved credential; it doesn't revoke the provider's grant or remove environment credentials. Pi AI refreshes account tokens and the server saves them.
+
+Sign-in sends authorization data, and the server token, over the client connection. Across any untrusted network, use HTTPS or an encrypted private network; plain HTTP on a LAN isn't encrypted.
+
+Typed credentials live in a new table. Before upgrading, back up the data directory and `.secret.key`: older servers can't read account sign-ins, and the upgrade moves saved API keys into the new table.
 
 ## Coding workspaces
 

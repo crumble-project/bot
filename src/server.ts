@@ -16,6 +16,8 @@ import { Scheduler } from "./scheduler";
 import { createAPI } from "./api";
 import { GroupChats } from "./group-chats";
 import { groupLookupExtension } from "./group-lookup";
+import { historySource, historyToolsExtension } from "./history-tools";
+import { HistorySearch } from "./history-search";
 import { assertOwnMemoryInGroup, memorySourceOf } from "./memory-sources";
 import { GroupTranscripts } from "./group-transcripts";
 import { AppError, type Agent } from "./domain";
@@ -41,6 +43,9 @@ import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { loadCommonSkills } from "./common-skills";
 import { PushManager, PushStore } from "./push";
+import { providerModels } from "./providers";
+import { ProviderCredentials } from "./provider-credentials";
+import { ProviderAuth } from "./provider-auth";
 import webUI from "../web/index.html";
 
 export async function startServer(
@@ -72,6 +77,7 @@ export async function startServer(
   });
 
   let push: PushManager | undefined;
+  let providerAuth: ProviderAuth | undefined;
 
   try {
     const explicitSkillsDir =
@@ -108,6 +114,15 @@ export async function startServer(
       readFileSync(tokenFile, "utf8").trim();
 
     const store = new Store(dataDir);
+    store.migrateProviderCredentials(
+      providerModels()
+        .getProviders()
+        .map((provider) => provider.id),
+    );
+    // One credential store and catalog serve the API and every bot, so refreshes and sign-ins are serialized.
+    const credentials = new ProviderCredentials(store);
+    const models = providerModels(credentials);
+    providerAuth = new ProviderAuth(store, credentials, models);
     const integrations = new MCPIntegrations(store);
 
     // One sandbox runs every agent's code mode scripts, each in a worker of its own.
@@ -152,16 +167,18 @@ export async function startServer(
     let service!: CrumbleService;
     let schedules!: BotSchedules;
     let groupChats!: GroupChats;
+    let historySearch!: HistorySearch;
 
     const runtime = new AgentRuntime(join(dataDir, "agents"), {
       commonSkills: () => commonSkills,
-      credentials: (provider) => store.getCredential(provider),
+      models,
       currentAgent: (id) => store.getAgent(id),
       ownerTimezone: () => store.getSetting<string>(OWNER_TIMEZONE),
       extensions: async (agent) => [
         ...(await integrations.extensionsForAgent(agent)),
         coordinationExtension(agent, service),
         groupLookupExtension(agent, groupChats),
+        historyToolsExtension(agent, historySearch),
         scheduleExtension(agent, schedules),
         displayExtension(charts),
         reactionExtension(),
@@ -250,6 +267,9 @@ export async function startServer(
       new GroupTranscripts(join(dataDir, "groups")),
       service,
     );
+    historySearch = new HistorySearch(
+      historySource(runtime, store, groupChats),
+    );
 
     push = new PushManager(new PushStore(dataDir));
     push.attach(service);
@@ -272,6 +292,7 @@ export async function startServer(
           openDesktop: (agentId: string) =>
             workspaces.openDesktop(agentId, BACKGROUND_CONTEXT),
         }),
+        providerAuth,
       },
       push,
     );
@@ -333,11 +354,13 @@ export async function startServer(
         await integrations.close();
         await codemodeSandbox.close();
         await charts.close();
+        await providerAuth?.close();
         await release();
       },
     };
   } catch (error) {
     await push?.close();
+    await providerAuth?.close();
     await release();
     throw error;
   }

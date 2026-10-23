@@ -3,6 +3,10 @@
 ## Unreleased
 
 - Add a web UI at `/ui`, served by the server itself: connect with the server token, create, edit, and delete bots, chat with a bot live with replies rendered as Markdown by `@tanstack/markdown`, stop a running reply, and set or remove provider API keys. It is built with React, TanStack Router, TanStack Query, Tailwind CSS, and shadcn/ui, bundled by Bun on first request, and keeps the token in the browser's local storage.
+- Add provider account sign-in through Pi AI, such as ChatGPT, Codex, Claude, and GitHub Copilot ([feature 0004](https://github.com/crumble-project/spec/blob/main/features/0004-provider-account-login.md)). Clients start a sign-in session on the server and relay its steps: links, device codes, and text, secret, selection, and pasted-code prompts. Sessions end after 10 minutes without an answer, 30 minutes in total, or a server restart. Provider credentials are now typed and encrypted in a new `provider_credentials` table; saved API keys move there on startup, so back up the data directory before upgrading. Pi AI refreshes account tokens; the server serializes refreshes, sign-ins, key changes, and sign-out per provider. One credential store and model catalog now serve the API and every bot. `GET /v1/models` lists only models the saved or ambient credential can use.
+
+- Add `history_search` and `history_read` model tools for searching original message text and reading surrounding messages after compaction. Bot chats can retrieve their own messages and current groups; group turns can retrieve only their shared group messages. Results are bounded, reuse a fixed search cutoff, and recheck current access. Existing group lookup and the public HTTP contract are unchanged. Indexing is deferred.
+
 - Start the bot desktop's Chromium without the "Restore pages?" bubble. Stopping the machine kills Chromium, so it offered to restore pages after every boot, in front of the owner and the desktop job. Needs a rebuilt desktop image.
 - Tell bots to send to an existing desktop job to check or continue its work, since a new job repeats everything, such as submitting a form, and to ask the owner before retrying anything that submits, buys, or sends. Tell desktop jobs to look at the screen after an unverifiable action and to check boxes and choices before submitting.
 - Notify the owner of the bot's answer to a coding or desktop job's report. Reports reach the bot's chat without an execution, so these answers sent no reply event before; a desktop job asking for a login only reached the owner if they opened the chat. The job reporter now waits for the bot's answer and announces it once as a `reply` event with origin `coding` or `desktop` and the new `jobName`, through the activity stream and push. Reactions and tool calls without text announce nothing.
@@ -43,6 +47,12 @@
 - Add the generated OpenAPI 3.1 contract at `openapi/openapi.json` for all 49 HTTP endpoints, including authentication and event payload schemas.
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
+
+## Contract 1.7.0
+
+- Add `POST /v1/providers/{provider}/login`, `GET` and `DELETE /v1/provider-logins/{id}`, and `POST /v1/provider-logins/{id}/responses` with the `ProviderLoginSession`, `ProviderLoginPrompt`, and `ProviderLoginEvent` schemas. Unknown or expired sessions, including those lost on restart, return 410.
+- Add `authMethods`, `credentialType`, and `activeLoginId` to `Provider`.
+- `DELETE /v1/providers/{provider}` now removes an account sign-in as well as an API key. Clients that only set API keys keep working unchanged.
 
 ## Contract 1.6.0
 

@@ -101,6 +101,23 @@ export const providerKeyInput = z.object({
   apiKey: z.string().trim().min(1).max(16000),
 });
 
+/** Login answers may be pasted callback URLs, never larger than this. */
+const MAX_LOGIN_VALUE = 16384;
+
+export const providerLoginInput = z.object({
+  method: z.enum(["api_key", "oauth"]),
+});
+
+export const providerLoginAnswerInput = z.object({
+  promptId: z.string().min(1).max(200),
+  value: z
+    .string()
+    .refine(
+      (value) => [...value].length <= MAX_LOGIN_VALUE,
+      `Use at most ${MAX_LOGIN_VALUE} characters`,
+    ),
+});
+
 export const oauthInput = z.object({
   redirectUri: z
     .string()
@@ -196,6 +213,8 @@ const errors = {
   500: json(error, "Internal server error"),
   503: json(error, "Service unavailable"),
 };
+
+const gone = json(error, "Login session ended or was lost on restart");
 
 function define<const R extends RouteConfig>(config: R) {
   return createRoute({
@@ -730,6 +749,37 @@ export const routes = {
     request: { params: z.object({ provider: z.string() }) },
     responses: { 204: empty },
   }),
+  startProviderLogin: define({
+    method: "post",
+    path: "/v1/providers/{provider}/login",
+    operationId: "startProviderLogin",
+    request: {
+      params: z.object({ provider: z.string() }),
+      body: body(providerLoginInput),
+    },
+    responses: { 202: json(response.loginSessionResponse) },
+  }),
+  getProviderLogin: define({
+    method: "get",
+    path: "/v1/provider-logins/{id}",
+    operationId: "getProviderLogin",
+    request: { params: id },
+    responses: { 200: json(response.loginSessionResponse), 410: gone },
+  }),
+  answerProviderLogin: define({
+    method: "post",
+    path: "/v1/provider-logins/{id}/responses",
+    operationId: "answerProviderLogin",
+    request: { params: id, body: body(providerLoginAnswerInput) },
+    responses: { 200: json(response.loginSessionResponse), 410: gone },
+  }),
+  cancelProviderLogin: define({
+    method: "delete",
+    path: "/v1/provider-logins/{id}",
+    operationId: "cancelProviderLogin",
+    request: { params: id },
+    responses: { 200: json(response.loginSessionResponse), 410: gone },
+  }),
   mcpServers: define({
     method: "get",
     path: "/v1/mcp-servers",
@@ -804,7 +854,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "1.6.0",
+      version: "1.7.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },
