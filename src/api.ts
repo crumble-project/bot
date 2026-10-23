@@ -18,6 +18,9 @@ import {
   mcpCreateInput,
   attachmentIndex,
   groupMessageInput,
+  changesInput,
+  patchInput,
+  reviewsInput,
 } from "./api-contract";
 import { bearerAuth } from "hono/bearer-auth";
 import { registerDesktopRoutes } from "./desktop-api";
@@ -36,12 +39,13 @@ import {
   agentInput,
   scheduleInput,
   skillInput,
+  skillLifecycleInput,
   groupChatInput,
   AppError,
   type MCPServer,
 } from "./domain";
 import type { CrumbleService } from "./service";
-import type { ChatPreviewActivity, ReplyActivity } from "./service";
+import type { Activity } from "./service";
 import type { Scheduler } from "./scheduler";
 import type { GroupChats } from "./group-chats";
 import type { MCPIntegrations } from "./integrations";
@@ -235,7 +239,15 @@ export function createAPI(
   );
   register(routes.updateAgent, async (c) => {
     const old = service.agent(c.req.param("id"));
-    const input = agentInput.parse({ ...old, ...(await c.req.json()) });
+    const body = patchInput(agentInput).parse(await c.req.json());
+
+    // The inline skills are a view of the bot's packages, which may outgrow the inline limit; only a submitted list is validated.
+    const { skills, ...input } = agentInput.parse({
+      ...old,
+      ...body,
+      skills: body.skills ?? [],
+    });
+
     provider.parse(input.provider);
     checkServers(old.id, input.mcpServers);
 
@@ -243,7 +255,10 @@ export function createAPI(
       for (const conversation of store.listConversations(old.id))
         await service.abort(conversation.id);
 
-    const updated = store.updateAgent(old.id, input);
+    const updated = store.updateAgent(
+      old.id,
+      body.skills ? { ...input, skills } : input,
+    );
 
     // The desktop tool picks the workspace image; a bot that gains or loses it needs a fresh boot.
     if (old.tools.includes("desktop") !== input.tools.includes("desktop"))
@@ -410,7 +425,7 @@ export function createAPI(
 
       stream.onAbort(finish);
 
-      const send = (data: ReplyActivity | ChatPreviewActivity) => {
+      const send = (data: Activity) => {
         const activity = data;
 
         const canonical =
@@ -654,25 +669,102 @@ export function createAPI(
 
     return c.body(null, 204);
   });
+
+  const agentSkill = (agentId: string, skillId: string) => {
+    const skill = store.getSkill(skillId);
+
+    if (!skill || skill.agentId !== agentId)
+      throw new AppError(404, "Skill not found");
+
+    return skill;
+  };
+
+  register(routes.agentSkills, (c) =>
+    c.json(store.listSkills(service.agent(c.req.param("id")).id), 200),
+  );
+  register(routes.createAgentSkill, async (c) =>
+    c.json(
+      store.createSkill({
+        ...skillInput.parse(await c.req.json()),
+        agentId: service.agent(c.req.param("id")).id,
+      }),
+      201,
+    ),
+  );
+  register(routes.updateAgentSkill, async (c) => {
+    const old = agentSkill(
+      service.agent(c.req.param("id")).id,
+      c.req.param("skillId"),
+    );
+
+    const body = await c.req.json();
+    const lifecycle = skillLifecycleInput.parse(body);
+
+    return c.json(
+      store.updateSkill(old.id, {
+        ...skillInput.parse({ ...old, ...body }),
+        ...(lifecycle.state && { state: lifecycle.state }),
+        ...(lifecycle.pinned !== undefined && { pinned: lifecycle.pinned }),
+      }),
+      200,
+    );
+  });
+  register(routes.deleteAgentSkill, (c) => {
+    store.deleteSkill(
+      agentSkill(service.agent(c.req.param("id")).id, c.req.param("skillId"))
+        .id,
+    );
+
+    return c.body(null, 204);
+  });
+  register(routes.agentReviews, (c) =>
+    c.json(
+      store.listReviewResults(
+        service.agent(c.req.param("id")).id,
+        reviewsInput.parse(c.req.query()).limit,
+      ),
+      200,
+    ),
+  );
+  register(routes.changes, (c) => {
+    const query = changesInput.parse(c.req.query());
+
+    if (query.agentId && query.agentId !== "shared")
+      service.agent(query.agentId);
+
+    return c.json(
+      store.listChanges(query.agentId === "shared" ? null : query.agentId, {
+        limit: query.limit,
+        before: query.before,
+      }),
+      200,
+    );
+  });
+  register(routes.revertChange, (c) => {
+    const reverted = store.revertChange(c.req.param("id"), {
+      actor: "owner",
+    });
+
+    if (!reverted) throw new AppError(404, "Change not found");
+
+    return c.json(reverted, 201);
+  });
   register(routes.skills, (c) =>
     c.json(
       [
         ...(options.commonSkills ?? []).map(
-          ({ id, name, description, instructions, path }) => {
-            const skill = {
-              id,
-              name,
-              description,
-              instructions,
-              path,
-              source: "bundled" as const,
-            };
-
-            return skill;
-          },
+          ({ id, name, description, instructions, documents, path }) => ({
+            id,
+            name,
+            description,
+            instructions,
+            documents,
+            path,
+            source: "bundled" as const,
+          }),
         ),
         ...store
-          .listSkills()
+          .listSkills(null)
           .map((skill) => ({ ...skill, source: "shared" as const })),
       ],
       200,
@@ -686,7 +778,7 @@ export function createAPI(
       throw new AppError(405, "Bundled skills are read-only");
     const old = store.getSkill(c.req.param("id"));
 
-    if (!old) throw new AppError(404, "Skill not found");
+    if (!old || old.agentId) throw new AppError(404, "Skill not found");
 
     return c.json(
       store.updateSkill(
@@ -702,7 +794,8 @@ export function createAPI(
     if (options.commonSkills?.some((skill) => skill.id === skillId))
       throw new AppError(405, "Bundled skills are read-only");
 
-    if (!store.deleteSkill(skillId)) throw new AppError(404, "Skill not found");
+    if (store.getSkill(skillId)?.agentId || !store.deleteSkill(skillId))
+      throw new AppError(404, "Skill not found");
 
     for (const agent of store.listAgents())
       if (agent.sharedSkills?.includes(skillId))

@@ -80,6 +80,7 @@ describe("memorySourceOf", () => {
       memorySourceOf(store, agent.id, {
         groupId: group.id,
         submissionIds: [],
+        reviewOf: null,
       }),
     ).toEqual({ kind: "group", groupId: group.id, name: "Trip" });
   });
@@ -102,7 +103,11 @@ describe("memorySourceOf", () => {
     execution(`delegate:${other.id}:t-1`);
 
     const source = (submissionIds: string[]) =>
-      memorySourceOf(store, agent.id, { groupId: null, submissionIds });
+      memorySourceOf(store, agent.id, {
+        groupId: null,
+        submissionIds,
+        reviewOf: null,
+      });
 
     expect(source(["owner-1"])).toEqual({ kind: "chat" });
     expect(source(["owner-1", "task-1"])).toEqual({
@@ -119,8 +124,17 @@ describe("memorySourceOf", () => {
   });
 
   test("keeps group turns out of shared memory", () => {
-    const group: MemoryContext = { groupId: "group-1", submissionIds: [] };
-    const chat: MemoryContext = { groupId: null, submissionIds: [] };
+    const group: MemoryContext = {
+      groupId: "group-1",
+      submissionIds: [],
+      reviewOf: null,
+    };
+
+    const chat: MemoryContext = {
+      groupId: null,
+      submissionIds: [],
+      reviewOf: null,
+    };
 
     expect(() => assertOwnMemoryInGroup(group, true)).toThrow(
       "save to your own memory",
@@ -174,7 +188,11 @@ test("the memory tool reports where it runs", async () => {
   }
 
   expect(contexts).toEqual([
-    { groupId: null, submissionIds: [expect.any(String)] },
-    { groupId: "group-1", submissionIds: [expect.any(String)] },
+    { groupId: null, submissionIds: [expect.any(String)], reviewOf: null },
+    {
+      groupId: "group-1",
+      submissionIds: [expect.any(String)],
+      reviewOf: null,
+    },
   ]);
 });

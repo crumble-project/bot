@@ -9,6 +9,7 @@ import {
   groupChatInput,
   scheduleInput,
   skillInput,
+  skillLifecycleInput,
 } from "./domain";
 import { attachmentInput, MAX_ATTACHMENTS } from "./attachments";
 import * as response from "./api-responses";
@@ -54,6 +55,17 @@ export const groupMessageInput = z
     message: "Write a message or attach a file",
     path: ["content"],
   });
+
+export const changesInput = z.object({
+  /** One bot's changes; `shared` for the shared library; omit for every change. */
+  agentId: z.union([z.string().uuid(), z.literal("shared")]).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  before: z.string().min(1).max(200).optional(),
+});
+
+export const reviewsInput = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
 
 export const activityInput = z.object({
   agentId: z.string().uuid().optional(),
@@ -156,6 +168,7 @@ export const attachmentIndex = z.coerce
 const id = z.object({ id: z.string() });
 const installation = z.object({ installationId: z.string().uuid() });
 const memoryParams = id.extend({ memoryId: z.string() });
+const skillParams = id.extend({ skillId: z.string() });
 
 const json = <S extends z.ZodType>(schema: S, description = "Success") => ({
   description,
@@ -167,7 +180,7 @@ const body = <S extends z.ZodType>(schema: S) => ({
   content: { "application/json": { schema } },
 });
 
-function patchInput(schema: z.ZodObject) {
+export function patchInput(schema: z.ZodObject) {
   const fields: Record<string, z.ZodType> = {};
 
   for (const [key, field] of Object.entries(schema.shape))
@@ -640,6 +653,68 @@ export const routes = {
     request: { params: id },
     responses: { 204: empty },
   }),
+  agentSkills: define({
+    method: "get",
+    path: "/v1/agents/{id}/skills",
+    operationId: "listAgentSkills",
+    description:
+      "The bot's own skill packages, including stale and archived ones. The agent's inline `skills` field lists the same skills by name and instructions.",
+    request: { params: id },
+    responses: { 200: json(z.array(response.skillResponse)) },
+  }),
+  createAgentSkill: define({
+    method: "post",
+    path: "/v1/agents/{id}/skills",
+    operationId: "createAgentSkill",
+    request: { params: id, body: body(skillInput) },
+    responses: { 201: json(response.skillResponse) },
+  }),
+  updateAgentSkill: define({
+    method: "patch",
+    path: "/v1/agents/{id}/skills/{skillId}",
+    operationId: "updateAgentSkill",
+    description:
+      "Changes a skill's content, restores an archived skill by setting state to active, or pins it so the curator never marks it stale or archives it.",
+    request: {
+      params: skillParams,
+      body: body(patchInput(skillInput).extend(skillLifecycleInput.shape)),
+    },
+    responses: { 200: json(z.union([response.skillResponse, z.null()])) },
+  }),
+  deleteAgentSkill: define({
+    method: "delete",
+    path: "/v1/agents/{id}/skills/{skillId}",
+    operationId: "deleteAgentSkill",
+    request: { params: skillParams },
+    responses: { 204: empty },
+  }),
+  agentReviews: define({
+    method: "get",
+    path: "/v1/agents/{id}/reviews",
+    operationId: "listAgentReviews",
+    description:
+      "What the bot's reviews changed, newest first, one entry per reviewed execution with its changes. Clients show these as notices in the bot chat, also after reconnecting.",
+    request: { params: id, query: reviewsInput },
+    responses: { 200: json(z.array(response.reviewResultResponse)) },
+  }),
+  changes: define({
+    method: "get",
+    path: "/v1/changes",
+    operationId: "listChanges",
+    description:
+      "Skill and memory changes by owners, bots, and reviews, newest first, with the state before and after each. Page with `before` set to the last change's ID.",
+    request: { query: changesInput },
+    responses: { 200: json(z.array(response.learnedChangeResponse)) },
+  }),
+  revertChange: define({
+    method: "post",
+    path: "/v1/changes/{id}/revert",
+    operationId: "revertChange",
+    description:
+      "Restores the state before the change, whatever happened since, and records the revert as a change of its own.",
+    request: { params: id },
+    responses: { 201: json(response.learnedChangeResponse) },
+  }),
   skills: define({
     method: "get",
     path: "/v1/skills",
@@ -854,7 +929,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "1.7.0",
+      version: "1.8.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },

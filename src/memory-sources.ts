@@ -1,4 +1,4 @@
-import { AppError, type MemorySource } from "./domain";
+import { AppError, type ChangeSource, type MemorySource } from "./domain";
 import type { MemoryContext } from "./runtime";
 import type { Store } from "./store";
 
@@ -36,6 +36,23 @@ export function memorySourceOf(
     };
 
   return { kind: "chat" };
+}
+
+/** The execution and conversation a tool call's run is answering, for the change record. */
+export function changeSourceOf(
+  store: Store,
+  agentId: string,
+  context: Pick<MemoryContext, "groupId" | "submissionIds">,
+): ChangeSource {
+  const execution = context.submissionIds
+    .map((id) => store.findExecutionBySubmission(agentId, id))
+    .findLast((each) => each !== null);
+
+  return {
+    executionId: execution?.id ?? null,
+    conversationId: execution?.conversationId ?? null,
+    groupId: context.groupId,
+  };
 }
 
 /** A group turn writes only to the bot's own memory, so one conversation cannot change every bot's context. */

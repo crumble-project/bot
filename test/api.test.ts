@@ -254,6 +254,7 @@ describe("HTTP API", () => {
           id: "common:tasks/SKILL.md",
           name: "Tasks",
           instructions: "Use tasks",
+          documents: [],
           path: "tasks/SKILL.md",
         },
       ],
@@ -266,6 +267,7 @@ describe("HTTP API", () => {
         id: "common:tasks/SKILL.md",
         name: "Tasks",
         instructions: "Use tasks",
+        documents: [],
         path: "tasks/SKILL.md",
         source: "bundled",
       },
@@ -629,6 +631,230 @@ describe("HTTP API", () => {
         await req(app, "/v1/providers").then((r: Response) => r.json()),
       ),
     ).not.toContain("secret");
+    store.close();
+  });
+
+  test("manages a bot's own skill packages apart from the shared library", async () => {
+    const { app, store } = setup();
+
+    const a = await req(app, "/v1/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        ...agentInput("A"),
+        skills: [{ name: "Research", instructions: "Check sources" }],
+      }),
+    }).then((r: Response) => r.json());
+
+    const b = await req(app, "/v1/agents", {
+      method: "POST",
+      body: JSON.stringify(agentInput("B")),
+    }).then((r: Response) => r.json());
+
+    const own = await req(app, `/v1/agents/${a.id}/skills`).then(
+      (r: Response) => r.json(),
+    );
+
+    expect(own).toHaveLength(1);
+    expect(own[0]).toMatchObject({
+      agentId: a.id,
+      name: "Research",
+      instructions: "Check sources",
+      documents: [],
+      createdBy: "owner",
+      state: "active",
+    });
+
+    const created = await req(app, `/v1/agents/${a.id}/skills`, {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Writing",
+        description: "House style",
+        instructions: "Short sentences",
+        documents: [{ path: "references/tone.md", content: "Plain words" }],
+      }),
+    });
+
+    expect(created.status).toBe(201);
+    const writing = await created.json();
+    expect(writing.documents).toEqual([
+      { path: "references/tone.md", content: "Plain words" },
+    ]);
+
+    const agent = await req(app, `/v1/agents/${a.id}`).then((r: Response) =>
+      r.json(),
+    );
+
+    expect(agent.skills).toEqual([
+      { name: "Research", instructions: "Check sources" },
+      { name: "Writing", instructions: "Short sentences" },
+    ]);
+
+    expect(
+      (
+        await req(app, `/v1/agents/${a.id}/skills`, {
+          method: "POST",
+          body: JSON.stringify({
+            name: "Bad",
+            instructions: "x",
+            documents: [{ path: "../etc/passwd", content: "x" }],
+          }),
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await req(app, `/v1/agents/${b.id}/skills/${writing.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ instructions: "leak" }),
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await req(app, `/v1/skills/${writing.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ instructions: "leak" }),
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (await req(app, "/v1/skills").then((r: Response) => r.json())).map(
+        (skill: { id: string }) => skill.id,
+      ),
+    ).not.toContain(writing.id);
+
+    const patched = await req(app, `/v1/agents/${a.id}/skills/${writing.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ instructions: "Shorter sentences" }),
+    }).then((r: Response) => r.json());
+
+    expect(patched).toMatchObject({
+      instructions: "Shorter sentences",
+      description: "House style",
+      documents: [{ path: "references/tone.md", content: "Plain words" }],
+    });
+    expect(
+      (
+        await req(app, `/v1/agents/${a.id}/skills/${writing.id}`, {
+          method: "DELETE",
+        })
+      ).status,
+    ).toBe(204);
+    expect(
+      (await req(app, `/v1/agents/${a.id}`).then((r: Response) => r.json()))
+        .skills,
+    ).toEqual([{ name: "Research", instructions: "Check sources" }]);
+
+    // Packages may outgrow the inline limit without blocking unrelated edits; a submitted list is still bounded.
+    for (let i = 0; i < 100; i++)
+      await req(app, `/v1/agents/${a.id}/skills`, {
+        method: "POST",
+        body: JSON.stringify({ name: `Skill ${i}`, instructions: "x" }),
+      });
+    expect(store.listSkills(a.id)).toHaveLength(101);
+
+    const disabled = await req(app, `/v1/agents/${a.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled: false }),
+    });
+
+    expect(disabled.status).toBe(200);
+    expect((await disabled.json()).skills).toHaveLength(101);
+    expect(store.listSkills(a.id)).toHaveLength(101);
+    expect(
+      (
+        await req(app, `/v1/agents/${a.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            skills: Array.from({ length: 101 }, (_, i) => ({
+              name: `S${i}`,
+              instructions: "x",
+            })),
+          }),
+        })
+      ).status,
+    ).toBe(400);
+    store.close();
+  });
+
+  test("lists learned changes and reverts one", async () => {
+    const { app, store } = setup();
+
+    const agent = await req(app, "/v1/agents", {
+      method: "POST",
+      body: JSON.stringify(agentInput("A")),
+    }).then((r: Response) => r.json());
+
+    const skill = await req(app, `/v1/agents/${agent.id}/skills`, {
+      method: "POST",
+      body: JSON.stringify({ name: "Writing", instructions: "Short" }),
+    }).then((r: Response) => r.json());
+
+    await req(app, `/v1/agents/${agent.id}/skills/${skill.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ instructions: "Shorter" }),
+    });
+    await req(app, "/v1/memories", {
+      method: "POST",
+      body: JSON.stringify({ content: "shared fact" }),
+    });
+
+    const changes = await req(app, `/v1/changes?agentId=${agent.id}`).then(
+      (r: Response) => r.json(),
+    );
+
+    expect(
+      changes.map((change: { action: string; target: string }) => [
+        change.target,
+        change.action,
+      ]),
+    ).toEqual([
+      ["skill", "update"],
+      ["skill", "create"],
+    ]);
+    expect(changes[0]).toMatchObject({
+      actor: "owner",
+      agentId: agent.id,
+      before: { instructions: "Short" },
+      after: { instructions: "Shorter" },
+    });
+    expect(
+      (
+        await req(app, "/v1/changes?agentId=shared").then((r: Response) =>
+          r.json(),
+        )
+      ).map((change: { target: string }) => change.target),
+    ).toEqual(["memory"]);
+    expect(
+      (await req(app, "/v1/changes").then((r: Response) => r.json())).length,
+    ).toBe(3);
+    expect((await req(app, "/v1/changes?agentId=nope")).status).toBe(400);
+
+    const reverted = await req(app, `/v1/changes/${changes[0].id}/revert`, {
+      method: "POST",
+    });
+
+    expect(reverted.status).toBe(201);
+    expect(await reverted.json()).toMatchObject({
+      action: "revert",
+      revertsId: changes[0].id,
+      after: { instructions: "Short" },
+    });
+    expect(
+      (
+        await req(app, `/v1/agents/${agent.id}/skills`).then((r: Response) =>
+          r.json(),
+        )
+      )[0].instructions,
+    ).toBe("Short");
+    expect(
+      (await req(app, "/v1/changes/missing/revert", { method: "POST" })).status,
+    ).toBe(404);
+    expect(
+      await req(app, `/v1/agents/${agent.id}/reviews`).then((r: Response) =>
+        r.json(),
+      ),
+    ).toEqual([]);
     store.close();
   });
 

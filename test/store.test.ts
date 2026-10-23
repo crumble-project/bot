@@ -177,6 +177,224 @@ describe("Store", () => {
     store.close();
   });
 
+  test("moves inline agent skills into the library and keeps packages on inline writes", () => {
+    const dir = make();
+    const db = new Database(join(dir, "store.sqlite"));
+    db.exec(
+      "CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, avatar TEXT NOT NULL, description TEXT NOT NULL, instructions TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, enabled INTEGER NOT NULL, tools TEXT NOT NULL, skills TEXT NOT NULL, mcp_servers TEXT NOT NULL, delegates TEXT NOT NULL DEFAULT '[]', inference TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL); CREATE TABLE skills (id TEXT PRIMARY KEY, name TEXT NOT NULL, instructions TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);",
+    );
+    db.query(
+      "INSERT INTO agents (id,name,avatar,description,instructions,provider,model,enabled,tools,skills,mcp_servers,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    ).run(
+      "legacy",
+      "Legacy",
+      "sparkles",
+      "",
+      "old",
+      "openai",
+      "gpt-4.1",
+      1,
+      "[]",
+      JSON.stringify([{ name: "Research", instructions: "Check sources" }]),
+      "[]",
+      "2020-01-01",
+      "2020-01-01",
+    );
+    db.query("INSERT INTO skills VALUES (?,?,?,?,?)").run(
+      "shared",
+      "Shared",
+      "Shared rules",
+      "2020-01-01",
+      "2020-01-01",
+    );
+    db.close();
+    const store = new Store(dir);
+    expect(store.getAgent("legacy")?.skills).toEqual([
+      { name: "Research", instructions: "Check sources" },
+    ]);
+    const [research] = store.listSkills("legacy");
+    expect(research).toMatchObject({
+      agentId: "legacy",
+      name: "Research",
+      description: "",
+      documents: [],
+      createdBy: "owner",
+      useCount: 0,
+      state: "active",
+      pinned: false,
+    });
+    expect(store.listSkills(null).map((skill) => skill.name)).toEqual([
+      "Shared",
+    ]);
+
+    store.updateSkill(research!.id, {
+      description: "Find sources",
+      documents: [{ path: "references/sources.md", content: "Primary first" }],
+      createdBy: "bot",
+    });
+    store.recordSkillUse(research!.id);
+    store.updateAgent("legacy", {
+      skills: [
+        { name: "Research", instructions: "Check primary sources" },
+        { name: "Writing", instructions: "Short sentences" },
+      ],
+    });
+    const after = store.listSkills("legacy");
+    expect(after.map((skill) => skill.name)).toEqual(["Research", "Writing"]);
+    expect(after[0]).toMatchObject({
+      id: research!.id,
+      instructions: "Check primary sources",
+      description: "Find sources",
+      documents: [{ path: "references/sources.md", content: "Primary first" }],
+      createdBy: "bot",
+      useCount: 1,
+    });
+    expect(after[0]!.lastUsedAt).not.toBeNull();
+    store.updateAgent("legacy", { skills: [] });
+    expect(store.listSkills("legacy")).toEqual([]);
+    expect(store.getSkill(research!.id)).toBeNull();
+    const copy = store.duplicateAgent("legacy");
+    expect(copy?.skills).toEqual([]);
+    store.close();
+  });
+
+  test("moves inline skills left behind by an interrupted migration", () => {
+    const dir = make();
+    const first = new Store(dir);
+    const agent = first.createAgent(input);
+    first.close();
+    // The schema is current, but a crash left this bot's skills inline.
+    const db = new Database(join(dir, "store.sqlite"));
+    db.query("UPDATE agents SET skills=? WHERE id=?").run(
+      JSON.stringify([{ name: "Left", instructions: "Behind" }]),
+      agent.id,
+    );
+    db.close();
+    const store = new Store(dir);
+    expect(store.getAgent(agent.id)?.skills).toEqual([
+      { name: "Left", instructions: "Behind" },
+    ]);
+    expect(store.listSkills(agent.id).map((skill) => skill.name)).toEqual([
+      "Left",
+    ]);
+    store.close();
+  });
+
+  test("records skill and memory changes and reverts them one at a time", () => {
+    const store = new Store(make());
+    const agent = store.createAgent(input);
+
+    const skill = store.createSkill(
+      {
+        agentId: agent.id,
+        name: "Research",
+        description: "",
+        instructions: "Check sources",
+        documents: [],
+        createdBy: "bot",
+        sourceExecutionId: "exec-1",
+      },
+      undefined,
+      { actor: "bot", source: { executionId: "exec-1" } },
+    );
+
+    store.updateSkill(
+      skill.id,
+      { instructions: "Check primary sources" },
+      { actor: "review", source: { executionId: "exec-2" } },
+    );
+    store.deleteSkill(skill.id);
+
+    const memory = store.createMemory(
+      { agentId: agent.id, content: "fact", source: { kind: "chat" } },
+      undefined,
+      { actor: "bot" },
+    );
+
+    const changes = store.listChanges(agent.id);
+    expect(
+      changes.map((change) => [change.actor, change.target, change.action]),
+    ).toEqual([
+      ["bot", "memory", "create"],
+      ["owner", "skill", "delete"],
+      ["review", "skill", "update"],
+      ["bot", "skill", "create"],
+    ]);
+    expect(changes[2]!.source).toEqual({ executionId: "exec-2" });
+    expect(store.listChanges(agent.id, { limit: 2 })).toHaveLength(2);
+    expect(
+      store.listChanges(agent.id, { limit: 2, before: changes[1]!.id }),
+    ).toEqual(changes.slice(2));
+    expect(store.listChanges(null)).toEqual([]);
+
+    // Undo the delete: the skill is back as it was before deletion, with its ID.
+    const undelete = store.revertChange(changes[1]!.id, { actor: "owner" });
+    expect(undelete).toMatchObject({
+      action: "revert",
+      revertsId: changes[1]!.id,
+      actor: "owner",
+    });
+    expect(store.getSkill(skill.id)).toMatchObject({
+      instructions: "Check primary sources",
+      createdBy: "bot",
+      sourceExecutionId: "exec-1",
+    });
+
+    // Undo the update: back to the first instructions.
+    store.revertChange(changes[2]!.id, { actor: "owner" });
+    expect(store.getSkill(skill.id)?.instructions).toBe("Check sources");
+
+    // Undo the create: the skill is gone.
+    store.revertChange(changes[3]!.id, { actor: "owner" });
+    expect(store.getSkill(skill.id)).toBeNull();
+
+    store.revertChange(changes[0]!.id, { actor: "owner" });
+    expect(store.getMemory(memory.id)).toBeNull();
+
+    expect(store.revertChange("missing", { actor: "owner" })).toBeNull();
+    expect(store.listChanges(agent.id)[0]).toMatchObject({
+      action: "revert",
+      target: "memory",
+    });
+
+    // Duplicating a bot copies its skill packages whole, except archived ones.
+    const kept = store.createSkill({
+      agentId: agent.id,
+      name: "Kept",
+      description: "Keep me",
+      instructions: "Whole package",
+      documents: [{ path: "references/depth.md", content: "Depth" }],
+      createdBy: "bot",
+      sourceExecutionId: "exec-3",
+      state: "stale",
+      pinned: true,
+    });
+
+    store.createSkill({
+      agentId: agent.id,
+      name: "Gone",
+      description: "",
+      instructions: "Archived",
+      documents: [],
+      state: "archived",
+    });
+
+    const copy = store.duplicateAgent(agent.id)!;
+    expect(copy.skills).toEqual([
+      { name: "Kept", instructions: "Whole package" },
+    ]);
+    expect(store.listSkills(copy.id)[0]).toMatchObject({
+      description: "Keep me",
+      documents: [{ path: "references/depth.md", content: "Depth" }],
+      createdBy: "bot",
+      sourceExecutionId: null,
+      state: "stale",
+      pinned: true,
+    });
+    expect(store.listSkills(copy.id)[0]!.id).not.toBe(kept.id);
+    store.close();
+  });
+
   test("persists inference settings through updates and duplication", () => {
     const store = new Store(make());
 
