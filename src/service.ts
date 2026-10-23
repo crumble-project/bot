@@ -66,13 +66,28 @@ export type ChatPreviewActivity = {
   lastMessage: string;
 };
 
+/** What a bot's review of one execution changed, for the notice in its chat. */
+export type LearnedActivity = {
+  type: "learned";
+  agentId: string;
+  agentName: string;
+  executionId: string;
+  changes: Array<{
+    changeId: string;
+    target: "skill" | "memory";
+    action: "create" | "update" | "delete" | "revert";
+    name: string;
+  }>;
+  createdAt: string;
+};
+
+export type Activity = ReplyActivity | ChatPreviewActivity | LearnedActivity;
+
 export class CrumbleService {
   private monitoring = new Map<string, Promise<void>>();
   private closing = false;
   private listeners = new Map<string, Set<() => void>>();
-  private activityListeners = new Set<
-    (event: ReplyActivity | ChatPreviewActivity) => void
-  >();
+  private activityListeners = new Set<(event: Activity) => void>();
   private chatOpening = new Map<string, Promise<Conversation>>();
   private settledListeners = new Set<
     (execution: Execution) => void | Promise<void>
@@ -111,7 +126,7 @@ export class CrumbleService {
     };
   }
 
-  onActivity(callback: (event: ReplyActivity | ChatPreviewActivity) => void) {
+  onActivity(callback: (event: Activity) => void) {
     this.activityListeners.add(callback);
 
     return () => {
@@ -230,8 +245,8 @@ export class CrumbleService {
     });
   }
 
-  /** Tells activity listeners, such as push delivery, about a reply that did not come from a bot chat execution. */
-  announce(event: ReplyActivity) {
+  /** Tells activity listeners, such as push delivery, about a reply that did not come from a bot chat execution, or a learned change. */
+  announce(event: ReplyActivity | LearnedActivity) {
     for (const listener of this.activityListeners) listener(event);
   }
 

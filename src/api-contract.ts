@@ -9,6 +9,7 @@ import {
   groupChatInput,
   scheduleInput,
   skillInput,
+  skillLifecycleInput,
 } from "./domain";
 import { attachmentInput, MAX_ATTACHMENTS } from "./attachments";
 import * as response from "./api-responses";
@@ -54,6 +55,17 @@ export const groupMessageInput = z
     message: "Write a message or attach a file",
     path: ["content"],
   });
+
+export const changesInput = z.object({
+  /** One bot's changes; `shared` for the shared library; omit for every change. */
+  agentId: z.union([z.string().uuid(), z.literal("shared")]).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  before: z.string().min(1).max(200).optional(),
+});
+
+export const reviewsInput = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
 
 export const activityInput = z.object({
   agentId: z.string().uuid().optional(),
@@ -160,6 +172,7 @@ export const attachmentIndex = z.coerce
 const id = z.object({ id: z.string() });
 const installation = z.object({ installationId: z.string().uuid() });
 const memoryParams = id.extend({ memoryId: z.string() });
+const skillParams = id.extend({ skillId: z.string() });
 
 const json = <S extends z.ZodType>(schema: S, description = "Success") => ({
   description,
@@ -171,7 +184,7 @@ const body = <S extends z.ZodType>(schema: S) => ({
   content: { "application/json": { schema } },
 });
 
-function patchInput(schema: z.ZodObject) {
+export function patchInput(schema: z.ZodObject) {
   const fields: Record<string, z.ZodType> = {};
 
   for (const [key, field] of Object.entries(schema.shape))
@@ -468,10 +481,11 @@ export const routes = {
     operationId: "streamActivityEvents",
     "x-sse-events": {
       activity: { $ref: "#/components/schemas/ActivityEvent" },
+      learned: { $ref: "#/components/schemas/LearnedEvent" },
       heartbeat: { $ref: "#/components/schemas/HeartbeatEvent" },
     },
     description:
-      "Server-sent events. Each activity event carries a ReplyEvent or ChatPreviewEvent JSON object in data. Current chat previews replay on connection; finished replies are not replayed. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. No Last-Event-ID replay.",
+      "Server-sent events. Each activity event carries a ReplyEvent or ChatPreviewEvent JSON object in data. Each learned event carries a LearnedEvent: what a bot's review of one turn changed; GET /v1/agents/{id}/reviews lists them durably. Current chat previews replay on connection; finished replies and learned events are not replayed. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. No Last-Event-ID replay.",
     responses: {
       200: {
         description: "SSE stream, not a JSON array",
@@ -644,11 +658,84 @@ export const routes = {
     request: { params: id },
     responses: { 204: empty },
   }),
+  agentSkills: define({
+    method: "get",
+    path: "/v1/agents/{id}/skills",
+    operationId: "listAgentSkills",
+    description:
+      "The bot's own skill packages, including stale and archived ones. The agent's inline `skills` field lists the same skills by name and instructions.",
+    request: { params: id },
+    responses: { 200: json(z.array(response.skillPackageResponse)) },
+  }),
+  createAgentSkill: define({
+    method: "post",
+    path: "/v1/agents/{id}/skills",
+    operationId: "createAgentSkill",
+    request: { params: id, body: body(skillInput) },
+    responses: { 201: json(response.skillPackageResponse) },
+  }),
+  updateAgentSkill: define({
+    method: "patch",
+    path: "/v1/agents/{id}/skills/{skillId}",
+    operationId: "updateAgentSkill",
+    description:
+      "Changes a skill's content, restores an archived skill by setting state to active, or pins it so the curator never marks it stale or archives it.",
+    request: {
+      params: skillParams,
+      body: body(patchInput(skillInput).extend(skillLifecycleInput.shape)),
+    },
+    responses: {
+      200: json(z.union([response.skillPackageResponse, z.null()])),
+    },
+  }),
+  deleteAgentSkill: define({
+    method: "delete",
+    path: "/v1/agents/{id}/skills/{skillId}",
+    operationId: "deleteAgentSkill",
+    request: { params: skillParams },
+    responses: { 204: empty },
+  }),
+  agentReviews: define({
+    method: "get",
+    path: "/v1/agents/{id}/reviews",
+    operationId: "listAgentReviews",
+    description:
+      "What the bot's reviews changed, newest first, one entry per reviewed execution with its changes. Clients show these as notices in the bot chat, also after reconnecting.",
+    request: { params: id, query: reviewsInput },
+    responses: { 200: json(z.array(response.reviewResultResponse)) },
+  }),
+  changes: define({
+    method: "get",
+    path: "/v1/changes",
+    operationId: "listChanges",
+    description:
+      "Skill and memory changes by owners, bots, and reviews, newest first, with the state before and after each. Page with `before` set to the last change's ID.",
+    request: { query: changesInput },
+    responses: { 200: json(z.array(response.learnedChangeResponse)) },
+  }),
+  revertChange: define({
+    method: "post",
+    path: "/v1/changes/{id}/revert",
+    operationId: "revertChange",
+    description:
+      "Restores the state before the change, whatever happened since, and records the revert as a change of its own.",
+    request: { params: id },
+    responses: { 201: json(response.learnedChangeResponse) },
+  }),
   skills: define({
     method: "get",
     path: "/v1/skills",
     operationId: "listSkills",
     responses: { 200: json(z.array(response.listedSkillResponse)) },
+  }),
+  getSkill: define({
+    method: "get",
+    path: "/v1/skills/{id}",
+    operationId: "getSkill",
+    description:
+      "One shared skill as a full package. GET /v1/skills keeps its earlier item shapes; the full records are here and in the create and update responses.",
+    request: { params: id },
+    responses: { 200: json(response.skillPackageResponse) },
   }),
   createSkill: define({
     method: "post",
@@ -662,7 +749,9 @@ export const routes = {
     path: "/v1/skills/{id}",
     operationId: "updateSkill",
     request: { params: id, body: body(patchInput(skillInput)) },
-    responses: { 200: json(z.union([response.skillResponse, z.null()])) },
+    responses: {
+      200: json(z.union([response.skillResponse, z.null()])),
+    },
   }),
   deleteSkill: define({
     method: "delete",
@@ -844,6 +933,7 @@ export function contractApp() {
   app.openAPIRegistry.register("ChatPreviewEvent", response.chatPreviewEvent);
   app.openAPIRegistry.register("HeartbeatEvent", response.heartbeatEvent);
   app.openAPIRegistry.register("ActivityEvent", response.activityEvent);
+  app.openAPIRegistry.register("LearnedEvent", response.learnedEvent);
 
   return app;
 }
@@ -858,7 +948,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "1.8.0",
+      version: "1.9.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },

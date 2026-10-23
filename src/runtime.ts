@@ -30,6 +30,20 @@ import {
 } from "./group-turns";
 import { AppError, conversationReference, type Agent } from "./domain";
 import { providerModels } from "./providers";
+import {
+  SKILL_WRITING_GUIDANCE,
+  SkillReads,
+  skillIndex,
+  skillTool,
+  type SkillLibrary,
+} from "./skill-library";
+import { skillManageTool } from "./skill-manage";
+import {
+  ReviewAnchor,
+  ReviewConversation,
+  reviewExtension,
+} from "./review-conversation";
+import { reviewInstructions, type ReviewScope } from "./learning-review";
 import { prepareAttachments, type AttachmentInput } from "./attachments";
 import {
   prepareReply,
@@ -38,6 +52,7 @@ import {
   readConversationTranscript,
   readTranscript,
   readTurnOutcome,
+  readTurnReport,
   type MessageOrigin,
   type BotMessageEvent,
   type TranscriptMessage,
@@ -54,7 +69,12 @@ export type MemoryRecord = {
 };
 
 /** Where the memory tool runs: a group turn names its group; another conversation's run names its inputs, oldest first. */
-export type MemoryContext = { groupId: string | null; submissionIds: string[] };
+export type MemoryContext = {
+  groupId: string | null;
+  submissionIds: string[];
+  /** The execution a review conversation is reviewing; null in the bot's own conversations. */
+  reviewOf: string | null;
+};
 
 export type RuntimeCallbacks = {
   models?: Models | ((agent: Agent) => Models | Promise<Models>);
@@ -78,10 +98,8 @@ export type RuntimeCallbacks = {
     id: string,
     context: MemoryContext,
   ) => void | Promise<void>;
-  /** Shared skills from the library the agent uses, added after its own skills. */
-  sharedSkills?: (agent: Agent) => Agent["skills"];
-  /** Repository-backed skills applied to every agent before shared and personal skills. */
-  commonSkills?: () => Agent["skills"];
+  /** The skills a bot can load and the ones it may write. Listed in its instructions by name only. */
+  skillLibrary?: SkillLibrary;
   extensions?: (agent: Agent) => Extension[] | Promise<Extension[]>;
   /** Installed but never offered in the bot's chat: tasks select them for the conversations they own. */
   taskExtensions?: (agent: Agent) => Extension[] | Promise<Extension[]>;
@@ -114,7 +132,11 @@ type HarnessRecord = {
   models: Models;
   choices: { agent: Agent };
   memory: ReturnType<typeof defineTool>;
+  skill: ReturnType<typeof defineTool>;
+  skillManage: ReturnType<typeof defineTool> | null;
   memoryExtension: Extension;
+  skillExtension: Extension;
+  reviewExtension: Extension;
   groupExtension: Extension;
   registry: ReturnType<typeof createRegistry>;
   /** Everything installed in the registry: the offered extensions, then the task extensions. */
@@ -239,6 +261,8 @@ function localConversationId(agentId: string, reference: string): never {
 }
 
 export class AgentRuntime {
+  /** Skills each turn has loaded, checked before a bot changes one. */
+  private readonly skillReads = new SkillReads();
   private readonly records = new Map<string, Promise<HarnessRecord>>();
   private closed = false;
   constructor(
@@ -309,6 +333,14 @@ export class AgentRuntime {
                 )
               )?.groupId ?? null,
             submissionIds: (live?.run?.inputs ?? []).map(String),
+            reviewOf:
+              (
+                await api.snapshot(
+                  ReviewConversation,
+                  api.conversationId,
+                  callContext,
+                )
+              )?.executionId ?? null,
           };
 
           const current = this.callbacks.currentAgent
@@ -354,6 +386,35 @@ export class AgentRuntime {
         },
       });
 
+      const currentAgent = () => {
+        const current = this.callbacks.currentAgent
+          ? this.callbacks.currentAgent(agent.id)
+          : agent;
+
+        if (!current?.enabled)
+          throw new Error("Skill access is disabled for this agent");
+
+        return current;
+      };
+
+      const library = this.callbacks.skillLibrary;
+
+      const skill = skillTool({
+        skills: async () => (await library?.available(currentAgent())) ?? [],
+        used: async (loaded, runKey) => {
+          this.skillReads.mark(runKey, loaded.id);
+          await library?.used(currentAgent(), loaded);
+        },
+      });
+
+      const skillManage = library
+        ? skillManageTool({
+            library,
+            reads: this.skillReads,
+            agent: currentAgent,
+          })
+        : null;
+
       const registry = createRegistry();
 
       const memoryExtension = defineExtension({
@@ -361,9 +422,17 @@ export class AgentRuntime {
         tools: [memory],
       });
 
+      const skillExtension = defineExtension({
+        name: "skills",
+        tools: [skill, ...(skillManage ? [skillManage] : [])],
+      });
+
       const groupExtension = groupTurnExtension();
       registry.install(memoryExtension);
+      registry.install(skillExtension);
       registry.install(groupExtension);
+      const reviewExt = reviewExtension();
+      registry.install(reviewExt);
 
       const extensions = [
         ...((await this.callbacks.extensions?.(agent)) ?? []),
@@ -413,7 +482,11 @@ export class AgentRuntime {
         models,
         choices,
         memory,
+        skill,
+        skillManage,
         memoryExtension,
+        skillExtension,
+        reviewExtension: reviewExt,
         groupExtension,
         registry,
         extensions,
@@ -466,6 +539,24 @@ export class AgentRuntime {
       )?.groupId,
     );
 
+    const reviewDoc = await record.harness.snapshot(
+      ReviewConversation,
+      localId,
+      BACKGROUND_CONTEXT,
+    );
+
+    const review: ReviewScope | null = reviewDoc?.executionId
+      ? { skills: reviewDoc.skills, memory: reviewDoc.memory }
+      : null;
+
+    const reviewModel = review ? this.reviewModelOf(agent) : null;
+
+    if (
+      reviewModel &&
+      !record.models.getModel(reviewModel.provider, reviewModel.model)
+    )
+      await record.models.refresh({ providers: [reviewModel.provider] });
+
     // A group turn can neither delegate nor start coding jobs, and may pass instead of answering.
     const offered = group
       ? next.filter(
@@ -473,11 +564,25 @@ export class AgentRuntime {
         )
       : next;
 
-    const tools = [
-      ...(agent.tools.includes("memory") ? [record.memory] : []),
-      ...offered.flatMap((extension) => extension.tools ?? []),
-      ...(group ? (record.groupExtension.tools ?? []) : []),
-    ];
+    const skills = (await this.callbacks.skillLibrary?.available(agent)) ?? [];
+
+    // The bot can always write its first skill, so the management tool does not wait for the index.
+    // A review gets only the stores it reviews: it cannot act in the chat, run jobs, delegate, or reach integrations.
+    const tools = review
+      ? [
+          ...(agent.tools.includes("memory") && review.memory
+            ? [record.memory]
+            : []),
+          ...(skills.length ? [record.skill] : []),
+          ...(record.skillManage && review.skills ? [record.skillManage] : []),
+        ]
+      : [
+          ...(agent.tools.includes("memory") ? [record.memory] : []),
+          ...(skills.length ? [record.skill] : []),
+          ...(record.skillManage ? [record.skillManage] : []),
+          ...offered.flatMap((extension) => extension.tools ?? []),
+          ...(group ? (record.groupExtension.tools ?? []) : []),
+        ];
 
     // With code mode the model writes one script that calls the other tools, instead of calling them itself.
     // Model-only tools, such as code mode itself, stay direct.
@@ -500,12 +605,6 @@ export class AgentRuntime {
 
     const shared = memory.filter((item) => item.shared);
 
-    const skills = [
-      ...(this.callbacks.commonSkills?.() ?? []),
-      ...(this.callbacks.sharedSkills?.(agent) ?? []),
-      ...agent.skills,
-    ];
-
     const now = new Date();
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const ownerTimezone = this.callbacks.ownerTimezone?.();
@@ -517,22 +616,37 @@ export class AgentRuntime {
     const clock = `Current server time (UTC): ${now.toISOString()}\nServer timezone: ${timezone}\nServer local time: ${now.toLocaleString("sv-SE", { timeZone: timezone, hour12: false })}${owner}\nUse this fresh clock for dates and relative times. The owner's timezone may differ from the server or external tools; use their known timezone, or ask if it is unknown. For one-time schedules, runAt must include Z (UTC) or an explicit offset such as +02:00. The timezone field controls recurring cron schedules; it does not reinterpret a one-time runAt timestamp.`;
     await conversation.configure(
       {
-        model: { provider: agent.provider, modelId: agent.model },
+        model: reviewModel
+          ? { provider: reviewModel.provider, modelId: reviewModel.model }
+          : { provider: agent.provider, modelId: agent.model },
         thinkingLevel: agent.inference?.thinkingLevel ?? "off",
         ...(group && {
           extensions: [
             record.memoryExtension,
+            record.skillExtension,
             ...offered,
             record.groupExtension,
+          ],
+        }),
+        ...(review && {
+          extensions: [
+            record.memoryExtension,
+            record.skillExtension,
+            record.reviewExtension,
           ],
         }),
         // Stable parts first and the clock last, following Hermes Agent's prompt order.
         instructions: [
           identity(agent.name),
-          agent.instructions,
-          CONTEXT_GUIDANCE,
+          review ? reviewInstructions(review) : agent.instructions,
+          review
+            ? `Your standing instructions in the owner's chat, which the turn followed:\n${agent.instructions}`
+            : CONTEXT_GUIDANCE,
           group ? GROUP_INSTRUCTIONS : "",
-          ...skills.map((skill) => `## ${skill.name}\n${skill.instructions}`),
+          skillIndex(skills),
+          record.skillManage && (!review || review.skills)
+            ? SKILL_WRITING_GUIDANCE
+            : "",
           MEMORY_GUIDANCE,
           `Persistent memory:\n${lines(memory.filter((item) => !item.shared))}`,
           shared.length
@@ -598,6 +712,106 @@ export class AgentRuntime {
     await this.configure(record, agent, reference);
 
     return reference;
+  }
+
+  /** The model a bot's reviews run on: the chosen one, else the bot's own. */
+  private reviewModelOf(agent: Agent) {
+    return (
+      agent.reviewModel ?? { provider: agent.provider, model: agent.model }
+    );
+  }
+
+  /** A new conversation that reviews one execution, owned by a background task so it stays out of the bot chat. */
+  async openReviewConversation(
+    agent: Agent,
+    executionId: string,
+    scope: ReviewScope,
+    budgetChars: number,
+  ): Promise<string> {
+    const record = await this.open(agent);
+    const root = await record.harness.root(BACKGROUND_CONTEXT);
+
+    const id = await root.commit(async (tx) => {
+      const anchor = await tx.createTask(ReviewAnchor, null, {
+        ownership: { kind: "conversation" },
+        background: true,
+      });
+
+      const child = await tx.createConversation({
+        ownership: { kind: "task", taskId: anchor },
+      });
+
+      const doc = await tx.doc(ReviewConversation, child.id);
+      doc.executionId = executionId;
+      doc.skills = scope.skills;
+      doc.memory = scope.memory;
+      doc.budgetChars = budgetChars;
+
+      return child.id;
+    }, BACKGROUND_CONTEXT);
+
+    const reference = conversationReference(agent.id, Number(id));
+    await this.configure(record, agent, reference);
+
+    return reference;
+  }
+
+  /**
+   * The characters of model input a whole review may spend, across every request it makes: 75% of the review
+   * model's context window, at most 600,000 tokens, lowered to the configured cap; four characters stand for a token.
+   */
+  async reviewBudgetChars(agent: Agent) {
+    const { models } = await this.open(agent);
+    const choice = this.reviewModelOf(agent);
+
+    if (!models.getModel(choice.provider, choice.model))
+      await models.refresh({ providers: [choice.provider] });
+
+    const window = models.getModel(
+      choice.provider,
+      choice.model,
+    )?.contextWindow;
+
+    const ceiling = window ? Math.min(window * 0.75, 600000) : 120000;
+
+    return Math.min(agent.review?.maxInputTokens ?? ceiling, ceiling) * 4;
+  }
+
+  /** A settled turn's tool-activity rounds and a bounded plain-text digest for its review. */
+  async turnReport(
+    agent: Agent,
+    conversationId: string,
+    submissionId: string,
+    maxChars: number,
+  ) {
+    const { harness } = await this.open(agent);
+
+    const submission = await harness.submission(
+      numericId(submissionId),
+      BACKGROUND_CONTEXT,
+    );
+
+    const status = await submission?.status(BACKGROUND_CONTEXT);
+
+    const conversation = await harness.conversation(
+      localConversationId(agent.id, conversationId),
+      BACKGROUND_CONTEXT,
+    );
+
+    if (
+      !status ||
+      !("entry" in status) ||
+      status.entry === undefined ||
+      !conversation
+    )
+      return {
+        rounds: 0,
+        roundsSinceSkillWrite: null,
+        roundsSinceMemoryWrite: null,
+        digest: "",
+      };
+
+    return readTurnReport(conversation, Number(status.entry), maxChars);
   }
 
   /** Whether the bot's model reads images; catalogs that list no modalities are trusted, as for chat uploads. */

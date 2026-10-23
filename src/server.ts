@@ -18,7 +18,16 @@ import { GroupChats } from "./group-chats";
 import { groupLookupExtension } from "./group-lookup";
 import { historySource, historyToolsExtension } from "./history-tools";
 import { HistorySearch } from "./history-search";
-import { assertOwnMemoryInGroup, memorySourceOf } from "./memory-sources";
+import {
+  assertOwnMemoryInGroup,
+  changeSourceOf,
+  memorySourceOf,
+} from "./memory-sources";
+import { skillLibrary } from "./skills";
+import { LearningReview } from "./learning-review";
+import { SkillCurator } from "./skill-curator";
+import type { ChangeBy } from "./domain";
+import type { MemoryContext } from "./runtime";
 import { GroupTranscripts } from "./group-transcripts";
 import { AppError, type Agent } from "./domain";
 import { MCPIntegrations } from "./integrations";
@@ -102,9 +111,9 @@ export async function startServer(
       options.skillsDir ?? process.env.CRUMBLE_SKILLS_DIR;
 
     const skillsDir = resolve(
-      // `skills` is part of the workspace next to bot; import.meta.dir keeps
+      // The default skills ship in this repository; import.meta.dir keeps
       // this independent of the process working directory.
-      explicitSkillsDir ?? resolve(import.meta.dir, "../../skills"),
+      explicitSkillsDir ?? resolve(import.meta.dir, "../skills"),
     );
 
     if (explicitSkillsDir && !existsSync(skillsDir))
@@ -193,8 +202,16 @@ export async function startServer(
     let groupChats!: GroupChats;
     let historySearch!: HistorySearch;
 
+    /** Who a bot's memory write is recorded for: the bot in its chat, or the review when one wrote it. */
+    const memoryChangeBy = (
+      agentId: string,
+      context: MemoryContext,
+    ): ChangeBy =>
+      context.reviewOf
+        ? { actor: "review", source: { executionId: context.reviewOf } }
+        : { actor: "bot", source: changeSourceOf(store, agentId, context) };
+
     const runtime = new AgentRuntime(join(dataDir, "agents"), {
-      commonSkills: () => commonSkills,
       models,
       currentAgent: (id) => store.getAgent(id),
       ownerTimezone: () => store.getSetting<string>(OWNER_TIMEZONE),
@@ -239,11 +256,15 @@ export async function startServer(
         if (shared && !usesSharedMemory(agentId))
           throw new AppError(400, "Shared memory is off for this agent");
 
-        return store.createMemory({
-          agentId: shared ? null : agentId,
-          content,
-          source: memorySourceOf(store, agentId, context),
-        });
+        return store.createMemory(
+          {
+            agentId: shared ? null : agentId,
+            content,
+            source: memorySourceOf(store, agentId, context),
+          },
+          undefined,
+          memoryChangeBy(agentId, context),
+        );
       },
       updateMemory: (agentId, id, content, context) => {
         const memory = reachableMemory(agentId, id);
@@ -254,26 +275,36 @@ export async function startServer(
         if (!content.trim() || content.length > 32000)
           throw new AppError(400, "Memory must contain 1–32000 characters");
 
-        return store.updateMemory(id, { content })!;
+        return store.updateMemory(
+          id,
+          { content },
+          memoryChangeBy(agentId, context),
+        )!;
       },
       deleteMemory: (agentId, id, context) => {
         const memory = reachableMemory(agentId, id);
 
         if (!memory) throw new AppError(404, "Memory not found");
         assertOwnMemoryInGroup(context, memory.agentId === null);
-        store.deleteMemory(id);
+        store.deleteMemory(id, memoryChangeBy(agentId, context));
       },
-      sharedSkills: (agent) =>
-        (agent.sharedSkills ?? []).flatMap((id) => {
-          const skill = store.getSkill(id);
-
-          return skill
-            ? [{ name: skill.name, instructions: skill.instructions }]
-            : [];
-        }),
+      skillLibrary: skillLibrary(store, commonSkills),
     });
 
     service = new CrumbleService(store, runtime);
+
+    const reviews = new LearningReview(store, runtime, (event) =>
+      service.announce(event),
+    );
+
+    await reviews.recover();
+
+    const stopReviews = service.onSettled((execution) =>
+      reviews.afterExecution(execution),
+    );
+
+    const curator = new SkillCurator(store);
+    curator.start();
 
     // The bot's answer to a job's report notifies the owner, like any other reply.
     const stopJobAnswers = [codingAnswers, desktopAnswers].map((listen) =>
@@ -369,6 +400,8 @@ export async function startServer(
         closed = true;
 
         for (const stop of stopJobAnswers) stop();
+        stopReviews();
+        curator.stop();
 
         await scheduler.stop();
         await server.stop(true);

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Crumble API",
-    "version": "1.8.0",
+    "version": "1.9.0",
     "description": "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime."
   },
   "components": {
@@ -123,6 +123,74 @@
             "chat-preview": "#/components/schemas/ChatPreviewEvent"
           }
         }
+      },
+      "LearnedEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "learned"
+            ]
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "executionId": {
+            "type": "string"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "changeId": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string",
+                  "enum": [
+                    "skill",
+                    "memory"
+                  ]
+                },
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "create",
+                    "update",
+                    "delete",
+                    "revert"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "changeId",
+                "target",
+                "action",
+                "name"
+              ]
+            }
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "agentId",
+          "agentName",
+          "executionId",
+          "changes",
+          "createdAt"
+        ],
+        "description": "A bot's review of one of its turns changed its skills or memory, sent as the `learned` event on /v1/events. Clients show a short notice in the bot chat and link to the change record."
       },
       "Health": {
         "type": "object",
@@ -373,6 +441,45 @@
               "model"
             ],
             "description": "The model for this bot's desktop jobs; unset, they use the bot's own model."
+          },
+          "review": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "skillThreshold": {
+                "type": "integer"
+              },
+              "memoryThreshold": {
+                "type": "integer"
+              },
+              "maxInputTokens": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "enabled",
+              "skillThreshold",
+              "memoryThreshold"
+            ],
+            "description": "How the bot reviews its turns to learn: whether at all, after how many tool-activity rounds for skills and memory, and how much of a turn a review reads. Unset means enabled with thresholds of 10."
+          },
+          "reviewModel": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "provider",
+              "model"
+            ],
+            "description": "The model that runs this bot's reviews; unset, they use the bot's own model."
           },
           "createdAt": {
             "type": "string"
@@ -1071,6 +1178,254 @@
           "kind"
         ],
         "description": "Where the memory was saved: the owner's bot chat, the owner directly, a scheduled task, another bot's request, or a group chat."
+      },
+      "SkillPackage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillDocument"
+            }
+          },
+          "createdBy": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "bot"
+            ]
+          },
+          "sourceExecutionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "useCount": {
+            "type": "integer"
+          },
+          "lastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "stale",
+              "archived"
+            ]
+          },
+          "pinned": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "instructions",
+          "createdAt",
+          "updatedAt",
+          "agentId",
+          "description",
+          "documents",
+          "createdBy",
+          "sourceExecutionId",
+          "useCount",
+          "lastUsedAt",
+          "state",
+          "pinned"
+        ]
+      },
+      "SkillDocument": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ]
+      },
+      "ReviewResult": {
+        "type": "object",
+        "properties": {
+          "executionId": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LearnedChange"
+            }
+          }
+        },
+        "required": [
+          "executionId",
+          "agentId",
+          "createdAt",
+          "changes"
+        ]
+      },
+      "LearnedChange": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actor": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "bot",
+              "review",
+              "curator"
+            ]
+          },
+          "target": {
+            "type": "string",
+            "enum": [
+              "skill",
+              "memory"
+            ]
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "delete",
+              "revert"
+            ]
+          },
+          "before": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkillPackage"
+              },
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkillPackage"
+              },
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChangeSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revertsId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "actor",
+          "target",
+          "targetId",
+          "action",
+          "before",
+          "after",
+          "source",
+          "revertsId",
+          "createdAt"
+        ]
+      },
+      "ChangeSource": {
+        "type": "object",
+        "properties": {
+          "executionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "conversationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "groupId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       },
       "ListedSkill": {
         "oneOf": [
@@ -2618,7 +2973,7 @@
                         "instructions"
                       ]
                     },
-                    "maxItems": 30,
+                    "maxItems": 100,
                     "default": []
                   },
                   "sharedSkills": {
@@ -2677,6 +3032,55 @@
                         "maximum": 1000000
                       }
                     }
+                  },
+                  "review": {
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean",
+                        "default": true
+                      },
+                      "skillThreshold": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1000,
+                        "default": 10
+                      },
+                      "memoryThreshold": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1000,
+                        "default": 10
+                      },
+                      "maxInputTokens": {
+                        "type": "integer",
+                        "minimum": 1000,
+                        "maximum": 2000000
+                      }
+                    }
+                  },
+                  "reviewModel": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80,
+                        "pattern": "^[a-z0-9-]+$"
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "model"
+                    ]
                   },
                   "desktopModel": {
                     "type": [
@@ -2998,7 +3402,7 @@
                         "instructions"
                       ]
                     },
-                    "maxItems": 30
+                    "maxItems": 100
                   },
                   "sharedSkills": {
                     "type": "array",
@@ -3054,6 +3458,55 @@
                         "maximum": 1000000
                       }
                     }
+                  },
+                  "review": {
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean",
+                        "default": true
+                      },
+                      "skillThreshold": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1000,
+                        "default": 10
+                      },
+                      "memoryThreshold": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1000,
+                        "default": 10
+                      },
+                      "maxInputTokens": {
+                        "type": "integer",
+                        "minimum": 1000,
+                        "maximum": 2000000
+                      }
+                    }
+                  },
+                  "reviewModel": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80,
+                        "pattern": "^[a-z0-9-]+$"
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "model"
+                    ]
                   },
                   "desktopModel": {
                     "type": [
@@ -5316,11 +5769,14 @@
           "activity": {
             "$ref": "#/components/schemas/ActivityEvent"
           },
+          "learned": {
+            "$ref": "#/components/schemas/LearnedEvent"
+          },
           "heartbeat": {
             "$ref": "#/components/schemas/HeartbeatEvent"
           }
         },
-        "description": "Server-sent events. Each activity event carries a ReplyEvent or ChatPreviewEvent JSON object in data. Current chat previews replay on connection; finished replies are not replayed. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. No Last-Event-ID replay.",
+        "description": "Server-sent events. Each activity event carries a ReplyEvent or ChatPreviewEvent JSON object in data. Each learned event carries a LearnedEvent: what a bot's review of one turn changed; GET /v1/agents/{id}/reviews lists them durably. Current chat previews replay on connection; finished replies and learned events are not replayed. Heartbeat events carry {} every 15 seconds. Authenticate with the Authorization header. No Last-Event-ID replay.",
         "security": [
           {
             "BearerAuth": []
@@ -7780,6 +8236,970 @@
         }
       }
     },
+    "/v1/agents/{id}/skills": {
+      "get": {
+        "operationId": "listAgentSkills",
+        "description": "The bot's own skill packages, including stale and archived ones. The agent's inline `skills` field lists the same skills by name and instructions.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SkillPackage"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createAgentSkill",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "default": ""
+                  },
+                  "instructions": {
+                    "type": "string",
+                    "maxLength": 32000
+                  },
+                  "documents": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "pattern": "^references\\/[a-z0-9][a-z0-9._-]{0,99}\\.md$"
+                        },
+                        "content": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64000
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "content"
+                      ]
+                    },
+                    "maxItems": 20,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "name",
+                  "instructions"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillPackage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/skills/{skillId}": {
+      "patch": {
+        "operationId": "updateAgentSkill",
+        "description": "Changes a skill's content, restores an archived skill by setting state to active, or pins it so the curator never marks it stale or archives it.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "skillId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "instructions": {
+                    "type": "string",
+                    "maxLength": 32000
+                  },
+                  "documents": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "pattern": "^references\\/[a-z0-9][a-z0-9._-]{0,99}\\.md$"
+                        },
+                        "content": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64000
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "content"
+                      ]
+                    },
+                    "maxItems": 20
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "stale",
+                      "archived"
+                    ]
+                  },
+                  "pinned": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SkillPackage"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAgentSkill",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "skillId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success, no response body"
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/reviews": {
+      "get": {
+        "operationId": "listAgentReviews",
+        "description": "What the bot's reviews changed, newest first, one entry per reviewed execution with its changes. Clients show these as notices in the bot chat, also after reconnecting.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ReviewResult"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/changes": {
+      "get": {
+        "operationId": "listChanges",
+        "description": "Skill and memory changes by owners, bots, and reviews, newest first, with the state before and after each. Page with `before` set to the last change's ID.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "shared"
+                  ]
+                }
+              ]
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "before",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LearnedChange"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/changes/{id}/revert": {
+      "post": {
+        "operationId": "revertChange",
+        "description": "Restores the state before the change, whatever happened since, and records the revert as a change of its own.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearnedChange"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/skills": {
       "get": {
         "operationId": "listSkills",
@@ -7903,9 +9323,37 @@
                     "minLength": 1,
                     "maxLength": 100
                   },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "default": ""
+                  },
                   "instructions": {
                     "type": "string",
                     "maxLength": 32000
+                  },
+                  "documents": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "pattern": "^references\\/[a-z0-9][a-z0-9._-]{0,99}\\.md$"
+                        },
+                        "content": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64000
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "content"
+                      ]
+                    },
+                    "maxItems": 20,
+                    "default": []
                   }
                 },
                 "required": [
@@ -8011,6 +9459,117 @@
       }
     },
     "/v1/skills/{id}": {
+      "get": {
+        "operationId": "getSkill",
+        "description": "One shared skill as a full package. GET /v1/skills keeps its earlier item shapes; the full records are here and in the create and update responses.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillPackage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
       "patch": {
         "operationId": "updateSkill",
         "security": [
@@ -8040,9 +9599,35 @@
                     "minLength": 1,
                     "maxLength": 100
                   },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
                   "instructions": {
                     "type": "string",
                     "maxLength": 32000
+                  },
+                  "documents": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "pattern": "^references\\/[a-z0-9][a-z0-9._-]{0,99}\\.md$"
+                        },
+                        "content": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64000
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "content"
+                      ]
+                    },
+                    "maxItems": 20
                   }
                 }
               }

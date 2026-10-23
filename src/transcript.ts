@@ -706,6 +706,157 @@ export async function readResponse(
   return output;
 }
 
+export type TurnReport = {
+  /** Assistant messages that called tools: the turn's tool-activity rounds. */
+  rounds: number;
+  /** Rounds after the turn's last skill write, or null when it wrote none. */
+  roundsSinceSkillWrite: number | null;
+  /** Rounds after the turn's last memory write, or null when it wrote none. */
+  roundsSinceMemoryWrite: number | null;
+  /** The turn in plain text for a review, preceded by the chat before it, bounded by `maxChars`. */
+  digest: string;
+};
+
+const clip = (text: string, max: number) =>
+  text.length > max ? `${text.slice(0, max - 1)}…` : text;
+
+const CONTEXT_ENTRIES = 40;
+
+/** The memory tool's arguments when the call writes. */
+const memoryWriteCall = z.object({
+  action: z.enum(["create", "update", "delete"]),
+});
+
+function entryLines(entry: EntryRecord, counters?: TurnReport): string[] {
+  const lines: string[] = [];
+
+  if (INPUT_KINDS.has(entry.kind)) {
+    const input = inputMetadata.parse(record(entry.data) ?? {});
+    lines.push(`Owner:\n${input.text ?? textOf(entry.model?.[0]?.content)}`);
+
+    return lines;
+  }
+
+  for (const message of entry.model ?? []) {
+    if (message.role === "assistant") {
+      const text = textOf(message.content).trim();
+
+      if (text) lines.push(`Assistant:\n${text}`);
+
+      const calls = Array.isArray(message.content)
+        ? message.content.filter((block) => block?.type === "toolCall")
+        : [];
+
+      if (calls.length && counters) {
+        counters.rounds++;
+
+        if (counters.roundsSinceSkillWrite !== null)
+          counters.roundsSinceSkillWrite++;
+
+        if (counters.roundsSinceMemoryWrite !== null)
+          counters.roundsSinceMemoryWrite++;
+
+        for (const call of calls) {
+          if (call.name === "skill_manage") counters.roundsSinceSkillWrite = 0;
+
+          const memoryWrite = memoryWriteCall.safeParse(call.arguments);
+
+          if (call.name === "memory" && memoryWrite.success)
+            counters.roundsSinceMemoryWrite = 0;
+        }
+      }
+
+      for (const call of calls)
+        lines.push(
+          `Tool call ${String(call.name ?? "unknown")}: ${clip(JSON.stringify(call.arguments ?? {}), 2000)}`,
+        );
+    } else if (message.role === "toolResult") {
+      const { toolName, isError } = toolMetadata.parse(message);
+
+      lines.push(
+        `${isError ? "Tool error" : "Tool result"} ${toolName ?? "unknown"}: ${clip(textOf(message.content).trim(), 4000)}`,
+      );
+    } else if (message.role === "user") {
+      const text = textOf(message.content).trim();
+
+      if (text) lines.push(`Owner:\n${text}`);
+    }
+  }
+
+  return lines;
+}
+
+/**
+ * What a review needs to know about one turn: the turn itself in full, preceded by the chat before it for the
+ * referents of corrections such as "use the previous format". The earlier chat gives way first when `maxChars`
+ * binds, then the middle of the turn.
+ */
+export async function readTurnReport(
+  conversation: Conversation,
+  inputEntryId: number,
+  maxChars: number,
+): Promise<TurnReport> {
+  // SAFETY: inputEntryId is the persisted input entry; the turn is that entry and everything up to the next input.
+  const turnPage = await conversation.entries(
+    { order: "ascending", minEntryId: inputEntryId as EntryId },
+    MAX_LIMIT,
+    undefined,
+    BACKGROUND_CONTEXT,
+  );
+
+  const report: TurnReport = {
+    rounds: 0,
+    roundsSinceSkillWrite: null,
+    roundsSinceMemoryWrite: null,
+    digest: "",
+  };
+
+  const turnLines: string[] = [];
+
+  for (const [index, entry] of turnPage.items.entries()) {
+    if (index > 0 && INPUT_KINDS.has(entry.kind)) break;
+    turnLines.push(...entryLines(entry, index > 0 ? report : undefined));
+  }
+
+  let turn = turnLines.join("\n\n");
+
+  if (turn.length > maxChars) {
+    // Keep the input and the end of the turn; the middle is usually tool output.
+    const head = Math.floor(maxChars * 0.4);
+    const tail = maxChars - head - 24;
+    turn = `${turn.slice(0, head)}\n\n[… omitted for length …]\n\n${turn.slice(-tail)}`;
+  }
+
+  const room = maxChars - turn.length - 40;
+
+  if (room > 200 && inputEntryId > 1) {
+    // SAFETY: the entry before the input is the inclusive upper bound of the earlier chat.
+    const earlier = await conversation.entries(
+      { order: "descending", maxEntryId: (inputEntryId - 1) as EntryId },
+      CONTEXT_ENTRIES,
+      undefined,
+      BACKGROUND_CONTEXT,
+    );
+
+    const contextLines = [...earlier.items]
+      .reverse()
+      .filter((entry) => INPUT_KINDS.has(entry.kind) || entry.model?.length)
+      .flatMap((entry) => entryLines(entry));
+
+    let context = contextLines.join("\n\n");
+
+    if (context.length > room)
+      context = `[… earlier chat omitted …]\n\n${context.slice(-room)}`;
+
+    if (context)
+      report.digest = `Earlier chat:\n\n${context}\n\nThe turn to review:\n\n${turn}`;
+  }
+
+  if (!report.digest) report.digest = `The turn to review:\n\n${turn}`;
+
+  return report;
+}
+
 export type TurnOutcome =
   | { kind: "message"; text: string }
   | { kind: "reaction"; emoji: string }

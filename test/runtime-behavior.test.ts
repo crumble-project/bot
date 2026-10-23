@@ -8,6 +8,7 @@ import {
   fauxProvider,
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
+import type { JsonValue } from "@earendil-works/chord";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { AgentRuntime } from "../src/runtime";
 import { providerModels } from "../src/providers";
@@ -15,6 +16,8 @@ import { ProviderCredentials } from "../src/provider-credentials";
 import { Store } from "../src/store";
 import { loadCommonSkills } from "../src/common-skills";
 import { agentInput, type Agent } from "../src/domain";
+import type { AvailableSkill, SkillLibrary } from "../src/skill-library";
+import { skillLibrary } from "../src/skills";
 
 const directories: string[] = [];
 const runtimes: AgentRuntime[] = [];
@@ -27,7 +30,9 @@ afterEach(async () => {
 });
 
 const makeAgent = (): Agent => ({
-  ...agentInput.omit({ desktopModel: true }).parse({ name: "Test" }),
+  ...agentInput
+    .omit({ desktopModel: true, reviewModel: true })
+    .parse({ name: "Test" }),
   id: crypto.randomUUID(),
   // SAFETY: The faux provider is registered in the test model registry.
   provider: "faux" as never,
@@ -35,6 +40,26 @@ const makeAgent = (): Agent => ({
   createdAt: "",
   updatedAt: "",
 });
+
+/** A read-only library for prompt tests; writes are exercised against the real one. */
+function fakeLibrary(
+  available: (agent: Agent) => AvailableSkill[],
+  used: (skill: AvailableSkill) => void = () => {},
+): SkillLibrary {
+  const unsupported = () => {
+    throw new Error("read-only library");
+  };
+
+  return {
+    available,
+    used: (_agent, skill) => used(skill),
+    own: () => [],
+    create: unsupported,
+    update: unsupported,
+    remove: unsupported,
+    transaction: (fn) => fn(),
+  };
+}
 
 function setup(
   options: ConstructorParameters<typeof AgentRuntime>[1] = {},
@@ -125,6 +150,16 @@ test("profile edits, skills and memory reach the next request without leaking be
 
   const { runtime, faux } = setup({
     listMemory: (id) => [{ id: "memory", content: `private:${id}` }],
+    skillLibrary: fakeLibrary((agent) =>
+      agent.skills.map((skill) => ({
+        id: skill.name,
+        name: skill.name,
+        description: "",
+        instructions: skill.instructions,
+        documents: [],
+        scope: "own" as const,
+      })),
+    ),
   });
 
   const a = makeAgent(),
@@ -157,22 +192,23 @@ test("profile edits, skills and memory reach the next request without leaking be
   );
   await runtime.wait(await runtime.submit(b, cb, "third", "three"), b);
   expect(requests[1]).toContain("New personality");
-  expect(requests[1]).toContain("Check primary sources");
+  expect(requests[1]).toContain("- Research: Check primary sources");
   expect(requests[1]).toContain(`private:${a.id}`);
   expect(requests[2]).toContain(`private:${b.id}`);
   expect(requests[2]).not.toContain(`private:${a.id}`);
   await expect(runtime.snapshot(b, ca)).rejects.toThrow();
 });
 
-test("loads bounded common skills and applies them before shared and personal skills", async () => {
+test("lists skills by name in the prompt and loads their content and documents on demand", async () => {
   const skillsRoot = mkdtempSync(join(tmpdir(), "crumble-skills-"));
   directories.push(skillsRoot);
   const taskDir = join(skillsRoot, "tasks");
-  mkdirSync(taskDir);
+  mkdirSync(join(taskDir, "references"), { recursive: true });
   await Bun.write(
     join(taskDir, "SKILL.md"),
     "---\nname: Tasks\ndescription: Handle tasks\n---\nCommon task rules",
   );
+  await Bun.write(join(taskDir, "references", "cron.md"), "Cron depth");
   const common = loadCommonSkills(skillsRoot);
   expect(common).toHaveLength(1);
   expect(common[0]).toMatchObject({
@@ -180,18 +216,235 @@ test("loads bounded common skills and applies them before shared and personal sk
     name: "Tasks",
     description: "Handle tasks",
     instructions: "Common task rules",
+    documents: [{ path: "references/cron.md", content: "Cron depth" }],
   });
   const requests: string[] = [];
+  const used: string[] = [];
 
   const { runtime, faux } = setup({
-    commonSkills: () => common,
-    sharedSkills: () => [{ name: "Shared", instructions: "Shared rules" }],
+    skillLibrary: fakeLibrary(
+      () => [
+        ...common.map((skill) => ({
+          ...skill,
+          description: skill.description ?? "",
+          scope: "default" as const,
+        })),
+        {
+          id: "shared",
+          name: "Shared",
+          description: "",
+          instructions: "Shared rules\nMore shared rules",
+          documents: [],
+          scope: "shared" as const,
+        },
+        {
+          id: "own",
+          name: "Tasks",
+          description: "The bot's own task rules",
+          instructions: "Own task rules",
+          documents: [],
+          scope: "own" as const,
+        },
+      ],
+      (skill) => {
+        used.push(`${skill.scope}:${skill.name}`);
+      },
+    ),
   });
 
-  const agent = {
-    ...makeAgent(),
-    skills: [{ name: "Personal", instructions: "Personal rules" }],
+  const agent = makeAgent();
+
+  faux.setResponses([
+    (context) => {
+      requests.push(JSON.stringify(context));
+
+      return fauxAssistantMessage(
+        [
+          fauxToolCall("skill", { action: "view", name: "tasks" }),
+          fauxToolCall("skill", {
+            action: "view",
+            name: "Tasks",
+            path: "references/cron.md",
+          }),
+        ],
+        { stopReason: "toolUse" },
+      );
+    },
+    fauxAssistantMessage("ok"),
+  ]);
+  const conversation = await runtime.createConversation(agent);
+  await runtime.wait(
+    await runtime.submit(agent, conversation, "go", "one"),
+    agent,
+  );
+  const prompt = requests[0] ?? "";
+  expect(prompt).toContain("- Tasks: The bot's own task rules");
+  expect(prompt).toContain("- Shared: Shared rules");
+  expect(prompt).not.toContain("Common task rules");
+  expect(prompt).not.toContain("Own task rules");
+  expect(prompt).not.toContain("More shared rules");
+  expect(prompt).toContain('"name":"skill"');
+
+  const transcript = JSON.stringify(
+    (await runtime.snapshot(agent, conversation)).messages,
+  );
+
+  expect(transcript).toContain("Own task rules");
+  expect(transcript).not.toContain("Common task rules");
+  expect(transcript).toContain(
+    "Skill Tasks has no document references/cron.md",
+  );
+  expect(used).toEqual(["own:Tasks"]);
+});
+
+test("a bot writes its own skills atomically, after reading them, and every change is recorded", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "crumble-skill-store-"));
+  directories.push(directory);
+  const store = new Store(directory);
+
+  const stored = store.createAgent({
+    ...agentInput.parse({ name: "Learner" }),
+    skills: [{ name: "Research", instructions: "Check sources" }],
+  });
+
+  const { runtime, faux } = setup({
+    currentAgent: () => stored,
+    skillLibrary: skillLibrary(store, []),
+  });
+
+  // SAFETY: The faux provider is registered in the test model registry.
+  const agent = { ...stored, provider: "faux" as never, model: "test" };
+  const results: string[] = [];
+
+  const call = (operations: JsonValue[]) =>
+    fauxAssistantMessage([fauxToolCall("skill_manage", { operations })], {
+      stopReason: "toolUse",
+    });
+
+  faux.setResponses([
+    () =>
+      call([
+        {
+          action: "patch",
+          name: "Research",
+          oldString: "Check sources",
+          newString: "Check primary sources",
+        },
+      ]),
+    (context) => {
+      results.push(JSON.stringify(context.messages.at(-1)));
+
+      return fauxAssistantMessage(
+        [fauxToolCall("skill", { action: "view", name: "research" })],
+        { stopReason: "toolUse" },
+      );
+    },
+    () =>
+      call([
+        {
+          action: "patch",
+          name: "Research",
+          oldString: "Check sources",
+          newString: "Check primary sources",
+        },
+        {
+          action: "write_document",
+          name: "Research",
+          path: "references/sources.md",
+          content: "Prefer primary sources",
+        },
+        {
+          action: "create",
+          name: "Writing",
+          instructions: "Short sentences",
+        },
+      ]),
+    (context) => {
+      results.push(JSON.stringify(context.messages.at(-1)));
+
+      return call([
+        {
+          action: "patch",
+          name: "Writing",
+          oldString: "Short",
+          newString: "Shorter",
+        },
+        { action: "delete", name: "Missing" },
+      ]);
+    },
+    (context) => {
+      results.push(JSON.stringify(context.messages.at(-1)));
+
+      return call([
+        { action: "create", name: " research ", instructions: "Twice" },
+      ]);
+    },
+    (context) => {
+      results.push(JSON.stringify(context.messages.at(-1)));
+
+      return fauxAssistantMessage("done");
+    },
+  ]);
+  const conversation = await runtime.createConversation(agent);
+  await runtime.wait(
+    await runtime.submit(agent, conversation, "learn", "one"),
+    agent,
+  );
+  expect(results[0]).toContain("before changing it");
+
+  // SAFETY: the tool result's text is the JSON the skill_manage tool wrote.
+  const batch = JSON.parse(JSON.parse(results[1]!).content[0].text) as {
+    applied: unknown[];
+    findings: Array<{ rule: string }>;
   };
+
+  expect(batch.applied).toEqual([
+    { action: "patch", name: "Research" },
+    {
+      action: "write_document",
+      name: "Research",
+      path: "references/sources.md",
+    },
+    { action: "create", name: "Writing" },
+  ]);
+  expect(batch.findings.map((finding) => finding.rule)).toEqual([
+    "missing-description",
+    "missing-description",
+  ]);
+  expect(results[2]).toContain("no skill named");
+  expect(results[3]).toContain("already have a skill named");
+
+  const skills = store.listSkills(stored.id);
+  expect(skills.map((skill) => skill.name)).toEqual(["Research", "Writing"]);
+  expect(skills[0]).toMatchObject({
+    instructions: "Check primary sources",
+    documents: [
+      { path: "references/sources.md", content: "Prefer primary sources" },
+    ],
+    useCount: 1,
+  });
+  // The failed batch rolled back the patch to Writing.
+  expect(skills[1]).toMatchObject({
+    instructions: "Short sentences",
+    createdBy: "bot",
+  });
+
+  const changes = store.listChanges(stored.id);
+  expect(changes.map((change) => `${change.actor}:${change.action}`)).toEqual([
+    "bot:create",
+    "bot:update",
+    "bot:update",
+    "owner:create",
+  ]);
+  expect(changes[0]!.source?.executionId).toBeNull();
+  expect(changes[1]!.before).toMatchObject({ documents: [] });
+  store.close();
+});
+
+test("a bot without skills gets no skill tool", async () => {
+  const { runtime, faux } = setup({ skillLibrary: fakeLibrary(() => []) });
+  const agent = makeAgent();
+  const requests: string[] = [];
 
   faux.setResponses([
     (context) => {
@@ -205,13 +458,8 @@ test("loads bounded common skills and applies them before shared and personal sk
     await runtime.submit(agent, conversation, "go", "one"),
     agent,
   );
-  const prompt = requests[0] ?? "";
-  expect(prompt.indexOf("Common task rules")).toBeLessThan(
-    prompt.indexOf("Shared rules"),
-  );
-  expect(prompt.indexOf("Shared rules")).toBeLessThan(
-    prompt.indexOf("Personal rules"),
-  );
+  expect(requests[0]).not.toContain('"name":"skill"');
+  expect(requests[0]).not.toContain("Skills:");
 });
 
 test("registered extension tools are offered, executed, recorded and revoked", async () => {

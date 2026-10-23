@@ -40,3 +40,4 @@ data.lock/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+data-login-test/

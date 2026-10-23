@@ -20,6 +20,10 @@ import type {
   Execution,
   MCPServer,
   Skill,
+  SkillDocument,
+  SkillInput,
+  ChangeBy,
+  LearnedChange,
   GroupChat,
   GroupChatInput,
   GroupMember,
@@ -27,7 +31,7 @@ import type {
   GroupTurnStatus,
   MemorySource,
 } from "./domain";
-import { memorySource } from "./domain";
+import { memorySource, skillStates } from "./domain";
 import { z } from "zod";
 import type { AttachmentInput } from "./attachments";
 import type { Credential, CredentialInfo } from "@earendil-works/pi-ai";
@@ -109,6 +113,9 @@ type Patch<T> = Partial<Omit<T, "id" | "createdAt" | "updatedAt">>;
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 
+/** Store writes without a stated actor come from the owner through the API. */
+const OWNER: ChangeBy = { actor: "owner" };
+
 export class Store {
   private db: Database;
   private key: Buffer;
@@ -188,6 +195,12 @@ export class Store {
 
     if (!agentCols.some((c) => c.name === "desktop_model"))
       this.db.exec("ALTER TABLE agents ADD COLUMN desktop_model TEXT");
+
+    if (!agentCols.some((c) => c.name === "review_model"))
+      this.db.exec("ALTER TABLE agents ADD COLUMN review_model TEXT");
+
+    if (!agentCols.some((c) => c.name === "review"))
+      this.db.exec("ALTER TABLE agents ADD COLUMN review TEXT");
 
     this.db.exec(
       "CREATE TABLE IF NOT EXISTS desktop_control (agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE, holder TEXT NOT NULL, changes INTEGER NOT NULL, updated_at TEXT NOT NULL)",
@@ -306,6 +319,74 @@ export class Store {
     this.db.exec(
       "CREATE UNIQUE INDEX IF NOT EXISTS executions_conversation_request ON executions(conversation_id, request_id)",
     );
+    this.migrateSkills();
+  }
+  /**
+   * Skills become packages in one library: a bot's own skills move out of the agent row into it. Schema and data
+   * move in one transaction, and any inline skills left behind are transferred on every startup, so a crash can
+   * neither lose them nor leave them in both places.
+   */
+  private migrateSkills() {
+    this.db.transaction(() => {
+      // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
+      const skillCols = this.db
+        .query("PRAGMA table_info(skills)")
+        .all() as Array<{ name: string }>;
+
+      const added: Array<[string, string]> = [
+        ["agent_id", "TEXT REFERENCES agents(id) ON DELETE CASCADE"],
+        ["description", "TEXT NOT NULL DEFAULT ''"],
+        ["created_by", "TEXT NOT NULL DEFAULT 'owner'"],
+        ["source_execution_id", "TEXT"],
+        ["use_count", "INTEGER NOT NULL DEFAULT 0"],
+        ["last_used_at", "TEXT"],
+        ["state", "TEXT NOT NULL DEFAULT 'active'"],
+        ["pinned", "INTEGER NOT NULL DEFAULT 0"],
+      ];
+
+      for (const [column, definition] of added)
+        if (!skillCols.some((c) => c.name === column))
+          this.db.exec(`ALTER TABLE skills ADD COLUMN ${column} ${definition}`);
+
+      this.db.exec(
+        "CREATE TABLE IF NOT EXISTS skill_documents (skill_id TEXT NOT NULL REFERENCES skills(id) ON DELETE CASCADE, path TEXT NOT NULL, content TEXT NOT NULL, PRIMARY KEY (skill_id, path))",
+      );
+      this.db.exec(
+        "CREATE TABLE IF NOT EXISTS review_counters (agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE, skill_rounds INTEGER NOT NULL DEFAULT 0, memory_rounds INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS pending_reviews (execution_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, conversation_id TEXT NOT NULL, created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS review_results (execution_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, change_ids TEXT NOT NULL, created_at TEXT NOT NULL)",
+      );
+      // Changes outlive their targets and bots, so they carry the bot ID without a foreign key.
+      this.db.exec(
+        "CREATE TABLE IF NOT EXISTS learned_changes (id TEXT PRIMARY KEY, agent_id TEXT, actor TEXT NOT NULL, target TEXT NOT NULL, target_id TEXT NOT NULL, action TEXT NOT NULL, before_state TEXT, after_state TEXT, source TEXT, reverts_id TEXT, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS learned_changes_agent ON learned_changes(agent_id, created_at)",
+      );
+
+      const agents = this.db
+        .query<{ id: string; skills: string }, []>(
+          "SELECT id, skills FROM agents WHERE skills != '[]'",
+        )
+        .all();
+
+      for (const agent of agents) {
+        // SAFETY: the agents.skills column always held the inline skill array.
+        const inline = JSON.parse(agent.skills) as Array<{
+          name: string;
+          instructions: string;
+        }>;
+
+        for (const skill of inline)
+          this.createSkill(
+            {
+              agentId: agent.id,
+              name: skill.name,
+              description: "",
+              instructions: skill.instructions,
+              documents: [],
+            },
+            undefined,
+            null,
+          );
+        this.db.query("UPDATE agents SET skills='[]' WHERE id=?").run(agent.id);
+      }
+    })();
   }
   close() {
     this.db.close();
@@ -327,13 +408,18 @@ export class Store {
       model: r.model,
       enabled: !!r.enabled,
       tools: JSON.parse(r.tools),
-      skills: JSON.parse(r.skills),
+      skills: this.listSkills(r.id).map(({ name, instructions }) => ({
+        name,
+        instructions,
+      })),
       sharedSkills: JSON.parse(r.shared_skills ?? "[]"),
       sharedMemory: !!r.shared_memory,
       mcpServers: JSON.parse(r.mcp_servers),
       delegates: JSON.parse(r.delegates ?? "[]"),
       inference: JSON.parse(r.inference ?? "{}"),
       ...(r.desktop_model && { desktopModel: JSON.parse(r.desktop_model) }),
+      ...(r.review_model && { reviewModel: JSON.parse(r.review_model) }),
+      ...(r.review && { review: JSON.parse(r.review) }),
       createdAt: r.created_at,
       updatedAt: r.updated_at,
     };
@@ -353,7 +439,7 @@ export class Store {
     const t = now();
     this.db
       .query(
-        "INSERT INTO agents (id,name,avatar,description,instructions,provider,model,enabled,tools,skills,shared_skills,shared_memory,mcp_servers,delegates,inference,desktop_model,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO agents (id,name,avatar,description,instructions,provider,model,enabled,tools,skills,shared_skills,shared_memory,mcp_servers,delegates,inference,desktop_model,review_model,review,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       )
       .run(
         agentId,
@@ -365,16 +451,19 @@ export class Store {
         input.model,
         this.b(input.enabled),
         this.j(input.tools),
-        this.j(input.skills),
+        "[]",
         this.j(input.sharedSkills ?? []),
         this.b(input.sharedMemory),
         this.j(input.mcpServers),
         this.j(input.delegates ?? []),
         this.j(input.inference ?? {}),
         input.desktopModel ? this.j(input.desktopModel) : null,
+        input.reviewModel ? this.j(input.reviewModel) : null,
+        input.review ? this.j(input.review) : null,
         t,
         t,
       );
+    this.replaceAgentSkills(agentId, input.skills);
 
     return this.getAgent(agentId)!;
   }
@@ -386,7 +475,7 @@ export class Store {
     const t = now();
     this.db
       .query(
-        "UPDATE agents SET name=?,avatar=?,description=?,instructions=?,provider=?,model=?,enabled=?,tools=?,skills=?,shared_skills=?,shared_memory=?,mcp_servers=?,delegates=?,inference=?,desktop_model=?,updated_at=? WHERE id=?",
+        "UPDATE agents SET name=?,avatar=?,description=?,instructions=?,provider=?,model=?,enabled=?,tools=?,skills=?,shared_skills=?,shared_memory=?,mcp_servers=?,delegates=?,inference=?,desktop_model=?,review_model=?,review=?,updated_at=? WHERE id=?",
       )
       .run(
         x.name,
@@ -397,18 +486,58 @@ export class Store {
         x.model,
         this.b(x.enabled),
         this.j(x.tools),
-        this.j(x.skills),
+        "[]",
         this.j(x.sharedSkills ?? []),
         this.b(x.sharedMemory),
         this.j(x.mcpServers),
         this.j(x.delegates ?? []),
         this.j(x.inference ?? {}),
         x.desktopModel ? this.j(x.desktopModel) : null,
+        x.reviewModel ? this.j(x.reviewModel) : null,
+        x.review ? this.j(x.review) : null,
         t,
         agentId,
       );
 
+    if (patch.skills) this.replaceAgentSkills(agentId, patch.skills);
+
     return this.getAgent(agentId);
+  }
+  /** The inline `skills` of an agent write: matched by name, so a kept skill keeps its documents, provenance, and usage. */
+  private replaceAgentSkills(
+    agentId: Id,
+    skills: Array<{ name: string; instructions: string }>,
+  ) {
+    this.db.transaction(() => {
+      const existing = this.listSkills(agentId);
+      const kept = new Set<string>();
+
+      for (const skill of skills) {
+        const match = existing.find(
+          (candidate) =>
+            candidate.name === skill.name && !kept.has(candidate.id),
+        );
+
+        if (match) {
+          kept.add(match.id);
+
+          if (match.instructions !== skill.instructions)
+            this.updateSkill(match.id, { instructions: skill.instructions });
+        } else
+          kept.add(
+            this.createSkill({
+              agentId,
+              name: skill.name,
+              description: "",
+              instructions: skill.instructions,
+              documents: [],
+            }).id,
+          );
+      }
+
+      for (const skill of existing)
+        if (!kept.has(skill.id)) this.deleteSkill(skill.id);
+    })();
   }
   /** The bot desktop's control lease; null until control first changes. */
   getDesktopControl(agentId: Id): ControlState | null {
@@ -448,11 +577,29 @@ export class Store {
       (serverId) => !this.getMCPServer(serverId)?.agentId,
     );
 
-    return this.createAgent({
+    const copy = this.createAgent({
       ...a,
       mcpServers,
+      skills: [],
       name: name ?? `${a.name} Copy`,
     });
+
+    // Skill packages are copied whole; archived ones stay behind, and the copy's skills were not learned from an execution.
+    for (const skill of this.listSkills(a.id))
+      if (skill.state !== "archived")
+        this.createSkill(
+          {
+            ...skill,
+            agentId: copy.id,
+            sourceExecutionId: null,
+            state: skill.state,
+            pinned: skill.pinned,
+          },
+          undefined,
+          OWNER,
+        );
+
+    return this.getAgent(copy.id)!;
   }
 
   private convo(r: any): Conversation {
@@ -575,6 +722,7 @@ export class Store {
       source?: MemorySource | null;
     },
     memoryId: string = id(),
+    by: ChangeBy | null = OWNER,
   ) {
     const t = now();
     this.db
@@ -589,21 +737,46 @@ export class Store {
         t,
         input.source ? JSON.stringify(input.source) : null,
       );
+    const memory = this.getMemory(memoryId)!;
+    this.recordChange(by, "memory", memory.agentId, memory.id, null, memory);
 
-    return this.getMemory(memoryId)!;
+    return memory;
   }
-  updateMemory(id: Id, patch: Patch<Memory>) {
+  updateMemory(id: Id, patch: Patch<Memory>, by: ChangeBy | null = OWNER) {
     const m = this.getMemory(id);
 
     if (!m) return null;
     this.db
       .query("UPDATE memories SET content=?,updated_at=? WHERE id=?")
       .run(patch.content ?? m.content, now(), id);
+    const memory = this.getMemory(id)!;
+    this.recordChange(by, "memory", m.agentId, m.id, m, memory);
 
-    return this.getMemory(id);
+    return memory;
   }
-  deleteMemory(id: Id) {
-    return this.db.query("DELETE FROM memories WHERE id=?").run(id).changes > 0;
+  deleteMemory(id: Id, by: ChangeBy | null = OWNER) {
+    const m = this.getMemory(id);
+
+    if (!m) return false;
+    this.db.query("DELETE FROM memories WHERE id=?").run(id);
+    this.recordChange(by, "memory", m.agentId, m.id, m, null);
+
+    return true;
+  }
+  /** Puts a memory back as it was, keeping its ID and timestamps. */
+  private restoreMemory(memory: Memory) {
+    this.db
+      .query(
+        "INSERT INTO memories (id,agent_id,content,created_at,updated_at,source) VALUES (?,?,?,?,?,?)",
+      )
+      .run(
+        memory.id,
+        memory.agentId,
+        memory.content,
+        memory.createdAt,
+        memory.updatedAt,
+        memory.source ? JSON.stringify(memory.source) : null,
+      );
   }
 
   private schedule(r: any): Schedule {
@@ -1036,19 +1209,44 @@ export class Store {
   }
 
   private skill(r: any): Skill {
+    const documents = this.db
+      .query<{ path: string; content: string }, [string]>(
+        "SELECT path, content FROM skill_documents WHERE skill_id=? ORDER BY path",
+      )
+      .all(r.id);
+
     return {
       id: r.id,
+      agentId: r.agent_id ?? null,
       name: r.name,
+      description: r.description ?? "",
       instructions: r.instructions,
+      documents,
+      createdBy: r.created_by === "bot" ? "bot" : "owner",
+      sourceExecutionId: r.source_execution_id ?? null,
+      useCount: r.use_count ?? 0,
+      lastUsedAt: r.last_used_at ?? null,
+      state: skillStates.includes(r.state) ? r.state : "active",
+      pinned: !!r.pinned,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
     };
   }
-  listSkills() {
-    return this.db
-      .query("SELECT * FROM skills ORDER BY name")
-      .all()
-      .map((r) => this.skill(r));
+  /** One bot's skills, or the shared ones for `null`, oldest first. */
+  listSkills(agentId: Id | null = null) {
+    const q = agentId
+      ? this.db
+          .query(
+            "SELECT * FROM skills WHERE agent_id=? ORDER BY created_at, rowid",
+          )
+          .all(agentId)
+      : this.db
+          .query(
+            "SELECT * FROM skills WHERE agent_id IS NULL ORDER BY created_at, rowid",
+          )
+          .all();
+
+    return q.map((r) => this.skill(r));
   }
   getSkill(id: Id) {
     const r = this.db.query("SELECT * FROM skills WHERE id=?").get(id);
@@ -1056,29 +1254,404 @@ export class Store {
     return r ? this.skill(r) : null;
   }
   createSkill(
-    input: { name: string; instructions: string },
+    input: SkillInput & {
+      agentId?: string | null;
+      createdBy?: Skill["createdBy"];
+      sourceExecutionId?: string | null;
+      state?: Skill["state"];
+      pinned?: boolean;
+    },
     skillId: string = id(),
+    by: ChangeBy | null = OWNER,
   ) {
     const t = now();
-    this.db
-      .query("INSERT INTO skills VALUES (?,?,?,?,?)")
-      .run(skillId, input.name, input.instructions, t, t);
+    this.db.transaction(() => {
+      this.db
+        .query(
+          "INSERT INTO skills (id,agent_id,name,description,instructions,created_by,source_execution_id,state,pinned,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        )
+        .run(
+          skillId,
+          input.agentId ?? null,
+          input.name,
+          input.description,
+          input.instructions,
+          input.createdBy ?? "owner",
+          input.sourceExecutionId ?? null,
+          input.state ?? "active",
+          this.b(input.pinned),
+          t,
+          t,
+        );
+      this.writeSkillDocuments(skillId, input.documents);
+    })();
+    const skill = this.getSkill(skillId)!;
+    this.recordChange(by, "skill", skill.agentId, skill.id, null, skill);
 
-    return this.getSkill(skillId)!;
+    return skill;
   }
-  updateSkill(id: Id, patch: Patch<Skill>) {
+  updateSkill(
+    id: Id,
+    patch: Partial<Omit<Skill, "id" | "agentId" | "createdAt" | "updatedAt">>,
+    by: ChangeBy | null = OWNER,
+  ) {
     const old = this.getSkill(id);
 
     if (!old) return null;
     const x = { ...old, ...patch };
-    this.db
-      .query("UPDATE skills SET name=?,instructions=?,updated_at=? WHERE id=?")
-      .run(x.name, x.instructions, now(), id);
+    this.db.transaction(() => {
+      this.db
+        .query(
+          "UPDATE skills SET name=?,description=?,instructions=?,created_by=?,source_execution_id=?,use_count=?,last_used_at=?,state=?,pinned=?,updated_at=? WHERE id=?",
+        )
+        .run(
+          x.name,
+          x.description,
+          x.instructions,
+          x.createdBy,
+          x.sourceExecutionId,
+          x.useCount,
+          x.lastUsedAt,
+          x.state,
+          this.b(x.pinned),
+          now(),
+          id,
+        );
 
-    return this.getSkill(id);
+      if (patch.documents) this.writeSkillDocuments(id, patch.documents);
+    })();
+    const skill = this.getSkill(id)!;
+    this.recordChange(by, "skill", old.agentId, old.id, old, skill);
+
+    return skill;
   }
-  deleteSkill(id: Id) {
-    return this.db.query("DELETE FROM skills WHERE id=?").run(id).changes > 0;
+  /** Puts a skill back as it was, keeping its ID, timestamps, and usage. */
+  private restoreSkill(skill: Skill) {
+    this.db.transaction(() => {
+      this.db
+        .query(
+          "INSERT INTO skills (id,agent_id,name,description,instructions,created_by,source_execution_id,use_count,last_used_at,state,pinned,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        )
+        .run(
+          skill.id,
+          skill.agentId,
+          skill.name,
+          skill.description,
+          skill.instructions,
+          skill.createdBy,
+          skill.sourceExecutionId,
+          skill.useCount,
+          skill.lastUsedAt,
+          skill.state,
+          this.b(skill.pinned),
+          skill.createdAt,
+          skill.updatedAt,
+        );
+      this.writeSkillDocuments(skill.id, skill.documents);
+    })();
+  }
+  private writeSkillDocuments(skillId: Id, documents: SkillDocument[]) {
+    this.db.query("DELETE FROM skill_documents WHERE skill_id=?").run(skillId);
+
+    for (const document of documents)
+      this.db
+        .query("INSERT INTO skill_documents VALUES (?,?,?)")
+        .run(skillId, document.path, document.content);
+  }
+  /** Loading a skill counts as using it, and brings a stale skill back to active. */
+  recordSkillUse(id: Id) {
+    this.db
+      .query(
+        "UPDATE skills SET use_count=use_count+1, last_used_at=?, state=CASE WHEN state='stale' THEN 'active' ELSE state END WHERE id=?",
+      )
+      .run(now(), id);
+  }
+  /** Bot-created skills across every bot, for the curator. */
+  listBotCreatedSkills() {
+    return this.db
+      .query("SELECT * FROM skills WHERE created_by='bot' ORDER BY created_at")
+      .all()
+      .map((r) => this.skill(r));
+  }
+  deleteSkill(id: Id, by: ChangeBy | null = OWNER) {
+    const old = this.getSkill(id);
+
+    if (!old) return false;
+    this.db.query("DELETE FROM skills WHERE id=?").run(id);
+    this.recordChange(by, "skill", old.agentId, old.id, old, null);
+
+    return true;
+  }
+  /** Adds a turn's tool-activity rounds to the bot's review counters and returns the totals. */
+  addReviewRounds(agentId: Id, skillRounds: number, memoryRounds: number) {
+    this.db
+      .query(
+        "INSERT INTO review_counters (agent_id, skill_rounds, memory_rounds) VALUES (?,?,?) ON CONFLICT(agent_id) DO UPDATE SET skill_rounds=skill_rounds+excluded.skill_rounds, memory_rounds=memory_rounds+excluded.memory_rounds",
+      )
+      .run(agentId, skillRounds, memoryRounds);
+
+    return this.reviewCounters(agentId);
+  }
+  reviewCounters(agentId: Id) {
+    const row = this.db
+      .query<{ skill_rounds: number; memory_rounds: number }, [string]>(
+        "SELECT skill_rounds, memory_rounds FROM review_counters WHERE agent_id=?",
+      )
+      .get(agentId);
+
+    return { skill: row?.skill_rounds ?? 0, memory: row?.memory_rounds ?? 0 };
+  }
+  /** Sets one counter: zero after a review fired, or the rounds after a turn's last write to that store. */
+  setReviewCounter(agentId: Id, counter: "skill" | "memory", rounds: number) {
+    const column = counter === "skill" ? "skill_rounds" : "memory_rounds";
+    this.db
+      .query(
+        `INSERT INTO review_counters (agent_id, ${column}) VALUES (?, ?) ON CONFLICT(agent_id) DO UPDATE SET ${column}=excluded.${column}`,
+      )
+      .run(agentId, rounds);
+  }
+  /** Reviews in flight; a server restart drops them instead of resuming. */
+  listPendingReviews() {
+    return this.db
+      .query<
+        {
+          execution_id: string;
+          agent_id: string;
+          conversation_id: string;
+          created_at: string;
+        },
+        []
+      >("SELECT * FROM pending_reviews ORDER BY created_at")
+      .all()
+      .map((r) => ({
+        executionId: r.execution_id,
+        agentId: r.agent_id,
+        conversationId: r.conversation_id,
+        createdAt: r.created_at,
+      }));
+  }
+  addPendingReview(executionId: Id, agentId: Id, conversationId: string) {
+    this.db
+      .query(
+        "INSERT OR REPLACE INTO pending_reviews (execution_id, agent_id, conversation_id, created_at) VALUES (?,?,?,?)",
+      )
+      .run(executionId, agentId, conversationId, now());
+  }
+  removePendingReview(executionId: Id) {
+    this.db
+      .query("DELETE FROM pending_reviews WHERE execution_id=?")
+      .run(executionId);
+  }
+  /** Runs `fn` atomically; a throw rolls back every write inside, including recorded changes. */
+  transaction<T>(fn: () => T): T {
+    return this.db.transaction(fn)();
+  }
+
+  private change(r: any): LearnedChange {
+    return {
+      id: r.id,
+      agentId: r.agent_id ?? null,
+      actor: r.actor,
+      target: r.target,
+      targetId: r.target_id,
+      action: r.action,
+      before: r.before_state ? JSON.parse(r.before_state) : null,
+      after: r.after_state ? JSON.parse(r.after_state) : null,
+      source: r.source ? JSON.parse(r.source) : null,
+      revertsId: r.reverts_id ?? null,
+      createdAt: r.created_at,
+    };
+  }
+  private recordChange(
+    by: ChangeBy | null,
+    target: LearnedChange["target"],
+    agentId: string | null,
+    targetId: string,
+    before: Skill | Memory | null,
+    after: Skill | Memory | null,
+    revertsId: string | null = null,
+  ) {
+    if (!by) return null;
+    const changeId = id();
+
+    // Recording is telemetry: a failure here is reported, never thrown, so it cannot undo or fail the change itself.
+    try {
+      return this.insertChange(
+        changeId,
+        by,
+        target,
+        agentId,
+        targetId,
+        before,
+        after,
+        revertsId,
+      );
+    } catch (error) {
+      console.error(
+        "Recording a learned change failed",
+        target,
+        targetId,
+        error,
+      );
+
+      return null;
+    }
+  }
+  private insertChange(
+    changeId: string,
+    by: ChangeBy,
+    target: LearnedChange["target"],
+    agentId: string | null,
+    targetId: string,
+    before: Skill | Memory | null,
+    after: Skill | Memory | null,
+    revertsId: string | null,
+  ) {
+    const action: LearnedChange["action"] = revertsId
+      ? "revert"
+      : before === null
+        ? "create"
+        : after === null
+          ? "delete"
+          : "update";
+
+    this.db
+      .query(
+        "INSERT INTO learned_changes (id,agent_id,actor,target,target_id,action,before_state,after_state,source,reverts_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+      )
+      .run(
+        changeId,
+        agentId,
+        by.actor,
+        target,
+        targetId,
+        action,
+        before ? JSON.stringify(before) : null,
+        after ? JSON.stringify(after) : null,
+        by.source ? JSON.stringify(by.source) : null,
+        revertsId,
+        now(),
+      );
+
+    return changeId;
+  }
+  /** Newest changes first: one bot's, the shared ones for `null`, or every change when `agentId` is undefined. */
+  listChanges(
+    agentId: string | null | undefined,
+    options: { limit?: number; before?: string } = {},
+  ): LearnedChange[] {
+    const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
+    const cursor = options.before ? this.getChange(options.before) : null;
+    const clauses: string[] = [];
+    const params: Array<string | number> = [];
+
+    if (agentId === null) clauses.push("agent_id IS NULL");
+    else if (agentId !== undefined) {
+      clauses.push("agent_id=?");
+      params.push(agentId);
+    }
+
+    if (cursor) {
+      clauses.push(
+        "(created_at < ? OR (created_at = ? AND rowid < (SELECT rowid FROM learned_changes WHERE id=?)))",
+      );
+      params.push(cursor.createdAt, cursor.createdAt, cursor.id);
+    }
+
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+
+    return this.db
+      .query(
+        `SELECT * FROM learned_changes ${where} ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+      )
+      .all(...params, limit)
+      .map((r) => this.change(r));
+  }
+  getChange(id: Id) {
+    const r = this.db.query("SELECT * FROM learned_changes WHERE id=?").get(id);
+
+    return r ? this.change(r) : null;
+  }
+  /** The changes one execution's review made, oldest first. */
+  listChangesOfExecution(executionId: string, actor: LearnedChange["actor"]) {
+    return this.db
+      .query(
+        "SELECT * FROM learned_changes WHERE actor=? AND json_extract(source, '$.executionId')=? ORDER BY created_at, rowid",
+      )
+      .all(actor, executionId)
+      .map((r) => this.change(r));
+  }
+  /** What a review of one execution changed, kept so clients can show it after the fact. */
+  addReviewResult(executionId: Id, agentId: Id, changeIds: string[]) {
+    this.db
+      .query(
+        "INSERT OR REPLACE INTO review_results (execution_id, agent_id, change_ids, created_at) VALUES (?,?,?,?)",
+      )
+      .run(executionId, agentId, JSON.stringify(changeIds), now());
+  }
+  listReviewResults(agentId: Id, limit = 50) {
+    return this.db
+      .query<
+        { execution_id: string; change_ids: string; created_at: string },
+        [string, number]
+      >(
+        "SELECT execution_id, change_ids, created_at FROM review_results WHERE agent_id=? ORDER BY created_at DESC, rowid DESC LIMIT ?",
+      )
+      .all(agentId, Math.min(Math.max(limit, 1), 200))
+      .map((r) => ({
+        executionId: r.execution_id,
+        agentId,
+        createdAt: r.created_at,
+        // SAFETY: change_ids holds the JSON array this store wrote.
+        changes: (JSON.parse(r.change_ids) as string[]).flatMap((id) => {
+          const change = this.getChange(id);
+
+          return change ? [change] : [];
+        }),
+      }));
+  }
+  /** Restores the state before `changeId`, recording the revert as a change of its own. */
+  revertChange(changeId: Id, by: ChangeBy): LearnedChange | null {
+    const change = this.getChange(changeId);
+
+    if (!change) return null;
+
+    return this.transaction(() => {
+      const current =
+        change.target === "skill"
+          ? this.getSkill(change.targetId)
+          : this.getMemory(change.targetId);
+
+      if (change.target === "skill") {
+        // SAFETY: a change's before state has the shape of its target, written by the same store.
+        const before = change.before as Skill | null;
+
+        if (current)
+          this.db.query("DELETE FROM skills WHERE id=?").run(change.targetId);
+
+        if (before) this.restoreSkill(before);
+      } else {
+        // SAFETY: a change's before state has the shape of its target, written by the same store.
+        const before = change.before as Memory | null;
+
+        if (current)
+          this.db.query("DELETE FROM memories WHERE id=?").run(change.targetId);
+
+        if (before) this.restoreMemory(before);
+      }
+
+      const revertId = this.recordChange(
+        by,
+        change.target,
+        change.agentId,
+        change.targetId,
+        current,
+        change.before,
+        change.id,
+      );
+
+      return revertId ? this.getChange(revertId) : null;
+    });
   }
 
   private groupChat(r: GroupChatRow): GroupChat {

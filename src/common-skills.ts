@@ -1,16 +1,52 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import {
+  MAX_SKILL_DOCUMENTS,
+  skillDocumentInput,
+  type SkillDocument,
+} from "./domain";
 
 export type CommonSkill = {
   id: string;
   name: string;
   description?: string;
   instructions: string;
+  /** Reference documents from the skill's `references` directory, by relative path. */
+  documents: SkillDocument[];
   path: string;
 };
 
 const MAX_SKILLS = 100;
 const MAX_FILE_BYTES = 512 * 1024;
+
+function loadDocuments(skillDir: string): SkillDocument[] {
+  const directory = join(skillDir, "references");
+
+  if (!existsSync(directory) || !statSync(directory).isDirectory()) return [];
+
+  const files = readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+    .map((entry) => entry.name)
+    .sort((a, b) => a.localeCompare(b));
+
+  if (files.length > MAX_SKILL_DOCUMENTS)
+    throw new Error(`Too many reference documents in ${directory}`);
+
+  return files.map((name) => {
+    const file = join(directory, name);
+    const content = readFileSync(file, "utf8");
+
+    const document = skillDocumentInput.safeParse({
+      path: `references/${name}`,
+      content,
+    });
+
+    if (!document.success)
+      throw new Error(`Invalid common skill document: ${file}`);
+
+    return document.data;
+  });
+}
 
 function unquote(value: string) {
   const trimmed = value.trim();
@@ -60,7 +96,14 @@ function parseSkill(
   if (!body) throw new Error(`Common skill has no instructions: ${file}`);
   const path = relative(root, file);
 
-  return { id: `common:${path}`, name, description, instructions: body, path };
+  return {
+    id: `common:${path}`,
+    name,
+    description,
+    instructions: body,
+    documents: loadDocuments(join(root, directory)),
+    path,
+  };
 }
 
 /** Load one SKILL.md from each immediate skill directory.

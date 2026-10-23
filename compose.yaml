@@ -1,9 +1,6 @@
 services:
   crumble:
-    build:
-      context: .
-      args:
-        SKILLS_REF: ${CRUMBLE_SKILLS_REF:-main}
+    build: .
     image: crumble-server
     restart: unless-stopped
     stop_grace_period: 30s

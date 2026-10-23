@@ -18,6 +18,7 @@ export const agentInput = z.object({
   model: z.string().trim().min(1).max(200).default("gpt-4.1"),
   enabled: z.boolean().default(true),
   tools: z.array(z.string().min(1).max(200)).max(100).default(["memory"]),
+  /** The bot's own skills by name; the full records live in the skill library. Writing replaces them by name. */
   skills: z
     .array(
       z.object({
@@ -25,7 +26,7 @@ export const agentInput = z.object({
         instructions: z.string().max(32000),
       }),
     )
-    .max(30)
+    .max(100)
     .default([]),
   /** Shared skills from the skill library this bot uses, besides its own `skills`. */
   sharedSkills: z.array(z.string().uuid()).max(100).optional(),
@@ -41,6 +42,29 @@ export const agentInput = z.object({
       temperature: z.number().min(0).max(2).optional(),
       maxOutputTokens: z.number().int().min(1).max(1000000).optional(),
     })
+    .optional(),
+  /** How the bot reviews its work afterwards to learn skills and memory. Thresholds count tool-activity rounds. */
+  review: z
+    .object({
+      enabled: z.boolean().default(true),
+      skillThreshold: z.number().int().min(1).max(1000).default(10),
+      memoryThreshold: z.number().int().min(1).max(1000).default(10),
+      /** Caps the turn digest a review reads; unset, 75% of the review model's context window, at most 600000. */
+      maxInputTokens: z.number().int().min(1000).max(2000000).optional(),
+    })
+    .optional(),
+  /** The model that runs this bot's reviews; unset or null, they use the bot's own model. Null clears it in a patch. */
+  reviewModel: z
+    .object({
+      provider: z
+        .string()
+        .trim()
+        .min(1)
+        .max(80)
+        .regex(/^[a-z0-9-]+$/),
+      model: z.string().trim().min(1).max(200),
+    })
+    .nullable()
     .optional(),
   /** The model for this bot's desktop jobs; unset or null, they use the bot's own model. Null clears it in a patch. */
   desktopModel: z
@@ -59,9 +83,10 @@ export const agentInput = z.object({
 
 export type AgentInput = z.infer<typeof agentInput>;
 
-/** A stored bot: a cleared desktop model is absent, never null. */
-export type Agent = Omit<AgentInput, "desktopModel"> & {
+/** A stored bot: a cleared desktop or review model is absent, never null. */
+export type Agent = Omit<AgentInput, "desktopModel" | "reviewModel"> & {
   desktopModel?: NonNullable<AgentInput["desktopModel"]>;
+  reviewModel?: NonNullable<AgentInput["reviewModel"]>;
   id: string;
   createdAt: string;
   updatedAt: string;
@@ -160,16 +185,95 @@ export type MCPServer = {
   oauthClientId: string | null;
 };
 
-export const skillInput = z.object({
-  name: z.string().trim().min(1).max(100),
-  instructions: z.string().max(32000),
+export const MAX_SKILL_DOCUMENTS = 20;
+
+/** A reference document inside a skill package, loaded only when the bot asks for it. */
+export const skillDocumentInput = z.object({
+  path: z
+    .string()
+    .regex(
+      /^references\/[a-z0-9][a-z0-9._-]{0,99}\.md$/,
+      "Document paths look like references/topic.md",
+    ),
+  content: z.string().min(1).max(64000),
 });
 
-/** A shared skill in the library, used by the bots that list it in `sharedSkills`. */
-export type Skill = z.infer<typeof skillInput> & {
+export type SkillDocument = z.infer<typeof skillDocumentInput>;
+
+export const skillInput = z.object({
+  name: z.string().trim().min(1).max(100),
+  description: z.string().trim().max(300).default(""),
+  instructions: z.string().max(32000),
+  documents: z
+    .array(skillDocumentInput)
+    .max(MAX_SKILL_DOCUMENTS)
+    .default([])
+    .refine(
+      (documents) =>
+        new Set(documents.map((document) => document.path)).size ===
+        documents.length,
+      "Document paths must be unique",
+    ),
+});
+
+export type SkillInput = z.infer<typeof skillInput>;
+
+export const skillStates = ["active", "stale", "archived"] as const;
+
+export type SkillState = (typeof skillStates)[number];
+
+/** What the owner may change on a skill beyond its content: its lifecycle state and whether the curator leaves it alone. */
+export const skillLifecycleInput = z.object({
+  state: z.enum(skillStates).optional(),
+  pinned: z.boolean().optional(),
+});
+
+/** A skill package in the library: a bot's own when `agentId` is set, shared when null. */
+export type Skill = SkillInput & {
   id: string;
+  agentId: string | null;
+  /** Who wrote the skill first; a bot's skills carry the execution they were learned from. */
+  createdBy: "owner" | "bot";
+  sourceExecutionId: string | null;
+  useCount: number;
+  lastUsedAt: string | null;
+  state: SkillState;
+  pinned: boolean;
   createdAt: string;
   updatedAt: string;
+};
+
+export const changeActors = ["owner", "bot", "review", "curator"] as const;
+
+export type ChangeActor = (typeof changeActors)[number];
+
+/** Where a learned change came from: the execution and conversation of the turn, or the group it ran in. */
+export type ChangeSource = {
+  executionId?: string | null;
+  conversationId?: string | null;
+  groupId?: string | null;
+};
+
+/** Who made a skill or memory change, and from where; `null` records nothing, for migrations. */
+export type ChangeBy = { actor: ChangeActor; source?: ChangeSource | null };
+
+export const changeActions = ["create", "update", "delete", "revert"] as const;
+
+/** One recorded change to a skill or memory, with the state before and after, so the owner can undo it. */
+export type LearnedChange = {
+  id: string;
+  /** The bot whose skill or memory changed; null for a shared one. */
+  agentId: string | null;
+  actor: ChangeActor;
+  target: "skill" | "memory";
+  targetId: string;
+  action: (typeof changeActions)[number];
+  before: Skill | Memory | null;
+  after: Skill | Memory | null;
+  source: ChangeSource | null;
+  /** The change this one undid. */
+  revertsId: string | null;
+  createdAt: string;
 };
 
 export const MIN_GROUP_MEMBERS = 2;
