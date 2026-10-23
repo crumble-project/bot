@@ -28,8 +28,10 @@ Railway is a second backend behind `Workspaces`, chosen with `CRUMBLE_WORKSPACE_
 - **No network policy.** Railway has no egress hook, so `WorkspaceNetworkPolicy` does not apply. Sandboxes are
   `ISOLATED`: internet only, not the Railway environment's private network. The owner accepted losing network-level
   approval on 2026-10-23; approvals for push or PR belong in the tool layer.
-- **No bot desktop yet.** Ubuntu ships Chromium only as a snap, which a sandbox cannot run. The exec stream carries
-  VNC (spike), so `openDesktop` needs only a template with the desktop.
+- **Bot desktops run in a second template** with the Dockerfile's desktop packages, cua-driver, and a pinned
+  Chromium snapshot build: Ubuntu ships Chromium only as a snap, which a sandbox cannot run, and Playwright's browser
+  is now Chrome for Testing. The desktop scripts upload at every boot. VNC goes over the same exec stream as pi-env,
+  through `socat` in the guest. A bot gaining or losing the desktop moves to the other template with its `/workspace`.
 
 ## Consequences
 

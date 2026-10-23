@@ -4,6 +4,7 @@ import path from "node:path";
 import { Sandbox, type SandboxResources, type SandboxTemplate } from "railway";
 import { z } from "zod";
 import {
+  DESKTOP_START,
   GUEST_DAEMON,
   MachineWorkspaces,
   assertAgentId,
@@ -19,6 +20,17 @@ const STREAM_SCRIPT = path.join(import.meta.dir, "railway-stream.py");
 const GUEST_STREAM = "/usr/local/lib/crumble/railway-stream.py";
 const GUEST_PYTHON = "/usr/bin/python3";
 const ARCHIVE = "/tmp/crumble-workspace.tgz";
+const DESKTOP_START_TIMEOUT_SEC = 120;
+
+const DESKTOP_SCRIPTS = path.join(
+  import.meta.dir,
+  "..",
+  "workspace-image",
+  "desktop",
+);
+
+// cua-driver's telemetry is on by default; the Microsandbox image sets the same in its environment.
+const GUEST_ENV = { CUA_DRIVER_RS_TELEMETRY_ENABLED: "0", DO_NOT_TRACK: "1" };
 
 const DEFAULT_RESOURCES: SandboxResources = { cpu: 2, memoryGB: 2 };
 
@@ -54,9 +66,60 @@ const BASE_RECIPE = {
 
 type Recipe = typeof BASE_RECIPE;
 
+const CUA_DRIVER_VERSION = "0.38.0";
+const PLAYWRIGHT_VERSION = "1.64.1";
+
+// The Chromium project's own build closest after the Stable 156 branch point; Playwright now ships Chrome for Testing.
+const CHROMIUM_REVISION = "1706547";
+
+const CHROMIUM_SHA256 =
+  "4388c45a42d73f45141d22d08518393b52a2398933521a6ce67482e59284a69c";
+
+const CUA_DRIVER_SHA256 =
+  "31ab9709dd91ce73677e49b9f3e75c6f0d3e4d9625c286c9e58262bfbea698dd";
+
+/**
+ * The base image plus the bot desktop, as in the Dockerfile's desktop stage. Ubuntu ships Chromium only as a snap, which
+ * a sandbox cannot run, so the browser is a pinned Chromium snapshot build.
+ */
+const DESKTOP_RECIPE: Recipe = {
+  packages: [
+    ...BASE_RECIPE.packages,
+    "tigervnc-standalone-server",
+    "openbox",
+    "tint2",
+    "xdotool",
+    "imagemagick",
+    "fonts-dejavu-core",
+    "fonts-noto-color-emoji",
+    "socat",
+    "procps",
+    "dbus-x11",
+    "at-spi2-core",
+    "x11-utils",
+    "zenity",
+    "unzip",
+  ],
+  steps: [
+    ...BASE_RECIPE.steps,
+    // Playwright knows the libraries Chromium needs on Ubuntu; it installs nothing else here.
+    `bash -lc 'npx -y playwright@${PLAYWRIGHT_VERSION} install-deps chromium'`,
+    `curl -fsSLo /tmp/chromium.zip https://commondatastorage.googleapis.com/chromium-browser-snapshots/Linux_x64/${CHROMIUM_REVISION}/chrome-linux.zip`,
+    `echo "${CHROMIUM_SHA256}  /tmp/chromium.zip" | sha256sum -c -`,
+    "unzip -q /tmp/chromium.zip -d /opt/crumble && rm /tmp/chromium.zip",
+    "ln -sf /opt/crumble/chrome-linux/chrome /usr/local/bin/chromium",
+    `curl -fsSLo /tmp/cua-driver.tgz https://github.com/trycua/cua/releases/download/cua-driver-rs-v${CUA_DRIVER_VERSION}/cua-driver-rs-${CUA_DRIVER_VERSION}-linux-x86_64-binary.tar.gz`,
+    `echo "${CUA_DRIVER_SHA256}  /tmp/cua-driver.tgz" | sha256sum -c -`,
+    "tar -xzf /tmp/cua-driver.tgz -C /usr/local/bin cua-driver && rm /tmp/cua-driver.tgz",
+    "CUA_DRIVER_RS_TELEMETRY_ENABLED=0 cua-driver telemetry disable",
+    // Every window maximized and undecorated: the job sees content, not window chrome.
+    `mkdir -p /opt/crumble && sed 's|<applications>|<applications><application class="*"><decor>no</decor><maximized>yes</maximized></application>|' /etc/xdg/openbox/rc.xml > /opt/crumble/openbox-rc.xml`,
+  ],
+};
+
 /** Names an image by its recipe, so a changed recipe is a new image that bots move to. */
-const imageName = (recipe: Recipe) =>
-  `railway-base-${createHash("sha256").update(JSON.stringify(recipe)).digest("hex").slice(0, 12)}`;
+const imageName = (kind: string, recipe: Recipe) =>
+  `railway-${kind}-${createHash("sha256").update(JSON.stringify(recipe)).digest("hex").slice(0, 12)}`;
 
 export type RailwayWorkspacesOptions = Omit<
   MachineWorkspacesOptions,
@@ -70,6 +133,8 @@ export type RailwayWorkspacesOptions = Omit<
   region?: string;
   resources?: SandboxResources;
   checkpointDelayMs?: number;
+  /** Whether bots can get a bot desktop; on by default. Its template takes minutes to build on first use. */
+  desktop?: boolean;
 };
 
 /**
@@ -91,13 +156,17 @@ export function railwayWorkspacesFromEnv(
  * Railway-backed workspaces: one Railway sandbox per bot. Railway has no volumes, so a bot's files outlive its machine
  * as a named checkpoint of the whole disk: taken after `checkpointDelayMs` without a sync, and before every stop. A
  * server that dies leaves the sandbox running; the next server reconnects to it. Railway has no egress hook, so no
- * network policy applies; sandboxes are isolated from the environment's private network.
+ * network policy applies; sandboxes are isolated from the environment's private network. A bot gaining or losing its
+ * bot desktop moves to the other image with its `/workspace`.
  */
 export class RailwayWorkspaces extends MachineWorkspaces {
   constructor(options: RailwayWorkspacesOptions) {
     const machines = new RailwayMachines(options);
 
-    super(machines, machines.baseImage, options);
+    super(machines, machines.baseImage, {
+      ...options,
+      ...(machines.desktopImage && { desktopImage: machines.desktopImage }),
+    });
   }
 }
 
@@ -112,7 +181,10 @@ type MachineRecord = z.infer<typeof machineRecord>;
 
 class RailwayMachines implements WorkspaceMachines {
   readonly kind = "railway";
-  readonly baseImage = imageName(BASE_RECIPE);
+  readonly baseImage = imageName("base", BASE_RECIPE);
+  readonly desktopImage: string | undefined;
+  private readonly recipes = new Map<string, Recipe>();
+  private readonly templates = new Map<string, Promise<SandboxTemplate>>();
   private readonly records: string;
   private readonly namePrefix: string;
   private readonly region: string | undefined;
@@ -120,7 +192,6 @@ class RailwayMachines implements WorkspaceMachines {
   private readonly checkpointDelayMs: number;
   // Railway runs x86_64 sandboxes whatever the host is.
   private readonly daemon = daemonPath("x64");
-  private template: Promise<SandboxTemplate> | undefined;
 
   constructor(options: RailwayWorkspacesOptions) {
     this.records = path.join(options.dataDir, "workspaces", "railway");
@@ -129,6 +200,12 @@ class RailwayMachines implements WorkspaceMachines {
     this.resources = options.resources ?? DEFAULT_RESOURCES;
     this.checkpointDelayMs =
       options.checkpointDelayMs ?? DEFAULT_CHECKPOINT_DELAY_MS;
+    this.recipes.set(this.baseImage, BASE_RECIPE);
+
+    if (options.desktop !== false) {
+      this.desktopImage = imageName("desktop", DESKTOP_RECIPE);
+      this.recipes.set(this.desktopImage, DESKTOP_RECIPE);
+    }
   }
 
   /** The bot's checkpoint name. */
@@ -143,7 +220,7 @@ class RailwayMachines implements WorkspaceMachines {
    * from the image. A checkpoint of another image has its `/workspace` copied into a new sandbox.
    */
   async boot(agentId: string, image: string): Promise<WorkspaceMachine> {
-    if (image !== this.baseImage)
+    if (!this.recipes.has(image))
       throw new Error(`Railway workspaces have no image ${image}`);
 
     const name = this.name(agentId);
@@ -169,6 +246,8 @@ class RailwayMachines implements WorkspaceMachines {
         mode: 0o755,
       });
       await sandbox.files.write(GUEST_STREAM, await readFile(STREAM_SCRIPT));
+
+      if (image === this.desktopImage) await startDesktop(sandbox);
     } catch (error) {
       // A new sandbox's files are all in the checkpoint; a reconnected one may hold writes the checkpoint lacks.
       if (!reconnected) await sandbox.destroy().catch(() => undefined);
@@ -187,6 +266,7 @@ class RailwayMachines implements WorkspaceMachines {
     const options = {
       resources: this.resources,
       idleTimeoutMinutes: RAILWAY_IDLE_TIMEOUT_MINUTES,
+      env: GUEST_ENV,
     };
 
     const saved = record !== undefined && (await hasCheckpoint(name));
@@ -199,7 +279,10 @@ class RailwayMachines implements WorkspaceMachines {
       return sandbox;
     }
 
-    const sandbox = await Sandbox.create(await this.buildTemplate(), options);
+    const sandbox = await Sandbox.create(
+      await this.buildTemplate(image),
+      options,
+    );
 
     try {
       if (saved) {
@@ -218,15 +301,22 @@ class RailwayMachines implements WorkspaceMachines {
   }
 
   /** Railway caches a template by its content, so later builds return at once. */
-  private buildTemplate() {
-    this.template ??= Sandbox.template()
-      .withPackages(...BASE_RECIPE.packages)
-      .run(BASE_RECIPE.steps.join(" && "))
-      .workdir(WORKSPACE_PATH)
-      .build(this.region ? { region: this.region } : {});
-    this.template.catch(() => (this.template = undefined));
+  private buildTemplate(image: string) {
+    let template = this.templates.get(image);
 
-    return this.template;
+    if (!template) {
+      const recipe = this.recipes.get(image)!;
+
+      template = Sandbox.template()
+        .withPackages(...recipe.packages)
+        .run(recipe.steps.join(" && "))
+        .workdir(WORKSPACE_PATH)
+        .build(this.region ? { region: this.region } : {});
+      this.templates.set(image, template);
+      template.catch(() => this.templates.delete(image));
+    }
+
+    return template;
   }
 
   private recordPath(agentId: string) {
@@ -367,6 +457,23 @@ class RailwayMachine implements WorkspaceMachine {
 
     return next;
   }
+}
+
+/** Uploads the desktop scripts, which change with the server rather than the image, and starts the bot desktop. */
+async function startDesktop(sandbox: Sandbox) {
+  for (const script of ["desktop-start.sh", "browser.sh"])
+    await sandbox.files.write(
+      `/opt/crumble/${script}`,
+      await readFile(path.join(DESKTOP_SCRIPTS, script)),
+      { mode: 0o755 },
+    );
+
+  const result = await sandbox.exec(DESKTOP_START, {
+    timeoutSec: DESKTOP_START_TIMEOUT_SEC,
+  });
+
+  if (result.exitCode !== 0)
+    throw new Error(`The bot desktop did not start: ${result.stderr}`);
 }
 
 /** A checkpoint snapshots the disk, not the guest's page cache, so recent writes need a `sync` first. */

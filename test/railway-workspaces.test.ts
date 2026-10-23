@@ -68,9 +68,21 @@ describe("Railway workspace configuration", () => {
     ).toBeInstanceOf(RailwayWorkspaces);
   });
 
-  test("Railway workspaces have no bot desktop yet", () => {
+  test("desktop bots boot the desktop image", () => {
     const workspaces = new RailwayWorkspaces({
       dataDir,
+      wantsDesktop: (agentId) => agentId === "desk",
+    });
+
+    expect(workspaces.desktop).toBe(true);
+    expect(workspaces.imageFor("desk")).toStartWith("railway-desktop-");
+    expect(workspaces.imageFor("plain")).toStartWith("railway-base-");
+  });
+
+  test("without the desktop no bot gets a bot desktop", () => {
+    const workspaces = new RailwayWorkspaces({
+      dataDir,
+      desktop: false,
       wantsDesktop: () => true,
     });
 

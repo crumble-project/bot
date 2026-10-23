@@ -82,7 +82,10 @@ Run 2026-10-23 from macOS against us-west2, 2 vCPU and 2 GB sandboxes.
 | VNC over exec stream | RFB banner in about 1 s; echo round trip median 175 ms |
 | Stream throughput | 16 MiB in 3.6 s, 64 MiB in 26.7 s, exact bytes |
 
-## Next steps
+## Desktop
 
-1. Bot desktops on Railway: a template with the desktop packages and a Chromium that is not a snap, then
-   `openDesktop` over the exec stream. Needs the desktop VM tests ported to Railway.
+Built 2026-10-23. Ubuntu 26.04 offers only the `chromium-browser` snap stub, and Playwright 1.64 installs Chrome for
+Testing (app name `Chromium-browser`, title "Google Chrome for Testing"), which `desktop-start.sh` does not recognize.
+The desktop template uses Playwright only for `install-deps` and installs the Chromium project's snapshot build
+1706547, the first after the Stable 156 branch point, checked against its SHA-256. The first template build took about
+2 minutes.

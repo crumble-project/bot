@@ -24,7 +24,7 @@ bun run dev    # or `bun run start` without file watching
 | `CRUMBLE_SKILLS_DIR` | `./skills` | Directory of bundled default skills |
 | `CRUMBLE_WORKSPACE_IMAGE` | Unset | Microsandbox OCI image enabling the `coding` tool |
 | `CRUMBLE_WORKSPACE_DESKTOP_IMAGE` | Unset | Microsandbox OCI image enabling the `desktop` tool |
-| `CRUMBLE_WORKSPACE_BACKEND` | Microsandbox | `railway` runs workspaces in Railway sandboxes and enables the `coding` tool |
+| `CRUMBLE_WORKSPACE_BACKEND` | Microsandbox | `railway` runs workspaces in Railway sandboxes and enables the `coding` and `desktop` tools |
 | `CRUMBLE_RAILWAY_REGION` | Railway's default | Region of new Railway sandboxes, such as `europe-west4` |
 | `CRUMBLE_CLAUDE_COMMAND` | `claude` on `PATH` | Claude Code executable for the Claude Code provider |
 | `CRUMBLE_CLAUDE_CONFIG_DIR` | `$CRUMBLE_DATA_DIR/claude` | Claude Code's own config directory, holding its sign-in |
@@ -48,7 +48,7 @@ Build `--target desktop` as `crumble-workspace-desktop:dev` to enable bot deskto
 
 ### Railway sandboxes
 
-With `CRUMBLE_WORKSPACE_BACKEND=railway`, each bot's workspace is a [Railway sandbox](https://docs.railway.com/sandboxes) instead, so the server needs no virtualization ([ADR 0005](docs/adr/0005-railway-workspaces.md)). Set `RAILWAY_TOKEN` (a project token) or `RAILWAY_API_TOKEN`, and `RAILWAY_ENVIRONMENT_ID`. Use a Hobby or Pro plan: other plans destroy idle sandboxes after 5 minutes. A bot's files survive as the checkpoint `crumble-<bot id>` in that environment, and outbound connections are not filtered. Bot desktops are not available on Railway yet.
+With `CRUMBLE_WORKSPACE_BACKEND=railway`, each bot's workspace is a [Railway sandbox](https://docs.railway.com/sandboxes) instead, so the server needs no virtualization ([ADR 0005](docs/adr/0005-railway-workspaces.md)). Set `RAILWAY_TOKEN` (a project token) or `RAILWAY_API_TOKEN`, and `RAILWAY_ENVIRONMENT_ID`. Use a Hobby or Pro plan: other plans destroy idle sandboxes after 5 minutes. A bot's files survive as the checkpoint `crumble-<bot id>` in that environment, and outbound connections are not filtered. The first bot desktop waits a few minutes while Railway builds the desktop template.
 
 Live tests create billed sandboxes: `CRUMBLE_RAILWAY_TESTS=1 bun test test/railway-workspaces.test.ts`.
 
