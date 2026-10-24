@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import net from "node:net";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -14,16 +15,32 @@ import {
   MachineWorkspaces,
   assertAgentId,
   daemonPath,
+  type GuestSetup,
   type MachineStream,
   type MachineWorkspacesOptions,
   type WorkspaceMachine,
   type WorkspaceMachines,
 } from "./machine-workspaces";
-import { WORKSPACE_PATH } from "./workspace";
+import { GUEST_CA_PATH, WORKSPACE_PATH } from "./workspace";
+import {
+  startWorkspaceProxy,
+  type WorkspaceInterceptor,
+  type WorkspaceProxy,
+} from "./workspace-proxy";
+import {
+  GUEST_PROXY_PORT,
+  TUNNEL_SCRIPT,
+  serveTunnel,
+} from "./workspace-tunnel";
 
 const STREAM_SCRIPT = path.join(import.meta.dir, "railway-stream.py");
 const GUEST_STREAM = "/usr/local/lib/crumble/railway-stream.py";
 const GUEST_PYTHON = "/usr/bin/python3";
+const GUEST_TUNNEL = "/usr/local/lib/crumble/workspace-tunnel.py";
+
+// A tunnel that ended while its machine runs is restarted after this long.
+const TUNNEL_RESTART_MS = 1_000;
+const GUEST_PROXY = `http://127.0.0.1:${GUEST_PROXY_PORT}`;
 const ARCHIVE = "/tmp/crumble-workspace.tgz";
 const DESKTOP_START_TIMEOUT_SEC = 120;
 
@@ -104,6 +121,7 @@ const DESKTOP_RECIPE: Recipe = {
     "x11-utils",
     "zenity",
     "unzip",
+    "libnss3-tools",
   ],
   steps: [
     ...BASE_RECIPE.steps,
@@ -186,6 +204,13 @@ type MachineRecord = z.infer<typeof machineRecord>;
 
 export class RailwayMachines implements WorkspaceMachines {
   readonly kind = "railway";
+  // Railway has no egress hook: jobs reach the workspace proxy only through the tunnel, by these variables.
+  readonly proxyEnv = {
+    HTTPS_PROXY: GUEST_PROXY,
+    https_proxy: GUEST_PROXY,
+    NO_PROXY: "localhost,127.0.0.1",
+    no_proxy: "localhost,127.0.0.1",
+  };
   readonly baseImage = imageName("base", BASE_RECIPE);
   readonly desktopImage: string | undefined;
   private readonly recipes = new Map<string, Recipe>();
@@ -195,6 +220,9 @@ export class RailwayMachines implements WorkspaceMachines {
   private readonly region: string | undefined;
   private readonly resources: SandboxResources;
   private readonly checkpointDelayMs: number;
+  private readonly intercept:
+    | ((agentId: string) => WorkspaceInterceptor)
+    | undefined;
   // Railway runs x86_64 sandboxes whatever the host is.
   private readonly daemon = daemonPath("x64");
 
@@ -205,6 +233,7 @@ export class RailwayMachines implements WorkspaceMachines {
     this.resources = options.resources ?? DEFAULT_RESOURCES;
     this.checkpointDelayMs =
       options.checkpointDelayMs ?? DEFAULT_CHECKPOINT_DELAY_MS;
+    this.intercept = options.intercept;
     this.recipes.set(this.baseImage, BASE_RECIPE);
 
     if (options.desktop !== false) {
@@ -224,7 +253,11 @@ export class RailwayMachines implements WorkspaceMachines {
    * Reconnects to the sandbox a previous server left running, boots the bot's checkpoint, or creates a new sandbox
    * from the image. A checkpoint of another image has its `/workspace` copied into a new sandbox.
    */
-  async boot(agentId: string, image: string): Promise<WorkspaceMachine> {
+  async boot(
+    agentId: string,
+    image: string,
+    guest: GuestSetup = {},
+  ): Promise<WorkspaceMachine> {
     if (!this.recipes.has(image))
       throw new Error(`Railway workspaces have no image ${image}`);
 
@@ -251,6 +284,12 @@ export class RailwayMachines implements WorkspaceMachines {
         mode: 0o755,
       });
       await sandbox.files.write(GUEST_STREAM, await readFile(STREAM_SCRIPT));
+      await sandbox.files.write(GUEST_TUNNEL, await readFile(TUNNEL_SCRIPT));
+
+      if (guest.caCertificate) {
+        await sandbox.files.write(GUEST_CA_PATH, guest.caCertificate);
+        await run(sandbox, "update-ca-certificates >/dev/null");
+      }
 
       if (image === this.desktopImage) await startDesktop(sandbox);
     } catch (error) {
@@ -259,7 +298,21 @@ export class RailwayMachines implements WorkspaceMachines {
       throw error;
     }
 
-    return new RailwayMachine(sandbox, name, image, this.checkpointDelayMs);
+    // Without a credential proxy there is nothing to tunnel to: jobs connect directly.
+    const proxy =
+      this.intercept &&
+      (await startWorkspaceProxy({
+        decide: () => true,
+        intercept: this.intercept(agentId),
+      }));
+
+    return new RailwayMachine(
+      sandbox,
+      name,
+      image,
+      this.checkpointDelayMs,
+      proxy,
+    );
   }
 
   private async create(
@@ -354,14 +407,45 @@ class RailwayMachine implements WorkspaceMachine {
   private checkpointing: Promise<void> = Promise.resolve();
   private readonly streams = new Set<ByteQueue>();
 
+  private stopped = false;
+  private tunnel: ReturnType<typeof serveTunnel> | undefined;
+
   constructor(
     private readonly sandbox: Sandbox,
     private readonly name: string,
     readonly image: string,
     private readonly checkpointDelayMs: number,
+    private readonly proxy?: WorkspaceProxy,
   ) {
     this.heartbeat = setInterval(() => void this.beat(), HEARTBEAT_MS);
     this.heartbeat.unref();
+
+    if (proxy) void this.openTunnel(proxy);
+  }
+
+  /** Carries the guest's proxy port to the workspace proxy for as long as the machine runs. */
+  private async openTunnel(proxy: WorkspaceProxy) {
+    if (this.stopped) return;
+
+    const [host, port] = proxy.address.split(":");
+
+    try {
+      const tunnel = serveTunnel(
+        await this.stream(GUEST_PYTHON, [
+          GUEST_TUNNEL,
+          String(GUEST_PROXY_PORT),
+        ]),
+        () => net.connect(Number(port), host),
+      );
+
+      this.tunnel = tunnel;
+      await tunnel.done;
+    } catch {
+      // Retried below, like a tunnel that ended.
+    }
+
+    if (this.stopped) return;
+    setTimeout(() => void this.openTunnel(proxy), TUNNEL_RESTART_MS).unref();
   }
 
   /** Ends the streams of a sandbox Railway destroyed, so pi-env reconnects to a new one instead of waiting. */
@@ -454,8 +538,11 @@ class RailwayMachine implements WorkspaceMachine {
    * for the next boot to reconnect to or Railway's idle timeout to end.
    */
   async stop() {
+    this.stopped = true;
     clearTimeout(this.checkpointTimer);
     clearInterval(this.heartbeat);
+    await this.tunnel?.close();
+    await this.proxy?.close();
 
     if (await this.isAlive()) await this.checkpoint();
 

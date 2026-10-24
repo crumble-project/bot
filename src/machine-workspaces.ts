@@ -16,6 +16,7 @@ import {
   type DesktopStream,
   type Workspaces,
 } from "./workspace";
+import type { WorkspaceInterceptor } from "./workspace-proxy";
 
 const BRIDGE_PATH = path.join(import.meta.dir, "workspace-bridge.ts");
 
@@ -58,6 +59,8 @@ export type GuestSetup = {
 export interface WorkspaceMachines {
   /** Prefix of pi-env environment ids. */
   readonly kind: string;
+  /** Variables that send a job's HTTPS through the workspace proxy, where the guest does not reach it on its own. */
+  readonly proxyEnv?: Record<string, string>;
   /**
    * Boots the bot's machine on `image` with the daemon at `GUEST_DAEMON`, and the bot desktop started on a desktop
    * image. Called serialized per bot.
@@ -77,6 +80,8 @@ export type MachineWorkspacesOptions = {
   wantsDesktop?: (agentId: string) => boolean;
   /** The bot's credential proxy authority, installed at every boot. */
   caCertificate?: (agentId: string) => Promise<string>;
+  /** Takes over the bot's TLS connections to its credential hosts. */
+  intercept?: (agentId: string) => WorkspaceInterceptor;
 };
 
 /** Throws for an agent id that could name another bot's machine. */
@@ -377,7 +382,7 @@ export class MachineWorkspaces implements Workspaces {
           connection: workspace.connection,
           id: workspace.env.id,
           cwd: WORKSPACE_PATH,
-          shellEnv,
+          shellEnv: { ...this.machines.proxyEnv, ...shellEnv },
         })
       : workspace.env;
   }

@@ -34,8 +34,6 @@ export type MicrosandboxWorkspacesOptions = MachineWorkspacesOptions & {
   network?: WorkspaceNetworkPolicy;
   /** Prefix of sandbox and volume names, which are global to the Microsandbox home. */
   namePrefix?: string;
-  /** Takes over the bot's TLS connections to its credential hosts. */
-  intercept?: (agentId: string) => WorkspaceInterceptor;
 };
 
 /**
