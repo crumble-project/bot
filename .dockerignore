@@ -13,3 +13,4 @@ ios
 openapi
 test
 tools
+!tools/assign-legacy-owner.ts
