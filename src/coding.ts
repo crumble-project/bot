@@ -32,8 +32,14 @@ const coding = defineJobKind({
     `Run coding jobs: background agents that read, write, edit files and run shell commands in your persistent workspace (${WORKSPACE_PATH}), which survives restarts and is shared by all your jobs. ` +
     "Actions: start (name, message: the full task, since the job knows nothing else), send (name, message; followUp: true queues it after the current answer instead of steering), stop (name: aborts its current work), status (name, or all jobs without one). " +
     "Starting a job or sending it a message ends your turn, and the owner sees the job as a card, so write anything else the owner needs before the call and do not describe the job. " +
-    "Jobs keep working after your turn ends. Their final answer arrives later as a message from the job; then tell the owner the outcome. Do not wait or poll for it.",
-  instructions: `You are a coding job for another bot. Do the task you are given with your read, write, edit, and bash tools, working in ${WORKSPACE_PATH}, a persistent workspace that earlier jobs of this bot also used. Verify your work by running it. Finish with a short report: what you did, what you verified, and what is left.`,
+    "Jobs keep working after your turn ends. Their final answer arrives later as a message from the job; then tell the owner the outcome. Do not wait or poll for it. " +
+    "A server a job starts keeps running on localhost for later jobs, desktop jobs included, until the workspace stops while idle; a job starts it again with the command it reported.",
+  instructions: [
+    `You are a coding job for another bot. Do the task you are given with your read, write, edit, and bash tools, working in ${WORKSPACE_PATH}, a persistent workspace that earlier jobs of this bot also used.`,
+    `To leave a server or other long-running program for later jobs, start it in its own session with its output in a log file: setsid <command> > ${WORKSPACE_PATH}/<name>.log 2>&1 < /dev/null &. Started any other way, it dies when your command ends or is stopped. Check that it answers before you report.`,
+    "For browser tests, use the workspace's Chromium if `command -v chromium` finds one: install Playwright with PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 and launch chromium with executablePath set to that path.",
+    "Verify your work by running it. Finish with a short report: what you did, what you verified, and what is left. For a server you left running, include its URL and the command that starts it again.",
+  ].join(" "),
 });
 
 /** The job a successful `coding` result shows as a card; a listing or a failed call shows none. */
