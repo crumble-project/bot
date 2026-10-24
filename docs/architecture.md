@@ -10,7 +10,7 @@ flowchart TD
   API --> Service["CrumbleService & AgentRuntime"]
   Service --> Store["Product SQLite (store.ts)\nAgents, groups, skills, memories,\nschedules, credentials, changes"]
   Service --> Pi["Pi Durable SQLite Stores\nPer-bot & per-group transcripts,\ncoding/desktop jobs, reviews"]
-  Pi --> Workspaces["MicrosandboxWorkspaces\nPer-bot Linux microVM +\nHTTP CONNECT proxy & Xvnc"]
+  Pi --> Workspaces["MachineWorkspaces\nMicrosandbox microVM + proxy & Xvnc,\nor Railway sandbox + checkpoint"]
 ```
 
 ## Core boundaries
@@ -42,6 +42,7 @@ flowchart TD
 `jobs.ts` (`defineJobKind`) powers both **coding jobs** (`coding.ts`) and **desktop jobs** (`desktop.ts`) as child conversations in the bot's Pi store owned by background anchor and reporter tasks:
 
 - **Coding jobs (`coding` tool):** Run `read`, `write`, `edit`, and `bash` via `pi-env` inside the bot's Microsandbox microVM (`MicrosandboxWorkspaces`), backed by a persistent ext4 volume (`crumble-<user id>-<bot id>`) mounted at `/workspace` and filtered by a per-workspace HTTP CONNECT proxy (`workspace-proxy.ts`).
+- **Workspace backends (`machine-workspaces.ts`, [ADR 0005](adr/0005-railway-workspaces.md)):** `MachineWorkspaces` owns the lifecycle both backends share (lazy boot, idle stop, holds, the pi-env relay). With `CRUMBLE_WORKSPACE_BACKEND=railway`, `RailwayWorkspaces` runs each bot in a Railway sandbox instead: files survive as the checkpoint `crumble-<user id>-<bot id>`, taken after 30 seconds without a sync and before every stop; a restarted server reconnects to the running sandbox; there is no network policy. Bot desktops boot a second template with a pinned Chromium snapshot build.
 - **Desktop jobs (`desktop` tool):** Boot `CRUMBLE_WORKSPACE_DESKTOP_IMAGE` (adding Xvnc, Openbox, tint2, Chromium, and `cua-driver`) and run exclusively one job at a time on `desktopModel` (or the bot's model) using the `computer_use` tool (accessibility tree first, screenshots as fallback).
 - **Watching and taking control (`desktop-control.ts`, `desktop-viewer.ts`, `rfb-filter.ts`):** `POST /v1/agents/{id}/desktop/viewer` issues a single-use ticket for a server-hosted noVNC viewer bridged to the guest's Xvnc over an exec stream. The RFB filter drops pointer, keyboard, and clipboard events unless the owner holds the persistent control lease (`PUT /v1/agents/{id}/desktop/control`). While the owner holds control, `computer_use` pauses; when control returns, stale snapshots are discarded and the job must capture the screen first.
 

@@ -2,6 +2,8 @@
 # Keeps Chromium running; the job cannot rely on the panel to relaunch it.
 . /run/crumble-desktop.env
 mkdir -p /workspace/.desktop/chromium
+# A profile restored onto another machine (a Railway checkpoint) keeps the old host's lock, and Chromium then refuses it.
+rm -f /workspace/.desktop/chromium/Singleton{Lock,Socket,Cookie}
 while true; do
   # --no-sandbox: the guest runs as root, and the VM is the sandbox.
   # --hide-crash-restore-bubble: stopping the VM kills Chromium, which would offer to restore pages on every boot.

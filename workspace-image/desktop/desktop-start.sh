@@ -27,8 +27,9 @@ if ! pgrep -x Xvnc >/dev/null; then
   nohup /opt/crumble/browser.sh >/tmp/browser.log 2>&1 &
 fi
 . /run/crumble-desktop.env
+# Debian's Chromium reports "Chromium", the snapshot build on Railway "Chromium-browser".
 for _ in $(seq 150); do
-  cua-driver call list_windows '{}' 2>/dev/null | grep -q '"app_name": "Chromium"' && exit 0
+  cua-driver call list_windows '{}' 2>/dev/null | grep -q '"app_name": "Chromium' && exit 0
   sleep 0.2
 done
 echo "bot desktop did not start; see /tmp/*.log" >&2

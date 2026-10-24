@@ -35,6 +35,7 @@ import { DesktopControl, type ControlState } from "./desktop-control";
 import { ViewerTickets } from "./desktop-viewer";
 import type { Workspaces } from "./workspace";
 import { microsandboxWorkspacesFromEnv } from "./microsandbox-workspaces";
+import { railwayWorkspacesFromEnv } from "./railway-workspaces";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { loadCommonSkills } from "./common-skills";
@@ -118,13 +119,16 @@ export async function createTenant(
     const store = new Store(dataDir);
     partialCleanup.push(() => store.close());
 
+    const machineOptions = {
+      namePrefix: `crumble-${options.tenantId.replace(/[^A-Za-z0-9_-]/g, "-")}`,
+      wantsDesktop: (agentId: string) =>
+        store.getAgent(agentId)?.tools.includes(DESKTOP_TOOL_NAME) === true,
+    };
+
     const workspaces =
       options.workspaces ??
-      microsandboxWorkspacesFromEnv(process.env, {
-        namePrefix: `crumble-${options.tenantId.replace(/[^A-Za-z0-9_-]/g, "-")}`,
-        wantsDesktop: (agentId) =>
-          store.getAgent(agentId)?.tools.includes(DESKTOP_TOOL_NAME) === true,
-      });
+      railwayWorkspacesFromEnv(process.env, { ...machineOptions, dataDir }) ??
+      microsandboxWorkspacesFromEnv(process.env, machineOptions);
 
     partialCleanup.push(() => workspaces?.close(BACKGROUND_CONTEXT));
     const desktopControl = new DesktopControl(store);

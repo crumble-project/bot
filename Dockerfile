@@ -20,6 +20,7 @@ ENV NODE_ENV=production \
 COPY --from=deps /app/node_modules node_modules
 COPY package.json tsconfig.json bunfig.toml ./
 COPY src src
+COPY workspace-image/desktop workspace-image/desktop
 COPY web web
 COPY skills skills
 COPY tools/assign-legacy-owner.ts tools/assign-legacy-owner.ts
