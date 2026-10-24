@@ -86,6 +86,11 @@
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
 
+## Contract 3.1.0
+
+- Add credentials a bot's coding jobs use without seeing their values: `GET /v1/agents/{id}/credentials` lists the bot's `Credential`s and pending `CredentialRequest`s, `PUT /v1/agents/{id}/credentials/{name}` creates or updates one (`hosts`, and a write-only `value`) and answers a request of the same name, `DELETE /v1/agents/{id}/credentials/{name}` deletes one or declines a request, and `GET /v1/agents/{id}/credentials/{name}/uses` pages its `CredentialUse`s from the last 90 days. Values never appear in responses.
+- Add the `request_credential` model tool. Its tool result carries the request (`name`, `hosts`, `reason`, `requestedAt`) in `toolDetails`, and answering or declining posts a message with origin kind `credential` and the credential's name.
+
 ## Contract 3.0.0
 
 - Replace the shared server bearer token with Better Auth account sessions. Clients must sign in through `POST /api/auth/sign-in/email` and use the returned session token, or use the browser session cookie. Legacy server tokens are rejected.
