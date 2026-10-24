@@ -1,13 +1,33 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  describe,
+  expect,
+  mock,
+  spyOn,
+  test,
+} from "bun:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { createEnvConformance } from "@earendil-works/pi-durable/testing";
-import { Sandbox } from "railway";
 import {
+  Sandbox,
+  SandboxNotFoundError,
+  type SandboxCheckpointInfo,
+  type SandboxTemplate,
+} from "railway";
+import {
+  RailwayMachines,
   RailwayWorkspaces,
   railwayWorkspacesFromEnv,
 } from "../src/railway-workspaces";
@@ -95,6 +115,146 @@ describe("Railway workspace configuration", () => {
 
     for (const agentId of ["", "../other", "a/b", "x".repeat(65)])
       expect(() => workspaces.env(agentId)).toThrow("Invalid agent id");
+  });
+});
+
+describe("Railway machines when Railway fails", () => {
+  const fakeSandbox = (id: string) => {
+    const fake = { destroyed: 0 };
+
+    // Own properties shadow the SDK's getters and methods, so nothing reaches Railway.
+    const sandbox: Sandbox = Object.create(Sandbox.prototype, {
+      id: { value: id },
+      status: { value: "RUNNING" },
+      files: { value: { write: async () => undefined } },
+      refresh: { value: async () => sandbox, writable: true },
+      heartbeat: { value: async () => sandbox },
+      exec: { value: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
+      checkpoint: { value: async () => undefined },
+      destroy: { value: async () => void (fake.destroyed += 1) },
+    });
+
+    return Object.assign(fake, { sandbox });
+  };
+
+  const stubSandboxes = (sandbox: Sandbox) => {
+    const recipe: SandboxTemplate = Object.getPrototypeOf(Sandbox.template());
+
+    spyOn(recipe, "build").mockImplementation(async function (
+      this: SandboxTemplate,
+    ) {
+      return this;
+    });
+
+    return spyOn(Sandbox, "create").mockResolvedValue(sandbox);
+  };
+
+  const checkpointNamed = (key: string): SandboxCheckpointInfo => ({
+    id: "checkpoint",
+    key,
+    environmentId: "test",
+    createdAt: new Date(0).toISOString(),
+  });
+
+  const newMachines = (region?: string) => {
+    const machineDir = mkdtempSync(path.join(tmpdir(), "crumble-railway-"));
+
+    return {
+      machineDir,
+      machines: new RailwayMachines({
+        dataDir: machineDir,
+        desktop: false,
+        ...(region && { region }),
+      }),
+    };
+  };
+
+  const writeMachineRecord = (
+    machineDir: string,
+    agentId: string,
+    record: { image: string; sandboxId: string },
+  ) => {
+    const records = path.join(machineDir, "workspaces", "railway");
+
+    mkdirSync(records, { recursive: true });
+    writeFileSync(
+      path.join(records, `${agentId}.json`),
+      JSON.stringify(record),
+    );
+  };
+
+  afterEach(() => {
+    mock.restore();
+  });
+
+  test("a sandbox Railway cannot report on keeps running instead of being destroyed unsaved", async () => {
+    const fake = fakeSandbox("live");
+    stubSandboxes(fake.sandbox);
+    const { machines } = newMachines();
+    const machine = await machines.boot("bot", machines.baseImage);
+
+    fake.sandbox.refresh = () =>
+      Promise.reject(new Error("Railway is unreachable"));
+
+    await expect(machine.stop()).rejects.toThrow("Railway is unreachable");
+    expect(fake.destroyed).toBe(0);
+  });
+
+  test("a failed reconnect keeps the running sandbox instead of restoring an older checkpoint", async () => {
+    const create = stubSandboxes(fakeSandbox("new").sandbox);
+    const { machineDir, machines } = newMachines();
+    const record = { image: machines.baseImage, sandboxId: "live" };
+
+    writeMachineRecord(machineDir, "bot", record);
+    spyOn(Sandbox, "connect").mockRejectedValue(
+      new Error("Railway is unreachable"),
+    );
+    spyOn(Sandbox, "checkpoints").mockResolvedValue([
+      checkpointNamed(machines.name("bot")),
+    ]);
+
+    await expect(machines.boot("bot", machines.baseImage)).rejects.toThrow(
+      "Railway is unreachable",
+    );
+    expect(create).not.toHaveBeenCalled();
+    expect(
+      JSON.parse(
+        readFileSync(
+          path.join(machineDir, "workspaces", "railway", "bot.json"),
+          "utf8",
+        ),
+      ),
+    ).toEqual(record);
+  });
+
+  test("new sandboxes boot in the configured region, and checkpoints where their data lives", async () => {
+    const create = stubSandboxes(fakeSandbox("new").sandbox);
+    const { machineDir, machines } = newMachines("europe-west4");
+
+    await (await machines.boot("fresh", machines.baseImage)).stop();
+    expect(create).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({ region: "europe-west4" }),
+    );
+
+    writeMachineRecord(machineDir, "saved", {
+      image: machines.baseImage,
+      sandboxId: "gone",
+    });
+    spyOn(Sandbox, "connect").mockRejectedValue(
+      new SandboxNotFoundError({ id: "gone", environmentId: "test" }),
+    );
+    spyOn(Sandbox, "checkpoints").mockResolvedValue([
+      checkpointNamed(machines.name("saved")),
+    ]);
+
+    await (await machines.boot("saved", machines.baseImage)).stop();
+    expect(create).toHaveBeenNthCalledWith(
+      2,
+      machines.name("saved"),
+      expect.not.objectContaining({ region: expect.anything() }),
+    );
   });
 });
 

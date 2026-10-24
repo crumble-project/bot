@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { Sandbox, type SandboxResources, type SandboxTemplate } from "railway";
+import {
+  Sandbox,
+  SandboxNotFoundError,
+  type SandboxResources,
+  type SandboxTemplate,
+} from "railway";
 import { z } from "zod";
 import {
   DESKTOP_START,
@@ -179,7 +184,7 @@ const machineRecord = z.object({
 
 type MachineRecord = z.infer<typeof machineRecord>;
 
-class RailwayMachines implements WorkspaceMachines {
+export class RailwayMachines implements WorkspaceMachines {
   readonly kind = "railway";
   readonly baseImage = imageName("base", BASE_RECIPE);
   readonly desktopImage: string | undefined;
@@ -279,10 +284,11 @@ class RailwayMachines implements WorkspaceMachines {
       return sandbox;
     }
 
-    const sandbox = await Sandbox.create(
-      await this.buildTemplate(image),
-      options,
-    );
+    // Only template sandboxes take a region: checkpoints boot where their data lives and reject another one.
+    const sandbox = await Sandbox.create(await this.buildTemplate(image), {
+      ...options,
+      ...(this.region && { region: this.region }),
+    });
 
     try {
       if (saved) {
@@ -362,7 +368,8 @@ class RailwayMachine implements WorkspaceMachine {
   private async beat() {
     const alive = await this.sandbox.heartbeat().then(
       (sandbox) => sandbox.status === "RUNNING",
-      () => this.isAlive(),
+      // A sandbox of unknown state keeps its streams until the next beat.
+      () => this.isAlive().catch(() => true),
     );
 
     if (alive) return;
@@ -373,10 +380,15 @@ class RailwayMachine implements WorkspaceMachine {
       stream.fail(new Error("Railway destroyed the sandbox"));
   }
 
+  /** Rejects when Railway cannot tell, so a failed request never counts as a gone sandbox. */
   isAlive() {
     return this.sandbox.refresh().then(
       (sandbox) => sandbox.status === "RUNNING",
-      () => false,
+      (error) => {
+        if (error instanceof SandboxNotFoundError) return false;
+
+        throw error;
+      },
     );
   }
 
@@ -437,7 +449,10 @@ class RailwayMachine implements WorkspaceMachine {
     this.checkpointTimer.unref();
   }
 
-  /** Destroys the sandbox only after a checkpoint succeeded; otherwise Railway's idle timeout ends it. */
+  /**
+   * Destroys the sandbox only after a checkpoint succeeded or Railway confirmed it gone; otherwise it keeps running,
+   * for the next boot to reconnect to or Railway's idle timeout to end.
+   */
   async stop() {
     clearTimeout(this.checkpointTimer);
     clearInterval(this.heartbeat);
@@ -482,14 +497,16 @@ async function checkpoint(sandbox: Sandbox, name: string) {
   await sandbox.checkpoint(name);
 }
 
-/** The running sandbox with this id, or undefined when Railway has destroyed it. */
+/** The running sandbox with this id, or undefined when Railway has destroyed it; other failures throw. */
 async function connectRunning(id: string) {
   try {
     const sandbox = await Sandbox.connect(id);
 
     return sandbox.status === "RUNNING" ? sandbox : undefined;
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (error instanceof SandboxNotFoundError) return undefined;
+
+    throw error;
   }
 }
 
