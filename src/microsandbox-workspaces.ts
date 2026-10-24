@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { Sandbox, Volume, VolumeNotFoundError } from "microsandbox";
 import { z } from "zod";
 import {
+  DESKTOP_DISPLAY_ONLY,
   DESKTOP_START,
   GUEST_DAEMON,
   MachineWorkspaces,
@@ -167,9 +168,12 @@ class MicrosandboxMachines implements WorkspaceMachines {
         await run(machine, "update-ca-certificates >/dev/null");
       }
 
-      if (image === this.desktopImage) await run(machine, DESKTOP_START);
+      const desktop = image === this.desktopImage;
 
-      return new MicrosandboxMachine(machine, proxy, image);
+      if (desktop)
+        await run(machine, `${DESKTOP_START} ${DESKTOP_DISPLAY_ONLY}`);
+
+      return new MicrosandboxMachine(machine, proxy, image, desktop);
     } catch (error) {
       await sandbox?.stop().catch(() => undefined);
       await proxy?.close();
@@ -183,7 +187,13 @@ class MicrosandboxMachine implements WorkspaceMachine {
     private readonly sandbox: Sandbox,
     private readonly proxy: WorkspaceProxy,
     readonly image: string,
+    private readonly desktop: boolean,
   ) {}
+
+  /** The start script, run again: while the desktop is up it only waits for the browser. */
+  async desktopReady() {
+    if (this.desktop) await run(this.sandbox, DESKTOP_START);
+  }
 
   isAlive() {
     return this.sandbox.ping().then(

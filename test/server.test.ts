@@ -222,6 +222,7 @@ test.serial(
         close: async () => {},
       }),
       keepAwake: () => () => {},
+      startDesktop: async () => {},
       sync: async () => {},
       close: async () => {},
     };

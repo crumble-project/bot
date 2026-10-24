@@ -278,6 +278,7 @@ test.serial(
         sync: async () => undefined,
         close: async () => undefined,
         keepAwake: () => () => undefined,
+        startDesktop: async () => undefined,
         openDesktop: async () => ({
           write: async () => undefined,
           output: (async function* () {

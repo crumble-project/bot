@@ -104,19 +104,46 @@ export class ViewerTickets {
   }
 }
 
-/** The viewer page: noVNC filling the window, connected to the ticket's stream. The app draws its own controls. */
+/**
+ * The viewer page: noVNC filling the window, connected to the ticket's stream, under a loading screen until the first
+ * frame. The app draws its own controls.
+ */
 export function viewerPage(ticket: string) {
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>Bot desktop</title>
-<style>html, body { margin: 0; height: 100%; background: #000; } #screen { width: 100vw; height: 100vh; }</style>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; } #screen { width: 100vw; height: 100vh; }
+  #status { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; color: rgb(255 255 255 / 0.6); font: 13px/1.4 system-ui, sans-serif; -webkit-font-smoothing: antialiased;
+    pointer-events: none; animation: appear 300ms ease-out 300ms both; transition: opacity 250ms ease-out; }
+  #status.done { opacity: 0; }
+  #spinner { width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgb(255 255 255 / 0.15);
+    border-top-color: rgb(255 255 255 / 0.7); animation: spin 0.9s linear infinite; }
+  #status.failed #spinner { display: none; }
+  @keyframes spin { to { transform: rotate(1turn); } }
+  @keyframes appear { from { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { #spinner { animation: none; } }
+</style>
 </head><body><div id="screen"></div>
+<div id="status" role="status"><div id="spinner"></div><div id="message">Starting the bot desktop</div></div>
 <script type="module">
   import RFB from "${VIEWER_PREFIX}/novnc/core/rfb.js";
   const scheme = location.protocol === "https:" ? "wss" : "ws";
   const rfb = new RFB(document.getElementById("screen"), \`\${scheme}://\${location.host}${VIEWER_PREFIX}/${ticket}/websockify\`);
+  const status = document.getElementById("status");
+  let connected = false;
   rfb.scaleViewport = true;
   rfb.background = "#000";
-  rfb.addEventListener("disconnect", () => document.title = "Bot desktop (disconnected)");
+  rfb.addEventListener("connect", () => {
+    connected = true;
+    status.classList.add("done");
+  });
+  rfb.addEventListener("disconnect", () => {
+    document.title = "Bot desktop (disconnected)";
+    if (connected) return;
+    status.classList.add("failed");
+    document.getElementById("message").textContent = "The bot desktop is unavailable";
+  });
 </script></body></html>
 `;
 }

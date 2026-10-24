@@ -10,6 +10,7 @@ import {
 } from "railway";
 import { z } from "zod";
 import {
+  DESKTOP_DISPLAY_ONLY,
   DESKTOP_START,
   GUEST_DAEMON,
   MachineWorkspaces,
@@ -279,19 +280,25 @@ export class RailwayMachines implements WorkspaceMachines {
 
     sandbox ??= await this.create(agentId, name, image, record);
 
+    const desktop = image === this.desktopImage;
+
     try {
-      await sandbox.files.write(GUEST_DAEMON, await readFile(this.daemon), {
-        mode: 0o755,
-      });
-      await sandbox.files.write(GUEST_STREAM, await readFile(STREAM_SCRIPT));
-      await sandbox.files.write(GUEST_TUNNEL, await readFile(TUNNEL_SCRIPT));
+      // Each write is a request to Railway; in parallel they cost one round trip.
+      await Promise.all([
+        sandbox.files.write(GUEST_DAEMON, await readFile(this.daemon), {
+          mode: 0o755,
+        }),
+        sandbox.files.write(GUEST_STREAM, await readFile(STREAM_SCRIPT)),
+        sandbox.files.write(GUEST_TUNNEL, await readFile(TUNNEL_SCRIPT)),
+        guest.caCertificate &&
+          sandbox.files.write(GUEST_CA_PATH, guest.caCertificate),
+        desktop && writeDesktopScripts(sandbox),
+      ]);
 
-      if (guest.caCertificate) {
-        await sandbox.files.write(GUEST_CA_PATH, guest.caCertificate);
+      if (guest.caCertificate)
         await run(sandbox, "update-ca-certificates >/dev/null");
-      }
 
-      if (image === this.desktopImage) await startDesktop(sandbox);
+      if (desktop) await startDesktop(sandbox, DESKTOP_DISPLAY_ONLY);
     } catch (error) {
       // A new sandbox's files are all in the checkpoint; a reconnected one may hold writes the checkpoint lacks.
       if (!reconnected) await sandbox.destroy().catch(() => undefined);
@@ -310,6 +317,7 @@ export class RailwayMachines implements WorkspaceMachines {
       sandbox,
       name,
       image,
+      desktop,
       this.checkpointDelayMs,
       proxy,
     );
@@ -414,6 +422,7 @@ class RailwayMachine implements WorkspaceMachine {
     private readonly sandbox: Sandbox,
     private readonly name: string,
     readonly image: string,
+    private readonly desktop: boolean,
     private readonly checkpointDelayMs: number,
     private readonly proxy?: WorkspaceProxy,
   ) {
@@ -462,6 +471,11 @@ class RailwayMachine implements WorkspaceMachine {
 
     for (const stream of this.streams)
       stream.fail(new Error("Railway destroyed the sandbox"));
+  }
+
+  /** The start script, run again: while the desktop is up it only waits for the browser. */
+  async desktopReady() {
+    if (this.desktop) await startDesktop(this.sandbox);
   }
 
   /** Rejects when Railway cannot tell, so a failed request never counts as a gone sandbox. */
@@ -562,15 +576,20 @@ class RailwayMachine implements WorkspaceMachine {
 }
 
 /** Uploads the desktop scripts, which change with the server rather than the image, and starts the bot desktop. */
-async function startDesktop(sandbox: Sandbox) {
-  for (const script of ["desktop-start.sh", "browser.sh"])
-    await sandbox.files.write(
-      `/opt/crumble/${script}`,
-      await readFile(path.join(DESKTOP_SCRIPTS, script)),
-      { mode: 0o755 },
-    );
+function writeDesktopScripts(sandbox: Sandbox) {
+  return Promise.all(
+    ["desktop-start.sh", "browser.sh"].map(async (script) =>
+      sandbox.files.write(
+        `/opt/crumble/${script}`,
+        await readFile(path.join(DESKTOP_SCRIPTS, script)),
+        { mode: 0o755 },
+      ),
+    ),
+  );
+}
 
-  const result = await sandbox.exec(DESKTOP_START, {
+async function startDesktop(sandbox: Sandbox, ...args: string[]) {
+  const result = await sandbox.exec([DESKTOP_START, ...args].join(" "), {
     timeoutSec: DESKTOP_START_TIMEOUT_SEC,
   });
 

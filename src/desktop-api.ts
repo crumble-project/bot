@@ -46,6 +46,7 @@ export function registerDesktopRoutes(options: {
   control: DesktopControl;
   tickets: ViewerTickets;
   openDesktop?: (agentId: string) => Promise<DesktopStream>;
+  startDesktop?: (agentId: string) => Promise<void>;
 }) {
   const { app, register, service, control, tickets } = options;
   // The bot of each viewer connection, from its redeemed ticket to its WebSocket.
@@ -109,6 +110,9 @@ export function registerDesktopRoutes(options: {
   register(routes.createDesktopViewer, (c) => {
     const agent = desktopAgent(c.req.param("id"));
     const { ticket, expiresAt } = tickets.issue(agent.id);
+
+    // The machine boots while the client loads the page; the viewer's WebSocket reports any failure.
+    void options.startDesktop?.(agent.id).catch(() => undefined);
 
     return c.json({ path: `${VIEWER_PREFIX}/${ticket}`, expiresAt }, 201);
   });

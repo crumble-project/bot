@@ -1,5 +1,6 @@
 #!/bin/bash
 # Starts the bot desktop once per boot; a second run while it is up only waits for it.
+# With --display it returns once the VNC server listens, before the browser is up.
 # The host runs this at boot, outside pi-env, whose daemon kills every process it started when it stops.
 set -u
 export DISPLAY=:1
@@ -25,6 +26,11 @@ if ! pgrep -x Xvnc >/dev/null; then
   sleep 0.5
   nohup tint2 >/tmp/tint2.log 2>&1 &
   nohup /opt/crumble/browser.sh >/tmp/browser.log 2>&1 &
+fi
+if [ "${1:-}" = --display ]; then
+  for _ in $(seq 50); do (: </dev/tcp/127.0.0.1/5900) 2>/dev/null && exit 0; sleep 0.1; done
+  echo "the VNC server did not start; see /tmp/xvnc.log" >&2
+  exit 1
 fi
 . /run/crumble-desktop.env
 # Debian's Chromium reports "Chromium", the snapshot build on Railway "Chromium-browser".

@@ -74,6 +74,8 @@ class GuestWorkspaces implements Workspaces {
     throw new Error("No bot desktop in this test");
   }
 
+  async startDesktop(_agentId: string, _context: Context) {}
+
   keepAwake(_agentId: string) {
     return () => {};
   }

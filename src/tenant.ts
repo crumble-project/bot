@@ -363,6 +363,8 @@ export async function createTenant(
         ...(workspaces && {
           openDesktop: (agentId: string) =>
             workspaces.openDesktop(agentId, BACKGROUND_CONTEXT),
+          startDesktop: (agentId: string) =>
+            workspaces.startDesktop(agentId, BACKGROUND_CONTEXT),
         }),
         providerAuth,
         oauthClient,

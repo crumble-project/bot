@@ -26,6 +26,9 @@ export const GUEST_DAEMON = "/usr/local/bin/pi-env";
 /** Started at boot on a desktop image, not through pi-env: its daemon kills what it started when the connection closes. */
 export const DESKTOP_START = "/opt/crumble/desktop-start.sh";
 
+/** Makes `DESKTOP_START` return once the VNC server listens, before the browser is up. */
+export const DESKTOP_DISPLAY_ONLY = "--display";
+
 /** A running workspace stops after this long without a request. */
 export const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -42,6 +45,8 @@ export interface WorkspaceMachine {
   /** The image it booted. */
   readonly image: string;
   isAlive(): Promise<boolean>;
+  /** Resolves once the bot desktop's browser is up; at once on an image without a bot desktop. */
+  desktopReady(): Promise<void>;
   stream(command: string, args: readonly string[]): Promise<MachineStream>;
   /** Makes completed writes in the workspace durable. */
   sync(): Promise<void>;
@@ -62,8 +67,8 @@ export interface WorkspaceMachines {
   /** Variables that send a job's HTTPS through the workspace proxy, where the guest does not reach it on its own. */
   readonly proxyEnv?: Record<string, string>;
   /**
-   * Boots the bot's machine on `image` with the daemon at `GUEST_DAEMON`, and the bot desktop started on a desktop
-   * image. Called serialized per bot.
+   * Boots the bot's machine on `image` with the daemon at `GUEST_DAEMON`. On a desktop image the bot desktop's VNC
+   * server already listens; its browser may still be starting. Called serialized per bot.
    */
   boot(
     agentId: string,
@@ -113,6 +118,7 @@ export function daemonPath(arch: NodeJS.Architecture = process.arch) {
 
 type Running = {
   machine: WorkspaceMachine;
+  desktopReady: Promise<void>;
   relay: Relay;
   command: readonly string[];
 };
@@ -207,8 +213,9 @@ class Workspace {
     return result;
   }
 
-  ensureStarted() {
-    return this.exclusive(async () => {
+  /** The relay command once the machine runs and, unless `displayOnly`, its bot desktop's browser is up. */
+  async ensureStarted(displayOnly = false) {
+    const running = await this.exclusive(async () => {
       // A bot that gained or lost its bot desktop needs the other image.
       const image = this.owner.imageFor(this.agentId);
 
@@ -217,15 +224,29 @@ class Workspace {
         this.running.machine.image === image &&
         (await this.running.machine.isAlive())
       )
-        return this.running.command;
+        return this.running;
 
       if (this.running) await this.teardown();
 
       this.running = await this.owner.boot(this.agentId, image);
       this.armIdleTimer();
 
-      return this.running.command;
+      return this.running;
     });
+
+    // Outside the queue: a viewer needs only the display and does not wait for a job's browser.
+    if (displayOnly) return running.command;
+
+    try {
+      await running.desktopReady;
+    } catch (error) {
+      await this.exclusive(async () => {
+        if (this.running === running) await this.teardown();
+      });
+      throw error;
+    }
+
+    return running.command;
   }
 
   sync() {
@@ -270,7 +291,7 @@ class Workspace {
     const release = this.hold();
 
     try {
-      await this.ensureStarted();
+      await this.ensureStarted(true);
 
       const running = this.running;
 
@@ -370,6 +391,10 @@ export class MachineWorkspaces implements Workspaces {
     return this.workspace(agentId).openDesktop();
   }
 
+  async startDesktop(agentId: string, _context?: Context) {
+    await this.workspace(agentId).ensureStarted(true);
+  }
+
   keepAwake(agentId: string) {
     return this.workspace(agentId).hold();
   }
@@ -410,11 +435,17 @@ export class MachineWorkspaces implements Workspaces {
       caCertificate: await this.caCertificate?.(agentId),
     });
 
+    const desktopReady = machine.desktopReady();
+
+    // Awaited by later callers; a failure before then must not go unhandled.
+    desktopReady.catch(() => undefined);
+
     try {
       const relay = await startRelay(machine);
 
       return {
         machine,
+        desktopReady,
         relay,
         command: [process.execPath, BRIDGE_PATH, relay.socketPath],
       };

@@ -50,6 +50,8 @@ export interface Workspaces {
    * closes. Rejects for a bot without its bot desktop.
    */
   openDesktop(agentId: string, context: Context): Promise<DesktopStream>;
+  /** Boots the bot's machine ahead of `openDesktop`, so a viewer about to connect waits less. */
+  startDesktop(agentId: string, context: Context): Promise<void>;
   /** Keeps the bot's machine from its idle stop until the returned release is called. */
   keepAwake(agentId: string): () => void;
   /** Makes completed writes in the bot's workspace durable. A stopped workspace has nothing to flush. */

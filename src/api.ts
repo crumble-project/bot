@@ -97,6 +97,8 @@ export function createAPI(
     viewerTickets?: ViewerTickets;
     /** Connects to a bot desktop's VNC server, for viewers. */
     openDesktop?: (agentId: string) => Promise<DesktopStream>;
+    /** Boots a bot's machine ahead of a viewer's connection. */
+    startDesktop?: (agentId: string) => Promise<void>;
     /** The server's provider sign-ins; API-only fixtures get one of their own. */
     providerAuth?: ProviderAuth;
     /** The server's OAuth client metadata document, when it has a public address. */
@@ -189,6 +191,7 @@ export function createAPI(
     control: options.desktopControl ?? new DesktopControl(store),
     tickets: options.viewerTickets ?? new ViewerTickets(),
     ...(options.openDesktop && { openDesktop: options.openDesktop }),
+    ...(options.startDesktop && { startDesktop: options.startDesktop }),
   });
   register(routes.capabilities, (c) =>
     c.json(
