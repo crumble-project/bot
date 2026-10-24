@@ -383,6 +383,11 @@ export class CrumbleService {
     });
   }
 
+  /** A message from Crumble itself that starts a turn in the bot's chat; `requestId` names its origin. */
+  async notice(agentId: string, content: string, requestId: string) {
+    return this.send((await this.chat(agentId)).id, content, requestId);
+  }
+
   async send(
     conversationId: string,
     content: string,
@@ -449,13 +454,16 @@ export class CrumbleService {
           this.store.getSchedule(execution.scheduleId)?.name ??
           "Scheduled task",
       };
-    const [prefix, sourceAgentId] = execution.requestId.split(":");
+    const [prefix, subject] = execution.requestId.split(":");
 
-    if (prefix === "delegate" && sourceAgentId)
+    if (prefix === "credential" && subject)
+      return { kind: "credential", name: subject };
+
+    if (prefix === "delegate" && subject)
       return {
         kind: "bot",
-        agentId: sourceAgentId,
-        name: this.store.getAgent(sourceAgentId)?.name ?? "Another bot",
+        agentId: subject,
+        name: this.store.getAgent(subject)?.name ?? "Another bot",
       };
 
     return { kind: "owner" };

@@ -9,6 +9,11 @@ import {
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { createCodingTools } from "@earendil-works/pi-durable/tools";
+import {
+  credentialExtension,
+  jobCredentialSection,
+  type Credentials,
+} from "./credentials";
 import type { Agent } from "./domain";
 import { defineJobKind, type JobExtensions, type JobInfo } from "./jobs";
 import type { CrumblePlugin } from "./plugins";
@@ -44,22 +49,43 @@ export type CodingExtensions = JobExtensions;
 export const codingJobs = (harness: Harness, chatId: ConversationId) =>
   coding.list(harness, chatId);
 
-export const codingEnv = (
+export async function codingEnv(
   workspaces: Workspaces,
   agentId: string,
   target: EnvTarget,
   context: Context,
-): Promise<ExecutionEnv | undefined> =>
-  coding.env(workspaces, agentId, target, context);
+  credentials?: Credentials,
+): Promise<ExecutionEnv | undefined> {
+  return coding.env(
+    workspaces,
+    agentId,
+    target,
+    context,
+    credentials?.env(agentId),
+  );
+}
 
 /** Lets a bot run coding jobs: child conversations with Pi's coding tools in the bot's workspace. */
 export function codingExtensions(
   agent: Pick<Agent, "id">,
   workspaces: Workspaces,
+  credentials?: Credentials,
 ): CodingExtensions {
   const job = defineExtension({
     name: "coding-job",
     tools: createCodingTools().tools,
+    sections: credentials
+      ? [
+          {
+            key: "workspace_credentials",
+            // Installed job extensions render in the bot's chat too; only a job needs this.
+            render: async (input, context) =>
+              (await coding.isJob(input.read, input.conversationId, context))
+                ? jobCredentialSection(credentials.list(agent.id).credentials)
+                : undefined,
+          },
+        ]
+      : [],
     hooks: [
       hook(ToolTask, {
         // A crash then loses at most the call in flight.
@@ -75,12 +101,20 @@ export function codingExtensions(
     ],
   });
 
-  return coding.extensions({ agentId: agent.id, job });
+  const extensions = coding.extensions({ agentId: agent.id, job });
+
+  return credentials
+    ? {
+        ...extensions,
+        chat: [...extensions.chat, credentialExtension(agent.id, credentials)],
+      }
+    : extensions;
 }
 
 /** Coding jobs as a plugin: offered to bots with the `coding` tool while workspaces are available. */
 export const codingPlugin = (
   workspaces: Workspaces | undefined,
+  credentials?: Credentials,
 ): CrumblePlugin => ({
   id: "coding",
   jobKinds: workspaces
@@ -88,9 +122,10 @@ export const codingPlugin = (
         {
           kind: "coding",
           enabled: (agent) => agent.tools.includes(CODING_TOOL_NAME),
-          extensions: (agent) => codingExtensions(agent, workspaces),
+          extensions: (agent) =>
+            codingExtensions(agent, workspaces, credentials),
           env: (agentId, target, context) =>
-            codingEnv(workspaces, agentId, target, context),
+            codingEnv(workspaces, agentId, target, context, credentials),
           onAnswer: codingAnswers,
         },
       ]

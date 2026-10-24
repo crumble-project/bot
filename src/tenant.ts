@@ -49,6 +49,7 @@ import {
   pluginProviders,
 } from "./plugins";
 import { ProviderCredentials } from "./provider-credentials";
+import { Credentials } from "./credentials";
 import { ProviderAuth } from "./provider-auth";
 import { clientDocument } from "./mcp-oauth";
 
@@ -133,11 +134,21 @@ export async function createTenant(
     partialCleanup.push(() => workspaces?.close(BACKGROUND_CONTEXT));
     const desktopControl = new DesktopControl(store);
 
+    let service!: CrumbleService;
+
+    const botCredentials = new Credentials(
+      store,
+      async (agentId, text, requestId) => {
+        await service.notice(agentId, text, requestId);
+      },
+    );
+
     const plugins = builtinPlugins({
       dataDir,
       env: process.env,
       workspaces,
       desktopControl,
+      credentials: botCredentials,
     });
 
     const providers = pluginProviders(plugins);
@@ -183,7 +194,6 @@ export async function createTenant(
         : null;
     };
 
-    let service!: CrumbleService;
     let schedules!: BotSchedules;
     let groupChats!: GroupChats;
     let historySearch!: HistorySearch;
@@ -343,6 +353,7 @@ export async function createTenant(
         }),
         providerAuth,
         oauthClient,
+        credentials: botCredentials,
       },
       push,
     );

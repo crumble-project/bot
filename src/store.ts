@@ -30,6 +30,9 @@ import type {
   GroupTurn,
   GroupTurnStatus,
   MemorySource,
+  AgentCredential,
+  CredentialRequest,
+  CredentialUse,
 } from "./domain";
 import { STANDARD_TOOLS, memorySource, skillStates } from "./domain";
 import { z } from "zod";
@@ -71,6 +74,40 @@ const providerCredential = z.discriminatedUnion("type", [
 ]);
 
 type KeyRow = { key: string };
+
+const hostList = z.array(z.string());
+
+type AgentCredentialRow = {
+  name: string;
+  hosts: string;
+  created_at: string;
+  updated_at: string;
+  last_used_at: string | null;
+};
+
+const agentCredentialOf = (row: AgentCredentialRow): AgentCredential => ({
+  name: row.name,
+  hosts: hostList.parse(JSON.parse(row.hosts)),
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  lastUsedAt: row.last_used_at,
+});
+
+type CredentialRequestRow = {
+  name: string;
+  hosts: string;
+  reason: string;
+  requested_at: string;
+};
+
+const credentialRequestOf = (row: CredentialRequestRow): CredentialRequest => ({
+  name: row.name,
+  hosts: hostList.parse(JSON.parse(row.hosts)),
+  reason: row.reason,
+  requestedAt: row.requested_at,
+});
+
+type CredentialUseRow = Omit<CredentialUse, "id"> & { id: number };
 
 type GroupChatRow = {
   id: string;
@@ -135,7 +172,7 @@ export class Store {
         (
           this.db
             .query(
-              "SELECT (SELECT COUNT(*) FROM credentials) + (SELECT COUNT(*) FROM provider_credentials) AS n",
+              "SELECT (SELECT COUNT(*) FROM credentials) + (SELECT COUNT(*) FROM provider_credentials) + (SELECT COUNT(*) FROM agent_credentials) AS n",
             )
             .get() as {
             n: number;
@@ -168,6 +205,11 @@ export class Store {
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS credentials (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS provider_credentials (provider TEXT PRIMARY KEY, type TEXT NOT NULL CHECK (type IN ('api_key', 'oauth')), value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS agent_credentials (agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, name TEXT NOT NULL, hosts TEXT NOT NULL, value TEXT NOT NULL, placeholder TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, last_used_at TEXT, PRIMARY KEY (agent_id, name));
+      CREATE TABLE IF NOT EXISTS credential_requests (agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, name TEXT NOT NULL, hosts TEXT NOT NULL, reason TEXT NOT NULL, requested_at TEXT NOT NULL, PRIMARY KEY (agent_id, name));
+      CREATE TABLE IF NOT EXISTS credential_uses (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL, name TEXT NOT NULL, at TEXT NOT NULL, job TEXT, method TEXT NOT NULL, host TEXT NOT NULL, path TEXT NOT NULL, status INTEGER, FOREIGN KEY (agent_id, name) REFERENCES agent_credentials(agent_id, name) ON DELETE CASCADE);
+      CREATE INDEX IF NOT EXISTS credential_uses_by_credential ON credential_uses(agent_id, name, id);
+      CREATE INDEX IF NOT EXISTS credential_uses_by_time ON credential_uses(at);
       CREATE TABLE IF NOT EXISTS mcp_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, enabled INTEGER NOT NULL, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE);
       CREATE TABLE IF NOT EXISTS group_chats (id TEXT PRIMARY KEY, name TEXT NOT NULL, bot_turns INTEGER NOT NULL DEFAULT 0, paused INTEGER NOT NULL DEFAULT 0, awaiting_answers TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS group_members (group_id TEXT NOT NULL REFERENCES group_chats(id) ON DELETE CASCADE, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, joined_at TEXT NOT NULL, conversation_id TEXT, cursor INTEGER NOT NULL DEFAULT 0, pending INTEGER NOT NULL DEFAULT 0, pending_bot_started INTEGER NOT NULL DEFAULT 0, summary TEXT, PRIMARY KEY (group_id, agent_id));
@@ -1089,6 +1131,205 @@ export class Store {
       .all() as KeyRow[];
 
     return rows.map((r) => r.key);
+  }
+
+  /** Metadata only: listing never decrypts a value. */
+  listAgentCredentials(agentId: Id): AgentCredential[] {
+    // SAFETY: The query selects exactly the columns of AgentCredentialRow.
+    const rows = this.db
+      .query(
+        "SELECT name, hosts, created_at, updated_at, last_used_at FROM agent_credentials WHERE agent_id=? ORDER BY name",
+      )
+      .all(agentId) as AgentCredentialRow[];
+
+    return rows.map(agentCredentialOf);
+  }
+  getAgentCredential(agentId: Id, name: string): AgentCredential | undefined {
+    // SAFETY: The query selects exactly the columns of AgentCredentialRow.
+    const row = this.db
+      .query(
+        "SELECT name, hosts, created_at, updated_at, last_used_at FROM agent_credentials WHERE agent_id=? AND name=?",
+      )
+      .get(agentId, name) as AgentCredentialRow | null;
+
+    return row ? agentCredentialOf(row) : undefined;
+  }
+  /** Creating needs a value; updating keeps the stored one when `value` is omitted. The placeholder never changes. */
+  saveAgentCredential(
+    agentId: Id,
+    name: string,
+    input: { hosts: string[]; value?: string; placeholder: string },
+  ) {
+    const at = now();
+    const hosts = JSON.stringify(input.hosts);
+
+    if (this.getAgentCredential(agentId, name)) {
+      if (input.value === undefined)
+        this.db
+          .query(
+            "UPDATE agent_credentials SET hosts=?, updated_at=? WHERE agent_id=? AND name=?",
+          )
+          .run(hosts, at, agentId, name);
+      else
+        this.db
+          .query(
+            "UPDATE agent_credentials SET hosts=?, value=?, updated_at=? WHERE agent_id=? AND name=?",
+          )
+          .run(hosts, this.encrypt(input.value), at, agentId, name);
+    } else {
+      if (input.value === undefined)
+        throw new Error("A new credential needs a value");
+      this.db
+        .query(
+          "INSERT INTO agent_credentials(agent_id,name,hosts,value,placeholder,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+        )
+        .run(
+          agentId,
+          name,
+          hosts,
+          this.encrypt(input.value),
+          input.placeholder,
+          at,
+          at,
+        );
+    }
+
+    return this.getAgentCredential(agentId, name)!;
+  }
+  deleteAgentCredential(agentId: Id, name: string) {
+    return (
+      this.db
+        .query("DELETE FROM agent_credentials WHERE agent_id=? AND name=?")
+        .run(agentId, name).changes > 0
+    );
+  }
+  /** Each credential's placeholder by name, for the bot's job environments. */
+  agentCredentialPlaceholders(agentId: Id): Record<string, string> {
+    // SAFETY: The query selects exactly the `name` and `placeholder` columns.
+    const rows = this.db
+      .query(
+        "SELECT name, placeholder FROM agent_credentials WHERE agent_id=? ORDER BY name",
+      )
+      .all(agentId) as Array<{ name: string; placeholder: string }>;
+
+    return Object.fromEntries(rows.map((row) => [row.name, row.placeholder]));
+  }
+  /** The value and hosts behind a placeholder, for the credential proxy; undefined for one that names no credential. */
+  credentialByPlaceholder(agentId: Id, placeholder: string) {
+    // SAFETY: The query selects exactly the `name`, `hosts`, and encrypted `value` columns.
+    const row = this.db
+      .query(
+        "SELECT name, hosts, value FROM agent_credentials WHERE agent_id=? AND placeholder=?",
+      )
+      .get(agentId, placeholder) as {
+      name: string;
+      hosts: string;
+      value: string;
+    } | null;
+
+    return row
+      ? {
+          name: row.name,
+          hosts: hostList.parse(JSON.parse(row.hosts)),
+          value: this.decrypt(row.value),
+        }
+      : undefined;
+  }
+  listCredentialRequests(agentId: Id): CredentialRequest[] {
+    // SAFETY: The query selects exactly the columns of CredentialRequestRow.
+    const rows = this.db
+      .query(
+        "SELECT name, hosts, reason, requested_at FROM credential_requests WHERE agent_id=? ORDER BY requested_at",
+      )
+      .all(agentId) as CredentialRequestRow[];
+
+    return rows.map(credentialRequestOf);
+  }
+  getCredentialRequest(agentId: Id, name: string) {
+    // SAFETY: The query selects exactly the columns of CredentialRequestRow.
+    const row = this.db
+      .query(
+        "SELECT name, hosts, reason, requested_at FROM credential_requests WHERE agent_id=? AND name=?",
+      )
+      .get(agentId, name) as CredentialRequestRow | null;
+
+    return row ? credentialRequestOf(row) : undefined;
+  }
+  /** A repeated request replaces the earlier one. */
+  setCredentialRequest(
+    agentId: Id,
+    request: { name: string; hosts: string[]; reason: string },
+  ) {
+    this.db
+      .query(
+        "INSERT INTO credential_requests(agent_id,name,hosts,reason,requested_at) VALUES(?,?,?,?,?) ON CONFLICT(agent_id,name) DO UPDATE SET hosts=excluded.hosts, reason=excluded.reason, requested_at=excluded.requested_at",
+      )
+      .run(
+        agentId,
+        request.name,
+        JSON.stringify(request.hosts),
+        request.reason,
+        now(),
+      );
+
+    return this.getCredentialRequest(agentId, request.name)!;
+  }
+  deleteCredentialRequest(agentId: Id, name: string) {
+    return (
+      this.db
+        .query("DELETE FROM credential_requests WHERE agent_id=? AND name=?")
+        .run(agentId, name).changes > 0
+    );
+  }
+  addCredentialUse(agentId: Id, name: string, use: Omit<CredentialUse, "id">) {
+    this.db.transaction(() => {
+      this.db
+        .query(
+          "INSERT INTO credential_uses(agent_id,name,at,job,method,host,path,status) VALUES(?,?,?,?,?,?,?,?)",
+        )
+        .run(
+          agentId,
+          name,
+          use.at,
+          use.job,
+          use.method,
+          use.host,
+          use.path,
+          use.status,
+        );
+      this.db
+        .query(
+          "UPDATE agent_credentials SET last_used_at=? WHERE agent_id=? AND name=?",
+        )
+        .run(use.at, agentId, name);
+    })();
+  }
+  /** Newest first; page with `before` set to the last use's ID. */
+  listCredentialUses(
+    agentId: Id,
+    name: string,
+    options: { limit: number; before?: string },
+  ): CredentialUse[] {
+    const before = Number(options.before);
+
+    // SAFETY: The query selects exactly the columns of CredentialUseRow.
+    const rows = this.db
+      .query(
+        "SELECT id, at, job, method, host, path, status FROM credential_uses WHERE agent_id=? AND name=? AND id<? ORDER BY id DESC LIMIT ?",
+      )
+      .all(
+        agentId,
+        name,
+        Number.isSafeInteger(before) && before > 0
+          ? before
+          : Number.MAX_SAFE_INTEGER,
+        options.limit,
+      ) as CredentialUseRow[];
+
+    return rows.map((row) => ({ ...row, id: String(row.id) }));
+  }
+  pruneCredentialUses(olderThan: string) {
+    this.db.query("DELETE FROM credential_uses WHERE at<?").run(olderThan);
   }
 
   getProviderCredential(providerId: string): Credential | undefined {

@@ -353,8 +353,17 @@ export class MachineWorkspaces implements Workspaces {
     return this.workspace(agentId).hold();
   }
 
-  env(agentId: string) {
-    return this.workspace(agentId).env;
+  env(agentId: string, shellEnv?: Record<string, string>) {
+    const workspace = this.workspace(agentId);
+
+    return shellEnv && Object.keys(shellEnv).length
+      ? new RemoteExecutionEnv({
+          connection: workspace.connection,
+          id: workspace.env.id,
+          cwd: WORKSPACE_PATH,
+          shellEnv,
+        })
+      : workspace.env;
   }
 
   async restart(agentId: string, _context?: Context) {

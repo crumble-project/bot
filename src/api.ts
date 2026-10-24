@@ -4,6 +4,7 @@ import {
   routes,
   contractApp,
   memoryInput,
+  credentialUsesInput,
   snapshotInput,
   historyInput,
   messageInput,
@@ -42,6 +43,7 @@ import {
   skillInput,
   skillLifecycleInput,
   groupChatInput,
+  credentialSaveInput,
   AppError,
   type MCPServer,
 } from "./domain";
@@ -52,6 +54,7 @@ import type { GroupChats } from "./group-chats";
 import type { MCPIntegrations } from "./integrations";
 import { providerModels } from "./providers";
 import { ProviderCredentials } from "./provider-credentials";
+import { Credentials } from "./credentials";
 import { loginMethods, ProviderAuth } from "./provider-auth";
 import type { CommonSkill } from "./common-skills";
 import {
@@ -100,6 +103,8 @@ export function createAPI(
     oauthClient?: ClientDocument;
     /** Providers whose sign-in happens outside Crumble, by provider ID. */
     externalAuth?: ReadonlyMap<string, () => Promise<ExternalAuth>>;
+    /** The bots' credentials; API-only fixtures get their own. */
+    credentials?: Credentials;
   } = {},
   push?: PushManager,
 ) {
@@ -107,6 +112,12 @@ export function createAPI(
     throw new Error("Server token must contain at least 32 characters");
   const { store, runtime } = service;
   const app = contractApp();
+
+  const credentials =
+    options.credentials ??
+    new Credentials(store, async (agentId, text, requestId) => {
+      await service.notice(agentId, text, requestId);
+    });
 
   const providerAuth =
     options.providerAuth ??
@@ -618,6 +629,35 @@ export function createAPI(
     });
   });
 
+  register(routes.agentCredentials, (c) => {
+    service.agent(c.req.param("id"));
+
+    return c.json(credentials.list(c.req.param("id")), 200);
+  });
+  register(routes.saveAgentCredential, async (c) => {
+    service.agent(c.req.param("id"));
+    const input = credentialSaveInput.parse(await c.req.json());
+
+    return c.json(
+      await credentials.save(c.req.param("id"), c.req.param("name"), input),
+      200,
+    );
+  });
+  register(routes.deleteAgentCredential, async (c) => {
+    service.agent(c.req.param("id"));
+    await credentials.delete(c.req.param("id"), c.req.param("name"));
+
+    return c.body(null, 204);
+  });
+  register(routes.agentCredentialUses, (c) => {
+    service.agent(c.req.param("id"));
+    const query = credentialUsesInput.parse(c.req.query());
+
+    return c.json(
+      credentials.uses(c.req.param("id"), c.req.param("name"), query),
+      200,
+    );
+  });
   register(routes.agentMemories, (c) => {
     service.agent(c.req.param("id"));
 

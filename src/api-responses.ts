@@ -361,6 +361,44 @@ const memorySourceResponse = z
       "Where the memory was saved: the owner's bot chat, the owner directly, a scheduled task, another bot's request, or a group chat.",
   });
 
+export const credentialResponse = z
+  .object({
+    name: z.string(),
+    hosts: z.array(z.string()),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    lastUsedAt: z.string().nullable(),
+  })
+  .openapi("Credential");
+
+export const credentialRequestResponse = z
+  .object({
+    name: z.string(),
+    hosts: z.array(z.string()),
+    reason: z.string(),
+    requestedAt: z.string(),
+  })
+  .openapi("CredentialRequest");
+
+export const credentialsResponse = z
+  .object({
+    credentials: z.array(credentialResponse),
+    requests: z.array(credentialRequestResponse),
+  })
+  .openapi("Credentials");
+
+export const credentialUseResponse = z
+  .object({
+    id: z.string(),
+    at: z.string(),
+    job: z.string().nullable(),
+    method: z.string(),
+    host: z.string(),
+    path: z.string(),
+    status: z.number().int().nullable(),
+  })
+  .openapi("CredentialUse");
+
 export const memoryResponse = z
   .object({
     id: z.string(),

@@ -30,8 +30,10 @@ export const allowAllRequests: WorkspaceNetworkPolicy = () => true;
  * on first use and may stop when idle; the workspace's files survive both.
  */
 export interface Workspaces {
-  /** The bot's environment. Lazy: nothing starts until its first operation. */
-  env(agentId: string): ExecutionEnv;
+  /**
+   * The bot's environment. Lazy: nothing starts until its first operation. Every command it runs also sees `shellEnv`.
+   */
+  env(agentId: string, shellEnv?: Record<string, string>): ExecutionEnv;
   /** Whether bots can get a bot desktop: the workspace image for them has one. */
   readonly desktop: boolean;
   /** Stops the bot's machine, whether busy or not; the next operation boots the image the bot needs now. */
