@@ -48,6 +48,12 @@ export interface WorkspaceMachine {
   stop(): Promise<void>;
 }
 
+/** What a booted guest gets besides the daemon. */
+export type GuestSetup = {
+  /** The bot's credential proxy authority in PEM, to trust at `GUEST_CA_PATH`. */
+  caCertificate?: string;
+};
+
 /** A backend that boots workspace machines. */
 export interface WorkspaceMachines {
   /** Prefix of pi-env environment ids. */
@@ -56,7 +62,11 @@ export interface WorkspaceMachines {
    * Boots the bot's machine on `image` with the daemon at `GUEST_DAEMON`, and the bot desktop started on a desktop
    * image. Called serialized per bot.
    */
-  boot(agentId: string, image: string): Promise<WorkspaceMachine>;
+  boot(
+    agentId: string,
+    image: string,
+    guest?: GuestSetup,
+  ): Promise<WorkspaceMachine>;
 }
 
 export type MachineWorkspacesOptions = {
@@ -65,6 +75,8 @@ export type MachineWorkspacesOptions = {
   desktopImage?: string;
   /** Whether the bot needs its bot desktop; read at each boot. */
   wantsDesktop?: (agentId: string) => boolean;
+  /** The bot's credential proxy authority, installed at every boot. */
+  caCertificate?: (agentId: string) => Promise<string>;
 };
 
 /** Throws for an agent id that could name another bot's machine. */
@@ -313,6 +325,9 @@ export class MachineWorkspaces implements Workspaces {
   private readonly idleTimeoutMs: number;
   private readonly desktopImage: string | undefined;
   private readonly wantsDesktop: (agentId: string) => boolean;
+  private readonly caCertificate:
+    | ((agentId: string) => Promise<string>)
+    | undefined;
   private closed = false;
 
   constructor(
@@ -323,6 +338,7 @@ export class MachineWorkspaces implements Workspaces {
     this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     this.desktopImage = options.desktopImage;
     this.wantsDesktop = options.wantsDesktop ?? (() => false);
+    this.caCertificate = options.caCertificate;
   }
 
   get kind() {
@@ -385,7 +401,9 @@ export class MachineWorkspaces implements Workspaces {
   async boot(agentId: string, image: string): Promise<Running> {
     if (this.closed) throw new Error("Workspaces are closed");
 
-    const machine = await this.machines.boot(agentId, image);
+    const machine = await this.machines.boot(agentId, image, {
+      caCertificate: await this.caCertificate?.(agentId),
+    });
 
     try {
       const relay = await startRelay(machine);

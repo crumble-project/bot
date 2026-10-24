@@ -1202,12 +1202,6 @@
           "at": {
             "type": "string"
           },
-          "job": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "method": {
             "type": "string"
           },
@@ -1227,7 +1221,6 @@
         "required": [
           "id",
           "at",
-          "job",
           "method",
           "host",
           "path",

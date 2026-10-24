@@ -33,6 +33,7 @@ import type {
   AgentCredential,
   CredentialRequest,
   CredentialUse,
+  CredentialGrant,
 } from "./domain";
 import { STANDARD_TOOLS, memorySource, skillStates } from "./domain";
 import { z } from "zod";
@@ -172,7 +173,7 @@ export class Store {
         (
           this.db
             .query(
-              "SELECT (SELECT COUNT(*) FROM credentials) + (SELECT COUNT(*) FROM provider_credentials) + (SELECT COUNT(*) FROM agent_credentials) AS n",
+              "SELECT (SELECT COUNT(*) FROM credentials) + (SELECT COUNT(*) FROM provider_credentials) + (SELECT COUNT(*) FROM agent_credentials) + (SELECT COUNT(*) FROM credential_authorities) AS n",
             )
             .get() as {
             n: number;
@@ -206,8 +207,9 @@ export class Store {
       CREATE TABLE IF NOT EXISTS credentials (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS provider_credentials (provider TEXT PRIMARY KEY, type TEXT NOT NULL CHECK (type IN ('api_key', 'oauth')), value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS agent_credentials (agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, name TEXT NOT NULL, hosts TEXT NOT NULL, value TEXT NOT NULL, placeholder TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, last_used_at TEXT, PRIMARY KEY (agent_id, name));
+      CREATE TABLE IF NOT EXISTS credential_authorities (agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE, certificate TEXT NOT NULL, key TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS credential_requests (agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, name TEXT NOT NULL, hosts TEXT NOT NULL, reason TEXT NOT NULL, requested_at TEXT NOT NULL, PRIMARY KEY (agent_id, name));
-      CREATE TABLE IF NOT EXISTS credential_uses (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL, name TEXT NOT NULL, at TEXT NOT NULL, job TEXT, method TEXT NOT NULL, host TEXT NOT NULL, path TEXT NOT NULL, status INTEGER, FOREIGN KEY (agent_id, name) REFERENCES agent_credentials(agent_id, name) ON DELETE CASCADE);
+      CREATE TABLE IF NOT EXISTS credential_uses (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL, name TEXT NOT NULL, at TEXT NOT NULL, method TEXT NOT NULL, host TEXT NOT NULL, path TEXT NOT NULL, status INTEGER, FOREIGN KEY (agent_id, name) REFERENCES agent_credentials(agent_id, name) ON DELETE CASCADE);
       CREATE INDEX IF NOT EXISTS credential_uses_by_credential ON credential_uses(agent_id, name, id);
       CREATE INDEX IF NOT EXISTS credential_uses_by_time ON credential_uses(at);
       CREATE TABLE IF NOT EXISTS mcp_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, enabled INTEGER NOT NULL, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE);
@@ -1214,26 +1216,52 @@ export class Store {
 
     return Object.fromEntries(rows.map((row) => [row.name, row.placeholder]));
   }
-  /** The value and hosts behind a placeholder, for the credential proxy; undefined for one that names no credential. */
-  credentialByPlaceholder(agentId: Id, placeholder: string) {
-    // SAFETY: The query selects exactly the `name`, `hosts`, and encrypted `value` columns.
-    const row = this.db
+  /** Every credential with its placeholder and decrypted value, for the credential proxy only. */
+  agentCredentialGrants(agentId: Id): CredentialGrant[] {
+    // SAFETY: The query selects exactly the `name`, `hosts`, `placeholder`, and encrypted `value` columns.
+    const rows = this.db
       .query(
-        "SELECT name, hosts, value FROM agent_credentials WHERE agent_id=? AND placeholder=?",
+        "SELECT name, hosts, placeholder, value FROM agent_credentials WHERE agent_id=? ORDER BY name",
       )
-      .get(agentId, placeholder) as {
+      .all(agentId) as Array<{
       name: string;
       hosts: string;
+      placeholder: string;
       value: string;
-    } | null;
+    }>;
+
+    return rows.map((row) => ({
+      name: row.name,
+      hosts: hostList.parse(JSON.parse(row.hosts)),
+      placeholder: row.placeholder,
+      value: this.decrypt(row.value),
+    }));
+  }
+  /** The bot's certificate authority for the credential proxy, with its private key in PKCS #8 PEM. */
+  getCredentialAuthority(agentId: Id) {
+    // SAFETY: The query selects exactly the `certificate` and encrypted `key` columns.
+    const row = this.db
+      .query(
+        "SELECT certificate, key FROM credential_authorities WHERE agent_id=?",
+      )
+      .get(agentId) as { certificate: string; key: string } | null;
 
     return row
-      ? {
-          name: row.name,
-          hosts: hostList.parse(JSON.parse(row.hosts)),
-          value: this.decrypt(row.value),
-        }
+      ? { certificate: row.certificate, key: this.decrypt(row.key) }
       : undefined;
+  }
+  /** Keeps the first authority saved for a bot, so concurrent callers agree on one. */
+  saveCredentialAuthority(
+    agentId: Id,
+    authority: { certificate: string; key: string },
+  ) {
+    this.db
+      .query(
+        "INSERT INTO credential_authorities(agent_id,certificate,key) VALUES(?,?,?) ON CONFLICT(agent_id) DO NOTHING",
+      )
+      .run(agentId, authority.certificate, this.encrypt(authority.key));
+
+    return this.getCredentialAuthority(agentId)!;
   }
   listCredentialRequests(agentId: Id): CredentialRequest[] {
     // SAFETY: The query selects exactly the columns of CredentialRequestRow.
@@ -1285,18 +1313,9 @@ export class Store {
     this.db.transaction(() => {
       this.db
         .query(
-          "INSERT INTO credential_uses(agent_id,name,at,job,method,host,path,status) VALUES(?,?,?,?,?,?,?,?)",
+          "INSERT INTO credential_uses(agent_id,name,at,method,host,path,status) VALUES(?,?,?,?,?,?,?)",
         )
-        .run(
-          agentId,
-          name,
-          use.at,
-          use.job,
-          use.method,
-          use.host,
-          use.path,
-          use.status,
-        );
+        .run(agentId, name, use.at, use.method, use.host, use.path, use.status);
       this.db
         .query(
           "UPDATE agent_credentials SET last_used_at=? WHERE agent_id=? AND name=?",
@@ -1315,7 +1334,7 @@ export class Store {
     // SAFETY: The query selects exactly the columns of CredentialUseRow.
     const rows = this.db
       .query(
-        "SELECT id, at, job, method, host, path, status FROM credential_uses WHERE agent_id=? AND name=? AND id<? ORDER BY id DESC LIMIT ?",
+        "SELECT id, at, method, host, path, status FROM credential_uses WHERE agent_id=? AND name=? AND id<? ORDER BY id DESC LIMIT ?",
       )
       .all(
         agentId,

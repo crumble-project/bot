@@ -50,6 +50,8 @@ import {
 } from "./plugins";
 import { ProviderCredentials } from "./provider-credentials";
 import { Credentials } from "./credentials";
+import { CredentialAuthorities } from "./credential-authority";
+import { credentialProxy } from "./credential-proxy";
 import { ProviderAuth } from "./provider-auth";
 import { clientDocument } from "./mcp-oauth";
 
@@ -120,10 +122,30 @@ export async function createTenant(
     const store = new Store(dataDir);
     partialCleanup.push(() => store.close());
 
+    let service!: CrumbleService;
+
+    const botCredentials = new Credentials(
+      store,
+      async (agentId, text, requestId) => {
+        await service.notice(agentId, text, requestId);
+      },
+    );
+
+    const authorities = new CredentialAuthorities(store);
+
     const machineOptions = {
       namePrefix: `crumble-${options.tenantId.replace(/[^A-Za-z0-9_-]/g, "-")}`,
       wantsDesktop: (agentId: string) =>
         store.getAgent(agentId)?.tools.includes(DESKTOP_TOOL_NAME) === true,
+      caCertificate: (agentId: string) => authorities.certificate(agentId),
+      intercept: (agentId: string) =>
+        credentialProxy({
+          agentId,
+          authorities,
+          grants: () => botCredentials.grants(agentId),
+          recordUse: (name, use) =>
+            botCredentials.recordUse(agentId, name, use),
+        }),
     };
 
     const workspaces =
@@ -133,15 +155,6 @@ export async function createTenant(
 
     partialCleanup.push(() => workspaces?.close(BACKGROUND_CONTEXT));
     const desktopControl = new DesktopControl(store);
-
-    let service!: CrumbleService;
-
-    const botCredentials = new Credentials(
-      store,
-      async (agentId, text, requestId) => {
-        await service.notice(agentId, text, requestId);
-      },
-    );
 
     const plugins = builtinPlugins({
       dataDir,

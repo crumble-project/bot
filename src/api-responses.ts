@@ -391,7 +391,6 @@ export const credentialUseResponse = z
   .object({
     id: z.string(),
     at: z.string(),
-    job: z.string().nullable(),
     method: z.string(),
     host: z.string(),
     path: z.string(),

@@ -9,8 +9,10 @@ import {
   type AgentCredential,
   type CredentialRequestInput,
   type CredentialSaveInput,
+  type CredentialUse,
 } from "./domain";
 import type { Store } from "./store";
+import { GUEST_CA_BUNDLE, GUEST_CA_PATH } from "./workspace";
 
 export const REQUEST_CREDENTIAL_TOOL = "request_credential";
 
@@ -115,9 +117,30 @@ export class Credentials {
     return this.store.listCredentialUses(agentId, name, options);
   }
 
-  /** The variables every command of the bot's coding jobs sees. */
+  /** The variables every command of the bot's coding jobs sees: placeholders, and where to find the bot's authority. */
   env(agentId: string) {
-    return this.store.agentCredentialPlaceholders(agentId);
+    const placeholders = this.store.agentCredentialPlaceholders(agentId);
+
+    if (!Object.keys(placeholders).length) return {};
+
+    return {
+      ...placeholders,
+      SSL_CERT_FILE: GUEST_CA_BUNDLE,
+      REQUESTS_CA_BUNDLE: GUEST_CA_BUNDLE,
+      CURL_CA_BUNDLE: GUEST_CA_BUNDLE,
+      NODE_EXTRA_CA_CERTS: GUEST_CA_PATH,
+      // Node's own fetch ignores the proxy variables without it.
+      NODE_USE_ENV_PROXY: "1",
+    };
+  }
+
+  /** What the credential proxy swaps in for the bot's placeholders. */
+  grants(agentId: string) {
+    return this.store.agentCredentialGrants(agentId);
+  }
+
+  recordUse(agentId: string, name: string, use: Omit<CredentialUse, "id">) {
+    this.store.addCredentialUse(agentId, name, use);
   }
 
   prune(now = Date.now()) {

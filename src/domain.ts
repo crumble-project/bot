@@ -285,12 +285,26 @@ export type CredentialRequest = {
   requestedAt: string;
 };
 
+/** What the credential proxy needs to swap a credential in: never leaves the server. */
+export type CredentialGrant = {
+  name: string;
+  hosts: string[];
+  placeholder: string;
+  value: string;
+};
+
+/** Whether `host` is one of `hosts`; `*.example.com` covers every subdomain, not the name itself. */
+export const hostMatches = (hosts: readonly string[], host: string) =>
+  hosts.some((pattern) =>
+    pattern.startsWith("*.")
+      ? host.endsWith(pattern.slice(1))
+      : pattern === host,
+  );
+
 /** One request the credential proxy sent with the real value. */
 export type CredentialUse = {
   id: string;
   at: string;
-  /** The coding job's name, when the request came from one. */
-  job: string | null;
   method: string;
   host: string;
   path: string;

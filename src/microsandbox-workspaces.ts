@@ -7,17 +7,23 @@ import {
   MachineWorkspaces,
   assertAgentId,
   daemonPath,
+  type GuestSetup,
   type MachineStream,
   type MachineWorkspacesOptions,
   type WorkspaceMachine,
   type WorkspaceMachines,
 } from "./machine-workspaces";
 import {
+  GUEST_CA_PATH,
   WORKSPACE_PATH,
   allowAllRequests,
   type WorkspaceNetworkPolicy,
 } from "./workspace";
-import { startWorkspaceProxy, type WorkspaceProxy } from "./workspace-proxy";
+import {
+  startWorkspaceProxy,
+  type WorkspaceInterceptor,
+  type WorkspaceProxy,
+} from "./workspace-proxy";
 
 const DISK_MIB = 8192;
 const MEMORY_MIB = 2048;
@@ -28,6 +34,8 @@ export type MicrosandboxWorkspacesOptions = MachineWorkspacesOptions & {
   network?: WorkspaceNetworkPolicy;
   /** Prefix of sandbox and volume names, which are global to the Microsandbox home. */
   namePrefix?: string;
+  /** Takes over the bot's TLS connections to its credential hosts. */
+  intercept?: (agentId: string) => WorkspaceInterceptor;
 };
 
 /**
@@ -76,10 +84,14 @@ class MicrosandboxMachines implements WorkspaceMachines {
   private readonly network: WorkspaceNetworkPolicy;
   private readonly namePrefix: string;
   private readonly desktopImage: string | undefined;
+  private readonly intercept:
+    | ((agentId: string) => WorkspaceInterceptor)
+    | undefined;
   private readonly daemon = daemonPath();
 
   constructor(options: MicrosandboxWorkspacesOptions) {
     this.network = options.network ?? allowAllRequests;
+    this.intercept = options.intercept;
     this.namePrefix = options.namePrefix ?? "crumble";
     this.desktopImage = options.desktopImage;
   }
@@ -94,13 +106,19 @@ class MicrosandboxMachines implements WorkspaceMachines {
    * It restarts the bot's existing machine, so programs installed outside `/workspace` survive, and creates a new one
    * when the image changed, the machine does not start, or its proxy port is taken.
    */
-  async boot(agentId: string, image: string): Promise<WorkspaceMachine> {
+  async boot(
+    agentId: string,
+    image: string,
+    guest: GuestSetup = {},
+  ): Promise<WorkspaceMachine> {
     const name = this.name(agentId);
 
     await ensureVolume(name);
 
     const decide = ({ host, port }: { host: string; port: number }) =>
       this.network({ agentId, host, port });
+
+    const intercept = this.intercept?.(agentId);
 
     let sandbox: Sandbox | undefined;
     let proxy: WorkspaceProxy | undefined;
@@ -113,12 +131,13 @@ class MicrosandboxMachines implements WorkspaceMachines {
       if (sandbox && record?.image === image)
         proxy = await startWorkspaceProxy({
           decide,
+          intercept,
           port: record.proxyPort,
         }).catch(() => undefined);
 
       if (!proxy) {
         await sandbox?.stop().catch(() => undefined);
-        proxy = await startWorkspaceProxy({ decide });
+        proxy = await startWorkspaceProxy({ decide, intercept });
         const address = proxy.address;
 
         // replace() also takes over a machine that could not be resumed.
@@ -144,6 +163,11 @@ class MicrosandboxMachines implements WorkspaceMachines {
 
       await machine.fs().write(GUEST_DAEMON, await readFile(this.daemon));
       await run(machine, `chmod 755 ${GUEST_DAEMON}`);
+
+      if (guest.caCertificate) {
+        await machine.fs().write(GUEST_CA_PATH, guest.caCertificate);
+        await run(machine, "update-ca-certificates >/dev/null");
+      }
 
       if (image === this.desktopImage) await run(machine, DESKTOP_START);
 

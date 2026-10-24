@@ -4,6 +4,13 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 /** The guest path where a bot's workspace lives; coding jobs start here. */
 export const WORKSPACE_PATH = "/workspace";
 
+/** Where the guest keeps the bot's credential proxy authority, which `update-ca-certificates` adds to the bundle. */
+export const GUEST_CA_PATH =
+  "/usr/local/share/ca-certificates/crumble-credentials.crt";
+
+/** The guest's system bundle: public authorities plus the bot's. */
+export const GUEST_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt";
+
 /** A byte stream to the bot desktop's VNC server; closing it releases the machine for its idle stop. */
 export type DesktopStream = {
   write(data: Uint8Array): Promise<void>;
