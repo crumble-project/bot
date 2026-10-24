@@ -7,7 +7,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
+import type { AddressInfo } from "node:net";
 import path from "node:path";
+import tls from "node:tls";
 import {
   afterAll,
   afterEach,
@@ -32,6 +34,10 @@ import {
   railwayWorkspacesFromEnv,
 } from "../src/railway-workspaces";
 import { WORKSPACE_PATH } from "../src/workspace";
+import { CredentialAuthorities } from "../src/credential-authority";
+import { credentialProxy } from "../src/credential-proxy";
+import { Credentials } from "../src/credentials";
+import { Store } from "../src/store";
 
 // Live tests create billed sandboxes, so they need an explicit opt-in besides the credentials.
 const railwayTests =
@@ -310,6 +316,131 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
       () => conformance.run(),
       conformance.timeoutMs ?? 120_000,
     );
+
+  test("a job's credential placeholder reaches its host as the value, through the tunnel", async () => {
+    const store = new Store(
+      mkdtempSync(path.join(tmpdir(), "crumble-railway-credentials-")),
+    );
+
+    const agentInput = {
+      avatar: "bot",
+      description: "",
+      instructions: "",
+      provider: "faux",
+      model: "chat",
+      enabled: true,
+      tools: ["coding"],
+      skills: [],
+      mcpServers: [],
+      delegates: [],
+    };
+
+    const bot = store.createAgent({ ...agentInput, name: "bot" });
+
+    const upstreamAgent = store.createAgent({
+      ...agentInput,
+      name: "upstream",
+    });
+
+    const authorities = new CredentialAuthorities(store);
+    const credentials = new Credentials(store, async () => {});
+    const value = "railway-live-test-value-0123456789";
+    const seen: string[] = [];
+
+    await credentials.save(bot.id, "ECHO_TOKEN", {
+      hosts: ["example.com"],
+      value,
+    });
+
+    // Stands in for example.com: the proxy checks the real name's public address, then dials this server instead.
+    const upstream = tls.createServer(
+      {
+        SNICallback: (name, done) =>
+          authorities
+            .context(upstreamAgent.id, name)
+            .then((context) => done(null, context), done),
+      },
+      (socket) => {
+        let head = "";
+
+        socket.on("data", (data: Buffer) => {
+          head += data.toString("latin1");
+
+          if (!head.includes("\r\n\r\n")) return;
+
+          const authorization =
+            /^authorization: (.*)$/im.exec(head)?.[1]?.trim() ?? "";
+
+          seen.push(authorization);
+          const body = JSON.stringify({ authorization });
+
+          socket.end(
+            `HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: ${body.length}\r\nconnection: close\r\n\r\n${body}`,
+          );
+        });
+      },
+    );
+
+    await new Promise<void>((resolve) =>
+      upstream.listen(0, "127.0.0.1", resolve),
+    );
+    const upstreamCa = await authorities.certificate(upstreamAgent.id);
+    // SAFETY: listen completed on a TCP port, not a Unix socket.
+    const upstreamPort = (upstream.address() as AddressInfo).port;
+
+    const workspaces = new RailwayWorkspaces({
+      dataDir,
+      namePrefix,
+      caCertificate: (agentId) => authorities.certificate(agentId),
+      intercept: (agentId) =>
+        credentialProxy({
+          agentId,
+          authorities,
+          grants: () => credentials.grants(agentId),
+          recordUse: (name, use) => credentials.recordUse(agentId, name, use),
+          lookup: async () => ["127.0.0.1"],
+          isPublicAddress: () => true,
+          upstreamCa,
+        }),
+    });
+
+    try {
+      const env = workspaces.env(bot.id, credentials.env(bot.id));
+      const placeholder = store.agentCredentialPlaceholders(bot.id).ECHO_TOKEN!;
+      const url = `https://example.com:${upstreamPort}/check`;
+
+      const curl = await sh(
+        env,
+        `curl -sS --max-time 30 -H "Authorization: Bearer $ECHO_TOKEN" ${url}`,
+      );
+
+      const python = await sh(
+        env,
+        `python3 -c 'import os,urllib.request as u; print(u.urlopen(u.Request("${url}", headers={"Authorization": "Bearer "+os.environ["ECHO_TOKEN"]})).read().decode())'`,
+      );
+
+      const node = await sh(
+        env,
+        `node -e 'fetch("${url}",{headers:{authorization:"Bearer "+process.env.ECHO_TOKEN}}).then(r=>r.text()).then(console.log,e=>console.log("failed",e.cause?.message??e.message))'`,
+      );
+
+      for (const result of [curl, python, node]) {
+        expect(result.output).toBe(
+          JSON.stringify({ authorization: `Bearer ${placeholder}` }),
+        );
+      }
+
+      expect(seen).toEqual(Array(3).fill(`Bearer ${value}`));
+      expect(
+        store.listCredentialUses(bot.id, "ECHO_TOKEN", { limit: 10 }),
+      ).toHaveLength(3);
+      expect((await sh(env, "env")).output).not.toContain(value);
+    } finally {
+      await workspaces.close();
+      upstream.close();
+      store.close();
+    }
+  }, 600_000);
 
   test("files survive a stop through the checkpoint", async () => {
     const first = new RailwayWorkspaces({ dataDir, namePrefix });
