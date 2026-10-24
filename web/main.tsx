@@ -77,6 +77,7 @@ import { ActivityPage } from "./activity";
 import { BotAvatar, botColor, botStyle } from "./avatar";
 import { BotForm } from "./bot-form";
 import { Chat } from "./chat";
+import { CredentialsPage } from "./credentials";
 import { BotDesktop } from "./desktop";
 import { GroupChatView, GroupForm } from "./groups";
 import { IntegrationsPage, OAuthCallback } from "./integrations";
@@ -161,6 +162,16 @@ const desktopRoute = createRoute({
     const { botId } = desktopRoute.useParams();
 
     return <BotDesktop key={botId} botId={botId} />;
+  },
+});
+
+const credentialsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/bots/$botId/credentials",
+  component: function BotCredentialsPage() {
+    const { botId } = credentialsRoute.useParams();
+
+    return <CredentialsPage key={botId} botId={botId} />;
   },
 });
 
@@ -289,6 +300,7 @@ const router = createRouter({
       botRoute,
       editBotRoute,
       desktopRoute,
+      credentialsRoute,
       newGroupRoute,
       groupRoute,
       editGroupRoute,

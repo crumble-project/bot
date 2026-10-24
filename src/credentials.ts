@@ -199,13 +199,15 @@ export function credentialExtension(agentId: string, credentials: Credentials) {
       reason: Type.String({ minLength: 1, maxLength: 1000 }),
     }),
     replay: "unsafe",
-    execute: async (args) =>
-      output({
-        request: credentials.request(
-          agentId,
-          credentialRequestInput.parse(args),
-        ),
-      }),
+    execute: async (args) => {
+      const request = credentials.request(
+        agentId,
+        credentialRequestInput.parse(args),
+      );
+
+      // Clients read the request from the details to offer the owner its form.
+      return { ...output({ request }), details: request };
+    },
   });
 
   return defineExtension({

@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowRight01Icon,
@@ -10,6 +11,7 @@ import {
   Copy01Icon,
   File02Icon,
   HammerIcon,
+  Key01Icon,
   ReplyIcon,
   StopIcon,
   Tick02Icon,
@@ -93,6 +95,25 @@ export function jobOf(message: Message) {
     : null;
 }
 
+/** The credential a `request_credential` result asked the owner for. */
+export function credentialRequestOf(message: Message) {
+  if (
+    message.role !== "toolResult" ||
+    message.isError ||
+    message.toolName !== "request_credential"
+  )
+    return null;
+
+  // SAFETY: The tool stores the saved request, with its name and hosts, as its details.
+  const details = message.toolDetails as
+    | { name?: string; hosts?: string[] }
+    | undefined;
+
+  return details?.name
+    ? { name: details.name, hosts: details.hosts ?? [] }
+    : null;
+}
+
 export function shownInChat(message: Message) {
   switch (message.role) {
     case "user":
@@ -105,7 +126,11 @@ export function shownInChat(message: Message) {
     case "assistant":
       return hasText(message);
     case "toolResult":
-      return displayOf(message) !== null || jobOf(message) !== null;
+      return (
+        displayOf(message) !== null ||
+        jobOf(message) !== null ||
+        credentialRequestOf(message) !== null
+      );
     case "event":
       return message.content.trim() !== "";
     default:
@@ -314,6 +339,14 @@ function originLabel(message: Message) {
   if (!origin || origin.kind === "owner") return null;
 
   if (origin.kind === "task") return `Task · ${origin.name ?? ""}`;
+
+  if (origin.kind === "credential")
+    return (
+      <span className="flex items-center gap-1">
+        <HugeiconsIcon icon={Key01Icon} className="size-3" />
+        Credential · {origin.name}
+      </span>
+    );
 
   if (origin.kind === "bot")
     return (
@@ -534,16 +567,44 @@ export function BotMessage({
 
 export function ToolResultRow({
   message,
+  botId,
   jobStatus,
   onOpenJob,
 }: {
   message: Message;
+  /** The bot whose chat this is; a credential request links to its credentials. */
+  botId?: string;
   jobStatus?: string;
   onOpenJob?: (job: { kind: "coding" | "desktop"; name: string }) => void;
 }) {
   const display = displayOf(message);
 
   if (display) return <DisplayCard display={display} />;
+
+  const credential = credentialRequestOf(message);
+
+  if (credential)
+    return botId ? (
+      <Link
+        to="/bots/$botId/credentials"
+        params={{ botId }}
+        className="flex w-full max-w-sm items-center gap-3 rounded-xl border p-3 text-left hover:bg-muted/50"
+      >
+        <HugeiconsIcon
+          icon={Key01Icon}
+          className="size-4 text-muted-foreground"
+        />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-sm font-medium">
+            {credential.name}
+          </span>
+          <span className="truncate text-xs text-muted-foreground">
+            Credential request · {credential.hosts.join(", ")}
+          </span>
+        </span>
+        <span className="text-xs text-muted-foreground">Review</span>
+      </Link>
+    ) : null;
 
   const job = jobOf(message);
 

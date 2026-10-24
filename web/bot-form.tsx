@@ -728,6 +728,19 @@ export function BotForm({ bot }: { bot?: Bot }) {
               <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
             </span>
           </Link>
+          {bot && (
+            <Link
+              to="/bots/$botId/credentials"
+              params={{ botId: bot.id }}
+              className="flex items-center justify-between gap-4 p-3 text-sm transition-colors hover:bg-muted/50"
+            >
+              <span className="font-medium">Credentials</span>
+              <span className="flex items-center gap-1 text-muted-foreground">
+                For coding jobs
+                <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
+              </span>
+            </Link>
+          )}
           <Field orientation="horizontal" className="p-3">
             <FieldContent>
               <FieldLabel htmlFor="enabled">Enabled</FieldLabel>
