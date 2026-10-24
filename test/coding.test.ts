@@ -457,3 +457,44 @@ test("clients list a bot's coding jobs and page through a job's work", async () 
     (await get(`/v1/agents/nobody/coding-jobs/builder/history`)).status,
   ).toBe(404);
 });
+
+test("a working coding job's history shows the steps it finished", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bot-coding-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const workspace = join(dir, "workspace");
+  await Bun.write(join(workspace, ".keep"), "");
+  const { store, agent } = setup(dir);
+  let calls = 0;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+
+  const { runtime } = open(
+    dir,
+    new DirectoryWorkspaces(workspace),
+    // The job's second model call waits, so the job stays working after its bash step.
+    script({ beforeJob: async () => void (++calls === 2 && (await held)) }),
+    agent,
+  );
+
+  cleanups.push(() => runtime.close());
+  const get = serve(store, runtime);
+  const chat = await runtime.openChat(agent);
+
+  await runtime.submit(agent, chat, "Build it", "req-1");
+  await until(() => calls === 2);
+
+  const history = historyResponse.parse(
+    await (
+      await get(`/v1/agents/${agent.id}/coding-jobs/builder/history`)
+    ).json(),
+  );
+
+  expect(history.messages.map((message) => message.role)).toEqual([
+    "user",
+    "assistant",
+    "toolResult",
+  ]);
+
+  release();
+  await until(async () => (await reports(runtime, agent, chat)).length === 1);
+});

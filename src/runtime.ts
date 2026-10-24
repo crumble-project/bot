@@ -1223,13 +1223,17 @@ export class AgentRuntime {
 
     if (!job) throw new AppError(404, "Coding job not found");
 
-    return this.visible(harness, options, () =>
-      readConversationTranscript(
-        harness,
-        agent.id,
-        job.conversationId,
-        options,
-      ),
+    return this.visible(
+      harness,
+      options,
+      () =>
+        readConversationTranscript(
+          harness,
+          agent.id,
+          job.conversationId,
+          options,
+        ),
+      false,
     );
   }
 
@@ -1264,25 +1268,38 @@ export class AgentRuntime {
 
     if (!job) throw new AppError(404, "Desktop job not found");
 
-    return this.visible(harness, options, () =>
-      readConversationTranscript(
-        harness,
-        agent.id,
-        job.conversationId,
-        options,
-      ),
+    return this.visible(
+      harness,
+      options,
+      () =>
+        readConversationTranscript(
+          harness,
+          agent.id,
+          job.conversationId,
+          options,
+        ),
+      false,
     );
   }
 
+  /** `hideActive`: a chat streams its active turn separately; a job has no stream, so its finished steps show. */
   private async visible(
     harness: Harness,
     options: HistoryOptions,
     read: () => Promise<TranscriptPage>,
+    hideActive = true,
   ) {
     try {
       const transcript = await read();
 
       if (options.includeActiveAssistant) return transcript;
+
+      if (!hideActive)
+        return {
+          ...transcript,
+          messages: hideIncompleteAssistant(transcript.messages),
+        };
+
       const inspection = await harness.inspect(BACKGROUND_CONTEXT);
 
       const cutoffs = inspection.submissions.flatMap((submission) =>

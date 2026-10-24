@@ -169,6 +169,8 @@ function Step({ item }: { item: Extract<Item, { kind: "step" }> }) {
   );
 }
 
+const STEP_REFRESH_MS = 3_000;
+
 /** A job's task, replies and tool steps, read-only. */
 export function JobDialog({
   botId,
@@ -196,6 +198,8 @@ export function JobDialog({
     initialPageParam: "",
     getNextPageParam: (page) =>
       page.hasMore && page.oldestEntryId ? page.oldestEntryId : undefined,
+    // Each finished step appears while the job works; the job list's events change `status` when it ends.
+    refetchInterval: status === "working" ? STEP_REFRESH_MS : false,
   });
 
   const messages = (history.data?.pages ?? [])
