@@ -24,6 +24,7 @@ COPY workspace-image/desktop workspace-image/desktop
 COPY web web
 COPY skills skills
 COPY tools/assign-legacy-owner.ts tools/assign-legacy-owner.ts
+COPY tools/tailwind-plugin.ts tools/tailwind-plugin.ts
 
 RUN mkdir -p /var/lib/crumble && chown bun:bun /var/lib/crumble
 USER bun
