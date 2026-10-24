@@ -24,6 +24,8 @@ bun run dev    # or `bun run start` without file watching
 | `CRUMBLE_SKILLS_DIR` | `./skills` | Directory of bundled default skills |
 | `CRUMBLE_WORKSPACE_IMAGE` | Unset | Microsandbox OCI image enabling the `coding` tool |
 | `CRUMBLE_WORKSPACE_DESKTOP_IMAGE` | Unset | Microsandbox OCI image enabling the `desktop` tool |
+| `CRUMBLE_CLAUDE_COMMAND` | `claude` | Claude Code executable, when it is not on `PATH` |
+| `CRUMBLE_CLAUDE_TELEMETRY` | Enabled | Set to `0`, `false`, `no`, or `off` to disable Claude Code telemetry and feature-flag traffic |
 
 
 Back up the entire `CRUMBLE_DATA_DIR`, including `.auth-secret` and each user’s `.secret.key`, plus `MSB_HOME` (`~/.microsandbox`).
@@ -48,7 +50,9 @@ Open `/ui` to create an account or sign in with email and password. Better Auth 
 
 Each account owns a separate database, encryption key, bot runtimes, transcripts, groups, memories, skills, schedules, MCP credentials, provider logins, push registrations, and workspace namespace under `users/USER_ID`. “Shared” memories and skills are shared only among that account’s bots. Bundled skills are read-only server defaults. Providers use credentials saved by that account; host environment keys are ignored.
 
-The host-wide Claude Code provider is disabled in multi-user mode. Configure a supported API provider in each account’s settings.
+Claude Code is available per account. Each account uses its own Claude Code configuration directory at `users/USER_ID/claude` and its own working directory at `users/USER_ID/claude-work`. The server never uses `CLAUDE_CONFIG_DIR` or the legacy `CRUMBLE_CLAUDE_CONFIG_DIR` value from the host environment, so Claude Code logins cannot be shared between accounts. The shared executable can come from `PATH` or `CRUMBLE_CLAUDE_COMMAND`; `CRUMBLE_CLAUDE_TELEMETRY` controls Claude Code telemetry and feature-flag traffic.
+
+To sign in, open **Settings**, select **Providers**, and find **Claude Code**. Run the displayed `CLAUDE_CONFIG_DIR` command on the server. The command points to that account's `users/USER_ID/claude` directory and runs `auth login`. Run the displayed logout command when you want to sign out. Crumble does not perform the sign-in for you. Status is cached for up to 30 seconds. Refresh the provider list after signing in or out.
 
 Native or API clients sign in through `POST /api/auth/sign-in/email`, then send the returned session token as `Authorization: Bearer SESSION_TOKEN`. Browser clients use the HTTP-only session cookie. Cookie-authenticated writes require the configured `Origin`. Sign-out revokes the session. Existing native clients need the account sign-in flow; this branch changes only `bot/`.
 

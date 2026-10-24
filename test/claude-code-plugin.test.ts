@@ -105,6 +105,22 @@ describe("Claude Code catalog", () => {
 });
 
 describe("Claude Code status", () => {
+  test("ignores shared config overrides for account-local CLI processes", () => {
+    const dir = dataDir();
+
+    const options = claudeCodeOptions(
+      dir,
+      env({
+        CRUMBLE_CLAUDE_CONFIG_DIR: "/shared/crumble-claude",
+        CLAUDE_CONFIG_DIR: "/shared/claude",
+      }),
+    );
+
+    expect(options.configDir).toBe(join(dir, "claude"));
+    expect(options.workDir).toBe(join(dir, "claude-work"));
+    expect(childEnv(options)["CLAUDE_CONFIG_DIR"]).toBe(join(dir, "claude"));
+  });
+
   test("reports a missing CLI with the install hint", async () => {
     const options = claudeCodeOptions(
       dataDir(),

@@ -134,7 +134,6 @@ export async function createTenant(
       env: process.env,
       workspaces,
       desktopControl,
-      claudeCode: false,
     });
 
     const providers = pluginProviders(plugins);
