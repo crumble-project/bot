@@ -21,14 +21,14 @@ const temp = () => {
 let tools = "";
 const previousTool = process.env.OASDIFF;
 
-// Stands in for oasdiff 1.34.0, which CI installs: it reports no breaking HTTP or event changes.
+// Stands in for oasdiff 1.34.1, which CI installs: it reports no breaking HTTP or event changes.
 beforeAll(async () => {
   tools = mkdtempSync(join(tmpdir(), "bot-oasdiff-"));
   const tool = join(tools, "oasdiff");
 
   await Bun.write(
     tool,
-    '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "oasdiff version 1.34.0"; elif [ "$1" = "breaking" ]; then echo "[]"; fi\n',
+    '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "oasdiff version 1.34.1"; elif [ "$1" = "breaking" ]; then echo "[]"; fi\n',
   );
   chmodSync(tool, 0o755);
   process.env.OASDIFF = tool;

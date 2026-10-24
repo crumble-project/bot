@@ -17,7 +17,7 @@ ARG CUA_DRIVER_SHA256_X86_64=31ab9709dd91ce73677e49b9f3e75c6f0d3e4d9625c286c9e58
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     tigervnc-standalone-server openbox tint2 chromium xdotool imagemagick fonts-dejavu-core fonts-noto-color-emoji \
-    socat procps dbus-x11 at-spi2-core x11-utils zenity \
+    socat procps dbus-x11 at-spi2-core x11-utils zenity libnss3-tools \
   && rm -rf /var/lib/apt/lists/*
 RUN set -eu; \
   case "$TARGETARCH" in arm64) arch=arm64; sum=$CUA_DRIVER_SHA256_ARM64 ;; amd64) arch=x86_64; sum=$CUA_DRIVER_SHA256_X86_64 ;; *) echo "unsupported $TARGETARCH"; exit 1 ;; esac; \

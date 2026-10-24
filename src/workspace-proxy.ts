@@ -3,6 +3,13 @@ import net from "node:net";
 
 export type ProxyRequest = { host: string; port: number };
 
+/** Takes over TLS connections to some hosts instead of tunneling them, such as the credential proxy. */
+export type WorkspaceInterceptor = {
+  wants(host: string): boolean;
+  /** The client socket is positioned at the start of its TLS ClientHello. */
+  handle(client: net.Socket, host: string, port: number): Promise<void>;
+};
+
 export type WorkspaceProxyOptions = {
   decide: (request: ProxyRequest) => boolean | Promise<boolean>;
   lookup?: (host: string) => Promise<string[]>;
@@ -10,6 +17,7 @@ export type WorkspaceProxyOptions = {
   firstByteTimeoutMs?: number;
   /** Listen on this port, so a restarted machine finds its proxy at the address it was created with. */
   port?: number;
+  intercept?: WorkspaceInterceptor;
 };
 
 export type WorkspaceProxy = { address: string; close(): Promise<void> };
@@ -216,6 +224,13 @@ export async function startWorkspaceProxy(
 
     if (!address || !(await options.decide({ host, port })) || client.destroyed)
       return void client.destroy();
+
+    if (first[0] === 22 && options.intercept?.wants(host)) {
+      client.unshift(first);
+
+      return options.intercept.handle(client, host, port);
+    }
+
     const upstream = track(net.connect(port, address));
     upstream.setTimeout(10_000, () => upstream.destroy());
     upstream.on("close", () => client.destroy());

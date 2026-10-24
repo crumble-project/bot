@@ -4,6 +4,13 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 /** The guest path where a bot's workspace lives; coding jobs start here. */
 export const WORKSPACE_PATH = "/workspace";
 
+/** Where the guest keeps the bot's credential proxy authority, which `update-ca-certificates` adds to the bundle. */
+export const GUEST_CA_PATH =
+  "/usr/local/share/ca-certificates/crumble-credentials.crt";
+
+/** The guest's system bundle: public authorities plus the bot's. */
+export const GUEST_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt";
+
 /** A byte stream to the bot desktop's VNC server; closing it releases the machine for its idle stop. */
 export type DesktopStream = {
   write(data: Uint8Array): Promise<void>;
@@ -30,8 +37,10 @@ export const allowAllRequests: WorkspaceNetworkPolicy = () => true;
  * on first use and may stop when idle; the workspace's files survive both.
  */
 export interface Workspaces {
-  /** The bot's environment. Lazy: nothing starts until its first operation. */
-  env(agentId: string): ExecutionEnv;
+  /**
+   * The bot's environment. Lazy: nothing starts until its first operation. Every command it runs also sees `shellEnv`.
+   */
+  env(agentId: string, shellEnv?: Record<string, string>): ExecutionEnv;
   /** Whether bots can get a bot desktop: the workspace image for them has one. */
   readonly desktop: boolean;
   /** Stops the bot's machine, whether busy or not; the next operation boots the image the bot needs now. */

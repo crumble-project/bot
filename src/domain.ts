@@ -189,6 +189,128 @@ export type MCPServer = {
   oauthClientId: string | null;
 };
 
+// Names the workspace, its shell, or the credential proxy itself depend on.
+const RESERVED_CREDENTIAL_NAMES = new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "SHELL",
+  "PWD",
+  "TERM",
+  "LANG",
+  "HOSTNAME",
+  "TMPDIR",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+  "NODE_USE_ENV_PROXY",
+  "NODE_OPTIONS",
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "REQUESTS_CA_BUNDLE",
+  "CURL_CA_BUNDLE",
+  "LD_PRELOAD",
+  "LD_LIBRARY_PATH",
+]);
+
+export const credentialName = z
+  .string()
+  .regex(
+    /^[A-Z_][A-Z0-9_]{0,63}$/,
+    "Credential names are environment variable names such as ACME_TOKEN",
+  )
+  .refine(
+    (name) =>
+      !RESERVED_CREDENTIAL_NAMES.has(name) && !name.startsWith("CRUMBLE_"),
+    "This name is reserved for the workspace",
+  );
+
+const HOST_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/** A public DNS name, or `*.` and one: the hosts a credential may be sent to. Addresses are not names. */
+export const credentialHost = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .max(253)
+  .refine((host) => {
+    const labels = host.replace(/^\*\./, "").split(".");
+
+    return (
+      labels.length >= 2 &&
+      labels.every((label) => HOST_LABEL.test(label)) &&
+      !/^[0-9]+$/.test(labels.at(-1)!)
+    );
+  }, "Hosts look like api.example.com or *.example.com");
+
+export const credentialHosts = z
+  .array(credentialHost)
+  .min(1, "Name at least one host")
+  .max(20)
+  .transform((hosts) => [...new Set(hosts)]);
+
+export const credentialRequestInput = z.object({
+  name: credentialName,
+  hosts: credentialHosts,
+  reason: z.string().trim().min(1).max(1000),
+});
+
+export type CredentialRequestInput = z.infer<typeof credentialRequestInput>;
+
+export const credentialSaveInput = z.object({
+  /** Kept when omitted; required for a credential nobody asked for. */
+  hosts: credentialHosts.optional(),
+  /** Write-only. Required to create; omit to keep the saved value. */
+  value: z.string().min(1).max(16000).optional(),
+});
+
+export type CredentialSaveInput = z.infer<typeof credentialSaveInput>;
+
+/** A credential the owner gave one bot. Its value is write-only and never part of this record. */
+export type AgentCredential = {
+  name: string;
+  hosts: string[];
+  createdAt: string;
+  updatedAt: string;
+  lastUsedAt: string | null;
+};
+
+/** A bot's request for a credential, waiting for the owner. */
+export type CredentialRequest = {
+  name: string;
+  hosts: string[];
+  reason: string;
+  requestedAt: string;
+};
+
+/** What the credential proxy needs to swap a credential in: never leaves the server. */
+export type CredentialGrant = {
+  name: string;
+  hosts: string[];
+  placeholder: string;
+  value: string;
+};
+
+/** Whether `host` is one of `hosts`; `*.example.com` covers every subdomain, not the name itself. */
+export const hostMatches = (hosts: readonly string[], host: string) =>
+  hosts.some((pattern) =>
+    pattern.startsWith("*.")
+      ? host.endsWith(pattern.slice(1))
+      : pattern === host,
+  );
+
+/** One request the credential proxy sent with the real value. */
+export type CredentialUse = {
+  id: string;
+  at: string;
+  method: string;
+  host: string;
+  path: string;
+  status: number | null;
+};
+
 export const MAX_SKILL_DOCUMENTS = 20;
 
 /** A reference document inside a skill package, loaded only when the bot asks for it. */

@@ -6,6 +6,7 @@ import {
 } from "@hono/zod-openapi";
 import {
   agentInput,
+  credentialSaveInput,
   groupChatInput,
   scheduleInput,
   skillInput,
@@ -55,6 +56,11 @@ export const groupMessageInput = z
     message: "Write a message or attach a file",
     path: ["content"],
   });
+
+export const credentialUsesInput = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  before: z.string().min(1).max(200).optional(),
+});
 
 export const changesInput = z.object({
   /** One bot's changes; `shared` for the shared library; omit for every change. */
@@ -178,6 +184,8 @@ export const attachmentIndex = z.coerce
 const id = z.object({ id: z.string() });
 const installation = z.object({ installationId: z.string().uuid() });
 const memoryParams = id.extend({ memoryId: z.string() });
+
+const credentialParams = id.extend({ name: z.string() });
 const skillParams = id.extend({ skillId: z.string() });
 
 const json = <S extends z.ZodType>(schema: S, description = "Success") => ({
@@ -614,6 +622,42 @@ export const routes = {
       },
     },
   }),
+  agentCredentials: define({
+    method: "get",
+    path: "/v1/agents/{id}/credentials",
+    operationId: "listAgentCredentials",
+    description:
+      "The bot's credentials and its requests for credentials the owner has not answered. Values are never returned.",
+    request: { params: id },
+    responses: { 200: json(response.credentialsResponse) },
+  }),
+  saveAgentCredential: define({
+    method: "put",
+    path: "/v1/agents/{id}/credentials/{name}",
+    operationId: "saveAgentCredential",
+    description:
+      "Creates or updates a credential. Saving one the bot requested answers the request and starts a bot turn with a notice. A new value applies from the next request; the placeholder stays the same.",
+    request: { params: credentialParams, body: body(credentialSaveInput) },
+    responses: { 200: json(response.credentialResponse) },
+  }),
+  deleteAgentCredential: define({
+    method: "delete",
+    path: "/v1/agents/{id}/credentials/{name}",
+    operationId: "deleteAgentCredential",
+    description:
+      "Deletes a credential and its use records, or declines a request for one, which starts a bot turn with a notice.",
+    request: { params: credentialParams },
+    responses: { 204: empty },
+  }),
+  agentCredentialUses: define({
+    method: "get",
+    path: "/v1/agents/{id}/credentials/{name}/uses",
+    operationId: "listAgentCredentialUses",
+    description:
+      "Requests sent with the credential's value in the last 90 days, newest first. Page with `before` set to the last use's ID.",
+    request: { params: credentialParams, query: credentialUsesInput },
+    responses: { 200: json(z.array(response.credentialUseResponse)) },
+  }),
   agentMemories: define({
     method: "get",
     path: "/v1/agents/{id}/memories",
@@ -972,7 +1016,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "3.0.0",
+      version: "3.1.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },

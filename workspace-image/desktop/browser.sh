@@ -2,6 +2,14 @@
 # Keeps Chromium running; the job cannot rely on the panel to relaunch it.
 . /run/crumble-desktop.env
 mkdir -p /workspace/.desktop/chromium
+# Chromium trusts an added authority only from its NSS database; the host installs the bot's at every boot.
+ca=/usr/local/share/ca-certificates/crumble-credentials.crt
+nssdb="sql:${HOME:-/root}/.pki/nssdb"
+if [ -f "$ca" ]; then
+  mkdir -p "${HOME:-/root}/.pki/nssdb"
+  certutil -d "$nssdb" -L >/dev/null 2>&1 || certutil -d "$nssdb" -N --empty-password
+  certutil -d "$nssdb" -A -t "C,," -n crumble-credentials -i "$ca"
+fi
 # A profile restored onto another machine (a Railway checkpoint) keeps the old host's lock, and Chromium then refuses it.
 rm -f /workspace/.desktop/chromium/Singleton{Lock,Socket,Cookie}
 while true; do

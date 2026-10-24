@@ -7,6 +7,8 @@ import type {
   capabilitiesResponse,
   chatSnapshotResponse,
   codingJobsResponse,
+  credentialUseResponse,
+  credentialsResponse,
   describedMcpServerResponse,
   desktopControlResponse,
   desktopJobsResponse,
@@ -44,6 +46,14 @@ export type Message = HistoryPage["messages"][number];
 export type Provider = z.infer<typeof providerResponse>;
 
 export type Memory = z.infer<typeof memoryResponse>;
+
+export type Credentials = z.infer<typeof credentialsResponse>;
+
+export type Credential = Credentials["credentials"][number];
+
+export type CredentialRequest = Credentials["requests"][number];
+
+export type CredentialUse = z.infer<typeof credentialUseResponse>;
 
 export type Change = z.infer<typeof learnedChangeResponse>;
 
@@ -234,6 +244,16 @@ export const botMemoriesQuery = (id: string) =>
     queryFn: ({ signal }) =>
       api<Memory[]>(`${agentPath(id)}/memories`, { signal }),
   });
+
+export const credentialsQuery = (id: string) =>
+  queryOptions({
+    queryKey: ["credentials", id],
+    queryFn: ({ signal }) =>
+      api<Credentials>(`${agentPath(id)}/credentials`, { signal }),
+  });
+
+export const credentialPath = (id: string, name: string) =>
+  `${agentPath(id)}/credentials/${encodeURIComponent(name)}`;
 
 export const sharedMemoriesQuery = queryOptions({
   queryKey: ["memories", "shared"],

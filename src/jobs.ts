@@ -497,6 +497,7 @@ export function defineJobKind(options: JobKindOptions) {
       agentId: string,
       target: EnvTarget,
       context: Context,
+      shellEnv?: Record<string, string>,
     ): Promise<ExecutionEnv | undefined> {
       const marker = await target.read.snapshot(
         Marker,
@@ -504,7 +505,7 @@ export function defineJobKind(options: JobKindOptions) {
         context,
       );
 
-      return marker?.job ? workspaces.env(agentId) : undefined;
+      return marker?.job ? workspaces.env(agentId, shellEnv) : undefined;
     },
 
     extensions(input: {

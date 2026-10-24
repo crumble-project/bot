@@ -329,6 +329,7 @@ export function Chat({ botId }: { botId: string }) {
                       ) : (
                         <ToolResultRow
                           message={row.message}
+                          botId={botId}
                           jobStatus={jobFor(jobOf(row.message)?.name)?.status}
                           onOpenJob={setJob}
                         />
