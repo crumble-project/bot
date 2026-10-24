@@ -1,6 +1,3 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
 import { upgradeWebSocket } from "hono/bun";
 import { streamSSE } from "hono/streaming";
@@ -9,6 +6,7 @@ import { desktopControlInput, routes, type contractApp } from "./api-contract";
 import type { DesktopControl } from "./desktop-control";
 import {
   bridgeDesktop,
+  novncResponse,
   VIEWER_PREFIX,
   viewerPage,
   type ViewerTickets,
@@ -22,29 +20,7 @@ export type Register = <R extends RouteConfig>(
   handler: RouteHandler<R>,
 ) => void;
 
-const NOVNC = path.dirname(
-  fileURLToPath(import.meta.resolve("@novnc/novnc/package.json")),
-);
-
-// The viewer page imports only noVNC's core library and the zlib port it bundles.
-const SERVED = ["core/", "vendor/"];
-
 const HEARTBEAT_MS = 15_000;
-
-/** A noVNC file under the package's core or vendor directory, or undefined for any other path. */
-function novncFile(requested: string) {
-  const relative = path.posix.normalize(decodeURIComponent(requested));
-
-  if (
-    !relative.endsWith(".js") ||
-    !SERVED.some((prefix) => relative.startsWith(prefix))
-  )
-    return undefined;
-
-  const file = path.resolve(NOVNC, relative);
-
-  return file.startsWith(`${NOVNC}${path.sep}`) ? file : undefined;
-}
 
 const bytesOf = async (data: WSMessageReceive) => {
   if (data instanceof Uint8Array) return data;
@@ -137,19 +113,10 @@ export function registerDesktopRoutes(options: {
     return c.json({ path: `${VIEWER_PREFIX}/${ticket}`, expiresAt }, 201);
   });
 
-  app.get(`${VIEWER_PREFIX}/novnc/*`, async (c) => {
-    const file = novncFile(c.req.path.slice(`${VIEWER_PREFIX}/novnc/`.length));
-
-    if (!file) return c.notFound();
-
-    const content = await readFile(file).catch(() => undefined);
-
-    if (!content) return c.notFound();
-
-    return c.body(new Uint8Array(content), 200, {
-      "Content-Type": "text/javascript; charset=utf-8",
-    });
-  });
+  app.get(
+    `${VIEWER_PREFIX}/novnc/*`,
+    async (c) => (await novncResponse(c.req.path)) ?? c.notFound(),
+  );
 
   app.get(`${VIEWER_PREFIX}/:ticket`, (c) => {
     const ticket = c.req.param("ticket");

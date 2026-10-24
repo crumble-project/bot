@@ -354,7 +354,7 @@ export async function createTenant(
           workspaces?.restart(agentId, BACKGROUND_CONTEXT),
         groupChats,
         desktopControl,
-        viewerTickets: new ViewerTickets(),
+        viewerTickets: new ViewerTickets(Date.now, options.tenantId),
         externalAuth: new Map(
           providers.flatMap(({ provider, externalAuth }) =>
             externalAuth ? [[provider.id, externalAuth] as const] : [],

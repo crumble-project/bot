@@ -1,4 +1,7 @@
 import { randomBytes } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { RfbProtocolError, rfbFilter } from "./rfb-filter";
 import type { DesktopStream } from "./workspace";
 
@@ -7,6 +10,47 @@ export const VIEWER_TICKET_MS = 60_000;
 
 /** The URL prefix of viewer pages, their WebSockets, and the noVNC files; outside `/v1` and its bearer auth. */
 export const VIEWER_PREFIX = "/desktop-viewer";
+
+const NOVNC = path.dirname(
+  fileURLToPath(import.meta.resolve("@novnc/novnc/package.json")),
+);
+
+// The viewer page imports only noVNC's core library and the zlib port it bundles.
+const SERVED = ["core/", "vendor/"];
+
+/** A noVNC file under the package's core or vendor directory, or undefined for any other path. */
+function novncFile(requested: string) {
+  const relative = path.posix.normalize(decodeURIComponent(requested));
+
+  if (
+    !relative.endsWith(".js") ||
+    !SERVED.some((prefix) => relative.startsWith(prefix))
+  )
+    return undefined;
+
+  const file = path.resolve(NOVNC, relative);
+
+  return file.startsWith(`${NOVNC}${path.sep}`) ? file : undefined;
+}
+
+/** The noVNC file a viewer page asks for at `requestPath`; public library code, so no sign-in is needed. */
+export async function novncResponse(requestPath: string) {
+  const prefix = `${VIEWER_PREFIX}/novnc/`;
+
+  if (!requestPath.startsWith(prefix)) return undefined;
+  const file = novncFile(requestPath.slice(prefix.length));
+  const content = file && (await readFile(file).catch(() => undefined));
+
+  return content
+    ? new Response(new Uint8Array(content), {
+        headers: { "Content-Type": "text/javascript; charset=utf-8" },
+      })
+    : undefined;
+}
+
+/** The account a ticket was issued in, from its `<account>.<secret>` form; the server routes the link there. */
+export const ticketOwner = (ticket: string) =>
+  /^([A-Za-z0-9_-]{1,128})\.[A-Za-z0-9_-]+$/.exec(ticket)?.[1];
 
 /**
  * Single-use viewer links. A web view cannot add the owner's bearer token to a WebSocket, so the ticket in the URL is
@@ -18,12 +62,17 @@ export class ViewerTickets {
     { agentId: string; expires: number }
   >();
 
-  constructor(private readonly now: () => number = Date.now) {}
+  /** `owner` names the account in each ticket, so a link opens without the account's session. */
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly owner?: string,
+  ) {}
 
   issue(agentId: string) {
     this.prune();
 
-    const ticket = randomBytes(32).toString("base64url");
+    const secret = randomBytes(32).toString("base64url");
+    const ticket = this.owner ? `${this.owner}.${secret}` : secret;
     const expires = this.now() + VIEWER_TICKET_MS;
 
     this.tickets.set(ticket, { agentId, expires });

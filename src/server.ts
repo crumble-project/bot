@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import lockfile from "proper-lockfile";
 import { websocket } from "hono/bun";
 import { createAuth } from "./auth";
+import { novncResponse, ticketOwner } from "./desktop-viewer";
 import { createTenant } from "./tenant";
 import { webUIRoutes } from "./web-ui";
 import {
@@ -148,6 +149,10 @@ export async function startServer(
         if (path.startsWith("/api/auth/"))
           return identity!.auth.handler(request);
 
+        const novnc = await novncResponse(path);
+
+        if (novnc) return novnc;
+
         if (
           !["GET", "HEAD", "OPTIONS"].includes(request.method) &&
           !requestOrigin &&
@@ -162,6 +167,23 @@ export async function startServer(
         const session = await identity!.auth.api.getSession({
           headers: request.headers,
         });
+
+        // A viewer link is its own credential: a web view cannot send the owner's session, so without one the link
+        // goes to the account it names. A session keeps it within the session's account.
+        const owner =
+          !session &&
+          ticketOwner(
+            /^\/desktop-viewer\/([^/]+)(?:\/websockify)?$/.exec(path)?.[1] ??
+              "",
+          );
+
+        if (owner && identity!.hasUser(owner) && !closed) {
+          const context = await tenant(owner);
+
+          request.headers.set("authorization", `Bearer ${context.token}`);
+
+          return context.app.fetch(request, bunServer);
+        }
 
         if (!session)
           return Response.json({ error: "Sign in required" }, { status: 401 });

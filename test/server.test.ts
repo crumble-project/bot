@@ -8,6 +8,7 @@ import {
   historyResponse,
 } from "../src/api-responses";
 import { startServer } from "../src/server";
+import type { Workspaces } from "../src/workspace";
 
 type Running = Awaited<ReturnType<typeof startServer>>;
 
@@ -198,5 +199,112 @@ test.serial("serves group chats and keeps them across restarts", async () => {
     rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+test.serial(
+  "a desktop viewer link opens without the owner's session",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-viewer-"));
+    const port = 20000 + Math.floor(Math.random() * 1000);
+
+    // A bot desktop that greets like a VNC server and then waits.
+    const workspaces: Workspaces = {
+      desktop: true,
+      env: () => {
+        throw new Error("No environment in this test");
+      },
+      restart: async () => {},
+      openDesktop: async () => ({
+        write: async () => {},
+        output: (async function* () {
+          yield new TextEncoder().encode("RFB 003.008\n");
+          await new Promise(() => {});
+        })(),
+        close: async () => {},
+      }),
+      keepAwake: () => () => {},
+      sync: async () => {},
+      close: async () => {},
+    };
+
+    try {
+      const running = await startServer({
+        dataDir,
+        port,
+        workspaces: () => workspaces,
+      });
+
+      const headers = await signUp(running);
+
+      const agent = agentResponse.parse(
+        await (
+          await fetch(new URL("/v1/agents", running.server.url), {
+            method: "POST",
+            headers: json(headers),
+            body: JSON.stringify({ name: "Viewer", tools: ["desktop"] }),
+          })
+        ).json(),
+      );
+
+      const viewer = await fetch(
+        new URL(`/v1/agents/${agent.id}/desktop/viewer`, running.server.url),
+        { method: "POST", headers },
+      );
+
+      // SAFETY: The route returns the DesktopViewer schema.
+      const link = ((await viewer.json()) as { path: string }).path;
+      const [owner, secret] = link.split("/").at(-1)!.split(".");
+
+      // A web view sends neither the session cookie nor a bearer token.
+      expect((await fetch(new URL(link, running.server.url))).status).toBe(200);
+      expect(
+        (
+          await fetch(
+            new URL("/desktop-viewer/novnc/core/rfb.js", running.server.url),
+          )
+        ).status,
+      ).toBe(200);
+
+      // The account in a ticket only routes it; the secret must be one that account issued.
+      expect(
+        (
+          await fetch(
+            new URL(`/desktop-viewer/${owner}.forged`, running.server.url),
+          )
+        ).status,
+      ).toBe(404);
+      expect(
+        (
+          await fetch(
+            new URL(`/desktop-viewer/nobody.${secret}`, running.server.url),
+          )
+        ).status,
+      ).toBe(401);
+
+      const greeting = await new Promise<string>((resolve, reject) => {
+        const socket = new WebSocket(
+          new URL(
+            `${link}/websockify`,
+            running.server.url.href.replace("http", "ws"),
+          ),
+        );
+
+        socket.binaryType = "arraybuffer";
+        socket.addEventListener("message", (event) => {
+          // SAFETY: binaryType is arraybuffer, so binary messages arrive as ArrayBuffer.
+          resolve(new TextDecoder().decode(event.data as ArrayBuffer));
+          socket.close();
+        });
+        socket.addEventListener("error", () =>
+          reject(new Error("WebSocket error")),
+        );
+      });
+
+      expect(greeting).toBe("RFB 003.008\n");
+      await running.close();
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
 
 export { signIn, signUp };
