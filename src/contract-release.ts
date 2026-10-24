@@ -270,8 +270,8 @@ export async function compareContracts(
   await validateContract(current);
   const tool = process.env.OASDIFF ?? "oasdiff";
 
-  if (run([tool, "--version"]).trim() !== "oasdiff version 1.34.0") {
-    throw new Error("Compatibility requires official oasdiff 1.34.0");
+  if (run([tool, "--version"]).trim() !== "oasdiff version 1.34.1") {
+    throw new Error("Compatibility requires official oasdiff 1.34.1");
   }
 
   await projectEvents(baseline, join(reports, "events-base.json"));
