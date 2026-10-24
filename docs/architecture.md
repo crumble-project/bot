@@ -1,10 +1,12 @@
 # Crumble server architecture
 
-Crumble is a single-owner, self-hosted personal agent server with an authenticated `/v1` HTTP and SSE API, a bundled web UI (`/ui`), and native macOS, iOS, and Android clients.
+Crumble is a multi-user, self-hosted agent server with an authenticated `/v1` HTTP and SSE API, a bundled web UI (`/ui`), and native macOS, iOS, and Android clients.
 
 ```mermaid
 flowchart TD
-  Clients["Clients\nWeb UI (/ui) · macOS · iOS · Android"] --> API["Hono HTTP & SSE API (/v1)"]
+  Clients["Clients\nWeb UI (/ui) · native clients"] --> Auth["Better Auth account session"]
+  Auth --> Tenant["Private user runtime (tenant.ts)"]
+  Tenant --> API["Hono HTTP & SSE API (/v1)"]
   API --> Service["CrumbleService & AgentRuntime"]
   Service --> Store["Product SQLite (store.ts)\nAgents, groups, skills, memories,\nschedules, credentials, changes"]
   Service --> Pi["Pi Durable SQLite Stores\nPer-bot & per-group transcripts,\ncoding/desktop jobs, reviews"]
@@ -13,15 +15,17 @@ flowchart TD
 
 ## Core boundaries
 
+- **Accounts (`auth.ts`, `server.ts`, `tenant.ts`):** Better Auth stores accounts and sessions in `auth.sqlite`. The host authenticates every API and viewer request before routing to a private user runtime under `users/USER_ID`. Each runtime owns its databases, files, encryption key, services, event listeners, provider logins, and workspace namespace. Startup recovers every existing account runtime so background schedules continue without an active browser. Shared memories and skills remain inside the account. Host provider environment credentials are ignored.
+
 - **Product store (`store.ts`) vs. Pi Durable (`runtime.ts`):** Product SQLite stores agent profiles, canonical chat references, group chats, memories, skill packages, learned-change logs, schedules, MCP servers, and encrypted credentials. Each bot owns a separate Pi Durable SQLite store that manages conversation entries, model calls, tool execution, compaction, and retries.
-- **Provider credentials (`provider-auth.ts`):** Encrypted at rest using `.secret.key`. Pi AI owns interactive sign-in, token refresh, and request authentication; `ProviderCredentials` serializes logins, refreshes, key updates, and sign-outs per provider across the server.
+- **Provider credentials (`provider-auth.ts`):** Encrypted at rest using `.secret.key`. Pi AI owns interactive sign-in, token refresh, and request authentication; `ProviderCredentials` serializes logins, refreshes, key updates, and sign-outs per provider within the account.
 - **MCP integrations:** Bots load tools only from enabled, permitted MCP servers. Unreachable or unauthenticated MCP servers are skipped for the turn with their error surfaced in status. OAuth supports dynamic client registration, Client ID Metadata Documents (`CRUMBLE_PUBLIC_URL`), and owner-registered OAuth client credentials.
 - **Bundled web UI (`web/`):** React, TanStack Router, TanStack Query, Tailwind CSS, and shadcn/ui served at `/ui` and bundled on demand by Bun.
 
 ## Plugins and the Claude Code provider
 
-- **Plugins (`plugins.ts`, `builtin-plugins.ts`, [ADR 0004](adr/0004-plugin-interfaces.md)):** Compiled-in modules contribute Pi AI providers and job kinds. Melious, Claude Code, coding jobs, and desktop jobs are plugins; the server builds the model catalog, job extensions, job environments, and job-answer notifications from their contributions.
-- **Claude Code (`claude-code/`):** A Pi AI provider whose `ProviderStreams` run each model request through a fresh `claude -p` process (`adapter.ts`), ported from Hermes' Claude Subscription DirectSDK. Claude Code gets no built-in tools, only an inert MCP inventory of the turn's tools (`inert-mcp.ts`), and the working context replayed as stream-json frames, each acknowledged before the next. A loopback admission relay (`relay.ts`) forwards the CLI's first Messages request with its own authorization, refuses later attempts, captures the reply, and keeps cache prefixes stable. Status (`setup.ts`) comes from `claude --version` and `claude auth status`, cached for 30 seconds; only qualified versions run.
+- **Plugins (`plugins.ts`, `builtin-plugins.ts`, [ADR 0004](adr/0004-plugin-interfaces.md)):** Compiled-in modules contribute Pi AI providers and job kinds. Melious, Claude Code, coding jobs, and desktop jobs are plugins; the tenant runtime enables Claude Code with account-specific paths. The server builds the model catalog, job extensions, job environments, and job-answer notifications from their contributions.
+- **Claude Code (`claude-code/`):** A Pi AI provider whose `ProviderStreams` run each model request through a fresh `claude -p` process (`adapter.ts`), ported from Hermes' Claude Subscription DirectSDK. Claude Code gets no built-in tools, only an inert MCP inventory of the turn's tools (`inert-mcp.ts`), and the working context replayed as stream-json frames, each acknowledged before the next. Each tenant supplies `users/USER_ID/claude` as `CLAUDE_CONFIG_DIR` and `users/USER_ID/claude-work` as the working directory. The server can share the executable selected by `CRUMBLE_CLAUDE_COMMAND`, but it never shares the configuration directory or login. A loopback admission relay (`relay.ts`) forwards the CLI's first Messages request with its own authorization, refuses later attempts, captures the reply, and keeps cache prefixes stable. Status (`setup.ts`) comes from `claude --version` and `claude auth status`, cached for 30 seconds; the settings page displays the exact per-account `auth login` and `auth logout` commands to run on the server.
 
 ## Bot messaging and schedules
 
@@ -37,8 +41,8 @@ flowchart TD
 
 `jobs.ts` (`defineJobKind`) powers both **coding jobs** (`coding.ts`) and **desktop jobs** (`desktop.ts`) as child conversations in the bot's Pi store owned by background anchor and reporter tasks:
 
-- **Coding jobs (`coding` tool):** Run `read`, `write`, `edit`, and `bash` via `pi-env` inside the bot's Microsandbox microVM (`MicrosandboxWorkspaces`), backed by a persistent ext4 volume (`crumble-<bot id>`) mounted at `/workspace` and filtered by a per-workspace HTTP CONNECT proxy (`workspace-proxy.ts`).
-- **Workspace backends (`machine-workspaces.ts`, [ADR 0005](adr/0005-railway-workspaces.md)):** `MachineWorkspaces` owns the lifecycle both backends share (lazy boot, idle stop, holds, the pi-env relay). With `CRUMBLE_WORKSPACE_BACKEND=railway`, `RailwayWorkspaces` runs each bot in a Railway sandbox instead: files survive as the checkpoint `crumble-<bot id>`, taken after 30 seconds without a sync and before every stop; a restarted server reconnects to the running sandbox; there is no network policy. Bot desktops boot a second template with a pinned Chromium snapshot build.
+- **Coding jobs (`coding` tool):** Run `read`, `write`, `edit`, and `bash` via `pi-env` inside the bot's Microsandbox microVM (`MicrosandboxWorkspaces`), backed by a persistent ext4 volume (`crumble-<user id>-<bot id>`) mounted at `/workspace` and filtered by a per-workspace HTTP CONNECT proxy (`workspace-proxy.ts`).
+- **Workspace backends (`machine-workspaces.ts`, [ADR 0005](adr/0005-railway-workspaces.md)):** `MachineWorkspaces` owns the lifecycle both backends share (lazy boot, idle stop, holds, the pi-env relay). With `CRUMBLE_WORKSPACE_BACKEND=railway`, `RailwayWorkspaces` runs each bot in a Railway sandbox instead: files survive as the checkpoint `crumble-<user id>-<bot id>`, taken after 30 seconds without a sync and before every stop; a restarted server reconnects to the running sandbox; there is no network policy. Bot desktops boot a second template with a pinned Chromium snapshot build.
 - **Desktop jobs (`desktop` tool):** Boot `CRUMBLE_WORKSPACE_DESKTOP_IMAGE` (adding Xvnc, Openbox, tint2, Chromium, and `cua-driver`) and run exclusively one job at a time on `desktopModel` (or the bot's model) using the `computer_use` tool (accessibility tree first, screenshots as fallback).
 - **Watching and taking control (`desktop-control.ts`, `desktop-viewer.ts`, `rfb-filter.ts`):** `POST /v1/agents/{id}/desktop/viewer` issues a single-use ticket for a server-hosted noVNC viewer bridged to the guest's Xvnc over an exec stream. The RFB filter drops pointer, keyboard, and clipboard events unless the owner holds the persistent control lease (`PUT /v1/agents/{id}/desktop/control`). While the owner holds control, `computer_use` pauses; when control returns, stale snapshots are discarded and the job must capture the screen first.
 

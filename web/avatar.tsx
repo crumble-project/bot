@@ -1,16 +1,15 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { type CSSProperties, useEffect, useLayoutEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import type { Bot } from "./api";
 import {
   type Blend,
   type BotState,
-  BotLook,
   BotPainter,
   REST,
-  avatarSeed,
   blendOf,
   blendPose,
   expressionOf,
+  lookOf,
   mixBlend,
   paintZs,
 } from "./bot-avatar";
@@ -19,14 +18,21 @@ export type { BotState };
 
 /** A bot's accent color, the hue of its avatar body. */
 export function botColor(bot: Pick<Bot, "id" | "avatar">) {
-  return new BotLook(avatarSeed(bot)).hex;
+  return lookOf(bot).hex;
+}
+
+/** Sets `--bot`, the color the `bg-bot-*` utilities in styles.css read, on an element. */
+export function botStyle(color: string) {
+  // SAFETY: CSSProperties has no index for custom properties; `--bot` takes any color string.
+  return { "--bot": color } as CSSProperties;
 }
 
 const sprites = new Map<string, OffscreenCanvas>();
 
 /** The body at rest, drawn once per look, size and pixel ratio, like the native sprite cache. */
 function bodySprite(painter: BotPainter, ratio: number) {
-  const key = `${painter.look.hash}-${painter.size}-${ratio}`;
+  const { hash, silhouette, hex } = painter.look;
+  const key = `${hash}-${silhouette}-${hex}-${painter.size}-${ratio}`;
   let sprite = sprites.get(key);
 
   if (!sprite) {
@@ -147,7 +153,6 @@ export function BotAvatar({
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const avatar = useRef<Live | null>(null);
-  const seed = avatarSeed(bot);
   const moving = animated && !reducedMotion();
 
   useLayoutEffect(() => {
@@ -156,7 +161,7 @@ export function BotAvatar({
     if (!element) return;
 
     const ratio = Math.min(3, Math.ceil(devicePixelRatio || 1));
-    const painter = new BotPainter(new BotLook(seed), size);
+    const painter = new BotPainter(lookOf(bot), size);
 
     element.width = size * ratio;
     element.height = size * ratio;
@@ -191,7 +196,7 @@ export function BotAvatar({
       avatar.current = null;
     };
     // `state` is left out on purpose: the effect below eases into a new state without a restart.
-  }, [seed, size, moving]);
+  }, [bot.id, bot.avatar, size, moving]);
 
   useEffect(() => {
     const entry = avatar.current;

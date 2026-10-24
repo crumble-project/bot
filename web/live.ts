@@ -165,6 +165,17 @@ function preview(agentId: string, lastMessage: string) {
 }
 
 let activityFollower = 0;
+let activityController: AbortController | null = null;
+
+/** Abort every account-bound stream before replacing the authenticated session. */
+export function clearLiveStreams() {
+  activityFollower++;
+  activityController?.abort();
+  activityController = null;
+
+  for (const stream of chatStreams.values()) stream.controller.abort();
+  chatStreams.clear();
+}
 
 /** Follows the server's activity stream: sidebar previews, notifications, and connection status. */
 export function followActivity(open: Open, signal: AbortSignal) {
@@ -175,6 +186,12 @@ export function followActivity(open: Open, signal: AbortSignal) {
   const report = (next: Status) => {
     if (current === activityFollower) setStatus(next);
   };
+
+  const controller = new AbortController();
+  activityController = controller;
+  signal.addEventListener("abort", () => controller.abort(), {
+    once: true,
+  });
 
   void follow(
     "/v1/events",
@@ -199,6 +216,9 @@ export function followActivity(open: Open, signal: AbortSignal) {
         else notify(event, open);
       },
     },
-    signal,
-  ).finally(() => report("disconnected"));
+    controller.signal,
+  ).finally(() => {
+    if (current === activityFollower) activityController = null;
+    report("disconnected");
+  });
 }

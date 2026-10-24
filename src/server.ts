@@ -1,95 +1,25 @@
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
-import { resolve, join } from "node:path";
-import { randomBytes } from "node:crypto";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { chmodSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import lockfile from "proper-lockfile";
-import { Store } from "./store";
-import { AgentRuntime } from "./runtime";
-import { CrumbleService, OWNER_TIMEZONE } from "./service";
-import { Scheduler } from "./scheduler";
-import { createAPI } from "./api";
-import { GroupChats } from "./group-chats";
-import { groupLookupExtension } from "./group-lookup";
-import { historySource, historyToolsExtension } from "./history-tools";
-import { HistorySearch } from "./history-search";
-import {
-  assertOwnMemoryInGroup,
-  changeSourceOf,
-  memorySourceOf,
-} from "./memory-sources";
-import { skillLibrary } from "./skills";
-import { LearningReview } from "./learning-review";
-import { SkillCurator } from "./skill-curator";
-import type { ChangeBy } from "./domain";
-import type { MemoryContext } from "./runtime";
-import { GroupTranscripts } from "./group-transcripts";
-import { AppError } from "./domain";
-import { MCPIntegrations } from "./integrations";
-import { BotSchedules, scheduleExtension } from "./bot-schedules";
-import { coordinationExtension } from "./coordination";
-import { ChartCompiler } from "./charts";
-import { displayExtension } from "./display";
-import { reactionExtension } from "./reaction";
-import { DESKTOP_TOOL_NAME } from "./desktop";
-import { DesktopControl, type ControlState } from "./desktop-control";
-import { ViewerTickets } from "./desktop-viewer";
 import { websocket } from "hono/bun";
-import type { Workspaces } from "./workspace";
-import { microsandboxWorkspacesFromEnv } from "./microsandbox-workspaces";
-import { railwayWorkspacesFromEnv } from "./railway-workspaces";
-import { CodemodeSandbox } from "@earendil-works/pi-codemode";
-import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
-import { loadCommonSkills } from "./common-skills";
-import { PushManager, PushStore } from "./push";
-import { providerModels } from "./providers";
-import { builtinPlugins } from "./builtin-plugins";
-import {
-  jobEnv,
-  jobExtensions,
-  pluginJobKinds,
-  pluginProviders,
-} from "./plugins";
-import { ProviderCredentials } from "./provider-credentials";
-import { ProviderAuth } from "./provider-auth";
+import { createAuth } from "./auth";
+import { createTenant } from "./tenant";
 import { webUIRoutes } from "./web-ui";
-import { clientDocument } from "./mcp-oauth";
-
-/** The server's public address, which authorization servers fetch Crumble's client document from. */
-function httpsUrl(value: string) {
-  const url = URL.canParse(value) ? new URL(value) : undefined;
-
-  if (url?.protocol !== "https:" || url.search || url.hash)
-    throw new Error(
-      `CRUMBLE_PUBLIC_URL must be an https address without a query, such as https://crumble.example.com: ${value}`,
-    );
-
-  return url;
-}
+import {
+  CLIENT_DOCUMENT_PATH,
+  clientDocument,
+  clientDocumentBody,
+} from "./mcp-oauth";
+import type { Workspaces } from "./workspace";
 
 export async function startServer(
   options: {
     dataDir?: string;
     hostname?: string;
     port?: number;
-    token?: string;
-    /**
-     * The public https address the server is reachable at, e.g. through a tunnel. It lets MCP servers whose
-     * authorization servers lack dynamic registration sign in through Crumble's Client ID Metadata Document.
-     */
     publicUrl?: string;
     skillsDir?: string;
-    /**
-     * Backs the `coding` and `desktop` tools; defaults to Microsandbox workspaces when `CRUMBLE_WORKSPACE_IMAGE` is set,
-     * with bot desktops when `CRUMBLE_WORKSPACE_DESKTOP_IMAGE` is set too. Without it no bot is offered either tool. The
-     * server closes it on shutdown.
-     */
-    workspaces?: Workspaces;
+    workspaces?: (userId: string) => Workspaces;
   } = {},
 ) {
   const dataDir = resolve(
@@ -105,326 +35,167 @@ export async function startServer(
     retries: 0,
   });
 
-  let push: PushManager | undefined;
-  let providerAuth: ProviderAuth | undefined;
+  const tenants = new Map<
+    string,
+    Promise<Awaited<ReturnType<typeof createTenant>>>
+  >();
+
+  let identity: Awaited<ReturnType<typeof createAuth>> | undefined;
+  let server: ReturnType<typeof Bun.serve> | undefined;
+  let closed = false;
+  const publicUrl = options.publicUrl ?? process.env.CRUMBLE_PUBLIC_URL;
+  let origin = "";
+  let ready: Promise<void>;
+
+  const tenant = (userId: string) => {
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(userId))
+      throw new Error("Invalid account ID");
+    let pending = tenants.get(userId);
+
+    if (!pending) {
+      pending = createTenant({
+        dataDir: join(dataDir, "users", userId),
+        tenantId: userId,
+        skillsDir: options.skillsDir ?? process.env.CRUMBLE_SKILLS_DIR,
+        publicUrl,
+        workspaces: options.workspaces?.(userId),
+      });
+      tenants.set(userId, pending);
+      void pending.catch(() => tenants.delete(userId));
+    }
+
+    return pending;
+  };
+
+  const close = async () => {
+    if (closed) return;
+    closed = true;
+
+    try {
+      await server?.stop(true);
+      const settled = await Promise.allSettled(tenants.values());
+
+      const results = await Promise.allSettled(
+        settled.flatMap((result) =>
+          result.status === "fulfilled" ? [result.value.close()] : [],
+        ),
+      );
+
+      const failed = results.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
+      );
+
+      if (failed.length)
+        throw new AggregateError(failed, "Tenant shutdown failed");
+    } finally {
+      identity?.close();
+      await release();
+    }
+  };
 
   try {
-    const explicitSkillsDir =
-      options.skillsDir ?? process.env.CRUMBLE_SKILLS_DIR;
+    if (publicUrl) {
+      const url = new URL(publicUrl);
 
-    const skillsDir = resolve(
-      // The default skills ship in this repository; import.meta.dir keeps
-      // this independent of the process working directory.
-      explicitSkillsDir ?? resolve(import.meta.dir, "../skills"),
-    );
-
-    if (explicitSkillsDir && !existsSync(skillsDir))
-      throw new Error(
-        `Configured common skills directory does not exist: ${skillsDir}`,
-      );
-
-    if (!existsSync(skillsDir))
-      console.warn(
-        `Common skills directory not found; continuing with no common skills: ${skillsDir}`,
-      );
-    const commonSkills = loadCommonSkills(skillsDir);
-    const tokenFile = join(dataDir, "server-token");
-
-    if (!existsSync(tokenFile))
-      writeFileSync(tokenFile, randomBytes(32).toString("hex"), {
-        mode: 0o600,
-        flag: "wx",
-      });
-    chmodSync(tokenFile, 0o600);
-
-    const token =
-      options.token ??
-      process.env.CRUMBLE_TOKEN ??
-      readFileSync(tokenFile, "utf8").trim();
-
-    const store = new Store(dataDir);
-
-    const wantsDesktop = (agentId: string) =>
-      store.getAgent(agentId)?.tools.includes(DESKTOP_TOOL_NAME) === true;
-
-    const workspaces =
-      options.workspaces ??
-      railwayWorkspacesFromEnv(process.env, { dataDir, wantsDesktop }) ??
-      microsandboxWorkspacesFromEnv(process.env, { wantsDesktop });
-
-    const desktopControl = new DesktopControl(store);
-
-    const plugins = builtinPlugins({
-      dataDir,
-      env: process.env,
-      workspaces,
-      desktopControl,
-    });
-
-    const providers = pluginProviders(plugins);
-    const jobKinds = pluginJobKinds(plugins);
-
-    store.migrateProviderCredentials(
-      providerModels(undefined, providers)
-        .getProviders()
-        .map((provider) => provider.id),
-    );
-    // One credential store and catalog serve the API and every bot, so refreshes and sign-ins are serialized.
-    const credentials = new ProviderCredentials(store);
-    const models = providerModels(credentials, providers);
-    providerAuth = new ProviderAuth(store, credentials, models);
-    const publicUrl = options.publicUrl ?? process.env.CRUMBLE_PUBLIC_URL;
+      if (
+        url.protocol !== "https:" ||
+        url.search ||
+        url.hash ||
+        url.pathname !== "/"
+      )
+        throw new Error(
+          "CRUMBLE_PUBLIC_URL must be an https origin without a path, query, or fragment",
+        );
+    }
 
     const oauthClient = publicUrl
-      ? clientDocument(httpsUrl(publicUrl))
+      ? clientDocument(new URL(publicUrl))
       : undefined;
 
-    const integrations = new MCPIntegrations(store, { oauthClient });
-
-    // One sandbox runs every agent's code mode scripts, each in a worker of its own.
-    const codemodeSandbox = new CodemodeSandbox({
-      memoryLimitBytes: 256 * 1024 * 1024,
-    });
-
-    const charts = new ChartCompiler();
-
-    const usesSharedMemory = (agentId: string) =>
-      store.getAgent(agentId)?.sharedMemory === true;
-
-    // A bot reaches its own memories, and the shared ones while it uses shared memory.
-    const reachableMemory = (agentId: string, id: string) => {
-      const memory = store.getMemory(id);
-
-      return memory?.agentId === agentId ||
-        (memory?.agentId === null && usesSharedMemory(agentId))
-        ? memory
-        : null;
-    };
-
-    let service!: CrumbleService;
-    let schedules!: BotSchedules;
-    let groupChats!: GroupChats;
-    let historySearch!: HistorySearch;
-
-    /** Who a bot's memory write is recorded for: the bot in its chat, or the review when one wrote it. */
-    const memoryChangeBy = (
-      agentId: string,
-      context: MemoryContext,
-    ): ChangeBy =>
-      context.reviewOf
-        ? { actor: "review", source: { executionId: context.reviewOf } }
-        : { actor: "bot", source: changeSourceOf(store, agentId, context) };
-
-    const runtime = new AgentRuntime(join(dataDir, "agents"), {
-      models,
-      currentAgent: (id) => store.getAgent(id),
-      ownerTimezone: () => store.getSetting<string>(OWNER_TIMEZONE),
-      extensions: async (agent) => [
-        ...(await integrations.extensionsForAgent(agent)),
-        coordinationExtension(agent, service),
-        groupLookupExtension(agent, groupChats),
-        historyToolsExtension(agent, historySearch),
-        scheduleExtension(agent, schedules),
-        displayExtension(charts),
-        reactionExtension(),
-        ...jobExtensions(jobKinds, agent).chat,
-        ...(agent.tools.includes("codemode")
-          ? [
-              createCodemodeExtension({
-                sandbox: codemodeSandbox,
-                namespaces: integrations.codemodeNamespaces(agent),
-              }),
-            ]
-          : []),
-      ],
-      taskExtensions: (agent) => jobExtensions(jobKinds, agent).job,
-      env: (agentId, target, context) =>
-        jobEnv(jobKinds, agentId, target, context),
-      listMemory: (agentId) => [
-        ...store.listMemories(agentId),
-        ...(usesSharedMemory(agentId)
-          ? store
-              .listMemories(null)
-              .map((memory) => ({ ...memory, shared: true }))
-          : []),
-      ],
-      createMemory: (agentId, content, shared, context) => {
-        if (!content.trim() || content.length > 32000)
-          throw new AppError(400, "Memory must contain 1–32000 characters");
-        assertOwnMemoryInGroup(context, shared);
-
-        if (shared && !usesSharedMemory(agentId))
-          throw new AppError(400, "Shared memory is off for this agent");
-
-        return store.createMemory(
-          {
-            agentId: shared ? null : agentId,
-            content,
-            source: memorySourceOf(store, agentId, context),
-          },
-          undefined,
-          memoryChangeBy(agentId, context),
-        );
-      },
-      updateMemory: (agentId, id, content, context) => {
-        const memory = reachableMemory(agentId, id);
-
-        if (!memory) throw new AppError(404, "Memory not found");
-        assertOwnMemoryInGroup(context, memory.agentId === null);
-
-        if (!content.trim() || content.length > 32000)
-          throw new AppError(400, "Memory must contain 1–32000 characters");
-
-        return store.updateMemory(
-          id,
-          { content },
-          memoryChangeBy(agentId, context),
-        )!;
-      },
-      deleteMemory: (agentId, id, context) => {
-        const memory = reachableMemory(agentId, id);
-
-        if (!memory) throw new AppError(404, "Memory not found");
-        assertOwnMemoryInGroup(context, memory.agentId === null);
-        store.deleteMemory(id, memoryChangeBy(agentId, context));
-      },
-      skillLibrary: skillLibrary(store, commonSkills),
-    });
-
-    service = new CrumbleService(store, runtime);
-
-    const reviews = new LearningReview(store, runtime, (event) =>
-      service.announce(event),
-    );
-
-    await reviews.recover();
-
-    const stopReviews = service.onSettled((execution) =>
-      reviews.afterExecution(execution),
-    );
-
-    const curator = new SkillCurator(store);
-    curator.start();
-
-    // The bot's answer to a job's report notifies the owner, like any other reply.
-    const stopJobAnswers = jobKinds.map((kind) =>
-      kind.onAnswer((answer) => service.announceJobAnswer(answer)),
-    );
-
-    const scheduler = new Scheduler(store, (a, p, r, s) =>
-      service.dispatch(a, p, r, s),
-    );
-
-    schedules = new BotSchedules(store, scheduler);
-
-    groupChats = new GroupChats(
-      store,
-      new GroupTranscripts(join(dataDir, "groups")),
-      service,
-    );
-    historySearch = new HistorySearch(
-      historySource(runtime, store, groupChats),
-    );
-
-    push = new PushManager(new PushStore(dataDir));
-    push.attach(service);
-
-    const app = createAPI(
-      service,
-      scheduler,
-      token,
-      integrations,
-      {
-        commonSkills,
-        coding: workspaces !== undefined,
-        desktop: workspaces?.desktop === true,
-        restartWorkspace: async (agentId) =>
-          workspaces?.restart(agentId, BACKGROUND_CONTEXT),
-        groupChats,
-        desktopControl,
-        viewerTickets: new ViewerTickets(),
-        externalAuth: new Map(
-          providers.flatMap(({ provider, externalAuth }) =>
-            externalAuth ? [[provider.id, externalAuth]] : [],
-          ),
-        ),
-        ...(workspaces && {
-          openDesktop: (agentId: string) =>
-            workspaces.openDesktop(agentId, BACKGROUND_CONTEXT),
-        }),
-        providerAuth,
-        oauthClient,
-      },
-      push,
-    );
-
-    // A bot desktop the owner holds control of stays awake, also after a restart.
-    const awake = new Map<string, () => void>();
-
-    const holdAwake = (agentId: string, state: ControlState) => {
-      if (!workspaces) return;
-
-      if (state.holder === "owner" && !awake.has(agentId))
-        awake.set(agentId, workspaces.keepAwake(agentId));
-      else if (state.holder === "bot") {
-        awake.get(agentId)?.();
-        awake.delete(agentId);
-      }
-    };
-
-    desktopControl.subscribeAll(holdAwake);
-
-    for (const agent of store.listAgents())
-      holdAwake(agent.id, desktopControl.get(agent.id));
-
-    const server = Bun.serve({
-      // The web UI is public; it reaches the API with the token the owner enters.
+    server = Bun.serve({
       routes: webUIRoutes,
-      // Bun's HMR bundle breaks TanStack Router's circular imports at startup.
       development: process.env.NODE_ENV !== "production" && { hmr: false },
-      fetch: app.fetch,
-      // Viewer connections to bot desktops.
       websocket,
       hostname: options.hostname ?? process.env.CRUMBLE_HOST ?? "127.0.0.1",
       port: options.port ?? Number(process.env.CRUMBLE_PORT ?? 7337),
       idleTimeout: 60,
-    });
+      async fetch(request, bunServer) {
+        await ready;
+        const path = new URL(request.url).pathname;
 
-    await service.recover();
-    await groupChats.recover();
-    scheduler.start();
-    let closed = false;
+        if (path === "/health")
+          return Response.json({ status: "ok", apiVersion: 1 });
 
-    return {
-      server,
-      service,
-      scheduler,
-      tokenFile,
-      async close() {
-        if (closed) return;
-        closed = true;
+        if (path === CLIENT_DOCUMENT_PATH)
+          return oauthClient
+            ? Response.json(clientDocumentBody(oauthClient))
+            : new Response("Not found", { status: 404 });
 
-        for (const stop of stopJobAnswers) stop();
-        stopReviews();
-        curator.stop();
+        if (
+          !path.startsWith("/v1/") &&
+          !path.startsWith("/desktop-viewer/") &&
+          !path.startsWith("/api/auth/")
+        )
+          return new Response("Not found", { status: 404 });
+        const requestOrigin = request.headers.get("origin");
 
-        await scheduler.stop();
-        await server.stop(true);
-        await groupChats.close();
-        await service.close();
-        await workspaces?.close(BACKGROUND_CONTEXT);
-        await push?.close();
-        await integrations.close();
-        await codemodeSandbox.close();
-        await charts.close();
-        await providerAuth?.close();
-        await release();
+        if (
+          (requestOrigin && requestOrigin !== origin) ||
+          request.headers.get("sec-fetch-site") === "cross-site"
+        )
+          return Response.json({ error: "Untrusted origin" }, { status: 403 });
+
+        if (path.startsWith("/api/auth/"))
+          return identity!.auth.handler(request);
+
+        if (
+          !["GET", "HEAD", "OPTIONS"].includes(request.method) &&
+          !requestOrigin &&
+          request.headers.has("cookie") &&
+          !request.headers.has("authorization")
+        )
+          return Response.json(
+            { error: "Origin is required for cookie-authenticated writes" },
+            { status: 403 },
+          );
+
+        const session = await identity!.auth.api.getSession({
+          headers: request.headers,
+        });
+
+        if (!session)
+          return Response.json({ error: "Sign in required" }, { status: 401 });
+
+        if (closed) return new Response("Server is closing", { status: 503 });
+        const context = await tenant(session.user.id);
+        // Bun upgrades require the original incoming Request instance.
+        request.headers.set("authorization", `Bearer ${context.token}`);
+        const response = await context.app.fetch(request, bunServer);
+
+        if (response) response.headers.set("Cache-Control", "no-store");
+
+        return response;
       },
-    };
+    });
+    origin = new URL(
+      publicUrl ?? process.env.BETTER_AUTH_URL ?? server.url.origin,
+    ).origin;
+    ready = (async () => {
+      identity = await createAuth(dataDir, origin);
+      const usersDir = join(dataDir, "users");
+
+      if (existsSync(usersDir)) {
+        for (const entry of readdirSync(usersDir, { withFileTypes: true })) {
+          if (entry.isDirectory() && identity.hasUser(entry.name))
+            await tenant(entry.name);
+        }
+      }
+    })();
+    await ready;
+
+    return { server, auth: identity!.auth, close };
   } catch (error) {
-    await push?.close();
-    await providerAuth?.close();
-    await release();
+    await close();
     throw error;
   }
 }
@@ -432,9 +203,7 @@ export async function startServer(
 if (import.meta.main) {
   const running = await startServer();
   console.log(`Crumble server listening on ${running.server.url}`);
-  console.log(
-    `Connection token: ${running.tokenFile} (copy its contents into the macOS app)`,
-  );
+  console.log("Open /ui to create an account or sign in.");
 
   const close = async () => {
     await running.close();

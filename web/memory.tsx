@@ -1,6 +1,11 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
-import { PencilIcon, SearchIcon, TrashIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  Delete02Icon,
+  PencilEdit01Icon,
+  Search01Icon,
+} from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +37,7 @@ import {
   send,
   sharedMemoriesQuery,
 } from "./api";
+import { BotAvatar } from "./avatar";
 import {
   ConfirmDelete,
   Section,
@@ -144,7 +150,10 @@ export function MemoryPage() {
           </SelectContent>
         </Select>
         <div className="relative flex-1">
-          <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <HugeiconsIcon
+            icon={Search01Icon}
+            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+          />
           <Input
             aria-label="Search memories"
             placeholder="Search"
@@ -183,6 +192,7 @@ export function MemoryPage() {
               <MemorySection
                 key={bot.id}
                 title={`${bot.name} · ${perBot[index]?.data?.length ?? 0}`}
+                icon={<BotAvatar bot={bot} size={22} />}
                 memories={matches(perBot[index]?.data ?? [])}
                 total={perBot[index]?.data?.length ?? 0}
                 error={perBot[index]?.error?.message}
@@ -206,6 +216,7 @@ export function MemoryPage() {
 
 function MemorySection({
   title,
+  icon,
   footer,
   memories,
   total,
@@ -214,6 +225,7 @@ function MemorySection({
   onDelete,
 }: {
   title: string;
+  icon?: ReactNode;
   footer?: string;
   memories: Memory[];
   total: number;
@@ -222,7 +234,7 @@ function MemorySection({
   onDelete: (memory: Memory) => void;
 }) {
   return (
-    <Section title={title} footer={footer}>
+    <Section title={title} icon={icon} footer={footer}>
       {error && <SectionEmpty>{error}</SectionEmpty>}
       {memories.length === 0 && !error && (
         <SectionEmpty>
@@ -245,7 +257,7 @@ function MemorySection({
             title="Edit"
             onClick={() => onEdit(memory)}
           >
-            <PencilIcon />
+            <HugeiconsIcon icon={PencilEdit01Icon} />
           </Button>
           <ConfirmDelete
             title="Delete this memory?"
@@ -253,7 +265,7 @@ function MemorySection({
             onConfirm={() => onDelete(memory)}
             trigger={
               <Button variant="ghost" size="icon-sm" title="Delete">
-                <TrashIcon />
+                <HugeiconsIcon icon={Delete02Icon} />
               </Button>
             }
           />

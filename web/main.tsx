@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   QueryClientProvider,
@@ -16,14 +16,15 @@ import {
   useNavigate,
   Outlet,
 } from "@tanstack/react-router";
+import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  ActivityIcon,
+  Activity01Icon,
   BotIcon,
   BrainIcon,
-  CalendarClockIcon,
-  PlusIcon,
-  SettingsIcon,
-} from "lucide-react";
+  Calendar03Icon,
+  PlusSignIcon,
+  Settings01Icon,
+} from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -57,28 +58,34 @@ import {
   SidebarMenuSkeleton,
   SidebarProvider,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
   type Bot,
   HttpError,
-  api,
   botsQuery,
   chatQuery,
   groupChatQuery,
   groupsQuery,
   queryClient,
-  token,
+  clearUserData,
 } from "./api";
+import { authClient } from "./auth-client";
 import { ActivityPage } from "./activity";
-import { BotAvatar } from "./avatar";
+import { BotAvatar, botColor, botStyle } from "./avatar";
 import { BotForm } from "./bot-form";
 import { Chat } from "./chat";
 import { BotDesktop } from "./desktop";
 import { GroupChatView, GroupForm } from "./groups";
 import { IntegrationsPage, OAuthCallback } from "./integrations";
-import { followActivity, useConnectionStatus, useWorking } from "./live";
+import {
+  clearLiveStreams,
+  followActivity,
+  useConnectionStatus,
+  useWorking,
+} from "./live";
 import { MemoryPage } from "./memory";
 import { GeneralSettings, ProvidersSettings, SettingsLayout } from "./settings";
 import { SkillsPage } from "./skills";
@@ -89,14 +96,21 @@ const rootRoute = createRootRoute();
 const connectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/connect",
+  beforeLoad: async () => {
+    const session = await authClient.getSession();
+
+    if (session.data) throw redirect({ to: "/" });
+  },
   component: Connect,
 });
 
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "app",
-  beforeLoad: () => {
-    if (!token.get()) throw redirect({ to: "/connect" });
+  beforeLoad: async () => {
+    const session = await authClient.getSession();
+
+    if (!session.data) throw redirect({ to: "/connect" });
   },
   component: Shell,
 });
@@ -295,6 +309,7 @@ const router = createRouter({
   ]),
   basepath: "/ui",
   defaultPreload: "intent",
+  defaultViewTransition: true,
   // Query owns caching; the router only triggers loads.
   defaultPreloadStaleTime: 0,
   defaultErrorComponent: ({ error }) => (
@@ -324,20 +339,25 @@ declare module "@tanstack/react-router" {
   }
 }
 
-token.subscribe(() => {
-  if (!token.get()) void router.navigate({ to: "/connect" });
-});
-
 function Connect() {
-  const [value, setValue] = useState("");
-  const navigate = useNavigate();
+  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
 
   const connect = useMutation({
-    mutationFn: async (candidate: string) => {
-      token.set(candidate);
-      await api("/v1/capabilities");
+    mutationFn: async () => {
+      const result =
+        mode === "sign-in"
+          ? await authClient.signIn.email({ email, password })
+          : await authClient.signUp.email({ email, password, name });
+
+      if (result.error) throw new Error(result.error.message);
     },
-    onSuccess: () => navigate({ to: "/" }),
+    onSuccess: async () => {
+      clearUserData();
+      window.location.assign("/ui/");
+    },
   });
 
   return (
@@ -345,26 +365,70 @@ function Connect() {
       className="mx-auto mt-[20vh] w-full max-w-xs px-4"
       onSubmit={(event) => {
         event.preventDefault();
-        connect.mutate(value.trim());
+        connect.mutate();
       }}
     >
       <FieldGroup>
         <h1 className="font-heading text-xl font-semibold">Crumble</h1>
+        {mode === "sign-up" && (
+          <Field>
+            <FieldLabel htmlFor="name">Name</FieldLabel>
+            <Input
+              id="name"
+              autoComplete="name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </Field>
+        )}
         <Field data-invalid={connect.isError || undefined}>
-          <FieldLabel htmlFor="token">Server token</FieldLabel>
+          <FieldLabel htmlFor="email">Email</FieldLabel>
           <Input
-            id="token"
-            type="password"
+            id="email"
+            type="email"
             autoFocus
-            autoComplete="current-password"
+            autoComplete="email"
             aria-invalid={connect.isError || undefined}
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </Field>
+        <Field data-invalid={connect.isError || undefined}>
+          <FieldLabel htmlFor="password">Password</FieldLabel>
+          <Input
+            id="password"
+            type="password"
+            autoComplete={
+              mode === "sign-in" ? "current-password" : "new-password"
+            }
+            aria-invalid={connect.isError || undefined}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
           />
           {connect.isError && <FieldError>{connect.error.message}</FieldError>}
         </Field>
-        <Button type="submit" disabled={!value.trim() || connect.isPending}>
-          Connect
+        <Button
+          type="submit"
+          disabled={
+            !email.trim() ||
+            !password ||
+            (mode === "sign-up" && !name.trim()) ||
+            connect.isPending
+          }
+        >
+          {mode === "sign-in" ? "Sign in" : "Create account"}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => {
+            setMode(mode === "sign-in" ? "sign-up" : "sign-in");
+            connect.reset();
+          }}
+        >
+          {mode === "sign-in"
+            ? "Create an account"
+            : "Already have an account? Sign in"}
         </Button>
       </FieldGroup>
     </form>
@@ -373,16 +437,32 @@ function Connect() {
 
 const WORKSPACE = [
   { to: "/memory", label: "Memory", icon: BrainIcon },
-  { to: "/tasks", label: "Tasks", icon: CalendarClockIcon },
-  { to: "/activity", label: "Activity", icon: ActivityIcon },
+  { to: "/tasks", label: "Tasks", icon: Calendar03Icon },
+  { to: "/activity", label: "Activity", icon: Activity01Icon },
 ] as const;
 
 function Shell() {
+  const session = authClient.useSession();
   const bots = useQuery(botsQuery);
   const groups = useQuery(groupsQuery);
   const matchRoute = useMatchRoute();
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
+  const userId = session.data?.user.id;
+  const previousUserId = useRef(userId);
+  useEffect(() => {
+    if (
+      previousUserId.current !== undefined &&
+      previousUserId.current !== userId
+    ) {
+      clearLiveStreams();
+      clearUserData();
+
+      if (!userId) window.location.assign("/ui/connect");
+    }
+
+    previousUserId.current = userId;
+  }, [userId]);
   const needle = search.trim().toLowerCase();
 
   useEffect(() => {
@@ -413,14 +493,29 @@ function Shell() {
   return (
     <TooltipProvider>
       <SidebarProvider>
-        <Sidebar>
+        <Sidebar variant="inset">
           <SidebarHeader>
-            <span className="px-2 font-heading font-semibold">Crumble</span>
-            <SidebarInput
-              placeholder="Search"
-              aria-label="Search bots and group chats"
+            <span className="px-2 pt-1 pb-2 font-heading text-lg font-semibold tracking-tight">
+              Crumble
+            </span>
+            <SidebarSearch
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={setSearch}
+              onOpenFirst={() => {
+                const [bot] = shownBots;
+                const [group] = shownGroups;
+
+                if (bot)
+                  void navigate({
+                    to: "/bots/$botId",
+                    params: { botId: bot.id },
+                  });
+                else if (group)
+                  void navigate({
+                    to: "/groups/$groupId",
+                    params: { groupId: group.id },
+                  });
+              }}
             />
           </SidebarHeader>
           <SidebarContent>
@@ -430,7 +525,7 @@ function Shell() {
                 title="New bot"
                 render={<Link to="/bots/new" />}
               >
-                <PlusIcon />
+                <HugeiconsIcon icon={PlusSignIcon} />
                 <span className="sr-only">New bot</span>
               </SidebarGroupAction>
               <SidebarGroupContent>
@@ -474,7 +569,7 @@ function Shell() {
                   title="New group chat"
                   render={<Link to="/groups/new" />}
                 >
-                  <PlusIcon />
+                  <HugeiconsIcon icon={PlusSignIcon} />
                   <span className="sr-only">New group chat</span>
                 </SidebarGroupAction>
               )}
@@ -544,7 +639,7 @@ function Shell() {
                         isActive={Boolean(matchRoute({ to: item.to }))}
                         render={<Link to={item.to} />}
                       >
-                        <item.icon />
+                        <HugeiconsIcon icon={item.icon} />
                         {item.label}
                       </SidebarMenuButton>
                     </SidebarMenuItem>
@@ -562,7 +657,7 @@ function Shell() {
                   )}
                   render={<Link to="/settings" />}
                 >
-                  <SettingsIcon />
+                  <HugeiconsIcon icon={Settings01Icon} />
                   Settings
                   <ConnectionStatus />
                 </SidebarMenuButton>
@@ -570,7 +665,7 @@ function Shell() {
             </SidebarMenu>
           </SidebarFooter>
         </Sidebar>
-        <SidebarInset className="h-dvh min-w-0">
+        <SidebarInset className="h-dvh min-w-0 overflow-hidden md:h-[calc(100dvh-1rem)] md:ring-1 md:ring-sidebar-border">
           <header className="flex h-12 shrink-0 items-center px-2 md:hidden">
             <SidebarTrigger />
           </header>
@@ -578,6 +673,69 @@ function Shell() {
         </SidebarInset>
       </SidebarProvider>
     </TooltipProvider>
+  );
+}
+
+const SEARCH_SHORTCUT = /Mac|iPhone|iPad/.test(navigator.userAgent)
+  ? "⌘K"
+  : "Ctrl K";
+
+function SidebarSearch({
+  value,
+  onChange,
+  onOpenFirst,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onOpenFirst: () => void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const { isMobile, setOpen, setOpenMobile } = useSidebar();
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "k" || !(event.metaKey || event.ctrlKey)) return;
+
+      event.preventDefault();
+
+      if (isMobile) setOpenMobile(true);
+      else setOpen(true);
+      // The sidebar may still be sliding in; focus once it is laid out.
+      requestAnimationFrame(() => input.current?.select());
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isMobile, setOpen, setOpenMobile]);
+
+  return (
+    <div className="relative">
+      <SidebarInput
+        ref={input}
+        placeholder="Search"
+        aria-label="Search bots and group chats"
+        aria-keyshortcuts="Meta+K"
+        className="pr-10"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            onChange("");
+            event.currentTarget.blur();
+          } else if (event.key === "Enter" && value.trim()) {
+            onOpenFirst();
+            onChange("");
+            event.currentTarget.blur();
+          }
+        }}
+      />
+      {!value && (
+        <kbd className="pointer-events-none absolute top-1/2 right-2 hidden -translate-y-1/2 rounded border bg-muted px-1 font-sans text-[10px] text-muted-foreground md:inline">
+          {SEARCH_SHORTCUT}
+        </kbd>
+      )}
+    </div>
   );
 }
 
@@ -596,17 +754,12 @@ function ConnectionStatus() {
 function BotRow({ bot, active }: { bot: Bot; active: boolean }) {
   const working = useWorking(bot.id);
 
-  const chip = !bot.enabled
-    ? "Paused"
-    : bot.description.length <= 24
-      ? bot.description
-      : "";
-
   return (
-    <SidebarMenuItem>
+    <SidebarMenuItem style={botStyle(botColor(bot))}>
       <SidebarMenuButton
         size="lg"
         isActive={active}
+        className="h-auto py-1.5 data-active:bg-bot-soft!"
         render={<Link to="/bots/$botId" params={{ botId: bot.id }} />}
       >
         <BotAvatar
@@ -618,22 +771,22 @@ function BotRow({ bot, active }: { bot: Bot; active: boolean }) {
           }
         />
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="flex items-center gap-1.5">
-            <span className={cn("truncate", !bot.enabled && "opacity-60")}>
-              {bot.name}
-            </span>
-            {chip && (
-              <span className="truncate text-[10px] text-muted-foreground">
-                {chip}
-              </span>
+          <span
+            className={cn(
+              "truncate font-heading font-medium",
+              !bot.enabled && "opacity-60",
             )}
+          >
+            {bot.name}
           </span>
           <span className="truncate text-xs text-muted-foreground">
             {working
               ? "Working…"
-              : bot.lastMessage
-                ? bot.lastMessage.replace(/[*_`#>]/g, "").slice(0, 120)
-                : "No messages yet"}
+              : !bot.enabled
+                ? "Paused"
+                : bot.lastMessage
+                  ? bot.lastMessage.replace(/[*_`#>]/g, "").slice(0, 120)
+                  : bot.description || "No messages yet"}
           </span>
         </span>
       </SidebarMenuButton>
@@ -641,38 +794,101 @@ function BotRow({ bot, active }: { bot: Bot; active: boolean }) {
   );
 }
 
+function greeting(hour: number) {
+  if (hour < 5) return "Up late";
+
+  if (hour < 12) return "Good morning";
+
+  if (hour < 18) return "Good afternoon";
+
+  return "Good evening";
+}
+
 function Home() {
   const bots = useQuery(botsQuery);
-  const empty = bots.data?.length === 0;
+
+  if (bots.data?.length)
+    return (
+      <div className="m-auto flex w-full max-w-4xl flex-col items-center gap-10 px-6 py-12">
+        <h1 className="font-heading text-3xl font-semibold tracking-tight">
+          {greeting(new Date().getHours())}
+        </h1>
+        <ul className="flex flex-wrap justify-center gap-2">
+          {bots.data.map((bot) => (
+            <HouseholdBot key={bot.id} bot={bot} />
+          ))}
+          <li>
+            <Link
+              to="/bots/new"
+              className="flex h-full w-36 flex-col items-center justify-center gap-3 rounded-3xl p-4 text-sm text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
+            >
+              <span className="flex size-[88px] items-center justify-center rounded-full border-2 border-dashed">
+                <HugeiconsIcon icon={PlusSignIcon} className="size-6" />
+              </span>
+              New bot
+            </Link>
+          </li>
+        </ul>
+      </div>
+    );
 
   return (
     <Empty>
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          <BotIcon />
+          <HugeiconsIcon icon={BotIcon} />
         </EmptyMedia>
-        <EmptyTitle>
+        <EmptyTitle className="font-heading text-lg">
           {bots.isPending
             ? "Opening your workspace"
-            : empty
-              ? "A little help, always here."
-              : "Choose a bot"}
+            : "A little help, always here."}
         </EmptyTitle>
-        <EmptyDescription>
-          {empty
-            ? "Create a bot to start chatting."
-            : "Pick a bot or group chat from the sidebar."}
-        </EmptyDescription>
+        {!bots.isPending && (
+          <EmptyDescription>Create a bot to start chatting.</EmptyDescription>
+        )}
       </EmptyHeader>
-      {empty && (
+      {bots.data && (
         <EmptyContent>
           <Button render={<Link to="/bots/new" />} nativeButton={false}>
-            <PlusIcon data-icon="inline-start" />
+            <HugeiconsIcon icon={PlusSignIcon} data-icon="inline-start" />
             Create a bot
           </Button>
         </EmptyContent>
       )}
     </Empty>
+  );
+}
+
+function HouseholdBot({ bot }: { bot: Bot }) {
+  const working = useWorking(bot.id);
+
+  return (
+    <li style={botStyle(botColor(bot))}>
+      <Link
+        to="/bots/$botId"
+        params={{ botId: bot.id }}
+        className="flex w-36 flex-col items-center gap-3 rounded-3xl p-4 text-center transition-colors duration-150 hover:bg-bot-soft focus-visible:bg-bot-soft focus-visible:outline-none"
+      >
+        <BotAvatar
+          bot={bot}
+          size={88}
+          live
+          state={working ? "working" : bot.enabled ? "idle" : "sleeping"}
+        />
+        <span className="flex w-full flex-col gap-0.5">
+          <span className="truncate font-heading font-semibold">
+            {bot.name}
+          </span>
+          <span className="truncate text-xs text-muted-foreground">
+            {working
+              ? "Working…"
+              : !bot.enabled
+                ? "Paused"
+                : bot.description || "Ready"}
+          </span>
+        </span>
+      </Link>
+    </li>
   );
 }
 

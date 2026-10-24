@@ -66,8 +66,7 @@ import {
 } from "./mcp-oauth";
 import type { ExternalAuth } from "./plugins";
 import { MAX_MESSAGE_BODY } from "./attachments";
-import { operationalActivity, sortActivity } from "./activity";
-import type { TranscriptMessage } from "./transcript";
+import { activityPage, decodeCursor } from "./activity";
 import {
   canonicalReplyEvent,
   type PushManager,
@@ -874,63 +873,33 @@ export function createAPI(
   );
   register(routes.activity, async (c) => {
     const input = activityInput.parse(c.req.query());
+    const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+
+    if (input.cursor && !cursor) throw new AppError(400, "Invalid cursor");
 
     const agents = input.agentId
       ? [service.agent(input.agentId)]
       : store.listAgents();
 
-    // History is durable per agent; skip bots that have never opened a conversation so
-    // this read-only feed does not initialize empty chats.
-    const existing = agents.filter(
-      (agent) => store.listConversations(agent.id, true).length,
-    );
-
-    const histories: {
-      agent: (typeof existing)[number];
-      messages: TranscriptMessage[];
-    }[] = [];
-
-    let historyHasMore = false;
-
-    for (const agent of existing) {
-      let before: string | undefined;
-      const collected: TranscriptMessage[] = [];
-      let pageHasMore = false;
-
-      // Walk a bounded number of pages so a text-heavy transcript does not hide
-      // older operational events while keeping this feed a cheap read.
-      for (let pageNumber = 0; pageNumber < 5; pageNumber++) {
-        const historyOptions = {
-          limit: 200,
-          includeActiveAssistant: true,
-          before,
-        };
-
-        const page = await runtime.history(agent, historyOptions);
-
-        collected.push(...page.messages);
-        pageHasMore = Boolean(page.hasMore);
-
-        if (!page.hasMore || !page.oldestEntryId) break;
-
-        if (operationalActivity(agent, collected).length >= input.limit) break;
-        before = page.oldestEntryId;
-      }
-
-      historyHasMore ||= pageHasMore;
-      histories.push({ agent, messages: collected });
-    }
-
-    const activities = sortActivity(
-      histories.flatMap(({ agent, messages }) =>
-        operationalActivity(agent, messages),
+    const feed: z.output<typeof activityFeedResponse> = await activityPage({
+      // History is durable per agent; skip bots that have never opened a conversation so
+      // this read-only feed does not initialize empty chats.
+      agents: agents.filter(
+        (agent) => store.listConversations(agent.id, true).length,
       ),
-    );
-
-    const feed: z.output<typeof activityFeedResponse> = {
-      activities: activities.slice(0, input.limit),
-      hasMore: activities.length > input.limit || historyHasMore,
-    };
+      history: (agent, before, limit) =>
+        runtime.history(agent, {
+          limit,
+          before,
+          includeActiveAssistant: true,
+        }),
+      changes: (limit, before) =>
+        store.listChanges(input.agentId, { limit, before }),
+      agentName: (id) => store.getAgent(id)?.name ?? null,
+      limit: input.limit,
+      cursor,
+      kind: input.kind,
+    });
 
     return c.json(feed, 200);
   });

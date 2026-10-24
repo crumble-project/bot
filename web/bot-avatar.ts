@@ -3,7 +3,7 @@
 
 export type BotState = "idle" | "working" | "sleeping";
 
-type Silhouette =
+export type Silhouette =
   | "circle"
   | "squircle"
   | "pill"
@@ -18,7 +18,7 @@ type Topper = "none" | "antenna" | "sprout" | "tuft";
 
 type Expression = "calm" | "delighted" | "focused" | "asleep";
 
-const SILHOUETTES: Silhouette[] = [
+export const SILHOUETTES: Silhouette[] = [
   "circle",
   "squircle",
   "pill",
@@ -31,7 +31,7 @@ const SILHOUETTES: Silhouette[] = [
 const MOUTHS: Mouth[] = ["smile", "grin", "cat", "tiny"];
 const TOPPERS: Topper[] = ["none", "antenna", "sprout", "tuft"];
 
-const PALETTE = [
+export const PALETTE = [
   "#8b5cf6",
   "#38bdf8",
   "#14b8a6",
@@ -44,17 +44,51 @@ const PALETTE = [
 
 const U64 = (1n << 64n) - 1n;
 
-/** The seed in a `bot:` or `critters:` avatar, else the bot's ID. */
-export function avatarSeed(bot: { id: string; avatar: string }) {
+/** A body shape and color the owner picked instead of the seeded ones. */
+export type AvatarChoice = { silhouette?: Silhouette; color?: string };
+
+/** A `bot:` or `critters:` avatar split into its seed and picks, as in `bot:<seed>;silhouette=cloud;color=#38bdf8`.
+ * Only the web reads the picks so far; the native apps hash the whole string as the seed.
+ */
+export function parseAvatar(bot: { id: string; avatar: string }) {
+  const choice: AvatarChoice = {};
+
   for (const prefix of ["bot:", "critters:"])
     if (bot.avatar.startsWith(prefix)) {
-      const seed = bot.avatar.slice(prefix.length).trim();
+      const [seed = "", ...options] = bot.avatar
+        .slice(prefix.length)
+        .split(";");
 
-      if (seed) return seed;
+      for (const option of options) {
+        const [key, value = ""] = option.split("=");
+
+        if (key === "silhouette")
+          choice.silhouette = SILHOUETTES.find((each) => each === value);
+
+        if (key === "color")
+          choice.color = PALETTE.find((each) => each === value);
+      }
+
+      if (seed.trim()) return { seed: seed.trim(), choice };
     }
 
-  return bot.id.trim() || "crumble";
+  return { seed: bot.id.trim() || "crumble", choice };
 }
+
+/** A `bot:` avatar string with the given seed and picks. */
+export function formatAvatar(seed: string, choice: AvatarChoice) {
+  return [
+    `bot:${seed}`,
+    ...(choice.silhouette ? [`silhouette=${choice.silhouette}`] : []),
+    ...(choice.color ? [`color=${choice.color}`] : []),
+  ].join(";");
+}
+
+export const lookOf = (bot: { id: string; avatar: string }) => {
+  const { seed, choice } = parseAvatar(bot);
+
+  return new BotLook(seed, choice);
+};
 
 type RGB = [number, number, number];
 
@@ -66,15 +100,15 @@ export class BotLook {
   readonly topper: Topper;
   readonly rgb: RGB;
 
-  constructor(seed: string) {
+  constructor(seed: string, choice: AvatarChoice = {}) {
     let hash = 1469598103934665603n;
 
     for (const byte of new TextEncoder().encode(seed))
       hash = ((hash ^ BigInt(byte)) * 1099511628211n) & U64;
 
     this.hash = hash;
-    this.silhouette = SILHOUETTES[Number(hash % 7n)]!;
-    this.hex = PALETTE[Number(hash % 8n)]!;
+    this.silhouette = choice.silhouette ?? SILHOUETTES[Number(hash % 7n)]!;
+    this.hex = choice.color ?? PALETTE[Number(hash % 8n)]!;
     this.mouth = MOUTHS[Number((hash >> 16n) % 4n)]!;
     this.topper = TOPPERS[Number((hash >> 24n) % 4n)]!;
 

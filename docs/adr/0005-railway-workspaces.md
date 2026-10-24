@@ -13,8 +13,8 @@ Railway is a second backend behind `Workspaces`, chosen with `CRUMBLE_WORKSPACE_
 - **One lifecycle, two backends.** `MachineWorkspaces` (`src/machine-workspaces.ts`) owns what both share: lazy boot,
   idle stop, holds, image choice per bot, and the pi-env relay. A backend implements `WorkspaceMachines.boot` and a
   `WorkspaceMachine`: liveness, a byte stream to a guest program, sync, and stop.
-- **Files live in a checkpoint.** Railway has no volumes. A bot's disk survives as the checkpoint `crumble-<bot id>`,
-  taken before every stop. A guest `sync` runs first, since a checkpoint does not flush the page cache.
+- **Files live in a checkpoint.** Railway has no volumes. A bot's disk survives as the checkpoint
+  `crumble-<user id>-<bot id>`, taken before every stop. A guest `sync` runs first, since a checkpoint does not flush the page cache.
 - **`sync` schedules, it does not wait.** Coding jobs sync after every file-changing tool call, and a checkpoint takes
   5 to 9 seconds. A sync schedules one after 30 seconds without another. A server that dies leaves the sandbox
   running; the next server reconnects to it through the sandbox id recorded in

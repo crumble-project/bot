@@ -49,7 +49,7 @@ Every `contract-vX.Y.Z` release and local bundle contains the seven `openapi/` a
 
 ## Server-sent events
 
-All `/v1` streams require bearer authentication and send `event: heartbeat` (`data: {}`) every 15 seconds. Clients must ignore heartbeats and unknown event names and recover state via the corresponding snapshot endpoint on reconnect.
+All `/v1` streams require a Better Auth account session (a session bearer token or browser session cookie) and send `event: heartbeat` (`data: {}`) every 15 seconds. Clients must ignore heartbeats and unknown event names and recover state via the corresponding snapshot endpoint on reconnect.
 
 | Endpoint | Event | JSON Schema asset |
 | --- | --- | --- |

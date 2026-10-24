@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useMatchRoute } from "@tanstack/react-router";
+import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  CopyIcon,
-  KeyRoundIcon,
-  PlugIcon,
-  SearchIcon,
+  Copy01Icon,
+  Key01Icon,
+  Plug01Icon,
+  Search01Icon,
   SlidersHorizontalIcon,
   SparklesIcon,
-} from "lucide-react";
+} from "@hugeicons/core-free-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,30 +23,23 @@ import {
   FieldContent,
   FieldDescription,
   FieldError,
-  FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import {
-  type Provider,
-  capabilitiesQuery,
-  providersQuery,
-  send,
-  token,
-} from "./api";
-import { notifications } from "./live";
+import { type Provider, capabilitiesQuery, providersQuery, send } from "./api";
+import { authClient } from "./auth-client";
+import { clearUserData } from "./api";
+import { clearLiveStreams, notifications } from "./live";
 import { LoginDialog, refreshProviders } from "./provider-login";
-import { WorkspacePage } from "./workspace";
+import { Section, WorkspacePage } from "./workspace";
 
 const SECTIONS = [
   { to: "/settings/general", label: "General", icon: SlidersHorizontalIcon },
-  { to: "/settings/providers", label: "Providers", icon: KeyRoundIcon },
-  { to: "/settings/integrations", label: "Integrations", icon: PlugIcon },
+  { to: "/settings/providers", label: "Providers", icon: Key01Icon },
+  { to: "/settings/integrations", label: "Integrations", icon: Plug01Icon },
   { to: "/settings/skills", label: "Skills", icon: SparklesIcon },
 ] as const;
 
@@ -70,7 +64,7 @@ export function SettingsLayout() {
             render={<Link to={section.to} />}
             nativeButton={false}
           >
-            <section.icon data-icon="inline-start" />
+            <HugeiconsIcon icon={section.icon} data-icon="inline-start" />
             {section.label}
           </Button>
         ))}
@@ -94,7 +88,7 @@ function Notifications() {
   const [permission, setPermission] = useState(notifications.permission);
 
   return (
-    <Field orientation="horizontal">
+    <Field orientation="horizontal" className="p-3">
       <FieldContent>
         <FieldLabel htmlFor="notifications">Notifications</FieldLabel>
         <FieldDescription>
@@ -119,6 +113,15 @@ function Notifications() {
 export function GeneralSettings() {
   const capabilities = useQuery(capabilitiesQuery);
 
+  const signOut = useMutation({
+    mutationFn: () => authClient.signOut(),
+    onSettled: () => {
+      clearLiveStreams();
+      clearUserData();
+      window.location.assign("/ui/connect");
+    },
+  });
+
   const features = [
     {
       name: "Coding jobs",
@@ -134,53 +137,51 @@ export function GeneralSettings() {
 
   return (
     <WorkspacePage title="General">
-      <FieldSet>
-        <FieldLegend variant="label">This browser</FieldLegend>
-        <FieldGroup>
-          <Notifications />
-          <Field orientation="horizontal">
+      <Section title="This browser">
+        <Notifications />
+        <Field orientation="horizontal" className="p-3">
+          <FieldContent>
+            <FieldLabel>Sign out</FieldLabel>
+            <FieldDescription>
+              Sign out of this account on this device.
+            </FieldDescription>
+          </FieldContent>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={signOut.isPending}
+            onClick={() => signOut.mutate()}
+          >
+            Sign out
+          </Button>
+        </Field>
+      </Section>
+      <Section title="Server">
+        <Field orientation="horizontal" className="p-3">
+          <FieldContent>
+            <FieldLabel>Address</FieldLabel>
+            <FieldDescription>{location.origin}</FieldDescription>
+          </FieldContent>
+        </Field>
+        {features.map((feature) => (
+          <Field key={feature.name} orientation="horizontal" className="p-3">
             <FieldContent>
-              <FieldLabel>Sign out</FieldLabel>
-              <FieldDescription>
-                Forgets the server token in this browser. Other clients stay
-                connected.
-              </FieldDescription>
+              <FieldLabel>{feature.name}</FieldLabel>
+              <FieldDescription>{feature.help}</FieldDescription>
             </FieldContent>
-            <Button variant="outline" onClick={() => token.set(null)}>
-              Sign out
-            </Button>
+            {capabilities.isPending ? (
+              <Skeleton className="h-5 w-16" />
+            ) : (
+              <Badge variant={feature.on ? "secondary" : "outline"}>
+                {feature.on ? "Available" : "Off"}
+              </Badge>
+            )}
           </Field>
-        </FieldGroup>
-      </FieldSet>
-      <FieldSet>
-        <FieldLegend variant="label">Server</FieldLegend>
-        <FieldGroup>
-          <Field orientation="horizontal">
-            <FieldContent>
-              <FieldLabel>Address</FieldLabel>
-              <FieldDescription>{location.origin}</FieldDescription>
-            </FieldContent>
-          </Field>
-          {features.map((feature) => (
-            <Field key={feature.name} orientation="horizontal">
-              <FieldContent>
-                <FieldLabel>{feature.name}</FieldLabel>
-                <FieldDescription>{feature.help}</FieldDescription>
-              </FieldContent>
-              {capabilities.isPending ? (
-                <Skeleton className="h-5 w-16" />
-              ) : (
-                <Badge variant={feature.on ? "secondary" : "outline"}>
-                  {feature.on ? "Available" : "Off"}
-                </Badge>
-              )}
-            </Field>
-          ))}
-          {capabilities.isError && (
-            <FieldError>{capabilities.error.message}</FieldError>
-          )}
-        </FieldGroup>
-      </FieldSet>
+        ))}
+      </Section>
+      {capabilities.isError && (
+        <FieldError>{capabilities.error.message}</FieldError>
+      )}
     </WorkspacePage>
   );
 }
@@ -363,7 +364,7 @@ function ExternalSignIn({
               title="Copy"
               onClick={() => void navigator.clipboard.writeText(command)}
             >
-              <CopyIcon />
+              <HugeiconsIcon icon={Copy01Icon} />
             </Button>
           </div>
         </div>
@@ -423,7 +424,10 @@ export function ProvidersSettings() {
         bot on the provider.
       </p>
       <div className="relative">
-        <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+        <HugeiconsIcon
+          icon={Search01Icon}
+          className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+        />
         <Input
           aria-label="Search providers"
           placeholder="Search providers"

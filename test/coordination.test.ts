@@ -70,19 +70,10 @@ const invoke = (
 ) => t.execute(args, { conversationId, taskId });
 
 describe("coordination extension", () => {
-  test("enforces allowlists, self-targets, and disabled targets", async () => {
+  test("refuses self-targets and disabled targets", async () => {
     const { store, service } = setup();
-
-    const source = store.createAgent(
-      input("Source", [uuid(1), uuid(2)]),
-      uuid(1),
-    );
-
+    const source = store.createAgent(input("Source"), uuid(1));
     const target = store.createAgent(input("Target"), uuid(2));
-    const denied = store.createAgent(input("Denied"), uuid(3));
-    await expect(
-      invoke(tool(service, source.id, 0), { agentId: denied.id, task: "x" }),
-    ).rejects.toThrow("permission");
     await expect(
       invoke(tool(service, source.id, 0), { agentId: source.id, task: "x" }),
     ).rejects.toThrow("another");
@@ -154,10 +145,11 @@ describe("coordination extension", () => {
       status: "running",
       response: [],
     });
-    store.updateAgent(source.id, { delegates: [] });
-    await expect(
-      invoke(tool(service, source.id, 1), { executionId }),
-    ).rejects.toThrow("receipt");
+    const granted = tool(service, source.id, 1);
+    store.updateAgent(source.id, { tools: [] });
+    await expect(invoke(granted, { executionId })).rejects.toThrow(
+      "permission",
+    );
     store.close();
   });
 });

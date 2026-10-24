@@ -1,18 +1,20 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  ArrowUpIcon,
-  ChevronRightIcon,
-  CopyIcon,
-  FileTextIcon,
+  ArrowRight01Icon,
+  ArrowUp02Icon,
+  Attachment01Icon,
+  Cancel01Icon,
+  ComputerIcon,
+  Copy01Icon,
+  File02Icon,
   HammerIcon,
-  MonitorIcon,
-  PaperclipIcon,
   ReplyIcon,
-  SquareIcon,
-  UsersIcon,
-  XIcon,
-} from "lucide-react";
+  StopIcon,
+  Tick02Icon,
+  UserGroupIcon,
+} from "@hugeicons/core-free-icons";
 import { Bubble, BubbleContent, BubbleReactions } from "@/components/ui/bubble";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,6 +29,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { type Bot, type Message, blobUrl } from "./api";
+import { botStyle } from "./avatar";
 import { DisplayCard, displayOf } from "./display";
 import { Reply } from "./markdown";
 
@@ -179,10 +182,36 @@ export function withTimeMarkers(messages: Message[]) {
   return rows;
 }
 
+export const ARRIVAL =
+  "animate-in fade-in slide-in-from-bottom-2 duration-200 ease-out";
+
+/**
+ * Animates only messages that arrive while the transcript is open, not the
+ * history already there when it loaded or pages fetched by scrolling back.
+ */
+export function useArrivals(live: Message[] | undefined) {
+  const seen = useRef<Set<string> | null>(null);
+
+  if (live && !seen.current)
+    seen.current = new Set(live.map((message) => message.id));
+
+  return {
+    remember: (messages: Message[]) =>
+      messages.forEach((message) => seen.current?.add(message.id)),
+    // A confirmed owner message replaces its outgoing copy, which already animated.
+    arrival: (message: Message) =>
+      seen.current &&
+      !seen.current.has(message.id) &&
+      !(message.role === "user" && message.requestId)
+        ? ARRIVAL
+        : undefined,
+  };
+}
+
 export function TimeMarker({ label }: { label: string }) {
   return (
     <Marker variant="separator">
-      <MarkerContent>{label}</MarkerContent>
+      <MarkerContent className="tabular-nums">{label}</MarkerContent>
     </Marker>
   );
 }
@@ -215,7 +244,8 @@ export function EventRow({ message }: { message: Message }) {
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <ChevronRightIcon
+        <HugeiconsIcon
+          icon={ArrowRight01Icon}
           className={cn("size-3 transition-transform", open && "rotate-90")}
         />
         {title}
@@ -242,7 +272,7 @@ function AttachmentImage({ path, name }: { path: string; name: string }) {
     <img
       src={image.data}
       alt={name}
-      className="max-h-64 max-w-full rounded-lg object-contain"
+      className="max-h-64 max-w-full rounded-lg object-contain outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
     />
   ) : (
     <div className="size-32 animate-pulse rounded-lg bg-muted" />
@@ -269,7 +299,7 @@ export function Attachments({
           />
         ) : (
           <Badge key={index} variant="outline">
-            <FileTextIcon data-icon="inline-start" />
+            <HugeiconsIcon icon={File02Icon} data-icon="inline-start" />
             {attachment.name}
           </Badge>
         ),
@@ -288,7 +318,7 @@ function originLabel(message: Message) {
   if (origin.kind === "bot")
     return (
       <span className="flex items-center gap-1">
-        <UsersIcon className="size-3" />
+        <HugeiconsIcon icon={UserGroupIcon} className="size-3" />
         From {origin.name}
       </span>
     );
@@ -309,7 +339,7 @@ export function MessageActions({
     (message.role === "user" || message.role === "assistant");
 
   return (
-    <div className="flex gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100">
+    <div className="flex gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
       {canReply && (
         <Button
           variant="ghost"
@@ -317,18 +347,51 @@ export function MessageActions({
           title="Reply"
           onClick={() => onReply(message)}
         >
-          <ReplyIcon />
+          <HugeiconsIcon icon={ReplyIcon} />
         </Button>
       )}
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        title="Copy"
-        onClick={() => void navigator.clipboard.writeText(message.content)}
-      >
-        <CopyIcon />
-      </Button>
+      <CopyButton text={message.content} />
     </div>
+  );
+}
+
+const ICON_SWAP =
+  "transition-[opacity,scale,filter] duration-200 ease-[cubic-bezier(0.2,0,0,1)]";
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+
+    const timer = setTimeout(() => setCopied(false), 1500);
+
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon-xs"
+      title={copied ? "Copied" : "Copy"}
+      className="relative"
+      onClick={() =>
+        void navigator.clipboard.writeText(text).then(() => setCopied(true))
+      }
+    >
+      <HugeiconsIcon
+        icon={Copy01Icon}
+        className={cn(ICON_SWAP, copied && "scale-25 opacity-0 blur-[4px]")}
+      />
+      <HugeiconsIcon
+        icon={Tick02Icon}
+        className={cn(
+          ICON_SWAP,
+          "absolute",
+          !copied && "scale-25 opacity-0 blur-[4px]",
+        )}
+      />
+    </Button>
   );
 }
 
@@ -379,7 +442,7 @@ export function OwnerMessage({
                 />
               ) : (
                 <Badge key={index} variant="outline">
-                  <FileTextIcon data-icon="inline-start" />
+                  <HugeiconsIcon icon={File02Icon} data-icon="inline-start" />
                   {upload.name}
                 </Badge>
               ),
@@ -387,7 +450,7 @@ export function OwnerMessage({
           </div>
         )}
         {message.content.trim() && (
-          <Bubble variant="default" align="end">
+          <Bubble variant="secondary" align="end">
             <BubbleContent className="whitespace-pre-wrap">
               {message.content}
             </BubbleContent>
@@ -428,11 +491,14 @@ export function OwnerMessage({
 export function BotMessage({
   message,
   sender,
+  color,
   reactions,
   onReply,
 }: {
   message: Message;
   sender?: ReactNode;
+  /** The sender's color, where the transcript mixes bots. */
+  color?: string;
   reactions?: string[];
   onReply?: (message: Message) => void;
 }) {
@@ -440,7 +506,11 @@ export function BotMessage({
     <MessageRow align="start">
       <MessageContent>
         {sender && <MessageHeader>{sender}</MessageHeader>}
-        <Bubble variant="secondary">
+        <Bubble
+          variant="secondary"
+          className="*:data-[slot=bubble-content]:bg-bot-soft!"
+          style={color ? botStyle(color) : undefined}
+        >
           <BubbleContent>
             <Reply source={message.content} />
           </BubbleContent>
@@ -481,7 +551,7 @@ export function ToolResultRow({
 
   const status = jobStatus ?? job.status;
   const working = status === "working" || status === "running";
-  const Icon = job.kind === "coding" ? HammerIcon : MonitorIcon;
+  const Icon = job.kind === "coding" ? HammerIcon : ComputerIcon;
 
   return (
     <button
@@ -489,7 +559,7 @@ export function ToolResultRow({
       className="flex w-full max-w-sm items-center gap-3 rounded-xl border p-3 text-left hover:bg-muted/50"
       onClick={() => onOpenJob?.(job)}
     >
-      <Icon className="size-4 text-muted-foreground" />
+      <HugeiconsIcon icon={Icon} className="size-4 text-muted-foreground" />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm font-medium">{job.name}</span>
         <span className="text-xs text-muted-foreground">
@@ -514,7 +584,7 @@ export function TypingDots() {
       {[0, 1, 2].map((index) => (
         <span
           key={index}
-          className="size-1.5 animate-bounce rounded-full bg-muted-foreground"
+          className="size-1.5 animate-bounce rounded-full bg-bot-strong"
           style={{ animationDelay: `${index * 150}ms` }}
         />
       ))}
@@ -730,7 +800,7 @@ export function Composer({
     >
       {replyingTo && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <ReplyIcon className="size-3" />
+          <HugeiconsIcon icon={ReplyIcon} className="size-3" />
           <span className="truncate">Replying to {replyingTo}</span>
           <Button
             type="button"
@@ -739,7 +809,7 @@ export function Composer({
             title="Cancel reply"
             onClick={onCancelReply}
           >
-            <XIcon />
+            <HugeiconsIcon icon={Cancel01Icon} />
           </Button>
         </div>
       )}
@@ -754,7 +824,7 @@ export function Composer({
                   className="size-6 rounded object-cover"
                 />
               ) : (
-                <FileTextIcon data-icon="inline-start" />
+                <HugeiconsIcon icon={File02Icon} data-icon="inline-start" />
               )}
               <span className="max-w-40 truncate">{upload.name}</span>
               <Button
@@ -766,7 +836,7 @@ export function Composer({
                   setUploads(uploads.filter((_, other) => other !== index))
                 }
               >
-                <XIcon />
+                <HugeiconsIcon icon={Cancel01Icon} />
               </Button>
             </Badge>
           ))}
@@ -802,7 +872,7 @@ export function Composer({
       )}
       <div
         className={cn(
-          "flex items-end gap-1 rounded-3xl border border-input bg-transparent p-1.5 transition-colors focus-within:border-ring dark:bg-input/30",
+          "flex items-end gap-1 rounded-3xl border border-input bg-background p-1.5 shadow-xs transition-[border-color,box-shadow] duration-150 focus-within:border-bot focus-within:shadow-sm dark:bg-input/30",
           disabled && "opacity-50",
         )}
       >
@@ -826,7 +896,7 @@ export function Composer({
           disabled={disabled || uploads.length >= MAX_FILES}
           onClick={() => picker.current?.click()}
         >
-          <PaperclipIcon />
+          <HugeiconsIcon icon={Attachment01Icon} />
         </Button>
         <Textarea
           ref={field}
@@ -878,18 +948,18 @@ export function Composer({
             title="Stop"
             onClick={onStop}
           >
-            <SquareIcon />
+            <HugeiconsIcon icon={StopIcon} />
           </Button>
         )}
         {(!running || canSend) && (
           <Button
             type="submit"
             size="icon"
-            className="rounded-full"
+            className="rounded-full bg-bot-strong hover:bg-bot-strong hover:brightness-110"
             title="Send"
             disabled={!canSend}
           >
-            <ArrowUpIcon />
+            <HugeiconsIcon icon={ArrowUp02Icon} />
           </Button>
         )}
       </div>

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { PencilIcon, TrashIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Delete02Icon, PencilEdit01Icon } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -230,7 +231,7 @@ function ServerRow({
         </Button>
       )}
       <Button variant="ghost" size="icon-sm" title="Edit" onClick={onEdit}>
-        <PencilIcon />
+        <HugeiconsIcon icon={PencilEdit01Icon} />
       </Button>
       <ConfirmDelete
         title={`Delete ${server.name}?`}
@@ -238,7 +239,7 @@ function ServerRow({
         onConfirm={() => remove.mutate()}
         trigger={
           <Button variant="ghost" size="icon-sm" title="Delete">
-            <TrashIcon />
+            <HugeiconsIcon icon={Delete02Icon} />
           </Button>
         }
       />

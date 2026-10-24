@@ -70,6 +70,12 @@ export const reviewsInput = z.object({
 export const activityInput = z.object({
   agentId: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(100),
+  /** Only this kind of item; pass the same kind with every page's cursor. */
+  kind: z
+    .enum(["tool-call", "tool-result", "mcp-call", "bot-message", "change"])
+    .optional(),
+  /** The previous page's `nextCursor`. */
+  cursor: z.string().min(1).max(8000).optional(),
 });
 
 export const pushInput = z
@@ -217,7 +223,7 @@ const error = z
 const errors = {
   400: json(error, "Invalid request or operation"),
   401: {
-    description: "Missing or invalid bearer token",
+    description: "Missing, expired, or invalid account session",
     content: { "text/plain": { schema: z.string() } },
   },
   404: json(error, "Resource not found"),
@@ -234,9 +240,14 @@ const errors = {
 const gone = json(error, "Login session ended or was lost on restart");
 
 function define<const R extends RouteConfig>(config: R) {
+  const security: NonNullable<RouteConfig["security"]> = [
+    { BearerAuth: [] },
+    { SessionCookie: [] },
+  ];
+
   return createRoute({
     ...config,
-    security: [{ BearerAuth: [] }],
+    security,
     responses: { ...errors, ...config.responses },
   });
 }
@@ -809,6 +820,8 @@ export const routes = {
     method: "get",
     path: "/v1/activity/feed",
     operationId: "getActivityFeed",
+    description:
+      "Bots' tool calls, tool results, MCP calls, and bot messages, and skill and memory changes, newest first. Page with `cursor` set to the previous page's `nextCursor`. A page may hold fewer than `limit` items while `hasMore` is true.",
     request: { query: activityInput },
     responses: { 200: json(response.activityFeedResponse) },
   }),
@@ -930,6 +943,15 @@ export function contractApp() {
   app.openAPIRegistry.registerComponent("securitySchemes", "BearerAuth", {
     type: "http",
     scheme: "bearer",
+    description:
+      "Better Auth session token from /api/auth/sign-in/email. The legacy server token is not accepted.",
+  });
+  app.openAPIRegistry.registerComponent("securitySchemes", "SessionCookie", {
+    type: "apiKey",
+    in: "cookie",
+    name: "better-auth.session_token",
+    description:
+      "Better Auth session cookie. HTTPS deployments use the __Secure- prefix. Cookie-authenticated writes require the configured Origin.",
   });
   app.openAPIRegistry.register("ReplyEvent", response.replyEvent);
   app.openAPIRegistry.register("ChatPreviewEvent", response.chatPreviewEvent);
@@ -950,7 +972,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "1.11.0",
+      version: "3.0.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },

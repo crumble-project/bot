@@ -9,6 +9,52 @@ import {
 } from "../src/api-responses";
 import { startServer } from "../src/server";
 
+type Running = Awaited<ReturnType<typeof startServer>>;
+
+async function signUp(running: Running, suffix = crypto.randomUUID()) {
+  const response = await fetch(
+    new URL("/api/auth/sign-up/email", running.server.url),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: `Test ${suffix}`,
+        email: `${suffix}@example.test`,
+        password: "correct horse battery staple",
+      }),
+    },
+  );
+
+  expect(response.status).toBe(200);
+  // SAFETY: Better Auth returns a token on successful bearer sign-up.
+  const body = (await response.json()) as { token?: string };
+  expect(body.token).toEqual(expect.any(String));
+
+  return { authorization: `Bearer ${body.token}` };
+}
+
+async function signIn(running: Running, email: string) {
+  const response = await fetch(
+    new URL("/api/auth/sign-in/email", running.server.url),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password: "correct horse battery staple" }),
+    },
+  );
+
+  expect(response.status).toBe(200);
+  // SAFETY: Better Auth returns a token on successful bearer sign-in.
+  const body = (await response.json()) as { token?: string };
+  expect(body.token).toEqual(expect.any(String));
+
+  return { authorization: `Bearer ${body.token}` };
+}
+
+function json(headers: Record<string, string>) {
+  return { ...headers, "content-type": "application/json" };
+}
+
 test.serial(
   "server owns its data directory exclusively and releases it after graceful shutdown",
   async () => {
@@ -37,11 +83,11 @@ test.serial("loads the workspace skills directory by default", async () => {
   const port = 19000 + Math.floor(Math.random() * 1000);
 
   try {
-    const token = "s".repeat(40);
-    const running = await startServer({ dataDir, port, token });
+    const running = await startServer({ dataDir, port });
+    const headers = await signUp(running);
 
     const response = await fetch(new URL("/v1/skills", running.server.url), {
-      headers: { authorization: `Bearer ${token}` },
+      headers,
     });
 
     expect(response.status).toBe(200);
@@ -69,7 +115,7 @@ test.serial(
   "failed listener startup releases the push worker and data lock",
   async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-push-startup-"));
-    let unexpected: Awaited<ReturnType<typeof startServer>> | undefined;
+    let unexpected: Running | undefined;
 
     try {
       let failure: unknown;
@@ -94,21 +140,20 @@ test.serial(
 test.serial("serves group chats and keeps them across restarts", async () => {
   const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-groups-"));
   const port = 20000 + Math.floor(Math.random() * 1000);
-  const token = "g".repeat(40);
-  const headers = { authorization: `Bearer ${token}` };
-  const json = { ...headers, "content-type": "application/json" };
 
   try {
-    const running = await startServer({ dataDir, port, token });
+    const running = await startServer({ dataDir, port });
+    const headers = await signUp(running);
     const memberIds: string[] = [];
 
     for (const name of ["Planner", "Researcher"]) {
       const response = await fetch(new URL("/v1/agents", running.server.url), {
         method: "POST",
-        headers: json,
+        headers: json(headers),
         body: JSON.stringify({ name }),
       });
 
+      expect(response.status).toBe(201);
       memberIds.push(agentResponse.parse(await response.json()).id);
     }
 
@@ -116,7 +161,7 @@ test.serial("serves group chats and keeps them across restarts", async () => {
       new URL("/v1/group-chats", running.server.url),
       {
         method: "POST",
-        headers: json,
+        headers: json(headers),
         body: JSON.stringify({ name: "Trip", memberIds }),
       },
     );
@@ -124,20 +169,21 @@ test.serial("serves group chats and keeps them across restarts", async () => {
     expect(created.status).toBe(201);
     const group = groupChatResponse.parse(await created.json());
 
-    await fetch(
+    const message = await fetch(
       new URL(`/v1/group-chats/${group.id}/messages`, running.server.url),
       {
         method: "POST",
-        headers: json,
+        headers: json(headers),
         body: JSON.stringify({
           content: "Hello",
           requestId: crypto.randomUUID(),
         }),
       },
     );
-    await running.close();
 
-    const reopened = await startServer({ dataDir, port, token });
+    expect(message.status).toBe(201);
+    await running.close();
+    const reopened = await startServer({ dataDir, port });
 
     const history = await fetch(
       new URL(`/v1/group-chats/${group.id}/history`, reopened.server.url),
@@ -152,3 +198,5 @@ test.serial("serves group chats and keeps them across restarts", async () => {
     rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+export { signIn, signUp };

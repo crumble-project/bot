@@ -5,7 +5,7 @@
 @custom-variant dark (@media (prefers-color-scheme: dark));
 
 @theme inline {
-  --font-heading: var(--font-sans);
+  --font-heading: ui-rounded, "SF Pro Rounded", var(--font-sans);
   --font-sans: ui-sans-serif, system-ui, -apple-system, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -72,13 +72,14 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
+  --bot: var(--muted-foreground);
+  --sidebar: oklch(0.967 0.002 260);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent: oklch(0.925 0.003 260);
   --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-border: oklch(0.91 0.003 260);
   --sidebar-ring: oklch(0.708 0 0);
 }
 
@@ -107,11 +108,11 @@
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
+    --sidebar: oklch(0.11 0.003 260);
     --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-primary: oklch(0.922 0 0);
+    --sidebar-primary-foreground: oklch(0.205 0 0);
+    --sidebar-accent: oklch(0.22 0.004 260);
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.556 0 0);
@@ -123,10 +124,62 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
   }
   html {
     @apply font-sans;
+  }
+  :where(h1, h2, h3, h4) {
+    text-wrap: balance;
+  }
+  :where(p, li, blockquote) {
+    text-wrap: pretty;
+  }
+}
+
+/* A bot's own color, set as --bot on its chat, row, or message, carries its identity. */
+@utility bg-bot-soft {
+  background-color: oklch(from var(--bot) 0.965 min(c, 0.025) h);
+
+  @variant dark {
+    background-color: oklch(from var(--bot) 0.26 min(c, 0.035) h);
+  }
+}
+
+@utility bg-bot-strong {
+  background-color: oklch(from var(--bot) 0.55 min(c, 0.17) h);
+  color: white;
+
+  @variant dark {
+    background-color: oklch(from var(--bot) 0.8 min(c, 0.14) h);
+    color: oklch(0.2 0 0);
+  }
+}
+
+@utility border-bot {
+  border-color: oklch(from var(--bot) 0.7 min(c, 0.12) h);
+}
+
+/* Route changes cross-fade instead of cutting; the sidebar stays put. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 150ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

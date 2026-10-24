@@ -92,10 +92,11 @@ afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
 
-test("recipients exposes only enabled, permitted, non-self bots", async () => {
+test("recipients exposes every other enabled bot", async () => {
   const { messaging, store } = setup();
   expect(messaging.recipients(ids.source)).toEqual([
     { id: ids.target, name: "Bot2", description: "Bot2 description" },
+    { id: ids.other, name: "Other", description: "Other description" },
   ]);
   store.close();
 });
@@ -236,9 +237,9 @@ test("result waits for completion and rejects revoked or foreign receipts", asyn
   expect(result.response).toEqual([
     `answer:submission:delegate:${ids.source}:ask-2`,
   ]);
-  store.updateAgent(ids.source, { delegates: [] });
+  store.updateAgent(ids.source, { tools: [] });
   await expect(messaging.result(ids.source, sent.executionId)).rejects.toThrow(
-    /receipt|permission|revoked/i,
+    /receipt|permission|revoked|turned off/i,
   );
   await expect(messaging.result(ids.other, sent.executionId)).rejects.toThrow(
     /receipt|permission|source/i,

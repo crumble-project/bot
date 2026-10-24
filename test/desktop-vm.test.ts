@@ -122,12 +122,19 @@ for (const backend of WORKSPACE_BACKENDS) {
           .split(" ")[0],
       );
 
-      const tree = text(
-        await tool.run(
-          { action: "capture", window_id: id, full: true },
-          BACKGROUND_CONTEXT,
-        ),
-      );
+      let tree = "";
+
+      // The window maps before its accessibility tree fills in on a remote machine.
+      await eventually(async () => {
+        tree = text(
+          await tool.run(
+            { action: "capture", window_id: id, full: true },
+            BACKGROUND_CONTEXT,
+          ),
+        );
+
+        return /text box/.test(tree) && /button "OK"/.test(tree);
+      });
 
       await tool.run(
         {
@@ -239,7 +246,7 @@ for (const backend of WORKSPACE_BACKENDS) {
   describe.skipIf(!backend.enabled)(
     `watching and taking control on ${backend.name}`,
     () => {
-      const token = "w".repeat(40);
+      let token = "";
       const dataDir = mkdtempSync(path.join(tmpdir(), "crumble-viewer-"));
       const port = 7400 + (process.pid % 500);
       const base = `http://127.0.0.1:${port}`;
@@ -304,7 +311,25 @@ for (const backend of WORKSPACE_BACKENDS) {
           .map((line) => Number(line.split("=")[1]));
 
       beforeAll(async () => {
-        running = await startServer({ dataDir, port, token, workspaces });
+        running = await startServer({
+          dataDir,
+          port,
+          workspaces: () => workspaces,
+        });
+
+        const auth = await fetch(`${base}/api/auth/sign-up/email`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            name: "Desktop owner",
+            email: `desktop-${process.pid}@example.test`,
+            password: "correct horse battery staple",
+          }),
+        });
+
+        expect(auth.status).toBe(200);
+        // SAFETY: Better Auth returns a token on successful bearer sign-up.
+        token = ((await auth.json()) as { token: string }).token;
 
         const created = await api("/v1/agents", {
           method: "POST",
@@ -430,7 +455,11 @@ for (const backend of WORKSPACE_BACKENDS) {
         await running.close();
 
         ({ workspaces, isRunning } = newWorkspaces());
-        running = await startServer({ dataDir, port, token, workspaces });
+        running = await startServer({
+          dataDir,
+          port,
+          workspaces: () => workspaces,
+        });
 
         const state = desktopControlResponse.parse(
           await (await api(`/v1/agents/${agentId}/desktop/control`)).json(),
@@ -443,7 +472,11 @@ for (const backend of WORKSPACE_BACKENDS) {
       test("a bot desktop the owner holds does not idle-stop", async () => {
         await running.close();
         ({ workspaces, isRunning } = newWorkspaces(1500));
-        running = await startServer({ dataDir, port, token, workspaces });
+        running = await startServer({
+          dataDir,
+          port,
+          workspaces: () => workspaces,
+        });
 
         await guest("true");
         await setControl("owner");

@@ -31,7 +31,7 @@ import type {
   GroupTurnStatus,
   MemorySource,
 } from "./domain";
-import { memorySource, skillStates } from "./domain";
+import { STANDARD_TOOLS, memorySource, skillStates } from "./domain";
 import { z } from "zod";
 import type { AttachmentInput } from "./attachments";
 import type { Credential, CredentialInfo } from "@earendil-works/pi-ai";
@@ -398,6 +398,10 @@ export class Store {
     return v ? 1 : 0;
   }
   private agent(r: any): Agent {
+    const tools: string[] = [
+      ...new Set([...STANDARD_TOOLS, ...JSON.parse(r.tools)]),
+    ];
+
     return {
       id: r.id,
       name: r.name,
@@ -407,15 +411,20 @@ export class Store {
       provider: r.provider,
       model: r.model,
       enabled: !!r.enabled,
-      tools: JSON.parse(r.tools),
+      tools,
       skills: this.listSkills(r.id).map(({ name, instructions }) => ({
         name,
         instructions,
       })),
       sharedSkills: JSON.parse(r.shared_skills ?? "[]"),
-      sharedMemory: !!r.shared_memory,
+      sharedMemory: tools.includes("memory"),
       mcpServers: JSON.parse(r.mcp_servers),
-      delegates: JSON.parse(r.delegates ?? "[]"),
+      delegates: this.db
+        .query<{ id: string }, [string]>(
+          "SELECT id FROM agents WHERE id != ? ORDER BY created_at",
+        )
+        .all(r.id)
+        .map((other) => other.id),
       inference: JSON.parse(r.inference ?? "{}"),
       ...(r.desktop_model && { desktopModel: JSON.parse(r.desktop_model) }),
       ...(r.review_model && { reviewModel: JSON.parse(r.review_model) }),

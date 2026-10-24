@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeftIcon, RefreshCwIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowLeft02Icon, RefreshIcon } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -84,7 +85,7 @@ export function BotDesktop({ botId }: { botId: string }) {
           render={<Link to="/bots/$botId" params={{ botId }} />}
           nativeButton={false}
         >
-          <ArrowLeftIcon />
+          <HugeiconsIcon icon={ArrowLeft02Icon} />
         </Button>
         <span className="truncate font-medium">
           {bot ? `${bot.name}'s desktop` : "Bot desktop"}
@@ -104,7 +105,7 @@ export function BotDesktop({ botId }: { botId: string }) {
             disabled={viewer.isPending}
             onClick={() => connect()}
           >
-            <RefreshCwIcon data-icon="inline-start" />
+            <HugeiconsIcon icon={RefreshIcon} data-icon="inline-start" />
             Reconnect
           </Button>
           <Button

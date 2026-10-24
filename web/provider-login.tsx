@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ExternalLinkIcon } from "lucide-react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { LinkSquare02Icon } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -167,7 +168,10 @@ function LoginSteps({ session }: { session: LoginSession }) {
                   nativeButton={false}
                 >
                   Open sign-in page
-                  <ExternalLinkIcon data-icon="inline-end" />
+                  <HugeiconsIcon
+                    icon={LinkSquare02Icon}
+                    data-icon="inline-end"
+                  />
                 </Button>
               </div>
             );
