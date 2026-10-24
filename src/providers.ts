@@ -12,6 +12,7 @@ import {
   type CrumblePlugin,
   type ProviderContribution,
 } from "./plugins";
+import type { AuthContext } from "@earendil-works/pi-ai";
 
 const MELIOUS_URL = "https://api.melious.ai/v1";
 
@@ -92,8 +93,14 @@ export function providerModels(
   contributions: readonly ProviderContribution[] = pluginProviders([
     meliousPlugin(),
   ]),
+  options: { allowAmbientEnv?: boolean } = {},
 ) {
-  const models = builtinModels({ credentials });
+  const authContext: AuthContext | undefined =
+    options.allowAmbientEnv === false
+      ? { env: async () => undefined, fileExists: async () => false }
+      : undefined;
+
+  const models = builtinModels({ credentials, authContext });
 
   for (const { provider } of contributions) models.setProvider(provider);
 

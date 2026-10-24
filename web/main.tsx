@@ -65,14 +65,14 @@ import { cn } from "@/lib/utils";
 import {
   type Bot,
   HttpError,
-  api,
   botsQuery,
   chatQuery,
   groupChatQuery,
   groupsQuery,
   queryClient,
-  token,
+  clearUserData,
 } from "./api";
+import { authClient } from "./auth-client";
 import { ActivityPage } from "./activity";
 import { BotAvatar, botColor, botStyle } from "./avatar";
 import { BotForm } from "./bot-form";
@@ -80,7 +80,12 @@ import { Chat } from "./chat";
 import { BotDesktop } from "./desktop";
 import { GroupChatView, GroupForm } from "./groups";
 import { IntegrationsPage, OAuthCallback } from "./integrations";
-import { followActivity, useConnectionStatus, useWorking } from "./live";
+import {
+  clearLiveStreams,
+  followActivity,
+  useConnectionStatus,
+  useWorking,
+} from "./live";
 import { MemoryPage } from "./memory";
 import { GeneralSettings, ProvidersSettings, SettingsLayout } from "./settings";
 import { SkillsPage } from "./skills";
@@ -91,14 +96,21 @@ const rootRoute = createRootRoute();
 const connectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/connect",
+  beforeLoad: async () => {
+    const session = await authClient.getSession();
+
+    if (session.data) throw redirect({ to: "/" });
+  },
   component: Connect,
 });
 
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "app",
-  beforeLoad: () => {
-    if (!token.get()) throw redirect({ to: "/connect" });
+  beforeLoad: async () => {
+    const session = await authClient.getSession();
+
+    if (!session.data) throw redirect({ to: "/connect" });
   },
   component: Shell,
 });
@@ -327,20 +339,25 @@ declare module "@tanstack/react-router" {
   }
 }
 
-token.subscribe(() => {
-  if (!token.get()) void router.navigate({ to: "/connect" });
-});
-
 function Connect() {
-  const [value, setValue] = useState("");
-  const navigate = useNavigate();
+  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
 
   const connect = useMutation({
-    mutationFn: async (candidate: string) => {
-      token.set(candidate);
-      await api("/v1/capabilities");
+    mutationFn: async () => {
+      const result =
+        mode === "sign-in"
+          ? await authClient.signIn.email({ email, password })
+          : await authClient.signUp.email({ email, password, name });
+
+      if (result.error) throw new Error(result.error.message);
     },
-    onSuccess: () => navigate({ to: "/" }),
+    onSuccess: async () => {
+      clearUserData();
+      window.location.assign("/ui/");
+    },
   });
 
   return (
@@ -348,26 +365,70 @@ function Connect() {
       className="mx-auto mt-[20vh] w-full max-w-xs px-4"
       onSubmit={(event) => {
         event.preventDefault();
-        connect.mutate(value.trim());
+        connect.mutate();
       }}
     >
       <FieldGroup>
         <h1 className="font-heading text-xl font-semibold">Crumble</h1>
+        {mode === "sign-up" && (
+          <Field>
+            <FieldLabel htmlFor="name">Name</FieldLabel>
+            <Input
+              id="name"
+              autoComplete="name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </Field>
+        )}
         <Field data-invalid={connect.isError || undefined}>
-          <FieldLabel htmlFor="token">Server token</FieldLabel>
+          <FieldLabel htmlFor="email">Email</FieldLabel>
           <Input
-            id="token"
-            type="password"
+            id="email"
+            type="email"
             autoFocus
-            autoComplete="current-password"
+            autoComplete="email"
             aria-invalid={connect.isError || undefined}
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </Field>
+        <Field data-invalid={connect.isError || undefined}>
+          <FieldLabel htmlFor="password">Password</FieldLabel>
+          <Input
+            id="password"
+            type="password"
+            autoComplete={
+              mode === "sign-in" ? "current-password" : "new-password"
+            }
+            aria-invalid={connect.isError || undefined}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
           />
           {connect.isError && <FieldError>{connect.error.message}</FieldError>}
         </Field>
-        <Button type="submit" disabled={!value.trim() || connect.isPending}>
-          Connect
+        <Button
+          type="submit"
+          disabled={
+            !email.trim() ||
+            !password ||
+            (mode === "sign-up" && !name.trim()) ||
+            connect.isPending
+          }
+        >
+          {mode === "sign-in" ? "Sign in" : "Create account"}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => {
+            setMode(mode === "sign-in" ? "sign-up" : "sign-in");
+            connect.reset();
+          }}
+        >
+          {mode === "sign-in"
+            ? "Create an account"
+            : "Already have an account? Sign in"}
         </Button>
       </FieldGroup>
     </form>
@@ -381,11 +442,27 @@ const WORKSPACE = [
 ] as const;
 
 function Shell() {
+  const session = authClient.useSession();
   const bots = useQuery(botsQuery);
   const groups = useQuery(groupsQuery);
   const matchRoute = useMatchRoute();
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
+  const userId = session.data?.user.id;
+  const previousUserId = useRef(userId);
+  useEffect(() => {
+    if (
+      previousUserId.current !== undefined &&
+      previousUserId.current !== userId
+    ) {
+      clearLiveStreams();
+      clearUserData();
+
+      if (!userId) window.location.assign("/ui/connect");
+    }
+
+    previousUserId.current = userId;
+  }, [userId]);
   const needle = search.trim().toLowerCase();
 
   useEffect(() => {

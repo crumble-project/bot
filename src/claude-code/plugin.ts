@@ -1,5 +1,6 @@
 import { createProvider, type Model } from "@earendil-works/pi-ai";
 import { join } from "node:path";
+import { chmodSync, mkdirSync } from "node:fs";
 import type { CrumblePlugin, ExternalAuth } from "../plugins";
 import { CLAUDE_CODE_API, claudeCodeStreams } from "./adapter";
 import {
@@ -31,7 +32,7 @@ export function claudeCodeOptions(
   env: NodeJS.ProcessEnv,
 ): ClaudeCodeOptions & { workDir: string } {
   const options: ClaudeCodeOptions & { workDir: string } = {
-    configDir: env["CRUMBLE_CLAUDE_CONFIG_DIR"] ?? join(dataDir, "claude"),
+    configDir: join(dataDir, "claude"),
     workDir: join(dataDir, "claude-work"),
     // Feature flags unlock models in Claude Code's picker; off keeps it quiet with fewer models.
     telemetry: !OFF.includes(
@@ -109,6 +110,8 @@ export function claudeCodePlugin(
   env: NodeJS.ProcessEnv,
 ): CrumblePlugin {
   const options = claudeCodeOptions(dataDir, env);
+  mkdirSync(options.configDir, { recursive: true, mode: 0o700 });
+  chmodSync(options.configDir, 0o700);
   let cached: { at: number; status: Promise<ClaudeCodeStatus> } | undefined;
 
   const status = () => {

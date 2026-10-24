@@ -12,6 +12,7 @@ export type PluginHost = {
   env: NodeJS.ProcessEnv;
   workspaces: Workspaces | undefined;
   desktopControl: DesktopControl;
+  /** Disable host-level Claude Code authentication for tenant runtimes. */
 };
 
 /** Every plugin compiled into the server, in the order their contributions are listed. */

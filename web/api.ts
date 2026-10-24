@@ -71,9 +71,6 @@ export type ActivityEvent = z.infer<typeof activityEvent>;
 
 export type { ChartLayout };
 
-const TOKEN_KEY = "crumble.token";
-const listeners = new Set<() => void>();
-
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -83,23 +80,11 @@ export const queryClient = new QueryClient({
   },
 });
 
-export const token = {
-  get: () => localStorage.getItem(TOKEN_KEY),
-  set(value: string | null) {
-    if (value) localStorage.setItem(TOKEN_KEY, value);
-    else localStorage.removeItem(TOKEN_KEY);
-
-    // A cache belongs to one credential; never show one token's data to another.
-    queryClient.getQueryCache().clear();
-
-    for (const listener of listeners) listener();
-  },
-  subscribe(listener: () => void) {
-    listeners.add(listener);
-
-    return () => listeners.delete(listener);
-  },
-};
+/** Drop all cached user data when the authenticated account changes. */
+export function clearUserData() {
+  queryClient.cancelQueries();
+  queryClient.clear();
+}
 
 export class HttpError extends Error {
   constructor(
@@ -125,14 +110,19 @@ async function errorMessage(response: Response) {
 async function request(path: string, init: RequestInit = {}) {
   const response = await fetch(path, {
     ...init,
+    credentials: "include",
     headers: {
       ...init.headers,
-      Authorization: `Bearer ${token.get() ?? ""}`,
       ...(init.body && { "Content-Type": "application/json" }),
     },
   });
 
-  if (response.status === 401) token.set(null);
+  if (response.status === 401) {
+    clearUserData();
+
+    if (!location.pathname.endsWith("/connect"))
+      window.location.assign("/ui/connect");
+  }
 
   if (!response.ok)
     throw new HttpError(response.status, await errorMessage(response));
@@ -287,7 +277,7 @@ type StreamHandlers = {
   onGone?: () => void;
 };
 
-/** Follows a server-sent event stream with the bearer token, reconnecting with backoff until `signal` aborts. */
+/** Follows a server-sent event stream with the session cookie, reconnecting with backoff until `signal` aborts. */
 export async function follow(
   path: string,
   handlers: StreamHandlers,

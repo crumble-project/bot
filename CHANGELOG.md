@@ -79,6 +79,12 @@
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
 
+## Contract 3.0.0
+
+- Replace the shared server bearer token with Better Auth account sessions. Clients must sign in through `POST /api/auth/sign-in/email` and use the returned session token, or use the browser session cookie. Legacy server tokens are rejected.
+- Scope `/v1` resources, event streams, and desktop viewers to the signed-in account. Shared memories and skills belong to that account's bots. Cookie-authenticated writes require the configured `Origin`.
+- Add the `SessionCookie` authentication alternative to the OpenAPI document and describe `BearerAuth` as an account session token. Existing native clients need account sign-in support before upgrading.
+
 ## Contract 2.0.0
 
 - `GET /v1/activity/feed` returns skill and memory changes as `ChangeActivity` items (`kind: "change"`, nullable `agentId` and `agentName` for the shared library, `timestamp`, and the `LearnedChange` as `change`) among the `OperationalActivity` items. Clients that decode `activities` as `OperationalActivity` only must handle the new item.

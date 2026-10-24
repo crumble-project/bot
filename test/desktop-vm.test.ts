@@ -225,7 +225,7 @@ describe.skipIf(!vmTests)("bot desktop in a VM", () => {
 });
 
 describe.skipIf(!vmTests)("watching and taking control", () => {
-  const token = "w".repeat(40);
+  let token = "";
   const dataDir = mkdtempSync(path.join(tmpdir(), "crumble-viewer-"));
   const port = 7400 + (process.pid % 500);
   const base = `http://127.0.0.1:${port}`;
@@ -291,7 +291,25 @@ describe.skipIf(!vmTests)("watching and taking control", () => {
       .map((line) => Number(line.split("=")[1]));
 
   beforeAll(async () => {
-    running = await startServer({ dataDir, port, token, workspaces });
+    running = await startServer({
+      dataDir,
+      port,
+      workspaces: () => workspaces,
+    });
+
+    const auth = await fetch(`${base}/api/auth/sign-up/email`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Desktop owner",
+        email: `desktop-${process.pid}@example.test`,
+        password: "correct horse battery staple",
+      }),
+    });
+
+    expect(auth.status).toBe(200);
+    // SAFETY: Better Auth returns a token on successful bearer sign-up.
+    token = ((await auth.json()) as { token: string }).token;
 
     const created = await api("/v1/agents", {
       method: "POST",
@@ -405,7 +423,11 @@ describe.skipIf(!vmTests)("watching and taking control", () => {
     await running.close();
 
     workspaces = newWorkspaces();
-    running = await startServer({ dataDir, port, token, workspaces });
+    running = await startServer({
+      dataDir,
+      port,
+      workspaces: () => workspaces,
+    });
 
     const state = desktopControlResponse.parse(
       await (await api(`/v1/agents/${agentId}/desktop/control`)).json(),
@@ -418,7 +440,11 @@ describe.skipIf(!vmTests)("watching and taking control", () => {
   test("a bot desktop the owner holds does not idle-stop", async () => {
     await running.close();
     workspaces = newWorkspaces(1500);
-    running = await startServer({ dataDir, port, token, workspaces });
+    running = await startServer({
+      dataDir,
+      port,
+      workspaces: () => workspaces,
+    });
 
     await guest("true");
     await setControl("owner");

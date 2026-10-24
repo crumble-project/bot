@@ -223,7 +223,7 @@ const error = z
 const errors = {
   400: json(error, "Invalid request or operation"),
   401: {
-    description: "Missing or invalid bearer token",
+    description: "Missing, expired, or invalid account session",
     content: { "text/plain": { schema: z.string() } },
   },
   404: json(error, "Resource not found"),
@@ -240,9 +240,14 @@ const errors = {
 const gone = json(error, "Login session ended or was lost on restart");
 
 function define<const R extends RouteConfig>(config: R) {
+  const security: NonNullable<RouteConfig["security"]> = [
+    { BearerAuth: [] },
+    { SessionCookie: [] },
+  ];
+
   return createRoute({
     ...config,
-    security: [{ BearerAuth: [] }],
+    security,
     responses: { ...errors, ...config.responses },
   });
 }
@@ -938,6 +943,15 @@ export function contractApp() {
   app.openAPIRegistry.registerComponent("securitySchemes", "BearerAuth", {
     type: "http",
     scheme: "bearer",
+    description:
+      "Better Auth session token from /api/auth/sign-in/email. The legacy server token is not accepted.",
+  });
+  app.openAPIRegistry.registerComponent("securitySchemes", "SessionCookie", {
+    type: "apiKey",
+    in: "cookie",
+    name: "better-auth.session_token",
+    description:
+      "Better Auth session cookie. HTTPS deployments use the __Secure- prefix. Cookie-authenticated writes require the configured Origin.",
   });
   app.openAPIRegistry.register("ReplyEvent", response.replyEvent);
   app.openAPIRegistry.register("ChatPreviewEvent", response.chatPreviewEvent);
@@ -958,7 +972,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "2.0.0",
+      version: "3.0.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },
