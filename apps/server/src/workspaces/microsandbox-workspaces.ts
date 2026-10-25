@@ -10,6 +10,7 @@ import {
   assertAgentId,
   bootStep,
   daemonPath,
+  untilBooted,
   type GuestSetup,
   type MachineStream,
   type MachineWorkspacesOptions,
@@ -33,6 +34,7 @@ import {
   startWorkspaceProxy,
   type WorkspaceInterceptor,
   type WorkspaceProxy,
+  type WorkspaceProxyOptions,
 } from "./workspace-proxy";
 
 const DISK_MIB = 8192;
@@ -114,114 +116,115 @@ class MicrosandboxMachines implements WorkspaceMachines {
    * It restarts the bot's existing machine, so programs installed outside `/workspace` survive, and creates a new one
    * when the image changed, the machine does not start, or its proxy port is taken.
    */
-  boot(agentId: string, image: string, guest: GuestSetup = {}) {
-    return Effect.gen({ self: this }, function* () {
-      const name = this.name(agentId);
+  readonly boot = Effect.fn("MicrosandboxMachines.boot")(function* (
+    this: MicrosandboxMachines,
+    agentId: string,
+    image: string,
+    guest: GuestSetup = {},
+  ) {
+    const name = this.name(agentId);
 
-      yield* bootStep("Opening the workspace volume", () => ensureVolume(name));
+    yield* bootStep("Opening the workspace volume", () => ensureVolume(name));
 
-      const decide = ({ host, port }: { host: string; port: number }) =>
-        this.network({ agentId, host, port });
+    const decide = ({ host, port }: { host: string; port: number }) =>
+      this.network({ agentId, host, port });
 
-      const intercept = this.intercept?.(agentId);
-      const daemon = this.daemon;
-      const desktop = image === this.desktopImage;
+    const intercept = this.intercept?.(agentId);
+    const desktop = image === this.desktopImage;
 
-      let sandbox: Sandbox | undefined;
-      let proxy: WorkspaceProxy | undefined;
+    // A machine's network settings are fixed at creation, so a restarted one needs its proxy at the same port.
+    const resumed = yield* untilBooted(
+      Effect.promise(() => resume(name)),
+      stopSandbox,
+    );
 
-      return yield* Effect.gen(function* () {
-        // A machine's network settings are fixed at creation, so a restarted one needs its proxy at the same port.
-        const resumed = yield* Effect.promise(() => resume(name));
+    const record = resumed
+      ? yield* Effect.promise(() => readMachineRecord(resumed))
+      : undefined;
 
-        sandbox = resumed;
+    const resumedProxy =
+      resumed && record?.image === image
+        ? yield* untilBooted(
+            Effect.promise(() =>
+              startWorkspaceProxy({
+                decide,
+                intercept,
+                port: record.proxyPort,
+              }).catch(() => undefined),
+            ),
+            closeProxy,
+          )
+        : undefined;
 
-        const record = resumed
-          ? yield* Effect.promise(() => readMachineRecord(resumed))
-          : undefined;
+    const { sandbox, proxy } =
+      resumed && resumedProxy
+        ? { sandbox: resumed, proxy: resumedProxy }
+        : yield* this.create(name, image, resumed, decide, intercept);
 
-        if (resumed && record?.image === image)
-          proxy = yield* Effect.promise(() =>
-            startWorkspaceProxy({
-              decide,
-              intercept,
-              port: record.proxyPort,
-            }).catch(() => undefined),
-          );
-
-        let machine: Sandbox;
-
-        if (resumed && proxy) machine = resumed;
-        else {
-          yield* Effect.promise(
-            async () => await resumed?.stop().catch(() => undefined),
-          );
-
-          const created = yield* bootStep("Starting the workspace proxy", () =>
-            startWorkspaceProxy({ decide, intercept }),
-          );
-
-          proxy = created;
-          // replace() also takes over a machine that could not be resumed.
-          machine = yield* bootStep("Creating the sandbox", () =>
-            Sandbox.builder(name)
-              .image(image)
-              .cpus(CPUS)
-              .memory(MEMORY_MIB)
-              .volume(WORKSPACE_PATH, (mount) => mount.named(name))
-              .proxy((outbound) => outbound.httpConnect(created.address))
-              .replace()
-              .create(),
-          );
-          sandbox = machine;
-
-          const fresh = machine;
-
-          const machineRecord: MachineRecord = {
-            image,
-            proxyPort: Number(created.address.split(":")[1]),
-          };
-
-          yield* bootStep("Recording the machine's image", async () => {
-            await fresh.fs().write(MACHINE_FILE, JSON.stringify(machineRecord));
-            await flush(fresh);
-          });
-        }
-
-        const machineProxy = proxy;
-        const booted = machine;
-
-        yield* bootStep("Installing the pi-env daemon", async () => {
-          await booted.fs().write(GUEST_DAEMON, await readFile(daemon));
-          await run(booted, `chmod 755 ${GUEST_DAEMON}`);
-        });
-
-        if (guest.caCertificate) {
-          const caCertificate = guest.caCertificate;
-
-          yield* bootStep("Installing the credential authority", async () => {
-            await booted.fs().write(GUEST_CA_PATH, caCertificate);
-            await run(booted, "update-ca-certificates >/dev/null");
-          });
-        }
-
-        if (desktop)
-          yield* startDesktop(
-            booted,
-            `${DESKTOP_START} ${DESKTOP_DISPLAY_ONLY}`,
-          );
-
-        return new MicrosandboxMachine(booted, machineProxy, image, desktop);
-      }).pipe(
-        Effect.onError(() =>
-          Effect.promise(async () => {
-            await sandbox?.stop().catch(() => undefined);
-            await proxy?.close();
-          }),
-        ),
-      );
+    yield* bootStep("Installing the pi-env daemon", async () => {
+      await sandbox.fs().write(GUEST_DAEMON, await readFile(this.daemon));
+      await run(sandbox, `chmod 755 ${GUEST_DAEMON}`);
     });
-  }
+
+    const caCertificate = guest.caCertificate;
+
+    if (caCertificate)
+      yield* bootStep("Installing the credential authority", async () => {
+        await sandbox.fs().write(GUEST_CA_PATH, caCertificate);
+        await run(sandbox, "update-ca-certificates >/dev/null");
+      });
+
+    if (desktop)
+      yield* startDesktop(sandbox, `${DESKTOP_START} ${DESKTOP_DISPLAY_ONLY}`);
+
+    return new MicrosandboxMachine(sandbox, proxy, image, desktop);
+  }, Effect.scoped);
+
+  /** A new machine for the bot, with a new proxy, replacing the one that could not be resumed. */
+  private readonly create = Effect.fn("MicrosandboxMachines.create")(function* (
+    this: MicrosandboxMachines,
+    name: string,
+    image: string,
+    resumed: Sandbox | undefined,
+    decide: WorkspaceProxyOptions["decide"],
+    intercept: WorkspaceInterceptor | undefined,
+  ) {
+    if (resumed) yield* Effect.promise(() => stopSandbox(resumed));
+
+    const proxy = yield* untilBooted(
+      bootStep("Starting the workspace proxy", () =>
+        startWorkspaceProxy({ decide, intercept }),
+      ),
+      closeProxy,
+    );
+
+    // replace() also takes over a machine that could not be resumed.
+    const sandbox = yield* untilBooted(
+      bootStep("Creating the sandbox", () =>
+        Sandbox.builder(name)
+          .image(image)
+          .cpus(CPUS)
+          .memory(MEMORY_MIB)
+          .volume(WORKSPACE_PATH, (mount) => mount.named(name))
+          .proxy((outbound) => outbound.httpConnect(proxy.address))
+          .replace()
+          .create(),
+      ),
+      stopSandbox,
+    );
+
+    const machineRecord: MachineRecord = {
+      image,
+      proxyPort: Number(proxy.address.split(":")[1]),
+    };
+
+    yield* bootStep("Recording the machine's image", async () => {
+      await sandbox.fs().write(MACHINE_FILE, JSON.stringify(machineRecord));
+      await flush(sandbox);
+    });
+
+    return { sandbox, proxy };
+  });
 }
 
 class MicrosandboxMachine implements WorkspaceMachine {
@@ -315,6 +318,14 @@ class MicrosandboxMachine implements WorkspaceMachine {
     };
   }
 }
+
+const stopSandbox = async (sandbox: Sandbox | undefined) => {
+  await sandbox?.stop().catch(() => undefined);
+};
+
+const closeProxy = async (proxy: WorkspaceProxy | undefined) => {
+  await proxy?.close();
+};
 
 /** Runs `desktop-start.sh` with its arguments; its output says why the bot desktop did not start. */
 const startDesktop = (sandbox: Sandbox, command: string) =>

@@ -20,6 +20,7 @@ import type { BotsAccess } from "../bots/bots";
 import type { DesktopStream } from "../workspaces/workspace";
 import type { DesktopOpenError } from "../workspaces/workspace-errors";
 import { Conflict } from "../shared/errors";
+import type { Runner } from "../shared/runner";
 
 const HEARTBEAT_MS = 15_000;
 
@@ -32,7 +33,7 @@ const closeReasons = {
   DesktopNotEnabled: "This bot needs the desktop tool for its bot desktop",
   WorkspaceBootFailed: "The bot's workspace did not start",
   DesktopStartFailed: "The bot desktop did not start",
-  WorkspaceStreamFailed: "The bot desktop's VNC server did not answer",
+  WorkspaceStreamFailed: "The bot desktop's socat relay did not start",
   WorkspaceUnreachable: "The bot's workspace is unreachable",
   WorkspacesClosed: "The server is shutting down",
   WorkspaceStopFailed: "The bot's previous machine did not stop",
@@ -61,6 +62,7 @@ export function registerDesktopRoutes(options: {
   app: ReturnType<typeof contractApp>;
   register: Register;
   service: BotsAccess;
+  run: Runner<never>;
   /** Whether the server has a desktop workspace image. */
   desktop: boolean;
   control: DesktopControlAccess;
@@ -70,7 +72,7 @@ export function registerDesktopRoutes(options: {
   ) => Effect.Effect<DesktopStream, DesktopOpenError>;
   startDesktop?: (agentId: string) => Effect.Effect<void, DesktopOpenError>;
 }) {
-  const { app, register, service, control, tickets } = options;
+  const { app, register, service, run, control, tickets } = options;
   // The bot of each viewer connection, from its redeemed ticket to its WebSocket.
   const viewers = new WeakMap<Request, string>();
 
@@ -135,7 +137,7 @@ export function registerDesktopRoutes(options: {
 
     // The machine boots while the client loads the page; the viewer's WebSocket reports any failure to the owner.
     if (options.startDesktop)
-      Effect.runFork(
+      run.runFork(
         options
           .startDesktop(agent.id)
           .pipe(
@@ -203,7 +205,7 @@ export function registerDesktopRoutes(options: {
           const fail = (reason: string) =>
             Effect.sync(() => ws.close(1011, reason));
 
-          Effect.runFork(
+          run.runFork(
             options.openDesktop!(agentId).pipe(
               Effect.flatMap((stream) => Effect.sync(() => attach(stream))),
               Effect.tapCause((cause) =>

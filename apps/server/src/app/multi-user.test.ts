@@ -277,7 +277,7 @@ test.serial(
         },
         restart: () => Effect.void,
         sync: () => Effect.void,
-        keepAwake: () => Effect.succeed(Effect.void),
+        keepAwake: () => () => {},
         startDesktop: () => Effect.void,
         openDesktop: () =>
           Effect.succeed({

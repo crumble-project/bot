@@ -57,8 +57,8 @@ export interface Workspaces {
   openDesktop(agentId: string): Effect.Effect<DesktopStream, DesktopOpenError>;
   /** Boots the bot's machine ahead of `openDesktop`, so a viewer about to connect waits less. */
   startDesktop(agentId: string): Effect.Effect<void, DesktopOpenError>;
-  /** Keeps the bot's machine from its idle stop until the returned release runs. */
-  keepAwake(agentId: string): Effect.Effect<Effect.Effect<void>>;
+  /** Keeps the bot's machine from its idle stop until the returned release is called. */
+  keepAwake(agentId: string): () => void;
   /** Makes completed writes in the bot's workspace durable. A stopped workspace has nothing to flush. */
   sync(agentId: string): Effect.Effect<void, WorkspaceSyncFailed>;
 }

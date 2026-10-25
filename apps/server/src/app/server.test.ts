@@ -10,7 +10,17 @@ import {
 } from "../contract/api-responses";
 import { startServer } from "./server";
 import type { Workspaces } from "../workspaces/workspace";
-import { DesktopStartFailed } from "../workspaces/workspace-errors";
+import {
+  DesktopNotConfigured,
+  DesktopNotEnabled,
+  DesktopStartFailed,
+  WorkspaceBootFailed,
+  WorkspaceStopFailed,
+  WorkspaceStreamFailed,
+  WorkspaceUnreachable,
+  WorkspacesClosed,
+  type DesktopOpenError,
+} from "../workspaces/workspace-errors";
 
 type Running = Awaited<ReturnType<typeof startServer>>;
 
@@ -63,7 +73,7 @@ function desktopWorkspaces(openDesktop: Workspaces["openDesktop"]): Workspaces {
     },
     restart: () => Effect.void,
     openDesktop,
-    keepAwake: () => Effect.succeed(Effect.void),
+    keepAwake: () => () => {},
     startDesktop: () => Effect.void,
     sync: () => Effect.void,
   };
@@ -316,29 +326,76 @@ test.serial(
   },
 );
 
+// Each failure's message and cause carry a secret, as guest output might: only the log may show them.
+const SECRET = "token=secret-123";
+
+const failure = (tag: string) => ({
+  message: `${tag} failed (${SECRET})`,
+  cause: `${tag} cause (${SECRET})`,
+});
+
+const desktopFailures: Array<{
+  error: DesktopOpenError;
+  reason: string;
+}> = [
+  {
+    error: new DesktopNotConfigured({
+      message: failure("DesktopNotConfigured").message,
+    }),
+    reason: "This server has no bot desktop image",
+  },
+  {
+    error: new DesktopNotEnabled({
+      message: failure("DesktopNotEnabled").message,
+    }),
+    reason: "This bot needs the desktop tool for its bot desktop",
+  },
+  {
+    error: new WorkspaceBootFailed(failure("WorkspaceBootFailed")),
+    reason: "The bot's workspace did not start",
+  },
+  {
+    error: new DesktopStartFailed(failure("DesktopStartFailed")),
+    reason: "The bot desktop did not start",
+  },
+  {
+    error: new WorkspaceStreamFailed(failure("WorkspaceStreamFailed")),
+    reason: "The bot desktop's socat relay did not start",
+  },
+  {
+    error: new WorkspaceUnreachable(failure("WorkspaceUnreachable")),
+    reason: "The bot's workspace is unreachable",
+  },
+  {
+    error: new WorkspacesClosed({
+      message: failure("WorkspacesClosed").message,
+    }),
+    reason: "The server is shutting down",
+  },
+  {
+    error: new WorkspaceStopFailed(failure("WorkspaceStopFailed")),
+    reason: "The bot's previous machine did not stop",
+  },
+];
+
 test.serial(
   "a bot desktop that fails to open is logged and named in the viewer's close reason",
   async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-viewer-fail-"));
-    const logged: unknown[][] = [];
+    const logged: string[] = [];
 
-    const log = spyOn(console, "log").mockImplementation((...args) => {
-      logged.push(args);
-    });
-
-    const error = spyOn(console, "error").mockImplementation((...args) => {
-      logged.push(args);
-    });
-
-    const workspaces = desktopWorkspaces(() =>
-      Effect.fail(
-        new DesktopStartFailed({
-          message:
-            "The bot desktop did not start: /opt/crumble/desktop-start.sh failed: Xvnc died",
-          cause: "Xvnc died",
-        }),
-      ),
+    const spies = (["log", "warn", "error"] as const).map((level) =>
+      spyOn(console, level).mockImplementation((...args) => {
+        logged.push(args.map(String).join(" "));
+      }),
     );
+
+    let opening: Effect.Effect<never, DesktopOpenError> = Effect.never;
+
+    const workspaces: Workspaces = {
+      ...desktopWorkspaces(() => opening),
+      startDesktop: () => opening,
+    };
 
     try {
       const running = await startServer({
@@ -359,36 +416,58 @@ test.serial(
         ).json(),
       );
 
-      const viewer = await fetch(
-        new URL(`/v1/agents/${agent.id}/desktop/viewer`, running.server.url),
-        { method: "POST", headers },
-      );
-
-      // SAFETY: The route returns the DesktopViewer schema.
-      const link = ((await viewer.json()) as { path: string }).path;
-
-      const closed = await new Promise<CloseEvent>((resolve) => {
-        const socket = new WebSocket(
-          new URL(
-            `${link}/websockify`,
-            running.server.url.href.replace("http", "ws"),
-          ),
+      // Each viewer link opens one connection; the server boots the bot desktop when it issues one.
+      const close = async () => {
+        const viewer = await fetch(
+          new URL(`/v1/agents/${agent.id}/desktop/viewer`, running.server.url),
+          { method: "POST", headers },
         );
 
-        socket.addEventListener("close", resolve);
-      });
+        // SAFETY: The route returns the DesktopViewer schema.
+        const link = ((await viewer.json()) as { path: string }).path;
+
+        return new Promise<CloseEvent>((resolve) => {
+          const socket = new WebSocket(
+            new URL(
+              `${link}/websockify`,
+              running.server.url.href.replace("http", "ws"),
+            ),
+          );
+
+          socket.addEventListener("close", resolve);
+        });
+      };
+
+      for (const { error, reason } of desktopFailures) {
+        opening = Effect.fail(error);
+        logged.length = 0;
+
+        const closed = await close();
+
+        expect(closed.code).toBe(1011);
+        expect(closed.reason).toBe(reason);
+        expect(closed.reason).not.toContain(SECRET);
+        expect(Buffer.byteLength(closed.reason)).toBeLessThanOrEqual(123);
+
+        const log = logged.join("\n");
+
+        expect(log).toContain("Opening a bot desktop failed");
+        expect(log).toContain("Booting a bot desktop failed");
+        expect(log).toContain(error.message);
+      }
+
+      // A defect has no name for the owner, but the log still has it.
+      opening = Effect.die(new Error(`The relay crashed (${SECRET})`));
+      logged.length = 0;
+
+      const closed = await close();
 
       expect(closed.code).toBe(1011);
-      expect(closed.reason).toBe("The bot desktop did not start");
-      expect(
-        logged.some((args) =>
-          args.some((arg) => String(arg).includes("Xvnc died")),
-        ),
-      ).toBe(true);
+      expect(closed.reason).toBe("The bot desktop is unavailable");
+      expect(logged.join("\n")).toContain("The relay crashed");
       await running.close();
     } finally {
-      log.mockRestore();
-      error.mockRestore();
+      for (const spy of spies) spy.mockRestore();
       rmSync(dataDir, { recursive: true, force: true });
     }
   },

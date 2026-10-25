@@ -53,7 +53,7 @@ class DirectoryWorkspaces implements Workspaces {
   }
 
   keepAwake(_agentId: string) {
-    return Effect.succeed(Effect.void);
+    return () => {};
   }
 }
 

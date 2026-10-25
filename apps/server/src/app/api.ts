@@ -219,6 +219,7 @@ export function createAPI(
     app,
     register,
     service,
+    run: core,
     desktop: options.desktop === true,
     control: options.desktopControl ?? desktopControlAccess(core),
     tickets: options.viewerTickets ?? new ViewerTickets(),

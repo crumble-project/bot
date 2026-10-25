@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { Effect } from "effect";
+import { Deferred, Effect } from "effect";
 import {
   MachineWorkspaces,
   type WorkspaceMachine,
@@ -14,6 +14,8 @@ const DESKTOP = "desktop";
 function fakeMachines(fail?: "desktop" | "stream") {
   const booted: string[] = [];
   const stopped: string[] = [];
+  // Completes at the first stop, so a test waits for an idle stop without guessing how long it takes.
+  const stopping = Deferred.makeUnsafe<void>();
 
   const machine = (image: string): WorkspaceMachine => ({
     image,
@@ -33,7 +35,9 @@ function fakeMachines(fail?: "desktop" | "stream") {
             output: (async function* () {})(),
           }),
     sync: Effect.void,
-    stop: Effect.sync(() => void stopped.push(image)),
+    stop: Effect.sync(() => void stopped.push(image)).pipe(
+      Effect.andThen(Deferred.succeed(stopping, undefined)),
+    ),
   });
 
   const machines: WorkspaceMachines = {
@@ -52,7 +56,7 @@ function fakeMachines(fail?: "desktop" | "stream") {
       }),
   };
 
-  return { machines, booted, stopped };
+  return { machines, booted, stopped, stopping };
 }
 
 const failureOf = <A, E extends { _tag: string }>(
@@ -106,18 +110,19 @@ test("a desktop that does not start fails the open, and the next open boots agai
 });
 
 test("a VNC stream that does not open releases the machine for its idle stop", async () => {
-  const { machines, stopped } = fakeMachines("stream");
+  const { machines, stopped, stopping } = fakeMachines("stream");
 
   const workspaces = new MachineWorkspaces(machines, BASE, {
     desktopImage: DESKTOP,
     wantsDesktop: () => true,
-    idleTimeoutMs: 10,
+    idleTimeoutMs: 0,
   });
 
   expect(await failureOf(workspaces.openDesktop("bot"))).toBe(
     "WorkspaceStreamFailed",
   );
-  await Bun.sleep(100);
+  // A hold the failed open kept would block the idle stop, and this would time out.
+  await Effect.runPromise(Deferred.await(stopping));
   expect(stopped).toEqual([DESKTOP]);
   await Effect.runPromise(workspaces.close());
 });
