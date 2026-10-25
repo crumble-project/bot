@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { Effect } from "effect";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,6 +10,7 @@ import {
 } from "../contract/api-responses";
 import { startServer } from "./server";
 import type { Workspaces } from "../workspaces/workspace";
+import { DesktopStartFailed } from "../workspaces/workspace-errors";
 
 type Running = Awaited<ReturnType<typeof startServer>>;
 
@@ -310,6 +311,84 @@ test.serial(
       expect(greeting).toBe("RFB 003.008\n");
       await running.close();
     } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.serial(
+  "a bot desktop that fails to open is logged and named in the viewer's close reason",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-viewer-fail-"));
+    const logged: unknown[][] = [];
+
+    const log = spyOn(console, "log").mockImplementation((...args) => {
+      logged.push(args);
+    });
+
+    const error = spyOn(console, "error").mockImplementation((...args) => {
+      logged.push(args);
+    });
+
+    const workspaces = desktopWorkspaces(() =>
+      Effect.fail(
+        new DesktopStartFailed({
+          message:
+            "The bot desktop did not start: /opt/crumble/desktop-start.sh failed: Xvnc died",
+          cause: "Xvnc died",
+        }),
+      ),
+    );
+
+    try {
+      const running = await startServer({
+        dataDir,
+        port: 0,
+        workspaces: () => Effect.succeed(workspaces),
+      });
+
+      const headers = await signUp(running);
+
+      const agent = agentResponse.parse(
+        await (
+          await fetch(new URL("/v1/agents", running.server.url), {
+            method: "POST",
+            headers: json(headers),
+            body: JSON.stringify({ name: "Viewer", tools: ["desktop"] }),
+          })
+        ).json(),
+      );
+
+      const viewer = await fetch(
+        new URL(`/v1/agents/${agent.id}/desktop/viewer`, running.server.url),
+        { method: "POST", headers },
+      );
+
+      // SAFETY: The route returns the DesktopViewer schema.
+      const link = ((await viewer.json()) as { path: string }).path;
+
+      const closed = await new Promise<CloseEvent>((resolve) => {
+        const socket = new WebSocket(
+          new URL(
+            `${link}/websockify`,
+            running.server.url.href.replace("http", "ws"),
+          ),
+        );
+
+        socket.addEventListener("close", resolve);
+      });
+
+      expect(closed.code).toBe(1011);
+      expect(closed.reason).toBe("The bot desktop did not start");
+      expect(
+        logged.some((args) =>
+          args.some((arg) => String(arg).includes("Xvnc died")),
+        ),
+      ).toBe(true);
+      await running.close();
+    } finally {
+      log.mockRestore();
+      error.mockRestore();
       rmSync(dataDir, { recursive: true, force: true });
     }
   },

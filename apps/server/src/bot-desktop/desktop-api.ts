@@ -23,6 +23,25 @@ import { Conflict } from "../shared/errors";
 
 const HEARTBEAT_MS = 15_000;
 
+/**
+ * WebSocket close reasons the viewer shows, at most 123 bytes each: they name what the owner can fix and carry no guest
+ * output, which may hold secrets. The log has the cause.
+ */
+const closeReasons = {
+  DesktopNotConfigured: "This server has no bot desktop image",
+  DesktopNotEnabled: "This bot needs the desktop tool for its bot desktop",
+  WorkspaceBootFailed: "The bot's workspace did not start",
+  DesktopStartFailed: "The bot desktop did not start",
+  WorkspaceStreamFailed: "The bot desktop's VNC server did not answer",
+  WorkspaceUnreachable: "The bot's workspace is unreachable",
+  WorkspacesClosed: "The server is shutting down",
+  WorkspaceStopFailed: "The bot's previous machine did not stop",
+} satisfies Record<DesktopOpenError["_tag"], string>;
+
+const UNAVAILABLE = "The bot desktop is unavailable";
+
+const closeReason = (error: DesktopOpenError) => closeReasons[error._tag];
+
 const bytesOf = async (data: WSMessageReceive) => {
   if (data instanceof Uint8Array) return data;
 
@@ -114,10 +133,20 @@ export function registerDesktopRoutes(options: {
     const agent = desktopAgent(c.req.param("id"));
     const { ticket, expiresAt } = tickets.issue(agent.id);
 
-    // The machine boots while the client loads the page; the viewer's WebSocket reports any failure.
+    // The machine boots while the client loads the page; the viewer's WebSocket reports any failure to the owner.
     if (options.startDesktop)
-      void Effect.runPromise(options.startDesktop(agent.id)).catch(
-        () => undefined,
+      Effect.runFork(
+        options
+          .startDesktop(agent.id)
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning(
+                "Booting a bot desktop failed",
+                agent.id,
+                cause,
+              ),
+            ),
+          ),
       );
 
     return c.json({ path: `${VIEWER_PREFIX}/${ticket}`, expiresAt }, 201);
@@ -156,22 +185,34 @@ export function registerDesktopRoutes(options: {
 
       return {
         onOpen: (_event, ws: WSContext) => {
-          void Effect.runPromise(options.openDesktop!(agentId))
-            .then((stream) => {
-              if (closed) return void stream.close();
+          const attach = (stream: DesktopStream) => {
+            if (closed) return void stream.close();
 
-              bridge = bridgeDesktop({
-                stream,
-                // Watching never lets input through; only the owner holding control does.
-                allowInput: () => control.get(agentId).holder === "owner",
-                // A copy: the WebSocket takes only bytes backed by a plain ArrayBuffer.
-                send: (data) => ws.send(new Uint8Array(data)),
-                close: () => ws.close(),
-              });
+            bridge = bridgeDesktop({
+              stream,
+              // Watching never lets input through; only the owner holding control does.
+              allowInput: () => control.get(agentId).holder === "owner",
+              // A copy: the WebSocket takes only bytes backed by a plain ArrayBuffer.
+              send: (data) => ws.send(new Uint8Array(data)),
+              close: () => ws.close(),
+            });
 
-              for (const data of pending.splice(0)) bridge.receive(data);
-            })
-            .catch(() => ws.close(1011, "The bot desktop is unavailable"));
+            for (const data of pending.splice(0)) bridge.receive(data);
+          };
+
+          const fail = (reason: string) =>
+            Effect.sync(() => ws.close(1011, reason));
+
+          Effect.runFork(
+            options.openDesktop!(agentId).pipe(
+              Effect.flatMap((stream) => Effect.sync(() => attach(stream))),
+              Effect.tapCause((cause) =>
+                Effect.logError("Opening a bot desktop failed", agentId, cause),
+              ),
+              Effect.catch((error) => fail(closeReason(error))),
+              Effect.catchDefect(() => fail(UNAVAILABLE)),
+            ),
+          );
         },
         onMessage: async (event) => {
           const data = await bytesOf(event.data);
