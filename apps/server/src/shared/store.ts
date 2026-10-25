@@ -1,8 +1,6 @@
 import type { JsonValue } from "@earendil-works/chord";
 import type { Credential, CredentialInfo } from "@earendil-works/pi-ai";
 import { Context, Effect, ManagedRuntime, Predicate } from "effect";
-import type { ControlState } from "../bot-desktop/desktop-control";
-import { DesktopControlRepository } from "../bot-desktop/desktop-control-repository";
 import { AgentRepository, type AgentPatch } from "../bots/agent-repository";
 import {
   ConversationRepository,
@@ -61,7 +59,7 @@ import type {
   Skill,
 } from "./domain";
 import { ProductDatabase } from "./product-database";
-import { productLayer, type ProductServices } from "./product-layer";
+import { coreLayer, type CoreServices } from "./core-layer";
 import { SettingsRepository } from "./settings-repository";
 
 /**
@@ -69,26 +67,24 @@ import { SettingsRepository } from "./settings-repository";
  * Callers move to the repositories themselves, after which this facade goes.
  */
 export class Store {
-  private readonly runtime: ManagedRuntime.ManagedRuntime<
-    ProductServices,
-    unknown
-  >;
+  /** The account runtime, for code still moving off this facade. */
+  readonly runtime: ManagedRuntime.ManagedRuntime<CoreServices, unknown>;
   // Only a store that opened its own database closes it; a shared runtime belongs to the account.
   private readonly ownsRuntime: boolean;
   // Set while a `transaction` callback runs, so the facade calls inside it join that transaction.
-  private transactionContext: Context.Context<ProductServices> | undefined;
+  private transactionContext: Context.Context<CoreServices> | undefined;
   /** Opens the product database in `source`, or runs over an account runtime that provides the repositories. */
   constructor(
-    source: string | ManagedRuntime.ManagedRuntime<ProductServices, unknown>,
+    source: string | ManagedRuntime.ManagedRuntime<CoreServices, unknown>,
   ) {
     this.ownsRuntime = Predicate.isString(source);
     this.runtime = Predicate.isString(source)
-      ? ManagedRuntime.make(productLayer(source))
+      ? ManagedRuntime.make(coreLayer(source))
       : source;
     // Built now, so a migration or key error fails construction.
     this.runtime.runSync(Effect.void);
   }
-  private run<A>(effect: Effect.Effect<A, never, ProductServices>): A {
+  private run<A>(effect: Effect.Effect<A, never, CoreServices>): A {
     return this.transactionContext
       ? Effect.runSync(Effect.provideContext(effect, this.transactionContext))
       : this.runtime.runSync(effect);
@@ -104,7 +100,7 @@ export class Store {
       ProductDatabase.use((db) =>
         db.transaction(() =>
           Effect.gen({ self: this }, function* () {
-            this.transactionContext = yield* Effect.context<ProductServices>();
+            this.transactionContext = yield* Effect.context<CoreServices>();
 
             try {
               return fn();
@@ -134,13 +130,6 @@ export class Store {
   }
   duplicateAgent(agentId: string, name?: string) {
     return this.run(AgentRepository.use((r) => r.duplicate(agentId, name)));
-  }
-  /** The bot desktop's control lease; null until control first changes. */
-  getDesktopControl(agentId: string): ControlState | null {
-    return this.run(DesktopControlRepository.use((r) => r.get(agentId)));
-  }
-  setDesktopControl(agentId: string, state: ControlState) {
-    this.run(DesktopControlRepository.use((r) => r.set(agentId, state)));
   }
 
   listConversations(agentId?: string, includeArchived = false): Conversation[] {

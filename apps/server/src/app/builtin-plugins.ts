@@ -2,7 +2,7 @@ import { claudeCodePlugin } from "../providers/claude-code/plugin";
 import { codingPlugin } from "../jobs/coding";
 import type { Credentials } from "../credentials/credentials";
 import { desktopPlugin } from "../jobs/desktop";
-import type { DesktopControl } from "../bot-desktop/desktop-control";
+import type { DesktopControlAccess } from "../bot-desktop/desktop-control";
 import type { CrumblePlugin } from "./plugins";
 import { meliousPlugin } from "../providers/providers";
 import type { Workspaces } from "../workspaces/workspace";
@@ -12,7 +12,7 @@ export type PluginHost = {
   dataDir: string;
   env: NodeJS.ProcessEnv;
   workspaces: Workspaces | undefined;
-  desktopControl: DesktopControl;
+  desktopControl: DesktopControlAccess;
   /** The bots' credentials, offered to coding jobs. */
   credentials?: Credentials;
   /** Disable host-level Claude Code authentication for tenant runtimes. */

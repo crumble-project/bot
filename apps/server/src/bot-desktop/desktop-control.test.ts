@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { DesktopControl } from "./desktop-control";
+import { desktopControlAccess } from "./desktop-control";
+import { DesktopControlRepository } from "./desktop-control-repository";
 import { agentInput } from "../shared/domain";
 import { Store } from "../shared/store";
 
@@ -27,7 +28,7 @@ function open() {
 
 test("the bot holds control until the owner takes it, and every change counts", () => {
   const { store, agentId } = open();
-  const control = new DesktopControl(store);
+  const control = desktopControlAccess(store.runtime);
 
   expect(control.get(agentId)).toMatchObject({ holder: "bot", changes: 0 });
   expect(control.set(agentId, "owner")).toMatchObject({
@@ -50,12 +51,12 @@ test("the bot holds control until the owner takes it, and every change counts", 
 test("the lease survives a restart", () => {
   const { dir, store, agentId } = open();
 
-  new DesktopControl(store).set(agentId, "owner");
+  desktopControlAccess(store.runtime).set(agentId, "owner");
   store.close();
 
   const reopened = new Store(dir);
 
-  expect(new DesktopControl(reopened).get(agentId)).toMatchObject({
+  expect(desktopControlAccess(reopened.runtime).get(agentId)).toMatchObject({
     holder: "owner",
     changes: 1,
   });
@@ -64,7 +65,7 @@ test("the lease survives a restart", () => {
 
 test("waiting for the bot's turn resolves on hand-back, and listeners hear each change", async () => {
   const { store, agentId } = open();
-  const control = new DesktopControl(store);
+  const control = desktopControlAccess(store.runtime);
   const heard: string[] = [];
   const stop = control.subscribe(agentId, (state) => heard.push(state.holder));
 
@@ -89,8 +90,12 @@ test("waiting for the bot's turn resolves on hand-back, and listeners hear each 
 test("deleting a bot deletes its lease", () => {
   const { store, agentId } = open();
 
-  new DesktopControl(store).set(agentId, "owner");
+  desktopControlAccess(store.runtime).set(agentId, "owner");
   store.deleteAgent(agentId);
-  expect(store.getDesktopControl(agentId)).toBeNull();
+  expect(
+    store.runtime.runSync(
+      DesktopControlRepository.use((repository) => repository.get(agentId)),
+    ),
+  ).toBeNull();
   store.close();
 });

@@ -24,7 +24,10 @@ import {
 } from "../contract/api-contract";
 import { bearerAuth } from "hono/bearer-auth";
 import { registerDesktopRoutes } from "../bot-desktop/desktop-api";
-import { DesktopControl } from "../bot-desktop/desktop-control";
+import {
+  desktopControlAccess,
+  type DesktopControlAccess,
+} from "../bot-desktop/desktop-control";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import type { DesktopStream } from "../workspaces/workspace";
 import { bodyLimit } from "hono/body-limit";
@@ -92,7 +95,7 @@ export function createAPI(
     /** Group chats; their routes answer 503 without it. */
     groupChats?: GroupChats;
     /** Who operates each bot desktop. */
-    desktopControl?: DesktopControl;
+    desktopControl?: DesktopControlAccess;
     /** Single-use viewer links. */
     viewerTickets?: ViewerTickets;
     /** Connects to a bot desktop's VNC server, for viewers. */
@@ -188,7 +191,7 @@ export function createAPI(
     register,
     service,
     desktop: options.desktop === true,
-    control: options.desktopControl ?? new DesktopControl(store),
+    control: options.desktopControl ?? desktopControlAccess(store.runtime),
     tickets: options.viewerTickets ?? new ViewerTickets(),
     ...(options.openDesktop && { openDesktop: options.openDesktop }),
     ...(options.startDesktop && { startDesktop: options.startDesktop }),

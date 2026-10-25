@@ -7,7 +7,7 @@ import {
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { computerUseTool } from "../bot-desktop/computer-use";
-import type { DesktopControl } from "../bot-desktop/desktop-control";
+import type { DesktopControlAccess } from "../bot-desktop/desktop-control";
 import type { Agent } from "../shared/domain";
 import { defineJobKind, type JobExtensions } from "./jobs";
 import type { CrumblePlugin } from "../app/plugins";
@@ -64,7 +64,7 @@ const UNCONTROLLED = {};
 // job must keep its snapshots and the lease change count it last saw.
 const tools = new WeakMap<object, Map<string, ComputerUseTool>>();
 
-function toolFor(agentId: string, control: DesktopControl | undefined) {
+function toolFor(agentId: string, control: DesktopControlAccess | undefined) {
   const scope = control ?? UNCONTROLLED;
   const byAgent = tools.get(scope) ?? new Map<string, ComputerUseTool>();
   let tool = byAgent.get(agentId);
@@ -87,7 +87,7 @@ function toolFor(agentId: string, control: DesktopControl | undefined) {
 /** Lets a bot run desktop jobs: child conversations with the computer_use tool on its bot desktop. */
 export function desktopExtensions(
   agent: Pick<Agent, "id" | "desktopModel">,
-  control?: DesktopControl,
+  control?: DesktopControlAccess,
 ): JobExtensions {
   const job = defineExtension({
     name: "desktop-job",
@@ -109,7 +109,7 @@ export function desktopExtensions(
 /** Desktop jobs as a plugin: offered to bots with the `desktop` tool while workspaces have bot desktops. */
 export const desktopPlugin = (
   workspaces: Workspaces | undefined,
-  control: DesktopControl,
+  control: DesktopControlAccess,
 ): CrumblePlugin => ({
   id: "desktop",
   jobKinds: workspaces?.desktop

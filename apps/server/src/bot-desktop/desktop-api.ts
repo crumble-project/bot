@@ -7,7 +7,7 @@ import {
   routes,
   type contractApp,
 } from "../contract/api-contract";
-import type { DesktopControl } from "./desktop-control";
+import type { ControlState, DesktopControlAccess } from "./desktop-control";
 import {
   bridgeDesktop,
   novncResponse,
@@ -42,7 +42,7 @@ export function registerDesktopRoutes(options: {
   service: CrumbleService;
   /** Whether the server has a desktop workspace image. */
   desktop: boolean;
-  control: DesktopControl;
+  control: DesktopControlAccess;
   tickets: ViewerTickets;
   openDesktop?: (agentId: string) => Promise<DesktopStream>;
   startDesktop?: (agentId: string) => Promise<void>;
@@ -83,7 +83,7 @@ export function registerDesktopRoutes(options: {
 
       stream.onAbort(finish);
 
-      const send = (state: ReturnType<DesktopControl["get"]>) =>
+      const send = (state: ControlState) =>
         stream
           .writeSSE({ event: "control", data: JSON.stringify(state) })
           .catch(finish);

@@ -2,7 +2,7 @@ import { describe, expect, test, afterEach } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { Store } from "../shared/store";
-import { DesktopControl } from "../bot-desktop/desktop-control";
+import { desktopControlAccess } from "../bot-desktop/desktop-control";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import { CrumbleService } from "../bots/service";
 import { Scheduler } from "../schedules/scheduler";
@@ -973,7 +973,7 @@ describe("bot desktop control and viewer", () => {
       service.dispatch(a, p, r, s),
     );
 
-    const desktopControl = new DesktopControl(store);
+    const desktopControl = desktopControlAccess(store.runtime);
     const viewerTickets = new ViewerTickets();
 
     const app = createAPI(service, scheduler, token, undefined, {

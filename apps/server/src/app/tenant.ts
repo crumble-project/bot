@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import lockfile from "proper-lockfile";
 import { Store } from "../shared/store";
-import { productLayer } from "../shared/product-layer";
+import { coreLayer } from "../shared/core-layer";
 import { AgentRuntime } from "../bots/runtime";
 import { CrumbleService, OWNER_TIMEZONE } from "../bots/service";
 import { Scheduler } from "../schedules/scheduler";
@@ -33,7 +33,7 @@ import { displayExtension } from "../display/display";
 import { reactionExtension } from "../bots/reaction";
 import { DESKTOP_TOOL_NAME } from "../jobs/desktop";
 import {
-  DesktopControl,
+  desktopControlAccess,
   type ControlState,
 } from "../bot-desktop/desktop-control";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
@@ -125,7 +125,7 @@ export async function createTenant(
         `Common skills directory not found; continuing with no common skills: ${skillsDir}`,
       );
     const commonSkills = loadCommonSkills(skillsDir);
-    const account = ManagedRuntime.make(productLayer(dataDir));
+    const account = ManagedRuntime.make(coreLayer(dataDir));
     partialCleanup.push(() => account.dispose());
     const store = new Store(account);
 
@@ -161,7 +161,7 @@ export async function createTenant(
       microsandboxWorkspacesFromEnv(process.env, machineOptions);
 
     partialCleanup.push(() => workspaces?.close(BACKGROUND_CONTEXT));
-    const desktopControl = new DesktopControl(store);
+    const desktopControl = desktopControlAccess(account);
 
     const plugins = builtinPlugins({
       dataDir,
