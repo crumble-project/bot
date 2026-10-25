@@ -1,8 +1,10 @@
 import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
+import { Effect, Layer } from "effect";
 import type { Agent } from "../shared/domain";
-import type { GroupChats } from "./group-chats";
+import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { GroupChats } from "./group-chats";
 
 export const GROUP_LOOKUP_EXTENSION = "group-lookup";
 
@@ -11,7 +13,7 @@ const READ_LIMIT = 30;
 /** Lets a bot answer questions about its group chats from its bot chat; group messages never enter that chat on their own. */
 export function groupLookupExtension(
   agent: Pick<Agent, "id">,
-  groups: GroupChats,
+  groups: GroupChats["Service"],
 ) {
   const tool = defineTool({
     name: "group_chats",
@@ -30,14 +32,18 @@ export function groupLookupExtension(
       });
 
       if (args.action === "list")
-        return text({ groups: await groups.forMember(agent.id) });
+        return text({
+          groups: await Effect.runPromise(groups.forMember(agent.id)),
+        });
 
       if (!args.groupId) throw new Error("read needs a groupId from list");
 
-      const page = await groups.readAsMember(agent.id, args.groupId, {
-        before: args.before,
-        limit: READ_LIMIT,
-      });
+      const page = await Effect.runPromise(
+        groups.readAsMember(agent.id, args.groupId, {
+          before: args.before,
+          limit: READ_LIMIT,
+        }),
+      );
 
       return text({
         messages: page.messages.map((message) => ({
@@ -58,3 +64,15 @@ export function groupLookupExtension(
 
   return defineExtension({ name: GROUP_LOOKUP_EXTENSION, tools: [tool] });
 }
+
+/** Offers every bot the lookup of its group chats. */
+export const groupLookupTools = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const groups = yield* GroupChats;
+
+    yield* (yield* BotExtensions).register(
+      ExtensionPosition.groupLookup,
+      (agent) => [groupLookupExtension(agent, groups)],
+    );
+  }),
+);

@@ -56,7 +56,7 @@ import type { Activity, BotsAccess } from "../bots/bots";
 import type { AgentRuntime } from "../bots/runtime";
 import type { Store } from "../shared/store";
 import type { SchedulerAccess } from "../schedules/scheduler";
-import type { GroupChats } from "../group-chats/group-chats";
+import type { GroupChatsAccess } from "../group-chats/group-chats";
 import type { McpIntegrations } from "../integrations/integrations";
 import {
   credentialsAccess,
@@ -103,7 +103,7 @@ export function createAPI(
     /** Stops a bot's workspace machine, so its next use boots the image its tools need now. */
     restartWorkspace?: (agentId: string) => Promise<void>;
     /** Group chats; their routes answer 503 without it. */
-    groupChats?: GroupChats;
+    groupChats?: GroupChatsAccess;
     /** Who operates each bot desktop. */
     desktopControl?: DesktopControlAccess;
     /** Single-use viewer links. */

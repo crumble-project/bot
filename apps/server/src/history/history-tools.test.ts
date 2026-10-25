@@ -10,7 +10,9 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { GroupChats } from "../group-chats/group-chats";
+import { Effect } from "effect";
+import { AgentRepository } from "../bots/agent-repository";
+import { standaloneGroupChats } from "../group-chats/group-chats";
 import { GroupTranscripts } from "../group-chats/group-transcripts";
 import { HistorySearch } from "./history-search";
 import { historySource } from "./history-tools";
@@ -61,11 +63,9 @@ test("history search keeps committed assistant messages visible across turn comp
 
   const service = standaloneBots(store, runtime);
 
-  const groups = new GroupChats(
-    store,
-    new GroupTranscripts(join(dir, "groups")),
+  const groups = standaloneGroupChats(
     service,
-    service.runtime,
+    new GroupTranscripts(join(dir, "groups")),
   );
 
   try {
@@ -83,7 +83,14 @@ test("history search keeps committed assistant messages visible across turn comp
       delegates: [],
     });
 
-    const engine = new HistorySearch(historySource(runtime, store, groups));
+    const engine = new HistorySearch(
+      historySource(
+        runtime,
+        store.runtime.runSync(AgentRepository.use(Effect.succeed)),
+        groups.service,
+      ),
+    );
+
     const context = { agentId: agent.id, groupId: null };
     const chat = await runtime.openChat(agent);
     const submission = await runtime.submit(agent, chat, "Run the probe.");

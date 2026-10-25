@@ -1,16 +1,18 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
+import { Effect, Layer } from "effect";
 import type { Agent } from "../shared/domain";
+import { AgentRepository } from "../bots/agent-repository";
+import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { BotRuntime, type AgentRuntime } from "../bots/runtime";
 import { GroupChats } from "../group-chats/group-chats";
 import { GroupConversation } from "../group-chats/group-turns";
-import type {
-  HistoryChat,
-  HistoryContext,
+import {
   HistorySearch,
-  HistorySource,
+  type HistoryChat,
+  type HistoryContext,
+  type HistorySource,
 } from "./history-search";
-import { AgentRuntime } from "../bots/runtime";
-import type { Store } from "../shared/store";
 
 export const HISTORY_TOOLS_EXTENSION = "history-tools";
 
@@ -88,27 +90,32 @@ export function historyToolsExtension(
 /** Adapts the existing retained transcript readers to the history engine. */
 export function historySource(
   runtime: AgentRuntime,
-  store: Store,
-  groups: GroupChats,
+  agents: AgentRepository["Service"],
+  groups: GroupChats["Service"],
 ): HistorySource {
+  const memberOf = (agentId: string) =>
+    Effect.runPromise(groups.forMember(agentId));
+
+  const agentOf = (agentId: string) => Effect.runSync(agents.get(agentId));
+
   return {
     async chats(context): Promise<HistoryChat[]> {
       if (context.groupId) {
-        const group = (await groups.forMember(context.agentId)).find(
+        const group = (await memberOf(context.agentId)).find(
           (candidate) => candidate.id === context.groupId,
         );
 
         return group ? [{ id: group.id, kind: "group", name: group.name }] : [];
       }
 
-      const agent = store.getAgent(context.agentId);
+      const agent = agentOf(context.agentId);
 
       const chats: HistoryChat[] = agent
         ? [{ id: agent.id, kind: "bot", name: agent.name }]
         : [];
 
       chats.push(
-        ...(await groups.forMember(context.agentId)).map((group) => ({
+        ...(await memberOf(context.agentId)).map((group) => ({
           id: group.id,
           kind: "group" as const,
           name: group.name,
@@ -122,19 +129,21 @@ export function historySource(
       if (chat.kind === "group") {
         if (
           (context.groupId !== null && context.groupId !== chat.id) ||
-          !(await groups.forMember(context.agentId)).some(
+          !(await memberOf(context.agentId)).some(
             (group) => group.id === chat.id,
           )
         )
           throw new Error("Group chat not found");
 
-        return groups.readAsMember(context.agentId, chat.id, { before });
+        return Effect.runPromise(
+          groups.readAsMember(context.agentId, chat.id, { before }),
+        );
       }
 
       if (context.groupId !== null || chat.id !== context.agentId)
         throw new Error("Bot chat not found");
 
-      const agent = store.getAgent(context.agentId);
+      const agent = agentOf(context.agentId);
 
       if (!agent) throw new Error("Bot chat not found");
 
@@ -142,3 +151,21 @@ export function historySource(
     },
   };
 }
+
+/** Offers every bot history search over its bot chat and group chats. */
+export const historyTools = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const history = new HistorySearch(
+      historySource(
+        yield* BotRuntime,
+        yield* AgentRepository,
+        yield* GroupChats,
+      ),
+    );
+
+    yield* (yield* BotExtensions).register(
+      ExtensionPosition.historyTools,
+      (agent) => [historyToolsExtension(agent, history)],
+    );
+  }),
+);

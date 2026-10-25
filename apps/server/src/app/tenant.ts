@@ -19,11 +19,14 @@ import {
 import { BotSchedules, scheduleTools } from "../schedules/bot-schedules";
 import { TaskDispatch } from "../schedules/task-dispatch";
 import { createAPI } from "./api";
-import { GroupChats } from "../group-chats/group-chats";
-import { groupLookupExtension } from "../group-chats/group-lookup";
+import {
+  GroupChats,
+  groupChatsAccess,
+  GroupTranscriptStore,
+} from "../group-chats/group-chats";
+import { groupLookupTools } from "../group-chats/group-lookup";
 import { GroupTranscripts } from "../group-chats/group-transcripts";
-import { historySource, historyToolsExtension } from "../history/history-tools";
-import { HistorySearch } from "../history/history-search";
+import { historyTools } from "../history/history-tools";
 import { skillLibrary } from "../skills/skills";
 import { LearningReview } from "../skills/learning-review";
 import { SkillCurator } from "../skills/skill-curator";
@@ -66,8 +69,6 @@ import {
   AccountStore,
   AccountWorkspaces,
   CommonSkills,
-  GroupChatsService,
-  HistorySearchService,
   Plugins,
 } from "./account-services";
 
@@ -292,55 +293,22 @@ function accountLayer(
 
   const scheduler = Scheduler.layer().pipe(Layer.provide(dispatch));
 
-  const groups = Layer.effect(
-    GroupChatsService,
-    Effect.gen(function* () {
-      const store = yield* AccountStore;
-      const service = botsAccess(runnerOf(yield* Effect.context<Bots>()));
-      const agents = yield* BotRuntime;
-
-      return yield* scoped(
-        () =>
-          new GroupChats(
-            store,
-            new GroupTranscripts(join(dataDir, "groups")),
-            service,
-            agents,
-          ),
-        (chats) => chats.close(),
-      );
-    }),
+  const groups = GroupChats.layer.pipe(
+    Layer.provide(
+      GroupTranscriptStore.layer(
+        () => new GroupTranscripts(join(dataDir, "groups")),
+      ),
+    ),
   );
 
   const schedules = BotSchedules.layer;
-
-  const history = Layer.effect(
-    HistorySearchService,
-    Effect.gen(function* () {
-      return new HistorySearch(
-        historySource(
-          yield* BotRuntime,
-          yield* AccountStore,
-          yield* GroupChatsService,
-        ),
-      );
-    }),
-  );
 
   // The tools of features not yet offering their own, at the positions bots were offered them before the registry.
   const tools = Layer.effectDiscard(
     Effect.gen(function* () {
       const extensions = yield* BotExtensions;
-      const groupChats = yield* GroupChatsService;
-      const historySearch = yield* HistorySearchService;
       const jobKinds = pluginJobKinds(yield* Plugins);
 
-      yield* extensions.register(ExtensionPosition.groupLookup, (agent) => [
-        groupLookupExtension(agent, groupChats),
-      ]);
-      yield* extensions.register(ExtensionPosition.historyTools, (agent) => [
-        historyToolsExtension(agent, historySearch),
-      ]);
       yield* extensions.register(
         ExtensionPosition.jobs,
         (agent) => jobExtensions(jobKinds, agent).chat,
@@ -390,10 +358,12 @@ function accountLayer(
     tools,
     coordinationTools,
     scheduleTools,
+    groupLookupTools,
+    historyTools,
     keepAwake,
     push,
   ).pipe(
-    Layer.provideMerge(Layer.mergeAll(schedules, history)),
+    Layer.provideMerge(schedules),
     Layer.provideMerge(Layer.mergeAll(scheduler, groups, activity)),
     Layer.provideMerge(bots),
     Layer.provideMerge(runtime),
@@ -453,7 +423,8 @@ export async function createTenant(
         );
 
         const workspaces = yield* AccountWorkspaces;
-        const groupChats = yield* GroupChatsService;
+        const chats = yield* GroupChats;
+        const groupChats = groupChatsAccess(chats);
         const plugins = yield* Plugins;
 
         const run = runnerOf(
@@ -499,7 +470,7 @@ export async function createTenant(
         );
 
         yield* bots.recover;
-        yield* Effect.promise(() => groupChats.recover());
+        yield* chats.recover;
         scheduler.start();
 
         return {

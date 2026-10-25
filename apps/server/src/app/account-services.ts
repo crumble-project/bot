@@ -1,7 +1,5 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { Context, Effect, Layer } from "effect";
-import type { GroupChats } from "../group-chats/group-chats";
-import type { HistorySearch } from "../history/history-search";
 import type { CommonSkill } from "../skills/common-skills";
 import type { CoreServices } from "../shared/core-layer";
 import { runnerOf } from "../shared/runner";
@@ -51,13 +49,3 @@ export class CommonSkills extends Context.Service<
   CommonSkills,
   CommonSkill[]
 >()("crumble/app/CommonSkills") {}
-
-export class GroupChatsService extends Context.Service<
-  GroupChatsService,
-  GroupChats
->()("crumble/app/GroupChatsService") {}
-
-export class HistorySearchService extends Context.Service<
-  HistorySearchService,
-  HistorySearch
->()("crumble/app/HistorySearchService") {}

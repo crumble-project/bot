@@ -11,7 +11,7 @@ import {
   groupMessageReceiptResponse,
   historyResponse,
 } from "../contract/api-responses";
-import { GroupChats } from "./group-chats";
+import { standaloneGroupChats } from "./group-chats";
 import { GroupTranscripts } from "./group-transcripts";
 import { AgentRuntime } from "../bots/runtime";
 import { standaloneScheduler } from "../schedules/scheduler";
@@ -43,12 +43,7 @@ function setup() {
 
   const transcripts = new GroupTranscripts(join(dir, "groups"));
 
-  const groupChats = new GroupChats(
-    store,
-    transcripts,
-    service,
-    service.runtime,
-  );
+  const groupChats = standaloneGroupChats(service, transcripts);
 
   const app = createAPI(service, scheduler, token, undefined, { groupChats });
 

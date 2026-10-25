@@ -11,7 +11,7 @@ import {
   type FauxResponseFactory,
 } from "@earendil-works/pi-ai/providers/faux";
 import { z } from "zod";
-import { GroupChats } from "./group-chats";
+import { standaloneGroupChats } from "./group-chats";
 import { groupLookupExtension } from "./group-lookup";
 import { GroupTranscripts } from "./group-transcripts";
 import { AgentRuntime } from "../bots/runtime";
@@ -91,19 +91,17 @@ async function setup() {
   const models = createModels();
   models.setProvider(faux.provider);
   const store = new Store(dir);
-  let groups!: GroupChats;
+  let groups!: ReturnType<typeof standaloneGroupChats>;
 
   const runtime = new AgentRuntime(join(dir, "agents"), {
     models,
-    extensions: (agent) => [groupLookupExtension(agent, groups)],
+    extensions: (agent) => [groupLookupExtension(agent, groups.service)],
   });
 
   const service = standaloneBots(store, runtime);
-  groups = new GroupChats(
-    store,
-    new GroupTranscripts(join(dir, "groups")),
+  groups = standaloneGroupChats(
     service,
-    service.runtime,
+    new GroupTranscripts(join(dir, "groups")),
   );
 
   cleanups.push(async () => {

@@ -15,7 +15,7 @@ import {
   type FauxResponseFactory,
 } from "@earendil-works/pi-ai/providers/faux";
 import { GROUP_TURN_BUDGET } from "../shared/domain";
-import { GroupChats } from "./group-chats";
+import { standaloneGroupChats, type GroupChatsAccess } from "./group-chats";
 import { GroupTranscripts } from "./group-transcripts";
 import { reactionExtension } from "../bots/reaction";
 import { AgentRuntime } from "../bots/runtime";
@@ -125,11 +125,9 @@ function open(dir: string, bots: Record<string, Bot>) {
     }),
   );
 
-  const groups = new GroupChats(
-    store,
-    new GroupTranscripts(join(dir, "groups")),
+  const groups = standaloneGroupChats(
     service,
-    service.runtime,
+    new GroupTranscripts(join(dir, "groups")),
   );
 
   let closed = false;
@@ -168,14 +166,14 @@ async function until(check: () => boolean | Promise<boolean>) {
 }
 
 /** Waits until no member has a running or queued turn. */
-const quiet = (groups: GroupChats, groupId: string) =>
+const quiet = (groups: GroupChatsAccess, groupId: string) =>
   until(() =>
     groups
       .activity(groupId)
       .members.every((member) => ["idle", "disabled"].includes(member.status)),
   );
 
-const botMessages = async (groups: GroupChats, groupId: string) =>
+const botMessages = async (groups: GroupChatsAccess, groupId: string) =>
   (await groups.snapshot(groupId, { limit: 200 })).messages.filter(
     (message) => message.origin?.kind === "bot",
   );
