@@ -2,6 +2,8 @@ import { Database } from "bun:sqlite";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createSign, createPrivateKey, createHash } from "node:crypto";
+import { Data, Effect, Exit, Schedule, Scope } from "effect";
+import { z } from "zod";
 
 export type PushPlatform = "macos" | "ios" | "android";
 
@@ -77,6 +79,41 @@ export function canonicalReplyEvent(
   };
 }
 
+/** The provider rejected the device's token; the device is disabled unless its token has rotated since. */
+export class PermanentRejection extends Data.TaggedError("PermanentRejection")<{
+  readonly message: string;
+}> {}
+
+/** The provider refused this notification for good; retrying cannot deliver it. */
+export class TerminalResponse extends Data.TaggedError("TerminalResponse")<{
+  readonly message: string;
+}> {}
+
+/** Any other send failure; the outbox retries it with persisted backoff until it expires. */
+class TemporaryFailure extends Data.TaggedError("TemporaryFailure")<{
+  readonly message: string;
+}> {}
+
+type SendFailure = PermanentRejection | TerminalResponse | TemporaryFailure;
+
+// Transports outside this module may still signal with truthy `permanent` or `terminal` flags on a thrown error.
+const failureFlags = z.object({
+  permanent: z.unknown().optional().transform(Boolean),
+  terminal: z.unknown().optional().transform(Boolean),
+});
+
+function flaggedFailure(
+  message: string,
+  flags: z.output<typeof failureFlags> | undefined,
+): SendFailure {
+  if (flags?.permanent) return new PermanentRejection({ message });
+
+  if (flags?.terminal) return new TerminalResponse({ message });
+
+  return new TemporaryFailure({ message });
+}
+
+/** Sends notifications. A send throws `PermanentRejection` or `TerminalResponse` when retrying cannot help. */
 export type PushTransport = {
   send(
     device: PushDevice,
@@ -543,16 +580,14 @@ class APNsTransport implements PushTransport {
         reason === "Unregistered" ||
         reason === "DeviceTokenNotForTopic"
       )
-        throw Object.assign(new Error("APNs rejected token"), {
-          permanent: true,
-        });
+        throw new PermanentRejection({ message: "APNs rejected token" });
 
       if (status >= 500 || status === 429)
         throw new Error(`APNs temporary failure ${status}`);
 
       if (status >= 400 && status !== 401 && status !== 403)
-        throw Object.assign(new Error(`APNs terminal response ${status}`), {
-          terminal: true,
+        throw new TerminalResponse({
+          message: `APNs terminal response ${status}`,
         });
 
       return status >= 200 && status < 300 ? "delivered" : "expired";
@@ -657,7 +692,7 @@ class FCMTransport implements PushTransport {
     }
 
     if (errorCode === "UNREGISTERED" || errorCode === "SENDER_ID_MISMATCH")
-      throw Object.assign(new Error("FCM rejected token"), { permanent: true });
+      throw new PermanentRejection({ message: "FCM rejected token" });
 
     if (response.status === 429 || response.status >= 500)
       throw new Error(`FCM temporary failure ${response.status}`);
@@ -667,10 +702,9 @@ class FCMTransport implements PushTransport {
       response.status !== 401 &&
       response.status !== 403
     )
-      throw Object.assign(
-        new Error(`FCM terminal response ${response.status}`),
-        { terminal: true },
-      );
+      throw new TerminalResponse({
+        message: `FCM terminal response ${response.status}`,
+      });
 
     return response.ok ? "delivered" : "expired";
   }
@@ -679,8 +713,8 @@ class FCMTransport implements PushTransport {
 export class PushManager {
   readonly serverId: string;
   readonly transports: Record<PushTransportName, PushTransport | undefined>;
-  private timer?: ReturnType<typeof setInterval>;
-  private unsubscribe?: () => void;
+  // Owns everything the manager opens; closing it releases them in reverse order.
+  private readonly scope = Effect.runSync(Scope.make());
   private draining: Promise<void> | undefined;
   private closed = false;
   constructor(
@@ -690,12 +724,43 @@ export class PushManager {
   ) {
     this.serverId = store.serverId();
     this.transports = transports;
+
+    // Added first, so they run last: deliver what is queued, then close the store.
+    this.addFinalizer(Effect.sync(() => this.store.close()));
+    this.addFinalizer(Effect.promise(() => this.drain()));
   }
   attach(service: { onActivity(callback: (event: any) => void): () => void }) {
-    this.unsubscribe = service.onActivity((event) => {
-      if (event.type === "reply" && event.origin !== "bot") this.enqueue(event);
-    });
-    this.timer = setInterval(() => void this.drain(), 1000);
+    Effect.runSync(
+      Effect.acquireRelease(
+        Effect.sync(() =>
+          service.onActivity((event) => {
+            if (event.type === "reply" && event.origin !== "bot")
+              this.enqueue(event);
+          }),
+        ),
+        (unsubscribe) => Effect.sync(unsubscribe),
+      ).pipe(Scope.provide(this.scope)),
+    );
+
+    // Polls the outbox for retries that come due; when each row is due stays in the store.
+    Effect.runFork(
+      this.backgroundDrain().pipe(
+        Effect.delay("1 second"),
+        Effect.repeat(Schedule.fixed("1 second")),
+        Effect.forkIn(this.scope),
+      ),
+    );
+  }
+  private addFinalizer(finalizer: Effect.Effect<void>) {
+    Effect.runSync(Scope.addFinalizer(this.scope, finalizer));
+  }
+  /** A drain nobody awaits: its failure is logged, and later drains still run. */
+  private backgroundDrain() {
+    return Effect.promise(() => this.drain()).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logError("Push delivery pass failed", cause),
+      ),
+    );
   }
   private enqueue(event: any) {
     if (this.closed) return;
@@ -709,11 +774,11 @@ export class PushManager {
     );
 
     this.store.enqueue(push);
-    void this.drain();
+    Effect.runFork(this.backgroundDrain());
   }
   async drain() {
     if (this.draining) return this.draining;
-    this.draining = this.drainOnce();
+    this.draining = Effect.runPromise(this.drainOnce());
 
     try {
       await this.draining;
@@ -721,84 +786,107 @@ export class PushManager {
       this.draining = undefined;
     }
   }
-  private async drainOnce() {
-    for (const row of this.store.pending()) {
-      const d = this.store.getDevice(row.installation_id);
+  private drainOnce() {
+    return Effect.gen({ self: this }, function* () {
+      for (const row of this.store.pending()) {
+        const d = this.store.getDevice(row.installation_id);
 
-      if (!d) continue;
+        if (!d) continue;
 
-      if (row.expires_at <= this.now()) {
-        this.store.removeDelivery(row.outbox_id, d.installationId);
-        continue;
-      }
-
-      // SAFETY: Outbox entries are written exclusively from ReplyPushEvent values.
-      const event = JSON.parse(row.event_json) as ReplyPushEvent;
-
-      // Presence names the bot chat a client shows; a group answer is not in it.
-      if (
-        !event.groupId &&
-        this.store.isSuppressed(d.installationId, event.agentId)
-      ) {
-        this.store.markDelivered(row.outbox_id, d.installationId);
-        continue;
-      }
-
-      const transport = this.transports[d.transport];
-
-      if (!transport) {
-        this.store.markDelivered(row.outbox_id, d.installationId);
-        continue;
-      }
-
-      if (transport.canSend && !transport.canSend(d)) {
-        this.store.markDelivered(row.outbox_id, d.installationId);
-        continue;
-      }
-
-      try {
-        const result = await transport.send(d, event);
-
-        if (result === "delivered") {
-          this.store.markDelivered(row.outbox_id, d.installationId);
-        } else {
+        if (row.expires_at <= this.now()) {
           this.store.removeDelivery(row.outbox_id, d.installationId);
-          console.warn(
-            "Push delivery reached a terminal provider state",
-            d.transport,
-          );
+          continue;
         }
-      } catch (error: any) {
-        if (error?.permanent) {
-          const current = this.store.getDevice(d.installationId);
 
-          if (current?.token === d.token) {
-            this.store.disableIfToken(d.installationId, d.token);
-            this.store.removeDelivery(row.outbox_id, d.installationId);
-          } else if (current) {
-            this.store.requeueDelivery(row.outbox_id, d.installationId);
-          } else {
-            this.store.removeDelivery(row.outbox_id, d.installationId);
-          }
-        } else if (error?.terminal) {
-          this.store.removeDelivery(row.outbox_id, d.installationId);
-          console.warn(
-            "Push delivery reached a terminal provider state",
-            d.transport,
-          );
-        } else if (row.attempts >= 7 || row.expires_at <= this.now())
-          this.store.removeDelivery(row.outbox_id, d.installationId);
-        else
-          this.store.markRetry(
-            row.outbox_id,
-            d.installationId,
-            row.attempts + 1,
-            this.now() + Math.min(300000, 1000 * 2 ** row.attempts),
-          );
+        // SAFETY: Outbox entries are written exclusively from ReplyPushEvent values.
+        const event = JSON.parse(row.event_json) as ReplyPushEvent;
+
+        // Presence names the bot chat a client shows; a group answer is not in it.
+        if (
+          !event.groupId &&
+          this.store.isSuppressed(d.installationId, event.agentId)
+        ) {
+          this.store.markDelivered(row.outbox_id, d.installationId);
+          continue;
+        }
+
+        const transport = this.transports[d.transport];
+
+        if (!transport) {
+          this.store.markDelivered(row.outbox_id, d.installationId);
+          continue;
+        }
+
+        if (transport.canSend && !transport.canSend(d)) {
+          this.store.markDelivered(row.outbox_id, d.installationId);
+          continue;
+        }
+
+        yield* this.send(transport, row, d, event);
       }
-    }
 
-    this.store.cleanup();
+      this.store.cleanup();
+    });
+  }
+  /** One delivery attempt, settled in the outbox; every failure kind decides its own outcome. */
+  private send(
+    transport: PushTransport,
+    row: PushPendingRow,
+    d: PushDevice,
+    event: ReplyPushEvent,
+  ) {
+    const terminal = () =>
+      Effect.sync(() => {
+        this.store.removeDelivery(row.outbox_id, d.installationId);
+        console.warn(
+          "Push delivery reached a terminal provider state",
+          d.transport,
+        );
+      });
+
+    return Effect.tryPromise({
+      try: () => transport.send(d, event),
+      catch: (error) =>
+        error instanceof PermanentRejection || error instanceof TerminalResponse
+          ? error
+          : flaggedFailure(String(error), failureFlags.safeParse(error).data),
+    }).pipe(
+      Effect.flatMap((result) =>
+        result === "delivered"
+          ? Effect.sync(() =>
+              this.store.markDelivered(row.outbox_id, d.installationId),
+            )
+          : terminal(),
+      ),
+      Effect.catchTags({
+        PermanentRejection: () =>
+          Effect.sync(() => {
+            const current = this.store.getDevice(d.installationId);
+
+            if (current?.token === d.token) {
+              this.store.disableIfToken(d.installationId, d.token);
+              this.store.removeDelivery(row.outbox_id, d.installationId);
+            } else if (current) {
+              this.store.requeueDelivery(row.outbox_id, d.installationId);
+            } else {
+              this.store.removeDelivery(row.outbox_id, d.installationId);
+            }
+          }),
+        TerminalResponse: terminal,
+        TemporaryFailure: () =>
+          Effect.sync(() => {
+            if (row.attempts >= 7 || row.expires_at <= this.now())
+              this.store.removeDelivery(row.outbox_id, d.installationId);
+            else
+              this.store.markRetry(
+                row.outbox_id,
+                d.installationId,
+                row.attempts + 1,
+                this.now() + Math.min(300000, 1000 * 2 ** row.attempts),
+              );
+          }),
+      }),
+    );
   }
   device(id: string, input: PushDeviceInput) {
     this.store.upsertDevice(id, input);
@@ -818,12 +906,9 @@ export class PushManager {
   presence(id: string, active: boolean, agentId: string | null) {
     return this.store.setPresence(id, active, agentId);
   }
+  /** Stops polling and listening, delivers what is queued, then closes the store; closing again does nothing. */
   async close() {
     this.closed = true;
-
-    if (this.timer) clearInterval(this.timer);
-    this.unsubscribe?.();
-    await this.drain();
-    this.store.close();
+    await Effect.runPromise(Scope.close(this.scope, Exit.void));
   }
 }

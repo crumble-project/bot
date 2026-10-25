@@ -26,6 +26,22 @@
     {
       "files": ["**/*.test.ts"],
       "rules": { "typescript/await-thenable": "off" }
+    },
+    {
+      "files": ["apps/server/src/push/**"],
+      "jsPlugins": [
+        {
+          "name": "anti-slop-effect",
+          "specifier": "./tools/oxlint/anti-slop/effect/index.ts"
+        }
+      ],
+      "rules": {
+        "anti-slop-effect/no-manual-effect-error-tag": "error",
+        "anti-slop-effect/no-manual-tag-comparison": "error",
+        "anti-slop-effect/no-manual-tagged-construction": "error",
+        "anti-slop-effect/no-service-constructor-imports": "error",
+        "anti-slop-effect/prefer-effect-match": "error"
+      }
     }
   ],
   "rules": {
