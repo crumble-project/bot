@@ -28,7 +28,7 @@
       "rules": { "typescript/await-thenable": "off" }
     },
     {
-      "files": ["apps/server/src/push/**"],
+      "files": ["apps/server/src/**", "apps/server/test/**"],
       "jsPlugins": [
         {
           "name": "anti-slop-effect",

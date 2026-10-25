@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { Effect } from "effect";
+import { Effect, Match } from "effect";
 import { z } from "zod";
 import { migrateFile, migrationsFolder } from "./database";
 import { upgradeLegacyStore } from "./legacy-schema";
@@ -64,7 +64,11 @@ const indexColumn = z.object({ name: z.string().nullable() });
 
 // Drizzle writes boolean defaults as `false`/`true`, which SQLite stores as 0/1.
 const normalizedDefault = (value: string | null) =>
-  value === "false" ? "0" : value === "true" ? "1" : value;
+  Match.value(value).pipe(
+    Match.when("false", () => "0"),
+    Match.when("true", () => "1"),
+    Match.orElse(() => value),
+  );
 
 /** Every user table as SQLite reports it, independent of column order, constraint names, and DDL text. */
 function schemaOf(file: string) {

@@ -41,6 +41,7 @@ import {
   type ClaudeCodeOptions,
   type ClaudeCodeStatus,
 } from "./setup";
+import { Match } from "effect";
 
 /** The Pi AI api id of the Claude Code adapter. */
 export const CLAUDE_CODE_API = "claude-code";
@@ -215,11 +216,11 @@ const contentBlocks = (
   );
 
 const nativeStop = (reason: StopReason) =>
-  reason === "toolUse"
-    ? "tool_use"
-    : reason === "length"
-      ? "max_tokens"
-      : "end_turn";
+  Match.value(reason).pipe(
+    Match.when("toolUse", () => "tool_use"),
+    Match.when("length", () => "max_tokens"),
+    Match.orElse(() => "end_turn"),
+  );
 
 /** The system prompt and the conversation as stream-json frames, ending in the frame that queries. */
 export function prepareHistory(

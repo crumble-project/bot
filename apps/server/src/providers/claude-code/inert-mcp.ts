@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { z } from "zod";
+import { Match } from "effect";
 
 const manifestPath = process.argv[2];
 
@@ -21,26 +22,24 @@ for await (const line of createInterface({ input: process.stdin })) {
   if (!line.trim()) continue;
   const row = request.parse(JSON.parse(line));
 
-  const result =
-    row.method === "initialize"
-      ? {
-          protocolVersion: "2024-11-05",
-          capabilities: { tools: {} },
-          serverInfo: { name: "crumble-inert-inventory", version: "1" },
-        }
-      : row.method === "tools/list"
-        ? { tools }
-        : row.method === "tools/call"
-          ? {
-              isError: true,
-              content: [
-                {
-                  type: "text",
-                  text: "Denied: tools here are inert; only Crumble runs tools.",
-                },
-              ],
-            }
-          : {};
+  const result = Match.value(row.method).pipe(
+    Match.when("initialize", () => ({
+      protocolVersion: "2024-11-05",
+      capabilities: { tools: {} },
+      serverInfo: { name: "crumble-inert-inventory", version: "1" },
+    })),
+    Match.when("tools/list", () => ({ tools })),
+    Match.when("tools/call", () => ({
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: "Denied: tools here are inert; only Crumble runs tools.",
+        },
+      ],
+    })),
+    Match.orElse(() => ({})),
+  );
 
   if (row.id !== undefined)
     process.stdout.write(
