@@ -25,6 +25,7 @@ COPY --from=deps /app/apps/web/node_modules apps/web/node_modules
 COPY package.json tsconfig.base.json bunfig.toml ./
 COPY apps/server/package.json apps/server/tsconfig.json apps/server/
 COPY apps/server/src apps/server/src
+COPY apps/server/drizzle apps/server/drizzle
 COPY apps/server/workspace-image/desktop apps/server/workspace-image/desktop
 COPY apps/server/skills apps/server/skills
 COPY apps/server/tools/assign-legacy-owner.ts apps/server/tools/assign-legacy-owner.ts

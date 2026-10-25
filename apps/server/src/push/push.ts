@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { createSign, createPrivateKey, createHash } from "node:crypto";
 import { Data, Effect, Exit, Schedule, Scope } from "effect";
 import { z } from "zod";
+import { migrateFile, migrationsFolder } from "../shared/database";
 
 export type PushPlatform = "macos" | "ios" | "android";
 
@@ -172,30 +173,10 @@ export class PushStore {
     dataDir: string,
     private readonly clock: () => number = Date.now,
   ) {
-    this.db = new Database(join(dataDir, "push.sqlite"));
+    const file = join(dataDir, "push.sqlite");
+    Effect.runSync(migrateFile(file, migrationsFolder("push")));
+    this.db = new Database(file);
     this.db.run("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;");
-    this.db.run(`
-      CREATE TABLE IF NOT EXISTS push_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS push_devices (
-        installation_id TEXT PRIMARY KEY, platform TEXT NOT NULL, transport TEXT NOT NULL,
-        token TEXT NOT NULL, environment TEXT NOT NULL, bundle_id TEXT, enabled INTEGER NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS push_presence (
-        installation_id TEXT PRIMARY KEY REFERENCES push_devices(installation_id) ON DELETE CASCADE,
-        active INTEGER NOT NULL, agent_id TEXT, refreshed_at INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS push_outbox (
-        id TEXT PRIMARY KEY, event_id TEXT NOT NULL UNIQUE, event_json TEXT NOT NULL,
-        created_at TEXT NOT NULL, expires_at INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS push_delivery (
-        outbox_id TEXT NOT NULL REFERENCES push_outbox(id) ON DELETE CASCADE,
-        installation_id TEXT NOT NULL REFERENCES push_devices(installation_id) ON DELETE CASCADE,
-        attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL,
-        delivered INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(outbox_id, installation_id)
-      );
-    `);
   }
   close() {
     this.db.close();

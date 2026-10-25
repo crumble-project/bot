@@ -472,6 +472,8 @@ describe("Store memory sources", () => {
     first.close();
 
     const db = new Database(join(dir, "store.sqlite"));
+    // A server before Drizzle had no migrations table.
+    db.run("DROP TABLE __drizzle_migrations");
     db.run("ALTER TABLE memories DROP COLUMN source");
     db.close();
 
@@ -571,7 +573,9 @@ describe("Store group chats", () => {
     first.close();
 
     const db = new Database(join(dir, "store.sqlite"));
-    db.run(`DROP TABLE group_turns;
+    // A server before Drizzle had no migrations table.
+    db.run(`DROP TABLE __drizzle_migrations;
+      DROP TABLE group_turns;
       ALTER TABLE group_chats DROP COLUMN bot_turns;
       ALTER TABLE group_chats DROP COLUMN paused;
       ALTER TABLE group_chats DROP COLUMN awaiting_answers;

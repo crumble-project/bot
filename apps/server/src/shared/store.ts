@@ -37,6 +37,9 @@ import type {
 } from "./domain";
 import { STANDARD_TOOLS, memorySource, skillStates } from "./domain";
 import { z } from "zod";
+import { Effect } from "effect";
+import { migrateFile, migrationsFolder } from "./database";
+import { upgradeLegacyStore } from "./legacy-schema";
 import type { AttachmentInput } from "./attachments";
 import type { Credential, CredentialInfo } from "@earendil-works/pi-ai";
 
@@ -162,9 +165,16 @@ export class Store {
     const keyPath = join(dataDir, ".secret.key");
     const keyExists = existsSync(keyPath);
     this.key = keyExists ? readFileSync(keyPath) : randomBytes(32);
-    this.db = new Database(join(dataDir, "store.sqlite"));
+    const file = join(dataDir, "store.sqlite");
+    Effect.runSync(
+      migrateFile(file, migrationsFolder("store"), {
+        table: "agents",
+        upgrade: upgradeLegacyStore,
+      }),
+    );
+    this.db = new Database(file);
     this.db.run("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
-    this.migrate();
+    this.migrateSkills();
 
     if (
       !keyExists &&
@@ -195,214 +205,13 @@ export class Store {
       /* permissions are best effort on Windows */
     }
   }
-  private migrate() {
-    this.db
-      .run(`CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, avatar TEXT NOT NULL, description TEXT NOT NULL, instructions TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, enabled INTEGER NOT NULL, tools TEXT NOT NULL, skills TEXT NOT NULL, mcp_servers TEXT NOT NULL, delegates TEXT NOT NULL DEFAULT '[]', inference TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, title TEXT NOT NULL, archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE, content TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, source TEXT);
-      CREATE TABLE IF NOT EXISTS skills (id TEXT PRIMARY KEY, name TEXT NOT NULL, instructions TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS schedules (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, name TEXT NOT NULL, prompt TEXT NOT NULL, cron TEXT, timezone TEXT NOT NULL, run_at TEXT, enabled INTEGER NOT NULL, next_run_at TEXT, created_at TEXT NOT NULL, created_by_agent_id TEXT);
-      CREATE TABLE IF NOT EXISTS executions (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, schedule_id TEXT REFERENCES schedules(id) ON DELETE SET NULL, submission_id TEXT, request_id TEXT NOT NULL, prompt TEXT, reply_to TEXT, status TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS credentials (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS provider_credentials (provider TEXT PRIMARY KEY, type TEXT NOT NULL CHECK (type IN ('api_key', 'oauth')), value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS agent_credentials (agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, name TEXT NOT NULL, hosts TEXT NOT NULL, value TEXT NOT NULL, placeholder TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, last_used_at TEXT, PRIMARY KEY (agent_id, name));
-      CREATE TABLE IF NOT EXISTS credential_authorities (agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE, certificate TEXT NOT NULL, key TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS credential_requests (agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, name TEXT NOT NULL, hosts TEXT NOT NULL, reason TEXT NOT NULL, requested_at TEXT NOT NULL, PRIMARY KEY (agent_id, name));
-      CREATE TABLE IF NOT EXISTS credential_uses (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL, name TEXT NOT NULL, at TEXT NOT NULL, method TEXT NOT NULL, host TEXT NOT NULL, path TEXT NOT NULL, status INTEGER, FOREIGN KEY (agent_id, name) REFERENCES agent_credentials(agent_id, name) ON DELETE CASCADE);
-      CREATE INDEX IF NOT EXISTS credential_uses_by_credential ON credential_uses(agent_id, name, id);
-      CREATE INDEX IF NOT EXISTS credential_uses_by_time ON credential_uses(at);
-      CREATE TABLE IF NOT EXISTS mcp_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, enabled INTEGER NOT NULL, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE);
-      CREATE TABLE IF NOT EXISTS group_chats (id TEXT PRIMARY KEY, name TEXT NOT NULL, bot_turns INTEGER NOT NULL DEFAULT 0, paused INTEGER NOT NULL DEFAULT 0, awaiting_answers TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS group_members (group_id TEXT NOT NULL REFERENCES group_chats(id) ON DELETE CASCADE, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, joined_at TEXT NOT NULL, conversation_id TEXT, cursor INTEGER NOT NULL DEFAULT 0, pending INTEGER NOT NULL DEFAULT 0, pending_bot_started INTEGER NOT NULL DEFAULT 0, summary TEXT, PRIMARY KEY (group_id, agent_id));
-      CREATE TABLE IF NOT EXISTS group_turns (execution_id TEXT PRIMARY KEY REFERENCES executions(id) ON DELETE CASCADE, group_id TEXT NOT NULL REFERENCES group_chats(id) ON DELETE CASCADE, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, through INTEGER NOT NULL, bot_started INTEGER NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL);`);
-
-    // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
-    const agentCols = this.db
-      .query("PRAGMA table_info(agents)")
-      .all() as Array<{ name: string }>;
-
-    if (!agentCols.some((c) => c.name === "delegates"))
-      this.db.run(
-        "ALTER TABLE agents ADD COLUMN delegates TEXT NOT NULL DEFAULT '[]'",
-      );
-
-    if (!agentCols.some((c) => c.name === "inference"))
-      this.db.run(
-        "ALTER TABLE agents ADD COLUMN inference TEXT NOT NULL DEFAULT '{}'",
-      );
-
-    if (!agentCols.some((c) => c.name === "shared_skills"))
-      this.db.run(
-        "ALTER TABLE agents ADD COLUMN shared_skills TEXT NOT NULL DEFAULT '[]'",
-      );
-
-    if (!agentCols.some((c) => c.name === "desktop_model"))
-      this.db.run("ALTER TABLE agents ADD COLUMN desktop_model TEXT");
-
-    if (!agentCols.some((c) => c.name === "review_model"))
-      this.db.run("ALTER TABLE agents ADD COLUMN review_model TEXT");
-
-    if (!agentCols.some((c) => c.name === "review"))
-      this.db.run("ALTER TABLE agents ADD COLUMN review TEXT");
-
-    this.db.run(
-      "CREATE TABLE IF NOT EXISTS desktop_control (agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE, holder TEXT NOT NULL, changes INTEGER NOT NULL, updated_at TEXT NOT NULL)",
-    );
-
-    if (!agentCols.some((c) => c.name === "shared_memory"))
-      this.db.run(
-        "ALTER TABLE agents ADD COLUMN shared_memory INTEGER NOT NULL DEFAULT 0",
-      );
-
-    if (agentCols.some((c) => c.name === "folder"))
-      this.db.run("ALTER TABLE agents DROP COLUMN folder");
-
-    // Shared memories have no bot, and SQLite cannot drop NOT NULL in place.
-    // SAFETY: PRAGMA table_info returns rows with a `name` and numeric `notnull` column.
-    const memoryCols = this.db
-      .query("PRAGMA table_info(memories)")
-      .all() as Array<{ name: string; notnull: number }>;
-
-    if (memoryCols.find((c) => c.name === "agent_id")?.notnull)
-      this.db.transaction(() => {
-        this.db
-          .run(`CREATE TABLE memories_next (id TEXT PRIMARY KEY, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE, content TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-          INSERT INTO memories_next SELECT id, agent_id, content, created_at, updated_at FROM memories;
-          DROP TABLE memories;
-          ALTER TABLE memories_next RENAME TO memories;`);
-      })();
-
-    if (!memoryCols.some((c) => c.name === "source"))
-      this.db.run("ALTER TABLE memories ADD COLUMN source TEXT");
-
-    // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
-    const serverCols = this.db
-      .query("PRAGMA table_info(mcp_servers)")
-      .all() as Array<{ name: string }>;
-
-    if (!serverCols.some((c) => c.name === "agent_id"))
-      this.db.run(
-        "ALTER TABLE mcp_servers ADD COLUMN agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE",
-      );
-
-    if (!serverCols.some((c) => c.name === "oauth_client_id"))
-      this.db.run("ALTER TABLE mcp_servers ADD COLUMN oauth_client_id TEXT");
-
-    // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
-    const conversationCols = this.db
-      .query("PRAGMA table_info(conversations)")
-      .all() as Array<{ name: string }>;
-
-    if (!conversationCols.some((c) => c.name === "archived"))
-      this.db.run(
-        "ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
-      );
-
-    // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
-    const scheduleCols = this.db
-      .query("PRAGMA table_info(schedules)")
-      .all() as Array<{ name: string }>;
-
-    if (!scheduleCols.some((c) => c.name === "created_by_agent_id"))
-      this.db.run("ALTER TABLE schedules ADD COLUMN created_by_agent_id TEXT");
-
-    // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
-    const groupCols = this.db
-      .query("PRAGMA table_info(group_chats)")
-      .all() as Array<{ name: string }>;
-
-    if (!groupCols.some((c) => c.name === "bot_turns"))
-      this.db.run(
-        "ALTER TABLE group_chats ADD COLUMN bot_turns INTEGER NOT NULL DEFAULT 0",
-      );
-
-    if (!groupCols.some((c) => c.name === "paused"))
-      this.db.run(
-        "ALTER TABLE group_chats ADD COLUMN paused INTEGER NOT NULL DEFAULT 0",
-      );
-
-    if (!groupCols.some((c) => c.name === "awaiting_answers"))
-      this.db.run(
-        "ALTER TABLE group_chats ADD COLUMN awaiting_answers TEXT NOT NULL DEFAULT '{}'",
-      );
-
-    // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
-    const memberCols = this.db
-      .query("PRAGMA table_info(group_members)")
-      .all() as Array<{ name: string }>;
-
-    if (!memberCols.some((c) => c.name === "conversation_id"))
-      this.db.run("ALTER TABLE group_members ADD COLUMN conversation_id TEXT");
-
-    if (!memberCols.some((c) => c.name === "summary"))
-      this.db.run("ALTER TABLE group_members ADD COLUMN summary TEXT");
-
-    for (const column of ["cursor", "pending", "pending_bot_started"])
-      if (!memberCols.some((c) => c.name === column))
-        this.db.run(
-          `ALTER TABLE group_members ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0`,
-        );
-
-    // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
-    const cols = this.db.query("PRAGMA table_info(executions)").all() as Array<{
-      name: string;
-    }>;
-
-    if (!cols.some((c) => c.name === "prompt"))
-      this.db.run("ALTER TABLE executions ADD COLUMN prompt TEXT");
-
-    if (!cols.some((c) => c.name === "reply_to"))
-      this.db.run("ALTER TABLE executions ADD COLUMN reply_to TEXT");
-
-    if (!cols.some((c) => c.name === "attachments"))
-      this.db.run("ALTER TABLE executions ADD COLUMN attachments TEXT");
-
-    if (!cols.some((c) => c.name === "attachments_digest"))
-      this.db.run("ALTER TABLE executions ADD COLUMN attachments_digest TEXT");
-    this.db.run(
-      "CREATE UNIQUE INDEX IF NOT EXISTS executions_conversation_request ON executions(conversation_id, request_id)",
-    );
-    this.migrateSkills();
-  }
   /**
-   * Skills become packages in one library: a bot's own skills move out of the agent row into it. Schema and data
-   * move in one transaction, and any inline skills left behind are transferred on every startup, so a crash can
-   * neither lose them nor leave them in both places.
+   * Skills become packages in one library: a bot's own skills move out of the agent row into it. Any inline skills
+   * left behind are transferred on every startup, in one transaction, so a crash can neither lose them nor leave
+   * them in both places.
    */
   private migrateSkills() {
     this.db.transaction(() => {
-      // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
-      const skillCols = this.db
-        .query("PRAGMA table_info(skills)")
-        .all() as Array<{ name: string }>;
-
-      const added: Array<[string, string]> = [
-        ["agent_id", "TEXT REFERENCES agents(id) ON DELETE CASCADE"],
-        ["description", "TEXT NOT NULL DEFAULT ''"],
-        ["created_by", "TEXT NOT NULL DEFAULT 'owner'"],
-        ["source_execution_id", "TEXT"],
-        ["use_count", "INTEGER NOT NULL DEFAULT 0"],
-        ["last_used_at", "TEXT"],
-        ["state", "TEXT NOT NULL DEFAULT 'active'"],
-        ["pinned", "INTEGER NOT NULL DEFAULT 0"],
-      ];
-
-      for (const [column, definition] of added)
-        if (!skillCols.some((c) => c.name === column))
-          this.db.run(`ALTER TABLE skills ADD COLUMN ${column} ${definition}`);
-
-      this.db.run(
-        "CREATE TABLE IF NOT EXISTS skill_documents (skill_id TEXT NOT NULL REFERENCES skills(id) ON DELETE CASCADE, path TEXT NOT NULL, content TEXT NOT NULL, PRIMARY KEY (skill_id, path))",
-      );
-      this.db.run(
-        "CREATE TABLE IF NOT EXISTS review_counters (agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE, skill_rounds INTEGER NOT NULL DEFAULT 0, memory_rounds INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS pending_reviews (execution_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, conversation_id TEXT NOT NULL, created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS review_results (execution_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, change_ids TEXT NOT NULL, created_at TEXT NOT NULL)",
-      );
-      // Changes outlive their targets and bots, so they carry the bot ID without a foreign key.
-      this.db.run(
-        "CREATE TABLE IF NOT EXISTS learned_changes (id TEXT PRIMARY KEY, agent_id TEXT, actor TEXT NOT NULL, target TEXT NOT NULL, target_id TEXT NOT NULL, action TEXT NOT NULL, before_state TEXT, after_state TEXT, source TEXT, reverts_id TEXT, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS learned_changes_agent ON learned_changes(agent_id, created_at)",
-      );
-
       const agents = this.db
         .query<{ id: string; skills: string }, []>(
           "SELECT id, skills FROM agents WHERE skills != '[]'",
