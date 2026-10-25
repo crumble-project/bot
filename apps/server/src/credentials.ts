@@ -108,7 +108,7 @@ export class Credentials {
   uses(
     agentId: string,
     name: string,
-    options: { limit: number; before?: string },
+    options: { limit: number; before?: string | undefined },
   ) {
     if (!this.store.getAgentCredential(agentId, name))
       throw new AppError(404, "Credential not found");

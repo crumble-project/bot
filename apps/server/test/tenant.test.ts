@@ -12,15 +12,15 @@ import { join } from "node:path";
 import { providerModels } from "../src/providers";
 import { createTenant } from "../src/tenant";
 
-const original = process.env.OPENAI_API_KEY;
+const original = process.env["OPENAI_API_KEY"];
 
 afterEach(() => {
-  if (original === undefined) delete process.env.OPENAI_API_KEY;
-  else process.env.OPENAI_API_KEY = original;
+  if (original === undefined) delete process.env["OPENAI_API_KEY"];
+  else process.env["OPENAI_API_KEY"] = original;
 });
 
 test("tenant provider models do not resolve ambient host credentials", async () => {
-  process.env.OPENAI_API_KEY = "host-secret";
+  process.env["OPENAI_API_KEY"] = "host-secret";
 
   const models = providerModels(undefined, [], { allowAmbientEnv: false });
 
@@ -36,9 +36,9 @@ test.serial(
     const firstDir = join(root, "first");
     const secondDir = join(root, "second");
     const fake = join(import.meta.dir, "fixtures", "fake-claude.ts");
-    const originalCommand = process.env.CRUMBLE_CLAUDE_COMMAND;
-    const originalConfig = process.env.CRUMBLE_CLAUDE_CONFIG_DIR;
-    const originalSkills = process.env.CRUMBLE_SKILLS_DIR;
+    const originalCommand = process.env["CRUMBLE_CLAUDE_COMMAND"];
+    const originalConfig = process.env["CRUMBLE_CLAUDE_CONFIG_DIR"];
+    const originalSkills = process.env["CRUMBLE_SKILLS_DIR"];
     let first: Awaited<ReturnType<typeof createTenant>> | undefined;
     let second: Awaited<ReturnType<typeof createTenant>> | undefined;
 
@@ -61,9 +61,9 @@ test.serial(
       );
       chmodSync(fake, 0o755);
 
-      process.env.CRUMBLE_CLAUDE_COMMAND = fake;
-      process.env.CRUMBLE_CLAUDE_CONFIG_DIR = sharedConfig;
-      process.env.CRUMBLE_SKILLS_DIR = skillsDir;
+      process.env["CRUMBLE_CLAUDE_COMMAND"] = fake;
+      process.env["CRUMBLE_CLAUDE_CONFIG_DIR"] = sharedConfig;
+      process.env["CRUMBLE_SKILLS_DIR"] = skillsDir;
 
       first = await createTenant({
         dataDir: firstDir,
@@ -136,15 +136,16 @@ test.serial(
       await Promise.allSettled([first?.close(), second?.close()]);
 
       if (originalCommand === undefined)
-        delete process.env.CRUMBLE_CLAUDE_COMMAND;
-      else process.env.CRUMBLE_CLAUDE_COMMAND = originalCommand;
+        delete process.env["CRUMBLE_CLAUDE_COMMAND"];
+      else process.env["CRUMBLE_CLAUDE_COMMAND"] = originalCommand;
 
       if (originalConfig === undefined)
-        delete process.env.CRUMBLE_CLAUDE_CONFIG_DIR;
-      else process.env.CRUMBLE_CLAUDE_CONFIG_DIR = originalConfig;
+        delete process.env["CRUMBLE_CLAUDE_CONFIG_DIR"];
+      else process.env["CRUMBLE_CLAUDE_CONFIG_DIR"] = originalConfig;
 
-      if (originalSkills === undefined) delete process.env.CRUMBLE_SKILLS_DIR;
-      else process.env.CRUMBLE_SKILLS_DIR = originalSkills;
+      if (originalSkills === undefined)
+        delete process.env["CRUMBLE_SKILLS_DIR"];
+      else process.env["CRUMBLE_SKILLS_DIR"] = originalSkills;
       rmSync(root, { recursive: true, force: true });
     }
   },

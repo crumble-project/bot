@@ -84,7 +84,7 @@ type Item =
       kind: "step";
       id: string;
       tool: string;
-      subject?: string;
+      subject?: string | undefined;
       result?: Message;
     };
 
@@ -181,7 +181,7 @@ export function JobDialog({
 }: {
   botId: string;
   job: JobRef;
-  status?: string;
+  status?: string | undefined;
   usage?: CodingJob["usage"];
   onClose: () => void;
 }) {

@@ -134,12 +134,11 @@ export const providerLoginInput = z.object({
 
 export const providerLoginAnswerInput = z.object({
   promptId: z.string().min(1).max(200),
-  value: z
-    .string()
-    .refine(
-      (value) => [...value].length <= MAX_LOGIN_VALUE,
-      `Use at most ${MAX_LOGIN_VALUE} characters`,
-    ),
+  value: z.string().refine(
+    // oxlint-disable-next-line typescript/no-misused-spread -- the limit counts code points, as spreading does
+    (value) => [...value].length <= MAX_LOGIN_VALUE,
+    `Use at most ${MAX_LOGIN_VALUE} characters`,
+  ),
 });
 
 export const oauthInput = z.object({

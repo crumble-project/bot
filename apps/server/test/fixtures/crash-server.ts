@@ -4,7 +4,7 @@ import { Store } from "../../src/store";
 import { AgentRuntime } from "../../src/runtime";
 import { CrumbleService } from "../../src/service";
 
-const dir = process.env.BOT_CRASH_DIR;
+const dir = process.env["BOT_CRASH_DIR"];
 
 if (!dir) throw new Error("BOT_CRASH_DIR is required");
 

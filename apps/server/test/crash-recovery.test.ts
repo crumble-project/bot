@@ -12,7 +12,6 @@ import { AgentRuntime } from "../src/runtime";
 import { CrumbleService } from "../src/service";
 
 const agentId = "00000000-0000-4000-8000-000000000301";
-const _requestId = "00000000-0000-4000-8000-000000000302";
 
 describe("crash recovery", () => {
   test("recovers durable execution and preserves one user turn", async () => {

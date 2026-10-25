@@ -171,7 +171,7 @@ test("the memory tool reports where it runs", async () => {
 
   const runtime = new AgentRuntime(temp(), {
     models,
-    createMemory: (agentId, content, _shared, context) => {
+    createMemory: (_agentId, content, _shared, context) => {
       contexts.push(context);
 
       return { id: "m", content };

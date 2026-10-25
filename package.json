@@ -11,13 +11,14 @@
     "@types/node": "^26.6.5",
     "oxfmt": "0.73.0",
     "oxlint": "1.88.0",
+    "oxlint-tsgolint": "7.0.2005",
     "typescript": "7.0.2"
   },
   "scripts": {
     "dev": "bun --watch apps/server/src/server.ts",
     "start": "bun apps/server/src/server.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p apps/server && tsc --noEmit -p apps/web",
+    "typecheck": "tsc --noEmit -p apps/server && tsc --noEmit -p apps/web",
     "lint": "oxlint",
     "format": "oxfmt apps",
     "format:check": "oxfmt --check apps",

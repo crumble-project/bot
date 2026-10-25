@@ -364,7 +364,7 @@ export function MessageActions({
   onReply,
 }: {
   message: Message;
-  onReply?: (message: Message) => void;
+  onReply?: ((message: Message) => void) | undefined;
 }) {
   const canReply =
     onReply &&
@@ -444,11 +444,11 @@ export function OwnerMessage({
   message: Message;
   /** Files of a message not confirmed yet, shown from local data. */
   uploads?: Upload[];
-  quote?: string;
-  reactions?: string[];
+  quote?: string | undefined;
+  reactions?: string[] | undefined;
   delivery?: Delivery;
   onRetry?: () => void;
-  onReply?: (message: Message) => void;
+  onReply?: ((message: Message) => void) | undefined;
   attachmentPath: (entryId: string, index: number) => string;
 }) {
   const label = originLabel(message);
@@ -531,9 +531,9 @@ export function BotMessage({
   message: Message;
   sender?: ReactNode;
   /** The sender's color, where the transcript mixes bots. */
-  color?: string;
-  reactions?: string[];
-  onReply?: (message: Message) => void;
+  color?: string | undefined;
+  reactions?: string[] | undefined;
+  onReply?: ((message: Message) => void) | undefined;
 }) {
   return (
     <MessageRow align="start">
@@ -574,7 +574,7 @@ export function ToolResultRow({
   message: Message;
   /** The bot whose chat this is; a credential request links to its credentials. */
   botId?: string;
-  jobStatus?: string;
+  jobStatus?: string | undefined;
   onOpenJob?: (job: { kind: "coding" | "desktop"; name: string }) => void;
 }) {
   const display = displayOf(message);
@@ -759,7 +759,7 @@ export function Composer({
   placeholder: string;
   disabled?: boolean;
   running: boolean;
-  replyingTo?: string;
+  replyingTo?: string | undefined;
   onCancelReply?: () => void;
   mentionable?: Mentionable[];
   /** Controls shown beside the send button. */

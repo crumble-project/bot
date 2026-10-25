@@ -36,6 +36,9 @@ import { z } from "zod";
 import type {
   activityFeedResponse,
   chatSnapshotResponse,
+  codingJobsResponse,
+  desktopJobsResponse,
+  scheduleRunResponse,
 } from "./api-responses";
 import {
   agentInput,
@@ -102,7 +105,7 @@ export function createAPI(
     /** The server's provider sign-ins; API-only fixtures get one of their own. */
     providerAuth?: ProviderAuth;
     /** The server's OAuth client metadata document, when it has a public address. */
-    oauthClient?: ClientDocument;
+    oauthClient?: ClientDocument | undefined;
     /** Providers whose sign-in happens outside Crumble, by provider ID. */
     externalAuth?: ReadonlyMap<string, () => Promise<ExternalAuth>>;
     /** The bots' credentials; API-only fixtures get their own. */
@@ -276,7 +279,7 @@ export function createAPI(
     const { skills, ...input } = agentInput.parse({
       ...old,
       ...body,
-      skills: body.skills ?? [],
+      skills: body["skills"] ?? [],
     });
 
     provider.parse(input.provider);
@@ -288,7 +291,7 @@ export function createAPI(
 
     const updated = store.updateAgent(
       old.id,
-      body.skills ? { ...input, skills } : input,
+      body["skills"] ? { ...input, skills } : input,
     );
 
     // The desktop tool picks the workspace image; a bot that gains or loses it needs a fresh boot.
@@ -333,9 +336,13 @@ export function createAPI(
 
     return c.json(await service.history(c.req.param("id"), input), 200);
   });
-  register(routes.codingJobs, async (c) =>
-    c.json({ jobs: await service.codingJobs(c.req.param("id")) }, 200),
-  );
+  register(routes.codingJobs, async (c) => {
+    const jobs: z.output<typeof codingJobsResponse> = {
+      jobs: await service.codingJobs(c.req.param("id")),
+    };
+
+    return c.json(jobs, 200);
+  });
   register(routes.codingJobHistory, async (c) =>
     c.json(
       await service.codingJobHistory(
@@ -346,9 +353,13 @@ export function createAPI(
       200,
     ),
   );
-  register(routes.desktopJobs, async (c) =>
-    c.json({ jobs: await service.desktopJobs(c.req.param("id")) }, 200),
-  );
+  register(routes.desktopJobs, async (c) => {
+    const jobs: z.output<typeof desktopJobsResponse> = {
+      jobs: await service.desktopJobs(c.req.param("id")),
+    };
+
+    return c.json(jobs, 200);
+  });
   register(routes.desktopJobHistory, async (c) =>
     c.json(
       await service.desktopJobHistory(
@@ -882,10 +893,7 @@ export function createAPI(
     c.json(store.listSchedules(c.req.query("agentId")), 200),
   );
   register(routes.createSchedule, async (c) =>
-    c.json(
-      await scheduler.create(scheduleInput.parse(await c.req.json())),
-      201,
-    ),
+    c.json(scheduler.create(scheduleInput.parse(await c.req.json())), 201),
   );
   register(routes.updateSchedule, async (c) => {
     const old = store.getSchedule(c.req.param("id"));
@@ -893,7 +901,7 @@ export function createAPI(
     if (!old) throw new AppError(404, "Schedule not found");
 
     return c.json(
-      await scheduler.update(
+      scheduler.update(
         old.id,
         scheduleInput.parse({ ...old, ...(await c.req.json()) }),
       ),
@@ -909,7 +917,12 @@ export function createAPI(
   register(routes.runSchedule, async (c) => {
     const run = await scheduler.runNow(c.req.param("id"));
 
-    return c.json({ ...run, result: run.result ?? undefined }, 202);
+    const body: z.output<typeof scheduleRunResponse> = {
+      ...run,
+      result: run.result ?? undefined,
+    };
+
+    return c.json(body, 202);
   });
   register(routes.executions, (c) =>
     c.json(store.listExecutions(c.req.query("agentId")), 200),

@@ -117,7 +117,11 @@ export function operationalActivity(
         const name = z.string().safeParse(call.name).data;
 
         if (name === undefined) return;
-        const callId = String(call.id ?? index);
+
+        const callId = String(
+          z.union([z.string(), z.number()]).safeParse(call.id).data ?? index,
+        );
+
         const args = z.string().safeParse(call.args).data;
         const status = z.string().safeParse(call.status).data;
         const durationMs = z.number().safeParse(call.durationMs).data;
@@ -287,7 +291,7 @@ export async function activityPage<
   agentName: (id: string) => string | null;
   limit: number;
   cursor: Cursor | null;
-  kind?: FeedItem["kind"];
+  kind?: FeedItem["kind"] | undefined;
 }) {
   const { limit, cursor, kind } = options;
   const queues: { items: FeedItem[]; tags: (string | null)[] }[] = [];

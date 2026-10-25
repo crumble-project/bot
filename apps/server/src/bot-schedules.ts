@@ -16,13 +16,13 @@ const output = (value: JsonValue) => ({
 });
 
 export type ScheduleDraft = {
-  agentId?: string;
-  name?: string;
-  prompt?: string;
-  cron?: string | null;
-  runAt?: string | null;
-  timezone?: string | null;
-  enabled?: boolean;
+  agentId?: string | undefined;
+  name?: string | undefined;
+  prompt?: string | undefined;
+  cron?: string | null | undefined;
+  runAt?: string | null | undefined;
+  timezone?: string | null | undefined;
+  enabled?: boolean | undefined;
 };
 
 /** Tasks a bot may see or change. Each task runs in one bot's chat. */

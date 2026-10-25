@@ -45,7 +45,7 @@ type Paint = Pick<
 type Placement = {
   dx: number;
   dy: number;
-  clip?: [number, number, number, number];
+  clip?: [number, number, number, number] | undefined;
   paint: Paint;
 };
 

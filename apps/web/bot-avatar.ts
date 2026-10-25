@@ -45,7 +45,10 @@ export const PALETTE = [
 const U64 = (1n << 64n) - 1n;
 
 /** A body shape and color the owner picked instead of the seeded ones. */
-export type AvatarChoice = { silhouette?: Silhouette; color?: string };
+export type AvatarChoice = {
+  silhouette?: Silhouette | undefined;
+  color?: string | undefined;
+};
 
 /** A `bot:` or `critters:` avatar split into its seed and picks, as in `bot:<seed>;silhouette=cloud;color=#38bdf8`.
  * Only the web reads the picks so far; the native apps hash the whole string as the seed.

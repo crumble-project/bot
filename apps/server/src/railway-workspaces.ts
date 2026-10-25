@@ -169,9 +169,9 @@ export function railwayWorkspacesFromEnv(
   env: Record<string, string | undefined>,
   options: RailwayWorkspacesOptions,
 ) {
-  if (env.CRUMBLE_WORKSPACE_BACKEND !== "railway") return undefined;
+  if (env["CRUMBLE_WORKSPACE_BACKEND"] !== "railway") return undefined;
 
-  const region = env.CRUMBLE_RAILWAY_REGION;
+  const region = env["CRUMBLE_RAILWAY_REGION"];
 
   return new RailwayWorkspaces({ ...options, ...(region && { region }) });
 }

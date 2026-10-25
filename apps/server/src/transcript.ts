@@ -24,11 +24,22 @@ type TranscriptEntryQuery = { order: "descending"; maxEntryId?: EntryId };
 const textBlock = z.object({ type: z.literal("text"), text: z.string() });
 const jsonRecord = z.record(z.string(), z.json());
 
-const messageOrigin = z.object({
-  kind: z.string(),
-  name: z.string().optional().catch(undefined),
-  agentId: z.string().optional().catch(undefined),
-});
+// Drops an unreadable name or agent ID instead of keeping it as `undefined`, so origins stay JSON.
+const messageOrigin = z
+  .object({
+    kind: z.string(),
+    name: z.string().optional().catch(undefined),
+    agentId: z.string().optional().catch(undefined),
+  })
+  .transform(({ kind, name, agentId }) => {
+    const origin: MessageOrigin = { kind };
+
+    if (name !== undefined) origin.name = name;
+
+    if (agentId !== undefined) origin.agentId = agentId;
+
+    return origin;
+  });
 
 const attachmentInfo = z.object({
   name: z.string(),
@@ -58,14 +69,14 @@ export const groupMessageData = z.object({
   sender: messageOrigin,
   requestId: z.string(),
   timestamp: z.number(),
-  replyTo: z.string().optional(),
-  replyPreview: z.string().optional(),
+  replyTo: z.string().exactOptional(),
+  replyPreview: z.string().exactOptional(),
   /** The emoji of a reaction to `replyTo`; a reaction has no text. */
-  reaction: z.string().optional(),
+  reaction: z.string().exactOptional(),
   /** The owner's uploads, kept with the message so every member turn can include them. */
-  attachments: z.array(attachmentInput).optional(),
+  attachments: z.array(attachmentInput).exactOptional(),
   /** What pages show for each upload, without its bytes. */
-  files: z.array(attachmentInfo).optional(),
+  files: z.array(attachmentInfo).exactOptional(),
 });
 
 export type GroupMessageData = z.infer<typeof groupMessageData>;
@@ -104,13 +115,13 @@ export type TranscriptMessage = {
   id: string;
   entryId: string;
   /** Stable admission ID copied from the durable input metadata for optimistic reconciliation. */
-  requestId?: string;
+  requestId?: string | undefined;
   role: string;
   content: string;
   blocks?: unknown;
   /** Provider terminal reason, used to hide aborted/error partials from chat views. */
   stopReason?: string;
-  timestamp?: number;
+  timestamp?: number | undefined;
   kind?: string;
   replyTo?: string;
   replyPreview?: string;
@@ -119,8 +130,8 @@ export type TranscriptMessage = {
   attachments?: AttachmentInfo[];
   /** Tool result metadata is carried on the model message, rather than its content blocks. */
   toolCallId?: string;
-  toolName?: string;
-  isError?: boolean;
+  toolName?: string | undefined;
+  isError?: boolean | undefined;
   /** Provider-specific details, including codemode nested tool calls. */
   toolDetails?: unknown;
 };
@@ -349,8 +360,8 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
   }
 
   const input = inputMetadata.parse(data ?? {});
-  const origin = originOf(data?.origin);
-  const attachments = attachmentsOf(data?.attachments);
+  const origin = originOf(data?.["origin"]);
+  const attachments = attachmentsOf(data?.["attachments"]);
 
   return (entry.model ?? []).flatMap((message, index) => {
     // Reply inputs carry a quoted context block for the model; owners see the text they wrote.
@@ -427,7 +438,7 @@ async function conversations(harness: Harness): Promise<ConversationRecord[]> {
   return records;
 }
 
-type PageOptions = { before?: string; limit?: number };
+type PageOptions = { before?: string | undefined; limit?: number | undefined };
 
 /** Newest-first page over the given conversations. Entry IDs are global, which makes them a shared cursor. */
 async function readPage(
@@ -642,7 +653,7 @@ export async function readAttachment(
   const entry = page?.items[0];
 
   if (!entry) throw new Error("Attachment not found");
-  const attachments = attachmentsOf(record(entry.data)?.attachments);
+  const attachments = attachmentsOf(record(entry.data)?.["attachments"]);
 
   if (attachments[index]?.kind !== "image")
     throw new Error("Attachment not found");

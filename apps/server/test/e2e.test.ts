@@ -14,7 +14,6 @@ import { Scheduler } from "../src/scheduler";
 import { createAPI } from "../src/api";
 
 const token = "e".repeat(40);
-const _agentId = "00000000-0000-4000-8000-000000000201";
 const requestId = "00000000-0000-4000-8000-000000000202";
 
 describe("HTTP/runtime persistence", () => {

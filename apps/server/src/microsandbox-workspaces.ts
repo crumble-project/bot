@@ -46,8 +46,8 @@ export function microsandboxWorkspacesFromEnv(
   env: Record<string, string | undefined> = process.env,
   options: MicrosandboxWorkspacesOptions = {},
 ) {
-  const image = env.CRUMBLE_WORKSPACE_IMAGE;
-  const desktopImage = env.CRUMBLE_WORKSPACE_DESKTOP_IMAGE;
+  const image = env["CRUMBLE_WORKSPACE_IMAGE"];
+  const desktopImage = env["CRUMBLE_WORKSPACE_DESKTOP_IMAGE"];
 
   return image
     ? new MicrosandboxWorkspaces(image, {

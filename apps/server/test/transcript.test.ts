@@ -48,7 +48,7 @@ function fakeHarness(entries: Record<number, FakeEntry[]>): Harness {
           _n: number,
           cursor?: Cursor,
         ): Promise<Awaited<ReturnType<Tx["scanConversations"]>>> => {
-          const start = cursor ? Number(cursor.offset) : 0;
+          const start = cursor ? Number(cursor["offset"]) : 0;
           const items = conversations.slice(start, start + 1);
 
           const page = {
@@ -72,7 +72,7 @@ function fakeHarness(entries: Record<number, FakeEntry[]>): Harness {
           (e) => query.maxEntryId === undefined || e.id <= query.maxEntryId,
         );
 
-        const start = cursor ? Number(cursor.offset) : 0;
+        const start = cursor ? Number(cursor["offset"]) : 0;
         const items = all.slice(start, start + limit);
 
         return {

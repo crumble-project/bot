@@ -19,7 +19,7 @@ const temp = () => {
 };
 
 let tools = "";
-const previousTool = process.env.OASDIFF;
+const previousTool = process.env["OASDIFF"];
 
 // Stands in for oasdiff 1.34.1, which CI installs: it reports no breaking HTTP or event changes.
 beforeAll(async () => {
@@ -31,14 +31,14 @@ beforeAll(async () => {
     '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "oasdiff version 1.34.1"; elif [ "$1" = "breaking" ]; then echo "[]"; fi\n',
   );
   chmodSync(tool, 0o755);
-  process.env.OASDIFF = tool;
+  process.env["OASDIFF"] = tool;
 });
 
 afterAll(() => {
   rmSync(tools, { recursive: true, force: true });
 
-  if (previousTool === undefined) delete process.env.OASDIFF;
-  else process.env.OASDIFF = previousTool;
+  if (previousTool === undefined) delete process.env["OASDIFF"];
+  else process.env["OASDIFF"] = previousTool;
 });
 
 const schema = (title: string) => ({

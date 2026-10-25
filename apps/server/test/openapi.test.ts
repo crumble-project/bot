@@ -30,7 +30,7 @@ describe("exported response and parameter schemas", () => {
 
   test("schedule admission results describe execution fields without requiring them", () => {
     const document = openAPIDocument();
-    const result = document.components?.schemas?.ScheduleRunResult;
+    const result = document.components?.schemas?.["ScheduleRunResult"];
 
     expect(result).toMatchObject({
       properties: {

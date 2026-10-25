@@ -92,7 +92,7 @@ export const queryClient = new QueryClient({
 
 /** Drop all cached user data when the authenticated account changes. */
 export function clearUserData() {
-  queryClient.cancelQueries();
+  void queryClient.cancelQueries();
   queryClient.clear();
 }
 
@@ -118,13 +118,14 @@ async function errorMessage(response: Response) {
 }
 
 async function request(path: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+
+  if (init.body) headers.set("Content-Type", "application/json");
+
   const response = await fetch(path, {
     ...init,
     credentials: "include",
-    headers: {
-      ...init.headers,
-      ...(init.body && { "Content-Type": "application/json" }),
-    },
+    headers,
   });
 
   if (response.status === 401) {
@@ -166,7 +167,7 @@ export async function send<Body>(path: string, method: string, body?: Body) {
 
 /** Fetches an authenticated binary, such as an attachment image, as an object URL. */
 export async function blobUrl(path: string, signal?: AbortSignal) {
-  const response = await request(path, { signal });
+  const response = await request(path, { signal: signal ?? null });
 
   return URL.createObjectURL(await response.blob());
 }

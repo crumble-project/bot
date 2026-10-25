@@ -41,8 +41,8 @@ import { Store } from "../src/store";
 
 // Live tests create billed sandboxes, so they need an explicit opt-in besides the credentials.
 const railwayTests =
-  process.env.CRUMBLE_RAILWAY_TESTS === "1" &&
-  Boolean(process.env.RAILWAY_TOKEN ?? process.env.RAILWAY_API_TOKEN);
+  process.env["CRUMBLE_RAILWAY_TESTS"] === "1" &&
+  Boolean(process.env["RAILWAY_TOKEN"] ?? process.env["RAILWAY_API_TOKEN"]);
 
 // Checkpoint names are global to the Railway environment, so each run gets its own.
 const namePrefix = `crumble-test-${process.pid}`;
@@ -406,7 +406,11 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
 
     try {
       const env = workspaces.env(bot.id, credentials.env(bot.id));
-      const placeholder = store.agentCredentialPlaceholders(bot.id).ECHO_TOKEN!;
+
+      const placeholder = store.agentCredentialPlaceholders(bot.id)[
+        "ECHO_TOKEN"
+      ]!;
+
       const url = `https://example.com:${upstreamPort}/check`;
 
       const curl = await sh(

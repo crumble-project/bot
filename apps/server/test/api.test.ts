@@ -9,6 +9,11 @@ import { Scheduler } from "../src/scheduler";
 import { createAPI } from "../src/api";
 import { memoryResponse } from "../src/api-responses";
 
+// Plain header records, so they spread into the defaults.
+type TestRequestInit = Omit<RequestInit, "headers"> & {
+  headers?: Record<string, string>;
+};
+
 const token = "t".repeat(40);
 
 type RuntimeAgent = { id: string };
@@ -97,7 +102,7 @@ async function readUntil(
   return seen;
 }
 
-const req = (app: any, path: string, init: RequestInit = {}) =>
+const req = (app: any, path: string, init: TestRequestInit = {}) =>
   app.request(path, {
     ...init,
     headers: {

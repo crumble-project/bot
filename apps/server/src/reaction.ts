@@ -11,8 +11,8 @@ const reaction = z.object({ emoji: z.string().regex(EMOJI) });
 /** The emoji of a successful `react` tool result; clients attach it to the latest input before it. */
 export function reactionOf(message: {
   role: string;
-  toolName?: string;
-  isError?: boolean;
+  toolName?: string | undefined;
+  isError?: boolean | undefined;
   toolDetails?: unknown;
 }): string | undefined {
   if (

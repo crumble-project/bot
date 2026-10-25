@@ -301,7 +301,13 @@ function ActivityPagination({
   );
 }
 
-function ActivityRow({ activity, bot }: { activity: Activity; bot?: Bot }) {
+function ActivityRow({
+  activity,
+  bot,
+}: {
+  activity: Activity;
+  bot?: Bot | undefined;
+}) {
   const [open, setOpen] = useState(false);
   const Icon = open ? ArrowDown01Icon : ArrowRight01Icon;
   const change = activity.kind === "change" ? activity.change : null;

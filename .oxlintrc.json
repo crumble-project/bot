@@ -1,5 +1,8 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "options": {
+    "typeAware": true
+  },
   "ignorePatterns": [
     ".agent/**",
     ".agents/**",
@@ -18,6 +21,12 @@
   ],
   "jsPlugins": [
     { "name": "anti-slop", "specifier": "./tools/oxlint/anti-slop/index.ts" }
+  ],
+  "overrides": [
+    {
+      "files": ["apps/*/test/**"],
+      "rules": { "typescript/await-thenable": "off" }
+    }
   ],
   "rules": {
     "oxc/no-accumulating-spread": "error",

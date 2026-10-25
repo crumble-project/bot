@@ -14,6 +14,11 @@ import { CrumbleService } from "../src/service";
 import { Scheduler } from "../src/scheduler";
 import { createAPI } from "../src/api";
 
+// Plain header records, so they spread into the defaults.
+type TestRequestInit = Omit<RequestInit, "headers"> & {
+  headers?: Record<string, string>;
+};
+
 const dirs: string[] = [];
 
 afterEach(() => {
@@ -82,7 +87,7 @@ describe("push registration and durable delivery", () => {
     const app = createAPI(service, scheduler, token, undefined, {}, push);
     const installationId = id();
 
-    const request = (path: string, init: RequestInit = {}) =>
+    const request = (path: string, init: TestRequestInit = {}) =>
       app.request(path, {
         ...init,
         headers: {
@@ -142,7 +147,7 @@ describe("push registration and durable delivery", () => {
       ).status,
     ).toBe(404);
     await push.close();
-    scheduler.stop();
+    await scheduler.stop();
     store.close();
   });
   test("persists server ID and keeps presence across token rotation", () => {

@@ -203,10 +203,10 @@ function entryNumber(entryId: string): number {
 }
 
 type HistoryOptions = {
-  before?: string;
-  limit?: number;
+  before?: string | undefined;
+  limit?: number | undefined;
   /** Operational consumers may need committed tool-call blocks mid-run. */
-  includeActiveAssistant?: boolean;
+  includeActiveAssistant?: boolean | undefined;
 };
 
 function hideActiveAssistant(messages: TranscriptMessage[], cutoffs: number[]) {
@@ -920,6 +920,11 @@ export class AgentRuntime {
 
     if (!model) throw new Error(`${agent.model} is not available`);
 
+    const options: InferenceOptions & { signal?: AbortSignal } =
+      inferenceOptions(agent.inference);
+
+    if (signal) options.signal = signal;
+
     const answer = await models.completeSimple(
       model,
       {
@@ -928,7 +933,7 @@ export class AgentRuntime {
           { role: "user", content: transcript, timestamp: Date.now() },
         ],
       },
-      { ...inferenceOptions(agent.inference), signal },
+      options,
     );
 
     const summary = answer.content
@@ -991,9 +996,9 @@ export class AgentRuntime {
     text: string,
     requestId?: string,
     options: {
-      replyTo?: string;
+      replyTo?: string | undefined;
       origin?: MessageOrigin;
-      attachments?: AttachmentInput[];
+      attachments?: AttachmentInput[] | undefined;
     } = {},
   ): Promise<string> {
     const record = await this.open(agent);
@@ -1046,19 +1051,20 @@ export class AgentRuntime {
         ]
       : prepared.modelContent;
 
-    const submission = await conversation.submit(
-      {
-        type: "input",
-        content,
-        requestId,
-        entry: {
-          kind: "crumble.message",
-          data: {
-            ...prepared.data,
-            ...entryMetadata(requestId, options.origin, attached.info),
-          },
+    const draft = {
+      type: "input" as const,
+      content,
+      entry: {
+        kind: "crumble.message",
+        data: {
+          ...prepared.data,
+          ...entryMetadata(requestId, options.origin, attached.info),
         },
       },
+    };
+
+    const submission = await conversation.submit(
+      requestId === undefined ? draft : { ...draft, requestId },
       BACKGROUND_CONTEXT,
     );
 
@@ -1124,7 +1130,7 @@ export class AgentRuntime {
   async snapshot(
     agent: Agent,
     conversationId: string,
-    options: { limit?: number } = {},
+    options: { limit?: number | undefined } = {},
   ): Promise<RuntimeSnapshot> {
     const { harness } = await this.open(agent);
 
@@ -1354,7 +1360,7 @@ export class AgentRuntime {
     agent: Agent,
     conversationId: string,
     callback: RuntimeWatch,
-    options: { limit?: number } = {},
+    options: { limit?: number | undefined } = {},
   ): Promise<() => Promise<void>> {
     const stream = await watchEvents(
       (await this.open(agent)).harness,

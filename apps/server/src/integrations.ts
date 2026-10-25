@@ -54,7 +54,7 @@ export type IntegrationsOptions = {
   requestTimeoutMs?: number;
   clientFactory?: MCPClientFactory;
   /** The server's OAuth client metadata document, when it has a public address. */
-  oauthClient?: ClientDocument;
+  oauthClient?: ClientDocument | undefined;
 };
 
 /** Every tool of one MCP server starts with this, which also groups them in code mode. */
@@ -361,7 +361,7 @@ export class MCPIntegrations {
           parameters: Type.Unsafe({
             ...remote.inputSchema,
             type: "object",
-            properties: remote.inputSchema.properties ?? {},
+            properties: remote.inputSchema["properties"] ?? {},
           }),
           replay: "unsafe",
           execute: async (args: McpArguments, _api: any, context: Context) => {
@@ -398,7 +398,11 @@ export class MCPIntegrations {
               throwAuthFailure(server, error, true);
             });
 
-            return { output: toLlmContent(result), isError: result.isError };
+            const output = toLlmContent(result);
+
+            return result.isError === undefined
+              ? { output }
+              : { output, isError: result.isError };
           },
         });
 

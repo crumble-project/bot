@@ -139,7 +139,8 @@ export function registerDesktopRoutes(options: {
       if (!agentId || !options.openDesktop) return c.notFound();
 
       viewers.set(c.req.raw, agentId);
-      await next();
+
+      return next();
     },
     upgradeWebSocket((c) => {
       const agentId = viewers.get(c.req.raw) ?? "";

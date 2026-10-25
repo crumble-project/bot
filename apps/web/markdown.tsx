@@ -1,6 +1,5 @@
 import {
   type ComponentProps,
-  type ReactNode,
   isValidElement,
   useEffect,
   useRef,
@@ -72,9 +71,9 @@ const components = {
       return <pre {...props} />;
 
     // SAFETY: Outside streaming, TanStack Markdown passes a code block's text as one string child of `code`.
-    const code = props.children.props as { children?: ReactNode };
+    const code = props.children.props as { children?: string };
 
-    return <Diagram source={String(code.children ?? "")} />;
+    return <Diagram source={code.children ?? ""} />;
   },
 } satisfies MarkdownComponents;
 

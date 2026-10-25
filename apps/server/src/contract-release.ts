@@ -102,7 +102,7 @@ export async function validateContract(directory: string) {
       await Bun.file(join(directory, name)).json(),
     );
 
-    if (schema.$schema !== "https://json-schema.org/draft/2020-12/schema") {
+    if (schema["$schema"] !== "https://json-schema.org/draft/2020-12/schema") {
       throw new Error(`${name} must use JSON Schema 2020-12`);
     }
 
@@ -268,7 +268,7 @@ export async function compareContracts(
   await mkdir(reports, { recursive: true });
   await validateContract(baseline);
   await validateContract(current);
-  const tool = process.env.OASDIFF ?? "oasdiff";
+  const tool = process.env["OASDIFF"] ?? "oasdiff";
 
   if (run([tool, "--version"]).trim() !== "oasdiff version 1.34.1") {
     throw new Error("Compatibility requires official oasdiff 1.34.1");
@@ -395,9 +395,9 @@ async function assertTagTarget(repo: string, tag: string, commit: string) {
 
 async function publish(repo: string, current: string, reports: string) {
   if (
-    process.env.GITHUB_ACTIONS !== "true" ||
-    process.env.GITHUB_REF !== "refs/heads/main" ||
-    process.env.GITHUB_EVENT_NAME !== "push"
+    process.env["GITHUB_ACTIONS"] !== "true" ||
+    process.env["GITHUB_REF"] !== "refs/heads/main" ||
+    process.env["GITHUB_EVENT_NAME"] !== "push"
   ) {
     throw new Error("Publishing is restricted to the main push workflow");
   }
@@ -424,7 +424,7 @@ async function publish(repo: string, current: string, reports: string) {
     await Bun.file(join(directory, "source-commit.txt")).text()
   ).trim();
 
-  if (commit !== process.env.GITHUB_SHA)
+  if (commit !== process.env["GITHUB_SHA"])
     throw new Error("Checkout differs from the workflow source commit");
   await assertTagTarget(repo, tag, commit);
 
@@ -507,9 +507,13 @@ async function publish(repo: string, current: string, reports: string) {
 
 if (import.meta.main) {
   const [command, ...args] = Bun.argv.slice(2);
-  const current = resolve(process.env.CONTRACT_DIR ?? "openapi");
-  const reports = resolve(process.env.CONTRACT_REPORTS ?? "contract-reports");
-  const repo = process.env.GITHUB_REPOSITORY ?? "crumble-project/bot";
+  const current = resolve(process.env["CONTRACT_DIR"] ?? "openapi");
+
+  const reports = resolve(
+    process.env["CONTRACT_REPORTS"] ?? "contract-reports",
+  );
+
+  const repo = process.env["GITHUB_REPOSITORY"] ?? "crumble-project/bot";
 
   if (command === "validate" && args.length <= 1) {
     await validateContract(resolve(args[0] ?? current));

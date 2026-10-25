@@ -57,9 +57,9 @@ import { clientDocument } from "./mcp-oauth";
 
 export type TenantOptions = {
   dataDir: string;
-  skillsDir?: string;
-  publicUrl?: string;
-  workspaces?: Workspaces;
+  skillsDir?: string | undefined;
+  publicUrl?: string | undefined;
+  workspaces?: Workspaces | undefined;
   tenantId: string;
 };
 
@@ -103,7 +103,7 @@ export async function createTenant(
 
   try {
     const explicitSkillsDir =
-      options.skillsDir ?? process.env.CRUMBLE_SKILLS_DIR;
+      options.skillsDir ?? process.env["CRUMBLE_SKILLS_DIR"];
 
     const skillsDir = resolve(
       explicitSkillsDir ?? resolve(import.meta.dir, "../skills"),

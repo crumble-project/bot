@@ -1,6 +1,6 @@
 import { migrateLegacyData } from "../src/legacy-migration";
 
-const dataDir = process.env.CRUMBLE_DATA_DIR ?? "./data";
+const dataDir = process.env["CRUMBLE_DATA_DIR"] ?? "./data";
 const email = process.argv[2]?.trim();
 
 if (!email) {

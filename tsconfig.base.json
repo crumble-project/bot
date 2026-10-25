@@ -6,7 +6,7 @@
     "module": "Preserve",
     "moduleDetection": "force",
     "jsx": "react-jsx",
-    "allowJs": true,
+    "allowJs": false,
     "types": ["bun"],
 
     // Bundler mode
@@ -15,16 +15,24 @@
     "verbatimModuleSyntax": true,
     "noEmit": true,
 
-    // Best practices
+    // Type checking: every strictness flag on
     "strict": true,
-    "skipLibCheck": true,
+    "checkJs": false,
+    "exactOptionalPropertyTypes": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedIndexedAccess": true,
+    "noUncheckedSideEffectImports": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "isolatedModules": true,
 
-    // Some stricter flags (disabled by default)
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false
-  }
+    // Third-party declarations fail their own checks under these flags
+    "skipLibCheck": true
+  },
+  "exclude": ["tools/oxlint/anti-slop/**", "node_modules", ]
 }

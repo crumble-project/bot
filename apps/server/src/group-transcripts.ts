@@ -222,7 +222,7 @@ export class GroupTranscripts {
 
   async history(
     groupId: string,
-    options: { before?: string; limit?: number } = {},
+    options: { before?: string | undefined; limit?: number | undefined } = {},
   ): Promise<TranscriptPage> {
     const harness = await this.open(groupId);
 

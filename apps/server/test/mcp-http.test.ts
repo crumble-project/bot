@@ -85,7 +85,7 @@ async function startMcp() {
     calls: () => calls,
     stop: async () => {
       await Promise.all([...sessions.values()].map((s) => s.close()));
-      http.stop();
+      void http.stop();
     },
   };
 }

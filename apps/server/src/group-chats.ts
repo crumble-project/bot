@@ -137,7 +137,10 @@ export class GroupChats {
     groupId: string,
     content: string,
     requestId: string,
-    options: { replyTo?: string; attachments?: AttachmentInput[] } = {},
+    options: {
+      replyTo?: string | undefined;
+      attachments?: AttachmentInput[] | undefined;
+    } = {},
   ): Promise<GroupMessageReceipt> {
     this.get(groupId);
     const attachments = options.attachments ?? [];
@@ -306,7 +309,7 @@ export class GroupChats {
   async readAsMember(
     agentId: string,
     groupId: string,
-    options: { before?: string; limit?: number },
+    options: { before?: string | undefined; limit?: number | undefined },
   ) {
     const group = this.store.getGroupChat(groupId);
 
@@ -316,7 +319,10 @@ export class GroupChats {
     return this.transcripts.history(groupId, options);
   }
 
-  history(groupId: string, options: { before?: string; limit?: number }) {
+  history(
+    groupId: string,
+    options: { before?: string | undefined; limit?: number | undefined },
+  ) {
     this.get(groupId);
 
     return this.transcripts.history(groupId, options);
@@ -324,7 +330,7 @@ export class GroupChats {
 
   async snapshot(
     groupId: string,
-    options: { limit?: number },
+    options: { limit?: number | undefined },
   ): Promise<GroupChatSnapshot> {
     const groupChat = this.get(groupId);
     const page = await this.transcripts.history(groupId, options);

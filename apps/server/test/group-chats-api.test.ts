@@ -18,6 +18,11 @@ import { Scheduler } from "../src/scheduler";
 import { CrumbleService } from "../src/service";
 import { Store } from "../src/store";
 
+// Plain header records, so they spread into the defaults.
+type TestRequestInit = Omit<RequestInit, "headers"> & {
+  headers?: Record<string, string>;
+};
+
 const token = "t".repeat(40);
 const dirs: string[] = [];
 
@@ -76,7 +81,7 @@ function setup() {
 const req = (
   app: ReturnType<typeof createAPI>,
   path: string,
-  init: RequestInit = {},
+  init: TestRequestInit = {},
 ) =>
   app.request(path, {
     ...init,

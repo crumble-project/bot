@@ -75,7 +75,7 @@ test("input tries background first, then foreground when cua-driver asks for it"
   expect(result.isError).toBe(false);
   expect(text(result)).toContain("delivery: foreground");
   const typed = calls.filter((c) => c.tool === "type_text");
-  expect(typed[0]!.args.delivery_mode).toBeUndefined();
+  expect(typed[0]!.args["delivery_mode"]).toBeUndefined();
   expect(typed[1]!.args).toMatchObject({
     delivery_mode: "foreground",
     element_token: "s1:2",
@@ -273,7 +273,7 @@ test("an ended cua-driver session is replaced and the call retried", async () =>
 
   const sessions = calls
     .filter((c) => c.tool === "list_windows")
-    .map((c) => c.args.session);
+    .map((c) => c.args["session"]);
 
   expect(sessions[0]).not.toBe(sessions[1]);
 });
@@ -353,7 +353,7 @@ test("actions wait while the owner holds control, and a plan from before is refu
 
   expect(fresh.isError).toBe(false);
   expect(
-    calls.filter((c) => c.tool === "get_window_state").at(-1)?.args.since,
+    calls.filter((c) => c.tool === "get_window_state").at(-1)?.args["since"],
   ).toBeUndefined();
 });
 

@@ -281,7 +281,7 @@ export class ChartCompiler {
 
       if (!build.success || !output)
         throw new Error(
-          `Chart runtime failed to build: ${build.logs.join("\n")}`,
+          `Chart runtime failed to build: ${build.logs.map((log) => log.message).join("\n")}`,
         );
 
       return output.text();

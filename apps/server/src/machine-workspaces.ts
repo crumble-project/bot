@@ -57,7 +57,7 @@ export interface WorkspaceMachine {
 /** What a booted guest gets besides the daemon. */
 export type GuestSetup = {
   /** The bot's credential proxy authority in PEM, to trust at `GUEST_CA_PATH`. */
-  caCertificate?: string;
+  caCertificate?: string | undefined;
 };
 
 /** A backend that boots workspace machines. */
@@ -525,7 +525,7 @@ function serveRelayConnection(machine: WorkspaceMachine, socket: net.Socket) {
 
     const args = daemonArgs(pending.subarray(0, newline).toString());
 
-    if (!args) return socket.destroy();
+    if (!args) return void socket.destroy();
 
     pipeDaemon(machine, socket, args, pending.subarray(newline + 1)).catch(() =>
       socket.destroy(),

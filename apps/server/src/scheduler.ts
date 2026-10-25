@@ -24,7 +24,7 @@ export class Scheduler {
   private readonly inFlight = new Set<string>();
   private readonly failed = new Map<string, number>();
   private static readonly retryAfterMs = 30_000;
-  private currentTick?: Promise<void>;
+  private currentTick: Promise<void> | undefined;
 
   constructor(
     private readonly store: Store,
@@ -141,12 +141,7 @@ export class Scheduler {
         )
           continue;
 
-        const admitted = await this.dispatchOnce(
-          schedule,
-          occurrence,
-          key,
-          now.valueOf(),
-        );
+        const admitted = await this.dispatchOnce(schedule, key, now.valueOf());
 
         if (!admitted) continue;
         const current = this.store.getSchedule(schedule.id);
@@ -189,7 +184,6 @@ export class Scheduler {
 
   private async dispatchOnce(
     schedule: Schedule,
-    occurrence: string,
     requestId: string,
     failedAt: number,
   ): Promise<boolean> {

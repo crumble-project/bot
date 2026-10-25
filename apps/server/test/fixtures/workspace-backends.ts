@@ -26,16 +26,16 @@ export type WorkspaceBackend = {
 
 export type BackendWorkspaces = {
   workspaces: MachineWorkspaces;
-  isRunning(agentId: string): Promise<boolean>;
+  isRunning: (agentId: string) => Promise<boolean>;
 };
 
-const IMAGE = process.env.CRUMBLE_WORKSPACE_IMAGE ?? "";
-const DESKTOP_IMAGE = process.env.CRUMBLE_WORKSPACE_DESKTOP_IMAGE ?? "";
+const IMAGE = process.env["CRUMBLE_WORKSPACE_IMAGE"] ?? "";
+const DESKTOP_IMAGE = process.env["CRUMBLE_WORKSPACE_DESKTOP_IMAGE"] ?? "";
 
 const microsandbox: WorkspaceBackend = {
   name: "Microsandbox",
   enabled:
-    process.env.CRUMBLE_VM_TESTS === "1" &&
+    process.env["CRUMBLE_VM_TESTS"] === "1" &&
     IMAGE !== "" &&
     DESKTOP_IMAGE !== "",
   firstBootTimeoutMs: 120_000,
@@ -73,15 +73,15 @@ const railway: WorkspaceBackend = {
   name: "Railway",
   // Live runs create billed sandboxes, so they need an explicit opt-in besides the credentials.
   enabled:
-    process.env.CRUMBLE_RAILWAY_TESTS === "1" &&
-    Boolean(process.env.RAILWAY_TOKEN ?? process.env.RAILWAY_API_TOKEN),
+    process.env["CRUMBLE_RAILWAY_TESTS"] === "1" &&
+    Boolean(process.env["RAILWAY_TOKEN"] ?? process.env["RAILWAY_API_TOKEN"]),
   firstBootTimeoutMs: 1_200_000,
   create: (options) => ({
     workspaces: new RailwayWorkspaces({
       ...options,
       dataDir: railwayDataDir,
-      ...(process.env.CRUMBLE_RAILWAY_REGION && {
-        region: process.env.CRUMBLE_RAILWAY_REGION,
+      ...(process.env["CRUMBLE_RAILWAY_REGION"] && {
+        region: process.env["CRUMBLE_RAILWAY_REGION"],
       }),
     }),
     isRunning: async (agentId) => {

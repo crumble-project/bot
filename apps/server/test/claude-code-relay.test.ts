@@ -1,5 +1,6 @@
 // Ported from Hermes' claude-subscription-directsdk tests/test_admission_*.py (MIT, see THIRD_PARTY_NOTICES.md).
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { z } from "zod";
 import {
   Admission,
   Capture,
@@ -1020,7 +1021,8 @@ describe("two native marks (test_admission_two_marks.py)", () => {
 
     const newest = blocksOf(messages.at(-1)).at(-1);
 
-    if (reminder && newest) newest.content = `${newest.content}${REMINDER}`;
+    if (reminder && newest)
+      newest.content = `${z.string().parse(newest.content)}${REMINDER}`;
     // native mark 2: per-request context, never replayed
     messages.push({
       role: "system",
@@ -1328,7 +1330,7 @@ describe("turn start (test_admission_turn_start.py)", () => {
 
   type Where = At | "tools" | "system";
 
-  type Item = { type?: string; cache_control?: Mark };
+  type Item = { type?: string; cache_control?: Mark | undefined };
 
   /**
    * Anthropic's documented lookup: each breakpoint checks up to 20 positions back, itself included, a run of
@@ -1705,7 +1707,8 @@ describe("turn start (test_admission_turn_start.py)", () => {
     const raw = native(messages.slice(0, end), "2.1.285");
     const result = blocksOf(raw.messages.at(-2))[0];
 
-    if (result) result.content = `${String(result.content)}${REMINDER}`;
+    if (result)
+      result.content = `${z.string().parse(result.content)}${REMINDER}`;
 
     const queried = blocksOf(messages[end - 1]);
     const { gate, status } = await relay(JSON.stringify(raw), queried);
@@ -1720,7 +1723,10 @@ describe("turn start (test_admission_turn_start.py)", () => {
     expect(sent.messages.at(-1)?.role).toBe("user");
 
     expect(
-      String(sent.messages[1]?.content).endsWith("Today's date is 2026-10-10."),
+      z
+        .string()
+        .parse(sent.messages[1]?.content)
+        .endsWith("Today's date is 2026-10-10."),
     ).toBe(true);
     expect(strip(sent.messages.at(-1)?.content)).toEqual(queried);
 

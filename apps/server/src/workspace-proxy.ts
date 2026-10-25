@@ -17,7 +17,7 @@ export type WorkspaceProxyOptions = {
   firstByteTimeoutMs?: number;
   /** Listen on this port, so a restarted machine finds its proxy at the address it was created with. */
   port?: number;
-  intercept?: WorkspaceInterceptor;
+  intercept?: WorkspaceInterceptor | undefined;
 };
 
 export type WorkspaceProxy = { address: string; close(): Promise<void> };

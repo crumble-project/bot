@@ -292,11 +292,12 @@ export async function finishAuthorization(
   let result;
 
   try {
-    result = await authorizeMcp(oauth, {
-      serverUrl: server.url,
-      authorizationCode: code,
-      iss,
-    });
+    const flow = { serverUrl: server.url, authorizationCode: code };
+
+    result = await authorizeMcp(
+      oauth,
+      iss === undefined ? flow : { ...flow, iss },
+    );
   } catch (error) {
     unavailable(server, error, "finish");
   }

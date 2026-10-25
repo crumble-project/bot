@@ -79,7 +79,7 @@ export function codingExtensions(
 ): CodingExtensions {
   const job = defineExtension({
     name: "coding-job",
-    tools: createCodingTools().tools,
+    tools: createCodingTools().tools ?? [],
     sections: credentials
       ? [
           {

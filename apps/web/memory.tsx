@@ -229,7 +229,7 @@ function MemorySection({
   footer?: string;
   memories: Memory[];
   total: number;
-  error?: string;
+  error?: string | undefined;
   onEdit: (memory: Memory) => void;
   onDelete: (memory: Memory) => void;
 }) {

@@ -12,7 +12,7 @@ export const QUALIFIED_VERSIONS = ["2.1.309"];
 
 export type ClaudeCodeOptions = {
   /** An explicit executable; otherwise `claude` on PATH or in the usual install directories. */
-  command?: string;
+  command?: string | undefined;
   /** Claude Code's own config directory, holding its login. */
   configDir: string;
   /** Let Claude Code send telemetry and fetch the feature flags that unlock models in its picker. */

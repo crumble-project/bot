@@ -12,7 +12,7 @@ export type PushDeviceInput = {
   transport: PushTransportName;
   token: string;
   environment: "development" | "production";
-  bundleId?: string;
+  bundleId?: string | undefined;
   enabled: boolean;
 };
 
@@ -132,7 +132,7 @@ export function notificationPreview(value: string) {
 export class PushStore {
   private db: Database;
   constructor(
-    private readonly dataDir: string,
+    dataDir: string,
     private readonly clock: () => number = Date.now,
   ) {
     this.db = new Database(join(dataDir, "push.sqlite"));
@@ -352,10 +352,10 @@ export function loadPushTransports(
   };
 
   const apns = [
-    env.CRUMBLE_APNS_TEAM_ID,
-    env.CRUMBLE_APNS_KEY_ID,
-    env.CRUMBLE_APNS_PRIVATE_KEY_PATH,
-    env.CRUMBLE_APNS_ALLOWED_TOPICS,
+    env["CRUMBLE_APNS_TEAM_ID"],
+    env["CRUMBLE_APNS_KEY_ID"],
+    env["CRUMBLE_APNS_PRIVATE_KEY_PATH"],
+    env["CRUMBLE_APNS_ALLOWED_TOPICS"],
   ];
 
   if (apns.some(Boolean) && apns.some((v) => !v))
@@ -365,33 +365,34 @@ export function loadPushTransports(
 
   if (apns.every(Boolean)) {
     if (
-      !env.CRUMBLE_APNS_ALLOWED_TOPICS!.split(",").some((topic) => topic.trim())
+      !env["CRUMBLE_APNS_ALLOWED_TOPICS"]!.split(",").some((topic) =>
+        topic.trim(),
+      )
     )
       configError("APNs ALLOWED_TOPICS must contain at least one topic");
 
-    if (!existsSync(env.CRUMBLE_APNS_PRIVATE_KEY_PATH!))
+    if (!existsSync(env["CRUMBLE_APNS_PRIVATE_KEY_PATH"]!))
       configError("APNs private key file does not exist");
 
     try {
-      createPrivateKey(readFileSync(env.CRUMBLE_APNS_PRIVATE_KEY_PATH!));
+      createPrivateKey(readFileSync(env["CRUMBLE_APNS_PRIVATE_KEY_PATH"]!));
     } catch {
       configError("APNs private key file is invalid");
     }
 
     out.apns = new APNsTransport(
-      env.CRUMBLE_APNS_TEAM_ID!,
-      env.CRUMBLE_APNS_KEY_ID!,
-      env.CRUMBLE_APNS_PRIVATE_KEY_PATH!,
+      env["CRUMBLE_APNS_TEAM_ID"]!,
+      env["CRUMBLE_APNS_KEY_ID"]!,
+      env["CRUMBLE_APNS_PRIVATE_KEY_PATH"]!,
       new Set(
-        env
-          .CRUMBLE_APNS_ALLOWED_TOPICS!.split(",")
+        env["CRUMBLE_APNS_ALLOWED_TOPICS"]!.split(",")
           .map((x) => x.trim())
           .filter(Boolean),
       ),
     );
   }
 
-  const fcm = env.CRUMBLE_FCM_SERVICE_ACCOUNT_PATH;
+  const fcm = env["CRUMBLE_FCM_SERVICE_ACCOUNT_PATH"];
 
   if (fcm) {
     if (!existsSync(fcm))
@@ -449,89 +450,90 @@ class APNsTransport implements PushTransport {
     const client = http2.connect(host);
 
     try {
-      const result = await new Promise<{ status: number; reason?: string }>(
-        (resolve, reject) => {
-          const req = client.request({
-            ":method": "POST",
-            ":path": `/3/device/${device.token}`,
-            authorization: `bearer ${jwt}`,
-            "apns-topic": topic,
-            "apns-push-type": "alert",
-            "apns-priority": "10",
-            "apns-expiration": String(Math.floor(Date.now() / 1000) + 86400),
-            "apns-collapse-id": createHash("sha256")
-              .update(`${event.serverId}:${event.agentId}`)
-              .digest("hex")
-              .slice(0, 64),
-            "content-type": "application/json",
-          });
+      const result = await new Promise<{
+        status: number;
+        reason?: string | undefined;
+      }>((resolve, reject) => {
+        const req = client.request({
+          ":method": "POST",
+          ":path": `/3/device/${device.token}`,
+          authorization: `bearer ${jwt}`,
+          "apns-topic": topic,
+          "apns-push-type": "alert",
+          "apns-priority": "10",
+          "apns-expiration": String(Math.floor(Date.now() / 1000) + 86400),
+          "apns-collapse-id": createHash("sha256")
+            .update(`${event.serverId}:${event.agentId}`)
+            .digest("hex")
+            .slice(0, 64),
+          "content-type": "application/json",
+        });
 
-          let responseBody = "";
-          let settled = false;
+        let responseBody = "";
+        let settled = false;
 
-          const timer = setTimeout(() => {
-            if (!settled) {
-              settled = true;
-              req.destroy(new Error("APNs request timed out"));
-              reject(new Error("APNs request timed out"));
-            }
-          }, 15_000);
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            req.destroy(new Error("APNs request timed out"));
+            reject(new Error("APNs request timed out"));
+          }
+        }, 15_000);
 
-          const fail = (error: Error) => {
+        const fail = (error: Error) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          reject(error);
+        };
+
+        client.once("error", fail);
+        req.on("response", (h) => {
+          const status = Number(h[":status"]);
+          req.setEncoding("utf8");
+          req.on("data", (chunk) => (responseBody += chunk));
+          req.on("end", () => {
             if (settled) return;
             settled = true;
             clearTimeout(timer);
-            reject(error);
-          };
+            let reason: string | undefined;
 
-          client.once("error", fail);
-          req.on("response", (h) => {
-            const status = Number(h[":status"]);
-            req.setEncoding("utf8");
-            req.on("data", (chunk) => (responseBody += chunk));
-            req.on("end", () => {
-              if (settled) return;
-              settled = true;
-              clearTimeout(timer);
-              let reason: string | undefined;
+            try {
+              reason = JSON.parse(responseBody).reason;
+            } catch {
+              /* empty success body */
+            }
 
-              try {
-                reason = JSON.parse(responseBody).reason;
-              } catch {
-                /* empty success body */
-              }
-
-              resolve({ status, reason });
-            });
+            resolve({ status, reason });
           });
-          req.on("error", fail);
-          req.end(
-            JSON.stringify({
-              aps: {
-                alert: {
-                  title: notificationTitle(event),
-                  body: notificationPreview(event.preview),
-                },
-                sound: "default",
+        });
+        req.on("error", fail);
+        req.end(
+          JSON.stringify({
+            aps: {
+              alert: {
+                title: notificationTitle(event),
+                body: notificationPreview(event.preview),
               },
-              type: event.type,
-              eventId: event.eventId,
-              serverId: event.serverId,
-              agentId: event.agentId,
-              agentName: event.agentName,
-              entryId: event.entryId,
-              preview: event.preview,
-              origin: event.origin,
-              createdAt: event.createdAt,
-              ...(event.groupId && {
-                groupId: event.groupId,
-                groupName: event.groupName,
-              }),
-              ...(event.jobName && { jobName: event.jobName }),
+              sound: "default",
+            },
+            type: event.type,
+            eventId: event.eventId,
+            serverId: event.serverId,
+            agentId: event.agentId,
+            agentName: event.agentName,
+            entryId: event.entryId,
+            preview: event.preview,
+            origin: event.origin,
+            createdAt: event.createdAt,
+            ...(event.groupId && {
+              groupId: event.groupId,
+              groupName: event.groupName,
             }),
-          );
-        },
-      );
+            ...(event.jobName && { jobName: event.jobName }),
+          }),
+        );
+      });
 
       const { status, reason } = result;
 
@@ -679,7 +681,7 @@ export class PushManager {
   readonly transports: Record<PushTransportName, PushTransport | undefined>;
   private timer?: ReturnType<typeof setInterval>;
   private unsubscribe?: () => void;
-  private draining?: Promise<void>;
+  private draining: Promise<void> | undefined;
   private closed = false;
   constructor(
     private store: PushStore,

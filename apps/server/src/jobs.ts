@@ -103,7 +103,7 @@ type ReporterInput = {
 type ReporterState =
   | { phase: "wait" }
   | { phase: "deliver" }
-  | { phase: "report"; report?: string }
+  | { phase: "report"; report?: string | undefined }
   | { phase: "announce"; entryId: string; preview: string };
 
 const jobCard = z.object({ name: z.string().min(1) });
@@ -431,19 +431,19 @@ export function defineJobKind(options: JobKindOptions) {
     toolName,
 
     /** Hears the bot's answer to each report of a job of this kind, from every bot in this process. */
-    onAnswer(listener: (answer: JobAnswer) => void) {
+    onAnswer: (listener: (answer: JobAnswer) => void) => {
       answerListeners.add(listener);
 
       return () => void answerListeners.delete(listener);
     },
 
     /** The job a successful tool result shows as a card; a listing or a failed call shows none. */
-    jobOf(message: {
+    jobOf: (message: {
       role: string;
-      toolName?: string;
-      isError?: boolean;
+      toolName?: string | undefined;
+      isError?: boolean | undefined;
       toolDetails?: unknown;
-    }): string | undefined {
+    }): string | undefined => {
       if (
         message.role !== "toolResult" ||
         message.toolName !== toolName ||
@@ -460,16 +460,21 @@ export function defineJobKind(options: JobKindOptions) {
         (await harness.snapshot(Jobs, chatId, BACKGROUND_CONTEXT))?.jobs ?? {};
 
       const found = await Promise.all(
-        Object.entries(jobs).map(async ([name, job]) => ({
-          name,
-          conversationId: job.conversationId,
-          status: await statusOf(harness, job, BACKGROUND_CONTEXT),
-          usage: await harness.snapshot(
+        Object.entries(jobs).map(async ([name, job]) => {
+          const listed: ListedJob = {
+            name,
+            conversationId: job.conversationId,
+            status: await statusOf(harness, job, BACKGROUND_CONTEXT),
+          };
+
+          const usage = await harness.snapshot(
             UsageDoc,
             job.conversationId,
             BACKGROUND_CONTEXT,
-          ),
-        })),
+          );
+
+          return usage ? { ...listed, usage } : listed;
+        }),
       );
 
       return found.sort(

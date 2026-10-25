@@ -60,8 +60,8 @@ const providerCredential = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("api_key"),
-      key: z.string().optional(),
-      env: z.record(z.string(), z.string()).optional(),
+      key: z.string().exactOptional(),
+      env: z.record(z.string(), z.string()).exactOptional(),
     })
     .loose(),
   z
@@ -937,7 +937,7 @@ export class Store {
           .query("SELECT * FROM executions ORDER BY created_at DESC")
           .all();
 
-    return q.map(this.execution);
+    return q.map((row) => this.execution(row));
   }
   private execution(r: any) {
     return {
@@ -1160,7 +1160,7 @@ export class Store {
   saveAgentCredential(
     agentId: Id,
     name: string,
-    input: { hosts: string[]; value?: string; placeholder: string },
+    input: { hosts: string[]; value?: string | undefined; placeholder: string },
   ) {
     const at = now();
     const hosts = JSON.stringify(input.hosts);
@@ -1327,7 +1327,7 @@ export class Store {
   listCredentialUses(
     agentId: Id,
     name: string,
-    options: { limit: number; before?: string },
+    options: { limit: number; before?: string | undefined },
   ): CredentialUse[] {
     const before = Number(options.before);
 
@@ -1437,8 +1437,8 @@ export class Store {
   }
   createMCPServer(
     input: Omit<MCPServer, "id" | "agentId" | "oauthClientId"> & {
-      agentId?: string | null;
-      oauthClientId?: string | null;
+      agentId?: string | null | undefined;
+      oauthClientId?: string | null | undefined;
     },
     serverId: string = id(),
   ) {
@@ -1807,7 +1807,7 @@ export class Store {
   /** Newest changes first: one bot's, the shared ones for `null`, or every change when `agentId` is undefined. */
   listChanges(
     agentId: string | null | undefined,
-    options: { limit?: number; before?: string } = {},
+    options: { limit?: number | undefined; before?: string | undefined } = {},
   ): LearnedChange[] {
     const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
     const cursor = options.before ? this.getChange(options.before) : null;

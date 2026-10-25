@@ -266,7 +266,7 @@ test("a bot without the coding tool is offered none", async () => {
     dir,
     new DirectoryWorkspaces(join(dir, "workspace")),
     (context, options, state, model) => {
-      script({ offered })(context, options, state, model);
+      void script({ offered })(context, options, state, model);
 
       return fauxAssistantMessage([fauxText("Plain answer.")]);
     },

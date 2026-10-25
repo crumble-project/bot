@@ -2,6 +2,7 @@ import { readdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type, type Static } from "@earendil-works/pi-ai";
+import type { JsonValue } from "@earendil-works/chord";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { DEFAULT_CHART_HEIGHT, type ChartCompiler } from "./charts";
 
@@ -125,9 +126,15 @@ Read chart_docs before using a mark or chart family you are unsure of.`,
       // Clients receive the compiled layouts, never the code.
       const { code, height, ...chart } = component;
 
+      const layouts = await charts.compile(
+        code,
+        height ?? DEFAULT_CHART_HEIGHT,
+      );
+
       const details = {
         ...chart,
-        layouts: await charts.compile(code, height ?? DEFAULT_CHART_HEIGHT),
+        // SAFETY: chartLayout validated these; storing details as JSON drops the style keys left undefined.
+        layouts: layouts as JsonValue,
       };
 
       return {

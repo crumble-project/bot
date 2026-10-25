@@ -169,7 +169,7 @@ function wallClock(date: Date, zone: string) {
       .map((part) => [part.type, part.value]),
   );
 
-  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+  return `${parts["year"]}-${parts["month"]}-${parts["day"]}T${parts["hour"]}:${parts["minute"]}`;
 }
 
 /** The instant whose wall clock in `zone` reads `local`; null when `local` is not a date. */
@@ -357,9 +357,9 @@ function TaskRow({
 }: {
   schedule: Schedule;
   bot: Bot;
-  creator?: Bot;
+  creator?: Bot | undefined;
   /** Set for upcoming tasks, which lead with when they run next. */
-  now?: Date;
+  now?: Date | undefined;
   onEdit: () => void;
 }) {
   const navigate = useNavigate();

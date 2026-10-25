@@ -9,7 +9,7 @@ import {
 export type CommonSkill = {
   id: string;
   name: string;
-  description?: string;
+  description?: string | undefined;
   instructions: string;
   /** Reference documents from the skill's `references` directory, by relative path. */
   documents: SkillDocument[];

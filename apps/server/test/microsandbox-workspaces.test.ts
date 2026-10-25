@@ -11,11 +11,11 @@ import {
 } from "../src/microsandbox-workspaces";
 import { WORKSPACE_PATH, type WorkspaceRequest } from "../src/workspace";
 
-const IMAGE = process.env.CRUMBLE_WORKSPACE_IMAGE ?? "";
-const vmTests = process.env.CRUMBLE_VM_TESTS === "1" && IMAGE !== "";
+const IMAGE = process.env["CRUMBLE_WORKSPACE_IMAGE"] ?? "";
+const vmTests = process.env["CRUMBLE_VM_TESTS"] === "1" && IMAGE !== "";
 
 // The same image under another tag, for the image change test.
-const OTHER_IMAGE = process.env.CRUMBLE_WORKSPACE_IMAGE_OTHER ?? "";
+const OTHER_IMAGE = process.env["CRUMBLE_WORKSPACE_IMAGE_OTHER"] ?? "";
 
 // Sandboxes and volumes are global to the Microsandbox home, so each run gets its own names.
 const namePrefix = `crumble-test-${process.pid}`;

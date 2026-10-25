@@ -1,4 +1,5 @@
 import { Store } from "./store";
+import { z } from "zod";
 import { AgentRuntime } from "./runtime";
 import type { JobAnswer } from "./jobs";
 import {
@@ -254,7 +255,10 @@ export class CrumbleService {
     for (const listener of this.listeners.get(conversationId) ?? []) listener();
   }
 
-  async snapshot(conversationId: string, options: { limit?: number } = {}) {
+  async snapshot(
+    conversationId: string,
+    options: { limit?: number | undefined } = {},
+  ) {
     const { agent, conversation } = this.conversation(conversationId);
 
     const snapshot = await this.runtime.snapshot(
@@ -334,11 +338,17 @@ export class CrumbleService {
     );
   }
 
-  async chatSnapshot(agentId: string, options: { limit?: number } = {}) {
+  async chatSnapshot(
+    agentId: string,
+    options: { limit?: number | undefined } = {},
+  ) {
     return this.snapshot((await this.chat(agentId)).id, options);
   }
 
-  async history(agentId: string, options: { before?: string; limit?: number }) {
+  async history(
+    agentId: string,
+    options: { before?: string | undefined; limit?: number | undefined },
+  ) {
     return this.runtime.history(this.agent(agentId), options);
   }
 
@@ -349,7 +359,7 @@ export class CrumbleService {
   async codingJobHistory(
     agentId: string,
     name: string,
-    options: { before?: string; limit?: number },
+    options: { before?: string | undefined; limit?: number | undefined },
   ) {
     return this.runtime.codingJobHistory(this.agent(agentId), name, options);
   }
@@ -361,7 +371,7 @@ export class CrumbleService {
   async desktopJobHistory(
     agentId: string,
     name: string,
-    options: { before?: string; limit?: number },
+    options: { before?: string | undefined; limit?: number | undefined },
   ) {
     return this.runtime.desktopJobHistory(this.agent(agentId), name, options);
   }
@@ -394,8 +404,8 @@ export class CrumbleService {
     requestId: string,
     options: {
       scheduleId?: string;
-      replyTo?: string;
-      attachments?: AttachmentInput[];
+      replyTo?: string | undefined;
+      attachments?: AttachmentInput[] | undefined;
     } = {},
   ) {
     const { agent } = this.conversation(conversationId);
@@ -522,7 +532,8 @@ export class CrumbleService {
                 result.status === "done"
                   ? null
                   : "detail" in result
-                    ? String(result.detail ?? result.reason)
+                    ? (z.string().safeParse(result.detail).data ??
+                      result.reason)
                     : "The agent could not answer this input",
             });
             this.changed(execution.conversationId);

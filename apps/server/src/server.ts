@@ -24,7 +24,7 @@ export async function startServer(
   } = {},
 ) {
   const dataDir = resolve(
-    options.dataDir ?? process.env.CRUMBLE_DATA_DIR ?? "./data",
+    options.dataDir ?? process.env["CRUMBLE_DATA_DIR"] ?? "./data",
   );
 
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
@@ -44,7 +44,7 @@ export async function startServer(
   let identity: Awaited<ReturnType<typeof createAuth>> | undefined;
   let server: ReturnType<typeof Bun.serve> | undefined;
   let closed = false;
-  const publicUrl = options.publicUrl ?? process.env.CRUMBLE_PUBLIC_URL;
+  const publicUrl = options.publicUrl ?? process.env["CRUMBLE_PUBLIC_URL"];
   let origin = "";
   let ready: Promise<void>;
 
@@ -57,7 +57,7 @@ export async function startServer(
       pending = createTenant({
         dataDir: join(dataDir, "users", userId),
         tenantId: userId,
-        skillsDir: options.skillsDir ?? process.env.CRUMBLE_SKILLS_DIR,
+        skillsDir: options.skillsDir ?? process.env["CRUMBLE_SKILLS_DIR"],
         publicUrl,
         workspaces: options.workspaces?.(userId),
       });
@@ -117,8 +117,8 @@ export async function startServer(
       routes: webUIRoutes,
       development: process.env.NODE_ENV !== "production" && { hmr: false },
       websocket,
-      hostname: options.hostname ?? process.env.CRUMBLE_HOST ?? "127.0.0.1",
-      port: options.port ?? Number(process.env.CRUMBLE_PORT ?? 7337),
+      hostname: options.hostname ?? process.env["CRUMBLE_HOST"] ?? "127.0.0.1",
+      port: options.port ?? Number(process.env["CRUMBLE_PORT"] ?? 7337),
       idleTimeout: 60,
       async fetch(request, bunServer) {
         await ready;
@@ -200,7 +200,7 @@ export async function startServer(
       },
     });
     origin = new URL(
-      publicUrl ?? process.env.BETTER_AUTH_URL ?? server.url.origin,
+      publicUrl ?? process.env["BETTER_AUTH_URL"] ?? server.url.origin,
     ).origin;
     ready = (async () => {
       identity = await createAuth(dataDir, origin);
