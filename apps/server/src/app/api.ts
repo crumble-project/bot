@@ -54,7 +54,19 @@ import {
 } from "../shared/domain";
 import type { Activity, BotsAccess } from "../bots/bots";
 import type { AgentRuntime } from "../bots/runtime";
-import type { Store } from "../shared/store";
+import type { CoreServices } from "../shared/core-layer";
+import type { Runner } from "../shared/runner";
+import { AgentRepository } from "../bots/agent-repository";
+import { ConversationRepository } from "../bots/conversation-repository";
+import { ExecutionRepository } from "../bots/execution-repository";
+import { SecretRepository } from "../credentials/secret-repository";
+import { McpServerRepository } from "../integrations/mcp-server-repository";
+import { MemoryRepository } from "../memory/memory-repository";
+import { ScheduleRepository } from "../schedules/schedule-repository";
+import { ChangeReverter } from "../skills/change-reverter";
+import { LearnedChangeRepository } from "../skills/learned-change-repository";
+import { SkillRepository } from "../skills/skill-repository";
+import { ProviderCredentialRepository } from "../providers/provider-credential-repository";
 import type { SchedulerAccess } from "../schedules/scheduler";
 import type { GroupChatsAccess } from "../group-chats/group-chats";
 import type { McpIntegrations } from "../integrations/integrations";
@@ -86,8 +98,11 @@ import { Push, type PushRuntime } from "../push/push";
 import { canonicalReplyEvent } from "../push/push-model";
 import { registerPushRoutes } from "../push/push-api";
 
-/** The bots the API serves, with the account's store and runtime its handlers still read directly. */
-export type ApiBots = BotsAccess & { store: Store; runtime: AgentRuntime };
+/** The bots the API serves, with the account's repositories and bot runtime its handlers read directly. */
+export type ApiBots = BotsAccess & {
+  core: Runner<CoreServices>;
+  runtime: AgentRuntime;
+};
 
 export function createAPI(
   service: ApiBots,
@@ -125,13 +140,17 @@ export function createAPI(
 ) {
   if (token.length < 32)
     throw new Error("Server token must contain at least 32 characters");
-  const { store, runtime } = service;
+  const { core, runtime } = service;
+
+  const exec = <A>(effect: Effect.Effect<A, never, CoreServices>) =>
+    core.runSync(effect);
+
   const app = contractApp();
 
-  const credentials = options.credentials ?? credentialsAccess(store.runtime);
-  const secrets = secretStorage(store.runtime);
+  const credentials = options.credentials ?? credentialsAccess(core);
+  const secrets = secretStorage(core);
 
-  const providerAuth = options.providerAuth ?? standaloneSignIns(store.runtime);
+  const providerAuth = options.providerAuth ?? standaloneSignIns(core);
 
   const models = providerAuth.models;
 
@@ -192,7 +211,7 @@ export function createAPI(
     register,
     service,
     desktop: options.desktop === true,
-    control: options.desktopControl ?? desktopControlAccess(store.runtime),
+    control: options.desktopControl ?? desktopControlAccess(core),
     tickets: options.viewerTickets ?? new ViewerTickets(),
     ...(options.openDesktop && { openDesktop: options.openDesktop }),
     ...(options.startDesktop && { startDesktop: options.startDesktop }),
@@ -212,7 +231,9 @@ export function createAPI(
   // A bot may use shared servers and its own, never another bot's.
   const checkServers = (agentId: string | null, serverIds: string[]) => {
     for (const serverId of serverIds) {
-      const owner = store.getMCPServer(serverId)?.agentId;
+      const owner = exec(
+        McpServerRepository.use((r) => r.get(serverId)),
+      )?.agentId;
 
       if (owner && owner !== agentId)
         throw new AppError(400, "That MCP server belongs to another bot");
@@ -232,7 +253,7 @@ export function createAPI(
     provider.parse(input.provider);
     checkServers(null, input.mcpServers);
 
-    return c.json(store.createAgent(input), 201);
+    return c.json(exec(AgentRepository.use((r) => r.create(input))), 201);
   });
   register(routes.getAgent, (c) =>
     c.json(service.agent(c.req.param("id")), 200),
@@ -252,12 +273,15 @@ export function createAPI(
     checkServers(old.id, input.mcpServers);
 
     if (!input.enabled && old.enabled)
-      for (const conversation of store.listConversations(old.id))
+      for (const conversation of exec(
+        ConversationRepository.use((r) => r.list(old.id)),
+      ))
         await service.abort(conversation.id);
 
-    const updated = store.updateAgent(
-      old.id,
-      body["skills"] ? { ...input, skills } : input,
+    const updated = exec(
+      AgentRepository.use((r) =>
+        r.update(old.id, body["skills"] ? { ...input, skills } : input),
+      ),
     );
 
     // The desktop tool picks the workspace image; a bot that gains or loses it needs a fresh boot.
@@ -269,18 +293,21 @@ export function createAPI(
   register(routes.duplicateAgent, (c) => {
     service.agent(c.req.param("id"));
 
-    return c.json(store.duplicateAgent(c.req.param("id")), 201);
+    return c.json(
+      exec(AgentRepository.use((r) => r.duplicate(c.req.param("id")))),
+      201,
+    );
   });
   register(routes.deleteAgent, async (c) => {
-    const personal = store
-      .listMCPServers()
-      .filter((server) => server.agentId === c.req.param("id"));
+    const personal = exec(McpServerRepository.use((r) => r.list)).filter(
+      (server) => server.agentId === c.req.param("id"),
+    );
 
     await service.deleteAgent(c.req.param("id"));
 
     // The bot's personal servers went with it; their credentials and connections go too.
     for (const server of personal) {
-      store.deleteCredential(`mcp:${server.id}`);
+      exec(SecretRepository.use((r) => r.delete(`mcp:${server.id}`)));
       signOut(secrets, server.id);
 
       if (integrations)
@@ -643,44 +670,57 @@ export function createAPI(
   register(routes.agentMemories, (c) => {
     service.agent(c.req.param("id"));
 
-    return c.json(store.listMemories(c.req.param("id")), 200);
+    return c.json(
+      exec(MemoryRepository.use((r) => r.list(c.req.param("id")))),
+      200,
+    );
   });
   register(routes.createAgentMemory, async (c) => {
     service.agent(c.req.param("id"));
     const input = memoryInput.parse(await c.req.json());
 
     return c.json(
-      store.createMemory({
-        agentId: c.req.param("id"),
-        content: input.content,
-        source: { kind: "owner" },
-      }),
+      exec(
+        MemoryRepository.use((r) =>
+          r.create({
+            agentId: c.req.param("id"),
+            content: input.content,
+            source: { kind: "owner" },
+          }),
+        ),
+      ),
       201,
     );
   });
   register(routes.updateAgentMemory, async (c) => {
-    const memory = store.getMemory(c.req.param("memoryId"));
+    const memory = exec(
+      MemoryRepository.use((r) => r.get(c.req.param("memoryId"))),
+    );
 
     if (!memory || memory.agentId !== c.req.param("id"))
       throw new AppError(404, "Memory not found");
 
+    const input = memoryInput.parse(await c.req.json());
+
     return c.json(
-      store.updateMemory(memory.id, memoryInput.parse(await c.req.json())),
+      exec(MemoryRepository.use((r) => r.update(memory.id, input))),
       200,
     );
   });
   register(routes.deleteAgentMemory, (c) => {
-    const memory = store.getMemory(c.req.param("memoryId"));
+    const memory = exec(
+      MemoryRepository.use((r) => r.get(c.req.param("memoryId"))),
+    );
 
     if (!memory || memory.agentId !== c.req.param("id"))
       throw new AppError(404, "Memory not found");
-    store.deleteMemory(memory.id);
+    exec(MemoryRepository.use((r) => r.delete(memory.id)));
 
     return c.body(null, 204);
   });
 
   const sharedMemory = (id: string) => {
-    const memory = store.getMemory(id);
+    const memory = exec(MemoryRepository.use((r) => r.get(id)));
 
     if (!memory || memory.agentId !== null)
       throw new AppError(404, "Memory not found");
@@ -688,35 +728,45 @@ export function createAPI(
     return memory;
   };
 
-  register(routes.memories, (c) => c.json(store.listMemories(null), 200));
+  register(routes.memories, (c) =>
+    c.json(exec(MemoryRepository.use((r) => r.list(null))), 200),
+  );
   register(routes.createMemory, async (c) => {
     const input = memoryInput.parse(await c.req.json());
 
     return c.json(
-      store.createMemory({
-        agentId: null,
-        content: input.content,
-        source: { kind: "owner" },
-      }),
+      exec(
+        MemoryRepository.use((r) =>
+          r.create({
+            agentId: null,
+            content: input.content,
+            source: { kind: "owner" },
+          }),
+        ),
+      ),
       201,
     );
   });
   register(routes.updateMemory, async (c) => {
     const memory = sharedMemory(c.req.param("id"));
 
+    const input = memoryInput.parse(await c.req.json());
+
     return c.json(
-      store.updateMemory(memory.id, memoryInput.parse(await c.req.json())),
+      exec(MemoryRepository.use((r) => r.update(memory.id, input))),
       200,
     );
   });
   register(routes.deleteMemory, (c) => {
-    store.deleteMemory(sharedMemory(c.req.param("id")).id);
+    exec(
+      MemoryRepository.use((r) => r.delete(sharedMemory(c.req.param("id")).id)),
+    );
 
     return c.body(null, 204);
   });
 
   const agentSkill = (agentId: string, skillId: string) => {
-    const skill = store.getSkill(skillId);
+    const skill = exec(SkillRepository.use((r) => r.get(skillId)));
 
     if (!skill || skill.agentId !== agentId)
       throw new AppError(404, "Skill not found");
@@ -725,17 +775,21 @@ export function createAPI(
   };
 
   register(routes.agentSkills, (c) =>
-    c.json(store.listSkills(service.agent(c.req.param("id")).id), 200),
-  );
-  register(routes.createAgentSkill, async (c) =>
     c.json(
-      store.createSkill({
-        ...skillInput.parse(await c.req.json()),
-        agentId: service.agent(c.req.param("id")).id,
-      }),
-      201,
+      exec(
+        SkillRepository.use((r) => r.list(service.agent(c.req.param("id")).id)),
+      ),
+      200,
     ),
   );
+  register(routes.createAgentSkill, async (c) => {
+    const input = {
+      ...skillInput.parse(await c.req.json()),
+      agentId: service.agent(c.req.param("id")).id,
+    };
+
+    return c.json(exec(SkillRepository.use((r) => r.create(input))), 201);
+  });
   register(routes.updateAgentSkill, async (c) => {
     const old = agentSkill(
       service.agent(c.req.param("id")).id,
@@ -746,27 +800,41 @@ export function createAPI(
     const lifecycle = skillLifecycleInput.parse(body);
 
     return c.json(
-      store.updateSkill(old.id, {
-        ...skillInput.parse({ ...old, ...body }),
-        ...(lifecycle.state && { state: lifecycle.state }),
-        ...(lifecycle.pinned !== undefined && { pinned: lifecycle.pinned }),
-      }),
+      exec(
+        SkillRepository.use((r) =>
+          r.update(old.id, {
+            ...skillInput.parse({ ...old, ...body }),
+            ...(lifecycle.state && { state: lifecycle.state }),
+            ...(lifecycle.pinned !== undefined && { pinned: lifecycle.pinned }),
+          }),
+        ),
+      ),
       200,
     );
   });
   register(routes.deleteAgentSkill, (c) => {
-    store.deleteSkill(
-      agentSkill(service.agent(c.req.param("id")).id, c.req.param("skillId"))
-        .id,
+    exec(
+      SkillRepository.use((r) =>
+        r.delete(
+          agentSkill(
+            service.agent(c.req.param("id")).id,
+            c.req.param("skillId"),
+          ).id,
+        ),
+      ),
     );
 
     return c.body(null, 204);
   });
   register(routes.agentReviews, (c) =>
     c.json(
-      store.listReviewResults(
-        service.agent(c.req.param("id")).id,
-        reviewsInput.parse(c.req.query()).limit,
+      exec(
+        LearnedChangeRepository.use((r) =>
+          r.listReviewResults(
+            service.agent(c.req.param("id")).id,
+            reviewsInput.parse(c.req.query()).limit,
+          ),
+        ),
       ),
       200,
     ),
@@ -778,17 +846,25 @@ export function createAPI(
       service.agent(query.agentId);
 
     return c.json(
-      store.listChanges(query.agentId === "shared" ? null : query.agentId, {
-        limit: query.limit,
-        before: query.before,
-      }),
+      exec(
+        LearnedChangeRepository.use((r) =>
+          r.list(query.agentId === "shared" ? null : query.agentId, {
+            limit: query.limit,
+            before: query.before,
+          }),
+        ),
+      ),
       200,
     );
   });
   register(routes.revertChange, (c) => {
-    const reverted = store.revertChange(c.req.param("id"), {
-      actor: "owner",
-    });
+    const reverted = exec(
+      ChangeReverter.use((r) =>
+        r.revert(c.req.param("id"), {
+          actor: "owner",
+        }),
+      ),
+    );
 
     if (!reverted) throw new AppError(404, "Change not found");
 
@@ -808,35 +884,37 @@ export function createAPI(
             source: "bundled" as const,
           }),
         ),
-        ...store
-          .listSkills(null)
-          .map((skill) => ({ ...skill, source: "shared" as const })),
+        ...exec(SkillRepository.use((r) => r.list(null))).map((skill) => ({
+          ...skill,
+          source: "shared" as const,
+        })),
       ],
       200,
     ),
   );
   register(routes.getSkill, (c) => {
-    const skill = store.getSkill(c.req.param("id"));
+    const skill = exec(SkillRepository.use((r) => r.get(c.req.param("id"))));
 
     if (!skill || skill.agentId) throw new AppError(404, "Skill not found");
 
     return c.json(skill, 200);
   });
-  register(routes.createSkill, async (c) =>
-    c.json(store.createSkill(skillInput.parse(await c.req.json())), 201),
-  );
+  register(routes.createSkill, async (c) => {
+    const input = skillInput.parse(await c.req.json());
+
+    return c.json(exec(SkillRepository.use((r) => r.create(input))), 201);
+  });
   register(routes.updateSkill, async (c) => {
     if (options.commonSkills?.some((skill) => skill.id === c.req.param("id")))
       throw new AppError(405, "Bundled skills are read-only");
-    const old = store.getSkill(c.req.param("id"));
+    const old = exec(SkillRepository.use((r) => r.get(c.req.param("id"))));
 
     if (!old || old.agentId) throw new AppError(404, "Skill not found");
 
+    const input = skillInput.parse({ ...old, ...(await c.req.json()) });
+
     return c.json(
-      store.updateSkill(
-        old.id,
-        skillInput.parse({ ...old, ...(await c.req.json()) }),
-      ),
+      exec(SkillRepository.use((r) => r.update(old.id, input))),
       200,
     );
   });
@@ -846,25 +924,38 @@ export function createAPI(
     if (options.commonSkills?.some((skill) => skill.id === skillId))
       throw new AppError(405, "Bundled skills are read-only");
 
-    if (store.getSkill(skillId)?.agentId || !store.deleteSkill(skillId))
+    if (
+      exec(SkillRepository.use((r) => r.get(skillId)))?.agentId ||
+      !exec(SkillRepository.use((r) => r.delete(skillId)))
+    )
       throw new AppError(404, "Skill not found");
 
-    for (const agent of store.listAgents())
-      if (agent.sharedSkills?.includes(skillId))
-        store.updateAgent(agent.id, {
-          sharedSkills: agent.sharedSkills.filter((id) => id !== skillId),
-        });
+    for (const agent of exec(AgentRepository.use((r) => r.list))) {
+      const shared = agent.sharedSkills ?? [];
+
+      if (shared.includes(skillId))
+        exec(
+          AgentRepository.use((r) =>
+            r.update(agent.id, {
+              sharedSkills: shared.filter((id) => id !== skillId),
+            }),
+          ),
+        );
+    }
 
     return c.body(null, 204);
   });
   register(routes.schedules, (c) =>
-    c.json(store.listSchedules(c.req.query("agentId")), 200),
+    c.json(
+      exec(ScheduleRepository.use((r) => r.list(c.req.query("agentId")))),
+      200,
+    ),
   );
   register(routes.createSchedule, async (c) =>
     c.json(scheduler.create(scheduleInput.parse(await c.req.json())), 201),
   );
   register(routes.updateSchedule, async (c) => {
-    const old = store.getSchedule(c.req.param("id"));
+    const old = exec(ScheduleRepository.use((r) => r.get(c.req.param("id"))));
 
     if (!old) throw new AppError(404, "Schedule not found");
 
@@ -877,7 +968,7 @@ export function createAPI(
     );
   });
   register(routes.deleteSchedule, (c) => {
-    if (!store.deleteSchedule(c.req.param("id")))
+    if (!exec(ScheduleRepository.use((r) => r.delete(c.req.param("id")))))
       throw new AppError(404, "Schedule not found");
 
     return c.body(null, 204);
@@ -893,7 +984,10 @@ export function createAPI(
     return c.json(body, 202);
   });
   register(routes.executions, (c) =>
-    c.json(store.listExecutions(c.req.query("agentId")), 200),
+    c.json(
+      exec(ExecutionRepository.use((r) => r.list(c.req.query("agentId")))),
+      200,
+    ),
   );
   register(routes.activity, async (c) => {
     const input = activityInput.parse(c.req.query());
@@ -903,13 +997,15 @@ export function createAPI(
 
     const agents = input.agentId
       ? [service.agent(input.agentId)]
-      : store.listAgents();
+      : exec(AgentRepository.use((r) => r.list));
 
     const feed: z.output<typeof activityFeedResponse> = await activityPage({
       // History is durable per agent; skip bots that have never opened a conversation so
       // this read-only feed does not initialize empty chats.
       agents: agents.filter(
-        (agent) => store.listConversations(agent.id, true).length,
+        (agent) =>
+          exec(ConversationRepository.use((r) => r.list(agent.id, true)))
+            .length,
       ),
       history: (agent, before, limit) =>
         runtime.history(agent, {
@@ -918,8 +1014,13 @@ export function createAPI(
           includeActiveAssistant: true,
         }),
       changes: (limit, before) =>
-        store.listChanges(input.agentId, { limit, before }),
-      agentName: (id) => store.getAgent(id)?.name ?? null,
+        exec(
+          LearnedChangeRepository.use((r) =>
+            r.list(input.agentId, { limit, before }),
+          ),
+        ),
+      agentName: (id) =>
+        exec(AgentRepository.use((r) => r.get(id)))?.name ?? null,
       limit: input.limit,
       cursor,
       kind: input.kind,
@@ -930,9 +1031,10 @@ export function createAPI(
 
   register(routes.providers, async (c) => {
     const saved = new Map(
-      store
-        .listProviderCredentials()
-        .map((info) => [info.providerId, info.type]),
+      exec(ProviderCredentialRepository.use((r) => r.list)).map((info) => [
+        info.providerId,
+        info.type,
+      ]),
     );
 
     return c.json(
@@ -1038,7 +1140,7 @@ export function createAPI(
   const describeServer = (server: MCPServer) => {
     const auth = hasOAuthTokens(secrets, server.id)
       ? "oauth"
-      : store.getCredential(`mcp:${server.id}`)
+      : exec(SecretRepository.use((r) => r.get(`mcp:${server.id}`)))
         ? "token"
         : "none";
 
@@ -1048,13 +1150,13 @@ export function createAPI(
       authenticated: auth !== "none",
       error: integrations?.failure(server.id) ?? null,
       hasOAuthClientSecret: Boolean(
-        store.getCredential(clientSecretKey(server.id)),
+        exec(SecretRepository.use((r) => r.get(clientSecretKey(server.id)))),
       ),
     } as const;
   };
 
   const mcpServer = (id: string) => {
-    const server = store.getMCPServer(id);
+    const server = exec(McpServerRepository.use((r) => r.get(id)));
 
     if (!server) throw new AppError(404, "MCP server not found");
 
@@ -1062,7 +1164,10 @@ export function createAPI(
   };
 
   register(routes.mcpServers, (c) =>
-    c.json(store.listMCPServers().map(describeServer), 200),
+    c.json(
+      exec(McpServerRepository.use((r) => r.list)).map(describeServer),
+      200,
+    ),
   );
   // OAuth sign-in: the client opens the returned URL, then posts back the code, state and issuer it receives.
   register(routes.oauth, async (c) => {
@@ -1114,39 +1219,58 @@ export function createAPI(
 
     if (owner && owner.mcpServers.length >= 30)
       throw new AppError(400, `${owner.name} already uses 30 MCP servers`);
-    const server = store.createMCPServer(input);
+    const server = exec(McpServerRepository.use((r) => r.create(input)));
 
-    if (input.token) store.setCredential(`mcp:${server.id}`, input.token);
+    const { token: serverToken, oauthClientSecret } = input;
 
-    if (input.oauthClientSecret)
-      store.setCredential(clientSecretKey(server.id), input.oauthClientSecret);
+    if (serverToken)
+      exec(SecretRepository.use((r) => r.set(`mcp:${server.id}`, serverToken)));
+
+    if (oauthClientSecret)
+      exec(
+        SecretRepository.use((r) =>
+          r.set(clientSecretKey(server.id), oauthClientSecret),
+        ),
+      );
 
     if (owner)
-      store.updateAgent(owner.id, {
-        mcpServers: [...owner.mcpServers, server.id],
-      });
+      exec(
+        AgentRepository.use((r) =>
+          r.update(owner.id, {
+            mcpServers: [...owner.mcpServers, server.id],
+          }),
+        ),
+      );
 
     return c.json(server, 201);
   });
   register(routes.updateMcpServer, async (c) => {
-    const old = store.getMCPServer(c.req.param("id"));
+    const old = exec(McpServerRepository.use((r) => r.get(c.req.param("id"))));
 
     if (!old) throw new AppError(404, "MCP server not found");
     const input = mcpInput.parse({ ...old, ...(await c.req.json()) });
 
-    if (input.token !== undefined) {
-      if (input.token) store.setCredential(`mcp:${old.id}`, input.token);
-      else store.deleteCredential(`mcp:${old.id}`);
+    const { token: serverToken, oauthClientSecret } = input;
+
+    if (serverToken !== undefined) {
+      if (serverToken)
+        exec(SecretRepository.use((r) => r.set(`mcp:${old.id}`, serverToken)));
+      else exec(SecretRepository.use((r) => r.delete(`mcp:${old.id}`)));
     }
 
     const secretChanged =
       input.oauthClientSecret !== undefined &&
-      input.oauthClientSecret !== store.getCredential(clientSecretKey(old.id));
+      input.oauthClientSecret !==
+        exec(SecretRepository.use((r) => r.get(clientSecretKey(old.id))));
 
     if (input.oauthClientSecret !== undefined) {
-      if (input.oauthClientSecret)
-        store.setCredential(clientSecretKey(old.id), input.oauthClientSecret);
-      else store.deleteCredential(clientSecretKey(old.id));
+      if (oauthClientSecret)
+        exec(
+          SecretRepository.use((r) =>
+            r.set(clientSecretKey(old.id), oauthClientSecret),
+          ),
+        );
+      else exec(SecretRepository.use((r) => r.delete(clientSecretKey(old.id))));
     }
 
     // Tokens belong to the client that obtained them, so another client signs in again.
@@ -1158,18 +1282,24 @@ export function createAPI(
     }
 
     return c.json(
-      store.updateMCPServer(old.id, {
-        ...input,
-        oauthClientId: input.oauthClientId ?? null,
-      }),
+      exec(
+        McpServerRepository.use((r) =>
+          r.update(old.id, {
+            ...input,
+            oauthClientId: input.oauthClientId ?? null,
+          }),
+        ),
+      ),
       200,
     );
   });
   register(routes.deleteMcpServer, (c) => {
-    if (!store.deleteMCPServer(c.req.param("id")))
+    if (!exec(McpServerRepository.use((r) => r.delete(c.req.param("id")))))
       throw new AppError(404, "MCP server not found");
-    store.deleteCredential(`mcp:${c.req.param("id")}`);
-    store.deleteCredential(clientSecretKey(c.req.param("id")));
+    exec(SecretRepository.use((r) => r.delete(`mcp:${c.req.param("id")}`)));
+    exec(
+      SecretRepository.use((r) => r.delete(clientSecretKey(c.req.param("id")))),
+    );
     signOut(secrets, c.req.param("id"));
 
     return c.body(null, 204);

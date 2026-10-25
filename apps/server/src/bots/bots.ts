@@ -1040,6 +1040,8 @@ export function standaloneBots(
   runtime: AgentRuntime,
 ): BotsAccess & {
   store: Store;
+  /** The store's account, for code that reads its repositories. */
+  core: Store["runtime"];
   runtime: AgentRuntime;
   /** Runs effects over the bots and what they stand on, such as features built on the bots in a test. */
   effects: Runner<StandaloneServices>;
@@ -1061,6 +1063,7 @@ export function standaloneBots(
   return {
     ...botsAccess(bots),
     store,
+    core: store.runtime,
     runtime,
     effects: bots,
     close: async () => {

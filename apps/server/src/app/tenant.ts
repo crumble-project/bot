@@ -65,7 +65,6 @@ import {
   pluginProviders,
   Plugins,
 } from "./plugins";
-import { AccountStore } from "./account-services";
 import { BotWorkspaces } from "../workspaces/workspace";
 import { desktopKeepAwake } from "../bot-desktop/keep-awake";
 import { AgentRepository } from "../bots/agent-repository";
@@ -116,11 +115,9 @@ function accountLayer(
     explicitSkillsDir !== undefined,
   );
 
-  const base = Layer.mergeAll(
-    AccountStore.layer,
-    commonSkills,
-    BotExtensions.layer,
-  ).pipe(Layer.provideMerge(coreLayer(dataDir)));
+  const base = Layer.mergeAll(commonSkills, BotExtensions.layer).pipe(
+    Layer.provideMerge(coreLayer(dataDir)),
+  );
 
   const workspaces = Layer.unwrap(
     Effect.gen(function* () {
@@ -318,7 +315,7 @@ export async function createTenant(
         const app = createAPI(
           {
             ...service,
-            store: yield* AccountStore,
+            core: run,
             runtime: yield* BotRuntime,
           },
           scheduler,
