@@ -2,7 +2,8 @@ import { randomBytes } from "node:crypto";
 import tls from "node:tls";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
-import { Context, Effect, Layer, type ManagedRuntime } from "effect";
+import { Context, Effect, Layer } from "effect";
+import type { Runner } from "../shared/runner";
 import { AgentCredentialRepository } from "./agent-credential-repository";
 
 const KEY_ALGORITHM = { name: "ECDSA", namedCurve: "P-256" } as const;
@@ -314,7 +315,7 @@ export type CredentialAuthoritiesAccess = {
 };
 
 export function credentialAuthoritiesAccess(
-  runtime: ManagedRuntime.ManagedRuntime<CredentialAuthorities, unknown>,
+  runtime: Runner<CredentialAuthorities>,
 ): CredentialAuthoritiesAccess {
   const authorities = runtime.runSync(
     CredentialAuthorities.use(Effect.succeed),

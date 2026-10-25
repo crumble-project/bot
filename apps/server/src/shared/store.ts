@@ -1,6 +1,7 @@
 import type { JsonValue } from "@earendil-works/chord";
 import type { Credential, CredentialInfo } from "@earendil-works/pi-ai";
 import { Context, Effect, ManagedRuntime, Predicate } from "effect";
+import type { Runner } from "./runner";
 import { AgentRepository, type AgentPatch } from "../bots/agent-repository";
 import {
   ConversationRepository,
@@ -67,20 +68,24 @@ import { SettingsRepository } from "./settings-repository";
  * Callers move to the repositories themselves, after which this facade goes.
  */
 export class Store {
-  /** The account runtime, for code still moving off this facade. */
-  readonly runtime: ManagedRuntime.ManagedRuntime<CoreServices, unknown>;
-  // Only a store that opened its own database closes it; a shared runtime belongs to the account.
-  private readonly ownsRuntime: boolean;
+  /** Runs effects on the account's services, for code still moving off this facade. */
+  readonly runtime: Runner<CoreServices>;
+  // Only a store that opened its own database closes it; a shared runner belongs to the account.
+  private readonly owned:
+    | ManagedRuntime.ManagedRuntime<CoreServices, unknown>
+    | undefined;
   // Set while a `transaction` callback runs, so the facade calls inside it join that transaction.
   private transactionContext: Context.Context<CoreServices> | undefined;
-  /** Opens the product database in `source`, or runs over an account runtime that provides the repositories. */
-  constructor(
-    source: string | ManagedRuntime.ManagedRuntime<CoreServices, unknown>,
-  ) {
-    this.ownsRuntime = Predicate.isString(source);
-    this.runtime = Predicate.isString(source)
-      ? ManagedRuntime.make(coreLayer(source))
-      : source;
+  /** Opens the product database in `source`, or runs over the account's services. */
+  constructor(source: string | Runner<CoreServices>) {
+    if (Predicate.isString(source)) {
+      this.owned = ManagedRuntime.make(coreLayer(source));
+      this.runtime = this.owned;
+    } else {
+      this.owned = undefined;
+      this.runtime = source;
+    }
+
     // Built now, so a migration or key error fails construction.
     this.runtime.runSync(Effect.void);
   }
@@ -90,7 +95,7 @@ export class Store {
       : this.runtime.runSync(effect);
   }
   close() {
-    if (this.ownsRuntime) Effect.runSync(this.runtime.disposeEffect);
+    if (this.owned) Effect.runSync(this.owned.disposeEffect);
   }
   /** Runs `fn` atomically; a throw rolls back every write inside, including recorded changes. */
   transaction<T>(fn: () => T): T {

@@ -4,13 +4,13 @@ import {
   DateTime,
   Effect,
   Layer,
-  ManagedRuntime,
   Option,
   Queue,
   Schedule,
   Schema,
   Semaphore,
 } from "effect";
+import type { Runner } from "../shared/runner";
 import { BotActivity } from "../bots/bot-activity";
 import type { ReplyActivity } from "../bots/service";
 import {
@@ -280,5 +280,5 @@ export const PushDelivery = Layer.effectDiscard(
   }),
 );
 
-/** Runs push effects from code outside Effect, such as HTTP handlers, until the account itself is a layer. */
-export type PushRuntime = ManagedRuntime.ManagedRuntime<Push, unknown>;
+/** Runs push effects from code outside Effect, such as HTTP handlers. */
+export type PushRuntime = Runner<Push>;

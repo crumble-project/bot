@@ -1,5 +1,6 @@
 import type { Context as PiContext } from "@earendil-works/chord";
-import { Context, Deferred, Effect, Layer, type ManagedRuntime } from "effect";
+import { Context, Deferred, Effect, Layer } from "effect";
+import type { Runner } from "../shared/runner";
 import { nowIso } from "../shared/time";
 import { DesktopControlRepository } from "./desktop-control-repository";
 
@@ -134,7 +135,7 @@ export type DesktopControlAccess = {
 };
 
 export function desktopControlAccess(
-  runtime: ManagedRuntime.ManagedRuntime<DesktopControl, unknown>,
+  runtime: Runner<DesktopControl>,
 ): DesktopControlAccess {
   const control = runtime.runSync(DesktopControl.use(Effect.succeed));
 

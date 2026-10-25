@@ -2,7 +2,8 @@ import { randomBytes } from "node:crypto";
 import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { Clock, Context, Effect, Layer, type ManagedRuntime } from "effect";
+import { Clock, Context, Effect, Layer } from "effect";
+import type { Runner } from "../shared/runner";
 import { BotNotices } from "../bots/bot-notices";
 import {
   AppError,
@@ -252,7 +253,7 @@ export type CredentialsAccess = {
 };
 
 export function credentialsAccess(
-  runtime: ManagedRuntime.ManagedRuntime<Credentials, unknown>,
+  runtime: Runner<Credentials>,
 ): CredentialsAccess {
   const credentials = runtime.runSync(Credentials.use(Effect.succeed));
 
