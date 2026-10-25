@@ -6,10 +6,11 @@
     "apps/server/test/fixtures/*.ts",
     "apps/server/tools/*.ts"
   ],
-  "ignoreFindings": [
-    "tools/oxlint/anti-slop/**",
-    "apps/web/components/ui/**"
-  ],
+  // Vendored oxlint plugins; tools/oxlint/anti-slop/UPSTREAM.md tracks them by checksum, so they stay as upstream wrote them.
+  "ignorePatterns": ["tools/oxlint/**"],
+  // Imported only by the ignored oxlint plugins.
+  "ignoreDependencies": ["@oxlint/plugins"],
+  "ignoreFindings": ["apps/web/components/ui/**"],
   "ignoreExportsUsedInFile": true,
   "overrides": [
     {
@@ -17,9 +18,5 @@
       "files": ["apps/server/src/app/web-ui.ts", "apps/web/api.ts"],
       "rules": { "package-cycle": "off" }
     }
-  ],
-  "duplicates": {
-    // Vendored; tools/oxlint/anti-slop/UPSTREAM.md tracks it by checksum, so it stays as upstream wrote it.
-    "ignore": ["tools/oxlint/anti-slop/**"]
-  }
+  ]
 }
