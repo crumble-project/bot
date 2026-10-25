@@ -6,6 +6,7 @@ import {
   text,
 } from "drizzle-orm/sqlite-core";
 import { agents } from "../bots/schema";
+import { changeActions, changeActors } from "../shared/domain";
 
 export const skills = sqliteTable("skills", {
   id: text("id").primaryKey(),
@@ -69,10 +70,10 @@ export const learnedChanges = sqliteTable(
   {
     id: text("id").primaryKey(),
     agentId: text("agent_id"),
-    actor: text("actor").notNull(),
-    target: text("target").notNull(),
+    actor: text("actor", { enum: changeActors }).notNull(),
+    target: text("target", { enum: ["skill", "memory"] }).notNull(),
     targetId: text("target_id").notNull(),
-    action: text("action").notNull(),
+    action: text("action", { enum: changeActions }).notNull(),
     beforeState: text("before_state"),
     afterState: text("after_state"),
     source: text("source"),

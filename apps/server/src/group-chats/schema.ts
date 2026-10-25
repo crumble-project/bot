@@ -49,6 +49,6 @@ export const groupTurns = sqliteTable("group_turns", {
     .references(() => agents.id, { onDelete: "cascade" }),
   through: integer("through").notNull(),
   botStarted: integer("bot_started", { mode: "boolean" }).notNull(),
-  status: text("status").notNull(),
+  status: text("status", { enum: ["running", "posting", "settled"] }).notNull(),
   createdAt: text("created_at").notNull(),
 });

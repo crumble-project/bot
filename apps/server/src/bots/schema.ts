@@ -60,7 +60,9 @@ export const executions = sqliteTable(
     requestId: text("request_id").notNull(),
     prompt: text("prompt"),
     replyTo: text("reply_to"),
-    status: text("status").notNull(),
+    status: text("status", {
+      enum: ["pending", "running", "done", "failed", "cancelled"],
+    }).notNull(),
     error: text("error"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
