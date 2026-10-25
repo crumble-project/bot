@@ -1,5 +1,7 @@
-import type { Context } from "@earendil-works/chord";
+import type { Context as PiContext } from "@earendil-works/chord";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { Context, Effect, Layer } from "effect";
 
 /** The guest path where a bot's workspace lives; coding jobs start here. */
 export const WORKSPACE_PATH = "/workspace";
@@ -44,18 +46,34 @@ export interface Workspaces {
   /** Whether bots can get a bot desktop: the workspace image for them has one. */
   readonly desktop: boolean;
   /** Stops the bot's machine, whether busy or not; the next operation boots the image the bot needs now. */
-  restart(agentId: string, context: Context): Promise<void>;
+  restart(agentId: string, context: PiContext): Promise<void>;
   /**
    * Connects to the bot desktop's VNC server, booting the machine if needed. The machine stays awake until the stream
    * closes. Rejects for a bot without its bot desktop.
    */
-  openDesktop(agentId: string, context: Context): Promise<DesktopStream>;
+  openDesktop(agentId: string, context: PiContext): Promise<DesktopStream>;
   /** Boots the bot's machine ahead of `openDesktop`, so a viewer about to connect waits less. */
-  startDesktop(agentId: string, context: Context): Promise<void>;
+  startDesktop(agentId: string, context: PiContext): Promise<void>;
   /** Keeps the bot's machine from its idle stop until the returned release is called. */
   keepAwake(agentId: string): () => void;
   /** Makes completed writes in the bot's workspace durable. A stopped workspace has nothing to flush. */
-  sync(agentId: string, context: Context): Promise<void>;
+  sync(agentId: string, context: PiContext): Promise<void>;
   /** Flushes and stops every running workspace. */
-  close(context: Context): Promise<void>;
+  close(context: PiContext): Promise<void>;
+}
+
+/** The account's bot workspaces, or none when the server has no workspace backend. */
+export class BotWorkspaces extends Context.Service<
+  BotWorkspaces,
+  Workspaces | undefined
+>()("crumble/workspaces/BotWorkspaces") {
+  /** The workspaces `make` returns, closed with the layer's scope. */
+  static layer(make: () => Workspaces | undefined) {
+    return Layer.effect(
+      BotWorkspaces,
+      Effect.acquireRelease(Effect.sync(make), (workspaces) =>
+        Effect.promise(async () => workspaces?.close(BACKGROUND_CONTEXT)),
+      ),
+    );
+  }
 }

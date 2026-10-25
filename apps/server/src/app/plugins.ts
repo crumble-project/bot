@@ -1,9 +1,12 @@
-import type { Context } from "@earendil-works/chord";
+import type { Context as PiContext } from "@earendil-works/chord";
 import type { Provider } from "@earendil-works/pi-ai";
 import type { EnvTarget } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { Agent } from "../shared/domain";
+import { Context, Effect, Layer } from "effect";
 import type { JobAnswer, JobExtensions } from "../jobs/jobs";
+import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { Bots } from "../bots/bots";
 
 /** How a provider that signs in outside Crumble stands, shown to the owner instead of sign-in methods. */
 export type ExternalAuth = {
@@ -38,7 +41,7 @@ export type JobKindContribution = {
   env: (
     agentId: string,
     target: EnvTarget,
-    context: Context,
+    context: PiContext,
   ) => Promise<ExecutionEnv | undefined>;
   /** Hears the bot's answer to each job report, for notifications. */
   onAnswer: (listener: (answer: JobAnswer) => void) => () => void;
@@ -78,7 +81,7 @@ export async function jobEnv(
   kinds: readonly JobKindContribution[],
   agentId: string,
   target: EnvTarget,
-  context: Context,
+  context: PiContext,
 ) {
   for (const kind of kinds) {
     const env = await kind.env(agentId, target, context);
@@ -88,3 +91,43 @@ export async function jobEnv(
 
   return undefined;
 }
+
+/** The plugins compiled into the server, as this account configures them. */
+export class Plugins extends Context.Service<
+  Plugins,
+  readonly CrumblePlugin[]
+>()("crumble/app/Plugins") {}
+
+/** Offers bots the job tools of the plugins' job kinds. */
+export const jobTools = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const jobKinds = pluginJobKinds(yield* Plugins);
+
+    yield* (yield* BotExtensions).register(
+      ExtensionPosition.jobs,
+      (agent) => jobExtensions(jobKinds, agent).chat,
+    );
+  }),
+);
+
+/** Announces each bot's answer to a job's report as a reply, until the layer's scope closes. */
+export const jobAnswers = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const bots = yield* Bots;
+    const jobKinds = pluginJobKinds(yield* Plugins);
+
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        jobKinds.map((kind) =>
+          kind.onAnswer((answer) =>
+            Effect.runSync(bots.announceJobAnswer(answer)),
+          ),
+        ),
+      ),
+      (stops) =>
+        Effect.sync(() => {
+          for (const stop of stops) stop();
+        }),
+    );
+  }),
+);

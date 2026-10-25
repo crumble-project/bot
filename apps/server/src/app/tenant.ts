@@ -8,7 +8,7 @@ import { BotRuntime } from "../bots/runtime";
 import { Bots, botsAccess, type BotsAccess } from "../bots/bots";
 import { BotMessaging } from "../bot-messaging/bot-messaging";
 import { BotActivity } from "../bots/bot-activity";
-import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { BotExtensions } from "../bots/bot-extensions";
 import { reactionTools } from "../bots/reaction";
 import { codemodeTools } from "../bots/codemode";
 import {
@@ -39,10 +39,7 @@ import { clientDocument, type ClientDocument } from "../integrations/mcp-oauth";
 import { coordinationTools } from "../bot-messaging/coordination";
 import { displayTools } from "../display/display";
 import { DESKTOP_TOOL_NAME } from "../jobs/desktop";
-import {
-  desktopControlAccess,
-  type ControlState,
-} from "../bot-desktop/desktop-control";
+import { desktopControlAccess } from "../bot-desktop/desktop-control";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import type { Workspaces } from "../workspaces/workspace";
 import { microsandboxWorkspacesFromEnv } from "../workspaces/microsandbox-workspaces";
@@ -60,12 +57,18 @@ import { coreLayer, type CoreServices } from "../shared/core-layer";
 import { runnerOf } from "../shared/runner";
 import { builtinPlugins } from "./builtin-plugins";
 import {
+  jobAnswers,
   jobEnv,
   jobExtensions,
+  jobTools,
   pluginJobKinds,
   pluginProviders,
+  Plugins,
 } from "./plugins";
-import { AccountStore, AccountWorkspaces, Plugins } from "./account-services";
+import { AccountStore } from "./account-services";
+import { BotWorkspaces } from "../workspaces/workspace";
+import { desktopKeepAwake } from "../bot-desktop/keep-awake";
+import { AgentRepository } from "../bots/agent-repository";
 
 export type TenantOptions = {
   dataDir: string;
@@ -95,17 +98,6 @@ function httpsUrl(value: string) {
   return url;
 }
 
-/** A value made by `acquire` that the layer's scope releases with `release`. */
-const scoped = <A>(
-  acquire: () => A,
-  release: (value: A) => void | Promise<void>,
-) =>
-  Effect.acquireRelease(Effect.sync(acquire), (value) =>
-    Effect.promise(async () => {
-      await release(value);
-    }),
-  );
-
 /** Every part of one account, in dependency order; closing the account releases them in reverse. */
 function accountLayer(
   options: TenantOptions,
@@ -133,14 +125,16 @@ function accountLayer(
   const workspaces = Layer.unwrap(
     Effect.gen(function* () {
       const run = runnerOf(yield* Effect.context<CoreServices>());
-      const store = yield* AccountStore;
+      const agents = yield* AgentRepository;
       const credentials = credentialsAccess(run);
       const authorities = credentialAuthoritiesAccess(run);
 
       const machineOptions = {
         namePrefix: `crumble-${options.tenantId.replace(/[^A-Za-z0-9_-]/g, "-")}`,
         wantsDesktop: (agentId: string) =>
-          store.getAgent(agentId)?.tools.includes(DESKTOP_TOOL_NAME) === true,
+          Effect.runSync(agents.get(agentId))?.tools.includes(
+            DESKTOP_TOOL_NAME,
+          ) === true,
         caCertificate: (agentId: string) => authorities.certificate(agentId),
         intercept: (agentId: string) =>
           credentialProxy({
@@ -151,7 +145,7 @@ function accountLayer(
           }),
       };
 
-      return AccountWorkspaces.layer(
+      return BotWorkspaces.layer(
         () =>
           options.workspaces ??
           railwayWorkspacesFromEnv(process.env, {
@@ -171,7 +165,7 @@ function accountLayer(
       return builtinPlugins({
         dataDir,
         env: process.env,
-        workspaces: yield* AccountWorkspaces,
+        workspaces: yield* BotWorkspaces,
         desktopControl: desktopControlAccess(run),
         credentials: credentialsAccess(run),
       });
@@ -219,25 +213,6 @@ function accountLayer(
 
   const curation = skillCuration.pipe(Layer.provide(SkillCurator.layer));
 
-  const jobAnswers = Layer.effectDiscard(
-    Effect.gen(function* () {
-      const service = yield* Bots;
-      const jobKinds = pluginJobKinds(yield* Plugins);
-
-      yield* scoped(
-        () =>
-          jobKinds.map((kind) =>
-            kind.onAnswer((answer) =>
-              Effect.runSync(service.announceJobAnswer(answer)),
-            ),
-          ),
-        (stops) => {
-          for (const stop of stops) stop();
-        },
-      );
-    }),
-  );
-
   const dispatch = Layer.effect(
     TaskDispatch,
     Bots.use((service) => Effect.succeed(service.dispatch)),
@@ -255,64 +230,18 @@ function accountLayer(
 
   const schedules = BotSchedules.layer;
 
-  // The tools of features not yet offering their own, at the positions bots were offered them before the registry.
-  const tools = Layer.effectDiscard(
-    Effect.gen(function* () {
-      const extensions = yield* BotExtensions;
-      const jobKinds = pluginJobKinds(yield* Plugins);
-
-      yield* extensions.register(
-        ExtensionPosition.jobs,
-        (agent) => jobExtensions(jobKinds, agent).chat,
-      );
-    }),
-  );
-
-  // A bot desktop stays awake while the owner holds it.
-  const keepAwake = Layer.effectDiscard(
-    Effect.gen(function* () {
-      const machines = yield* AccountWorkspaces;
-      const store = yield* AccountStore;
-
-      const control = desktopControlAccess(
-        runnerOf(yield* Effect.context<CoreServices>()),
-      );
-
-      const awake = new Map<string, () => void>();
-
-      const holdAwake = (agentId: string, state: ControlState) => {
-        if (!machines) return;
-
-        if (state.holder === "owner" && !awake.has(agentId))
-          awake.set(agentId, machines.keepAwake(agentId));
-        else if (state.holder === "bot") {
-          awake.get(agentId)?.();
-          awake.delete(agentId);
-        }
-      };
-
-      yield* scoped(
-        () => control.subscribeAll(holdAwake),
-        (stop) => stop(),
-      );
-
-      for (const agent of store.listAgents())
-        holdAwake(agent.id, control.get(agent.id));
-    }),
-  );
-
   const push = PushDelivery.pipe(Layer.provideMerge(Push.layer(dataDir)));
 
   return Layer.mergeAll(
     reviews,
     curation,
     jobAnswers,
-    tools,
+    jobTools,
     coordinationTools,
     scheduleTools,
     groupLookupTools,
     historyTools,
-    keepAwake,
+    desktopKeepAwake,
     push,
   ).pipe(
     Layer.provideMerge(schedules),
@@ -375,7 +304,7 @@ export async function createTenant(
           runnerOf(yield* Effect.context<Scheduler>()),
         );
 
-        const workspaces = yield* AccountWorkspaces;
+        const workspaces = yield* BotWorkspaces;
         const chats = yield* GroupChats;
         const groupChats = groupChatsAccess(chats);
         const plugins = yield* Plugins;
