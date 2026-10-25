@@ -22,6 +22,7 @@ import {
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { createEnvConformance } from "@earendil-works/pi-durable/testing";
+import { Effect } from "effect";
 import {
   Sandbox,
   SandboxNotFoundError,
@@ -197,12 +198,17 @@ describe("Railway machines when Railway fails", () => {
     const fake = fakeSandbox("live");
     stubSandboxes(fake.sandbox);
     const { machines } = newMachines();
-    const machine = await machines.boot("bot", machines.baseImage);
+
+    const machine = await Effect.runPromise(
+      machines.boot("bot", machines.baseImage),
+    );
 
     fake.sandbox.refresh = () =>
       Promise.reject(new Error("Railway is unreachable"));
 
-    await expect(machine.stop()).rejects.toThrow("Railway is unreachable");
+    await expect(Effect.runPromise(machine.stop)).rejects.toThrow(
+      "Railway is unreachable",
+    );
     expect(fake.destroyed).toBe(0);
   });
 
@@ -219,9 +225,9 @@ describe("Railway machines when Railway fails", () => {
       checkpointNamed(machines.name("bot")),
     ]);
 
-    await expect(machines.boot("bot", machines.baseImage)).rejects.toThrow(
-      "Railway is unreachable",
-    );
+    await expect(
+      Effect.runPromise(machines.boot("bot", machines.baseImage)),
+    ).rejects.toThrow("Railway is unreachable");
     expect(create).not.toHaveBeenCalled();
     expect(
       JSON.parse(
@@ -237,7 +243,11 @@ describe("Railway machines when Railway fails", () => {
     const create = stubSandboxes(fakeSandbox("new").sandbox);
     const { machineDir, machines } = newMachines("europe-west4");
 
-    await (await machines.boot("fresh", machines.baseImage)).stop();
+    await Effect.runPromise(
+      machines
+        .boot("fresh", machines.baseImage)
+        .pipe(Effect.flatMap((machine) => machine.stop)),
+    );
     expect(create).toHaveBeenNthCalledWith(
       1,
       expect.anything(),
@@ -255,7 +265,11 @@ describe("Railway machines when Railway fails", () => {
       checkpointNamed(machines.name("saved")),
     ]);
 
-    await (await machines.boot("saved", machines.baseImage)).stop();
+    await Effect.runPromise(
+      machines
+        .boot("saved", machines.baseImage)
+        .pipe(Effect.flatMap((machine) => machine.stop)),
+    );
     expect(create).toHaveBeenNthCalledWith(
       2,
       machines.name("saved"),
@@ -268,7 +282,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
   const workspaces = new RailwayWorkspaces({ dataDir, namePrefix });
 
   afterAll(async () => {
-    await workspaces.close();
+    await Effect.runPromise(workspaces.close());
 
     for (const file of readdirSync(recordsDir)) {
       const { sandboxId } = readRecord(path.basename(file, ".json"));
@@ -440,7 +454,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
       ).toHaveLength(3);
       expect((await sh(env, "env")).output).not.toContain(value);
     } finally {
-      await workspaces.close();
+      await Effect.runPromise(workspaces.close());
       upstream.close();
       store.close();
     }
@@ -451,7 +465,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
 
     await sh(first.env("persist"), "echo kept > /workspace/note");
     const { sandboxId } = readRecord("persist");
-    await first.close();
+    await Effect.runPromise(first.close());
 
     const second = new RailwayWorkspaces({ dataDir, namePrefix });
 
@@ -461,7 +475,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
       );
       expect(readRecord("persist").sandboxId).not.toBe(sandboxId);
     } finally {
-      await second.close();
+      await Effect.runPromise(second.close());
     }
   }, 300_000);
 
@@ -493,7 +507,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
       );
       expect(readRecord("orphan").sandboxId).toBe(sandboxId);
     } finally {
-      await next.close();
+      await Effect.runPromise(next.close());
     }
   }, 300_000);
 
@@ -506,7 +520,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
 
     try {
       await sh(lossy.env("lost"), "echo kept > /workspace/note");
-      await lossy.sync("lost");
+      await Effect.runPromise(lossy.sync("lost"));
       await Bun.sleep(20_000);
 
       const { sandboxId } = readRecord("lost");
@@ -518,7 +532,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
         "kept\n",
       );
     } finally {
-      await lossy.close();
+      await Effect.runPromise(lossy.close());
     }
   }, 300_000);
 
@@ -539,7 +553,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
         "kept\n",
       );
     } finally {
-      await idle.close();
+      await Effect.runPromise(idle.close());
     }
   }, 300_000);
 
@@ -550,7 +564,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
       first.env("moved"),
       "mkdir -p /workspace/dir && echo kept > /workspace/dir/note",
     );
-    await first.close();
+    await Effect.runPromise(first.close());
 
     writeFileSync(
       recordFile("moved"),
@@ -565,7 +579,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
       );
       expect(readRecord("moved").image).toBe(second.imageFor("moved"));
     } finally {
-      await second.close();
+      await Effect.runPromise(second.close());
     }
   }, 600_000);
 });

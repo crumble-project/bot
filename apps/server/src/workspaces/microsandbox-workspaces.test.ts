@@ -4,6 +4,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { createEnvConformance } from "@earendil-works/pi-durable/testing";
+import { Effect } from "effect";
 import { Sandbox } from "microsandbox";
 import {
   MicrosandboxWorkspaces,
@@ -84,7 +85,7 @@ describe("workspace configuration", () => {
 describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
   const workspaces = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
 
-  afterAll(() => workspaces.close());
+  afterAll(() => Effect.runPromise(workspaces.close()));
 
   const env = () => workspaces.env("conformance");
 
@@ -123,7 +124,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
     const first = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
 
     await sh(first.env("persist"), "echo kept > /workspace/note");
-    await first.close();
+    await Effect.runPromise(first.close());
 
     const second = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
 
@@ -132,7 +133,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
         "kept\n",
       );
     } finally {
-      await second.close();
+      await Effect.runPromise(second.close());
     }
   }, 120_000);
 
@@ -171,7 +172,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
         await readText(next.env("orphaned"), "/usr/local/bin/marker"),
       ).toBe("installed\n");
     } finally {
-      await next.close();
+      await Effect.runPromise(next.close());
     }
   }, 180_000);
 
@@ -192,7 +193,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
         "installed\n",
       );
     } finally {
-      await first.close();
+      await Effect.runPromise(first.close());
     }
 
     // A new server process: a new MicrosandboxWorkspaces, the same machine.
@@ -211,7 +212,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
 
       expect(https.output).toBe("200");
     } finally {
-      await second.close();
+      await Effect.runPromise(second.close());
     }
   }, 180_000);
 
@@ -227,7 +228,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
           "echo kept > /workspace/note && echo installed > /usr/local/bin/marker && sync",
         );
       } finally {
-        await first.close();
+        await Effect.runPromise(first.close());
       }
 
       const second = new MicrosandboxWorkspaces(OTHER_IMAGE, { namePrefix });
@@ -240,7 +241,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
 
         expect(result.output).toBe("kept\nnone");
       } finally {
-        await second.close();
+        await Effect.runPromise(second.close());
       }
     },
     180_000,
@@ -261,7 +262,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
         "kept\n",
       );
     } finally {
-      await idle.close();
+      await Effect.runPromise(idle.close());
     }
   }, 120_000);
 
@@ -279,12 +280,12 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
         "kept\n",
       );
     } finally {
-      await dying.close();
+      await Effect.runPromise(dying.close());
     }
   }, 120_000);
 
   test("sync is a no-op for a stopped workspace", async () => {
-    await workspaces.sync("never-started");
+    await Effect.runPromise(workspaces.sync("never-started"));
   });
 
   test("the network policy decides each connection before it leaves", async () => {
@@ -316,7 +317,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
         { agentId: "denied", host: "example.com", port: 443 },
       ]);
     } finally {
-      await denying.close();
+      await Effect.runPromise(denying.close());
     }
   }, 120_000);
 });

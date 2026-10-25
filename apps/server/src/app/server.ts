@@ -11,6 +11,7 @@ import {
   clientDocument,
   clientDocumentBody,
 } from "../integrations/mcp-oauth";
+import type { Effect, Scope } from "effect";
 import type { Workspaces } from "../workspaces/workspace";
 
 export async function startServer(
@@ -20,7 +21,10 @@ export async function startServer(
     port?: number;
     publicUrl?: string;
     skillsDir?: string;
-    workspaces?: (userId: string) => Workspaces;
+    /** Each account's workspaces instead of those from the environment, owned by the account's scope. */
+    workspaces?: (
+      userId: string,
+    ) => Effect.Effect<Workspaces | undefined, never, Scope.Scope>;
   } = {},
 ) {
   const dataDir = resolve(

@@ -9,6 +9,7 @@ import {
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { createCodingTools } from "@earendil-works/pi-durable/tools";
+import { Effect } from "effect";
 import {
   credentialExtension,
   jobCredentialSection,
@@ -99,7 +100,7 @@ export function codingExtensions(
           if (!FILE_CHANGING_TOOLS.has(call.name)) return undefined;
 
           if (await coding.isJob(api, api.conversationId, context))
-            await workspaces.sync(agent.id, context);
+            await Effect.runPromise(workspaces.sync(agent.id));
 
           return undefined;
         },

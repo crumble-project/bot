@@ -3,3 +3,4 @@
 set -e
 bun run lint
 bun run typecheck
+bunx fallow audit --base HEAD

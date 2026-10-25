@@ -3,19 +3,33 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Context } from "@earendil-works/chord";
 import {
   Connection,
   RemoteExecutionEnv,
   type ConnectionOptions,
 } from "@earendil-works/pi-env";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
+import { Effect, Exit, Fiber, Semaphore, type Scope } from "effect";
 import { z } from "zod";
 import {
   WORKSPACE_PATH,
   type DesktopStream,
   type Workspaces,
 } from "./workspace";
+import {
+  DesktopNotConfigured,
+  DesktopNotEnabled,
+  WorkspaceBootFailed,
+  WorkspacesClosed,
+  messageOf,
+  type DesktopOpenError,
+  type DesktopStartFailed,
+  type WorkspaceStartError,
+  type WorkspaceStopFailed,
+  type WorkspaceStreamFailed,
+  type WorkspaceSyncFailed,
+  type WorkspaceUnreachable,
+} from "./workspace-errors";
 import type { WorkspaceInterceptor } from "./workspace-proxy";
 
 const BRIDGE_PATH = path.join(import.meta.dir, "workspace-bridge.ts");
@@ -44,14 +58,17 @@ export type MachineStream = {
 export interface WorkspaceMachine {
   /** The image it booted. */
   readonly image: string;
-  isAlive(): Promise<boolean>;
-  /** Resolves once the bot desktop's browser is up; at once on an image without a bot desktop. */
-  desktopReady(): Promise<void>;
-  stream(command: string, args: readonly string[]): Promise<MachineStream>;
+  readonly isAlive: Effect.Effect<boolean, WorkspaceUnreachable>;
+  /** Succeeds once the bot desktop's browser is up; at once on an image without a bot desktop. */
+  readonly desktopReady: Effect.Effect<void, DesktopStartFailed>;
+  stream(
+    command: string,
+    args: readonly string[],
+  ): Effect.Effect<MachineStream, WorkspaceStreamFailed>;
   /** Makes completed writes in the workspace durable. */
-  sync(): Promise<void>;
+  readonly sync: Effect.Effect<void, WorkspaceSyncFailed>;
   /** Makes the workspace durable while the machine still runs, then stops it and frees what it held. */
-  stop(): Promise<void>;
+  readonly stop: Effect.Effect<void, WorkspaceStopFailed>;
 }
 
 /** What a booted guest gets besides the daemon. */
@@ -74,7 +91,7 @@ export interface WorkspaceMachines {
     agentId: string,
     image: string,
     guest?: GuestSetup,
-  ): Promise<WorkspaceMachine>;
+  ): Effect.Effect<WorkspaceMachine, WorkspaceBootFailed | DesktopStartFailed>;
 }
 
 export type MachineWorkspacesOptions = {
@@ -94,6 +111,37 @@ export function assertAgentId(agentId: string) {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(agentId))
     throw new Error(`Invalid agent id: ${agentId}`);
 }
+
+/** One step of a boot through a backend's SDK; its failure names the step. */
+export const bootStep = <A>(step: string, run: () => Promise<A>) =>
+  Effect.tryPromise({
+    try: run,
+    catch: (cause) =>
+      new WorkspaceBootFailed({
+        message: `${step} failed: ${messageOf(cause)}`,
+        cause,
+      }),
+  });
+
+/** Acquires a resource for a boot that releases it only if the boot fails: on success the booted machine owns it. */
+export const untilBooted = <A, E>(
+  acquire: Effect.Effect<A, E>,
+  release: (resource: A) => Promise<void>,
+): Effect.Effect<A, E, Scope.Scope> =>
+  Effect.acquireRelease(acquire, (resource, exit) =>
+    Exit.isFailure(exit)
+      ? Effect.promise(() => release(resource))
+      : Effect.void,
+  );
+
+/** Logs the failure of work nobody waits for, such as cleanup after another failure or an idle stop. */
+export const logFailure =
+  (label: string, agentId: string) =>
+  <A, E>(effect: Effect.Effect<A, E>) =>
+    effect.pipe(
+      Effect.asVoid,
+      Effect.catchCause((cause) => Effect.logError(label, agentId, cause)),
+    );
 
 const DAEMON_DIRECTORY: Partial<Record<NodeJS.Architecture, string>> = {
   arm64: "arm64",
@@ -118,7 +166,8 @@ export function daemonPath(arch: NodeJS.Architecture = process.arch) {
 
 type Running = {
   machine: WorkspaceMachine;
-  desktopReady: Promise<void>;
+  // Started at boot; a job joins it, a viewer does not wait for it.
+  desktopReady: Fiber.Fiber<void, DesktopStartFailed>;
   relay: Relay;
   command: readonly string[];
 };
@@ -178,15 +227,16 @@ class Workspace {
   // Viewers and an owner holding control: the machine stays up while any hold.
   private holds = 0;
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
-  private queue: Promise<unknown> = Promise.resolve();
+  private readonly lock = Semaphore.makeUnsafe(1);
 
   constructor(
     private readonly owner: MachineWorkspaces,
     readonly agentId: string,
     private readonly idleTimeoutMs: number,
   ) {
+    // pi-env runs this command for its connection: the Pi boundary, where a failed start rejects with its tagged error.
     this.connection = new TrackedConnection(
-      { command: () => this.ensureStarted() },
+      { command: () => Effect.runPromise(this.ensureStarted()) },
       {
         begin: () => {
           this.inflight += 1;
@@ -205,68 +255,92 @@ class Workspace {
     });
   }
 
-  /** Start and stop never overlap, and concurrent callers share one start. */
-  private exclusive<T>(task: () => Promise<T>): Promise<T> {
-    const result = this.queue.then(task);
-    this.queue = result.catch(() => undefined);
-
-    return result;
+  /** Start and stop never overlap, and concurrent callers share one start; a caller that leaves does not stop one halfway. */
+  private exclusive<A, E>(task: Effect.Effect<A, E>) {
+    return Semaphore.withPermit(this.lock, Effect.uninterruptible(task));
   }
 
-  /** The relay command once the machine runs and, unless `displayOnly`, its bot desktop's browser is up. */
-  async ensureStarted(displayOnly = false) {
-    const running = await this.exclusive(async () => {
-      // A bot that gained or lost its bot desktop needs the other image.
-      const image = this.owner.imageFor(this.agentId);
+  /** The running machine, booted on the image the bot needs now, and unless `displayOnly` with its browser up. */
+  private readonly start = Effect.fn("Workspace.start")(function* (
+    this: Workspace,
+    displayOnly: boolean,
+  ) {
+    const running = yield* this.exclusive(this.boot());
 
-      if (
-        this.running &&
-        this.running.machine.image === image &&
-        (await this.running.machine.isAlive())
-      )
-        return this.running;
+    // Outside the lock: a viewer needs only the display and does not wait for a job's browser.
+    if (displayOnly) return running;
 
-      if (this.running) await this.teardown();
+    yield* Fiber.join(running.desktopReady).pipe(
+      Effect.onError(() =>
+        this.exclusive(
+          Effect.suspend(() =>
+            this.running === running ? this.teardown() : Effect.void,
+          ),
+        ).pipe(
+          logFailure("Stopping a workspace whose desktop failed", this.agentId),
+        ),
+      ),
+    );
 
-      this.running = await this.owner.boot(this.agentId, image);
-      this.armIdleTimer();
+    return running;
+  });
 
+  /** The running machine if it runs the image the bot needs now, otherwise a new one; called under the lock. */
+  private readonly boot = Effect.fn("Workspace.boot")(function* (
+    this: Workspace,
+  ) {
+    // A bot that gained or lost its bot desktop needs the other image.
+    const image = this.owner.imageFor(this.agentId);
+
+    if (
+      this.running &&
+      this.running.machine.image === image &&
+      (yield* this.running.machine.isAlive)
+    )
       return this.running;
-    });
 
-    // Outside the queue: a viewer needs only the display and does not wait for a job's browser.
-    if (displayOnly) return running.command;
+    if (this.running) yield* this.teardown();
 
-    try {
-      await running.desktopReady;
-    } catch (error) {
-      await this.exclusive(async () => {
-        if (this.running === running) await this.teardown();
-      });
-      throw error;
-    }
+    const booted = yield* this.owner.boot(this.agentId, image);
 
-    return running.command;
+    this.running = booted;
+    this.armIdleTimer();
+
+    return booted;
+  });
+
+  /** The relay command once the machine runs and, unless `displayOnly`, its bot desktop's browser is up. */
+  ensureStarted(
+    displayOnly = false,
+  ): Effect.Effect<readonly string[], WorkspaceStartError> {
+    return this.start(displayOnly).pipe(Effect.map(({ command }) => command));
   }
 
   sync() {
-    return this.exclusive(async () => {
-      await this.running?.machine.sync();
-    });
+    return this.exclusive(
+      Effect.suspend(() => this.running?.machine.sync ?? Effect.void),
+    );
   }
 
   /** Stops only an idle workspace unless forced. A restart keeps the connection, which reconnects on next use. */
   stop(force: boolean, keepConnection = false) {
-    clearTimeout(this.idleTimer);
+    return Effect.suspend(() => {
+      clearTimeout(this.idleTimer);
 
-    return this.exclusive(async () => {
-      // pi-env's Connection reconnects after losing its bridge but not after close(), so only the last stop closes it.
-      if (force && !keepConnection) this.connection.close();
+      return this.exclusive(
+        Effect.suspend(() => {
+          // pi-env's Connection reconnects after losing its bridge but not after close(), so only the last stop closes it.
+          if (force && !keepConnection) this.connection.close();
 
-      if (!this.running || (!force && (this.inflight > 0 || this.holds > 0)))
-        return;
+          if (
+            !this.running ||
+            (!force && (this.inflight > 0 || this.holds > 0))
+          )
+            return Effect.void;
 
-      await this.teardown();
+          return this.teardown();
+        }),
+      );
     });
   }
 
@@ -286,19 +360,55 @@ class Workspace {
     };
   }
 
+  /** The desktop image, failing for a server without one or a bot that does not need its bot desktop. */
+  private readonly desktopImage = Effect.fn("Workspace.desktopImage")(
+    function* (this: Workspace) {
+      const desktopImage = this.owner.desktopImageName();
+
+      if (desktopImage === undefined)
+        return yield* new DesktopNotConfigured({
+          message: "This server has no bot desktop image",
+        });
+
+      if (this.owner.imageFor(this.agentId) !== desktopImage)
+        return yield* new DesktopNotEnabled({
+          message:
+            "This bot has no bot desktop: it does not have the desktop tool",
+        });
+
+      return desktopImage;
+    },
+  );
+
+  /** Boots the bot desktop's machine as far as its display, for a viewer about to connect. */
+  startDesktop(): Effect.Effect<void, DesktopOpenError> {
+    return this.desktopImage().pipe(Effect.andThen(this.start(true)));
+  }
+
   /** A stream to Xvnc in the guest, through socat on an exec stream like the pi-env relay: no guest port. */
-  async openDesktop(): Promise<DesktopStream> {
+  readonly openDesktop = Effect.fn("Workspace.openDesktop")(function* (
+    this: Workspace,
+  ): Effect.fn.Return<DesktopStream, DesktopOpenError> {
+    const desktopImage = yield* this.desktopImage();
     const release = this.hold();
 
-    try {
-      await this.ensureStarted(true);
+    return yield* this.connectDesktop(desktopImage, release).pipe(
+      Effect.onError(() => Effect.sync(release)),
+    );
+  });
 
-      const running = this.running;
+  private readonly connectDesktop = Effect.fn("Workspace.connectDesktop")(
+    function* (this: Workspace, desktopImage: string, release: () => void) {
+      const running = yield* this.start(true);
 
-      if (!running || running.machine.image !== this.owner.desktopImageName())
-        throw new Error("This bot has no bot desktop");
+      // The bot lost its bot desktop while the machine booted.
+      if (running.machine.image !== desktopImage)
+        return yield* new DesktopNotEnabled({
+          message:
+            "This bot has no bot desktop: it does not have the desktop tool",
+        });
 
-      const stream = await running.machine.stream("socat", [
+      const stream = yield* running.machine.stream("socat", [
         "-",
         "TCP:127.0.0.1:5900",
       ]);
@@ -313,12 +423,9 @@ class Workspace {
           release();
           await stream.end().catch(() => undefined);
         },
-      };
-    } catch (error) {
-      release();
-      throw error;
-    }
-  }
+      } satisfies DesktopStream;
+    },
+  );
 
   private armIdleTimer() {
     clearTimeout(this.idleTimer);
@@ -326,19 +433,29 @@ class Workspace {
     if (!this.running || this.inflight > 0 || this.holds > 0) return;
 
     this.idleTimer = setTimeout(
-      () => void this.stop(false).catch(() => undefined),
+      () =>
+        void Effect.runFork(
+          this.stop(false).pipe(
+            logFailure("Workspace idle stop failed", this.agentId),
+          ),
+        ),
       this.idleTimeoutMs,
     );
     this.idleTimer.unref();
   }
 
-  private async teardown() {
+  private readonly teardown = Effect.fn("Workspace.teardown")(function* (
+    this: Workspace,
+  ) {
     const running = this.running;
 
     this.running = undefined;
-    await running?.relay.close();
-    await running?.machine.stop();
-  }
+
+    if (!running) return;
+
+    yield* Effect.promise(() => running.relay.close());
+    yield* running.machine.stop;
+  });
 }
 
 /**
@@ -387,12 +504,12 @@ export class MachineWorkspaces implements Workspaces {
       : this.image;
   }
 
-  openDesktop(agentId: string, _context?: Context) {
-    return this.workspace(agentId).openDesktop();
+  openDesktop(agentId: string) {
+    return Effect.suspend(() => this.workspace(agentId).openDesktop());
   }
 
-  async startDesktop(agentId: string, _context?: Context) {
-    await this.workspace(agentId).ensureStarted(true);
+  startDesktop(agentId: string) {
+    return Effect.suspend(() => this.workspace(agentId).startDesktop());
   }
 
   keepAwake(agentId: string) {
@@ -412,48 +529,77 @@ export class MachineWorkspaces implements Workspaces {
       : workspace.env;
   }
 
-  async restart(agentId: string, _context?: Context) {
-    await this.workspaces.get(agentId)?.stop(true, true);
-  }
-
-  async sync(agentId: string, _context?: Context) {
-    await this.workspaces.get(agentId)?.sync();
-  }
-
-  async close(_context?: Context) {
-    this.closed = true;
-    await Promise.all(
-      [...this.workspaces.values()].map((workspace) => workspace.stop(true)),
+  restart(agentId: string) {
+    return Effect.suspend(
+      () => this.workspaces.get(agentId)?.stop(true, true) ?? Effect.void,
     );
   }
 
-  /** Boots the bot's machine and a relay for its daemon; called by `Workspace`, serialized per bot. */
-  async boot(agentId: string, image: string): Promise<Running> {
-    if (this.closed) throw new Error("Workspaces are closed");
+  sync(agentId: string) {
+    return Effect.suspend(
+      () => this.workspaces.get(agentId)?.sync() ?? Effect.void,
+    );
+  }
 
-    const machine = await this.machines.boot(agentId, image, {
-      caCertificate: await this.caCertificate?.(agentId),
+  /** Flushes and stops every running workspace; fails with the first stop that failed, after trying them all. */
+  readonly close = Effect.fn("MachineWorkspaces.close")(function* (
+    this: MachineWorkspaces,
+  ): Effect.fn.Return<void, WorkspaceStopFailed> {
+    this.closed = true;
+
+    const exits = yield* Effect.forEach(
+      [...this.workspaces.values()],
+      (workspace) => Effect.exit(workspace.stop(true)),
+      { concurrency: "unbounded" },
+    );
+
+    const failed = exits.find(Exit.isFailure);
+
+    if (failed) return yield* Effect.failCause(failed.cause);
+  });
+
+  /** Boots the bot's machine and a relay for its daemon; called by `Workspace`, serialized per bot. */
+  readonly boot = Effect.fn("MachineWorkspaces.boot")(function* (
+    this: MachineWorkspaces,
+    agentId: string,
+    image: string,
+  ): Effect.fn.Return<Running, WorkspaceStartError> {
+    if (this.closed)
+      return yield* new WorkspacesClosed({
+        message: "The account's workspaces are closed",
+      });
+
+    const certificate = this.caCertificate;
+
+    const caCertificate = certificate
+      ? yield* bootStep("Reading the bot's credential authority", () =>
+          certificate(agentId),
+        )
+      : undefined;
+
+    const machine = yield* this.machines.boot(agentId, image, {
+      caCertificate,
     });
 
-    const desktopReady = machine.desktopReady();
+    const desktopReady = yield* Effect.forkDetach(machine.desktopReady);
 
-    // Awaited by later callers; a failure before then must not go unhandled.
-    desktopReady.catch(() => undefined);
+    const relay = yield* bootStep("Starting the workspace relay", () =>
+      startRelay(machine),
+    ).pipe(
+      Effect.onError(() =>
+        machine.stop.pipe(
+          logFailure("Stopping a machine without its relay", agentId),
+        ),
+      ),
+    );
 
-    try {
-      const relay = await startRelay(machine);
-
-      return {
-        machine,
-        desktopReady,
-        relay,
-        command: [process.execPath, BRIDGE_PATH, relay.socketPath],
-      };
-    } catch (error) {
-      await machine.stop();
-      throw error;
-    }
-  }
+    return {
+      machine,
+      desktopReady,
+      relay,
+      command: [process.execPath, BRIDGE_PATH, relay.socketPath],
+    };
+  });
 
   private workspace(agentId: string) {
     assertAgentId(agentId);
@@ -468,6 +614,14 @@ export class MachineWorkspaces implements Workspaces {
     return workspace;
   }
 }
+
+/** The workspaces `make` returns, stopped when the scope closes; a failed stop is a defect of closing. */
+export const acquireWorkspaces = (
+  make: () => MachineWorkspaces | undefined,
+): Effect.Effect<MachineWorkspaces | undefined, never, Scope.Scope> =>
+  Effect.acquireRelease(Effect.sync(make), (workspaces) =>
+    workspaces ? Effect.orDie(workspaces.close()) : Effect.void,
+  );
 
 /**
  * A unix socket that runs the daemon in the guest per connection: only this process can run commands in the machine,
@@ -541,7 +695,7 @@ async function pipeDaemon(
   args: string[],
   rest: Buffer,
 ) {
-  const daemon = await machine.stream(GUEST_DAEMON, args);
+  const daemon = await Effect.runPromise(machine.stream(GUEST_DAEMON, args));
 
   // Writes to the guest are async; chaining keeps them in order.
   let writes = Promise.resolve();

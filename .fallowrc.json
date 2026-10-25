@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  // Run by drizzle-kit, spawned by tests by path, or run as `bun tools/...`.
+  "entry": [
+    "apps/server/drizzle.*.config.ts",
+    "apps/server/test/fixtures/*.ts",
+    "apps/server/tools/*.ts"
+  ],
+  "ignoreFindings": [
+    "tools/oxlint/anti-slop/**",
+    "apps/web/components/ui/**"
+  ],
+  "ignoreExportsUsedInFile": true
+}

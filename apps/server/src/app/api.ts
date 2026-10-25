@@ -30,8 +30,8 @@ import {
 } from "../bot-desktop/desktop-control";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import type { DesktopStream } from "../workspaces/workspace";
+import type { DesktopOpenError } from "../workspaces/workspace-errors";
 import { bodyLimit } from "hono/body-limit";
-import { streamSSE } from "hono/streaming";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { Effect } from "effect";
@@ -91,6 +91,7 @@ import {
   secretStorage,
 } from "../integrations/mcp-oauth";
 import type { ExternalAuth } from "./plugins";
+import { sendHeartbeat, snapshotSender, streamEvents } from "./event-stream";
 import { MAX_MESSAGE_BODY } from "../shared/attachments";
 import { activityPage, decodeCursor } from "../activity/activity";
 import { Push, type PushRuntime } from "../push/push";
@@ -132,9 +133,11 @@ export function createAPI(
     /** Single-use viewer links. */
     viewerTickets?: ViewerTickets;
     /** Connects to a bot desktop's VNC server, for viewers. */
-    openDesktop?: (agentId: string) => Promise<DesktopStream>;
+    openDesktop?: (
+      agentId: string,
+    ) => Effect.Effect<DesktopStream, DesktopOpenError>;
     /** Boots a bot's machine ahead of a viewer's connection. */
-    startDesktop?: (agentId: string) => Promise<void>;
+    startDesktop?: (agentId: string) => Effect.Effect<void, DesktopOpenError>;
     /** The server's provider sign-ins; API-only fixtures get one of their own. */
     providerAuth?: ProviderSignInsAccess;
     /** The server's OAuth client metadata document, when it has a public address. */
@@ -216,6 +219,7 @@ export function createAPI(
     app,
     register,
     service,
+    run: core,
     desktop: options.desktop === true,
     control: options.desktopControl ?? desktopControlAccess(core),
     tickets: options.viewerTickets ?? new ViewerTickets(),
@@ -415,61 +419,23 @@ export function createAPI(
     const agent = service.agent(c.req.param("id"));
     const chat = await service.chat(agent.id);
 
-    return streamSSE(c, async (stream) => {
-      let finish!: () => void;
+    return streamEvents(c, async ({ stream, close, onClose }) => {
+      const sendSnapshot = snapshotSender(stream, () =>
+        service.snapshot(chat.id, options),
+      );
 
-      const finished = new Promise<void>((resolve) => {
-        finish = resolve;
-      });
-
-      stream.onAbort(finish);
-
-      const sendSnapshot = async () => {
-        if (!stream.aborted)
-          await stream.writeSSE({
-            event: "snapshot",
-            data: JSON.stringify(await service.snapshot(chat.id, options)),
-          });
-      };
-
-      const unsubscribe = service.subscribe(chat.id, () => {
-        void sendSnapshot().catch(finish);
-      });
-
-      let stop: (() => Promise<void>) | undefined;
-
-      try {
-        stop = await runtime.watch(agent, chat.id, sendSnapshot, options);
-      } catch (error) {
-        unsubscribe();
-        throw error;
-      }
-
-      const timer = setInterval(() => {
-        stream.writeSSE({ event: "heartbeat", data: "{}" }).catch(finish);
-      }, 15000);
-
-      try {
-        await finished;
-      } finally {
-        clearInterval(timer);
-        unsubscribe();
-        await stop?.();
-      }
+      onClose(
+        service.subscribe(chat.id, () => {
+          void sendSnapshot().catch(close);
+        }),
+      );
+      onClose(await runtime.watch(agent, chat.id, sendSnapshot, options));
     });
   });
 
   // Server-wide activity for notifications: finished replies from every bot.
   register(routes.events, (c) =>
-    streamSSE(c, async (stream) => {
-      let finish!: () => void;
-
-      const finished = new Promise<void>((resolve) => {
-        finish = resolve;
-      });
-
-      stream.onAbort(finish);
-
+    streamEvents(c, async ({ stream, close, onClose }) => {
       const send = (data: Activity) => {
         const activity = data;
 
@@ -491,39 +457,22 @@ export function createAPI(
               event: data.type === "learned" ? "learned" : "activity",
               data: JSON.stringify(canonical),
             })
-            .catch(finish);
+            .catch(close);
       };
 
-      const unsubscribers = [service.onActivity(send)];
+      onClose(service.onActivity(send));
 
-      // Browsers see the response only once a body chunk arrives, which without bots to preview could take 15 seconds.
-      await stream.writeSSE({ event: "heartbeat", data: "{}" });
+      // Without bots to preview, the first activity could take 15 seconds to arrive.
+      await sendHeartbeat(stream);
 
       // Replay current previews on every connection so a sidebar can recover missed events.
-      try {
-        for (const { agent, lastMessage } of await service.agentPreviews())
-          send({
-            type: "chat-preview",
-            agentId: agent.id,
-            agentName: agent.name,
-            lastMessage,
-          });
-      } catch (error) {
-        for (const unsubscribe of unsubscribers) unsubscribe?.();
-        throw error;
-      }
-
-      const timer = setInterval(() => {
-        stream.writeSSE({ event: "heartbeat", data: "{}" }).catch(finish);
-      }, 15000);
-
-      try {
-        await finished;
-      } finally {
-        clearInterval(timer);
-
-        for (const unsubscribe of unsubscribers) unsubscribe?.();
-      }
+      for (const { agent, lastMessage } of await service.agentPreviews())
+        send({
+          type: "chat-preview",
+          agentId: agent.id,
+          agentName: agent.name,
+          lastMessage,
+        });
     }),
   );
 
@@ -610,39 +559,19 @@ export function createAPI(
     const groups = groupChats();
     const groupId = groups.get(c.req.param("id")).id;
 
-    return streamSSE(c, async (stream) => {
-      let finish!: () => void;
-
-      const finished = new Promise<void>((resolve) => {
-        finish = resolve;
-      });
-
-      stream.onAbort(finish);
-
-      const sendSnapshot = async () => {
-        if (!stream.aborted)
-          await stream.writeSSE({
-            event: "snapshot",
-            data: JSON.stringify(await groups.snapshot(groupId, query)),
-          });
-      };
+    return streamEvents(c, async ({ stream, close, onClose }) => {
+      const sendSnapshot = snapshotSender(stream, () =>
+        groups.snapshot(groupId, query),
+      );
 
       // A deleted group fails its next snapshot, which ends the stream.
-      const unsubscribe = groups.subscribe(groupId, () => {
-        void sendSnapshot().catch(finish);
-      });
+      onClose(
+        groups.subscribe(groupId, () => {
+          void sendSnapshot().catch(close);
+        }),
+      );
 
-      const timer = setInterval(() => {
-        stream.writeSSE({ event: "heartbeat", data: "{}" }).catch(finish);
-      }, 15000);
-
-      try {
-        await sendSnapshot();
-        await finished;
-      } finally {
-        clearInterval(timer);
-        unsubscribe();
-      }
+      await sendSnapshot();
     });
   });
 
@@ -683,92 +612,77 @@ export function createAPI(
       200,
     );
   });
-  register(routes.createAgentMemory, async (c) => {
-    service.agent(c.req.param("id"));
-    const input = memoryInput.parse(await c.req.json());
 
-    return c.json(
-      exec(
-        MemoryRepository.use((r) =>
-          r.create({
-            agentId: c.req.param("id"),
-            content: input.content,
-            source: { kind: "owner" },
-          }),
-        ),
-      ),
-      201,
-    );
-  });
-  register(routes.updateAgentMemory, async (c) => {
-    const memory = exec(
-      MemoryRepository.use((r) => r.get(c.req.param("memoryId"))),
-    );
+  /** The memory, which must belong to the bot or, with `null`, to every bot. */
+  const memoryOf = (agentId: string | null, memoryId: string) => {
+    const memory = exec(MemoryRepository.use((r) => r.get(memoryId)));
 
-    if (!memory || memory.agentId !== c.req.param("id"))
-      throw new NotFound({ message: "Memory not found" });
-
-    const input = memoryInput.parse(await c.req.json());
-
-    return c.json(
-      exec(MemoryRepository.use((r) => r.update(memory.id, input))),
-      200,
-    );
-  });
-  register(routes.deleteAgentMemory, (c) => {
-    const memory = exec(
-      MemoryRepository.use((r) => r.get(c.req.param("memoryId"))),
-    );
-
-    if (!memory || memory.agentId !== c.req.param("id"))
-      throw new NotFound({ message: "Memory not found" });
-    exec(MemoryRepository.use((r) => r.delete(memory.id)));
-
-    return c.body(null, 204);
-  });
-
-  const sharedMemory = (id: string) => {
-    const memory = exec(MemoryRepository.use((r) => r.get(id)));
-
-    if (!memory || memory.agentId !== null)
+    if (!memory || memory.agentId !== agentId)
       throw new NotFound({ message: "Memory not found" });
 
     return memory;
   };
 
-  register(routes.memories, (c) =>
-    c.json(exec(MemoryRepository.use((r) => r.list(null))), 200),
-  );
-  register(routes.createMemory, async (c) => {
-    const input = memoryInput.parse(await c.req.json());
+  const createMemory = (
+    agentId: string | null,
+    input: z.output<typeof memoryInput>,
+  ) =>
+    exec(
+      MemoryRepository.use((r) =>
+        r.create({
+          agentId,
+          content: input.content,
+          source: { kind: "owner" },
+        }),
+      ),
+    );
+
+  const updateMemory = (
+    memoryId: string,
+    input: z.output<typeof memoryInput>,
+  ) => exec(MemoryRepository.use((r) => r.update(memoryId, input)));
+
+  const deleteMemory = (memoryId: string) =>
+    exec(MemoryRepository.use((r) => r.delete(memoryId)));
+
+  register(routes.createAgentMemory, async (c) => {
+    service.agent(c.req.param("id"));
 
     return c.json(
-      exec(
-        MemoryRepository.use((r) =>
-          r.create({
-            agentId: null,
-            content: input.content,
-            source: { kind: "owner" },
-          }),
-        ),
-      ),
+      createMemory(c.req.param("id"), memoryInput.parse(await c.req.json())),
       201,
     );
   });
-  register(routes.updateMemory, async (c) => {
-    const memory = sharedMemory(c.req.param("id"));
-
-    const input = memoryInput.parse(await c.req.json());
+  register(routes.updateAgentMemory, async (c) => {
+    const memory = memoryOf(c.req.param("id"), c.req.param("memoryId"));
 
     return c.json(
-      exec(MemoryRepository.use((r) => r.update(memory.id, input))),
+      updateMemory(memory.id, memoryInput.parse(await c.req.json())),
+      200,
+    );
+  });
+  register(routes.deleteAgentMemory, (c) => {
+    deleteMemory(memoryOf(c.req.param("id"), c.req.param("memoryId")).id);
+
+    return c.body(null, 204);
+  });
+
+  register(routes.memories, (c) =>
+    c.json(exec(MemoryRepository.use((r) => r.list(null))), 200),
+  );
+  register(routes.createMemory, async (c) =>
+    c.json(createMemory(null, memoryInput.parse(await c.req.json())), 201),
+  );
+  register(routes.updateMemory, async (c) => {
+    const memory = memoryOf(null, c.req.param("id"));
+
+    return c.json(
+      updateMemory(memory.id, memoryInput.parse(await c.req.json())),
       200,
     );
   });
   register(routes.deleteMemory, (c) => {
-    exec(
-      MemoryRepository.use((r) => r.delete(sharedMemory(c.req.param("id")).id)),
-    );
+    deleteMemory(memoryOf(null, c.req.param("id")).id);
 
     return c.body(null, 204);
   });
@@ -1175,6 +1089,14 @@ export function createAPI(
     return server;
   };
 
+  // Writing an empty secret removes the stored one.
+  const storeSecret = (key: string, value: string | undefined) => {
+    if (value === undefined) return;
+
+    if (value) exec(SecretRepository.use((r) => r.set(key, value)));
+    else exec(SecretRepository.use((r) => r.delete(key)));
+  };
+
   register(routes.mcpServers, (c) =>
     c.json(
       exec(McpServerRepository.use((r) => r.list)).map(describeServer),
@@ -1235,17 +1157,8 @@ export function createAPI(
       });
     const server = exec(McpServerRepository.use((r) => r.create(input)));
 
-    const { token: serverToken, oauthClientSecret } = input;
-
-    if (serverToken)
-      exec(SecretRepository.use((r) => r.set(`mcp:${server.id}`, serverToken)));
-
-    if (oauthClientSecret)
-      exec(
-        SecretRepository.use((r) =>
-          r.set(clientSecretKey(server.id), oauthClientSecret),
-        ),
-      );
+    storeSecret(`mcp:${server.id}`, input.token);
+    storeSecret(clientSecretKey(server.id), input.oauthClientSecret);
 
     if (owner)
       exec(
@@ -1259,33 +1172,17 @@ export function createAPI(
     return c.json(server, 201);
   });
   register(routes.updateMcpServer, async (c) => {
-    const old = exec(McpServerRepository.use((r) => r.get(c.req.param("id"))));
-
-    if (!old) throw new NotFound({ message: "MCP server not found" });
+    const old = mcpServer(c.req.param("id"));
     const input = mcpInput.parse({ ...old, ...(await c.req.json()) });
 
-    const { token: serverToken, oauthClientSecret } = input;
-
-    if (serverToken !== undefined) {
-      if (serverToken)
-        exec(SecretRepository.use((r) => r.set(`mcp:${old.id}`, serverToken)));
-      else exec(SecretRepository.use((r) => r.delete(`mcp:${old.id}`)));
-    }
+    storeSecret(`mcp:${old.id}`, input.token);
 
     const secretChanged =
       input.oauthClientSecret !== undefined &&
       input.oauthClientSecret !==
         exec(SecretRepository.use((r) => r.get(clientSecretKey(old.id))));
 
-    if (input.oauthClientSecret !== undefined) {
-      if (oauthClientSecret)
-        exec(
-          SecretRepository.use((r) =>
-            r.set(clientSecretKey(old.id), oauthClientSecret),
-          ),
-        );
-      else exec(SecretRepository.use((r) => r.delete(clientSecretKey(old.id))));
-    }
+    storeSecret(clientSecretKey(old.id), input.oauthClientSecret);
 
     // Tokens belong to the client that obtained them, so another client signs in again.
     if (secretChanged || (input.oauthClientId ?? null) !== old.oauthClientId) {

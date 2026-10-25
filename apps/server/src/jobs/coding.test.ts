@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { Context } from "@earendil-works/chord";
+import { Effect } from "effect";
 import { createModels } from "@earendil-works/pi-ai";
 import type { Message } from "@earendil-works/pi-ai";
 import {
@@ -22,7 +22,8 @@ import { AgentRuntime } from "../bots/runtime";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { standaloneBots } from "../bots/bots";
 import { Store } from "../../test/support/store";
-import type { DesktopStream, Workspaces } from "../workspaces/workspace";
+import type { Workspaces } from "../workspaces/workspace";
+import { DesktopNotConfigured } from "../workspaces/workspace-errors";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -45,26 +46,27 @@ class DirectoryWorkspaces implements Workspaces {
     return env;
   }
 
-  async sync(agentId: string, _context: Context) {
-    this.synced.push(agentId);
+  sync(agentId: string) {
+    return Effect.sync(() => void this.synced.push(agentId));
   }
 
-  async restart(_agentId: string, _context: Context) {}
-
-  async openDesktop(
-    _agentId: string,
-    _context: Context,
-  ): Promise<DesktopStream> {
-    throw new Error("No bot desktop in this test");
+  restart(_agentId: string) {
+    return Effect.void;
   }
 
-  async startDesktop(_agentId: string, _context: Context) {}
+  openDesktop(_agentId: string) {
+    return Effect.fail(
+      new DesktopNotConfigured({ message: "No bot desktop in this test" }),
+    );
+  }
+
+  startDesktop(_agentId: string) {
+    return Effect.void;
+  }
 
   keepAwake(_agentId: string) {
     return () => {};
   }
-
-  async close(_context: Context) {}
 }
 
 const messageText = (message: Message) =>
@@ -74,6 +76,37 @@ const messageText = (message: Message) =>
   )
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("");
+
+const call = (name: string, args: Record<string, string>) =>
+  fauxAssistantMessage(fauxToolCall(name, args), {
+    stopReason: "toolUse",
+  });
+
+/** What a job's model answers next, told apart by the tool call it saw last. */
+function jobReply(last: Message) {
+  if (last.role === "user")
+    return call("bash", { command: "echo hello > hello.txt" });
+
+  if (last.role === "toolResult" && last.toolName === "bash")
+    return call("write", { path: "notes.txt", content: "notes" });
+
+  return fauxAssistantMessage([fauxText("Wrote hello.txt and notes.txt.")]);
+}
+
+/** What the bot's model answers next: start the job, or wrap up once it ran. */
+function botReply(last: Message, text: string) {
+  if (text.startsWith("[coding job"))
+    return fauxAssistantMessage([fauxText("The job is finished.")]);
+
+  if (last.role === "toolResult")
+    return fauxAssistantMessage([fauxText("Started.")]);
+
+  return call("coding", {
+    action: "start",
+    name: "builder",
+    message: "Create the files.",
+  });
+}
 
 /** One scripted model plays the bot and its jobs; the tools it was offered tell them apart. */
 function script(
@@ -96,36 +129,13 @@ function script(
       (message) => message.role !== "system",
     )!;
 
-    const text = messageText(last);
-
-    const call = (name: string, args: Record<string, string>) =>
-      fauxAssistantMessage(fauxToolCall(name, args), {
-        stopReason: "toolUse",
-      });
-
     if (job) {
       await options.beforeJob?.(streamOptions?.signal);
 
-      if (last.role === "user")
-        return call("bash", { command: "echo hello > hello.txt" });
-
-      if (last.role === "toolResult" && last.toolName === "bash")
-        return call("write", { path: "notes.txt", content: "notes" });
-
-      return fauxAssistantMessage([fauxText("Wrote hello.txt and notes.txt.")]);
+      return jobReply(last);
     }
 
-    if (text.startsWith("[coding job"))
-      return fauxAssistantMessage([fauxText("The job is finished.")]);
-
-    if (last.role === "toolResult")
-      return fauxAssistantMessage([fauxText("Started.")]);
-
-    return call("coding", {
-      action: "start",
-      name: "builder",
-      message: "Create the files.",
-    });
+    return botReply(last, messageText(last));
   };
 }
 

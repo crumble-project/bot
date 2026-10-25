@@ -9,6 +9,7 @@
     "@oxlint/plugins": "1.88.0",
     "@types/bun": "latest",
     "@types/node": "^26.6.5",
+    "fallow": "^3.36.0",
     "oxfmt": "0.73.0",
     "oxlint": "1.88.0",
     "oxlint-tsgolint": "7.0.2005",
