@@ -6,7 +6,6 @@ import type { CrumbleService } from "../bots/service";
 import { ChartCompiler } from "../display/charts";
 import type { GroupChats } from "../group-chats/group-chats";
 import type { HistorySearch } from "../history/history-search";
-import type { MCPIntegrations } from "../integrations/integrations";
 import type { BotSchedules } from "../schedules/bot-schedules";
 import type { Scheduler } from "../schedules/scheduler";
 import type { CommonSkill } from "../skills/common-skills";
@@ -52,11 +51,6 @@ export class Plugins extends Context.Service<
   Plugins,
   readonly CrumblePlugin[]
 >()("crumble/app/Plugins") {}
-
-export class McpIntegrations extends Context.Service<
-  McpIntegrations,
-  MCPIntegrations
->()("crumble/app/McpIntegrations") {}
 
 /** The QuickJS sandbox of code mode. */
 export class Codemode extends Context.Service<Codemode, CodemodeSandbox>()(

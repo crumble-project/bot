@@ -4,14 +4,17 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Agent, MCPServer } from "../shared/domain";
 import type { McpTransport } from "@earendil-works/pi-mcp";
-import { MCPIntegrations, type MCPClient } from "./integrations";
+import { standaloneIntegrations, type MCPClient } from "./integrations";
 import {
   finishAuthorization,
   hasOAuthTokens,
+  secretStorage,
   signOut,
   startAuthorization,
 } from "./mcp-oauth";
 import { Store } from "../shared/store";
+
+const secrets = (store: Store) => secretStorage(store.runtime);
 
 type OAuthRegistration = {
   client_id?: string;
@@ -121,12 +124,12 @@ function setup(options?: { issParameter?: boolean }) {
 }
 
 async function signIn(store: Store, server: MCPServer) {
-  const started = await startAuthorization(store, server, redirect);
+  const started = await startAuthorization(secrets(store), server, redirect);
 
   if (!("authorizationUrl" in started))
     throw new Error("expected a sign-in URL");
   await finishAuthorization(
-    store,
+    secrets(store),
     server,
     "code-1",
     new URL(started.authorizationUrl).searchParams.get("state")!,
@@ -136,7 +139,7 @@ async function signIn(store: Store, server: MCPServer) {
 describe("MCP OAuth", () => {
   test("signs in with a registered client, PKCE, and a checked state", async () => {
     const { store, server, fake } = setup();
-    const started = await startAuthorization(store, server, redirect);
+    const started = await startAuthorization(secrets(store), server, redirect);
 
     if (!("authorizationUrl" in started))
       throw new Error("expected a sign-in URL");
@@ -149,35 +152,47 @@ describe("MCP OAuth", () => {
     expect(state.length).toBeGreaterThan(10);
 
     await expect(
-      finishAuthorization(store, server, "code-1", "stale"),
+      finishAuthorization(secrets(store), server, "code-1", "stale"),
     ).rejects.toThrow("expired");
-    await finishAuthorization(store, server, "code-1", state);
-    expect(hasOAuthTokens(store, server.id)).toBe(true);
+    await finishAuthorization(secrets(store), server, "code-1", state);
+    expect(hasOAuthTokens(secrets(store), server.id)).toBe(true);
     const exchange = fake.tokenRequests[0]!;
     expect(exchange.get("grant_type")).toBe("authorization_code");
     expect(exchange.get("code")).toBe("code-1");
     expect(exchange.get("code_verifier")?.length).toBeGreaterThan(40);
     // The state answers one attempt only.
     await expect(
-      finishAuthorization(store, server, "code-1", state),
+      finishAuthorization(secrets(store), server, "code-1", state),
     ).rejects.toThrow("expired");
 
-    signOut(store, server.id);
-    expect(hasOAuthTokens(store, server.id)).toBe(false);
+    signOut(secrets(store), server.id);
+    expect(hasOAuthTokens(secrets(store), server.id)).toBe(false);
   });
 
   test("checks the issuer a server returns with the code (RFC 9207)", async () => {
     const { store, server, fake } = setup({ issParameter: true });
-    const started = await startAuthorization(store, server, redirect);
+    const started = await startAuthorization(secrets(store), server, redirect);
 
     if (!("authorizationUrl" in started))
       throw new Error("expected a sign-in URL");
     const state = new URL(started.authorizationUrl).searchParams.get("state")!;
     await expect(
-      finishAuthorization(store, server, "code-1", state, "https://evil.test"),
+      finishAuthorization(
+        secrets(store),
+        server,
+        "code-1",
+        state,
+        "https://evil.test",
+      ),
     ).rejects.toThrow("Linear could not finish OAuth sign-in");
-    await finishAuthorization(store, server, "code-1", state, fake.issuer);
-    expect(hasOAuthTokens(store, server.id)).toBe(true);
+    await finishAuthorization(
+      secrets(store),
+      server,
+      "code-1",
+      state,
+      fake.issuer,
+    );
+    expect(hasOAuthTokens(secrets(store), server.id)).toBe(true);
   });
 
   test("servers without OAuth metadata explain that they can't sign in", async () => {
@@ -198,16 +213,16 @@ describe("MCP OAuth", () => {
       enabled: true,
     });
 
-    await expect(startAuthorization(store, server, redirect)).rejects.toThrow(
-      "Plain could not start OAuth sign-in",
-    );
+    await expect(
+      startAuthorization(secrets(store), server, redirect),
+    ).rejects.toThrow("Plain could not start OAuth sign-in");
   });
 
   test("an expired sign-in leaves the server out and asks to sign in again", async () => {
     const { store, server, fake } = setup();
     await signIn(store, server);
     fake.refuseRefresh();
-    const integrations = new MCPIntegrations(store);
+    const { integrations, close } = standaloneIntegrations(store.runtime);
     // SAFETY: OAuth integration only reads these Agent fields in this fixture.
     const agent = { id: "a1", mcpServers: [server.id] } as Agent;
     const extensions = await integrations.extensionsForAgent(agent);
@@ -219,18 +234,18 @@ describe("MCP OAuth", () => {
     expect(integrations.failure(server.id)).toContain(
       "Sign in to Linear again under Integrations",
     );
-    await integrations.close();
+    await close();
   });
 
   test("signed-in servers connect through OAuth instead of a stored token", async () => {
     const { store, server } = setup();
     store.setCredential(`mcp:${server.id}`, "static-token");
-    const started = await startAuthorization(store, server, redirect);
+    const started = await startAuthorization(secrets(store), server, redirect);
 
     if (!("authorizationUrl" in started))
       throw new Error("expected a sign-in URL");
     await finishAuthorization(
-      store,
+      secrets(store),
       server,
       "code-1",
       new URL(started.authorizationUrl).searchParams.get("state")!,
@@ -244,7 +259,7 @@ describe("MCP OAuth", () => {
       close: async () => {},
     };
 
-    const integrations = new MCPIntegrations(store, {
+    const { integrations, close } = standaloneIntegrations(store.runtime, {
       clientFactory: (_server, headers, authProvider) => {
         calls.push({ headers, oauth: Boolean(authProvider) });
 
@@ -260,6 +275,6 @@ describe("MCP OAuth", () => {
     const agent = { id: "a1", mcpServers: [server.id] } as Agent;
     await integrations.extensionsForAgent(agent);
     expect(calls).toEqual([{ headers: {}, oauth: true }]);
-    await integrations.close();
+    await close();
   });
 });

@@ -8,7 +8,10 @@ import {
   type McpOAuthStateStore,
 } from "@earendil-works/pi-mcp/oauth";
 import { AppError, type MCPServer } from "../shared/domain";
-import type { Store } from "../shared/store";
+import { Context, Effect, Layer } from "effect";
+import { SecretRepository } from "../credentials/secret-repository";
+import { appErrors } from "../shared/app-errors";
+import { runnerOf, type Runner } from "../shared/runner";
 
 /**
  * A server's OAuth state as pi-mcp keeps it (client registration, tokens, PKCE verifier, state),
@@ -87,8 +90,29 @@ export const clientDocumentBody = (document: ClientDocument) => ({
   redirect_uris: document.redirectUris,
 });
 
-function read(store: Store, serverId: string): SavedOAuth | undefined {
-  const raw = store.getCredential(credentialKey(serverId));
+/** Encrypted values by key, as the OAuth flows read and write them synchronously. */
+export type SecretStorage = {
+  get(key: string): string | undefined;
+  set(key: string, value: string): void;
+  delete(key: string): void;
+};
+
+export const secretStorage = (
+  run: Runner<SecretRepository>,
+): SecretStorage => ({
+  get: (key) =>
+    run.runSync(SecretRepository.use((secrets) => secrets.get(key))),
+  set: (key, value) =>
+    run.runSync(SecretRepository.use((secrets) => secrets.set(key, value))),
+  delete: (key) =>
+    run.runSync(SecretRepository.use((secrets) => secrets.delete(key))),
+});
+
+function read(
+  storage: SecretStorage,
+  serverId: string,
+): SavedOAuth | undefined {
+  const raw = storage.get(credentialKey(serverId));
 
   if (!raw) return undefined;
 
@@ -101,29 +125,29 @@ function read(store: Store, serverId: string): SavedOAuth | undefined {
   }
 }
 
-function write(store: Store, serverId: string, saved: SavedOAuth) {
-  store.setCredential(credentialKey(serverId), JSON.stringify(saved));
+function write(storage: SecretStorage, serverId: string, saved: SavedOAuth) {
+  storage.set(credentialKey(serverId), JSON.stringify(saved));
 }
 
-export function hasOAuthTokens(store: Store, serverId: string) {
-  return Boolean(read(store, serverId)?.state.tokens?.access_token);
+export function hasOAuthTokens(storage: SecretStorage, serverId: string) {
+  return Boolean(read(storage, serverId)?.state.tokens?.access_token);
 }
 
-export function signOut(store: Store, serverId: string) {
-  store.deleteCredential(credentialKey(serverId));
+export function signOut(storage: SecretStorage, serverId: string) {
+  storage.delete(credentialKey(serverId));
 }
 
 function provider(
-  store: Store,
+  storage: SecretStorage,
   server: MCPServer,
   redirectUrl: string,
   onRedirect: (url: URL) => void,
   document: ClientDocument | undefined,
 ) {
   const stateStore: McpOAuthStateStore = {
-    load: () => read(store, server.id)?.state,
+    load: () => read(storage, server.id)?.state,
     save: (state) =>
-      write(store, server.id, {
+      write(storage, server.id, {
         redirectUrl,
         state,
         clientId: server.oauthClientId,
@@ -147,7 +171,7 @@ function provider(
 
   if (!server.oauthClientId) return new McpOAuthProvider(options);
 
-  const secret = store.getCredential(clientSecretKey(server.id));
+  const secret = storage.get(clientSecretKey(server.id));
 
   return new OwnerClientProvider(options, {
     client_id: server.oauthClientId,
@@ -161,16 +185,16 @@ function provider(
  * refresh fails it cannot open a browser, so the call fails and the owner signs in again.
  */
 export function connectionAuth(
-  store: Store,
+  storage: SecretStorage,
   server: MCPServer,
   document?: ClientDocument,
 ): AuthProvider | undefined {
-  const saved = read(store, server.id);
+  const saved = read(storage, server.id);
 
   if (!saved?.state.tokens?.access_token) return undefined;
 
   return adaptOAuthProvider(
-    provider(store, server, saved.redirectUrl, () => undefined, document),
+    provider(storage, server, saved.redirectUrl, () => undefined, document),
   );
 }
 
@@ -209,12 +233,12 @@ function registrationHint(
  * URL the owner signs in at, or `authorized` when the saved tokens still work.
  */
 export async function startAuthorization(
-  store: Store,
+  storage: SecretStorage,
   server: MCPServer,
   redirectUrl: string,
   document?: ClientDocument,
 ): Promise<{ authorizationUrl: string } | { authorized: true }> {
-  const saved = read(store, server.id);
+  const saved = read(storage, server.id);
 
   // A registration names its redirect URL and server, so a change of either starts over.
   if (
@@ -223,7 +247,7 @@ export async function startAuthorization(
     saved.state.serverUrl !== server.url ||
     (saved.clientId ?? null) !== server.oauthClientId
   )
-    write(store, server.id, {
+    write(storage, server.id, {
       redirectUrl,
       state: { serverUrl: server.url },
       clientId: server.oauthClientId,
@@ -231,7 +255,7 @@ export async function startAuthorization(
   let authorizationUrl: URL | undefined;
 
   const oauth = provider(
-    store,
+    storage,
     server,
     redirectUrl,
     (url) => {
@@ -269,20 +293,20 @@ export async function startAuthorization(
  * `iss` is the issuer the callback carried, which servers that promise one must send (RFC 9207).
  */
 export async function finishAuthorization(
-  store: Store,
+  storage: SecretStorage,
   server: MCPServer,
   code: string,
   state: string,
   iss?: string,
   document?: ClientDocument,
 ) {
-  const saved = read(store, server.id);
+  const saved = read(storage, server.id);
 
   if (!saved?.state.oauthState || saved.state.oauthState !== state)
     throw new AppError(400, "This sign-in has expired; start again");
 
   const oauth = provider(
-    store,
+    storage,
     server,
     saved.redirectUrl,
     () => undefined,
@@ -305,7 +329,65 @@ export async function finishAuthorization(
   if (result !== "AUTHORIZED")
     throw new AppError(400, `${server.name} did not accept the sign-in`);
   // The state and verifier answer one attempt only.
-  const done = read(store, server.id)!;
+  const done = read(storage, server.id)!;
   const { oauthState: _state, codeVerifier: _verifier, ...rest } = done.state;
-  write(store, server.id, { ...done, state: rest });
+  write(storage, server.id, { ...done, state: rest });
+}
+
+/** OAuth sign-in to MCP servers, with tokens and registrations encrypted among the account's secrets. */
+export class McpOAuth extends Context.Service<
+  McpOAuth,
+  {
+    readonly hasTokens: (serverId: string) => Effect.Effect<boolean>;
+    readonly signOut: (serverId: string) => Effect.Effect<void>;
+    /** The auth a live connection uses, when the server has saved tokens. */
+    readonly connectionAuth: (
+      server: MCPServer,
+      document?: ClientDocument,
+    ) => Effect.Effect<AuthProvider | undefined>;
+    readonly start: (
+      server: MCPServer,
+      redirectUrl: string,
+      document?: ClientDocument,
+    ) => Effect.Effect<
+      { authorizationUrl: string } | { authorized: true },
+      AppError
+    >;
+    readonly finish: (
+      server: MCPServer,
+      code: string,
+      state: string,
+      iss?: string,
+      document?: ClientDocument,
+    ) => Effect.Effect<void, AppError>;
+  }
+>()("crumble/integrations/McpOAuth") {
+  static readonly layer = Layer.effect(
+    McpOAuth,
+    Effect.gen(function* () {
+      const storage = secretStorage(
+        runnerOf(yield* Effect.context<SecretRepository>()),
+      );
+
+      return McpOAuth.of({
+        hasTokens: (serverId) =>
+          Effect.sync(() => hasOAuthTokens(storage, serverId)),
+        signOut: (serverId) => Effect.sync(() => signOut(storage, serverId)),
+        connectionAuth: (server, document) =>
+          Effect.sync(() => connectionAuth(storage, server, document)),
+        start: (server, redirectUrl, document) =>
+          appErrors(
+            Effect.tryPromise(() =>
+              startAuthorization(storage, server, redirectUrl, document),
+            ),
+          ),
+        finish: (server, code, state, iss, document) =>
+          appErrors(
+            Effect.tryPromise(() =>
+              finishAuthorization(storage, server, code, state, iss, document),
+            ),
+          ),
+      });
+    }),
+  );
 }

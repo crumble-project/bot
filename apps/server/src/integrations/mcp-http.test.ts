@@ -5,7 +5,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import type { Agent } from "../shared/domain";
-import { MCPIntegrations } from "./integrations";
+import { standaloneIntegrations } from "./integrations";
 import { Store } from "../shared/store";
 
 const agent = (id: string, mcpServers: string[]): Agent => ({
@@ -104,7 +104,7 @@ describe("real Streamable HTTP MCP integration", () => {
 
     const id = "00000000-0000-4000-8000-000000000011";
 
-    const integrations = new MCPIntegrations(store, {
+    const { integrations, close } = standaloneIntegrations(store.runtime, {
       requestTimeoutMs: 3_000,
     });
 
@@ -137,7 +137,7 @@ describe("real Streamable HTTP MCP integration", () => {
     // SAFETY: The faux MCP tool returns a text output item.
     expect((sent.output as any)[0].text).toBe("sent:hello");
     expect(mcp.calls()).toBe(1);
-    await integrations.close();
+    await close();
     store.close();
     await mcp.stop();
   });
@@ -155,7 +155,7 @@ describe("real Streamable HTTP MCP integration", () => {
 
     const id = "00000000-0000-4000-8000-000000000012";
 
-    const integrations = new MCPIntegrations(store, {
+    const { integrations, close } = standaloneIntegrations(store.runtime, {
       requestTimeoutMs: 3_000,
     });
 
@@ -180,7 +180,7 @@ describe("real Streamable HTTP MCP integration", () => {
 
     await expect(pending).rejects.toThrow("no longer enabled");
     expect(mcp.calls()).toBe(0);
-    await integrations.close();
+    await close();
     store.close();
     await mcp.stop();
   });

@@ -29,7 +29,7 @@ import { LearningReview } from "../skills/learning-review";
 import { SkillCurator } from "../skills/skill-curator";
 import { loadCommonSkills } from "../skills/common-skills";
 import { AppError, type ChangeBy } from "../shared/domain";
-import { MCPIntegrations } from "../integrations/integrations";
+import { McpIntegrations } from "../integrations/integrations";
 import { clientDocument, type ClientDocument } from "../integrations/mcp-oauth";
 import { coordinationExtension } from "../bot-messaging/coordination";
 import { displayExtension } from "../display/display";
@@ -71,7 +71,6 @@ import {
   CommonSkills,
   GroupChatsService,
   HistorySearchService,
-  McpIntegrations,
   Plugins,
   TaskScheduler,
 } from "./account-services";
@@ -211,17 +210,7 @@ function accountLayer(
     ),
   );
 
-  const integrations = Layer.effect(
-    McpIntegrations,
-    Effect.gen(function* () {
-      const store = yield* AccountStore;
-
-      return yield* scoped(
-        () => new MCPIntegrations(store, { oauthClient }),
-        (connected) => connected.close(),
-      );
-    }),
-  );
+  const integrations = McpIntegrations.layer({ oauthClient });
 
   const runtime = Layer.effect(
     BotRuntime,

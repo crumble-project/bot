@@ -4,7 +4,11 @@ import {
   withAbortSignal,
 } from "@earendil-works/chord/context";
 import type { Agent, MCPServer } from "../shared/domain";
-import { MCPIntegrations, mcpToolPrefix, type MCPClient } from "./integrations";
+import {
+  mcpToolPrefix,
+  standaloneIntegrations,
+  type MCPClient,
+} from "./integrations";
 import { Store } from "../shared/store";
 import type { McpTransport } from "@earendil-works/pi-mcp";
 
@@ -69,7 +73,7 @@ describe("MCP integrations", () => {
       },
     };
 
-    const integrations = new MCPIntegrations(store, {
+    const { integrations, close } = standaloneIntegrations(store.runtime, {
       clientFactory: () => ({ client, transport: unusedTransport }),
     });
 
@@ -99,7 +103,7 @@ describe("MCP integrations", () => {
     // SAFETY: The fake MCP client returns text output items.
     expect((result.output as any)[0].text).toBe("ok");
     expect(called).toBe(1);
-    await integrations.close();
+    await close();
     store.close();
   });
 
@@ -118,7 +122,7 @@ describe("MCP integrations", () => {
       enabled: false,
     });
 
-    const integrations = new MCPIntegrations(store);
+    const { integrations, close } = standaloneIntegrations(store.runtime);
 
     const namespaces = integrations.codemodeNamespaces(
       agent("a1", [linear.id, off.id]),
@@ -131,6 +135,7 @@ describe("MCP integrations", () => {
         prefix: mcpToolPrefix(linear.id),
       },
     ]);
+    await close();
     store.close();
   });
 
@@ -159,7 +164,7 @@ describe("MCP integrations", () => {
       },
     };
 
-    const integrations = new MCPIntegrations(store, {
+    const { integrations, close } = standaloneIntegrations(store.runtime, {
       clientFactory: () => ({ client, transport: unusedTransport }),
     });
 
@@ -185,7 +190,7 @@ describe("MCP integrations", () => {
     // SAFETY: The fake MCP client returns text output items.
     expect((result.output as any)[0].text).toBe("sent");
     expect(called).toBe(1);
-    await integrations.close();
+    await close();
     store.close();
   });
 
@@ -199,7 +204,7 @@ describe("MCP integrations", () => {
       enabled: true,
     });
 
-    const integrations = new MCPIntegrations(store, {
+    const { integrations, close } = standaloneIntegrations(store.runtime, {
       requestTimeoutMs: 20,
       clientFactory: () => ({
         transport: unusedTransport,
@@ -233,7 +238,7 @@ describe("MCP integrations", () => {
       ),
     ).rejects.toThrow("MCP request timed out after 20ms");
     expect(performance.now() - started).toBeLessThan(500);
-    await integrations.close();
+    await close();
     store.close();
   });
 
@@ -249,7 +254,7 @@ describe("MCP integrations", () => {
 
     let called = 0;
 
-    const integrations = new MCPIntegrations(store, {
+    const { integrations, close } = standaloneIntegrations(store.runtime, {
       requestTimeoutMs: 1_000,
       clientFactory: () => ({
         transport: unusedTransport,
@@ -287,7 +292,7 @@ describe("MCP integrations", () => {
       ),
     ).rejects.toBe(reason);
     expect(called).toBe(0);
-    await integrations.close();
+    await close();
     store.close();
   });
 
@@ -303,7 +308,7 @@ describe("MCP integrations", () => {
 
     let called = 0;
 
-    const integrations = new MCPIntegrations(store, {
+    const { integrations, close } = standaloneIntegrations(store.runtime, {
       requestTimeoutMs: 1_000,
       clientFactory: () => ({
         transport: unusedTransport,
@@ -355,7 +360,7 @@ describe("MCP integrations", () => {
     controller.abort(reason);
     await expect(pending).rejects.toBe(reason);
     expect(called).toBe(1);
-    await integrations.close();
+    await close();
     store.close();
   });
 });

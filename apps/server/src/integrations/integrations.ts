@@ -18,15 +18,22 @@ import { z } from "zod";
 import {
   defineExtension,
   defineTool,
+  type Extension,
   type ToolRegistration,
 } from "@earendil-works/pi-durable";
-import type { Context } from "@earendil-works/chord/context";
+import type { Context as PiContext } from "@earendil-works/chord/context";
 import type { Agent, MCPServer } from "../shared/domain";
-import { Store } from "../shared/store";
+import { Context, Effect, Layer, ManagedRuntime } from "effect";
+import { AgentRepository } from "../bots/agent-repository";
+import { SecretRepository } from "../credentials/secret-repository";
+import { runnerOf, type Runner } from "../shared/runner";
+import { McpServerRepository } from "./mcp-server-repository";
 import {
   type ClientDocument,
   connectionAuth,
   hasOAuthTokens,
+  secretStorage,
+  type SecretStorage,
 } from "./mcp-oauth";
 import type { CodemodeNamespace } from "@earendil-works/pi-durable/codemode";
 
@@ -138,8 +145,8 @@ const credentialPayload = z.object({
   token: z.string().optional(),
 });
 
-function credentials(store: Store, server: MCPServer) {
-  const raw = store.getCredential(`mcp:${server.id}`);
+function credentials(secrets: SecretStorage, server: MCPServer) {
+  const raw = secrets.get(`mcp:${server.id}`);
 
   if (!raw) return {};
 
@@ -162,7 +169,14 @@ function credentials(store: Store, server: MCPServer) {
   return { Authorization: `Bearer ${raw}` } satisfies CredentialHeaders;
 }
 
-export class MCPIntegrations {
+/** What connections read from the account: the servers a bot may use, its bots, and their secrets. */
+type IntegrationData = {
+  usableServer(agentId: string, serverId: string): MCPServer | null;
+  agent(agentId: string): Agent | null;
+  secrets: SecretStorage;
+};
+
+class McpConnections {
   private readonly failures = new Map<string, string>();
   private readonly connections = new Map<
     string,
@@ -175,7 +189,7 @@ export class MCPIntegrations {
   private readonly timeout: number;
   private readonly factory: MCPClientFactory;
   constructor(
-    private readonly store: Store,
+    private readonly data: IntegrationData,
     options: IntegrationsOptions = {},
   ) {
     this.timeout = options.requestTimeoutMs ?? 30_000;
@@ -268,8 +282,8 @@ export class MCPIntegrations {
 
   private async connection(server: MCPServer) {
     // A signed-in server authenticates through OAuth, which refreshes its own access token.
-    const oauth = hasOAuthTokens(this.store, server.id);
-    const headers = oauth ? {} : credentials(this.store, server);
+    const oauth = hasOAuthTokens(this.data.secrets, server.id);
+    const headers = oauth ? {} : credentials(this.data.secrets, server);
     const hadCredentials = oauth || Object.keys(headers).length > 0;
     const fingerprint = digest({ url: server.url, headers, oauth });
     const existing = this.connections.get(server.id);
@@ -285,7 +299,9 @@ export class MCPIntegrations {
     const value = this.factory(
       server,
       headers,
-      oauth ? connectionAuth(this.store, server, this.oauthClient) : undefined,
+      oauth
+        ? connectionAuth(this.data.secrets, server, this.oauthClient)
+        : undefined,
     );
 
     try {
@@ -338,7 +354,7 @@ export class MCPIntegrations {
     const leftOut: string[] = [];
 
     for (const serverId of agent.mcpServers) {
-      const server = this.store.usableMCPServer(agent.id, serverId);
+      const server = this.data.usableServer(agent.id, serverId);
 
       if (!server) continue;
       const listed = await this.listedTools(server);
@@ -364,10 +380,14 @@ export class MCPIntegrations {
             properties: remote.inputSchema["properties"] ?? {},
           }),
           replay: "unsafe",
-          execute: async (args: McpArguments, _api: any, context: Context) => {
+          execute: async (
+            args: McpArguments,
+            _api: any,
+            context: PiContext,
+          ) => {
             const assertAllowed = () => {
-              const current = this.store.usableMCPServer(agent.id, server.id);
-              const owner = this.store.getAgent(agent.id);
+              const current = this.data.usableServer(agent.id, server.id);
+              const owner = this.data.agent(agent.id);
 
               if (
                 !current ||
@@ -434,7 +454,7 @@ export class MCPIntegrations {
   /** The agent's MCP servers as code mode namespaces, so scripts see each server's tools together. */
   codemodeNamespaces(agent: Agent): CodemodeNamespace[] {
     return agent.mcpServers.flatMap((serverId) => {
-      const server = this.store.usableMCPServer(agent.id, serverId);
+      const server = this.data.usableServer(agent.id, serverId);
 
       return server
         ? [
@@ -470,3 +490,87 @@ export class MCPIntegrations {
 }
 
 export type { Agent };
+
+/** The account's MCP servers as tools for bots: connections stay open and close with the account. */
+export class McpIntegrations extends Context.Service<
+  McpIntegrations,
+  {
+    /** Why a server's tools were left out of a bot's last turn, until it connects again. */
+    readonly failure: (serverId: string) => string | null;
+    /** The bot's MCP tools, for Pi Durable at turn time. */
+    readonly extensionsForAgent: (agent: Agent) => Promise<Extension[]>;
+    /** The agent's MCP servers as code mode namespaces, so scripts see each server's tools together. */
+    readonly codemodeNamespaces: (agent: Agent) => CodemodeNamespace[];
+    /** Drops a server's open connection, so the next use picks up new credentials. */
+    readonly disconnect: (serverId: string) => Effect.Effect<void>;
+  }
+>()("crumble/integrations/McpIntegrations") {
+  static layer(options: IntegrationsOptions = {}) {
+    return Layer.effect(
+      McpIntegrations,
+      Effect.gen(function* () {
+        const run = runnerOf(
+          yield* Effect.context<
+            McpServerRepository | AgentRepository | SecretRepository
+          >(),
+        );
+
+        const connections = yield* Effect.acquireRelease(
+          Effect.sync(
+            () =>
+              new McpConnections(
+                {
+                  usableServer: (agentId, serverId) =>
+                    run.runSync(
+                      McpServerRepository.use((servers) =>
+                        servers.usable(agentId, serverId),
+                      ),
+                    ),
+                  agent: (agentId) =>
+                    run.runSync(
+                      AgentRepository.use((agents) => agents.get(agentId)),
+                    ),
+                  secrets: secretStorage(run),
+                },
+                options,
+              ),
+          ),
+          (open) => Effect.promise(() => open.close()),
+        );
+
+        return McpIntegrations.of({
+          failure: (serverId) => connections.failure(serverId),
+          extensionsForAgent: (agent) => connections.extensionsForAgent(agent),
+          codemodeNamespaces: (agent) => connections.codemodeNamespaces(agent),
+          disconnect: (serverId) =>
+            Effect.promise(() => connections.disconnect(serverId)),
+        });
+      }),
+    );
+  }
+}
+
+/** MCP integrations over the data `core` reaches, for an API or a test that runs without an account. */
+export function standaloneIntegrations(
+  core: Runner<McpServerRepository | AgentRepository | SecretRepository>,
+  options: IntegrationsOptions = {},
+) {
+  const runtime = ManagedRuntime.make(
+    McpIntegrations.layer(options).pipe(
+      Layer.provide(
+        Layer.succeedContext(
+          core.runSync(
+            Effect.context<
+              McpServerRepository | AgentRepository | SecretRepository
+            >(),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  return {
+    integrations: runtime.runSync(McpIntegrations.use(Effect.succeed)),
+    close: () => runtime.dispose(),
+  };
+}

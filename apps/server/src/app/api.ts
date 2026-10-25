@@ -56,7 +56,7 @@ import type { CrumbleService } from "../bots/service";
 import type { Activity } from "../bots/service";
 import type { Scheduler } from "../schedules/scheduler";
 import type { GroupChats } from "../group-chats/group-chats";
-import type { MCPIntegrations } from "../integrations/integrations";
+import type { McpIntegrations } from "../integrations/integrations";
 import {
   credentialsAccess,
   type CredentialsAccess,
@@ -76,6 +76,7 @@ import {
   hasOAuthTokens,
   signOut,
   startAuthorization,
+  secretStorage,
 } from "../integrations/mcp-oauth";
 import type { ExternalAuth } from "./plugins";
 import { MAX_MESSAGE_BODY } from "../shared/attachments";
@@ -88,7 +89,7 @@ export function createAPI(
   service: CrumbleService,
   scheduler: Scheduler,
   token: string,
-  integrations?: MCPIntegrations,
+  integrations?: McpIntegrations["Service"],
   options: {
     commonSkills?: CommonSkill[];
     /** Whether the server can give bots the coding tool. */
@@ -124,6 +125,7 @@ export function createAPI(
   const app = contractApp();
 
   const credentials = options.credentials ?? credentialsAccess(store.runtime);
+  const secrets = secretStorage(store.runtime);
 
   const providerAuth = options.providerAuth ?? standaloneSignIns(store.runtime);
 
@@ -275,8 +277,10 @@ export function createAPI(
     // The bot's personal servers went with it; their credentials and connections go too.
     for (const server of personal) {
       store.deleteCredential(`mcp:${server.id}`);
-      signOut(store, server.id);
-      await integrations?.disconnect(server.id);
+      signOut(secrets, server.id);
+
+      if (integrations)
+        await Effect.runPromise(integrations.disconnect(server.id));
     }
 
     return c.body(null, 204);
@@ -1028,7 +1032,7 @@ export function createAPI(
   );
 
   const describeServer = (server: MCPServer) => {
-    const auth = hasOAuthTokens(store, server.id)
+    const auth = hasOAuthTokens(secrets, server.id)
       ? "oauth"
       : store.getCredential(`mcp:${server.id}`)
         ? "token"
@@ -1062,7 +1066,7 @@ export function createAPI(
 
     return c.json(
       await startAuthorization(
-        store,
+        secrets,
         mcpServer(c.req.param("id")),
         redirectUri,
         options.oauthClient,
@@ -1075,21 +1079,25 @@ export function createAPI(
 
     const server = mcpServer(c.req.param("id"));
     await finishAuthorization(
-      store,
+      secrets,
       server,
       code,
       state,
       iss,
       options.oauthClient,
     );
-    await integrations?.disconnect(server.id);
+
+    if (integrations)
+      await Effect.runPromise(integrations.disconnect(server.id));
 
     return c.json(describeServer(server), 200);
   });
   register(routes.deleteOauth, async (c) => {
     const server = mcpServer(c.req.param("id"));
-    signOut(store, server.id);
-    await integrations?.disconnect(server.id);
+    signOut(secrets, server.id);
+
+    if (integrations)
+      await Effect.runPromise(integrations.disconnect(server.id));
 
     return c.json(describeServer(server), 200);
   });
@@ -1139,8 +1147,10 @@ export function createAPI(
 
     // Tokens belong to the client that obtained them, so another client signs in again.
     if (secretChanged || (input.oauthClientId ?? null) !== old.oauthClientId) {
-      signOut(store, old.id);
-      await integrations?.disconnect(old.id);
+      signOut(secrets, old.id);
+
+      if (integrations)
+        await Effect.runPromise(integrations.disconnect(old.id));
     }
 
     return c.json(
@@ -1156,7 +1166,7 @@ export function createAPI(
       throw new AppError(404, "MCP server not found");
     store.deleteCredential(`mcp:${c.req.param("id")}`);
     store.deleteCredential(clientSecretKey(c.req.param("id")));
-    signOut(store, c.req.param("id"));
+    signOut(secrets, c.req.param("id"));
 
     return c.body(null, 204);
   });

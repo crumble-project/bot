@@ -18,6 +18,7 @@ import type {
 import { Context, Effect, Layer, ManagedRuntime, Predicate } from "effect";
 import type { ProviderContribution } from "../app/plugins";
 import { ProviderCredentialRepository } from "./provider-credential-repository";
+import { appErrors } from "../shared/app-errors";
 import { AppError } from "../shared/domain";
 import { SettingsRepository } from "../shared/settings-repository";
 import type { Runner } from "../shared/runner";
@@ -105,14 +106,6 @@ export function loginMethods(provider: Provider): LoginMethod[] {
       : []),
   ];
 }
-
-/** Fails with the AppErrors sign-in raises; anything else is a defect. */
-const appErrors = <A>(effect: Effect.Effect<A, unknown>) =>
-  effect.pipe(
-    Effect.catch((error) =>
-      error instanceof AppError ? Effect.fail(error) : Effect.die(error),
-    ),
-  );
 
 /**
  * Relays Pi AI login flows to clients. Sessions live in memory only: a restart ends them, while saved credentials stay
