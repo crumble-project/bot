@@ -12,10 +12,12 @@ export const pushSettings = sqliteTable("push_settings", {
 
 export const pushDevices = sqliteTable("push_devices", {
   installationId: text("installation_id").primaryKey(),
-  platform: text("platform").notNull(),
-  transport: text("transport").notNull(),
+  platform: text("platform", { enum: ["macos", "ios", "android"] }).notNull(),
+  transport: text("transport", { enum: ["apns", "fcm"] }).notNull(),
   token: text("token").notNull(),
-  environment: text("environment").notNull(),
+  environment: text("environment", {
+    enum: ["development", "production"],
+  }).notNull(),
   bundleId: text("bundle_id"),
   enabled: integer("enabled", { mode: "boolean" }).notNull(),
   updatedAt: text("updated_at").notNull(),

@@ -42,7 +42,9 @@ import { railwayWorkspacesFromEnv } from "../workspaces/railway-workspaces";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { loadCommonSkills } from "../skills/common-skills";
-import { PushManager, PushStore } from "../push/push";
+import { Effect, Layer, ManagedRuntime } from "effect";
+import { BotActivity } from "../bots/bot-activity";
+import { Push, PushDelivery, type PushRuntime } from "../push/push";
 import { providerModels } from "../providers/providers";
 import { builtinPlugins } from "./builtin-plugins";
 import {
@@ -101,7 +103,7 @@ export async function createTenant(
   });
 
   const partialCleanup: Array<() => Promise<void> | void> = [];
-  let push: PushManager | undefined;
+  let push: PushRuntime | undefined;
   let providerAuth: ProviderAuth | undefined;
 
   try {
@@ -339,9 +341,19 @@ export async function createTenant(
     historySearch = new HistorySearch(
       historySource(runtime, store, groupChats),
     );
-    push = new PushManager(new PushStore(dataDir));
-    push.attach(service);
-    partialCleanup.push(() => push?.close());
+    push = ManagedRuntime.make(
+      PushDelivery.pipe(
+        Layer.provideMerge(Push.layer(dataDir)),
+        Layer.provide(
+          Layer.succeed(BotActivity, {
+            subscribe: (listener) => service.onActivity(listener),
+          }),
+        ),
+      ),
+    );
+    partialCleanup.push(() => push?.dispose());
+    // Built now, so a push configuration error fails the account's startup.
+    await push.runPromise(Effect.void);
     const token = randomBytes(32).toString("hex");
 
     const app = createAPI(
@@ -425,7 +437,7 @@ export async function createTenant(
         await attempt(() => groupChats.close());
         await attempt(() => service.close());
         await attempt(() => workspaces?.close(BACKGROUND_CONTEXT));
-        await attempt(() => push?.close());
+        await attempt(() => push?.dispose());
         await attempt(() => integrations.close());
         await attempt(() => codemodeSandbox.close());
         await attempt(() => charts.close());

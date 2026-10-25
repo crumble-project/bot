@@ -56,3 +56,15 @@ export const migrateFile = (
   migrateDatabase(folder, legacy).pipe(
     Effect.provide(SqliteClient.layer({ filename })),
   );
+
+export type SqliteDatabase = Drizzle.EffectSQLiteBunDatabase;
+
+/** A Drizzle database on the provided SQLite client, migrated first; the client's layer closes it. */
+export const sqliteDatabase = Effect.fnUntraced(function* (
+  folder: string,
+  legacy?: Parameters<typeof migrateDatabase>[1],
+) {
+  yield* migrateDatabase(folder, legacy);
+
+  return yield* Drizzle.makeWithDefaults();
+});

@@ -31,6 +31,7 @@ import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
+import { Effect } from "effect";
 import type {
   activityFeedResponse,
   chatSnapshotResponse,
@@ -71,7 +72,8 @@ import {
 import type { ExternalAuth } from "./plugins";
 import { MAX_MESSAGE_BODY } from "../shared/attachments";
 import { activityPage, decodeCursor } from "../activity/activity";
-import { canonicalReplyEvent, type PushManager } from "../push/push";
+import { Push, type PushRuntime } from "../push/push";
+import { canonicalReplyEvent } from "../push/push-model";
 import { registerPushRoutes } from "../push/push-api";
 
 export function createAPI(
@@ -106,7 +108,7 @@ export function createAPI(
     /** The bots' credentials; API-only fixtures get their own. */
     credentials?: Credentials;
   } = {},
-  push?: PushManager,
+  push?: PushRuntime,
 ) {
   if (token.length < 32)
     throw new Error("Server token must contain at least 32 characters");
@@ -198,6 +200,10 @@ export function createAPI(
     ),
   );
   registerPushRoutes(register, push);
+
+  const pushServerId = push?.runSync(
+    Push.use((service) => Effect.succeed(service.serverId)),
+  );
 
   // A bot may use shared servers and its own, never another bot's.
   const checkServers = (agentId: string | null, serverIds: string[]) => {
@@ -427,8 +433,8 @@ export function createAPI(
         const activity = data;
 
         const canonical =
-          activity.type === "reply" && push
-            ? canonicalReplyEvent(activity, push.serverId)
+          activity.type === "reply" && pushServerId !== undefined
+            ? canonicalReplyEvent(activity, pushServerId)
             : activity.type === "reply"
               ? {
                   ...activity,

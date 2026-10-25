@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import {
-  PushManager,
-  PushStore,
-  type PushTransport,
-  type ReplyPushEvent,
-} from "./push";
+import { Effect, Layer, ManagedRuntime } from "effect";
+import { TestClock } from "effect/testing";
+import { Push, PushDelivery } from "./push";
+import { canonicalReplyEvent } from "./push-model";
+import { PushRepository } from "./push-repository";
+import { PushTransports, type PushTransport } from "./push-transports";
+import { BotActivity } from "../bots/bot-activity";
+import type { Activity, ReplyActivity } from "../bots/service";
 
 const dirs: string[] = [];
 
@@ -16,45 +18,96 @@ afterEach(() => {
 
 const id = () => crypto.randomUUID();
 
-/** A store that counts closes and can fail its outbox reads on demand. */
-class ObservedStore extends PushStore {
-  closes = 0;
-  failPending = 0;
-  override pending(limit?: number) {
-    if (this.failPending > 0) {
-      this.failPending--;
+/** What the test observes of the store: how often it closed, and outbox reads it should fail. */
+type StoreProbe = { closes: number; failPending: number };
 
-      throw new Error("outbox unreadable");
-    }
+/** The real repository, counting its closes and failing outbox reads on demand. */
+const observedRepository = (dir: string, probe: StoreProbe) =>
+  Layer.effect(
+    PushRepository,
+    Effect.gen(function* () {
+      const repository = yield* PushRepository;
 
-    return super.pending(limit);
-  }
-  override close() {
-    this.closes++;
-    super.close();
-  }
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          probe.closes++;
+        }),
+      );
+
+      return PushRepository.of({
+        ...repository,
+        pending: (limit) =>
+          Effect.suspend(() => {
+            if (probe.failPending <= 0) return repository.pending(limit);
+            probe.failPending--;
+
+            return Effect.die(new Error("outbox unreadable"));
+          }),
+      });
+    }),
+  ).pipe(Layer.provide(PushRepository.layer(dir)));
+
+/** A source of activity the test fires, recording unsubscribes. */
+function activitySource() {
+  let listener: ((event: Activity) => void) | undefined;
+  let unsubscribes = 0;
+
+  return {
+    layer: Layer.succeed(BotActivity, {
+      subscribe: (callback: (event: Activity) => void) => {
+        listener = callback;
+
+        return () => {
+          unsubscribes++;
+          listener = undefined;
+        };
+      },
+    }),
+    emit: (event: Activity) => listener?.(event),
+    unsubscribes: () => unsubscribes,
+  };
 }
 
-function setup() {
+/** Push with delivery attached, over one device registered for `fcm`. */
+async function setup(fcm: PushTransport) {
   const dir = mkdtempSync(join("/tmp", "crumble-push-lifecycle-"));
   dirs.push(dir);
-  const store = new ObservedStore(dir);
-  const installationId = id();
-  store.upsertDevice(installationId, {
-    platform: "android",
-    transport: "fcm",
-    token: "token",
-    environment: "production",
-    enabled: true,
-  });
+  const probe: StoreProbe = { closes: 0, failPending: 0 };
+  const source = activitySource();
 
-  return { store, installationId };
+  const runtime = ManagedRuntime.make(
+    PushDelivery.pipe(
+      Layer.provideMerge(
+        Push.layerNoDeps.pipe(
+          Layer.provide(
+            Layer.succeed(PushTransports, { fcm, apns: undefined }),
+          ),
+          Layer.provideMerge(observedRepository(dir, probe)),
+        ),
+      ),
+      Layer.provide(source.layer),
+      Layer.provideMerge(TestClock.layer()),
+    ),
+  );
+
+  await runtime.runPromise(
+    PushRepository.use((repository) =>
+      repository.upsertDevice(id(), {
+        platform: "android",
+        transport: "fcm",
+        token: "token",
+        environment: "production",
+        enabled: true,
+      }),
+    ),
+  );
+
+  return { runtime, probe, source };
 }
 
-const reply = (serverId: string): ReplyPushEvent => ({
+const reply = (): ReplyActivity => ({
   type: "reply",
-  eventId: id(),
-  serverId,
+  executionId: id(),
   agentId: id(),
   agentName: "Bot",
   entryId: null,
@@ -63,61 +116,53 @@ const reply = (serverId: string): ReplyPushEvent => ({
   createdAt: new Date().toISOString(),
 });
 
-/** A service whose reply listener the test fires, recording unsubscribes. */
-function activitySource() {
-  let listener: ((event: ReplyPushEvent) => void) | undefined;
-  let unsubscribes = 0;
+const enqueueReply = Push.use((push) =>
+  PushRepository.use((repository) =>
+    repository.enqueue(canonicalReplyEvent(reply(), push.serverId)),
+  ),
+);
 
-  return {
-    service: {
-      onActivity(callback: (event: ReplyPushEvent) => void) {
-        listener = callback;
+const delivering = (count: { sends: number }): PushTransport => ({
+  send: () =>
+    Effect.sync(() => {
+      count.sends++;
 
-        return () => {
-          unsubscribes++;
-          listener = undefined;
-        };
-      },
-    },
-    emit: (event: ReplyPushEvent) => listener?.(event),
-    unsubscribes: () => unsubscribes,
-  };
-}
+      return "delivered" as const;
+    }),
+});
 
-const transports = (fcm: PushTransport) => ({ fcm, apns: undefined });
-
-describe("push manager lifecycle", () => {
-  test("close waits for a send in progress before closing the store", async () => {
-    const { store } = setup();
+describe("push lifecycle", () => {
+  test("closing waits for a send in progress before closing the store", async () => {
     const release = Promise.withResolvers<void>();
     const order: string[] = [];
 
-    const manager = new PushManager(
-      store,
-      transports({
-        send: async () => {
+    const { runtime, probe } = await setup({
+      send: () =>
+        Effect.promise(async () => {
           order.push("send started");
           await release.promise;
           order.push("send finished");
 
-          return "delivered";
-        },
-      }),
-    );
+          return "delivered" as const;
+        }),
+    });
 
-    store.enqueue(reply(manager.serverId));
-    const draining = manager.drain();
+    await runtime.runPromise(enqueueReply);
+    const draining = runtime.runPromise(Push.use((push) => push.drain));
+    await Bun.sleep(20);
 
-    const closing = manager.close().then(() => {
-      order.push(`closed with ${store.closes} store close`);
+    const closing = runtime.dispose().then(() => {
+      order.push(`closed with ${probe.closes} store close`);
     });
 
     await Bun.sleep(20);
     expect(order).toEqual(["send started"]);
-    expect(store.closes).toBe(0);
+    expect(probe.closes).toBe(0);
 
     release.resolve();
-    await Promise.all([draining, closing]);
+    // Disposing interrupts the caller waiting on the pass; the pass itself finishes before the store closes.
+    await Promise.allSettled([draining]);
+    await closing;
     expect(order).toEqual([
       "send started",
       "send finished",
@@ -126,67 +171,37 @@ describe("push manager lifecycle", () => {
   });
 
   test("closing twice resolves and closes the store once", async () => {
-    const { store } = setup();
-    const source = activitySource();
+    const { runtime, probe, source } = await setup(delivering({ sends: 0 }));
 
-    const manager = new PushManager(
-      store,
-      transports({ send: async () => "delivered" }),
-    );
-
-    manager.attach(source.service);
-
-    await manager.close();
-    await manager.close();
-    expect(store.closes).toBe(1);
+    await runtime.dispose();
+    await runtime.dispose();
+    expect(probe.closes).toBe(1);
     expect(source.unsubscribes()).toBe(1);
   });
 
-  test("close stops listening, so later replies are not sent", async () => {
-    const { store } = setup();
-    const source = activitySource();
-    let sends = 0;
+  test("closing stops listening, so later replies are not sent", async () => {
+    const count = { sends: 0 };
+    const { runtime, source } = await setup(delivering(count));
 
-    const manager = new PushManager(
-      store,
-      transports({
-        send: async () => {
-          sends++;
+    await runtime.dispose();
 
-          return "delivered";
-        },
-      }),
-    );
-
-    manager.attach(source.service);
-    await manager.close();
-
-    source.emit({ ...reply(manager.serverId), origin: "owner" });
+    source.emit(reply());
     await Bun.sleep(20);
-    expect(sends).toBe(0);
+    expect(count.sends).toBe(0);
   });
 
-  test("close still closes the store when the final delivery pass fails, and reports it", async () => {
-    const { store } = setup();
-    const source = activitySource();
+  test("closing still closes the store when the final delivery pass fails, and reports it", async () => {
+    const { runtime, probe, source } = await setup(delivering({ sends: 0 }));
 
-    const manager = new PushManager(
-      store,
-      transports({ send: async () => "delivered" }),
-    );
+    probe.failPending = 1;
 
-    manager.attach(source.service);
-    store.failPending = 1;
-
-    expect(manager.close()).rejects.toThrow("outbox unreadable");
+    expect(runtime.dispose()).rejects.toThrow("outbox unreadable");
     await Bun.sleep(20);
-    expect(store.closes).toBe(1);
+    expect(probe.closes).toBe(1);
     expect(source.unsubscribes()).toBe(1);
   });
 
   test("a failed background pass is logged, and polling delivers once the outbox reads again", async () => {
-    const { store } = setup();
-    const source = activitySource();
     let unhandled = 0;
 
     const onUnhandled = () => {
@@ -194,34 +209,24 @@ describe("push manager lifecycle", () => {
     };
 
     process.on("unhandledRejection", onUnhandled);
-    let sends = 0;
-
-    const manager = new PushManager(
-      store,
-      transports({
-        send: async () => {
-          sends++;
-
-          return "delivered";
-        },
-      }),
-    );
+    const count = { sends: 0 };
+    const { runtime, probe, source } = await setup(delivering(count));
 
     try {
-      manager.attach(source.service);
-      store.failPending = 1;
+      probe.failPending = 1;
 
       // The reply's immediate pass fails; the next poll, a second later, delivers it.
-      source.emit(reply(manager.serverId));
+      source.emit(reply());
       await Bun.sleep(50);
-      expect(sends).toBe(0);
+      expect(count.sends).toBe(0);
 
-      await Bun.sleep(1_500);
-      expect(sends).toBe(1);
+      await runtime.runPromise(TestClock.adjust("1 second"));
+      await Bun.sleep(50);
+      expect(count.sends).toBe(1);
       expect(unhandled).toBe(0);
     } finally {
       process.off("unhandledRejection", onUnhandled);
-      await manager.close();
+      await runtime.dispose();
     }
   });
 });
