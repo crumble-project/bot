@@ -30,6 +30,7 @@ import {
 } from "../bot-desktop/desktop-control";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import type { DesktopStream } from "../workspaces/workspace";
+import type { DesktopOpenError } from "../workspaces/workspace-errors";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import { HTTPException } from "hono/http-exception";
@@ -132,9 +133,11 @@ export function createAPI(
     /** Single-use viewer links. */
     viewerTickets?: ViewerTickets;
     /** Connects to a bot desktop's VNC server, for viewers. */
-    openDesktop?: (agentId: string) => Promise<DesktopStream>;
+    openDesktop?: (
+      agentId: string,
+    ) => Effect.Effect<DesktopStream, DesktopOpenError>;
     /** Boots a bot's machine ahead of a viewer's connection. */
-    startDesktop?: (agentId: string) => Promise<void>;
+    startDesktop?: (agentId: string) => Effect.Effect<void, DesktopOpenError>;
     /** The server's provider sign-ins; API-only fixtures get one of their own. */
     providerAuth?: ProviderSignInsAccess;
     /** The server's OAuth client metadata document, when it has a public address. */

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { Effect } from "effect";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -50,6 +51,21 @@ async function signIn(running: Running, email: string) {
   expect(body.token).toEqual(expect.any(String));
 
   return { authorization: `Bearer ${body.token}` };
+}
+
+/** Workspaces with only a bot desktop, which `openDesktop` opens. */
+function desktopWorkspaces(openDesktop: Workspaces["openDesktop"]): Workspaces {
+  return {
+    desktop: true,
+    env: () => {
+      throw new Error("No environment in this test");
+    },
+    restart: () => Effect.void,
+    openDesktop,
+    keepAwake: () => Effect.succeed(Effect.void),
+    startDesktop: () => Effect.void,
+    sync: () => Effect.void,
+  };
 }
 
 function json(headers: Record<string, string>) {
@@ -207,13 +223,8 @@ test.serial(
     const port = 20000 + Math.floor(Math.random() * 1000);
 
     // A bot desktop that greets like a VNC server and then waits.
-    const workspaces: Workspaces = {
-      desktop: true,
-      env: () => {
-        throw new Error("No environment in this test");
-      },
-      restart: async () => {},
-      openDesktop: async () => ({
+    const workspaces = desktopWorkspaces(() =>
+      Effect.succeed({
         write: async () => {},
         output: (async function* () {
           yield new TextEncoder().encode("RFB 003.008\n");
@@ -221,17 +232,13 @@ test.serial(
         })(),
         close: async () => {},
       }),
-      keepAwake: () => () => {},
-      startDesktop: async () => {},
-      sync: async () => {},
-      close: async () => {},
-    };
+    );
 
     try {
       const running = await startServer({
         dataDir,
         port,
-        workspaces: () => workspaces,
+        workspaces: () => Effect.succeed(workspaces),
       });
 
       const headers = await signUp(running);

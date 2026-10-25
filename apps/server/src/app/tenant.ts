@@ -1,9 +1,8 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import lockfile from "proper-lockfile";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { Effect, Layer, ManagedRuntime, type Scope } from "effect";
 import { BotRuntime } from "../bots/runtime";
 import { Bots, botsAccess, type BotsAccess } from "../bots/bots";
 import { BotMessaging } from "../bot-messaging/bot-messaging";
@@ -44,6 +43,7 @@ import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import type { Workspaces } from "../workspaces/workspace";
 import { microsandboxWorkspacesFromEnv } from "../workspaces/microsandbox-workspaces";
 import { railwayWorkspacesFromEnv } from "../workspaces/railway-workspaces";
+import { acquireWorkspaces } from "../workspaces/machine-workspaces";
 import { Push, PushDelivery } from "../push/push";
 import { ProviderModels } from "../providers/providers";
 import {
@@ -73,7 +73,10 @@ export type TenantOptions = {
   dataDir: string;
   skillsDir?: string | undefined;
   publicUrl?: string | undefined;
-  workspaces?: Workspaces | undefined;
+  /** Replaces the workspaces from the environment; the account's scope owns what it acquires. */
+  workspaces?:
+    | Effect.Effect<Workspaces | undefined, never, Scope.Scope>
+    | undefined;
   tenantId: string;
 };
 
@@ -143,13 +146,14 @@ function accountLayer(
       };
 
       return BotWorkspaces.layer(
-        () =>
-          options.workspaces ??
-          railwayWorkspacesFromEnv(process.env, {
-            ...machineOptions,
-            dataDir,
-          }) ??
-          microsandboxWorkspacesFromEnv(process.env, machineOptions),
+        options.workspaces ??
+          acquireWorkspaces(
+            () =>
+              railwayWorkspacesFromEnv(process.env, {
+                ...machineOptions,
+                dataDir,
+              }) ?? microsandboxWorkspacesFromEnv(process.env, machineOptions),
+          ),
       );
     }),
   );
@@ -326,7 +330,7 @@ export async function createTenant(
             coding: workspaces !== undefined,
             desktop: workspaces?.desktop === true,
             restartWorkspace: async (agentId) =>
-              workspaces?.restart(agentId, BACKGROUND_CONTEXT),
+              workspaces && Effect.runPromise(workspaces.restart(agentId)),
             groupChats,
             desktopControl: desktopControlAccess(run),
             viewerTickets: new ViewerTickets(Date.now, options.tenantId),
@@ -336,10 +340,9 @@ export async function createTenant(
               ),
             ),
             ...(workspaces && {
-              openDesktop: (agentId: string) =>
-                workspaces.openDesktop(agentId, BACKGROUND_CONTEXT),
+              openDesktop: (agentId: string) => workspaces.openDesktop(agentId),
               startDesktop: (agentId: string) =>
-                workspaces.startDesktop(agentId, BACKGROUND_CONTEXT),
+                workspaces.startDesktop(agentId),
             }),
             providerAuth: providerSignInsAccess(run),
             oauthClient,

@@ -3,9 +3,11 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { Effect } from "effect";
 import { createComputerUse } from "./computer-use";
 import { desktopControlResponse } from "../contract/api-responses";
 import { startServer } from "../app/server";
+import { acquireWorkspaces } from "../workspaces/machine-workspaces";
 import { connectRfb } from "../../test/fixtures/rfb-client";
 import {
   WORKSPACE_BACKENDS,
@@ -33,7 +35,7 @@ for (const backend of WORKSPACE_BACKENDS) {
     }, backend.firstBootTimeoutMs);
 
     afterAll(async () => {
-      await workspaces.close(BACKGROUND_CONTEXT);
+      await Effect.runPromise(workspaces.close());
       await backend.cleanup(namePrefix);
     }, 120_000);
 
@@ -169,7 +171,7 @@ for (const backend of WORKSPACE_BACKENDS) {
 
     test("browser state and files survive a restart", async () => {
       await env().writeFile("/workspace/keep.txt", "kept", BACKGROUND_CONTEXT);
-      await workspaces.restart("desk", BACKGROUND_CONTEXT);
+      await Effect.runPromise(workspaces.restart("desk"));
 
       let out = "";
       await env().exec(
@@ -190,7 +192,7 @@ for (const backend of WORKSPACE_BACKENDS) {
         undefined,
         BACKGROUND_CONTEXT,
       );
-      await workspaces.restart("desk", BACKGROUND_CONTEXT);
+      await Effect.runPromise(workspaces.restart("desk"));
       const tool = cu();
       await Bun.sleep(3000);
 
@@ -222,7 +224,7 @@ for (const backend of WORKSPACE_BACKENDS) {
       });
 
       try {
-        const stream = await idle.openDesktop("stream", BACKGROUND_CONTEXT);
+        const stream = await Effect.runPromise(idle.openDesktop("stream"));
         const first = await stream.output[Symbol.asyncIterator]().next();
 
         expect(new TextDecoder().decode(first.value)).toStartWith("RFB 003.");
@@ -235,13 +237,13 @@ for (const backend of WORKSPACE_BACKENDS) {
           true,
         );
       } finally {
-        await idle.close(BACKGROUND_CONTEXT);
+        await Effect.runPromise(idle.close());
       }
     }, 120_000);
 
     test("a bot without its bot desktop gets no desktop stream", async () => {
       await expect(
-        workspaces.openDesktop("plain-stream", BACKGROUND_CONTEXT),
+        Effect.runPromise(workspaces.openDesktop("plain-stream")),
       ).rejects.toThrow("no bot desktop");
     }, 120_000);
   });
@@ -317,7 +319,7 @@ for (const backend of WORKSPACE_BACKENDS) {
         running = await startServer({
           dataDir,
           port,
-          workspaces: () => workspaces,
+          workspaces: () => acquireWorkspaces(() => workspaces),
         });
 
         const auth = await fetch(`${base}/api/auth/sign-up/email`, {
@@ -461,7 +463,7 @@ for (const backend of WORKSPACE_BACKENDS) {
         running = await startServer({
           dataDir,
           port,
-          workspaces: () => workspaces,
+          workspaces: () => acquireWorkspaces(() => workspaces),
         });
 
         const state = desktopControlResponse.parse(
@@ -478,7 +480,7 @@ for (const backend of WORKSPACE_BACKENDS) {
         running = await startServer({
           dataDir,
           port,
-          workspaces: () => workspaces,
+          workspaces: () => acquireWorkspaces(() => workspaces),
         });
 
         await guest("true");

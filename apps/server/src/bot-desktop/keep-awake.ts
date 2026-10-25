@@ -8,15 +8,17 @@ export const desktopKeepAwake = Layer.effectDiscard(
   Effect.gen(function* () {
     const machines = yield* BotWorkspaces;
     const control = yield* DesktopControl;
-    const awake = new Map<string, () => void>();
+    const awake = new Map<string, Effect.Effect<void>>();
 
     const holdAwake = (agentId: string, state: ControlState) => {
       if (!machines) return;
 
       if (state.holder === "owner" && !awake.has(agentId))
-        awake.set(agentId, machines.keepAwake(agentId));
+        awake.set(agentId, Effect.runSync(machines.keepAwake(agentId)));
       else if (state.holder === "bot") {
-        awake.get(agentId)?.();
+        const release = awake.get(agentId);
+
+        if (release) Effect.runSync(release);
         awake.delete(agentId);
       }
     };

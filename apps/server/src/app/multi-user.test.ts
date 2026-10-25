@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { Effect } from "effect";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -274,24 +275,24 @@ test.serial(
         env: () => {
           throw new Error("unused in viewer test");
         },
-        restart: async () => undefined,
-        sync: async () => undefined,
-        close: async () => undefined,
-        keepAwake: () => () => undefined,
-        startDesktop: async () => undefined,
-        openDesktop: async () => ({
-          write: async () => undefined,
-          output: (async function* () {
-            yield new TextEncoder().encode("RFB 003.008\n");
-          })(),
-          close: async () => undefined,
-        }),
+        restart: () => Effect.void,
+        sync: () => Effect.void,
+        keepAwake: () => Effect.succeed(Effect.void),
+        startDesktop: () => Effect.void,
+        openDesktop: () =>
+          Effect.succeed({
+            write: async () => undefined,
+            output: (async function* () {
+              yield new TextEncoder().encode("RFB 003.008\n");
+            })(),
+            close: async () => undefined,
+          }),
       } satisfies Workspaces;
 
       running = await startServer({
         dataDir,
         port: 0,
-        workspaces: () => workspaces,
+        workspaces: () => Effect.succeed(workspaces),
       });
       const owner = await signUp(running, `viewer-${crypto.randomUUID()}`);
 

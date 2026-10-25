@@ -1,4 +1,5 @@
 import type { Register } from "../contract/route";
+import { Effect } from "effect";
 import { upgradeWebSocket } from "@hono/bun";
 import { streamSSE } from "hono/streaming";
 import type { WSContext, WSMessageReceive } from "hono/ws";
@@ -17,6 +18,7 @@ import {
 } from "./desktop-viewer";
 import type { BotsAccess } from "../bots/bots";
 import type { DesktopStream } from "../workspaces/workspace";
+import type { DesktopOpenError } from "../workspaces/workspace-errors";
 import { Conflict } from "../shared/errors";
 
 const HEARTBEAT_MS = 15_000;
@@ -44,8 +46,10 @@ export function registerDesktopRoutes(options: {
   desktop: boolean;
   control: DesktopControlAccess;
   tickets: ViewerTickets;
-  openDesktop?: (agentId: string) => Promise<DesktopStream>;
-  startDesktop?: (agentId: string) => Promise<void>;
+  openDesktop?: (
+    agentId: string,
+  ) => Effect.Effect<DesktopStream, DesktopOpenError>;
+  startDesktop?: (agentId: string) => Effect.Effect<void, DesktopOpenError>;
 }) {
   const { app, register, service, control, tickets } = options;
   // The bot of each viewer connection, from its redeemed ticket to its WebSocket.
@@ -111,7 +115,10 @@ export function registerDesktopRoutes(options: {
     const { ticket, expiresAt } = tickets.issue(agent.id);
 
     // The machine boots while the client loads the page; the viewer's WebSocket reports any failure.
-    void options.startDesktop?.(agent.id).catch(() => undefined);
+    if (options.startDesktop)
+      void Effect.runPromise(options.startDesktop(agent.id)).catch(
+        () => undefined,
+      );
 
     return c.json({ path: `${VIEWER_PREFIX}/${ticket}`, expiresAt }, 201);
   });
@@ -149,7 +156,7 @@ export function registerDesktopRoutes(options: {
 
       return {
         onOpen: (_event, ws: WSContext) => {
-          void options.openDesktop!(agentId)
+          void Effect.runPromise(options.openDesktop!(agentId))
             .then((stream) => {
               if (closed) return void stream.close();
 

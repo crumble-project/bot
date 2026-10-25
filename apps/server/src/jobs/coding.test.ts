@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { Context } from "@earendil-works/chord";
+import { Effect } from "effect";
 import { createModels } from "@earendil-works/pi-ai";
 import type { Message } from "@earendil-works/pi-ai";
 import {
@@ -22,7 +22,8 @@ import { AgentRuntime } from "../bots/runtime";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { standaloneBots } from "../bots/bots";
 import { Store } from "../../test/support/store";
-import type { DesktopStream, Workspaces } from "../workspaces/workspace";
+import type { Workspaces } from "../workspaces/workspace";
+import { DesktopNotConfigured } from "../workspaces/workspace-errors";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -45,26 +46,27 @@ class DirectoryWorkspaces implements Workspaces {
     return env;
   }
 
-  async sync(agentId: string, _context: Context) {
-    this.synced.push(agentId);
+  sync(agentId: string) {
+    return Effect.sync(() => void this.synced.push(agentId));
   }
 
-  async restart(_agentId: string, _context: Context) {}
-
-  async openDesktop(
-    _agentId: string,
-    _context: Context,
-  ): Promise<DesktopStream> {
-    throw new Error("No bot desktop in this test");
+  restart(_agentId: string) {
+    return Effect.void;
   }
 
-  async startDesktop(_agentId: string, _context: Context) {}
+  openDesktop(_agentId: string) {
+    return Effect.fail(
+      new DesktopNotConfigured({ message: "No bot desktop in this test" }),
+    );
+  }
+
+  startDesktop(_agentId: string) {
+    return Effect.void;
+  }
 
   keepAwake(_agentId: string) {
-    return () => {};
+    return Effect.succeed(Effect.void);
   }
-
-  async close(_context: Context) {}
 }
 
 const messageText = (message: Message) =>
