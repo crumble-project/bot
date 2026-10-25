@@ -8,18 +8,19 @@ flowchart TD
   Auth --> Tenant["Private user runtime (tenant.ts)"]
   Tenant --> API["Hono HTTP & SSE API (/v1)"]
   API --> Service["Bots & BotRuntime"]
-  Service --> Store["Product SQLite (store.ts)\nAgents, groups, skills, memories,\nschedules, credentials, changes"]
+  Service --> Store["Product SQLite (feature repositories)\nAgents, groups, skills, memories,\nschedules, credentials, changes"]
   Service --> Pi["Pi Durable SQLite Stores\nPer-bot & per-group transcripts,\ncoding/desktop jobs, reviews"]
   Pi --> Workspaces["MachineWorkspaces\nMicrosandbox microVM + proxy & Xvnc,\nor Railway sandbox + checkpoint"]
 ```
 
 ## Core boundaries
 
-Source files named below live in feature folders under `apps/server/src/`, such as `app/tenant.ts`, `shared/store.ts`, and `bots/runtime.ts`.
+Source files named below live in feature folders under `apps/server/src/`, such as `app/tenant.ts`, `bots/bots.ts`, and `bots/runtime.ts`.
 
 - **Accounts (`auth.ts`, `server.ts`, `tenant.ts`):** Better Auth stores accounts and sessions in `auth.sqlite`. The host authenticates every API and viewer request before routing to a private user runtime under `users/USER_ID`. Each runtime owns its databases, files, encryption key, services, event listeners, provider logins, and workspace namespace. Startup recovers every existing account runtime so background schedules continue without an active browser. Shared memories and skills remain inside the account. Host provider environment credentials are ignored.
 
-- **Product store (`store.ts`) vs. Pi Durable (`runtime.ts`):** Product SQLite stores agent profiles, canonical chat references, group chats, memories, skill packages, learned-change logs, schedules, MCP servers, and encrypted credentials. Each bot owns a separate Pi Durable SQLite store that manages conversation entries, model calls, tool execution, compaction, and retries.
+- **Product store (repositories) vs. Pi Durable (`runtime.ts`):** Product SQLite (`store.sqlite`), read and written through each feature's Drizzle repository, stores agent profiles, canonical chat references, group chats, memories, skill packages, learned-change logs, schedules, MCP servers, and encrypted credentials. Each bot owns a separate Pi Durable SQLite store that manages conversation entries, model calls, tool execution, compaction, and retries.
+- **Effect services (`app/tenant.ts`):** Each account is one Effect `Layer` graph: repositories over `ProductDatabase`, then feature services such as `Bots`, `BotRuntime`, `GroupChats`, `BotSkills`, `Scheduler`, and `Push`, each with its own scope. Features offer their bot tools by registering them in `BotExtensions` from a layer of their own. Closing the account releases the graph in reverse. Domain failures are tagged errors (`shared/errors.ts`) that the API maps to HTTP statuses in one place; HTTP handlers reach services through access adapters (`botsAccess`, `groupChatsAccess`, and similar), which keep a Promise API at the Hono boundary.
 - **Provider credentials (`provider-auth.ts`):** Encrypted at rest using `.secret.key`. Pi AI owns interactive sign-in, token refresh, and request authentication; `ProviderCredentials` serializes logins, refreshes, key updates, and sign-outs per provider within the account.
 - **MCP integrations:** Bots load tools only from enabled, permitted MCP servers. Unreachable or unauthenticated MCP servers are skipped for the turn with their error surfaced in status. OAuth supports dynamic client registration, Client ID Metadata Documents (`CRUMBLE_PUBLIC_URL`), and owner-registered OAuth client credentials.
 - **Bundled web UI (`apps/web/`):** React, TanStack Router, TanStack Query, Tailwind CSS, and shadcn/ui served at `/ui` and bundled on demand by Bun.
