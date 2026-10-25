@@ -1,0 +1,17 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    "apps/server": {
+      "entry": [
+        "drizzle.*.config.ts",
+        "test/fixtures/*.ts",
+        "tools/*.ts"
+      ]
+    },
+    "apps/web": {
+      "entry": ["main.tsx", "styles.css", "tailwind-plugin.ts"]
+    }
+  },
+  "ignore": ["tools/oxlint/anti-slop/**", "apps/web/components/ui/**"],
+  "ignoreExportsUsedInFile": true
+}
