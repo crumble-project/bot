@@ -1,6 +1,6 @@
 import type { JsonValue } from "@earendil-works/chord";
 import type { Credential, CredentialInfo } from "@earendil-works/pi-ai";
-import { Context, Effect, ManagedRuntime } from "effect";
+import { Context, Effect, ManagedRuntime, Predicate } from "effect";
 import type { ControlState } from "../bot-desktop/desktop-control";
 import { DesktopControlRepository } from "../bot-desktop/desktop-control-repository";
 import { AgentRepository, type AgentPatch } from "../bots/agent-repository";
@@ -73,10 +73,18 @@ export class Store {
     ProductServices,
     unknown
   >;
+  // Only a store that opened its own database closes it; a shared runtime belongs to the account.
+  private readonly ownsRuntime: boolean;
   // Set while a `transaction` callback runs, so the facade calls inside it join that transaction.
   private transactionContext: Context.Context<ProductServices> | undefined;
-  constructor(dataDir: string) {
-    this.runtime = ManagedRuntime.make(productLayer(dataDir));
+  /** Opens the product database in `source`, or runs over an account runtime that provides the repositories. */
+  constructor(
+    source: string | ManagedRuntime.ManagedRuntime<ProductServices, unknown>,
+  ) {
+    this.ownsRuntime = Predicate.isString(source);
+    this.runtime = Predicate.isString(source)
+      ? ManagedRuntime.make(productLayer(source))
+      : source;
     // Built now, so a migration or key error fails construction.
     this.runtime.runSync(Effect.void);
   }
@@ -86,7 +94,7 @@ export class Store {
       : this.runtime.runSync(effect);
   }
   close() {
-    Effect.runSync(this.runtime.disposeEffect);
+    if (this.ownsRuntime) Effect.runSync(this.runtime.disposeEffect);
   }
   /** Runs `fn` atomically; a throw rolls back every write inside, including recorded changes. */
   transaction<T>(fn: () => T): T {

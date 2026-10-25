@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import lockfile from "proper-lockfile";
 import { Store } from "../shared/store";
+import { productLayer } from "../shared/product-layer";
 import { AgentRuntime } from "../bots/runtime";
 import { CrumbleService, OWNER_TIMEZONE } from "../bots/service";
 import { Scheduler } from "../schedules/scheduler";
@@ -124,8 +125,9 @@ export async function createTenant(
         `Common skills directory not found; continuing with no common skills: ${skillsDir}`,
       );
     const commonSkills = loadCommonSkills(skillsDir);
-    const store = new Store(dataDir);
-    partialCleanup.push(() => store.close());
+    const account = ManagedRuntime.make(productLayer(dataDir));
+    partialCleanup.push(() => account.dispose());
+    const store = new Store(account);
 
     let service!: CrumbleService;
 
@@ -442,6 +444,7 @@ export async function createTenant(
         await attempt(() => codemodeSandbox.close());
         await attempt(() => charts.close());
         await attempt(() => providerAuth?.close());
+        await attempt(() => account.dispose());
         await attempt(() => release());
 
         if (errors.length)
