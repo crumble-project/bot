@@ -4,22 +4,54 @@ import type {
   CredentialInfo,
   CredentialStore,
 } from "@earendil-works/pi-ai";
-import type { Store } from "../shared/store";
+import { Context, Effect, Layer } from "effect";
+import { runnerOf, type Runner } from "../shared/runner";
+import { ProviderCredentialRepository } from "./provider-credential-repository";
+
+/** Pi AI's credential store, with what sign-in flows need beyond it. */
+export type ProviderCredentialStore = CredentialStore & {
+  commitLogin: QueuedCredentialStore["commitLogin"];
+  idle: QueuedCredentialStore["idle"];
+};
 
 /**
- * Pi AI's credential store over the encrypted Store. One instance serves the API and every bot
- * runtime; the data-directory lock makes this process the only writer, so per-provider promise
- * queues serialize refresh, login, key replacement and sign-out.
+ * Pi AI's credential store over the account's encrypted provider credentials. One instance serves the API and every
+ * bot runtime; the data-directory lock makes this process the only writer, so per-provider promise queues serialize
+ * refresh, login, key replacement and sign-out.
  */
-export class ProviderCredentials implements CredentialStore {
+export class ProviderCredentials extends Context.Service<
+  ProviderCredentials,
+  ProviderCredentialStore
+>()("crumble/providers/ProviderCredentials") {
+  static readonly layer = Layer.effect(
+    ProviderCredentials,
+    Effect.gen(function* () {
+      const run = runnerOf(
+        yield* Effect.context<ProviderCredentialRepository>(),
+      );
+
+      return new QueuedCredentialStore(run);
+    }),
+  );
+}
+
+class QueuedCredentialStore implements CredentialStore {
   private readonly queues = new Map<string, Promise<unknown>>();
 
-  constructor(private readonly store: Store) {}
+  constructor(private readonly run: Runner<ProviderCredentialRepository>) {}
+
+  private repository<A>(
+    use: (
+      repository: ProviderCredentialRepository["Service"],
+    ) => Effect.Effect<A>,
+  ) {
+    return this.run.runSync(ProviderCredentialRepository.use(use));
+  }
 
   async read(providerId: string, options?: AuthOperationOptions) {
     options?.signal?.throwIfAborted();
 
-    return this.store.getProviderCredential(providerId);
+    return this.repository((r) => r.get(providerId));
   }
 
   async list(
@@ -27,7 +59,7 @@ export class ProviderCredentials implements CredentialStore {
   ): Promise<readonly CredentialInfo[]> {
     options?.signal?.throwIfAborted();
 
-    return this.store.listProviderCredentials();
+    return this.repository((r) => r.list);
   }
 
   modify(
@@ -40,13 +72,12 @@ export class ProviderCredentials implements CredentialStore {
     return this.enqueue(
       providerId,
       async () => {
-        const next = await update(this.store.getProviderCredential(providerId));
+        const next = await update(this.repository((r) => r.get(providerId)));
 
         // A started refresh persists even if its caller went away, so a rotated token is never lost.
-        if (next !== undefined)
-          this.store.setProviderCredential(providerId, next);
+        if (next !== undefined) this.repository((r) => r.set(providerId, next));
 
-        return this.store.getProviderCredential(providerId);
+        return this.repository((r) => r.get(providerId));
       },
       options?.signal,
     );
@@ -56,7 +87,7 @@ export class ProviderCredentials implements CredentialStore {
     await this.enqueue(
       providerId,
       async () => {
-        this.store.deleteProviderCredential(providerId);
+        this.repository((r) => r.delete(providerId));
       },
       options?.signal,
     );
@@ -74,7 +105,7 @@ export class ProviderCredentials implements CredentialStore {
   ) {
     return this.enqueue(providerId, async () => {
       if (!isCurrent()) return false;
-      this.store.setProviderCredential(providerId, credential);
+      this.repository((r) => r.set(providerId, credential));
       onCommitted();
 
       return true;

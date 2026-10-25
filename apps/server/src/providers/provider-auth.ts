@@ -15,9 +15,17 @@ import type {
   loginPrompt,
   loginSessionResponse,
 } from "../contract/api-responses";
+import { Context, Effect, Layer, ManagedRuntime, Predicate } from "effect";
+import type { ProviderContribution } from "../app/plugins";
+import { ProviderCredentialRepository } from "./provider-credential-repository";
 import { AppError } from "../shared/domain";
-import type { ProviderCredentials } from "./provider-credentials";
-import type { Store } from "../shared/store";
+import { SettingsRepository } from "../shared/settings-repository";
+import type { Runner } from "../shared/runner";
+import {
+  ProviderCredentials,
+  type ProviderCredentialStore,
+} from "./provider-credentials";
+import { ProviderModels } from "./providers";
 
 export type LoginSession = z.output<typeof loginSessionResponse>;
 
@@ -98,20 +106,131 @@ export function loginMethods(provider: Provider): LoginMethod[] {
   ];
 }
 
+/** Fails with the AppErrors sign-in raises; anything else is a defect. */
+const appErrors = <A>(effect: Effect.Effect<A, unknown>) =>
+  effect.pipe(
+    Effect.catch((error) =>
+      error instanceof AppError ? Effect.fail(error) : Effect.die(error),
+    ),
+  );
+
 /**
- * Relays Pi AI login flows to clients. Sessions live in memory only: a restart ends them, while
- * saved credentials stay in the encrypted store. Raw provider errors never leave this module,
- * because Pi AI can put token responses into them.
+ * Relays Pi AI login flows to clients. Sessions live in memory only: a restart ends them, while saved credentials stay
+ * encrypted in the database. Raw provider errors never leave this module, because Pi AI can put token responses into
+ * them.
  */
-export class ProviderAuth {
+export class ProviderSignIns extends Context.Service<
+  ProviderSignIns,
+  {
+    readonly models: Models;
+    readonly start: (
+      providerId: string,
+      method: AuthType,
+    ) => Effect.Effect<LoginSession, AppError>;
+    readonly get: (sessionId: string) => Effect.Effect<LoginSession, AppError>;
+    readonly answer: (
+      sessionId: string,
+      promptId: string,
+      value: string,
+    ) => Effect.Effect<LoginSession, AppError>;
+    readonly cancel: (
+      sessionId: string,
+    ) => Effect.Effect<LoginSession, AppError>;
+    /** Replaces the saved credential; a pending sign-in for the provider can no longer save its result. */
+    readonly setApiKey: (
+      providerId: string,
+      key: string,
+    ) => Effect.Effect<void>;
+    /** Removes the saved credential. The provider's grant and any ambient credential stay as they are. */
+    readonly signOut: (providerId: string) => Effect.Effect<void>;
+    readonly activeLoginId: (providerId: string) => string | null;
+  }
+>()("crumble/providers/ProviderSignIns") {
+  static readonly layer = Layer.effect(
+    ProviderSignIns,
+    Effect.gen(function* () {
+      const settings = yield* SettingsRepository;
+      const credentials = yield* ProviderCredentials;
+      const models = yield* ProviderModels;
+
+      const deviceId = () => {
+        const saved = Effect.runSync(settings.get(DEVICE_ID));
+
+        if (Predicate.isString(saved) && saved) return saved;
+        const created = randomUUID();
+        Effect.runSync(settings.set(DEVICE_ID, created));
+
+        return created;
+      };
+
+      const sessions = yield* Effect.acquireRelease(
+        Effect.sync(() => new SignInSessions(deviceId, credentials, models)),
+        (signIns) => Effect.promise(() => signIns.close()),
+      );
+
+      return ProviderSignIns.of({
+        models,
+        start: (providerId, method) =>
+          appErrors(Effect.try(() => sessions.start(providerId, method))),
+        get: (sessionId) =>
+          appErrors(Effect.try(() => sessions.get(sessionId))),
+        answer: (sessionId, promptId, value) =>
+          appErrors(
+            Effect.try(() => sessions.answer(sessionId, promptId, value)),
+          ),
+        cancel: (sessionId) =>
+          appErrors(Effect.try(() => sessions.cancel(sessionId))),
+        setApiKey: (providerId, key) =>
+          Effect.promise(() => sessions.setApiKey(providerId, key)),
+        signOut: (providerId) =>
+          Effect.promise(() => sessions.signOut(providerId)),
+        activeLoginId: (providerId) => sessions.activeLoginId(providerId),
+      });
+    }),
+  );
+}
+
+/** Sign-ins for code outside Effect, such as the HTTP handlers. */
+export type ProviderSignInsAccess = {
+  readonly models: Models;
+  start(providerId: string, method: AuthType): LoginSession;
+  get(sessionId: string): LoginSession;
+  answer(sessionId: string, promptId: string, value: string): LoginSession;
+  cancel(sessionId: string): LoginSession;
+  setApiKey(providerId: string, key: string): Promise<void>;
+  signOut(providerId: string): Promise<void>;
+  activeLoginId(providerId: string): string | null;
+};
+
+export function providerSignInsAccess(
+  runtime: Runner<ProviderSignIns>,
+): ProviderSignInsAccess {
+  const signIns = runtime.runSync(ProviderSignIns.use(Effect.succeed));
+
+  return {
+    models: signIns.models,
+    start: (providerId, method) =>
+      runtime.runSync(signIns.start(providerId, method)),
+    get: (sessionId) => runtime.runSync(signIns.get(sessionId)),
+    answer: (sessionId, promptId, value) =>
+      runtime.runSync(signIns.answer(sessionId, promptId, value)),
+    cancel: (sessionId) => runtime.runSync(signIns.cancel(sessionId)),
+    setApiKey: (providerId, key) =>
+      runtime.runPromise(signIns.setApiKey(providerId, key)),
+    signOut: (providerId) => runtime.runPromise(signIns.signOut(providerId)),
+    activeLoginId: signIns.activeLoginId,
+  };
+}
+
+class SignInSessions {
   private readonly sessions = new Map<string, Session>();
   private readonly active = new Map<string, Session>();
   private readonly flows = new Set<Promise<void>>();
   private closed = false;
 
   constructor(
-    private readonly store: Store,
-    private readonly credentials: ProviderCredentials,
+    private readonly deviceId: () => string,
+    private readonly credentials: ProviderCredentialStore,
     readonly models: Models,
   ) {}
 
@@ -466,14 +585,6 @@ export class ProviderAuth {
       failure: session.failure && { ...session.failure },
     };
   }
-
-  private deviceId() {
-    const saved = this.store.getSetting<string>(DEVICE_ID);
-
-    if (saved) return saved;
-
-    return this.store.setSetting(DEVICE_ID, randomUUID());
-  }
 }
 
 function abortable<T>(operation: Promise<T>, signal: AbortSignal) {
@@ -496,4 +607,27 @@ function isPortConflict(error: Error): boolean {
     return true;
 
   return error.cause instanceof Error && isPortConflict(error.cause);
+}
+
+/** Sign-ins over the credentials and settings `core` reaches, for an API that runs without an account. */
+export function standaloneSignIns(
+  core: Runner<
+    ProviderCredentialRepository | ProviderCredentials | SettingsRepository
+  >,
+  contributions?: readonly ProviderContribution[],
+): ProviderSignInsAccess {
+  const context = core.runSync(
+    Effect.context<
+      ProviderCredentialRepository | ProviderCredentials | SettingsRepository
+    >(),
+  );
+
+  return providerSignInsAccess(
+    ManagedRuntime.make(
+      ProviderSignIns.layer.pipe(
+        Layer.provide(ProviderModels.layer(contributions)),
+        Layer.provide(Layer.succeedContext(context)),
+      ),
+    ),
+  );
 }

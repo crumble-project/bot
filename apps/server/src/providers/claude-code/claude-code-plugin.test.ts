@@ -19,9 +19,7 @@ import {
 import { claudeCodePlugin, claudeCodeOptions } from "./plugin";
 import { childEnv, claudeCodeStatus } from "./setup";
 import { pluginProviders } from "../../app/plugins";
-import { ProviderAuth } from "../provider-auth";
-import { ProviderCredentials } from "../provider-credentials";
-import { providerModels } from "../providers";
+import { standaloneSignIns } from "../provider-auth";
 import type { AgentRuntime } from "../../bots/runtime";
 import { Scheduler } from "../../schedules/scheduler";
 import { CrumbleService } from "../../bots/service";
@@ -217,13 +215,7 @@ function api(fake: Record<string, string>) {
   const store = new Store(dir);
   const plugin = claudeCodePlugin(dir, env());
   const providers = pluginProviders([plugin]);
-  const credentials = new ProviderCredentials(store);
-
-  const providerAuth = new ProviderAuth(
-    store,
-    credentials,
-    providerModels(credentials, providers),
-  );
+  const providerAuth = standaloneSignIns(store.runtime, providers);
   // SAFETY: provider routes never reach the runtime.
 
   const service = new CrumbleService(store, {} as AgentRuntime);

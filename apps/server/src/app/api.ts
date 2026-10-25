@@ -57,13 +57,15 @@ import type { Activity } from "../bots/service";
 import type { Scheduler } from "../schedules/scheduler";
 import type { GroupChats } from "../group-chats/group-chats";
 import type { MCPIntegrations } from "../integrations/integrations";
-import { providerModels } from "../providers/providers";
-import { ProviderCredentials } from "../providers/provider-credentials";
 import {
   credentialsAccess,
   type CredentialsAccess,
 } from "../credentials/credentials";
-import { loginMethods, ProviderAuth } from "../providers/provider-auth";
+import {
+  loginMethods,
+  standaloneSignIns,
+  type ProviderSignInsAccess,
+} from "../providers/provider-auth";
 import type { CommonSkill } from "../skills/common-skills";
 import {
   CLIENT_DOCUMENT_PATH,
@@ -106,7 +108,7 @@ export function createAPI(
     /** Boots a bot's machine ahead of a viewer's connection. */
     startDesktop?: (agentId: string) => Promise<void>;
     /** The server's provider sign-ins; API-only fixtures get one of their own. */
-    providerAuth?: ProviderAuth;
+    providerAuth?: ProviderSignInsAccess;
     /** The server's OAuth client metadata document, when it has a public address. */
     oauthClient?: ClientDocument | undefined;
     /** Providers whose sign-in happens outside Crumble, by provider ID. */
@@ -123,13 +125,7 @@ export function createAPI(
 
   const credentials = options.credentials ?? credentialsAccess(store.runtime);
 
-  const providerAuth =
-    options.providerAuth ??
-    (() => {
-      const credentials = new ProviderCredentials(store);
-
-      return new ProviderAuth(store, credentials, providerModels(credentials));
-    })();
+  const providerAuth = options.providerAuth ?? standaloneSignIns(store.runtime);
 
   const models = providerAuth.models;
 

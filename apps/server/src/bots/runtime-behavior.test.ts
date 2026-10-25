@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { afterEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -93,7 +94,11 @@ function setup(
 test("saved credentials rotate without opening a new runtime", async () => {
   const directory = mkdtempSync(join(tmpdir(), "crumble-credentials-"));
   directories.push(directory);
-  const credentials = new ProviderCredentials(new Store(directory));
+
+  const credentials = new Store(directory).runtime.runSync(
+    ProviderCredentials.use(Effect.succeed),
+  );
+
   const models = providerModels(credentials);
 
   for (const key of ["first-test-key", "second-test-key"]) {

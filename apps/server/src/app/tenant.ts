@@ -43,9 +43,11 @@ import type { Workspaces } from "../workspaces/workspace";
 import { microsandboxWorkspacesFromEnv } from "../workspaces/microsandbox-workspaces";
 import { railwayWorkspacesFromEnv } from "../workspaces/railway-workspaces";
 import { Push, PushDelivery } from "../push/push";
-import { providerModels } from "../providers/providers";
-import { ProviderCredentials } from "../providers/provider-credentials";
-import { ProviderAuth } from "../providers/provider-auth";
+import { ProviderModels } from "../providers/providers";
+import {
+  ProviderSignIns,
+  providerSignInsAccess,
+} from "../providers/provider-auth";
 import { credentialsAccess } from "../credentials/credentials";
 import { credentialAuthoritiesAccess } from "../credentials/credential-authority";
 import { credentialProxy } from "../credentials/credential-proxy";
@@ -71,9 +73,6 @@ import {
   HistorySearchService,
   McpIntegrations,
   Plugins,
-  ProviderModels,
-  ProviderSignIns,
-  ProviderStore,
   TaskScheduler,
 } from "./account-services";
 
@@ -202,46 +201,14 @@ function accountLayer(
     }),
   );
 
-  const providers = Layer.effect(
-    ProviderStore,
-    Effect.gen(function* () {
-      const store = yield* AccountStore;
-      const contributions = pluginProviders(yield* Plugins);
-
-      // API keys saved before typed credentials move to the provider table, before any provider reads them.
-      store.migrateProviderCredentials(
-        providerModels(undefined, contributions, { allowAmbientEnv: false })
-          .getProviders()
-          .map((provider) => provider.id),
-      );
-
-      return new ProviderCredentials(store);
-    }),
-  );
-
-  const models = Layer.effect(
-    ProviderModels,
-    Effect.gen(function* () {
-      return providerModels(
-        yield* ProviderStore,
-        pluginProviders(yield* Plugins),
-        { allowAmbientEnv: false },
-      );
-    }),
-  );
-
-  const signIns = Layer.effect(
-    ProviderSignIns,
-    Effect.gen(function* () {
-      const store = yield* AccountStore;
-      const credentials = yield* ProviderStore;
-      const catalog = yield* ProviderModels;
-
-      return yield* scoped(
-        () => new ProviderAuth(store, credentials, catalog),
-        (auth) => auth.close(),
-      );
-    }),
+  const models = Layer.unwrap(
+    Plugins.use((installed) =>
+      Effect.succeed(
+        ProviderModels.layer(pluginProviders(installed), {
+          allowAmbientEnv: false,
+        }),
+      ),
+    ),
   );
 
   const integrations = Layer.effect(
@@ -570,9 +537,8 @@ function accountLayer(
     Layer.provideMerge(Layer.mergeAll(scheduler, groups, activity)),
     Layer.provideMerge(bots),
     Layer.provideMerge(runtime),
-    Layer.provideMerge(Layer.mergeAll(signIns, integrations)),
+    Layer.provideMerge(Layer.mergeAll(ProviderSignIns.layer, integrations)),
     Layer.provideMerge(models),
-    Layer.provideMerge(providers),
     Layer.provideMerge(plugins),
     Layer.provideMerge(workspaces),
     Layer.provideMerge(base),
@@ -615,7 +581,11 @@ export async function createTenant(
         const workspaces = yield* AccountWorkspaces;
         const groupChats = yield* GroupChatsService;
         const plugins = yield* Plugins;
-        const run = runnerOf(yield* Effect.context<CoreServices | Push>());
+
+        const run = runnerOf(
+          yield* Effect.context<CoreServices | Push | ProviderSignIns>(),
+        );
+
         const token = randomBytes(32).toString("hex");
 
         const app = createAPI(
@@ -643,7 +613,7 @@ export async function createTenant(
               startDesktop: (agentId: string) =>
                 workspaces.startDesktop(agentId, BACKGROUND_CONTEXT),
             }),
-            providerAuth: yield* ProviderSignIns,
+            providerAuth: providerSignInsAccess(run),
             oauthClient,
             credentials: credentialsAccess(run),
           },

@@ -1,5 +1,4 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { Models } from "@earendil-works/pi-ai";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { Context, Effect, Layer } from "effect";
 import type { AgentRuntime } from "../bots/runtime";
@@ -8,8 +7,6 @@ import { ChartCompiler } from "../display/charts";
 import type { GroupChats } from "../group-chats/group-chats";
 import type { HistorySearch } from "../history/history-search";
 import type { MCPIntegrations } from "../integrations/integrations";
-import type { ProviderAuth } from "../providers/provider-auth";
-import type { ProviderCredentials } from "../providers/provider-credentials";
 import type { BotSchedules } from "../schedules/bot-schedules";
 import type { Scheduler } from "../schedules/scheduler";
 import type { CommonSkill } from "../skills/common-skills";
@@ -55,22 +52,6 @@ export class Plugins extends Context.Service<
   Plugins,
   readonly CrumblePlugin[]
 >()("crumble/app/Plugins") {}
-
-/** Pi AI's credential store for model providers. */
-export class ProviderStore extends Context.Service<
-  ProviderStore,
-  ProviderCredentials
->()("crumble/app/ProviderStore") {}
-
-/** The account's model catalog: built-in and plugin providers over its credentials. */
-export class ProviderModels extends Context.Service<ProviderModels, Models>()(
-  "crumble/app/ProviderModels",
-) {}
-
-export class ProviderSignIns extends Context.Service<
-  ProviderSignIns,
-  ProviderAuth
->()("crumble/app/ProviderSignIns") {}
 
 export class McpIntegrations extends Context.Service<
   McpIntegrations,
