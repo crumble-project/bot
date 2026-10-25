@@ -250,9 +250,11 @@ export class BotWorkspaces extends Context.Service<
       Effect.acquireRelease(Effect.sync(make), (workspaces) =>
         workspaces
           ? workspaces.close.pipe(
-              Effect.catchCause((cause) =>
+              Effect.tapCause((cause) =>
                 Effect.logError("Closing bot workspaces failed", cause),
               ),
+              // A failed close keeps failing the release, as it did before the service.
+              Effect.orDie,
             )
           : Effect.void,
       ),
