@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Scheduler } from "./scheduler";
+import { standaloneScheduler } from "./scheduler";
 import { Store } from "../shared/store";
 
 const dirs: string[] = [];
@@ -38,9 +38,12 @@ describe("Scheduler", () => {
     const agent = store.createAgent(agentInput);
     const calls: string[] = [];
 
-    const scheduler = new Scheduler(store, async (_a, _p, requestId) => {
-      calls.push(requestId);
-    });
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async (_a, _p, requestId) => {
+        calls.push(requestId);
+      },
+    );
 
     const due = new Date(Date.now() - 1_000).toISOString();
 
@@ -66,9 +69,12 @@ describe("Scheduler", () => {
     const agent = store.createAgent(agentInput);
     const calls: string[] = [];
 
-    const scheduler = new Scheduler(store, async (_a, _p, requestId) => {
-      calls.push(requestId);
-    });
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async (_a, _p, requestId) => {
+        calls.push(requestId);
+      },
+    );
 
     const schedule = scheduler.create({
       agentId: agent.id,
@@ -98,7 +104,7 @@ describe("Scheduler", () => {
   test("rejects invalid timezone and cron expressions", () => {
     const store = new Store(make());
     const agent = store.createAgent(agentInput);
-    const scheduler = new Scheduler(store, async () => undefined);
+    const scheduler = standaloneScheduler(store.runtime, async () => undefined);
     expect(() =>
       scheduler.create({
         agentId: agent.id,
@@ -130,11 +136,14 @@ describe("Scheduler", () => {
     const calls: string[] = [];
     let attempts = 0;
 
-    const scheduler = new Scheduler(store, async (_a, _p, requestId) => {
-      calls.push(requestId);
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async (_a, _p, requestId) => {
+        calls.push(requestId);
 
-      if (++attempts === 1) throw new Error("temporary");
-    });
+        if (++attempts === 1) throw new Error("temporary");
+      },
+    );
 
     const due = new Date("2026-10-17T00:00:00.000Z");
 
@@ -156,6 +165,80 @@ describe("Scheduler", () => {
       `schedule:${schedule.id}:${due.toISOString()}`,
     ]);
     expect(store.getSchedule(schedule.id)?.nextRunAt).toBeNull();
+    store.close();
+  });
+
+  test("stopping waits for a dispatch in progress and records it", async () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const release = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async () => {
+        started.resolve();
+        await release.promise;
+      },
+      10,
+    );
+
+    const schedule = scheduler.create({
+      agentId: agent.id,
+      name: "once",
+      prompt: "hello",
+      cron: null,
+      timezone: "UTC",
+      runAt: new Date(Date.now() - 1_000).toISOString(),
+      enabled: true,
+    });
+
+    scheduler.start();
+    await started.promise;
+
+    let stopped = false;
+
+    const stopping = scheduler.stop().then(() => {
+      stopped = true;
+    });
+
+    await Bun.sleep(30);
+    expect(stopped).toBe(false);
+
+    release.resolve();
+    await stopping;
+    expect(store.getSchedule(schedule.id)?.nextRunAt).toBeNull();
+    store.close();
+  });
+
+  test("nothing is dispatched once stopped", async () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const calls: string[] = [];
+
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async (_a, _p, requestId) => {
+        calls.push(requestId);
+      },
+      10,
+    );
+
+    scheduler.start();
+    await scheduler.stop();
+
+    scheduler.create({
+      agentId: agent.id,
+      name: "once",
+      prompt: "hello",
+      cron: null,
+      timezone: "UTC",
+      runAt: new Date(Date.now() - 1_000).toISOString(),
+      enabled: true,
+    });
+
+    await Bun.sleep(50);
+    expect(calls).toEqual([]);
     store.close();
   });
 });

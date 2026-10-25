@@ -14,7 +14,7 @@ import {
 import { GroupChats } from "./group-chats";
 import { GroupTranscripts } from "./group-transcripts";
 import { AgentRuntime } from "../bots/runtime";
-import { Scheduler } from "../schedules/scheduler";
+import { standaloneScheduler } from "../schedules/scheduler";
 import { CrumbleService } from "../bots/service";
 import { Store } from "../shared/store";
 
@@ -40,7 +40,7 @@ function setup() {
     new AgentRuntime(join(dir, "agents")),
   );
 
-  const scheduler = new Scheduler(store, (a, p, r, s) =>
+  const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
     service.dispatch(a, p, r, s),
   );
 

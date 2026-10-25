@@ -11,8 +11,13 @@ import { CrumbleService, OWNER_TIMEZONE } from "../bots/service";
 import { BotActivity } from "../bots/bot-activity";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import { reactionExtension } from "../bots/reaction";
-import { Scheduler } from "../schedules/scheduler";
+import {
+  Scheduler,
+  schedulerAccess,
+  type SchedulerAccess,
+} from "../schedules/scheduler";
 import { BotSchedules, scheduleExtension } from "../schedules/bot-schedules";
+import { TaskDispatch } from "../schedules/task-dispatch";
 import { createAPI } from "./api";
 import { GroupChats } from "../group-chats/group-chats";
 import { groupLookupExtension } from "../group-chats/group-lookup";
@@ -64,7 +69,6 @@ import {
   AccountStore,
   AccountWorkspaces,
   BotRuntime,
-  BotSchedulesService,
   Bots,
   Charts,
   Codemode,
@@ -72,7 +76,6 @@ import {
   GroupChatsService,
   HistorySearchService,
   Plugins,
-  TaskScheduler,
 } from "./account-services";
 
 export type TenantOptions = {
@@ -88,7 +91,7 @@ export type TenantRuntime = {
   /** Internal API bearer used by the host auth router when dispatching requests. */
   token: string;
   service: CrumbleService;
-  scheduler: Scheduler;
+  scheduler: SchedulerAccess;
   close: () => Promise<void>;
 };
 
@@ -376,19 +379,19 @@ function accountLayer(
     }),
   );
 
-  const scheduler = Layer.effect(
-    TaskScheduler,
-    Effect.gen(function* () {
-      const store = yield* AccountStore;
-      const service = yield* Bots;
-
-      return yield* scoped(
-        () =>
-          new Scheduler(store, (a, p, r, s) => service.dispatch(a, p, r, s)),
-        (tasks) => tasks.stop(),
-      );
-    }),
+  const dispatch = Layer.effect(
+    TaskDispatch,
+    Bots.use((service) =>
+      Effect.succeed((agentId, prompt, requestId, scheduleId) =>
+        Effect.tryPromise({
+          try: () => service.dispatch(agentId, prompt, requestId, scheduleId),
+          catch: (error) => error,
+        }),
+      ),
+    ),
   );
+
+  const scheduler = Scheduler.layer().pipe(Layer.provide(dispatch));
 
   const groups = Layer.effect(
     GroupChatsService,
@@ -408,12 +411,7 @@ function accountLayer(
     }),
   );
 
-  const schedules = Layer.effect(
-    BotSchedulesService,
-    Effect.gen(function* () {
-      return new BotSchedules(yield* AccountStore, yield* TaskScheduler);
-    }),
-  );
+  const schedules = BotSchedules.layer;
 
   const history = Layer.effect(
     HistorySearchService,
@@ -436,7 +434,7 @@ function accountLayer(
       const service = yield* Bots;
       const groupChats = yield* GroupChatsService;
       const historySearch = yield* HistorySearchService;
-      const botSchedules = yield* BotSchedulesService;
+      const botSchedules = yield* BotSchedules;
       const charts = yield* Charts;
       const sandbox = yield* Codemode;
       const jobKinds = pluginJobKinds(yield* Plugins);
@@ -566,7 +564,11 @@ export async function createTenant(
     return await account.runPromise(
       Effect.gen(function* () {
         const service = yield* Bots;
-        const scheduler = yield* TaskScheduler;
+
+        const scheduler = schedulerAccess(
+          runnerOf(yield* Effect.context<Scheduler>()),
+        );
+
         const workspaces = yield* AccountWorkspaces;
         const groupChats = yield* GroupChatsService;
         const plugins = yield* Plugins;

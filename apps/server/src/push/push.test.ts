@@ -21,7 +21,7 @@ import { BotActivity } from "../bots/bot-activity";
 import type { Activity, ReplyActivity } from "../bots/service";
 import { Store } from "../shared/store";
 import { CrumbleService } from "../bots/service";
-import { Scheduler } from "../schedules/scheduler";
+import { standaloneScheduler } from "../schedules/scheduler";
 import { createAPI } from "../app/api";
 
 // Plain header records, so they spread into the defaults.
@@ -134,7 +134,7 @@ describe("push registration and durable delivery", () => {
     };
 
     const service = new CrumbleService(store, runtime);
-    const scheduler = new Scheduler(store, async () => {});
+    const scheduler = standaloneScheduler(store.runtime, async () => {});
 
     const push = await pushRuntime(
       dir,

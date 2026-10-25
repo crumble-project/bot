@@ -11,7 +11,7 @@ import {
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { AgentRuntime } from "../bots/runtime";
 import { CrumbleService } from "../bots/service";
-import { Scheduler } from "../schedules/scheduler";
+import { standaloneScheduler } from "../schedules/scheduler";
 import { Store } from "../shared/store";
 import { createAPI } from "../app/api";
 import {
@@ -64,8 +64,8 @@ describe("operational activity", () => {
       }),
     );
 
-    const scheduler = new Scheduler(
-      store,
+    const scheduler = standaloneScheduler(
+      store.runtime,
       (agent, prompt, requestId, scheduleId) =>
         service.dispatch(agent, prompt, requestId, scheduleId),
     );

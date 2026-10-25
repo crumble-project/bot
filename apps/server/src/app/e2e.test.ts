@@ -10,7 +10,7 @@ import {
 import { AgentRuntime } from "../bots/runtime";
 import { Store } from "../shared/store";
 import { CrumbleService } from "../bots/service";
-import { Scheduler } from "../schedules/scheduler";
+import { standaloneScheduler } from "../schedules/scheduler";
 import { createAPI } from "./api";
 
 const token = "e".repeat(40);
@@ -32,7 +32,7 @@ describe("HTTP/runtime persistence", () => {
     const makeApp = (store: Store, runtime: AgentRuntime) => {
       const service = new CrumbleService(store, runtime);
 
-      const scheduler = new Scheduler(store, (a, p, r, s) =>
+      const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
         service.dispatch(a, p, r, s),
       );
 

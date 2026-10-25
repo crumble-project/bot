@@ -5,7 +5,7 @@ import { Store } from "../shared/store";
 import { desktopControlAccess } from "../bot-desktop/desktop-control";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import { CrumbleService } from "../bots/service";
-import { Scheduler } from "../schedules/scheduler";
+import { standaloneScheduler } from "../schedules/scheduler";
 import { createAPI } from "./api";
 import { memoryResponse } from "../contract/api-responses";
 
@@ -77,7 +77,7 @@ function setup() {
   const store = new Store(dir);
   const service = new CrumbleService(store, runtime);
 
-  const scheduler = new Scheduler(store, (a, p, r, s) =>
+  const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
     service.dispatch(a, p, r, s),
   );
 
@@ -117,7 +117,7 @@ describe("HTTP API", () => {
     const { app, store, runtime } = setup();
     const service = new CrumbleService(store, runtime);
 
-    const scheduler = new Scheduler(store, (a, p, r, s) =>
+    const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
       service.dispatch(a, p, r, s),
     );
 
@@ -184,7 +184,7 @@ describe("HTTP API", () => {
     const { store, runtime } = setup();
     const service = new CrumbleService(store, runtime);
 
-    const scheduler = new Scheduler(store, (a, p, r, s) =>
+    const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
       service.dispatch(a, p, r, s),
     );
 
@@ -267,7 +267,7 @@ describe("HTTP API", () => {
     const store = new Store(dir);
     const service = new CrumbleService(store, runtime);
 
-    const scheduler = new Scheduler(store, (a, p, r, s) =>
+    const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
       service.dispatch(a, p, r, s),
     );
 
@@ -969,7 +969,7 @@ describe("bot desktop control and viewer", () => {
     const { store, runtime } = setup();
     const service = new CrumbleService(store, runtime);
 
-    const scheduler = new Scheduler(store, (a, p, r, s) =>
+    const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
       service.dispatch(a, p, r, s),
     );
 

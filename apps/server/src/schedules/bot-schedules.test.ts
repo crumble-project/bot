@@ -3,8 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AppError } from "../shared/domain";
-import { BotSchedules, scheduleExtension } from "./bot-schedules";
-import { Scheduler } from "./scheduler";
+import { scheduleExtension, standaloneBotSchedules } from "./bot-schedules";
 import { Store } from "../shared/store";
 
 const dirs: string[] = [];
@@ -39,9 +38,13 @@ function setup() {
   const dir = mkdtempSync(join(tmpdir(), "bot-schedules-"));
   dirs.push(dir);
   const store = new Store(dir);
-  const scheduler = new Scheduler(store, async () => ({ id: "exec-1" }));
 
-  return { store, schedules: new BotSchedules(store, scheduler), scheduler };
+  const { service, schedules, scheduler } = standaloneBotSchedules(
+    store.runtime,
+    async () => ({ id: "exec-1" }),
+  );
+
+  return { store, service, schedules, scheduler };
 }
 
 const later = () => new Date(Date.now() + 60_000).toISOString();
@@ -52,13 +55,15 @@ describe("bot schedules", () => {
     const self = store.createAgent(input("Self", ["schedule"]), uuid(1));
     const calls: unknown[][] = [];
 
-    const scheduler = new Scheduler(store, async (...args) => {
-      calls.push(args);
-    });
+    const { service, scheduler } = standaloneBotSchedules(
+      store.runtime,
+      async (...args) => {
+        calls.push(args);
+      },
+    );
 
-    const schedules = new BotSchedules(store, scheduler);
     // SAFETY: Schedule extensions expose their registered tool list.
-    const tool = (scheduleExtension(self, schedules) as any).tools[0];
+    const tool = (scheduleExtension(self, service) as any).tools[0];
 
     try {
       const saved = await tool.execute({
@@ -175,11 +180,11 @@ describe("bot schedules", () => {
   });
 
   test("every bot can schedule, but a paused bot cannot", () => {
-    const { store, schedules } = setup();
+    const { store, service, schedules } = setup();
     const plain = store.createAgent(input("Plain", ["memory"]), uuid(1));
     expect(
       // SAFETY: Schedule extensions expose their registered tool list.
-      (scheduleExtension(store.getAgent(plain.id)!, schedules) as any).tools,
+      (scheduleExtension(store.getAgent(plain.id)!, service) as any).tools,
     ).toHaveLength(1);
 
     const paused = store.createAgent(
@@ -198,10 +203,10 @@ describe("bot schedules", () => {
   });
 
   test("the schedule tool saves a task for the calling bot", async () => {
-    const { store, schedules } = setup();
+    const { store, service } = setup();
     const self = store.createAgent(input("Self", ["schedule"]), uuid(1));
     // SAFETY: Schedule extensions expose their registered tool list.
-    const tool = (scheduleExtension(self, schedules) as any).tools[0];
+    const tool = (scheduleExtension(self, service) as any).tools[0];
 
     const saved = await tool.execute(
       {

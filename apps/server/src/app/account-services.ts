@@ -6,8 +6,6 @@ import type { CrumbleService } from "../bots/service";
 import { ChartCompiler } from "../display/charts";
 import type { GroupChats } from "../group-chats/group-chats";
 import type { HistorySearch } from "../history/history-search";
-import type { BotSchedules } from "../schedules/bot-schedules";
-import type { Scheduler } from "../schedules/scheduler";
 import type { CommonSkill } from "../skills/common-skills";
 import type { CoreServices } from "../shared/core-layer";
 import { runnerOf } from "../shared/runner";
@@ -92,15 +90,6 @@ export class BotRuntime extends Context.Service<BotRuntime, AgentRuntime>()(
 export class Bots extends Context.Service<Bots, CrumbleService>()(
   "crumble/app/Bots",
 ) {}
-
-export class TaskScheduler extends Context.Service<TaskScheduler, Scheduler>()(
-  "crumble/app/TaskScheduler",
-) {}
-
-export class BotSchedulesService extends Context.Service<
-  BotSchedulesService,
-  BotSchedules
->()("crumble/app/BotSchedulesService") {}
 
 export class GroupChatsService extends Context.Service<
   GroupChatsService,

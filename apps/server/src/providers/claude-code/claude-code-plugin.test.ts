@@ -21,7 +21,7 @@ import { childEnv, claudeCodeStatus } from "./setup";
 import { pluginProviders } from "../../app/plugins";
 import { standaloneSignIns } from "../provider-auth";
 import type { AgentRuntime } from "../../bots/runtime";
-import { Scheduler } from "../../schedules/scheduler";
+import { standaloneScheduler } from "../../schedules/scheduler";
 import { CrumbleService } from "../../bots/service";
 import { Store } from "../../shared/store";
 
@@ -220,7 +220,7 @@ function api(fake: Record<string, string>) {
 
   const service = new CrumbleService(store, {} as AgentRuntime);
 
-  const scheduler = new Scheduler(store, (a, p, r, s) =>
+  const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
     service.dispatch(a, p, r, s),
   );
 

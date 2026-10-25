@@ -54,7 +54,7 @@ import {
 } from "../shared/domain";
 import type { CrumbleService } from "../bots/service";
 import type { Activity } from "../bots/service";
-import type { Scheduler } from "../schedules/scheduler";
+import type { SchedulerAccess } from "../schedules/scheduler";
 import type { GroupChats } from "../group-chats/group-chats";
 import type { McpIntegrations } from "../integrations/integrations";
 import {
@@ -87,7 +87,7 @@ import { registerPushRoutes } from "../push/push-api";
 
 export function createAPI(
   service: CrumbleService,
-  scheduler: Scheduler,
+  scheduler: SchedulerAccess,
   token: string,
   integrations?: McpIntegrations["Service"],
   options: {

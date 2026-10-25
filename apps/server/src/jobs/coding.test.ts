@@ -19,7 +19,7 @@ import type { Agent } from "../shared/domain";
 import { createAPI } from "../app/api";
 import { codingJobsResponse, historyResponse } from "../contract/api-responses";
 import { AgentRuntime } from "../bots/runtime";
-import { Scheduler } from "../schedules/scheduler";
+import { standaloneScheduler } from "../schedules/scheduler";
 import { CrumbleService } from "../bots/service";
 import { Store } from "../shared/store";
 import type { DesktopStream, Workspaces } from "../workspaces/workspace";
@@ -338,7 +338,7 @@ const token = "t".repeat(40);
 function serve(store: Store, runtime: AgentRuntime) {
   const service = new CrumbleService(store, runtime);
 
-  const scheduler = new Scheduler(store, (a, p, r, s) =>
+  const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
     service.dispatch(a, p, r, s),
   );
 
