@@ -47,7 +47,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/contract-tools
       - name: Publish a new contract version or resume its draft
-        run: bun src/contract-release.ts publish
+        run: bun apps/server/src/contract/contract-release.ts publish
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Preserve release compatibility reports

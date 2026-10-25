@@ -28,7 +28,7 @@ The server never assigns legacy data to the first person who registers. An opera
 5. Assign the legacy data to that account:
 
    ```bash
-   CRUMBLE_DATA_DIR=./data bun tools/assign-legacy-owner.ts OWNER_EMAIL
+   CRUMBLE_DATA_DIR=./data bun apps/server/tools/assign-legacy-owner.ts OWNER_EMAIL
    ```
 
 6. Restart the server and sign in through `/ui`.
@@ -49,6 +49,6 @@ For Docker, stop the service before running the migration against its volume:
 
 ```bash
 docker compose stop crumble
-docker compose run --rm crumble bun tools/assign-legacy-owner.ts OWNER_EMAIL
+docker compose run --rm crumble bun apps/server/tools/assign-legacy-owner.ts OWNER_EMAIL
 docker compose up -d
 ```

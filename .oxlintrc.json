@@ -1,5 +1,8 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "options": {
+    "typeAware": true
+  },
   "ignorePatterns": [
     ".agent/**",
     ".agents/**",
@@ -13,13 +16,36 @@
     ".roo/**",
     ".windsurf/**",
     "tools/oxlint/anti-slop/**",
-    "web/components/ui/**",
-    "web/hooks/**"
+    "apps/web/components/ui/**",
+    "apps/web/hooks/**"
   ],
   "jsPlugins": [
     { "name": "anti-slop", "specifier": "./tools/oxlint/anti-slop/index.ts" }
   ],
+  "overrides": [
+    {
+      "files": ["**/*.test.ts"],
+      "rules": { "typescript/await-thenable": "off" }
+    },
+    {
+      "files": ["apps/server/src/**", "apps/server/test/**"],
+      "jsPlugins": [
+        {
+          "name": "anti-slop-effect",
+          "specifier": "./tools/oxlint/anti-slop/effect/index.ts"
+        }
+      ],
+      "rules": {
+        "anti-slop-effect/no-manual-effect-error-tag": "error",
+        "anti-slop-effect/no-manual-tag-comparison": "error",
+        "anti-slop-effect/no-manual-tagged-construction": "error",
+        "anti-slop-effect/no-service-constructor-imports": "error",
+        "anti-slop-effect/prefer-effect-match": "error"
+      }
+    }
+  ],
   "rules": {
+    "typescript/no-deprecated": "warn",
     "oxc/no-accumulating-spread": "error",
     "anti-slop/no-array-filter-map": "error",
     "anti-slop/no-reduce-accumulator-copy": "error",

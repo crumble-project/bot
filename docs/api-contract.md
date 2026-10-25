@@ -1,10 +1,10 @@
 # API contract maintenance
 
-`bot` owns and publishes the HTTP and server-sent event (SSE) contract from its Zod route and response schemas. The contract version (`info.version` in `src/api-contract.ts`) is independent of the server version.
+`bot` owns and publishes the HTTP and server-sent event (SSE) contract from its Zod route and response schemas. The contract version (`info.version` in `apps/server/src/contract/api-contract.ts`) is independent of the server version.
 
 ```mermaid
 flowchart LR
-  Schemas["Zod Schemas\nsrc/api-contract.ts\nsrc/api-responses.ts"] --> Gen["bun run openapi:generate\nopenapi/ (7 artifacts)"]
+  Schemas["Zod Schemas\napps/server/src/contract/api-contract.ts\napps/server/src/contract/api-responses.ts"] --> Gen["bun run openapi:generate\nopenapi/ (7 artifacts)"]
   Gen --> Check["oasdiff & Ajv\nValidation & compatibility"]
   Check --> Release["GitHub Release\ncontract-vX.Y.Z bundle"]
   Release --> Apple["apple/apfelkern\nscripts/contract.py"]
@@ -32,7 +32,7 @@ bun run contract:validate
 ## Change workflow
 
 1. Update the Zod schema and route handler together, using stable operation IDs.
-2. Bump `info.version` in `src/api-contract.ts` (major for breaking HTTP/SSE changes or removed event schemas; minor/patch for compatible additions).
+2. Bump `info.version` in `apps/server/src/contract/api-contract.ts` (major for breaking HTTP/SSE changes or removed event schemas; minor/patch for compatible additions).
 3. Add a `## Contract X.Y.Z` section to `CHANGELOG.md`.
 4. Run `bun run openapi:generate`, `bun run check`, `bun run contract:validate`, and `bun run contract:compatibility`.
 5. Commit the source changes and all seven generated `openapi/` artifacts together.

@@ -36,10 +36,10 @@ Back up the entire `CRUMBLE_DATA_DIR`, including `.auth-secret` and each user’
 
 Bots with the `coding` or `desktop` capability run jobs inside a per-bot [Microsandbox](https://github.com/superradcompany/microsandbox) microVM with a persistent disk volume (`crumble-<user id>-<bot id>`). Requires Apple silicon on macOS or `/dev/kvm` on Linux.
 
-Use the published images (`ghcr.io/crumble-project/crumble-workspace` and `ghcr.io/crumble-project/crumble-workspace-desktop`) or build and load locally from `workspace-image/Dockerfile`:
+Use the published images (`ghcr.io/crumble-project/crumble-workspace` and `ghcr.io/crumble-project/crumble-workspace-desktop`) or build and load locally from `apps/server/workspace-image/Dockerfile`:
 
 ```bash
-docker build --target base -t crumble-workspace:dev workspace-image
+docker build --target base -t crumble-workspace:dev apps/server/workspace-image
 docker save crumble-workspace:dev -o /tmp/crumble-workspace.tar
 bun -e 'import { Image } from "microsandbox"; await Image.load("/tmp/crumble-workspace.tar", { tag: "crumble-workspace:dev" })'
 ```
@@ -50,7 +50,7 @@ Build `--target desktop` as `crumble-workspace-desktop:dev` to enable bot deskto
 
 With `CRUMBLE_WORKSPACE_BACKEND=railway`, each bot's workspace is a [Railway sandbox](https://docs.railway.com/sandboxes) instead, so the server needs no virtualization ([ADR 0005](docs/adr/0005-railway-workspaces.md)). Set `RAILWAY_TOKEN` (a project token) or `RAILWAY_API_TOKEN`, and `RAILWAY_ENVIRONMENT_ID`. Use a Hobby or Pro plan: other plans destroy idle sandboxes after 5 minutes. A bot's files survive as the checkpoint `crumble-<user id>-<bot id>` in that environment, and outbound connections are not filtered. The first bot desktop waits a few minutes while Railway builds the desktop template.
 
-Live tests create billed sandboxes: `CRUMBLE_RAILWAY_TESTS=1 bun test test/railway-workspaces.test.ts`.
+Live tests create billed sandboxes: `CRUMBLE_RAILWAY_TESTS=1 bun test apps/server/src/workspaces/railway-workspaces.test.ts`.
 
 ## Accounts and isolation
 
@@ -78,6 +78,10 @@ On Linux with KVM workspaces, layer `compose.kvm.yaml` and pass `CRUMBLE_KVM_GID
 
 ## Develop
 
+The repository is a Bun workspace: `apps/server` holds the server, bundled skills, and the workspace image, and `apps/web` holds the web UI, which the server bundles and serves. Run scripts from the repository root.
+
+Server code is grouped by feature under `apps/server/src/` (`bots/`, `group-chats/`, `jobs/`, `workspaces/`, and so on), with each test next to the file it covers. `app/` wires the features into the server, `contract/` holds the HTTP and SSE schemas, and `shared/` holds the domain types and the product store.
+
 ```bash
 bun run check                  # Lint, format, typecheck, contract drift, and unit tests
 bun run format                 # Format source and tests
@@ -87,10 +91,12 @@ bun run contract:compatibility # Compare against the latest stable contract-vX.Y
 bun run contract:bundle        # Export a checksummed release bundle
 ```
 
+`bun install` points Git at the hooks in `.githooks/`: each commit runs `bun run lint` and `bun run typecheck`, and each push runs `bun run check`, tests included. Skip them once with `--no-verify`.
+
 ## Documentation
 
 - [Architecture](docs/architecture.md)
 - [API contract maintenance](docs/api-contract.md) and [generated OpenAPI spec](openapi/openapi.json)
 - [Native push notifications](docs/native-push.md)
-- [Bundled default skills](skills/README.md)
+- [Bundled default skills](apps/server/skills/README.md)
 - [Specifications and glossary](https://github.com/crumble-project/spec)
