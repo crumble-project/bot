@@ -15,12 +15,14 @@ flowchart TD
 
 ## Core boundaries
 
+Source files named below live in `apps/server/src/` unless noted.
+
 - **Accounts (`auth.ts`, `server.ts`, `tenant.ts`):** Better Auth stores accounts and sessions in `auth.sqlite`. The host authenticates every API and viewer request before routing to a private user runtime under `users/USER_ID`. Each runtime owns its databases, files, encryption key, services, event listeners, provider logins, and workspace namespace. Startup recovers every existing account runtime so background schedules continue without an active browser. Shared memories and skills remain inside the account. Host provider environment credentials are ignored.
 
 - **Product store (`store.ts`) vs. Pi Durable (`runtime.ts`):** Product SQLite stores agent profiles, canonical chat references, group chats, memories, skill packages, learned-change logs, schedules, MCP servers, and encrypted credentials. Each bot owns a separate Pi Durable SQLite store that manages conversation entries, model calls, tool execution, compaction, and retries.
 - **Provider credentials (`provider-auth.ts`):** Encrypted at rest using `.secret.key`. Pi AI owns interactive sign-in, token refresh, and request authentication; `ProviderCredentials` serializes logins, refreshes, key updates, and sign-outs per provider within the account.
 - **MCP integrations:** Bots load tools only from enabled, permitted MCP servers. Unreachable or unauthenticated MCP servers are skipped for the turn with their error surfaced in status. OAuth supports dynamic client registration, Client ID Metadata Documents (`CRUMBLE_PUBLIC_URL`), and owner-registered OAuth client credentials.
-- **Bundled web UI (`web/`):** React, TanStack Router, TanStack Query, Tailwind CSS, and shadcn/ui served at `/ui` and bundled on demand by Bun.
+- **Bundled web UI (`apps/web/`):** React, TanStack Router, TanStack Query, Tailwind CSS, and shadcn/ui served at `/ui` and bundled on demand by Bun.
 
 ## Plugins and the Claude Code provider
 
@@ -67,6 +69,6 @@ flowchart TD
 
 Implemented in `skills.ts` and `review.ts` ([ADR 0003](adr/0003-learned-skills.md)):
 
-- **Skill packages:** Stored in `skills` and `skill_documents` (plus read-only bundled defaults in `skills/`). Working context lists skills by name and description; bots load instructions and `references/*.md` on demand via `skill` and edit their own skills in atomic batches via `skill_manage`. `Agent.skills` remains a compatible `{ name, instructions }` view over the bot's skill rows.
+- **Skill packages:** Stored in `skills` and `skill_documents` (plus read-only bundled defaults in `apps/server/skills/`). Working context lists skills by name and description; bots load instructions and `references/*.md` on demand via `skill` and edit their own skills in atomic batches via `skill_manage`. `Agent.skills` remains a compatible `{ name, instructions }` view over the bot's skill rows.
 - **Post-turn review:** Tracks tool-activity rounds per bot in `review_counters`. When the skill or memory counter reaches its threshold (default 10), a background review conversation runs on `reviewModel` (or the bot's model) within a strict character/token budget and updates skills or memory.
 - **Change ledger and curator:** Every skill or memory mutation is logged in `learned_changes` with full before/after state for `GET /v1/changes` and `POST /v1/changes/{id}/revert`, and review changes emit a `learned` SSE event. A periodic curator marks bot-created skills `stale` after 14 unused days and `archived` after 30 days unless pinned or used by a scheduled task.

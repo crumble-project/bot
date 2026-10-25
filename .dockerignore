@@ -11,7 +11,8 @@ coverage
 docs
 ios
 openapi
-test
 tools
-!tools/assign-legacy-owner.ts
-!tools/tailwind-plugin.ts
+apps/*/node_modules
+apps/server/test
+apps/server/tools
+!apps/server/tools/assign-legacy-owner.ts

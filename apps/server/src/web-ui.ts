@@ -1,8 +1,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import webUI from "../web/index.html";
+import webUI from "@crumble/web/index.html";
 
-/** Where the browser loads Pele's ES modules from; `web/markdown.tsx` imports this path at runtime. */
+/** Where the browser loads Pele's ES modules from; `apps/web/markdown.tsx` imports this path at runtime. */
 export const PELE_PREFIX = "/ui-modules/pele";
 
 const PELE = path.join(
@@ -21,10 +21,9 @@ function peleFile(requested: string) {
   return file.startsWith(`${PELE}${path.sep}`) ? file : undefined;
 }
 
-/** The install icon `web/manifest.webmanifest` names; Bun bundles only files the HTML links to. */
-const APP_ICON = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../web/icon-512.png",
+/** The install icon `apps/web/manifest.webmanifest` names; Bun bundles only files the HTML links to. */
+const APP_ICON = fileURLToPath(
+  import.meta.resolve("@crumble/web/icon-512.png"),
 );
 
 /**

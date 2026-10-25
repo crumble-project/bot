@@ -29,7 +29,12 @@ const tailwind: BunPlugin = {
       const root =
         compiler.root === "none"
           ? []
-          : [{ ...(compiler.root ?? { base, pattern: "**/*" }), negated: false }];
+          : [
+              {
+                ...(compiler.root ?? { base, pattern: "**/*" }),
+                negated: false,
+              },
+            ];
 
       const candidates = new Scanner({
         sources: [...root, ...compiler.sources],

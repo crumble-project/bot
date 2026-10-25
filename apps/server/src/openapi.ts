@@ -53,7 +53,7 @@ export async function exportBundle(directory?: string) {
     "status",
     "--porcelain",
     "--",
-    "src",
+    "apps/server",
     "openapi",
     "CHANGELOG.md",
     "package.json",
@@ -77,7 +77,7 @@ export async function exportBundle(directory?: string) {
   if (source.exitCode !== 0) throw new Error(source.stderr.toString());
 
   const changelog = await Bun.file(
-    new URL("../CHANGELOG.md", import.meta.url),
+    new URL("../../../CHANGELOG.md", import.meta.url),
   ).text();
 
   const version = openAPIDocument().info.version;
@@ -130,7 +130,7 @@ if (import.meta.main) {
     let stale = false;
 
     for (const [name, content] of Object.entries(contractArtifacts())) {
-      const target = new URL(`../openapi/${name}`, import.meta.url);
+      const target = new URL(`../../../openapi/${name}`, import.meta.url);
 
       if (args[0] === "--check") {
         if (
@@ -150,7 +150,9 @@ if (import.meta.main) {
 
     if (stale) process.exitCode = 1;
   } else {
-    console.error("Usage: bun src/openapi.ts [--check | --bundle [DIRECTORY]]");
+    console.error(
+      "Usage: bun apps/server/src/openapi.ts [--check | --bundle [DIRECTORY]]",
+    );
     process.exitCode = 1;
   }
 }

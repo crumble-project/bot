@@ -522,7 +522,7 @@ if (import.meta.main) {
     await publish(repo, current, reports);
   } else {
     throw new Error(
-      "Usage: bun src/contract-release.ts validate [DIRECTORY] | compatibility [BASELINE_DIRECTORY] | publish",
+      "Usage: bun apps/server/src/contract-release.ts validate [DIRECTORY] | compatibility [BASELINE_DIRECTORY] | publish",
     );
   }
 }

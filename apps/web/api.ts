@@ -23,9 +23,9 @@ import type {
   modelResponse,
   providerResponse,
   scheduleResponse,
-} from "../src/api-responses";
-import type { agentInput } from "../src/domain";
-import type { ChartLayout } from "../src/charts";
+} from "@crumble/server/api-responses";
+import type { agentInput } from "@crumble/server/domain";
+import type { ChartLayout } from "@crumble/server/charts";
 
 export type Bot = z.infer<typeof agentPreviewResponse>;
 
