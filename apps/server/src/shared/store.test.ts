@@ -147,7 +147,7 @@ describe("Store", () => {
   test("migrates an older agent schema without losing rows", () => {
     const dir = make();
     const db = new Database(join(dir, "store.sqlite"));
-    db.exec(
+    db.run(
       "CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT, avatar TEXT, description TEXT, instructions TEXT, provider TEXT, model TEXT, enabled INTEGER, folder TEXT NOT NULL, tools TEXT, skills TEXT, mcp_servers TEXT, created_at TEXT, updated_at TEXT)",
     );
     db.query("INSERT INTO agents VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(
@@ -180,7 +180,7 @@ describe("Store", () => {
   test("moves inline agent skills into the library and keeps packages on inline writes", () => {
     const dir = make();
     const db = new Database(join(dir, "store.sqlite"));
-    db.exec(
+    db.run(
       "CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, avatar TEXT NOT NULL, description TEXT NOT NULL, instructions TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, enabled INTEGER NOT NULL, tools TEXT NOT NULL, skills TEXT NOT NULL, mcp_servers TEXT NOT NULL, delegates TEXT NOT NULL DEFAULT '[]', inference TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL); CREATE TABLE skills (id TEXT PRIMARY KEY, name TEXT NOT NULL, instructions TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);",
     );
     db.query(
@@ -472,7 +472,7 @@ describe("Store memory sources", () => {
     first.close();
 
     const db = new Database(join(dir, "store.sqlite"));
-    db.exec("ALTER TABLE memories DROP COLUMN source");
+    db.run("ALTER TABLE memories DROP COLUMN source");
     db.close();
 
     const upgraded = new Store(dir);
@@ -571,7 +571,7 @@ describe("Store group chats", () => {
     first.close();
 
     const db = new Database(join(dir, "store.sqlite"));
-    db.exec(`DROP TABLE group_turns;
+    db.run(`DROP TABLE group_turns;
       ALTER TABLE group_chats DROP COLUMN bot_turns;
       ALTER TABLE group_chats DROP COLUMN paused;
       ALTER TABLE group_chats DROP COLUMN awaiting_answers;

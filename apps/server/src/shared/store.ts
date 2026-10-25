@@ -163,7 +163,7 @@ export class Store {
     const keyExists = existsSync(keyPath);
     this.key = keyExists ? readFileSync(keyPath) : randomBytes(32);
     this.db = new Database(join(dataDir, "store.sqlite"));
-    this.db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
+    this.db.run("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
     this.migrate();
 
     if (
@@ -197,7 +197,7 @@ export class Store {
   }
   private migrate() {
     this.db
-      .exec(`CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, avatar TEXT NOT NULL, description TEXT NOT NULL, instructions TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, enabled INTEGER NOT NULL, tools TEXT NOT NULL, skills TEXT NOT NULL, mcp_servers TEXT NOT NULL, delegates TEXT NOT NULL DEFAULT '[]', inference TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+      .run(`CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, avatar TEXT NOT NULL, description TEXT NOT NULL, instructions TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, enabled INTEGER NOT NULL, tools TEXT NOT NULL, skills TEXT NOT NULL, mcp_servers TEXT NOT NULL, delegates TEXT NOT NULL DEFAULT '[]', inference TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, title TEXT NOT NULL, archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE, content TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, source TEXT);
       CREATE TABLE IF NOT EXISTS skills (id TEXT PRIMARY KEY, name TEXT NOT NULL, instructions TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -223,40 +223,40 @@ export class Store {
       .all() as Array<{ name: string }>;
 
     if (!agentCols.some((c) => c.name === "delegates"))
-      this.db.exec(
+      this.db.run(
         "ALTER TABLE agents ADD COLUMN delegates TEXT NOT NULL DEFAULT '[]'",
       );
 
     if (!agentCols.some((c) => c.name === "inference"))
-      this.db.exec(
+      this.db.run(
         "ALTER TABLE agents ADD COLUMN inference TEXT NOT NULL DEFAULT '{}'",
       );
 
     if (!agentCols.some((c) => c.name === "shared_skills"))
-      this.db.exec(
+      this.db.run(
         "ALTER TABLE agents ADD COLUMN shared_skills TEXT NOT NULL DEFAULT '[]'",
       );
 
     if (!agentCols.some((c) => c.name === "desktop_model"))
-      this.db.exec("ALTER TABLE agents ADD COLUMN desktop_model TEXT");
+      this.db.run("ALTER TABLE agents ADD COLUMN desktop_model TEXT");
 
     if (!agentCols.some((c) => c.name === "review_model"))
-      this.db.exec("ALTER TABLE agents ADD COLUMN review_model TEXT");
+      this.db.run("ALTER TABLE agents ADD COLUMN review_model TEXT");
 
     if (!agentCols.some((c) => c.name === "review"))
-      this.db.exec("ALTER TABLE agents ADD COLUMN review TEXT");
+      this.db.run("ALTER TABLE agents ADD COLUMN review TEXT");
 
-    this.db.exec(
+    this.db.run(
       "CREATE TABLE IF NOT EXISTS desktop_control (agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE, holder TEXT NOT NULL, changes INTEGER NOT NULL, updated_at TEXT NOT NULL)",
     );
 
     if (!agentCols.some((c) => c.name === "shared_memory"))
-      this.db.exec(
+      this.db.run(
         "ALTER TABLE agents ADD COLUMN shared_memory INTEGER NOT NULL DEFAULT 0",
       );
 
     if (agentCols.some((c) => c.name === "folder"))
-      this.db.exec("ALTER TABLE agents DROP COLUMN folder");
+      this.db.run("ALTER TABLE agents DROP COLUMN folder");
 
     // Shared memories have no bot, and SQLite cannot drop NOT NULL in place.
     // SAFETY: PRAGMA table_info returns rows with a `name` and numeric `notnull` column.
@@ -267,14 +267,14 @@ export class Store {
     if (memoryCols.find((c) => c.name === "agent_id")?.notnull)
       this.db.transaction(() => {
         this.db
-          .exec(`CREATE TABLE memories_next (id TEXT PRIMARY KEY, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE, content TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+          .run(`CREATE TABLE memories_next (id TEXT PRIMARY KEY, agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE, content TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
           INSERT INTO memories_next SELECT id, agent_id, content, created_at, updated_at FROM memories;
           DROP TABLE memories;
           ALTER TABLE memories_next RENAME TO memories;`);
       })();
 
     if (!memoryCols.some((c) => c.name === "source"))
-      this.db.exec("ALTER TABLE memories ADD COLUMN source TEXT");
+      this.db.run("ALTER TABLE memories ADD COLUMN source TEXT");
 
     // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
     const serverCols = this.db
@@ -282,12 +282,12 @@ export class Store {
       .all() as Array<{ name: string }>;
 
     if (!serverCols.some((c) => c.name === "agent_id"))
-      this.db.exec(
+      this.db.run(
         "ALTER TABLE mcp_servers ADD COLUMN agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE",
       );
 
     if (!serverCols.some((c) => c.name === "oauth_client_id"))
-      this.db.exec("ALTER TABLE mcp_servers ADD COLUMN oauth_client_id TEXT");
+      this.db.run("ALTER TABLE mcp_servers ADD COLUMN oauth_client_id TEXT");
 
     // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
     const conversationCols = this.db
@@ -295,7 +295,7 @@ export class Store {
       .all() as Array<{ name: string }>;
 
     if (!conversationCols.some((c) => c.name === "archived"))
-      this.db.exec(
+      this.db.run(
         "ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
       );
 
@@ -305,7 +305,7 @@ export class Store {
       .all() as Array<{ name: string }>;
 
     if (!scheduleCols.some((c) => c.name === "created_by_agent_id"))
-      this.db.exec("ALTER TABLE schedules ADD COLUMN created_by_agent_id TEXT");
+      this.db.run("ALTER TABLE schedules ADD COLUMN created_by_agent_id TEXT");
 
     // SAFETY: PRAGMA table_info returns rows with a `name` column for every table column.
     const groupCols = this.db
@@ -313,17 +313,17 @@ export class Store {
       .all() as Array<{ name: string }>;
 
     if (!groupCols.some((c) => c.name === "bot_turns"))
-      this.db.exec(
+      this.db.run(
         "ALTER TABLE group_chats ADD COLUMN bot_turns INTEGER NOT NULL DEFAULT 0",
       );
 
     if (!groupCols.some((c) => c.name === "paused"))
-      this.db.exec(
+      this.db.run(
         "ALTER TABLE group_chats ADD COLUMN paused INTEGER NOT NULL DEFAULT 0",
       );
 
     if (!groupCols.some((c) => c.name === "awaiting_answers"))
-      this.db.exec(
+      this.db.run(
         "ALTER TABLE group_chats ADD COLUMN awaiting_answers TEXT NOT NULL DEFAULT '{}'",
       );
 
@@ -333,14 +333,14 @@ export class Store {
       .all() as Array<{ name: string }>;
 
     if (!memberCols.some((c) => c.name === "conversation_id"))
-      this.db.exec("ALTER TABLE group_members ADD COLUMN conversation_id TEXT");
+      this.db.run("ALTER TABLE group_members ADD COLUMN conversation_id TEXT");
 
     if (!memberCols.some((c) => c.name === "summary"))
-      this.db.exec("ALTER TABLE group_members ADD COLUMN summary TEXT");
+      this.db.run("ALTER TABLE group_members ADD COLUMN summary TEXT");
 
     for (const column of ["cursor", "pending", "pending_bot_started"])
       if (!memberCols.some((c) => c.name === column))
-        this.db.exec(
+        this.db.run(
           `ALTER TABLE group_members ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0`,
         );
 
@@ -350,17 +350,17 @@ export class Store {
     }>;
 
     if (!cols.some((c) => c.name === "prompt"))
-      this.db.exec("ALTER TABLE executions ADD COLUMN prompt TEXT");
+      this.db.run("ALTER TABLE executions ADD COLUMN prompt TEXT");
 
     if (!cols.some((c) => c.name === "reply_to"))
-      this.db.exec("ALTER TABLE executions ADD COLUMN reply_to TEXT");
+      this.db.run("ALTER TABLE executions ADD COLUMN reply_to TEXT");
 
     if (!cols.some((c) => c.name === "attachments"))
-      this.db.exec("ALTER TABLE executions ADD COLUMN attachments TEXT");
+      this.db.run("ALTER TABLE executions ADD COLUMN attachments TEXT");
 
     if (!cols.some((c) => c.name === "attachments_digest"))
-      this.db.exec("ALTER TABLE executions ADD COLUMN attachments_digest TEXT");
-    this.db.exec(
+      this.db.run("ALTER TABLE executions ADD COLUMN attachments_digest TEXT");
+    this.db.run(
       "CREATE UNIQUE INDEX IF NOT EXISTS executions_conversation_request ON executions(conversation_id, request_id)",
     );
     this.migrateSkills();
@@ -390,16 +390,16 @@ export class Store {
 
       for (const [column, definition] of added)
         if (!skillCols.some((c) => c.name === column))
-          this.db.exec(`ALTER TABLE skills ADD COLUMN ${column} ${definition}`);
+          this.db.run(`ALTER TABLE skills ADD COLUMN ${column} ${definition}`);
 
-      this.db.exec(
+      this.db.run(
         "CREATE TABLE IF NOT EXISTS skill_documents (skill_id TEXT NOT NULL REFERENCES skills(id) ON DELETE CASCADE, path TEXT NOT NULL, content TEXT NOT NULL, PRIMARY KEY (skill_id, path))",
       );
-      this.db.exec(
+      this.db.run(
         "CREATE TABLE IF NOT EXISTS review_counters (agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE, skill_rounds INTEGER NOT NULL DEFAULT 0, memory_rounds INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS pending_reviews (execution_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, conversation_id TEXT NOT NULL, created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS review_results (execution_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, change_ids TEXT NOT NULL, created_at TEXT NOT NULL)",
       );
       // Changes outlive their targets and bots, so they carry the bot ID without a foreign key.
-      this.db.exec(
+      this.db.run(
         "CREATE TABLE IF NOT EXISTS learned_changes (id TEXT PRIMARY KEY, agent_id TEXT, actor TEXT NOT NULL, target TEXT NOT NULL, target_id TEXT NOT NULL, action TEXT NOT NULL, before_state TEXT, after_state TEXT, source TEXT, reverts_id TEXT, created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS learned_changes_agent ON learned_changes(agent_id, created_at)",
       );
 

@@ -14,6 +14,7 @@
     "@earendil-works/pi-durable": "1.4.0",
     "@earendil-works/pi-env": "1.4.0",
     "@earendil-works/pi-mcp": "1.4.0",
+    "@hono/bun": "1.0.1",
     "@hono/zod-openapi": "1.6.3",
     "@novnc/novnc": "1.7.0",
     "@tanstack/charts": "1.1.0",

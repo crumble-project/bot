@@ -31,7 +31,7 @@ export const desktopControlInput = z.object({
 export const messageInput = z
   .object({
     content: z.string().trim().max(32000),
-    requestId: z.string().uuid(),
+    requestId: z.uuid(),
     replyTo: z.string().min(1).max(200).optional(),
     attachments: z.array(attachmentInput).max(MAX_ATTACHMENTS).default([]),
     timezone: z.string().min(1).max(100).optional(),
@@ -44,7 +44,7 @@ export const messageInput = z
 export const groupMessageInput = z
   .object({
     content: z.string().trim().max(32000),
-    requestId: z.string().uuid(),
+    requestId: z.uuid(),
     /** A message in the same group; replying to a bot's message also wakes that bot. */
     replyTo: z.string().min(1).max(200).optional(),
     attachments: z.array(attachmentInput).max(MAX_ATTACHMENTS).default([]),
@@ -61,7 +61,7 @@ export const credentialUsesInput = z.object({
 
 export const changesInput = z.object({
   /** One bot's changes; `shared` for the shared library; omit for every change. */
-  agentId: z.union([z.string().uuid(), z.literal("shared")]).optional(),
+  agentId: z.union([z.uuid(), z.literal("shared")]).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   before: z.string().min(1).max(200).optional(),
 });
@@ -71,7 +71,7 @@ export const reviewsInput = z.object({
 });
 
 export const activityInput = z.object({
-  agentId: z.string().uuid().optional(),
+  agentId: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(100),
   /** Only this kind of item; pass the same kind with every page's cursor. */
   kind: z
@@ -131,7 +131,7 @@ export const mcpInput = z.object({
 });
 
 export const mcpCreateInput = mcpInput.extend({
-  agentId: z.string().uuid().nullable().default(null),
+  agentId: z.uuid().nullable().default(null),
 });
 
 export const attachmentIndex = z.coerce
@@ -151,7 +151,7 @@ export function patchInput(schema: z.ZodObject) {
 
   for (const [key, field] of Object.entries(schema.shape))
     fields[key] = (
-      field instanceof z.ZodDefault ? field.removeDefault() : field
+      field instanceof z.ZodDefault ? field.unwrap() : field
     ).optional();
 
   return z.object(fields);

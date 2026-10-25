@@ -59,7 +59,7 @@ const color = z
       ),
   );
 
-const finite = z.number().finite();
+const finite = z.number();
 
 const paint = {
   fill: color.optional(),

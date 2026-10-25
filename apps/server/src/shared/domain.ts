@@ -32,12 +32,12 @@ export const agentInput = z.object({
     .max(100)
     .default([]),
   /** Shared skills from the skill library this bot uses, besides its own `skills`. */
-  sharedSkills: z.array(z.string().uuid()).max(100).optional(),
+  sharedSkills: z.array(z.uuid()).max(100).optional(),
   /** Ignored: a bot with memory always uses shared memory too. */
   sharedMemory: z.boolean().optional(),
-  mcpServers: z.array(z.string().uuid()).max(30).default([]),
+  mcpServers: z.array(z.uuid()).max(30).default([]),
   /** Ignored: a bot that may message other bots reaches every one of them. */
-  delegates: z.array(z.string().uuid()).max(30).default([]),
+  delegates: z.array(z.uuid()).max(30).default([]),
   inference: z
     .object({
       thinkingLevel: z
@@ -133,13 +133,12 @@ export type Memory = {
 
 export const scheduleInput = z
   .object({
-    agentId: z.string().uuid(),
+    agentId: z.uuid(),
     name: z.string().trim().min(1).max(200),
     prompt: z.string().trim().min(1).max(32000),
     cron: z.string().max(100).nullable().default(null),
     timezone: z.string().max(100).default("UTC"),
-    runAt: z
-      .string()
+    runAt: z.iso
       .datetime({ offset: true })
       .transform((value) => new Date(value).toISOString())
       .nullable()
@@ -409,7 +408,7 @@ export const groupChatInput = z.object({
   name: z.string().trim().min(1).max(80),
   /** Member bots in the order they joined. */
   memberIds: z
-    .array(z.string().uuid())
+    .array(z.uuid())
     .min(MIN_GROUP_MEMBERS)
     .max(MAX_GROUP_MEMBERS)
     .refine((ids) => new Set(ids).size === ids.length, "List each bot once"),

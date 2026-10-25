@@ -35,7 +35,7 @@ export const pushInput = z
 
 export const presenceInput = z.object({
   active: z.boolean(),
-  agentId: z.string().uuid().nullable(),
+  agentId: z.uuid().nullable(),
 });
 
 export const pushStatusResponse = z
@@ -49,7 +49,7 @@ export const pushDeviceResponse = z
   .object({ serverId: z.string(), remoteDelivery: z.boolean() })
   .openapi("PushDeviceRegistration");
 
-const installation = z.object({ installationId: z.string().uuid() });
+const installation = z.object({ installationId: z.uuid() });
 
 export const pushRoutes = {
   pushStatus: define({

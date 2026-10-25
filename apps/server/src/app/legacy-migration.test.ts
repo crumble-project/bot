@@ -42,7 +42,7 @@ function fixture() {
   store.setCredential("openai", "encrypted-secret");
   store.close();
   const auth = new Database(join(dataDir, "auth.sqlite"));
-  auth.exec('CREATE TABLE "user" (id TEXT PRIMARY KEY, email TEXT NOT NULL)');
+  auth.run('CREATE TABLE "user" (id TEXT PRIMARY KEY, email TEXT NOT NULL)');
   auth
     .query('INSERT INTO "user" (id, email) VALUES (?, ?)')
     .run("user-1", "owner@example.com");

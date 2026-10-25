@@ -1,5 +1,5 @@
 import type { Register } from "../contract/route";
-import { upgradeWebSocket } from "hono/bun";
+import { upgradeWebSocket } from "@hono/bun";
 import { streamSSE } from "hono/streaming";
 import type { WSContext, WSMessageReceive } from "hono/ws";
 import {

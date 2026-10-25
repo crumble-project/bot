@@ -24,23 +24,20 @@ export function registerPushRoutes(
   register(pushRoutes.putDevice, async (c) => {
     if (!push) throw new AppError(503, "Push delivery is unavailable");
 
-    const installationId = z
-      .string()
-      .uuid()
-      .parse(c.req.param("installationId"));
+    const installationId = z.uuid().parse(c.req.param("installationId"));
 
     const input: PushDeviceInput = pushInput.parse(await c.req.json());
 
     return c.json(push.device(installationId, input), 200);
   });
   register(pushRoutes.deleteDevice, (c) => {
-    push?.remove(z.string().uuid().parse(c.req.param("installationId")));
+    push?.remove(z.uuid().parse(c.req.param("installationId")));
 
     return c.body(null, 204);
   });
   register(pushRoutes.putPresence, async (c) => {
     if (!push) throw new AppError(503, "Push delivery is unavailable");
-    const id = z.string().uuid().parse(c.req.param("installationId"));
+    const id = z.uuid().parse(c.req.param("installationId"));
 
     const input = presenceInput.parse(await c.req.json());
 

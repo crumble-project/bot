@@ -79,7 +79,7 @@ const positionSchema = z.object({
 });
 
 const keySchema = z.object({
-  timestamp: z.number().finite().nullable(),
+  timestamp: z.number().nullable(),
   chatId: z.string(),
   entry: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   index: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),

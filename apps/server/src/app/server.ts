@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import lockfile from "proper-lockfile";
-import { websocket } from "hono/bun";
+import { websocket } from "@hono/bun";
 import { createAuth } from "./auth";
 import { novncResponse, ticketOwner } from "../bot-desktop/desktop-viewer";
 import { createTenant } from "./tenant";

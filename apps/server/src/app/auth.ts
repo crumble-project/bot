@@ -16,7 +16,7 @@ export async function createAuth(dataDir: string, baseURL: string) {
     });
   chmodSync(secretPath, 0o600);
   const database = new Database(join(dataDir, "auth.sqlite"));
-  database.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
+  database.run("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
 
   const options = {
     appName: "Crumble",

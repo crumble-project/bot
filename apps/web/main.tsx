@@ -131,7 +131,8 @@ const newBotRoute = createRoute({
 const botRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/bots/$botId",
-  loader: ({ params }) => queryClient.ensureQueryData(chatQuery(params.botId)),
+  loader: ({ params }) =>
+    queryClient.query({ ...chatQuery(params.botId), staleTime: "static" }),
   component: function BotPage() {
     const { botId } = botRoute.useParams();
 
@@ -142,7 +143,7 @@ const botRoute = createRoute({
 const editBotRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/bots/$botId/edit",
-  loader: () => queryClient.ensureQueryData(botsQuery),
+  loader: () => queryClient.query({ ...botsQuery, staleTime: "static" }),
   component: function EditBotPage() {
     const { botId } = editBotRoute.useParams();
     const bot = useQuery(botsQuery).data?.find((each) => each.id === botId);
@@ -185,7 +186,10 @@ const groupRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/groups/$groupId",
   loader: ({ params }) =>
-    queryClient.ensureQueryData(groupChatQuery(params.groupId)),
+    queryClient.query({
+      ...groupChatQuery(params.groupId),
+      staleTime: "static",
+    }),
   component: function GroupPage() {
     const { groupId } = groupRoute.useParams();
 
@@ -196,7 +200,7 @@ const groupRoute = createRoute({
 const editGroupRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/groups/$groupId/edit",
-  loader: () => queryClient.ensureQueryData(groupsQuery),
+  loader: () => queryClient.query({ ...groupsQuery, staleTime: "static" }),
   component: function EditGroupPage() {
     const { groupId } = editGroupRoute.useParams();
 

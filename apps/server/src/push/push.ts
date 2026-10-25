@@ -173,8 +173,8 @@ export class PushStore {
     private readonly clock: () => number = Date.now,
   ) {
     this.db = new Database(join(dataDir, "push.sqlite"));
-    this.db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;");
-    this.db.exec(`
+    this.db.run("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;");
+    this.db.run(`
       CREATE TABLE IF NOT EXISTS push_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS push_devices (
         installation_id TEXT PRIMARY KEY, platform TEXT NOT NULL, transport TEXT NOT NULL,
