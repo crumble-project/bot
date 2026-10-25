@@ -1,7 +1,5 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { Context, Effect, Layer } from "effect";
-import { ChartCompiler } from "../display/charts";
 import type { GroupChats } from "../group-chats/group-chats";
 import type { HistorySearch } from "../history/history-search";
 import type { CommonSkill } from "../skills/common-skills";
@@ -47,33 +45,6 @@ export class Plugins extends Context.Service<
   Plugins,
   readonly CrumblePlugin[]
 >()("crumble/app/Plugins") {}
-
-/** The QuickJS sandbox of code mode. */
-export class Codemode extends Context.Service<Codemode, CodemodeSandbox>()(
-  "crumble/app/Codemode",
-) {
-  static readonly layer = Layer.effect(
-    Codemode,
-    Effect.acquireRelease(
-      Effect.sync(
-        () => new CodemodeSandbox({ memoryLimitBytes: 256 * 1024 * 1024 }),
-      ),
-      (sandbox) => Effect.promise(async () => sandbox.close()),
-    ),
-  );
-}
-
-export class Charts extends Context.Service<Charts, ChartCompiler>()(
-  "crumble/app/Charts",
-) {
-  static readonly layer = Layer.effect(
-    Charts,
-    Effect.acquireRelease(
-      Effect.sync(() => new ChartCompiler()),
-      (charts) => Effect.promise(async () => charts.close()),
-    ),
-  );
-}
 
 /** The skills bundled with the server, read-only for every account. */
 export class CommonSkills extends Context.Service<

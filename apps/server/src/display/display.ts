@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 import { Type, type Static } from "@earendil-works/pi-ai";
 import type { JsonValue } from "@earendil-works/chord";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { DEFAULT_CHART_HEIGHT, type ChartCompiler } from "./charts";
+import { Effect, Layer } from "effect";
+import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { ChartCompiler, DEFAULT_CHART_HEIGHT } from "./charts";
 
 export const DISPLAY_TOOL_NAME = "show";
 
@@ -166,3 +168,17 @@ Read chart_docs before using a mark or chart family you are unsure of.`,
 
   return defineExtension({ name: "display", tools: [show, docs] });
 }
+
+/** Offers every bot the `show` tool, with a chart sandbox the layer's scope closes. */
+export const displayTools = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const charts = yield* Effect.acquireRelease(
+      Effect.sync(() => new ChartCompiler()),
+      (compiler) => Effect.promise(async () => compiler.close()),
+    );
+
+    yield* (yield* BotExtensions).register(ExtensionPosition.display, () => [
+      displayExtension(charts),
+    ]);
+  }),
+);

@@ -3,20 +3,20 @@ import { resolve, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import lockfile from "proper-lockfile";
-import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { BotRuntime } from "../bots/runtime";
 import { Bots, botsAccess, type BotsAccess } from "../bots/bots";
 import { BotMessaging } from "../bot-messaging/bot-messaging";
 import { BotActivity } from "../bots/bot-activity";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
-import { reactionExtension } from "../bots/reaction";
+import { reactionTools } from "../bots/reaction";
+import { codemodeTools } from "../bots/codemode";
 import {
   Scheduler,
   schedulerAccess,
   type SchedulerAccess,
 } from "../schedules/scheduler";
-import { BotSchedules, scheduleExtension } from "../schedules/bot-schedules";
+import { BotSchedules, scheduleTools } from "../schedules/bot-schedules";
 import { TaskDispatch } from "../schedules/task-dispatch";
 import { createAPI } from "./api";
 import { GroupChats } from "../group-chats/group-chats";
@@ -28,10 +28,13 @@ import { skillLibrary } from "../skills/skills";
 import { LearningReview } from "../skills/learning-review";
 import { SkillCurator } from "../skills/skill-curator";
 import { loadCommonSkills } from "../skills/common-skills";
-import { McpIntegrations } from "../integrations/integrations";
+import {
+  integrationTools,
+  McpIntegrations,
+} from "../integrations/integrations";
 import { clientDocument, type ClientDocument } from "../integrations/mcp-oauth";
-import { coordinationExtension } from "../bot-messaging/coordination";
-import { displayExtension } from "../display/display";
+import { coordinationTools } from "../bot-messaging/coordination";
+import { displayTools } from "../display/display";
 import { DESKTOP_TOOL_NAME } from "../jobs/desktop";
 import {
   desktopControlAccess,
@@ -62,8 +65,6 @@ import {
 import {
   AccountStore,
   AccountWorkspaces,
-  Charts,
-  Codemode,
   CommonSkills,
   GroupChatsService,
   HistorySearchService,
@@ -143,8 +144,6 @@ function accountLayer(
     AccountStore.layer,
     commonSkills,
     BotExtensions.layer,
-    Codemode.layer,
-    Charts.layer,
   ).pipe(Layer.provideMerge(coreLayer(dataDir)));
 
   const workspaces = Layer.unwrap(
@@ -328,53 +327,23 @@ function accountLayer(
     }),
   );
 
-  // Each feature's tools for bots' chats, at the positions bots were offered them before the registry.
+  // The tools of features not yet offering their own, at the positions bots were offered them before the registry.
   const tools = Layer.effectDiscard(
     Effect.gen(function* () {
       const extensions = yield* BotExtensions;
-      const integrated = yield* McpIntegrations;
-      const messaging = yield* BotMessaging;
       const groupChats = yield* GroupChatsService;
       const historySearch = yield* HistorySearchService;
-      const botSchedules = yield* BotSchedules;
-      const charts = yield* Charts;
-      const sandbox = yield* Codemode;
       const jobKinds = pluginJobKinds(yield* Plugins);
 
-      yield* extensions.register(ExtensionPosition.integrations, (agent) =>
-        integrated.extensionsForAgent(agent),
-      );
-      yield* extensions.register(ExtensionPosition.coordination, (agent) => [
-        coordinationExtension(agent, messaging),
-      ]);
       yield* extensions.register(ExtensionPosition.groupLookup, (agent) => [
         groupLookupExtension(agent, groupChats),
       ]);
       yield* extensions.register(ExtensionPosition.historyTools, (agent) => [
         historyToolsExtension(agent, historySearch),
       ]);
-      yield* extensions.register(ExtensionPosition.schedules, (agent) => [
-        scheduleExtension(agent, botSchedules),
-      ]);
-      yield* extensions.register(ExtensionPosition.display, () => [
-        displayExtension(charts),
-      ]);
-      yield* extensions.register(ExtensionPosition.reaction, () => [
-        reactionExtension(),
-      ]);
       yield* extensions.register(
         ExtensionPosition.jobs,
         (agent) => jobExtensions(jobKinds, agent).chat,
-      );
-      yield* extensions.register(ExtensionPosition.codemode, (agent) =>
-        agent.tools.includes("codemode")
-          ? [
-              createCodemodeExtension({
-                sandbox,
-                namespaces: integrated.codemodeNamespaces(agent),
-              }),
-            ]
-          : [],
       );
     }),
   );
@@ -419,6 +388,8 @@ function accountLayer(
     curation,
     jobAnswers,
     tools,
+    coordinationTools,
+    scheduleTools,
     keepAwake,
     push,
   ).pipe(
@@ -426,6 +397,15 @@ function accountLayer(
     Layer.provideMerge(Layer.mergeAll(scheduler, groups, activity)),
     Layer.provideMerge(bots),
     Layer.provideMerge(runtime),
+    // Below the runtime, so their sandboxes close after it.
+    Layer.provideMerge(
+      Layer.mergeAll(
+        integrationTools,
+        codemodeTools,
+        displayTools,
+        reactionTools,
+      ),
+    ),
     Layer.provideMerge(Layer.mergeAll(ProviderSignIns.layer, integrations)),
     Layer.provideMerge(models),
     Layer.provideMerge(plugins),

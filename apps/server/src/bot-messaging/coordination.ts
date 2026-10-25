@@ -2,7 +2,9 @@ import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import type { Agent } from "../shared/domain";
-import { botMessagingAccess, type BotMessaging } from "./bot-messaging";
+import { Effect, Layer } from "effect";
+import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { BotMessaging, botMessagingAccess } from "./bot-messaging";
 
 const output = (value: JsonValue) => ({
   structuredOutput: value,
@@ -104,3 +106,15 @@ export function coordinationExtension(
       : [],
   });
 }
+
+/** Offers bots with messaging the tools that reach other bots. */
+export const coordinationTools = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const messaging = yield* BotMessaging;
+
+    yield* (yield* BotExtensions).register(
+      ExtensionPosition.coordination,
+      (agent) => [coordinationExtension(agent, messaging)],
+    );
+  }),
+);

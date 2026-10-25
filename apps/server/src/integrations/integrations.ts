@@ -28,6 +28,7 @@ import { AgentRepository } from "../bots/agent-repository";
 import { SecretRepository } from "../credentials/secret-repository";
 import { runnerOf, type Runner } from "../shared/runner";
 import { McpServerRepository } from "./mcp-server-repository";
+import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import {
   type ClientDocument,
   connectionAuth,
@@ -574,3 +575,15 @@ export function standaloneIntegrations(
     close: () => runtime.dispose(),
   };
 }
+
+/** Offers each bot the tools of the MCP servers it may use. */
+export const integrationTools = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const integrations = yield* McpIntegrations;
+
+    yield* (yield* BotExtensions).register(
+      ExtensionPosition.integrations,
+      (agent) => integrations.extensionsForAgent(agent),
+    );
+  }),
+);

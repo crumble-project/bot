@@ -13,6 +13,7 @@ import { TaskDispatch, type ScheduleDispatchResult } from "./task-dispatch";
 import { AgentRepository } from "../bots/agent-repository";
 import { ScheduleRepository } from "./schedule-repository";
 import { Scheduler, schedulerAccess } from "./scheduler";
+import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 
 const output = (value: JsonValue) => ({
   structuredOutput: value,
@@ -421,3 +422,15 @@ export function standaloneBotSchedules(
     scheduler: schedulerAccess(runtime),
   };
 }
+
+/** Offers every bot the task tool. */
+export const scheduleTools = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const schedules = yield* BotSchedules;
+
+    yield* (yield* BotExtensions).register(
+      ExtensionPosition.schedules,
+      (agent) => [scheduleExtension(agent, schedules)],
+    );
+  }),
+);

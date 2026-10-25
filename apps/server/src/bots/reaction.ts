@@ -1,6 +1,8 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { z } from "zod";
+import { Layer } from "effect";
+import { BotExtensions, ExtensionPosition } from "./bot-extensions";
 
 export const REACTION_TOOL_NAME = "react";
 
@@ -53,3 +55,12 @@ export function reactionExtension() {
 
   return defineExtension({ name: "reaction", tools: [react] });
 }
+
+/** Offers every bot the `react` tool. */
+export const reactionTools = Layer.effectDiscard(
+  BotExtensions.use((extensions) =>
+    extensions.register(ExtensionPosition.reaction, () => [
+      reactionExtension(),
+    ]),
+  ),
+);
