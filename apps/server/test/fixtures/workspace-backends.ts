@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { Sandbox as MicrosandboxSandbox } from "microsandbox";
 import { Sandbox as RailwaySandbox } from "railway";
-import type { MachineWorkspaces } from "../../src/machine-workspaces";
-import { MicrosandboxWorkspaces } from "../../src/microsandbox-workspaces";
-import { RailwayWorkspaces } from "../../src/railway-workspaces";
+import type { MachineWorkspaces } from "../../src/workspaces/machine-workspaces";
+import { MicrosandboxWorkspaces } from "../../src/workspaces/microsandbox-workspaces";
+import { RailwayWorkspaces } from "../../src/workspaces/railway-workspaces";
 
 export type BackendWorkspacesOptions = {
   namePrefix: string;

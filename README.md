@@ -50,7 +50,7 @@ Build `--target desktop` as `crumble-workspace-desktop:dev` to enable bot deskto
 
 With `CRUMBLE_WORKSPACE_BACKEND=railway`, each bot's workspace is a [Railway sandbox](https://docs.railway.com/sandboxes) instead, so the server needs no virtualization ([ADR 0005](docs/adr/0005-railway-workspaces.md)). Set `RAILWAY_TOKEN` (a project token) or `RAILWAY_API_TOKEN`, and `RAILWAY_ENVIRONMENT_ID`. Use a Hobby or Pro plan: other plans destroy idle sandboxes after 5 minutes. A bot's files survive as the checkpoint `crumble-<user id>-<bot id>` in that environment, and outbound connections are not filtered. The first bot desktop waits a few minutes while Railway builds the desktop template.
 
-Live tests create billed sandboxes: `CRUMBLE_RAILWAY_TESTS=1 bun test apps/server/test/railway-workspaces.test.ts`.
+Live tests create billed sandboxes: `CRUMBLE_RAILWAY_TESTS=1 bun test apps/server/src/workspaces/railway-workspaces.test.ts`.
 
 ## Accounts and isolation
 
@@ -78,7 +78,9 @@ On Linux with KVM workspaces, layer `compose.kvm.yaml` and pass `CRUMBLE_KVM_GID
 
 ## Develop
 
-The repository is a Bun workspace: `apps/server` holds the server, its tests, bundled skills, and the workspace image, and `apps/web` holds the web UI, which the server bundles and serves. Run scripts from the repository root.
+The repository is a Bun workspace: `apps/server` holds the server, bundled skills, and the workspace image, and `apps/web` holds the web UI, which the server bundles and serves. Run scripts from the repository root.
+
+Server code is grouped by feature under `apps/server/src/` (`bots/`, `group-chats/`, `jobs/`, `workspaces/`, and so on), with each test next to the file it covers. `app/` wires the features into the server, `contract/` holds the HTTP and SSE schemas, and `shared/` holds the domain types and the product store.
 
 ```bash
 bun run check                  # Lint, format, typecheck, contract drift, and unit tests

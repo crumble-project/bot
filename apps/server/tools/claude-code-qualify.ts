@@ -20,7 +20,7 @@ import {
   CLAUDE_CODE_API,
   streamClaudeCode,
   type AdapterOptions,
-} from "../src/claude-code/adapter";
+} from "../src/providers/claude-code/adapter";
 
 const binary = process.argv[2];
 

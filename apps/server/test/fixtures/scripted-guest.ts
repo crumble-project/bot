@@ -1,7 +1,7 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { ExecutionError, FileError } from "@earendil-works/pi-durable/env";
 import { z } from "zod";
-import type { DesktopShell } from "../../src/computer-use";
+import type { DesktopShell } from "../../src/bot-desktop/computer-use";
 
 const jsonObject = z.record(z.string(), z.json());
 

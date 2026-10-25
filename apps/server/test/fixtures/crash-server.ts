@@ -1,8 +1,8 @@
 import { createModels, type AssistantMessage } from "@earendil-works/pi-ai";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
-import { Store } from "../../src/store";
-import { AgentRuntime } from "../../src/runtime";
-import { CrumbleService } from "../../src/service";
+import { Store } from "../../src/shared/store";
+import { AgentRuntime } from "../../src/bots/runtime";
+import { CrumbleService } from "../../src/bots/service";
 
 const dir = process.env["BOT_CRASH_DIR"];
 

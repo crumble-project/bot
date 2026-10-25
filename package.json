@@ -15,18 +15,18 @@
     "typescript": "7.0.2"
   },
   "scripts": {
-    "dev": "bun --watch apps/server/src/server.ts",
-    "start": "bun apps/server/src/server.ts",
+    "dev": "bun --watch apps/server/src/app/server.ts",
+    "start": "bun apps/server/src/app/server.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit -p apps/server && tsc --noEmit -p apps/web",
-    "lint": "oxlint",
+    "lint": "oxlint --deny-warnings",
     "format": "oxfmt apps",
     "format:check": "oxfmt --check apps",
-    "openapi:generate": "bun apps/server/src/openapi.ts",
-    "openapi:check": "bun apps/server/src/openapi.ts --check",
-    "contract:bundle": "bun apps/server/src/openapi.ts --bundle",
-    "contract:validate": "bun apps/server/src/contract-release.ts validate",
-    "contract:compatibility": "bun apps/server/src/contract-release.ts compatibility",
+    "openapi:generate": "bun apps/server/src/contract/openapi.ts",
+    "openapi:check": "bun apps/server/src/contract/openapi.ts --check",
+    "contract:bundle": "bun apps/server/src/contract/openapi.ts --bundle",
+    "contract:validate": "bun apps/server/src/contract/contract-release.ts validate",
+    "contract:compatibility": "bun apps/server/src/contract/contract-release.ts compatibility",
     "check": "bun run lint && bun run format:check && bun run typecheck && bun run openapi:check && bun test"
   }
 }

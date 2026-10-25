@@ -24,7 +24,7 @@
   ],
   "overrides": [
     {
-      "files": ["apps/*/test/**"],
+      "files": ["**/*.test.ts"],
       "rules": { "typescript/await-thenable": "off" }
     }
   ],

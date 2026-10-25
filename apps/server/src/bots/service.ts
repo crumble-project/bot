@@ -1,0 +1,657 @@
+import { Store } from "../shared/store";
+import { z } from "zod";
+import { AgentRuntime } from "./runtime";
+import type { JobAnswer } from "../jobs/jobs";
+import {
+  AppError,
+  conversationReference,
+  type Agent,
+  type Conversation,
+  type Execution,
+} from "../shared/domain";
+import {
+  latestMessagePreview,
+  latestReply,
+  type BotMessageEvent,
+  type MessageOrigin,
+} from "./transcript";
+import {
+  attachmentDigest,
+  prepareAttachments,
+  type AttachmentInput,
+} from "../shared/attachments";
+
+export const delegationRequest = (sourceAgentId: string, taskId: string) =>
+  `delegate:${sourceAgentId}:${taskId}`;
+
+/** Group turns run as executions too, but their output belongs to the group, not the bot chat. */
+export const GROUP_TURN_PREFIX = "group-turn:";
+
+const isGroupTurn = (execution: Execution) =>
+  execution.requestId.startsWith(GROUP_TURN_PREFIX);
+
+/** The IANA timezone the owner's client last reported with a chat message. */
+export const OWNER_TIMEZONE = "owner-timezone";
+
+const isTimezone = (timezone: string) => {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** A finished reply anywhere on the server, for clients that notify their owner. */
+export type ReplyActivity = {
+  type: "reply";
+  executionId: string;
+  agentId: string;
+  agentName: string;
+  entryId: string | null;
+  origin: string;
+  preview: string;
+  createdAt: string;
+  /** Set for a bot's answer in a group chat; clients open the group instead of the bot chat. */
+  groupId?: string;
+  /** Set for a bot's answer to a coding or desktop job's report (origin `coding` or `desktop`): the job's name. */
+  jobName?: string;
+  groupName?: string;
+};
+
+export type ChatPreviewActivity = {
+  type: "chat-preview";
+  agentId: string;
+  agentName: string;
+  lastMessage: string;
+};
+
+/** What a bot's review of one execution changed, for the notice in its chat. */
+export type LearnedActivity = {
+  type: "learned";
+  agentId: string;
+  agentName: string;
+  executionId: string;
+  changes: Array<{
+    changeId: string;
+    target: "skill" | "memory";
+    action: "create" | "update" | "delete" | "revert";
+    name: string;
+  }>;
+  createdAt: string;
+};
+
+export type Activity = ReplyActivity | ChatPreviewActivity | LearnedActivity;
+
+export class CrumbleService {
+  private monitoring = new Map<string, Promise<void>>();
+  private closing = false;
+  private listeners = new Map<string, Set<() => void>>();
+  private activityListeners = new Set<(event: Activity) => void>();
+  private chatOpening = new Map<string, Promise<Conversation>>();
+  private settledListeners = new Set<
+    (execution: Execution) => void | Promise<void>
+  >();
+  constructor(
+    readonly store: Store,
+    readonly runtime: AgentRuntime,
+  ) {}
+
+  agent(id: string): Agent {
+    const agent = this.store.getAgent(id);
+
+    if (!agent) throw new AppError(404, "Agent not found");
+
+    return agent;
+  }
+
+  conversation(id: string) {
+    const conversation = this.store.getConversation(id);
+
+    if (!conversation || conversation.archived)
+      throw new AppError(404, "Conversation not found");
+
+    return { conversation, agent: this.agent(conversation.agentId) };
+  }
+
+  subscribe(conversationId: string, callback: () => void) {
+    const listeners = this.listeners.get(conversationId) ?? new Set();
+    listeners.add(callback);
+    this.listeners.set(conversationId, listeners);
+
+    return () => {
+      listeners.delete(callback);
+
+      if (!listeners.size) this.listeners.delete(conversationId);
+    };
+  }
+
+  onActivity(callback: (event: Activity) => void) {
+    this.activityListeners.add(callback);
+
+    return () => {
+      this.activityListeners.delete(callback);
+    };
+  }
+
+  /** Runs when an execution is done, failed, or cancelled; it may run more than once for one execution. */
+  onSettled(callback: (execution: Execution) => void | Promise<void>) {
+    this.settledListeners.add(callback);
+
+    return () => {
+      this.settledListeners.delete(callback);
+    };
+  }
+
+  private settled(executionId: string) {
+    const execution = this.store.getExecution(executionId);
+
+    if (!execution || ["pending", "running"].includes(execution.status)) return;
+
+    for (const listener of this.settledListeners)
+      void Promise.resolve(listener(execution)).catch((error) =>
+        console.error("Settled execution handler failed", executionId, error),
+      );
+  }
+
+  /** Reads existing durable history for sidebar summaries without creating a chat. */
+  async agentPreviews() {
+    return Promise.all(
+      this.store.listAgents().map(async (agent) => {
+        const conversation = this.store.listConversations(agent.id, true)[0];
+
+        if (!conversation) return { agent, lastMessage: "" };
+        const history = await this.runtime.history(agent, { limit: 200 });
+
+        return { agent, lastMessage: latestMessagePreview(history.messages) };
+      }),
+    );
+  }
+
+  private async announcePreview(agentId: string, conversationId: string) {
+    if (!this.activityListeners.size) return;
+    const agent = this.store.getAgent(agentId);
+
+    if (!agent) return;
+    const { messages } = await this.snapshot(conversationId);
+    const lastMessage = latestMessagePreview(messages);
+
+    const event: ChatPreviewActivity = {
+      type: "chat-preview",
+      agentId: agent.id,
+      agentName: agent.name,
+      lastMessage,
+    };
+
+    for (const listener of this.activityListeners) listener(event);
+  }
+
+  /** Tells activity listeners which bot answered and how its reply begins. */
+  private async announceReply(execution: Execution) {
+    if (!this.activityListeners.size) return;
+    const agent = this.store.getAgent(execution.agentId);
+
+    if (!agent) return;
+    const { messages } = await this.snapshot(execution.conversationId);
+    const lastMessage = latestMessagePreview(messages);
+
+    for (const listener of this.activityListeners)
+      listener({
+        type: "chat-preview",
+        agentId: agent.id,
+        agentName: agent.name,
+        lastMessage,
+      });
+
+    const { reply, reaction } = latestReply(messages);
+
+    // A reaction acknowledges the input without an answer worth a notification.
+    if (!reply && reaction) return;
+
+    const event: ReplyActivity = {
+      type: "reply",
+      executionId: execution.id,
+      agentId: agent.id,
+      agentName: agent.name,
+      entryId: reply?.entryId ?? null,
+      origin: this.origin(execution).kind,
+      preview: reply?.content.trim().slice(0, 240) ?? "",
+      createdAt: execution.createdAt,
+    };
+
+    for (const listener of this.activityListeners) listener(event);
+  }
+
+  /**
+   * Tells activity listeners about the bot's answer to a job's report, such as a desktop job asking for the owner. Job
+   * reports reach the chat without an execution, so `announceReply` never sees them. Bots of another server in the same
+   * process are ignored.
+   */
+  announceJobAnswer(answer: JobAnswer) {
+    const agent = this.store.getAgent(answer.agentId);
+
+    if (!agent) return;
+
+    this.announce({
+      type: "reply",
+      executionId: answer.eventId,
+      agentId: agent.id,
+      agentName: agent.name,
+      entryId: conversationReference(agent.id, Number(answer.entryId)),
+      origin: answer.kind,
+      jobName: answer.name,
+      preview: answer.preview,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  /** Tells activity listeners, such as push delivery, about a reply that did not come from a bot chat execution, or a learned change. */
+  announce(event: ReplyActivity | LearnedActivity) {
+    for (const listener of this.activityListeners) listener(event);
+  }
+
+  private changed(conversationId: string) {
+    for (const listener of this.listeners.get(conversationId) ?? []) listener();
+  }
+
+  async snapshot(
+    conversationId: string,
+    options: { limit?: number | undefined } = {},
+  ) {
+    const { agent, conversation } = this.conversation(conversationId);
+
+    const snapshot = await this.runtime.snapshot(
+      agent,
+      conversationId,
+      options,
+    );
+
+    const latest = this.store
+      .listExecutions(agent.id)
+      .find((execution) => execution.conversationId === conversationId);
+
+    return {
+      ...snapshot,
+      agentId: agent.id,
+      conversation,
+      error: latest?.status === "failed" ? latest.error : null,
+    };
+  }
+
+  /** The bot's one continuous chat, created on first use and stable across restarts. */
+  async chat(agentId: string): Promise<Conversation> {
+    const opening = this.chatOpening.get(agentId);
+
+    if (opening) return opening;
+
+    const promise = (async () => {
+      const agent = this.agent(agentId);
+      const saved = this.store.getSetting<string>(`chat:${agentId}`);
+      const existing = saved ? this.store.getConversation(saved) : undefined;
+
+      if (existing?.agentId === agentId)
+        return existing.archived
+          ? this.store.restoreConversation(existing.id)!
+          : existing;
+      // Upgrades from session-based installs continue the most recent session's working context.
+      const legacy = this.store.listConversations(agentId, true)[0];
+
+      const chat = legacy
+        ? legacy.archived
+          ? this.store.restoreConversation(legacy.id)!
+          : legacy
+        : this.store.createConversation(
+            { agentId, title: agent.name },
+            await this.runtime.openChat(agent),
+          );
+
+      this.store.setSetting(`chat:${agentId}`, chat.id);
+
+      return chat;
+    })();
+
+    this.chatOpening.set(agentId, promise);
+
+    try {
+      return await promise;
+    } finally {
+      this.chatOpening.delete(agentId);
+    }
+  }
+
+  async recordBotMessage(
+    agentId: string,
+    event: BotMessageEvent,
+    requestId: string,
+  ) {
+    const chat = await this.chat(agentId);
+    await this.runtime.recordBotMessage(
+      this.agent(agentId),
+      chat.id,
+      event,
+      requestId,
+    );
+    this.changed(chat.id);
+    void this.announcePreview(agentId, chat.id).catch((error) =>
+      console.error("Chat preview announcement failed", agentId, error),
+    );
+  }
+
+  async chatSnapshot(
+    agentId: string,
+    options: { limit?: number | undefined } = {},
+  ) {
+    return this.snapshot((await this.chat(agentId)).id, options);
+  }
+
+  async history(
+    agentId: string,
+    options: { before?: string | undefined; limit?: number | undefined },
+  ) {
+    return this.runtime.history(this.agent(agentId), options);
+  }
+
+  async codingJobs(agentId: string) {
+    return this.runtime.codingJobs(this.agent(agentId));
+  }
+
+  async codingJobHistory(
+    agentId: string,
+    name: string,
+    options: { before?: string | undefined; limit?: number | undefined },
+  ) {
+    return this.runtime.codingJobHistory(this.agent(agentId), name, options);
+  }
+
+  async desktopJobs(agentId: string) {
+    return this.runtime.desktopJobs(this.agent(agentId));
+  }
+
+  async desktopJobHistory(
+    agentId: string,
+    name: string,
+    options: { before?: string | undefined; limit?: number | undefined },
+  ) {
+    return this.runtime.desktopJobHistory(this.agent(agentId), name, options);
+  }
+
+  async sendChat(
+    agentId: string,
+    content: string,
+    requestId: string,
+    replyTo?: string,
+    attachments: AttachmentInput[] = [],
+    timezone?: string,
+  ) {
+    if (timezone && isTimezone(timezone))
+      this.store.setSetting(OWNER_TIMEZONE, timezone);
+
+    return this.send((await this.chat(agentId)).id, content, requestId, {
+      replyTo,
+      attachments,
+    });
+  }
+
+  /** A message from Crumble itself that starts a turn in the bot's chat; `requestId` names its origin. */
+  async notice(agentId: string, content: string, requestId: string) {
+    return this.send((await this.chat(agentId)).id, content, requestId);
+  }
+
+  async send(
+    conversationId: string,
+    content: string,
+    requestId: string,
+    options: {
+      scheduleId?: string;
+      replyTo?: string | undefined;
+      attachments?: AttachmentInput[] | undefined;
+    } = {},
+  ) {
+    const { agent } = this.conversation(conversationId);
+
+    if (!agent.enabled)
+      throw new AppError(409, "Enable this agent before starting work");
+    const replyTo = options.replyTo ?? null;
+    const attachments = options.attachments ?? [];
+    // Validate before anything is stored, so a bad file never leaves a failed execution behind.
+    prepareAttachments(attachments);
+    const attachmentsDigest = attachmentDigest(attachments);
+    let execution = this.store.findExecution(conversationId, requestId);
+
+    if (
+      execution &&
+      (execution.prompt !== content ||
+        (execution.replyTo ?? null) !== replyTo ||
+        (execution.attachmentsDigest ?? null) !== attachmentsDigest)
+    )
+      throw new AppError(
+        409,
+        "Request ID already used for a different message",
+      );
+    execution ??= this.store.createExecution({
+      agentId: agent.id,
+      conversationId,
+      scheduleId: options.scheduleId ?? null,
+      requestId,
+      prompt: content,
+      replyTo,
+      attachments,
+      attachmentsDigest,
+      submissionId: null,
+      status: "pending",
+      error: null,
+    });
+    await this.admit(execution);
+    this.changed(conversationId);
+
+    if (isGroupTurn(execution)) return this.store.getExecution(execution.id)!;
+    void this.announcePreview(execution.agentId, conversationId).catch(
+      (error) =>
+        console.error("Chat preview announcement failed", execution.id, error),
+    );
+
+    return this.store.getExecution(execution.id)!;
+  }
+
+  private origin(execution: Execution): MessageOrigin {
+    if (isGroupTurn(execution)) return { kind: "group" };
+
+    if (execution.scheduleId)
+      return {
+        kind: "task",
+        name:
+          this.store.getSchedule(execution.scheduleId)?.name ??
+          "Scheduled task",
+      };
+    const [prefix, subject] = execution.requestId.split(":");
+
+    if (prefix === "credential" && subject)
+      return { kind: "credential", name: subject };
+
+    if (prefix === "delegate" && subject)
+      return {
+        kind: "bot",
+        agentId: subject,
+        name: this.store.getAgent(subject)?.name ?? "Another bot",
+      };
+
+    return { kind: "owner" };
+  }
+
+  private async admit(execution: Execution) {
+    if (["done", "cancelled"].includes(execution.status)) return;
+
+    // Admission can fail after Pi has committed but before the host gets its ID.
+    // Reuse the durable request ID; never create another user turn to recover it.
+    if (execution.status === "failed" && execution.submissionId) return;
+    const agent = this.agent(execution.agentId);
+
+    if (!agent.enabled) {
+      await this.runtime.abort(agent, execution.conversationId);
+      this.store.updateExecution(execution.id, { status: "cancelled" });
+      this.changed(execution.conversationId);
+      this.settled(execution.id);
+
+      return;
+    }
+
+    try {
+      const submissionId =
+        execution.submissionId ??
+        (await this.runtime.submit(
+          agent,
+          execution.conversationId,
+          execution.prompt,
+          execution.requestId,
+          {
+            replyTo: execution.replyTo ?? undefined,
+            origin: this.origin(execution),
+            attachments: this.store.executionAttachments(execution.id),
+          },
+        ));
+
+      this.store.updateExecution(execution.id, {
+        submissionId,
+        status: "running",
+      });
+      this.store.clearExecutionAttachments(execution.id);
+
+      if (!this.monitoring.has(execution.id)) {
+        const monitor = this.runtime
+          .wait(submissionId, agent)
+          .then((result) => {
+            if (this.closing) return;
+            const current = this.store.getExecution(execution.id);
+
+            if (!current || current.status === "cancelled")
+              return this.settled(execution.id);
+            this.store.updateExecution(execution.id, {
+              status: result.status === "done" ? "done" : "failed",
+              error:
+                result.status === "done"
+                  ? null
+                  : "detail" in result
+                    ? (z.string().safeParse(result.detail).data ??
+                      result.reason)
+                    : "The agent could not answer this input",
+            });
+            this.changed(execution.conversationId);
+            this.settled(execution.id);
+
+            if (result.status === "done" && !isGroupTurn(execution))
+              void this.announceReply(execution).catch((error) =>
+                console.error("Reply announcement failed", execution.id, error),
+              );
+          })
+          .catch((error) => {
+            if (this.closing) return;
+
+            if (this.store.getExecution(execution.id))
+              this.store.updateExecution(execution.id, {
+                status: "failed",
+                error: String(error.message ?? error),
+              });
+            this.changed(execution.conversationId);
+            this.settled(execution.id);
+          })
+          .finally(() => this.monitoring.delete(execution.id));
+
+        this.monitoring.set(execution.id, monitor);
+      }
+    } catch (error) {
+      this.store.updateExecution(execution.id, {
+        status: "failed",
+        error: String(error instanceof Error ? error.message : error),
+      });
+      this.changed(execution.conversationId);
+      this.settled(execution.id);
+      throw error;
+    }
+  }
+
+  async dispatch(
+    agentId: string,
+    prompt: string,
+    requestId: string,
+    scheduleId: string,
+  ) {
+    const existing = this.store
+      .listExecutions(agentId)
+      .find((e) => e.requestId === requestId);
+
+    if (existing) {
+      await this.admit(existing);
+
+      return existing;
+    }
+
+    const chat = await this.chat(agentId);
+
+    return this.send(chat.id, prompt, requestId, { scheduleId });
+  }
+
+  async recover() {
+    for (const execution of this.store
+      .listExecutions()
+      .filter((e) => e.status === "pending" || e.status === "running")) {
+      try {
+        await this.admit(execution);
+      } catch (error) {
+        console.error("Execution recovery failed", execution.id, error);
+      }
+    }
+  }
+
+  async compact(agentId: string) {
+    const agent = this.agent(agentId);
+    const chat = await this.chat(agentId);
+    const taskId = await this.runtime.compact(agent, chat.id);
+    this.changed(chat.id);
+
+    return taskId;
+  }
+
+  async abortChat(agentId: string) {
+    await this.abort((await this.chat(agentId)).id);
+  }
+
+  async abort(conversationId: string) {
+    const { agent } = this.conversation(conversationId);
+
+    const active = this.store
+      .listExecutions(agent.id)
+      .filter(
+        (execution) =>
+          execution.conversationId === conversationId &&
+          ["pending", "running"].includes(execution.status),
+      );
+
+    await this.runtime.abort(agent, conversationId);
+
+    for (const execution of active) {
+      if (this.store.getExecution(execution.id)?.status !== "done")
+        this.store.updateExecution(execution.id, { status: "cancelled" });
+    }
+
+    this.changed(conversationId);
+
+    for (const execution of active) this.settled(execution.id);
+  }
+
+  async deleteAgent(id: string) {
+    this.agent(id);
+
+    for (const conversation of this.store.listConversations(id))
+      await this.abort(conversation.id);
+    await this.runtime.deleteAgent(id);
+    this.store.deleteAgent(id);
+  }
+
+  async close() {
+    this.closing = true;
+    await this.runtime.close();
+    await Promise.allSettled(this.monitoring.values());
+    this.store.close();
+  }
+}

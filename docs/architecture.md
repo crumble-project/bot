@@ -15,7 +15,7 @@ flowchart TD
 
 ## Core boundaries
 
-Source files named below live in `apps/server/src/` unless noted.
+Source files named below live in feature folders under `apps/server/src/`, such as `app/tenant.ts`, `shared/store.ts`, and `bots/runtime.ts`.
 
 - **Accounts (`auth.ts`, `server.ts`, `tenant.ts`):** Better Auth stores accounts and sessions in `auth.sqlite`. The host authenticates every API and viewer request before routing to a private user runtime under `users/USER_ID`. Each runtime owns its databases, files, encryption key, services, event listeners, provider logins, and workspace namespace. Startup recovers every existing account runtime so background schedules continue without an active browser. Shared memories and skills remain inside the account. Host provider environment credentials are ignored.
 
