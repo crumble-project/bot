@@ -9,12 +9,19 @@ export const desktopKeepAwake = Layer.effectDiscard(
     const machines = yield* BotWorkspaces;
     const control = yield* DesktopControl;
     const awake = new Map<string, () => void>();
+    const context = yield* Effect.context<never>();
+    const runSync = Effect.runSyncWith(context);
 
     const holdAwake = (agentId: string, state: ControlState) => {
       if (!machines) return;
 
       if (state.holder === "owner" && !awake.has(agentId))
-        awake.set(agentId, machines.keepAwake(agentId));
+        runSync(
+          machines.keepAwake(agentId).pipe(
+            Effect.map((release) => void awake.set(agentId, release)),
+            Effect.ignore,
+          ),
+        );
       else if (state.holder === "bot") {
         awake.get(agentId)?.();
         awake.delete(agentId);
@@ -23,7 +30,13 @@ export const desktopKeepAwake = Layer.effectDiscard(
 
     yield* Effect.acquireRelease(
       Effect.sync(() => control.subscribeAll(holdAwake)),
-      (stop) => Effect.sync(stop),
+      (stop) =>
+        Effect.sync(() => {
+          stop();
+
+          for (const release of awake.values()) release();
+          awake.clear();
+        }),
     );
 
     for (const agent of yield* (yield* AgentRepository).list)

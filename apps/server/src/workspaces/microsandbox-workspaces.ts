@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { Effect } from "effect";
 import { Sandbox, Volume, VolumeNotFoundError } from "microsandbox";
 import { z } from "zod";
 import {
@@ -15,8 +16,12 @@ import {
   type WorkspaceMachines,
 } from "./machine-workspaces";
 import {
+  DesktopStartError,
+  DesktopStreamError,
   GUEST_CA_PATH,
+  MachineBootError,
   WORKSPACE_PATH,
+  WorkspaceOperationError,
   allowAllRequests,
   type WorkspaceNetworkPolicy,
 } from "./workspace";
@@ -105,80 +110,114 @@ class MicrosandboxMachines implements WorkspaceMachines {
    * It restarts the bot's existing machine, so programs installed outside `/workspace` survive, and creates a new one
    * when the image changed, the machine does not start, or its proxy port is taken.
    */
-  async boot(
+  boot(
     agentId: string,
     image: string,
     guest: GuestSetup = {},
-  ): Promise<WorkspaceMachine> {
-    const name = this.name(agentId);
+  ): Effect.Effect<WorkspaceMachine, MachineBootError | DesktopStartError> {
+    const bootStep = <A>(tryPromise: () => Promise<A>) =>
+      Effect.tryPromise({
+        try: tryPromise,
+        catch: (cause) =>
+          new MachineBootError({
+            backend: this.kind,
+            agentId,
+            message: cause instanceof Error ? cause.message : String(cause),
+            cause,
+          }),
+      });
 
-    await ensureVolume(name);
+    return Effect.gen({ self: this }, function* () {
+      const name = this.name(agentId);
 
-    const decide = ({ host, port }: { host: string; port: number }) =>
-      this.network({ agentId, host, port });
+      yield* bootStep(() => ensureVolume(name));
 
-    const intercept = this.intercept?.(agentId);
+      const decide = ({ host, port }: { host: string; port: number }) =>
+        this.network({ agentId, host, port });
 
-    let sandbox: Sandbox | undefined;
-    let proxy: WorkspaceProxy | undefined;
+      const intercept = this.intercept?.(agentId);
 
-    try {
-      // A machine's network settings are fixed at creation, so a restarted one needs its proxy at the same port.
-      sandbox = await resume(name);
-      const record = sandbox && (await readMachineRecord(sandbox));
+      let sandbox: Sandbox | undefined;
+      let proxy: WorkspaceProxy | undefined;
 
-      if (sandbox && record?.image === image)
-        proxy = await startWorkspaceProxy({
-          decide,
-          intercept,
-          port: record.proxyPort,
-        }).catch(() => undefined);
-
-      if (!proxy) {
+      const cleanup = Effect.promise(async () => {
         await sandbox?.stop().catch(() => undefined);
-        proxy = await startWorkspaceProxy({ decide, intercept });
-        const address = proxy.address;
+        await proxy?.close();
+      });
 
-        // replace() also takes over a machine that could not be resumed.
-        sandbox = await Sandbox.builder(name)
-          .image(image)
-          .cpus(CPUS)
-          .memory(MEMORY_MIB)
-          .volume(WORKSPACE_PATH, (mount) => mount.named(name))
-          .proxy((outbound) => outbound.httpConnect(address))
-          .replace()
-          .create();
+      return yield* Effect.gen({ self: this }, function* () {
+        // A machine's network settings are fixed at creation, so a restarted one needs its proxy at the same port.
+        sandbox = yield* bootStep(() => resume(name));
 
-        const record: MachineRecord = {
-          image,
-          proxyPort: Number(address.split(":")[1]),
-        };
+        const record = sandbox
+          ? yield* bootStep(() => readMachineRecord(sandbox!))
+          : undefined;
 
-        await sandbox.fs().write(MACHINE_FILE, JSON.stringify(record));
-        await flush(sandbox);
-      }
+        if (sandbox && record?.image === image)
+          proxy = yield* bootStep(() =>
+            startWorkspaceProxy({
+              decide,
+              intercept,
+              port: record.proxyPort,
+            }).catch(() => undefined),
+          );
 
-      const machine = sandbox!;
+        if (!proxy) {
+          yield* bootStep(async () => {
+            await sandbox?.stop().catch(() => undefined);
+            proxy = await startWorkspaceProxy({ decide, intercept });
+            const address = proxy.address;
 
-      await machine.fs().write(GUEST_DAEMON, await readFile(this.daemon));
-      await run(machine, `chmod 755 ${GUEST_DAEMON}`);
+            // replace() also takes over a machine that could not be resumed.
+            sandbox = await Sandbox.builder(name)
+              .image(image)
+              .cpus(CPUS)
+              .memory(MEMORY_MIB)
+              .volume(WORKSPACE_PATH, (mount) => mount.named(name))
+              .proxy((outbound) => outbound.httpConnect(address))
+              .replace()
+              .create();
 
-      if (guest.caCertificate) {
-        await machine.fs().write(GUEST_CA_PATH, guest.caCertificate);
-        await run(machine, "update-ca-certificates >/dev/null");
-      }
+            const createdRecord: MachineRecord = {
+              image,
+              proxyPort: Number(address.split(":")[1]),
+            };
 
-      const desktop = image === this.desktopImage;
+            await sandbox
+              .fs()
+              .write(MACHINE_FILE, JSON.stringify(createdRecord));
+            await flush(sandbox);
+          });
+        }
 
-      if (desktop)
-        await run(machine, `${DESKTOP_START} ${DESKTOP_DISPLAY_ONLY}`);
+        const machine = sandbox!;
 
-      return new MicrosandboxMachine(machine, proxy, image, desktop);
-    } catch (error) {
-      await sandbox?.stop().catch(() => undefined);
-      await proxy?.close();
-      throw error;
-    }
+        yield* bootStep(async () => {
+          await machine.fs().write(GUEST_DAEMON, await readFile(this.daemon));
+          await run(machine, `chmod 755 ${GUEST_DAEMON}`);
+
+          if (guest.caCertificate) {
+            await machine.fs().write(GUEST_CA_PATH, guest.caCertificate);
+            await run(machine, "update-ca-certificates >/dev/null");
+          }
+        });
+
+        const desktop = image === this.desktopImage;
+
+        if (desktop)
+          yield* Effect.tryPromise({
+            try: () => run(machine, `${DESKTOP_START} ${DESKTOP_DISPLAY_ONLY}`),
+            catch: (cause) =>
+              new DesktopStartError({
+                agentId,
+                message: cause instanceof Error ? cause.message : String(cause),
+                cause,
+              }),
+          });
+
+        return new MicrosandboxMachine(machine, proxy!, image, desktop);
+      }).pipe(Effect.onError(() => cleanup));
+    }).pipe(Effect.withSpan("MicrosandboxMachines.boot"));
   }
 }
 
@@ -191,53 +230,97 @@ class MicrosandboxMachine implements WorkspaceMachine {
   ) {}
 
   /** The start script, run again: while the desktop is up it only waits for the browser. */
-  async desktopReady() {
-    if (this.desktop) await run(this.sandbox, DESKTOP_START);
+  get desktopReady(): Effect.Effect<void, DesktopStartError> {
+    if (!this.desktop) return Effect.void;
+
+    return Effect.tryPromise({
+      try: () => run(this.sandbox, DESKTOP_START),
+      catch: (cause) =>
+        new DesktopStartError({
+          message: cause instanceof Error ? cause.message : String(cause),
+          cause,
+        }),
+    });
   }
 
-  isAlive() {
-    return this.sandbox.ping().then(
-      () => true,
-      () => false,
+  get isAlive(): Effect.Effect<boolean, WorkspaceOperationError> {
+    return Effect.promise(() =>
+      this.sandbox.ping().then(
+        () => true,
+        () => false,
+      ),
     );
   }
 
-  async stream(
+  stream(
     command: string,
     args: readonly string[],
-  ): Promise<MachineStream> {
-    const exec = await this.sandbox.execStreamWith(command, (options) =>
-      options.args([...args]).stdinPipe(),
-    );
+  ): Effect.Effect<MachineStream, DesktopStreamError> {
+    const sandbox = this.sandbox;
 
-    const stdin = await exec.takeStdin();
+    return Effect.tryPromise({
+      try: async () => {
+        const exec = await sandbox.execStreamWith(command, (options) =>
+          options.args([...args]).stdinPipe(),
+        );
 
-    if (!stdin) throw new Error(`${command} has no stdin`);
+        const stdin = await exec.takeStdin();
 
-    async function* output() {
-      for await (const event of exec)
-        if (event.kind === "stdout") yield new Uint8Array(event.data);
-    }
+        if (!stdin) throw new Error(`${command} has no stdin`);
 
-    return {
-      write: (data) => stdin.write(data),
-      end: () => stdin.close(),
-      output: output(),
-    };
+        async function* output() {
+          for await (const event of exec)
+            if (event.kind === "stdout") yield new Uint8Array(event.data);
+        }
+
+        return {
+          write: (data: Uint8Array) => stdin.write(data),
+          end: () => stdin.close(),
+          output: output(),
+        };
+      },
+      catch: (cause) =>
+        new DesktopStreamError({
+          command,
+          message: cause instanceof Error ? cause.message : String(cause),
+          cause,
+        }),
+    });
   }
 
   /** A killed machine loses what the guest had not synced. */
-  sync() {
-    return flush(this.sandbox);
+  get sync(): Effect.Effect<void, WorkspaceOperationError> {
+    return Effect.tryPromise({
+      try: () => flush(this.sandbox),
+      catch: (cause) =>
+        new WorkspaceOperationError({
+          message: cause instanceof Error ? cause.message : String(cause),
+          cause,
+        }),
+    });
   }
 
-  async stop() {
-    try {
-      if (await this.isAlive()) await flush(this.sandbox);
-    } finally {
-      await this.sandbox.stop().catch(() => undefined);
-      await this.proxy.close();
-    }
+  get stop(): Effect.Effect<void, WorkspaceOperationError> {
+    return Effect.tryPromise({
+      try: async () => {
+        try {
+          const alive = await this.sandbox.ping().then(
+            () => true,
+            () => false,
+          );
+
+          if (alive) await flush(this.sandbox);
+        } finally {
+          await this.sandbox.stop().catch(() => undefined);
+          await this.proxy.close();
+        }
+      },
+      catch: (cause) =>
+        new WorkspaceOperationError({
+          message: cause instanceof Error ? cause.message : String(cause),
+          cause,
+        }),
+    });
   }
 }
 

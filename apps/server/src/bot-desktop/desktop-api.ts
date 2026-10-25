@@ -1,5 +1,6 @@
 import type { Register } from "../contract/route";
 import { upgradeWebSocket } from "@hono/bun";
+import { Effect } from "effect";
 import { streamSSE } from "hono/streaming";
 import type { WSContext, WSMessageReceive } from "hono/ws";
 import {
@@ -16,8 +17,9 @@ import {
   type ViewerTickets,
 } from "./desktop-viewer";
 import type { BotsAccess } from "../bots/bots";
-import type { DesktopStream } from "../workspaces/workspace";
+import type { DesktopOpenError, DesktopStream } from "../workspaces/workspace";
 import { Conflict } from "../shared/errors";
+import type { Runner } from "../shared/runner";
 
 const HEARTBEAT_MS = 15_000;
 
@@ -40,14 +42,17 @@ export function registerDesktopRoutes(options: {
   app: ReturnType<typeof contractApp>;
   register: Register;
   service: BotsAccess;
+  run: Runner<never>;
   /** Whether the server has a desktop workspace image. */
   desktop: boolean;
   control: DesktopControlAccess;
   tickets: ViewerTickets;
-  openDesktop?: (agentId: string) => Promise<DesktopStream>;
-  startDesktop?: (agentId: string) => Promise<void>;
+  openDesktop?: (
+    agentId: string,
+  ) => Effect.Effect<DesktopStream, DesktopOpenError>;
+  startDesktop?: (agentId: string) => Effect.Effect<void, DesktopOpenError>;
 }) {
-  const { app, register, service, control, tickets } = options;
+  const { app, register, service, run, control, tickets } = options;
   // The bot of each viewer connection, from its redeemed ticket to its WebSocket.
   const viewers = new WeakMap<Request, string>();
 
@@ -111,7 +116,8 @@ export function registerDesktopRoutes(options: {
     const { ticket, expiresAt } = tickets.issue(agent.id);
 
     // The machine boots while the client loads the page; the viewer's WebSocket reports any failure.
-    void options.startDesktop?.(agent.id).catch(() => undefined);
+    if (options.startDesktop)
+      run.runFork(Effect.ignore(options.startDesktop(agent.id)));
 
     return c.json({ path: `${VIEWER_PREFIX}/${ticket}`, expiresAt }, 201);
   });
@@ -149,22 +155,31 @@ export function registerDesktopRoutes(options: {
 
       return {
         onOpen: (_event, ws: WSContext) => {
-          void options.openDesktop!(agentId)
-            .then((stream) => {
-              if (closed) return void stream.close();
+          run.runFork(
+            options.openDesktop!(agentId).pipe(
+              Effect.tap((stream) =>
+                Effect.sync(() => {
+                  if (closed) return void stream.close();
 
-              bridge = bridgeDesktop({
-                stream,
-                // Watching never lets input through; only the owner holding control does.
-                allowInput: () => control.get(agentId).holder === "owner",
-                // A copy: the WebSocket takes only bytes backed by a plain ArrayBuffer.
-                send: (data) => ws.send(new Uint8Array(data)),
-                close: () => ws.close(),
-              });
+                  bridge = bridgeDesktop({
+                    stream,
+                    // Watching never lets input through; only the owner holding control does.
+                    allowInput: () => control.get(agentId).holder === "owner",
+                    // A copy: the WebSocket takes only bytes backed by a plain ArrayBuffer.
+                    send: (data) => ws.send(new Uint8Array(data)),
+                    close: () => ws.close(),
+                  });
 
-              for (const data of pending.splice(0)) bridge.receive(data);
-            })
-            .catch(() => ws.close(1011, "The bot desktop is unavailable"));
+                  for (const data of pending.splice(0)) bridge.receive(data);
+                }),
+              ),
+              Effect.catchCause(() =>
+                Effect.sync(() =>
+                  ws.close(1011, "The bot desktop is unavailable"),
+                ),
+              ),
+            ),
+          );
         },
         onMessage: async (event) => {
           const data = await bytesOf(event.data);

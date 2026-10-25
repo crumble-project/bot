@@ -138,11 +138,12 @@ export function viewerPage(ticket: string) {
     connected = true;
     status.classList.add("done");
   });
-  rfb.addEventListener("disconnect", () => {
+  rfb.addEventListener("disconnect", (event) => {
     document.title = "Bot desktop (disconnected)";
     if (connected) return;
     status.classList.add("failed");
-    document.getElementById("message").textContent = "The bot desktop is unavailable";
+    document.getElementById("message").textContent =
+      event.detail?.reason || "The bot desktop is unavailable";
   });
 </script></body></html>
 `;

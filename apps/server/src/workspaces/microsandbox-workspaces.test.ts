@@ -4,12 +4,28 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { createEnvConformance } from "@earendil-works/pi-durable/testing";
+import { Effect } from "effect";
 import { Sandbox } from "microsandbox";
+import {
+  MachineWorkspaces,
+  type WorkspaceMachine,
+  type WorkspaceMachines,
+} from "./machine-workspaces";
 import {
   MicrosandboxWorkspaces,
   microsandboxWorkspacesFromEnv,
 } from "./microsandbox-workspaces";
-import { WORKSPACE_PATH, type WorkspaceRequest } from "./workspace";
+import {
+  DesktopNotConfigured,
+  DesktopStartError,
+  DesktopStreamError,
+  InvalidAgentId,
+  MachineBootError,
+  PlainWorkspaceImage,
+  WORKSPACE_PATH,
+  WorkspacesClosed,
+  type WorkspaceRequest,
+} from "./workspace";
 
 const IMAGE = process.env["CRUMBLE_WORKSPACE_IMAGE"] ?? "";
 const vmTests = process.env["CRUMBLE_VM_TESTS"] === "1" && IMAGE !== "";
@@ -73,18 +89,162 @@ describe("workspace configuration", () => {
     expect(workspaces.imageFor("desk")).toBe("crumble-workspace:dev");
   });
 
-  test("agent ids cannot name another machine", () => {
+  test("agent ids cannot name another machine", async () => {
     const workspaces = new MicrosandboxWorkspaces("crumble-workspace:dev");
 
-    for (const agentId of ["", "../other", "a/b", "x".repeat(65)])
+    for (const agentId of ["", "../other", "a/b", "x".repeat(65)]) {
       expect(() => workspaces.env(agentId)).toThrow("Invalid agent id");
+
+      const failed = await Effect.runPromise(
+        Effect.flip(workspaces.openDesktop(agentId)),
+      );
+
+      expect(failed).toBeInstanceOf(InvalidAgentId);
+      expect(failed).toMatchObject({ agentId });
+    }
+  });
+
+  test("opening a desktop surfaces tagged errors for each failure kind", async () => {
+    const fakeMachine = (
+      image: string,
+      overrides: Partial<WorkspaceMachine> = {},
+    ): WorkspaceMachine => ({
+      image,
+      desktopReady: Effect.void,
+      isAlive: Effect.succeed(true),
+      sync: Effect.void,
+      stop: Effect.void,
+      stream: () =>
+        Effect.succeed({
+          write: () => Promise.resolve(),
+          end: () => Promise.resolve(),
+          output: (async function* () {})(),
+        }),
+      ...overrides,
+    });
+
+    const unconfigured = new MachineWorkspaces(
+      {
+        kind: "microsandbox",
+        boot: (_id, image) => Effect.succeed(fakeMachine(image)),
+      },
+      "crumble-workspace:dev",
+    );
+
+    expect(
+      await Effect.runPromise(Effect.flip(unconfigured.openDesktop("desk"))),
+    ).toBeInstanceOf(DesktopNotConfigured);
+
+    let mode: "ok" | "boot-fail" | "desktop-fail" | "stream-fail" = "ok";
+
+    const machines: WorkspaceMachines = {
+      kind: "microsandbox",
+      boot: (agentId, image) => {
+        if (mode === "boot-fail")
+          return Effect.fail(
+            new MachineBootError({
+              backend: "microsandbox",
+              agentId,
+              message: "sandbox create failed",
+            }),
+          );
+
+        if (mode === "desktop-fail")
+          return Effect.fail(
+            new DesktopStartError({
+              agentId,
+              message: "desktop-start.sh exited with code 1",
+            }),
+          );
+
+        return Effect.succeed(
+          fakeMachine(
+            image,
+            mode === "stream-fail"
+              ? {
+                  stream: (command) =>
+                    Effect.fail(
+                      new DesktopStreamError({
+                        command,
+                        message: `${command} has no stdin`,
+                      }),
+                    ),
+                }
+              : {},
+          ),
+        );
+      },
+    };
+
+    const workspaces = new MachineWorkspaces(
+      machines,
+      "crumble-workspace:dev",
+      {
+        desktopImage: "crumble-workspace-desktop:dev",
+        wantsDesktop: (agentId) => agentId !== "plain",
+      },
+    );
+
+    const plainFailed = await Effect.runPromise(
+      Effect.flip(workspaces.openDesktop("plain")),
+    );
+
+    expect(plainFailed).toBeInstanceOf(PlainWorkspaceImage);
+    expect(plainFailed).toMatchObject({
+      agentId: "plain",
+      image: "crumble-workspace:dev",
+    });
+
+    mode = "boot-fail";
+
+    const bootFailed = await Effect.runPromise(
+      Effect.flip(workspaces.openDesktop("desk-boot")),
+    );
+
+    expect(bootFailed).toBeInstanceOf(MachineBootError);
+    expect(bootFailed).toMatchObject({
+      backend: "microsandbox",
+      agentId: "desk-boot",
+    });
+
+    mode = "desktop-fail";
+
+    const scriptFailed = await Effect.runPromise(
+      Effect.flip(workspaces.openDesktop("desk-script")),
+    );
+
+    expect(scriptFailed).toBeInstanceOf(DesktopStartError);
+    expect(scriptFailed).toMatchObject({
+      agentId: "desk-script",
+    });
+
+    mode = "stream-fail";
+
+    const streamFailed = await Effect.runPromise(
+      Effect.flip(workspaces.openDesktop("desk-stream")),
+    );
+
+    expect(streamFailed).toBeInstanceOf(DesktopStreamError);
+    expect(streamFailed).toMatchObject({
+      command: "socat",
+    });
+
+    await Effect.runPromise(workspaces.close);
+
+    mode = "ok";
+
+    const closedFailed = await Effect.runPromise(
+      Effect.flip(workspaces.openDesktop("desk-closed")),
+    );
+
+    expect(closedFailed).toBeInstanceOf(WorkspacesClosed);
   });
 });
 
 describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
   const workspaces = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
 
-  afterAll(() => workspaces.close());
+  afterAll(() => Effect.runPromise(workspaces.close));
 
   const env = () => workspaces.env("conformance");
 
@@ -123,7 +283,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
     const first = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
 
     await sh(first.env("persist"), "echo kept > /workspace/note");
-    await first.close();
+    await Effect.runPromise(first.close);
 
     const second = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
 
@@ -132,7 +292,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
         "kept\n",
       );
     } finally {
-      await second.close();
+      await Effect.runPromise(second.close);
     }
   }, 120_000);
 
@@ -171,7 +331,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
         await readText(next.env("orphaned"), "/usr/local/bin/marker"),
       ).toBe("installed\n");
     } finally {
-      await next.close();
+      await Effect.runPromise(next.close);
     }
   }, 180_000);
 
@@ -192,7 +352,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
         "installed\n",
       );
     } finally {
-      await first.close();
+      await Effect.runPromise(first.close);
     }
 
     // A new server process: a new MicrosandboxWorkspaces, the same machine.
@@ -211,7 +371,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
 
       expect(https.output).toBe("200");
     } finally {
-      await second.close();
+      await Effect.runPromise(second.close);
     }
   }, 180_000);
 
@@ -227,7 +387,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
           "echo kept > /workspace/note && echo installed > /usr/local/bin/marker && sync",
         );
       } finally {
-        await first.close();
+        await Effect.runPromise(first.close);
       }
 
       const second = new MicrosandboxWorkspaces(OTHER_IMAGE, { namePrefix });
@@ -240,7 +400,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
 
         expect(result.output).toBe("kept\nnone");
       } finally {
-        await second.close();
+        await Effect.runPromise(second.close);
       }
     },
     180_000,
@@ -261,7 +421,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
         "kept\n",
       );
     } finally {
-      await idle.close();
+      await Effect.runPromise(idle.close);
     }
   }, 120_000);
 
@@ -279,12 +439,12 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
         "kept\n",
       );
     } finally {
-      await dying.close();
+      await Effect.runPromise(dying.close);
     }
   }, 120_000);
 
   test("sync is a no-op for a stopped workspace", async () => {
-    await workspaces.sync("never-started");
+    await Effect.runPromise(workspaces.sync("never-started"));
   });
 
   test("the network policy decides each connection before it leaves", async () => {
@@ -316,7 +476,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
         { agentId: "denied", host: "example.com", port: 443 },
       ]);
     } finally {
-      await denying.close();
+      await Effect.runPromise(denying.close);
     }
   }, 120_000);
 });

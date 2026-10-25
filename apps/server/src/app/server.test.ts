@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Effect } from "effect";
 import {
   agentResponse,
   groupChatResponse,
@@ -212,19 +213,20 @@ test.serial(
       env: () => {
         throw new Error("No environment in this test");
       },
-      restart: async () => {},
-      openDesktop: async () => ({
-        write: async () => {},
-        output: (async function* () {
-          yield new TextEncoder().encode("RFB 003.008\n");
-          await new Promise(() => {});
-        })(),
-        close: async () => {},
-      }),
-      keepAwake: () => () => {},
-      startDesktop: async () => {},
-      sync: async () => {},
-      close: async () => {},
+      restart: () => Effect.void,
+      openDesktop: () =>
+        Effect.succeed({
+          write: async () => {},
+          output: (async function* () {
+            yield new TextEncoder().encode("RFB 003.008\n");
+            await new Promise(() => {});
+          })(),
+          close: async () => {},
+        }),
+      keepAwake: () => Effect.succeed(() => {}),
+      startDesktop: () => Effect.void,
+      sync: () => Effect.void,
+      close: Effect.void,
     };
 
     try {

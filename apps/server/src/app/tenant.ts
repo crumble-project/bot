@@ -1,7 +1,6 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import lockfile from "proper-lockfile";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { BotRuntime } from "../bots/runtime";
@@ -129,9 +128,9 @@ function accountLayer(
       const machineOptions = {
         namePrefix: `crumble-${options.tenantId.replace(/[^A-Za-z0-9_-]/g, "-")}`,
         wantsDesktop: (agentId: string) =>
-          Effect.runSync(agents.get(agentId))?.tools.includes(
-            DESKTOP_TOOL_NAME,
-          ) === true,
+          run
+            .runSync(agents.get(agentId))
+            ?.tools.includes(DESKTOP_TOOL_NAME) === true,
         caCertificate: (agentId: string) => authorities.certificate(agentId),
         intercept: (agentId: string) =>
           credentialProxy({
@@ -325,8 +324,10 @@ export async function createTenant(
             commonSkills: yield* CommonSkills,
             coding: workspaces !== undefined,
             desktop: workspaces?.desktop === true,
-            restartWorkspace: async (agentId) =>
-              workspaces?.restart(agentId, BACKGROUND_CONTEXT),
+            restartWorkspace: (agentId) =>
+              workspaces
+                ? run.runPromise(workspaces.restart(agentId))
+                : Promise.resolve(),
             groupChats,
             desktopControl: desktopControlAccess(run),
             viewerTickets: new ViewerTickets(Date.now, options.tenantId),
@@ -336,10 +337,9 @@ export async function createTenant(
               ),
             ),
             ...(workspaces && {
-              openDesktop: (agentId: string) =>
-                workspaces.openDesktop(agentId, BACKGROUND_CONTEXT),
+              openDesktop: (agentId: string) => workspaces.openDesktop(agentId),
               startDesktop: (agentId: string) =>
-                workspaces.startDesktop(agentId, BACKGROUND_CONTEXT),
+                workspaces.startDesktop(agentId),
             }),
             providerAuth: providerSignInsAccess(run),
             oauthClient,

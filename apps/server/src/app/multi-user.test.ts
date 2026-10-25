@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Effect } from "effect";
 import { startServer } from "./server";
 import type { Workspaces } from "../workspaces/workspace";
 
@@ -274,18 +275,19 @@ test.serial(
         env: () => {
           throw new Error("unused in viewer test");
         },
-        restart: async () => undefined,
-        sync: async () => undefined,
-        close: async () => undefined,
-        keepAwake: () => () => undefined,
-        startDesktop: async () => undefined,
-        openDesktop: async () => ({
-          write: async () => undefined,
-          output: (async function* () {
-            yield new TextEncoder().encode("RFB 003.008\n");
-          })(),
-          close: async () => undefined,
-        }),
+        restart: () => Effect.void,
+        sync: () => Effect.void,
+        close: Effect.void,
+        keepAwake: () => Effect.succeed(() => undefined),
+        startDesktop: () => Effect.void,
+        openDesktop: () =>
+          Effect.succeed({
+            write: async () => undefined,
+            output: (async function* () {
+              yield new TextEncoder().encode("RFB 003.008\n");
+            })(),
+            close: async () => undefined,
+          }),
       } satisfies Workspaces;
 
       running = await startServer({
