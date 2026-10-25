@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Log bot desktop open, prewarm, and stream failures with the bot ID and original cause. Failed viewer connections close with fixed recovery instructions for the tagged failure instead of a generic unavailable message; close reasons never include backend error text or viewer credentials.
+
 - Run bot workspaces and the desktop viewer through Effect 4 services with tagged failures for configuration, boot, guest setup, desktop startup, streams, checkpoints, and teardown. Workspace idle stops, viewer and control holds, display-only viewer boot, image switching, Railway checkpoints, and shutdown after the bot runtime are preserved. The HTTP API contract is unchanged.
 
 - The server's features run as Effect services instead of classes over the store: `Bots` (formerly `CrumbleService`), `BotRuntime`, `BotMemory`, `BotMessaging`, `GroupChats` with `GroupTranscriptStore`, `BotSkills`, `SkillCurator`, `LearningReview`, `BotWorkspaces`, and `Plugins`, besides the credentials, providers, integrations, schedules, and push services converted before. Each feature registers its bot tools from a layer of its own. Closing an account interrupts waits for bot outcomes and background group turns between steps, and the next start recovers them as it recovers a crash; a step in progress, such as posting a group answer, still finishes. A `skill_manage` batch runs in one database transaction. Domain failures are tagged errors (`InvalidInput`, `Forbidden`, `NotFound`, `ReadOnly`, `Conflict`, `Gone`, `Unavailable`) mapped to the same HTTP statuses as before, and the Effect lint rules cover the whole server. Better Auth's users are read with Drizzle; SQL strings remain only in migrations and connection setup. The API contract is unchanged.

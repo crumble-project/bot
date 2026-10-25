@@ -3,7 +3,12 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { RfbProtocolError, rfbFilter } from "./rfb-filter";
-import type { DesktopStream } from "../workspaces/workspace";
+import {
+  isWorkspaceError,
+  WorkspaceStreamError,
+  type DesktopStream,
+  type WorkspaceError,
+} from "../workspaces/workspace";
 
 /** How long an issued viewer link stays valid before its WebSocket connects. */
 export const VIEWER_TICKET_MS = 60_000;
@@ -157,6 +162,8 @@ export function bridgeDesktop(options: {
   allowInput: () => boolean;
   send: (data: Uint8Array) => void;
   close: () => void;
+  agentId?: string;
+  onError?: (error: WorkspaceError) => void;
 }) {
   const { stream } = options;
   const filter = rfbFilter(options.allowInput);
@@ -167,13 +174,35 @@ export function bridgeDesktop(options: {
 
     closed = true;
     options.close();
-    await stream.close();
+    await stream.close().catch((cause) => {
+      options.onError?.(
+        isWorkspaceError(cause)
+          ? cause
+          : new WorkspaceStreamError({
+              agentId: options.agentId ?? "",
+              backend: "viewer",
+              operation: "close",
+              cause,
+            }),
+      );
+    });
   };
 
   void (async () => {
     for await (const chunk of stream.output) options.send(chunk);
   })()
-    .catch(() => undefined)
+    .catch((cause) => {
+      options.onError?.(
+        isWorkspaceError(cause)
+          ? cause
+          : new WorkspaceStreamError({
+              agentId: options.agentId ?? "",
+              backend: "viewer",
+              operation: "read",
+              cause,
+            }),
+      );
+    })
     .finally(() => void close());
 
   return {
@@ -183,7 +212,20 @@ export function bridgeDesktop(options: {
       try {
         const passed = filter.push(data);
 
-        if (passed.length) void stream.write(passed).catch(() => void close());
+        if (passed.length)
+          void stream.write(passed).catch((cause) => {
+            options.onError?.(
+              isWorkspaceError(cause)
+                ? cause
+                : new WorkspaceStreamError({
+                    agentId: options.agentId ?? "",
+                    backend: "viewer",
+                    operation: "write",
+                    cause,
+                  }),
+            );
+            void close();
+          });
       } catch (error) {
         if (error instanceof RfbProtocolError) void close();
         else throw error;

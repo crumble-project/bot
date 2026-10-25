@@ -1,6 +1,6 @@
 import type { Register } from "../contract/route";
 import { upgradeWebSocket } from "@hono/bun";
-import { Context, Deferred, Effect, Layer } from "effect";
+import { Cause, Context, Deferred, Effect, Layer, Match, Result } from "effect";
 import { streamSSE } from "hono/streaming";
 import type { WSContext, WSMessageReceive } from "hono/ws";
 import {
@@ -65,6 +65,44 @@ export class BotDesktop extends Context.Service<
     }),
   );
 }
+
+const desktopCloseReason = (error: WorkspaceError): string =>
+  Match.value(error).pipe(
+    Match.tagsExhaustive({
+      WorkspaceDesktopUnavailable: () =>
+        "Set CRUMBLE_WORKSPACE_DESKTOP_IMAGE on the server, then reopen the desktop.",
+      WorkspaceDesktopDisabled: () =>
+        "Enable this bot's desktop tool, then reopen the desktop.",
+      WorkspaceDesktopStartError: () =>
+        "Desktop startup failed. Check desktop-start.sh and the server logs.",
+      WorkspaceBootError: () =>
+        "Workspace boot failed. Check the workspace backend and server logs.",
+      WorkspaceStreamError: () =>
+        "Desktop stream failed. Check socat, Xvnc, and the server logs.",
+      WorkspaceSetupError: () =>
+        "Workspace setup failed. Check the guest image and server logs.",
+      WorkspaceRelayError: () =>
+        "Workspace relay failed. Check server resources and logs.",
+      WorkspaceClosed: () =>
+        "The server is shutting down. Reconnect after it restarts.",
+      WorkspaceInvalidAgentId: () =>
+        "Invalid bot ID. Request a new viewer link.",
+      WorkspaceLivenessError: () =>
+        "Workspace health check failed. Check the backend and server logs.",
+      WorkspaceSyncError: () =>
+        "Workspace checkpoint failed. Check storage and server logs before retrying.",
+      WorkspaceStopError: () =>
+        "Workspace stop failed. Check the backend and server logs before retrying.",
+    }),
+  );
+
+const closeReason = (cause: Cause.Cause<WorkspaceError>) => {
+  const error = Cause.findError(cause);
+
+  return Result.isSuccess(error)
+    ? desktopCloseReason(error.success)
+    : "Unexpected desktop failure. Check the server logs, then reopen the desktop.";
+};
 
 const bytesOf = async (data: WSMessageReceive) => {
   if (data instanceof Uint8Array) return data;
@@ -200,6 +238,7 @@ export function registerDesktopRoutes(options: {
       let bridge: ReturnType<typeof bridgeDesktop> | undefined;
       const finished = Deferred.makeUnsafe<void>();
       let closed = false;
+      let failed = false;
 
       return {
         onOpen: (_event, ws: WSContext) => {
@@ -228,6 +267,18 @@ export function registerDesktopRoutes(options: {
 
                 bridge = bridgeDesktop({
                   stream,
+                  agentId,
+                  onError: (error) => {
+                    failed = true;
+                    Effect.runFork(
+                      Effect.logError(
+                        "Bot desktop stream failed",
+                        agentId,
+                        error,
+                      ),
+                    );
+                    ws.close(1011, desktopCloseReason(error));
+                  },
                   // Watching never lets input through; only the owner holding control does.
                   allowInput: () => control.get(agentId).holder === "owner",
                   // A copy: the WebSocket takes only bytes backed by a plain ArrayBuffer.
@@ -235,7 +286,7 @@ export function registerDesktopRoutes(options: {
                   close: () => {
                     Deferred.doneUnsafe(finished, Effect.void);
 
-                    ws.close();
+                    if (!failed) ws.close();
                   },
                 });
 
@@ -244,10 +295,15 @@ export function registerDesktopRoutes(options: {
                 yield* Deferred.await(finished);
               }),
             ).pipe(
-              Effect.catchCause(() =>
-                Effect.sync(() =>
-                  ws.close(1011, "The bot desktop is unavailable"),
-                ),
+              Effect.catchCause((cause) =>
+                Effect.gen(function* () {
+                  yield* Effect.logError(
+                    "Bot desktop open failed",
+                    agentId,
+                    cause,
+                  );
+                  ws.close(1011, closeReason(cause));
+                }),
               ),
             ),
           );
