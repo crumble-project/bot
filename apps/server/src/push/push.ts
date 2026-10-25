@@ -241,18 +241,24 @@ export class Push extends Context.Service<
 
 /**
  * Delivers the owner's replies as they finish and polls for retries that come due; when each retry is due stays
- * in the outbox. Closing stops both before `Push` makes its last pass.
+ * in the outbox. Closing stops both and writes replies still in memory to the outbox before `Push` makes its last pass.
  */
 export const PushDelivery = Layer.effectDiscard(
   Effect.gen(function* () {
     const push = yield* Push;
     const activity = yield* BotActivity;
     const replies = yield* Queue.unbounded<ReplyActivity>();
+    const due = yield* Queue.sliding<void>(1);
 
     const backgroundDrain = push.drain.pipe(
       Effect.catchCause((cause) =>
         Effect.logError("Push delivery pass failed", cause),
       ),
+    );
+
+    // Runs after the listener and consumer stop: replies still in memory reach the outbox for the last pass.
+    yield* Effect.addFinalizer(() =>
+      Queue.clear(replies).pipe(Effect.flatMap(Effect.forEach(push.enqueue))),
     );
 
     yield* Effect.acquireRelease(
@@ -265,8 +271,16 @@ export const PushDelivery = Layer.effectDiscard(
       (unsubscribe) => Effect.sync(unsubscribe),
     );
 
-    yield* Queue.take(replies).pipe(
-      Effect.flatMap(push.enqueue),
+    // Persisting never waits on a send, and a taken reply is persisted even when closing interrupts.
+    yield* Effect.uninterruptibleMask((restore) =>
+      restore(Queue.take(replies)).pipe(Effect.flatMap(push.enqueue)),
+    ).pipe(
+      Effect.andThen(Queue.offer(due, undefined)),
+      Effect.forever,
+      Effect.forkScoped,
+    );
+
+    yield* Queue.take(due).pipe(
       Effect.andThen(backgroundDrain),
       Effect.forever,
       Effect.forkScoped,

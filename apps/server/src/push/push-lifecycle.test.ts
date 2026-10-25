@@ -170,6 +170,34 @@ describe("push lifecycle", () => {
     ]);
   });
 
+  test("a reply that arrives during a send is still delivered when closing", async () => {
+    const release = Promise.withResolvers<void>();
+    const sent: string[] = [];
+
+    const { runtime, source } = await setup({
+      send: (_device, event) =>
+        Effect.promise(async () => {
+          if (sent.length === 0) await release.promise;
+          sent.push(event.eventId);
+
+          return "delivered" as const;
+        }),
+    });
+
+    const first = reply();
+    const second = reply();
+    source.emit(first);
+    await Bun.sleep(20);
+    source.emit(second);
+    await Bun.sleep(20);
+
+    const closing = runtime.dispose();
+    await Bun.sleep(20);
+    release.resolve();
+    await closing;
+    expect(sent).toEqual([first.executionId, second.executionId]);
+  });
+
   test("closing twice resolves and closes the store once", async () => {
     const { runtime, probe, source } = await setup(delivering({ sends: 0 }));
 
