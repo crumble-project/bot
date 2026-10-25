@@ -16,6 +16,9 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
+import { eq, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { authUsers } from "./auth-schema";
 
 const MARKER = ".legacy-migration.json";
 const LEGACY_PATHS = [
@@ -75,12 +78,13 @@ function legacyUser(
   let db: Database | undefined;
   try {
     db = new Database(authPath, { readonly: true });
-    // SAFETY: the selected columns match Better Auth's user table schema.
-    const row = db
-      .query(
-        'SELECT id, email FROM "user" WHERE lower(email) = lower(?) LIMIT 2',
-      )
-      .all(email) as Array<{ id: string; email: string }>;
+
+    const row = drizzle({ client: db })
+      .select({ id: authUsers.id, email: authUsers.email })
+      .from(authUsers)
+      .where(eq(sql`lower(${authUsers.email})`, sql`lower(${email})`))
+      .limit(2)
+      .all();
     if (row.length === 0) fail(`no Better Auth user exists for ${email}`);
     if (row.length > 1) fail(`multiple Better Auth users match ${email}`);
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(row[0]!.id))

@@ -5,6 +5,9 @@ import { Database } from "bun:sqlite";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { bearer } from "better-auth/plugins/bearer";
 import { getMigrations } from "better-auth/db/migration";
+import { eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { authUsers } from "./auth-schema";
 
 export async function createAuth(dataDir: string, baseURL: string) {
   const secretPath = join(dataDir, ".auth-secret");
@@ -34,11 +37,16 @@ export async function createAuth(dataDir: string, baseURL: string) {
     const { runMigrations } = await getMigrations(options);
     await runMigrations();
     const auth = betterAuth(options);
+    const users = drizzle({ client: database });
 
     return {
       auth,
       hasUser: (id: string) =>
-        Boolean(database.query('SELECT id FROM "user" WHERE id = ?').get(id)),
+        users
+          .select({ id: authUsers.id })
+          .from(authUsers)
+          .where(eq(authUsers.id, id))
+          .get() !== undefined,
       close: () => database.close(),
     };
   } catch (error) {
