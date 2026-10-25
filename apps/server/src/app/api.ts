@@ -49,7 +49,6 @@ import {
   skillLifecycleInput,
   groupChatInput,
   credentialSaveInput,
-  AppError,
   type MCPServer,
 } from "../shared/domain";
 import type { Activity, BotsAccess } from "../bots/bots";
@@ -97,6 +96,15 @@ import { activityPage, decodeCursor } from "../activity/activity";
 import { Push, type PushRuntime } from "../push/push";
 import { canonicalReplyEvent } from "../push/push-model";
 import { registerPushRoutes } from "../push/push-api";
+import {
+  InvalidInput,
+  NotFound,
+  ReadOnly,
+  Conflict,
+  Unavailable,
+  httpStatus,
+  isAppError,
+} from "../shared/errors";
 
 /** The bots the API serves, with the account's repositories and bot runtime its handlers read directly. */
 export type ApiBots = BotsAccess & {
@@ -194,10 +202,8 @@ export function createAPI(
     if (error instanceof z.ZodError)
       return c.json({ error: "Invalid request", details: error.issues }, 400);
 
-    if (error instanceof AppError) {
-      // SAFETY: AppError status codes are constructed from the server's known HTTP responses.
-      return c.json({ error: error.message }, error.status as 400);
-    }
+    if (isAppError(error))
+      return c.json({ error: error.message }, httpStatus(error));
 
     if (error instanceof SyntaxError)
       return c.json({ error: "Invalid JSON" }, 400);
@@ -236,7 +242,9 @@ export function createAPI(
       )?.agentId;
 
       if (owner && owner !== agentId)
-        throw new AppError(400, "That MCP server belongs to another bot");
+        throw new InvalidInput({
+          message: "That MCP server belongs to another bot",
+        });
     }
   };
 
@@ -521,7 +529,7 @@ export function createAPI(
 
   const groupChats = () => {
     if (!options.groupChats)
-      throw new AppError(503, "Group chats are unavailable");
+      throw new Unavailable({ message: "Group chats are unavailable" });
 
     return options.groupChats;
   };
@@ -698,7 +706,7 @@ export function createAPI(
     );
 
     if (!memory || memory.agentId !== c.req.param("id"))
-      throw new AppError(404, "Memory not found");
+      throw new NotFound({ message: "Memory not found" });
 
     const input = memoryInput.parse(await c.req.json());
 
@@ -713,7 +721,7 @@ export function createAPI(
     );
 
     if (!memory || memory.agentId !== c.req.param("id"))
-      throw new AppError(404, "Memory not found");
+      throw new NotFound({ message: "Memory not found" });
     exec(MemoryRepository.use((r) => r.delete(memory.id)));
 
     return c.body(null, 204);
@@ -723,7 +731,7 @@ export function createAPI(
     const memory = exec(MemoryRepository.use((r) => r.get(id)));
 
     if (!memory || memory.agentId !== null)
-      throw new AppError(404, "Memory not found");
+      throw new NotFound({ message: "Memory not found" });
 
     return memory;
   };
@@ -769,7 +777,7 @@ export function createAPI(
     const skill = exec(SkillRepository.use((r) => r.get(skillId)));
 
     if (!skill || skill.agentId !== agentId)
-      throw new AppError(404, "Skill not found");
+      throw new NotFound({ message: "Skill not found" });
 
     return skill;
   };
@@ -866,7 +874,7 @@ export function createAPI(
       ),
     );
 
-    if (!reverted) throw new AppError(404, "Change not found");
+    if (!reverted) throw new NotFound({ message: "Change not found" });
 
     return c.json(reverted, 201);
   });
@@ -895,7 +903,8 @@ export function createAPI(
   register(routes.getSkill, (c) => {
     const skill = exec(SkillRepository.use((r) => r.get(c.req.param("id"))));
 
-    if (!skill || skill.agentId) throw new AppError(404, "Skill not found");
+    if (!skill || skill.agentId)
+      throw new NotFound({ message: "Skill not found" });
 
     return c.json(skill, 200);
   });
@@ -906,10 +915,10 @@ export function createAPI(
   });
   register(routes.updateSkill, async (c) => {
     if (options.commonSkills?.some((skill) => skill.id === c.req.param("id")))
-      throw new AppError(405, "Bundled skills are read-only");
+      throw new ReadOnly({ message: "Bundled skills are read-only" });
     const old = exec(SkillRepository.use((r) => r.get(c.req.param("id"))));
 
-    if (!old || old.agentId) throw new AppError(404, "Skill not found");
+    if (!old || old.agentId) throw new NotFound({ message: "Skill not found" });
 
     const input = skillInput.parse({ ...old, ...(await c.req.json()) });
 
@@ -922,13 +931,13 @@ export function createAPI(
     const skillId = c.req.param("id");
 
     if (options.commonSkills?.some((skill) => skill.id === skillId))
-      throw new AppError(405, "Bundled skills are read-only");
+      throw new ReadOnly({ message: "Bundled skills are read-only" });
 
     if (
       exec(SkillRepository.use((r) => r.get(skillId)))?.agentId ||
       !exec(SkillRepository.use((r) => r.delete(skillId)))
     )
-      throw new AppError(404, "Skill not found");
+      throw new NotFound({ message: "Skill not found" });
 
     for (const agent of exec(AgentRepository.use((r) => r.list))) {
       const shared = agent.sharedSkills ?? [];
@@ -957,7 +966,7 @@ export function createAPI(
   register(routes.updateSchedule, async (c) => {
     const old = exec(ScheduleRepository.use((r) => r.get(c.req.param("id"))));
 
-    if (!old) throw new AppError(404, "Schedule not found");
+    if (!old) throw new NotFound({ message: "Schedule not found" });
 
     return c.json(
       scheduler.update(
@@ -969,7 +978,7 @@ export function createAPI(
   });
   register(routes.deleteSchedule, (c) => {
     if (!exec(ScheduleRepository.use((r) => r.delete(c.req.param("id")))))
-      throw new AppError(404, "Schedule not found");
+      throw new NotFound({ message: "Schedule not found" });
 
     return c.body(null, 204);
   });
@@ -993,7 +1002,8 @@ export function createAPI(
     const input = activityInput.parse(c.req.query());
     const cursor = input.cursor ? decodeCursor(input.cursor) : null;
 
-    if (input.cursor && !cursor) throw new AppError(400, "Invalid cursor");
+    if (input.cursor && !cursor)
+      throw new InvalidInput({ message: "Invalid cursor" });
 
     const agents = input.agentId
       ? [service.agent(input.agentId)]
@@ -1063,7 +1073,9 @@ export function createAPI(
       return await models.getAvailable(name);
     } catch {
       // Pi AI errors can carry provider responses; keep them out of logs and clients.
-      throw new AppError(503, "Provider credentials could not be read");
+      throw new Unavailable({
+        message: "Provider credentials could not be read",
+      });
     }
   };
 
@@ -1098,10 +1110,9 @@ export function createAPI(
     const external = await options.externalAuth?.get(name)?.();
 
     if (external)
-      throw new AppError(
-        409,
-        `This provider signs in outside Crumble. Sign out on the server: ${external.signOutCommand ?? "see its documentation"}`,
-      );
+      throw new Conflict({
+        message: `This provider signs in outside Crumble. Sign out on the server: ${external.signOutCommand ?? "see its documentation"}`,
+      });
 
     await providerAuth.signOut(name);
 
@@ -1110,7 +1121,8 @@ export function createAPI(
   register(routes.startProviderLogin, async (c) => {
     const name = c.req.param("provider");
 
-    if (!models.getProvider(name)) throw new AppError(404, "Unknown provider");
+    if (!models.getProvider(name))
+      throw new NotFound({ message: "Unknown provider" });
     const input = providerLoginInput.parse(await c.req.json());
 
     return c.json(providerAuth.start(name, input.method), 202);
@@ -1122,7 +1134,7 @@ export function createAPI(
     const input = providerLoginAnswerInput.safeParse(await c.req.json());
 
     // Answers can be secrets or callback URLs; never echo them in validation details.
-    if (!input.success) throw new AppError(400, "Invalid answer");
+    if (!input.success) throw new InvalidInput({ message: "Invalid answer" });
 
     return c.json(
       providerAuth.answer(
@@ -1158,7 +1170,7 @@ export function createAPI(
   const mcpServer = (id: string) => {
     const server = exec(McpServerRepository.use((r) => r.get(id)));
 
-    if (!server) throw new AppError(404, "MCP server not found");
+    if (!server) throw new NotFound({ message: "MCP server not found" });
 
     return server;
   };
@@ -1218,7 +1230,9 @@ export function createAPI(
     const owner = input.agentId ? service.agent(input.agentId) : null;
 
     if (owner && owner.mcpServers.length >= 30)
-      throw new AppError(400, `${owner.name} already uses 30 MCP servers`);
+      throw new InvalidInput({
+        message: `${owner.name} already uses 30 MCP servers`,
+      });
     const server = exec(McpServerRepository.use((r) => r.create(input)));
 
     const { token: serverToken, oauthClientSecret } = input;
@@ -1247,7 +1261,7 @@ export function createAPI(
   register(routes.updateMcpServer, async (c) => {
     const old = exec(McpServerRepository.use((r) => r.get(c.req.param("id"))));
 
-    if (!old) throw new AppError(404, "MCP server not found");
+    if (!old) throw new NotFound({ message: "MCP server not found" });
     const input = mcpInput.parse({ ...old, ...(await c.req.json()) });
 
     const { token: serverToken, oauthClientSecret } = input;
@@ -1295,7 +1309,7 @@ export function createAPI(
   });
   register(routes.deleteMcpServer, (c) => {
     if (!exec(McpServerRepository.use((r) => r.delete(c.req.param("id")))))
-      throw new AppError(404, "MCP server not found");
+      throw new NotFound({ message: "MCP server not found" });
     exec(SecretRepository.use((r) => r.delete(`mcp:${c.req.param("id")}`)));
     exec(
       SecretRepository.use((r) => r.delete(clientSecretKey(c.req.param("id")))),

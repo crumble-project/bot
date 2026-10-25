@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AppError } from "../shared/domain";
+import { Forbidden } from "../shared/errors";
 import { scheduleExtension, standaloneBotSchedules } from "./bot-schedules";
 import { Store } from "../shared/store";
 
@@ -161,7 +161,7 @@ describe("bot schedules", () => {
         prompt: "x",
         runAt: later(),
       }),
-    ).toThrow(AppError);
+    ).toThrow(Forbidden);
     expect(() =>
       schedules.update(other.id, task.id, { name: "Stolen" }),
     ).toThrow(/Task not found/);

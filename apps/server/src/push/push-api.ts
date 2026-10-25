@@ -1,10 +1,10 @@
 import { z } from "zod";
 import type { Register } from "../contract/route";
-import { AppError } from "../shared/domain";
 import { Effect } from "effect";
 import { Push, type PushRuntime } from "./push";
 import type { PushDeviceInput } from "./push-model";
 import { presenceInput, pushInput, pushRoutes } from "./push-contract";
+import { NotFound, Unavailable } from "../shared/errors";
 
 /** The owner's push routes: delivery status, device registration, and presence. Without a runtime, push is unavailable. */
 export function registerPushRoutes(
@@ -26,7 +26,8 @@ export function registerPushRoutes(
     ),
   );
   register(pushRoutes.putDevice, async (c) => {
-    if (!runtime) throw new AppError(503, "Push delivery is unavailable");
+    if (!runtime)
+      throw new Unavailable({ message: "Push delivery is unavailable" });
 
     const installationId = z.uuid().parse(c.req.param("installationId"));
 
@@ -49,7 +50,8 @@ export function registerPushRoutes(
     return c.body(null, 204);
   });
   register(pushRoutes.putPresence, async (c) => {
-    if (!runtime) throw new AppError(503, "Push delivery is unavailable");
+    if (!runtime)
+      throw new Unavailable({ message: "Push delivery is unavailable" });
     const id = z.uuid().parse(c.req.param("installationId"));
 
     const input = presenceInput.parse(await c.req.json());
@@ -58,7 +60,7 @@ export function registerPushRoutes(
       Push.use((service) => service.presence(id, input.active, input.agentId)),
     );
 
-    if (!registered) throw new AppError(404, "Push device not found");
+    if (!registered) throw new NotFound({ message: "Push device not found" });
 
     return c.body(null, 204);
   });

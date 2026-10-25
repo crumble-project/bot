@@ -7,11 +7,12 @@ import {
   type McpOAuthState,
   type McpOAuthStateStore,
 } from "@earendil-works/pi-mcp/oauth";
-import { AppError, type MCPServer } from "../shared/domain";
+import { type MCPServer } from "../shared/domain";
 import { Context, Effect, Layer } from "effect";
 import { SecretRepository } from "../credentials/secret-repository";
 import { appErrors } from "../shared/app-errors";
 import { runnerOf, type Runner } from "../shared/runner";
+import { InvalidInput, isAppError, type AppError } from "../shared/errors";
 
 /**
  * A server's OAuth state as pi-mcp keeps it (client registration, tokens, PKCE verifier, state),
@@ -203,12 +204,11 @@ function unavailable(
   cause: unknown,
   step: "start" | "finish" = "start",
 ): never {
-  if (cause instanceof AppError) throw cause;
+  if (isAppError(cause)) throw cause;
   const reason = cause instanceof Error ? cause.message : String(cause);
-  throw new AppError(
-    400,
-    `${server.name} could not ${step} OAuth sign-in: ${reason}`,
-  );
+  throw new InvalidInput({
+    message: `${server.name} could not ${step} OAuth sign-in: ${reason}`,
+  });
 }
 
 /** What to do when an authorization server registers no clients: CIMD needs a public address, or a token instead. */
@@ -303,7 +303,9 @@ export async function finishAuthorization(
   const saved = read(storage, server.id);
 
   if (!saved?.state.oauthState || saved.state.oauthState !== state)
-    throw new AppError(400, "This sign-in has expired; start again");
+    throw new InvalidInput({
+      message: "This sign-in has expired; start again",
+    });
 
   const oauth = provider(
     storage,
@@ -327,7 +329,9 @@ export async function finishAuthorization(
   }
 
   if (result !== "AUTHORIZED")
-    throw new AppError(400, `${server.name} did not accept the sign-in`);
+    throw new InvalidInput({
+      message: `${server.name} did not accept the sign-in`,
+    });
   // The state and verifier answer one attempt only.
   const done = read(storage, server.id)!;
   const { oauthState: _state, codeVerifier: _verifier, ...rest } = done.state;

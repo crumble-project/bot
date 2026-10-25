@@ -11,7 +11,6 @@ import {
 } from "effect";
 import type { JobAnswer } from "../jobs/jobs";
 import {
-  AppError,
   conversationReference,
   type Agent,
   type Conversation,
@@ -43,6 +42,7 @@ import {
   type BotMessageEvent,
   type MessageOrigin,
 } from "./transcript";
+import { NotFound, Conflict, type AppError } from "../shared/errors";
 
 export const delegationRequest = (sourceAgentId: string, taskId: string) =>
   `delegate:${sourceAgentId}:${taskId}`;
@@ -267,7 +267,9 @@ export class Bots extends Context.Service<
         const found = yield* agents.get(id);
 
         if (!found)
-          return yield* Effect.fail(new AppError(404, "Agent not found"));
+          return yield* Effect.fail(
+            new NotFound({ message: "Agent not found" }),
+          );
 
         return found;
       });
@@ -279,7 +281,7 @@ export class Bots extends Context.Service<
 
         if (!found || found.archived)
           return yield* Effect.fail(
-            new AppError(404, "Conversation not found"),
+            new NotFound({ message: "Conversation not found" }),
           );
 
         return { conversation: found, agent: yield* agent(found.agentId) };
@@ -642,7 +644,7 @@ export class Bots extends Context.Service<
 
         if (!owner.enabled)
           return yield* Effect.fail(
-            new AppError(409, "Enable this agent before starting work"),
+            new Conflict({ message: "Enable this agent before starting work" }),
           );
         const replyTo = options.replyTo ?? null;
         const attachments = options.attachments ?? [];
@@ -667,10 +669,9 @@ export class Bots extends Context.Service<
             (existing.attachmentsDigest ?? null) !== attachmentsDigest)
         )
           return yield* Effect.fail(
-            new AppError(
-              409,
-              "Request ID already used for a different message",
-            ),
+            new Conflict({
+              message: "Request ID already used for a different message",
+            }),
           );
 
         const execution =

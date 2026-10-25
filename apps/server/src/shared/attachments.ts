@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { z } from "zod";
-import { AppError } from "./domain";
+import { InvalidInput } from "./errors";
 
 export const MAX_ATTACHMENTS = 8;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -70,18 +70,16 @@ export function prepareAttachments(items: AttachmentInput[]) {
     const kind = attachmentKind(item.mimeType);
 
     if (!kind)
-      throw new AppError(
-        400,
-        `${item.name}: only images (PNG, JPEG, GIF, WebP) and text files can be attached`,
-      );
+      throw new InvalidInput({
+        message: `${item.name}: only images (PNG, JPEG, GIF, WebP) and text files can be attached`,
+      });
     const bytes = Buffer.from(item.data, "base64");
     const limit = kind === "image" ? MAX_IMAGE_BYTES : MAX_TEXT_BYTES;
 
     if (bytes.length > limit)
-      throw new AppError(
-        400,
-        `${item.name} is larger than ${limit / 1024 / 1024 >= 1 ? `${limit / 1024 / 1024} MB` : `${limit / 1024} KB`}`,
-      );
+      throw new InvalidInput({
+        message: `${item.name} is larger than ${limit / 1024 / 1024 >= 1 ? `${limit / 1024 / 1024} MB` : `${limit / 1024} KB`}`,
+      });
 
     if (kind === "image") {
       blocks.push({ type: "image", data: item.data, mimeType: item.mimeType });
@@ -91,7 +89,7 @@ export function prepareAttachments(items: AttachmentInput[]) {
       try {
         text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
       } catch {
-        throw new AppError(400, `${item.name} is not UTF-8 text`);
+        throw new InvalidInput({ message: `${item.name} is not UTF-8 text` });
       }
 
       blocks.push({

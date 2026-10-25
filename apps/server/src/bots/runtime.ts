@@ -29,7 +29,7 @@ import {
   GroupConversation,
   groupTurnExtension,
 } from "../group-chats/group-turns";
-import { AppError, conversationReference, type Agent } from "../shared/domain";
+import { conversationReference, type Agent } from "../shared/domain";
 import { ProviderModels, providerModels } from "../providers/providers";
 import { BotMemory } from "../memory/bot-memory";
 import { SettingsRepository } from "../shared/settings-repository";
@@ -69,6 +69,7 @@ import {
   type TranscriptMessage,
   type TranscriptPage,
 } from "./transcript";
+import { InvalidInput, NotFound } from "../shared/errors";
 
 /** The IANA timezone the owner's client last reported with a chat message. */
 export const OWNER_TIMEZONE = "owner-timezone";
@@ -1039,10 +1040,10 @@ export class AgentRuntime {
           text,
         );
       } catch (error) {
-        throw new AppError(
-          400,
-          error instanceof Error ? error.message : "Invalid reply target",
-        );
+        throw new InvalidInput({
+          message:
+            error instanceof Error ? error.message : "Invalid reply target",
+        });
       }
 
     const conversation = await this.configure(record, agent, conversationId);
@@ -1054,10 +1055,9 @@ export class AgentRuntime {
       model?.input &&
       !model.input.includes("image")
     )
-      throw new AppError(
-        400,
-        `${agent.model} can't read images. Choose a model that accepts images in the agent's profile.`,
-      );
+      throw new InvalidInput({
+        message: `${agent.model} can't read images. Choose a model that accepts images in the agent's profile.`,
+      });
 
     if (options.origin?.kind === "bot") {
       prepared.modelContent = `Message from bot ${JSON.stringify(options.origin.name ?? "Another bot")} (${options.origin.agentId ?? "unknown"}):\n\n${prepared.modelContent}\n\nReply to this bot's message. Your answer will be returned to the requesting bot.`;
@@ -1127,10 +1127,10 @@ export class AgentRuntime {
     try {
       return await readAttachment(record.harness, agent.id, entryId, index);
     } catch (error) {
-      throw new AppError(
-        404,
-        error instanceof Error ? error.message : "Attachment not found",
-      );
+      throw new NotFound({
+        message:
+          error instanceof Error ? error.message : "Attachment not found",
+      });
     }
   }
 
@@ -1248,7 +1248,7 @@ export class AgentRuntime {
       (each) => each.name === name,
     );
 
-    if (!job) throw new AppError(404, "Coding job not found");
+    if (!job) throw new NotFound({ message: "Coding job not found" });
 
     return this.visible(
       harness,
@@ -1293,7 +1293,7 @@ export class AgentRuntime {
       (each) => each.name === name,
     );
 
-    if (!job) throw new AppError(404, "Desktop job not found");
+    if (!job) throw new NotFound({ message: "Desktop job not found" });
 
     return this.visible(
       harness,
@@ -1345,10 +1345,10 @@ export class AgentRuntime {
         ),
       };
     } catch (error) {
-      throw new AppError(
-        400,
-        error instanceof Error ? error.message : "Invalid history cursor",
-      );
+      throw new InvalidInput({
+        message:
+          error instanceof Error ? error.message : "Invalid history cursor",
+      });
     }
   }
 

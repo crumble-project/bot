@@ -460,12 +460,3 @@ export type GroupTurn = {
 /** The public ID of one of an agent's conversations; a client passes it back as given. */
 export const conversationReference = (agentId: string, localId: number) =>
   `${agentId}:${localId}`;
-
-export class AppError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}

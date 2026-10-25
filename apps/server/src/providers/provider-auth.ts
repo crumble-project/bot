@@ -19,7 +19,6 @@ import { Context, Effect, Layer, ManagedRuntime, Predicate } from "effect";
 import type { ProviderContribution } from "../app/plugins";
 import { ProviderCredentialRepository } from "./provider-credential-repository";
 import { appErrors } from "../shared/app-errors";
-import { AppError } from "../shared/domain";
 import { SettingsRepository } from "../shared/settings-repository";
 import type { Runner } from "../shared/runner";
 import {
@@ -27,6 +26,14 @@ import {
   type ProviderCredentialStore,
 } from "./provider-credentials";
 import { ProviderModels } from "./providers";
+import {
+  InvalidInput,
+  NotFound,
+  Conflict,
+  Gone,
+  Unavailable,
+  type AppError,
+} from "../shared/errors";
 
 export type LoginSession = z.output<typeof loginSessionResponse>;
 
@@ -228,20 +235,25 @@ class SignInSessions {
   ) {}
 
   start(providerId: string, method: AuthType): LoginSession {
-    if (this.closed) throw new AppError(503, "The server is shutting down");
+    if (this.closed)
+      throw new Unavailable({ message: "The server is shutting down" });
     const provider = this.models.getProvider(providerId);
 
-    if (!provider) throw new AppError(404, "Unknown provider");
+    if (!provider) throw new NotFound({ message: "Unknown provider" });
     const login = this.loginFunction(provider, method);
 
     if (!login)
-      throw new AppError(400, `${provider.name} does not offer this sign-in`);
+      throw new InvalidInput({
+        message: `${provider.name} does not offer this sign-in`,
+      });
 
     if (this.active.has(providerId))
-      throw new AppError(409, "A sign-in for this provider is in progress");
+      throw new Conflict({
+        message: "A sign-in for this provider is in progress",
+      });
 
     if (this.active.size >= MAX_ACTIVE)
-      throw new AppError(409, "Too many sign-ins are in progress");
+      throw new Conflict({ message: "Too many sign-ins are in progress" });
     this.prune();
     const now = Date.now();
 
@@ -279,17 +291,19 @@ class SignInSessions {
     const session = this.session(sessionId);
 
     if (session.status !== "pending")
-      throw new AppError(409, "This sign-in has ended");
+      throw new Conflict({ message: "This sign-in has ended" });
     const pending = session.prompt;
 
     if (!pending || pending.prompt.id !== promptId)
-      throw new AppError(409, "This prompt no longer accepts an answer");
+      throw new Conflict({
+        message: "This prompt no longer accepts an answer",
+      });
 
     if (
       pending.prompt.type === "select" &&
       !pending.prompt.options?.some((option) => option.id === value)
     )
-      throw new AppError(400, "Choose one of the offered options");
+      throw new InvalidInput({ message: "Choose one of the offered options" });
     session.lastActivity = Date.now();
     this.schedule(session);
     pending.settle(value);
@@ -547,7 +561,7 @@ class SignInSessions {
     this.prune();
     const session = this.sessions.get(sessionId);
 
-    if (!session) throw new AppError(410, "This sign-in no longer exists");
+    if (!session) throw new Gone({ message: "This sign-in no longer exists" });
 
     return session;
   }

@@ -11,7 +11,6 @@ import {
   Schedule as Cadence,
 } from "effect";
 import {
-  AppError,
   scheduleInput,
   type Schedule,
   type ScheduleInput,
@@ -20,6 +19,12 @@ import { AgentRepository } from "../bots/agent-repository";
 import type { Runner } from "../shared/runner";
 import { ScheduleRepository } from "./schedule-repository";
 import { TaskDispatch, type ScheduleDispatchResult } from "./task-dispatch";
+import {
+  InvalidInput,
+  NotFound,
+  Conflict,
+  type AppError,
+} from "../shared/errors";
 
 export type { ScheduleDispatchResult } from "./task-dispatch";
 
@@ -52,10 +57,9 @@ const validate = (input: ScheduleInput) =>
       return value;
     },
     catch: (error) =>
-      new AppError(
-        400,
-        error instanceof Error ? error.message : "Invalid schedule",
-      ),
+      new InvalidInput({
+        message: error instanceof Error ? error.message : "Invalid schedule",
+      }),
   });
 
 const errorText = (cause: unknown) =>
@@ -109,10 +113,12 @@ export class Scheduler extends Context.Service<
                 try: () =>
                   nextOccurrence(schedule.cron!, schedule.timezone, new Date()),
                 catch: (error) =>
-                  new AppError(
-                    400,
-                    error instanceof Error ? error.message : "Invalid schedule",
-                  ),
+                  new InvalidInput({
+                    message:
+                      error instanceof Error
+                        ? error.message
+                        : "Invalid schedule",
+                  }),
               })
             : schedule.runAt;
 
@@ -128,7 +134,9 @@ export class Scheduler extends Context.Service<
           const value = yield* validate(input);
 
           if (!(yield* agents.get(value.agentId)))
-            return yield* Effect.fail(new AppError(404, "Agent not found"));
+            return yield* Effect.fail(
+              new NotFound({ message: "Agent not found" }),
+            );
 
           return yield* setInitialNext(
             yield* schedules.create(value, undefined, createdByAgentId),
@@ -142,11 +150,15 @@ export class Scheduler extends Context.Service<
           const old = yield* schedules.get(id);
 
           if (!old)
-            return yield* Effect.fail(new AppError(404, "Schedule not found"));
+            return yield* Effect.fail(
+              new NotFound({ message: "Schedule not found" }),
+            );
           const value = yield* validate({ ...old, ...input });
 
           if (!(yield* agents.get(value.agentId)))
-            return yield* Effect.fail(new AppError(404, "Agent not found"));
+            return yield* Effect.fail(
+              new NotFound({ message: "Agent not found" }),
+            );
           const updated = yield* schedules.update(id, value);
 
           if (!updated) return null;
@@ -166,15 +178,19 @@ export class Scheduler extends Context.Service<
           const schedule = yield* schedules.get(id);
 
           if (!schedule)
-            return yield* Effect.fail(new AppError(404, "Schedule not found"));
+            return yield* Effect.fail(
+              new NotFound({ message: "Schedule not found" }),
+            );
           const agent = yield* agents.get(schedule.agentId);
 
           if (!agent)
-            return yield* Effect.fail(new AppError(404, "Agent not found"));
+            return yield* Effect.fail(
+              new NotFound({ message: "Agent not found" }),
+            );
 
           if (!schedule.enabled || !agent.enabled)
             return yield* Effect.fail(
-              new AppError(409, "Schedule or agent is disabled"),
+              new Conflict({ message: "Schedule or agent is disabled" }),
             );
 
           if (inFlight.has(id)) return { admitted: false };

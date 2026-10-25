@@ -10,7 +10,6 @@ import { mkdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { attachmentDigest } from "../shared/attachments";
-import { AppError } from "../shared/domain";
 import {
   GROUP_MESSAGE_KIND,
   groupMessageData,
@@ -18,6 +17,7 @@ import {
   type GroupMessageData,
   type TranscriptPage,
 } from "../bots/transcript";
+import { InvalidInput, NotFound, Conflict } from "../shared/errors";
 
 export type GroupPost = Omit<GroupMessageData, "requestId" | "timestamp">;
 
@@ -121,10 +121,9 @@ export class GroupTranscripts {
       attachmentDigest(written.data.attachments ?? []) !==
         attachmentDigest(message.attachments ?? [])
     )
-      throw new AppError(
-        409,
-        "Request ID already used for a different message",
-      );
+      throw new Conflict({
+        message: "Request ID already used for a different message",
+      });
 
     return {
       entryId: `${groupId}:${Number(settled.entry)}`,
@@ -201,7 +200,7 @@ export class GroupTranscripts {
   async attachment(groupId: string, entryId: string, index: number) {
     const item = (await this.message(groupId, entryId))?.attachments?.[index];
 
-    if (!item) throw new AppError(404, "Attachment not found");
+    if (!item) throw new NotFound({ message: "Attachment not found" });
 
     return { mimeType: item.mimeType, data: Buffer.from(item.data, "base64") };
   }
@@ -229,10 +228,10 @@ export class GroupTranscripts {
     try {
       return await readTranscript(harness, groupId, options);
     } catch (error) {
-      throw new AppError(
-        400,
-        error instanceof Error ? error.message : "Invalid history cursor",
-      );
+      throw new InvalidInput({
+        message:
+          error instanceof Error ? error.message : "Invalid history cursor",
+      });
     }
   }
 

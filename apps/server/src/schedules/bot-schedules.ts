@@ -2,7 +2,6 @@ import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import {
-  AppError,
   type Agent,
   type Schedule,
   type ScheduleInput,
@@ -14,6 +13,13 @@ import { AgentRepository } from "../bots/agent-repository";
 import { ScheduleRepository } from "./schedule-repository";
 import { Scheduler, schedulerAccess } from "./scheduler";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import {
+  InvalidInput,
+  Forbidden,
+  NotFound,
+  Conflict,
+  type AppError,
+} from "../shared/errors";
 
 const output = (value: JsonValue) => ({
   structuredOutput: value,
@@ -57,7 +63,9 @@ const when = (
 
   if (nextCron && nextRun)
     return Effect.fail(
-      new AppError(400, "Choose a recurring cron or a one-time date"),
+      new InvalidInput({
+        message: "Choose a recurring cron or a one-time date",
+      }),
     );
 
   if (nextCron) return Effect.succeed({ cron: nextCron, runAt: null });
@@ -71,7 +79,9 @@ const when = (
 
   if (!kept.cron && !kept.runAt)
     return Effect.fail(
-      new AppError(400, "Choose a recurring cron or a one-time date"),
+      new InvalidInput({
+        message: "Choose a recurring cron or a one-time date",
+      }),
     );
 
   return Effect.succeed(kept);
@@ -122,7 +132,7 @@ export class BotSchedules extends Context.Service<
 
         if (!agent?.enabled || !agent.tools.includes("schedule"))
           return yield* Effect.fail(
-            new AppError(403, "Scheduling is turned off for this bot"),
+            new Forbidden({ message: "Scheduling is turned off for this bot" }),
           );
 
         return agent;
@@ -140,18 +150,20 @@ export class BotSchedules extends Context.Service<
           !(from.tools.includes("delegate") && from.delegates.includes(id))
         )
           return yield* Effect.fail(
-            new AppError(
-              403,
-              "You can schedule a task for yourself, or for a bot you are allowed to message",
-            ),
+            new Forbidden({
+              message:
+                "You can schedule a task for yourself, or for a bot you are allowed to message",
+            }),
           );
         const targeted = yield* agents.get(id);
 
         if (!targeted)
-          return yield* Effect.fail(new AppError(404, "Bot not found"));
+          return yield* Effect.fail(new NotFound({ message: "Bot not found" }));
 
         if (id !== from.id && !targeted.enabled)
-          return yield* Effect.fail(new AppError(409, "That bot is disabled"));
+          return yield* Effect.fail(
+            new Conflict({ message: "That bot is disabled" }),
+          );
 
         return targeted.id;
       });
@@ -160,7 +172,9 @@ export class BotSchedules extends Context.Service<
         const schedule = yield* schedules.get(id);
 
         if (!schedule || !visible(from, schedule))
-          return yield* Effect.fail(new AppError(404, "Task not found"));
+          return yield* Effect.fail(
+            new NotFound({ message: "Task not found" }),
+          );
 
         return schedule;
       });
@@ -204,7 +218,7 @@ export class BotSchedules extends Context.Service<
 
         if (!name || !prompt)
           return yield* Effect.fail(
-            new AppError(400, "Task name and prompt are required"),
+            new InvalidInput({ message: "Task name and prompt are required" }),
           );
         const agentId = yield* target(from, draft.agentId);
 
@@ -249,7 +263,9 @@ export class BotSchedules extends Context.Service<
         });
 
         if (!schedule)
-          return yield* Effect.fail(new AppError(404, "Task not found"));
+          return yield* Effect.fail(
+            new NotFound({ message: "Task not found" }),
+          );
 
         return yield* present(schedule);
       });
@@ -262,7 +278,9 @@ export class BotSchedules extends Context.Service<
         const existing = yield* manageable(from, id);
 
         if (!(yield* schedules.delete(existing.id)))
-          return yield* Effect.fail(new AppError(404, "Task not found"));
+          return yield* Effect.fail(
+            new NotFound({ message: "Task not found" }),
+          );
 
         return { deleted: true as const, id: existing.id };
       });
@@ -330,7 +348,7 @@ export function scheduleExtension(
         return output(await Effect.runPromise(schedules.list(agent.id)));
 
       if (!args.id && args.action !== "create")
-        throw new AppError(400, "Task ID is required");
+        throw new InvalidInput({ message: "Task ID is required" });
 
       if (args.action === "create")
         return output(

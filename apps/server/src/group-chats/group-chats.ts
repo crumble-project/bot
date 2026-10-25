@@ -8,7 +8,6 @@ import {
   Semaphore,
 } from "effect";
 import {
-  AppError,
   GROUP_TURN_BUDGET,
   type Agent,
   type Execution,
@@ -33,6 +32,7 @@ import type { Runner } from "../shared/runner";
 import { GroupChatRepository } from "./group-chat-repository";
 import { mentionedMembers, mentionsOwner } from "./group-mentions";
 import type { GroupEntry, GroupTranscripts } from "./group-transcripts";
+import { InvalidInput, NotFound, type AppError } from "../shared/errors";
 
 export type GroupMemberActivity = {
   agentId: string;
@@ -205,7 +205,9 @@ export class GroupChats extends Context.Service<
         const group = yield* groups.get(groupId);
 
         if (!group)
-          return yield* Effect.fail(new AppError(404, "Group chat not found"));
+          return yield* Effect.fail(
+            new NotFound({ message: "Group chat not found" }),
+          );
 
         return group;
       });
@@ -219,7 +221,7 @@ export class GroupChats extends Context.Service<
         for (const agentId of memberIds)
           if (!(yield* agents.get(agentId)))
             return yield* Effect.fail(
-              new AppError(400, "Choose existing bots as members"),
+              new InvalidInput({ message: "Choose existing bots as members" }),
             );
       });
 
@@ -883,7 +885,9 @@ export class GroupChats extends Context.Service<
 
           if (replyTo && !target)
             return yield* Effect.fail(
-              new AppError(400, "Reply to a message in this group chat"),
+              new InvalidInput({
+                message: "Reply to a message in this group chat",
+              }),
             );
 
           const { entryId, created } = yield* pi(() =>
@@ -1020,7 +1024,7 @@ export class GroupChats extends Context.Service<
 
           if (!group?.memberIds.includes(agentId))
             return yield* Effect.fail(
-              new AppError(404, "Group chat not found"),
+              new NotFound({ message: "Group chat not found" }),
             );
 
           return yield* pi(() => transcripts.history(groupId, options));

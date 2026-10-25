@@ -6,7 +6,6 @@ import { Clock, Context, Effect, Layer } from "effect";
 import type { Runner } from "../shared/runner";
 import { BotNotices } from "../bots/bot-notices";
 import {
-  AppError,
   credentialName,
   credentialRequestInput,
   type AgentCredential,
@@ -18,6 +17,12 @@ import {
 } from "../shared/domain";
 import { AgentCredentialRepository } from "./agent-credential-repository";
 import { GUEST_CA_BUNDLE, GUEST_CA_PATH } from "../workspaces/workspace";
+import {
+  InvalidInput,
+  NotFound,
+  Conflict,
+  type AppError,
+} from "../shared/errors";
 
 export const REQUEST_CREDENTIAL_TOOL = "request_credential";
 
@@ -105,10 +110,9 @@ export class Credentials extends Context.Service<
           input.hosts.every((host) => existing.hosts.includes(host))
         )
           return yield* Effect.fail(
-            new AppError(
-              409,
-              `${input.name} is already yours for ${hostsText(existing.hosts)}`,
-            ),
+            new Conflict({
+              message: `${input.name} is already yours for ${hostsText(existing.hosts)}`,
+            }),
           );
 
         return yield* repository.setRequest(agentId, input);
@@ -131,12 +135,12 @@ export class Credentials extends Context.Service<
 
         if (!resolvedHosts)
           return yield* Effect.fail(
-            new AppError(400, "Name at least one host"),
+            new InvalidInput({ message: "Name at least one host" }),
           );
 
         if (!existing && value === undefined)
           return yield* Effect.fail(
-            new AppError(400, "A new credential needs a value"),
+            new InvalidInput({ message: "A new credential needs a value" }),
           );
 
         const credential = yield* repository.save(agentId, checkedName, {
@@ -164,7 +168,9 @@ export class Credentials extends Context.Service<
         if (yield* repository.delete(agentId, name)) return;
 
         if (!(yield* repository.deleteRequest(agentId, name)))
-          return yield* Effect.fail(new AppError(404, "Credential not found"));
+          return yield* Effect.fail(
+            new NotFound({ message: "Credential not found" }),
+          );
 
         yield* notify(
           agentId,
@@ -187,7 +193,9 @@ export class Credentials extends Context.Service<
         options: { limit: number; before?: string | undefined },
       ) {
         if (!(yield* repository.get(agentId, name)))
-          return yield* Effect.fail(new AppError(404, "Credential not found"));
+          return yield* Effect.fail(
+            new NotFound({ message: "Credential not found" }),
+          );
 
         yield* prune;
 

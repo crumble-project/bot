@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect";
-import { AppError, type ChangeBy, type Memory } from "../shared/domain";
+import { type ChangeBy, type Memory } from "../shared/domain";
 import type { MemoryContext } from "../bots/runtime";
 import { AgentRepository } from "../bots/agent-repository";
 import { ExecutionRepository } from "../bots/execution-repository";
@@ -11,10 +11,13 @@ import {
   changeSourceOf,
   memorySourceOf,
 } from "./memory-sources";
+import { InvalidInput, NotFound, type AppError } from "../shared/errors";
 
 const validContent = (content: string): Effect.Effect<void, AppError> =>
   !content.trim() || content.length > 32000
-    ? Effect.fail(new AppError(400, "Memory must contain 1–32000 characters"))
+    ? Effect.fail(
+        new InvalidInput({ message: "Memory must contain 1–32000 characters" }),
+      )
     : Effect.void;
 
 /** What a bot's memory tool reads and changes: its own memories, and the shared ones when it uses shared memory. */
@@ -73,7 +76,9 @@ export class BotMemory extends Context.Service<
         )
           return memory;
 
-        return yield* Effect.fail(new AppError(404, "Memory not found"));
+        return yield* Effect.fail(
+          new NotFound({ message: "Memory not found" }),
+        );
       });
 
       const changeBy = (
@@ -109,7 +114,9 @@ export class BotMemory extends Context.Service<
 
             if (shared && !(yield* usesSharedMemory(agentId)))
               return yield* Effect.fail(
-                new AppError(400, "Shared memory is off for this agent"),
+                new InvalidInput({
+                  message: "Shared memory is off for this agent",
+                }),
               );
 
             const source = yield* memorySourceOf(agentId, context).pipe(
@@ -136,7 +143,9 @@ export class BotMemory extends Context.Service<
             );
 
             if (!updated)
-              return yield* Effect.fail(new AppError(404, "Memory not found"));
+              return yield* Effect.fail(
+                new NotFound({ message: "Memory not found" }),
+              );
 
             return updated;
           },

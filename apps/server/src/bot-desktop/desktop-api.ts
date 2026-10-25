@@ -15,9 +15,9 @@ import {
   viewerPage,
   type ViewerTickets,
 } from "./desktop-viewer";
-import { AppError } from "../shared/domain";
 import type { BotsAccess } from "../bots/bots";
 import type { DesktopStream } from "../workspaces/workspace";
+import { Conflict } from "../shared/errors";
 
 const HEARTBEAT_MS = 15_000;
 
@@ -55,7 +55,7 @@ export function registerDesktopRoutes(options: {
     const agent = service.agent(id);
 
     if (!options.desktop || !agent.tools.includes("desktop"))
-      throw new AppError(409, "This bot has no bot desktop");
+      throw new Conflict({ message: "This bot has no bot desktop" });
 
     return agent;
   };

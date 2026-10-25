@@ -4,7 +4,7 @@ import {
   type Context as PiContext,
 } from "@earendil-works/chord/context";
 import { Context, Effect, Layer, Option, Schema } from "effect";
-import { AppError, type Agent, type Execution } from "../shared/domain";
+import { type Agent, type Execution } from "../shared/domain";
 import { appErrors } from "../shared/app-errors";
 import { SettingsRepository } from "../shared/settings-repository";
 import { AgentRepository } from "../bots/agent-repository";
@@ -12,6 +12,13 @@ import { Bots, delegationRequest } from "../bots/bots";
 import { ExecutionRepository } from "../bots/execution-repository";
 import { BotRuntime } from "../bots/runtime";
 import type { Runner } from "../shared/runner";
+import {
+  InvalidInput,
+  Forbidden,
+  NotFound,
+  Conflict,
+  type AppError,
+} from "../shared/errors";
 
 type Receipt = {
   executionId: string;
@@ -83,10 +90,9 @@ export class BotMessaging extends Context.Service<
 
       if (!found.enabled || !found.tools.includes("delegate"))
         return yield* Effect.fail(
-          new AppError(
-            403,
-            "This agent has no permission to message other bots",
-          ),
+          new Forbidden({
+            message: "This agent has no permission to message other bots",
+          }),
         );
 
       return found;
@@ -104,12 +110,16 @@ export class BotMessaging extends Context.Service<
 
       if (!matches.length)
         return yield* Effect.fail(
-          new AppError(404, "Bot not found; use list_bots to find a recipient"),
+          new NotFound({
+            message: "Bot not found; use list_bots to find a recipient",
+          }),
         );
 
       if (matches.length > 1)
         return yield* Effect.fail(
-          new AppError(409, "Bot name is ambiguous; use the ID from list_bots"),
+          new Conflict({
+            message: "Bot name is ambiguous; use the ID from list_bots",
+          }),
         );
 
       return matches[0]!;
@@ -123,20 +133,23 @@ export class BotMessaging extends Context.Service<
         )
       )
         return yield* Effect.fail(
-          new AppError(409, "Delegated tasks cannot start further delegations"),
+          new Conflict({
+            message: "Delegated tasks cannot start further delegations",
+          }),
         );
     });
 
     const authorize = (from: Agent, target: Agent) => {
       if (!target.enabled || target.id === from.id)
-        return Effect.fail(new AppError(400, "Choose another enabled agent"));
+        return Effect.fail(
+          new InvalidInput({ message: "Choose another enabled agent" }),
+        );
 
       if (!from.delegates.includes(target.id))
         return Effect.fail(
-          new AppError(
-            403,
-            "This agent has no permission to delegate to that agent",
-          ),
+          new Forbidden({
+            message: "This agent has no permission to delegate to that agent",
+          }),
         );
 
       return Effect.void;
@@ -157,13 +170,13 @@ export class BotMessaging extends Context.Service<
         !from.delegates.includes(saved.targetAgentId)
       )
         return yield* Effect.fail(
-          new AppError(404, "Delegation receipt not found"),
+          new NotFound({ message: "Delegation receipt not found" }),
         );
       const execution = yield* executions.get(executionId);
 
       if (!execution || execution.agentId !== saved.targetAgentId)
         return yield* Effect.fail(
-          new AppError(404, "Delegation execution not found"),
+          new NotFound({ message: "Delegation execution not found" }),
         );
 
       return execution;
@@ -234,12 +247,14 @@ export class BotMessaging extends Context.Service<
 
         if (!message || message.length > 32000)
           return yield* Effect.fail(
-            new AppError(400, "A bot message must contain 1–32000 characters"),
+            new InvalidInput({
+              message: "A bot message must contain 1–32000 characters",
+            }),
           );
 
         if (!input.requestId)
           return yield* Effect.fail(
-            new AppError(400, "A bot message needs a request ID"),
+            new InvalidInput({ message: "A bot message needs a request ID" }),
           );
         yield* assertCanSend(from.id);
 
@@ -265,10 +280,9 @@ export class BotMessaging extends Context.Service<
           (saved.targetAgentId !== target.id || saved.message !== message)
         )
           return yield* Effect.fail(
-            new AppError(
-              409,
-              "Request ID already used for a different bot message",
-            ),
+            new Conflict({
+              message: "Request ID already used for a different bot message",
+            }),
           );
 
         // Reserve the destination before awaiting chat admission. A replay cannot send
@@ -291,10 +305,10 @@ export class BotMessaging extends Context.Service<
           (yield* executions.list(target.id)).filter(active).length >= 4
         )
           return yield* Effect.fail(
-            new AppError(
-              409,
-              "This agent already has four active tasks; try again later",
-            ),
+            new Conflict({
+              message:
+                "This agent already has four active tasks; try again later",
+            }),
           );
         const execution = yield* bots.send(chat.id, message, requestId);
         yield* settings.set(`delegation-receipt:${execution.id}`, {

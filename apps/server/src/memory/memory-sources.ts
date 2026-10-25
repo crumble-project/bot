@@ -1,14 +1,11 @@
 import { Effect } from "effect";
-import {
-  AppError,
-  type ChangeSource,
-  type MemorySource,
-} from "../shared/domain";
+import { type ChangeSource, type MemorySource } from "../shared/domain";
 import type { MemoryContext } from "../bots/runtime";
 import { AgentRepository } from "../bots/agent-repository";
 import { ExecutionRepository } from "../bots/execution-repository";
 import { GroupChatRepository } from "../group-chats/group-chat-repository";
 import { ScheduleRepository } from "../schedules/schedule-repository";
+import { InvalidInput, type AppError } from "../shared/errors";
 
 /** The newest of a run's inputs that Crumble admitted as an execution. */
 const newestExecution = Effect.fnUntraced(function* (
@@ -89,9 +86,9 @@ export const assertOwnMemoryInGroup = (
 ): Effect.Effect<void, AppError> =>
   context.groupId && shared
     ? Effect.fail(
-        new AppError(
-          400,
-          "In a group chat, save to your own memory; shared memory cannot be changed here",
-        ),
+        new InvalidInput({
+          message:
+            "In a group chat, save to your own memory; shared memory cannot be changed here",
+        }),
       )
     : Effect.void;
