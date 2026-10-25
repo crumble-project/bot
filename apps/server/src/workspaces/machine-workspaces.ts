@@ -3,18 +3,30 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Context } from "@earendil-works/chord";
 import {
   Connection,
   RemoteExecutionEnv,
   type ConnectionOptions,
 } from "@earendil-works/pi-env";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
+import { Effect } from "effect";
 import { z } from "zod";
 import {
+  BotDesktopImageMissing,
+  BotDesktopNotConfigured,
+  InvalidAgentId,
+  WorkspaceConfigFailed,
+  WorkspacesClosed,
   WORKSPACE_PATH,
+  bootFailure,
+  desktopStartFailure,
+  desktopStreamFailure,
+  isWorkspaceFailure,
+  stopFailure,
+  syncFailure,
   type DesktopStream,
-  type Workspaces,
+  type WorkspaceFailure,
+  type WorkspaceService,
 } from "./workspace";
 import type { WorkspaceInterceptor } from "./workspace-proxy";
 
@@ -92,7 +104,10 @@ export type MachineWorkspacesOptions = {
 /** Throws for an agent id that could name another bot's machine. */
 export function assertAgentId(agentId: string) {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(agentId))
-    throw new Error(`Invalid agent id: ${agentId}`);
+    throw new InvalidAgentId({
+      agentId,
+      message: `Invalid agent id: ${agentId}`,
+    });
 }
 
 const DAEMON_DIRECTORY: Partial<Record<NodeJS.Architecture, string>> = {
@@ -104,8 +119,14 @@ const DAEMON_DIRECTORY: Partial<Record<NodeJS.Architecture, string>> = {
 export function daemonPath(arch: NodeJS.Architecture = process.arch) {
   const directory = DAEMON_DIRECTORY[arch];
 
-  if (!directory)
-    throw new Error(`Workspaces need an arm64 or x64 guest, not ${arch}`);
+  if (!directory) {
+    const cause = new Error(`Unsupported guest architecture: ${arch}`);
+
+    throw new WorkspaceConfigFailed({
+      message: cause.message,
+      cause,
+    });
+  }
 
   return path.join(
     path.dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-env"))),
@@ -288,6 +309,15 @@ class Workspace {
 
   /** A stream to Xvnc in the guest, through socat on an exec stream like the pi-env relay: no guest port. */
   async openDesktop(): Promise<DesktopStream> {
+    const desktopImage = this.owner.desktopImageName();
+
+    if (!desktopImage)
+      throw new BotDesktopNotConfigured({
+        agentId: this.agentId,
+        message:
+          "This bot has no bot desktop: no desktop image is configured (CRUMBLE_WORKSPACE_DESKTOP_IMAGE)",
+      });
+
     const release = this.hold();
 
     try {
@@ -295,13 +325,19 @@ class Workspace {
 
       const running = this.running;
 
-      if (!running || running.machine.image !== this.owner.desktopImageName())
-        throw new Error("This bot has no bot desktop");
+      if (!running || running.machine.image !== desktopImage)
+        throw new BotDesktopImageMissing({
+          agentId: this.agentId,
+          image: running?.machine.image ?? this.owner.imageFor(this.agentId),
+          message:
+            "This bot has no bot desktop: its workspace is running the plain image",
+        });
 
-      const stream = await running.machine.stream("socat", [
-        "-",
-        "TCP:127.0.0.1:5900",
-      ]);
+      const stream = await running.machine
+        .stream("socat", ["-", "TCP:127.0.0.1:5900"])
+        .catch((error) => {
+          throw desktopStreamFailure(this.agentId)(error);
+        });
 
       // Writes to the guest are async; chaining keeps them in order.
       let writes = Promise.resolve();
@@ -326,7 +362,12 @@ class Workspace {
     if (!this.running || this.inflight > 0 || this.holds > 0) return;
 
     this.idleTimer = setTimeout(
-      () => void this.stop(false).catch(() => undefined),
+      () =>
+        void this.stop(false).catch((error) =>
+          Effect.runPromise(
+            Effect.logError("Workspace idle stop failed", this.agentId, error),
+          ),
+        ),
       this.idleTimeoutMs,
     );
     this.idleTimer.unref();
@@ -336,8 +377,13 @@ class Workspace {
     const running = this.running;
 
     this.running = undefined;
-    await running?.relay.close();
-    await running?.machine.stop();
+
+    try {
+      await running?.relay.close();
+      await running?.machine.stop();
+    } catch (error) {
+      throw stopFailure(this.agentId)(error);
+    }
   }
 }
 
@@ -346,7 +392,7 @@ class Workspace {
  * `idleTimeoutMs` of inactivity, while viewers hold it awake. Which image it boots follows the bot's need for its
  * bot desktop; the backend keeps the files across stops and image changes.
  */
-export class MachineWorkspaces implements Workspaces {
+export class MachineWorkspaces implements WorkspaceService {
   private readonly workspaces = new Map<string, Workspace>();
   private readonly idleTimeoutMs: number;
   private readonly desktopImage: string | undefined;
@@ -387,12 +433,29 @@ export class MachineWorkspaces implements Workspaces {
       : this.image;
   }
 
-  openDesktop(agentId: string, _context?: Context) {
-    return this.workspace(agentId).openDesktop();
+  openDesktop(agentId: string) {
+    return Effect.tryPromise({
+      try: () => this.workspace(agentId).openDesktop(),
+      catch: desktopStreamFailure(agentId),
+    });
   }
 
-  async startDesktop(agentId: string, _context?: Context) {
-    await this.workspace(agentId).ensureStarted(true);
+  startDesktop(agentId: string) {
+    return Effect.tryPromise({
+      try: async () => {
+        assertAgentId(agentId);
+
+        if (!this.desktopImage)
+          throw new BotDesktopNotConfigured({
+            agentId,
+            message:
+              "This bot has no bot desktop: no desktop image is configured (CRUMBLE_WORKSPACE_DESKTOP_IMAGE)",
+          });
+
+        await this.workspace(agentId).ensureStarted(true);
+      },
+      catch: desktopStartFailure(agentId),
+    });
   }
 
   keepAwake(agentId: string) {
@@ -412,30 +475,62 @@ export class MachineWorkspaces implements Workspaces {
       : workspace.env;
   }
 
-  async restart(agentId: string, _context?: Context) {
-    await this.workspaces.get(agentId)?.stop(true, true);
+  restart(agentId: string): Effect.Effect<void, WorkspaceFailure> {
+    return Effect.tryPromise({
+      try: async () => {
+        await this.workspaces.get(agentId)?.stop(true, true);
+      },
+      catch: stopFailure(agentId),
+    });
   }
 
-  async sync(agentId: string, _context?: Context) {
-    await this.workspaces.get(agentId)?.sync();
+  sync(agentId: string): Effect.Effect<void, WorkspaceFailure> {
+    return Effect.tryPromise({
+      try: async () => {
+        await this.workspaces.get(agentId)?.sync();
+      },
+      catch: syncFailure(agentId),
+    });
   }
 
-  async close(_context?: Context) {
-    this.closed = true;
-    await Promise.all(
-      [...this.workspaces.values()].map((workspace) => workspace.stop(true)),
-    );
+  get close(): Effect.Effect<void, WorkspaceFailure> {
+    return Effect.suspend(() => {
+      this.closed = true;
+
+      return Effect.forEach(
+        [...this.workspaces.values()],
+        (workspace) =>
+          Effect.tryPromise({
+            try: () => workspace.stop(true),
+            catch: stopFailure(workspace.agentId),
+          }),
+        { concurrency: "unbounded", discard: true },
+      );
+    });
   }
 
   /** Boots the bot's machine and a relay for its daemon; called by `Workspace`, serialized per bot. */
   async boot(agentId: string, image: string): Promise<Running> {
-    if (this.closed) throw new Error("Workspaces are closed");
+    if (this.closed)
+      throw new WorkspacesClosed({
+        message: "The workspace is shutting down",
+      });
 
-    const machine = await this.machines.boot(agentId, image, {
-      caCertificate: await this.caCertificate?.(agentId),
+    let machine: WorkspaceMachine;
+
+    try {
+      machine = await this.machines.boot(agentId, image, {
+        caCertificate: await this.caCertificate?.(agentId),
+      });
+    } catch (error) {
+      throw isWorkspaceFailure(error) ? error : bootFailure(agentId)(error);
+    }
+
+    const desktopReady = machine.desktopReady().catch((error) => {
+      throw isWorkspaceFailure(error)
+        ? error
+        : desktopStartFailure(agentId)(error);
     });
-
-    const desktopReady = machine.desktopReady();
 
     // Awaited by later callers; a failure before then must not go unhandled.
     desktopReady.catch(() => undefined);
@@ -450,8 +545,8 @@ export class MachineWorkspaces implements Workspaces {
         command: [process.execPath, BRIDGE_PATH, relay.socketPath],
       };
     } catch (error) {
-      await machine.stop();
-      throw error;
+      await machine.stop().catch(() => undefined);
+      throw isWorkspaceFailure(error) ? error : bootFailure(agentId)(error);
     }
   }
 

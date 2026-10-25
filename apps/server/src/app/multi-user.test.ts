@@ -3,7 +3,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startServer } from "./server";
-import type { Workspaces } from "../workspaces/workspace";
+import { Effect } from "effect";
+import {
+  BotDesktopStartFailed,
+  type WorkspaceService,
+} from "../workspaces/workspace";
 
 type Running = Awaited<ReturnType<typeof startServer>>;
 
@@ -274,19 +278,20 @@ test.serial(
         env: () => {
           throw new Error("unused in viewer test");
         },
-        restart: async () => undefined,
-        sync: async () => undefined,
-        close: async () => undefined,
+        restart: () => Effect.void,
+        sync: () => Effect.void,
+        close: Effect.void,
         keepAwake: () => () => undefined,
-        startDesktop: async () => undefined,
-        openDesktop: async () => ({
-          write: async () => undefined,
-          output: (async function* () {
-            yield new TextEncoder().encode("RFB 003.008\n");
-          })(),
-          close: async () => undefined,
-        }),
-      } satisfies Workspaces;
+        startDesktop: () => Effect.void,
+        openDesktop: () =>
+          Effect.succeed({
+            write: async () => undefined,
+            output: (async function* () {
+              yield new TextEncoder().encode("RFB 003.008\n");
+            })(),
+            close: async () => undefined,
+          }),
+      } satisfies WorkspaceService;
 
       running = await startServer({
         dataDir,
@@ -553,6 +558,90 @@ test.serial(
           })
         ).status,
       ).toBe(401);
+    } finally {
+      await running?.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.serial(
+  "a failed desktop open is logged and closes the viewer with an actionable reason",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-viewer-failure-"));
+    let running: Awaited<ReturnType<typeof startServer>> | undefined;
+
+    const failure = new BotDesktopStartFailed({
+      agentId: "desktop",
+      message: "The bot desktop did not start: desktop-start.sh exited 1",
+      cause: new Error("desktop-start.sh exited 1"),
+    });
+
+    const workspaces: WorkspaceService = {
+      desktop: true,
+      env: () => {
+        throw new Error("unused in viewer failure test");
+      },
+      restart: () => Effect.void,
+      sync: () => Effect.void,
+      close: Effect.void,
+      keepAwake: () => () => undefined,
+      startDesktop: () => Effect.void,
+      openDesktop: () => Effect.fail(failure),
+    };
+
+    try {
+      running = await startServer({
+        dataDir,
+        port: 0,
+        workspaces: () => workspaces,
+      });
+      const owner = await signUp(running, `failure-${crypto.randomUUID()}`);
+
+      const agent = await fetch(new URL("/v1/agents", running.server.url), {
+        method: "POST",
+        headers: json(owner),
+        body: JSON.stringify({ name: "Desktop", tools: ["desktop"] }),
+      });
+
+      expect(agent.status).toBe(201);
+      // SAFETY: The agent route returns the documented agent object.
+      const agentId = ((await agent.json()) as { id: string }).id;
+
+      const viewer = await fetch(
+        new URL(`/v1/agents/${agentId}/desktop/viewer`, running.server.url),
+        { method: "POST", headers: owner },
+      );
+
+      expect(viewer.status).toBe(201);
+      // SAFETY: The viewer route returns the documented ticket path.
+      const path = ((await viewer.json()) as { path: string }).path;
+      const socketUrl = new URL(`${path}/websockify`, running.server.url);
+
+      socketUrl.protocol = "ws:";
+
+      const closed = await new Promise<CloseEvent>((resolve, reject) => {
+        const socket = new WebSocket(socketUrl);
+
+        const timer = setTimeout(() => {
+          socket.close();
+          reject(new Error("viewer websocket timeout"));
+        }, 5000);
+
+        socket.addEventListener("close", (event) => {
+          clearTimeout(timer);
+          resolve(event);
+        });
+        socket.addEventListener("error", () => {
+          clearTimeout(timer);
+          reject(new Error("viewer websocket error"));
+        });
+      });
+
+      expect(closed.code).toBe(1011);
+      expect(closed.reason).toBe(
+        "The bot desktop failed to start; check the server log",
+      );
     } finally {
       await running?.close();
       rmSync(dataDir, { recursive: true, force: true });

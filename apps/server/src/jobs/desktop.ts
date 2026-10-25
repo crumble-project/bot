@@ -11,7 +11,7 @@ import type { DesktopControlAccess } from "../bot-desktop/desktop-control";
 import type { Agent } from "../shared/domain";
 import { defineJobKind, type JobExtensions } from "./jobs";
 import type { CrumblePlugin } from "../app/plugins";
-import type { Workspaces } from "../workspaces/workspace";
+import type { WorkspaceService } from "../workspaces/workspace";
 
 export const DESKTOP_TOOL_NAME = "desktop";
 
@@ -49,7 +49,7 @@ export const desktopJobs = (harness: Harness, chatId: ConversationId) =>
   desktop.list(harness, chatId);
 
 export const desktopEnv = (
-  workspaces: Workspaces,
+  workspaces: WorkspaceService,
   agentId: string,
   target: EnvTarget,
   context: Context,
@@ -108,7 +108,7 @@ export function desktopExtensions(
 
 /** Desktop jobs as a plugin: offered to bots with the `desktop` tool while workspaces have bot desktops. */
 export const desktopPlugin = (
-  workspaces: Workspaces | undefined,
+  workspaces: WorkspaceService | undefined,
   control: DesktopControlAccess,
 ): CrumblePlugin => ({
   id: "desktop",

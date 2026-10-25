@@ -22,7 +22,13 @@ import {
   type WorkspaceMachine,
   type WorkspaceMachines,
 } from "./machine-workspaces";
-import { GUEST_CA_PATH, WORKSPACE_PATH } from "./workspace";
+import {
+  BotDesktopStartFailed,
+  WorkspaceConfigFailed,
+  failureMessage,
+  GUEST_CA_PATH,
+  WORKSPACE_PATH,
+} from "./workspace";
 import {
   startWorkspaceProxy,
   type WorkspaceInterceptor,
@@ -259,8 +265,11 @@ export class RailwayMachines implements WorkspaceMachines {
     image: string,
     guest: GuestSetup = {},
   ): Promise<WorkspaceMachine> {
-    if (!this.recipes.has(image))
-      throw new Error(`Railway workspaces have no image ${image}`);
+    if (!this.recipes.has(image)) {
+      const cause = new Error(`Unknown Railway workspace image: ${image}`);
+
+      throw new WorkspaceConfigFailed({ message: cause.message, cause });
+    }
 
     const name = this.name(agentId);
     const record = await this.readRecord(agentId);
@@ -298,7 +307,7 @@ export class RailwayMachines implements WorkspaceMachines {
       if (guest.caCertificate)
         await run(sandbox, "update-ca-certificates >/dev/null");
 
-      if (desktop) await startDesktop(sandbox, DESKTOP_DISPLAY_ONLY);
+      if (desktop) await startDesktop(sandbox, agentId, DESKTOP_DISPLAY_ONLY);
     } catch (error) {
       // A new sandbox's files are all in the checkpoint; a reconnected one may hold writes the checkpoint lacks.
       if (!reconnected) await sandbox.destroy().catch(() => undefined);
@@ -316,6 +325,7 @@ export class RailwayMachines implements WorkspaceMachines {
     return new RailwayMachine(
       sandbox,
       name,
+      agentId,
       image,
       desktop,
       this.checkpointDelayMs,
@@ -421,6 +431,7 @@ class RailwayMachine implements WorkspaceMachine {
   constructor(
     private readonly sandbox: Sandbox,
     private readonly name: string,
+    private readonly agentId: string,
     readonly image: string,
     private readonly desktop: boolean,
     private readonly checkpointDelayMs: number,
@@ -475,7 +486,7 @@ class RailwayMachine implements WorkspaceMachine {
 
   /** The start script, run again: while the desktop is up it only waits for the browser. */
   async desktopReady() {
-    if (this.desktop) await startDesktop(this.sandbox);
+    if (this.desktop) await startDesktop(this.sandbox, this.agentId);
   }
 
   /** Rejects when Railway cannot tell, so a failed request never counts as a gone sandbox. */
@@ -588,13 +599,26 @@ function writeDesktopScripts(sandbox: Sandbox) {
   );
 }
 
-async function startDesktop(sandbox: Sandbox, ...args: string[]) {
+async function startDesktop(
+  sandbox: Sandbox,
+  agentId: string,
+  ...args: string[]
+) {
   const result = await sandbox.exec([DESKTOP_START, ...args].join(" "), {
     timeoutSec: DESKTOP_START_TIMEOUT_SEC,
   });
 
-  if (result.exitCode !== 0)
-    throw new Error(`The bot desktop did not start: ${result.stderr}`);
+  if (result.exitCode !== 0) {
+    const cause = new Error(
+      `The bot desktop did not start: ${result.stderr || result.stdout}`,
+    );
+
+    throw new BotDesktopStartFailed({
+      agentId,
+      message: failureMessage("The bot desktop did not start", cause),
+      cause,
+    });
+  }
 }
 
 /** A checkpoint snapshots the disk, not the guest's page cache, so recent writes need a `sync` first. */

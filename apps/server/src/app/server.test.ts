@@ -8,7 +8,8 @@ import {
   historyResponse,
 } from "../contract/api-responses";
 import { startServer } from "./server";
-import type { Workspaces } from "../workspaces/workspace";
+import { Effect } from "effect";
+import type { WorkspaceService } from "../workspaces/workspace";
 
 type Running = Awaited<ReturnType<typeof startServer>>;
 
@@ -207,24 +208,25 @@ test.serial(
     const port = 20000 + Math.floor(Math.random() * 1000);
 
     // A bot desktop that greets like a VNC server and then waits.
-    const workspaces: Workspaces = {
+    const workspaces: WorkspaceService = {
       desktop: true,
       env: () => {
         throw new Error("No environment in this test");
       },
-      restart: async () => {},
-      openDesktop: async () => ({
-        write: async () => {},
-        output: (async function* () {
-          yield new TextEncoder().encode("RFB 003.008\n");
-          await new Promise(() => {});
-        })(),
-        close: async () => {},
-      }),
+      restart: () => Effect.void,
+      openDesktop: () =>
+        Effect.succeed({
+          write: async () => {},
+          output: (async function* () {
+            yield new TextEncoder().encode("RFB 003.008\n");
+            await new Promise(() => {});
+          })(),
+          close: async () => {},
+        }),
       keepAwake: () => () => {},
-      startDesktop: async () => {},
-      sync: async () => {},
-      close: async () => {},
+      startDesktop: () => Effect.void,
+      sync: () => Effect.void,
+      close: Effect.void,
     };
 
     try {

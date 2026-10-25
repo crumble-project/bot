@@ -15,6 +15,8 @@ import {
   type WorkspaceMachines,
 } from "./machine-workspaces";
 import {
+  BotDesktopStartFailed,
+  failureMessage,
   GUEST_CA_PATH,
   WORKSPACE_PATH,
   allowAllRequests,
@@ -170,10 +172,9 @@ class MicrosandboxMachines implements WorkspaceMachines {
 
       const desktop = image === this.desktopImage;
 
-      if (desktop)
-        await run(machine, `${DESKTOP_START} ${DESKTOP_DISPLAY_ONLY}`);
+      if (desktop) await startDesktop(machine, agentId, DESKTOP_DISPLAY_ONLY);
 
-      return new MicrosandboxMachine(machine, proxy, image, desktop);
+      return new MicrosandboxMachine(machine, proxy, image, desktop, agentId);
     } catch (error) {
       await sandbox?.stop().catch(() => undefined);
       await proxy?.close();
@@ -188,11 +189,12 @@ class MicrosandboxMachine implements WorkspaceMachine {
     private readonly proxy: WorkspaceProxy,
     readonly image: string,
     private readonly desktop: boolean,
+    private readonly agentId: string,
   ) {}
 
   /** The start script, run again: while the desktop is up it only waits for the browser. */
   async desktopReady() {
-    if (this.desktop) await run(this.sandbox, DESKTOP_START);
+    if (this.desktop) await startDesktop(this.sandbox, this.agentId);
   }
 
   isAlive() {
@@ -299,6 +301,23 @@ async function run(sandbox: Sandbox, command: string) {
 
   if (!result.success)
     throw new Error(`${command} failed: ${result.stderr() || result.stdout()}`);
+}
+
+/** The display-only start, at boot and again before a viewer's browser connects. */
+async function startDesktop(
+  sandbox: Sandbox,
+  agentId: string,
+  ...args: string[]
+) {
+  try {
+    await run(sandbox, [DESKTOP_START, ...args].join(" "));
+  } catch (error) {
+    throw new BotDesktopStartFailed({
+      agentId,
+      message: failureMessage("The bot desktop did not start", error),
+      cause: error,
+    });
+  }
 }
 
 const flush = (sandbox: Sandbox) => run(sandbox, "sync");

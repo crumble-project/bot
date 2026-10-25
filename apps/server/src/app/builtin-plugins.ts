@@ -5,13 +5,13 @@ import { desktopPlugin } from "../jobs/desktop";
 import type { DesktopControlAccess } from "../bot-desktop/desktop-control";
 import type { CrumblePlugin } from "./plugins";
 import { meliousPlugin } from "../providers/providers";
-import type { Workspaces } from "../workspaces/workspace";
+import type { WorkspaceService } from "../workspaces/workspace";
 
 /** What the server hands the built-in plugins; each takes only the part it needs. */
 export type PluginHost = {
   dataDir: string;
   env: NodeJS.ProcessEnv;
-  workspaces: Workspaces | undefined;
+  workspaces: WorkspaceService | undefined;
   desktopControl: DesktopControlAccess;
   /** The bots' credentials, offered to coding jobs. */
   credentials?: CredentialsAccess;

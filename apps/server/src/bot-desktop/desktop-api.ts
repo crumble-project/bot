@@ -1,5 +1,6 @@
 import type { Register } from "../contract/route";
 import { upgradeWebSocket } from "@hono/bun";
+import { Cause, Effect, Predicate } from "effect";
 import { streamSSE } from "hono/streaming";
 import type { WSContext, WSMessageReceive } from "hono/ws";
 import {
@@ -16,10 +17,44 @@ import {
   type ViewerTickets,
 } from "./desktop-viewer";
 import type { BotsAccess } from "../bots/bots";
-import type { DesktopStream } from "../workspaces/workspace";
+import type {
+  DesktopStream,
+  FailureCause,
+  WorkspaceFailure,
+} from "../workspaces/workspace";
 import { Conflict } from "../shared/errors";
 
 const HEARTBEAT_MS = 15_000;
+
+/** A WebSocket close reason the owner can act on, without the failure's cause or any credential. */
+export function desktopCloseReason(error: FailureCause) {
+  if (Predicate.isTagged(error, "BotDesktopNotConfigured"))
+    return "Set CRUMBLE_WORKSPACE_DESKTOP_IMAGE to enable bot desktops";
+
+  if (Predicate.isTagged(error, "BotDesktopImageMissing"))
+    return "The bot's workspace is running an image without a bot desktop";
+
+  if (Predicate.isTagged(error, "BotDesktopStartFailed"))
+    return "The bot desktop failed to start; check the server log";
+
+  if (Predicate.isTagged(error, "BotDesktopStreamFailed"))
+    return "The bot desktop stream failed to open; check the server log";
+
+  if (Predicate.isTagged(error, "WorkspaceStopFailed"))
+    return "The bot workspace could not be stopped; check the server log";
+
+  if (Predicate.isTagged(error, "WorkspacesClosed"))
+    return "The bot workspace is shutting down; try again shortly";
+
+  if (
+    Predicate.isTagged(error, "WorkspaceBootFailed") ||
+    Predicate.isTagged(error, "WorkspaceSyncFailed") ||
+    Predicate.isTagged(error, "WorkspaceConfigFailed")
+  )
+    return "The bot workspace failed to start; check the server log";
+
+  return "The bot desktop is unavailable; check the server log";
+}
 
 const bytesOf = async (data: WSMessageReceive) => {
   if (data instanceof Uint8Array) return data;
@@ -44,8 +79,10 @@ export function registerDesktopRoutes(options: {
   desktop: boolean;
   control: DesktopControlAccess;
   tickets: ViewerTickets;
-  openDesktop?: (agentId: string) => Promise<DesktopStream>;
-  startDesktop?: (agentId: string) => Promise<void>;
+  openDesktop?: (
+    agentId: string,
+  ) => Effect.Effect<DesktopStream, WorkspaceFailure>;
+  startDesktop?: (agentId: string) => Effect.Effect<void, WorkspaceFailure>;
 }) {
   const { app, register, service, control, tickets } = options;
   // The bot of each viewer connection, from its redeemed ticket to its WebSocket.
@@ -111,7 +148,20 @@ export function registerDesktopRoutes(options: {
     const { ticket, expiresAt } = tickets.issue(agent.id);
 
     // The machine boots while the client loads the page; the viewer's WebSocket reports any failure.
-    void options.startDesktop?.(agent.id).catch(() => undefined);
+    if (options.startDesktop)
+      void Effect.runPromise(
+        options
+          .startDesktop(agent.id)
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning(
+                "Bot desktop preboot failed",
+                agent.id,
+                Cause.squash(cause),
+              ),
+            ),
+          ),
+      );
 
     return c.json({ path: `${VIEWER_PREFIX}/${ticket}`, expiresAt }, 201);
   });
@@ -149,22 +199,39 @@ export function registerDesktopRoutes(options: {
 
       return {
         onOpen: (_event, ws: WSContext) => {
-          void options.openDesktop!(agentId)
-            .then((stream) => {
-              if (closed) return void stream.close();
+          void Effect.runPromise(
+            Effect.gen(function* () {
+              const stream = yield* options.openDesktop!(agentId);
 
-              bridge = bridgeDesktop({
-                stream,
-                // Watching never lets input through; only the owner holding control does.
-                allowInput: () => control.get(agentId).holder === "owner",
-                // A copy: the WebSocket takes only bytes backed by a plain ArrayBuffer.
-                send: (data) => ws.send(new Uint8Array(data)),
-                close: () => ws.close(),
+              if (closed) return yield* Effect.promise(() => stream.close());
+
+              yield* Effect.sync(() => {
+                bridge = bridgeDesktop({
+                  stream,
+                  // Watching never lets input through; only the owner holding control does.
+                  allowInput: () => control.get(agentId).holder === "owner",
+                  // A copy: the WebSocket takes only bytes backed by a plain ArrayBuffer.
+                  send: (data) => ws.send(new Uint8Array(data)),
+                  close: () => ws.close(),
+                });
+
+                for (const data of pending.splice(0)) bridge.receive(data);
               });
+            }).pipe(
+              Effect.catchCause((cause) => {
+                const error = Cause.squash(cause);
 
-              for (const data of pending.splice(0)) bridge.receive(data);
-            })
-            .catch(() => ws.close(1011, "The bot desktop is unavailable"));
+                return Effect.gen(function* () {
+                  yield* Effect.logError(
+                    "Could not open the bot desktop",
+                    agentId,
+                    error,
+                  );
+                  ws.close(1011, desktopCloseReason(error));
+                });
+              }),
+            ),
+          );
         },
         onMessage: async (event) => {
           const data = await bytesOf(event.data);

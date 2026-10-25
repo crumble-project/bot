@@ -7,6 +7,7 @@ import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { createAPI } from "./api";
+import { Effect } from "effect";
 import { memoryResponse } from "../contract/api-responses";
 
 // Plain header records, so they spread into the defaults.
@@ -191,7 +192,8 @@ describe("HTTP API", () => {
     const restarted: string[] = [];
 
     const app = createAPI(service, scheduler, token, undefined, {
-      restartWorkspace: async (agentId) => void restarted.push(agentId),
+      restartWorkspace: (agentId) =>
+        Effect.sync(() => void restarted.push(agentId)),
     });
 
     const agent = store.createAgent({

@@ -11,7 +11,7 @@ import {
   clientDocument,
   clientDocumentBody,
 } from "../integrations/mcp-oauth";
-import type { Workspaces } from "../workspaces/workspace";
+import type { WorkspaceService } from "../workspaces/workspace";
 
 export async function startServer(
   options: {
@@ -20,7 +20,7 @@ export async function startServer(
     port?: number;
     publicUrl?: string;
     skillsDir?: string;
-    workspaces?: (userId: string) => Workspaces;
+    workspaces?: (userId: string) => WorkspaceService;
   } = {},
 ) {
   const dataDir = resolve(

@@ -2,7 +2,6 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { Context } from "@earendil-works/chord";
 import { createModels, type Message } from "@earendil-works/pi-ai";
 import {
   fauxAssistantMessage,
@@ -18,7 +17,8 @@ import type { Agent } from "../shared/domain";
 import { AgentRuntime } from "../bots/runtime";
 import { Store } from "../../test/support/store";
 import { latestMessagePreview } from "../bots/transcript";
-import type { DesktopStream, Workspaces } from "../workspaces/workspace";
+import { Effect } from "effect";
+import type { DesktopStream, WorkspaceService } from "../workspaces/workspace";
 import {
   scriptedGuest,
   type GuestCall,
@@ -31,7 +31,7 @@ afterEach(async () => {
 });
 
 /** The workspace is a scripted bot desktop: cua-driver answers from replies, nothing runs. */
-class GuestWorkspaces implements Workspaces {
+class GuestWorkspaces implements WorkspaceService {
   readonly desktop = true;
   readonly calls: GuestCall[];
   private readonly guest: ReturnType<typeof scriptedGuest>;
@@ -66,24 +66,29 @@ class GuestWorkspaces implements Workspaces {
     });
   }
 
-  async sync(_agentId: string, _context: Context) {}
-
-  async restart(_agentId: string, _context: Context) {}
-
-  async openDesktop(
-    _agentId: string,
-    _context: Context,
-  ): Promise<DesktopStream> {
-    throw new Error("No bot desktop in this test");
+  sync() {
+    return Effect.void;
   }
 
-  async startDesktop(_agentId: string, _context: Context) {}
+  restart() {
+    return Effect.void;
+  }
+
+  openDesktop(): Effect.Effect<DesktopStream> {
+    return Effect.die("No bot desktop in this test");
+  }
+
+  startDesktop() {
+    return Effect.void;
+  }
 
   keepAwake(_agentId: string) {
     return () => {};
   }
 
-  async close(_context: Context) {}
+  get close() {
+    return Effect.void;
+  }
 }
 
 const textOf = (message: Message) =>

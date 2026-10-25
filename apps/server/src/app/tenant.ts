@@ -1,7 +1,6 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import lockfile from "proper-lockfile";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { BotRuntime } from "../bots/runtime";
@@ -41,7 +40,7 @@ import { displayTools } from "../display/display";
 import { DESKTOP_TOOL_NAME } from "../jobs/desktop";
 import { desktopControlAccess } from "../bot-desktop/desktop-control";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
-import type { Workspaces } from "../workspaces/workspace";
+import type { WorkspaceService } from "../workspaces/workspace";
 import { microsandboxWorkspacesFromEnv } from "../workspaces/microsandbox-workspaces";
 import { railwayWorkspacesFromEnv } from "../workspaces/railway-workspaces";
 import { Push, PushDelivery } from "../push/push";
@@ -73,7 +72,7 @@ export type TenantOptions = {
   dataDir: string;
   skillsDir?: string | undefined;
   publicUrl?: string | undefined;
-  workspaces?: Workspaces | undefined;
+  workspaces?: WorkspaceService | undefined;
   tenantId: string;
 };
 
@@ -325,8 +324,8 @@ export async function createTenant(
             commonSkills: yield* CommonSkills,
             coding: workspaces !== undefined,
             desktop: workspaces?.desktop === true,
-            restartWorkspace: async (agentId) =>
-              workspaces?.restart(agentId, BACKGROUND_CONTEXT),
+            restartWorkspace: (agentId) =>
+              workspaces?.restart(agentId) ?? Effect.void,
             groupChats,
             desktopControl: desktopControlAccess(run),
             viewerTickets: new ViewerTickets(Date.now, options.tenantId),
@@ -336,10 +335,9 @@ export async function createTenant(
               ),
             ),
             ...(workspaces && {
-              openDesktop: (agentId: string) =>
-                workspaces.openDesktop(agentId, BACKGROUND_CONTEXT),
+              openDesktop: (agentId: string) => workspaces.openDesktop(agentId),
               startDesktop: (agentId: string) =>
-                workspaces.startDesktop(agentId, BACKGROUND_CONTEXT),
+                workspaces.startDesktop(agentId),
             }),
             providerAuth: providerSignInsAccess(run),
             oauthClient,

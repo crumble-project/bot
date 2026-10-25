@@ -2,7 +2,6 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { Context } from "@earendil-works/chord";
 import { createModels } from "@earendil-works/pi-ai";
 import type { Message } from "@earendil-works/pi-ai";
 import {
@@ -22,7 +21,8 @@ import { AgentRuntime } from "../bots/runtime";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { standaloneBots } from "../bots/bots";
 import { Store } from "../../test/support/store";
-import type { DesktopStream, Workspaces } from "../workspaces/workspace";
+import { Effect } from "effect";
+import type { DesktopStream, WorkspaceService } from "../workspaces/workspace";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -31,7 +31,7 @@ afterEach(async () => {
 });
 
 /** A directory on this machine standing in for the VM boundary. */
-class DirectoryWorkspaces implements Workspaces {
+class DirectoryWorkspaces implements WorkspaceService {
   readonly synced: string[] = [];
   readonly environments: ExecutionEnv[] = [];
   readonly desktop = false;
@@ -45,26 +45,31 @@ class DirectoryWorkspaces implements Workspaces {
     return env;
   }
 
-  async sync(agentId: string, _context: Context) {
+  sync(agentId: string) {
     this.synced.push(agentId);
+
+    return Effect.void;
   }
 
-  async restart(_agentId: string, _context: Context) {}
-
-  async openDesktop(
-    _agentId: string,
-    _context: Context,
-  ): Promise<DesktopStream> {
-    throw new Error("No bot desktop in this test");
+  restart() {
+    return Effect.void;
   }
 
-  async startDesktop(_agentId: string, _context: Context) {}
+  openDesktop(): Effect.Effect<DesktopStream> {
+    return Effect.die("No bot desktop in this test");
+  }
+
+  startDesktop() {
+    return Effect.void;
+  }
 
   keepAwake(_agentId: string) {
     return () => {};
   }
 
-  async close(_context: Context) {}
+  get close() {
+    return Effect.void;
+  }
 }
 
 const messageText = (message: Message) =>
@@ -155,7 +160,7 @@ function setup(dir: string, tools: string[] = ["coding"]) {
 
 function open(
   dir: string,
-  workspaces: Workspaces,
+  workspaces: WorkspaceService,
   steps: FauxResponseFactory,
   agent: Agent,
 ) {

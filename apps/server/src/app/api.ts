@@ -29,7 +29,7 @@ import {
   type DesktopControlAccess,
 } from "../bot-desktop/desktop-control";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
-import type { DesktopStream } from "../workspaces/workspace";
+import type { DesktopStream, WorkspaceFailure } from "../workspaces/workspace";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import { HTTPException } from "hono/http-exception";
@@ -124,7 +124,9 @@ export function createAPI(
     /** Whether the server can give bots the desktop tool. */
     desktop?: boolean;
     /** Stops a bot's workspace machine, so its next use boots the image its tools need now. */
-    restartWorkspace?: (agentId: string) => Promise<void>;
+    restartWorkspace?: (
+      agentId: string,
+    ) => Effect.Effect<void, WorkspaceFailure>;
     /** Group chats; their routes answer 503 without it. */
     groupChats?: GroupChatsAccess;
     /** Who operates each bot desktop. */
@@ -132,9 +134,11 @@ export function createAPI(
     /** Single-use viewer links. */
     viewerTickets?: ViewerTickets;
     /** Connects to a bot desktop's VNC server, for viewers. */
-    openDesktop?: (agentId: string) => Promise<DesktopStream>;
+    openDesktop?: (
+      agentId: string,
+    ) => Effect.Effect<DesktopStream, WorkspaceFailure>;
     /** Boots a bot's machine ahead of a viewer's connection. */
-    startDesktop?: (agentId: string) => Promise<void>;
+    startDesktop?: (agentId: string) => Effect.Effect<void, WorkspaceFailure>;
     /** The server's provider sign-ins; API-only fixtures get one of their own. */
     providerAuth?: ProviderSignInsAccess;
     /** The server's OAuth client metadata document, when it has a public address. */
@@ -293,8 +297,11 @@ export function createAPI(
     );
 
     // The desktop tool picks the workspace image; a bot that gains or loses it needs a fresh boot.
-    if (old.tools.includes("desktop") !== input.tools.includes("desktop"))
-      await options.restartWorkspace?.(old.id);
+    if (
+      old.tools.includes("desktop") !== input.tools.includes("desktop") &&
+      options.restartWorkspace
+    )
+      await Effect.runPromise(options.restartWorkspace(old.id));
 
     return c.json(updated, 200);
   });

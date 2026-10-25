@@ -1,4 +1,5 @@
 import type { Context } from "@earendil-works/chord";
+import { Effect } from "effect";
 import {
   ToolTask,
   defineExtension,
@@ -17,7 +18,7 @@ import {
 import type { Agent } from "../shared/domain";
 import { defineJobKind, type JobExtensions, type JobInfo } from "./jobs";
 import type { CrumblePlugin } from "../app/plugins";
-import { WORKSPACE_PATH, type Workspaces } from "../workspaces/workspace";
+import { WORKSPACE_PATH, type WorkspaceService } from "../workspaces/workspace";
 
 export const CODING_TOOL_NAME = "coding";
 
@@ -56,7 +57,7 @@ export const codingJobs = (harness: Harness, chatId: ConversationId) =>
   coding.list(harness, chatId);
 
 export async function codingEnv(
-  workspaces: Workspaces,
+  workspaces: WorkspaceService,
   agentId: string,
   target: EnvTarget,
   context: Context,
@@ -74,7 +75,7 @@ export async function codingEnv(
 /** Lets a bot run coding jobs: child conversations with Pi's coding tools in the bot's workspace. */
 export function codingExtensions(
   agent: Pick<Agent, "id">,
-  workspaces: Workspaces,
+  workspaces: WorkspaceService,
   credentials?: CredentialsAccess,
 ): CodingExtensions {
   const job = defineExtension({
@@ -99,7 +100,7 @@ export function codingExtensions(
           if (!FILE_CHANGING_TOOLS.has(call.name)) return undefined;
 
           if (await coding.isJob(api, api.conversationId, context))
-            await workspaces.sync(agent.id, context);
+            await Effect.runPromise(workspaces.sync(agent.id));
 
           return undefined;
         },
@@ -119,7 +120,7 @@ export function codingExtensions(
 
 /** Coding jobs as a plugin: offered to bots with the `coding` tool while workspaces are available. */
 export const codingPlugin = (
-  workspaces: Workspaces | undefined,
+  workspaces: WorkspaceService | undefined,
   credentials?: CredentialsAccess,
 ): CrumblePlugin => ({
   id: "coding",

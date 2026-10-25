@@ -26,7 +26,7 @@ import {
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { z } from "zod";
 import { conversationReference } from "../shared/domain";
-import { WORKSPACE_PATH, type Workspaces } from "../workspaces/workspace";
+import { WORKSPACE_PATH, type WorkspaceService } from "../workspaces/workspace";
 
 export type JobKindOptions = {
   /** Names the kind's documents, tasks, request IDs, and message origin. Stored data depends on it: never rename. */
@@ -498,7 +498,7 @@ export function defineJobKind(options: JobKindOptions) {
      * tool that wrongly reached for a shell would fail instead of touching the workspace.
      */
     async env(
-      workspaces: Workspaces,
+      workspaces: WorkspaceService,
       agentId: string,
       target: EnvTarget,
       context: Context,
