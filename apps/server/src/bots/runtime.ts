@@ -1,6 +1,6 @@
 import {
   BACKGROUND_CONTEXT,
-  type Context,
+  type Context as PiContext,
 } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord";
 import { Type, type Models } from "@earendil-works/pi-ai";
@@ -19,6 +19,7 @@ import {
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CODEMODE_TOOL_NAME } from "@earendil-works/pi-durable/codemode";
+import { Context, Effect, Layer, Predicate } from "effect";
 import { codingJobs } from "../jobs/coding";
 import { desktopJobs } from "../jobs/desktop";
 import {
@@ -29,7 +30,11 @@ import {
   groupTurnExtension,
 } from "../group-chats/group-turns";
 import { AppError, conversationReference, type Agent } from "../shared/domain";
-import { providerModels } from "../providers/providers";
+import { ProviderModels, providerModels } from "../providers/providers";
+import { BotMemory } from "../memory/bot-memory";
+import { SettingsRepository } from "../shared/settings-repository";
+import { AgentRepository } from "./agent-repository";
+import { BotExtensions } from "./bot-extensions";
 import {
   SKILL_WRITING_GUIDANCE,
   SkillReads,
@@ -64,6 +69,9 @@ import {
   type TranscriptMessage,
   type TranscriptPage,
 } from "./transcript";
+
+/** The IANA timezone the owner's client last reported with a chat message. */
+export const OWNER_TIMEZONE = "owner-timezone";
 
 export type MemoryRecord = {
   id: string;
@@ -113,7 +121,7 @@ export type RuntimeCallbacks = {
   env?: (
     agentId: string,
     target: EnvTarget,
-    context: Context,
+    context: PiContext,
   ) => ExecutionEnv | undefined | Promise<ExecutionEnv | undefined>;
 };
 
@@ -1122,7 +1130,7 @@ export class AgentRuntime {
   async wait(
     submissionId: string,
     agent: Agent,
-    context: Context = BACKGROUND_CONTEXT,
+    context: PiContext = BACKGROUND_CONTEXT,
   ) {
     const submission = await (
       await this.open(agent)
@@ -1419,5 +1427,57 @@ export class AgentRuntime {
         .map((record) => record.value.harness.close(BACKGROUND_CONTEXT)),
     );
     this.records.clear();
+  }
+}
+
+/** The account's bots on Pi Durable, each with the memory, models and tools Crumble gives it. */
+export class BotRuntime extends Context.Service<BotRuntime, AgentRuntime>()(
+  "crumble/bots/BotRuntime",
+) {
+  /** Over `dataDir`'s harness files; `options` are what features outside the bots give every bot. */
+  static layer(
+    dataDir: string,
+    options: Pick<RuntimeCallbacks, "skillLibrary" | "taskExtensions" | "env">,
+  ) {
+    return Layer.effect(
+      BotRuntime,
+      Effect.gen(function* () {
+        const agents = yield* AgentRepository;
+        const settings = yield* SettingsRepository;
+        const memory = yield* BotMemory;
+        const extensions = yield* BotExtensions;
+        const models = yield* ProviderModels;
+
+        return yield* Effect.acquireRelease(
+          Effect.sync(
+            () =>
+              new AgentRuntime(dataDir, {
+                ...options,
+                models,
+                currentAgent: (id) => Effect.runSync(agents.get(id)),
+                ownerTimezone: () => {
+                  const timezone = Effect.runSync(settings.get(OWNER_TIMEZONE));
+
+                  return Predicate.isString(timezone) ? timezone : undefined;
+                },
+                extensions: (agent) => extensions.forAgent(agent),
+                listMemory: (agentId) =>
+                  Effect.runPromise(memory.list(agentId)),
+                createMemory: (agentId, content, shared, context) =>
+                  Effect.runPromise(
+                    memory.create(agentId, content, shared, context),
+                  ),
+                updateMemory: (agentId, id, content, context) =>
+                  Effect.runPromise(
+                    memory.update(agentId, id, content, context),
+                  ),
+                deleteMemory: (agentId, id, context) =>
+                  Effect.runPromise(memory.delete(agentId, id, context)),
+              }),
+          ),
+          (runtime) => Effect.promise(() => runtime.close()),
+        );
+      }),
+    );
   }
 }

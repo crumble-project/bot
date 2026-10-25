@@ -9,6 +9,7 @@ import {
   fauxText,
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
+import { Effect } from "effect";
 import type { Agent } from "../shared/domain";
 import { assertOwnMemoryInGroup, memorySourceOf } from "./memory-sources";
 import { AgentRuntime, type MemoryContext } from "../bots/runtime";
@@ -77,11 +78,13 @@ describe("memorySourceOf", () => {
     });
 
     expect(
-      memorySourceOf(store, agent.id, {
-        groupId: group.id,
-        submissionIds: [],
-        reviewOf: null,
-      }),
+      store.runtime.runSync(
+        memorySourceOf(agent.id, {
+          groupId: group.id,
+          submissionIds: [],
+          reviewOf: null,
+        }),
+      ),
     ).toEqual({ kind: "group", groupId: group.id, name: "Trip" });
   });
 
@@ -103,11 +106,13 @@ describe("memorySourceOf", () => {
     execution(`delegate:${other.id}:t-1`);
 
     const source = (submissionIds: string[]) =>
-      memorySourceOf(store, agent.id, {
-        groupId: null,
-        submissionIds,
-        reviewOf: null,
-      });
+      store.runtime.runSync(
+        memorySourceOf(agent.id, {
+          groupId: null,
+          submissionIds,
+          reviewOf: null,
+        }),
+      );
 
     expect(source(["owner-1"])).toEqual({ kind: "chat" });
     expect(source(["owner-1", "task-1"])).toEqual({
@@ -136,11 +141,12 @@ describe("memorySourceOf", () => {
       reviewOf: null,
     };
 
-    expect(() => assertOwnMemoryInGroup(group, true)).toThrow(
-      "save to your own memory",
-    );
-    expect(() => assertOwnMemoryInGroup(group, false)).not.toThrow();
-    expect(() => assertOwnMemoryInGroup(chat, true)).not.toThrow();
+    const check = (context: MemoryContext, shared: boolean) => () =>
+      Effect.runSync(assertOwnMemoryInGroup(context, shared));
+
+    expect(check(group, true)).toThrow("save to your own memory");
+    expect(check(group, false)).not.toThrow();
+    expect(check(chat, true)).not.toThrow();
   });
 });
 

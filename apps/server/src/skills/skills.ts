@@ -16,7 +16,10 @@ export function skillLibrary(
   const by = (agentId: string, context: SkillToolContext): ChangeBy =>
     context.reviewOf
       ? { actor: "review", source: { executionId: context.reviewOf } }
-      : { actor: "bot", source: changeSourceOf(store, agentId, context) };
+      : {
+          actor: "bot",
+          source: store.run(changeSourceOf(agentId, context)),
+        };
 
   const own = (agentId: string) =>
     store.listSkills(agentId).filter((skill) => skill.state !== "archived");
@@ -59,7 +62,7 @@ export function skillLibrary(
           createdBy: "bot",
           sourceExecutionId:
             context.reviewOf ??
-            changeSourceOf(store, agentId, context).executionId ??
+            store.run(changeSourceOf(agentId, context)).executionId ??
             null,
         },
         undefined,

@@ -1,7 +1,6 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { Context, Effect, Layer } from "effect";
-import type { AgentRuntime } from "../bots/runtime";
 import type { CrumbleService } from "../bots/service";
 import { ChartCompiler } from "../display/charts";
 import type { GroupChats } from "../group-chats/group-chats";
@@ -82,10 +81,6 @@ export class CommonSkills extends Context.Service<
   CommonSkills,
   CommonSkill[]
 >()("crumble/app/CommonSkills") {}
-
-export class BotRuntime extends Context.Service<BotRuntime, AgentRuntime>()(
-  "crumble/app/BotRuntime",
-) {}
 
 export class Bots extends Context.Service<Bots, CrumbleService>()(
   "crumble/app/Bots",

@@ -5,9 +5,8 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import lockfile from "proper-lockfile";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { Effect, Layer, ManagedRuntime } from "effect";
-import { AgentRuntime } from "../bots/runtime";
-import type { MemoryContext } from "../bots/runtime";
-import { CrumbleService, OWNER_TIMEZONE } from "../bots/service";
+import { BotRuntime } from "../bots/runtime";
+import { CrumbleService } from "../bots/service";
 import { BotActivity } from "../bots/bot-activity";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import { reactionExtension } from "../bots/reaction";
@@ -24,16 +23,10 @@ import { groupLookupExtension } from "../group-chats/group-lookup";
 import { GroupTranscripts } from "../group-chats/group-transcripts";
 import { historySource, historyToolsExtension } from "../history/history-tools";
 import { HistorySearch } from "../history/history-search";
-import {
-  assertOwnMemoryInGroup,
-  changeSourceOf,
-  memorySourceOf,
-} from "../memory/memory-sources";
 import { skillLibrary } from "../skills/skills";
 import { LearningReview } from "../skills/learning-review";
 import { SkillCurator } from "../skills/skill-curator";
 import { loadCommonSkills } from "../skills/common-skills";
-import { AppError, type ChangeBy } from "../shared/domain";
 import { McpIntegrations } from "../integrations/integrations";
 import { clientDocument, type ClientDocument } from "../integrations/mcp-oauth";
 import { coordinationExtension } from "../bot-messaging/coordination";
@@ -68,7 +61,6 @@ import {
 import {
   AccountStore,
   AccountWorkspaces,
-  BotRuntime,
   Bots,
   Charts,
   Codemode,
@@ -215,91 +207,15 @@ function accountLayer(
 
   const integrations = McpIntegrations.layer({ oauthClient });
 
-  const runtime = Layer.effect(
-    BotRuntime,
+  const runtime = Layer.unwrap(
     Effect.gen(function* () {
-      const store = yield* AccountStore;
       const jobKinds = pluginJobKinds(yield* Plugins);
-      const extensions = yield* BotExtensions;
 
-      const usesSharedMemory = (agentId: string) =>
-        store.getAgent(agentId)?.sharedMemory === true;
-
-      const reachableMemory = (agentId: string, id: string) => {
-        const memory = store.getMemory(id);
-
-        return memory?.agentId === agentId ||
-          (memory?.agentId === null && usesSharedMemory(agentId))
-          ? memory
-          : null;
-      };
-
-      const memoryChangeBy = (
-        agentId: string,
-        context: MemoryContext,
-      ): ChangeBy =>
-        context.reviewOf
-          ? { actor: "review", source: { executionId: context.reviewOf } }
-          : { actor: "bot", source: changeSourceOf(store, agentId, context) };
-
-      // The bot chats that own the runtime close it, before their own end.
-      return new AgentRuntime(join(dataDir, "agents"), {
-        models: yield* ProviderModels,
-        currentAgent: (id) => store.getAgent(id),
-        ownerTimezone: () => store.getSetting<string>(OWNER_TIMEZONE),
-        extensions: (agent) => extensions.forAgent(agent),
+      return BotRuntime.layer(join(dataDir, "agents"), {
         taskExtensions: (agent) => jobExtensions(jobKinds, agent).job,
         env: (agentId, target, context) =>
           jobEnv(jobKinds, agentId, target, context),
-        listMemory: (agentId) => [
-          ...store.listMemories(agentId),
-          ...(usesSharedMemory(agentId)
-            ? store
-                .listMemories(null)
-                .map((memory) => ({ ...memory, shared: true }))
-            : []),
-        ],
-        createMemory: (agentId, content, shared, context) => {
-          if (!content.trim() || content.length > 32000)
-            throw new AppError(400, "Memory must contain 1–32000 characters");
-          assertOwnMemoryInGroup(context, shared);
-
-          if (shared && !usesSharedMemory(agentId))
-            throw new AppError(400, "Shared memory is off for this agent");
-
-          return store.createMemory(
-            {
-              agentId: shared ? null : agentId,
-              content,
-              source: memorySourceOf(store, agentId, context),
-            },
-            undefined,
-            memoryChangeBy(agentId, context),
-          );
-        },
-        updateMemory: (agentId, id, content, context) => {
-          const memory = reachableMemory(agentId, id);
-
-          if (!memory) throw new AppError(404, "Memory not found");
-          assertOwnMemoryInGroup(context, memory.agentId === null);
-
-          if (!content.trim() || content.length > 32000)
-            throw new AppError(400, "Memory must contain 1–32000 characters");
-
-          return store.updateMemory(
-            id,
-            { content },
-            memoryChangeBy(agentId, context),
-          )!;
-        },
-        deleteMemory: (agentId, id, context) => {
-          const memory = reachableMemory(agentId, id);
-
-          if (!memory) throw new AppError(404, "Memory not found");
-          assertOwnMemoryInGroup(context, memory.agentId === null);
-          store.deleteMemory(id, memoryChangeBy(agentId, context));
-        },
-        skillLibrary: skillLibrary(store, yield* CommonSkills),
+        skillLibrary: skillLibrary(yield* AccountStore, yield* CommonSkills),
       });
     }),
   );

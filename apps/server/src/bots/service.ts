@@ -2,7 +2,7 @@ import { Effect, Fiber } from "effect";
 import { BotNotices } from "./bot-notices";
 import { Store } from "../shared/store";
 import { z } from "zod";
-import { AgentRuntime } from "./runtime";
+import { OWNER_TIMEZONE, type AgentRuntime } from "./runtime";
 import type { JobAnswer } from "../jobs/jobs";
 import {
   AppError,
@@ -31,9 +31,6 @@ export const GROUP_TURN_PREFIX = "group-turn:";
 
 const isGroupTurn = (execution: Execution) =>
   execution.requestId.startsWith(GROUP_TURN_PREFIX);
-
-/** The IANA timezone the owner's client last reported with a chat message. */
-export const OWNER_TIMEZONE = "owner-timezone";
 
 const isTimezone = (timezone: string) => {
   try {

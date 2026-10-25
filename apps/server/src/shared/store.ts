@@ -89,7 +89,8 @@ export class Store {
     // Built now, so a migration or key error fails construction.
     this.runtime.runSync(Effect.void);
   }
-  private run<A>(effect: Effect.Effect<A, never, CoreServices>): A {
+  /** Runs `effect` now, inside the open `transaction` if there is one. */
+  run<A>(effect: Effect.Effect<A, never, CoreServices>): A {
     return this.transactionContext
       ? Effect.runSync(Effect.provideContext(effect, this.transactionContext))
       : this.runtime.runSync(effect);
