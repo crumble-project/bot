@@ -21,11 +21,13 @@ import {
   type Harness,
   type ModelRef,
   type TaskId,
+  type Tx,
   type UsageState,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { z } from "zod";
 import { conversationReference } from "../shared/domain";
+import { defineAnchorTask } from "../shared/anchor-task";
 import { WORKSPACE_PATH, type Workspaces } from "../workspaces/workspace";
 
 export type JobKindOptions = {
@@ -167,27 +169,23 @@ export function defineJobKind(options: JobKindOptions) {
       deltasSinceBase >= 32,
   });
 
+  // A delivery is stopped when its job is gone or was stopped after the delivery was queued.
+  const deliveryTarget = async (
+    tx: Tx,
+    chatId: ConversationId,
+    name: string,
+    stops: number,
+  ) => {
+    const state = await tx.doc(Jobs, chatId);
+    const job = state.jobs[name];
+
+    return !job || (job.stops ?? 0) !== stops
+      ? { state, job, stopped: true as const }
+      : { state, job, stopped: false as const };
+  };
+
   // The job's conversation is owned by this task so it outlives the bot's turns and Esc.
-  const Anchor = defineTask<null, { phase: "done" }, null>({
-    name: `crumble.${kind}-anchor`,
-    version: 1,
-    initial: () => ({ phase: "done" }),
-    phases: {
-      done: (_anchor, runtime, taskContext) =>
-        runtime.commit(
-          () => ({
-            status: "terminal",
-            outcome: { status: "completed", result: null },
-          }),
-          taskContext,
-        ),
-    },
-    abort: (_anchor, runtime, taskContext) =>
-      runtime.commit(
-        () => ({ status: "terminal", outcome: { status: "aborted" } }),
-        taskContext,
-      ),
-  });
+  const Anchor = defineAnchorTask(`crumble.${kind}-anchor`);
 
   // Delivers one message to a job and reports its answer to the bot. Request IDs keep a restart from delivering the
   // message or the report twice.
@@ -205,10 +203,14 @@ export function defineJobKind(options: JobKindOptions) {
           let waiting = false;
 
           await runtime.commit(async (tx) => {
-            const state = await tx.doc(Jobs, runtime.conversationId);
-            const job = state.jobs[name];
+            const { state, job, stopped } = await deliveryTarget(
+              tx,
+              runtime.conversationId,
+              name,
+              stops,
+            );
 
-            if (!job || (job.stops ?? 0) !== stops) {
+            if (stopped) {
               settleDelivery(job, reporter.id);
 
               return {
@@ -248,10 +250,14 @@ export function defineJobKind(options: JobKindOptions) {
         let admitted = false;
 
         await runtime.commit(async (tx) => {
-          const state = await tx.doc(Jobs, runtime.conversationId);
-          const job = state.jobs[name];
+          const { state, job, stopped } = await deliveryTarget(
+            tx,
+            runtime.conversationId,
+            name,
+            reporter.input.stops ?? 0,
+          );
 
-          if (!job || (job.stops ?? 0) !== (reporter.input.stops ?? 0)) {
+          if (stopped) {
             settleDelivery(job, reporter.id);
             releaseHolder(state, name);
 

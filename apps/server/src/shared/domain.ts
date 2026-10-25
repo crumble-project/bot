@@ -3,6 +3,20 @@ import { z } from "zod";
 /** Tools every bot has, whatever its saved `tools` say. */
 export const STANDARD_TOOLS = ["schedule", "codemode"];
 
+/** A model other than the bot's own; null clears it in a patch. */
+const modelChoice = z
+  .object({
+    provider: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .regex(/^[a-z0-9-]+$/),
+    model: z.string().trim().min(1).max(200),
+  })
+  .nullable()
+  .optional();
+
 export const agentInput = z.object({
   name: z.string().trim().min(1).max(80),
   avatar: z.string().max(100).default("bot"),
@@ -58,31 +72,9 @@ export const agentInput = z.object({
     })
     .optional(),
   /** The model that runs this bot's reviews; unset or null, they use the bot's own model. Null clears it in a patch. */
-  reviewModel: z
-    .object({
-      provider: z
-        .string()
-        .trim()
-        .min(1)
-        .max(80)
-        .regex(/^[a-z0-9-]+$/),
-      model: z.string().trim().min(1).max(200),
-    })
-    .nullable()
-    .optional(),
+  reviewModel: modelChoice,
   /** The model for this bot's desktop jobs; unset or null, they use the bot's own model. Null clears it in a patch. */
-  desktopModel: z
-    .object({
-      provider: z
-        .string()
-        .trim()
-        .min(1)
-        .max(80)
-        .regex(/^[a-z0-9-]+$/),
-      model: z.string().trim().min(1).max(200),
-    })
-    .nullable()
-    .optional(),
+  desktopModel: modelChoice,
 });
 
 export type AgentInput = z.infer<typeof agentInput>;

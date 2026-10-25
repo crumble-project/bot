@@ -10,5 +10,9 @@
     "tools/oxlint/anti-slop/**",
     "apps/web/components/ui/**"
   ],
-  "ignoreExportsUsedInFile": true
+  "ignoreExportsUsedInFile": true,
+  "duplicates": {
+    // Vendored; tools/oxlint/anti-slop/UPSTREAM.md tracks it by checksum, so it stays as upstream wrote it.
+    "ignore": ["tools/oxlint/anti-slop/**"]
+  }
 }

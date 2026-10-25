@@ -13,6 +13,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { FieldError } from "@/components/ui/field";
 
 /** The header row and scrolling body every workspace and settings page shares. */
 export function WorkspacePage({
@@ -91,19 +92,46 @@ export function ConfirmDelete({
   return (
     <AlertDialog>
       <AlertDialogTrigger render={trigger} />
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={onConfirm}>
-            Delete
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
+      <ConfirmDeleteContent
+        title={title}
+        description={description}
+        onConfirm={onConfirm}
+      />
     </AlertDialog>
+  );
+}
+
+export function ConfirmDeleteContent({
+  title,
+  description,
+  error,
+  pending,
+  onConfirm,
+}: {
+  title: string;
+  description: string;
+  error?: Error | null;
+  pending?: boolean;
+  onConfirm: () => void;
+}) {
+  return (
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>{title}</AlertDialogTitle>
+        <AlertDialogDescription>{description}</AlertDialogDescription>
+      </AlertDialogHeader>
+      {error && <FieldError>{error.message}</FieldError>}
+      <AlertDialogFooter>
+        <AlertDialogCancel>Cancel</AlertDialogCancel>
+        <AlertDialogAction
+          variant="destructive"
+          disabled={pending}
+          onClick={onConfirm}
+        >
+          Delete
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
   );
 }
 

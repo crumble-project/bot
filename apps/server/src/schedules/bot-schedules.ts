@@ -8,10 +8,14 @@ import {
 } from "../shared/domain";
 import { Context, Effect, Layer, ManagedRuntime } from "effect";
 import type { Runner } from "../shared/runner";
-import { TaskDispatch, type ScheduleDispatchResult } from "./task-dispatch";
 import { AgentRepository } from "../bots/agent-repository";
 import { ScheduleRepository } from "./schedule-repository";
-import { Scheduler, schedulerAccess } from "./scheduler";
+import {
+  Scheduler,
+  schedulerAccess,
+  standaloneDependencies,
+  type StandaloneDispatch,
+} from "./scheduler";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import {
   InvalidInput,
@@ -406,29 +410,12 @@ export const botSchedulesAccess = (
 /** Bot schedules and their scheduler over the tasks `core` reaches, for a test without an account. */
 export function standaloneBotSchedules(
   core: Runner<ScheduleRepository | AgentRepository>,
-  dispatch: (
-    agentId: string,
-    prompt: string,
-    requestId: string,
-    scheduleId: string,
-  ) => Promise<ScheduleDispatchResult>,
+  dispatch: StandaloneDispatch,
 ) {
   const runtime = ManagedRuntime.make(
     BotSchedules.layer.pipe(
       Layer.provideMerge(Scheduler.layer()),
-      Layer.provide(
-        Layer.succeed(TaskDispatch, (agentId, prompt, requestId, scheduleId) =>
-          Effect.tryPromise({
-            try: () => dispatch(agentId, prompt, requestId, scheduleId),
-            catch: (error) => error,
-          }),
-        ),
-      ),
-      Layer.provide(
-        Layer.succeedContext(
-          core.runSync(Effect.context<ScheduleRepository | AgentRepository>()),
-        ),
-      ),
+      Layer.provide(standaloneDependencies(core, dispatch)),
     ),
   );
 

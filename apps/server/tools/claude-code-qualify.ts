@@ -167,6 +167,18 @@ const wireBody = z.looseObject({
 
 type Wire = z.infer<typeof wireBody>;
 
+/** A local Messages API that answers each parsed request body with `respond`. */
+const fixturePeer = (respond: (wire: Wire) => Response) =>
+  Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    idleTimeout: 0,
+    fetch: async (request) =>
+      new URL(request.url).pathname === "/v1/messages"
+        ? respond(wireBody.parse(await request.json()))
+        : new Response("{}", { status: 404 }),
+  });
+
 function adapter(upstream: string, home: string): AdapterOptions {
   return {
     command: binary,
@@ -253,79 +265,72 @@ async function admission() {
 
     let closed = false;
 
-    const peer = Bun.serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      idleTimeout: 0,
-      fetch: async (request) => {
-        if (new URL(request.url).pathname !== "/v1/messages")
-          return new Response("{}", { status: 404 });
-        bodies.push(wireBody.parse(await request.json()));
-        requests++;
-        entered();
+    const peer = fixturePeer((wire) => {
+      bodies.push(wire);
+      requests++;
+      entered();
 
-        if (peerMode === "error")
-          return Response.json(
-            {
-              type: "error",
-              error: { type: "rate_limit_error", message: "fixture" },
-            },
-            { status: 429 },
-          );
+      if (peerMode === "error")
+        return Response.json(
+          {
+            type: "error",
+            error: { type: "rate_limit_error", message: "fixture" },
+          },
+          { status: 429 },
+        );
 
-        if (peerMode === "cancel")
-          return new Response(
-            new ReadableStream({
-              cancel: () => {
-                closed = true;
-              },
-            }),
-            { headers: { "content-type": "text/event-stream" } },
-          );
-        let blocks: Block[] = [{ type: "text", text: "FIRST λ" }];
-
-        if (peerMode === "thinking")
-          blocks = [
-            {
-              type: "thinking",
-              thinking: "fixture thought",
-              signature: "fixture-signature",
-            },
-          ];
-
-        if (peerMode === "tools" || peerMode === "tool_max")
-          blocks.push({
-            type: "tool_use",
-            id: "host_tool_1",
-            name: "mcp__crumble__read_file",
-            input: { path: "fixture.txt" },
-          });
-
-        if (peerMode === "unknown_tool")
-          blocks.push({
-            type: "tool_use",
-            id: "host_tool_1",
-            name: "mcp__fastmail__draft_email",
-            input: { to: "fixture" },
-          });
-
-        const stop =
-          peerMode === "disconnect"
-            ? undefined
-            : ({
-                max: "max_tokens",
-                tool_max: "max_tokens",
-                context: "model_context_window_exceeded",
-                tools: "tool_use",
-                unknown_tool: "tool_use",
-                refusal: "refusal",
-              }[peerMode] ?? "end_turn");
-
+      if (peerMode === "cancel")
         return new Response(
-          sse(blocks, stop, "claude-sonnet-4-6", "msg_fixture"),
+          new ReadableStream({
+            cancel: () => {
+              closed = true;
+            },
+          }),
           { headers: { "content-type": "text/event-stream" } },
         );
-      },
+      let blocks: Block[] = [{ type: "text", text: "FIRST λ" }];
+
+      if (peerMode === "thinking")
+        blocks = [
+          {
+            type: "thinking",
+            thinking: "fixture thought",
+            signature: "fixture-signature",
+          },
+        ];
+
+      if (peerMode === "tools" || peerMode === "tool_max")
+        blocks.push({
+          type: "tool_use",
+          id: "host_tool_1",
+          name: "mcp__crumble__read_file",
+          input: { path: "fixture.txt" },
+        });
+
+      if (peerMode === "unknown_tool")
+        blocks.push({
+          type: "tool_use",
+          id: "host_tool_1",
+          name: "mcp__fastmail__draft_email",
+          input: { to: "fixture" },
+        });
+
+      const stop =
+        peerMode === "disconnect"
+          ? undefined
+          : ({
+              max: "max_tokens",
+              tool_max: "max_tokens",
+              context: "model_context_window_exceeded",
+              tools: "tool_use",
+              unknown_tool: "tool_use",
+              refusal: "refusal",
+            }[peerMode] ?? "end_turn");
+
+      return new Response(
+        sse(blocks, stop, "claude-sonnet-4-6", "msg_fixture"),
+        { headers: { "content-type": "text/event-stream" } },
+      );
     });
 
     const options = adapter(`http://127.0.0.1:${peer.port}`, home);
@@ -532,40 +537,31 @@ async function cacheWire(modelId: string) {
     signature: "public-fixture-opaque-signature",
   };
 
-  const peer = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    idleTimeout: 0,
-    fetch: async (request) => {
-      if (new URL(request.url).pathname !== "/v1/messages")
-        return new Response("{}", { status: 404 });
-      const wire = wireBody.parse(await request.json());
+  const peer = fixturePeer((wire) => {
+    wires.push(wire);
+    const number = wires.length;
 
-      wires.push(wire);
-      const number = wires.length;
+    const blocks: Block[] = tools
+      ? [
+          thinking,
+          {
+            type: "tool_use",
+            id: `toolu_public_${number}`,
+            name: wire.tools[0]?.name ?? "",
+            input: {},
+          },
+        ]
+      : [{ type: "text", text: "PUBLIC SYNTHETIC ANSWER" }];
 
-      const blocks: Block[] = tools
-        ? [
-            thinking,
-            {
-              type: "tool_use",
-              id: `toolu_public_${number}`,
-              name: wire.tools[0]?.name ?? "",
-              input: {},
-            },
-          ]
-        : [{ type: "text", text: "PUBLIC SYNTHETIC ANSWER" }];
-
-      return new Response(
-        sse(
-          blocks,
-          tools ? "tool_use" : "end_turn",
-          wire.model,
-          `msg_public_${number}`,
-        ),
-        { headers: { "content-type": "text/event-stream" } },
-      );
-    },
+    return new Response(
+      sse(
+        blocks,
+        tools ? "tool_use" : "end_turn",
+        wire.model,
+        `msg_public_${number}`,
+      ),
+      { headers: { "content-type": "text/event-stream" } },
+    );
   });
 
   const options = adapter(`http://127.0.0.1:${peer.port}`, home);

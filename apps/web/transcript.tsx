@@ -428,6 +428,24 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+function MessageReactions({
+  reactions,
+  align,
+}: {
+  reactions: string[] | undefined;
+  align: "start" | "end";
+}) {
+  if (!reactions || reactions.length === 0) return null;
+
+  return (
+    <BubbleReactions side="bottom" align={align}>
+      <Badge variant="secondary" title={reactions.join(", ")}>
+        {reactions.map((reaction) => reaction.split(" ").at(-1)).join("")}
+      </Badge>
+    </BubbleReactions>
+  );
+}
+
 export type Delivery = "sending" | "failed";
 
 /** An owner message: right-aligned bubble with origin, reply quote, attachments, reactions, and delivery state. */
@@ -487,15 +505,7 @@ export function OwnerMessage({
             <BubbleContent className="whitespace-pre-wrap">
               {message.content}
             </BubbleContent>
-            {reactions && reactions.length > 0 && (
-              <BubbleReactions side="bottom" align="end">
-                <Badge variant="secondary" title={reactions.join(", ")}>
-                  {reactions
-                    .map((reaction) => reaction.split(" ").at(-1))
-                    .join("")}
-                </Badge>
-              </BubbleReactions>
-            )}
+            <MessageReactions reactions={reactions} align="end" />
           </Bubble>
         )}
         <MessageFooter className="gap-2">
@@ -547,15 +557,7 @@ export function BotMessage({
           <BubbleContent>
             <Reply source={message.content} />
           </BubbleContent>
-          {reactions && reactions.length > 0 && (
-            <BubbleReactions side="bottom" align="start">
-              <Badge variant="secondary" title={reactions.join(", ")}>
-                {reactions
-                  .map((reaction) => reaction.split(" ").at(-1))
-                  .join("")}
-              </Badge>
-            </BubbleReactions>
-          )}
+          <MessageReactions reactions={reactions} align="start" />
         </Bubble>
         <MessageFooter>
           <MessageActions message={message} onReply={onReply} />

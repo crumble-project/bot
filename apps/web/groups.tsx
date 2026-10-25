@@ -4,25 +4,9 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { PencilEdit01Icon } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import {
   Field,
   FieldContent,
@@ -34,17 +18,9 @@ import {
   FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  MessageScroller,
-  MessageScrollerButton,
-  MessageScrollerContent,
-  MessageScrollerItem,
-  MessageScrollerProvider,
-  MessageScrollerViewport,
-} from "@/components/ui/message-scroller";
-import { Skeleton } from "@/components/ui/skeleton";
+import { MessageScrollerItem } from "@/components/ui/message-scroller";
 import { Switch } from "@/components/ui/switch";
-import { cn, randomId } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import {
   Tooltip,
   TooltipContent,
@@ -53,9 +29,7 @@ import {
 import {
   type Bot,
   type GroupChat,
-  type HistoryPage,
   type Message,
-  api,
   botsQuery,
   call,
   follow,
@@ -66,20 +40,28 @@ import {
   send,
 } from "./api";
 import { BotAvatar, botColor } from "./avatar";
+import { ConfirmDeleteContent } from "./workspace";
 import { outgoingMessage } from "./chat";
-import { confirm, deliver, useOutgoing } from "./delivery";
+import { confirm, useOutgoing } from "./delivery";
+import {
+  ConversationEmpty,
+  ConversationError,
+  ConversationLoading,
+  ConversationRows,
+  ConversationScroller,
+  LoadEarlier,
+  useHistory,
+  useMessageSending,
+} from "./conversation";
 import {
   BotMessage,
   Composer,
   OwnerMessage,
-  TimeMarker,
   TypingDots,
   ARRIVAL,
   useArrivals,
-  type Upload,
   mergeMessages,
   reactionsOf,
-  withTimeMarkers,
 } from "./transcript";
 
 const MEMBER_STATUS = {
@@ -94,10 +76,12 @@ export function GroupChatView({ groupId }: { groupId: string }) {
   const snapshot = useQuery(groupChatQuery(groupId));
   const bots = useQuery(botsQuery).data ?? [];
   const outgoing = useOutgoing(`group:${groupId}`);
-  const [older, setOlder] = useState<HistoryPage | null>(null);
-  const [replyTo, setReplyTo] = useState<Message | null>(null);
-  const [sendError, setSendError] = useState<string | null>(null);
   const path = groupPath(groupId);
+
+  const { replyTo, setReplyTo, sendError, sendMessage } = useMessageSending(
+    `group:${groupId}`,
+    path,
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -131,6 +115,7 @@ export function GroupChatView({ groupId }: { groupId: string }) {
 
   const live = snapshot.data?.messages;
   const { arrival, remember } = useArrivals(live);
+  const { older, loadEarlier } = useHistory(`${path}/history`, remember);
 
   useEffect(() => {
     if (live)
@@ -140,37 +125,11 @@ export function GroupChatView({ groupId }: { groupId: string }) {
       );
   }, [groupId, live]);
 
-  const loadEarlier = useMutation({
-    mutationFn: (before: string) =>
-      api<HistoryPage>(
-        `${path}/history?before=${encodeURIComponent(before)}&limit=100`,
-      ),
-    onSuccess: (page) => {
-      remember(page.messages);
-      setOlder({
-        messages: mergeMessages(page.messages, older?.messages ?? []),
-        hasMore: page.hasMore,
-        oldestEntryId: page.oldestEntryId,
-      });
-    },
-  });
-
   const stop = useMutation({ mutationFn: () => send(`${path}/stop`, "POST") });
 
-  if (snapshot.isError)
-    return (
-      <Alert variant="destructive" className="m-6 w-auto">
-        <AlertDescription>{snapshot.error.message}</AlertDescription>
-      </Alert>
-    );
+  if (snapshot.isError) return <ConversationError error={snapshot.error} />;
 
-  if (!snapshot.data)
-    return (
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-6">
-        <Skeleton className="h-10 w-1/2 self-end" />
-        <Skeleton className="h-20 w-3/4" />
-      </div>
-    );
+  if (!snapshot.data) return <ConversationLoading />;
 
   const { groupChat, activity } = snapshot.data;
   const byId = new Map(bots.map((bot) => [bot.id, bot]));
@@ -212,31 +171,6 @@ export function GroupChatView({ groupId }: { groupId: string }) {
 
   const attachmentPath = (entryId: string, index: number) =>
     `${path}/attachments/${encodeURIComponent(entryId)}/${index}`;
-
-  const quoteOf = (message: Message) =>
-    message.replyPreview ??
-    (message.replyTo ? byEntry.get(message.replyTo)?.content : undefined);
-
-  const sendMessage = async (
-    content: string,
-    uploads: Upload[],
-    requestId: string = randomId(),
-    target = replyTo?.entryId,
-  ) => {
-    setReplyTo(null);
-    setSendError(null);
-
-    const failure = await deliver(`group:${groupId}`, `${path}/messages`, {
-      requestId,
-      content,
-      uploads,
-      ...(target && { replyTo: target }),
-    });
-
-    if (failure) setSendError(`Message was not confirmed: ${failure}`);
-
-    return failure === null;
-  };
 
   const colorOf = (message: Message) => {
     const bot = message.origin?.agentId
@@ -299,141 +233,103 @@ export function GroupChatView({ groupId }: { groupId: string }) {
           <HugeiconsIcon icon={PencilEdit01Icon} />
         </Button>
       </header>
-      <MessageScrollerProvider autoScroll>
-        <MessageScroller className="flex-1">
-          <MessageScrollerViewport>
-            <MessageScrollerContent className="mx-auto w-full max-w-3xl justify-end gap-3 p-6">
-              {hasMore && oldest && (
-                <MessageScrollerItem messageId="earlier">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mx-auto flex"
-                    disabled={loadEarlier.isPending}
-                    onClick={() => loadEarlier.mutate(oldest)}
-                  >
-                    Load earlier messages
-                  </Button>
-                </MessageScrollerItem>
-              )}
-              {shown.length === 0 && outgoing.length === 0 && (
-                <MessageScrollerItem messageId="empty">
-                  <Empty>
-                    <EmptyHeader>
-                      <EmptyTitle className="text-lg">
-                        Start the conversation
-                      </EmptyTitle>
-                      <EmptyDescription>
-                        Everyone here reads every message. Mention a bot with @
-                        to ask only it.
-                      </EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
-                </MessageScrollerItem>
-              )}
-              {withTimeMarkers(shown).map((row) =>
-                row.kind === "time" ? (
-                  <MessageScrollerItem key={row.key} messageId={row.key}>
-                    <TimeMarker label={row.label} />
-                  </MessageScrollerItem>
-                ) : (
-                  <MessageScrollerItem
-                    key={row.message.id}
-                    messageId={row.message.id}
-                    className={arrival(row.message)}
-                  >
-                    {row.message.role === "user" ? (
-                      <OwnerMessage
-                        message={row.message}
-                        quote={quoteOf(row.message)}
-                        reactions={reactions.get(row.message.entryId)}
-                        onReply={setReplyTo}
-                        attachmentPath={attachmentPath}
-                      />
-                    ) : (
-                      <BotMessage
-                        message={row.message}
-                        sender={sender(row.message)}
-                        color={colorOf(row.message)}
-                        reactions={reactions.get(row.message.entryId)}
-                        onReply={setReplyTo}
-                      />
-                    )}
-                  </MessageScrollerItem>
-                ),
-              )}
-              {outgoing.map((message) => (
-                <MessageScrollerItem
-                  key={message.requestId}
-                  messageId={message.requestId}
-                  className={ARRIVAL}
-                >
-                  <OwnerMessage
-                    message={outgoingMessage(message)}
-                    uploads={message.uploads}
-                    delivery={message.state}
-                    onRetry={() =>
-                      void sendMessage(
-                        message.content,
-                        message.uploads,
-                        message.requestId,
-                        message.replyTo,
-                      )
-                    }
-                    attachmentPath={attachmentPath}
-                  />
-                </MessageScrollerItem>
-              ))}
-              {working.length > 0 && (
-                <MessageScrollerItem messageId="working" className={ARRIVAL}>
-                  <div className="flex items-center gap-2">
-                    <div className="flex -space-x-1.5">
-                      {working.flatMap((member) => {
-                        const bot = byId.get(member.agentId);
+      <ConversationScroller>
+        {hasMore && oldest && (
+          <LoadEarlier
+            pending={loadEarlier.isPending}
+            onLoad={() => loadEarlier.mutate(oldest)}
+          />
+        )}
+        {shown.length === 0 && outgoing.length === 0 && (
+          <ConversationEmpty title="Start the conversation">
+            Everyone here reads every message. Mention a bot with @ to ask only
+            it.
+          </ConversationEmpty>
+        )}
+        <ConversationRows
+          messages={shown}
+          arrival={arrival}
+          byEntry={byEntry}
+          reactions={reactions}
+          onReply={setReplyTo}
+          attachmentPath={attachmentPath}
+          renderMessage={(message) => (
+            <BotMessage
+              message={message}
+              sender={sender(message)}
+              color={colorOf(message)}
+              reactions={reactions.get(message.entryId)}
+              onReply={setReplyTo}
+            />
+          )}
+        />
+        {outgoing.map((message) => (
+          <MessageScrollerItem
+            key={message.requestId}
+            messageId={message.requestId}
+            className={ARRIVAL}
+          >
+            <OwnerMessage
+              message={outgoingMessage(message)}
+              uploads={message.uploads}
+              delivery={message.state}
+              onRetry={() =>
+                void sendMessage(
+                  message.content,
+                  message.uploads,
+                  message.requestId,
+                  message.replyTo,
+                )
+              }
+              attachmentPath={attachmentPath}
+            />
+          </MessageScrollerItem>
+        ))}
+        {working.length > 0 && (
+          <MessageScrollerItem messageId="working" className={ARRIVAL}>
+            <div className="flex items-center gap-2">
+              <div className="flex -space-x-1.5">
+                {working.flatMap((member) => {
+                  const bot = byId.get(member.agentId);
 
-                        return bot
-                          ? [
-                              <BotAvatar
-                                key={bot.id}
-                                bot={bot}
-                                size={22}
-                                state="working"
-                              />,
-                            ]
-                          : [];
-                      })}
-                    </div>
-                    <TypingDots />
-                  </div>
-                </MessageScrollerItem>
-              )}
-              {failures.map((member) => (
-                <MessageScrollerItem
-                  key={`failure-${member.agentId}`}
-                  messageId={`failure-${member.agentId}`}
-                >
-                  <Alert variant="destructive">
-                    <AlertTitle>
-                      {byId.get(member.agentId)?.name ?? "A bot"} couldn't
-                      finish
-                    </AlertTitle>
-                    <AlertDescription>{member.error}</AlertDescription>
-                  </Alert>
-                </MessageScrollerItem>
-              ))}
-              {activity.paused && (
-                <MessageScrollerItem messageId="paused">
-                  <p className="text-center text-sm text-muted-foreground">
-                    The bots are waiting for you. Your next message lets them
-                    continue.
-                  </p>
-                </MessageScrollerItem>
-              )}
-            </MessageScrollerContent>
-          </MessageScrollerViewport>
-          <MessageScrollerButton />
-        </MessageScroller>
-      </MessageScrollerProvider>
+                  return bot
+                    ? [
+                        <BotAvatar
+                          key={bot.id}
+                          bot={bot}
+                          size={22}
+                          state="working"
+                        />,
+                      ]
+                    : [];
+                })}
+              </div>
+              <TypingDots />
+            </div>
+          </MessageScrollerItem>
+        )}
+        {failures.map((member) => (
+          <MessageScrollerItem
+            key={`failure-${member.agentId}`}
+            messageId={`failure-${member.agentId}`}
+          >
+            <Alert variant="destructive">
+              <AlertTitle>
+                {byId.get(member.agentId)?.name ?? "A bot"} couldn't finish
+              </AlertTitle>
+              <AlertDescription>{member.error}</AlertDescription>
+            </Alert>
+          </MessageScrollerItem>
+        ))}
+        {activity.paused && (
+          <MessageScrollerItem messageId="paused">
+            <p className="text-center text-sm text-muted-foreground">
+              The bots are waiting for you. Your next message lets them
+              continue.
+            </p>
+          </MessageScrollerItem>
+        )}
+      </ConversationScroller>
       {sendError && (
         <p className="mx-auto w-full max-w-3xl px-4 text-xs text-destructive">
           {sendError}
@@ -576,28 +472,13 @@ export function GroupForm({ group }: { group?: GroupChat }) {
               >
                 Delete
               </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete {group.name}?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    The group chat and its messages will be removed. The bots
-                    stay. This cannot be undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                {remove.isError && (
-                  <FieldError>{remove.error.message}</FieldError>
-                )}
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    variant="destructive"
-                    disabled={remove.isPending}
-                    onClick={() => remove.mutate(group.id)}
-                  >
-                    Delete
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
+              <ConfirmDeleteContent
+                title={`Delete ${group.name}?`}
+                description="The group chat and its messages will be removed. The bots stay. This cannot be undone."
+                error={remove.error}
+                pending={remove.isPending}
+                onConfirm={() => remove.mutate(group.id)}
+              />
             </AlertDialog>
           )}
           <div className="ml-auto flex gap-2">

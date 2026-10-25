@@ -16,15 +16,21 @@ export const groupChats = sqliteTable("group_chats", {
   updatedAt: text("updated_at").notNull(),
 });
 
+const groupIdColumn = () =>
+  text("group_id")
+    .notNull()
+    .references(() => groupChats.id, { onDelete: "cascade" });
+
+const agentIdColumn = () =>
+  text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" });
+
 export const groupMembers = sqliteTable(
   "group_members",
   {
-    groupId: text("group_id")
-      .notNull()
-      .references(() => groupChats.id, { onDelete: "cascade" }),
-    agentId: text("agent_id")
-      .notNull()
-      .references(() => agents.id, { onDelete: "cascade" }),
+    groupId: groupIdColumn(),
+    agentId: agentIdColumn(),
     joinedAt: text("joined_at").notNull(),
     conversationId: text("conversation_id"),
     cursor: integer("cursor").notNull().default(0),
@@ -41,12 +47,8 @@ export const groupTurns = sqliteTable("group_turns", {
   executionId: text("execution_id")
     .primaryKey()
     .references(() => executions.id, { onDelete: "cascade" }),
-  groupId: text("group_id")
-    .notNull()
-    .references(() => groupChats.id, { onDelete: "cascade" }),
-  agentId: text("agent_id")
-    .notNull()
-    .references(() => agents.id, { onDelete: "cascade" }),
+  groupId: groupIdColumn(),
+  agentId: agentIdColumn(),
   through: integer("through").notNull(),
   botStarted: integer("bot_started", { mode: "boolean" }).notNull(),
   status: text("status", { enum: ["running", "posting", "settled"] }).notNull(),

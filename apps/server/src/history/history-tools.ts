@@ -1,5 +1,11 @@
 import { Type } from "@earendil-works/pi-ai";
-import { defineExtension, defineTool } from "@earendil-works/pi-durable";
+import type { Context } from "@earendil-works/chord";
+import {
+  defineExtension,
+  defineTool,
+  type ConversationId,
+  type DocumentReader,
+} from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
 import type { Agent } from "../shared/domain";
 import { AgentRepository } from "../bots/agent-repository";
@@ -25,6 +31,20 @@ export function historyToolsExtension(
   agent: Pick<Agent, "id">,
   history: HistorySearch,
 ) {
+  // A group turn sees only its group, so the scope comes from the calling conversation on every call.
+  const contextOf = async (
+    api: DocumentReader & { conversationId: ConversationId },
+    callContext: Context,
+  ): Promise<HistoryContext> => {
+    const group = await api.snapshot(
+      GroupConversation,
+      api.conversationId,
+      callContext,
+    );
+
+    return { agentId: agent.id, groupId: group?.groupId ?? null };
+  };
+
   const search = defineTool({
     name: "history_search",
     description:
@@ -36,20 +56,12 @@ export function historyToolsExtension(
     }),
     callers: ["model"],
     replay: "safe",
-    execute: async (args, api, callContext) => {
-      const group = await api.snapshot(
-        GroupConversation,
-        api.conversationId,
-        callContext,
-      );
-
-      const context: HistoryContext = {
-        agentId: agent.id,
-        groupId: group?.groupId ?? null,
-      };
-
-      return textResult(JSON.stringify(await history.search(context, args)));
-    },
+    execute: async (args, api, callContext) =>
+      textResult(
+        JSON.stringify(
+          await history.search(await contextOf(api, callContext), args),
+        ),
+      ),
   });
 
   const read = defineTool({
@@ -65,20 +77,12 @@ export function historyToolsExtension(
     }),
     callers: ["model"],
     replay: "safe",
-    execute: async (args, api, callContext) => {
-      const group = await api.snapshot(
-        GroupConversation,
-        api.conversationId,
-        callContext,
-      );
-
-      const context: HistoryContext = {
-        agentId: agent.id,
-        groupId: group?.groupId ?? null,
-      };
-
-      return textResult(JSON.stringify(await history.read(context, args)));
-    },
+    execute: async (args, api, callContext) =>
+      textResult(
+        JSON.stringify(
+          await history.read(await contextOf(api, callContext), args),
+        ),
+      ),
   });
 
   return defineExtension({

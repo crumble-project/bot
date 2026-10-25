@@ -280,11 +280,11 @@ export const jobsQuery = (
   queryOptions({
     queryKey: ["jobs", id, kind, version],
     queryFn: async ({ signal }) =>
+      // Coding and desktop jobs share one response shape.
       (
-        await api<{ jobs: (CodingJob | DesktopJob)[] }>(
-          `${agentPath(id)}/${kind}-jobs`,
-          { signal },
-        )
+        await api<{ jobs: CodingJob[] }>(`${agentPath(id)}/${kind}-jobs`, {
+          signal,
+        })
       ).jobs,
   });
 

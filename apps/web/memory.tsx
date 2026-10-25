@@ -11,12 +11,12 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { OwnerSelectField, SaveDialogFooter } from "./form-fields";
 import {
   Select,
   SelectContent,
@@ -319,28 +319,13 @@ function MemoryDialog({
           }}
         >
           <FieldGroup>
-            <Field>
-              <FieldLabel>Remembered by</FieldLabel>
-              <Select
-                items={owners}
-                value={owner}
-                disabled={editing.memory !== null}
-                onValueChange={(value) => setOwner(value ?? SHARED)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {owners.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
+            <OwnerSelectField
+              label="Remembered by"
+              owners={owners}
+              value={owner}
+              disabled={editing.memory !== null}
+              onValueChange={(value) => setOwner(value ?? SHARED)}
+            />
             <Field>
               <FieldLabel htmlFor="memory-content">Memory</FieldLabel>
               <Textarea
@@ -351,22 +336,12 @@ function MemoryDialog({
                 onChange={(event) => setContent(event.target.value)}
               />
             </Field>
-            {save.isError && (
-              <Alert variant="destructive">
-                <AlertDescription>{save.error.message}</AlertDescription>
-              </Alert>
-            )}
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={!content.trim() || save.isPending}
-              >
-                {editing.memory ? "Save" : "Add"}
-              </Button>
-            </DialogFooter>
+            <SaveDialogFooter
+              error={save.isError ? save.error : null}
+              onCancel={onClose}
+              disabled={!content.trim() || save.isPending}
+              label={editing.memory ? "Save" : "Add"}
+            />
           </FieldGroup>
         </form>
       </DialogContent>

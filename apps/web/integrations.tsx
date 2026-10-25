@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -23,14 +22,7 @@ import {
   FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { OwnerSelectField, SaveDialogFooter } from "./form-fields";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
@@ -320,28 +312,13 @@ function ServerDialog({
           }}
         >
           <FieldGroup>
-            <Field>
-              <FieldLabel>Available to</FieldLabel>
-              <Select
-                items={owners}
-                value={owner}
-                disabled={server !== null}
-                onValueChange={(value) => setOwner(value ?? SHARED)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {owners.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
+            <OwnerSelectField
+              label="Available to"
+              owners={owners}
+              value={owner}
+              disabled={server !== null}
+              onValueChange={(value) => setOwner(value ?? SHARED)}
+            />
             <Field>
               <FieldLabel htmlFor="mcp-name">Name</FieldLabel>
               <Input
@@ -437,24 +414,12 @@ function ServerDialog({
                 onCheckedChange={setEnabled}
               />
             </Field>
-            {save.isError && (
-              <Alert variant="destructive">
-                <AlertDescription>{save.error.message}</AlertDescription>
-              </Alert>
-            )}
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={
-                  !name.trim() || !validUrl(url.trim()) || save.isPending
-                }
-              >
-                {server ? "Save" : "Add"}
-              </Button>
-            </DialogFooter>
+            <SaveDialogFooter
+              error={save.isError ? save.error : null}
+              onCancel={onClose}
+              disabled={!name.trim() || !validUrl(url.trim()) || save.isPending}
+              label={server ? "Save" : "Add"}
+            />
           </FieldGroup>
         </form>
       </DialogContent>

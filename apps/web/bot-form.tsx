@@ -9,17 +9,7 @@ import {
   PencilEdit01Icon,
   ShuffleIcon,
 } from "@hugeicons/core-free-icons";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -64,7 +54,7 @@ import {
   send,
 } from "./api";
 import { BotAvatar } from "./avatar";
-import { WorkspacePage } from "./workspace";
+import { ConfirmDeleteContent, WorkspacePage } from "./workspace";
 import {
   type AvatarChoice,
   PALETTE,
@@ -777,28 +767,13 @@ export function BotForm({ bot }: { bot?: Bot }) {
                 >
                   Delete
                 </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete {bot.name}?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      The bot, its chat, memories and tasks will be removed.
-                      This cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  {remove.isError && (
-                    <FieldError>{remove.error.message}</FieldError>
-                  )}
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      variant="destructive"
-                      disabled={remove.isPending}
-                      onClick={() => remove.mutate(bot.id)}
-                    >
-                      Delete
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
+                <ConfirmDeleteContent
+                  title={`Delete ${bot.name}?`}
+                  description="The bot, its chat, memories and tasks will be removed. This cannot be undone."
+                  error={remove.error}
+                  pending={remove.isPending}
+                  onConfirm={() => remove.mutate(bot.id)}
+                />
               </AlertDialog>
               <Button
                 type="button"

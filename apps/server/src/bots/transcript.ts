@@ -48,17 +48,19 @@ const attachmentInfo = z.object({
   kind: z.enum(["image", "text"]),
 });
 
+export const botCommunication = z.object({
+  executionId: z.string(),
+  fromAgentId: z.string(),
+  fromName: z.string(),
+  toAgentId: z.string(),
+  toName: z.string(),
+  status: z.enum(["sent", "done", "failed", "cancelled"]),
+});
+
 const botMessage = z.object({
   content: z.string(),
   timestamp: z.number().optional().catch(undefined),
-  communication: z.object({
-    executionId: z.string(),
-    fromAgentId: z.string(),
-    fromName: z.string(),
-    toAgentId: z.string(),
-    toName: z.string(),
-    status: z.enum(["sent", "done", "failed", "cancelled"]),
-  }),
+  communication: botCommunication,
 });
 
 export const GROUP_MESSAGE_KIND = "crumble.group-message";

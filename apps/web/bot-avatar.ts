@@ -411,6 +411,19 @@ export const expressionOf = (state: BotState): Expression =>
 
 type Rect = { x: number; y: number; width: number; height: number };
 
+function addPuffEllipse(path: Path2D, puff: Rect) {
+  path.moveTo(puff.x + puff.width, puff.y + puff.height / 2);
+  path.ellipse(
+    puff.x + puff.width / 2,
+    puff.y + puff.height / 2,
+    puff.width / 2,
+    puff.height / 2,
+    0,
+    0,
+    Math.PI * 2,
+  );
+}
+
 type Point = [number, number];
 
 /** A body outline as Path2D, its tight bounds, and for the cloud, the puffs whose union it is. */
@@ -503,18 +516,7 @@ function bodyOf(silhouette: Silhouette, rect: Rect): Body {
         height: rect.height * height!,
       }));
 
-      for (const puff of puffs) {
-        path.moveTo(puff.x + puff.width, puff.y + puff.height / 2);
-        path.ellipse(
-          puff.x + puff.width / 2,
-          puff.y + puff.height / 2,
-          puff.width / 2,
-          puff.height / 2,
-          0,
-          0,
-          Math.PI * 2,
-        );
-      }
+      for (const puff of puffs) addPuffEllipse(path, puff);
 
       const left = Math.min(...puffs.map((puff) => puff.x));
       const top = Math.min(...puffs.map((puff) => puff.y));
@@ -752,15 +754,7 @@ export class BotPainter {
     const ellipse = (puff: Rect) => {
       const path = new Path2D();
 
-      path.ellipse(
-        puff.x + puff.width / 2,
-        puff.y + puff.height / 2,
-        puff.width / 2,
-        puff.height / 2,
-        0,
-        0,
-        Math.PI * 2,
-      );
+      addPuffEllipse(path, puff);
 
       return path;
     };

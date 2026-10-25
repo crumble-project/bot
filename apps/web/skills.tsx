@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -24,14 +23,7 @@ import {
   FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { OwnerSelectField, SaveDialogFooter } from "./form-fields";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -410,28 +402,13 @@ function SkillDialog({
           }}
         >
           <FieldGroup>
-            <Field>
-              <FieldLabel>Available to</FieldLabel>
-              <Select
-                items={owners}
-                value={owner}
-                disabled={editing.kind !== "new"}
-                onValueChange={(value) => setOwner(value ?? SHARED)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {owners.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
+            <OwnerSelectField
+              label="Available to"
+              owners={owners}
+              value={owner}
+              disabled={editing.kind !== "new"}
+              onValueChange={(value) => setOwner(value ?? SHARED)}
+            />
             <Field>
               <FieldLabel htmlFor="skill-name">Name</FieldLabel>
               <Input
@@ -451,24 +428,12 @@ function SkillDialog({
                 onChange={(event) => setInstructions(event.target.value)}
               />
             </Field>
-            {save.isError && (
-              <Alert variant="destructive">
-                <AlertDescription>{save.error.message}</AlertDescription>
-              </Alert>
-            )}
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={
-                  !name.trim() || !instructions.trim() || save.isPending
-                }
-              >
-                {editing.kind === "new" ? "Add" : "Save"}
-              </Button>
-            </DialogFooter>
+            <SaveDialogFooter
+              error={save.isError ? save.error : null}
+              onCancel={onClose}
+              disabled={!name.trim() || !instructions.trim() || save.isPending}
+              label={editing.kind === "new" ? "Add" : "Save"}
+            />
           </FieldGroup>
         </form>
       </DialogContent>

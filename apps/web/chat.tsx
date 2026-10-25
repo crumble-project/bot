@@ -9,34 +9,27 @@ import {
 } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { MessageScrollerItem } from "@/components/ui/message-scroller";
 import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import {
-  MessageScroller,
-  MessageScrollerButton,
-  MessageScrollerContent,
-  MessageScrollerItem,
-  MessageScrollerProvider,
-  MessageScrollerViewport,
-} from "@/components/ui/message-scroller";
-import { Skeleton } from "@/components/ui/skeleton";
-import { randomId } from "@/lib/utils";
-import {
-  type HistoryPage,
   type Message,
   agentPath,
-  api,
   botsQuery,
   chatQuery,
   jobsQuery,
   send,
 } from "./api";
 import { BotAvatar, botColor, botStyle } from "./avatar";
-import { type Outgoing, confirm, deliver, useOutgoing } from "./delivery";
+import { type Outgoing, confirm, useOutgoing } from "./delivery";
+import {
+  ConversationEmpty,
+  ConversationError,
+  ConversationLoading,
+  ConversationRows,
+  ConversationScroller,
+  LoadEarlier,
+  useHistory,
+  useMessageSending,
+} from "./conversation";
 import { DetailsPanel } from "./details";
 import { type JobRef, JobDialog } from "./jobs";
 import { useChatStream } from "./live";
@@ -46,17 +39,14 @@ import {
   Composer,
   EventRow,
   OwnerMessage,
-  TimeMarker,
   ToolResultRow,
   TypingDots,
-  type Upload,
   ARRIVAL,
   useArrivals,
   jobOf,
   mergeMessages,
   reactionsOf,
   shownInChat,
-  withTimeMarkers,
 } from "./transcript";
 
 const DETAILS_KEY = "crumble.details";
@@ -76,10 +66,7 @@ export function Chat({ botId }: { botId: string }) {
   const bots = useQuery(botsQuery);
   const bot = bots.data?.find((each) => each.id === botId);
   const outgoing = useOutgoing(`bot:${botId}`);
-  const [older, setOlder] = useState<HistoryPage | null>(null);
-  const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [job, setJob] = useState<JobRef | null>(null);
-  const [sendError, setSendError] = useState<string | null>(null);
 
   const [details, setDetails] = useState(
     () => localStorage.getItem(DETAILS_KEY) !== "off",
@@ -87,10 +74,17 @@ export function Chat({ botId }: { botId: string }) {
 
   const path = agentPath(botId);
 
+  const { replyTo, setReplyTo, sendError, sendMessage } = useMessageSending(
+    `bot:${botId}`,
+    path,
+    () => ({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+  );
+
   useChatStream(botId);
 
   const live = chat.data?.messages;
   const { arrival, remember } = useArrivals(live);
+  const { older, loadEarlier } = useHistory(`${path}/chat/history`, remember);
 
   useEffect(() => {
     if (live)
@@ -125,43 +119,12 @@ export function Chat({ botId }: { botId: string }) {
 
   const jobs = [...(codingJobs.data ?? []), ...(desktopJobs.data ?? [])];
 
-  const loadEarlier = useMutation({
-    mutationFn: (before: string) =>
-      api<HistoryPage>(
-        `${path}/chat/history?before=${encodeURIComponent(before)}&limit=100`,
-      ),
-    onSuccess: (page) => {
-      remember(page.messages);
-      setOlder({
-        messages: mergeMessages(page.messages, older?.messages ?? []),
-        hasMore: page.hasMore,
-        oldestEntryId: page.oldestEntryId,
-      });
-    },
-  });
-
   const stop = useMutation({ mutationFn: () => send(`${path}/abort`, "POST") });
 
-  if (chat.isError)
-    return (
-      <Alert variant="destructive" className="m-6 w-auto">
-        <AlertDescription>{chat.error.message}</AlertDescription>
-      </Alert>
-    );
+  if (chat.isError) return <ConversationError error={chat.error} />;
 
   if (!chat.data || !bot)
-    return (
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-6">
-        {bots.isSuccess && !bot ? (
-          <p className="text-muted-foreground">Bot not found.</p>
-        ) : (
-          <>
-            <Skeleton className="h-10 w-1/2 self-end" />
-            <Skeleton className="h-20 w-3/4" />
-          </>
-        )}
-      </div>
-    );
+    return <ConversationLoading notFound={bots.isSuccess && !bot} />;
 
   const { status, error } = chat.data;
   const running = status === "running";
@@ -184,34 +147,9 @@ export function Chat({ botId }: { botId: string }) {
       )
     : [];
 
-  const quoteOf = (message: Message) =>
-    message.replyPreview ??
-    (message.replyTo ? byEntry.get(message.replyTo)?.content : undefined);
-
   const toggleDetails = () => {
     localStorage.setItem(DETAILS_KEY, details ? "off" : "on");
     setDetails(!details);
-  };
-
-  const sendMessage = async (
-    content: string,
-    uploads: Upload[],
-    requestId: string = randomId(),
-    target = replyTo?.entryId,
-  ) => {
-    setReplyTo(null);
-    setSendError(null);
-
-    const failure = await deliver(
-      `bot:${botId}`,
-      `${path}/messages`,
-      { requestId, content, uploads, ...(target && { replyTo: target }) },
-      { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
-    );
-
-    if (failure) setSendError(`Message was not confirmed: ${failure}`);
-
-    return failure === null;
   };
 
   const attachmentPath = (entryId: string, index: number) =>
@@ -269,129 +207,91 @@ export function Chat({ botId }: { botId: string }) {
             </Button>
           </div>
         </header>
-        <MessageScrollerProvider autoScroll>
-          <MessageScroller className="flex-1">
-            <MessageScrollerViewport>
-              <MessageScrollerContent className="mx-auto w-full max-w-3xl justify-end gap-3 p-6">
-                {hasMore && oldest && (
-                  <MessageScrollerItem messageId="earlier">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="mx-auto flex"
-                      disabled={loadEarlier.isPending}
-                      onClick={() => loadEarlier.mutate(oldest)}
-                    >
-                      Load earlier messages
-                    </Button>
-                  </MessageScrollerItem>
-                )}
-                {shown.length === 0 && outgoing.length === 0 && !running && (
-                  <MessageScrollerItem messageId="empty">
-                    <Empty>
-                      <EmptyHeader>
-                        <EmptyTitle className="text-lg">
-                          Say hello to {bot.name}
-                        </EmptyTitle>
-                        <EmptyDescription>
-                          It keeps its memory and work between visits.
-                        </EmptyDescription>
-                      </EmptyHeader>
-                    </Empty>
-                  </MessageScrollerItem>
-                )}
-                {withTimeMarkers(shown).map((row) =>
-                  row.kind === "time" ? (
-                    <MessageScrollerItem key={row.key} messageId={row.key}>
-                      <TimeMarker label={row.label} />
-                    </MessageScrollerItem>
-                  ) : (
-                    <MessageScrollerItem
-                      key={row.message.id}
-                      messageId={row.message.id}
-                      className={arrival(row.message)}
-                    >
-                      {row.message.role === "user" ? (
-                        <OwnerMessage
-                          message={row.message}
-                          quote={quoteOf(row.message)}
-                          reactions={reactions.get(row.message.entryId)}
-                          onReply={setReplyTo}
-                          attachmentPath={attachmentPath}
-                        />
-                      ) : row.message.role === "assistant" ? (
-                        <BotMessage
-                          message={row.message}
-                          onReply={setReplyTo}
-                        />
-                      ) : row.message.role === "event" ? (
-                        <EventRow message={row.message} />
-                      ) : (
-                        <ToolResultRow
-                          message={row.message}
-                          botId={botId}
-                          jobStatus={jobFor(jobOf(row.message)?.name)?.status}
-                          onOpenJob={setJob}
-                        />
-                      )}
-                    </MessageScrollerItem>
-                  ),
-                )}
-                {outgoing.map((message) => (
-                  <MessageScrollerItem
-                    key={message.requestId}
-                    messageId={message.requestId}
-                    className={ARRIVAL}
+        <ConversationScroller>
+          {hasMore && oldest && (
+            <LoadEarlier
+              pending={loadEarlier.isPending}
+              onLoad={() => loadEarlier.mutate(oldest)}
+            />
+          )}
+          {shown.length === 0 && outgoing.length === 0 && !running && (
+            <ConversationEmpty title={<>Say hello to {bot.name}</>}>
+              It keeps its memory and work between visits.
+            </ConversationEmpty>
+          )}
+          <ConversationRows
+            messages={shown}
+            arrival={arrival}
+            byEntry={byEntry}
+            reactions={reactions}
+            onReply={setReplyTo}
+            attachmentPath={attachmentPath}
+            renderMessage={(message) =>
+              message.role === "assistant" ? (
+                <BotMessage message={message} onReply={setReplyTo} />
+              ) : message.role === "event" ? (
+                <EventRow message={message} />
+              ) : (
+                <ToolResultRow
+                  message={message}
+                  botId={botId}
+                  jobStatus={jobFor(jobOf(message)?.name)?.status}
+                  onOpenJob={setJob}
+                />
+              )
+            }
+          />
+          {outgoing.map((message) => (
+            <MessageScrollerItem
+              key={message.requestId}
+              messageId={message.requestId}
+              className={ARRIVAL}
+            >
+              <OwnerMessage
+                message={outgoingMessage(message)}
+                uploads={message.uploads}
+                quote={
+                  message.replyTo
+                    ? byEntry.get(message.replyTo)?.content
+                    : undefined
+                }
+                delivery={message.state}
+                onRetry={() =>
+                  void sendMessage(
+                    message.content,
+                    message.uploads,
+                    message.requestId,
+                    message.replyTo,
+                  )
+                }
+                attachmentPath={attachmentPath}
+              />
+            </MessageScrollerItem>
+          ))}
+          {running && (
+            <MessageScrollerItem messageId="typing" className={ARRIVAL}>
+              <TypingDots />
+            </MessageScrollerItem>
+          )}
+          {error && !running && (
+            <MessageScrollerItem messageId="failure">
+              <Alert variant="destructive">
+                <AlertTitle>The bot couldn't finish</AlertTitle>
+                <AlertDescription className="flex flex-col items-start gap-2">
+                  {error}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    render={<Link to="/settings/providers" />}
+                    nativeButton={false}
                   >
-                    <OwnerMessage
-                      message={outgoingMessage(message)}
-                      uploads={message.uploads}
-                      quote={
-                        message.replyTo
-                          ? byEntry.get(message.replyTo)?.content
-                          : undefined
-                      }
-                      delivery={message.state}
-                      onRetry={() =>
-                        void sendMessage(
-                          message.content,
-                          message.uploads,
-                          message.requestId,
-                          message.replyTo,
-                        )
-                      }
-                      attachmentPath={attachmentPath}
-                    />
-                  </MessageScrollerItem>
-                ))}
-                {running && (
-                  <MessageScrollerItem messageId="typing" className={ARRIVAL}>
-                    <TypingDots />
-                  </MessageScrollerItem>
-                )}
-                {error && !running && (
-                  <MessageScrollerItem messageId="failure">
-                    <Alert variant="destructive">
-                      <AlertTitle>The bot couldn't finish</AlertTitle>
-                      <AlertDescription className="flex flex-col items-start gap-2">
-                        {error}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          render={<Link to="/settings/providers" />}
-                          nativeButton={false}
-                        >
-                          Provider settings…
-                        </Button>
-                      </AlertDescription>
-                    </Alert>
-                  </MessageScrollerItem>
-                )}
-              </MessageScrollerContent>
-            </MessageScrollerViewport>
-            <MessageScrollerButton />
-          </MessageScroller>
-        </MessageScrollerProvider>
+                    Provider settings…
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            </MessageScrollerItem>
+          )}
+        </ConversationScroller>
         {sendError && (
           <p className="mx-auto w-full max-w-3xl px-4 text-xs text-destructive">
             {sendError}
