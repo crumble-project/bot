@@ -2,8 +2,7 @@ import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import type { Agent } from "../shared/domain";
-import type { CrumbleService } from "../bots/service";
-import { BotMessaging } from "./bot-messaging";
+import { botMessagingAccess, type BotMessaging } from "./bot-messaging";
 
 const output = (value: JsonValue) => ({
   structuredOutput: value,
@@ -11,8 +10,11 @@ const output = (value: JsonValue) => ({
 });
 
 /** Model tools adapt the bot-messaging interface; addressing and exchange policy live there. */
-export function coordinationExtension(agent: Agent, service: CrumbleService) {
-  const messaging = new BotMessaging(service);
+export function coordinationExtension(
+  agent: Agent,
+  service: BotMessaging["Service"],
+) {
+  const messaging = botMessagingAccess(service);
 
   const delegate = defineTool({
     name: "delegate",

@@ -2,7 +2,7 @@ import { createModels, type AssistantMessage } from "@earendil-works/pi-ai";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import { Store } from "../../src/shared/store";
 import { AgentRuntime } from "../../src/bots/runtime";
-import { CrumbleService } from "../../src/bots/service";
+import { standaloneBots } from "../../src/bots/bots";
 
 const dir = process.env["BOT_CRASH_DIR"];
 
@@ -41,7 +41,7 @@ const agent = store.createAgent(
 );
 
 const runtime = new AgentRuntime(dir, { models });
-const service = new CrumbleService(store, runtime);
+const service = standaloneBots(store, runtime);
 const conversation = await service.chat(agent.id);
 
 const execution = await service.send(

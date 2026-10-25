@@ -52,8 +52,9 @@ import {
   AppError,
   type MCPServer,
 } from "../shared/domain";
-import type { CrumbleService } from "../bots/service";
-import type { Activity } from "../bots/service";
+import type { Activity, BotsAccess } from "../bots/bots";
+import type { AgentRuntime } from "../bots/runtime";
+import type { Store } from "../shared/store";
 import type { SchedulerAccess } from "../schedules/scheduler";
 import type { GroupChats } from "../group-chats/group-chats";
 import type { McpIntegrations } from "../integrations/integrations";
@@ -85,8 +86,11 @@ import { Push, type PushRuntime } from "../push/push";
 import { canonicalReplyEvent } from "../push/push-model";
 import { registerPushRoutes } from "../push/push-api";
 
+/** The bots the API serves, with the account's store and runtime its handlers still read directly. */
+export type ApiBots = BotsAccess & { store: Store; runtime: AgentRuntime };
+
 export function createAPI(
-  service: CrumbleService,
+  service: ApiBots,
   scheduler: SchedulerAccess,
   token: string,
   integrations?: McpIntegrations["Service"],

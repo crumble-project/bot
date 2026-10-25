@@ -19,7 +19,7 @@ import { GroupChats } from "./group-chats";
 import { GroupTranscripts } from "./group-transcripts";
 import { reactionExtension } from "../bots/reaction";
 import { AgentRuntime } from "../bots/runtime";
-import { CrumbleService } from "../bots/service";
+import { standaloneBots } from "../bots/bots";
 import { Store } from "../shared/store";
 
 const cleanups: (() => void | Promise<void>)[] = [];
@@ -117,7 +117,7 @@ function open(dir: string, bots: Record<string, Bot>) {
   models.setProvider(faux.provider);
   const store = new Store(dir);
 
-  const service = new CrumbleService(
+  const service = standaloneBots(
     store,
     new AgentRuntime(join(dir, "agents"), {
       models,
@@ -129,6 +129,7 @@ function open(dir: string, bots: Record<string, Bot>) {
     store,
     new GroupTranscripts(join(dir, "groups")),
     service,
+    service.runtime,
   );
 
   let closed = false;
@@ -518,7 +519,7 @@ describe("group turns", () => {
 });
 
 describe("owner notifications", () => {
-  const replies = (service: CrumbleService) => {
+  const replies = (service: ReturnType<typeof standaloneBots>) => {
     const events: Array<{ preview: string; groupId?: string }> = [];
 
     service.onActivity((event) => {

@@ -10,7 +10,7 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { AgentRuntime } from "../bots/runtime";
-import { CrumbleService } from "../bots/service";
+import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { Store } from "../shared/store";
 import { createAPI } from "../app/api";
@@ -54,7 +54,7 @@ describe("operational activity", () => {
 
     const store = new Store(dir);
 
-    const service = new CrumbleService(
+    const service = standaloneBots(
       store,
       new AgentRuntime(dir, {
         models,

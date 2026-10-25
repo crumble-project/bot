@@ -1,6 +1,6 @@
 import type { Execution, LearnedChange, Memory, Skill } from "../shared/domain";
 import type { AgentRuntime } from "../bots/runtime";
-import { GROUP_TURN_PREFIX, type LearnedActivity } from "../bots/service";
+import { GROUP_TURN_PREFIX, type LearnedActivity } from "../bots/bots";
 import type { Store } from "../shared/store";
 
 /** Which stores one review may change. */

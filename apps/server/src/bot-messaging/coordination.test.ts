@@ -3,8 +3,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Store } from "../shared/store";
-import { CrumbleService } from "../bots/service";
+import { standaloneBots } from "../bots/bots";
 import { coordinationExtension } from "./coordination";
+import { standaloneMessaging } from "./bot-messaging";
 
 const dirs: string[] = [];
 
@@ -50,13 +51,20 @@ function setup() {
   };
 
   const store = new Store(dir);
-  const service = new CrumbleService(store, runtime);
+  const service = standaloneBots(store, runtime);
 
   return { store, service };
 }
 
-const tool = (service: CrumbleService, agentId: string, index: number) => {
-  const extension = coordinationExtension(service.agent(agentId), service);
+const tool = (
+  service: ReturnType<typeof standaloneBots>,
+  agentId: string,
+  index: number,
+) => {
+  const extension = coordinationExtension(
+    service.agent(agentId),
+    standaloneMessaging(service),
+  );
   // SAFETY: The coordination extension always exposes its registered tools.
 
   return (extension as any).tools[index];

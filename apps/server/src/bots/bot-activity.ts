@@ -1,5 +1,5 @@
 import { Context } from "effect";
-import type { Activity } from "./service";
+import type { Activity } from "./bots";
 
 /** Replies, chat previews, and learned changes as they happen anywhere in the account. */
 export class BotActivity extends Context.Service<

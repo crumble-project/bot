@@ -15,7 +15,7 @@ import { GroupChats } from "./group-chats";
 import { GroupTranscripts } from "./group-transcripts";
 import { AgentRuntime } from "../bots/runtime";
 import { standaloneScheduler } from "../schedules/scheduler";
-import { CrumbleService } from "../bots/service";
+import { standaloneBots } from "../bots/bots";
 import { Store } from "../shared/store";
 
 // Plain header records, so they spread into the defaults.
@@ -35,17 +35,20 @@ function setup() {
   dirs.push(dir);
   const store = new Store(dir);
 
-  const service = new CrumbleService(
-    store,
-    new AgentRuntime(join(dir, "agents")),
-  );
+  const service = standaloneBots(store, new AgentRuntime(join(dir, "agents")));
 
   const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
     service.dispatch(a, p, r, s),
   );
 
   const transcripts = new GroupTranscripts(join(dir, "groups"));
-  const groupChats = new GroupChats(store, transcripts, service);
+
+  const groupChats = new GroupChats(
+    store,
+    transcripts,
+    service,
+    service.runtime,
+  );
 
   const app = createAPI(service, scheduler, token, undefined, { groupChats });
 

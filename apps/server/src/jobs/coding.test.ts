@@ -20,7 +20,7 @@ import { createAPI } from "../app/api";
 import { codingJobsResponse, historyResponse } from "../contract/api-responses";
 import { AgentRuntime } from "../bots/runtime";
 import { standaloneScheduler } from "../schedules/scheduler";
-import { CrumbleService } from "../bots/service";
+import { standaloneBots } from "../bots/bots";
 import { Store } from "../shared/store";
 import type { DesktopStream, Workspaces } from "../workspaces/workspace";
 
@@ -336,7 +336,7 @@ test("a restart while a job works does not report twice", async () => {
 const token = "t".repeat(40);
 
 function serve(store: Store, runtime: AgentRuntime) {
-  const service = new CrumbleService(store, runtime);
+  const service = standaloneBots(store, runtime);
 
   const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
     service.dispatch(a, p, r, s),

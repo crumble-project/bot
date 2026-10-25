@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Store } from "../shared/store";
 import { desktopControlAccess } from "../bot-desktop/desktop-control";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
-import { CrumbleService } from "../bots/service";
+import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { createAPI } from "./api";
 import { memoryResponse } from "../contract/api-responses";
@@ -75,7 +75,7 @@ function setup() {
   };
 
   const store = new Store(dir);
-  const service = new CrumbleService(store, runtime);
+  const service = standaloneBots(store, runtime);
 
   const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
     service.dispatch(a, p, r, s),
@@ -115,7 +115,7 @@ const req = (app: any, path: string, init: TestRequestInit = {}) =>
 describe("HTTP API", () => {
   test("reports whether the server can run coding jobs", async () => {
     const { app, store, runtime } = setup();
-    const service = new CrumbleService(store, runtime);
+    const service = standaloneBots(store, runtime);
 
     const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
       service.dispatch(a, p, r, s),
@@ -182,7 +182,7 @@ describe("HTTP API", () => {
 
   test("gaining or losing the desktop tool restarts the bot's workspace", async () => {
     const { store, runtime } = setup();
-    const service = new CrumbleService(store, runtime);
+    const service = standaloneBots(store, runtime);
 
     const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
       service.dispatch(a, p, r, s),
@@ -265,7 +265,7 @@ describe("HTTP API", () => {
     };
 
     const store = new Store(dir);
-    const service = new CrumbleService(store, runtime);
+    const service = standaloneBots(store, runtime);
 
     const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
       service.dispatch(a, p, r, s),
@@ -967,7 +967,7 @@ describe("HTTP API", () => {
 describe("bot desktop control and viewer", () => {
   function desktopApp(tools = ["desktop"]) {
     const { store, runtime } = setup();
-    const service = new CrumbleService(store, runtime);
+    const service = standaloneBots(store, runtime);
 
     const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
       service.dispatch(a, p, r, s),
@@ -1129,7 +1129,7 @@ describe("bot desktop control and viewer", () => {
 describe("job answer notifications", () => {
   test("the bot's answer to a job report becomes a reply event with the job's origin and name", () => {
     const { store, runtime } = setup();
-    const service = new CrumbleService(store, runtime);
+    const service = standaloneBots(store, runtime);
     const heard: unknown[] = [];
 
     const agent = store.createAgent({

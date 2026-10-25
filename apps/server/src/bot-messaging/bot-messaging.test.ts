@@ -2,8 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { BotMessaging } from "./bot-messaging";
-import { CrumbleService } from "../bots/service";
+import { botMessagingAccess, standaloneMessaging } from "./bot-messaging";
+import { standaloneBots } from "../bots/bots";
 import type { Agent } from "../shared/domain";
 import { Store } from "../shared/store";
 import {
@@ -73,7 +73,7 @@ function setup(
   };
 
   const store = new Store(dir);
-  const service = new CrumbleService(store, runtime);
+  const service = standaloneBots(store, runtime);
   const source = store.createAgent(input("Source", [ids.target]), ids.source);
   const target = store.createAgent(input("Bot2"), ids.target);
   store.createAgent(input("Disabled", [ids.target], false), ids.disabled);
@@ -84,7 +84,7 @@ function setup(
     service,
     source,
     target,
-    messaging: new BotMessaging(service),
+    messaging: botMessagingAccess(standaloneMessaging(service)),
   };
 }
 

@@ -7,7 +7,7 @@ flowchart TD
   Clients["Clients\nWeb UI (/ui) · native clients"] --> Auth["Better Auth account session"]
   Auth --> Tenant["Private user runtime (tenant.ts)"]
   Tenant --> API["Hono HTTP & SSE API (/v1)"]
-  API --> Service["CrumbleService & AgentRuntime"]
+  API --> Service["Bots & BotRuntime"]
   Service --> Store["Product SQLite (store.ts)\nAgents, groups, skills, memories,\nschedules, credentials, changes"]
   Service --> Pi["Pi Durable SQLite Stores\nPer-bot & per-group transcripts,\ncoding/desktop jobs, reviews"]
   Pi --> Workspaces["MachineWorkspaces\nMicrosandbox microVM + proxy & Xvnc,\nor Railway sandbox + checkpoint"]
@@ -31,7 +31,7 @@ Source files named below live in feature folders under `apps/server/src/`, such 
 
 ## Bot messaging and schedules
 
-- **`BotMessaging` (`bot-messaging.ts`):** Exposes `ask_bot`, `delegate`, and `delegation_status` model tools over `CrumbleService.send`. Enforces per-bot permission allowlists, exact-name resolution, request-ID deduplication, and a one-hop delegation rule to prevent cycles. Sent messages and terminal replies are recorded as data-only transcript entries for client exchange cards.
+- **`BotMessaging` (`bot-messaging.ts`):** Exposes `ask_bot`, `delegate`, and `delegation_status` model tools over `Bots.send`. Enforces per-bot permission allowlists, exact-name resolution, request-ID deduplication, and a one-hop delegation rule to prevent cycles. Sent messages and terminal replies are recorded as data-only transcript entries for client exchange cards.
 - **`BotSchedules` (`schedules.ts`):** One-time and cron tasks targeting a bot's continuous chat. Bots with the `schedule` capability can manage tasks targeting themselves or bots they are permitted to message.
 
 ## Inline visuals and reactions

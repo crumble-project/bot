@@ -9,7 +9,7 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { Store } from "../shared/store";
 import { AgentRuntime } from "./runtime";
-import { CrumbleService } from "./service";
+import { standaloneBots } from "./bots";
 
 const agentId = "00000000-0000-4000-8000-000000000301";
 
@@ -59,7 +59,7 @@ describe("crash recovery", () => {
       models.setProvider(faux.provider);
       const store = new Store(dir);
       const runtime = new AgentRuntime(dir, { models });
-      const service = new CrumbleService(store, runtime);
+      const service = standaloneBots(store, runtime);
       await service.recover();
 
       for (let i = 0; i < 20; i++) {

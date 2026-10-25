@@ -22,7 +22,7 @@ import { pluginProviders } from "../../app/plugins";
 import { standaloneSignIns } from "../provider-auth";
 import type { AgentRuntime } from "../../bots/runtime";
 import { standaloneScheduler } from "../../schedules/scheduler";
-import { CrumbleService } from "../../bots/service";
+import { standaloneBots } from "../../bots/bots";
 import { Store } from "../../shared/store";
 
 const FAKE = join(import.meta.dir, "../../../test/fixtures/fake-claude.ts");
@@ -218,7 +218,7 @@ function api(fake: Record<string, string>) {
   const providerAuth = standaloneSignIns(store.runtime, providers);
   // SAFETY: provider routes never reach the runtime.
 
-  const service = new CrumbleService(store, {} as AgentRuntime);
+  const service = standaloneBots(store, {} as AgentRuntime);
 
   const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
     service.dispatch(a, p, r, s),

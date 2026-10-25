@@ -9,7 +9,7 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "../bots/runtime";
 import { Store } from "../shared/store";
-import { CrumbleService } from "../bots/service";
+import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { createAPI } from "./api";
 
@@ -30,7 +30,7 @@ describe("HTTP/runtime persistence", () => {
     models.setProvider(faux.provider);
 
     const makeApp = (store: Store, runtime: AgentRuntime) => {
-      const service = new CrumbleService(store, runtime);
+      const service = standaloneBots(store, runtime);
 
       const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
         service.dispatch(a, p, r, s),

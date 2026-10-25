@@ -18,9 +18,9 @@ import {
   type PushTransport,
 } from "./push-transports";
 import { BotActivity } from "../bots/bot-activity";
-import type { Activity, ReplyActivity } from "../bots/service";
+import type { Activity, ReplyActivity } from "../bots/bots";
 import { Store } from "../shared/store";
-import { CrumbleService } from "../bots/service";
+import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { createAPI } from "../app/api";
 
@@ -133,7 +133,7 @@ describe("push registration and durable delivery", () => {
       deleteAgent: async () => {},
     };
 
-    const service = new CrumbleService(store, runtime);
+    const service = standaloneBots(store, runtime);
     const scheduler = standaloneScheduler(store.runtime, async () => {});
 
     const push = await pushRuntime(
@@ -520,7 +520,7 @@ describe("push registration and durable delivery", () => {
       close: async () => {},
     };
 
-    const service = new CrumbleService(store, runtime);
+    const service = standaloneBots(store, runtime);
     const installationId = id();
     let delivered: ReplyPushEvent | undefined;
 

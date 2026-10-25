@@ -16,7 +16,7 @@ import {
   type ViewerTickets,
 } from "./desktop-viewer";
 import { AppError } from "../shared/domain";
-import type { CrumbleService } from "../bots/service";
+import type { BotsAccess } from "../bots/bots";
 import type { DesktopStream } from "../workspaces/workspace";
 
 const HEARTBEAT_MS = 15_000;
@@ -39,7 +39,7 @@ const bytesOf = async (data: WSMessageReceive) => {
 export function registerDesktopRoutes(options: {
   app: ReturnType<typeof contractApp>;
   register: Register;
-  service: CrumbleService;
+  service: BotsAccess;
   /** Whether the server has a desktop workspace image. */
   desktop: boolean;
   control: DesktopControlAccess;

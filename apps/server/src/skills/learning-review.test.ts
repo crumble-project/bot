@@ -12,12 +12,12 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { LearningReview } from "./learning-review";
 import { AgentRuntime } from "../bots/runtime";
-import { CrumbleService, type LearnedActivity } from "../bots/service";
+import { standaloneBots, type LearnedActivity } from "../bots/bots";
 import { skillLibrary } from "./skills";
 import { Store } from "../shared/store";
 
 const dirs: string[] = [];
-const services: CrumbleService[] = [];
+const services: ReturnType<typeof standaloneBots>[] = [];
 
 afterEach(async () => {
   for (const service of services.splice(0)) await service.close();
@@ -49,7 +49,7 @@ function open(responses: FauxResponseStep[]) {
     skillLibrary: skillLibrary(store, []),
   });
 
-  const service = new CrumbleService(store, runtime);
+  const service = standaloneBots(store, runtime);
   services.push(service);
   const learned: LearnedActivity[] = [];
 
@@ -62,7 +62,10 @@ function open(responses: FauxResponseStep[]) {
   return { store, runtime, service, reviews, learned, faux };
 }
 
-async function settle(service: CrumbleService, executionId: string) {
+async function settle(
+  service: ReturnType<typeof standaloneBots>,
+  executionId: string,
+) {
   for (let i = 0; i < 300; i++) {
     const status = service.store.getExecution(executionId)?.status;
 

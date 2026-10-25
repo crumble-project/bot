@@ -15,9 +15,10 @@ import {
 } from "../shared/attachments";
 import { mentionedMembers, mentionsOwner } from "./group-mentions";
 import type { GroupEntry, GroupTranscripts } from "./group-transcripts";
-import { GROUP_TURN_PREFIX, type CrumbleService } from "../bots/service";
+import { GROUP_TURN_PREFIX, type BotsAccess } from "../bots/bots";
 import type { Store } from "../shared/store";
 import type { TranscriptPage } from "../bots/transcript";
+import type { AgentRuntime } from "../bots/runtime";
 
 export type GroupMemberActivity = {
   agentId: string;
@@ -65,7 +66,8 @@ export class GroupChats {
   constructor(
     private readonly store: Store,
     private readonly transcripts: GroupTranscripts,
-    private readonly service: CrumbleService,
+    private readonly service: BotsAccess,
+    private readonly runtime: AgentRuntime,
   ) {
     service.onSettled((execution) => this.settled(execution));
   }
@@ -611,7 +613,7 @@ export class GroupChats {
     // Opening the bot chat first keeps an upgraded bot's chat from adopting the group conversation as its session.
     await this.service.chat(agentId);
 
-    const conversationId = await this.service.runtime.openGroupConversation(
+    const conversationId = await this.runtime.openGroupConversation(
       agent,
       group.id,
     );
@@ -643,7 +645,7 @@ export class GroupChats {
     }
 
     try {
-      return await this.service.runtime.summarize(
+      return await this.runtime.summarize(
         agent,
         lines.join("\n\n"),
         AbortSignal.timeout(SUMMARY_TIMEOUT_MS),
@@ -660,7 +662,7 @@ export class GroupChats {
    * Images are left out, by name, for a model that cannot read them.
    */
   private async turnAttachments(agent: Agent, unseen: GroupEntry[]) {
-    const images = await this.service.runtime.acceptsImages(agent);
+    const images = await this.runtime.acceptsImages(agent);
     const attachments: AttachmentInput[] = [];
     const omitted: string[] = [];
 
@@ -756,7 +758,7 @@ export class GroupChats {
 
     if (!agent) return;
 
-    const outcome = await this.service.runtime.turnOutcome(
+    const outcome = await this.runtime.turnOutcome(
       agent,
       conversationId,
       submissionId,

@@ -8,7 +8,7 @@ import { canonicalReplyEvent } from "./push-model";
 import { PushRepository } from "./push-repository";
 import { PushTransports, type PushTransport } from "./push-transports";
 import { BotActivity } from "../bots/bot-activity";
-import type { Activity, ReplyActivity } from "../bots/service";
+import type { Activity, ReplyActivity } from "../bots/bots";
 
 const dirs: string[] = [];
 

@@ -10,9 +10,9 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "../bots/runtime";
 import { Store } from "../shared/store";
-import { CrumbleService } from "../bots/service";
+import { standaloneBots } from "../bots/bots";
 import { coordinationExtension } from "./coordination";
-import { BotMessaging } from "./bot-messaging";
+import { botMessagingAccess, standaloneMessaging } from "./bot-messaging";
 
 test("a real faux turn asks another bot and only exposes its answer", async () => {
   const dir = mkdtempSync(join(tmpdir(), "bot-messaging-e2e-"));
@@ -109,16 +109,18 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
       },
       targetId,
     );
-    let service!: CrumbleService;
+    let service!: ReturnType<typeof standaloneBots>;
 
     const runtime = new AgentRuntime(dir, {
       models,
       listMemory: (id) =>
         id === sourceId ? [{ id: "m", content: "private source memory" }] : [],
-      extensions: (agent) => [coordinationExtension(agent, service)],
+      extensions: (agent) => [
+        coordinationExtension(agent, standaloneMessaging(service)),
+      ],
     });
 
-    service = new CrumbleService(store, runtime);
+    service = standaloneBots(store, runtime);
 
     const execution = await service.sendChat(
       source.id,
@@ -159,7 +161,7 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
       "Bot2 says it feels fine.",
     );
     const targetExecution = store.listExecutions(targetId)[0]!;
-    const messaging = new BotMessaging(service);
+    const messaging = botMessagingAccess(standaloneMessaging(service));
     const targetChat = await service.chat(targetId);
     let targetChanges = 0;
 

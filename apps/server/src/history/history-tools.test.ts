@@ -15,7 +15,7 @@ import { GroupTranscripts } from "../group-chats/group-transcripts";
 import { HistorySearch } from "./history-search";
 import { historySource } from "./history-tools";
 import { AgentRuntime } from "../bots/runtime";
-import { CrumbleService } from "../bots/service";
+import { standaloneBots } from "../bots/bots";
 import { Store } from "../shared/store";
 
 test("history search keeps committed assistant messages visible across turn completion", async () => {
@@ -59,12 +59,13 @@ test("history search keeps committed assistant messages visible across turn comp
     ],
   });
 
-  const service = new CrumbleService(store, runtime);
+  const service = standaloneBots(store, runtime);
 
   const groups = new GroupChats(
     store,
     new GroupTranscripts(join(dir, "groups")),
     service,
+    service.runtime,
   );
 
   try {

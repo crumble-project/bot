@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentRuntime } from "./runtime";
-import { CrumbleService } from "./service";
+import { standaloneBots } from "./bots";
 import { Store } from "../shared/store";
 
 const dirs: string[] = [];
@@ -70,7 +70,7 @@ describe("scheduled admission recovery", () => {
       runtimeFixture,
     ) as AgentRuntime;
 
-    const first = new CrumbleService(store, fakeRuntime);
+    const first = standaloneBots(store, fakeRuntime);
     await expect(
       first.dispatch(
         agent.id,
@@ -80,7 +80,7 @@ describe("scheduled admission recovery", () => {
       ),
     ).rejects.toThrow("temporary runtime failure");
 
-    const second = new CrumbleService(store, fakeRuntime);
+    const second = standaloneBots(store, fakeRuntime);
 
     await second.dispatch(
       agent.id,

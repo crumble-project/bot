@@ -6,7 +6,8 @@ import lockfile from "proper-lockfile";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { BotRuntime } from "../bots/runtime";
-import { CrumbleService } from "../bots/service";
+import { Bots, botsAccess, type BotsAccess } from "../bots/bots";
+import { BotMessaging } from "../bot-messaging/bot-messaging";
 import { BotActivity } from "../bots/bot-activity";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import { reactionExtension } from "../bots/reaction";
@@ -61,7 +62,6 @@ import {
 import {
   AccountStore,
   AccountWorkspaces,
-  Bots,
   Charts,
   Codemode,
   CommonSkills,
@@ -82,7 +82,7 @@ export type TenantRuntime = {
   app: ReturnType<typeof createAPI>;
   /** Internal API bearer used by the host auth router when dispatching requests. */
   token: string;
-  service: CrumbleService;
+  service: BotsAccess;
   scheduler: SchedulerAccess;
   close: () => Promise<void>;
 };
@@ -220,18 +220,7 @@ function accountLayer(
     }),
   );
 
-  const bots = Layer.effect(
-    Bots,
-    Effect.gen(function* () {
-      const store = yield* AccountStore;
-      const agents = yield* BotRuntime;
-
-      return yield* scoped(
-        () => new CrumbleService(store, agents),
-        (service) => service.close(),
-      );
-    }),
-  );
+  const bots = BotMessaging.layer.pipe(Layer.provideMerge(Bots.layer));
 
   const activity = Layer.effect(
     BotActivity,
@@ -250,7 +239,7 @@ function accountLayer(
       const service = yield* Bots;
 
       const learning = new LearningReview(store, yield* BotRuntime, (event) =>
-        service.announce(event),
+        Effect.runSync(service.announce(event)),
       );
 
       yield* Effect.promise(() => learning.recover());
@@ -286,7 +275,9 @@ function accountLayer(
       yield* scoped(
         () =>
           jobKinds.map((kind) =>
-            kind.onAnswer((answer) => service.announceJobAnswer(answer)),
+            kind.onAnswer((answer) =>
+              Effect.runSync(service.announceJobAnswer(answer)),
+            ),
           ),
         (stops) => {
           for (const stop of stops) stop();
@@ -297,14 +288,7 @@ function accountLayer(
 
   const dispatch = Layer.effect(
     TaskDispatch,
-    Bots.use((service) =>
-      Effect.succeed((agentId, prompt, requestId, scheduleId) =>
-        Effect.tryPromise({
-          try: () => service.dispatch(agentId, prompt, requestId, scheduleId),
-          catch: (error) => error,
-        }),
-      ),
-    ),
+    Bots.use((service) => Effect.succeed(service.dispatch)),
   );
 
   const scheduler = Scheduler.layer().pipe(Layer.provide(dispatch));
@@ -313,7 +297,8 @@ function accountLayer(
     GroupChatsService,
     Effect.gen(function* () {
       const store = yield* AccountStore;
-      const service = yield* Bots;
+      const service = botsAccess(runnerOf(yield* Effect.context<Bots>()));
+      const agents = yield* BotRuntime;
 
       return yield* scoped(
         () =>
@@ -321,6 +306,7 @@ function accountLayer(
             store,
             new GroupTranscripts(join(dataDir, "groups")),
             service,
+            agents,
           ),
         (chats) => chats.close(),
       );
@@ -347,7 +333,7 @@ function accountLayer(
     Effect.gen(function* () {
       const extensions = yield* BotExtensions;
       const integrated = yield* McpIntegrations;
-      const service = yield* Bots;
+      const messaging = yield* BotMessaging;
       const groupChats = yield* GroupChatsService;
       const historySearch = yield* HistorySearchService;
       const botSchedules = yield* BotSchedules;
@@ -359,7 +345,7 @@ function accountLayer(
         integrated.extensionsForAgent(agent),
       );
       yield* extensions.register(ExtensionPosition.coordination, (agent) => [
-        coordinationExtension(agent, service),
+        coordinationExtension(agent, messaging),
       ]);
       yield* extensions.register(ExtensionPosition.groupLookup, (agent) => [
         groupLookupExtension(agent, groupChats),
@@ -479,7 +465,8 @@ export async function createTenant(
   try {
     return await account.runPromise(
       Effect.gen(function* () {
-        const service = yield* Bots;
+        const bots = yield* Bots;
+        const service = botsAccess(runnerOf(yield* Effect.context<Bots>()));
 
         const scheduler = schedulerAccess(
           runnerOf(yield* Effect.context<Scheduler>()),
@@ -496,7 +483,11 @@ export async function createTenant(
         const token = randomBytes(32).toString("hex");
 
         const app = createAPI(
-          service,
+          {
+            ...service,
+            store: yield* AccountStore,
+            runtime: yield* BotRuntime,
+          },
           scheduler,
           token,
           yield* McpIntegrations,
@@ -527,7 +518,7 @@ export async function createTenant(
           run,
         );
 
-        yield* Effect.promise(() => service.recover());
+        yield* bots.recover;
         yield* Effect.promise(() => groupChats.recover());
         scheduler.start();
 

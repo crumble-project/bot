@@ -9,7 +9,7 @@ import {
   type FauxResponseStep,
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "./runtime";
-import { CrumbleService } from "./service";
+import { standaloneBots } from "./bots";
 import { Store } from "../shared/store";
 
 const dirs: string[] = [];
@@ -35,7 +35,7 @@ function open(
   const models = createModels();
   models.setProvider(faux.provider);
   const store = new Store(dir);
-  const service = new CrumbleService(store, new AgentRuntime(dir, { models }));
+  const service = standaloneBots(store, new AgentRuntime(dir, { models }));
 
   return { store, service };
 }
@@ -62,7 +62,10 @@ function setup(responses: FauxResponseStep[], input?: ("text" | "image")[]) {
   return { ...opened, dir, agent };
 }
 
-async function settle(service: CrumbleService, executionId: string) {
+async function settle(
+  service: ReturnType<typeof standaloneBots>,
+  executionId: string,
+) {
   for (let i = 0; i < 200; i++) {
     const status = service.store.getExecution(executionId)?.status;
 

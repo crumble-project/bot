@@ -12,7 +12,7 @@ import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { AgentRuntime } from "./runtime";
-import { CrumbleService } from "./service";
+import { standaloneBots } from "./bots";
 import { Store } from "../shared/store";
 
 const cleanups: (() => void | Promise<void>)[] = [];
@@ -71,7 +71,7 @@ test("code mode offers one tool whose scripts call the agent's other tools", asy
   models.setProvider(faux.provider);
   const store = new Store(dir);
 
-  const service = new CrumbleService(
+  const service = standaloneBots(
     store,
     new AgentRuntime(dir, {
       models,

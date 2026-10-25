@@ -12,7 +12,7 @@ import {
 } from "effect";
 import type { Runner } from "../shared/runner";
 import { BotActivity } from "../bots/bot-activity";
-import type { ReplyActivity } from "../bots/service";
+import type { ReplyActivity } from "../bots/bots";
 import {
   canonicalReplyEvent,
   ReplyPushEvent,

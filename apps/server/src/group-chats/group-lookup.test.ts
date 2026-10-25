@@ -15,7 +15,7 @@ import { GroupChats } from "./group-chats";
 import { groupLookupExtension } from "./group-lookup";
 import { GroupTranscripts } from "./group-transcripts";
 import { AgentRuntime } from "../bots/runtime";
-import { CrumbleService } from "../bots/service";
+import { standaloneBots } from "../bots/bots";
 import { Store } from "../shared/store";
 
 const cleanups: (() => void | Promise<void>)[] = [];
@@ -98,11 +98,12 @@ async function setup() {
     extensions: (agent) => [groupLookupExtension(agent, groups)],
   });
 
-  const service = new CrumbleService(store, runtime);
+  const service = standaloneBots(store, runtime);
   groups = new GroupChats(
     store,
     new GroupTranscripts(join(dir, "groups")),
     service,
+    service.runtime,
   );
 
   cleanups.push(async () => {
