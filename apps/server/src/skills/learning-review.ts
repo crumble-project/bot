@@ -1,7 +1,17 @@
-import type { Execution, LearnedChange, Memory, Skill } from "../shared/domain";
-import type { AgentRuntime } from "../bots/runtime";
-import { GROUP_TURN_PREFIX, type LearnedActivity } from "../bots/bots";
-import type { Store } from "../shared/store";
+import { Cause, Context, Effect, FiberSet, Layer } from "effect";
+import type {
+  Agent,
+  Execution,
+  LearnedChange,
+  Memory,
+  Skill,
+} from "../shared/domain";
+import type { Runner } from "../shared/runner";
+import { AgentRepository } from "../bots/agent-repository";
+import { BotRuntime } from "../bots/runtime";
+import { Bots, GROUP_TURN_PREFIX } from "../bots/bots";
+import { LearnedChangeRepository } from "./learned-change-repository";
+import { ReviewRepository } from "./review-repository";
 
 /** Which stores one review may change. */
 export type ReviewScope = { skills: boolean; memory: boolean };
@@ -43,77 +53,60 @@ const nameOf = (change: LearnedChange) => {
 };
 
 /** Reviews a bot's settled bot-chat turns in the background and reports what they changed. */
-export class LearningReview {
-  private readonly running = new Set<string>();
-
-  constructor(
-    private readonly store: Store,
-    private readonly runtime: AgentRuntime,
-    private readonly announce: (event: LearnedActivity) => void,
-  ) {}
-
-  /** A review interrupted by a restart is dropped: its conversation is aborted and forgotten. */
-  async recover() {
-    for (const pending of this.store.listPendingReviews()) {
-      const agent = this.store.getAgent(pending.agentId);
-
-      if (agent)
-        await this.runtime
-          .abort(agent, pending.conversationId)
-          .catch((error) =>
-            console.error(
-              "Dropping a pending review failed",
-              pending.executionId,
-              error,
-            ),
-          );
-      this.store.removePendingReview(pending.executionId);
-    }
+export class LearningReview extends Context.Service<
+  LearningReview,
+  {
+    /** A review interrupted by a restart is dropped: its conversation is aborted and forgotten. */
+    readonly recover: Effect.Effect<void>;
+    /** Counts the turn's tool activity and runs a review when a counter reaches its threshold. */
+    readonly afterExecution: (execution: Execution) => Effect.Effect<void>;
   }
+>()("crumble/skills/LearningReview") {
+  static readonly make = Effect.gen(function* () {
+    const agents = yield* AgentRepository;
+    const reviews = yield* ReviewRepository;
+    const changes = yield* LearnedChangeRepository;
+    const runtime = yield* BotRuntime;
+    const bots = yield* Bots;
+    const running = new Set<string>();
 
-  /** Counts the turn's tool activity and runs a review when a counter reaches its threshold. */
-  async afterExecution(execution: Execution) {
-    if (
-      execution.status !== "done" ||
-      execution.scheduleId ||
-      isGroupTurn(execution) ||
-      !execution.submissionId ||
-      this.running.has(execution.id)
-    )
-      return;
-    const agent = this.store.getAgent(execution.agentId);
-    const settings = { ...DEFAULTS, ...agent?.review };
+    const pi = <A>(run: () => Promise<A>) =>
+      Effect.tryPromise({ try: run, catch: (error) => error });
 
-    if (!agent?.enabled || !settings.enabled) return;
-    this.running.add(execution.id);
-
-    try {
-      const budgetChars = await this.runtime.reviewBudgetChars(agent);
+    const review = Effect.fnUntraced(function* (
+      execution: Execution,
+      submissionId: string,
+      agent: Agent,
+      settings: typeof DEFAULTS,
+    ) {
+      const budgetChars = yield* pi(() => runtime.reviewBudgetChars(agent));
 
       // The digest may take at most half the budget; the rest pays for the review's own requests.
-      const report = await this.runtime.turnReport(
-        agent,
-        execution.conversationId,
-        execution.submissionId,
-        Math.floor(budgetChars / 2),
+      const report = yield* pi(() =>
+        runtime.turnReport(
+          agent,
+          execution.conversationId,
+          submissionId,
+          Math.floor(budgetChars / 2),
+        ),
       );
 
       // A write inside the turn restarts that store's count; only rounds after it count towards the next review.
       if (report.roundsSinceSkillWrite !== null)
-        this.store.setReviewCounter(
+        yield* reviews.setCounter(
           agent.id,
           "skill",
           report.roundsSinceSkillWrite,
         );
 
       if (report.roundsSinceMemoryWrite !== null)
-        this.store.setReviewCounter(
+        yield* reviews.setCounter(
           agent.id,
           "memory",
           report.roundsSinceMemoryWrite,
         );
 
-      const counters = this.store.addReviewRounds(
+      const counters = yield* reviews.addRounds(
         agent.id,
         report.roundsSinceSkillWrite === null ? report.rounds : 0,
         report.roundsSinceMemoryWrite === null ? report.rounds : 0,
@@ -128,49 +121,46 @@ export class LearningReview {
 
       if (!scope.skills && !scope.memory) return;
 
-      if (scope.skills) this.store.setReviewCounter(agent.id, "skill", 0);
+      if (scope.skills) yield* reviews.setCounter(agent.id, "skill", 0);
 
-      if (scope.memory) this.store.setReviewCounter(agent.id, "memory", 0);
+      if (scope.memory) yield* reviews.setCounter(agent.id, "memory", 0);
 
-      const conversation = await this.runtime.openReviewConversation(
-        agent,
-        execution.id,
-        scope,
-        budgetChars,
+      const conversation = yield* pi(() =>
+        runtime.openReviewConversation(agent, execution.id, scope, budgetChars),
       );
 
-      this.store.addPendingReview(execution.id, agent.id, conversation);
+      yield* reviews.addPending(execution.id, agent.id, conversation);
 
-      try {
-        const submission = await this.runtime.submit(
-          agent,
-          conversation,
-          report.digest || "(The turn left no readable digest.)",
-          `review:${execution.id}`,
-          { origin: { kind: "review" } },
+      yield* Effect.gen(function* () {
+        const submission = yield* pi(() =>
+          runtime.submit(
+            agent,
+            conversation,
+            report.digest || "(The turn left no readable digest.)",
+            `review:${execution.id}`,
+            { origin: { kind: "review" } },
+          ),
         );
 
-        await this.runtime.wait(submission, agent);
-      } finally {
-        this.store.removePendingReview(execution.id);
-      }
+        yield* pi(() => runtime.wait(submission, agent));
+      }).pipe(Effect.ensuring(reviews.removePending(execution.id)));
 
-      const changes = this.store.listChangesOfExecution(execution.id, "review");
+      const made = yield* changes.listOfExecution(execution.id, "review");
 
-      if (!changes.length) return;
+      if (!made.length) return;
 
-      this.store.addReviewResult(
+      yield* changes.addReviewResult(
         execution.id,
         agent.id,
-        changes.map((change) => change.id),
+        made.map((change) => change.id),
       );
 
-      this.announce({
+      yield* bots.announce({
         type: "learned",
         agentId: agent.id,
         agentName: agent.name,
         executionId: execution.id,
-        changes: changes.map((change) => ({
+        changes: made.map((change) => ({
           changeId: change.id,
           target: change.target,
           action: change.action,
@@ -178,10 +168,105 @@ export class LearningReview {
         })),
         createdAt: new Date().toISOString(),
       });
-    } catch (error) {
-      console.error("Learning review failed", execution.id, error);
-    } finally {
-      this.running.delete(execution.id);
-    }
-  }
+    });
+
+    return LearningReview.of({
+      recover: Effect.gen(function* () {
+        for (const pending of yield* reviews.listPending) {
+          const agent = yield* agents.get(pending.agentId);
+
+          if (agent)
+            yield* pi(() => runtime.abort(agent, pending.conversationId)).pipe(
+              Effect.catch((error) =>
+                Effect.logError(
+                  "Dropping a pending review failed",
+                  pending.executionId,
+                  error,
+                ),
+              ),
+            );
+          yield* reviews.removePending(pending.executionId);
+        }
+      }),
+      afterExecution: Effect.fn("LearningReview.afterExecution")(function* (
+        execution: Execution,
+      ) {
+        const { submissionId } = execution;
+
+        if (
+          execution.status !== "done" ||
+          execution.scheduleId ||
+          isGroupTurn(execution) ||
+          !submissionId ||
+          running.has(execution.id)
+        )
+          return;
+        const agent = yield* agents.get(execution.agentId);
+        const settings = { ...DEFAULTS, ...agent?.review };
+
+        if (!agent?.enabled || !settings.enabled) return;
+        running.add(execution.id);
+
+        yield* review(execution, submissionId, agent, settings).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logError(
+              "Learning review failed",
+              execution.id,
+              Cause.squash(cause),
+            ),
+          ),
+          Effect.ensuring(Effect.sync(() => running.delete(execution.id))),
+        );
+      }),
+    });
+  });
+
+  static readonly layer = Layer.effect(LearningReview, LearningReview.make);
 }
+
+/** Drops the reviews a restart interrupted, then reviews each settled bot-chat turn until the layer's scope closes. */
+export const learningReviews = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const learning = yield* LearningReview;
+    const bots = yield* Bots;
+    const background = yield* FiberSet.make();
+    const fork = yield* FiberSet.runtime(background)<never>();
+
+    yield* learning.recover;
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        bots.onSettled((execution) => {
+          fork(learning.afterExecution(execution));
+        }),
+      ),
+      (stop) => Effect.sync(stop),
+    );
+  }),
+);
+
+/** Learning reviews over standalone bots, for a test without an account. */
+export const standaloneLearningReview = (bots: {
+  effects: Runner<Bots | BotRuntime | AgentRepository>;
+  store: { runtime: Runner<ReviewRepository | LearnedChangeRepository> };
+}) => {
+  const learning = Effect.runSync(
+    LearningReview.make.pipe(
+      Effect.provideContext(
+        Context.merge(
+          bots.effects.runSync(
+            Effect.context<Bots | BotRuntime | AgentRepository>(),
+          ),
+          bots.store.runtime.runSync(
+            Effect.context<ReviewRepository | LearnedChangeRepository>(),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  return {
+    recover: () => Effect.runPromise(learning.recover),
+    afterExecution: (execution: Execution) =>
+      Effect.runPromise(learning.afterExecution(execution)),
+  };
+};

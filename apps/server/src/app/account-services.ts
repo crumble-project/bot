@@ -1,6 +1,5 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { Context, Effect, Layer } from "effect";
-import type { CommonSkill } from "../skills/common-skills";
 import type { CoreServices } from "../shared/core-layer";
 import { runnerOf } from "../shared/runner";
 import { Store } from "../shared/store";
@@ -43,9 +42,3 @@ export class Plugins extends Context.Service<
   Plugins,
   readonly CrumblePlugin[]
 >()("crumble/app/Plugins") {}
-
-/** The skills bundled with the server, read-only for every account. */
-export class CommonSkills extends Context.Service<
-  CommonSkills,
-  CommonSkill[]
->()("crumble/app/CommonSkills") {}

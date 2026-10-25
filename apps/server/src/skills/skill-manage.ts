@@ -8,12 +8,17 @@ import {
   type Skill,
   type SkillInput,
 } from "../shared/domain";
+import { Effect } from "effect";
 import {
   resolveSkill,
   skillToolContext,
-  type SkillLibrary,
+  SkillToolError,
   type SkillReads,
 } from "./skill-library";
+import type { BotSkills } from "./skills";
+
+const refuse = (message: string) =>
+  Effect.fail(new SkillToolError({ message }));
 
 export const SKILL_MANAGE_TOOL_NAME = "skill_manage";
 
@@ -114,7 +119,7 @@ const operation = Type.Union([
 type Operation = Static<typeof operation>;
 
 export type SkillManageCallbacks = {
-  library: SkillLibrary;
+  library: BotSkills["Service"];
   reads: SkillReads;
   agent: () => Agent;
 };
@@ -128,22 +133,24 @@ export function applyPatch(
   newString: string,
   replaceAll: boolean,
   label: string,
-) {
+): Effect.Effect<string, SkillToolError> {
   const count = source.split(oldString).length - 1;
 
   if (count === 0)
-    throw new Error(
+    return refuse(
       `${label} does not contain the text to replace; load it again and copy the passage exactly`,
     );
 
   if (count > 1 && !replaceAll)
-    throw new Error(
+    return refuse(
       `${label} contains the text to replace ${count} times; include more surrounding text or set replaceAll`,
     );
 
-  return replaceAll
-    ? source.split(oldString).join(newString)
-    : source.replace(oldString, () => newString);
+  return Effect.succeed(
+    replaceAll
+      ? source.split(oldString).join(newString)
+      : source.replace(oldString, () => newString),
+  );
 }
 
 /** The model tool a bot edits its own skills with: an ordered batch, applied atomically. */
@@ -164,203 +171,221 @@ export function skillManageTool(callbacks: SkillManageCallbacks) {
     execute: async (args, api, callContext) => {
       const agent = callbacks.agent();
       const context = await skillToolContext(api, callContext);
-      const available = await callbacks.library.available(agent);
-      const applied: Applied[] = [];
-      const touched = new Map<string, Skill>();
+      const { library, reads } = callbacks;
 
-      const own = (name: string) =>
-        callbacks.library
-          .own(agent.id)
-          .find((skill) => skill.name.toLowerCase() === name.toLowerCase()) ??
-        null;
+      return Effect.runPromise(
+        Effect.gen(function* () {
+          const available = yield* library.available(agent);
+          const applied: Applied[] = [];
+          const touched = new Map<string, Skill>();
 
-      const target = (operation: Operation) => {
-        const skill = own(operation.name);
-
-        if (skill) {
-          if (!callbacks.reads.has(context.runKey, skill.id))
-            throw new Error(
-              `Load skill ${skill.name} with the skill tool in this turn before changing it; writes must follow a current read`,
-            );
-
-          return skill;
-        }
-
-        const shadowed = resolveSkill(available, operation.name);
-
-        throw new Error(
-          shadowed
-            ? `Skill ${shadowed.name} is ${shadowed.scope} and read-only; create your own skill named ${JSON.stringify(shadowed.name)} to shadow it, then change that`
-            : `You have no skill named ${JSON.stringify(operation.name)}; use skill_manage create or check the skill tool's list`,
-        );
-      };
-
-      const validate = (input: SkillInput) => {
-        const parsed = skillInput.safeParse(input);
-
-        if (!parsed.success)
-          throw new Error(
-            parsed.error.issues
-              .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
-              .join("; "),
-          );
-
-        return parsed.data;
-      };
-
-      const update = (skill: Skill, patch: Partial<SkillInput>) => {
-        const next = validate({ ...skill, ...patch });
-        const updated = callbacks.library.update(skill.id, next, context);
-        touched.set(updated.id, updated);
-
-        return updated;
-      };
-
-      callbacks.library.transaction(() => {
-        for (const raw of args.operations) {
-          const operation = { ...raw, name: raw.name.trim() };
-
-          if (!operation.name) throw new Error("A skill name is required");
-
-          if (operation.action === "create") {
-            if (own(operation.name))
-              throw new Error(
-                `You already have a skill named ${JSON.stringify(operation.name)}; patch or rewrite it`,
+          const own = (name: string) =>
+            library
+              .own(agent.id)
+              .pipe(
+                Effect.map(
+                  (skills) =>
+                    skills.find(
+                      (skill) =>
+                        skill.name.toLowerCase() === name.toLowerCase(),
+                    ) ?? null,
+                ),
               );
 
-            const created = callbacks.library.create(
-              agent.id,
-              validate({
-                name: operation.name,
-                description: operation.description ?? "",
-                instructions: operation.instructions,
-                documents: operation.documents ?? [],
-              }),
-              context,
-            );
+          const target = Effect.fnUntraced(function* (operation: Operation) {
+            const skill = yield* own(operation.name);
 
-            touched.set(created.id, created);
-            callbacks.reads.mark(context.runKey, created.id);
-            applied.push({ action: "create", name: created.name });
-            continue;
-          }
-
-          const skill = target(operation);
-
-          if (operation.action === "delete") {
-            if (context.reviewOf)
-              throw new Error(
-                "A review never deletes a skill; patch it, or mention the overlap in your reply",
-              );
-            callbacks.library.remove(skill.id, context);
-            touched.delete(skill.id);
-            applied.push({ action: "delete", name: skill.name });
-          } else if (operation.action === "rewrite") {
-            update(skill, {
-              instructions: operation.instructions,
-              ...(operation.description !== undefined && {
-                description: operation.description,
-              }),
-            });
-            applied.push({ action: "rewrite", name: skill.name });
-          } else if (operation.action === "patch") {
-            if (operation.path) {
-              const document = skill.documents.find(
-                (candidate) => candidate.path === operation.path,
-              );
-
-              if (!document)
-                throw new Error(
-                  `Skill ${skill.name} has no document ${operation.path}`,
+            if (skill) {
+              if (!reads.has(context.runKey, skill.id))
+                return yield* refuse(
+                  `Load skill ${skill.name} with the skill tool in this turn before changing it; writes must follow a current read`,
                 );
 
-              update(skill, {
-                documents: skill.documents.map((candidate) =>
-                  candidate === document
-                    ? {
-                        ...candidate,
-                        content: applyPatch(
-                          candidate.content,
-                          operation.oldString,
-                          operation.newString,
-                          operation.replaceAll === true,
-                          `Document ${operation.path} of skill ${skill.name}`,
-                        ),
-                      }
-                    : candidate,
-                ),
+              return skill;
+            }
+
+            const shadowed = resolveSkill(available, operation.name);
+
+            return yield* refuse(
+              shadowed
+                ? `Skill ${shadowed.name} is ${shadowed.scope} and read-only; create your own skill named ${JSON.stringify(shadowed.name)} to shadow it, then change that`
+                : `You have no skill named ${JSON.stringify(operation.name)}; use skill_manage create or check the skill tool's list`,
+            );
+          });
+
+          const validate = (input: SkillInput) => {
+            const parsed = skillInput.safeParse(input);
+
+            return parsed.success
+              ? Effect.succeed(parsed.data)
+              : refuse(
+                  parsed.error.issues
+                    .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+                    .join("; "),
+                );
+          };
+
+          const update = Effect.fnUntraced(function* (
+            skill: Skill,
+            patch: Partial<SkillInput>,
+          ) {
+            const next = yield* validate({ ...skill, ...patch });
+            const updated = yield* library.update(skill.id, next, context);
+            touched.set(updated.id, updated);
+
+            return updated;
+          });
+
+          const apply = Effect.fnUntraced(function* (raw: Operation) {
+            const operation = { ...raw, name: raw.name.trim() };
+
+            if (!operation.name)
+              return yield* refuse("A skill name is required");
+
+            if (operation.action === "create") {
+              if (yield* own(operation.name))
+                return yield* refuse(
+                  `You already have a skill named ${JSON.stringify(operation.name)}; patch or rewrite it`,
+                );
+
+              const created = yield* library.create(
+                agent.id,
+                yield* validate({
+                  name: operation.name,
+                  description: operation.description ?? "",
+                  instructions: operation.instructions,
+                  documents: operation.documents ?? [],
+                }),
+                context,
+              );
+
+              touched.set(created.id, created);
+              reads.mark(context.runKey, created.id);
+              applied.push({ action: "create", name: created.name });
+
+              return;
+            }
+
+            const skill = yield* target(operation);
+
+            if (operation.action === "delete") {
+              if (context.reviewOf)
+                return yield* refuse(
+                  "A review never deletes a skill; patch it, or mention the overlap in your reply",
+                );
+              yield* library.remove(skill.id, context);
+              touched.delete(skill.id);
+              applied.push({ action: "delete", name: skill.name });
+            } else if (operation.action === "rewrite") {
+              yield* update(skill, {
+                instructions: operation.instructions,
+                ...(operation.description !== undefined && {
+                  description: operation.description,
+                }),
               });
-            } else
-              update(skill, {
-                instructions: applyPatch(
-                  skill.instructions,
+              applied.push({ action: "rewrite", name: skill.name });
+            } else if (operation.action === "patch") {
+              if (operation.path) {
+                const document = skill.documents.find(
+                  (candidate) => candidate.path === operation.path,
+                );
+
+                if (!document)
+                  return yield* refuse(
+                    `Skill ${skill.name} has no document ${operation.path}`,
+                  );
+
+                const content = yield* applyPatch(
+                  document.content,
                   operation.oldString,
                   operation.newString,
                   operation.replaceAll === true,
-                  `Skill ${skill.name}`,
+                  `Document ${operation.path} of skill ${skill.name}`,
+                );
+
+                yield* update(skill, {
+                  documents: skill.documents.map((candidate) =>
+                    candidate === document
+                      ? { ...candidate, content }
+                      : candidate,
+                  ),
+                });
+              } else
+                yield* update(skill, {
+                  instructions: yield* applyPatch(
+                    skill.instructions,
+                    operation.oldString,
+                    operation.newString,
+                    operation.replaceAll === true,
+                    `Skill ${skill.name}`,
+                  ),
+                });
+              applied.push({
+                action: "patch",
+                name: skill.name,
+                ...(operation.path && { path: operation.path }),
+              });
+            } else if (operation.action === "write_document") {
+              const document = skillDocumentInput.safeParse({
+                path: operation.path,
+                content: operation.content,
+              });
+
+              if (!document.success)
+                return yield* refuse(
+                  document.error.issues[0]?.message ?? "Invalid document",
+                );
+
+              const others = skill.documents.filter(
+                (candidate) => candidate.path !== document.data.path,
+              );
+
+              yield* update(skill, { documents: [...others, document.data] });
+              applied.push({
+                action: "write_document",
+                name: skill.name,
+                path: document.data.path,
+              });
+            } else {
+              if (
+                !skill.documents.some(
+                  (candidate) => candidate.path === operation.path,
+                )
+              )
+                return yield* refuse(
+                  `Skill ${skill.name} has no document ${operation.path}`,
+                );
+              yield* update(skill, {
+                documents: skill.documents.filter(
+                  (candidate) => candidate.path !== operation.path,
                 ),
               });
-            applied.push({
-              action: "patch",
-              name: skill.name,
-              ...(operation.path && { path: operation.path }),
-            });
-          } else if (operation.action === "write_document") {
-            const document = skillDocumentInput.safeParse({
-              path: operation.path,
-              content: operation.content,
-            });
+              applied.push({
+                action: "remove_document",
+                name: skill.name,
+                path: operation.path,
+              });
+            }
+          });
 
-            if (!document.success)
-              throw new Error(
-                document.error.issues[0]?.message ?? "Invalid document",
-              );
+          yield* library.transaction(
+            Effect.forEach(args.operations, apply, { discard: true }),
+          );
 
-            const others = skill.documents.filter(
-              (candidate) => candidate.path !== document.data.path,
-            );
+          const findings = [...touched.values()].flatMap((skill) =>
+            lintSkill(skill),
+          );
 
-            update(skill, { documents: [...others, document.data] });
-            applied.push({
-              action: "write_document",
-              name: skill.name,
-              path: document.data.path,
-            });
-          } else {
-            if (
-              !skill.documents.some(
-                (candidate) => candidate.path === operation.path,
-              )
-            )
-              throw new Error(
-                `Skill ${skill.name} has no document ${operation.path}`,
-              );
-            update(skill, {
-              documents: skill.documents.filter(
-                (candidate) => candidate.path !== operation.path,
-              ),
-            });
-            applied.push({
-              action: "remove_document",
-              name: skill.name,
-              path: operation.path,
-            });
-          }
-        }
-      });
-
-      const findings = [...touched.values()].flatMap((skill) =>
-        lintSkill(skill),
+          return {
+            output: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ applied, findings }),
+              },
+            ],
+          };
+        }),
       );
-
-      return {
-        output: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ applied, findings }),
-          },
-        ],
-      };
     },
   });
 }

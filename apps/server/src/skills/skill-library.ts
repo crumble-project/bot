@@ -2,7 +2,8 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool, LiveDoc } from "@earendil-works/pi-durable";
 import type { ToolExecutionApi } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord/context";
-import type { Agent, Skill, SkillDocument, SkillInput } from "../shared/domain";
+import { Schema } from "effect";
+import type { SkillDocument } from "../shared/domain";
 import { GroupConversation } from "../group-chats/group-turns";
 import { ReviewConversation } from "./review-conversation";
 
@@ -49,23 +50,11 @@ export async function skillToolContext(
   };
 }
 
-/** The skills a bot can read and the ones it may write, behind the store. */
-export interface SkillLibrary {
-  /** Defaults, shared skills the bot uses, and its own, archived ones excluded. */
-  available(agent: Agent): AvailableSkill[] | Promise<AvailableSkill[]>;
-  used(agent: Agent, skill: AvailableSkill): void | Promise<void>;
-  /** The bot's own skills, archived ones excluded. */
-  own(agentId: string): Skill[];
-  create(agentId: string, input: SkillInput, context: SkillToolContext): Skill;
-  update(
-    skillId: string,
-    patch: Partial<SkillInput>,
-    context: SkillToolContext,
-  ): Skill;
-  remove(skillId: string, context: SkillToolContext): void;
-  /** Runs `fn` atomically; a throw undoes every write inside. */
-  transaction<T>(fn: () => T): T;
-}
+/** Why a skill tool call was refused; the model reads the message. */
+export class SkillToolError extends Schema.TaggedError<SkillToolError>()(
+  "SkillToolError",
+  { message: Schema.String },
+) {}
 
 const MAX_TRACKED_RUNS = 200;
 

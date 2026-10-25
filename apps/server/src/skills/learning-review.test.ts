@@ -10,10 +10,10 @@ import {
   type FauxResponseFactory,
   type FauxResponseStep,
 } from "@earendil-works/pi-ai/providers/faux";
-import { LearningReview } from "./learning-review";
+import { standaloneLearningReview } from "./learning-review";
 import { AgentRuntime } from "../bots/runtime";
 import { standaloneBots, type LearnedActivity } from "../bots/bots";
-import { skillLibrary } from "./skills";
+import { standaloneSkills } from "./skills";
 import { Store } from "../shared/store";
 
 const dirs: string[] = [];
@@ -46,15 +46,17 @@ function open(responses: FauxResponseStep[]) {
   const runtime = new AgentRuntime(dir, {
     models,
     currentAgent: (id) => store.getAgent(id),
-    skillLibrary: skillLibrary(store, []),
+    skillLibrary: standaloneSkills(store),
   });
 
   const service = standaloneBots(store, runtime);
   services.push(service);
   const learned: LearnedActivity[] = [];
 
-  const reviews = new LearningReview(store, runtime, (event) => {
-    learned.push(event);
+  const reviews = standaloneLearningReview(service);
+
+  service.onActivity((event) => {
+    if (event.type === "learned") learned.push(event);
   });
 
   service.onSettled((execution) => reviews.afterExecution(execution));

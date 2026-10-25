@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -27,10 +27,10 @@ import {
 import { groupLookupTools } from "../group-chats/group-lookup";
 import { GroupTranscripts } from "../group-chats/group-transcripts";
 import { historyTools } from "../history/history-tools";
-import { skillLibrary } from "../skills/skills";
-import { LearningReview } from "../skills/learning-review";
-import { SkillCurator } from "../skills/skill-curator";
-import { loadCommonSkills } from "../skills/common-skills";
+import { BotSkills } from "../skills/skills";
+import { LearningReview, learningReviews } from "../skills/learning-review";
+import { SkillCurator, skillCuration } from "../skills/skill-curator";
+import { CommonSkills } from "../skills/common-skills";
 import {
   integrationTools,
   McpIntegrations,
@@ -65,12 +65,7 @@ import {
   pluginJobKinds,
   pluginProviders,
 } from "./plugins";
-import {
-  AccountStore,
-  AccountWorkspaces,
-  CommonSkills,
-  Plugins,
-} from "./account-services";
+import { AccountStore, AccountWorkspaces, Plugins } from "./account-services";
 
 export type TenantOptions = {
   dataDir: string;
@@ -124,21 +119,9 @@ function accountLayer(
     explicitSkillsDir ?? resolve(import.meta.dir, "../../skills"),
   );
 
-  const commonSkills = Layer.effect(
-    CommonSkills,
-    Effect.sync(() => {
-      if (explicitSkillsDir && !existsSync(skillsDir))
-        throw new Error(
-          `Configured common skills directory does not exist: ${skillsDir}`,
-        );
-
-      if (!existsSync(skillsDir))
-        console.warn(
-          `Common skills directory not found; continuing with no common skills: ${skillsDir}`,
-        );
-
-      return loadCommonSkills(skillsDir);
-    }),
+  const commonSkills = CommonSkills.layer(
+    skillsDir,
+    explicitSkillsDir !== undefined,
   );
 
   const base = Layer.mergeAll(
@@ -215,7 +198,6 @@ function accountLayer(
         taskExtensions: (agent) => jobExtensions(jobKinds, agent).job,
         env: (agentId, target, context) =>
           jobEnv(jobKinds, agentId, target, context),
-        skillLibrary: skillLibrary(yield* AccountStore, yield* CommonSkills),
       });
     }),
   );
@@ -233,39 +215,9 @@ function accountLayer(
     ),
   );
 
-  const reviews = Layer.effectDiscard(
-    Effect.gen(function* () {
-      const store = yield* AccountStore;
-      const service = yield* Bots;
+  const reviews = learningReviews.pipe(Layer.provide(LearningReview.layer));
 
-      const learning = new LearningReview(store, yield* BotRuntime, (event) =>
-        Effect.runSync(service.announce(event)),
-      );
-
-      yield* Effect.promise(() => learning.recover());
-      yield* scoped(
-        () =>
-          service.onSettled((execution) => learning.afterExecution(execution)),
-        (stop) => stop(),
-      );
-    }),
-  );
-
-  const curation = Layer.effectDiscard(
-    Effect.gen(function* () {
-      const store = yield* AccountStore;
-
-      yield* scoped(
-        () => {
-          const curator = new SkillCurator(store);
-          curator.start();
-
-          return curator;
-        },
-        (curator) => curator.stop(),
-      );
-    }),
-  );
+  const curation = skillCuration.pipe(Layer.provide(SkillCurator.layer));
 
   const jobAnswers = Layer.effectDiscard(
     Effect.gen(function* () {
@@ -367,6 +319,7 @@ function accountLayer(
     Layer.provideMerge(Layer.mergeAll(scheduler, groups, activity)),
     Layer.provideMerge(bots),
     Layer.provideMerge(runtime),
+    Layer.provideMerge(BotSkills.layer),
     // Below the runtime, so their sandboxes close after it.
     Layer.provideMerge(
       Layer.mergeAll(

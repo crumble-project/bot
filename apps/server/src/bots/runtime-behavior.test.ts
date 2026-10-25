@@ -17,8 +17,8 @@ import { ProviderCredentials } from "../providers/provider-credentials";
 import { Store } from "../shared/store";
 import { loadCommonSkills } from "../skills/common-skills";
 import { agentInput, type Agent } from "../shared/domain";
-import type { AvailableSkill, SkillLibrary } from "../skills/skill-library";
-import { skillLibrary } from "../skills/skills";
+import type { AvailableSkill } from "../skills/skill-library";
+import { standaloneSkills, type BotSkills } from "../skills/skills";
 
 const directories: string[] = [];
 const runtimes: AgentRuntime[] = [];
@@ -46,19 +46,17 @@ const makeAgent = (): Agent => ({
 function fakeLibrary(
   available: (agent: Agent) => AvailableSkill[],
   used: (skill: AvailableSkill) => void = () => {},
-): SkillLibrary {
-  const unsupported = () => {
-    throw new Error("read-only library");
-  };
+): BotSkills["Service"] {
+  const unsupported = () => Effect.die(new Error("read-only library"));
 
   return {
-    available,
-    used: (_agent, skill) => used(skill),
-    own: () => [],
+    available: (agent) => Effect.sync(() => available(agent)),
+    used: (_agent, skill) => Effect.sync(() => used(skill)),
+    own: () => Effect.succeed([]),
     create: unsupported,
     update: unsupported,
     remove: unsupported,
-    transaction: (fn) => fn(),
+    transaction: (effect) => effect,
   };
 }
 
@@ -314,7 +312,7 @@ test("a bot writes its own skills atomically, after reading them, and every chan
 
   const { runtime, faux } = setup({
     currentAgent: () => stored,
-    skillLibrary: skillLibrary(store, []),
+    skillLibrary: standaloneSkills(store),
   });
 
   // SAFETY: The faux provider is registered in the test model registry.

@@ -3,7 +3,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { SkillCurator } from "./skill-curator";
+import { Effect, Layer, ManagedRuntime } from "effect";
+import { TestClock } from "effect/testing";
+import { curateNow, SkillCurator, skillCuration } from "./skill-curator";
 import { Store } from "../shared/store";
 
 const dirs: string[] = [];
@@ -95,7 +97,7 @@ test("stale and archive bot-created skills by idle time, sparing pinned, schedul
     enabled: true,
   });
 
-  const actions = new SkillCurator(store).pass(now);
+  const actions = curateNow(store, now);
 
   expect(
     actions.map((action) => [action.name, action.from, action.to]),
@@ -116,23 +118,50 @@ test("stale and archive bot-created skills by idle time, sparing pinned, schedul
   expect(
     store.listChanges(agent.id).filter((change) => change.actor === "curator"),
   ).toHaveLength(2);
-  expect(new SkillCurator(store).pass(now)).toEqual([]);
+  expect(curateNow(store, now)).toEqual([]);
 
   // Using a stale skill makes it active again; the owner restores an archived one, which counts as activity.
   store.recordSkillUse(idle);
   expect(store.getSkill(idle)?.state).toBe("active");
   store.updateSkill(old, { state: "active" });
   expect(store.getSkill(old)).toMatchObject({ state: "active", pinned: false });
-  expect(new SkillCurator(store).pass(now)).toEqual([]);
+  expect(curateNow(store, now)).toEqual([]);
   expect(store.getSkill(old)?.state).toBe("active");
 
   // Never used for long enough, a skill goes into the archive too.
   const later = new Date(now.getTime() + 31 * DAY);
   expect(
-    new SkillCurator(store)
-      .pass(later)
-      .map((action) => [action.name, action.to]),
+    curateNow(store, later).map((action) => [action.name, action.to]),
   ).toContainEqual(["Never used", "archived"]);
   db.close();
   store.close();
+});
+
+test("curation runs a pass at start and every six hours, and stops with its scope", async () => {
+  const passes: number[] = [];
+
+  const curator = Layer.succeed(SkillCurator, {
+    pass: (now) =>
+      Effect.sync(() => {
+        passes.push(now.getTime());
+
+        return [];
+      }),
+  });
+
+  const runtime = ManagedRuntime.make(
+    skillCuration.pipe(
+      Layer.provide(curator),
+      Layer.provideMerge(TestClock.layer()),
+    ),
+  );
+
+  await runtime.runPromise(TestClock.adjust("1 second"));
+  expect(passes).toHaveLength(1);
+  await runtime.runPromise(TestClock.adjust("6 hours"));
+  expect(passes).toHaveLength(2);
+  expect(passes[1]! - passes[0]!).toBe(6 * 60 * 60 * 1000);
+
+  await runtime.dispose();
+  expect(passes).toHaveLength(2);
 });

@@ -40,8 +40,8 @@ import {
   SkillReads,
   skillIndex,
   skillTool,
-  type SkillLibrary,
 } from "../skills/skill-library";
+import { BotSkills } from "../skills/skills";
 import { skillManageTool } from "../skills/skill-manage";
 import {
   ReviewAnchor,
@@ -113,7 +113,7 @@ export type RuntimeCallbacks = {
     context: MemoryContext,
   ) => void | Promise<void>;
   /** The skills a bot can load and the ones it may write. Listed in its instructions by name only. */
-  skillLibrary?: SkillLibrary;
+  skillLibrary?: BotSkills["Service"];
   extensions?: (agent: Agent) => Extension[] | Promise<Extension[]>;
   /** Installed but never offered in the bot's chat: tasks select them for the conversations they own. */
   taskExtensions?: (agent: Agent) => Extension[] | Promise<Extension[]>;
@@ -494,10 +494,13 @@ export class AgentRuntime {
       const library = this.callbacks.skillLibrary;
 
       const skill = skillTool({
-        skills: async () => (await library?.available(currentAgent())) ?? [],
+        skills: async () =>
+          library ? Effect.runPromise(library.available(currentAgent())) : [],
         used: async (loaded, runKey) => {
           this.skillReads.mark(runKey, loaded.id);
-          await library?.used(currentAgent(), loaded);
+
+          if (library)
+            await Effect.runPromise(library.used(currentAgent(), loaded));
         },
       });
 
@@ -658,7 +661,11 @@ export class AgentRuntime {
         )
       : next;
 
-    const skills = (await this.callbacks.skillLibrary?.available(agent)) ?? [];
+    const library = this.callbacks.skillLibrary;
+
+    const skills = library
+      ? await Effect.runPromise(library.available(agent))
+      : [];
 
     // The bot can always write its first skill, so the management tool does not wait for the index.
     // A review gets only the stores it reviews: it cannot act in the chat, run jobs, delegate, or reach integrations.
@@ -1437,7 +1444,7 @@ export class BotRuntime extends Context.Service<BotRuntime, AgentRuntime>()(
   /** Over `dataDir`'s harness files; `options` are what features outside the bots give every bot. */
   static layer(
     dataDir: string,
-    options: Pick<RuntimeCallbacks, "skillLibrary" | "taskExtensions" | "env">,
+    options: Pick<RuntimeCallbacks, "taskExtensions" | "env">,
   ) {
     return Layer.effect(
       BotRuntime,
@@ -1447,6 +1454,7 @@ export class BotRuntime extends Context.Service<BotRuntime, AgentRuntime>()(
         const memory = yield* BotMemory;
         const extensions = yield* BotExtensions;
         const models = yield* ProviderModels;
+        const skillLibrary = yield* BotSkills;
 
         return yield* Effect.acquireRelease(
           Effect.sync(
@@ -1454,6 +1462,7 @@ export class BotRuntime extends Context.Service<BotRuntime, AgentRuntime>()(
               new AgentRuntime(dataDir, {
                 ...options,
                 models,
+                skillLibrary,
                 currentAgent: (id) => Effect.runSync(agents.get(id)),
                 ownerTimezone: () => {
                   const timezone = Effect.runSync(settings.get(OWNER_TIMEZONE));

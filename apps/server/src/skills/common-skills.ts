@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import { Context, Effect, Layer } from "effect";
 import {
   MAX_SKILL_DOCUMENTS,
   skillDocumentInput,
@@ -129,4 +130,30 @@ export function loadCommonSkills(root: string): CommonSkill[] {
 
     return [parseSkill(file, resolved, entry.name)];
   });
+}
+
+/** The skills bundled with the server, read-only for every account. */
+export class CommonSkills extends Context.Service<
+  CommonSkills,
+  CommonSkill[]
+>()("crumble/skills/CommonSkills") {
+  /** Read from `root`; a missing directory that was configured `explicit`ly fails, a missing default warns. */
+  static layer(root: string, explicit: boolean) {
+    return Layer.effect(
+      CommonSkills,
+      Effect.sync(() => {
+        if (explicit && !existsSync(root))
+          throw new Error(
+            `Configured common skills directory does not exist: ${root}`,
+          );
+
+        if (!existsSync(root))
+          console.warn(
+            `Common skills directory not found; continuing with no common skills: ${root}`,
+          );
+
+        return loadCommonSkills(root);
+      }),
+    );
+  }
 }
