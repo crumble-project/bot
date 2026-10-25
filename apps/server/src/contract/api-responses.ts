@@ -34,17 +34,6 @@ export const capabilitiesResponse = z
   })
   .openapi("Capabilities");
 
-export const pushStatusResponse = z
-  .object({
-    serverId: z.string(),
-    transports: z.object({ apns: z.boolean(), fcm: z.boolean() }),
-  })
-  .openapi("PushStatus");
-
-export const pushDeviceResponse = z
-  .object({ serverId: z.string(), remoteDelivery: z.boolean() })
-  .openapi("PushDeviceRegistration");
-
 export const agentResponse = z
   .object({
     id: z.string(),

@@ -9,8 +9,6 @@ import {
   historyInput,
   messageInput,
   activityInput,
-  pushInput,
-  presenceInput,
   providerKeyInput,
   providerLoginInput,
   providerLoginAnswerInput,
@@ -73,11 +71,8 @@ import {
 import type { ExternalAuth } from "./plugins";
 import { MAX_MESSAGE_BODY } from "../shared/attachments";
 import { activityPage, decodeCursor } from "../activity/activity";
-import {
-  canonicalReplyEvent,
-  type PushManager,
-  type PushDeviceInput,
-} from "../push/push";
+import { canonicalReplyEvent, type PushManager } from "../push/push";
+import { registerPushRoutes } from "../push/push-api";
 
 export function createAPI(
   service: CrumbleService,
@@ -202,46 +197,7 @@ export function createAPI(
       200,
     ),
   );
-  register(routes.pushStatus, (c) =>
-    c.json(
-      {
-        serverId: push?.serverId ?? "",
-        transports: {
-          apns: !!push?.transports.apns,
-          fcm: !!push?.transports.fcm,
-        },
-      },
-      200,
-    ),
-  );
-  register(routes.putDevice, async (c) => {
-    if (!push) throw new AppError(503, "Push delivery is unavailable");
-
-    const installationId = z
-      .string()
-      .uuid()
-      .parse(c.req.param("installationId"));
-
-    const input: PushDeviceInput = pushInput.parse(await c.req.json());
-
-    return c.json(push.device(installationId, input), 200);
-  });
-  register(routes.deleteDevice, (c) => {
-    push?.remove(z.string().uuid().parse(c.req.param("installationId")));
-
-    return c.body(null, 204);
-  });
-  register(routes.putPresence, async (c) => {
-    if (!push) throw new AppError(503, "Push delivery is unavailable");
-    const id = z.string().uuid().parse(c.req.param("installationId"));
-
-    const input = presenceInput.parse(await c.req.json());
-
-    if (!push.presence(id, input.active, input.agentId))
-      throw new AppError(404, "Push device not found");
-
-    return c.body(null, 204);
-  });
+  registerPushRoutes(register, push);
 
   // A bot may use shared servers and its own, never another bot's.
   const checkServers = (agentId: string | null, serverIds: string[]) => {

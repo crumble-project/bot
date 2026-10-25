@@ -1,9 +1,4 @@
-import {
-  createRoute,
-  OpenAPIHono,
-  z,
-  type RouteConfig,
-} from "@hono/zod-openapi";
+import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import {
   agentInput,
   credentialSaveInput,
@@ -14,6 +9,8 @@ import {
 } from "../shared/domain";
 import { attachmentInput, MAX_ATTACHMENTS } from "../shared/attachments";
 import * as response from "./api-responses";
+import { body, define, empty, error, json } from "./route";
+import { pushRoutes } from "../push/push-contract";
 
 export const memoryInput = z.object({
   content: z.string().trim().min(1).max(32000),
@@ -84,43 +81,6 @@ export const activityInput = z.object({
   cursor: z.string().min(1).max(8000).optional(),
 });
 
-export const pushInput = z
-  .object({
-    platform: z.enum(["macos", "ios", "android"]),
-    transport: z.enum(["apns", "fcm"]),
-    token: z.string().trim().min(1).max(4096),
-    environment: z.enum(["development", "production"]),
-    bundleId: z.string().trim().min(1).max(255).optional(),
-    enabled: z.boolean(),
-  })
-  .superRefine((value, ctx) => {
-    if (value.transport === "fcm" && value.platform !== "android")
-      ctx.addIssue({
-        code: "custom",
-        path: ["transport"],
-        message: "FCM is only valid for Android",
-      });
-
-    if (value.transport === "apns" && value.platform === "android")
-      ctx.addIssue({
-        code: "custom",
-        path: ["transport"],
-        message: "APNs is only valid for macOS or iOS",
-      });
-
-    if (value.transport === "apns" && !value.bundleId)
-      ctx.addIssue({
-        code: "custom",
-        path: ["bundleId"],
-        message: "APNs requires bundleId",
-      });
-  });
-
-export const presenceInput = z.object({
-  active: z.boolean(),
-  agentId: z.string().uuid().nullable(),
-});
-
 export const providerKeyInput = z.object({
   apiKey: z.string().trim().min(1).max(16000),
 });
@@ -181,21 +141,10 @@ export const attachmentIndex = z.coerce
   .max(MAX_ATTACHMENTS - 1);
 
 const id = z.object({ id: z.string() });
-const installation = z.object({ installationId: z.string().uuid() });
 const memoryParams = id.extend({ memoryId: z.string() });
 
 const credentialParams = id.extend({ name: z.string() });
 const skillParams = id.extend({ skillId: z.string() });
-
-const json = <S extends z.ZodType>(schema: S, description = "Success") => ({
-  description,
-  content: { "application/json": { schema } },
-});
-
-const body = <S extends z.ZodType>(schema: S) => ({
-  required: true,
-  content: { "application/json": { schema } },
-});
 
 export function patchInput(schema: z.ZodObject) {
   const fields: Record<string, z.ZodType> = {};
@@ -208,56 +157,7 @@ export function patchInput(schema: z.ZodObject) {
   return z.object(fields);
 }
 
-const empty = { description: "Success, no response body" };
-
-const error = z
-  .object({
-    error: z.string(),
-    details: z
-      .array(
-        z
-          .object({
-            code: z.string(),
-            path: z.array(z.union([z.string(), z.number()])),
-            message: z.string(),
-          })
-          .loose(),
-      )
-      .optional(),
-  })
-  .openapi("Error");
-
-const errors = {
-  400: json(error, "Invalid request or operation"),
-  401: {
-    description: "Missing, expired, or invalid account session",
-    content: { "text/plain": { schema: z.string() } },
-  },
-  404: json(error, "Resource not found"),
-  405: json(error, "Resource is read-only"),
-  409: json(error, "Conflicting request"),
-  413: {
-    description: "Request body exceeds the size limit",
-    content: { "text/plain": { schema: z.string() } },
-  },
-  500: json(error, "Internal server error"),
-  503: json(error, "Service unavailable"),
-};
-
 const gone = json(error, "Login session ended or was lost on restart");
-
-function define<const R extends RouteConfig>(config: R) {
-  const security: NonNullable<RouteConfig["security"]> = [
-    { BearerAuth: [] },
-    { SessionCookie: [] },
-  ];
-
-  return createRoute({
-    ...config,
-    security,
-    responses: { ...errors, ...config.responses },
-  });
-}
 
 export const routes = {
   health: createRoute({
@@ -273,33 +173,7 @@ export const routes = {
     operationId: "getCapabilities",
     responses: { 200: json(response.capabilitiesResponse) },
   }),
-  pushStatus: define({
-    method: "get",
-    path: "/v1/push",
-    operationId: "getPushStatus",
-    responses: { 200: json(response.pushStatusResponse) },
-  }),
-  putDevice: define({
-    method: "put",
-    path: "/v1/push/devices/{installationId}",
-    operationId: "putPushDevice",
-    request: { params: installation, body: body(pushInput) },
-    responses: { 200: json(response.pushDeviceResponse) },
-  }),
-  deleteDevice: define({
-    method: "delete",
-    path: "/v1/push/devices/{installationId}",
-    operationId: "deletePushDevice",
-    request: { params: installation },
-    responses: { 204: empty },
-  }),
-  putPresence: define({
-    method: "put",
-    path: "/v1/push/devices/{installationId}/presence",
-    operationId: "putPushPresence",
-    request: { params: installation, body: body(presenceInput) },
-    responses: { 204: empty },
-  }),
+  ...pushRoutes,
   listAgents: define({
     method: "get",
     path: "/v1/agents",

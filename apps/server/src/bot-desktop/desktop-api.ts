@@ -1,4 +1,4 @@
-import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
+import type { Register } from "../contract/route";
 import { upgradeWebSocket } from "hono/bun";
 import { streamSSE } from "hono/streaming";
 import type { WSContext, WSMessageReceive } from "hono/ws";
@@ -18,11 +18,6 @@ import {
 import { AppError } from "../shared/domain";
 import type { CrumbleService } from "../bots/service";
 import type { DesktopStream } from "../workspaces/workspace";
-
-export type Register = <R extends RouteConfig>(
-  definition: R & { getRoutingPath: () => string },
-  handler: RouteHandler<R>,
-) => void;
 
 const HEARTBEAT_MS = 15_000;
 
