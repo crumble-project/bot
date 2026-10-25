@@ -23,13 +23,15 @@ import {
   reviewsInput,
 } from "../contract/api-contract";
 import { bearerAuth } from "hono/bearer-auth";
-import { registerDesktopRoutes } from "../bot-desktop/desktop-api";
+import {
+  registerDesktopRoutes,
+  type BotDesktop,
+} from "../bot-desktop/desktop-api";
 import {
   desktopControlAccess,
   type DesktopControlAccess,
 } from "../bot-desktop/desktop-control";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
-import type { DesktopStream } from "../workspaces/workspace";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import { HTTPException } from "hono/http-exception";
@@ -131,10 +133,8 @@ export function createAPI(
     desktopControl?: DesktopControlAccess;
     /** Single-use viewer links. */
     viewerTickets?: ViewerTickets;
-    /** Connects to a bot desktop's VNC server, for viewers. */
-    openDesktop?: (agentId: string) => Promise<DesktopStream>;
-    /** Boots a bot's machine ahead of a viewer's connection. */
-    startDesktop?: (agentId: string) => Promise<void>;
+    /** Opens and prewarms the account's bot desktop viewer streams. */
+    desktopViewer?: BotDesktop["Service"];
     /** The server's provider sign-ins; API-only fixtures get one of their own. */
     providerAuth?: ProviderSignInsAccess;
     /** The server's OAuth client metadata document, when it has a public address. */
@@ -219,8 +219,7 @@ export function createAPI(
     desktop: options.desktop === true,
     control: options.desktopControl ?? desktopControlAccess(core),
     tickets: options.viewerTickets ?? new ViewerTickets(),
-    ...(options.openDesktop && { openDesktop: options.openDesktop }),
-    ...(options.startDesktop && { startDesktop: options.startDesktop }),
+    ...(options.desktopViewer && { desktopViewer: options.desktopViewer }),
   });
   register(routes.capabilities, (c) =>
     c.json(

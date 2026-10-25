@@ -1,5 +1,6 @@
 import type { Register } from "../contract/route";
 import { upgradeWebSocket } from "@hono/bun";
+import { Context, Deferred, Effect, Layer } from "effect";
 import { streamSSE } from "hono/streaming";
 import type { WSContext, WSMessageReceive } from "hono/ws";
 import {
@@ -16,10 +17,54 @@ import {
   type ViewerTickets,
 } from "./desktop-viewer";
 import type { BotsAccess } from "../bots/bots";
-import type { DesktopStream } from "../workspaces/workspace";
+import {
+  BotWorkspaces,
+  WorkspaceDesktopUnavailable,
+  type DesktopStream,
+  type WorkspaceError,
+} from "../workspaces/workspace";
 import { Conflict } from "../shared/errors";
 
 const HEARTBEAT_MS = 15_000;
+
+/** Opens viewer streams without waiting for the bot desktop's browser. */
+export class BotDesktop extends Context.Service<
+  BotDesktop,
+  {
+    readonly open: (
+      agentId: string,
+    ) => Effect.Effect<DesktopStream, WorkspaceError>;
+    readonly start: (agentId: string) => Effect.Effect<void, WorkspaceError>;
+  }
+>()("crumble/bot-desktop/BotDesktop") {
+  static readonly layer = Layer.effect(
+    BotDesktop,
+    Effect.gen(function* () {
+      const workspaces = yield* BotWorkspaces;
+
+      return BotDesktop.of({
+        open: Effect.fn("BotDesktop.open")(function* (agentId) {
+          if (!workspaces)
+            return yield* new WorkspaceDesktopUnavailable({ agentId });
+
+          const stream = yield* workspaces.openDesktop(agentId);
+          let closing: Promise<void> | undefined;
+
+          return {
+            ...stream,
+            close: () => (closing ??= stream.close()),
+          };
+        }),
+        start: Effect.fn("BotDesktop.start")(function* (agentId) {
+          if (!workspaces)
+            return yield* new WorkspaceDesktopUnavailable({ agentId });
+
+          yield* workspaces.startDesktop(agentId);
+        }),
+      });
+    }),
+  );
+}
 
 const bytesOf = async (data: WSMessageReceive) => {
   if (data instanceof Uint8Array) return data;
@@ -44,8 +89,7 @@ export function registerDesktopRoutes(options: {
   desktop: boolean;
   control: DesktopControlAccess;
   tickets: ViewerTickets;
-  openDesktop?: (agentId: string) => Promise<DesktopStream>;
-  startDesktop?: (agentId: string) => Promise<void>;
+  desktopViewer?: BotDesktop["Service"];
 }) {
   const { app, register, service, control, tickets } = options;
   // The bot of each viewer connection, from its redeemed ticket to its WebSocket.
@@ -110,8 +154,17 @@ export function registerDesktopRoutes(options: {
     const agent = desktopAgent(c.req.param("id"));
     const { ticket, expiresAt } = tickets.issue(agent.id);
 
-    // The machine boots while the client loads the page; the viewer's WebSocket reports any failure.
-    void options.startDesktop?.(agent.id).catch(() => undefined);
+    // The machine boots while the page loads; a failure is logged even if the viewer never connects.
+    if (options.desktopViewer)
+      Effect.runFork(
+        options.desktopViewer
+          .start(agent.id)
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logError("Bot desktop prewarm failed", agent.id, cause),
+            ),
+          ),
+      );
 
     return c.json({ path: `${VIEWER_PREFIX}/${ticket}`, expiresAt }, 201);
   });
@@ -135,7 +188,7 @@ export function registerDesktopRoutes(options: {
       // Spent here, before the upgrade: a link opens one connection.
       const agentId = tickets.redeem(c.req.param("ticket"));
 
-      if (!agentId || !options.openDesktop) return c.notFound();
+      if (!agentId || !options.desktopViewer) return c.notFound();
 
       viewers.set(c.req.raw, agentId);
 
@@ -145,26 +198,59 @@ export function registerDesktopRoutes(options: {
       const agentId = viewers.get(c.req.raw) ?? "";
       const pending: Uint8Array[] = [];
       let bridge: ReturnType<typeof bridgeDesktop> | undefined;
+      const finished = Deferred.makeUnsafe<void>();
       let closed = false;
 
       return {
         onOpen: (_event, ws: WSContext) => {
-          void options.openDesktop!(agentId)
-            .then((stream) => {
-              if (closed) return void stream.close();
+          const viewer = options.desktopViewer;
 
-              bridge = bridgeDesktop({
-                stream,
-                // Watching never lets input through; only the owner holding control does.
-                allowInput: () => control.get(agentId).holder === "owner",
-                // A copy: the WebSocket takes only bytes backed by a plain ArrayBuffer.
-                send: (data) => ws.send(new Uint8Array(data)),
-                close: () => ws.close(),
-              });
+          if (!viewer) return;
 
-              for (const data of pending.splice(0)) bridge.receive(data);
-            })
-            .catch(() => ws.close(1011, "The bot desktop is unavailable"));
+          Effect.runFork(
+            Effect.scoped(
+              Effect.gen(function* () {
+                const stream = yield* Effect.acquireRelease(
+                  viewer.open(agentId),
+                  (stream) =>
+                    Effect.promise(() => stream.close()).pipe(
+                      Effect.catchCause((cause) =>
+                        Effect.logError(
+                          "Bot desktop stream close failed",
+                          agentId,
+                          cause,
+                        ),
+                      ),
+                    ),
+                );
+
+                if (closed) return;
+
+                bridge = bridgeDesktop({
+                  stream,
+                  // Watching never lets input through; only the owner holding control does.
+                  allowInput: () => control.get(agentId).holder === "owner",
+                  // A copy: the WebSocket takes only bytes backed by a plain ArrayBuffer.
+                  send: (data) => ws.send(new Uint8Array(data)),
+                  close: () => {
+                    Deferred.doneUnsafe(finished, Effect.void);
+
+                    ws.close();
+                  },
+                });
+
+                for (const data of pending.splice(0)) bridge.receive(data);
+
+                yield* Deferred.await(finished);
+              }),
+            ).pipe(
+              Effect.catchCause(() =>
+                Effect.sync(() =>
+                  ws.close(1011, "The bot desktop is unavailable"),
+                ),
+              ),
+            ),
+          );
         },
         onMessage: async (event) => {
           const data = await bytesOf(event.data);
@@ -176,7 +262,8 @@ export function registerDesktopRoutes(options: {
         },
         onClose: () => {
           closed = true;
-          void bridge?.close();
+          pending.length = 0;
+          Deferred.doneUnsafe(finished, Effect.void);
         },
       };
     }),

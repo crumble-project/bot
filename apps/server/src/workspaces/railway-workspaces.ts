@@ -9,6 +9,7 @@ import {
   type SandboxTemplate,
 } from "railway";
 import { z } from "zod";
+import { Effect, Exit } from "effect";
 import {
   DESKTOP_DISPLAY_ONLY,
   DESKTOP_START,
@@ -22,7 +23,20 @@ import {
   type WorkspaceMachine,
   type WorkspaceMachines,
 } from "./machine-workspaces";
-import { GUEST_CA_PATH, WORKSPACE_PATH } from "./workspace";
+import {
+  GUEST_CA_PATH,
+  WORKSPACE_PATH,
+  WorkspaceBootError,
+  WorkspaceDesktopStartError,
+  WorkspaceLivenessError,
+  WorkspaceSetupError,
+  WorkspaceStreamError,
+  WorkspaceStopError,
+  WorkspaceSyncError,
+  workspaceOperation,
+  workspacePromise,
+  type WorkspaceError,
+} from "./workspace";
 import {
   startWorkspaceProxy,
   type WorkspaceInterceptor,
@@ -254,10 +268,24 @@ export class RailwayMachines implements WorkspaceMachines {
    * Reconnects to the sandbox a previous server left running, boots the bot's checkpoint, or creates a new sandbox
    * from the image. A checkpoint of another image has its `/workspace` copied into a new sandbox.
    */
-  async boot(
+  readonly boot = Effect.fn("RailwayMachines.boot")(
+    (agentId: string, image: string, guest: GuestSetup = {}) =>
+      workspaceOperation(
+        () => this.bootMachine(agentId, image, guest),
+        (cause) =>
+          new WorkspaceBootError({
+            agentId,
+            backend: this.kind,
+            operation: "boot",
+            cause,
+          }),
+      ),
+  );
+
+  private async bootMachine(
     agentId: string,
     image: string,
-    guest: GuestSetup = {},
+    guest: GuestSetup,
   ): Promise<WorkspaceMachine> {
     if (!this.recipes.has(image))
       throw new Error(`Railway workspaces have no image ${image}`);
@@ -283,44 +311,118 @@ export class RailwayMachines implements WorkspaceMachines {
     const desktop = image === this.desktopImage;
 
     try {
-      // Each write is a request to Railway; in parallel they cost one round trip.
-      await Promise.all([
-        sandbox.files.write(GUEST_DAEMON, await readFile(this.daemon), {
-          mode: 0o755,
-        }),
-        sandbox.files.write(GUEST_STREAM, await readFile(STREAM_SCRIPT)),
-        sandbox.files.write(GUEST_TUNNEL, await readFile(TUNNEL_SCRIPT)),
-        guest.caCertificate &&
-          sandbox.files.write(GUEST_CA_PATH, guest.caCertificate),
-        desktop && writeDesktopScripts(sandbox),
-      ]);
+      await workspacePromise(
+        workspaceOperation(
+          async () => {
+            // Finish every upload before a failed setup destroys the new sandbox.
+            const uploads = await Promise.allSettled(
+              [
+                async () =>
+                  sandbox.files.write(
+                    GUEST_DAEMON,
+                    await readFile(this.daemon),
+                    { mode: 0o755 },
+                  ),
+                async () =>
+                  sandbox.files.write(
+                    GUEST_STREAM,
+                    await readFile(STREAM_SCRIPT),
+                  ),
+                async () =>
+                  sandbox.files.write(
+                    GUEST_TUNNEL,
+                    await readFile(TUNNEL_SCRIPT),
+                  ),
+                async () =>
+                  guest.caCertificate &&
+                  sandbox.files.write(GUEST_CA_PATH, guest.caCertificate),
+                async () => desktop && writeDesktopScripts(sandbox),
+              ].map((upload) => upload()),
+            );
 
-      if (guest.caCertificate)
-        await run(sandbox, "update-ca-certificates >/dev/null");
+            for (const upload of uploads)
+              if (upload.status === "rejected") throw upload.reason;
 
-      if (desktop) await startDesktop(sandbox, DESKTOP_DISPLAY_ONLY);
+            if (guest.caCertificate)
+              await run(sandbox, "update-ca-certificates >/dev/null");
+          },
+          (cause) =>
+            new WorkspaceSetupError({
+              agentId,
+              backend: this.kind,
+              operation: "guest installation",
+              cause,
+            }),
+        ),
+      );
+
+      if (desktop)
+        await workspacePromise(
+          workspaceOperation(
+            () => startDesktop(sandbox, DESKTOP_DISPLAY_ONLY),
+            (cause) =>
+              new WorkspaceDesktopStartError({
+                agentId,
+                backend: this.kind,
+                operation: "display",
+                cause,
+              }),
+          ),
+        );
     } catch (error) {
       // A new sandbox's files are all in the checkpoint; a reconnected one may hold writes the checkpoint lacks.
-      if (!reconnected) await sandbox.destroy().catch(() => undefined);
+      if (!reconnected)
+        await sandbox
+          .destroy()
+          .catch((cause) =>
+            Effect.runPromise(
+              Effect.logError("Railway guest setup cleanup failed", cause),
+            ),
+          );
       throw error;
     }
 
     // Without a credential proxy there is nothing to tunnel to: jobs connect directly.
-    const proxy =
-      this.intercept &&
-      (await startWorkspaceProxy({
-        decide: () => true,
-        intercept: this.intercept(agentId),
-      }));
+    try {
+      const proxy =
+        this.intercept &&
+        (await workspacePromise(
+          workspaceOperation(
+            () =>
+              startWorkspaceProxy({
+                decide: () => true,
+                intercept: this.intercept?.(agentId),
+              }),
+            (cause) =>
+              new WorkspaceSetupError({
+                agentId,
+                backend: this.kind,
+                operation: "proxy",
+                cause,
+              }),
+          ),
+        ));
 
-    return new RailwayMachine(
-      sandbox,
-      name,
-      image,
-      desktop,
-      this.checkpointDelayMs,
-      proxy,
-    );
+      return new RailwayMachine(
+        sandbox,
+        name,
+        image,
+        desktop,
+        this.checkpointDelayMs,
+        agentId,
+        proxy,
+      );
+    } catch (error) {
+      if (!reconnected)
+        await sandbox
+          .destroy()
+          .catch((cause) =>
+            Effect.runPromise(
+              Effect.logError("Railway proxy setup cleanup failed", cause),
+            ),
+          );
+      throw error;
+    }
   }
 
   private async create(
@@ -424,6 +526,7 @@ class RailwayMachine implements WorkspaceMachine {
     readonly image: string,
     private readonly desktop: boolean,
     private readonly checkpointDelayMs: number,
+    private readonly agentId: string,
     private readonly proxy?: WorkspaceProxy,
   ) {
     this.heartbeat = setInterval(() => void this.beat(), HEARTBEAT_MS);
@@ -440,17 +543,18 @@ class RailwayMachine implements WorkspaceMachine {
 
     try {
       const tunnel = serveTunnel(
-        await this.stream(GUEST_PYTHON, [
-          GUEST_TUNNEL,
-          String(GUEST_PROXY_PORT),
-        ]),
+        await workspacePromise(
+          this.stream(GUEST_PYTHON, [GUEST_TUNNEL, String(GUEST_PROXY_PORT)]),
+        ),
         () => net.connect(Number(port), host),
       );
 
       this.tunnel = tunnel;
       await tunnel.done;
-    } catch {
-      // Retried below, like a tunnel that ended.
+    } catch (cause) {
+      await Effect.runPromise(
+        Effect.logError("Railway workspace tunnel failed; retrying", cause),
+      );
     }
 
     if (this.stopped) return;
@@ -462,7 +566,7 @@ class RailwayMachine implements WorkspaceMachine {
     const alive = await this.sandbox.heartbeat().then(
       (sandbox) => sandbox.status === "RUNNING",
       // A sandbox of unknown state keeps its streams until the next beat.
-      () => this.isAlive().catch(() => true),
+      () => workspacePromise(this.isAlive()).catch(() => true),
     );
 
     if (alive) return;
@@ -470,27 +574,51 @@ class RailwayMachine implements WorkspaceMachine {
     clearInterval(this.heartbeat);
 
     for (const stream of this.streams)
-      stream.fail(new Error("Railway destroyed the sandbox"));
+      stream.fail(
+        new WorkspaceStreamError(
+          this.failure(new Error("Railway destroyed the sandbox"), "heartbeat"),
+        ),
+      );
   }
 
   /** The start script, run again: while the desktop is up it only waits for the browser. */
-  async desktopReady() {
-    if (this.desktop) await startDesktop(this.sandbox);
+  private failure(cause: unknown, operation: string) {
+    return { agentId: this.agentId, backend: "railway", operation, cause };
   }
 
-  /** Rejects when Railway cannot tell, so a failed request never counts as a gone sandbox. */
-  isAlive() {
-    return this.sandbox.refresh().then(
-      (sandbox) => sandbox.status === "RUNNING",
-      (error) => {
-        if (error instanceof SandboxNotFoundError) return false;
-
-        throw error;
+  readonly desktopReady = Effect.fn("RailwayMachine.desktopReady")(() =>
+    workspaceOperation(
+      async () => {
+        if (this.desktop) await startDesktop(this.sandbox);
       },
-    );
-  }
+      (cause) => new WorkspaceDesktopStartError(this.failure(cause, "browser")),
+    ),
+  );
 
-  async stream(
+  /** Failure to query Railway must not count as a gone sandbox. */
+  readonly isAlive = Effect.fn("RailwayMachine.isAlive")(() =>
+    workspaceOperation(
+      () =>
+        this.sandbox.refresh().then(
+          (sandbox) => sandbox.status === "RUNNING",
+          (error) => {
+            if (error instanceof SandboxNotFoundError) return false;
+            throw error;
+          },
+        ),
+      (cause) => new WorkspaceLivenessError(this.failure(cause, "refresh")),
+    ),
+  );
+
+  readonly stream = Effect.fn("RailwayMachine.stream")(
+    (command: string, args: readonly string[]) =>
+      workspaceOperation(
+        () => this.openStream(command, args),
+        (cause) => new WorkspaceStreamError(this.failure(cause, command)),
+      ),
+  );
+
+  private async openStream(
     command: string,
     args: readonly string[],
   ): Promise<MachineStream> {
@@ -520,16 +648,36 @@ class RailwayMachine implements WorkspaceMachine {
     exec
       .finally(() => this.streams.delete(output))
       .then(
-        () => output.end(),
-        (error) =>
-          output.fail(
-            error instanceof Error ? error : new Error(String(error)),
-          ),
+        (result) => {
+          if (result.exitCode !== 0)
+            output.fail(
+              new WorkspaceStreamError(this.failure(result, command)),
+            );
+          else output.end();
+        },
+        (cause) =>
+          output.fail(new WorkspaceStreamError(this.failure(cause, command))),
       );
 
     return {
-      write: (data) => exec.stdin.write(data),
-      end: () => exec.stdin.end(),
+      write: (data) =>
+        workspacePromise(
+          workspaceOperation(
+            () => exec.stdin.write(data),
+            (cause) =>
+              new WorkspaceStreamError(
+                this.failure(cause, `${command}: write`),
+              ),
+          ),
+        ),
+      end: () =>
+        workspacePromise(
+          workspaceOperation(
+            () => exec.stdin.end(),
+            (cause) =>
+              new WorkspaceStreamError(this.failure(cause, `${command}: end`)),
+          ),
+        ),
       output,
     };
   }
@@ -538,30 +686,69 @@ class RailwayMachine implements WorkspaceMachine {
    * Schedules a checkpoint instead of waiting for one: a checkpoint takes seconds, and a server crash loses nothing
    * while the sandbox runs on and the next server reconnects.
    */
-  async sync() {
-    clearTimeout(this.checkpointTimer);
-    this.checkpointTimer = setTimeout(
-      () => void this.checkpoint().catch(() => undefined),
-      this.checkpointDelayMs,
-    );
-    this.checkpointTimer.unref();
-  }
+  readonly sync = Effect.fn("RailwayMachine.sync")(() =>
+    Effect.sync(() => {
+      clearTimeout(this.checkpointTimer);
+      this.checkpointTimer = setTimeout(() => {
+        Effect.runFork(
+          workspaceOperation(
+            () => this.checkpoint(),
+            (cause) =>
+              new WorkspaceSyncError(this.failure(cause, "checkpoint")),
+          ).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logError("Railway workspace checkpoint failed", cause),
+            ),
+          ),
+        );
+      }, this.checkpointDelayMs);
+      this.checkpointTimer.unref();
+    }),
+  );
 
   /**
    * Destroys the sandbox only after a checkpoint succeeded or Railway confirmed it gone; otherwise it keeps running,
    * for the next boot to reconnect to or Railway's idle timeout to end.
    */
-  async stop() {
+  readonly stop = Effect.fn("RailwayMachine.stop")(function* (
+    this: RailwayMachine,
+  ): Effect.fn.Return<void, WorkspaceError> {
     this.stopped = true;
     clearTimeout(this.checkpointTimer);
     clearInterval(this.heartbeat);
-    await this.tunnel?.close();
-    await this.proxy?.close();
 
-    if (await this.isAlive()) await this.checkpoint();
+    const tunnel = yield* workspaceOperation(
+      async () => this.tunnel?.close(),
+      (cause) => new WorkspaceStopError(this.failure(cause, "tunnel close")),
+    ).pipe(Effect.exit);
 
-    await this.sandbox.destroy().catch(() => undefined);
-  }
+    const proxy = yield* workspaceOperation(
+      async () => this.proxy?.close(),
+      (cause) => new WorkspaceStopError(this.failure(cause, "proxy close")),
+    ).pipe(Effect.exit);
+
+    const saved = yield* Effect.gen({ self: this }, function* () {
+      if (yield* this.isAlive())
+        yield* workspaceOperation(
+          () => this.checkpoint(),
+          (cause) =>
+            new WorkspaceSyncError(
+              this.failure(cause, "checkpoint before stop"),
+            ),
+        );
+      yield* workspaceOperation(
+        () => this.sandbox.destroy(),
+        (cause) => new WorkspaceStopError(this.failure(cause, "destroy")),
+      );
+    }).pipe(Effect.exit);
+
+    for (const exit of [tunnel, proxy, saved])
+      if (Exit.isFailure(exit))
+        yield* Effect.logError("Railway stop failed", exit.cause);
+    yield* saved;
+    yield* tunnel;
+    yield* proxy;
+  }, Effect.uninterruptible);
 
   /** One checkpoint at a time; a request during one takes another after it, so it covers every earlier write. */
   private checkpoint() {
@@ -658,7 +845,7 @@ const quote = (arg: string) => `'${arg.replaceAll("'", `'\\''`)}'`;
 class ByteQueue implements AsyncIterable<Uint8Array> {
   private readonly chunks: Uint8Array[] = [];
   private done = false;
-  private error: Error | undefined;
+  private error: WorkspaceStreamError | undefined;
   private wake: (() => void) | undefined;
 
   push(chunk: Uint8Array) {
@@ -671,7 +858,7 @@ class ByteQueue implements AsyncIterable<Uint8Array> {
     this.wake?.();
   }
 
-  fail(error: Error) {
+  fail(error: WorkspaceStreamError) {
     this.error = error;
     this.end();
   }

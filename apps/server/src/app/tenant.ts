@@ -1,7 +1,6 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import lockfile from "proper-lockfile";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { BotRuntime } from "../bots/runtime";
@@ -67,6 +66,7 @@ import {
 } from "./plugins";
 import { BotWorkspaces } from "../workspaces/workspace";
 import { desktopKeepAwake } from "../bot-desktop/keep-awake";
+import { BotDesktop } from "../bot-desktop/desktop-api";
 import { AgentRepository } from "../bots/agent-repository";
 
 export type TenantOptions = {
@@ -239,6 +239,7 @@ function accountLayer(
     groupLookupTools,
     historyTools,
     desktopKeepAwake,
+    BotDesktop.layer,
     push,
   ).pipe(
     Layer.provideMerge(schedules),
@@ -326,7 +327,7 @@ export async function createTenant(
             coding: workspaces !== undefined,
             desktop: workspaces?.desktop === true,
             restartWorkspace: async (agentId) =>
-              workspaces?.restart(agentId, BACKGROUND_CONTEXT),
+              workspaces && Effect.runPromise(workspaces.restart(agentId)),
             groupChats,
             desktopControl: desktopControlAccess(run),
             viewerTickets: new ViewerTickets(Date.now, options.tenantId),
@@ -335,12 +336,7 @@ export async function createTenant(
                 externalAuth ? [[provider.id, externalAuth] as const] : [],
               ),
             ),
-            ...(workspaces && {
-              openDesktop: (agentId: string) =>
-                workspaces.openDesktop(agentId, BACKGROUND_CONTEXT),
-              startDesktop: (agentId: string) =>
-                workspaces.startDesktop(agentId, BACKGROUND_CONTEXT),
-            }),
+            desktopViewer: yield* BotDesktop,
             providerAuth: providerSignInsAccess(run),
             oauthClient,
             credentials: credentialsAccess(run),

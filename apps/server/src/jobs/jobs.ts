@@ -25,6 +25,7 @@ import {
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { z } from "zod";
+import { Effect } from "effect";
 import { conversationReference } from "../shared/domain";
 import { WORKSPACE_PATH, type Workspaces } from "../workspaces/workspace";
 
@@ -510,7 +511,9 @@ export function defineJobKind(options: JobKindOptions) {
         context,
       );
 
-      return marker?.job ? workspaces.env(agentId, shellEnv) : undefined;
+      return marker?.job
+        ? Effect.runPromise(workspaces.env(agentId, shellEnv))
+        : undefined;
     },
 
     extensions(input: {

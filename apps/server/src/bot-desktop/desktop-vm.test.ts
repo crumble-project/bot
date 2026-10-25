@@ -3,6 +3,8 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { Effect } from "effect";
+import { WorkspaceDesktopDisabled } from "../workspaces/workspace";
 import { createComputerUse } from "./computer-use";
 import { desktopControlResponse } from "../contract/api-responses";
 import { startServer } from "../app/server";
@@ -29,15 +31,17 @@ for (const backend of WORKSPACE_BACKENDS) {
     });
 
     beforeAll(async () => {
-      await workspaces.env("desk").exec("true", undefined, BACKGROUND_CONTEXT);
+      await (
+        await Effect.runPromise(workspaces.env("desk"))
+      ).exec("true", undefined, BACKGROUND_CONTEXT);
     }, backend.firstBootTimeoutMs);
 
     afterAll(async () => {
-      await workspaces.close(BACKGROUND_CONTEXT);
+      await Effect.runPromise(workspaces.close());
       await backend.cleanup(namePrefix);
     }, 120_000);
 
-    const env = () => workspaces.env("desk");
+    const env = () => Effect.runSync(workspaces.env("desk"));
     const cu = () => createComputerUse(env());
 
     const text = (r: { content: { type: string; text?: string }[] }) =>
@@ -169,7 +173,7 @@ for (const backend of WORKSPACE_BACKENDS) {
 
     test("browser state and files survive a restart", async () => {
       await env().writeFile("/workspace/keep.txt", "kept", BACKGROUND_CONTEXT);
-      await workspaces.restart("desk", BACKGROUND_CONTEXT);
+      await Effect.runPromise(workspaces.restart("desk"));
 
       let out = "";
       await env().exec(
@@ -190,7 +194,7 @@ for (const backend of WORKSPACE_BACKENDS) {
         undefined,
         BACKGROUND_CONTEXT,
       );
-      await workspaces.restart("desk", BACKGROUND_CONTEXT);
+      await Effect.runPromise(workspaces.restart("desk"));
       const tool = cu();
       await Bun.sleep(3000);
 
@@ -204,13 +208,13 @@ for (const backend of WORKSPACE_BACKENDS) {
 
     test("a bot without the desktop tool boots the base image", async () => {
       let out = "";
-      await workspaces
-        .env("plain")
-        .exec(
-          "command -v cua-driver || echo none",
-          { onOutput: (t) => (out += t) },
-          BACKGROUND_CONTEXT,
-        );
+      await (
+        await Effect.runPromise(workspaces.env("plain"))
+      ).exec(
+        "command -v cua-driver || echo none",
+        { onOutput: (t) => (out += t) },
+        BACKGROUND_CONTEXT,
+      );
       expect(out.trim()).toBe("none");
     }, 120_000);
 
@@ -222,7 +226,7 @@ for (const backend of WORKSPACE_BACKENDS) {
       });
 
       try {
-        const stream = await idle.openDesktop("stream", BACKGROUND_CONTEXT);
+        const stream = await Effect.runPromise(idle.openDesktop("stream"));
         const first = await stream.output[Symbol.asyncIterator]().next();
 
         expect(new TextDecoder().decode(first.value)).toStartWith("RFB 003.");
@@ -235,14 +239,16 @@ for (const backend of WORKSPACE_BACKENDS) {
           true,
         );
       } finally {
-        await idle.close(BACKGROUND_CONTEXT);
+        await Effect.runPromise(idle.close());
       }
     }, 120_000);
 
     test("a bot without its bot desktop gets no desktop stream", async () => {
-      await expect(
-        workspaces.openDesktop("plain-stream", BACKGROUND_CONTEXT),
-      ).rejects.toThrow("no bot desktop");
+      const error = await Effect.runPromise(
+        workspaces.openDesktop("plain-stream").pipe(Effect.flip),
+      );
+
+      expect(error).toBeInstanceOf(WorkspaceDesktopDisabled);
     }, 120_000);
   });
 
@@ -296,13 +302,13 @@ for (const backend of WORKSPACE_BACKENDS) {
       const guest = async (command: string) => {
         let output = "";
 
-        await workspaces
-          .env(agentId)
-          .exec(
-            `. /run/crumble-desktop.env; ${command}`,
-            { onOutput: (text) => (output += text) },
-            BACKGROUND_CONTEXT,
-          );
+        await (
+          await Effect.runPromise(workspaces.env(agentId))
+        ).exec(
+          `. /run/crumble-desktop.env; ${command}`,
+          { onOutput: (text) => (output += text) },
+          BACKGROUND_CONTEXT,
+        );
 
         return output.trim();
       };
@@ -422,7 +428,10 @@ for (const backend of WORKSPACE_BACKENDS) {
           },
         };
 
-        const tool = createComputerUse(workspaces.env(agentId), gate);
+        const tool = createComputerUse(
+          await Effect.runPromise(workspaces.env(agentId)),
+          gate,
+        );
 
         expect(
           (await tool.run({ action: "capture" }, BACKGROUND_CONTEXT)).isError,

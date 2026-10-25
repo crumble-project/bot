@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { Context } from "@earendil-works/chord";
+import { Effect } from "effect";
 import { createModels, type Message } from "@earendil-works/pi-ai";
 import {
   fauxAssistantMessage,
@@ -18,7 +18,7 @@ import type { Agent } from "../shared/domain";
 import { AgentRuntime } from "../bots/runtime";
 import { Store } from "../../test/support/store";
 import { latestMessagePreview } from "../bots/transcript";
-import type { DesktopStream, Workspaces } from "../workspaces/workspace";
+import type { Workspaces } from "../workspaces/workspace";
 import {
   scriptedGuest,
   type GuestCall,
@@ -59,31 +59,38 @@ class GuestWorkspaces implements Workspaces {
   }
 
   env(_agentId: string) {
-    return Object.assign(new NodeExecutionEnv({ cwd: this.dir }), {
-      exec: this.guest.shell.exec,
-      writeFile: this.guest.shell.writeFile,
-      readBinaryFile: this.guest.shell.readBinaryFile,
-    });
+    return Effect.sync(() =>
+      Object.assign(new NodeExecutionEnv({ cwd: this.dir }), {
+        exec: this.guest.shell.exec,
+        writeFile: this.guest.shell.writeFile,
+        readBinaryFile: this.guest.shell.readBinaryFile,
+      }),
+    );
   }
 
-  async sync(_agentId: string, _context: Context) {}
-
-  async restart(_agentId: string, _context: Context) {}
-
-  async openDesktop(
-    _agentId: string,
-    _context: Context,
-  ): Promise<DesktopStream> {
-    throw new Error("No bot desktop in this test");
+  sync(_agentId: string) {
+    return Effect.void;
   }
 
-  async startDesktop(_agentId: string, _context: Context) {}
+  restart(_agentId: string) {
+    return Effect.void;
+  }
+
+  openDesktop(_agentId: string) {
+    return Effect.die(new Error("No bot desktop in this test"));
+  }
+
+  startDesktop(_agentId: string) {
+    return Effect.void;
+  }
 
   keepAwake(_agentId: string) {
-    return () => {};
+    return Effect.succeed(() => {});
   }
 
-  async close(_context: Context) {}
+  close() {
+    return Effect.void;
+  }
 }
 
 const textOf = (message: Message) =>

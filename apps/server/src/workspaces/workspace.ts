@@ -1,78 +1,194 @@
-import type { Context as PiContext } from "@earendil-works/chord";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { Context, Effect, Layer } from "effect";
+import { Cause, Context, Effect, Exit, Layer, Schema } from "effect";
 
 /** The guest path where a bot's workspace lives; coding jobs start here. */
 export const WORKSPACE_PATH = "/workspace";
 
-/** Where the guest keeps the bot's credential proxy authority, which `update-ca-certificates` adds to the bundle. */
+/** The bot's credential proxy authority, installed into the guest's trusted system bundle. */
 export const GUEST_CA_PATH =
   "/usr/local/share/ca-certificates/crumble-credentials.crt";
 
-/** The guest's system bundle: public authorities plus the bot's. */
+/** Public authorities plus the bot's credential proxy authority. */
 export const GUEST_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt";
 
-/** A byte stream to the bot desktop's VNC server; closing it releases the machine for its idle stop. */
+export class WorkspaceDesktopUnavailable extends Schema.TaggedError<WorkspaceDesktopUnavailable>()(
+  "WorkspaceDesktopUnavailable",
+  { agentId: Schema.String },
+) {}
+
+export class WorkspaceDesktopDisabled extends Schema.TaggedError<WorkspaceDesktopDisabled>()(
+  "WorkspaceDesktopDisabled",
+  { agentId: Schema.String },
+) {}
+
+export class WorkspaceClosed extends Schema.TaggedError<WorkspaceClosed>()(
+  "WorkspaceClosed",
+  {},
+) {}
+
+export class WorkspaceInvalidAgentId extends Schema.TaggedError<WorkspaceInvalidAgentId>()(
+  "WorkspaceInvalidAgentId",
+  { agentId: Schema.String },
+) {}
+
+const failure = {
+  agentId: Schema.String,
+  backend: Schema.String,
+  operation: Schema.String,
+  cause: Schema.Defect(),
+};
+
+export class WorkspaceBootError extends Schema.TaggedError<WorkspaceBootError>()(
+  "WorkspaceBootError",
+  failure,
+) {}
+
+export class WorkspaceDesktopStartError extends Schema.TaggedError<WorkspaceDesktopStartError>()(
+  "WorkspaceDesktopStartError",
+  failure,
+) {}
+
+export class WorkspaceStreamError extends Schema.TaggedError<WorkspaceStreamError>()(
+  "WorkspaceStreamError",
+  failure,
+) {}
+
+export class WorkspaceSyncError extends Schema.TaggedError<WorkspaceSyncError>()(
+  "WorkspaceSyncError",
+  failure,
+) {}
+
+export class WorkspaceStopError extends Schema.TaggedError<WorkspaceStopError>()(
+  "WorkspaceStopError",
+  failure,
+) {}
+
+export class WorkspaceRelayError extends Schema.TaggedError<WorkspaceRelayError>()(
+  "WorkspaceRelayError",
+  failure,
+) {}
+
+export class WorkspaceSetupError extends Schema.TaggedError<WorkspaceSetupError>()(
+  "WorkspaceSetupError",
+  failure,
+) {}
+
+export class WorkspaceLivenessError extends Schema.TaggedError<WorkspaceLivenessError>()(
+  "WorkspaceLivenessError",
+  failure,
+) {}
+
+export type WorkspaceError =
+  | WorkspaceDesktopUnavailable
+  | WorkspaceDesktopDisabled
+  | WorkspaceClosed
+  | WorkspaceInvalidAgentId
+  | WorkspaceBootError
+  | WorkspaceDesktopStartError
+  | WorkspaceStreamError
+  | WorkspaceSyncError
+  | WorkspaceStopError
+  | WorkspaceRelayError
+  | WorkspaceSetupError
+  | WorkspaceLivenessError;
+
+export const isWorkspaceError = Schema.is(
+  Schema.Union([
+    WorkspaceDesktopUnavailable,
+    WorkspaceDesktopDisabled,
+    WorkspaceClosed,
+    WorkspaceInvalidAgentId,
+    WorkspaceBootError,
+    WorkspaceDesktopStartError,
+    WorkspaceStreamError,
+    WorkspaceSyncError,
+    WorkspaceStopError,
+    WorkspaceRelayError,
+    WorkspaceSetupError,
+    WorkspaceLivenessError,
+  ]),
+);
+
+/** Keeps domain failures intact across SDK Promise boundaries. */
+export const workspaceOperation = <A>(
+  run: () => Promise<A>,
+  failure: (cause: unknown) => WorkspaceError,
+) =>
+  Effect.tryPromise({
+    try: run,
+    catch: (cause) => (isWorkspaceError(cause) ? cause : failure(cause)),
+  });
+
+/** External APIs need rejected tagged errors rather than Effect's FiberFailure wrapper. */
+export async function workspacePromise<A>(
+  effect: Effect.Effect<A, WorkspaceError>,
+): Promise<A> {
+  const exit = await Effect.runPromiseExit(effect);
+
+  if (Exit.isFailure(exit)) throw Cause.squash(exit.cause);
+
+  return exit.value;
+}
+
+/** The Promise/iterable boundary used by WebSocket handlers. Rejections retain tagged stream failures. */
 export type DesktopStream = {
   write(data: Uint8Array): Promise<void>;
   output: AsyncIterable<Uint8Array>;
   close(): Promise<void>;
 };
 
-/** An outbound connection from a bot's workspace, named by its TLS server name or HTTP `Host`. */
+/** An outbound connection, named by TLS server name or HTTP Host. */
 export type WorkspaceRequest = { agentId: string; host: string; port: number };
 
-/**
- * Decides a workspace's outbound connections before they leave the machine. A connection waits while the policy does,
- * so an owner-approval flow can replace the default.
- */
+/** An outbound connection waits for this decision before leaving the guest. */
 export type WorkspaceNetworkPolicy = (
   request: WorkspaceRequest,
 ) => boolean | Promise<boolean>;
 
-/** Trusts every request to the internet. */
 export const allowAllRequests: WorkspaceNetworkPolicy = () => true;
 
-/**
- * Each bot's persistent coding workspace: a disk only that bot's coding jobs can reach. The machine behind it starts
- * on first use and may stop when idle; the workspace's files survive both.
- */
+/** Each bot's persistent workspace; service methods have no runtime requirements. */
 export interface Workspaces {
-  /**
-   * The bot's environment. Lazy: nothing starts until its first operation. Every command it runs also sees `shellEnv`.
-   */
-  env(agentId: string, shellEnv?: Record<string, string>): ExecutionEnv;
-  /** Whether bots can get a bot desktop: the workspace image for them has one. */
+  /** Lazy: no machine starts until the environment's first operation. */
+  env(
+    agentId: string,
+    shellEnv?: Record<string, string>,
+  ): Effect.Effect<ExecutionEnv, WorkspaceError>;
+  /** Whether a desktop image is configured, independently of each bot's needs. */
   readonly desktop: boolean;
-  /** Stops the bot's machine, whether busy or not; the next operation boots the image the bot needs now. */
-  restart(agentId: string, context: PiContext): Promise<void>;
-  /**
-   * Connects to the bot desktop's VNC server, booting the machine if needed. The machine stays awake until the stream
-   * closes. Rejects for a bot without its bot desktop.
-   */
-  openDesktop(agentId: string, context: PiContext): Promise<DesktopStream>;
-  /** Boots the bot's machine ahead of `openDesktop`, so a viewer about to connect waits less. */
-  startDesktop(agentId: string, context: PiContext): Promise<void>;
-  /** Keeps the bot's machine from its idle stop until the returned release is called. */
-  keepAwake(agentId: string): () => void;
-  /** Makes completed writes in the bot's workspace durable. A stopped workspace has nothing to flush. */
-  sync(agentId: string, context: PiContext): Promise<void>;
-  /** Flushes and stops every running workspace. */
-  close(context: PiContext): Promise<void>;
+  /** Stops even a busy machine; its next operation boots the image it needs now. */
+  restart(agentId: string): Effect.Effect<void, WorkspaceError>;
+  /** Holds the machine awake until the returned VNC stream closes. */
+  openDesktop(agentId: string): Effect.Effect<DesktopStream, WorkspaceError>;
+  /** Starts the display without waiting for the desktop's browser. */
+  startDesktop(agentId: string): Effect.Effect<void, WorkspaceError>;
+  /** Prevents idle stops until the returned idempotent release is called. */
+  keepAwake(agentId: string): Effect.Effect<() => void, WorkspaceError>;
+  /** Makes completed workspace writes durable; stopped workspaces need no flush. */
+  sync(agentId: string): Effect.Effect<void, WorkspaceError>;
+  /** Flushes and stops every running workspace, attempting all even if one fails. */
+  close(): Effect.Effect<void, WorkspaceError>;
 }
 
-/** The account's bot workspaces, or none when the server has no workspace backend. */
+/** The account's workspaces, or none when no backend is configured. */
 export class BotWorkspaces extends Context.Service<
   BotWorkspaces,
   Workspaces | undefined
 >()("crumble/workspaces/BotWorkspaces") {
-  /** The workspaces `make` returns, closed with the layer's scope. */
+  /** Closes the resource with the layer's scope and logs all cleanup causes. */
   static layer(make: () => Workspaces | undefined) {
     return Layer.effect(
       BotWorkspaces,
       Effect.acquireRelease(Effect.sync(make), (workspaces) =>
-        Effect.promise(async () => workspaces?.close(BACKGROUND_CONTEXT)),
+        workspaces
+          ? workspaces
+              .close()
+              .pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logError("Workspace cleanup failed", cause),
+                ),
+              )
+          : Effect.void,
       ),
     );
   }

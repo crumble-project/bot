@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { Sandbox, Volume, VolumeNotFoundError } from "microsandbox";
 import { z } from "zod";
+import { Effect, Exit } from "effect";
 import {
   DESKTOP_DISPLAY_ONLY,
   DESKTOP_START,
@@ -17,6 +18,15 @@ import {
 import {
   GUEST_CA_PATH,
   WORKSPACE_PATH,
+  WorkspaceBootError,
+  WorkspaceDesktopStartError,
+  WorkspaceSetupError,
+  WorkspaceStreamError,
+  WorkspaceSyncError,
+  WorkspaceStopError,
+  workspaceOperation,
+  workspacePromise,
+  type WorkspaceError,
   allowAllRequests,
   type WorkspaceNetworkPolicy,
 } from "./workspace";
@@ -105,14 +115,42 @@ class MicrosandboxMachines implements WorkspaceMachines {
    * It restarts the bot's existing machine, so programs installed outside `/workspace` survive, and creates a new one
    * when the image changed, the machine does not start, or its proxy port is taken.
    */
-  async boot(
+  readonly boot = Effect.fn("MicrosandboxMachines.boot")(
+    (agentId: string, image: string, guest: GuestSetup = {}) =>
+      workspaceOperation(
+        () => this.bootMachine(agentId, image, guest),
+        (cause) =>
+          new WorkspaceBootError({
+            agentId,
+            backend: this.kind,
+            operation: "boot",
+            cause,
+          }),
+      ),
+  );
+
+  private async bootMachine(
     agentId: string,
     image: string,
-    guest: GuestSetup = {},
+    guest: GuestSetup,
   ): Promise<WorkspaceMachine> {
     const name = this.name(agentId);
 
-    await ensureVolume(name);
+    const setup = <A>(operation: string, run: () => Promise<A>) =>
+      workspacePromise(
+        workspaceOperation(
+          run,
+          (cause) =>
+            new WorkspaceSetupError({
+              agentId,
+              backend: this.kind,
+              operation,
+              cause,
+            }),
+        ),
+      );
+
+    await setup("volume", () => ensureVolume(name));
 
     const decide = ({ host, port }: { host: string; port: number }) =>
       this.network({ agentId, host, port });
@@ -136,7 +174,9 @@ class MicrosandboxMachines implements WorkspaceMachines {
 
       if (!proxy) {
         await sandbox?.stop().catch(() => undefined);
-        proxy = await startWorkspaceProxy({ decide, intercept });
+        proxy = await setup("proxy", () =>
+          startWorkspaceProxy({ decide, intercept }),
+        );
         const address = proxy.address;
 
         // replace() also takes over a machine that could not be resumed.
@@ -158,25 +198,54 @@ class MicrosandboxMachines implements WorkspaceMachines {
         await flush(sandbox);
       }
 
-      const machine = sandbox!;
+      if (!sandbox)
+        throw new WorkspaceBootError({
+          agentId,
+          backend: this.kind,
+          operation: "create",
+          cause: new Error("Sandbox creation returned no machine"),
+        });
+      const machine = sandbox;
 
-      await machine.fs().write(GUEST_DAEMON, await readFile(this.daemon));
-      await run(machine, `chmod 755 ${GUEST_DAEMON}`);
+      await setup("guest installation", async () => {
+        await machine.fs().write(GUEST_DAEMON, await readFile(this.daemon));
+        await run(machine, `chmod 755 ${GUEST_DAEMON}`);
 
-      if (guest.caCertificate) {
-        await machine.fs().write(GUEST_CA_PATH, guest.caCertificate);
-        await run(machine, "update-ca-certificates >/dev/null");
-      }
+        if (guest.caCertificate) {
+          await machine.fs().write(GUEST_CA_PATH, guest.caCertificate);
+          await run(machine, "update-ca-certificates >/dev/null");
+        }
+      });
 
       const desktop = image === this.desktopImage;
 
       if (desktop)
-        await run(machine, `${DESKTOP_START} ${DESKTOP_DISPLAY_ONLY}`);
+        await workspacePromise(
+          workspaceOperation(
+            () => run(machine, `${DESKTOP_START} ${DESKTOP_DISPLAY_ONLY}`),
+            (cause) =>
+              new WorkspaceDesktopStartError({
+                agentId,
+                backend: this.kind,
+                operation: "display",
+                cause,
+              }),
+          ),
+        );
 
-      return new MicrosandboxMachine(machine, proxy, image, desktop);
+      return new MicrosandboxMachine(machine, proxy, image, desktop, agentId);
     } catch (error) {
-      await sandbox?.stop().catch(() => undefined);
-      await proxy?.close();
+      for (const cleanup of [() => sandbox?.stop(), () => proxy?.close()])
+        await Effect.runPromise(
+          Effect.tryPromise({
+            try: async () => cleanup(),
+            catch: (cause) => cause,
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logError("Microsandbox boot cleanup failed", cause),
+            ),
+          ),
+        );
       throw error;
     }
   }
@@ -188,21 +257,41 @@ class MicrosandboxMachine implements WorkspaceMachine {
     private readonly proxy: WorkspaceProxy,
     readonly image: string,
     private readonly desktop: boolean,
+    private readonly agentId: string,
   ) {}
 
-  /** The start script, run again: while the desktop is up it only waits for the browser. */
-  async desktopReady() {
-    if (this.desktop) await run(this.sandbox, DESKTOP_START);
+  private failure(cause: unknown, operation: string) {
+    return { agentId: this.agentId, backend: "microsandbox", operation, cause };
   }
 
+  /** The start script, run again: while the desktop is up it only waits for the browser. */
+  readonly desktopReady = Effect.fn("MicrosandboxMachine.desktopReady")(() =>
+    workspaceOperation(
+      async () => {
+        if (this.desktop) await run(this.sandbox, DESKTOP_START);
+      },
+      (cause) => new WorkspaceDesktopStartError(this.failure(cause, "browser")),
+    ),
+  );
+
   isAlive() {
-    return this.sandbox.ping().then(
-      () => true,
-      () => false,
+    return Effect.promise(() =>
+      this.sandbox.ping().then(
+        () => true,
+        () => false,
+      ),
     );
   }
 
-  async stream(
+  readonly stream = Effect.fn("MicrosandboxMachine.stream")(
+    (command: string, args: readonly string[]) =>
+      workspaceOperation(
+        () => this.openStream(command, args),
+        (cause) => new WorkspaceStreamError(this.failure(cause, command)),
+      ),
+  );
+
+  private async openStream(
     command: string,
     args: readonly string[],
   ): Promise<MachineStream> {
@@ -214,31 +303,72 @@ class MicrosandboxMachine implements WorkspaceMachine {
 
     if (!stdin) throw new Error(`${command} has no stdin`);
 
+    const failure = (cause: unknown) =>
+      cause instanceof WorkspaceStreamError
+        ? cause
+        : new WorkspaceStreamError(this.failure(cause, command));
+
     async function* output() {
-      for await (const event of exec)
-        if (event.kind === "stdout") yield new Uint8Array(event.data);
+      let stderr = "";
+
+      try {
+        for await (const event of exec) {
+          if (event.kind === "stdout") yield new Uint8Array(event.data);
+
+          if (event.kind === "stderr")
+            stderr = (stderr + Buffer.from(event.data).toString("utf8")).slice(
+              -16_384,
+            );
+
+          if (event.kind === "exited" && event.code !== 0)
+            throw failure({ event, stderr });
+        }
+      } catch (cause) {
+        throw failure(cause);
+      }
     }
 
     return {
-      write: (data) => stdin.write(data),
-      end: () => stdin.close(),
+      write: (data) =>
+        workspacePromise(workspaceOperation(() => stdin.write(data), failure)),
+      end: () =>
+        workspacePromise(workspaceOperation(() => stdin.close(), failure)),
       output: output(),
     };
   }
 
   /** A killed machine loses what the guest had not synced. */
-  sync() {
-    return flush(this.sandbox);
-  }
+  readonly sync = Effect.fn("MicrosandboxMachine.sync")(() =>
+    workspaceOperation(
+      () => flush(this.sandbox),
+      (cause) => new WorkspaceSyncError(this.failure(cause, "sync")),
+    ),
+  );
 
-  async stop() {
-    try {
-      if (await this.isAlive()) await flush(this.sandbox);
-    } finally {
-      await this.sandbox.stop().catch(() => undefined);
-      await this.proxy.close();
-    }
-  }
+  readonly stop = Effect.fn("MicrosandboxMachine.stop")(function* (
+    this: MicrosandboxMachine,
+  ): Effect.fn.Return<void, WorkspaceError> {
+    const sync = yield* Effect.gen({ self: this }, function* () {
+      if (yield* this.isAlive()) yield* this.sync();
+    }).pipe(Effect.exit);
+
+    const stopped = yield* workspaceOperation(
+      () => this.sandbox.stop(),
+      (cause) => new WorkspaceStopError(this.failure(cause, "stop")),
+    ).pipe(Effect.exit);
+
+    const proxy = yield* workspaceOperation(
+      () => this.proxy.close(),
+      (cause) => new WorkspaceStopError(this.failure(cause, "proxy close")),
+    ).pipe(Effect.exit);
+
+    for (const exit of [sync, stopped, proxy])
+      if (Exit.isFailure(exit))
+        yield* Effect.logError("Microsandbox stop failed", exit.cause);
+    yield* sync;
+    yield* stopped;
+    yield* proxy;
+  }, Effect.uninterruptible);
 }
 
 /** The bot's workspace volume, created on first use. Disk volumes are ext4 with a journal. */

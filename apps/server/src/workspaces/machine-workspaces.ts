@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Context } from "@earendil-works/chord";
+import { Cause, Effect, Exit, Fiber, Schema, Semaphore } from "effect";
 import {
   Connection,
   RemoteExecutionEnv,
@@ -13,12 +13,25 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { z } from "zod";
 import {
   WORKSPACE_PATH,
+  WorkspaceClosed,
+  WorkspaceDesktopDisabled,
+  WorkspaceDesktopUnavailable,
+  WorkspaceInvalidAgentId,
+  WorkspaceRelayError,
+  WorkspaceSetupError,
+  workspacePromise,
+  type WorkspaceError,
   type DesktopStream,
   type Workspaces,
 } from "./workspace";
 import type { WorkspaceInterceptor } from "./workspace-proxy";
 
 const BRIDGE_PATH = path.join(import.meta.dir, "workspace-bridge.ts");
+
+const logCleanup = (message: string) =>
+  Effect.catchCause((cause: Cause.Cause<WorkspaceError>) =>
+    Effect.logError(message, cause),
+  );
 
 /** Where every backend puts the pi-env daemon in the guest. */
 export const GUEST_DAEMON = "/usr/local/bin/pi-env";
@@ -44,14 +57,15 @@ export type MachineStream = {
 export interface WorkspaceMachine {
   /** The image it booted. */
   readonly image: string;
-  isAlive(): Promise<boolean>;
-  /** Resolves once the bot desktop's browser is up; at once on an image without a bot desktop. */
-  desktopReady(): Promise<void>;
-  stream(command: string, args: readonly string[]): Promise<MachineStream>;
-  /** Makes completed writes in the workspace durable. */
-  sync(): Promise<void>;
-  /** Makes the workspace durable while the machine still runs, then stops it and frees what it held. */
-  stop(): Promise<void>;
+  isAlive(): Effect.Effect<boolean, WorkspaceError>;
+  /** Completes once the bot desktop's browser is up; at once on a plain image. */
+  desktopReady(): Effect.Effect<void, WorkspaceError>;
+  stream(
+    command: string,
+    args: readonly string[],
+  ): Effect.Effect<MachineStream, WorkspaceError>;
+  sync(): Effect.Effect<void, WorkspaceError>;
+  stop(): Effect.Effect<void, WorkspaceError>;
 }
 
 /** What a booted guest gets besides the daemon. */
@@ -74,7 +88,7 @@ export interface WorkspaceMachines {
     agentId: string,
     image: string,
     guest?: GuestSetup,
-  ): Promise<WorkspaceMachine>;
+  ): Effect.Effect<WorkspaceMachine, WorkspaceError>;
 }
 
 export type MachineWorkspacesOptions = {
@@ -89,10 +103,12 @@ export type MachineWorkspacesOptions = {
   intercept?: (agentId: string) => WorkspaceInterceptor;
 };
 
-/** Throws for an agent id that could name another bot's machine. */
+const AgentId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,64}$/));
+const validAgentId = Schema.is(AgentId);
+
+/** Synchronous boundary for backend naming helpers. */
 export function assertAgentId(agentId: string) {
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(agentId))
-    throw new Error(`Invalid agent id: ${agentId}`);
+  if (!validAgentId(agentId)) throw new WorkspaceInvalidAgentId({ agentId });
 }
 
 const DAEMON_DIRECTORY: Partial<Record<NodeJS.Architecture, string>> = {
@@ -118,7 +134,7 @@ export function daemonPath(arch: NodeJS.Architecture = process.arch) {
 
 type Running = {
   machine: WorkspaceMachine;
-  desktopReady: Promise<void>;
+  desktopReady: Fiber.Fiber<void, WorkspaceError>;
   relay: Relay;
   command: readonly string[];
 };
@@ -178,7 +194,7 @@ class Workspace {
   // Viewers and an owner holding control: the machine stays up while any hold.
   private holds = 0;
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
-  private queue: Promise<unknown> = Promise.resolve();
+  private readonly lock = Semaphore.makeUnsafe(1);
 
   constructor(
     private readonly owner: MachineWorkspaces,
@@ -186,7 +202,7 @@ class Workspace {
     private readonly idleTimeoutMs: number,
   ) {
     this.connection = new TrackedConnection(
-      { command: () => this.ensureStarted() },
+      { command: () => workspacePromise(this.ensureStarted()) },
       {
         begin: () => {
           this.inflight += 1;
@@ -206,68 +222,72 @@ class Workspace {
   }
 
   /** Start and stop never overlap, and concurrent callers share one start. */
-  private exclusive<T>(task: () => Promise<T>): Promise<T> {
-    const result = this.queue.then(task);
-    this.queue = result.catch(() => undefined);
-
-    return result;
+  private exclusive<A, E>(task: Effect.Effect<A, E>) {
+    return Semaphore.withPermit(this.lock, Effect.uninterruptible(task));
   }
 
   /** The relay command once the machine runs and, unless `displayOnly`, its bot desktop's browser is up. */
-  async ensureStarted(displayOnly = false) {
-    const running = await this.exclusive(async () => {
-      // A bot that gained or lost its bot desktop needs the other image.
-      const image = this.owner.imageFor(this.agentId);
+  readonly ensureStarted = Effect.fn("Workspace.ensureStarted")(function* (
+    this: Workspace,
+    displayOnly = false,
+  ) {
+    const running = yield* this.exclusive(
+      Effect.gen({ self: this }, function* () {
+        yield* this.owner.checkOpen();
+        const image = this.owner.imageFor(this.agentId);
 
-      if (
-        this.running &&
-        this.running.machine.image === image &&
-        (await this.running.machine.isAlive())
-      )
+        if (
+          this.running &&
+          this.running.machine.image === image &&
+          (yield* this.running.machine.isAlive())
+        )
+          return this.running;
+
+        if (this.running) yield* this.teardown();
+        this.running = yield* this.owner.boot(this.agentId, image);
+        this.armIdleTimer();
+
         return this.running;
+      }),
+    );
 
-      if (this.running) await this.teardown();
-
-      this.running = await this.owner.boot(this.agentId, image);
-      this.armIdleTimer();
-
-      return this.running;
-    });
-
-    // Outside the queue: a viewer needs only the display and does not wait for a job's browser.
-    if (displayOnly) return running.command;
-
-    try {
-      await running.desktopReady;
-    } catch (error) {
-      await this.exclusive(async () => {
-        if (this.running === running) await this.teardown();
-      });
-      throw error;
+    // Viewers need the display, not the browser; waiting here must not hold the boot lock.
+    if (!displayOnly) {
+      yield* Fiber.join(running.desktopReady).pipe(
+        Effect.onError(() =>
+          this.exclusive(
+            Effect.suspend(() =>
+              this.running === running ? this.teardown() : Effect.void,
+            ),
+          ).pipe(logCleanup("Desktop readiness cleanup failed")),
+        ),
+      );
     }
 
     return running.command;
-  }
+  });
 
   sync() {
-    return this.exclusive(async () => {
-      await this.running?.machine.sync();
-    });
+    return this.exclusive(
+      Effect.suspend(() => this.running?.machine.sync() ?? Effect.void),
+    );
   }
 
   /** Stops only an idle workspace unless forced. A restart keeps the connection, which reconnects on next use. */
   stop(force: boolean, keepConnection = false) {
-    clearTimeout(this.idleTimer);
+    return this.exclusive(
+      Effect.suspend(() => {
+        clearTimeout(this.idleTimer);
 
-    return this.exclusive(async () => {
-      // pi-env's Connection reconnects after losing its bridge but not after close(), so only the last stop closes it.
-      if (force && !keepConnection) this.connection.close();
+        // A restart keeps pi-env's reconnectable connection; only the final stop closes it.
+        if (force && !keepConnection) this.connection.close();
 
-      if (!this.running || (!force && (this.inflight > 0 || this.holds > 0)))
-        return;
+        if (!this.running || (!force && (this.inflight > 0 || this.holds > 0)))
+          return Effect.void;
 
-      await this.teardown();
-    });
+        return this.teardown();
+      }),
+    );
   }
 
   /** Keeps the machine from its idle stop until released. */
@@ -287,58 +307,97 @@ class Workspace {
   }
 
   /** A stream to Xvnc in the guest, through socat on an exec stream like the pi-env relay: no guest port. */
-  async openDesktop(): Promise<DesktopStream> {
+  readonly openDesktop = Effect.fn("Workspace.openDesktop")(function* (
+    this: Workspace,
+  ): Effect.fn.Return<DesktopStream, WorkspaceError> {
     const release = this.hold();
 
-    try {
-      await this.ensureStarted(true);
+    return yield* Effect.gen({ self: this }, function* () {
+      yield* this.ensureStarted(true);
 
-      const running = this.running;
+      return yield* this.exclusive(
+        Effect.gen({ self: this }, function* () {
+          const running = this.running;
 
-      if (!running || running.machine.image !== this.owner.desktopImageName())
-        throw new Error("This bot has no bot desktop");
+          if (
+            !running ||
+            running.machine.image !== this.owner.desktopImageName()
+          )
+            return yield* new WorkspaceDesktopDisabled({
+              agentId: this.agentId,
+            });
 
-      const stream = await running.machine.stream("socat", [
-        "-",
-        "TCP:127.0.0.1:5900",
-      ]);
+          const stream = yield* running.machine.stream("socat", [
+            "-",
+            "TCP:127.0.0.1:5900",
+          ]);
 
-      // Writes to the guest are async; chaining keeps them in order.
-      let writes = Promise.resolve();
+          let writes = Promise.resolve();
 
-      return {
-        write: (data) => (writes = writes.then(() => stream.write(data))),
-        output: stream.output,
-        close: async () => {
-          release();
-          await stream.end().catch(() => undefined);
-        },
-      };
-    } catch (error) {
-      release();
-      throw error;
-    }
-  }
+          return {
+            write: (data: Uint8Array) =>
+              (writes = writes.then(() => stream.write(data))),
+            output: stream.output,
+            close: async () => {
+              release();
+              await stream.end();
+            },
+          };
+        }),
+      );
+    }).pipe(
+      Effect.onError(() => Effect.sync(release)),
+      Effect.uninterruptible,
+    );
+  });
 
   private armIdleTimer() {
     clearTimeout(this.idleTimer);
 
     if (!this.running || this.inflight > 0 || this.holds > 0) return;
 
-    this.idleTimer = setTimeout(
-      () => void this.stop(false).catch(() => undefined),
-      this.idleTimeoutMs,
-    );
+    this.idleTimer = setTimeout(() => {
+      Effect.runFork(
+        this.stop(false).pipe(logCleanup("Workspace idle stop failed")),
+      );
+    }, this.idleTimeoutMs);
     this.idleTimer.unref();
   }
 
-  private async teardown() {
+  private readonly teardown = Effect.fn("Workspace.teardown")(function* (
+    this: Workspace,
+  ) {
     const running = this.running;
-
     this.running = undefined;
-    await running?.relay.close();
-    await running?.machine.stop();
-  }
+
+    if (!running) return;
+    yield* Fiber.interrupt(running.desktopReady);
+
+    const relay = yield* Effect.tryPromise({
+      try: () => running.relay.close(),
+      catch: (cause) =>
+        new WorkspaceRelayError({
+          agentId: this.agentId,
+          backend: this.owner.kind,
+          operation: "close",
+          cause,
+        }),
+    }).pipe(Effect.exit);
+
+    const machine = yield* running.machine.stop().pipe(Effect.exit);
+
+    if (Exit.isFailure(relay)) {
+      if (Exit.isFailure(machine))
+        yield* Effect.logError(
+          "Workspace machine stop also failed",
+          machine.cause,
+        );
+
+      return yield* relay;
+    }
+
+    return yield* machine;
+  });
 }
 
 /**
@@ -387,20 +446,38 @@ export class MachineWorkspaces implements Workspaces {
       : this.image;
   }
 
-  openDesktop(agentId: string, _context?: Context) {
-    return this.workspace(agentId).openDesktop();
-  }
+  readonly openDesktop = Effect.fn("Workspaces.openDesktop")(function* (
+    this: MachineWorkspaces,
+    agentId: string,
+  ) {
+    const workspace = yield* this.workspace(agentId);
+    yield* this.checkDesktop(agentId);
 
-  async startDesktop(agentId: string, _context?: Context) {
-    await this.workspace(agentId).ensureStarted(true);
-  }
+    return yield* workspace.openDesktop();
+  });
 
-  keepAwake(agentId: string) {
-    return this.workspace(agentId).hold();
-  }
+  readonly startDesktop = Effect.fn("Workspaces.startDesktop")(function* (
+    this: MachineWorkspaces,
+    agentId: string,
+  ) {
+    const workspace = yield* this.workspace(agentId);
+    yield* this.checkDesktop(agentId);
+    yield* workspace.ensureStarted(true);
+  });
 
-  env(agentId: string, shellEnv?: Record<string, string>) {
-    const workspace = this.workspace(agentId);
+  readonly keepAwake = Effect.fn("Workspaces.keepAwake")(function* (
+    this: MachineWorkspaces,
+    agentId: string,
+  ) {
+    return (yield* this.workspace(agentId)).hold();
+  });
+
+  readonly env = Effect.fn("Workspaces.env")(function* (
+    this: MachineWorkspaces,
+    agentId: string,
+    shellEnv?: Record<string, string>,
+  ): Effect.fn.Return<ExecutionEnv, WorkspaceError> {
+    const workspace = yield* this.workspace(agentId);
 
     return shellEnv && Object.keys(shellEnv).length
       ? new RemoteExecutionEnv({
@@ -410,54 +487,129 @@ export class MachineWorkspaces implements Workspaces {
           shellEnv: { ...this.machines.proxyEnv, ...shellEnv },
         })
       : workspace.env;
-  }
+  });
 
-  async restart(agentId: string, _context?: Context) {
-    await this.workspaces.get(agentId)?.stop(true, true);
-  }
+  readonly restart = Effect.fn("Workspaces.restart")(function* (
+    this: MachineWorkspaces,
+    agentId: string,
+  ) {
+    yield* this.validate(agentId);
+    yield* this.workspaces.get(agentId)?.stop(true, true) ?? Effect.void;
+  });
 
-  async sync(agentId: string, _context?: Context) {
-    await this.workspaces.get(agentId)?.sync();
-  }
+  readonly sync = Effect.fn("Workspaces.sync")(function* (
+    this: MachineWorkspaces,
+    agentId: string,
+  ) {
+    yield* this.validate(agentId);
+    yield* this.workspaces.get(agentId)?.sync() ?? Effect.void;
+  });
 
-  async close(_context?: Context) {
+  readonly close = Effect.fn("Workspaces.close")(function* (
+    this: MachineWorkspaces,
+  ) {
     this.closed = true;
-    await Promise.all(
-      [...this.workspaces.values()].map((workspace) => workspace.stop(true)),
+
+    const exits = yield* Effect.forEach(
+      this.workspaces.values(),
+      (workspace) => workspace.stop(true).pipe(Effect.exit),
+      { concurrency: "unbounded" },
+    );
+
+    for (const exit of exits)
+      if (Exit.isFailure(exit))
+        yield* Effect.logError("Workspace close failed", exit.cause);
+
+    for (const exit of exits) if (Exit.isFailure(exit)) return yield* exit;
+  }, Effect.uninterruptible);
+
+  /** Boots the bot's machine and a relay for its daemon; called by `Workspace`, serialized per bot. */
+  readonly boot = Effect.fn("Workspaces.boot")(function* (
+    this: MachineWorkspaces,
+    agentId: string,
+    image: string,
+  ): Effect.fn.Return<Running, WorkspaceError> {
+    yield* this.validate(agentId);
+
+    const caCertificate = yield* Effect.tryPromise({
+      try: async () => this.caCertificate?.(agentId),
+      catch: (cause) =>
+        new WorkspaceSetupError({
+          agentId,
+          backend: this.kind,
+          operation: "credential authority",
+          cause,
+        }),
+    });
+
+    const machine = yield* this.machines.boot(agentId, image, {
+      caCertificate,
+    });
+
+    const relay = yield* Effect.tryPromise({
+      try: () => startRelay(machine),
+      catch: (cause) =>
+        new WorkspaceRelayError({
+          agentId,
+          backend: this.kind,
+          operation: "listen",
+          cause,
+        }),
+    }).pipe(
+      Effect.onError(() =>
+        machine.stop().pipe(logCleanup("Workspace boot cleanup failed")),
+      ),
+    );
+
+    const desktopReady = Effect.runFork(
+      machine
+        .desktopReady()
+        .pipe(
+          Effect.tapError((error) =>
+            Effect.logError("Workspace desktop readiness failed", error),
+          ),
+        ),
+    );
+
+    return {
+      machine,
+      desktopReady,
+      relay,
+      command: [process.execPath, BRIDGE_PATH, relay.socketPath],
+    };
+  });
+
+  checkOpen() {
+    return Effect.suspend(() =>
+      this.closed ? Effect.fail(new WorkspaceClosed({})) : Effect.void,
     );
   }
 
-  /** Boots the bot's machine and a relay for its daemon; called by `Workspace`, serialized per bot. */
-  async boot(agentId: string, image: string): Promise<Running> {
-    if (this.closed) throw new Error("Workspaces are closed");
+  private readonly validate = Effect.fnUntraced(function* (
+    this: MachineWorkspaces,
+    agentId: string,
+  ) {
+    if (!validAgentId(agentId))
+      return yield* new WorkspaceInvalidAgentId({ agentId });
+    yield* this.checkOpen();
+  });
 
-    const machine = await this.machines.boot(agentId, image, {
-      caCertificate: await this.caCertificate?.(agentId),
-    });
+  private readonly checkDesktop = Effect.fnUntraced(function* (
+    this: MachineWorkspaces,
+    agentId: string,
+  ) {
+    if (!this.desktop)
+      return yield* new WorkspaceDesktopUnavailable({ agentId });
 
-    const desktopReady = machine.desktopReady();
+    if (!this.wantsDesktop(agentId))
+      return yield* new WorkspaceDesktopDisabled({ agentId });
+  });
 
-    // Awaited by later callers; a failure before then must not go unhandled.
-    desktopReady.catch(() => undefined);
-
-    try {
-      const relay = await startRelay(machine);
-
-      return {
-        machine,
-        desktopReady,
-        relay,
-        command: [process.execPath, BRIDGE_PATH, relay.socketPath],
-      };
-    } catch (error) {
-      await machine.stop();
-      throw error;
-    }
-  }
-
-  private workspace(agentId: string) {
-    assertAgentId(agentId);
-
+  private readonly workspace = Effect.fnUntraced(function* (
+    this: MachineWorkspaces,
+    agentId: string,
+  ) {
+    yield* this.validate(agentId);
     let workspace = this.workspaces.get(agentId);
 
     if (!workspace) {
@@ -466,7 +618,7 @@ export class MachineWorkspaces implements Workspaces {
     }
 
     return workspace;
-  }
+  });
 }
 
 /**
@@ -485,17 +637,33 @@ async function startRelay(machine: WorkspaceMachine): Promise<Relay> {
     serveRelayConnection(machine, socket);
   });
 
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(socketPath, resolve);
-  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(socketPath, resolve);
+    });
+  } catch (cause) {
+    server.close();
+    await rm(dir, { recursive: true, force: true }).catch((cleanup) =>
+      Effect.runPromise(
+        Effect.logError("Workspace relay setup cleanup failed", cleanup),
+      ),
+    );
+    throw cause;
+  }
 
   return {
     socketPath,
     async close() {
       for (const socket of sockets) socket.destroy();
-      await new Promise((resolve) => server.close(resolve));
-      await rm(dir, { recursive: true, force: true });
+
+      try {
+        await new Promise<void>((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        );
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
     },
   };
 }
@@ -527,8 +695,11 @@ function serveRelayConnection(machine: WorkspaceMachine, socket: net.Socket) {
 
     if (!args) return void socket.destroy();
 
-    pipeDaemon(machine, socket, args, pending.subarray(newline + 1)).catch(() =>
-      socket.destroy(),
+    pipeDaemon(machine, socket, args, pending.subarray(newline + 1)).catch(
+      (cause) => {
+        socket.destroy();
+        Effect.runFork(Effect.logError("Workspace daemon relay failed", cause));
+      },
     );
   };
 
@@ -541,7 +712,7 @@ async function pipeDaemon(
   args: string[],
   rest: Buffer,
 ) {
-  const daemon = await machine.stream(GUEST_DAEMON, args);
+  const daemon = await workspacePromise(machine.stream(GUEST_DAEMON, args));
 
   // Writes to the guest are async; chaining keeps them in order.
   let writes = Promise.resolve();

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startServer } from "./server";
 import type { Workspaces } from "../workspaces/workspace";
+import { Effect } from "effect";
 
 type Running = Awaited<ReturnType<typeof startServer>>;
 
@@ -271,21 +272,20 @@ test.serial(
     try {
       const workspaces = {
         desktop: true,
-        env: () => {
-          throw new Error("unused in viewer test");
-        },
-        restart: async () => undefined,
-        sync: async () => undefined,
-        close: async () => undefined,
-        keepAwake: () => () => undefined,
-        startDesktop: async () => undefined,
-        openDesktop: async () => ({
-          write: async () => undefined,
-          output: (async function* () {
-            yield new TextEncoder().encode("RFB 003.008\n");
-          })(),
-          close: async () => undefined,
-        }),
+        env: () => Effect.die(new Error("unused in viewer test")),
+        restart: () => Effect.void,
+        sync: () => Effect.void,
+        close: () => Effect.void,
+        keepAwake: () => Effect.succeed(() => undefined),
+        startDesktop: () => Effect.void,
+        openDesktop: () =>
+          Effect.succeed({
+            write: async () => undefined,
+            output: (async function* () {
+              yield new TextEncoder().encode("RFB 003.008\n");
+            })(),
+            close: async () => undefined,
+          }),
       } satisfies Workspaces;
 
       running = await startServer({
