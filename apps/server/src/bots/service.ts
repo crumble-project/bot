@@ -1,3 +1,5 @@
+import { Effect, Fiber } from "effect";
+import { BotNotices } from "./bot-notices";
 import { Store } from "../shared/store";
 import { z } from "zod";
 import { AgentRuntime } from "./runtime";
@@ -93,10 +95,20 @@ export class CrumbleService {
   private settledListeners = new Set<
     (execution: Execution) => void | Promise<void>
   >();
+  // Takes notices for bots' chats, such as a saved credential's, until close.
+  private readonly notices: Fiber.Fiber<never, unknown>;
   constructor(
     readonly store: Store,
     readonly runtime: AgentRuntime,
-  ) {}
+  ) {
+    this.notices = store.runtime.runFork(
+      BotNotices.use((notices) =>
+        notices.handle((agentId, text, requestId) =>
+          Effect.tryPromise(() => this.notice(agentId, text, requestId)),
+        ),
+      ).pipe(Effect.andThen(Effect.never), Effect.scoped),
+    );
+  }
 
   agent(id: string): Agent {
     const agent = this.store.getAgent(id);
@@ -650,6 +662,7 @@ export class CrumbleService {
 
   async close() {
     this.closing = true;
+    await Effect.runPromise(Fiber.interrupt(this.notices));
     await this.runtime.close();
     await Promise.allSettled(this.monitoring.values());
     this.store.close();

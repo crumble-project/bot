@@ -59,7 +59,10 @@ import type { GroupChats } from "../group-chats/group-chats";
 import type { MCPIntegrations } from "../integrations/integrations";
 import { providerModels } from "../providers/providers";
 import { ProviderCredentials } from "../providers/provider-credentials";
-import { Credentials } from "../credentials/credentials";
+import {
+  credentialsAccess,
+  type CredentialsAccess,
+} from "../credentials/credentials";
 import { loginMethods, ProviderAuth } from "../providers/provider-auth";
 import type { CommonSkill } from "../skills/common-skills";
 import {
@@ -109,7 +112,7 @@ export function createAPI(
     /** Providers whose sign-in happens outside Crumble, by provider ID. */
     externalAuth?: ReadonlyMap<string, () => Promise<ExternalAuth>>;
     /** The bots' credentials; API-only fixtures get their own. */
-    credentials?: Credentials;
+    credentials?: CredentialsAccess;
   } = {},
   push?: PushRuntime,
 ) {
@@ -118,11 +121,7 @@ export function createAPI(
   const { store, runtime } = service;
   const app = contractApp();
 
-  const credentials =
-    options.credentials ??
-    new Credentials(store, async (agentId, text, requestId) => {
-      await service.notice(agentId, text, requestId);
-    });
+  const credentials = options.credentials ?? credentialsAccess(store.runtime);
 
   const providerAuth =
     options.providerAuth ??

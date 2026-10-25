@@ -55,8 +55,8 @@ import {
   pluginProviders,
 } from "./plugins";
 import { ProviderCredentials } from "../providers/provider-credentials";
-import { Credentials } from "../credentials/credentials";
-import { CredentialAuthorities } from "../credentials/credential-authority";
+import { credentialsAccess } from "../credentials/credentials";
+import { credentialAuthoritiesAccess } from "../credentials/credential-authority";
 import { credentialProxy } from "../credentials/credential-proxy";
 import { ProviderAuth } from "../providers/provider-auth";
 import { clientDocument } from "../integrations/mcp-oauth";
@@ -131,14 +131,8 @@ export async function createTenant(
 
     let service!: CrumbleService;
 
-    const botCredentials = new Credentials(
-      store,
-      async (agentId, text, requestId) => {
-        await service.notice(agentId, text, requestId);
-      },
-    );
-
-    const authorities = new CredentialAuthorities(store);
+    const botCredentials = credentialsAccess(account);
+    const authorities = credentialAuthoritiesAccess(account);
 
     const machineOptions = {
       namePrefix: `crumble-${options.tenantId.replace(/[^A-Za-z0-9_-]/g, "-")}`,

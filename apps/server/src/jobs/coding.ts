@@ -12,7 +12,7 @@ import { createCodingTools } from "@earendil-works/pi-durable/tools";
 import {
   credentialExtension,
   jobCredentialSection,
-  type Credentials,
+  type CredentialsAccess,
 } from "../credentials/credentials";
 import type { Agent } from "../shared/domain";
 import { defineJobKind, type JobExtensions, type JobInfo } from "./jobs";
@@ -60,7 +60,7 @@ export async function codingEnv(
   agentId: string,
   target: EnvTarget,
   context: Context,
-  credentials?: Credentials,
+  credentials?: CredentialsAccess,
 ): Promise<ExecutionEnv | undefined> {
   return coding.env(
     workspaces,
@@ -75,7 +75,7 @@ export async function codingEnv(
 export function codingExtensions(
   agent: Pick<Agent, "id">,
   workspaces: Workspaces,
-  credentials?: Credentials,
+  credentials?: CredentialsAccess,
 ): CodingExtensions {
   const job = defineExtension({
     name: "coding-job",
@@ -120,7 +120,7 @@ export function codingExtensions(
 /** Coding jobs as a plugin: offered to bots with the `coding` tool while workspaces are available. */
 export const codingPlugin = (
   workspaces: Workspaces | undefined,
-  credentials?: Credentials,
+  credentials?: CredentialsAccess,
 ): CrumblePlugin => ({
   id: "coding",
   jobKinds: workspaces

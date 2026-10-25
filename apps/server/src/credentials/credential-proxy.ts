@@ -5,7 +5,6 @@ import type { LookupFunction } from "node:net";
 import type net from "node:net";
 import { Transform } from "node:stream";
 import tls from "node:tls";
-import type { CredentialAuthorities } from "./credential-authority";
 import {
   hostMatches,
   type CredentialGrant,
@@ -18,7 +17,9 @@ import {
 
 export type CredentialProxyOptions = {
   agentId: string;
-  authorities: CredentialAuthorities;
+  authorities: {
+    context(agentId: string, host: string): Promise<tls.SecureContext>;
+  };
   /** Read for every request, so a changed or deleted credential applies at once. */
   grants: () => CredentialGrant[];
   recordUse: (name: string, use: Omit<CredentialUse, "id">) => void;

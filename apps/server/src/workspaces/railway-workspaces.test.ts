@@ -34,9 +34,9 @@ import {
   railwayWorkspacesFromEnv,
 } from "./railway-workspaces";
 import { WORKSPACE_PATH } from "./workspace";
-import { CredentialAuthorities } from "../credentials/credential-authority";
+import { credentialAuthoritiesAccess } from "../credentials/credential-authority";
 import { credentialProxy } from "../credentials/credential-proxy";
-import { Credentials } from "../credentials/credentials";
+import { credentialsAccess } from "../credentials/credentials";
 import { Store } from "../shared/store";
 
 // Live tests create billed sandboxes, so they need an explicit opt-in besides the credentials.
@@ -342,8 +342,8 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
       name: "upstream",
     });
 
-    const authorities = new CredentialAuthorities(store);
-    const credentials = new Credentials(store, async () => {});
+    const authorities = credentialAuthoritiesAccess(store.runtime);
+    const credentials = credentialsAccess(store.runtime);
     const value = "railway-live-test-value-0123456789";
     const seen: string[] = [];
 

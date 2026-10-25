@@ -1,6 +1,6 @@
 import { claudeCodePlugin } from "../providers/claude-code/plugin";
 import { codingPlugin } from "../jobs/coding";
-import type { Credentials } from "../credentials/credentials";
+import type { CredentialsAccess } from "../credentials/credentials";
 import { desktopPlugin } from "../jobs/desktop";
 import type { DesktopControlAccess } from "../bot-desktop/desktop-control";
 import type { CrumblePlugin } from "./plugins";
@@ -14,7 +14,7 @@ export type PluginHost = {
   workspaces: Workspaces | undefined;
   desktopControl: DesktopControlAccess;
   /** The bots' credentials, offered to coding jobs. */
-  credentials?: Credentials;
+  credentials?: CredentialsAccess;
   /** Disable host-level Claude Code authentication for tenant runtimes. */
 };
 
