@@ -1,6 +1,6 @@
 import type { Register } from "../contract/route";
 import { upgradeWebSocket } from "@hono/bun";
-import { Effect } from "effect";
+import { Cause, Effect, Match } from "effect";
 import { streamSSE } from "hono/streaming";
 import type { WSContext, WSMessageReceive } from "hono/ws";
 import {
@@ -22,6 +22,24 @@ import { Conflict } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 
 const HEARTBEAT_MS = 15_000;
+
+/** Owner-actionable WebSocket close reason for a failed desktop open, without leaking secrets or tokens. */
+export const desktopCloseReason = (error: DesktopOpenError): string =>
+  Match.value(error).pipe(
+    Match.tagsExhaustive({
+      DesktopNotConfigured: () =>
+        "Set CRUMBLE_WORKSPACE_DESKTOP_IMAGE to enable bot desktops",
+      PlainWorkspaceImage: () => "Enable the desktop tool on this bot first",
+      WorkspacesClosed: () => "The workspace server is shutting down",
+      InvalidAgentId: () => "Invalid bot identifier",
+      MachineBootError: (failure) =>
+        `Failed to start the ${failure.backend} workspace machine`,
+      DesktopStartError: () =>
+        "The bot desktop failed to start in the workspace",
+      DesktopStreamError: () =>
+        "Failed to connect to the bot desktop VNC server",
+    }),
+  );
 
 const bytesOf = async (data: WSMessageReceive) => {
   if (data instanceof Uint8Array) return data;
@@ -173,10 +191,33 @@ export function registerDesktopRoutes(options: {
                   for (const data of pending.splice(0)) bridge.receive(data);
                 }),
               ),
-              Effect.catchCause(() =>
-                Effect.sync(() =>
-                  ws.close(1011, "The bot desktop is unavailable"),
+              Effect.catch((error) =>
+                Effect.logError("Failed to open bot desktop", {
+                  agentId,
+                  tag: error._tag,
+                  message: error.message,
+                }).pipe(
+                  Effect.andThen(
+                    Effect.sync(() =>
+                      ws.close(1011, desktopCloseReason(error)),
+                    ),
+                  ),
                 ),
+              ),
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.void
+                  : Effect.logError(
+                      "Unexpected failure opening bot desktop",
+                      agentId,
+                      Cause.squash(cause),
+                    ).pipe(
+                      Effect.andThen(
+                        Effect.sync(() =>
+                          ws.close(1011, "The bot desktop is unavailable"),
+                        ),
+                      ),
+                    ),
               ),
             ),
           );
