@@ -5,6 +5,7 @@ export default defineConfig({
   dialect: "sqlite",
   schema: [
     "./src/bots/schema.ts",
+    "./src/bots/execution-schema.ts",
     "./src/bot-desktop/schema.ts",
     "./src/credentials/schema.ts",
     "./src/group-chats/schema.ts",

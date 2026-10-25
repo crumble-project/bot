@@ -53,7 +53,7 @@ import {
 import {
   reviewInstructions,
   type ReviewScope,
-} from "../skills/learning-review";
+} from "../skills/review-instructions";
 import {
   prepareAttachments,
   type AttachmentInput,

@@ -56,11 +56,10 @@ import { credentialProxy } from "../credentials/credential-proxy";
 import { coreLayer, type CoreServices } from "../shared/core-layer";
 import { runnerOf } from "../shared/runner";
 import { builtinPlugins } from "./builtin-plugins";
+import { jobAnswers, jobTools } from "./plugin-layers";
 import {
-  jobAnswers,
   jobEnv,
   jobExtensions,
-  jobTools,
   pluginJobKinds,
   pluginProviders,
   Plugins,

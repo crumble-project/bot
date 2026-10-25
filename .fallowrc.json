@@ -11,6 +11,13 @@
     "apps/web/components/ui/**"
   ],
   "ignoreExportsUsedInFile": true,
+  "overrides": [
+    {
+      // The server serves the web UI's bundle, and the web UI imports only the server's API types; nothing builds packages in dependency order.
+      "files": ["apps/server/src/app/web-ui.ts", "apps/web/api.ts"],
+      "rules": { "package-cycle": "off" }
+    }
+  ],
   "duplicates": {
     // Vendored; tools/oxlint/anti-slop/UPSTREAM.md tracks it by checksum, so it stays as upstream wrote it.
     "ignore": ["tools/oxlint/anti-slop/**"]
