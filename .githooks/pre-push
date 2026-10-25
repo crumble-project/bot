@@ -1,0 +1,4 @@
+#!/bin/sh
+# Run the same checks as CI, tests included, before each push. Skip once with `git push --no-verify`.
+set -e
+bun run check

@@ -1,0 +1,5 @@
+#!/bin/sh
+# Lint and type-check the working tree before each commit. Skip once with `git commit --no-verify`.
+set -e
+bun run lint
+bun run typecheck

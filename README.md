@@ -91,6 +91,8 @@ bun run contract:compatibility # Compare against the latest stable contract-vX.Y
 bun run contract:bundle        # Export a checksummed release bundle
 ```
 
+`bun install` points Git at the hooks in `.githooks/`: each commit runs `bun run lint` and `bun run typecheck`, and each push runs `bun run check`, tests included. Skip them once with `--no-verify`.
+
 ## Documentation
 
 - [Architecture](docs/architecture.md)

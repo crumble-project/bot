@@ -15,6 +15,7 @@
     "typescript": "7.0.2"
   },
   "scripts": {
+    "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "dev": "bun --watch apps/server/src/app/server.ts",
     "start": "bun apps/server/src/app/server.ts",
     "test": "bun test",
