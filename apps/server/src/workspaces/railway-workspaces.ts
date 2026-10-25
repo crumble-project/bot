@@ -278,55 +278,10 @@ export class RailwayMachines implements WorkspaceMachines {
 
     const name = this.name(agentId);
     const record = yield* Effect.promise(() => this.readRecord(agentId));
-    const sandboxId = record?.sandboxId;
-
-    const running = sandboxId
-      ? yield* bootStep("Reconnecting to the running sandbox", () =>
-          connectRunning(sandboxId),
-        )
-      : undefined;
-
-    const reconnected = record?.image === image ? running : undefined;
-
-    // Keep the files it has written since its last checkpoint.
-    if (running && !reconnected)
-      yield* bootStep("Checkpointing the sandbox's other image", async () => {
-        await checkpoint(running, name);
-        await running.destroy();
-      });
-
-    // A new sandbox's files are all in the checkpoint; a reconnected one may hold writes the checkpoint lacks.
-    const machine =
-      reconnected ??
-      (yield* untilBooted(
-        bootStep("Creating the sandbox", () =>
-          this.create(agentId, name, image, record),
-        ),
-        (sandbox) => sandbox.destroy().catch(() => undefined),
-      ));
-
+    const machine = yield* this.sandbox(agentId, name, image, record);
     const desktop = image === this.desktopImage;
 
-    // Each write is a request to Railway; in parallel they cost one round trip.
-    yield* bootStep("Writing the guest files", async () => {
-      await Promise.all([
-        machine.files.write(GUEST_DAEMON, await readFile(this.daemon), {
-          mode: 0o755,
-        }),
-        machine.files.write(GUEST_STREAM, await readFile(STREAM_SCRIPT)),
-        machine.files.write(GUEST_TUNNEL, await readFile(TUNNEL_SCRIPT)),
-        guest.caCertificate &&
-          machine.files.write(GUEST_CA_PATH, guest.caCertificate),
-        desktop && writeDesktopScripts(machine),
-      ]);
-    });
-
-    if (guest.caCertificate)
-      yield* bootStep("Installing the credential authority", () =>
-        run(machine, "update-ca-certificates >/dev/null"),
-      );
-
-    if (desktop) yield* startDesktop(machine, DESKTOP_DISPLAY_ONLY);
+    yield* this.prepareGuest(machine, desktop, guest);
 
     const intercept = this.intercept;
 
@@ -350,6 +305,74 @@ export class RailwayMachines implements WorkspaceMachines {
       proxy,
     );
   }, Effect.scoped);
+
+  /** The sandbox to run in: the one still running for the bot, or a new one from its checkpoint. */
+  private readonly sandbox = Effect.fn("RailwayMachines.sandbox")(function* (
+    this: RailwayMachines,
+    agentId: string,
+    name: string,
+    image: string,
+    record: MachineRecord | undefined,
+  ) {
+    const sandboxId = record?.sandboxId;
+
+    const running = sandboxId
+      ? yield* bootStep("Reconnecting to the running sandbox", () =>
+          connectRunning(sandboxId),
+        )
+      : undefined;
+
+    const reconnected = record?.image === image ? running : undefined;
+
+    // Keep the files it has written since its last checkpoint.
+    if (running && !reconnected)
+      yield* bootStep("Checkpointing the sandbox's other image", async () => {
+        await checkpoint(running, name);
+        await running.destroy();
+      });
+
+    // A new sandbox's files are all in the checkpoint; a reconnected one may hold writes the checkpoint lacks.
+    return (
+      reconnected ??
+      (yield* untilBooted(
+        bootStep("Creating the sandbox", () =>
+          this.create(agentId, name, image, record),
+        ),
+        (sandbox) => sandbox.destroy().catch(() => undefined),
+      ))
+    );
+  });
+
+  /** Writes the guest's files and, on a desktop image, starts its bot desktop. */
+  private readonly prepareGuest = Effect.fn("RailwayMachines.prepareGuest")(
+    function* (
+      this: RailwayMachines,
+      machine: Sandbox,
+      desktop: boolean,
+      guest: GuestSetup,
+    ) {
+      // Each write is a request to Railway; in parallel they cost one round trip.
+      yield* bootStep("Writing the guest files", async () => {
+        await Promise.all([
+          machine.files.write(GUEST_DAEMON, await readFile(this.daemon), {
+            mode: 0o755,
+          }),
+          machine.files.write(GUEST_STREAM, await readFile(STREAM_SCRIPT)),
+          machine.files.write(GUEST_TUNNEL, await readFile(TUNNEL_SCRIPT)),
+          guest.caCertificate &&
+            machine.files.write(GUEST_CA_PATH, guest.caCertificate),
+          desktop && writeDesktopScripts(machine),
+        ]);
+      });
+
+      if (guest.caCertificate)
+        yield* bootStep("Installing the credential authority", () =>
+          run(machine, "update-ca-certificates >/dev/null"),
+        );
+
+      if (desktop) yield* startDesktop(machine, DESKTOP_DISPLAY_ONLY);
+    },
+  );
 
   private async create(
     agentId: string,

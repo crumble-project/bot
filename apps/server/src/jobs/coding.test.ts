@@ -77,6 +77,37 @@ const messageText = (message: Message) =>
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("");
 
+const call = (name: string, args: Record<string, string>) =>
+  fauxAssistantMessage(fauxToolCall(name, args), {
+    stopReason: "toolUse",
+  });
+
+/** What a job's model answers next, told apart by the tool call it saw last. */
+function jobReply(last: Message) {
+  if (last.role === "user")
+    return call("bash", { command: "echo hello > hello.txt" });
+
+  if (last.role === "toolResult" && last.toolName === "bash")
+    return call("write", { path: "notes.txt", content: "notes" });
+
+  return fauxAssistantMessage([fauxText("Wrote hello.txt and notes.txt.")]);
+}
+
+/** What the bot's model answers next: start the job, or wrap up once it ran. */
+function botReply(last: Message, text: string) {
+  if (text.startsWith("[coding job"))
+    return fauxAssistantMessage([fauxText("The job is finished.")]);
+
+  if (last.role === "toolResult")
+    return fauxAssistantMessage([fauxText("Started.")]);
+
+  return call("coding", {
+    action: "start",
+    name: "builder",
+    message: "Create the files.",
+  });
+}
+
 /** One scripted model plays the bot and its jobs; the tools it was offered tell them apart. */
 function script(
   options: {
@@ -98,36 +129,13 @@ function script(
       (message) => message.role !== "system",
     )!;
 
-    const text = messageText(last);
-
-    const call = (name: string, args: Record<string, string>) =>
-      fauxAssistantMessage(fauxToolCall(name, args), {
-        stopReason: "toolUse",
-      });
-
     if (job) {
       await options.beforeJob?.(streamOptions?.signal);
 
-      if (last.role === "user")
-        return call("bash", { command: "echo hello > hello.txt" });
-
-      if (last.role === "toolResult" && last.toolName === "bash")
-        return call("write", { path: "notes.txt", content: "notes" });
-
-      return fauxAssistantMessage([fauxText("Wrote hello.txt and notes.txt.")]);
+      return jobReply(last);
     }
 
-    if (text.startsWith("[coding job"))
-      return fauxAssistantMessage([fauxText("The job is finished.")]);
-
-    if (last.role === "toolResult")
-      return fauxAssistantMessage([fauxText("Started.")]);
-
-    return call("coding", {
-      action: "start",
-      name: "builder",
-      message: "Create the files.",
-    });
+    return botReply(last, messageText(last));
   };
 }
 
