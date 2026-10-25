@@ -37,7 +37,7 @@ import { WORKSPACE_PATH } from "./workspace";
 import { credentialAuthoritiesAccess } from "../credentials/credential-authority";
 import { credentialProxy } from "../credentials/credential-proxy";
 import { credentialsAccess } from "../credentials/credentials";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 
 // Live tests create billed sandboxes, so they need an explicit opt-in besides the credentials.
 const railwayTests =

@@ -21,7 +21,7 @@ import { codingJobsResponse, historyResponse } from "../contract/api-responses";
 import { AgentRuntime } from "../bots/runtime";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { standaloneBots } from "../bots/bots";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 import type { DesktopStream, Workspaces } from "../workspaces/workspace";
 
 const cleanups: (() => void | Promise<void>)[] = [];

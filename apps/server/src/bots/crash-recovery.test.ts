@@ -7,7 +7,7 @@ import {
   fauxProvider,
   fauxAssistantMessage,
 } from "@earendil-works/pi-ai/providers/faux";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 import { AgentRuntime } from "./runtime";
 import { standaloneBots } from "./bots";
 

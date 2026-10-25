@@ -2,7 +2,7 @@ import { describe, expect, test, afterEach } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 import { standaloneBots } from "../bots/bots";
 import { coordinationExtension } from "./coordination";
 import { standaloneMessaging } from "./bot-messaging";
@@ -57,7 +57,7 @@ function setup() {
 }
 
 const tool = (
-  service: ReturnType<typeof standaloneBots>,
+  service: ReturnType<typeof standaloneBots<Store>>,
   agentId: string,
   index: number,
 ) => {

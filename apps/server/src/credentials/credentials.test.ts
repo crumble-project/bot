@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { Effect, Exit, Scope } from "effect";
 import { BotNotices } from "../bots/bot-notices";
 import { agentInput } from "../shared/domain";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 import { Credentials } from "./credentials";
 
 const dirs: string[] = [];

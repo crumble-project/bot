@@ -6,7 +6,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { desktopControlAccess } from "./desktop-control";
 import { DesktopControlRepository } from "./desktop-control-repository";
 import { agentInput } from "../shared/domain";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 
 const dirs: string[] = [];
 

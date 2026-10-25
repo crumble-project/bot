@@ -10,7 +10,7 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "./runtime";
 import { standaloneBots } from "./bots";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 
 const dirs: string[] = [];
 
@@ -63,7 +63,7 @@ function setup(responses: FauxResponseStep[], input?: ("text" | "image")[]) {
 }
 
 async function settle(
-  service: ReturnType<typeof standaloneBots>,
+  service: ReturnType<typeof standaloneBots<Store>>,
   executionId: string,
 ) {
   for (let i = 0; i < 200; i++) {

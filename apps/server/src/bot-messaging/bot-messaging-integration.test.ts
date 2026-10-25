@@ -9,7 +9,7 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "../bots/runtime";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 import { standaloneBots } from "../bots/bots";
 import { coordinationExtension } from "./coordination";
 import { botMessagingAccess, standaloneMessaging } from "./bot-messaging";
@@ -109,7 +109,7 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
       },
       targetId,
     );
-    let service!: ReturnType<typeof standaloneBots>;
+    let service!: ReturnType<typeof standaloneBots<Store>>;
 
     const runtime = new AgentRuntime(dir, {
       models,

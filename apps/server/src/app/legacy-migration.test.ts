@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import lockfile from "proper-lockfile";
 import { Database } from "bun:sqlite";
 import { migrateLegacyData } from "./legacy-migration";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 
 const dirs: string[] = [];
 

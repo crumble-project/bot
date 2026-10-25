@@ -14,7 +14,7 @@ import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { AgentRuntime } from "./runtime";
 import { providerModels } from "../providers/providers";
 import { ProviderCredentials } from "../providers/provider-credentials";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 import { loadCommonSkills } from "../skills/common-skills";
 import { agentInput, type Agent } from "../shared/domain";
 import type { AvailableSkill } from "../skills/skill-library";

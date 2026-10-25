@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { botMessagingAccess, standaloneMessaging } from "./bot-messaging";
 import { standaloneBots } from "../bots/bots";
 import type { Agent } from "../shared/domain";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 import {
   awaitWithContext,
   BACKGROUND_CONTEXT,

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Effect } from "effect";
 import { agentInput } from "../shared/domain";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 import type { MemoryContext } from "../bots/runtime";
 import { BotMemory } from "./bot-memory";
 

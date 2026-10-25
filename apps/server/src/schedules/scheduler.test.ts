@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { standaloneScheduler } from "./scheduler";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 
 const dirs: string[] = [];
 

@@ -12,7 +12,7 @@ import {
   signOut,
   startAuthorization,
 } from "./mcp-oauth";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 
 const secrets = (store: Store) => secretStorage(store.runtime);
 

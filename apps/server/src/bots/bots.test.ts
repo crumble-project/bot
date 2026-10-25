@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { agentInput } from "../shared/domain";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 import { standaloneBots } from "./bots";
 import { AgentRuntime } from "./runtime";
 

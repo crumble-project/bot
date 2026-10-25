@@ -1,42 +1,48 @@
 import type { JsonValue } from "@earendil-works/chord";
 import type { Credential, CredentialInfo } from "@earendil-works/pi-ai";
 import { Context, Effect, ManagedRuntime, Predicate } from "effect";
-import type { Runner } from "./runner";
-import { AgentRepository, type AgentPatch } from "../bots/agent-repository";
+import type { Runner } from "../../src/shared/runner";
+import {
+  AgentRepository,
+  type AgentPatch,
+} from "../../src/bots/agent-repository";
 import {
   ConversationRepository,
   type ConversationPatch,
-} from "../bots/conversation-repository";
+} from "../../src/bots/conversation-repository";
 import {
   ExecutionRepository,
   type NewExecution,
-} from "../bots/execution-repository";
+} from "../../src/bots/execution-repository";
 import {
   AgentCredentialRepository,
   type CredentialAuthority,
-} from "../credentials/agent-credential-repository";
-import { SecretRepository } from "../credentials/secret-repository";
+} from "../../src/credentials/agent-credential-repository";
+import { SecretRepository } from "../../src/credentials/secret-repository";
 import {
   GroupChatRepository,
   type GroupActivity,
   type GroupMemberChange,
-} from "../group-chats/group-chat-repository";
+} from "../../src/group-chats/group-chat-repository";
 import {
   McpServerRepository,
   type NewMCPServer,
-} from "../integrations/mcp-server-repository";
-import { MemoryRepository, type NewMemory } from "../memory/memory-repository";
-import { ProviderCredentialRepository } from "../providers/provider-credential-repository";
-import { ScheduleRepository } from "../schedules/schedule-repository";
-import { ChangeReverter } from "../skills/change-reverter";
-import { LearnedChangeRepository } from "../skills/learned-change-repository";
-import { ReviewRepository } from "../skills/review-repository";
+} from "../../src/integrations/mcp-server-repository";
+import {
+  MemoryRepository,
+  type NewMemory,
+} from "../../src/memory/memory-repository";
+import { ProviderCredentialRepository } from "../../src/providers/provider-credential-repository";
+import { ScheduleRepository } from "../../src/schedules/schedule-repository";
+import { ChangeReverter } from "../../src/skills/change-reverter";
+import { LearnedChangeRepository } from "../../src/skills/learned-change-repository";
+import { ReviewRepository } from "../../src/skills/review-repository";
 import {
   SkillRepository,
   type NewSkill,
   type SkillPatch,
-} from "../skills/skill-repository";
-import type { AttachmentInput } from "./attachments";
+} from "../../src/skills/skill-repository";
+import type { AttachmentInput } from "../../src/shared/attachments";
 import type {
   Agent,
   AgentCredential,
@@ -58,17 +64,14 @@ import type {
   Schedule,
   ScheduleInput,
   Skill,
-} from "./domain";
-import { ProductDatabase } from "./product-database";
-import { coreLayer, type CoreServices } from "./core-layer";
-import { SettingsRepository } from "./settings-repository";
+} from "../../src/shared/domain";
+import { ProductDatabase } from "../../src/shared/product-database";
+import { coreLayer, type CoreServices } from "../../src/shared/core-layer";
+import { SettingsRepository } from "../../src/shared/settings-repository";
 
-/**
- * The product database for code that is not Effect yet: each method runs its repository's effect synchronously.
- * Callers move to the repositories themselves, after which this facade goes.
- */
+/** An account's product database for tests to set up and inspect: each method runs a repository effect synchronously. */
 export class Store {
-  /** Runs effects on the account's services, for code still moving off this facade. */
+  /** Runs effects on the account's services, such as the standalone features a test builds. */
   readonly runtime: Runner<CoreServices>;
   // Only a store that opened its own database closes it; a shared runner belongs to the account.
   private readonly owned:

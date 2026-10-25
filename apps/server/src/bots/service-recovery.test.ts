@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentRuntime } from "./runtime";
 import { standaloneBots } from "./bots";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 
 const dirs: string[] = [];
 

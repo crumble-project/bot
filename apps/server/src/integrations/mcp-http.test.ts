@@ -6,7 +6,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { z } from "zod";
 import type { Agent } from "../shared/domain";
 import { standaloneIntegrations } from "./integrations";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 
 const agent = (id: string, mcpServers: string[]): Agent => ({
   id,

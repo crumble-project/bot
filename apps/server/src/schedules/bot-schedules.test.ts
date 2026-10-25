@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Forbidden } from "../shared/errors";
 import { scheduleExtension, standaloneBotSchedules } from "./bot-schedules";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 
 const dirs: string[] = [];
 

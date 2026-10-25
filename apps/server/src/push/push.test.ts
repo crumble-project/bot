@@ -19,7 +19,7 @@ import {
 } from "./push-transports";
 import { BotActivity } from "../bots/bot-activity";
 import type { Activity, ReplyActivity } from "../bots/bots";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { createAPI } from "../app/api";

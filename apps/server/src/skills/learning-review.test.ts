@@ -14,10 +14,10 @@ import { standaloneLearningReview } from "./learning-review";
 import { AgentRuntime } from "../bots/runtime";
 import { standaloneBots, type LearnedActivity } from "../bots/bots";
 import { standaloneSkills } from "./skills";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 
 const dirs: string[] = [];
-const services: ReturnType<typeof standaloneBots>[] = [];
+const services: ReturnType<typeof standaloneBots<Store>>[] = [];
 
 afterEach(async () => {
   for (const service of services.splice(0)) await service.close();
@@ -65,7 +65,7 @@ function open(responses: FauxResponseStep[]) {
 }
 
 async function settle(
-  service: ReturnType<typeof standaloneBots>,
+  service: ReturnType<typeof standaloneBots<Store>>,
   executionId: string,
 ) {
   for (let i = 0; i < 300; i++) {

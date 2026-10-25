@@ -8,7 +8,7 @@ import {
   fauxProvider,
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "../bots/runtime";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { createAPI } from "./api";

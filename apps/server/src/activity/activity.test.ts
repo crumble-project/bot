@@ -12,7 +12,7 @@ import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { AgentRuntime } from "../bots/runtime";
 import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 import { createAPI } from "../app/api";
 import {
   activityPage,

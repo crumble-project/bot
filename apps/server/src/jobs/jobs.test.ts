@@ -15,7 +15,7 @@ import { defineExtension } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { defineJobKind, type JobKindOptions } from "./jobs";
 import { AgentRuntime } from "../bots/runtime";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 import type { DesktopStream, Workspaces } from "../workspaces/workspace";
 
 const cleanups: (() => void | Promise<void>)[] = [];

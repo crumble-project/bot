@@ -9,7 +9,7 @@ import {
   standaloneIntegrations,
   type MCPClient,
 } from "./integrations";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 import type { McpTransport } from "@earendil-works/pi-mcp";
 
 const agent = (id: string, mcpServers: string[]): Agent => ({

@@ -16,7 +16,7 @@ import { desktopAnswers, desktopEnv, desktopExtensions } from "./desktop";
 import type { JobAnswer } from "./jobs";
 import type { Agent } from "../shared/domain";
 import { AgentRuntime } from "../bots/runtime";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 import { latestMessagePreview } from "../bots/transcript";
 import type { DesktopStream, Workspaces } from "../workspaces/workspace";
 import {

@@ -13,7 +13,7 @@ import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { AgentRuntime } from "./runtime";
 import { standaloneBots } from "./bots";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 

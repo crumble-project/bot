@@ -18,7 +18,7 @@ import { HistorySearch } from "./history-search";
 import { historySource } from "./history-tools";
 import { AgentRuntime } from "../bots/runtime";
 import { standaloneBots } from "../bots/bots";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 
 test("history search keeps committed assistant messages visible across turn completion", async () => {
   const dir = mkdtempSync(join(tmpdir(), "bot-history-active-"));

@@ -24,7 +24,7 @@ import {
 } from "../shared/attachments";
 import type { Runner } from "../shared/runner";
 import { SettingsRepository } from "../shared/settings-repository";
-import type { Store } from "../shared/store";
+import type { CoreServices } from "../shared/core-layer";
 import { ScheduleRepository } from "../schedules/schedule-repository";
 import { AgentRepository } from "./agent-repository";
 import { BotNotices } from "./bot-notices";
@@ -1036,13 +1036,15 @@ type StandaloneServices =
   | ScheduleRepository
   | BotNotices;
 
-export function standaloneBots(
-  store: Store,
+export function standaloneBots<
+  S extends { runtime: Runner<CoreServices>; close(): void },
+>(
+  store: S,
   runtime: AgentRuntime,
 ): BotsAccess & {
-  store: Store;
+  store: S;
   /** The store's account, for code that reads its repositories. */
-  core: Store["runtime"];
+  core: Runner<CoreServices>;
   runtime: AgentRuntime;
   /** Runs effects over the bots and what they stand on, such as features built on the bots in a test. */
   effects: Runner<StandaloneServices>;

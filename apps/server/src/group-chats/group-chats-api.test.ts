@@ -16,7 +16,7 @@ import { GroupTranscripts } from "./group-transcripts";
 import { AgentRuntime } from "../bots/runtime";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { standaloneBots } from "../bots/bots";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 
 // Plain header records, so they spread into the defaults.
 type TestRequestInit = Omit<RequestInit, "headers"> & {

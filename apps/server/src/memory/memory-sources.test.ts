@@ -13,7 +13,7 @@ import { Effect } from "effect";
 import type { Agent } from "../shared/domain";
 import { assertOwnMemoryInGroup, memorySourceOf } from "./memory-sources";
 import { AgentRuntime, type MemoryContext } from "../bots/runtime";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 

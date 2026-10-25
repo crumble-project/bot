@@ -16,7 +16,7 @@ import { groupLookupExtension } from "./group-lookup";
 import { GroupTranscripts } from "./group-transcripts";
 import { AgentRuntime } from "../bots/runtime";
 import { standaloneBots } from "../bots/bots";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 

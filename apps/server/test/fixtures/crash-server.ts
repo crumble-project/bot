@@ -1,6 +1,6 @@
 import { createModels, type AssistantMessage } from "@earendil-works/pi-ai";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
-import { Store } from "../../src/shared/store";
+import { Store } from "../support/store";
 import { AgentRuntime } from "../../src/bots/runtime";
 import { standaloneBots } from "../../src/bots/bots";
 

@@ -20,7 +20,7 @@ import { GroupTranscripts } from "./group-transcripts";
 import { reactionExtension } from "../bots/reaction";
 import { AgentRuntime } from "../bots/runtime";
 import { standaloneBots } from "../bots/bots";
-import { Store } from "../shared/store";
+import { Store } from "../../test/support/store";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -517,7 +517,7 @@ describe("group turns", () => {
 });
 
 describe("owner notifications", () => {
-  const replies = (service: ReturnType<typeof standaloneBots>) => {
+  const replies = (service: ReturnType<typeof standaloneBots<Store>>) => {
     const events: Array<{ preview: string; groupId?: string }> = [];
 
     service.onActivity((event) => {

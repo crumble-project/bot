@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { Store } from "./store";
+import { Store } from "../../test/support/store";
 
 const dirs: string[] = [];
 

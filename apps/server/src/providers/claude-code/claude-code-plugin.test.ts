@@ -23,7 +23,7 @@ import { standaloneSignIns } from "../provider-auth";
 import type { AgentRuntime } from "../../bots/runtime";
 import { standaloneScheduler } from "../../schedules/scheduler";
 import { standaloneBots } from "../../bots/bots";
-import { Store } from "../../shared/store";
+import { Store } from "../../../test/support/store";
 
 const FAKE = join(import.meta.dir, "../../../test/fixtures/fake-claude.ts");
 
