@@ -2,6 +2,7 @@
   "name": "crumble",
   "type": "module",
   "private": true,
+  "license": "AGPL-3.0-only",
   "workspaces": [
     "apps/server",
     "apps/web"

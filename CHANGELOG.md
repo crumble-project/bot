@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Crumble is licensed under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). The repository has a `LICENSE` file, each `package.json` has a `license` field, and the published images carry the `org.opencontainers.image.licenses` label. Anyone who runs a modified server for others must offer them its source.
+
 ## 0.1.0
 
 - Publish the server image. `ghcr.io/crumble-project/crumble-server` is built for `linux/amd64` and `linux/arm64`. A `vX.Y.Z` tag publishes it and both workspace images as `X.Y.Z` and `latest`, and the tag must match `apps/server/package.json`. Pushes to `main` publish `main` and `sha-…` tags; the workspace images previously had only `sha-…` tags from manual runs, so the untagged references in the README pulled a `latest` that did not exist. Pull requests build the images on `linux/amd64` without publishing them. The README and docs pin images to `0.1.0`, and the docs describe the release steps.

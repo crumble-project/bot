@@ -108,3 +108,7 @@ bun run contract:bundle        # Export a checksummed release bundle
 - [Native push notifications](docs/native-push.md)
 - [Bundled default skills](apps/server/skills/README.md)
 - [Specifications and glossary](https://github.com/crumble-project/spec)
+
+## License
+
+Crumble is licensed under the [GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`). Third-party code is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

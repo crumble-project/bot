@@ -7,6 +7,8 @@ sidebar:
 
 Crumble is split across repositories in [`crumble-project`](https://github.com/crumble-project). The server and web app live in `bot`. Specifications and the [glossary](/reference/glossary) live in `spec`.
 
+The server and web app are licensed under the [GNU Affero General Public License v3.0](https://github.com/crumble-project/bot/blob/main/LICENSE) (`AGPL-3.0-only`). Contributions to `bot` are accepted under the same license.
+
 ## Propose a feature
 
 New user-visible features go through [`crumble-project/spec`](https://github.com/crumble-project/spec/blob/main/features/README.md) before any code is written:
