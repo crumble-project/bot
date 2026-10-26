@@ -38,7 +38,6 @@ import { useChatStream } from "@/lib/live";
 import { BotReasoning } from "@/features/bots/reasoning";
 import {
   BotMessage,
-  Composer,
   EventRow,
   OwnerMessage,
   ToolResultRow,
@@ -50,6 +49,7 @@ import {
   reactionsOf,
   shownInChat,
 } from "./transcript";
+import { Composer } from "./composer";
 
 const DETAILS_KEY = "crumble.details";
 
@@ -431,6 +431,30 @@ function useChatDelivery(botId: string) {
   return { outgoing, sending, stop };
 }
 
+function ChatJobDialog({
+  botId,
+  job,
+  jobFor,
+  onClose,
+}: {
+  botId: string;
+  job: JobRef;
+  jobFor: ReturnType<typeof useChatJobs>;
+  onClose: () => void;
+}) {
+  const current = jobFor(job.name);
+
+  return (
+    <JobDialog
+      botId={botId}
+      job={job}
+      status={current?.status}
+      usage={current?.usage}
+      onClose={onClose}
+    />
+  );
+}
+
 export function Chat({ botId }: { botId: string }) {
   const chat = useQuery(chatQuery(botId));
   const bots = useQuery(botsQuery);
@@ -480,11 +504,10 @@ export function Chat({ botId }: { botId: string }) {
       </div>
       {details && <DetailsPanel bot={bot} />}
       {job && (
-        <JobDialog
+        <ChatJobDialog
           botId={botId}
           job={job}
-          status={jobFor(job.name)?.status}
-          usage={jobFor(job.name)?.usage}
+          jobFor={jobFor}
           onClose={() => setJob(null)}
         />
       )}

@@ -19,11 +19,11 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { randomId } from "@/lib/utils";
 import { type HistoryPage, type Message, api } from "@/lib/api";
+import type { Upload } from "./composer";
 import { deliver } from "./delivery";
 import {
   OwnerMessage,
   TimeMarker,
-  type Upload,
   mergeMessages,
   withTimeMarkers,
 } from "./transcript";

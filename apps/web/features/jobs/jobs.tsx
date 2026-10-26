@@ -93,35 +93,49 @@ function blocksOf(message: Message): Block[] {
   return Array.isArray(message.blocks) ? (message.blocks as Block[]) : [];
 }
 
+type StepItem = Extract<Item, { kind: "step" }>;
+
+function stepOf(message: Message, block: Block, index: number) {
+  return {
+    kind: "step" as const,
+    id: block.id ?? `${message.id}:${index}`,
+    tool: block.name ?? "",
+    subject: block.arguments?.command ?? block.arguments?.path,
+  };
+}
+
+function assistantItems(message: Message, steps: Map<string, StepItem>) {
+  const items: Item[] = [];
+
+  for (const [index, block] of blocksOf(message).entries()) {
+    if (block.type === "text" && block.text?.trim())
+      items.push({
+        kind: "reply",
+        id: `${message.id}:${index}`,
+        text: block.text,
+      });
+
+    if (block.type === "toolCall" && block.name) {
+      const step = stepOf(message, block, index);
+
+      steps.set(step.id, step);
+      items.push(step);
+    }
+  }
+
+  return items;
+}
+
 function itemsOf(messages: Message[]) {
   const items: Item[] = [];
-  const steps = new Map<string, Extract<Item, { kind: "step" }>>();
+  const steps = new Map<string, StepItem>();
 
   for (const message of messages) {
     if (message.role === "user" && message.content.trim())
       items.push({ kind: "task", id: message.id, text: message.content });
 
     if (message.role === "assistant")
-      for (const [index, block] of blocksOf(message).entries()) {
-        if (block.type === "text" && block.text?.trim())
-          items.push({
-            kind: "reply",
-            id: `${message.id}:${index}`,
-            text: block.text,
-          });
-
-        if (block.type === "toolCall" && block.name) {
-          const step = {
-            kind: "step" as const,
-            id: block.id ?? `${message.id}:${index}`,
-            tool: block.name,
-            subject: block.arguments?.command ?? block.arguments?.path,
-          };
-
-          steps.set(step.id, step);
-          items.push(step);
-        }
-      }
+      items.push(...assistantItems(message, steps));
 
     if (message.role === "toolResult" && message.toolCallId) {
       const step = steps.get(message.toolCallId);
@@ -133,15 +147,29 @@ function itemsOf(messages: Message[]) {
   return items;
 }
 
-function Step({ item }: { item: Extract<Item, { kind: "step" }> }) {
-  const verb =
-    VERBS.get(item.tool) ??
-    item.tool.charAt(0).toUpperCase() + item.tool.slice(1);
-
-  const failed = item.result?.isError === true;
-  const showOutput = item.result && (item.tool === "bash" || failed);
-  const lines = item.result?.content.split("\n") ?? [];
+function StepOutput({ content }: { content: string }) {
+  const lines = content.split("\n");
   const hidden = Math.max(0, lines.length - 12);
+
+  return (
+    <pre className="max-h-60 overflow-auto rounded-md bg-muted p-2 font-mono text-xs whitespace-pre-wrap">
+      {hidden > 0 && (
+        <span className="text-muted-foreground">
+          {hidden} earlier lines not shown{"\n"}
+        </span>
+      )}
+      {lines.slice(-12).join("\n")}
+    </pre>
+  );
+}
+
+function verbOf(tool: string) {
+  return VERBS.get(tool) ?? tool.charAt(0).toUpperCase() + tool.slice(1);
+}
+
+function Step({ item }: { item: StepItem }) {
+  const verb = verbOf(item.tool);
+  const failed = item.result?.isError === true;
 
   return (
     <div className="flex flex-col gap-1 text-sm">
@@ -155,37 +183,86 @@ function Step({ item }: { item: Extract<Item, { kind: "step" }> }) {
         )}
         {failed && <Badge variant="destructive">Failed</Badge>}
       </div>
-      {showOutput && (
-        <pre className="max-h-60 overflow-auto rounded-md bg-muted p-2 font-mono text-xs whitespace-pre-wrap">
-          {hidden > 0 && (
-            <span className="text-muted-foreground">
-              {hidden} earlier lines not shown{"\n"}
-            </span>
-          )}
-          {lines.slice(-12).join("\n")}
-        </pre>
+      {item.result && (item.tool === "bash" || failed) && (
+        <StepOutput content={item.result.content} />
       )}
     </div>
   );
 }
 
-const STEP_REFRESH_MS = 3_000;
+function JobItem({ item }: { item: Item }) {
+  if (item.kind === "task")
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium text-muted-foreground">Task</span>
+        <div className="rounded-lg bg-muted p-3 text-sm whitespace-pre-wrap">
+          {item.text}
+        </div>
+      </div>
+    );
 
-/** A job's task, replies and tool steps, read-only. */
-export function JobDialog({
+  if (item.kind === "reply")
+    return (
+      <div className="text-sm">
+        <Reply source={item.text} />
+      </div>
+    );
+
+  return <Step item={item} />;
+}
+
+function JobActions({
   botId,
-  job,
-  status,
-  usage,
-  onClose,
+  kind,
+  onRefresh,
 }: {
   botId: string;
-  job: JobRef;
-  status?: string | undefined;
-  usage?: CodingJob["usage"];
-  onClose: () => void;
+  kind: JobRef["kind"];
+  onRefresh: () => void;
 }) {
-  const label = job.kind === "coding" ? "coding job" : "desktop job";
+  return (
+    <div className="flex gap-2">
+      <Button variant="outline" size="sm" onClick={onRefresh}>
+        <HugeiconsIcon icon={RefreshIcon} data-icon="inline-start" />
+        Refresh
+      </Button>
+      {kind === "desktop" && (
+        <Button
+          variant="outline"
+          size="sm"
+          render={<Link to="/bots/$botId/desktop" params={{ botId }} />}
+          nativeButton={false}
+        >
+          <HugeiconsIcon icon={ComputerIcon} data-icon="inline-start" />
+          Open bot desktop
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function JobHistoryError({
+  label,
+  onRetry,
+}: {
+  label: string;
+  onRetry: () => void;
+}) {
+  return (
+    <Alert variant="destructive">
+      <AlertDescription className="flex items-center justify-between gap-2">
+        Couldn't load this {label}.
+        <Button size="sm" variant="outline" onClick={onRetry}>
+          Try again
+        </Button>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+const STEP_REFRESH_MS = 3_000;
+
+function useJobHistory(botId: string, job: JobRef, status?: string) {
   const base = `${agentPath(botId)}/${job.kind}-jobs/${encodeURIComponent(job.name)}/history`;
 
   const history = useInfiniteQuery({
@@ -206,7 +283,63 @@ export function JobDialog({
     .toReversed()
     .flatMap((page) => page.messages);
 
-  const items = itemsOf(messages);
+  return { history, items: itemsOf(messages) };
+}
+
+function JobHistoryBody({
+  history,
+  items,
+  label,
+  working,
+}: {
+  history: ReturnType<typeof useJobHistory>["history"];
+  items: Item[];
+  label: string;
+  working: boolean;
+}) {
+  return (
+    <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4">
+      {history.hasNextPage && (
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={history.isFetchingNextPage}
+          onClick={() => void history.fetchNextPage()}
+        >
+          Load earlier activity
+        </Button>
+      )}
+      {history.isPending && <Spinner className="mx-auto" />}
+      {history.isError && (
+        <JobHistoryError label={label} onRetry={() => void history.refetch()} />
+      )}
+      {history.isSuccess && items.length === 0 && (
+        <p className="text-sm text-muted-foreground">Nothing here yet.</p>
+      )}
+      {items.map((item) => (
+        <JobItem key={item.id} item={item} />
+      ))}
+      {working && <p className="shimmer text-sm">Working…</p>}
+    </div>
+  );
+}
+
+/** A job's task, replies and tool steps, read-only. */
+export function JobDialog({
+  botId,
+  job,
+  status,
+  usage,
+  onClose,
+}: {
+  botId: string;
+  job: JobRef;
+  status?: string | undefined;
+  usage?: CodingJob["usage"];
+  onClose: () => void;
+}) {
+  const label = job.kind === "coding" ? "coding job" : "desktop job";
+  const { history, items } = useJobHistory(botId, job, status);
   const cost = usageLine(usage);
 
   return (
@@ -219,76 +352,17 @@ export function JobDialog({
             {cost && ` · ${cost}`}
           </DialogDescription>
         </DialogHeader>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void history.refetch()}
-          >
-            <HugeiconsIcon icon={RefreshIcon} data-icon="inline-start" />
-            Refresh
-          </Button>
-          {job.kind === "desktop" && (
-            <Button
-              variant="outline"
-              size="sm"
-              render={<Link to="/bots/$botId/desktop" params={{ botId }} />}
-              nativeButton={false}
-            >
-              <HugeiconsIcon icon={ComputerIcon} data-icon="inline-start" />
-              Open bot desktop
-            </Button>
-          )}
-        </div>
-        <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4">
-          {history.hasNextPage && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={history.isFetchingNextPage}
-              onClick={() => void history.fetchNextPage()}
-            >
-              Load earlier activity
-            </Button>
-          )}
-          {history.isPending && <Spinner className="mx-auto" />}
-          {history.isError && (
-            <Alert variant="destructive">
-              <AlertDescription className="flex items-center justify-between gap-2">
-                Couldn't load this {label}.
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void history.refetch()}
-                >
-                  Try again
-                </Button>
-              </AlertDescription>
-            </Alert>
-          )}
-          {history.isSuccess && items.length === 0 && (
-            <p className="text-sm text-muted-foreground">Nothing here yet.</p>
-          )}
-          {items.map((item) =>
-            item.kind === "task" ? (
-              <div key={item.id} className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Task
-                </span>
-                <div className="rounded-lg bg-muted p-3 text-sm whitespace-pre-wrap">
-                  {item.text}
-                </div>
-              </div>
-            ) : item.kind === "reply" ? (
-              <div key={item.id} className="text-sm">
-                <Reply source={item.text} />
-              </div>
-            ) : (
-              <Step key={item.id} item={item} />
-            ),
-          )}
-          {status === "working" && <p className="shimmer text-sm">Working…</p>}
-        </div>
+        <JobActions
+          botId={botId}
+          kind={job.kind}
+          onRefresh={() => void history.refetch()}
+        />
+        <JobHistoryBody
+          history={history}
+          items={items}
+          label={label}
+          working={status === "working"}
+        />
       </DialogContent>
     </Dialog>
   );

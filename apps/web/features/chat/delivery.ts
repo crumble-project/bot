@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { send } from "@/lib/api";
-import type { Upload } from "./transcript";
+import type { Upload } from "./composer";
 
 export type Outgoing = {
   requestId: string;

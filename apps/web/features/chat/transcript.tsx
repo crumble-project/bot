@@ -4,16 +4,12 @@ import { Link } from "@tanstack/react-router";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowRight01Icon,
-  ArrowUp02Icon,
-  Attachment01Icon,
-  Cancel01Icon,
   ComputerIcon,
   Copy01Icon,
   File02Icon,
   HammerIcon,
   Key01Icon,
   ReplyIcon,
-  StopIcon,
   Tick02Icon,
   UserGroupIcon,
 } from "@hugeicons/core-free-icons";
@@ -28,10 +24,10 @@ import {
   MessageHeader,
 } from "@/components/ui/message";
 import { Spinner } from "@/components/ui/spinner";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { type Bot, type Message, blobUrl } from "@/lib/api";
+import { type Message, blobUrl } from "@/lib/api";
 import { botStyle } from "@/features/bots/avatar";
+import type { Upload } from "./composer";
 import { DisplayCard, displayOf } from "./display";
 import { Reply } from "@/components/markdown";
 
@@ -114,28 +110,58 @@ export function credentialRequestOf(message: Message) {
     : null;
 }
 
+function userShown(message: Message) {
+  return (
+    (message.content.trim() !== "" || Boolean(message.attachments?.length)) &&
+    message.origin?.kind !== "coding" &&
+    message.origin?.kind !== "desktop"
+  );
+}
+
+function toolResultShown(message: Message) {
+  return (
+    displayOf(message) !== null ||
+    jobOf(message) !== null ||
+    credentialRequestOf(message) !== null
+  );
+}
+
 export function shownInChat(message: Message) {
   switch (message.role) {
     case "user":
-      return (
-        (message.content.trim() !== "" ||
-          Boolean(message.attachments?.length)) &&
-        message.origin?.kind !== "coding" &&
-        message.origin?.kind !== "desktop"
-      );
+      return userShown(message);
     case "assistant":
       return hasText(message);
     case "toolResult":
-      return (
-        displayOf(message) !== null ||
-        jobOf(message) !== null ||
-        credentialRequestOf(message) !== null
-      );
+      return toolResultShown(message);
     case "event":
       return message.content.trim() !== "";
     default:
       return false;
   }
+}
+
+function reactionEmoji(message: Message) {
+  if (message.role !== "toolResult" || message.toolName !== "react") return;
+
+  if (message.isError) return;
+
+  // SAFETY: The react tool records the emoji it sent in its details.
+  return (message.toolDetails as { emoji?: string } | undefined)?.emoji;
+}
+
+function reactionLabel(message: Message, emoji: string, group: boolean) {
+  return group && message.origin?.name
+    ? `${message.origin.name} ${emoji}`
+    : emoji;
+}
+
+function addReaction(
+  reactions: Map<string, string[]>,
+  target: string,
+  label: string,
+) {
+  reactions.set(target, [...(reactions.get(target) ?? []), label]);
 }
 
 /** Emoji reactions from the `react` tool, keyed by the message they react to. */
@@ -146,22 +172,12 @@ export function reactionsOf(messages: Message[], group: boolean) {
   for (const message of messages) {
     if (message.role === "user" && message.entryId) lastUser = message.entryId;
 
-    if (message.role !== "toolResult" || message.toolName !== "react") continue;
-
-    if (message.isError) continue;
-
-    // SAFETY: The react tool records the emoji it sent in its details.
-    const emoji = (message.toolDetails as { emoji?: string } | undefined)
-      ?.emoji;
-
+    const emoji = reactionEmoji(message);
     const target = group ? message.replyTo : lastUser;
 
     if (!emoji || !target) continue;
 
-    const label =
-      group && message.origin?.name ? `${message.origin.name} ${emoji}` : emoji;
-
-    reactions.set(target, [...(reactions.get(target) ?? []), label]);
+    addReaction(reactions, target, reactionLabel(message, emoji, group));
   }
 
   return reactions;
@@ -567,51 +583,49 @@ export function BotMessage({
   );
 }
 
-export function ToolResultRow({
-  message,
+function CredentialRequestCard({
+  credential,
   botId,
+}: {
+  credential: { name: string; hosts: string[] };
+  botId: string;
+}) {
+  return (
+    <Link
+      to="/bots/$botId/credentials"
+      params={{ botId }}
+      className="flex w-full max-w-sm items-center gap-3 rounded-xl border p-3 text-left hover:bg-muted/50"
+    >
+      <HugeiconsIcon
+        icon={Key01Icon}
+        className="size-4 text-muted-foreground"
+      />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm font-medium">{credential.name}</span>
+        <span className="truncate text-xs text-muted-foreground">
+          Credential request · {credential.hosts.join(", ")}
+        </span>
+      </span>
+      <span className="text-xs text-muted-foreground">Review</span>
+    </Link>
+  );
+}
+
+function JobCard({
+  job,
   jobStatus,
   onOpenJob,
 }: {
-  message: Message;
-  /** The bot whose chat this is; a credential request links to its credentials. */
-  botId?: string;
+  job: {
+    kind: "coding" | "desktop";
+    name: string;
+    status?: string | undefined;
+  };
   jobStatus?: string | undefined;
-  onOpenJob?: (job: { kind: "coding" | "desktop"; name: string }) => void;
+  onOpenJob?:
+    | ((job: { kind: "coding" | "desktop"; name: string }) => void)
+    | undefined;
 }) {
-  const display = displayOf(message);
-
-  if (display) return <DisplayCard display={display} />;
-
-  const credential = credentialRequestOf(message);
-
-  if (credential)
-    return botId ? (
-      <Link
-        to="/bots/$botId/credentials"
-        params={{ botId }}
-        className="flex w-full max-w-sm items-center gap-3 rounded-xl border p-3 text-left hover:bg-muted/50"
-      >
-        <HugeiconsIcon
-          icon={Key01Icon}
-          className="size-4 text-muted-foreground"
-        />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-sm font-medium">
-            {credential.name}
-          </span>
-          <span className="truncate text-xs text-muted-foreground">
-            Credential request · {credential.hosts.join(", ")}
-          </span>
-        </span>
-        <span className="text-xs text-muted-foreground">Review</span>
-      </Link>
-    ) : null;
-
-  const job = jobOf(message);
-
-  if (!job) return null;
-
   const status = jobStatus ?? job.status;
   const working = status === "working" || status === "running";
   const Icon = job.kind === "coding" ? HammerIcon : ComputerIcon;
@@ -641,6 +655,36 @@ export function ToolResultRow({
   );
 }
 
+export function ToolResultRow({
+  message,
+  botId,
+  jobStatus,
+  onOpenJob,
+}: {
+  message: Message;
+  /** The bot whose chat this is; a credential request links to its credentials. */
+  botId?: string;
+  jobStatus?: string | undefined;
+  onOpenJob?: (job: { kind: "coding" | "desktop"; name: string }) => void;
+}) {
+  const display = displayOf(message);
+
+  if (display) return <DisplayCard display={display} />;
+
+  const credential = credentialRequestOf(message);
+
+  if (credential)
+    return botId ? (
+      <CredentialRequestCard credential={credential} botId={botId} />
+    ) : null;
+
+  const job = jobOf(message);
+
+  if (!job) return null;
+
+  return <JobCard job={job} jobStatus={jobStatus} onOpenJob={onOpenJob} />;
+}
+
 export function TypingDots() {
   return (
     <div className="flex gap-1 px-3 py-2" aria-label="Working">
@@ -652,380 +696,5 @@ export function TypingDots() {
         />
       ))}
     </div>
-  );
-}
-
-export type Upload = {
-  name: string;
-  mimeType: string;
-  data: string;
-  preview?: string;
-};
-
-const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
-const MAX_IMAGE = 5 * 1024 * 1024;
-const MAX_TEXT = 512 * 1024;
-const MAX_FILES = 8;
-
-function base64(bytes: ArrayBuffer) {
-  let binary = "";
-  const view = new Uint8Array(bytes);
-
-  for (let index = 0; index < view.length; index += 0x8000)
-    binary += String.fromCharCode(...view.subarray(index, index + 0x8000));
-
-  return btoa(binary);
-}
-
-/** Re-encodes other or oversized images as JPEG within 2048 pixels, like the native apps. */
-async function reencode(file: File) {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, 2048 / Math.max(bitmap.width, bitmap.height));
-
-  const canvas = new OffscreenCanvas(
-    Math.round(bitmap.width * scale),
-    Math.round(bitmap.height * scale),
-  );
-
-  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-
-  return canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 });
-}
-
-/** Turns picked files into message attachments, enforcing the server's limits. */
-export async function toUploads(files: File[]) {
-  const uploads: Upload[] = [];
-  const errors: string[] = [];
-
-  for (const file of files) {
-    try {
-      if (file.type.startsWith("image/")) {
-        const direct =
-          IMAGE_TYPES.includes(file.type) && file.size <= MAX_IMAGE;
-
-        const blob = direct ? file : await reencode(file);
-
-        if (blob.size > MAX_IMAGE) {
-          errors.push(`${file.name} is larger than 5 MB.`);
-          continue;
-        }
-
-        uploads.push({
-          name: direct ? file.name : file.name.replace(/\.[^.]+$/, "") + ".jpg",
-          mimeType: blob.type,
-          data: base64(await blob.arrayBuffer()),
-          preview: URL.createObjectURL(blob),
-        });
-        continue;
-      }
-
-      const bytes = await file.arrayBuffer();
-
-      if (bytes.byteLength > MAX_TEXT) {
-        errors.push(`${file.name} is larger than 512 KB.`);
-        continue;
-      }
-
-      new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      uploads.push({
-        name: file.name,
-        mimeType:
-          file.type.startsWith("text/") || file.type === "application/json"
-            ? file.type
-            : "text/plain",
-        data: base64(bytes),
-      });
-    } catch {
-      errors.push(
-        `${file.name} can't be attached. Attach images or text files.`,
-      );
-    }
-  }
-
-  return { uploads, errors };
-}
-
-export type Mentionable = Pick<Bot, "id" | "name">;
-
-export function Composer({
-  placeholder,
-  disabled,
-  running,
-  replyingTo,
-  onCancelReply,
-  mentionable = [],
-  actions,
-  onSend,
-  onStop,
-}: {
-  placeholder: string;
-  disabled?: boolean;
-  running: boolean;
-  replyingTo?: string | undefined;
-  onCancelReply?: () => void;
-  mentionable?: Mentionable[];
-  /** Controls shown beside the send button. */
-  actions?: ReactNode;
-  onSend: (content: string, uploads: Upload[]) => Promise<boolean>;
-  onStop: () => void;
-}) {
-  const [draft, setDraft] = useState("");
-  const [uploads, setUploads] = useState<Upload[]>([]);
-  const [errors, setErrors] = useState<string[]>([]);
-  const [sending, setSending] = useState(false);
-  const [dragging, setDragging] = useState(false);
-  const picker = useRef<HTMLInputElement>(null);
-  const field = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => field.current?.focus(), []);
-
-  const mention = /(?:^|\s)@([^\s@]*)$/.exec(draft)?.[1];
-
-  const suggestions =
-    mention === undefined
-      ? []
-      : mentionable.filter((bot) =>
-          bot.name.toLowerCase().startsWith(mention.toLowerCase()),
-        );
-
-  const [selected, setSelected] = useState(0);
-  const suggestion = suggestions[selected % Math.max(suggestions.length, 1)];
-
-  const accept = () => {
-    if (!suggestion || mention === undefined) return;
-
-    setDraft(
-      `${draft.slice(0, draft.length - mention.length)}${suggestion.name} `,
-    );
-    setSelected(0);
-  };
-
-  const add = async (files: File[]) => {
-    const room = MAX_FILES - uploads.length;
-
-    const { uploads: added, errors: failed } = await toUploads(
-      files.slice(0, room),
-    );
-
-    setUploads([...uploads, ...added]);
-    setErrors([
-      ...failed,
-      ...(files.length > room ? [`Attach at most ${MAX_FILES} files.`] : []),
-    ]);
-  };
-
-  const canSend =
-    !disabled && !sending && (draft.trim() !== "" || uploads.length > 0);
-
-  const submit = async () => {
-    if (!canSend) return;
-
-    setSending(true);
-    const content = draft.trim();
-    const pending = uploads;
-
-    setDraft("");
-    setUploads([]);
-    setErrors([]);
-
-    // A failed send puts the message back when nothing new was typed.
-    if (!(await onSend(content, pending))) {
-      setDraft((current) => current || content);
-      setUploads((current) => (current.length ? current : pending));
-    }
-
-    setSending(false);
-  };
-
-  return (
-    <form
-      className={cn(
-        "mx-auto flex w-full max-w-3xl flex-col gap-2 p-4",
-        dragging && "rounded-xl outline-2 outline-dashed outline-ring",
-      )}
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submit();
-      }}
-      onDragOver={(event) => {
-        if (disabled) return;
-
-        event.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(event) => {
-        event.preventDefault();
-        setDragging(false);
-
-        if (!disabled) void add([...event.dataTransfer.files]);
-      }}
-    >
-      {replyingTo && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <HugeiconsIcon icon={ReplyIcon} className="size-3" />
-          <span className="truncate">Replying to {replyingTo}</span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            title="Cancel reply"
-            onClick={onCancelReply}
-          >
-            <HugeiconsIcon icon={Cancel01Icon} />
-          </Button>
-        </div>
-      )}
-      {uploads.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {uploads.map((upload, index) => (
-            <Badge key={index} variant="outline" className="h-8 gap-1.5 pr-0.5">
-              {upload.preview ? (
-                <img
-                  src={upload.preview}
-                  alt=""
-                  className="size-6 rounded object-cover"
-                />
-              ) : (
-                <HugeiconsIcon icon={File02Icon} data-icon="inline-start" />
-              )}
-              <span className="max-w-40 truncate">{upload.name}</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                title={`Remove ${upload.name}`}
-                onClick={() =>
-                  setUploads(uploads.filter((_, other) => other !== index))
-                }
-              >
-                <HugeiconsIcon icon={Cancel01Icon} />
-              </Button>
-            </Badge>
-          ))}
-        </div>
-      )}
-      {errors.map((error) => (
-        <p key={error} className="text-xs text-destructive">
-          {error}
-        </p>
-      ))}
-      {suggestions.length > 0 && (
-        <div className="flex flex-wrap gap-1 text-xs">
-          {suggestions.map((bot, index) => (
-            <Button
-              key={bot.id}
-              type="button"
-              size="xs"
-              variant={bot === suggestion ? "secondary" : "ghost"}
-              onClick={() => {
-                setSelected(index);
-                setDraft(
-                  `${draft.slice(0, draft.length - (mention?.length ?? 0))}${bot.name} `,
-                );
-              }}
-            >
-              @{bot.name}
-            </Button>
-          ))}
-          <span className="self-center text-muted-foreground">
-            Tab to complete
-          </span>
-        </div>
-      )}
-      <div
-        className={cn(
-          "flex items-end gap-1 rounded-3xl border border-input bg-background p-1.5 shadow-xs transition-[border-color,box-shadow] duration-150 focus-within:border-bot focus-within:shadow-sm dark:bg-input/30",
-          disabled && "opacity-50",
-        )}
-      >
-        <input
-          ref={picker}
-          type="file"
-          multiple
-          hidden
-          accept="image/*,text/*,.json,.xml,.md,.csv,.ts,.tsx,.js,.py,.swift,.go,.rs,.java,.kt,.rb,.sh,.yaml,.yml,.toml"
-          onChange={(event) => {
-            void add([...(event.target.files ?? [])]);
-            event.target.value = "";
-          }}
-        />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="rounded-full"
-          title="Attach files"
-          disabled={disabled || uploads.length >= MAX_FILES}
-          onClick={() => picker.current?.click()}
-        >
-          <HugeiconsIcon icon={Attachment01Icon} />
-        </Button>
-        <Textarea
-          ref={field}
-          aria-label="Message"
-          placeholder={placeholder}
-          disabled={disabled}
-          className="max-h-[40vh] min-h-8 resize-none self-center border-0 bg-transparent px-1.5 py-1.5 focus-visible:ring-0 disabled:bg-transparent dark:bg-transparent dark:disabled:bg-transparent"
-          value={draft}
-          onChange={(event) => {
-            setDraft(event.target.value);
-            setSelected(0);
-          }}
-          onPaste={(event) => {
-            const files = [...event.clipboardData.files];
-
-            if (files.length) {
-              event.preventDefault();
-              void add(files);
-            }
-          }}
-          onKeyDown={(event) => {
-            if (suggestions.length && event.key === "Tab") {
-              event.preventDefault();
-              accept();
-            } else if (suggestions.length && event.key === "ArrowDown") {
-              event.preventDefault();
-              setSelected(selected + 1);
-            } else if (suggestions.length && event.key === "ArrowUp") {
-              event.preventDefault();
-              setSelected(selected + suggestions.length - 1);
-            } else if (
-              event.key === "Enter" &&
-              !event.shiftKey &&
-              !event.altKey &&
-              !event.nativeEvent.isComposing
-            ) {
-              event.preventDefault();
-              void submit();
-            }
-          }}
-        />
-        {actions}
-        {running && (
-          <Button
-            type="button"
-            size="icon"
-            variant="secondary"
-            className="rounded-full"
-            title="Stop"
-            onClick={onStop}
-          >
-            <HugeiconsIcon icon={StopIcon} />
-          </Button>
-        )}
-        {(!running || canSend) && (
-          <Button
-            type="submit"
-            size="icon"
-            className="rounded-full bg-bot-strong hover:bg-bot-strong hover:brightness-110"
-            title="Send"
-            disabled={!canSend}
-          >
-            <HugeiconsIcon icon={ArrowUp02Icon} />
-          </Button>
-        )}
-      </div>
-    </form>
   );
 }

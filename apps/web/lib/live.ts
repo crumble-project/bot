@@ -118,38 +118,49 @@ function plain(markdown: string) {
 
 type Open = (target: { botId?: string; groupId?: string }) => void;
 
-function notify(event: Extract<ActivityEvent, { type: "reply" }>, open: Open) {
-  if (event.origin === "bot" || !notifications.enabled()) return;
+type ReplyEvent = Extract<ActivityEvent, { type: "reply" }>;
 
-  if (!("Notification" in window) || Notification.permission !== "granted")
-    return;
+function canNotify() {
+  return (
+    notifications.enabled() &&
+    "Notification" in window &&
+    Notification.permission === "granted"
+  );
+}
 
+function isShowing(event: ReplyEvent) {
   const path = location.pathname;
 
   const showing = event.groupId
     ? path.endsWith(`/groups/${event.groupId}`)
     : path.endsWith(`/bots/${event.agentId}`);
 
-  if (document.visibilityState === "visible" && showing) return;
+  return document.visibilityState === "visible" && showing;
+}
 
-  if (!firstNotice(event.eventId)) return;
+function noticeTitle(event: ReplyEvent) {
+  if (event.groupId)
+    return `${event.agentName} in ${event.groupName ?? "a group"}`;
 
   const job =
     event.origin === "coding" || event.origin === "desktop"
       ? ` · ${event.origin} job ${event.jobName ?? ""}`.trimEnd()
       : "";
 
-  const notification = new Notification(
-    event.groupId
-      ? `${event.agentName} in ${event.groupName ?? "a group"}`
-      : `${event.agentName}${job}`,
-    {
-      body: plain(event.preview) || "Replied",
-      tag: event.groupId
-        ? `reply-group-${event.groupId}`
-        : `reply-${event.agentId}`,
-    },
-  );
+  return `${event.agentName}${job}`;
+}
+
+function notify(event: ReplyEvent, open: Open) {
+  if (event.origin === "bot" || !canNotify()) return;
+
+  if (isShowing(event) || !firstNotice(event.eventId)) return;
+
+  const notification = new Notification(noticeTitle(event), {
+    body: plain(event.preview) || "Replied",
+    tag: event.groupId
+      ? `reply-group-${event.groupId}`
+      : `reply-${event.agentId}`,
+  });
 
   notification.onclick = () => {
     window.focus();

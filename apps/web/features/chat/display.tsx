@@ -182,8 +182,13 @@ function pathData(commands: Extract<Node, { kind: "path" }>["commands"]) {
   return commands.map((command) => command.join(" ")).join(" ");
 }
 
-function ChartNode({ node, id }: { node: Node; id: string }) {
-  const common = {
+const BASELINES = new Map<string | undefined, "hanging" | "middle">([
+  ["hanging", "hanging"],
+  ["middle", "middle"],
+]);
+
+function commonProps(node: Node, id: string) {
+  return {
     fill: paint(node.fill, node.kind === "line" ? "none" : "var(--foreground)"),
     fillOpacity: node.fillOpacity,
     stroke: paint(node.stroke, "none"),
@@ -196,93 +201,83 @@ function ChartNode({ node, id }: { node: Node; id: string }) {
     opacity: node.opacity,
     clipPath: node.clip ? `url(#${id})` : undefined,
   };
+}
 
-  const clip = node.clip && (
-    <clipPath id={id}>
-      <rect
-        x={node.clip[0]}
-        y={node.clip[1]}
-        width={node.clip[2]}
-        height={node.clip[3]}
-      />
-    </clipPath>
+type CommonProps = ReturnType<typeof commonProps>;
+
+function ChartText({
+  node,
+  common,
+}: {
+  node: Extract<Node, { kind: "text" }>;
+  common: CommonProps;
+}) {
+  return (
+    <text
+      {...common}
+      x={node.x}
+      y={node.y}
+      fontSize={node.size}
+      fontWeight={node.weight}
+      textAnchor={node.anchor}
+      dominantBaseline={BASELINES.get(node.baseline) ?? "auto"}
+      transform={
+        node.rotate ? `rotate(${node.rotate} ${node.x} ${node.y})` : undefined
+      }
+    >
+      {node.text}
+    </text>
   );
+}
 
+function ChartMark({ node, common }: { node: Node; common: CommonProps }) {
   switch (node.kind) {
     case "line":
       return (
-        <>
-          {clip}
-          <line
-            {...common}
-            x1={node.x1}
-            y1={node.y1}
-            x2={node.x2}
-            y2={node.y2}
-          />
-        </>
+        <line {...common} x1={node.x1} y1={node.y1} x2={node.x2} y2={node.y2} />
       );
     case "path":
       return (
-        <>
-          {clip}
-          <path
-            {...common}
-            d={pathData(node.commands)}
-            fillRule={node.evenOdd ? "evenodd" : "nonzero"}
-          />
-        </>
+        <path
+          {...common}
+          d={pathData(node.commands)}
+          fillRule={node.evenOdd ? "evenodd" : "nonzero"}
+        />
       );
     case "circle":
-      return (
-        <>
-          {clip}
-          <circle {...common} cx={node.x} cy={node.y} r={node.radius} />
-        </>
-      );
+      return <circle {...common} cx={node.x} cy={node.y} r={node.radius} />;
     case "rect":
       return (
-        <>
-          {clip}
-          <rect
-            {...common}
-            x={node.x}
-            y={node.y}
-            width={node.width}
-            height={node.height}
-            rx={node.radius}
-          />
-        </>
+        <rect
+          {...common}
+          x={node.x}
+          y={node.y}
+          width={node.width}
+          height={node.height}
+          rx={node.radius}
+        />
       );
     case "text":
-      return (
-        <>
-          {clip}
-          <text
-            {...common}
-            x={node.x}
-            y={node.y}
-            fontSize={node.size}
-            fontWeight={node.weight}
-            textAnchor={node.anchor}
-            dominantBaseline={
-              node.baseline === "hanging"
-                ? "hanging"
-                : node.baseline === "middle"
-                  ? "middle"
-                  : "auto"
-            }
-            transform={
-              node.rotate
-                ? `rotate(${node.rotate} ${node.x} ${node.y})`
-                : undefined
-            }
-          >
-            {node.text}
-          </text>
-        </>
-      );
+      return <ChartText node={node} common={common} />;
   }
+}
+
+function ChartNode({ node, id }: { node: Node; id: string }) {
+  return (
+    <>
+      {node.clip && (
+        <clipPath id={id}>
+          <rect
+            x={node.clip[0]}
+            y={node.clip[1]}
+            width={node.clip[2]}
+            height={node.clip[3]}
+          />
+        </clipPath>
+      )}
+      <ChartMark node={node} common={commonProps(node, id)} />
+    </>
+  );
 }
 
 /** Draws the server-compiled chart, choosing the widest layout that fits. */

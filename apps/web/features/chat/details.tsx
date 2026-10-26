@@ -1,9 +1,14 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  type UseQueryResult,
+  useMutation,
+  useQuery,
+} from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   type Bot,
+  type Memory,
   type Schedule,
   botMemoriesQuery,
   queryClient,
@@ -57,6 +62,64 @@ function Routine({ schedule }: { schedule: Schedule }) {
   );
 }
 
+function ProfileSummary({ bot, working }: { bot: Bot; working: boolean }) {
+  return (
+    <div className="flex flex-col items-center gap-2 text-center">
+      <BotAvatar
+        bot={bot}
+        size={84}
+        live
+        state={working ? "working" : bot.enabled ? "idle" : "sleeping"}
+      />
+      <span className="font-medium">{bot.name}</span>
+      <span className="text-xs text-muted-foreground">
+        {bot.description || (bot.enabled ? "Ready" : "Paused")}
+      </span>
+    </div>
+  );
+}
+
+function RoutineList({
+  schedules,
+  routines,
+}: {
+  schedules: UseQueryResult<Schedule[]>;
+  routines: Schedule[];
+}) {
+  return (
+    <>
+      {schedules.isPending && <Skeleton className="h-10" />}
+      {routines.map((schedule) => (
+        <Routine key={schedule.id} schedule={schedule} />
+      ))}
+      {schedules.isSuccess && routines.length === 0 && (
+        <p className="text-sm text-muted-foreground">No routines yet</p>
+      )}
+    </>
+  );
+}
+
+function MemoryNotes({ memories }: { memories: UseQueryResult<Memory[]> }) {
+  return (
+    <>
+      {memories.isPending && <Skeleton className="h-16" />}
+      {memories.data?.map((memory) => (
+        <div key={memory.id} className="flex flex-col gap-0.5">
+          <p className="line-clamp-4 text-sm">{memory.content}</p>
+          {sourceLabel(memory) && (
+            <span className="text-xs text-muted-foreground">
+              {sourceLabel(memory)}
+            </span>
+          )}
+        </div>
+      ))}
+      {memories.data?.length === 0 && (
+        <p className="text-sm text-muted-foreground">Nothing remembered yet</p>
+      )}
+    </>
+  );
+}
+
 /** The bot inspector beside its chat: profile, routines, and memory. */
 export function DetailsPanel({ bot }: { bot: Bot }) {
   const working = useWorking(bot.id);
@@ -70,49 +133,17 @@ export function DetailsPanel({ bot }: { bot: Bot }) {
 
   return (
     <aside className="hidden w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l p-4 lg:flex">
-      <div className="flex flex-col items-center gap-2 text-center">
-        <BotAvatar
-          bot={bot}
-          size={84}
-          live
-          state={working ? "working" : bot.enabled ? "idle" : "sleeping"}
-        />
-        <span className="font-medium">{bot.name}</span>
-        <span className="text-xs text-muted-foreground">
-          {bot.description || (bot.enabled ? "Ready" : "Paused")}
-        </span>
-      </div>
+      <ProfileSummary bot={bot} working={working} />
       <Tabs defaultValue="routines">
         <TabsList className="w-full">
           <TabsTrigger value="routines">Routines</TabsTrigger>
           <TabsTrigger value="memory">Memory</TabsTrigger>
         </TabsList>
         <TabsContent value="routines" className="flex flex-col gap-3 pt-3">
-          {schedules.isPending && <Skeleton className="h-10" />}
-          {routines.map((schedule) => (
-            <Routine key={schedule.id} schedule={schedule} />
-          ))}
-          {schedules.isSuccess && routines.length === 0 && (
-            <p className="text-sm text-muted-foreground">No routines yet</p>
-          )}
+          <RoutineList schedules={schedules} routines={routines} />
         </TabsContent>
         <TabsContent value="memory" className="flex flex-col gap-3 pt-3">
-          {memories.isPending && <Skeleton className="h-16" />}
-          {memories.data?.map((memory) => (
-            <div key={memory.id} className="flex flex-col gap-0.5">
-              <p className="line-clamp-4 text-sm">{memory.content}</p>
-              {sourceLabel(memory) && (
-                <span className="text-xs text-muted-foreground">
-                  {sourceLabel(memory)}
-                </span>
-              )}
-            </div>
-          ))}
-          {memories.data?.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              Nothing remembered yet
-            </p>
-          )}
+          <MemoryNotes memories={memories} />
         </TabsContent>
       </Tabs>
     </aside>

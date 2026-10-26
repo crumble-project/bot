@@ -280,28 +280,26 @@ function DisclosureRow({
   );
 }
 
-function useBotDetails(bot?: Bot) {
+function useBotIdentity(bot?: Bot) {
   const [avatar, setAvatar] = useState(bot?.avatar ?? seedAvatar());
   const [name, setName] = useState(bot?.name ?? "");
   const [description, setDescription] = useState(bot?.description ?? "");
+
+  return { avatar, setAvatar, name, setName, description, setDescription };
+}
+
+function useBotBehavior(bot?: Bot) {
   const [enabled, setEnabled] = useState(bot?.enabled ?? true);
 
   const [instructions, setInstructions] = useState(
     bot?.instructions ?? DEFAULT_INSTRUCTIONS,
   );
 
-  return {
-    avatar,
-    setAvatar,
-    name,
-    setName,
-    description,
-    setDescription,
-    enabled,
-    setEnabled,
-    instructions,
-    setInstructions,
-  };
+  return { enabled, setEnabled, instructions, setInstructions };
+}
+
+function useBotDetails(bot?: Bot) {
+  return { ...useBotIdentity(bot), ...useBotBehavior(bot) };
 }
 
 function useBotModel(bot: Bot | undefined, providers: Provider[]) {

@@ -50,30 +50,32 @@ export type AvatarChoice = {
   color?: string | undefined;
 };
 
+const AVATAR_PREFIXES = ["bot:", "critters:"];
+
+function applyOption(choice: AvatarChoice, option: string) {
+  const [key, value = ""] = option.split("=");
+
+  if (key === "silhouette")
+    choice.silhouette = SILHOUETTES.find((each) => each === value);
+
+  if (key === "color") choice.color = PALETTE.find((each) => each === value);
+}
+
 /** A `bot:` or `critters:` avatar split into its seed and picks, as in `bot:<seed>;silhouette=cloud;color=#38bdf8`.
  * Only the web reads the picks so far; the native apps hash the whole string as the seed.
  */
 export function parseAvatar(bot: { id: string; avatar: string }) {
   const choice: AvatarChoice = {};
 
-  for (const prefix of ["bot:", "critters:"])
-    if (bot.avatar.startsWith(prefix)) {
-      const [seed = "", ...options] = bot.avatar
-        .slice(prefix.length)
-        .split(";");
+  for (const prefix of AVATAR_PREFIXES) {
+    if (!bot.avatar.startsWith(prefix)) continue;
 
-      for (const option of options) {
-        const [key, value = ""] = option.split("=");
+    const [seed = "", ...options] = bot.avatar.slice(prefix.length).split(";");
 
-        if (key === "silhouette")
-          choice.silhouette = SILHOUETTES.find((each) => each === value);
+    for (const option of options) applyOption(choice, option);
 
-        if (key === "color")
-          choice.color = PALETTE.find((each) => each === value);
-      }
-
-      if (seed.trim()) return { seed: seed.trim(), choice };
-    }
+    if (seed.trim()) return { seed: seed.trim(), choice };
+  }
 
   return { seed: bot.id.trim() || "crumble", choice };
 }

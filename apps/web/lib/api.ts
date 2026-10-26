@@ -337,6 +337,12 @@ async function readEventStream(response: Response, handlers: StreamHandlers) {
   }
 }
 
+function endsStream(error: HttpError, handlers: StreamHandlers) {
+  if (error.status === 404) handlers.onGone?.();
+
+  return error.status === 401 || error.status === 404;
+}
+
 /** Follows a server-sent event stream with the session cookie, reconnecting with backoff until `signal` aborts. */
 export async function follow(
   path: string,
@@ -356,11 +362,7 @@ export async function follow(
     } catch (error) {
       if (signal.aborted) return;
 
-      if (error instanceof HttpError) {
-        if (error.status === 404) handlers.onGone?.();
-
-        if (error.status === 401 || error.status === 404) return;
-      }
+      if (error instanceof HttpError && endsStream(error, handlers)) return;
     }
 
     handlers.onStatus?.("reconnecting");
