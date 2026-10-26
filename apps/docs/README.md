@@ -33,4 +33,4 @@ bun run deploy
 
 ## Writing docs
 
-Pages live in `content/` as Markdown, or MDX for pages with callouts or Mermaid diagrams, with `title` and `description` frontmatter. Keep terminology aligned with [`spec/GLOSSARY.md`](https://github.com/crumble-project/spec/blob/main/GLOSSARY.md), link to generated schemas in `openapi/`, and update the docs in the same pull request as the server change they describe.
+Pages live in `content/` as Markdown, or MDX for pages with callouts or Mermaid diagrams, with `title` and `description` frontmatter. Keep terminology aligned with [`GLOSSARY.md`](https://github.com/crumble-project/bot/blob/main/GLOSSARY.md), link to generated schemas in `openapi/`, and update the docs in the same pull request as the server change they describe.

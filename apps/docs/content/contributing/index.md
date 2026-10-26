@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-Crumble is split across repositories in [`crumble-project`](https://github.com/crumble-project). The server and web app live in `bot`. The [glossary](/reference/glossary) lives in `spec`.
+Crumble is split across repositories in [`crumble-project`](https://github.com/crumble-project). The server and web app live in `bot`. So does the canonical glossary, `GLOSSARY.md`, which the [glossary](/reference/glossary) page copies.
 
 The server and web app are licensed under the [GNU Affero General Public License v3.0](https://github.com/crumble-project/bot/blob/main/LICENSE) (`AGPL-3.0-only`). Contributions to `bot` are accepted under the same license.
 

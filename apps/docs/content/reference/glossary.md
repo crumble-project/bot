@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-These definitions are copied from the canonical [glossary](https://github.com/crumble-project/spec/blob/main/GLOSSARY.md) in `crumble-project/spec`. If they differ, the spec wins.
+These definitions are copied from the canonical [glossary](https://github.com/crumble-project/bot/blob/main/GLOSSARY.md) in `crumble-project/bot`. If they differ, that file wins.
 
 ### Bot
 
