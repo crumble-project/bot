@@ -1,5 +1,9 @@
 import { Fragment, type MouseEvent, useRef, useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  type UseQueryResult,
+} from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -68,23 +72,24 @@ function details(activity: Operational): Details {
   return activity.details as Details;
 }
 
+const CALL_LABELS = {
+  "tool-call": { prefix: "Tool call", fallback: "tool" },
+  "tool-result": { prefix: "Tool result", fallback: "tool" },
+  "mcp-call": { prefix: "MCP call", fallback: "server" },
+};
+
 function kindLabel(activity: Operational) {
   const { toolName, name: toolLabel, communication } = details(activity);
-  const name = toolName ?? toolLabel;
 
-  switch (activity.kind) {
-    case "tool-call":
-      return `Tool call · ${name ?? "tool"}`;
-    case "tool-result":
-      return `Tool result · ${name ?? "tool"}`;
-    case "mcp-call":
-      return `MCP call · ${name ?? "server"}`;
-    case "bot-message": {
-      const { fromName, toName } = communication ?? {};
+  if (activity.kind === "bot-message") {
+    const { fromName, toName } = communication ?? {};
 
-      return `Bot message · ${fromName ?? "?"} → ${toName ?? "?"}`;
-    }
+    return `Bot message · ${fromName ?? "?"} → ${toName ?? "?"}`;
   }
+
+  const { prefix, fallback } = CALL_LABELS[activity.kind];
+
+  return `${prefix} · ${toolName ?? toolLabel ?? fallback}`;
 }
 
 function detailText(activity: Operational) {
@@ -105,16 +110,8 @@ const KINDS = [
   { label: "Changes", value: "change" },
 ];
 
-export function ActivityPage() {
-  const bots = useQuery(botsQuery);
-  const [kind, setKind] = useState(ALL);
-  // The feed pages by cursor, so pages are numbered as they are reached; cursors[n] opens page n.
-  const [cursors, setCursors] = useState([""]);
-  const [page, setPage] = useState(0);
-  const top = useRef<HTMLDivElement>(null);
-  const cursor = cursors[page] ?? "";
-
-  const feed = useQuery({
+function useActivityFeed(kind: string, cursor: string) {
+  return useQuery({
     queryKey: ["activity", kind, cursor],
     queryFn: ({ signal }) => {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
@@ -127,11 +124,22 @@ export function ActivityPage() {
     },
     placeholderData: keepPreviousData,
   });
+}
+
+export function ActivityPage() {
+  const bots = useQuery(botsQuery);
+  const [kind, setKind] = useState(ALL);
+  // The feed pages by cursor, so pages are numbered as they are reached; cursors[n] opens page n.
+  const [cursors, setCursors] = useState([""]);
+  const [page, setPage] = useState(0);
+  const top = useRef<HTMLDivElement>(null);
+  const cursor = cursors[page] ?? "";
+
+  const feed = useActivityFeed(kind, cursor);
 
   const nextCursor = feed.isPlaceholderData ? null : feed.data?.nextCursor;
 
   const botsById = new Map((bots.data ?? []).map((bot) => [bot.id, bot]));
-  const items = feed.data?.activities ?? [];
 
   const go = (target: number) => {
     if (target < 0 || target > cursors.length) return;
@@ -161,72 +169,133 @@ export function ActivityPage() {
       }}
     >
       <div ref={top} className="scroll-mt-6">
-        <Select
-          items={KINDS}
-          value={kind}
-          onValueChange={(value) => restart(value ?? ALL)}
-        >
-          <SelectTrigger className="w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {KINDS.map((item) => (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
+        <KindSelect kind={kind} onChange={(value) => restart(value)} />
       </div>
-      {feed.isPending ? (
-        <Skeleton className="h-40" />
-      ) : feed.isError ? (
-        <Alert variant="destructive">
-          <AlertDescription>{feed.error.message}</AlertDescription>
-        </Alert>
-      ) : items.length === 0 && page === 0 && !nextCursor ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyTitle>No Activity</EmptyTitle>
-            <EmptyDescription>
-              {kind === ALL
-                ? "Tool calls, bot messages, and skill and memory changes will appear here."
-                : "Nothing of this kind yet."}
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        <>
-          {items.length > 0 ? (
-            <div className="flex flex-col divide-y rounded-lg border">
-              {items.map((activity) => (
-                <ActivityRow
-                  key={activity.id}
-                  activity={activity}
-                  bot={
-                    activity.agentId
-                      ? botsById.get(activity.agentId)
-                      : undefined
-                  }
-                />
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Nothing on this page. Older activity continues on the next one.
-            </p>
-          )}
-          <ActivityPagination
-            page={page}
-            known={cursors.length}
-            hasNext={Boolean(nextCursor)}
-            onPage={go}
-          />
-        </>
-      )}
+      <ActivityBody
+        feed={feed}
+        kind={kind}
+        page={page}
+        known={cursors.length}
+        nextCursor={nextCursor}
+        botsById={botsById}
+        onPage={go}
+      />
     </WorkspacePage>
+  );
+}
+
+function KindSelect({
+  kind,
+  onChange,
+}: {
+  kind: string;
+  onChange: (kind: string) => void;
+}) {
+  return (
+    <Select
+      items={KINDS}
+      value={kind}
+      onValueChange={(value) => onChange(value ?? ALL)}
+    >
+      <SelectTrigger className="w-44">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          {KINDS.map((item) => (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
+function ActivityEmpty({ kind }: { kind: string }) {
+  return (
+    <Empty>
+      <EmptyHeader>
+        <EmptyTitle>No Activity</EmptyTitle>
+        <EmptyDescription>
+          {kind === ALL
+            ? "Tool calls, bot messages, and skill and memory changes will appear here."
+            : "Nothing of this kind yet."}
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  );
+}
+
+function ActivityList({
+  items,
+  botsById,
+}: {
+  items: Activity[];
+  botsById: Map<string, Bot>;
+}) {
+  if (items.length === 0)
+    return (
+      <p className="text-sm text-muted-foreground">
+        Nothing on this page. Older activity continues on the next one.
+      </p>
+    );
+
+  return (
+    <div className="flex flex-col divide-y rounded-lg border">
+      {items.map((activity) => (
+        <ActivityRow
+          key={activity.id}
+          activity={activity}
+          bot={activity.agentId ? botsById.get(activity.agentId) : undefined}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ActivityBody({
+  feed,
+  kind,
+  page,
+  known,
+  nextCursor,
+  botsById,
+  onPage,
+}: {
+  feed: UseQueryResult<ActivityFeed>;
+  kind: string;
+  page: number;
+  known: number;
+  nextCursor: string | null | undefined;
+  botsById: Map<string, Bot>;
+  onPage: (page: number) => void;
+}) {
+  const items = feed.data?.activities ?? [];
+
+  if (feed.isPending) return <Skeleton className="h-40" />;
+
+  if (feed.isError)
+    return (
+      <Alert variant="destructive">
+        <AlertDescription>{feed.error.message}</AlertDescription>
+      </Alert>
+    );
+
+  if (items.length === 0 && page === 0 && !nextCursor)
+    return <ActivityEmpty kind={kind} />;
+
+  return (
+    <>
+      <ActivityList items={items} botsById={botsById} />
+      <ActivityPagination
+        page={page}
+        known={known}
+        hasNext={Boolean(nextCursor)}
+        onPage={onPage}
+      />
+    </>
   );
 }
 
@@ -310,7 +379,6 @@ function ActivityRow({
 }) {
   const [open, setOpen] = useState(false);
   const Icon = open ? ArrowDown01Icon : ArrowRight01Icon;
-  const change = activity.kind === "change" ? activity.change : null;
 
   return (
     <div className="flex flex-col gap-2 p-3">
@@ -324,15 +392,7 @@ function ActivityRow({
         )}
         <div className="flex min-w-0 flex-1 flex-col">
           <p className="truncate text-sm">
-            {activity.kind === "change"
-              ? changeSummary(activity.change, activity.agentName)
-              : kindLabel(activity)}
-            {change && (
-              <span className="text-muted-foreground">
-                {" "}
-                · {changeTitle(change)}
-              </span>
-            )}
+            <ActivityTitle activity={activity} />
           </p>
           <span className="truncate text-xs text-muted-foreground">
             {activity.timestamp
@@ -344,22 +404,7 @@ function ActivityRow({
             {activity.agentName ?? "Shared"}
           </span>
         </div>
-        {change ? (
-          <RevertChange change={change} />
-        ) : (
-          activity.agentId && (
-            <Button
-              variant="ghost"
-              size="sm"
-              render={
-                <Link to="/bots/$botId" params={{ botId: activity.agentId }} />
-              }
-              nativeButton={false}
-            >
-              Open Chat
-            </Button>
-          )
-        )}
+        <ActivityAction activity={activity} />
       </div>
       <button
         type="button"
@@ -379,5 +424,37 @@ function ActivityRow({
           </pre>
         ))}
     </div>
+  );
+}
+
+function ActivityTitle({ activity }: { activity: Activity }) {
+  if (activity.kind !== "change") return kindLabel(activity);
+
+  return (
+    <>
+      {changeSummary(activity.change, activity.agentName)}
+      <span className="text-muted-foreground">
+        {" "}
+        · {changeTitle(activity.change)}
+      </span>
+    </>
+  );
+}
+
+function ActivityAction({ activity }: { activity: Activity }) {
+  if (activity.kind === "change")
+    return <RevertChange change={activity.change} />;
+
+  if (!activity.agentId) return null;
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      render={<Link to="/bots/$botId" params={{ botId: activity.agentId }} />}
+      nativeButton={false}
+    >
+      Open Chat
+    </Button>
   );
 }

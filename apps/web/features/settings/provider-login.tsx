@@ -31,14 +31,7 @@ export async function refreshProviders() {
   await queryClient.invalidateQueries({ queryKey: ["models"] });
 }
 
-/** Runs a provider's account sign-in; closing keeps it going on the server so it can be continued. */
-export function LoginDialog({
-  provider,
-  onClose,
-}: {
-  provider: Provider;
-  onClose: () => void;
-}) {
+function useProviderLogin(provider: Provider, onClose: () => void) {
   const [sessionId, setSessionId] = useState(provider.activeLoginId);
   const path = `/v1/providers/${encodeURIComponent(provider.provider)}/login`;
 
@@ -79,6 +72,48 @@ export function LoginDialog({
 
   const failure = start.error ?? (gone ? null : session.error);
 
+  return { sessionId, start, session, cancel, status, gone, failure };
+}
+
+type ProviderLogin = ReturnType<typeof useProviderLogin>;
+
+function LoginBody({
+  sessionId,
+  start,
+  session,
+  gone,
+}: Pick<ProviderLogin, "sessionId" | "start" | "session" | "gone">) {
+  if (sessionId === null)
+    return (
+      <Button disabled={start.isPending} onClick={() => start.mutate()}>
+        {start.isPending && <Spinner data-icon="inline-start" />}
+        Start sign-in
+      </Button>
+    );
+
+  if (gone)
+    return (
+      <Alert>
+        <AlertDescription>
+          This sign-in ended or was lost on restart. Close this and start again.
+        </AlertDescription>
+      </Alert>
+    );
+
+  return session.data ? <LoginSteps session={session.data} /> : <Spinner />;
+}
+
+/** Runs a provider's account sign-in; closing keeps it going on the server so it can be continued. */
+export function LoginDialog({
+  provider,
+  onClose,
+}: {
+  provider: Provider;
+  onClose: () => void;
+}) {
+  const login = useProviderLogin(provider, onClose);
+  const { sessionId, cancel, status, failure } = login;
+
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
@@ -89,23 +124,7 @@ export function LoginDialog({
             it.
           </DialogDescription>
         </DialogHeader>
-        {sessionId === null ? (
-          <Button disabled={start.isPending} onClick={() => start.mutate()}>
-            {start.isPending && <Spinner data-icon="inline-start" />}
-            Start sign-in
-          </Button>
-        ) : gone ? (
-          <Alert>
-            <AlertDescription>
-              This sign-in ended or was lost on restart. Close this and start
-              again.
-            </AlertDescription>
-          </Alert>
-        ) : session.data ? (
-          <LoginSteps session={session.data} />
-        ) : (
-          <Spinner />
-        )}
+        <LoginBody {...login} />
         {failure && (
           <Alert variant="destructive">
             <AlertDescription>{failure.message}</AlertDescription>

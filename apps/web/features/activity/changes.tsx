@@ -81,8 +81,7 @@ function lines(state: State) {
 
 type DiffLine = { kind: " " | "-" | "+"; text: string };
 
-/** A line diff by longest common subsequence, after trimming the shared head and tail. */
-function diff(before: string[], after: string[]): DiffLine[] {
+function commonHead(before: string[], after: string[]) {
   let head = 0;
 
   while (
@@ -92,6 +91,10 @@ function diff(before: string[], after: string[]): DiffLine[] {
   )
     head++;
 
+  return head;
+}
+
+function commonTail(before: string[], after: string[], head: number) {
   let tail = 0;
 
   while (
@@ -101,9 +104,10 @@ function diff(before: string[], after: string[]): DiffLine[] {
   )
     tail++;
 
-  const a = before.slice(head, before.length - tail);
-  const b = after.slice(head, after.length - tail);
+  return tail;
+}
 
+function commonLengths(a: string[], b: string[]) {
   const table = Array.from({ length: a.length + 1 }, () =>
     Array.from({ length: b.length + 1 }, () => 0),
   );
@@ -115,6 +119,11 @@ function diff(before: string[], after: string[]): DiffLine[] {
           ? table[i + 1]![j + 1]! + 1
           : Math.max(table[i + 1]![j]!, table[i]![j + 1]!);
 
+  return table;
+}
+
+function walkDiff(a: string[], b: string[]) {
+  const table = commonLengths(a, b);
   const middle: DiffLine[] = [];
   let i = 0;
   let j = 0;
@@ -130,6 +139,19 @@ function diff(before: string[], after: string[]): DiffLine[] {
       middle.push({ kind: "-", text: a[i++]! });
     else middle.push({ kind: "+", text: b[j++]! });
   }
+
+  return middle;
+}
+
+/** A line diff by longest common subsequence, after trimming the shared head and tail. */
+function diff(before: string[], after: string[]): DiffLine[] {
+  const head = commonHead(before, after);
+  const tail = commonTail(before, after, head);
+
+  const middle = walkDiff(
+    before.slice(head, before.length - tail),
+    after.slice(head, after.length - tail),
+  );
 
   const same = (text: string): DiffLine => ({ kind: " ", text });
 

@@ -1,5 +1,9 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  type UseQueryResult,
+  useMutation,
+  useQuery,
+} from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -72,6 +76,72 @@ function clock(hour: string, minute: string) {
   return `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
 }
 
+const NUMBER = /^\d+$/;
+
+const WEEKDAY_PHRASES = new Map([
+  ["*", "Every day"],
+  ["1-5", "Weekdays"],
+  ["0,6", "Weekends"],
+  ["6,0", "Weekends"],
+]);
+
+function weekdayPhrase(weekday: string) {
+  const phrase = WEEKDAY_PHRASES.get(weekday);
+
+  if (phrase) return phrase;
+
+  return /^[0-7]$/.test(weekday) ? `Every ${DAYS[Number(weekday) % 7]}` : null;
+}
+
+type CronFields = {
+  minute: string;
+  hour: string;
+  dayOfMonth: string | undefined;
+  weekday: string | undefined;
+};
+
+function describeMonthly(
+  { minute, hour, dayOfMonth, weekday }: CronFields,
+  zone: string,
+) {
+  if (
+    !dayOfMonth ||
+    !NUMBER.test(dayOfMonth) ||
+    !NUMBER.test(minute) ||
+    !NUMBER.test(hour) ||
+    weekday !== "*"
+  )
+    return null;
+
+  return `Monthly on day ${dayOfMonth} at ${clock(hour, minute)}${zone}`;
+}
+
+function describeFrequent({ minute, hour, weekday }: CronFields) {
+  if (hour !== "*" || weekday !== "*") return null;
+
+  const every = /^\*\/(\d+)$/.exec(minute);
+
+  if (every) return `Every ${every[1]} minutes`;
+
+  return NUMBER.test(minute)
+    ? `Every hour at :${minute.padStart(2, "0")}`
+    : null;
+}
+
+function describeRecurring(fields: CronFields, zone: string) {
+  const { minute, hour, weekday } = fields;
+
+  const frequent = describeFrequent(fields);
+
+  if (frequent) return frequent;
+
+  if (!NUMBER.test(minute) || !NUMBER.test(hour)) return null;
+
+  const phrase = weekdayPhrase(weekday ?? "");
+
+  return phrase && `${phrase} at ${clock(hour, minute)}${zone}`;
+}
+
 /** Describes common cron shapes in words, like the Mac app; anything else stays as written. */
 export function describeCron(cron: string, timezone: string) {
   const [minute, hour, dayOfMonth, month, weekday, ...rest] = cron
@@ -79,45 +149,18 @@ export function describeCron(cron: string, timezone: string) {
     .split(/\s+/);
 
   const zone = timezone !== LOCAL_ZONE ? ` (${timezone})` : "";
-  const number = /^\d+$/;
+  const plain = `${cron}${zone}`;
 
-  if (rest.length || !minute || !hour || month !== "*") return `${cron}${zone}`;
+  if (rest.length || !minute || !hour || month !== "*") return plain;
 
-  if (dayOfMonth !== "*") {
-    if (
-      !dayOfMonth ||
-      !number.test(dayOfMonth) ||
-      !number.test(minute) ||
-      !number.test(hour) ||
-      weekday !== "*"
-    )
-      return `${cron}${zone}`;
+  const fields = { minute, hour, dayOfMonth, weekday };
 
-    return `Monthly on day ${dayOfMonth} at ${clock(hour, minute)}${zone}`;
-  }
+  const described =
+    dayOfMonth !== "*"
+      ? describeMonthly(fields, zone)
+      : describeRecurring(fields, zone);
 
-  const every = /^\*\/(\d+)$/.exec(minute);
-
-  if (every && hour === "*" && weekday === "*")
-    return `Every ${every[1]} minutes`;
-
-  if (number.test(minute) && hour === "*" && weekday === "*")
-    return `Every hour at :${minute.padStart(2, "0")}`;
-
-  if (!number.test(minute) || !number.test(hour)) return `${cron}${zone}`;
-
-  const at = `at ${clock(hour, minute)}${zone}`;
-
-  if (weekday === "*") return `Every day ${at}`;
-
-  if (weekday === "1-5") return `Weekdays ${at}`;
-
-  if (weekday === "0,6" || weekday === "6,0") return `Weekends ${at}`;
-
-  if (weekday && /^[0-7]$/.test(weekday))
-    return `Every ${DAYS[Number(weekday) % 7]} ${at}`;
-
-  return `${cron}${zone}`;
+  return described ?? plain;
 }
 
 export function describeTiming(schedule: Schedule) {
@@ -256,14 +299,107 @@ function soon(date: Date, now: Date) {
   return relative.format(Math.round(minutes / 60), "hour");
 }
 
+function TasksEmpty({
+  firstBot,
+  onCreate,
+}: {
+  firstBot?: Bot | undefined;
+  onCreate: () => void;
+}) {
+  return (
+    <Empty>
+      <EmptyHeader>
+        <EmptyTitle className="font-heading text-lg">No tasks yet</EmptyTitle>
+        <EmptyDescription>
+          {firstBot
+            ? "A task sends a bot a message once or on a schedule, and the bot answers in its chat."
+            : "Create a bot, then give it a task to run once or on a schedule."}
+        </EmptyDescription>
+      </EmptyHeader>
+      {firstBot && (
+        <EmptyContent>
+          <Button onClick={onCreate}>
+            <HugeiconsIcon icon={PlusSignIcon} data-icon="inline-start" />
+            New task
+          </Button>
+        </EmptyContent>
+      )}
+    </Empty>
+  );
+}
+
+function Agenda({
+  shown,
+  byId,
+  onEdit,
+}: {
+  shown: Schedule[];
+  byId: Map<string, Bot>;
+  onEdit: (schedule: Schedule) => void;
+}) {
+  const now = new Date();
+
+  return agendaOf(shown, now).map((group) => (
+    <Section key={group.title} title={group.title}>
+      {group.list.map((schedule) => {
+        const bot = byId.get(schedule.agentId);
+
+        return bot ? (
+          <TaskRow
+            key={schedule.id}
+            schedule={schedule}
+            bot={bot}
+            creator={
+              schedule.createdByAgentId &&
+              schedule.createdByAgentId !== schedule.agentId
+                ? byId.get(schedule.createdByAgentId)
+                : undefined
+            }
+            now={group.upcoming ? now : undefined}
+            onEdit={() => onEdit(schedule)}
+          />
+        ) : null;
+      })}
+    </Section>
+  ));
+}
+
+function TasksBody({
+  bots,
+  schedules,
+  onCreate,
+  onEdit,
+}: {
+  bots: UseQueryResult<Bot[]>;
+  schedules: UseQueryResult<Schedule[]>;
+  onCreate: () => void;
+  onEdit: (schedule: Schedule) => void;
+}) {
+  const firstBot = bots.data?.[0];
+  const byId = new Map(bots.data?.map((bot) => [bot.id, bot]));
+  const shown = schedules.data?.filter((schedule) => !finished(schedule));
+
+  if (bots.isPending || schedules.isPending)
+    return <Skeleton className="h-40" />;
+
+  if (schedules.isError)
+    return (
+      <Alert variant="destructive">
+        <AlertDescription>{schedules.error.message}</AlertDescription>
+      </Alert>
+    );
+
+  if (!shown?.length)
+    return <TasksEmpty firstBot={firstBot} onCreate={onCreate} />;
+
+  return <Agenda shown={shown} byId={byId} onEdit={onEdit} />;
+}
+
 export function TasksPage() {
   const bots = useQuery(botsQuery);
   const schedules = useQuery(schedulesQuery);
   const [editing, setEditing] = useState<Editing | null>(null);
   const firstBot = bots.data?.[0];
-  const now = new Date();
-  const byId = new Map(bots.data?.map((bot) => [bot.id, bot]));
-  const shown = schedules.data?.filter((schedule) => !finished(schedule));
 
   const create = () =>
     firstBot && setEditing({ schedule: null, agentId: firstBot.id });
@@ -280,60 +416,14 @@ export function TasksPage() {
       newDisabled={!firstBot}
       onNew={create}
     >
-      {bots.isPending || schedules.isPending ? (
-        <Skeleton className="h-40" />
-      ) : schedules.isError ? (
-        <Alert variant="destructive">
-          <AlertDescription>{schedules.error.message}</AlertDescription>
-        </Alert>
-      ) : !shown?.length ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyTitle className="font-heading text-lg">
-              No tasks yet
-            </EmptyTitle>
-            <EmptyDescription>
-              {firstBot
-                ? "A task sends a bot a message once or on a schedule, and the bot answers in its chat."
-                : "Create a bot, then give it a task to run once or on a schedule."}
-            </EmptyDescription>
-          </EmptyHeader>
-          {firstBot && (
-            <EmptyContent>
-              <Button onClick={create}>
-                <HugeiconsIcon icon={PlusSignIcon} data-icon="inline-start" />
-                New task
-              </Button>
-            </EmptyContent>
-          )}
-        </Empty>
-      ) : (
-        agendaOf(shown, now).map((group) => (
-          <Section key={group.title} title={group.title}>
-            {group.list.map((schedule) => {
-              const bot = byId.get(schedule.agentId);
-
-              return bot ? (
-                <TaskRow
-                  key={schedule.id}
-                  schedule={schedule}
-                  bot={bot}
-                  creator={
-                    schedule.createdByAgentId &&
-                    schedule.createdByAgentId !== schedule.agentId
-                      ? byId.get(schedule.createdByAgentId)
-                      : undefined
-                  }
-                  now={group.upcoming ? now : undefined}
-                  onEdit={() =>
-                    setEditing({ schedule, agentId: schedule.agentId })
-                  }
-                />
-              ) : null;
-            })}
-          </Section>
-        ))
-      )}
+      <TasksBody
+        bots={bots}
+        schedules={schedules}
+        onCreate={create}
+        onEdit={(schedule) =>
+          setEditing({ schedule, agentId: schedule.agentId })
+        }
+      />
       {editing && (
         <TaskDialog
           bots={bots.data ?? []}
@@ -348,23 +438,9 @@ export function TasksPage() {
 const refresh = () =>
   queryClient.invalidateQueries({ queryKey: schedulesQuery.queryKey });
 
-function TaskRow({
-  schedule,
-  bot,
-  creator,
-  now,
-  onEdit,
-}: {
-  schedule: Schedule;
-  bot: Bot;
-  creator?: Bot | undefined;
-  /** Set for upcoming tasks, which lead with when they run next. */
-  now?: Date | undefined;
-  onEdit: () => void;
-}) {
+function useTaskActions(schedule: Schedule) {
   const navigate = useNavigate();
   const path = `/v1/schedules/${encodeURIComponent(schedule.id)}`;
-  const next = now && schedule.nextRunAt ? new Date(schedule.nextRunAt) : null;
 
   const toggle = useMutation({
     mutationFn: (enabled: boolean) => send(path, "PATCH", { enabled }),
@@ -386,76 +462,139 @@ function TaskRow({
     onSettled: refresh,
   });
 
-  const failure = toggle.error ?? run.error ?? remove.error;
+  return { toggle, run, remove };
+}
+
+function NextRun({ next, now }: { next: Date | null; now: Date }) {
+  return (
+    <div className="flex w-16 shrink-0 flex-col tabular-nums">
+      {next && (
+        <>
+          <span className="font-heading text-base font-semibold">
+            {next.toLocaleTimeString(undefined, {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </span>
+          {next.getTime() - now.getTime() < 86_400_000 && (
+            <span className="text-xs text-muted-foreground">
+              {soon(next, now)}
+            </span>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function TaskSummary({
+  schedule,
+  bot,
+  creator,
+  next,
+  failure,
+}: {
+  schedule: Schedule;
+  bot: Bot;
+  creator?: Bot | undefined;
+  next: Date | null;
+  failure?: Error | null;
+}) {
+  return (
+    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <span className="truncate text-sm font-medium">{schedule.name}</span>
+      <p className="line-clamp-1 text-sm text-muted-foreground">
+        {schedule.prompt}
+      </p>
+      <span className="truncate text-xs text-muted-foreground">
+        {bot.name},{" "}
+        {next && !schedule.cron
+          ? "once"
+          : describeTiming(schedule).replace(/^\w/, (letter) =>
+              letter.toLowerCase(),
+            )}
+        {creator && `, scheduled by ${creator.name}`}
+      </span>
+      {failure && (
+        <span className="text-xs text-destructive">{failure.message}</span>
+      )}
+    </div>
+  );
+}
+
+function TaskControls({
+  schedule,
+  actions,
+  onEdit,
+}: {
+  schedule: Schedule;
+  actions: ReturnType<typeof useTaskActions>;
+  onEdit: () => void;
+}) {
+  const { run, remove } = actions;
+
+  return (
+    <div className="flex gap-1 opacity-0 transition-opacity group-hover/task:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        title="Run now"
+        disabled={!schedule.enabled || run.isPending}
+        onClick={() => run.mutate()}
+      >
+        <HugeiconsIcon icon={PlayIcon} />
+      </Button>
+      <Button variant="ghost" size="icon-sm" title="Edit" onClick={onEdit}>
+        <HugeiconsIcon icon={PencilEdit01Icon} />
+      </Button>
+      <ConfirmDelete
+        title={`Delete ${schedule.name}?`}
+        description="The task stops running. This cannot be undone."
+        onConfirm={() => remove.mutate()}
+        trigger={
+          <Button variant="ghost" size="icon-sm" title="Delete">
+            <HugeiconsIcon icon={Delete02Icon} />
+          </Button>
+        }
+      />
+    </div>
+  );
+}
+
+function TaskRow({
+  schedule,
+  bot,
+  creator,
+  now,
+  onEdit,
+}: {
+  schedule: Schedule;
+  bot: Bot;
+  creator?: Bot | undefined;
+  /** Set for upcoming tasks, which lead with when they run next. */
+  now?: Date | undefined;
+  onEdit: () => void;
+}) {
+  const next = now && schedule.nextRunAt ? new Date(schedule.nextRunAt) : null;
+  const actions = useTaskActions(schedule);
+  const { toggle, run, remove } = actions;
 
   return (
     <div className="group/task flex items-center gap-3 p-3">
-      {now && (
-        <div className="flex w-16 shrink-0 flex-col tabular-nums">
-          {next && (
-            <>
-              <span className="font-heading text-base font-semibold">
-                {next.toLocaleTimeString(undefined, {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </span>
-              {next.getTime() - now.getTime() < 86_400_000 && (
-                <span className="text-xs text-muted-foreground">
-                  {soon(next, now)}
-                </span>
-              )}
-            </>
-          )}
-        </div>
-      )}
+      {now && <NextRun next={next} now={now} />}
       <BotAvatar
         bot={bot}
         size={32}
         state={schedule.enabled ? "idle" : "sleeping"}
       />
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate text-sm font-medium">{schedule.name}</span>
-        <p className="line-clamp-1 text-sm text-muted-foreground">
-          {schedule.prompt}
-        </p>
-        <span className="truncate text-xs text-muted-foreground">
-          {bot.name},{" "}
-          {next && !schedule.cron
-            ? "once"
-            : describeTiming(schedule).replace(/^\w/, (letter) =>
-                letter.toLowerCase(),
-              )}
-          {creator && `, scheduled by ${creator.name}`}
-        </span>
-        {failure && (
-          <span className="text-xs text-destructive">{failure.message}</span>
-        )}
-      </div>
-      <div className="flex gap-1 opacity-0 transition-opacity group-hover/task:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          title="Run now"
-          disabled={!schedule.enabled || run.isPending}
-          onClick={() => run.mutate()}
-        >
-          <HugeiconsIcon icon={PlayIcon} />
-        </Button>
-        <Button variant="ghost" size="icon-sm" title="Edit" onClick={onEdit}>
-          <HugeiconsIcon icon={PencilEdit01Icon} />
-        </Button>
-        <ConfirmDelete
-          title={`Delete ${schedule.name}?`}
-          description="The task stops running. This cannot be undone."
-          onConfirm={() => remove.mutate()}
-          trigger={
-            <Button variant="ghost" size="icon-sm" title="Delete">
-              <HugeiconsIcon icon={Delete02Icon} />
-            </Button>
-          }
-        />
-      </div>
+      <TaskSummary
+        schedule={schedule}
+        bot={bot}
+        creator={creator}
+        next={next}
+        failure={toggle.error ?? run.error ?? remove.error}
+      />
+      <TaskControls schedule={schedule} actions={actions} onEdit={onEdit} />
       <Switch
         aria-label={schedule.enabled ? "Pause task" : "Resume task"}
         checked={toggle.isPending ? toggle.variables : schedule.enabled}
@@ -464,6 +603,120 @@ function TaskRow({
       />
     </div>
   );
+}
+
+type TaskDraft = {
+  agentId: string;
+  name: string;
+  enabled: boolean;
+  prompt: string;
+  repeat: boolean;
+  cron: string;
+  timezone: string;
+  runAt: string;
+};
+
+type TaskBody = {
+  agentId: string;
+  name: string;
+  prompt: string;
+  timezone: string;
+  enabled: boolean;
+  cron: string | null;
+  runAt: string | null;
+};
+
+const DEFAULT_CRON = "0 9 * * *";
+
+function blankDraft(agentId: string): TaskDraft {
+  return {
+    agentId,
+    name: "",
+    enabled: true,
+    prompt: "",
+    repeat: false,
+    cron: DEFAULT_CRON,
+    timezone: LOCAL_ZONE,
+    runAt: inOneHour(LOCAL_ZONE),
+  };
+}
+
+function draftOf(agentId: string, schedule: Schedule): TaskDraft {
+  return {
+    agentId,
+    name: schedule.name,
+    enabled: schedule.enabled,
+    prompt: schedule.prompt,
+    repeat: schedule.cron !== null,
+    cron: schedule.cron ?? DEFAULT_CRON,
+    timezone: schedule.timezone,
+    runAt: schedule.runAt
+      ? wallClock(new Date(schedule.runAt), schedule.timezone)
+      : inOneHour(schedule.timezone),
+  };
+}
+
+function initialDraft(editing: Editing) {
+  return editing.schedule
+    ? draftOf(editing.agentId, editing.schedule)
+    : blankDraft(editing.agentId);
+}
+
+function runTimeError(draft: TaskDraft) {
+  if (draft.repeat ? !draft.cron.trim() : !draft.runAt)
+    return "Choose either a recurring cron or a one-time run time.";
+
+  if (!validZone(draft.timezone.trim())) return "Choose a valid time zone.";
+
+  return null;
+}
+
+function taskBody(draft: TaskDraft): { error: string } | { body: TaskBody } {
+  if (!draft.name.trim() || !draft.prompt.trim())
+    return { error: "Task name and prompt are required." };
+
+  const error = runTimeError(draft);
+
+  if (error) return { error };
+
+  const timezone = draft.timezone.trim();
+  const instant = draft.repeat ? null : fromWallClock(draft.runAt, timezone);
+
+  if (!draft.repeat && !instant)
+    return { error: "Choose a valid date and time." };
+
+  return {
+    body: {
+      agentId: draft.agentId,
+      name: draft.name.trim(),
+      prompt: draft.prompt.trim(),
+      timezone,
+      enabled: draft.enabled,
+      cron: draft.repeat ? draft.cron.trim() : null,
+      runAt: instant?.toISOString() ?? null,
+    },
+  };
+}
+
+function useSaveTask(schedule: Schedule | null, onClose: () => void) {
+  return useMutation({
+    mutationFn: (body: TaskBody) =>
+      schedule
+        ? send(
+            `/v1/schedules/${encodeURIComponent(schedule.id)}`,
+            "PATCH",
+            body,
+          )
+        : send("/v1/schedules", "POST", {
+            ...body,
+            cron: body.cron ?? undefined,
+            runAt: body.runAt ?? undefined,
+          }),
+    onSuccess: async () => {
+      await refresh();
+      onClose();
+    },
+  });
 }
 
 function TaskDialog({
@@ -476,71 +729,21 @@ function TaskDialog({
   onClose: () => void;
 }) {
   const initial = editing.schedule;
-  const [agentId, setAgentId] = useState(editing.agentId);
-  const [name, setName] = useState(initial?.name ?? "");
-  const [enabled, setEnabled] = useState(initial?.enabled ?? true);
-  const [prompt, setPrompt] = useState(initial?.prompt ?? "");
-  const [repeat, setRepeat] = useState(initial ? initial.cron !== null : false);
-  const [cron, setCron] = useState(initial?.cron ?? "0 9 * * *");
-  const [timezone, setTimezone] = useState(initial?.timezone ?? LOCAL_ZONE);
+  const [draft, setDraft] = useState(() => initialDraft(editing));
   const [error, setError] = useState<string | null>(null);
+  const save = useSaveTask(initial, onClose);
 
-  const [runAt, setRunAt] = useState(() =>
-    initial?.runAt
-      ? wallClock(new Date(initial.runAt), initial.timezone)
-      : inOneHour(initial?.timezone ?? LOCAL_ZONE),
-  );
-
-  const botItems = bots.map((bot) => ({ label: bot.name, value: bot.id }));
-
-  const save = useMutation({
-    mutationFn: (body: {
-      agentId: string;
-      name: string;
-      prompt: string;
-      timezone: string;
-      enabled: boolean;
-      cron: string | null;
-      runAt: string | null;
-    }) =>
-      initial
-        ? send(`/v1/schedules/${encodeURIComponent(initial.id)}`, "PATCH", body)
-        : send("/v1/schedules", "POST", {
-            ...body,
-            cron: body.cron ?? undefined,
-            runAt: body.runAt ?? undefined,
-          }),
-    onSuccess: async () => {
-      await refresh();
-      onClose();
-    },
-  });
+  const patch = (change: Partial<TaskDraft>) =>
+    setDraft((current) => ({ ...current, ...change }));
 
   const submit = () => {
     setError(null);
 
-    if (!name.trim() || !prompt.trim())
-      return setError("Task name and prompt are required.");
+    const result = taskBody(draft);
 
-    if (repeat ? !cron.trim() : !runAt)
-      return setError("Choose either a recurring cron or a one-time run time.");
+    if ("error" in result) return setError(result.error);
 
-    if (!validZone(timezone.trim()))
-      return setError("Choose a valid time zone.");
-
-    const instant = repeat ? null : fromWallClock(runAt, timezone.trim());
-
-    if (!repeat && !instant) return setError("Choose a valid date and time.");
-
-    save.mutate({
-      agentId,
-      name: name.trim(),
-      prompt: prompt.trim(),
-      timezone: timezone.trim(),
-      enabled,
-      cron: repeat ? cron.trim() : null,
-      runAt: instant?.toISOString() ?? null,
-    });
+    save.mutate(result.body);
   };
 
   const failure = error ?? save.error?.message;
@@ -558,102 +761,7 @@ function TaskDialog({
           }}
         >
           <FieldGroup>
-            <Field>
-              <FieldLabel>Runs on</FieldLabel>
-              <Select
-                items={botItems}
-                value={agentId}
-                onValueChange={(value) => value && setAgentId(value)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {botItems.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="task-name">Name</FieldLabel>
-              <Input
-                id="task-name"
-                maxLength={200}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="task-prompt">Prompt</FieldLabel>
-              <Textarea
-                id="task-prompt"
-                className="min-h-24"
-                maxLength={32000}
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel>Frequency</FieldLabel>
-              <Tabs
-                value={repeat ? "repeat" : "once"}
-                onValueChange={(value: string) => setRepeat(value === "repeat")}
-              >
-                <TabsList>
-                  <TabsTrigger value="once">Run once</TabsTrigger>
-                  <TabsTrigger value="repeat">Repeat</TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </Field>
-            {repeat ? (
-              <Field>
-                <FieldLabel htmlFor="task-cron">Cron</FieldLabel>
-                <Input
-                  id="task-cron"
-                  className="font-mono"
-                  maxLength={100}
-                  value={cron}
-                  onChange={(event) => setCron(event.target.value)}
-                />
-                <FieldDescription>
-                  {describeCron(cron, timezone.trim())}
-                </FieldDescription>
-              </Field>
-            ) : (
-              <Field>
-                <FieldLabel htmlFor="task-run-at">Date and time</FieldLabel>
-                <Input
-                  id="task-run-at"
-                  type="datetime-local"
-                  value={runAt}
-                  onChange={(event) => setRunAt(event.target.value)}
-                />
-              </Field>
-            )}
-            <Field>
-              <FieldLabel htmlFor="task-zone">Time zone</FieldLabel>
-              <Input
-                id="task-zone"
-                maxLength={100}
-                value={timezone}
-                onChange={(event) => setTimezone(event.target.value)}
-              />
-            </Field>
-            <Field orientation="horizontal">
-              <FieldContent>
-                <FieldLabel htmlFor="task-enabled">Enabled</FieldLabel>
-              </FieldContent>
-              <Switch
-                id="task-enabled"
-                checked={enabled}
-                onCheckedChange={setEnabled}
-              />
-            </Field>
+            <TaskFields bots={bots} draft={draft} patch={patch} />
             {failure && (
               <Alert variant="destructive">
                 <AlertDescription>{failure}</AlertDescription>
@@ -671,5 +779,120 @@ function TaskDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function TaskFields({
+  bots,
+  draft,
+  patch,
+}: {
+  bots: Bot[];
+  draft: TaskDraft;
+  patch: (change: Partial<TaskDraft>) => void;
+}) {
+  const botItems = bots.map((bot) => ({ label: bot.name, value: bot.id }));
+
+  return (
+    <>
+      <Field>
+        <FieldLabel>Runs on</FieldLabel>
+        <Select
+          items={botItems}
+          value={draft.agentId}
+          onValueChange={(value) => value && patch({ agentId: value })}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {botItems.map((item) => (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="task-name">Name</FieldLabel>
+        <Input
+          id="task-name"
+          maxLength={200}
+          value={draft.name}
+          onChange={(event) => patch({ name: event.target.value })}
+        />
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="task-prompt">Prompt</FieldLabel>
+        <Textarea
+          id="task-prompt"
+          className="min-h-24"
+          maxLength={32000}
+          value={draft.prompt}
+          onChange={(event) => patch({ prompt: event.target.value })}
+        />
+      </Field>
+      <Field>
+        <FieldLabel>Frequency</FieldLabel>
+        <Tabs
+          value={draft.repeat ? "repeat" : "once"}
+          onValueChange={(value: string) =>
+            patch({ repeat: value === "repeat" })
+          }
+        >
+          <TabsList>
+            <TabsTrigger value="once">Run once</TabsTrigger>
+            <TabsTrigger value="repeat">Repeat</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </Field>
+      {draft.repeat ? (
+        <Field>
+          <FieldLabel htmlFor="task-cron">Cron</FieldLabel>
+          <Input
+            id="task-cron"
+            className="font-mono"
+            maxLength={100}
+            value={draft.cron}
+            onChange={(event) => patch({ cron: event.target.value })}
+          />
+          <FieldDescription>
+            {describeCron(draft.cron, draft.timezone.trim())}
+          </FieldDescription>
+        </Field>
+      ) : (
+        <Field>
+          <FieldLabel htmlFor="task-run-at">Date and time</FieldLabel>
+          <Input
+            id="task-run-at"
+            type="datetime-local"
+            value={draft.runAt}
+            onChange={(event) => patch({ runAt: event.target.value })}
+          />
+        </Field>
+      )}
+      <Field>
+        <FieldLabel htmlFor="task-zone">Time zone</FieldLabel>
+        <Input
+          id="task-zone"
+          maxLength={100}
+          value={draft.timezone}
+          onChange={(event) => patch({ timezone: event.target.value })}
+        />
+      </Field>
+      <Field orientation="horizontal">
+        <FieldContent>
+          <FieldLabel htmlFor="task-enabled">Enabled</FieldLabel>
+        </FieldContent>
+        <Switch
+          id="task-enabled"
+          checked={draft.enabled}
+          onCheckedChange={(enabled) => patch({ enabled })}
+        />
+      </Field>
+    </>
   );
 }

@@ -11,13 +11,30 @@ import { Input } from "@/components/ui/input";
 import { clearUserData } from "@/lib/api";
 import { authClient } from "@/lib/auth-client";
 
-export function Connect() {
-  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
+type Mode = "sign-in" | "sign-up";
 
-  const connect = useMutation({
+const MODE_COPY = {
+  "sign-in": {
+    submit: "Sign in",
+    switch: "Create an account",
+    other: "sign-up",
+    autoComplete: "current-password",
+  },
+  "sign-up": {
+    submit: "Create account",
+    switch: "Already have an account? Sign in",
+    other: "sign-in",
+    autoComplete: "new-password",
+  },
+} as const;
+
+function useConnect(
+  mode: Mode,
+  credentials: { email: string; password: string; name: string },
+) {
+  const { email, password, name } = credentials;
+
+  return useMutation({
     mutationFn: async () => {
       const result =
         mode === "sign-in"
@@ -31,6 +48,26 @@ export function Connect() {
       window.location.assign("/ui/");
     },
   });
+}
+
+function canConnect(
+  mode: Mode,
+  { email, password, name }: { email: string; password: string; name: string },
+) {
+  return Boolean(
+    email.trim() && password && (mode !== "sign-up" || name.trim()),
+  );
+}
+
+export function Connect() {
+  const [mode, setMode] = useState<Mode>("sign-in");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const credentials = { email, password, name };
+  const copy = MODE_COPY[mode];
+
+  const connect = useConnect(mode, credentials);
 
   return (
     <form
@@ -70,9 +107,7 @@ export function Connect() {
           <Input
             id="password"
             type="password"
-            autoComplete={
-              mode === "sign-in" ? "current-password" : "new-password"
-            }
+            autoComplete={copy.autoComplete}
             aria-invalid={connect.isError || undefined}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
@@ -81,26 +116,19 @@ export function Connect() {
         </Field>
         <Button
           type="submit"
-          disabled={
-            !email.trim() ||
-            !password ||
-            (mode === "sign-up" && !name.trim()) ||
-            connect.isPending
-          }
+          disabled={!canConnect(mode, credentials) || connect.isPending}
         >
-          {mode === "sign-in" ? "Sign in" : "Create account"}
+          {copy.submit}
         </Button>
         <Button
           type="button"
           variant="ghost"
           onClick={() => {
-            setMode(mode === "sign-in" ? "sign-up" : "sign-in");
+            setMode(copy.other);
             connect.reset();
           }}
         >
-          {mode === "sign-in"
-            ? "Create an account"
-            : "Already have an account? Sign in"}
+          {copy.switch}
         </Button>
       </FieldGroup>
     </form>

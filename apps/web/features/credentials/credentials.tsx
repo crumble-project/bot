@@ -320,6 +320,43 @@ function RowMenu({ children }: { children: ReactNode }) {
   );
 }
 
+function useSaveCredential(
+  botId: string,
+  draft: { name: string; hosts: string; value: string },
+  onClose: () => void,
+) {
+  return useMutation({
+    mutationFn: () =>
+      call<Credential, { hosts: string[]; value?: string }>(
+        credentialPath(botId, draft.name),
+        "PUT",
+        {
+          hosts: hostList(draft.hosts),
+          ...(draft.value && { value: draft.value }),
+        },
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: credentialsQuery(botId).queryKey,
+      });
+      onClose();
+    },
+  });
+}
+
+function credentialDraft(editing: Editing) {
+  const existing = editing.kind === "credential" ? editing.credential : null;
+  const request = editing.kind === "request" ? editing.request : null;
+  const source = existing ?? request;
+
+  return {
+    existing,
+    request,
+    name: source?.name ?? "",
+    hosts: (source?.hosts ?? []).join(", "),
+  };
+}
+
 function CredentialDialog({
   botId,
   editing,
@@ -329,32 +366,12 @@ function CredentialDialog({
   editing: Editing;
   onClose: () => void;
 }) {
-  const existing = editing.kind === "credential" ? editing.credential : null;
-  const request = editing.kind === "request" ? editing.request : null;
-
-  const [name, setName] = useState(existing?.name ?? request?.name ?? "");
-
-  const [hosts, setHosts] = useState(
-    (existing?.hosts ?? request?.hosts ?? []).join(", "),
-  );
-
+  const { existing, request, ...initial } = credentialDraft(editing);
+  const [name, setName] = useState(initial.name);
+  const [hosts, setHosts] = useState(initial.hosts);
   const [value, setValue] = useState("");
-  const nameInvalid = name !== "" && !NAME.test(name);
 
-  const save = useMutation({
-    mutationFn: () =>
-      call<Credential, { hosts: string[]; value?: string }>(
-        credentialPath(botId, name),
-        "PUT",
-        { hosts: hostList(hosts), ...(value && { value }) },
-      ),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: credentialsQuery(botId).queryKey,
-      });
-      onClose();
-    },
-  });
+  const save = useSaveCredential(botId, { name, hosts, value }, onClose);
 
   const ready =
     NAME.test(name) &&
@@ -379,50 +396,15 @@ function CredentialDialog({
           }}
         >
           <FieldGroup>
-            <Field data-invalid={nameInvalid || undefined}>
-              <FieldLabel htmlFor="credential-name">Name</FieldLabel>
-              <Input
-                id="credential-name"
-                placeholder="ACME_TOKEN"
-                autoComplete="off"
-                disabled={existing !== null || request !== null}
-                aria-invalid={nameInvalid || undefined}
-                value={name}
-                onChange={(event) => setName(event.target.value.toUpperCase())}
-              />
-              <FieldDescription>
-                The environment variable coding jobs see.
-              </FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="credential-hosts">Hosts</FieldLabel>
-              <Input
-                id="credential-hosts"
-                placeholder="api.example.com, *.example.com"
-                autoComplete="off"
-                value={hosts}
-                onChange={(event) => setHosts(event.target.value)}
-              />
-              <FieldDescription>
-                {request
-                  ? "The bot proposed these. The value goes only to them, so check they belong to the service."
-                  : "The value goes only to these hosts. *.example.com covers every subdomain."}
-              </FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="credential-value">Value</FieldLabel>
-              <Input
-                id="credential-value"
-                type="password"
-                autoComplete="off"
-                placeholder={existing ? "Keep the saved value" : undefined}
-                value={value}
-                onChange={(event) => setValue(event.target.value)}
-              />
-              <FieldDescription>
-                Stored encrypted and never shown again.
-              </FieldDescription>
-            </Field>
+            <CredentialFields
+              locked={editing.kind !== "new"}
+              proposed={request !== null}
+              replacing={existing !== null}
+              draft={{ name, hosts, value }}
+              onName={setName}
+              onHosts={setHosts}
+              onValue={setValue}
+            />
             {save.isError && (
               <Alert variant="destructive">
                 <AlertDescription>{save.error.message}</AlertDescription>
@@ -440,6 +422,75 @@ function CredentialDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function CredentialFields({
+  locked,
+  proposed,
+  replacing,
+  draft,
+  onName,
+  onHosts,
+  onValue,
+}: {
+  locked: boolean;
+  proposed: boolean;
+  replacing: boolean;
+  draft: { name: string; hosts: string; value: string };
+  onName: (name: string) => void;
+  onHosts: (hosts: string) => void;
+  onValue: (value: string) => void;
+}) {
+  const nameInvalid = draft.name !== "" && !NAME.test(draft.name);
+
+  return (
+    <>
+      <Field data-invalid={nameInvalid || undefined}>
+        <FieldLabel htmlFor="credential-name">Name</FieldLabel>
+        <Input
+          id="credential-name"
+          placeholder="ACME_TOKEN"
+          autoComplete="off"
+          disabled={locked}
+          aria-invalid={nameInvalid || undefined}
+          value={draft.name}
+          onChange={(event) => onName(event.target.value.toUpperCase())}
+        />
+        <FieldDescription>
+          The environment variable coding jobs see.
+        </FieldDescription>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="credential-hosts">Hosts</FieldLabel>
+        <Input
+          id="credential-hosts"
+          placeholder="api.example.com, *.example.com"
+          autoComplete="off"
+          value={draft.hosts}
+          onChange={(event) => onHosts(event.target.value)}
+        />
+        <FieldDescription>
+          {proposed
+            ? "The bot proposed these. The value goes only to them, so check they belong to the service."
+            : "The value goes only to these hosts. *.example.com covers every subdomain."}
+        </FieldDescription>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="credential-value">Value</FieldLabel>
+        <Input
+          id="credential-value"
+          type="password"
+          autoComplete="off"
+          placeholder={replacing ? "Keep the saved value" : undefined}
+          value={draft.value}
+          onChange={(event) => onValue(event.target.value)}
+        />
+        <FieldDescription>
+          Stored encrypted and never shown again.
+        </FieldDescription>
+      </Field>
+    </>
   );
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import {
   Link,
   useMatchRoute,
@@ -35,7 +35,13 @@ import {
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { type Bot, botsQuery, groupsQuery, clearUserData } from "@/lib/api";
+import {
+  type Bot,
+  type GroupChat,
+  botsQuery,
+  groupsQuery,
+  clearUserData,
+} from "@/lib/api";
 import { authClient } from "@/lib/auth-client";
 import {
   clearLiveStreams,
@@ -51,15 +57,9 @@ const WORKSPACE = [
   { to: "/activity", label: "Activity", icon: Activity01Icon },
 ] as const;
 
-export function Shell() {
-  const session = authClient.useSession();
-  const bots = useQuery(botsQuery);
-  const groups = useQuery(groupsQuery);
-  const matchRoute = useMatchRoute();
-  const navigate = useNavigate();
-  const [search, setSearch] = useState("");
-  const userId = session.data?.user.id;
+function useResetOnUserChange(userId: string | undefined) {
   const previousUserId = useRef(userId);
+
   useEffect(() => {
     if (
       previousUserId.current !== undefined &&
@@ -73,7 +73,10 @@ export function Shell() {
 
     previousUserId.current = userId;
   }, [userId]);
-  const needle = search.trim().toLowerCase();
+}
+
+function useFollowActivity() {
+  const navigate = useNavigate();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -86,19 +89,31 @@ export function Shell() {
 
     return () => controller.abort();
   }, [navigate]);
+}
 
-  const shownBots = (bots.data ?? []).filter(
-    (bot) =>
-      !needle ||
-      bot.name.toLowerCase().includes(needle) ||
-      bot.lastMessage?.toLowerCase().includes(needle),
+function matchesBot(bot: Bot, needle: string) {
+  return (
+    !needle ||
+    bot.name.toLowerCase().includes(needle) ||
+    bot.lastMessage?.toLowerCase().includes(needle)
   );
+}
+
+export function Shell() {
+  const session = authClient.useSession();
+  const bots = useQuery(botsQuery);
+  const groups = useQuery(groupsQuery);
+  const navigate = useNavigate();
+  const [search, setSearch] = useState("");
+  useResetOnUserChange(session.data?.user.id);
+  useFollowActivity();
+  const needle = search.trim().toLowerCase();
+
+  const shownBots = (bots.data ?? []).filter((bot) => matchesBot(bot, needle));
 
   const shownGroups = (groups.data ?? []).filter(
     (group) => !needle || group.name.toLowerCase().includes(needle),
   );
-
-  const byId = new Map(bots.data?.map((bot) => [bot.id, bot]));
 
   return (
     <TooltipProvider>
@@ -129,151 +144,15 @@ export function Shell() {
             />
           </SidebarHeader>
           <SidebarContent>
-            <SidebarGroup>
-              <SidebarGroupLabel>Bots</SidebarGroupLabel>
-              <SidebarGroupAction
-                title="New bot"
-                render={<Link to="/bots/new" />}
-              >
-                <HugeiconsIcon icon={PlusSignIcon} />
-                <span className="sr-only">New bot</span>
-              </SidebarGroupAction>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {bots.isPending &&
-                    [0, 1, 2].map((index) => (
-                      <SidebarMenuItem key={index}>
-                        <SidebarMenuSkeleton showIcon />
-                      </SidebarMenuItem>
-                    ))}
-                  {shownBots.map((bot) => (
-                    <BotRow
-                      key={bot.id}
-                      bot={bot}
-                      active={Boolean(
-                        matchRoute({
-                          to: "/bots/$botId",
-                          params: { botId: bot.id },
-                          fuzzy: true,
-                        }),
-                      )}
-                    />
-                  ))}
-                  {bots.data && shownBots.length === 0 && (
-                    <p className="px-2 text-xs text-muted-foreground">
-                      {needle ? "No results" : "No bots yet"}
-                    </p>
-                  )}
-                </SidebarMenu>
-                {bots.isError && (
-                  <p className="px-2 text-xs text-destructive">
-                    {bots.error.message}
-                  </p>
-                )}
-              </SidebarGroupContent>
-            </SidebarGroup>
-            <SidebarGroup>
-              <SidebarGroupLabel>Group chats</SidebarGroupLabel>
-              {(bots.data?.length ?? 0) >= 2 && (
-                <SidebarGroupAction
-                  title="New group chat"
-                  render={<Link to="/groups/new" />}
-                >
-                  <HugeiconsIcon icon={PlusSignIcon} />
-                  <span className="sr-only">New group chat</span>
-                </SidebarGroupAction>
-              )}
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {shownGroups.map((group) => {
-                    const members = group.memberIds.flatMap((id) => {
-                      const member = byId.get(id);
-
-                      return member ? [member] : [];
-                    });
-
-                    return (
-                      <SidebarMenuItem key={group.id}>
-                        <SidebarMenuButton
-                          size="lg"
-                          isActive={Boolean(
-                            matchRoute({
-                              to: "/groups/$groupId",
-                              params: { groupId: group.id },
-                              fuzzy: true,
-                            }),
-                          )}
-                          render={
-                            <Link
-                              to="/groups/$groupId"
-                              params={{ groupId: group.id }}
-                            />
-                          }
-                        >
-                          <span className="flex shrink-0 -space-x-3">
-                            {members.slice(0, 2).map((member) => (
-                              <BotAvatar
-                                key={member.id}
-                                bot={member}
-                                size={26}
-                              />
-                            ))}
-                          </span>
-                          <span className="flex min-w-0 flex-col">
-                            <span className="truncate">{group.name}</span>
-                            <span className="truncate text-xs text-muted-foreground">
-                              {members.map((member) => member.name).join(", ")}
-                            </span>
-                          </span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })}
-                  {groups.data?.length === 0 && (
-                    <p className="px-2 text-xs text-muted-foreground">
-                      {(bots.data?.length ?? 0) >= 2
-                        ? "No group chats yet"
-                        : "Create two bots to start a group chat"}
-                    </p>
-                  )}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-            <SidebarGroup>
-              <SidebarGroupLabel>Workspace</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {WORKSPACE.map((item) => (
-                    <SidebarMenuItem key={item.to}>
-                      <SidebarMenuButton
-                        isActive={Boolean(matchRoute({ to: item.to }))}
-                        render={<Link to={item.to} />}
-                      >
-                        <HugeiconsIcon icon={item.icon} />
-                        {item.label}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
+            <BotsSection bots={bots} shownBots={shownBots} needle={needle} />
+            <GroupsSection
+              bots={bots.data}
+              groups={groups.data}
+              shownGroups={shownGroups}
+            />
+            <WorkspaceSection />
           </SidebarContent>
-          <SidebarFooter>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={Boolean(
-                    matchRoute({ to: "/settings", fuzzy: true }),
-                  )}
-                  render={<Link to="/settings" />}
-                >
-                  <HugeiconsIcon icon={Settings01Icon} />
-                  Settings
-                  <ConnectionStatus />
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarFooter>
+          <SettingsFooter />
         </Sidebar>
         <SidebarInset className="h-dvh min-w-0 overflow-hidden md:h-[calc(100dvh-1rem)] md:ring-1 md:ring-sidebar-border">
           <header className="flex h-12 shrink-0 items-center px-2 md:hidden">
@@ -283,6 +162,187 @@ export function Shell() {
         </SidebarInset>
       </SidebarProvider>
     </TooltipProvider>
+  );
+}
+
+function BotsSection({
+  bots,
+  shownBots,
+  needle,
+}: {
+  bots: UseQueryResult<Bot[]>;
+  shownBots: Bot[];
+  needle: string;
+}) {
+  const matchRoute = useMatchRoute();
+
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel>Bots</SidebarGroupLabel>
+      <SidebarGroupAction title="New bot" render={<Link to="/bots/new" />}>
+        <HugeiconsIcon icon={PlusSignIcon} />
+        <span className="sr-only">New bot</span>
+      </SidebarGroupAction>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {bots.isPending &&
+            [0, 1, 2].map((index) => (
+              <SidebarMenuItem key={index}>
+                <SidebarMenuSkeleton showIcon />
+              </SidebarMenuItem>
+            ))}
+          {shownBots.map((bot) => (
+            <BotRow
+              key={bot.id}
+              bot={bot}
+              active={Boolean(
+                matchRoute({
+                  to: "/bots/$botId",
+                  params: { botId: bot.id },
+                  fuzzy: true,
+                }),
+              )}
+            />
+          ))}
+          {bots.data && shownBots.length === 0 && (
+            <p className="px-2 text-xs text-muted-foreground">
+              {needle ? "No results" : "No bots yet"}
+            </p>
+          )}
+        </SidebarMenu>
+        {bots.isError && (
+          <p className="px-2 text-xs text-destructive">{bots.error.message}</p>
+        )}
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+}
+
+function GroupsSection({
+  bots,
+  groups,
+  shownGroups,
+}: {
+  bots: Bot[] | undefined;
+  groups: GroupChat[] | undefined;
+  shownGroups: GroupChat[];
+}) {
+  const byId = new Map(bots?.map((bot) => [bot.id, bot]));
+  const canGroup = (bots?.length ?? 0) >= 2;
+
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel>Group chats</SidebarGroupLabel>
+      {canGroup && (
+        <SidebarGroupAction
+          title="New group chat"
+          render={<Link to="/groups/new" />}
+        >
+          <HugeiconsIcon icon={PlusSignIcon} />
+          <span className="sr-only">New group chat</span>
+        </SidebarGroupAction>
+      )}
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {shownGroups.map((group) => (
+            <GroupRow
+              key={group.id}
+              group={group}
+              members={group.memberIds.flatMap((id) => {
+                const member = byId.get(id);
+
+                return member ? [member] : [];
+              })}
+            />
+          ))}
+          {groups?.length === 0 && (
+            <p className="px-2 text-xs text-muted-foreground">
+              {canGroup
+                ? "No group chats yet"
+                : "Create two bots to start a group chat"}
+            </p>
+          )}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+}
+
+function GroupRow({ group, members }: { group: GroupChat; members: Bot[] }) {
+  const matchRoute = useMatchRoute();
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        size="lg"
+        isActive={Boolean(
+          matchRoute({
+            to: "/groups/$groupId",
+            params: { groupId: group.id },
+            fuzzy: true,
+          }),
+        )}
+        render={<Link to="/groups/$groupId" params={{ groupId: group.id }} />}
+      >
+        <span className="flex shrink-0 -space-x-3">
+          {members.slice(0, 2).map((member) => (
+            <BotAvatar key={member.id} bot={member} size={26} />
+          ))}
+        </span>
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate">{group.name}</span>
+          <span className="truncate text-xs text-muted-foreground">
+            {members.map((member) => member.name).join(", ")}
+          </span>
+        </span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+function WorkspaceSection() {
+  const matchRoute = useMatchRoute();
+
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {WORKSPACE.map((item) => (
+            <SidebarMenuItem key={item.to}>
+              <SidebarMenuButton
+                isActive={Boolean(matchRoute({ to: item.to }))}
+                render={<Link to={item.to} />}
+              >
+                <HugeiconsIcon icon={item.icon} />
+                {item.label}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+}
+
+function SettingsFooter() {
+  const matchRoute = useMatchRoute();
+
+  return (
+    <SidebarFooter>
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            isActive={Boolean(matchRoute({ to: "/settings", fuzzy: true }))}
+            render={<Link to="/settings" />}
+          >
+            <HugeiconsIcon icon={Settings01Icon} />
+            Settings
+            <ConnectionStatus />
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    </SidebarFooter>
   );
 }
 

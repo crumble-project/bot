@@ -1,5 +1,9 @@
 import { type ReactNode, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  type UseQueryResult,
+  useMutation,
+  useQuery,
+} from "@tanstack/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowDown01Icon,
@@ -68,30 +72,14 @@ function patchSkills(bot: Bot, skills: BotSkill[]) {
   return send(agentPath(bot.id), "PATCH", { skills });
 }
 
-export function SkillsPage() {
-  const bots = useQuery(botsQuery);
-  const skills = useQuery(skillsQuery);
-  const [editing, setEditing] = useState<Editing | null>(null);
-
-  const bundled = (skills.data ?? []).flatMap((skill) =>
-    skill.source === "bundled" ? [skill] : [],
-  );
-
-  const shared = (skills.data ?? []).flatMap((skill) =>
-    skill.source === "shared" ? [skill] : [],
-  );
-
-  const personal = (bots.data ?? []).flatMap((bot) =>
-    bot.skills.map((skill, index) => ({ bot, skill, index })),
-  );
-
-  const removeShared = useMutation({
+function useRemoveSkills() {
+  const shared = useMutation({
     mutationFn: (skill: SharedSkill) =>
       send(`/v1/skills/${encodeURIComponent(skill.id)}`, "DELETE"),
     onSettled: refresh,
   });
 
-  const removePersonal = useMutation({
+  const personal = useMutation({
     mutationFn: ({ bot, index }: { bot: Bot; index: number }) =>
       patchSkills(
         bot,
@@ -100,7 +88,149 @@ export function SkillsPage() {
     onSettled: refresh,
   });
 
-  const failure = removeShared.error ?? removePersonal.error;
+  return { shared, personal };
+}
+
+function PersonalRow({
+  bot,
+  skill,
+  onEdit,
+  onDelete,
+}: {
+  bot: Bot;
+  skill: BotSkill;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="flex items-start gap-2 p-3">
+      <Expandable
+        title={skill.name}
+        subtitle={`Only ${bot.name}`}
+        body={skill.instructions}
+      />
+      <Button variant="ghost" size="icon-sm" title="Edit" onClick={onEdit}>
+        <HugeiconsIcon icon={PencilEdit01Icon} />
+      </Button>
+      <ConfirmDelete
+        title={`Delete ${skill.name}?`}
+        description={`${bot.name} loses this skill. This cannot be undone.`}
+        onConfirm={onDelete}
+        trigger={
+          <Button variant="ghost" size="icon-sm" title="Delete">
+            <HugeiconsIcon icon={Delete02Icon} />
+          </Button>
+        }
+      />
+    </div>
+  );
+}
+
+function SkillSections({
+  bots,
+  skills,
+  remove,
+  onEdit,
+}: {
+  bots: Bot[];
+  skills: ListedSkill[];
+  remove: ReturnType<typeof useRemoveSkills>;
+  onEdit: (editing: Editing) => void;
+}) {
+  const bundled = skills.flatMap((skill) =>
+    skill.source === "bundled" ? [skill] : [],
+  );
+
+  const shared = skills.flatMap((skill) =>
+    skill.source === "shared" ? [skill] : [],
+  );
+
+  const personal = bots.flatMap((bot) =>
+    bot.skills.map((skill, index) => ({ bot, skill, index })),
+  );
+
+  return (
+    <>
+      <Section
+        title="Default · Every bot"
+        footer="Default skills are files on the server. Edit them there and restart the server."
+      >
+        {bundled.length === 0 && (
+          <SectionEmpty>No default skills.</SectionEmpty>
+        )}
+        {bundled.map((skill) => (
+          <BundledRow key={skill.id} skill={skill} />
+        ))}
+      </Section>
+      <Section title="Shared">
+        {shared.length === 0 && (
+          <SectionEmpty>No shared skills yet.</SectionEmpty>
+        )}
+        {shared.map((skill) => (
+          <SharedRow
+            key={skill.id}
+            skill={skill}
+            bots={bots}
+            onEdit={() => onEdit({ kind: "shared", skill })}
+            onDelete={() => remove.shared.mutate(skill)}
+          />
+        ))}
+      </Section>
+      <Section title="Personal">
+        {personal.length === 0 && (
+          <SectionEmpty>No personal skills yet.</SectionEmpty>
+        )}
+        {personal.map(({ bot, skill, index }) => (
+          <PersonalRow
+            key={`${bot.id}:${index}`}
+            bot={bot}
+            skill={skill}
+            onEdit={() => onEdit({ kind: "personal", bot, index })}
+            onDelete={() => remove.personal.mutate({ bot, index })}
+          />
+        ))}
+      </Section>
+    </>
+  );
+}
+
+function SkillsBody({
+  bots,
+  skills,
+  remove,
+  onEdit,
+}: {
+  bots: UseQueryResult<Bot[]>;
+  skills: UseQueryResult<ListedSkill[]>;
+  remove: ReturnType<typeof useRemoveSkills>;
+  onEdit: (editing: Editing) => void;
+}) {
+  if (skills.isPending || bots.isPending) return <Skeleton className="h-40" />;
+
+  if (skills.isError)
+    return (
+      <Alert variant="destructive">
+        <AlertDescription>{skills.error.message}</AlertDescription>
+      </Alert>
+    );
+
+  return (
+    <SkillSections
+      bots={bots.data ?? []}
+      skills={skills.data ?? []}
+      remove={remove}
+      onEdit={onEdit}
+    />
+  );
+}
+
+export function SkillsPage() {
+  const bots = useQuery(botsQuery);
+  const skills = useQuery(skillsQuery);
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const remove = useRemoveSkills();
+
+  const failure = remove.shared.error ?? remove.personal.error;
 
   return (
     <WorkspacePage
@@ -115,76 +245,12 @@ export function SkillsPage() {
           <AlertDescription>{failure.message}</AlertDescription>
         </Alert>
       )}
-      {skills.isPending || bots.isPending ? (
-        <Skeleton className="h-40" />
-      ) : skills.isError ? (
-        <Alert variant="destructive">
-          <AlertDescription>{skills.error.message}</AlertDescription>
-        </Alert>
-      ) : (
-        <>
-          <Section
-            title="Default · Every bot"
-            footer="Default skills are files on the server. Edit them there and restart the server."
-          >
-            {bundled.length === 0 && (
-              <SectionEmpty>No default skills.</SectionEmpty>
-            )}
-            {bundled.map((skill) => (
-              <BundledRow key={skill.id} skill={skill} />
-            ))}
-          </Section>
-          <Section title="Shared">
-            {shared.length === 0 && (
-              <SectionEmpty>No shared skills yet.</SectionEmpty>
-            )}
-            {shared.map((skill) => (
-              <SharedRow
-                key={skill.id}
-                skill={skill}
-                bots={bots.data ?? []}
-                onEdit={() => setEditing({ kind: "shared", skill })}
-                onDelete={() => removeShared.mutate(skill)}
-              />
-            ))}
-          </Section>
-          <Section title="Personal">
-            {personal.length === 0 && (
-              <SectionEmpty>No personal skills yet.</SectionEmpty>
-            )}
-            {personal.map(({ bot, skill, index }) => (
-              <div
-                key={`${bot.id}:${index}`}
-                className="flex items-start gap-2 p-3"
-              >
-                <Expandable
-                  title={skill.name}
-                  subtitle={`Only ${bot.name}`}
-                  body={skill.instructions}
-                />
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  title="Edit"
-                  onClick={() => setEditing({ kind: "personal", bot, index })}
-                >
-                  <HugeiconsIcon icon={PencilEdit01Icon} />
-                </Button>
-                <ConfirmDelete
-                  title={`Delete ${skill.name}?`}
-                  description={`${bot.name} loses this skill. This cannot be undone.`}
-                  onConfirm={() => removePersonal.mutate({ bot, index })}
-                  trigger={
-                    <Button variant="ghost" size="icon-sm" title="Delete">
-                      <HugeiconsIcon icon={Delete02Icon} />
-                    </Button>
-                  }
-                />
-              </div>
-            ))}
-          </Section>
-        </>
-      )}
+      <SkillsBody
+        bots={bots}
+        skills={skills}
+        remove={remove}
+        onEdit={setEditing}
+      />
       {editing && (
         <SkillDialog
           bots={bots.data ?? []}
@@ -325,6 +391,52 @@ function SharedRow({
   );
 }
 
+function skillDraft(editing: Editing) {
+  if (editing.kind === "new")
+    return { owner: SHARED, name: "", instructions: "" };
+
+  const skill =
+    editing.kind === "shared"
+      ? editing.skill
+      : editing.bot.skills[editing.index];
+
+  return {
+    owner: editing.kind === "personal" ? editing.bot.id : SHARED,
+    name: skill?.name ?? "",
+    instructions: skill?.instructions ?? "",
+  };
+}
+
+async function saveSkill(
+  editing: Editing,
+  bots: Bot[],
+  owner: string,
+  skill: BotSkill,
+) {
+  if (editing.kind === "shared")
+    return send(
+      `/v1/skills/${encodeURIComponent(editing.skill.id)}`,
+      "PATCH",
+      skill,
+    );
+
+  if (editing.kind === "personal")
+    return patchSkills(
+      editing.bot,
+      editing.bot.skills.map((each, index) =>
+        index === editing.index ? skill : each,
+      ),
+    );
+
+  if (owner === SHARED) return send("/v1/skills", "POST", skill);
+
+  const bot = bots.find((each) => each.id === owner);
+
+  if (!bot) throw new Error("Choose a bot.");
+
+  return patchSkills(bot, [...bot.skills, skill]);
+}
+
 function SkillDialog({
   bots,
   editing,
@@ -334,19 +446,11 @@ function SkillDialog({
   editing: Editing;
   onClose: () => void;
 }) {
-  const initial =
-    editing.kind === "shared"
-      ? editing.skill
-      : editing.kind === "personal"
-        ? editing.bot.skills[editing.index]
-        : undefined;
-
-  const [owner, setOwner] = useState(
-    editing.kind === "personal" ? editing.bot.id : SHARED,
-  );
-
-  const [name, setName] = useState(initial?.name ?? "");
-  const [instructions, setInstructions] = useState(initial?.instructions ?? "");
+  const initial = skillDraft(editing);
+  const [owner, setOwner] = useState(initial.owner);
+  const [name, setName] = useState(initial.name);
+  const [instructions, setInstructions] = useState(initial.instructions);
+  const valid = Boolean(name.trim() && instructions.trim());
 
   const owners = [
     { label: "Every bot (shared)", value: SHARED },
@@ -354,32 +458,8 @@ function SkillDialog({
   ];
 
   const save = useMutation({
-    mutationFn: async () => {
-      const skill = { name: name.trim(), instructions };
-
-      if (editing.kind === "shared")
-        return send(
-          `/v1/skills/${encodeURIComponent(editing.skill.id)}`,
-          "PATCH",
-          skill,
-        );
-
-      if (editing.kind === "personal")
-        return patchSkills(
-          editing.bot,
-          editing.bot.skills.map((each, index) =>
-            index === editing.index ? skill : each,
-          ),
-        );
-
-      if (owner === SHARED) return send("/v1/skills", "POST", skill);
-
-      const bot = bots.find((each) => each.id === owner);
-
-      if (!bot) throw new Error("Choose a bot.");
-
-      return patchSkills(bot, [...bot.skills, skill]);
-    },
+    mutationFn: () =>
+      saveSkill(editing, bots, owner, { name: name.trim(), instructions }),
     onSuccess: async () => {
       await refresh();
       onClose();
@@ -398,7 +478,7 @@ function SkillDialog({
           onSubmit={(event) => {
             event.preventDefault();
 
-            if (name.trim() && instructions.trim()) save.mutate();
+            if (valid) save.mutate();
           }}
         >
           <FieldGroup>
@@ -431,7 +511,7 @@ function SkillDialog({
             <SaveDialogFooter
               error={save.isError ? save.error : null}
               onCancel={onClose}
-              disabled={!name.trim() || !instructions.trim() || save.isPending}
+              disabled={!valid || save.isPending}
               label={editing.kind === "new" ? "Add" : "Save"}
             />
           </FieldGroup>

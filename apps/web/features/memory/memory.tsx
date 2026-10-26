@@ -1,5 +1,10 @@
 import { type ReactNode, useState } from "react";
-import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
+import {
+  type UseQueryResult,
+  useMutation,
+  useQueries,
+  useQuery,
+} from "@tanstack/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Delete02Icon,
@@ -57,31 +62,139 @@ function memoryPath(owner: string, id?: string) {
   return id ? `${base}/${encodeURIComponent(id)}` : base;
 }
 
+const SOURCE_LABELS: Record<
+  NonNullable<Memory["source"]>["kind"],
+  (name: string | undefined) => string
+> = {
+  chat: () => "From the bot chat",
+  owner: () => "Added by you",
+  task: (name) => `From the task ${name ?? ""}`.trim(),
+  bot: (name) => `From a request by ${name ?? "a bot"}`,
+  group: (name) => `From the group chat ${name ?? ""}`.trim(),
+};
+
 export function sourceLabel(memory: Memory) {
   const source = memory.source;
 
-  switch (source?.kind) {
-    case "chat":
-      return "From the bot chat";
-    case "owner":
-      return "Added by you";
-    case "task":
-      return `From the task ${source.name ?? ""}`.trim();
-    case "bot":
-      return `From a request by ${source.name ?? "a bot"}`;
-    case "group":
-      return `From the group chat ${source.name ?? ""}`.trim();
-    default:
-      return null;
-  }
+  return source ? SOURCE_LABELS[source.kind](source.name) : null;
 }
 
-export function MemoryPage() {
+const inScope = (scope: string, id: string) => scope === ALL || scope === id;
+
+function MemoryFilters({
+  scopeItems,
+  scope,
+  search,
+  onScope,
+  onSearch,
+}: {
+  scopeItems: { label: string; value: string }[];
+  scope: string;
+  search: string;
+  onScope: (scope: string) => void;
+  onSearch: (search: string) => void;
+}) {
+  return (
+    <div className="flex gap-2">
+      <Select
+        items={scopeItems}
+        value={scope}
+        onValueChange={(value) => onScope(value ?? ALL)}
+      >
+        <SelectTrigger className="w-44">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {scopeItems.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+      <div className="relative flex-1">
+        <HugeiconsIcon
+          icon={Search01Icon}
+          className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          aria-label="Search memories"
+          placeholder="Search"
+          className="pl-8"
+          value={search}
+          onChange={(event) => onSearch(event.target.value)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function MemorySections({
+  bots,
+  shared,
+  perBot,
+  scope,
+  needle,
+  onEdit,
+  onDelete,
+}: {
+  bots: Bot[];
+  shared: UseQueryResult<Memory[]>;
+  perBot: UseQueryResult<Memory[]>[];
+  scope: string;
+  needle: string;
+  onEdit: (memory: Memory, owner: string) => void;
+  onDelete: (memory: Memory) => void;
+}) {
+  const matches = (memories: Memory[]) =>
+    needle
+      ? memories.filter((memory) =>
+          memory.content.toLowerCase().includes(needle),
+        )
+      : memories;
+
+  const users = bots.flatMap((bot) => (bot.sharedMemory ? [bot.name] : []));
+
+  return (
+    <>
+      {inScope(scope, SHARED) && (
+        <MemorySection
+          title={`Shared · ${shared.data?.length ?? 0}`}
+          footer={
+            users.length
+              ? `Used by: ${users.join(", ")}`
+              : "No bots use shared memory. Turn it on in a bot's profile."
+          }
+          memories={matches(shared.data ?? [])}
+          total={shared.data?.length ?? 0}
+          error={shared.error?.message}
+          onEdit={(memory) => onEdit(memory, SHARED)}
+          onDelete={onDelete}
+        />
+      )}
+      {bots.map((bot, index) =>
+        inScope(scope, bot.id) ? (
+          <MemorySection
+            key={bot.id}
+            title={`${bot.name} · ${perBot[index]?.data?.length ?? 0}`}
+            icon={<BotAvatar bot={bot} size={22} />}
+            memories={matches(perBot[index]?.data ?? [])}
+            total={perBot[index]?.data?.length ?? 0}
+            error={perBot[index]?.error?.message}
+            onEdit={(memory) => onEdit(memory, bot.id)}
+            onDelete={onDelete}
+          />
+        ) : null,
+      )}
+    </>
+  );
+}
+
+function useMemoryData() {
   const bots = useQuery(botsQuery);
   const shared = useQuery(sharedMemoriesQuery);
-  const [scope, setScope] = useState(ALL);
-  const [search, setSearch] = useState("");
-  const [editing, setEditing] = useState<Editing | null>(null);
 
   const perBot = useQueries({
     queries: (bots.data ?? []).map((bot) => botMemoriesQuery(bot.id)),
@@ -90,18 +203,22 @@ export function MemoryPage() {
   const refreshing =
     bots.isFetching || shared.isFetching || perBot.some((q) => q.isFetching);
 
-  const needle = search.trim().toLowerCase();
+  return { bots, shared, perBot, refreshing };
+}
 
-  const matches = (memories: Memory[]) =>
-    needle
-      ? memories.filter((memory) =>
-          memory.content.toLowerCase().includes(needle),
-        )
-      : memories;
+function useDeleteMemory() {
+  return useMutation({
+    mutationFn: (memory: Memory) =>
+      send(memoryPath(memory.agentId ?? SHARED, memory.id), "DELETE"),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["memories"] }),
+  });
+}
 
-  const users = (bots.data ?? []).flatMap((bot) =>
-    bot.sharedMemory ? [bot.name] : [],
-  );
+export function MemoryPage() {
+  const { bots, shared, perBot, refreshing } = useMemoryData();
+  const [scope, setScope] = useState(ALL);
+  const [search, setSearch] = useState("");
+  const [editing, setEditing] = useState<Editing | null>(null);
 
   const scopeItems = [
     { label: "All", value: ALL },
@@ -109,11 +226,7 @@ export function MemoryPage() {
     ...(bots.data ?? []).map((bot) => ({ label: bot.name, value: bot.id })),
   ];
 
-  const remove = useMutation({
-    mutationFn: (memory: Memory) =>
-      send(memoryPath(memory.agentId ?? SHARED, memory.id), "DELETE"),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["memories"] }),
-  });
+  const remove = useDeleteMemory();
 
   return (
     <WorkspacePage
@@ -130,39 +243,13 @@ export function MemoryPage() {
         })
       }
     >
-      <div className="flex gap-2">
-        <Select
-          items={scopeItems}
-          value={scope}
-          onValueChange={(value) => setScope(value ?? ALL)}
-        >
-          <SelectTrigger className="w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {scopeItems.map((item) => (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-        <div className="relative flex-1">
-          <HugeiconsIcon
-            icon={Search01Icon}
-            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            aria-label="Search memories"
-            placeholder="Search"
-            className="pl-8"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </div>
-      </div>
+      <MemoryFilters
+        scopeItems={scopeItems}
+        scope={scope}
+        search={search}
+        onScope={setScope}
+        onSearch={setSearch}
+      />
       {remove.isError && (
         <Alert variant="destructive">
           <AlertDescription>{remove.error.message}</AlertDescription>
@@ -171,37 +258,15 @@ export function MemoryPage() {
       {bots.isPending || shared.isPending ? (
         <Skeleton className="h-40" />
       ) : (
-        <>
-          {(scope === ALL || scope === SHARED) && (
-            <MemorySection
-              title={`Shared · ${shared.data?.length ?? 0}`}
-              footer={
-                users.length
-                  ? `Used by: ${users.join(", ")}`
-                  : "No bots use shared memory. Turn it on in a bot's profile."
-              }
-              memories={matches(shared.data ?? [])}
-              total={shared.data?.length ?? 0}
-              error={shared.error?.message}
-              onEdit={(memory) => setEditing({ memory, owner: SHARED })}
-              onDelete={(memory) => remove.mutate(memory)}
-            />
-          )}
-          {(bots.data ?? []).map((bot, index) =>
-            scope === ALL || scope === bot.id ? (
-              <MemorySection
-                key={bot.id}
-                title={`${bot.name} · ${perBot[index]?.data?.length ?? 0}`}
-                icon={<BotAvatar bot={bot} size={22} />}
-                memories={matches(perBot[index]?.data ?? [])}
-                total={perBot[index]?.data?.length ?? 0}
-                error={perBot[index]?.error?.message}
-                onEdit={(memory) => setEditing({ memory, owner: bot.id })}
-                onDelete={(memory) => remove.mutate(memory)}
-              />
-            ) : null,
-          )}
-        </>
+        <MemorySections
+          bots={bots.data ?? []}
+          shared={shared}
+          perBot={perBot}
+          scope={scope}
+          needle={search.trim().toLowerCase()}
+          onEdit={(memory, owner) => setEditing({ memory, owner })}
+          onDelete={(memory) => remove.mutate(memory)}
+        />
       )}
       {editing && (
         <MemoryDialog

@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  type UseMutationResult,
+} from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft02Icon, RefreshIcon } from "@hugeicons/core-free-icons";
@@ -15,10 +19,7 @@ import {
   follow,
 } from "@/lib/api";
 
-/** Watch a bot's desktop, and take control from its desktop job or hand it back. */
-export function BotDesktop({ botId }: { botId: string }) {
-  const bot = useQuery(botsQuery).data?.find((each) => each.id === botId);
-  const path = agentPath(botId);
+function useDesktopControl(path: string) {
   const [control, setControl] = useState<DesktopControl | null>(null);
   const holder = useRef<DesktopControl["holder"]>("bot");
 
@@ -31,15 +32,6 @@ export function BotDesktop({ botId }: { botId: string }) {
   useEffect(() => {
     holder.current = control?.holder ?? "bot";
   }, [control]);
-
-  // The viewer link works once, so every connection needs a fresh one.
-  const viewer = useMutation({
-    mutationFn: () => call<DesktopViewer>(`${path}/desktop/viewer`, "POST"),
-  });
-
-  const { mutate: connect } = viewer;
-
-  useEffect(() => connect(), [connect]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -73,6 +65,61 @@ export function BotDesktop({ botId }: { botId: string }) {
     onSuccess: apply,
   });
 
+  return { control, take };
+}
+
+function DesktopControls({
+  control,
+  take,
+  viewer,
+  onReconnect,
+}: {
+  control: DesktopControl | null;
+  take: ReturnType<typeof useDesktopControl>["take"];
+  viewer: UseMutationResult<DesktopViewer, Error, void>;
+  onReconnect: () => void;
+}) {
+  const owner = control?.holder === "owner";
+
+  return (
+    <div className="ml-auto flex items-center gap-2">
+      {take.isPending && <Spinner />}
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={viewer.isPending}
+        onClick={onReconnect}
+      >
+        <HugeiconsIcon icon={RefreshIcon} data-icon="inline-start" />
+        Reconnect
+      </Button>
+      <Button
+        size="sm"
+        variant={owner ? "outline" : "default"}
+        disabled={!control || take.isPending}
+        onClick={() => take.mutate(owner ? "bot" : "owner")}
+      >
+        {owner ? "Hand back" : "Take control"}
+      </Button>
+    </div>
+  );
+}
+
+/** Watch a bot's desktop, and take control from its desktop job or hand it back. */
+export function BotDesktop({ botId }: { botId: string }) {
+  const bot = useQuery(botsQuery).data?.find((each) => each.id === botId);
+  const path = agentPath(botId);
+  const { control, take } = useDesktopControl(path);
+
+  // The viewer link works once, so every connection needs a fresh one.
+  const viewer = useMutation({
+    mutationFn: () => call<DesktopViewer>(`${path}/desktop/viewer`, "POST"),
+  });
+
+  const { mutate: connect } = viewer;
+
+  useEffect(() => connect(), [connect]);
+
   const owner = control?.holder === "owner";
 
   return (
@@ -91,65 +138,60 @@ export function BotDesktop({ botId }: { botId: string }) {
           {bot ? `${bot.name}'s desktop` : "Bot desktop"}
         </span>
         <span className="text-sm text-muted-foreground">
-          {control
-            ? owner
-              ? "You have control"
-              : "The bot has control"
-            : null}
+          {control ? controlLabel(owner) : null}
         </span>
-        <div className="ml-auto flex items-center gap-2">
-          {take.isPending && <Spinner />}
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={viewer.isPending}
-            onClick={() => connect()}
-          >
-            <HugeiconsIcon icon={RefreshIcon} data-icon="inline-start" />
-            Reconnect
-          </Button>
-          <Button
-            size="sm"
-            variant={owner ? "outline" : "default"}
-            disabled={!control || take.isPending}
-            onClick={() => take.mutate(owner ? "bot" : "owner")}
-          >
-            {owner ? "Hand back" : "Take control"}
-          </Button>
-        </div>
+        <DesktopControls
+          control={control}
+          take={take}
+          viewer={viewer}
+          onReconnect={() => connect()}
+        />
       </header>
       {take.isError && (
         <Alert variant="destructive" className="m-4 w-auto">
           <AlertDescription>{take.error.message}</AlertDescription>
         </Alert>
       )}
-      <div className="relative min-h-0 flex-1 bg-muted">
-        {viewer.isPending && (
-          <div className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Spinner />
-            Connecting
-          </div>
-        )}
-        {viewer.isError && (
-          <Alert variant="destructive" className="m-6 w-auto">
-            <AlertTitle>Can't show the bot desktop</AlertTitle>
-            <AlertDescription>{viewer.error.message}</AlertDescription>
-          </Alert>
-        )}
-        {viewer.data && (
-          <iframe
-            key={viewer.data.path}
-            title="Bot desktop"
-            src={viewer.data.path}
-            className="size-full border-0"
-          />
-        )}
-      </div>
+      <ViewerPane viewer={viewer} />
       {owner && (
         <p className="border-t px-4 py-2 text-xs text-muted-foreground">
           The bot's desktop job waits while you have control. Hand back when
           you're done.
         </p>
+      )}
+    </div>
+  );
+}
+
+const controlLabel = (owner: boolean) =>
+  owner ? "You have control" : "The bot has control";
+
+function ViewerPane({
+  viewer,
+}: {
+  viewer: UseMutationResult<DesktopViewer, Error, void>;
+}) {
+  return (
+    <div className="relative min-h-0 flex-1 bg-muted">
+      {viewer.isPending && (
+        <div className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Spinner />
+          Connecting
+        </div>
+      )}
+      {viewer.isError && (
+        <Alert variant="destructive" className="m-6 w-auto">
+          <AlertTitle>Can't show the bot desktop</AlertTitle>
+          <AlertDescription>{viewer.error.message}</AlertDescription>
+        </Alert>
+      )}
+      {viewer.data && (
+        <iframe
+          key={viewer.data.path}
+          title="Bot desktop"
+          src={viewer.data.path}
+          className="size-full border-0"
+        />
       )}
     </div>
   );

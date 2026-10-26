@@ -212,24 +212,10 @@ function status(provider: Provider) {
   return provider.activeLoginId ? "Signing in…" : null;
 }
 
-function ProviderRow({
-  provider,
-  onSignIn,
-}: {
-  provider: Provider;
-  onSignIn: () => void;
-}) {
+function useProviderCredential(provider: Provider) {
   const [editing, setEditing] = useState(false);
   const [key, setKey] = useState("");
   const path = `/v1/providers/${encodeURIComponent(provider.provider)}`;
-  const oauth = provider.authMethods.find((method) => method.type === "oauth");
-
-  const takesKey = provider.authMethods.some(
-    (method) => method.type === "api_key",
-  );
-
-  const label = status(provider);
-  const id = `key-${provider.provider}`;
 
   const save = useMutation({
     mutationFn: (apiKey: string | null) =>
@@ -242,6 +228,119 @@ function ProviderRow({
       save.reset();
     },
   });
+
+  return { editing, setEditing, key, setKey, save };
+}
+
+type ProviderCredential = ReturnType<typeof useProviderCredential>;
+
+function ProviderActions({
+  provider,
+  credential,
+  onSignIn,
+}: {
+  provider: Provider;
+  credential: ProviderCredential;
+  onSignIn: () => void;
+}) {
+  const { editing, setEditing, save } = credential;
+
+  const hasOAuth = provider.authMethods.some(
+    (method) => method.type === "oauth",
+  );
+
+  const takesKey = provider.authMethods.some(
+    (method) => method.type === "api_key",
+  );
+
+  return (
+    <div className="flex gap-1">
+      {hasOAuth && provider.credentialType !== "oauth" && (
+        <Button variant="outline" size="sm" onClick={onSignIn}>
+          {provider.activeLoginId ? "Continue sign-in" : "Sign in"}
+        </Button>
+      )}
+      {takesKey && !editing && (
+        <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
+          {provider.credentialType === "api_key" ? "Replace key" : "Add key"}
+        </Button>
+      )}
+      {provider.credentialType && (
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={save.isPending}
+          onClick={() => save.mutate(null)}
+        >
+          {provider.credentialType === "oauth" ? "Sign out" : "Remove key"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function KeyForm({
+  provider,
+  credential,
+}: {
+  provider: Provider;
+  credential: ProviderCredential;
+}) {
+  const { setEditing, key, setKey, save } = credential;
+  const id = `key-${provider.provider}`;
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+
+        if (key.trim()) save.mutate(key.trim());
+      }}
+    >
+      <Field data-invalid={save.isError || undefined}>
+        <FieldLabel htmlFor={id} className="sr-only">
+          {provider.name} API key
+        </FieldLabel>
+        <div className="flex gap-2">
+          <Input
+            id={id}
+            type="password"
+            autoFocus
+            autoComplete="off"
+            placeholder="API key"
+            aria-invalid={save.isError || undefined}
+            value={key}
+            onChange={(event) => setKey(event.target.value)}
+          />
+          <Button type="submit" disabled={!key.trim() || save.isPending}>
+            Save
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              setEditing(false);
+              setKey("");
+            }}
+          >
+            Cancel
+          </Button>
+        </div>
+      </Field>
+    </form>
+  );
+}
+
+function ProviderRow({
+  provider,
+  onSignIn,
+}: {
+  provider: Provider;
+  onSignIn: () => void;
+}) {
+  const credential = useProviderCredential(provider);
+  const oauth = provider.authMethods.find((method) => method.type === "oauth");
+  const label = status(provider);
 
   return (
     <div className="flex flex-col gap-3 py-3">
@@ -261,72 +360,18 @@ function ProviderRow({
             </span>
           )}
         </div>
-        <div className="flex gap-1">
-          {oauth && provider.credentialType !== "oauth" && (
-            <Button variant="outline" size="sm" onClick={onSignIn}>
-              {provider.activeLoginId ? "Continue sign-in" : "Sign in"}
-            </Button>
-          )}
-          {takesKey && !editing && (
-            <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
-              {provider.credentialType === "api_key"
-                ? "Replace key"
-                : "Add key"}
-            </Button>
-          )}
-          {provider.credentialType && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={save.isPending}
-              onClick={() => save.mutate(null)}
-            >
-              {provider.credentialType === "oauth" ? "Sign out" : "Remove key"}
-            </Button>
-          )}
-        </div>
+        <ProviderActions
+          provider={provider}
+          credential={credential}
+          onSignIn={onSignIn}
+        />
       </div>
-      {editing && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-
-            if (key.trim()) save.mutate(key.trim());
-          }}
-        >
-          <Field data-invalid={save.isError || undefined}>
-            <FieldLabel htmlFor={id} className="sr-only">
-              {provider.name} API key
-            </FieldLabel>
-            <div className="flex gap-2">
-              <Input
-                id={id}
-                type="password"
-                autoFocus
-                autoComplete="off"
-                placeholder="API key"
-                aria-invalid={save.isError || undefined}
-                value={key}
-                onChange={(event) => setKey(event.target.value)}
-              />
-              <Button type="submit" disabled={!key.trim() || save.isPending}>
-                Save
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setEditing(false);
-                  setKey("");
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </Field>
-        </form>
+      {credential.editing && (
+        <KeyForm provider={provider} credential={credential} />
       )}
-      {save.isError && <FieldError>{save.error.message}</FieldError>}
+      {credential.save.isError && (
+        <FieldError>{credential.save.error.message}</FieldError>
+      )}
       {provider.externalAuth && (
         <ExternalSignIn external={provider.externalAuth} />
       )}

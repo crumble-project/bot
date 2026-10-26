@@ -74,19 +74,62 @@ function validUrl(value: string) {
 
 type Editing = { server: McpServer | null };
 
+function personalServers(bots: Bot[], list: McpServer[]) {
+  return bots.flatMap((bot) => {
+    const own = list.filter((server) => server.agentId === bot.id);
+
+    return own.length ? [{ bot, servers: own }] : [];
+  });
+}
+
+function IntegrationSections({
+  shared,
+  personal,
+  onEdit,
+}: {
+  shared: McpServer[];
+  personal: { bot: Bot; servers: McpServer[] }[];
+  onEdit: (server: McpServer) => void;
+}) {
+  return (
+    <>
+      <Section
+        title="Shared"
+        footer="Shared MCP servers can be turned on for any bot in its profile."
+      >
+        {shared.length === 0 && (
+          <SectionEmpty>No shared MCP servers yet.</SectionEmpty>
+        )}
+        {shared.map((server) => (
+          <ServerRow
+            key={server.id}
+            server={server}
+            owner={null}
+            onEdit={() => onEdit(server)}
+          />
+        ))}
+      </Section>
+      {personal.map(({ bot, servers: own }) => (
+        <Section key={bot.id} title={`Only ${bot.name}`}>
+          {own.map((server) => (
+            <ServerRow
+              key={server.id}
+              server={server}
+              owner={bot}
+              onEdit={() => onEdit(server)}
+            />
+          ))}
+        </Section>
+      ))}
+    </>
+  );
+}
+
 export function IntegrationsPage() {
   const bots = useQuery(botsQuery);
   const servers = useQuery(mcpServersQuery);
   const [editing, setEditing] = useState<Editing | null>(null);
   const list = servers.data ?? [];
-
-  const shared = list.filter((server) => server.agentId === null);
-
-  const personal = (bots.data ?? []).flatMap((bot) => {
-    const own = list.filter((server) => server.agentId === bot.id);
-
-    return own.length ? [{ bot, servers: own }] : [];
-  });
 
   return (
     <WorkspacePage
@@ -103,36 +146,11 @@ export function IntegrationsPage() {
           <AlertDescription>{servers.error.message}</AlertDescription>
         </Alert>
       ) : (
-        <>
-          <Section
-            title="Shared"
-            footer="Shared MCP servers can be turned on for any bot in its profile."
-          >
-            {shared.length === 0 && (
-              <SectionEmpty>No shared MCP servers yet.</SectionEmpty>
-            )}
-            {shared.map((server) => (
-              <ServerRow
-                key={server.id}
-                server={server}
-                owner={null}
-                onEdit={() => setEditing({ server })}
-              />
-            ))}
-          </Section>
-          {personal.map(({ bot, servers: own }) => (
-            <Section key={bot.id} title={`Only ${bot.name}`}>
-              {own.map((server) => (
-                <ServerRow
-                  key={server.id}
-                  server={server}
-                  owner={bot}
-                  onEdit={() => setEditing({ server })}
-                />
-              ))}
-            </Section>
-          ))}
-        </>
+        <IntegrationSections
+          shared={list.filter((server) => server.agentId === null)}
+          personal={personalServers(bots.data ?? [], list)}
+          onEdit={(server) => setEditing({ server })}
+        />
       )}
       {editing && (
         <ServerDialog
@@ -239,6 +257,91 @@ function ServerRow({
   );
 }
 
+type ServerDraft = {
+  owner: string;
+  name: string;
+  url: string;
+  token: string;
+  enabled: boolean;
+  clientId: string;
+  clientSecret: string;
+};
+
+const BLANK_DRAFT: ServerDraft = {
+  owner: SHARED,
+  name: "",
+  url: "",
+  token: "",
+  enabled: true,
+  clientId: "",
+  clientSecret: "",
+};
+
+function initialDraft(server: McpServer | null): ServerDraft {
+  if (!server) return BLANK_DRAFT;
+
+  return {
+    ...BLANK_DRAFT,
+    owner: server.agentId ?? SHARED,
+    name: server.name,
+    url: server.url,
+    enabled: server.enabled,
+    clientId: server.oauthClientId ?? "",
+  };
+}
+
+function oauthClientPatch(draft: ServerDraft, server: McpServer | null) {
+  const clientId = draft.clientId.trim();
+  const clientSecret = draft.clientSecret.trim();
+
+  return {
+    ...((clientId || server?.oauthClientId) && {
+      oauthClientId: clientId || null,
+    }),
+    // Without an app, its secret has no use; clearing the client ID removes it too.
+    ...(clientSecret
+      ? { oauthClientSecret: clientSecret }
+      : !clientId && server?.hasOAuthClientSecret && { oauthClientSecret: "" }),
+  };
+}
+
+function serverBody(draft: ServerDraft, server: McpServer | null) {
+  const token = draft.token.trim();
+
+  return {
+    name: draft.name.trim(),
+    url: draft.url.trim(),
+    enabled: draft.enabled,
+    ...(token && { token }),
+    ...oauthClientPatch(draft, server),
+  };
+}
+
+function useSaveServer(
+  draft: ServerDraft,
+  server: McpServer | null,
+  reset: () => void,
+  onClose: () => void,
+) {
+  return useMutation({
+    mutationFn: () => {
+      const body = serverBody(draft, server);
+
+      return server
+        ? send(serverPath(server.id), "PATCH", body)
+        : send("/v1/mcp-servers", "POST", {
+            ...body,
+            agentId: draft.owner === SHARED ? null : draft.owner,
+          });
+    },
+    onSuccess: async () => {
+      reset();
+      await refresh();
+      onClose();
+    },
+  });
+}
+
 function ServerDialog({
   bots,
   server,
@@ -248,53 +351,19 @@ function ServerDialog({
   server: McpServer | null;
   onClose: () => void;
 }) {
-  const [owner, setOwner] = useState(server?.agentId ?? SHARED);
-  const [name, setName] = useState(server?.name ?? "");
-  const [url, setUrl] = useState(server?.url ?? "");
-  const [tokenValue, setTokenValue] = useState("");
-  const [enabled, setEnabled] = useState(server?.enabled ?? true);
-  const [clientId, setClientId] = useState(server?.oauthClientId ?? "");
-  const [clientSecret, setClientSecret] = useState("");
-  const callback = `${location.origin}/ui/oauth/callback`;
+  const [draft, setDraft] = useState(() => initialDraft(server));
 
-  const owners = [
-    { label: "Every bot (shared)", value: SHARED },
-    ...bots.map((bot) => ({ label: bot.name, value: bot.id })),
-  ];
+  const patch = (change: Partial<ServerDraft>) =>
+    setDraft((current) => ({ ...current, ...change }));
 
-  const save = useMutation({
-    mutationFn: () => {
-      const body = {
-        name: name.trim(),
-        url: url.trim(),
-        enabled,
-        ...(tokenValue.trim() && { token: tokenValue.trim() }),
-        ...((clientId.trim() || server?.oauthClientId) && {
-          oauthClientId: clientId.trim() || null,
-        }),
-        // Without an app, its secret has no use; clearing the client ID removes it too.
-        ...(clientSecret.trim()
-          ? { oauthClientSecret: clientSecret.trim() }
-          : !clientId.trim() &&
-            server?.hasOAuthClientSecret && { oauthClientSecret: "" }),
-      };
+  const save = useSaveServer(
+    draft,
+    server,
+    () => patch({ token: "", clientSecret: "" }),
+    onClose,
+  );
 
-      return server
-        ? send(serverPath(server.id), "PATCH", body)
-        : send("/v1/mcp-servers", "POST", {
-            ...body,
-            agentId: owner === SHARED ? null : owner,
-          });
-    },
-    onSuccess: async () => {
-      setTokenValue("");
-      setClientSecret("");
-      await refresh();
-      onClose();
-    },
-  });
-
-  const urlInvalid = url.trim() !== "" && !validUrl(url.trim());
+  const valid = Boolean(draft.name.trim() && validUrl(draft.url.trim()));
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -308,122 +377,157 @@ function ServerDialog({
           onSubmit={(event) => {
             event.preventDefault();
 
-            if (name.trim() && validUrl(url.trim())) save.mutate();
+            if (valid) save.mutate();
           }}
         >
           <FieldGroup>
-            <OwnerSelectField
-              label="Available to"
-              owners={owners}
-              value={owner}
-              disabled={server !== null}
-              onValueChange={(value) => setOwner(value ?? SHARED)}
+            <ServerFields
+              bots={bots}
+              server={server}
+              draft={draft}
+              patch={patch}
             />
-            <Field>
-              <FieldLabel htmlFor="mcp-name">Name</FieldLabel>
-              <Input
-                id="mcp-name"
-                maxLength={100}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </Field>
-            <Field data-invalid={urlInvalid || undefined}>
-              <FieldLabel htmlFor="mcp-url">URL</FieldLabel>
-              <Input
-                id="mcp-url"
-                type="url"
-                placeholder="https://example.com/mcp"
-                aria-invalid={urlInvalid || undefined}
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-              />
-              {urlInvalid && (
-                <FieldDescription>Use an HTTP or HTTPS URL.</FieldDescription>
-              )}
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="mcp-token">Token</FieldLabel>
-              <Input
-                id="mcp-token"
-                type="password"
-                autoComplete="off"
-                placeholder={
-                  server?.auth === "token"
-                    ? "Replace the saved token"
-                    : "Optional"
-                }
-                value={tokenValue}
-                onChange={(event) => setTokenValue(event.target.value)}
-              />
-              <FieldDescription>
-                Sent as a bearer token. Leave it empty for servers that need no
-                sign-in or use OAuth.
-              </FieldDescription>
-            </Field>
-            <FieldSet>
-              <FieldLegend variant="label">OAuth app</FieldLegend>
-              <FieldDescription>
-                Only for servers whose sign-in can't register Crumble, such as
-                GitHub&apos;s. Register an OAuth app there with the callback URL{" "}
-                <code className="rounded bg-muted px-1 py-0.5 text-xs break-all">
-                  {callback}
-                </code>{" "}
-                and enter its client ID and secret.
-              </FieldDescription>
-              <Field>
-                <FieldLabel htmlFor="mcp-client-id">Client ID</FieldLabel>
-                <Input
-                  id="mcp-client-id"
-                  autoComplete="off"
-                  placeholder="Optional"
-                  value={clientId}
-                  onChange={(event) => setClientId(event.target.value)}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="mcp-client-secret">
-                  Client secret
-                </FieldLabel>
-                <Input
-                  id="mcp-client-secret"
-                  type="password"
-                  autoComplete="off"
-                  disabled={!clientId.trim()}
-                  placeholder={
-                    server?.hasOAuthClientSecret
-                      ? "Replace the saved secret"
-                      : "Optional"
-                  }
-                  value={clientSecret}
-                  onChange={(event) => setClientSecret(event.target.value)}
-                />
-                <FieldDescription>
-                  Stored encrypted and never shown again. Changing the app signs
-                  the server out.
-                </FieldDescription>
-              </Field>
-            </FieldSet>
+            <OAuthAppFields server={server} draft={draft} patch={patch} />
             <Field orientation="horizontal">
               <FieldContent>
                 <FieldLabel htmlFor="mcp-enabled">Enabled</FieldLabel>
               </FieldContent>
               <Switch
                 id="mcp-enabled"
-                checked={enabled}
-                onCheckedChange={setEnabled}
+                checked={draft.enabled}
+                onCheckedChange={(enabled) => patch({ enabled })}
               />
             </Field>
             <SaveDialogFooter
               error={save.isError ? save.error : null}
               onCancel={onClose}
-              disabled={!name.trim() || !validUrl(url.trim()) || save.isPending}
+              disabled={!valid || save.isPending}
               label={server ? "Save" : "Add"}
             />
           </FieldGroup>
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+type DraftFieldsProps = {
+  server: McpServer | null;
+  draft: ServerDraft;
+  patch: (change: Partial<ServerDraft>) => void;
+};
+
+function ServerFields({
+  bots,
+  server,
+  draft,
+  patch,
+}: DraftFieldsProps & { bots: Bot[] }) {
+  const owners = [
+    { label: "Every bot (shared)", value: SHARED },
+    ...bots.map((bot) => ({ label: bot.name, value: bot.id })),
+  ];
+
+  const urlInvalid = draft.url.trim() !== "" && !validUrl(draft.url.trim());
+
+  return (
+    <>
+      <OwnerSelectField
+        label="Available to"
+        owners={owners}
+        value={draft.owner}
+        disabled={server !== null}
+        onValueChange={(value) => patch({ owner: value ?? SHARED })}
+      />
+      <Field>
+        <FieldLabel htmlFor="mcp-name">Name</FieldLabel>
+        <Input
+          id="mcp-name"
+          maxLength={100}
+          value={draft.name}
+          onChange={(event) => patch({ name: event.target.value })}
+        />
+      </Field>
+      <Field data-invalid={urlInvalid || undefined}>
+        <FieldLabel htmlFor="mcp-url">URL</FieldLabel>
+        <Input
+          id="mcp-url"
+          type="url"
+          placeholder="https://example.com/mcp"
+          aria-invalid={urlInvalid || undefined}
+          value={draft.url}
+          onChange={(event) => patch({ url: event.target.value })}
+        />
+        {urlInvalid && (
+          <FieldDescription>Use an HTTP or HTTPS URL.</FieldDescription>
+        )}
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="mcp-token">Token</FieldLabel>
+        <Input
+          id="mcp-token"
+          type="password"
+          autoComplete="off"
+          placeholder={
+            server?.auth === "token" ? "Replace the saved token" : "Optional"
+          }
+          value={draft.token}
+          onChange={(event) => patch({ token: event.target.value })}
+        />
+        <FieldDescription>
+          Sent as a bearer token. Leave it empty for servers that need no
+          sign-in or use OAuth.
+        </FieldDescription>
+      </Field>
+    </>
+  );
+}
+
+function OAuthAppFields({ server, draft, patch }: DraftFieldsProps) {
+  const callback = `${location.origin}/ui/oauth/callback`;
+
+  return (
+    <FieldSet>
+      <FieldLegend variant="label">OAuth app</FieldLegend>
+      <FieldDescription>
+        Only for servers whose sign-in can't register Crumble, such as
+        GitHub&apos;s. Register an OAuth app there with the callback URL{" "}
+        <code className="rounded bg-muted px-1 py-0.5 text-xs break-all">
+          {callback}
+        </code>{" "}
+        and enter its client ID and secret.
+      </FieldDescription>
+      <Field>
+        <FieldLabel htmlFor="mcp-client-id">Client ID</FieldLabel>
+        <Input
+          id="mcp-client-id"
+          autoComplete="off"
+          placeholder="Optional"
+          value={draft.clientId}
+          onChange={(event) => patch({ clientId: event.target.value })}
+        />
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="mcp-client-secret">Client secret</FieldLabel>
+        <Input
+          id="mcp-client-secret"
+          type="password"
+          autoComplete="off"
+          disabled={!draft.clientId.trim()}
+          placeholder={
+            server?.hasOAuthClientSecret
+              ? "Replace the saved secret"
+              : "Optional"
+          }
+          value={draft.clientSecret}
+          onChange={(event) => patch({ clientSecret: event.target.value })}
+        />
+        <FieldDescription>
+          Stored encrypted and never shown again. Changing the app signs the
+          server out.
+        </FieldDescription>
+      </Field>
+    </FieldSet>
   );
 }
 
