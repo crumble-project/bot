@@ -1,11 +1,22 @@
 name: Workspace images
+
 on:
-  workflow_dispatch:
+  pull_request:
+    paths:
+      - apps/server/workspace-image/**
+      - .github/workflows/workspace-image.yml
   push:
-    tags: ["workspace-image-v*"]
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - apps/server/workspace-image/**
+      - .github/workflows/workspace-image.yml
+  workflow_dispatch:
+
 permissions:
   contents: read
   packages: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -14,23 +25,32 @@ jobs:
         target: [base, desktop]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Tags
+        id: tags
+        run: |
+          name=crumble-workspace; [ "${{ matrix.target }}" = desktop ] && name=crumble-workspace-desktop
+          image=ghcr.io/${{ github.repository_owner }}/$name
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "tags=$image:${GITHUB_REF_NAME#v},$image:latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=$image:main,$image:sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+          fi
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+      - if: github.event_name != 'pull_request'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Tag
-        id: tag
-        run: |
-          name=crumble-workspace; [ "${{ matrix.target }}" = desktop ] && name=crumble-workspace-desktop
-          version=${GITHUB_REF_NAME#workspace-image-v}; [ "$GITHUB_REF_TYPE" = tag ] || version=sha-${GITHUB_SHA::12}
-          echo "ref=ghcr.io/${{ github.repository_owner }}/$name:$version" >> "$GITHUB_OUTPUT"
+      # Pull requests only check that the images build, on one platform to stay fast.
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: apps/server/workspace-image
           target: ${{ matrix.target }}
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.tag.outputs.ref }}
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

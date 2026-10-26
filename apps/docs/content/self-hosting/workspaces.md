@@ -16,11 +16,11 @@ Without either, bots still chat, but can't start coding jobs or use a desktop.
 
 ## Microsandbox
 
-Start the server with the published workspace images:
+Start the server with the published workspace images. Use the same version as your server:
 
 ```bash
-CRUMBLE_WORKSPACE_IMAGE=ghcr.io/crumble-project/crumble-workspace \
-CRUMBLE_WORKSPACE_DESKTOP_IMAGE=ghcr.io/crumble-project/crumble-workspace-desktop \
+CRUMBLE_WORKSPACE_IMAGE=ghcr.io/crumble-project/crumble-workspace:0.1.0 \
+CRUMBLE_WORKSPACE_DESKTOP_IMAGE=ghcr.io/crumble-project/crumble-workspace-desktop:0.1.0 \
 bun run start
 ```
 
@@ -34,7 +34,7 @@ Add `compose.kvm.yaml` and pass the KVM group and the workspace image:
 
 ```bash
 CRUMBLE_KVM_GID=$(getent group kvm | cut -d: -f3) \
-CRUMBLE_WORKSPACE_IMAGE=ghcr.io/crumble-project/crumble-workspace \
+CRUMBLE_WORKSPACE_IMAGE=ghcr.io/crumble-project/crumble-workspace:0.1.0 \
 docker compose -f compose.yaml -f compose.kvm.yaml up -d --build
 ```
 
