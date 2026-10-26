@@ -33,7 +33,7 @@ Source files named below live in feature folders under `apps/server/src/`, such 
 ## Bot messaging and schedules
 
 - **`BotMessaging` (`bot-messaging.ts`):** Exposes `ask_bot`, `delegate`, and `delegation_status` model tools over `Bots.send`. Enforces per-bot permission allowlists, exact-name resolution, request-ID deduplication, and a one-hop delegation rule to prevent cycles. Sent messages and terminal replies are recorded as data-only transcript entries for client exchange cards.
-- **`BotSchedules` (`schedules.ts`):** One-time and cron tasks targeting a bot's continuous chat. Bots with the `schedule` capability can manage tasks targeting themselves or bots they are permitted to message.
+- **`BotSchedules` (`schedules.ts`):** One-time and recurring tasks targeting a bot's continuous chat. Bots with the `schedule` capability can manage prompt tasks targeting themselves or bots they are permitted to message. Script tasks require coding jobs and a Workspace, and can target only their own bot. **`ScriptRuns`** admits a run by recording a `script_runs` row, then executes it in the background. The scheduler waits for durable admission, not command completion; a task with a run still in progress skips overlapping occurrences. Runs retain their status and output, and interrupted runs are recorded rather than resumed.
 
 ## Inline visuals and reactions
 

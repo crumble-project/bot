@@ -356,6 +356,8 @@ function originLabel(message: Message) {
 
   if (origin.kind === "task") return `Task · ${origin.name ?? ""}`;
 
+  if (origin.kind === "script") return `Script task · ${origin.name ?? ""}`;
+
   if (origin.kind === "credential")
     return (
       <span className="flex items-center gap-1">
@@ -518,9 +520,15 @@ export function OwnerMessage({
         )}
         {message.content.trim() && (
           <Bubble variant="secondary" align="end">
-            <BubbleContent className="whitespace-pre-wrap">
-              {message.content}
-            </BubbleContent>
+            {message.origin?.kind === "script" ? (
+              <BubbleContent>
+                <Reply source={message.content} />
+              </BubbleContent>
+            ) : (
+              <BubbleContent className="whitespace-pre-wrap">
+                {message.content}
+              </BubbleContent>
+            )}
             <MessageReactions reactions={reactions} align="end" />
           </Bubble>
         )}

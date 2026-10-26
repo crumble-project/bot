@@ -5,11 +5,14 @@ import {
   type Agent,
   type Schedule,
   type ScheduleInput,
+  type ScheduleKind,
 } from "../shared/domain";
 import { Context, Effect, Layer, ManagedRuntime } from "effect";
 import type { Runner } from "../shared/runner";
 import { AgentRepository } from "../bots/agent-repository";
 import { ScheduleRepository } from "./schedule-repository";
+import type { ScriptRuns } from "./script-runs";
+import { BotWorkspaces, type Workspaces } from "../workspaces/workspace";
 import {
   Scheduler,
   schedulerAccess,
@@ -34,6 +37,10 @@ export type ScheduleDraft = {
   agentId?: string | undefined;
   name?: string | undefined;
   prompt?: string | undefined;
+  kind?: ScheduleKind | undefined;
+  command?: string | null | undefined;
+  timeoutSeconds?: number | undefined;
+  notify?: boolean | undefined;
   cron?: string | null | undefined;
   runAt?: string | null | undefined;
   timezone?: string | null | undefined;
@@ -46,6 +53,10 @@ type PresentedTask = {
   agentName: string;
   name: string;
   prompt: string;
+  kind: ScheduleKind;
+  command: string | null;
+  timeoutSeconds: number;
+  notify: boolean;
   cron: string | null;
   timezone: string;
   runAt: string | null;
@@ -56,6 +67,63 @@ type PresentedTask = {
 
 const visible = (source: Agent, schedule: Schedule) =>
   schedule.agentId === source.id || schedule.createdByAgentId === source.id;
+
+const retainedTiming = (
+  draft: ScheduleDraft,
+  cron: string | null,
+  runAt: string | null,
+) => ({
+  cron: draft.cron !== undefined ? null : cron,
+  runAt: draft.runAt !== undefined ? null : runAt,
+});
+
+const kindFields = (
+  draft: ScheduleDraft,
+  existing: Pick<
+    ScheduleInput,
+    "kind" | "command" | "timeoutSeconds" | "notify"
+  > = {
+    kind: "prompt",
+    command: null,
+    timeoutSeconds: 600,
+    notify: true,
+  },
+) => {
+  const kind = draft.kind ?? existing.kind;
+
+  return {
+    kind,
+    command:
+      draft.command !== undefined
+        ? draft.command
+        : kind === "script"
+          ? existing.command
+          : null,
+    timeoutSeconds: draft.timeoutSeconds ?? existing.timeoutSeconds,
+    notify: draft.notify ?? existing.notify,
+  };
+};
+
+const updatedText = (draft: ScheduleDraft, existing: Schedule) => ({
+  name: draft.name?.trim() || existing.name,
+  prompt: draft.prompt?.trim() || existing.prompt,
+  timezone: draft.timezone?.trim() || existing.timezone,
+});
+
+const requiredContent = Effect.fnUntraced(function* (
+  draft: ScheduleDraft,
+  kind: ScheduleKind,
+) {
+  const name = draft.name?.trim() ?? "";
+  const prompt = draft.prompt?.trim() ?? "";
+
+  if (!name || (kind === "prompt" && !prompt))
+    return yield* new InvalidInput({
+      message: "Task name and prompt are required",
+    });
+
+  return { name, prompt };
+});
 
 const when = (
   draft: ScheduleDraft,
@@ -76,10 +144,7 @@ const when = (
 
   if (nextRun) return Effect.succeed({ cron: null, runAt: nextRun });
 
-  const kept = {
-    cron: draft.cron !== undefined ? null : cron,
-    runAt: draft.runAt !== undefined ? null : runAt,
-  };
+  const kept = retainedTiming(draft, cron, runAt);
 
   if (!kept.cron && !kept.runAt)
     return Effect.fail(
@@ -91,7 +156,7 @@ const when = (
   return Effect.succeed(kept);
 };
 
-/** Tasks a bot may see or change. Each task runs in one bot's chat. */
+/** Tasks a bot may see or change. Each task targets one bot. */
 export class BotSchedules extends Context.Service<
   BotSchedules,
   {
@@ -130,6 +195,31 @@ export class BotSchedules extends Context.Service<
       const agents = yield* AgentRepository;
       const schedules = yield* ScheduleRepository;
       const scheduler = yield* Scheduler;
+      const workspaces = yield* BotWorkspaces;
+
+      const scriptPolicy = Effect.fnUntraced(function* (
+        from: Agent,
+        agentId: string,
+        createdByAgentId: string | null = null,
+      ) {
+        if (!from.tools.includes("coding"))
+          return yield* new Forbidden({
+            message: "Script tasks need coding jobs",
+          });
+
+        if (
+          agentId !== from.id ||
+          (createdByAgentId && createdByAgentId !== agentId)
+        )
+          return yield* new Forbidden({
+            message: "You can only give yourself a script task",
+          });
+
+        if (workspaces === undefined)
+          return yield* new Conflict({
+            message: "This server has no workspaces",
+          });
+      });
 
       const source = Effect.fnUntraced(function* (id: string) {
         const agent = yield* agents.get(id);
@@ -190,6 +280,10 @@ export class BotSchedules extends Context.Service<
           agentName: (yield* agents.get(schedule.agentId))?.name ?? "",
           name: schedule.name,
           prompt: schedule.prompt,
+          kind: schedule.kind,
+          command: schedule.command,
+          timeoutSeconds: schedule.timeoutSeconds,
+          notify: schedule.notify,
           cron: schedule.cron,
           timezone: schedule.timezone,
           runAt: schedule.runAt,
@@ -217,20 +311,20 @@ export class BotSchedules extends Context.Service<
         draft: ScheduleDraft,
       ) {
         const from = yield* source(sourceId);
-        const name = draft.name?.trim() ?? "";
-        const prompt = draft.prompt?.trim() ?? "";
+        const fields = kindFields(draft);
+        const { kind } = fields;
 
-        if (!name || !prompt)
-          return yield* Effect.fail(
-            new InvalidInput({ message: "Task name and prompt are required" }),
-          );
+        if (kind === "script")
+          yield* scriptPolicy(from, draft.agentId?.trim() || from.id);
+
+        const content = yield* requiredContent(draft, kind);
         const agentId = yield* target(from, draft.agentId);
 
         const schedule = yield* scheduler.create(
           {
             agentId,
-            name,
-            prompt,
+            ...content,
+            ...fields,
             ...(yield* when(draft, null, null)),
             timezone: draft.timezone?.trim() || "UTC",
             enabled: draft.enabled ?? true,
@@ -249,6 +343,15 @@ export class BotSchedules extends Context.Service<
         const from = yield* source(sourceId);
         const existing = yield* manageable(from, id);
         const requested = draft.agentId?.trim();
+        const fields = kindFields(draft, existing);
+        const { kind } = fields;
+
+        if (kind === "script")
+          yield* scriptPolicy(
+            from,
+            requested || existing.agentId,
+            existing.createdByAgentId,
+          );
 
         const agentId =
           requested && requested !== existing.agentId
@@ -259,9 +362,8 @@ export class BotSchedules extends Context.Service<
 
         const schedule = yield* scheduler.update(existing.id, {
           agentId,
-          name: draft.name?.trim() || existing.name,
-          prompt: draft.prompt?.trim() || existing.prompt,
-          timezone: draft.timezone?.trim() || existing.timezone,
+          ...updatedText(draft, existing),
+          ...fields,
           enabled: draft.enabled ?? existing.enabled,
           ...timing,
         });
@@ -318,7 +420,7 @@ export function scheduleExtension(
   const schedule = defineTool({
     name: "schedule",
     description:
-      "Create, list, update, delete, or run a task that targets one bot. The task runs in that bot's chat, once at runAt (ISO-8601 with Z for UTC or an explicit offset, e.g. 2026-10-18T12:10:00+02:00) or on a cron schedule. timezone controls cron only; it does not change the instant in runAt. Use the owner's known timezone for local times; ask if unknown. Omit agentId to target yourself. Pass another bot's ID only when you are allowed to message it. You can change tasks that run on you and tasks you created. A task exists only after this tool saves it. Use enabled to pause or resume.",
+      "Create, list, update, delete, or run a task that targets one bot. The task runs in that bot's chat, once at runAt (ISO-8601 with Z for UTC or an explicit offset, e.g. 2026-10-18T12:10:00+02:00) or on a cron schedule. timezone controls cron only; it does not change the instant in runAt. Use the owner's known timezone for local times; ask if unknown. Omit agentId to target yourself. Pass another bot's ID only when you are allowed to message it. You can change tasks that run on you and tasks you created. A task exists only after this tool saves it. Use enabled to pause or resume. With kind script, the task runs command in your workspace (/workspace) on the schedule instead of sending a prompt, with your credentials; it runs only on you, needs coding jobs, and is killed after timeoutSeconds (default 600). With notify (default true) each run's result arrives in your chat.",
     parameters: Type.Object({
       action: Type.Union([
         Type.Literal("list"),
@@ -331,6 +433,14 @@ export function scheduleExtension(
       agentId: Type.Optional(Type.String({ minLength: 1 })),
       name: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
       prompt: Type.Optional(Type.String({ minLength: 1, maxLength: 32000 })),
+      kind: Type.Optional(
+        Type.Union([Type.Literal("prompt"), Type.Literal("script")]),
+      ),
+      command: Type.Optional(Type.String({ minLength: 1, maxLength: 8000 })),
+      timeoutSeconds: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 3600 }),
+      ),
+      notify: Type.Optional(Type.Boolean()),
       cron: Type.Optional(Type.String({ maxLength: 100 })),
       runAt: Type.Optional(Type.String({ maxLength: 40 })),
       timezone: Type.Optional(Type.String({ maxLength: 100 })),
@@ -342,6 +452,10 @@ export function scheduleExtension(
         agentId: args.agentId,
         name: args.name,
         prompt: args.prompt,
+        kind: args.kind,
+        command: args.command,
+        timeoutSeconds: args.timeoutSeconds,
+        notify: args.notify,
         cron: args.cron,
         runAt: args.runAt,
         timezone: args.timezone,
@@ -411,11 +525,14 @@ export const botSchedulesAccess = (
 export function standaloneBotSchedules(
   core: Runner<ScheduleRepository | AgentRepository>,
   dispatch: StandaloneDispatch,
+  scriptRuns?: ScriptRuns["Service"],
+  workspaces?: Workspaces,
 ) {
   const runtime = ManagedRuntime.make(
     BotSchedules.layer.pipe(
       Layer.provideMerge(Scheduler.layer()),
-      Layer.provide(standaloneDependencies(core, dispatch)),
+      Layer.provide(standaloneDependencies(core, dispatch, scriptRuns)),
+      Layer.provide(Layer.succeed(BotWorkspaces, workspaces)),
     ),
   );
 

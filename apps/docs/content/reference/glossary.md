@@ -79,6 +79,12 @@ Background work a bot hands to a separate agent that edits files and runs comman
 
 Avoid: Subagent, session, sub-chat.
 
+### Script task
+
+A scheduled task that runs a shell command in its bot's workspace instead of sending a prompt to the bot chat. Only a bot with coding jobs has script tasks, and only for itself.
+
+Avoid: Cron job, routine, script job.
+
 ### Workspace
 
 A bot's persistent files for coding jobs and desktop jobs, on a disk only that bot's jobs can reach. The machine running them starts and stops as needed.

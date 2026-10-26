@@ -41,6 +41,10 @@ describe("scheduled admission recovery", () => {
     const schedule = store.createSchedule({
       agentId: agent.id,
       name: "Recovery task",
+      kind: "prompt",
+      command: null,
+      timeoutSeconds: 600,
+      notify: true,
       prompt: "retry me",
       cron: null,
       timezone: "UTC",

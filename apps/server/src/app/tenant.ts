@@ -17,6 +17,7 @@ import {
 } from "../schedules/scheduler";
 import { BotSchedules, scheduleTools } from "../schedules/bot-schedules";
 import { TaskDispatch } from "../schedules/task-dispatch";
+import { ScriptRuns } from "../schedules/script-runs";
 import { createAPI } from "./api";
 import {
   GroupChats,
@@ -250,6 +251,7 @@ function accountLayer(
   ).pipe(
     Layer.provideMerge(schedules),
     Layer.provideMerge(Layer.mergeAll(scheduler, groups, activity)),
+    Layer.provideMerge(ScriptRuns.layer),
     Layer.provideMerge(bots),
     Layer.provideMerge(runtime),
     Layer.provideMerge(BotSkills.layer),
@@ -331,6 +333,7 @@ export async function createTenant(
           {
             commonSkills: yield* CommonSkills,
             coding: workspaces !== undefined,
+            scriptRuns: yield* ScriptRuns,
             desktop: workspaces?.desktop === true,
             restartWorkspace: async (agentId) =>
               workspaces && Effect.runPromise(workspaces.restart(agentId)),
@@ -355,6 +358,7 @@ export async function createTenant(
         );
 
         yield* bots.recover;
+        yield* (yield* ScriptRuns).recover;
         yield* chats.recover;
         scheduler.start();
 

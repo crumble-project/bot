@@ -123,11 +123,38 @@ export type Memory = {
   updatedAt: string;
 };
 
+export type ScheduleKind = "prompt" | "script";
+
+export type ScriptRunStatus =
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "timed_out"
+  | "interrupted";
+
+export type ScriptRun = {
+  id: string;
+  scheduleId: string;
+  agentId: string;
+  command: string;
+  status: ScriptRunStatus;
+  exitCode: number | null;
+  output: string;
+  droppedBytes: number;
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+};
+
 export const scheduleInput = z
   .object({
     agentId: z.uuid(),
     name: z.string().trim().min(1).max(200),
-    prompt: z.string().trim().min(1).max(32000),
+    kind: z.enum(["prompt", "script"]).default("prompt"),
+    prompt: z.string().trim().max(32000).default(""),
+    command: z.string().max(8000).nullable().default(null),
+    timeoutSeconds: z.number().int().min(1).max(3600).default(600),
+    notify: z.boolean().default(true),
     cron: z.string().max(100).nullable().default(null),
     timezone: z.string().max(100).default("UTC"),
     runAt: z.iso
@@ -140,9 +167,29 @@ export const scheduleInput = z
   .refine(
     (v) => Boolean(v.cron) !== Boolean(v.runAt),
     "Choose a recurring cron or one-time date",
+  )
+  .refine(
+    (v) =>
+      v.kind === "prompt"
+        ? v.prompt.length > 0 && v.command === null
+        : Boolean(v.command?.trim()),
+    "Prompt tasks need a prompt and no command; script tasks need a command",
   );
 
 export type ScheduleInput = z.infer<typeof scheduleInput>;
+
+export const mergeScheduleInput = (
+  existing: ScheduleInput,
+  patch: Partial<ScheduleInput>,
+): ScheduleInput => {
+  const next = { ...existing, ...patch };
+
+  return {
+    ...next,
+    prompt: next.kind === "script" ? "" : next.prompt,
+    command: next.kind === "prompt" ? null : next.command,
+  };
+};
 
 export type Schedule = ScheduleInput & {
   id: string;

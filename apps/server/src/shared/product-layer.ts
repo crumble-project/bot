@@ -10,6 +10,7 @@ import { McpServerRepository } from "../integrations/mcp-server-repository";
 import { MemoryRepository } from "../memory/memory-repository";
 import { ProviderCredentialRepository } from "../providers/provider-credential-repository";
 import { ScheduleRepository } from "../schedules/schedule-repository";
+import { ScriptRunRepository } from "../schedules/script-run-repository";
 import { ChangeReverter } from "../skills/change-reverter";
 import { InlineSkillsTransfer } from "../skills/inline-skills";
 import { LearnedChangeRepository } from "../skills/learned-change-repository";
@@ -30,6 +31,7 @@ export const productLayer = (dataDir: string) => {
     McpServerRepository.layer,
     SettingsRepository.layer,
     ScheduleRepository.layer,
+    ScriptRunRepository.layer,
     DesktopControlRepository.layer,
     ConversationRepository.layer,
     ExecutionRepository.layer,

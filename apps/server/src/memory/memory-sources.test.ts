@@ -94,6 +94,10 @@ describe("memorySourceOf", () => {
     const schedule = store.createSchedule({
       agentId: agent.id,
       name: "Morning brief",
+      kind: "prompt",
+      command: null,
+      timeoutSeconds: 600,
+      notify: true,
       prompt: "Brief me",
       cron: "0 7 * * *",
       timezone: "UTC",

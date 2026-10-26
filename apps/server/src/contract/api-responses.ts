@@ -109,7 +109,10 @@ const conversation = z
 
 const origin = z
   .object({
-    kind: z.string(),
+    kind: z.string().openapi({
+      description:
+        "Where the message came from: owner, task, script (a script task's result), credential, bot, or group. Clients may receive other values later.",
+    }),
     name: z.string().optional(),
     agentId: z.string().optional(),
   })
@@ -299,6 +302,33 @@ export const executionResponse = z
   })
   .openapi("Execution");
 
+export const scriptRunResponse = z
+  .object({
+    id: z.string(),
+    scheduleId: z.string(),
+    agentId: z.string(),
+    command: z.string(),
+    status: z.enum([
+      "running",
+      "succeeded",
+      "failed",
+      "timed_out",
+      "interrupted",
+    ]),
+    exitCode: z.number().int().nullable(),
+    output: z.string().openapi({
+      description: "The last 64 KiB and 2000 lines of combined output.",
+    }),
+    droppedBytes: z
+      .number()
+      .int()
+      .openapi({ description: "Bytes dropped from the output tail." }),
+    error: z.string().nullable(),
+    startedAt: z.string(),
+    finishedAt: z.string().nullable(),
+  })
+  .openapi("ScriptRun");
+
 export const scheduleRunResponse = z
   .object({
     admitted: z.boolean(),
@@ -470,6 +500,10 @@ export const scheduleResponse = z
     agentId: z.string(),
     name: z.string(),
     prompt: z.string(),
+    kind: z.enum(["prompt", "script"]),
+    command: z.string().nullable(),
+    timeoutSeconds: z.number().int(),
+    notify: z.boolean(),
     cron: z.string().nullable(),
     timezone: z.string(),
     runAt: z.string().nullable(),
@@ -692,7 +726,7 @@ export const replyEvent = z
     entryId: z.string().nullable(),
     origin: z.string().openapi({
       description:
-        "What the bot answered: owner (a message from the owner), task (a scheduled task), bot (another bot's request), group (a group chat turn), or coding or desktop (a job's report; jobName names the job). Clients may receive other values later.",
+        "What the bot answered: owner (a message from the owner), task (a scheduled task), script (a script task's result), bot (another bot's request), group (a group chat turn), or coding or desktop (a job's report; jobName names the job). Clients may receive other values later.",
     }),
     preview: z.string(),
     createdAt: z.string(),

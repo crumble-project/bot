@@ -54,6 +54,10 @@ _Avoid_: Auto-save, self-update
 Background work a bot hands to a separate agent that edits files and runs commands in the bot's workspace. The job's answer returns to the bot's chat.
 _Avoid_: Subagent, session, sub-chat
 
+**Script task**:
+A scheduled task that runs a shell command in its bot's workspace instead of sending a prompt to the bot chat. Only a bot with coding jobs has script tasks, and only for itself.
+_Avoid_: Cron job, routine, script job
+
 **Workspace**:
 A bot's persistent files for coding jobs and desktop jobs, on a disk only that bot's jobs can reach. The machine running them starts and stops as needed.
 _Avoid_: Sandbox, container, VM (in product language)

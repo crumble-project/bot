@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add script tasks: a bot with coding jobs can run a command in its workspace on a schedule, with a configurable timeout and optional results sent to its chat. The Tasks page lists script task runs. Existing script tasks can be converted to prompt tasks without coding jobs or workspaces. Updates validate the complete task before saving; shutdown stops admitting script runs and finalizes runs recorded during shutdown.
+
 - `bun run check` and the pre-commit hook fail when an `AGENTS.md` or `CLAUDE.md` names a path that does not exist. `AGENTS.md` now points at Effect under `apps/server/node_modules/`, where Bun installs it. `bun run --cwd apps/server db:generate` (and `db:generate:push`) generates migrations, and the contributing docs describe it.
 - New features no longer start as specifications in `crumble-project/spec`, which is archived. The contributing docs drop the proposal process and the Specifications page, which now redirects to Contributing.
 - The canonical glossary moves from `crumble-project/spec` to `GLOSSARY.md` in this repository. The Android and Apple glossaries and the docs site's Glossary page link here.
@@ -115,6 +117,13 @@
 - Add the generated OpenAPI 3.1 contract at `openapi/openapi.json` for all 49 HTTP endpoints, including authentication and event payload schemas.
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
+
+## Contract 3.2.0
+
+- Add `kind` (`prompt` or `script`, default `prompt`), nullable `command` (up to 8000 characters), `timeoutSeconds` (1–3600, default 600), and `notify` (default `true`) to schedule inputs and `Schedule`. Script tasks need a command instead of a prompt, coding jobs, and workspaces. A bot can give a script task only to itself.
+- Add `GET /v1/schedules/{id}/runs` (`listScriptRuns`), returning the last 90 days of runs, newest first. `limit` defaults to 20 (maximum 200); `before` takes the last run's ID, including runs with identical start times. An unknown ID returns an empty list.
+- Add `ScriptRun`: `id`, `scheduleId`, `agentId`, `command`, `status` (`running`, `succeeded`, `failed`, `timed_out`, or `interrupted`), nullable `exitCode`, `output`, `droppedBytes`, nullable `error`, `startedAt`, and nullable `finishedAt`.
+- Add message origin kind `script` for script task results, with the task's name.
 
 ## Contract 3.1.0
 

@@ -1,5 +1,6 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { agents } from "../bots/schema";
+import type { ScheduleKind } from "../shared/domain";
 
 export const schedules = sqliteTable("schedules", {
   id: text("id").primaryKey(),
@@ -7,7 +8,11 @@ export const schedules = sqliteTable("schedules", {
     .notNull()
     .references(() => agents.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  kind: text("kind").$type<ScheduleKind>().notNull().default("prompt"),
   prompt: text("prompt").notNull(),
+  command: text("command"),
+  timeoutSeconds: integer("timeout_seconds").notNull().default(600),
+  notify: integer("notify", { mode: "boolean" }).notNull().default(true),
   cron: text("cron"),
   timezone: text("timezone").notNull(),
   runAt: text("run_at"),
