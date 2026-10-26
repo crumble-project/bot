@@ -1,13 +1,16 @@
 {
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
-  // Run by drizzle-kit, spawned by tests by path, run as `bun tools/...`, or loaded by Blume by file name.
+  // Run by drizzle-kit, spawned by tests by path, run as `bun tools/...`, or loaded by Blume, Panda, or TanStack Start by file name.
   "entry": [
     "apps/server/drizzle.*.config.ts",
     "apps/server/test/fixtures/*.ts",
     "apps/server/tools/*.ts",
     "apps/docs/blume.config.ts",
     "apps/docs/theme.css",
-    "apps/docs/content/**/*.{ts,mdx}"
+    "apps/docs/content/**/*.{ts,mdx}",
+    "apps/site/panda.config.ts",
+    "apps/site/src/router.tsx",
+    "apps/site/src/routes/**/*.tsx"
   ],
   // Vendored oxlint plugins; tools/oxlint/anti-slop/UPSTREAM.md tracks them by checksum, so they stay as upstream wrote them.
   "ignorePatterns": ["tools/oxlint/**"],

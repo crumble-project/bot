@@ -30,6 +30,7 @@ See [Specifications](/contributing/specifications) for the existing ones.
 | `apps/server/workspace-image/` | Dockerfile and desktop scripts for workspace images.     |
 | `apps/web/`                    | The web app, grouped by feature.                         |
 | `apps/docs/`                   | This documentation site, built with Blume.               |
+| `apps/site/`                   | The landing page at crumbli.ng.                          |
 | `openapi/`                     | The generated OpenAPI contract and event stream schemas. |
 
 Server code uses [Effect](https://effect.website). Read `apps/server/AGENTS.md` before changing it. See [Architecture](/contributing/architecture) for how the pieces fit.

@@ -8,6 +8,6 @@ Before writing any Effect code, first read `node_modules/effect/AGENTS.md`
 If you need to learn more about particular Effect apis and concepts that the
 guide doesn't cover, search through the source code in `node_modules/effect/src`.
 
-# Documentation
+# Documentation and site
 
-User-facing docs live in `apps/docs` (a Blume site with its own lockfile, outside the root workspace). When a change alters behavior, settings, endpoints, or UI labels the docs describe, update the matching page in the same change and run `bun run check` from `apps/docs`.
+User-facing docs live in `apps/docs` (a Blume site) and the landing page in `apps/site` (TanStack Start). Each has its own lockfile, outside the root workspace. When a change alters behavior, settings, endpoints, or UI labels the docs describe, update the matching page in the same change and run `bun run check` from `apps/docs`.
