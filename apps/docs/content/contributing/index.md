@@ -58,3 +58,21 @@ bun run contract:bundle         # export a checksummed release bundle
 ```
 
 `bun run openapi:check` fails if the generated files are out of date. `bun run check` runs it for you.
+
+## Release
+
+`apps/server/package.json` holds the version. A release publishes `crumble-server`, `crumble-workspace`, and `crumble-workspace-desktop` with the same version, so a server and its workspace images always match.
+
+1. In one pull request:
+   - set `version` in `apps/server/package.json`
+   - rename `## Unreleased` in `CHANGELOG.md` to `## X.Y.Z`, and add a new empty `## Unreleased` above it
+   - update the image tags in `README.md` and `apps/docs`
+2. Squash-merge it.
+3. Tag the merge commit and push the tag:
+
+   ```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+
+The Server image and Workspace images workflows publish `X.Y.Z` and `latest` for each image. The server workflow fails if the tag doesn't match `apps/server/package.json`. Every push to `main` also publishes `main` and `sha-…` tags.
