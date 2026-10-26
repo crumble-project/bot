@@ -66,6 +66,49 @@ function replacing(pairs: ReadonlyArray<readonly [string, string]>) {
   });
 }
 
+const requestHeaders = (
+  rawHeaders: string[],
+  swap: (text: string) => string,
+) => {
+  const headers: Record<string, string[]> = {};
+
+  for (let index = 0; index < rawHeaders.length; index += 2) {
+    const key = rawHeaders[index]!.toLowerCase();
+    const value = rawHeaders[index + 1]!;
+
+    if (HOP_BY_HOP.has(key)) continue;
+
+    const basic = key === "authorization" && /^basic\s+(\S+)$/i.exec(value);
+
+    const swapped = basic
+      ? `Basic ${Buffer.from(swap(Buffer.from(basic[1]!, "base64").toString("utf8"))).toString("base64")}`
+      : swap(value);
+
+    (headers[key] ??= []).push(swapped);
+  }
+
+  return headers;
+};
+
+const responseHeaders = (
+  rawHeaders: string[],
+  scrubbing: boolean,
+  scrubText: (text: string) => string,
+) => {
+  const headers: Record<string, string[]> = {};
+
+  for (let index = 0; index < rawHeaders.length; index += 2) {
+    const key = rawHeaders[index]!.toLowerCase();
+
+    // A scrubbed body can change length; Node frames it anew.
+    if (HOP_BY_HOP.has(key) || (scrubbing && key === "content-length"))
+      continue;
+    (headers[key] ??= []).push(scrubText(rawHeaders[index + 1]!));
+  }
+
+  return headers;
+};
+
 /**
  * Swaps a bot's credential placeholders for their values on requests to the credentials' hosts, and the values back
  * in responses. It sees only TLS connections the workspace proxy hands it, so a placeholder sent anywhere else, or from
@@ -128,23 +171,7 @@ export function credentialProxy(
           return current.replaceAll(grant.placeholder, grant.value);
         }, text);
 
-      const headers: Record<string, string[]> = {};
-
-      for (let index = 0; index < request.rawHeaders.length; index += 2) {
-        const name = request.rawHeaders[index]!;
-        const value = request.rawHeaders[index + 1]!;
-        const key = name.toLowerCase();
-
-        if (HOP_BY_HOP.has(key)) continue;
-
-        const basic = key === "authorization" && /^basic\s+(\S+)$/i.exec(value);
-
-        const swapped = basic
-          ? `Basic ${Buffer.from(swap(Buffer.from(basic[1]!, "base64").toString("utf8"))).toString("base64")}`
-          : swap(value);
-
-        (headers[key] ??= []).push(swapped);
-      }
+      const headers = requestHeaders(request.rawHeaders, swap);
 
       // Uncompressed responses, so the value can be scrubbed from them.
       headers["accept-encoding"] = ["identity"];
@@ -189,21 +216,12 @@ export function credentialProxy(
         },
         (reply) => {
           record(reply.statusCode ?? null);
-          const replyHeaders: Record<string, string[]> = {};
 
-          for (let index = 0; index < reply.rawHeaders.length; index += 2) {
-            const key = reply.rawHeaders[index]!.toLowerCase();
-
-            // A scrubbed body can change length; Node frames it anew.
-            if (
-              HOP_BY_HOP.has(key) ||
-              (scrub.length && key === "content-length")
-            )
-              continue;
-            (replyHeaders[key] ??= []).push(
-              scrubText(reply.rawHeaders[index + 1]!),
-            );
-          }
+          const replyHeaders = responseHeaders(
+            reply.rawHeaders,
+            scrub.length > 0,
+            scrubText,
+          );
 
           response.writeHead(
             reply.statusCode ?? 502,

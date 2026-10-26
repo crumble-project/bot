@@ -474,6 +474,196 @@ function conversationInstructions(
     .join("\n\n");
 }
 
+function assertMemoryEnabled(agent: Agent | null | undefined) {
+  if (!agent?.enabled || !agent.tools.includes("memory"))
+    throw new Error("Memory access is disabled for this agent");
+}
+
+type MemoryArgs = {
+  action: "list" | "create" | "update" | "delete";
+  id?: string | undefined;
+  content?: string | undefined;
+  shared?: boolean | undefined;
+};
+
+function createMemoryAction(
+  callbacks: RuntimeCallbacks,
+  agentId: string,
+  args: MemoryArgs,
+  context: MemoryContext,
+) {
+  if (!args.content?.trim() || !callbacks.createMemory)
+    throw new Error("Memory content is required");
+
+  return callbacks.createMemory(
+    agentId,
+    args.content,
+    args.shared === true,
+    context,
+  );
+}
+
+function updateMemoryAction(
+  callbacks: RuntimeCallbacks,
+  agentId: string,
+  args: MemoryArgs,
+  context: MemoryContext,
+) {
+  if (!args.id || !args.content?.trim() || !callbacks.updateMemory)
+    throw new Error("Memory ID and content are required");
+
+  return callbacks.updateMemory(agentId, args.id, args.content, context);
+}
+
+async function deleteMemoryAction(
+  callbacks: RuntimeCallbacks,
+  agentId: string,
+  args: MemoryArgs,
+  context: MemoryContext,
+) {
+  if (!args.id || !callbacks.deleteMemory)
+    throw new Error("Memory ID is required");
+  await callbacks.deleteMemory(agentId, args.id, context);
+
+  return { deleted: true as const };
+}
+
+async function runMemoryAction(
+  callbacks: RuntimeCallbacks,
+  agentId: string,
+  args: MemoryArgs,
+  context: MemoryContext,
+): Promise<MemoryRecord[] | MemoryRecord | { deleted: true }> {
+  if (args.action === "list")
+    return (await callbacks.listMemory?.(agentId)) ?? [];
+
+  if (args.action === "create")
+    return createMemoryAction(callbacks, agentId, args, context);
+
+  if (args.action === "update")
+    return updateMemoryAction(callbacks, agentId, args, context);
+
+  return deleteMemoryAction(callbacks, agentId, args, context);
+}
+
+async function preparedInput(
+  record: HarnessRecord,
+  agent: Agent,
+  text: string,
+  replyTo: string | undefined,
+): Promise<PreparedReply> {
+  if (!replyTo) return { modelContent: text, data: { text } };
+
+  try {
+    return await prepareReply(record.harness, agent.id, replyTo, text);
+  } catch (error) {
+    throw new InvalidInput({
+      message: error instanceof Error ? error.message : "Invalid reply target",
+    });
+  }
+}
+
+type PreparedAttachments = ReturnType<typeof prepareAttachments>;
+
+// Catalogs that list no modalities are trusted; the provider reports anything it refuses.
+function assertImageSupport(
+  agent: Agent,
+  model: { input?: readonly string[] } | undefined,
+  info: PreparedAttachments["info"],
+) {
+  if (
+    info.some((item) => item.kind === "image") &&
+    model?.input &&
+    !model.input.includes("image")
+  )
+    throw new InvalidInput({
+      message: `${agent.model} can't read images. Choose a model that accepts images in the agent's profile.`,
+    });
+}
+
+function botRelayText(origin: MessageOrigin, text: string) {
+  return `Message from bot ${JSON.stringify(origin.name ?? "Another bot")} (${origin.agentId ?? "unknown"}):\n\n${text}\n\nReply to this bot's message. Your answer will be returned to the requesting bot.`;
+}
+
+function inputContent(text: string, blocks: PreparedAttachments["blocks"]) {
+  if (!blocks.length) return text;
+
+  return [...(text.trim() ? [{ type: "text" as const, text }] : []), ...blocks];
+}
+
+function inferenceModels(models: Models, choices: { agent: Agent }) {
+  return new Proxy(models, {
+    get(target, property) {
+      if (property === "streamSimple")
+        return (...args: Parameters<Models["streamSimple"]>) => {
+          const inference = choices.agent.inference;
+
+          return target.streamSimple(args[0], args[1], {
+            ...args[2],
+            ...inferenceOptions(inference),
+          });
+        };
+
+      // SAFETY: Proxy properties are the keys of the Models instance; the
+      // special streamSimple branch above handles the only replaced method.
+      const value = target[property as keyof Models];
+
+      return value instanceof Function ? value.bind(target) : value;
+    },
+  });
+}
+
+function modelChoice(source: { provider: string; model: string }) {
+  return { provider: source.provider, modelId: source.model };
+}
+
+type ConversationTools = ReturnType<typeof chatTools>;
+
+// With code mode the model writes one script that calls the other tools, instead of calling them itself.
+// Model-only tools, such as code mode itself, stay direct.
+function modelToolsOf(tools: ConversationTools) {
+  if (!tools.some((tool) => tool.name === CODEMODE_TOOL_NAME)) return tools;
+
+  return tools.filter(
+    (tool) => tool.callers !== undefined && !tool.callers.includes("tools"),
+  );
+}
+
+function scopedExtensions(
+  record: HarnessRecord,
+  offered: Extension[],
+  scope: { group: unknown; review: unknown },
+) {
+  if (scope.review)
+    return {
+      extensions: [
+        record.memoryExtension,
+        record.skillExtension,
+        record.reviewExtension,
+      ],
+    };
+
+  if (scope.group)
+    return {
+      extensions: [
+        record.memoryExtension,
+        record.skillExtension,
+        ...offered,
+        record.groupExtension,
+      ],
+    };
+
+  return {};
+}
+
+async function ensureAgentModels(models: Models, agent: Agent) {
+  // Dynamic catalogs (Melious) list models only after a refresh with the saved key.
+  await ensureModel(models, agent);
+
+  // The desktop job model may come from another provider with a dynamic catalog.
+  if (agent.desktopModel) await ensureModel(models, agent.desktopModel);
+}
+
 export class AgentRuntime {
   /** Skills each turn has loaded, checked before a bot changes one. */
   private readonly skillReads = new SkillReads();
@@ -500,137 +690,134 @@ export class AgentRuntime {
     }
   }
 
+  private memoryTool(agent: Agent) {
+    return defineTool({
+      name: "memory",
+      description:
+        "Read and manage this agent’s persistent memory. When the agent uses shared memory, `list` also returns shared memories (marked `shared`), which other agents see too; create one with `shared: true` only for what every agent should know. In a group chat only your own memory can be changed.",
+      parameters: Type.Object({
+        action: Type.Union([
+          Type.Literal("list"),
+          Type.Literal("create"),
+          Type.Literal("update"),
+          Type.Literal("delete"),
+        ]),
+        id: Type.Optional(Type.String({ minLength: 1 })),
+        content: Type.Optional(Type.String({ minLength: 1, maxLength: 32000 })),
+        shared: Type.Optional(Type.Boolean()),
+      }),
+      // Writes are not replay-safe: interrupted calls report an interruption instead of duplicating a memory.
+      replay: "unsafe",
+      execute: async (args, api, callContext) => {
+        const live = await api.snapshot(
+          LiveDoc,
+          api.conversationId,
+          callContext,
+        );
+
+        const context: MemoryContext = {
+          groupId:
+            (
+              await api.snapshot(
+                GroupConversation,
+                api.conversationId,
+                callContext,
+              )
+            )?.groupId ?? null,
+          submissionIds: (live?.run?.inputs ?? []).map(String),
+          reviewOf:
+            (
+              await api.snapshot(
+                ReviewConversation,
+                api.conversationId,
+                callContext,
+              )
+            )?.executionId ?? null,
+        };
+
+        const current = this.callbacks.currentAgent
+          ? this.callbacks.currentAgent(agent.id)
+          : agent;
+
+        assertMemoryEnabled(current);
+
+        const result = await runMemoryAction(
+          this.callbacks,
+          agent.id,
+          args,
+          context,
+        );
+
+        return { output: [{ type: "text", text: JSON.stringify(result) }] };
+      },
+    });
+  }
+
+  private skillTools(agent: Agent) {
+    const currentAgent = () => {
+      const current = this.callbacks.currentAgent
+        ? this.callbacks.currentAgent(agent.id)
+        : agent;
+
+      if (!current?.enabled)
+        throw new Error("Skill access is disabled for this agent");
+
+      return current;
+    };
+
+    const library = this.callbacks.skillLibrary;
+
+    const skill = skillTool({
+      skills: async () =>
+        library ? Effect.runPromise(library.available(currentAgent())) : [],
+      used: async (loaded, runKey) => {
+        this.skillReads.mark(runKey, loaded.id);
+
+        if (library)
+          await Effect.runPromise(library.used(currentAgent(), loaded));
+      },
+    });
+
+    const skillManage = library
+      ? skillManageTool({
+          library,
+          reads: this.skillReads,
+          agent: currentAgent,
+        })
+      : null;
+
+    return { skill, skillManage };
+  }
+
+  private async modelsFor(agent: Agent) {
+    const { models } = this.callbacks;
+
+    if (models instanceof Function) return models(agent);
+
+    return models ?? providerModels();
+  }
+
+  private async extensionsOf(agent: Agent) {
+    const next = (await this.callbacks.extensions?.(agent)) ?? [];
+
+    const installed = [
+      ...next,
+      ...((await this.callbacks.taskExtensions?.(agent)) ?? []),
+    ];
+
+    return { next, installed };
+  }
+
   private async openRecord(agent: Agent): Promise<HarnessRecord> {
     const storage = await openNodeSqliteStorage(
       `${this.dataDir}/${agent.id}.sqlite`,
     );
 
     try {
-      const models =
-        this.callbacks.models instanceof Function
-          ? await this.callbacks.models(agent)
-          : (this.callbacks.models ?? providerModels());
+      const models = await this.modelsFor(agent);
 
-      const memory = defineTool({
-        name: "memory",
-        description:
-          "Read and manage this agent’s persistent memory. When the agent uses shared memory, `list` also returns shared memories (marked `shared`), which other agents see too; create one with `shared: true` only for what every agent should know. In a group chat only your own memory can be changed.",
-        parameters: Type.Object({
-          action: Type.Union([
-            Type.Literal("list"),
-            Type.Literal("create"),
-            Type.Literal("update"),
-            Type.Literal("delete"),
-          ]),
-          id: Type.Optional(Type.String({ minLength: 1 })),
-          content: Type.Optional(
-            Type.String({ minLength: 1, maxLength: 32000 }),
-          ),
-          shared: Type.Optional(Type.Boolean()),
-        }),
-        // Writes are not replay-safe: interrupted calls report an interruption instead of duplicating a memory.
-        replay: "unsafe",
-        execute: async (args, api, callContext) => {
-          const live = await api.snapshot(
-            LiveDoc,
-            api.conversationId,
-            callContext,
-          );
-
-          const context: MemoryContext = {
-            groupId:
-              (
-                await api.snapshot(
-                  GroupConversation,
-                  api.conversationId,
-                  callContext,
-                )
-              )?.groupId ?? null,
-            submissionIds: (live?.run?.inputs ?? []).map(String),
-            reviewOf:
-              (
-                await api.snapshot(
-                  ReviewConversation,
-                  api.conversationId,
-                  callContext,
-                )
-              )?.executionId ?? null,
-          };
-
-          const current = this.callbacks.currentAgent
-            ? this.callbacks.currentAgent(agent.id)
-            : agent;
-
-          if (!current?.enabled || !current.tools.includes("memory"))
-            throw new Error("Memory access is disabled for this agent");
-          let result: MemoryRecord[] | MemoryRecord | { deleted: true };
-
-          if (args.action === "list")
-            result = (await this.callbacks.listMemory?.(agent.id)) ?? [];
-          else if (args.action === "create") {
-            if (!args.content?.trim() || !this.callbacks.createMemory)
-              throw new Error("Memory content is required");
-            result = await this.callbacks.createMemory(
-              agent.id,
-              args.content,
-              args.shared === true,
-              context,
-            );
-          } else if (args.action === "update") {
-            if (
-              !args.id ||
-              !args.content?.trim() ||
-              !this.callbacks.updateMemory
-            )
-              throw new Error("Memory ID and content are required");
-            result = await this.callbacks.updateMemory(
-              agent.id,
-              args.id,
-              args.content,
-              context,
-            );
-          } else {
-            if (!args.id || !this.callbacks.deleteMemory)
-              throw new Error("Memory ID is required");
-            await this.callbacks.deleteMemory(agent.id, args.id, context);
-            result = { deleted: true };
-          }
-
-          return { output: [{ type: "text", text: JSON.stringify(result) }] };
-        },
-      });
-
-      const currentAgent = () => {
-        const current = this.callbacks.currentAgent
-          ? this.callbacks.currentAgent(agent.id)
-          : agent;
-
-        if (!current?.enabled)
-          throw new Error("Skill access is disabled for this agent");
-
-        return current;
-      };
-
-      const library = this.callbacks.skillLibrary;
-
-      const skill = skillTool({
-        skills: async () =>
-          library ? Effect.runPromise(library.available(currentAgent())) : [],
-        used: async (loaded, runKey) => {
-          this.skillReads.mark(runKey, loaded.id);
-
-          if (library)
-            await Effect.runPromise(library.used(currentAgent(), loaded));
-        },
-      });
-
-      const skillManage = library
-        ? skillManageTool({
-            library,
-            reads: this.skillReads,
-            agent: currentAgent,
-          })
-        : null;
+      const memory = this.memoryTool(agent);
+      const { skill, skillManage } = this.skillTools(agent);
 
       const registry = createRegistry();
 
@@ -651,33 +838,12 @@ export class AgentRuntime {
       const reviewExt = reviewExtension();
       registry.install(reviewExt);
 
-      const extensions = [
-        ...((await this.callbacks.extensions?.(agent)) ?? []),
-        ...((await this.callbacks.taskExtensions?.(agent)) ?? []),
-      ];
+      const { installed: extensions } = await this.extensionsOf(agent);
 
       for (const extension of extensions) registry.install(extension);
       const choices = { agent };
 
-      const configuredModels = new Proxy(models, {
-        get(target, property) {
-          if (property === "streamSimple")
-            return (...args: Parameters<Models["streamSimple"]>) => {
-              const inference = choices.agent.inference;
-
-              return target.streamSimple(args[0], args[1], {
-                ...args[2],
-                ...inferenceOptions(inference),
-              });
-            };
-
-          // SAFETY: Proxy properties are the keys of the Models instance; the
-          // special streamSimple branch above handles the only replaced method.
-          const value = target[property as keyof Models];
-
-          return value instanceof Function ? value.bind(target) : value;
-        },
-      });
+      const configuredModels = inferenceModels(models, choices);
 
       const harness = await Harness.open(
         storage,
@@ -715,12 +881,7 @@ export class AgentRuntime {
   }
 
   private async installExtensions(record: HarnessRecord, agent: Agent) {
-    const next = (await this.callbacks.extensions?.(agent)) ?? [];
-
-    const installed = [
-      ...next,
-      ...((await this.callbacks.taskExtensions?.(agent)) ?? []),
-    ];
+    const { next, installed } = await this.extensionsOf(agent);
 
     for (const previous of record.extensions)
       if (!installed.some((extension) => extension.name === previous.name))
@@ -732,6 +893,24 @@ export class AgentRuntime {
     return next;
   }
 
+  private async ensuredReviewModel(
+    record: HarnessRecord,
+    agent: Agent,
+    review: boolean,
+  ) {
+    const reviewModel = review ? this.reviewModelOf(agent) : null;
+
+    if (reviewModel) await ensureModel(record.models, reviewModel);
+
+    return reviewModel;
+  }
+
+  private async availableSkills(agent: Agent) {
+    const library = this.callbacks.skillLibrary;
+
+    return library ? Effect.runPromise(library.available(agent)) : [];
+  }
+
   private async configure(
     record: HarnessRecord,
     agent: Agent,
@@ -739,12 +918,7 @@ export class AgentRuntime {
   ) {
     record.choices.agent = agent;
 
-    // Dynamic catalogs (Melious) list models only after a refresh with the saved key.
-    await ensureModel(record.models, agent);
-
-    // The desktop job model may come from another provider with a dynamic catalog.
-    if (agent.desktopModel)
-      await ensureModel(record.models, agent.desktopModel);
+    await ensureAgentModels(record.models, agent);
     const next = await this.installExtensions(record, agent);
 
     const localId = localConversationId(agent.id, conversationId);
@@ -752,9 +926,11 @@ export class AgentRuntime {
     const scope = await conversationScope(record.harness, localId);
     const { group, review } = scope;
 
-    const reviewModel = review ? this.reviewModelOf(agent) : null;
-
-    if (reviewModel) await ensureModel(record.models, reviewModel);
+    const reviewModel = await this.ensuredReviewModel(
+      record,
+      agent,
+      Boolean(review),
+    );
 
     // A group turn can neither delegate nor start coding jobs, and may pass instead of answering.
     const offered = group
@@ -763,23 +939,11 @@ export class AgentRuntime {
         )
       : next;
 
-    const library = this.callbacks.skillLibrary;
-
-    const skills = library
-      ? await Effect.runPromise(library.available(agent))
-      : [];
+    const skills = await this.availableSkills(agent);
 
     const tools = review
       ? reviewTools(record, agent, skills.length > 0, review)
       : chatTools(record, agent, offered, skills.length > 0, group);
-
-    // With code mode the model writes one script that calls the other tools, instead of calling them itself.
-    // Model-only tools, such as code mode itself, stay direct.
-    const codemode = tools.find((tool) => tool.name === CODEMODE_TOOL_NAME);
-
-    const modelOnly = tools.filter(
-      (tool) => tool.callers !== undefined && !tool.callers.includes("tools"),
-    );
 
     const conversation = await record.harness.conversation(
       localId,
@@ -793,32 +957,16 @@ export class AgentRuntime {
 
     await conversation.configure(
       {
-        model: reviewModel
-          ? { provider: reviewModel.provider, modelId: reviewModel.model }
-          : { provider: agent.provider, modelId: agent.model },
+        model: modelChoice(reviewModel ?? agent),
         thinkingLevel: agent.inference?.thinkingLevel ?? "off",
-        ...(group && {
-          extensions: [
-            record.memoryExtension,
-            record.skillExtension,
-            ...offered,
-            record.groupExtension,
-          ],
-        }),
-        ...(review && {
-          extensions: [
-            record.memoryExtension,
-            record.skillExtension,
-            record.reviewExtension,
-          ],
-        }),
+        ...scopedExtensions(record, offered, scope),
         instructions: conversationInstructions(agent, skills, memory, {
           ...scope,
           canWriteSkills: Boolean(record.skillManage),
           clock,
         }),
         tools,
-        modelTools: codemode ? modelOnly : tools,
+        modelTools: modelToolsOf(tools),
       },
       BACKGROUND_CONTEXT,
     );
@@ -1066,51 +1214,18 @@ export class AgentRuntime {
     const record = await this.open(agent);
     const attached = prepareAttachments(options.attachments ?? []);
 
-    let prepared: PreparedReply = {
-      modelContent: text,
-      data: { text },
-    };
-
-    if (options.replyTo)
-      try {
-        prepared = await prepareReply(
-          record.harness,
-          agent.id,
-          options.replyTo,
-          text,
-        );
-      } catch (error) {
-        throw new InvalidInput({
-          message:
-            error instanceof Error ? error.message : "Invalid reply target",
-        });
-      }
-
+    const prepared = await preparedInput(record, agent, text, options.replyTo);
     const conversation = await this.configure(record, agent, conversationId);
     const model = record.models.getModel(agent.provider, agent.model);
 
-    // Catalogs that list no modalities are trusted; the provider reports anything it refuses.
-    if (
-      attached.info.some((item) => item.kind === "image") &&
-      model?.input &&
-      !model.input.includes("image")
-    )
-      throw new InvalidInput({
-        message: `${agent.model} can't read images. Choose a model that accepts images in the agent's profile.`,
-      });
+    assertImageSupport(agent, model, attached.info);
 
-    if (options.origin?.kind === "bot") {
-      prepared.modelContent = `Message from bot ${JSON.stringify(options.origin.name ?? "Another bot")} (${options.origin.agentId ?? "unknown"}):\n\n${prepared.modelContent}\n\nReply to this bot's message. Your answer will be returned to the requesting bot.`;
-    }
-
-    const content = attached.blocks.length
-      ? [
-          ...(prepared.modelContent.trim()
-            ? [{ type: "text" as const, text: prepared.modelContent }]
-            : []),
-          ...attached.blocks,
-        ]
-      : prepared.modelContent;
+    const content = inputContent(
+      options.origin?.kind === "bot"
+        ? botRelayText(options.origin, prepared.modelContent)
+        : prepared.modelContent,
+      attached.blocks,
+    );
 
     const draft = {
       type: "input" as const,

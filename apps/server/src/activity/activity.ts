@@ -47,154 +47,182 @@ const blockInput = z.object({
 
 const isMcpTool = (name: string) => /^(mcp(?:[_:/-]|$))/i.test(name);
 
-/** Converts durable transcript messages into the operational events shown in Activity. */
-export function operationalActivity(
-  agent: Pick<Agent, "id" | "name">,
-  messages: TranscriptMessage[],
+type ActivityAgent = Pick<Agent, "id" | "name">;
+
+function activityOf(
+  agent: ActivityAgent,
+  message: TranscriptMessage,
+  id: string,
+  kind: ActivityKind,
+  details: ActivityDetails,
+): OperationalActivity {
+  const item: OperationalActivity = {
+    id,
+    agentId: agent.id,
+    agentName: agent.name,
+    entryId: message.entryId,
+    kind,
+    details,
+  };
+
+  if (message.timestamp !== undefined) item.timestamp = message.timestamp;
+
+  return item;
+}
+
+function messageEvents(
+  agent: ActivityAgent,
+  message: TranscriptMessage,
 ): OperationalActivity[] {
   const result: OperationalActivity[] = [];
 
-  for (const message of messages) {
-    const activity = (
-      id: string,
-      kind: ActivityKind,
-      details: ActivityDetails,
-    ): OperationalActivity => {
-      const item: OperationalActivity = {
-        id,
-        agentId: agent.id,
-        agentName: agent.name,
-        entryId: message.entryId,
-        kind,
+  if (message.kind === "bot-message" && message.communication) {
+    const details = {
+      content: message.content,
+      communication: message.communication,
+    } satisfies ActivityDetails;
+
+    result.push(
+      activityOf(
+        agent,
+        message,
+        `${agent.id}:${message.id}:bot-message`,
+        "bot-message",
         details,
-      };
+      ),
+    );
+  }
 
-      if (message.timestamp !== undefined) item.timestamp = message.timestamp;
+  if (message.role === "toolResult" || message.toolCallId) {
+    const details = {
+      toolCallId: message.toolCallId,
+      toolName: message.toolName,
+      isError: message.isError,
+      content: message.content || undefined,
+    } satisfies ActivityDetails;
 
-      return item;
-    };
-
-    if (message.kind === "bot-message" && message.communication) {
-      const details = {
-        content: message.content,
-        communication: message.communication,
-      } satisfies ActivityDetails;
-
-      result.push(
-        activity(
-          `${agent.id}:${message.id}:bot-message`,
-          "bot-message",
-          details,
-        ),
-      );
-    }
-
-    if (message.role === "toolResult" || message.toolCallId) {
-      const details = {
-        toolCallId: message.toolCallId,
-        toolName: message.toolName,
-        isError: message.isError,
-        content: message.content || undefined,
-      } satisfies ActivityDetails;
-
-      result.push(
-        activity(
-          `${agent.id}:${message.id}:tool-result`,
-          "tool-result",
-          details,
-        ),
-      );
-    }
-
-    const toolDetails = toolDetailsInput.safeParse(message.toolDetails).data;
-    const nested = z.array(z.unknown()).safeParse(toolDetails?.calls).data;
-
-    if (nested)
-      nested.forEach((rawCall, index) => {
-        const call = nestedCallInput.safeParse(rawCall).data;
-
-        if (!call) return;
-        const name = z.string().safeParse(call.name).data;
-
-        if (name === undefined) return;
-
-        const callId = String(
-          z.union([z.string(), z.number()]).safeParse(call.id).data ?? index,
-        );
-
-        const args = z.string().safeParse(call.args).data;
-        const status = z.string().safeParse(call.status).data;
-        const durationMs = z.number().safeParse(call.durationMs).data;
-        const error = z.string().safeParse(call.error).data;
-
-        const details = {
-          parentToolCallId: message.toolCallId,
-          name,
-          args,
-          status,
-          durationMs,
-          error,
-        } satisfies ActivityDetails;
-
-        result.push(
-          activity(
-            `${agent.id}:${message.id}:nested-${callId}`,
-            isMcpTool(name) ? "mcp-call" : "tool-call",
-            details,
-          ),
-        );
-      });
-
-    const blocks = z.array(z.unknown()).safeParse(message.blocks).data;
-
-    if (!blocks) continue;
-    blocks.forEach((rawBlock, index) => {
-      const block = blockInput.safeParse(rawBlock).data;
-      const type = z.string().safeParse(block?.type).data;
-
-      if (!block || !type) return;
-
-      if (type === "toolCall") {
-        const name = z.string().safeParse(block.name).data;
-
-        if (name === undefined) return;
-        const id = z.string().safeParse(block.id).data;
-
-        const details = {
-          id,
-          name,
-          arguments: jsonValue.safeParse(block.arguments).data,
-        } satisfies ActivityDetails;
-
-        result.push(
-          activity(
-            `${agent.id}:${message.id}:block-${index}`,
-            isMcpTool(name) ? "mcp-call" : "tool-call",
-            details,
-          ),
-        );
-      } else if (type === "toolResult") {
-        const toolCallId = z.string().safeParse(block.toolCallId).data;
-        const isError = z.boolean().safeParse(block.isError).data;
-
-        const details = {
-          toolCallId,
-          content: jsonValue.safeParse(block.content).data,
-          isError,
-        } satisfies ActivityDetails;
-
-        result.push(
-          activity(
-            `${agent.id}:${message.id}:block-${index}`,
-            "tool-result",
-            details,
-          ),
-        );
-      }
-    });
+    result.push(
+      activityOf(
+        agent,
+        message,
+        `${agent.id}:${message.id}:tool-result`,
+        "tool-result",
+        details,
+      ),
+    );
   }
 
   return result;
+}
+
+function nestedCallEvent(
+  agent: ActivityAgent,
+  message: TranscriptMessage,
+  call: z.infer<typeof nestedCallInput>,
+  index: number,
+): OperationalActivity[] {
+  const name = z.string().safeParse(call.name).data;
+
+  if (name === undefined) return [];
+
+  const callId = String(
+    z.union([z.string(), z.number()]).safeParse(call.id).data ?? index,
+  );
+
+  const details = {
+    parentToolCallId: message.toolCallId,
+    name,
+    args: z.string().safeParse(call.args).data,
+    status: z.string().safeParse(call.status).data,
+    durationMs: z.number().safeParse(call.durationMs).data,
+    error: z.string().safeParse(call.error).data,
+  } satisfies ActivityDetails;
+
+  return [
+    activityOf(
+      agent,
+      message,
+      `${agent.id}:${message.id}:nested-${callId}`,
+      isMcpTool(name) ? "mcp-call" : "tool-call",
+      details,
+    ),
+  ];
+}
+
+function nestedCallEvents(agent: ActivityAgent, message: TranscriptMessage) {
+  const toolDetails = toolDetailsInput.safeParse(message.toolDetails).data;
+  const nested = z.array(z.unknown()).safeParse(toolDetails?.calls).data;
+
+  return (nested ?? []).flatMap((rawCall, index) => {
+    const call = nestedCallInput.safeParse(rawCall).data;
+
+    return call ? nestedCallEvent(agent, message, call, index) : [];
+  });
+}
+
+function blockEvent(
+  agent: ActivityAgent,
+  message: TranscriptMessage,
+  block: z.infer<typeof blockInput>,
+  type: string,
+  index: number,
+): OperationalActivity[] {
+  const id = `${agent.id}:${message.id}:block-${index}`;
+
+  if (type === "toolCall") {
+    const name = z.string().safeParse(block.name).data;
+
+    if (name === undefined) return [];
+
+    const details = {
+      id: z.string().safeParse(block.id).data,
+      name,
+      arguments: jsonValue.safeParse(block.arguments).data,
+    } satisfies ActivityDetails;
+
+    return [
+      activityOf(
+        agent,
+        message,
+        id,
+        isMcpTool(name) ? "mcp-call" : "tool-call",
+        details,
+      ),
+    ];
+  }
+
+  if (type !== "toolResult") return [];
+
+  const details = {
+    toolCallId: z.string().safeParse(block.toolCallId).data,
+    content: jsonValue.safeParse(block.content).data,
+    isError: z.boolean().safeParse(block.isError).data,
+  } satisfies ActivityDetails;
+
+  return [activityOf(agent, message, id, "tool-result", details)];
+}
+
+function blockEvents(agent: ActivityAgent, message: TranscriptMessage) {
+  const blocks = z.array(z.unknown()).safeParse(message.blocks).data;
+
+  return (blocks ?? []).flatMap((rawBlock, index) => {
+    const block = blockInput.safeParse(rawBlock).data;
+    const type = z.string().safeParse(block?.type).data;
+
+    return block && type ? blockEvent(agent, message, block, type, index) : [];
+  });
+}
+
+/** Converts durable transcript messages into the operational events shown in Activity. */
+export function operationalActivity(
+  agent: ActivityAgent,
+  messages: TranscriptMessage[],
+): OperationalActivity[] {
+  return messages.flatMap((message) => [
+    ...messageEvents(agent, message),
+    ...nestedCallEvents(agent, message),
+    ...blockEvents(agent, message),
+  ]);
 }
 
 export function sortActivity(items: OperationalActivity[]) {
@@ -302,7 +330,29 @@ function oldestMessageKey(messages: TranscriptMessage[]) {
   }, null);
 }
 
-async function agentActivityQueue<A extends Pick<Agent, "id" | "name">>(
+function isFreshActivity(
+  item: OperationalActivity,
+  kind: ActivityPageOptions<ActivityAgent>["kind"],
+  cursor: Cursor | null,
+) {
+  return (
+    (!kind || item.kind === kind) &&
+    (!cursor?.k || compareKeys(keyOf(item), cursor.k) < 0)
+  );
+}
+
+function sortedQueue(items: FeedItem[], tags: (string | null)[]) {
+  const order = items
+    .map((item, index) => ({ item, tag: tags[index]! }))
+    .sort((a, b) => compareKeys(keyOf(b.item), keyOf(a.item)));
+
+  return {
+    items: order.map(({ item }) => item),
+    tags: order.map(({ tag }) => tag),
+  };
+}
+
+async function readHistoryPages<A extends Pick<Agent, "id" | "name">>(
   agent: A,
   start: string | null | undefined,
   options: ActivityPageOptions<A>,
@@ -316,10 +366,8 @@ async function agentActivityQueue<A extends Pick<Agent, "id" | "name">>(
   for (let index = 0; index < HISTORY_PAGES; index++) {
     page = await options.history(agent, before, HISTORY_PAGE_SIZE);
 
-    const fresh = operationalActivity(agent, page.messages).filter(
-      (item) =>
-        (!kind || item.kind === kind) &&
-        (!cursor?.k || compareKeys(keyOf(item), cursor.k) < 0),
+    const fresh = operationalActivity(agent, page.messages).filter((item) =>
+      isFreshActivity(item, kind, cursor),
     );
 
     items.push(...fresh);
@@ -329,18 +377,21 @@ async function agentActivityQueue<A extends Pick<Agent, "id" | "name">>(
     before = page.oldestEntryId;
   }
 
+  return { items, tags, page };
+}
+
+async function agentActivityQueue<A extends Pick<Agent, "id" | "name">>(
+  agent: A,
+  start: string | null | undefined,
+  options: ActivityPageOptions<A>,
+) {
+  const { items, tags, page } = await readHistoryPages(agent, start, options);
+
   const more = Boolean(page?.hasMore && page.oldestEntryId);
   // Unread history is older than the oldest message read, so nothing older may be returned yet.
   const floor = more && page ? oldestMessageKey(page.messages) : null;
 
-  const order = items
-    .map((item, index) => ({ item, tag: tags[index]! }))
-    .sort((a, b) => compareKeys(keyOf(b.item), keyOf(a.item)));
-
-  const queue = {
-    items: order.map(({ item }) => item),
-    tags: order.map(({ tag }) => tag),
-  };
+  const queue = sortedQueue(items, tags);
 
   return { queue, floor, next: more ? page!.oldestEntryId! : (false as const) };
 }
@@ -384,20 +435,15 @@ function mergeActivityQueues(
   return { heads, activities };
 }
 
-/**
- * One page of the activity feed: every bot's operational activity and the skill and memory changes, newest first.
- * Each source is merged as a queue, so a page is a prefix of every source and the cursor resumes each one exactly.
- */
-export async function activityPage<A extends Pick<Agent, "id" | "name">>(
+type FetchedQueue = { agentId: string; queue: number; next: string | false };
+
+async function loadAgentQueues<A extends Pick<Agent, "id" | "name">>(
   options: ActivityPageOptions<A>,
 ) {
-  const { limit, cursor, kind } = options;
+  const { cursor, kind } = options;
   const queues: ActivityQueue[] = [];
   const hints: Cursor["h"] = {};
-
-  const fetched: { agentId: string; queue: number; next: string | false }[] =
-    [];
-
+  const fetched: FetchedQueue[] = [];
   let floor: Key | null = null;
 
   for (const agent of kind === "change" ? [] : options.agents) {
@@ -421,12 +467,17 @@ export async function activityPage<A extends Pick<Agent, "id" | "name">>(
     });
   }
 
-  const changes =
-    !kind || kind === "change"
-      ? options.changes(limit + 1, cursor?.c ?? undefined)
-      : [];
+  return { queues, hints, fetched, floor };
+}
 
-  const changeQueue: FeedItem[] = changes.map((change) => ({
+function changeFeedQueue<A extends Pick<Agent, "id" | "name">>(
+  options: ActivityPageOptions<A>,
+): FeedItem[] {
+  const { limit, cursor, kind } = options;
+
+  if (kind && kind !== "change") return [];
+
+  return options.changes(limit + 1, cursor?.c ?? undefined).map((change) => ({
     id: change.id,
     agentId: change.agentId,
     agentName: change.agentId ? options.agentName(change.agentId) : null,
@@ -434,7 +485,33 @@ export async function activityPage<A extends Pick<Agent, "id" | "name">>(
     kind: "change",
     change,
   }));
+}
 
+function nextCursor(
+  activities: FeedItem[],
+  hints: Cursor["h"],
+  cursor: Cursor | null | undefined,
+): Cursor {
+  const lastChange = activities.findLast((item) => item.kind === "change");
+  const last = activities.at(-1);
+
+  return {
+    k: last ? keyOf(last) : (cursor?.k ?? null),
+    h: hints,
+    c: lastChange?.id ?? cursor?.c ?? null,
+  };
+}
+
+/**
+ * One page of the activity feed: every bot's operational activity and the skill and memory changes, newest first.
+ * Each source is merged as a queue, so a page is a prefix of every source and the cursor resumes each one exactly.
+ */
+export async function activityPage<A extends Pick<Agent, "id" | "name">>(
+  options: ActivityPageOptions<A>,
+) {
+  const { limit, cursor } = options;
+  const { queues, hints, fetched, floor } = await loadAgentQueues(options);
+  const changeQueue = changeFeedQueue(options);
   const all = [...queues.map((queue) => queue.items), changeQueue];
   const { heads, activities } = mergeActivityQueues(all, limit, floor);
 
@@ -445,22 +522,15 @@ export async function activityPage<A extends Pick<Agent, "id" | "name">>(
     hints[agentId] = head < items.length ? tags[head]! : next;
   }
 
-  const lastChange = activities.findLast((item) => item.kind === "change");
-  const last = activities.at(-1);
-
   const hasMore =
     Object.values(hints).some((hint) => hint !== false) ||
     heads.at(-1)! < changeQueue.length;
 
-  const next: Cursor = {
-    k: last ? keyOf(last) : (cursor?.k ?? null),
-    h: hints,
-    c: lastChange?.id ?? cursor?.c ?? null,
-  };
-
   return {
     activities,
     hasMore,
-    nextCursor: hasMore ? encodeCursor(next) : null,
+    nextCursor: hasMore
+      ? encodeCursor(nextCursor(activities, hints, cursor))
+      : null,
   };
 }

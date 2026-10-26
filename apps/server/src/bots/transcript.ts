@@ -151,32 +151,41 @@ function hasTextBlock(message: TranscriptMessage) {
     : Boolean(message.content.trim());
 }
 
+function eventLabel(message: TranscriptMessage): string {
+  const reaction = reactionOf(message);
+
+  if (reaction) return `Reacted ${reaction}`;
+  const job = codingJobOf(message);
+
+  if (job) return `Coding job ${job}`;
+  const desktopJob = desktopJobOf(message);
+
+  return desktopJob ? `Desktop job ${desktopJob}` : "";
+}
+
+function conversationPreview(message: TranscriptMessage): string {
+  if (message.role !== "user" && message.role !== "assistant") return "";
+  const text = message.content.trim();
+
+  if (text && hasTextBlock(message)) return text.slice(0, 240);
+  const attachment = message.attachments?.[0];
+
+  return attachment ? `Attachment: ${attachment.name}` : "";
+}
+
+function previewOf(message: TranscriptMessage): string {
+  const botText =
+    message.kind === "bot-message" ? message.content.trim().slice(0, 240) : "";
+
+  return botText || eventLabel(message) || conversationPreview(message);
+}
+
 /** Short, user-facing text for an agent list/sidebar. Structural tool and thinking blocks are excluded. */
 export function latestMessagePreview(messages: TranscriptMessage[]): string {
   for (const message of [...messages].reverse()) {
-    if (message.kind === "bot-message") {
-      const text = message.content.trim();
+    const preview = previewOf(message);
 
-      if (text) return text.slice(0, 240);
-    }
-
-    const reaction = reactionOf(message);
-
-    if (reaction) return `Reacted ${reaction}`;
-    const job = codingJobOf(message);
-
-    if (job) return `Coding job ${job}`;
-    const desktopJob = desktopJobOf(message);
-
-    if (desktopJob) return `Desktop job ${desktopJob}`;
-
-    if (message.role !== "user" && message.role !== "assistant") continue;
-    const text = message.content.trim();
-
-    if (text && hasTextBlock(message)) return text.slice(0, 240);
-    const attachment = message.attachments?.[0];
-
-    if (attachment) return `Attachment: ${attachment.name}`;
+    if (preview) return preview;
   }
 
   return "";
@@ -276,91 +285,143 @@ function withoutImageData(content: ModelContent) {
   );
 }
 
-function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
-  const entryId = entryRef(agentId, Number(entry.id));
+function normalizeBoundary(
+  entryId: string,
+  entry: EntryRecord,
+): TranscriptMessage[] {
+  const message = entry.model?.[0];
 
-  if (entry.kind === "pi.compaction" || entry.kind === "pi.reset") {
-    const message = entry.model?.[0];
+  return [
+    {
+      id: `${entryId}:0`,
+      entryId,
+      role: "event",
+      kind: entry.kind === "pi.compaction" ? "compaction" : "reset",
+      content:
+        textOf(message?.content) ||
+        (entry.kind === "pi.reset"
+          ? "Conversation reset"
+          : "Conversation compacted"),
+      timestamp: message?.timestamp,
+    },
+  ];
+}
 
-    return [
-      {
-        id: `${entryId}:0`,
-        entryId,
-        role: "event",
-        kind: entry.kind === "pi.compaction" ? "compaction" : "reset",
-        content:
-          textOf(message?.content) ||
-          (entry.kind === "pi.reset"
-            ? "Conversation reset"
-            : "Conversation compacted"),
-        timestamp: message?.timestamp,
-      },
-    ];
-  }
+function normalizeBotMessage(
+  entryId: string,
+  entry: EntryRecord,
+): TranscriptMessage[] {
+  const parsed = botMessage.safeParse(entry.data);
 
+  if (!parsed.success) return [];
+
+  return [
+    {
+      id: `${entryId}:0`,
+      entryId,
+      role: "event",
+      kind: "bot-message",
+      content: parsed.data.content,
+      timestamp: parsed.data.timestamp,
+      communication: parsed.data.communication,
+    },
+  ];
+}
+
+function normalizeGroupMessage(
+  entryId: string,
+  entry: EntryRecord,
+): TranscriptMessage[] {
+  const parsed = groupMessageData.safeParse(entry.data);
+
+  if (!parsed.success) return [];
+
+  const { text, sender, requestId, timestamp, replyTo, replyPreview } =
+    parsed.data;
+
+  // Reactions take the shape of a bot chat's `react` result, attached to the message they answer.
+  const message: TranscriptMessage =
+    parsed.data.reaction === undefined
+      ? {
+          id: `${entryId}:0`,
+          entryId,
+          requestId,
+          role: sender.kind === "owner" ? "user" : "assistant",
+          content: text,
+          timestamp,
+          kind: entry.kind,
+          origin: sender,
+        }
+      : {
+          id: `${entryId}:0`,
+          entryId,
+          requestId,
+          role: "toolResult",
+          content: `Reacted ${parsed.data.reaction}`,
+          timestamp,
+          kind: entry.kind,
+          origin: sender,
+          toolName: REACTION_TOOL_NAME,
+          toolDetails: { emoji: parsed.data.reaction },
+        };
+
+  if (replyTo !== undefined) message.replyTo = replyTo;
+
+  if (replyPreview !== undefined) message.replyPreview = replyPreview;
+
+  if (parsed.data.files?.length) message.attachments = parsed.data.files;
+
+  return [message];
+}
+
+type ModelMessage = NonNullable<EntryRecord["model"]>[number];
+
+type ToolMetadata = ReturnType<typeof toolMetadata.parse>;
+
+function emptyMessage(
+  message: ModelMessage,
+  content: string,
+  attached: AttachmentInfo[],
+  metadata: ToolMetadata,
+) {
+  return (
+    !content &&
+    !attached.length &&
+    message.role !== "toolResult" &&
+    metadata.toolCallId === undefined &&
+    metadata.details === undefined
+  );
+}
+
+function applyToolMetadata(result: TranscriptMessage, metadata: ToolMetadata) {
+  if (metadata.toolCallId !== undefined)
+    result.toolCallId = metadata.toolCallId;
+
+  if (metadata.toolName !== undefined) result.toolName = metadata.toolName;
+
+  if (metadata.isError !== undefined) result.isError = metadata.isError;
+
+  if (metadata.details !== undefined) result.toolDetails = metadata.details;
+}
+
+function applyInputMetadata(
+  result: TranscriptMessage,
+  input: ReturnType<typeof inputMetadata.parse>,
+) {
+  if (input.requestId) result.requestId = input.requestId;
+
+  if (!input.replyTo) return;
+  result.replyTo = input.replyTo;
+
+  if (input.replyPreview !== undefined)
+    result.replyPreview = input.replyPreview;
+}
+
+function normalizeModelEntry(
+  entryId: string,
+  entry: EntryRecord,
+): TranscriptMessage[] {
   const data = record(entry.data);
-
-  if (entry.kind === "crumble.bot-message") {
-    const parsed = botMessage.safeParse(entry.data);
-
-    if (!parsed.success) return [];
-
-    return [
-      {
-        id: `${entryId}:0`,
-        entryId,
-        role: "event",
-        kind: "bot-message",
-        content: parsed.data.content,
-        timestamp: parsed.data.timestamp,
-        communication: parsed.data.communication,
-      },
-    ];
-  }
-
-  if (entry.kind === GROUP_MESSAGE_KIND) {
-    const parsed = groupMessageData.safeParse(entry.data);
-
-    if (!parsed.success) return [];
-
-    const { text, sender, requestId, timestamp, replyTo, replyPreview } =
-      parsed.data;
-
-    // Reactions take the shape of a bot chat's `react` result, attached to the message they answer.
-    const message: TranscriptMessage =
-      parsed.data.reaction === undefined
-        ? {
-            id: `${entryId}:0`,
-            entryId,
-            requestId,
-            role: sender.kind === "owner" ? "user" : "assistant",
-            content: text,
-            timestamp,
-            kind: entry.kind,
-            origin: sender,
-          }
-        : {
-            id: `${entryId}:0`,
-            entryId,
-            requestId,
-            role: "toolResult",
-            content: `Reacted ${parsed.data.reaction}`,
-            timestamp,
-            kind: entry.kind,
-            origin: sender,
-            toolName: REACTION_TOOL_NAME,
-            toolDetails: { emoji: parsed.data.reaction },
-          };
-
-    if (replyTo !== undefined) message.replyTo = replyTo;
-
-    if (replyPreview !== undefined) message.replyPreview = replyPreview;
-
-    if (parsed.data.files?.length) message.attachments = parsed.data.files;
-
-    return [message];
-  }
-
   const input = inputMetadata.parse(data ?? {});
   const origin = originOf(data?.["origin"]);
   const attachments = attachmentsOf(data?.["attachments"]);
@@ -375,14 +436,7 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
     const attached = message.role === "user" ? attachments : [];
     const metadata = toolMetadata.parse(message);
 
-    if (
-      !content &&
-      !attached.length &&
-      message.role !== "toolResult" &&
-      metadata.toolCallId === undefined &&
-      metadata.details === undefined
-    )
-      return [];
+    if (emptyMessage(message, content, attached, metadata)) return [];
 
     const result: TranscriptMessage = {
       id: `${entryId}:${index}`,
@@ -395,31 +449,30 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
     };
 
     if (message.role === "assistant") result.stopReason = message.stopReason;
-
-    if (input.requestId) result.requestId = input.requestId;
-
-    if (input.replyTo) {
-      result.replyTo = input.replyTo;
-
-      if (input.replyPreview !== undefined)
-        result.replyPreview = input.replyPreview;
-    }
+    applyInputMetadata(result, input);
 
     if (origin) result.origin = origin;
 
     if (attached.length) result.attachments = attached;
-
-    if (metadata.toolCallId !== undefined)
-      result.toolCallId = metadata.toolCallId;
-
-    if (metadata.toolName !== undefined) result.toolName = metadata.toolName;
-
-    if (metadata.isError !== undefined) result.isError = metadata.isError;
-
-    if (metadata.details !== undefined) result.toolDetails = metadata.details;
+    applyToolMetadata(result, metadata);
 
     return [result];
   });
+}
+
+function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
+  const entryId = entryRef(agentId, Number(entry.id));
+
+  if (entry.kind === "pi.compaction" || entry.kind === "pi.reset")
+    return normalizeBoundary(entryId, entry);
+
+  if (entry.kind === "crumble.bot-message")
+    return normalizeBotMessage(entryId, entry);
+
+  if (entry.kind === GROUP_MESSAGE_KIND)
+    return normalizeGroupMessage(entryId, entry);
+
+  return normalizeModelEntry(entryId, entry);
 }
 
 async function conversations(harness: Harness): Promise<ConversationRecord[]> {
@@ -442,22 +495,14 @@ async function conversations(harness: Harness): Promise<ConversationRecord[]> {
 
 type PageOptions = { before?: string | undefined; limit?: number | undefined };
 
-/** Newest-first page over the given conversations. Entry IDs are global, which makes them a shared cursor. */
-async function readPage(
-  agentId: string,
+const pageLimit = (limit: number | undefined) =>
+  Math.min(Math.max(limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
+
+async function collectEntries(
   sources: Conversation[],
-  options: PageOptions,
-): Promise<TranscriptPage> {
-  const limit = Math.min(
-    Math.max(options.limit ?? DEFAULT_LIMIT, 1),
-    MAX_LIMIT,
-  );
-
-  const before =
-    options.before === undefined
-      ? undefined
-      : parseEntryRef(agentId, options.before, "history cursor");
-
+  limit: number,
+  before: number | undefined,
+) {
   const raw = new Map<number, EntryRecord>();
   let truncated = false;
 
@@ -482,6 +527,24 @@ async function readPage(
   }
 
   const entries = [...raw.values()].sort((a, b) => Number(b.id) - Number(a.id));
+
+  return { entries, truncated };
+}
+
+/** Newest-first page over the given conversations. Entry IDs are global, which makes them a shared cursor. */
+async function readPage(
+  agentId: string,
+  sources: Conversation[],
+  options: PageOptions,
+): Promise<TranscriptPage> {
+  const limit = pageLimit(options.limit);
+
+  const before =
+    options.before === undefined
+      ? undefined
+      : parseEntryRef(agentId, options.before, "history cursor");
+
+  const { entries, truncated } = await collectEntries(sources, limit, before);
   const messages: TranscriptMessage[] = [];
   let consumed = 0;
 
@@ -678,6 +741,25 @@ export async function readAttachment(
   return { mimeType: image.mimeType, data: Buffer.from(image.data, "base64") };
 }
 
+function outputLines(message: ModelMessage): string[] {
+  const lines: string[] = [];
+  const text = message.role === "assistant" ? textOf(message.content) : "";
+
+  if (text) lines.push(text);
+  const { toolName, isError, details } = toolMetadata.parse(message);
+
+  const reaction = reactionOf({
+    role: message.role,
+    toolName,
+    isError,
+    toolDetails: details,
+  });
+
+  if (reaction) lines.push(`Reacted ${reaction}`);
+
+  return lines;
+}
+
 /** Assistant output after one input, stopping at the next input so unrelated chat stays private. */
 export async function readResponse(
   conversation: Conversation,
@@ -696,24 +778,8 @@ export async function readResponse(
   for (const entry of page.items) {
     if (INPUT_KINDS.has(entry.kind)) break;
 
-    for (const message of entry.model ?? []) {
-      if (message.role === "assistant") {
-        const text = textOf(message.content);
-
-        if (text) output.push(text);
-      }
-
-      const { toolName, isError, details } = toolMetadata.parse(message);
-
-      const reaction = reactionOf({
-        role: message.role,
-        toolName,
-        isError,
-        toolDetails: details,
-      });
-
-      if (reaction) output.push(`Reacted ${reaction}`);
-    }
+    for (const message of entry.model ?? [])
+      output.push(...outputLines(message));
   }
 
   return output;
@@ -794,29 +860,66 @@ function toolResultLine(
   return `${isError ? "Tool error" : "Tool result"} ${toolName ?? "unknown"}: ${clip(textOf(message.content).trim(), 4000)}`;
 }
 
-function entryLines(entry: EntryRecord, counters?: TurnReport): string[] {
-  const lines: string[] = [];
+function messageLines(
+  message: ModelMessage,
+  counters: TurnReport | undefined,
+): string[] {
+  if (message.role === "assistant")
+    return assistantLines(message.content, counters);
 
+  if (message.role === "toolResult") return [toolResultLine(message)];
+
+  if (message.role !== "user") return [];
+  const text = textOf(message.content).trim();
+
+  return text ? [`Owner:\n${text}`] : [];
+}
+
+function entryLines(entry: EntryRecord, counters?: TurnReport): string[] {
   if (INPUT_KINDS.has(entry.kind)) {
     const input = inputMetadata.parse(record(entry.data) ?? {});
-    lines.push(`Owner:\n${input.text ?? textOf(entry.model?.[0]?.content)}`);
 
-    return lines;
+    return [`Owner:\n${input.text ?? textOf(entry.model?.[0]?.content)}`];
   }
 
-  for (const message of entry.model ?? []) {
-    if (message.role === "assistant") {
-      lines.push(...assistantLines(message.content, counters));
-    } else if (message.role === "toolResult") {
-      lines.push(toolResultLine(message));
-    } else if (message.role === "user") {
-      const text = textOf(message.content).trim();
+  return (entry.model ?? []).flatMap((message) =>
+    messageLines(message, counters),
+  );
+}
 
-      if (text) lines.push(`Owner:\n${text}`);
-    }
-  }
+function clipTurn(turn: string, maxChars: number) {
+  if (turn.length <= maxChars) return turn;
 
-  return lines;
+  // Keep the input and the end of the turn; the middle is usually tool output.
+  const head = Math.floor(maxChars * 0.4);
+  const tail = maxChars - head - 24;
+
+  return `${turn.slice(0, head)}\n\n[… omitted for length …]\n\n${turn.slice(-tail)}`;
+}
+
+async function earlierChat(
+  conversation: Conversation,
+  inputEntryId: number,
+  room: number,
+) {
+  // SAFETY: the entry before the input is the inclusive upper bound of the earlier chat.
+  const earlier = await conversation.entries(
+    { order: "descending", maxEntryId: (inputEntryId - 1) as EntryId },
+    CONTEXT_ENTRIES,
+    undefined,
+    BACKGROUND_CONTEXT,
+  );
+
+  const contextLines = [...earlier.items]
+    .reverse()
+    .filter((entry) => INPUT_KINDS.has(entry.kind) || entry.model?.length)
+    .flatMap((entry) => entryLines(entry));
+
+  const context = contextLines.join("\n\n");
+
+  return context.length > room
+    ? `[… earlier chat omitted …]\n\n${context.slice(-room)}`
+    : context;
 }
 
 /**
@@ -851,41 +954,17 @@ export async function readTurnReport(
     turnLines.push(...entryLines(entry, index > 0 ? report : undefined));
   }
 
-  let turn = turnLines.join("\n\n");
-
-  if (turn.length > maxChars) {
-    // Keep the input and the end of the turn; the middle is usually tool output.
-    const head = Math.floor(maxChars * 0.4);
-    const tail = maxChars - head - 24;
-    turn = `${turn.slice(0, head)}\n\n[… omitted for length …]\n\n${turn.slice(-tail)}`;
-  }
-
+  const turn = clipTurn(turnLines.join("\n\n"), maxChars);
   const room = maxChars - turn.length - 40;
 
-  if (room > 200 && inputEntryId > 1) {
-    // SAFETY: the entry before the input is the inclusive upper bound of the earlier chat.
-    const earlier = await conversation.entries(
-      { order: "descending", maxEntryId: (inputEntryId - 1) as EntryId },
-      CONTEXT_ENTRIES,
-      undefined,
-      BACKGROUND_CONTEXT,
-    );
+  const context =
+    room > 200 && inputEntryId > 1
+      ? await earlierChat(conversation, inputEntryId, room)
+      : "";
 
-    const contextLines = [...earlier.items]
-      .reverse()
-      .filter((entry) => INPUT_KINDS.has(entry.kind) || entry.model?.length)
-      .flatMap((entry) => entryLines(entry));
-
-    let context = contextLines.join("\n\n");
-
-    if (context.length > room)
-      context = `[… earlier chat omitted …]\n\n${context.slice(-room)}`;
-
-    if (context)
-      report.digest = `Earlier chat:\n\n${context}\n\nThe turn to review:\n\n${turn}`;
-  }
-
-  if (!report.digest) report.digest = `The turn to review:\n\n${turn}`;
+  report.digest = context
+    ? `Earlier chat:\n\n${context}\n\nThe turn to review:\n\n${turn}`
+    : `The turn to review:\n\n${turn}`;
 
   return report;
 }
@@ -894,6 +973,23 @@ export type TurnOutcome =
   | { kind: "message"; text: string }
   | { kind: "reaction"; emoji: string }
   | { kind: "pass" };
+
+function toolOutcome(message: ModelMessage): TurnOutcome | null {
+  const { toolName, isError, details } = toolMetadata.parse(message);
+
+  if (message.role !== "toolResult" || isError) return null;
+
+  if (toolName === PASS_TOOL_NAME) return { kind: "pass" };
+
+  const emoji = reactionOf({
+    role: message.role,
+    toolName,
+    isError,
+    toolDetails: details,
+  });
+
+  return emoji ? { kind: "reaction", emoji } : null;
+}
 
 /** A group turn's result after its input: a pass or reaction wins, else the final answer, else nothing. */
 export async function readTurnOutcome(
@@ -915,20 +1011,9 @@ export async function readTurnOutcome(
 
     for (const message of entry.model ?? []) {
       if (message.role === "assistant") text = textOf(message.content).trim();
-      const { toolName, isError, details } = toolMetadata.parse(message);
+      const outcome = toolOutcome(message);
 
-      if (message.role !== "toolResult" || isError) continue;
-
-      if (toolName === PASS_TOOL_NAME) return { kind: "pass" };
-
-      const emoji = reactionOf({
-        role: message.role,
-        toolName,
-        isError,
-        toolDetails: details,
-      });
-
-      if (emoji) return { kind: "reaction", emoji };
+      if (outcome) return outcome;
     }
   }
 
