@@ -1,0 +1,21 @@
+:root {
+  --blume-background: #faf8f1;
+  --blume-foreground: #10261f;
+  --blume-muted: #edf5e7;
+  --blume-muted-foreground: #346552;
+  --blume-border: #dcebdb;
+  --blume-accent: #17372c;
+  --blume-accent-foreground: #edf5e7;
+  --blume-code-background: #ffffff;
+}
+
+:root[data-theme="dark"] {
+  --blume-background: #10261f;
+  --blume-foreground: #edf5e7;
+  --blume-muted: #17372c;
+  --blume-muted-foreground: #dcebdb;
+  --blume-border: #346552;
+  --blume-accent: #a8e2c0;
+  --blume-accent-foreground: #10261f;
+  --blume-code-background: #17372c;
+}

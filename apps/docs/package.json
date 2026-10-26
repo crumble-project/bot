@@ -1,0 +1,23 @@
+{
+  "name": "@crumble/docs",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.4",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "dev": "blume dev",
+    "check": "blume doctor && blume validate --strict",
+    "build": "blume build",
+    "preview": "blume preview",
+    "deploy:check": "wrangler deploy --dry-run",
+    "deploy": "bun run check && bun run build && wrangler deploy"
+  },
+  "dependencies": {
+    "blume": "2.2.4"
+  },
+  "devDependencies": {
+    "wrangler": "4.152.0"
+  }
+}

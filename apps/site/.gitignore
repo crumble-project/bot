@@ -1,0 +1,8 @@
+node_modules/
+.wrangler/
+dist/
+styled-system/
+src/routeTree.gen.ts
+.env
+.env.*
+.DS_Store

@@ -1,0 +1,42 @@
+---
+title: Install the server
+description: Run the Crumble server with Bun or Docker and create your account.
+sidebar:
+  order: 1
+---
+
+The Crumble server runs your bots, stores your data, and serves the web app. You need either Bun 1.4 or later, or Docker with Compose.
+
+## Run with Docker
+
+```bash
+git clone https://github.com/crumble-project/bot.git
+cd bot
+docker compose up -d --build
+```
+
+## Run with Bun
+
+```bash
+git clone https://github.com/crumble-project/bot.git
+cd bot
+bun install
+bun run start
+```
+
+Use `bun run dev` instead to restart on file changes while you work on the server.
+
+## Create your account
+
+Open `http://127.0.0.1:7337/ui` and sign up with an email address and password.
+
+:::caution
+Anyone who can reach the server can create an account. The server listens on `127.0.0.1` by default, so only your own machine can reach it. Before you open it to a network, put it behind HTTPS and read [Configuration](/self-hosting/configuration).
+:::
+
+Each account is separate. Bots, chats, memories, provider sign-ins, and workspaces in one account are invisible to every other account.
+
+## Next steps
+
+- [Connect a model provider](/getting-started/providers) so your bots can answer.
+- To let bots write code or use a desktop, [set up workspaces](/self-hosting/workspaces).
