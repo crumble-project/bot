@@ -70,73 +70,100 @@ const ServiceAccount = Schema.Struct({
 
 type ServiceAccount = typeof ServiceAccount.Type;
 
+export type ApnsSettings = {
+  teamId: string;
+  keyId: string;
+  keyPath: string;
+  topics: Set<string>;
+};
+
 const configError = (message: string) =>
   new PushConfigError({ message: `Push configuration: ${message}` });
 
-export const loadPushTransports = Effect.fnUntraced(function* (
-  env: Record<string, string | undefined>,
-) {
-  const out: Record<PushTransportName, PushTransport | undefined> = {
-    apns: undefined,
-    fcm: undefined,
-  };
+const temporaryFailure = (cause: unknown) =>
+  new TemporaryFailure({ message: String(cause) });
 
+/** What a provider's success status means: neither provider confirms the device showed it. */
+export const deliveryOutcome = (status: number): "delivered" | "expired" =>
+  status >= 200 && status < 300 ? "delivered" : "expired";
+
+const apnsTopics = (allowedTopics: string) =>
+  new Set(
+    allowedTopics
+      .split(",")
+      .map((topic) => topic.trim())
+      .filter(Boolean),
+  );
+
+/** The APNs settings the environment names; `undefined` when it names none. */
+export const loadApnsSettings = Effect.fnUntraced(function* (
+  env: Record<string, string | undefined>,
+): Effect.fn.Return<ApnsSettings | undefined, PushConfigError> {
   const teamId = env["CRUMBLE_APNS_TEAM_ID"];
   const keyId = env["CRUMBLE_APNS_KEY_ID"];
   const keyPath = env["CRUMBLE_APNS_PRIVATE_KEY_PATH"];
   const allowedTopics = env["CRUMBLE_APNS_ALLOWED_TOPICS"];
-  const apns = [teamId, keyId, keyPath, allowedTopics];
 
-  if (apns.some(Boolean) && apns.some((v) => !v))
+  if (![teamId, keyId, keyPath, allowedTopics].some(Boolean)) return undefined;
+
+  if (!(teamId && keyId && keyPath && allowedTopics))
     return yield* configError(
       "APNs requires TEAM_ID, KEY_ID, PRIVATE_KEY_PATH, and ALLOWED_TOPICS",
     );
 
-  if (teamId && keyId && keyPath && allowedTopics) {
-    const topics = new Set(
-      allowedTopics
-        .split(",")
-        .map((topic) => topic.trim())
-        .filter(Boolean),
+  const topics = apnsTopics(allowedTopics);
+
+  if (!topics.size)
+    return yield* configError(
+      "APNs ALLOWED_TOPICS must contain at least one topic",
     );
 
-    if (!topics.size)
-      return yield* configError(
-        "APNs ALLOWED_TOPICS must contain at least one topic",
-      );
+  if (!existsSync(keyPath))
+    return yield* configError("APNs private key file does not exist");
 
-    if (!existsSync(keyPath))
-      return yield* configError("APNs private key file does not exist");
+  yield* Effect.try({
+    try: () => createPrivateKey(readFileSync(keyPath)),
+    catch: () => configError("APNs private key file is invalid"),
+  });
 
-    yield* Effect.try({
-      try: () => createPrivateKey(readFileSync(keyPath)),
-      catch: () => configError("APNs private key file is invalid"),
-    });
+  return { teamId, keyId, keyPath, topics };
+});
 
-    out.apns = apnsTransport(teamId, keyId, keyPath, topics);
-  }
+/** The FCM service account the environment names; `undefined` when it names none. */
+export const loadFcmSettings = Effect.fnUntraced(function* (
+  env: Record<string, string | undefined>,
+): Effect.fn.Return<ServiceAccount | undefined, PushConfigError> {
+  const path = env["CRUMBLE_FCM_SERVICE_ACCOUNT_PATH"];
 
-  const fcm = env["CRUMBLE_FCM_SERVICE_ACCOUNT_PATH"];
+  if (!path) return undefined;
 
-  if (fcm) {
-    if (!existsSync(fcm))
-      return yield* configError("FCM service account file does not exist");
+  if (!existsSync(path))
+    return yield* configError("FCM service account file does not exist");
 
-    const account = yield* Schema.decodeUnknownEffect(
-      Schema.fromJsonString(ServiceAccount),
-    )(readFileSync(fcm, "utf8")).pipe(
-      Effect.mapError(() => configError("FCM service account is incomplete")),
-    );
+  const account = yield* Schema.decodeUnknownEffect(
+    Schema.fromJsonString(ServiceAccount),
+  )(readFileSync(path, "utf8")).pipe(
+    Effect.mapError(() => configError("FCM service account is incomplete")),
+  );
 
-    yield* Effect.try({
-      try: () => createPrivateKey(account.private_key),
-      catch: () => configError("FCM service account private key is invalid"),
-    });
+  yield* Effect.try({
+    try: () => createPrivateKey(account.private_key),
+    catch: () => configError("FCM service account private key is invalid"),
+  });
 
-    out.fcm = fcmTransport(account);
-  }
+  return account;
+});
 
-  return out;
+export const loadPushTransports = Effect.fnUntraced(function* (
+  env: Record<string, string | undefined>,
+) {
+  const apns = yield* loadApnsSettings(env);
+  const fcm = yield* loadFcmSettings(env);
+
+  return {
+    apns: apns ? apnsTransport(apns) : undefined,
+    fcm: fcm ? fcmTransport(fcm) : undefined,
+  };
 });
 
 const ApnsResponse = Schema.fromJsonString(
@@ -198,12 +225,108 @@ function apnsRequest(
   ).finally(() => client.close());
 }
 
-function apnsTransport(
-  teamId: string,
-  keyId: string,
-  keyPath: string,
-  topics: Set<string>,
-): PushTransport {
+/** The APNs host for the device's environment. */
+export const apnsHost = (environment: PushDevice["environment"]) =>
+  environment === "development"
+    ? "https://api.sandbox.push.apple.com"
+    : "https://api.push.apple.com";
+
+/** A signed APNs provider token; the key file is read per send so a rotated key needs no restart. */
+export function apnsJwt(settings: ApnsSettings, seconds: number) {
+  const key = createPrivateKey(readFileSync(settings.keyPath));
+  const head = b64(JSON.stringify({ alg: "ES256", kid: settings.keyId }));
+  const claims = b64(JSON.stringify({ iss: settings.teamId, iat: seconds }));
+  const signer = createSign("SHA256");
+  signer.update(`${head}.${claims}`);
+  signer.end();
+
+  return `${head}.${claims}.${b64(signer.sign({ key, dsaEncoding: "ieee-p1363" }))}`;
+}
+
+/** The APNs headers for one notification; the collapse ID replaces the notification for the same answer. */
+export function apnsHeaders(
+  topic: string,
+  device: PushDevice,
+  event: ReplyPushEvent,
+  jwt: string,
+  seconds: number,
+) {
+  return {
+    ":method": "POST",
+    ":path": `/3/device/${device.token}`,
+    authorization: `bearer ${jwt}`,
+    "apns-topic": topic,
+    "apns-push-type": "alert",
+    "apns-priority": "10",
+    "apns-expiration": String(seconds + 86400),
+    "apns-collapse-id": createHash("sha256")
+      .update(`${event.serverId}:${event.agentId}`)
+      .digest("hex")
+      .slice(0, 64),
+    "content-type": "application/json",
+  };
+}
+
+/** The APNs alert payload: the shown notification plus the fields the app renders the answer from. */
+export function apnsPayload(event: ReplyPushEvent) {
+  return {
+    aps: {
+      alert: {
+        title: notificationTitle(event),
+        body: notificationPreview(event.preview),
+      },
+      sound: "default",
+    },
+    type: event.type,
+    eventId: event.eventId,
+    serverId: event.serverId,
+    agentId: event.agentId,
+    agentName: event.agentName,
+    entryId: event.entryId,
+    preview: event.preview,
+    origin: event.origin,
+    createdAt: event.createdAt,
+    ...(event.groupId && {
+      groupId: event.groupId,
+      groupName: event.groupName,
+    }),
+    ...(event.jobName && { jobName: event.jobName }),
+  };
+}
+
+const apnsRejectedTokens = new Set([
+  "BadDeviceToken",
+  "Unregistered",
+  "DeviceTokenNotForTopic",
+]);
+
+/** How a retry should treat the response; `undefined` when the notification was accepted or expired. */
+export function classifyApnsResponse(
+  status: number,
+  reason: string | undefined,
+): SendFailure | undefined {
+  if (
+    status === 410 ||
+    (reason !== undefined && apnsRejectedTokens.has(reason))
+  )
+    return new PermanentRejection({ message: "APNs rejected token" });
+
+  if (status >= 500 || status === 429)
+    return new TemporaryFailure({
+      message: `APNs temporary failure ${status}`,
+    });
+
+  if (status >= 400 && status !== 401 && status !== 403)
+    return new TerminalResponse({
+      message: `APNs terminal response ${status}`,
+    });
+
+  return undefined;
+}
+
+function apnsTransport(settings: ApnsSettings): PushTransport {
+  const { topics } = settings;
+
   return {
     canSend: (device) => !!device.bundleId && topics.has(device.bundleId),
     send: Effect.fn("APNs.send")(function* (device, event) {
@@ -215,85 +338,23 @@ function apnsTransport(
         });
 
       const seconds = Math.floor((yield* Clock.currentTimeMillis) / 1000);
-      const key = createPrivateKey(readFileSync(keyPath));
-      const head = b64(JSON.stringify({ alg: "ES256", kid: keyId }));
-      const claims = b64(JSON.stringify({ iss: teamId, iat: seconds }));
-      const signer = createSign("SHA256");
-      signer.update(`${head}.${claims}`);
-      signer.end();
-      const jwt = `${head}.${claims}.${b64(signer.sign({ key, dsaEncoding: "ieee-p1363" }))}`;
-
-      const host =
-        device.environment === "development"
-          ? "https://api.sandbox.push.apple.com"
-          : "https://api.push.apple.com";
+      const jwt = apnsJwt(settings, seconds);
 
       const { status, reason } = yield* Effect.tryPromise({
         try: () =>
           apnsRequest(
-            host,
-            {
-              ":method": "POST",
-              ":path": `/3/device/${device.token}`,
-              authorization: `bearer ${jwt}`,
-              "apns-topic": topic,
-              "apns-push-type": "alert",
-              "apns-priority": "10",
-              "apns-expiration": String(seconds + 86400),
-              "apns-collapse-id": createHash("sha256")
-                .update(`${event.serverId}:${event.agentId}`)
-                .digest("hex")
-                .slice(0, 64),
-              "content-type": "application/json",
-            },
-            JSON.stringify({
-              aps: {
-                alert: {
-                  title: notificationTitle(event),
-                  body: notificationPreview(event.preview),
-                },
-                sound: "default",
-              },
-              type: event.type,
-              eventId: event.eventId,
-              serverId: event.serverId,
-              agentId: event.agentId,
-              agentName: event.agentName,
-              entryId: event.entryId,
-              preview: event.preview,
-              origin: event.origin,
-              createdAt: event.createdAt,
-              ...(event.groupId && {
-                groupId: event.groupId,
-                groupName: event.groupName,
-              }),
-              ...(event.jobName && { jobName: event.jobName }),
-            }),
+            apnsHost(device.environment),
+            apnsHeaders(topic, device, event, jwt, seconds),
+            JSON.stringify(apnsPayload(event)),
           ),
-        catch: (cause) => new TemporaryFailure({ message: String(cause) }),
+        catch: temporaryFailure,
       });
 
-      if (
-        status === 410 ||
-        reason === "BadDeviceToken" ||
-        reason === "Unregistered" ||
-        reason === "DeviceTokenNotForTopic"
-      )
-        return yield* new PermanentRejection({
-          message: "APNs rejected token",
-        });
+      const failure = classifyApnsResponse(status, reason);
 
-      if (status >= 500 || status === 429)
-        return yield* new TemporaryFailure({
-          message: `APNs temporary failure ${status}`,
-        });
+      if (failure) return yield* failure;
 
-      if (status >= 400 && status !== 401 && status !== 403)
-        return yield* new TerminalResponse({
-          message: `APNs terminal response ${status}`,
-        });
-
-      return status >= 200 && status < 300 ? "delivered" : "expired";
+      return deliveryOutcome(status);
     }),
   };
 }
@@ -312,10 +373,72 @@ const FcmError = Schema.Struct({
   ),
 });
 
-function fcmTransport(account: ServiceAccount): PushTransport {
-  const temporary = (cause: unknown) =>
-    new TemporaryFailure({ message: String(cause) });
+/** The FCM data payload: everything the app needs to render the answer itself. */
+export function fcmData(event: ReplyPushEvent) {
+  return {
+    type: event.type,
+    eventId: event.eventId,
+    serverId: event.serverId,
+    agentId: event.agentId,
+    agentName: event.agentName,
+    entryId: event.entryId ?? "",
+    origin: event.origin,
+    preview: event.preview,
+    createdAt: event.createdAt,
+    ...(event.groupId && {
+      groupId: event.groupId,
+      groupName: event.groupName ?? "",
+    }),
+    ...(event.jobName && { jobName: event.jobName }),
+  } satisfies Record<string, string>;
+}
 
+/** The FCM message body for one device. */
+export function fcmMessage(device: PushDevice, event: ReplyPushEvent) {
+  return {
+    message: {
+      token: device.token,
+      data: fcmData(event),
+      android: { priority: "HIGH", ttl: "86400s" },
+    },
+  };
+}
+
+const fcmRejectedTokens = new Set(["UNREGISTERED", "SENDER_ID_MISMATCH"]);
+
+/** How a retry should treat the response; `undefined` when the message was accepted. */
+export function classifyFcmResponse(
+  status: number,
+  errorCode: string | undefined,
+): SendFailure | undefined {
+  if (errorCode !== undefined && fcmRejectedTokens.has(errorCode))
+    return new PermanentRejection({ message: "FCM rejected token" });
+
+  if (status === 429 || status >= 500)
+    return new TemporaryFailure({ message: `FCM temporary failure ${status}` });
+
+  if (status >= 400 && status !== 401 && status !== 403)
+    return new TerminalResponse({ message: `FCM terminal response ${status}` });
+
+  return undefined;
+}
+
+/** The error code the response body names; an unreadable body is classified from the status alone. */
+export const fcmErrorCode = (
+  response: Response,
+): Effect.Effect<string | undefined> =>
+  response.ok
+    ? Effect.undefined
+    : Effect.tryPromise(() => response.json()).pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(FcmError)),
+        Effect.map(
+          (body) =>
+            body.error?.details?.find((detail) => detail.errorCode)?.errorCode,
+        ),
+        Effect.orElseSucceed(() => undefined),
+      );
+
+function fcmTransport(account: ServiceAccount): PushTransport {
   const accessToken = Effect.gen(function* () {
     const seconds = Math.floor((yield* Clock.currentTimeMillis) / 1000);
     const head = b64(JSON.stringify({ alg: "RS256", typ: "JWT" }));
@@ -346,7 +469,7 @@ function fcmTransport(account: ServiceAccount): PushTransport {
           }),
           signal: AbortSignal.timeout(15_000),
         }),
-      catch: temporary,
+      catch: temporaryFailure,
     });
 
     if (!response.ok)
@@ -356,11 +479,11 @@ function fcmTransport(account: ServiceAccount): PushTransport {
 
     const body = yield* Effect.tryPromise({
       try: () => response.json(),
-      catch: temporary,
+      catch: temporaryFailure,
     });
 
     return (yield* Schema.decodeUnknownEffect(FcmToken)(body).pipe(
-      Effect.mapError(temporary),
+      Effect.mapError(temporaryFailure),
     )).access_token;
   });
 
@@ -368,23 +491,6 @@ function fcmTransport(account: ServiceAccount): PushTransport {
     canSend: () => true,
     send: Effect.fn("FCM.send")(function* (device, event) {
       const token = yield* accessToken;
-
-      const data = {
-        type: event.type,
-        eventId: event.eventId,
-        serverId: event.serverId,
-        agentId: event.agentId,
-        agentName: event.agentName,
-        entryId: event.entryId ?? "",
-        origin: event.origin,
-        preview: event.preview,
-        createdAt: event.createdAt,
-        ...(event.groupId && {
-          groupId: event.groupId,
-          groupName: event.groupName ?? "",
-        }),
-        ...(event.jobName && { jobName: event.jobName }),
-      } satisfies Record<string, string>;
 
       const response = yield* Effect.tryPromise({
         try: () =>
@@ -396,50 +502,19 @@ function fcmTransport(account: ServiceAccount): PushTransport {
                 authorization: `Bearer ${token}`,
                 "content-type": "application/json",
               },
-              body: JSON.stringify({
-                message: {
-                  token: device.token,
-                  data,
-                  android: { priority: "HIGH", ttl: "86400s" },
-                },
-              }),
+              body: JSON.stringify(fcmMessage(device, event)),
               signal: AbortSignal.timeout(15_000),
             },
           ),
-        catch: temporary,
+        catch: temporaryFailure,
       });
 
-      // An unreadable error body is classified from the status alone.
-      const errorCode = response.ok
-        ? undefined
-        : yield* Effect.tryPromise(() => response.json()).pipe(
-            Effect.flatMap(Schema.decodeUnknownEffect(FcmError)),
-            Effect.map(
-              (body) =>
-                body.error?.details?.find((detail) => detail.errorCode)
-                  ?.errorCode,
-            ),
-            Effect.orElseSucceed(() => undefined),
-          );
+      const errorCode = yield* fcmErrorCode(response);
+      const failure = classifyFcmResponse(response.status, errorCode);
 
-      if (errorCode === "UNREGISTERED" || errorCode === "SENDER_ID_MISMATCH")
-        return yield* new PermanentRejection({ message: "FCM rejected token" });
+      if (failure) return yield* failure;
 
-      if (response.status === 429 || response.status >= 500)
-        return yield* new TemporaryFailure({
-          message: `FCM temporary failure ${response.status}`,
-        });
-
-      if (
-        response.status >= 400 &&
-        response.status !== 401 &&
-        response.status !== 403
-      )
-        return yield* new TerminalResponse({
-          message: `FCM terminal response ${response.status}`,
-        });
-
-      return response.ok ? "delivered" : "expired";
+      return deliveryOutcome(response.status);
     }),
   };
 }

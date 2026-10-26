@@ -167,29 +167,14 @@ class MicrosandboxMachines implements WorkspaceMachines {
       decide: WorkspaceProxyOptions["decide"],
       intercept: WorkspaceInterceptor | undefined,
     ) {
-      // A machine's network settings are fixed at creation, so a restarted one needs its proxy at the same port.
       const resumed = yield* untilBooted(
         Effect.promise(() => resume(name)),
         stopSandbox,
       );
 
-      const record = resumed
-        ? yield* Effect.promise(() => readMachineRecord(resumed))
+      const resumedProxy = resumed
+        ? yield* this.resumedProxy(resumed, image, decide, intercept)
         : undefined;
-
-      const resumedProxy =
-        resumed && record?.image === image
-          ? yield* untilBooted(
-              Effect.promise(() =>
-                startWorkspaceProxy({
-                  decide,
-                  intercept,
-                  port: record.proxyPort,
-                }).catch(() => undefined),
-              ),
-              closeProxy,
-            )
-          : undefined;
 
       if (resumed && resumedProxy)
         return { sandbox: resumed, proxy: resumedProxy };
@@ -197,6 +182,33 @@ class MicrosandboxMachines implements WorkspaceMachines {
       return yield* this.create(name, image, resumed, decide, intercept);
     },
   );
+
+  /** The proxy a resumed machine takes at its recorded port, when that machine is the expected image. */
+  private readonly resumedProxy = Effect.fn(
+    "MicrosandboxMachines.resumedProxy",
+  )(function* (
+    this: MicrosandboxMachines,
+    sandbox: Sandbox,
+    image: string,
+    decide: WorkspaceProxyOptions["decide"],
+    intercept: WorkspaceInterceptor | undefined,
+  ) {
+    const record = yield* Effect.promise(() => readMachineRecord(sandbox));
+
+    if (record?.image !== image) return undefined;
+
+    // A machine's network settings are fixed at creation, so a restarted one needs its proxy at the same port.
+    return yield* untilBooted(
+      Effect.promise(() =>
+        startWorkspaceProxy({
+          decide,
+          intercept,
+          port: record.proxyPort,
+        }).catch(() => undefined),
+      ),
+      closeProxy,
+    );
+  });
 
   /** A new machine for the bot, with a new proxy, replacing the one that could not be resumed. */
   private readonly create = Effect.fn("MicrosandboxMachines.create")(function* (

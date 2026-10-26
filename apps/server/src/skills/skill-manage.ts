@@ -13,7 +13,9 @@ import {
   resolveSkill,
   skillToolContext,
   SkillToolError,
+  type AvailableSkill,
   type SkillReads,
+  type SkillToolContext,
 } from "./skill-library";
 import type { BotSkills } from "./skills";
 
@@ -118,6 +120,14 @@ const operation = Type.Union([
 
 type Operation = Static<typeof operation>;
 
+type CreateOperation = Extract<Operation, { action: "create" }>;
+
+type PatchOperation = Extract<Operation, { action: "patch" }>;
+
+type RewriteOperation = Extract<Operation, { action: "rewrite" }>;
+
+type WriteDocumentOperation = Extract<Operation, { action: "write_document" }>;
+
 export type SkillManageCallbacks = {
   library: BotSkills["Service"];
   reads: SkillReads;
@@ -153,6 +163,253 @@ export function applyPatch(
   );
 }
 
+/** The batch being applied: the library, the turn's reads, and what the batch has written so far. */
+type Batch = {
+  library: BotSkills["Service"];
+  reads: SkillReads;
+  agentId: string;
+  context: SkillToolContext;
+  available: AvailableSkill[];
+  applied: Applied[];
+  touched: Map<string, Skill>;
+};
+
+const ownSkill = (batch: Batch, name: string) =>
+  batch.library
+    .own(batch.agentId)
+    .pipe(
+      Effect.map(
+        (skills) =>
+          skills.find(
+            (skill) => skill.name.toLowerCase() === name.toLowerCase(),
+          ) ?? null,
+      ),
+    );
+
+const validateSkill = (input: SkillInput) => {
+  const parsed = skillInput.safeParse(input);
+
+  return parsed.success
+    ? Effect.succeed(parsed.data)
+    : refuse(
+        parsed.error.issues
+          .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+          .join("; "),
+      );
+};
+
+const updateSkill = Effect.fnUntraced(function* (
+  batch: Batch,
+  skill: Skill,
+  patch: Partial<SkillInput>,
+) {
+  const next = yield* validateSkill({ ...skill, ...patch });
+  const updated = yield* batch.library.update(skill.id, next, batch.context);
+  batch.touched.set(updated.id, updated);
+
+  return updated;
+});
+
+const targetSkill = Effect.fnUntraced(function* (
+  batch: Batch,
+  operation: Operation,
+) {
+  const skill = yield* ownSkill(batch, operation.name);
+
+  if (skill) {
+    if (!batch.reads.has(batch.context.runKey, skill.id))
+      return yield* refuse(
+        `Load skill ${skill.name} with the skill tool in this turn before changing it; writes must follow a current read`,
+      );
+
+    return skill;
+  }
+
+  const shadowed = resolveSkill(batch.available, operation.name);
+
+  return yield* refuse(
+    shadowed
+      ? `Skill ${shadowed.name} is ${shadowed.scope} and read-only; create your own skill named ${JSON.stringify(shadowed.name)} to shadow it, then change that`
+      : `You have no skill named ${JSON.stringify(operation.name)}; use skill_manage create or check the skill tool's list`,
+  );
+});
+
+const createSkill = Effect.fnUntraced(function* (
+  batch: Batch,
+  operation: CreateOperation,
+) {
+  if (yield* ownSkill(batch, operation.name))
+    return yield* refuse(
+      `You already have a skill named ${JSON.stringify(operation.name)}; patch or rewrite it`,
+    );
+
+  const created = yield* batch.library.create(
+    batch.agentId,
+    yield* validateSkill({
+      name: operation.name,
+      description: operation.description ?? "",
+      instructions: operation.instructions,
+      documents: operation.documents ?? [],
+    }),
+    batch.context,
+  );
+
+  batch.touched.set(created.id, created);
+  batch.reads.mark(batch.context.runKey, created.id);
+  batch.applied.push({ action: "create", name: created.name });
+});
+
+const deleteSkill = Effect.fnUntraced(function* (batch: Batch, skill: Skill) {
+  if (batch.context.reviewOf)
+    return yield* refuse(
+      "A review never deletes a skill; patch it, or mention the overlap in your reply",
+    );
+
+  yield* batch.library.remove(skill.id, batch.context);
+  batch.touched.delete(skill.id);
+  batch.applied.push({ action: "delete", name: skill.name });
+});
+
+const rewriteSkill = Effect.fnUntraced(function* (
+  batch: Batch,
+  skill: Skill,
+  operation: RewriteOperation,
+) {
+  yield* updateSkill(batch, skill, {
+    instructions: operation.instructions,
+    ...(operation.description !== undefined && {
+      description: operation.description,
+    }),
+  });
+  batch.applied.push({ action: "rewrite", name: skill.name });
+});
+
+const patchDocument = Effect.fnUntraced(function* (
+  batch: Batch,
+  skill: Skill,
+  documentPath: string,
+  operation: PatchOperation,
+) {
+  const document = skill.documents.find(
+    (candidate) => candidate.path === documentPath,
+  );
+
+  if (!document)
+    return yield* refuse(`Skill ${skill.name} has no document ${documentPath}`);
+
+  const content = yield* applyPatch(
+    document.content,
+    operation.oldString,
+    operation.newString,
+    operation.replaceAll === true,
+    `Document ${documentPath} of skill ${skill.name}`,
+  );
+
+  yield* updateSkill(batch, skill, {
+    documents: skill.documents.map((candidate) =>
+      candidate === document ? { ...candidate, content } : candidate,
+    ),
+  });
+});
+
+const patchSkill = Effect.fnUntraced(function* (
+  batch: Batch,
+  skill: Skill,
+  operation: PatchOperation,
+) {
+  if (operation.path)
+    yield* patchDocument(batch, skill, operation.path, operation);
+  else
+    yield* updateSkill(batch, skill, {
+      instructions: yield* applyPatch(
+        skill.instructions,
+        operation.oldString,
+        operation.newString,
+        operation.replaceAll === true,
+        `Skill ${skill.name}`,
+      ),
+    });
+
+  batch.applied.push({
+    action: "patch",
+    name: skill.name,
+    ...(operation.path && { path: operation.path }),
+  });
+});
+
+const writeDocument = Effect.fnUntraced(function* (
+  batch: Batch,
+  skill: Skill,
+  operation: WriteDocumentOperation,
+) {
+  const document = skillDocumentInput.safeParse({
+    path: operation.path,
+    content: operation.content,
+  });
+
+  if (!document.success)
+    return yield* refuse(
+      document.error.issues[0]?.message ?? "Invalid document",
+    );
+
+  const others = skill.documents.filter(
+    (candidate) => candidate.path !== document.data.path,
+  );
+
+  yield* updateSkill(batch, skill, { documents: [...others, document.data] });
+  batch.applied.push({
+    action: "write_document",
+    name: skill.name,
+    path: document.data.path,
+  });
+});
+
+const removeDocument = Effect.fnUntraced(function* (
+  batch: Batch,
+  skill: Skill,
+  documentPath: string,
+) {
+  if (!skill.documents.some((candidate) => candidate.path === documentPath))
+    return yield* refuse(`Skill ${skill.name} has no document ${documentPath}`);
+
+  yield* updateSkill(batch, skill, {
+    documents: skill.documents.filter(
+      (candidate) => candidate.path !== documentPath,
+    ),
+  });
+  batch.applied.push({
+    action: "remove_document",
+    name: skill.name,
+    path: documentPath,
+  });
+});
+
+const applyOperation = Effect.fnUntraced(function* (
+  batch: Batch,
+  raw: Operation,
+) {
+  const operation = { ...raw, name: raw.name.trim() };
+
+  if (!operation.name) return yield* refuse("A skill name is required");
+
+  if (operation.action === "create")
+    return yield* createSkill(batch, operation);
+  const skill = yield* targetSkill(batch, operation);
+
+  switch (operation.action) {
+    case "delete":
+      return yield* deleteSkill(batch, skill);
+    case "rewrite":
+      return yield* rewriteSkill(batch, skill, operation);
+    case "patch":
+      return yield* patchSkill(batch, skill, operation);
+    case "write_document":
+      return yield* writeDocument(batch, skill, operation);
+    case "remove_document":
+      return yield* removeDocument(batch, skill, operation.path);
+  }
+});
+
 /** The model tool a bot edits its own skills with: an ordered batch, applied atomically. */
 export function skillManageTool(callbacks: SkillManageCallbacks) {
   return defineTool({
@@ -175,204 +432,25 @@ export function skillManageTool(callbacks: SkillManageCallbacks) {
 
       return Effect.runPromise(
         Effect.gen(function* () {
-          const available = yield* library.available(agent);
-          const applied: Applied[] = [];
-          const touched = new Map<string, Skill>();
-
-          const own = (name: string) =>
-            library
-              .own(agent.id)
-              .pipe(
-                Effect.map(
-                  (skills) =>
-                    skills.find(
-                      (skill) =>
-                        skill.name.toLowerCase() === name.toLowerCase(),
-                    ) ?? null,
-                ),
-              );
-
-          const target = Effect.fnUntraced(function* (operation: Operation) {
-            const skill = yield* own(operation.name);
-
-            if (skill) {
-              if (!reads.has(context.runKey, skill.id))
-                return yield* refuse(
-                  `Load skill ${skill.name} with the skill tool in this turn before changing it; writes must follow a current read`,
-                );
-
-              return skill;
-            }
-
-            const shadowed = resolveSkill(available, operation.name);
-
-            return yield* refuse(
-              shadowed
-                ? `Skill ${shadowed.name} is ${shadowed.scope} and read-only; create your own skill named ${JSON.stringify(shadowed.name)} to shadow it, then change that`
-                : `You have no skill named ${JSON.stringify(operation.name)}; use skill_manage create or check the skill tool's list`,
-            );
-          });
-
-          const validate = (input: SkillInput) => {
-            const parsed = skillInput.safeParse(input);
-
-            return parsed.success
-              ? Effect.succeed(parsed.data)
-              : refuse(
-                  parsed.error.issues
-                    .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
-                    .join("; "),
-                );
+          const batch: Batch = {
+            library,
+            reads,
+            context,
+            agentId: agent.id,
+            available: yield* library.available(agent),
+            applied: [],
+            touched: new Map(),
           };
 
-          const update = Effect.fnUntraced(function* (
-            skill: Skill,
-            patch: Partial<SkillInput>,
-          ) {
-            const next = yield* validate({ ...skill, ...patch });
-            const updated = yield* library.update(skill.id, next, context);
-            touched.set(updated.id, updated);
-
-            return updated;
-          });
-
-          const apply = Effect.fnUntraced(function* (raw: Operation) {
-            const operation = { ...raw, name: raw.name.trim() };
-
-            if (!operation.name)
-              return yield* refuse("A skill name is required");
-
-            if (operation.action === "create") {
-              if (yield* own(operation.name))
-                return yield* refuse(
-                  `You already have a skill named ${JSON.stringify(operation.name)}; patch or rewrite it`,
-                );
-
-              const created = yield* library.create(
-                agent.id,
-                yield* validate({
-                  name: operation.name,
-                  description: operation.description ?? "",
-                  instructions: operation.instructions,
-                  documents: operation.documents ?? [],
-                }),
-                context,
-              );
-
-              touched.set(created.id, created);
-              reads.mark(context.runKey, created.id);
-              applied.push({ action: "create", name: created.name });
-
-              return;
-            }
-
-            const skill = yield* target(operation);
-
-            if (operation.action === "delete") {
-              if (context.reviewOf)
-                return yield* refuse(
-                  "A review never deletes a skill; patch it, or mention the overlap in your reply",
-                );
-              yield* library.remove(skill.id, context);
-              touched.delete(skill.id);
-              applied.push({ action: "delete", name: skill.name });
-            } else if (operation.action === "rewrite") {
-              yield* update(skill, {
-                instructions: operation.instructions,
-                ...(operation.description !== undefined && {
-                  description: operation.description,
-                }),
-              });
-              applied.push({ action: "rewrite", name: skill.name });
-            } else if (operation.action === "patch") {
-              if (operation.path) {
-                const document = skill.documents.find(
-                  (candidate) => candidate.path === operation.path,
-                );
-
-                if (!document)
-                  return yield* refuse(
-                    `Skill ${skill.name} has no document ${operation.path}`,
-                  );
-
-                const content = yield* applyPatch(
-                  document.content,
-                  operation.oldString,
-                  operation.newString,
-                  operation.replaceAll === true,
-                  `Document ${operation.path} of skill ${skill.name}`,
-                );
-
-                yield* update(skill, {
-                  documents: skill.documents.map((candidate) =>
-                    candidate === document
-                      ? { ...candidate, content }
-                      : candidate,
-                  ),
-                });
-              } else
-                yield* update(skill, {
-                  instructions: yield* applyPatch(
-                    skill.instructions,
-                    operation.oldString,
-                    operation.newString,
-                    operation.replaceAll === true,
-                    `Skill ${skill.name}`,
-                  ),
-                });
-              applied.push({
-                action: "patch",
-                name: skill.name,
-                ...(operation.path && { path: operation.path }),
-              });
-            } else if (operation.action === "write_document") {
-              const document = skillDocumentInput.safeParse({
-                path: operation.path,
-                content: operation.content,
-              });
-
-              if (!document.success)
-                return yield* refuse(
-                  document.error.issues[0]?.message ?? "Invalid document",
-                );
-
-              const others = skill.documents.filter(
-                (candidate) => candidate.path !== document.data.path,
-              );
-
-              yield* update(skill, { documents: [...others, document.data] });
-              applied.push({
-                action: "write_document",
-                name: skill.name,
-                path: document.data.path,
-              });
-            } else {
-              if (
-                !skill.documents.some(
-                  (candidate) => candidate.path === operation.path,
-                )
-              )
-                return yield* refuse(
-                  `Skill ${skill.name} has no document ${operation.path}`,
-                );
-              yield* update(skill, {
-                documents: skill.documents.filter(
-                  (candidate) => candidate.path !== operation.path,
-                ),
-              });
-              applied.push({
-                action: "remove_document",
-                name: skill.name,
-                path: operation.path,
-              });
-            }
-          });
-
           yield* library.transaction(
-            Effect.forEach(args.operations, apply, { discard: true }),
+            Effect.forEach(
+              args.operations,
+              (operation) => applyOperation(batch, operation),
+              { discard: true },
+            ),
           );
 
-          const findings = [...touched.values()].flatMap((skill) =>
+          const findings = [...batch.touched.values()].flatMap((skill) =>
             lintSkill(skill),
           );
 
@@ -380,7 +458,7 @@ export function skillManageTool(callbacks: SkillManageCallbacks) {
             output: [
               {
                 type: "text" as const,
-                text: JSON.stringify({ applied, findings }),
+                text: JSON.stringify({ applied: batch.applied, findings }),
               },
             ],
           };

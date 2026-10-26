@@ -237,48 +237,19 @@ class SignInSessions {
   start(providerId: string, method: AuthType): LoginSession {
     if (this.closed)
       throw new Unavailable({ message: "The server is shutting down" });
-    const provider = this.models.getProvider(providerId);
 
-    if (!provider) throw new NotFound({ message: "Unknown provider" });
-    const login = this.loginFunction(provider, method);
+    const login = this.loginFor(providerId, method);
 
-    if (!login)
-      throw new InvalidInput({
-        message: `${provider.name} does not offer this sign-in`,
-      });
-
-    if (this.active.has(providerId))
-      throw new Conflict({
-        message: "A sign-in for this provider is in progress",
-      });
-
-    if (this.active.size >= MAX_ACTIVE)
-      throw new Conflict({ message: "Too many sign-ins are in progress" });
+    this.reserve(providerId);
     this.prune();
-    const now = Date.now();
 
-    const session: Session = {
-      id: randomUUID(),
-      provider: providerId,
-      method,
-      status: "pending",
-      createdAt: now,
-      lastActivity: now,
-      prompt: null,
-      events: [],
-      failure: null,
-      controller: new AbortController(),
-    };
+    const session = this.createSession(providerId, method);
 
     this.sessions.set(session.id, session);
     this.active.set(providerId, session);
     this.schedule(session);
-    const hint = method === "oauth" ? REMOTE_HINTS.get(providerId) : undefined;
-
-    if (hint) session.events.push({ type: "info", message: hint });
-    const flow = this.run(session, login);
-    this.flows.add(flow);
-    void flow.finally(() => this.flows.delete(flow));
+    this.addRemoteHint(session, providerId, method);
+    this.beginFlow(session, login);
 
     return this.project(session);
   }
@@ -289,24 +260,9 @@ class SignInSessions {
 
   answer(sessionId: string, promptId: string, value: string): LoginSession {
     const session = this.session(sessionId);
+    const pending = this.awaitingAnswer(session, promptId);
 
-    if (session.status !== "pending")
-      throw new Conflict({ message: "This sign-in has ended" });
-    const pending = session.prompt;
-
-    if (!pending || pending.prompt.id !== promptId)
-      throw new Conflict({
-        message: "This prompt no longer accepts an answer",
-      });
-
-    if (
-      pending.prompt.type === "select" &&
-      !pending.prompt.options?.some((option) => option.id === value)
-    )
-      throw new InvalidInput({ message: "Choose one of the offered options" });
-    session.lastActivity = Date.now();
-    this.schedule(session);
-    pending.settle(value);
+    this.acceptAnswer(session, pending, value);
 
     return this.project(session);
   }
@@ -345,6 +301,98 @@ class SignInSessions {
     await this.credentials.idle();
   }
 
+  private loginFor(providerId: string, method: AuthType) {
+    const provider = this.models.getProvider(providerId);
+
+    if (!provider) throw new NotFound({ message: "Unknown provider" });
+    const login = this.loginFunction(provider, method);
+
+    if (!login)
+      throw new InvalidInput({
+        message: `${provider.name} does not offer this sign-in`,
+      });
+
+    return login;
+  }
+
+  private reserve(providerId: string) {
+    if (this.active.has(providerId))
+      throw new Conflict({
+        message: "A sign-in for this provider is in progress",
+      });
+
+    if (this.active.size >= MAX_ACTIVE)
+      throw new Conflict({ message: "Too many sign-ins are in progress" });
+  }
+
+  private createSession(providerId: string, method: AuthType): Session {
+    const now = Date.now();
+
+    return {
+      id: randomUUID(),
+      provider: providerId,
+      method,
+      status: "pending",
+      createdAt: now,
+      lastActivity: now,
+      prompt: null,
+      events: [],
+      failure: null,
+      controller: new AbortController(),
+    };
+  }
+
+  private addRemoteHint(
+    session: Session,
+    providerId: string,
+    method: AuthType,
+  ) {
+    if (method !== "oauth") return;
+    const hint = REMOTE_HINTS.get(providerId);
+
+    if (hint) session.events.push({ type: "info", message: hint });
+  }
+
+  private beginFlow(
+    session: Session,
+    login: (interaction: ProviderAuthInteraction) => Promise<Credential>,
+  ) {
+    const flow = this.run(session, login);
+
+    this.flows.add(flow);
+    void flow.finally(() => this.flows.delete(flow));
+  }
+
+  private awaitingAnswer(session: Session, promptId: string): PendingPrompt {
+    if (session.status !== "pending")
+      throw new Conflict({ message: "This sign-in has ended" });
+    const pending = session.prompt;
+
+    if (!pending || pending.prompt.id !== promptId)
+      throw new Conflict({
+        message: "This prompt no longer accepts an answer",
+      });
+
+    return pending;
+  }
+
+  private acceptAnswer(
+    session: Session,
+    pending: PendingPrompt,
+    value: string,
+  ) {
+    const { prompt } = pending;
+
+    if (
+      prompt.type === "select" &&
+      !prompt.options?.some((option) => option.id === value)
+    )
+      throw new InvalidInput({ message: "Choose one of the offered options" });
+    session.lastActivity = Date.now();
+    this.schedule(session);
+    pending.settle(value);
+  }
+
   private loginFunction(provider: Provider, method: AuthType) {
     const options = {
       agentName: "Crumble",
@@ -367,11 +415,19 @@ class SignInSessions {
     session: Session,
     login: (interaction: ProviderAuthInteraction) => Promise<Credential>,
   ) {
+    const credential = await this.authenticate(session, login);
+
+    if (credential) await this.save(session, credential);
+  }
+
+  private async authenticate(
+    session: Session,
+    login: (interaction: ProviderAuthInteraction) => Promise<Credential>,
+  ) {
     const { signal } = session.controller;
-    let credential: Credential;
 
     try {
-      credential = await abortable(
+      return await abortable(
         login({
           signal,
           prompt: (prompt) => this.prompt(session, prompt),
@@ -382,14 +438,14 @@ class SignInSessions {
     } catch (error) {
       this.fail(
         session,
-        error instanceof Error && isPortConflict(error)
-          ? "callback_unavailable"
-          : "provider_failure",
+        failureCode(error instanceof Error ? error : undefined),
       );
 
-      return;
+      return undefined;
     }
+  }
 
+  private async save(session: Session, credential: Credential) {
     try {
       const committed = await this.credentials.commitLogin(
         session.provider,
@@ -415,54 +471,50 @@ class SignInSessions {
       return Promise.reject(new Error("Overlapping login prompts"));
     }
 
-    return new Promise((resolve, reject) => {
-      const id = randomUUID();
-      const signals = [session.controller.signal, prompt.signal];
+    return this.awaitPrompt(session, prompt);
+  }
 
-      const release = () => {
-        for (const signal of signals)
-          signal?.removeEventListener("abort", withdraw);
+  private awaitPrompt(session: Session, prompt: AuthPrompt): Promise<string> {
+    const id = randomUUID();
 
-        if (session.prompt?.prompt.id === id) session.prompt = null;
-      };
-
-      const withdraw = () => {
-        release();
-        reject(new Error("Prompt withdrawn"));
-      };
-
-      if (signals.some((signal) => signal?.aborted)) return withdraw();
-
-      for (const signal of signals)
-        signal?.addEventListener("abort", withdraw, { once: true });
-
-      session.prompt = {
-        prompt:
-          prompt.type === "select"
-            ? {
-                id,
-                type: "select",
-                message: prompt.message,
-                options: prompt.options.map(({ id, label, description }) => ({
-                  id,
-                  label,
-                  ...(description !== undefined && { description }),
-                })),
-              }
-            : {
-                id,
-                type: prompt.type,
-                message: prompt.message,
-                ...(prompt.placeholder !== undefined && {
-                  placeholder: prompt.placeholder,
-                }),
-              },
-        settle: (value) => {
-          release();
-          resolve(value);
-        },
-      };
+    return new Promise<string>((resolve, reject) => {
+      this.holdPrompt(session, id, prompt, resolve, reject);
     });
+  }
+
+  private holdPrompt(
+    session: Session,
+    id: string,
+    prompt: AuthPrompt,
+    resolve: (value: string) => void,
+    reject: (error: Error) => void,
+  ) {
+    const signals = [session.controller.signal, prompt.signal];
+
+    const release = () => {
+      for (const signal of signals)
+        signal?.removeEventListener("abort", withdraw);
+
+      if (session.prompt?.prompt.id === id) session.prompt = null;
+    };
+
+    const withdraw = () => {
+      release();
+      reject(new Error("Prompt withdrawn"));
+    };
+
+    if (signals.some((signal) => signal?.aborted)) return withdraw();
+
+    for (const signal of signals)
+      signal?.addEventListener("abort", withdraw, { once: true });
+
+    session.prompt = {
+      prompt: promptView(id, prompt),
+      settle: (value) => {
+        release();
+        resolve(value);
+      },
+    };
   }
 
   private notify(session: Session, event: AuthEvent) {
@@ -471,31 +523,17 @@ class SignInSessions {
     if (JSON.stringify(event).length > MAX_EVENT_BYTES)
       return this.fail(session, "provider_failure");
 
-    const copy: LoginEvent =
-      event.type === "info"
-        ? {
-            type: "info",
-            message: event.message,
-            ...(event.links && {
-              links: event.links.map((link) => ({ ...link })),
-            }),
-          }
-        : { ...event };
+    this.appendEvent(session, copyEvent(event));
+  }
 
+  private appendEvent(session: Session, copy: LoginEvent) {
     const events = session.events;
 
     if (copy.type === "progress" && events.at(-1)?.type === "progress")
       events[events.length - 1] = copy;
     else events.push(copy);
 
-    // The current authorization link or device code outlives older messages.
-    while (events.length > MAX_EVENTS) {
-      const index = events.findIndex(
-        (item) => item.type !== "auth_url" && item.type !== "device_code",
-      );
-
-      events.splice(index === -1 ? 0 : index, 1);
-    }
+    trimEvents(events);
   }
 
   private isCurrent(session: Session) {
@@ -606,14 +644,71 @@ function abortable<T>(operation: Promise<T>, signal: AbortSignal) {
   });
 }
 
-function isPortConflict(error: Error): boolean {
-  if (
+/** Whether a login failed because the provider's callback port is already taken. */
+export function isPortConflict(error: Error): boolean {
+  return (
+    selfPortConflict(error) ||
+    (error.cause instanceof Error && isPortConflict(error.cause))
+  );
+}
+
+function selfPortConflict(error: Error): boolean {
+  return (
     ("code" in error && error.code === "EADDRINUSE") ||
     /\bport \d+ is in use\b/i.test(error.message)
-  )
-    return true;
+  );
+}
 
-  return error.cause instanceof Error && isPortConflict(error.cause);
+function failureCode(error: Error | undefined): Failure["code"] {
+  return error && isPortConflict(error)
+    ? "callback_unavailable"
+    : "provider_failure";
+}
+
+function promptView(id: string, prompt: AuthPrompt): LoginPrompt {
+  if (prompt.type === "select")
+    return {
+      id,
+      type: "select",
+      message: prompt.message,
+      options: prompt.options.map(({ id, label, description }) => ({
+        id,
+        label,
+        ...(description !== undefined && { description }),
+      })),
+    };
+
+  return {
+    id,
+    type: prompt.type,
+    message: prompt.message,
+    ...(prompt.placeholder !== undefined && {
+      placeholder: prompt.placeholder,
+    }),
+  };
+}
+
+function copyEvent(event: AuthEvent): LoginEvent {
+  if (event.type !== "info") return { ...event };
+
+  return {
+    type: "info",
+    message: event.message,
+    ...(event.links && {
+      links: event.links.map((link) => ({ ...link })),
+    }),
+  };
+}
+
+function trimEvents(events: LoginEvent[]) {
+  // The current authorization link or device code outlives older messages.
+  while (events.length > MAX_EVENTS) {
+    const index = events.findIndex(
+      (item) => item.type !== "auth_url" && item.type !== "device_code",
+    );
+
+    events.splice(index === -1 ? 0 : index, 1);
+  }
 }
 
 /** Sign-ins over the credentials and settings `core` reaches, for an API that runs without an account. */

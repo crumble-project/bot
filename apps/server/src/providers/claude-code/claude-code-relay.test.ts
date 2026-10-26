@@ -1332,6 +1332,25 @@ describe("turn start (test_admission_turn_start.py)", () => {
 
   type Item = { type?: string; cache_control?: Mark | undefined };
 
+  type Entry = { where: Where; item: Item; key: string };
+
+  /** A user message carrying anything but tool results: a turn opens here. */
+  const opensTurn = (item: Message) =>
+    item.role === "user" &&
+    Array.isArray(item.content) &&
+    item.content.some((entry) => entry.type !== "tool_result");
+
+  const messageBlocks = (item: Message) =>
+    Array.isArray(item.content)
+      ? item.content
+      : [{ type: "text", text: item.content }];
+
+  /** A run of consecutive tool_use or tool_result blocks counts once toward the lookback. */
+  const sameToolKind = (
+    kind: string | undefined,
+    previous: string | undefined,
+  ) => (kind === "tool_use" || kind === "tool_result") && previous === kind;
+
   /**
    * Anthropic's documented lookup: each breakpoint checks up to 20 positions back, itself included, a run of
    * tool_use or tool_result blocks counting once; entries are written only at breakpoints. A thinking block
@@ -1342,16 +1361,26 @@ describe("turn start (test_admission_turn_start.py)", () => {
 
     /** Where this request's read ends: a message block, "system" or undefined. */
     send(body: Body): Where | undefined {
-      const { messages } = body;
+      const flat = this.flatten(body);
 
-      const opens = messages.map(
-        (item) =>
-          item.role === "user" &&
-          Array.isArray(item.content) &&
-          item.content.some((entry) => entry.type !== "tool_result"),
+      const marks = flat.flatMap((entry, k) =>
+        entry.item.cache_control ? [k] : [],
       );
 
-      const flat: { where: Where; item: Item; key: string }[] = [];
+      const read = marks.reduce(
+        (best, mark) => Math.max(best, this.lookup(flat, mark)),
+        -1,
+      );
+
+      for (const mark of marks) this.entries.add(flat[mark]?.key ?? "");
+
+      return read < 0 ? undefined : flat[read]?.where;
+    }
+
+    /** Every tool, system and message block in hash order; thinking renders closed once a later turn opens. */
+    private flatten(body: Body): Entry[] {
+      const opens = body.messages.map(opensTurn);
+      const flat: Entry[] = [];
       const hasher = new Bun.CryptoHasher("sha256");
 
       const add = (where: Where, item: Item, hashed: Item) => {
@@ -1365,12 +1394,8 @@ describe("turn start (test_admission_turn_start.py)", () => {
 
       for (const entry of body.system ?? []) add("system", entry, entry);
 
-      for (const [i, item] of messages.entries()) {
-        const content = Array.isArray(item.content)
-          ? item.content
-          : [{ type: "text", text: item.content }];
-
-        for (const [j, entry] of content.entries())
+      for (const [i, item] of body.messages.entries())
+        for (const [j, entry] of messageBlocks(item).entries())
           add(
             [i, j],
             entry,
@@ -1378,42 +1403,25 @@ describe("turn start (test_admission_turn_start.py)", () => {
               ? { ...entry, closed: opens.slice(i + 1).some(Boolean) }
               : entry,
           );
+
+      return flat;
+    }
+
+    /** How far back one breakpoint reads: the index of the entry it finds, or -1 when the lookback misses. */
+    private lookup(flat: Entry[], mark: number) {
+      let k = mark;
+      let seen = 1;
+
+      while (k >= 0 && seen <= 20) {
+        if (this.entries.has(flat[k]?.key ?? "")) return k;
+        const kind = flat[k]?.item.type;
+
+        k -= 1;
+
+        if (!sameToolKind(kind, flat[k]?.item.type)) seen += 1;
       }
 
-      const marks = flat.flatMap((entry, k) =>
-        entry.item.cache_control ? [k] : [],
-      );
-
-      let read = -1;
-
-      for (const mark of marks) {
-        let k = mark;
-        let seen = 1;
-
-        while (k >= 0 && seen <= 20) {
-          if (this.entries.has(flat[k]?.key ?? "")) {
-            read = Math.max(read, k);
-            break;
-          }
-
-          const kind = flat[k]?.item.type;
-
-          k -= 1;
-
-          if (
-            !(
-              (kind === "tool_use" || kind === "tool_result") &&
-              k >= 0 &&
-              flat[k]?.item.type === kind
-            )
-          )
-            seen += 1;
-        }
-      }
-
-      for (const mark of marks) this.entries.add(flat[mark]?.key ?? "");
-
-      return read < 0 ? undefined : flat[read]?.where;
+      return -1;
     }
   }
 

@@ -21,6 +21,8 @@ import {
   type Harness,
   type ModelRef,
   type TaskId,
+  type ToolExecutionApi,
+  type ToolExecutionResult,
   type Tx,
   type UsageState,
 } from "@earendil-works/pi-durable";
@@ -138,6 +140,70 @@ const statusOf = async (reader: DocumentReader, job: Job, context: Context) =>
   (await reader.snapshot(LiveDoc, job.conversationId, context))?.run
     ? ("working" as const)
     : ("idle" as const);
+
+/** The job a call names, as the tool's details: what a client's job card shows. */
+type JobDetails = {
+  name: string;
+  status: JobInfo["status"];
+  conversationId: string;
+};
+
+/** How the tool answers one call: text for the model, and the card's job when the call names one. */
+type Reply = (text: string, found?: JobInfo) => ToolExecutionResult<JobDetails>;
+
+/** One call of the job tool: the bot it answers, the jobs it read, and how to answer. */
+type JobToolCall = {
+  agentId: string;
+  api: ToolExecutionApi;
+  context: Context;
+  /** The jobs of the bot's chat, as the call read them. */
+  jobs: JobsState["jobs"];
+  reply: Reply;
+};
+
+/** A start or send call: the job to create or message, and what a job it starts runs with. */
+type StartOrSend = {
+  action: "start" | "send";
+  name: string;
+  message: string;
+  followUp: boolean;
+  /** The job's own extension: its tools and hooks. */
+  job: Extension;
+  /** The job's model; unset, a job starts with the bot's model. */
+  model: ModelRef | undefined;
+};
+
+/** What a start or send did, and the job its card shows. */
+type Started = { text: string; found: JobInfo | undefined };
+
+// Both tasks belong to the bot's chat and are background: its Esc and idle waits skip them.
+const BACKGROUND = {
+  ownership: { kind: "conversation" },
+  background: true,
+} as const;
+
+function jobReply(
+  agentId: string,
+  text: string,
+  found?: JobInfo,
+): ToolExecutionResult<JobDetails> {
+  const result = { output: [{ type: "text" as const, text }] };
+
+  if (!found) return result;
+
+  // Clients attach a job card to the job's conversation through the details.
+  return {
+    ...result,
+    details: {
+      name: found.name,
+      status: found.status,
+      conversationId: conversationReference(
+        agentId,
+        Number(found.conversationId),
+      ),
+    },
+  };
+}
 
 export type JobKind = ReturnType<typeof defineJobKind>;
 
@@ -433,6 +499,155 @@ export function defineJobKind(options: JobKindOptions) {
       }, taskContext),
   });
 
+  /** Starts the job's own conversation as a copy of the bot's agent; false when the name is taken. */
+  const startJob = async (tx: Tx, request: StartOrSend, state: JobsState) => {
+    const { name, job, model } = request;
+
+    if (Object.hasOwn(state.jobs, name)) return false;
+
+    const anchor = await tx.createTask(Anchor, null, BACKGROUND);
+
+    // Starts as a copy of the bot's agent, then keeps only the job's own tools. Selecting exactly the job extension
+    // also drops the bot's other tools, hooks, and prompt sections, so a job can neither start jobs nor delegate,
+    // schedule, or reach integrations.
+    const child = await tx.createConversation({
+      ownership: { kind: "task", taskId: anchor },
+    });
+
+    await configure(tx, child.id, {
+      extensions: [job],
+      tools: null,
+      modelTools: null,
+      instructions: options.instructions,
+      cwd: WORKSPACE_PATH,
+      ...(model && { model }),
+    });
+    (await tx.doc(Marker, child.id)).job = true;
+    state.jobs[name] = { conversationId: child.id, reported: [] };
+
+    return true;
+  };
+
+  /** Whether a delivery of the job is submitting right now, which an abort must wait for. */
+  const submitting = async (
+    api: ToolExecutionApi,
+    context: Context,
+    name: string,
+  ) =>
+    Object.values(
+      (await api.snapshot(Jobs, api.conversationId, context))?.jobs[name]
+        ?.deliveries ?? {},
+    ).includes("submitting");
+
+  /** Drops deliveries still waiting for the screen, then aborts the job's current answer and tools and its queued
+   * messages. It stays usable. */
+  const stopJob = async (call: JobToolCall, existing: Job, name: string) => {
+    const { api, context, reply } = call;
+
+    await api.commit(async (tx) => {
+      const job = (await tx.doc(Jobs, api.conversationId)).jobs[name];
+
+      if (job) job.stops = (job.stops ?? 0) + 1;
+    }, context);
+
+    // A delivery admitted before the stop count changed finishes submitting first, so the abort covers it.
+    for (
+      let waited = 0;
+      waited < STOP_WAIT_MS && (await submitting(api, context, name));
+      waited += STOP_POLL_MS
+    )
+      await awaitWithContext(
+        new Promise((resolve) => setTimeout(resolve, STOP_POLL_MS)),
+        context,
+      );
+
+    await (await api.conversation(existing.conversationId, context))!.abort(
+      context,
+    );
+
+    return reply(`Stopped ${name}.`, {
+      name,
+      conversationId: existing.conversationId,
+      status: "idle",
+    });
+  };
+
+  /** Starts a job or messages an existing one, admitting its delivery before it answers. */
+  const startOrSend = async (
+    call: JobToolCall,
+    request: StartOrSend,
+  ): Promise<Started> => {
+    const { agentId, api, context } = call;
+
+    return api.commit(async (tx): Promise<Started> => {
+      const state = await tx.doc(Jobs, api.conversationId);
+
+      if (request.action === "start" && !(await startJob(tx, request, state)))
+        return {
+          text: `${request.name} already exists; use send.`,
+          found: undefined,
+        };
+
+      const record = state.jobs[request.name]!;
+      const conversationId = record.conversationId;
+
+      const reporter = await tx.createTask(
+        Reporter,
+        {
+          agentId,
+          name: request.name,
+          conversationId,
+          message: request.message,
+          followUp: request.action === "send" && request.followUp,
+          stops: record.stops ?? 0,
+        },
+        BACKGROUND,
+      );
+
+      record.deliveries = {
+        ...record.deliveries,
+        [String(reporter)]: "waiting",
+      };
+
+      return {
+        text:
+          request.action === "send"
+            ? `Sent to ${request.name}.`
+            : `Started ${request.name}.`,
+        found: {
+          name: request.name,
+          conversationId,
+          status: "working" as const,
+        },
+      };
+    }, context);
+  };
+
+  /** The jobs the call names, or all of them, oldest first, with the status of each. */
+  const statusReply = async (call: JobToolCall, name: string | undefined) => {
+    const { api, context, jobs, reply } = call;
+    const names = name === undefined ? Object.keys(jobs) : [name];
+    const found: JobInfo[] = [];
+
+    for (const each of names) {
+      const job = Object.hasOwn(jobs, each) ? jobs[each] : undefined;
+
+      if (job)
+        found.push({
+          name: each,
+          conversationId: job.conversationId,
+          status: await statusOf(api, job, context),
+        });
+    }
+
+    const text = found.length
+      ? found.map((each) => `${each.name}: ${each.status}`).join("\n")
+      : `No ${label}s.`;
+
+    // Details describe one job; a listing has none.
+    return reply(text, name === undefined ? undefined : found[0]);
+  };
+
   return {
     toolName,
 
@@ -548,169 +763,49 @@ export function defineJobKind(options: JobKindOptions) {
         // A rerun of stop or send after a crash could hit newer work; the model can check with status.
         replay: "unsafe",
         execute: async (args, api, callContext) => {
-          const { action, name, message, followUp } = args;
-
-          const reply = (text: string, found?: JobInfo) => {
-            const result = { output: [{ type: "text" as const, text }] };
-
-            if (!found) return result;
-
-            // Clients attach a job card to the job's conversation through the details.
-            return {
-              ...result,
-              details: {
-                name: found.name,
-                status: found.status,
-                conversationId: conversationReference(
-                  agentId,
-                  Number(found.conversationId),
-                ),
-              },
-            };
-          };
+          const { action, name, message } = args;
 
           const jobs =
             (await api.snapshot(Jobs, api.conversationId, callContext))?.jobs ??
             {};
 
-          if (action === "status") {
-            const names = name === undefined ? Object.keys(jobs) : [name];
-            const found: JobInfo[] = [];
+          const call: JobToolCall = {
+            agentId,
+            api,
+            context: callContext,
+            jobs,
+            reply: (text, found) => jobReply(agentId, text, found),
+          };
 
-            for (const each of names) {
-              const job = Object.hasOwn(jobs, each) ? jobs[each] : undefined;
+          if (action === "status") return statusReply(call, name);
 
-              if (job)
-                found.push({
-                  name: each,
-                  conversationId: job.conversationId,
-                  status: await statusOf(api, job, callContext),
-                });
-            }
-
-            const text = found.length
-              ? found.map((each) => `${each.name}: ${each.status}`).join("\n")
-              : `No ${label}s.`;
-
-            // Details describe one job; a listing has none.
-            return reply(text, name === undefined ? undefined : found[0]);
-          }
-
-          if (name === undefined) return reply(`${action} needs a name.`);
+          if (name === undefined) return call.reply(`${action} needs a name.`);
           const existing = Object.hasOwn(jobs, name) ? jobs[name] : undefined;
 
           if (action !== "start" && !existing)
-            return reply(`No ${label} named ${name}.`);
+            return call.reply(`No ${label} named ${name}.`);
 
-          if (action === "stop") {
-            // Drops deliveries still waiting for the screen, then aborts the job's current answer and tools and its
-            // queued messages. It stays usable.
-            await api.commit(async (tx) => {
-              const job = (await tx.doc(Jobs, api.conversationId)).jobs[name];
+          if (action === "stop") return stopJob(call, existing!, name);
 
-              if (job) job.stops = (job.stops ?? 0) + 1;
-            }, callContext);
+          if (message === undefined)
+            return call.reply(`${action} needs a message.`);
 
-            // A delivery admitted before the stop count changed finishes submitting first, so the abort covers it.
-            for (
-              let waited = 0;
-              waited < STOP_WAIT_MS &&
-              Object.values(
-                (await api.snapshot(Jobs, api.conversationId, callContext))
-                  ?.jobs[name]?.deliveries ?? {},
-              ).includes("submitting");
-              waited += STOP_POLL_MS
-            )
-              await awaitWithContext(
-                new Promise((resolve) => setTimeout(resolve, STOP_POLL_MS)),
-                callContext,
-              );
-
-            await (await api.conversation(
-              existing!.conversationId,
-              callContext,
-            ))!.abort(callContext);
-
-            return reply(`Stopped ${name}.`, {
-              name,
-              conversationId: existing!.conversationId,
-              status: "idle",
-            });
-          }
-
-          if (message === undefined) return reply(`${action} needs a message.`);
-
-          const result = await api.commit(async (tx) => {
-            const state = await tx.doc(Jobs, api.conversationId);
-
-            // Both tasks belong to the bot's chat and are background: its Esc and idle waits skip them.
-            const background = {
-              ownership: { kind: "conversation" },
-              background: true,
-            } as const;
-
-            if (action === "start") {
-              if (Object.hasOwn(state.jobs, name))
-                return {
-                  text: `${name} already exists; use send.`,
-                  found: undefined,
-                };
-
-              const anchor = await tx.createTask(Anchor, null, background);
-
-              // Starts as a copy of the bot's agent, then keeps only the job's own tools. Selecting exactly the job
-              // extension also drops the bot's other tools, hooks, and prompt sections, so a job can neither start
-              // jobs nor delegate, schedule, or reach integrations.
-              const child = await tx.createConversation({
-                ownership: { kind: "task", taskId: anchor },
-              });
-
-              await configure(tx, child.id, {
-                extensions: [job],
-                tools: null,
-                modelTools: null,
-                instructions: options.instructions,
-                cwd: WORKSPACE_PATH,
-                ...(input.model && { model: input.model }),
-              });
-              (await tx.doc(Marker, child.id)).job = true;
-              state.jobs[name] = { conversationId: child.id, reported: [] };
-            }
-
-            const record = state.jobs[name]!;
-            const conversationId = record.conversationId;
-
-            const reporter = await tx.createTask(
-              Reporter,
-              {
-                agentId,
-                name,
-                conversationId,
-                message,
-                followUp: action === "send" && followUp === true,
-                stops: record.stops ?? 0,
-              },
-              background,
-            );
-
-            record.deliveries = {
-              ...record.deliveries,
-              [String(reporter)]: "waiting",
-            };
-
-            return {
-              text: action === "send" ? `Sent to ${name}.` : `Started ${name}.`,
-              found: { name, conversationId, status: "working" as const },
-            };
-          }, callContext);
+          const result = await startOrSend(call, {
+            action,
+            name,
+            message,
+            followUp: args.followUp === true,
+            job,
+            model: input.model,
+          });
 
           // The card shows the started or messaged job, so the turn ends with it, as after `show`.
           return result.found
             ? {
-                ...reply(result.text, result.found),
+                ...call.reply(result.text, result.found),
                 control: { terminate: true },
               }
-            : reply(result.text);
+            : call.reply(result.text);
         },
       });
 

@@ -47,7 +47,7 @@ export function contractArtifacts() {
   return artifacts;
 }
 
-export async function exportBundle(directory?: string) {
+function assertSourcesCommitted() {
   const status = Bun.spawnSync([
     "git",
     "status",
@@ -66,22 +66,17 @@ export async function exportBundle(directory?: string) {
     throw new Error(
       "Commit contract sources and artifacts before exporting a provenance bundle",
     );
+}
 
-  const output = directory
-    ? resolve(directory)
-    : await mkdtemp(join(tmpdir(), "crumble-contract-"));
-
-  const artifacts = contractArtifacts();
+function headCommit() {
   const source = Bun.spawnSync(["git", "rev-parse", "HEAD"]);
 
   if (source.exitCode !== 0) throw new Error(source.stderr.toString());
 
-  const changelog = await Bun.file(
-    new URL("../../../../CHANGELOG.md", import.meta.url),
-  ).text();
+  return source.stdout.toString().trim();
+}
 
-  const version = openAPIDocument().info.version;
-
+export function changelogPayload(changelog: string, version: string) {
   const section = changelog
     .split(`## Contract ${version}\n`)[1]
     ?.split("\n## ")[0];
@@ -89,19 +84,20 @@ export async function exportBundle(directory?: string) {
   if (!section?.trim())
     throw new Error(`Missing CHANGELOG.md section: Contract ${version}`);
 
-  artifacts["CHANGELOG.md"] = `# Contract ${version}\n\n${section.trim()}\n`;
-  artifacts["source-commit.txt"] = `${source.stdout.toString().trim()}\n`;
+  return `# Contract ${version}\n\n${section.trim()}\n`;
+}
 
-  const checksums = Object.entries(artifacts)
+export function checksumManifest(artifacts: ContractArtifacts) {
+  return Object.entries(artifacts)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(
       ([name, content]) =>
         `${createHash("sha256").update(content).digest("hex")}  ${name}\n`,
     )
     .join("");
+}
 
-  artifacts["SHA256SUMS"] = checksums;
-
+async function writeBundle(output: string, artifacts: ContractArtifacts) {
   for (const name of Object.keys(artifacts)) {
     const target = join(output, name);
 
@@ -112,7 +108,29 @@ export async function exportBundle(directory?: string) {
   for (const [name, content] of Object.entries(artifacts)) {
     await Bun.write(join(output, name), content);
   }
+}
 
+export async function exportBundle(directory?: string) {
+  assertSourcesCommitted();
+
+  const output = directory
+    ? resolve(directory)
+    : await mkdtemp(join(tmpdir(), "crumble-contract-"));
+
+  const artifacts = contractArtifacts();
+  const commit = headCommit();
+
+  const changelog = await Bun.file(
+    new URL("../../../../CHANGELOG.md", import.meta.url),
+  ).text();
+
+  const version = openAPIDocument().info.version;
+
+  artifacts["CHANGELOG.md"] = changelogPayload(changelog, version);
+  artifacts["source-commit.txt"] = `${commit}\n`;
+  artifacts["SHA256SUMS"] = checksumManifest(artifacts);
+
+  await writeBundle(output, artifacts);
   console.log(output);
 
   return output;

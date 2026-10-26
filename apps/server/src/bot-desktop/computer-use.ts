@@ -249,6 +249,11 @@ const messageOf = (reply: DriverReply) =>
     reply.error?.message,
   ].find(Boolean);
 
+const textResult = (value: string, isError = false): ComputerUseResult => ({
+  content: [{ type: "text", text: value }],
+  isError,
+});
+
 /** Normalizes placeholder arguments: some models (gpt-6-luna) fill every optional field with 0, "", or [0, 0]. */
 function normalize(raw: ComputerUseArgs): ComputerUseArgs {
   const args = { ...raw };
@@ -284,6 +289,16 @@ type Acted = { reply: DriverReply; route: "background" | "foreground" };
 
 /** An action the tool refused before reaching cua-driver, such as a missing argument. */
 type Invalid = { invalid: string };
+
+/** One action's arguments and the window it acts on. */
+type ActionCall = {
+  args: ComputerUseArgs;
+  base: DriverArgs;
+  target: Window;
+  context: Context;
+};
+
+type Action = (call: ActionCall) => Acted | Invalid | Promise<Acted | Invalid>;
 
 type Pointer = { element_token: string } | { x: number; y: number };
 
@@ -457,6 +472,51 @@ export function createComputerUse(shell: DesktopShell, gate?: ControlGate) {
     return { text: parts.filter(Boolean).join(" | "), error: Boolean(code) };
   }
 
+  /** The window's tree, compacted and cut to fit this tool's result. */
+  function treeOf(reply: DriverReply) {
+    const tree = compact(reply.tree_diff ?? reply.tree_markdown ?? "");
+
+    return tree.length > MAX_TREE_CHARS
+      ? `${tree.slice(0, MAX_TREE_CHARS)}\n[tree cut at ${MAX_TREE_CHARS} characters; scroll or capture a smaller window]`
+      : tree;
+  }
+
+  const otherWindows = (target: Window, list: Window[]) =>
+    list.flatMap((each) =>
+      each.window_id === target.window_id
+        ? []
+        : [`${each.window_id} ${each.app_name} "${each.title}"`],
+    );
+
+  function headerOf(
+    target: Window,
+    reply: DriverReply,
+    since: string | undefined,
+    others: string[],
+  ) {
+    return [
+      `window ${target.window_id} ${target.app_name} "${target.title}" (snapshot ${reply.snapshot_id ?? "none"}${since ? `, changes since ${since}` : ""})`,
+      others.length ? `other windows: ${others.join("; ")}` : undefined,
+      reply.degraded ? `degraded: ${reply.degraded_reason ?? ""}` : undefined,
+      reply.truncated
+        ? "tree truncated: capture with full=true or narrow the window"
+        : undefined,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  const screenshotOf = (
+    reply: DriverReply,
+    image: string,
+  ): (TextContent | ImageContent)[] => [
+    {
+      type: "text",
+      text: `screenshot ${reply.screenshot_width ?? "?"}x${reply.screenshot_height ?? "?"}, coordinates are pixels of this image`,
+    },
+    { type: "image", data: image, mimeType: "image/jpeg" },
+  ];
+
   async function capture(
     target: Window,
     mode: string,
@@ -490,38 +550,14 @@ export function createComputerUse(shell: DesktopShell, gate?: ControlGate) {
 
     if (reply.snapshot_id) snapshots.set(target.window_id, reply.snapshot_id);
 
-    const others = (await windows(context))
-      .filter((each) => each.window_id !== target.window_id)
-      .map((each) => `${each.window_id} ${each.app_name} "${each.title}"`);
-
-    let tree = compact(reply.tree_diff ?? reply.tree_markdown ?? "");
-
-    if (tree.length > MAX_TREE_CHARS)
-      tree = `${tree.slice(0, MAX_TREE_CHARS)}\n[tree cut at ${MAX_TREE_CHARS} characters; scroll or capture a smaller window]`;
-
-    const header = [
-      `window ${target.window_id} ${target.app_name} "${target.title}" (snapshot ${reply.snapshot_id ?? "none"}${since ? `, changes since ${since}` : ""})`,
-      others.length ? `other windows: ${others.join("; ")}` : undefined,
-      reply.degraded ? `degraded: ${reply.degraded_reason ?? ""}` : undefined,
-      reply.truncated
-        ? "tree truncated: capture with full=true or narrow the window"
-        : undefined,
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const others = otherWindows(target, await windows(context));
+    const header = headerOf(target, reply, since, others);
 
     const content: (TextContent | ImageContent)[] = [
-      { type: "text", text: `${header}\n${tree}` },
+      { type: "text", text: `${header}\n${treeOf(reply)}` },
     ];
 
-    if (image)
-      content.push(
-        {
-          type: "text",
-          text: `screenshot ${reply.screenshot_width ?? "?"}x${reply.screenshot_height ?? "?"}, coordinates are pixels of this image`,
-        },
-        { type: "image", data: image, mimeType: "image/jpeg" },
-      );
+    if (image) content.push(...screenshotOf(reply, image));
 
     return content;
   }
@@ -547,146 +583,201 @@ export function createComputerUse(shell: DesktopShell, gate?: ControlGate) {
     return x === undefined || y === undefined ? undefined : { x, y };
   };
 
+  function pair(coordinates?: number[]): [number, number] | undefined {
+    const [x, y] = coordinates ?? [];
+
+    return x === undefined || y === undefined ? undefined : [x, y];
+  }
+
+  async function focusWindow({ base, context }: ActionCall): Promise<Acted> {
+    return {
+      reply: (await driver("bring_to_front", base, context)).reply,
+      route: "foreground",
+    };
+  }
+
+  function click(action: string, { args, base, target, context }: ActionCall) {
+    const at = pointer(target, args);
+
+    if (!at) return { invalid: `${action} needs element or coordinate` };
+
+    return act(action, { ...base, ...at }, context);
+  }
+
+  function drag({ args, base, context }: ActionCall) {
+    const from = pair(args.from_coordinate);
+    const to = pair(args.to_coordinate);
+
+    if (!from || !to)
+      return { invalid: "drag needs from_coordinate and to_coordinate" };
+
+    return act(
+      "drag",
+      { ...base, from_x: from[0], from_y: from[1], to_x: to[0], to_y: to[1] },
+      context,
+    );
+  }
+
+  function scroll({ args, base, target, context }: ActionCall) {
+    return act(
+      "scroll",
+      {
+        ...base,
+        ...pointer(target, args),
+        direction: args.direction ?? "down",
+        amount: args.amount ?? 3,
+      },
+      context,
+    );
+  }
+
+  function typeText({ args, base, target, context }: ActionCall) {
+    if (args.text === undefined) return { invalid: "type needs text" };
+
+    return act(
+      "type_text",
+      {
+        ...base,
+        ...(args.element !== undefined && {
+          element_token: tokenFor(target, args.element),
+        }),
+        text: args.text,
+      },
+      context,
+    );
+  }
+
+  function pressKey({ args, base, context }: ActionCall) {
+    if (!args.keys) return { invalid: "key needs keys" };
+
+    const keys = args.keys.split("+").map((key) => key.trim().toLowerCase());
+
+    return keys.length > 1
+      ? act("hotkey", { ...base, keys }, context)
+      : act("press_key", { ...base, key: keys[0] ?? "" }, context);
+  }
+
+  function setValue({ args, base, target, context }: ActionCall) {
+    if (args.element === undefined || args.value === undefined)
+      return { invalid: "set_value needs element and value" };
+
+    return act(
+      "set_value",
+      {
+        ...base,
+        element_token: tokenFor(target, args.element),
+        value: args.value,
+      },
+      context,
+    );
+  }
+
+  const ACTIONS = new Map<string, Action>([
+    ["focus_window", focusWindow],
+    ["click", (call) => click("click", call)],
+    ["double_click", (call) => click("double_click", call)],
+    ["right_click", (call) => click("right_click", call)],
+    ["drag", drag],
+    ["scroll", scroll],
+    ["type", typeText],
+    ["key", pressKey],
+    ["set_value", setValue],
+  ]);
+
   async function perform(
     args: ComputerUseArgs,
     target: Window,
     context: Context,
   ): Promise<Acted | Invalid> {
     const base = { pid: target.pid, window_id: target.window_id };
+    const action = ACTIONS.get(args.action);
 
-    switch (args.action) {
-      case "focus_window":
-        return {
-          reply: (await driver("bring_to_front", base, context)).reply,
-          route: "foreground",
-        };
-      case "click":
-      case "double_click":
-      case "right_click": {
-        const at = pointer(target, args);
+    if (!action) return { invalid: `unknown action ${args.action}` };
 
-        if (!at)
-          return { invalid: `${args.action} needs element or coordinate` };
+    return action({ args, base, target, context });
+  }
 
-        return act(args.action, { ...base, ...at }, context);
-      }
+  /** Waits for the bot's turn; returns the refusal for a plan made before a handover. */
+  async function controlTurn(
+    action: string,
+    context: Context,
+  ): Promise<string | undefined> {
+    if (!gate) return undefined;
 
-      case "drag": {
-        const [fromX, fromY] = args.from_coordinate ?? [];
-        const [toX, toY] = args.to_coordinate ?? [];
+    // A paused job waits here, without a time limit, while the owner has control.
+    const state = await gate.untilBot(context);
 
-        if (
-          fromX === undefined ||
-          fromY === undefined ||
-          toX === undefined ||
-          toY === undefined
-        )
-          return { invalid: "drag needs from_coordinate and to_coordinate" };
+    const changed = lastChanges !== undefined && state.changes !== lastChanges;
 
-        return act(
-          "drag",
-          { ...base, from_x: fromX, from_y: fromY, to_x: toX, to_y: toY },
-          context,
-        );
-      }
+    lastChanges = state.changes;
 
-      case "scroll":
-        return act(
-          "scroll",
-          {
-            ...base,
-            ...pointer(target, args),
-            direction: args.direction ?? "down",
-            amount: args.amount ?? 3,
-          },
-          context,
-        );
-      case "type":
-        if (args.text === undefined) return { invalid: "type needs text" };
+    if (!changed) return undefined;
 
-        return act(
-          "type_text",
-          {
-            ...base,
-            ...(args.element !== undefined && {
-              element_token: tokenFor(target, args.element),
-            }),
-            text: args.text,
-          },
-          context,
-        );
-      case "key": {
-        if (!args.keys) return { invalid: "key needs keys" };
+    snapshots.clear();
 
-        const keys = args.keys
-          .split("+")
-          .map((key) => key.trim().toLowerCase());
+    return OBSERVE.has(action) ? undefined : STALE;
+  }
 
-        return keys.length > 1
-          ? act("hotkey", { ...base, keys }, context)
-          : act("press_key", { ...base, key: keys[0] ?? "" }, context);
-      }
+  async function listing(context: Context) {
+    const lines = (await windows(context)).map(
+      (each) => `${each.window_id} ${each.app_name} "${each.title}"`,
+    );
 
-      case "set_value":
-        if (args.element === undefined || args.value === undefined)
-          return { invalid: "set_value needs element and value" };
+    return lines.join("\n") || "no windows";
+  }
 
-        return act(
-          "set_value",
-          {
-            ...base,
-            element_token: tokenFor(target, args.element),
-            value: args.value,
-          },
-          context,
-        );
-      default:
-        return { invalid: `unknown action ${args.action}` };
-    }
+  async function pause(seconds?: number) {
+    const bounded = Math.min(Math.max(seconds ?? 1, 0), 30);
+
+    await new Promise((resolve) => setTimeout(resolve, bounded * 1000));
+
+    return bounded;
+  }
+
+  /** Runs one action, then reports its verdict and, on request, a fresh capture. */
+  async function actAndReport(
+    args: ComputerUseArgs,
+    window: Window,
+    context: Context,
+  ): Promise<ComputerUseResult> {
+    const acted = await perform(args, window, context);
+
+    if ("invalid" in acted) return textResult(acted.invalid, true);
+
+    const { text: summary, error } = verdict(acted);
+
+    const after =
+      args.capture_after && !error
+        ? await capture(
+            await target(args.window_id, context),
+            "ax",
+            false,
+            context,
+          )
+        : [];
+
+    return {
+      content: [{ type: "text", text: summary }, ...after],
+      isError: error,
+    };
   }
 
   async function run(
     raw: ComputerUseArgs,
     context: Context,
   ): Promise<ComputerUseResult> {
-    const text = (value: string, isError = false): ComputerUseResult => ({
-      content: [{ type: "text", text: value }],
-      isError,
-    });
+    const stale = await controlTurn(raw.action, context);
 
-    if (gate) {
-      // A paused job waits here, without a time limit, while the owner has control.
-      const state = await gate.untilBot(context);
-
-      const changed =
-        lastChanges !== undefined && state.changes !== lastChanges;
-
-      lastChanges = state.changes;
-
-      if (changed) {
-        snapshots.clear();
-
-        if (!OBSERVE.has(raw.action)) return text(STALE, true);
-      }
-    }
+    if (stale) return textResult(stale, true);
 
     const args = normalize(raw);
 
     try {
       if (args.action === "list_windows")
-        return text(
-          (await windows(context))
-            .map((each) => `${each.window_id} ${each.app_name} "${each.title}"`)
-            .join("\n") || "no windows",
-        );
+        return textResult(await listing(context));
 
-      if (args.action === "wait") {
-        const seconds = Math.min(Math.max(args.seconds ?? 1, 0), 30);
-
-        await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
-
-        return text(`waited ${seconds}s`);
-      }
+      if (args.action === "wait")
+        return textResult(`waited ${await pause(args.seconds)}s`);
 
       const window = await target(args.window_id, context);
 
@@ -701,28 +792,9 @@ export function createComputerUse(shell: DesktopShell, gate?: ControlGate) {
           isError: false,
         };
 
-      const acted = await perform(args, window, context);
-
-      if ("invalid" in acted) return text(acted.invalid, true);
-
-      const { text: summary, error } = verdict(acted);
-
-      const after =
-        args.capture_after && !error
-          ? await capture(
-              await target(args.window_id, context),
-              "ax",
-              false,
-              context,
-            )
-          : [];
-
-      return {
-        content: [{ type: "text", text: summary }, ...after],
-        isError: error,
-      };
+      return await actAndReport(args, window, context);
     } catch (error) {
-      return text(
+      return textResult(
         `error: ${error instanceof Error ? error.message : String(error)}`,
         true,
       );

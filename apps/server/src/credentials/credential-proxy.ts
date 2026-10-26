@@ -66,7 +66,22 @@ function replacing(pairs: ReadonlyArray<readonly [string, string]>) {
   });
 }
 
-const requestHeaders = (
+const swappedHeaderValue = (
+  key: string,
+  value: string,
+  swap: (text: string) => string,
+) => {
+  const basic = key === "authorization" && /^basic\s+(\S+)$/i.exec(value);
+
+  if (!basic) return swap(value);
+
+  const decoded = Buffer.from(basic[1]!, "base64").toString("utf8");
+
+  return `Basic ${Buffer.from(swap(decoded)).toString("base64")}`;
+};
+
+/** The headers towards the upstream server, with credentials swapped in and hop-by-hop headers dropped. */
+export const requestHeaders = (
   rawHeaders: string[],
   swap: (text: string) => string,
 ) => {
@@ -74,23 +89,23 @@ const requestHeaders = (
 
   for (let index = 0; index < rawHeaders.length; index += 2) {
     const key = rawHeaders[index]!.toLowerCase();
-    const value = rawHeaders[index + 1]!;
 
     if (HOP_BY_HOP.has(key)) continue;
 
-    const basic = key === "authorization" && /^basic\s+(\S+)$/i.exec(value);
-
-    const swapped = basic
-      ? `Basic ${Buffer.from(swap(Buffer.from(basic[1]!, "base64").toString("utf8"))).toString("base64")}`
-      : swap(value);
-
-    (headers[key] ??= []).push(swapped);
+    (headers[key] ??= []).push(
+      swappedHeaderValue(key, rawHeaders[index + 1]!, swap),
+    );
   }
 
   return headers;
 };
 
-const responseHeaders = (
+// A scrubbed body can change length; Node frames it anew.
+const forwardable = (key: string, scrubbing: boolean) =>
+  !HOP_BY_HOP.has(key) && !(scrubbing && key === "content-length");
+
+/** The headers towards the workspace, with credential values scrubbed and hop-by-hop headers dropped. */
+export const responseHeaders = (
   rawHeaders: string[],
   scrubbing: boolean,
   scrubText: (text: string) => string,
@@ -100,9 +115,7 @@ const responseHeaders = (
   for (let index = 0; index < rawHeaders.length; index += 2) {
     const key = rawHeaders[index]!.toLowerCase();
 
-    // A scrubbed body can change length; Node frames it anew.
-    if (HOP_BY_HOP.has(key) || (scrubbing && key === "content-length"))
-      continue;
+    if (!forwardable(key, scrubbing)) continue;
     (headers[key] ??= []).push(scrubText(rawHeaders[index + 1]!));
   }
 

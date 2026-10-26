@@ -48,6 +48,35 @@ test("capture returns the focused window's tree, then a diff", async () => {
   ).toMatchObject({ since: "s1" });
 });
 
+test("a long tree is cut, and a refused capture reports cua-driver's reason", async () => {
+  const { shell } = scriptedGuest({
+    list_windows: [windows],
+    get_window_state: [
+      {
+        snapshot_id: "s1",
+        tree_markdown: `- [0] frame "Form" ${"x".repeat(13_000)}`,
+        truncated: true,
+      },
+      {
+        status: "refused",
+        refusal: { code: "window_gone", message: "window 101 closed" },
+      },
+    ],
+  });
+
+  const tool = createComputerUse(shell);
+
+  const first = await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+
+  expect(text(first)).toContain("[tree cut at 12000 characters");
+  expect(text(first)).toContain("tree truncated: capture with full=true");
+
+  const second = await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+
+  expect(second.isError).toBe(false);
+  expect(text(second)).toBe("capture failed: window 101 closed");
+});
+
 test("input tries background first, then foreground when cua-driver asks for it", async () => {
   const { shell, calls } = scriptedGuest({
     list_windows: [windows],
@@ -290,6 +319,104 @@ test("a failed window listing reports cua-driver's error, not an empty desktop",
 
   expect(result.isError).toBe(true);
   expect(text(result)).toContain("cua-driver daemon is not running");
+});
+
+test("each input action reaches cua-driver with its own arguments", async () => {
+  const { shell, calls } = scriptedGuest({ list_windows: [windows] });
+  const tool = createComputerUse(shell);
+
+  await tool.run({ action: "click", coordinate: [10, 20] }, BACKGROUND_CONTEXT);
+
+  await tool.run(
+    {
+      action: "drag",
+      from_coordinate: [1, 2],
+      to_coordinate: [3, 4],
+    },
+    BACKGROUND_CONTEXT,
+  );
+
+  await tool.run(
+    { action: "scroll", coordinate: [5, 6], direction: "up", amount: 2 },
+    BACKGROUND_CONTEXT,
+  );
+
+  await tool.run({ action: "key", keys: "ctrl+l" }, BACKGROUND_CONTEXT);
+  await tool.run({ action: "key", keys: "Return" }, BACKGROUND_CONTEXT);
+  await tool.run({ action: "focus_window" }, BACKGROUND_CONTEXT);
+
+  const argsOf = (name: string) => calls.find((c) => c.tool === name)!.args;
+
+  expect(argsOf("click")).toMatchObject({
+    pid: 7,
+    window_id: 101,
+    x: 10,
+    y: 20,
+  });
+  expect(argsOf("drag")).toMatchObject({
+    from_x: 1,
+    from_y: 2,
+    to_x: 3,
+    to_y: 4,
+  });
+  expect(argsOf("scroll")).toMatchObject({
+    x: 5,
+    y: 6,
+    direction: "up",
+    amount: 2,
+  });
+  expect(argsOf("hotkey")["keys"]).toEqual(["ctrl", "l"]);
+  expect(argsOf("press_key")).toMatchObject({ key: "return" });
+  expect(argsOf("bring_to_front")).toMatchObject({
+    pid: 7,
+    window_id: 101,
+  });
+});
+
+test("capture_after appends a capture of the target window", async () => {
+  const { shell, calls } = scriptedGuest({
+    list_windows: [windows],
+    get_window_state: [{ snapshot_id: "s1", tree_markdown: "- [0] frame" }],
+    click: [{ effect: "confirmed" }],
+  });
+
+  const tool = createComputerUse(shell);
+
+  await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+
+  const result = await tool.run(
+    { action: "click", element: 1, capture_after: true },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(result.isError).toBe(false);
+  expect(text(result)).toContain("window 101 Chromium");
+  expect(calls.filter((c) => c.tool === "get_window_state")).toHaveLength(2);
+});
+
+test("an unknown action is refused with its name", async () => {
+  const { shell, calls } = scriptedGuest({ list_windows: [windows] });
+
+  const result = await createComputerUse(shell).run(
+    { action: "hover" },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(result.isError).toBe(true);
+  expect(text(result)).toBe("unknown action hover");
+  expect(calls.some((c) => c.tool !== "list_windows")).toBe(false);
+});
+
+test("wait pauses for the given seconds and reports them", async () => {
+  const { shell } = scriptedGuest({});
+
+  const result = await createComputerUse(shell).run(
+    { action: "wait", seconds: 0.01 },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(result.isError).toBe(false);
+  expect(text(result)).toBe("waited 0.01s");
 });
 
 /** A control lease the test hands between bot and owner. */

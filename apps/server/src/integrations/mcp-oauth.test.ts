@@ -28,71 +28,106 @@ afterEach(() => {
   while (cleanups.length) cleanups.pop()!();
 });
 
+/** One endpoint of the fake server: when it answers a request, and with what. */
+type Route = {
+  matches: (url: URL, request: Request) => boolean;
+  respond: (url: URL, request: Request) => Response | Promise<Response>;
+};
+
 /** An MCP server's OAuth side: resource metadata, authorization server metadata, registration and tokens. */
 function fakeAuthorizationServer({ issParameter = false } = {}) {
   const tokenRequests: URLSearchParams[] = [];
   let refreshRefused = false;
 
+  const resourceMetadata = (url: URL) =>
+    Response.json({
+      resource: `${url.origin}/mcp`,
+      authorization_servers: [url.origin],
+    });
+
+  const authorizationServerMetadata = (url: URL) =>
+    Response.json({
+      issuer: url.origin,
+      authorization_endpoint: `${url.origin}/authorize`,
+      token_endpoint: `${url.origin}/token`,
+      registration_endpoint: `${url.origin}/register`,
+      response_types_supported: ["code"],
+      grant_types_supported: ["authorization_code", "refresh_token"],
+      code_challenge_methods_supported: ["S256"],
+      token_endpoint_auth_methods_supported: ["none"],
+      authorization_response_iss_parameter_supported: issParameter,
+    });
+
+  const register = async (request: Request) =>
+    Response.json(
+      {
+        // SAFETY: Registration JSON is an object according to the OAuth protocol.
+        ...((await request.json()) as OAuthRegistration),
+        client_id: "crumble-client",
+      },
+      { status: 201 },
+    );
+
+  const token = async (request: Request) => {
+    const params = new URLSearchParams(await request.text());
+    tokenRequests.push(params);
+
+    if (refreshRefused && params.get("grant_type") === "refresh_token")
+      return Response.json({ error: "invalid_grant" }, { status: 400 });
+
+    return Response.json({
+      access_token: `access-${tokenRequests.length}`,
+      token_type: "Bearer",
+      refresh_token: "refresh-1",
+      expires_in: 3600,
+    });
+  };
+
+  // The MCP endpoint refuses every token, as it would once a sign-in has lapsed.
+  const unauthorized = (url: URL) =>
+    new Response("unauthorized", {
+      status: 401,
+      headers: {
+        "WWW-Authenticate": `Bearer resource_metadata="${url.origin}/.well-known/oauth-protected-resource/mcp"`,
+      },
+    });
+
+  const routes: readonly Route[] = [
+    {
+      matches: (url) =>
+        url.pathname.startsWith("/.well-known/oauth-protected-resource"),
+      respond: (url) => resourceMetadata(url),
+    },
+    {
+      matches: (url) =>
+        url.pathname === "/.well-known/oauth-authorization-server",
+      respond: (url) => authorizationServerMetadata(url),
+    },
+    {
+      matches: (url, request) =>
+        url.pathname === "/register" && request.method === "POST",
+      respond: (_url, request) => register(request),
+    },
+    {
+      matches: (url, request) =>
+        url.pathname === "/token" && request.method === "POST",
+      respond: (_url, request) => token(request),
+    },
+    {
+      matches: (url) => url.pathname === "/mcp",
+      respond: (url) => unauthorized(url),
+    },
+  ];
+
   const server = Bun.serve({
     port: 0,
     async fetch(request) {
       const url = new URL(request.url);
-      const origin = url.origin;
+      const route = routes.find((candidate) => candidate.matches(url, request));
 
-      if (url.pathname.startsWith("/.well-known/oauth-protected-resource"))
-        return Response.json({
-          resource: `${origin}/mcp`,
-          authorization_servers: [origin],
-        });
-
-      if (url.pathname === "/.well-known/oauth-authorization-server")
-        return Response.json({
-          issuer: origin,
-          authorization_endpoint: `${origin}/authorize`,
-          token_endpoint: `${origin}/token`,
-          registration_endpoint: `${origin}/register`,
-          response_types_supported: ["code"],
-          grant_types_supported: ["authorization_code", "refresh_token"],
-          code_challenge_methods_supported: ["S256"],
-          token_endpoint_auth_methods_supported: ["none"],
-          authorization_response_iss_parameter_supported: issParameter,
-        });
-
-      if (url.pathname === "/register" && request.method === "POST")
-        return Response.json(
-          {
-            // SAFETY: Registration JSON is an object according to the OAuth protocol.
-            ...((await request.json()) as OAuthRegistration),
-            client_id: "crumble-client",
-          },
-          { status: 201 },
-        );
-
-      if (url.pathname === "/token" && request.method === "POST") {
-        const params = new URLSearchParams(await request.text());
-        tokenRequests.push(params);
-
-        if (refreshRefused && params.get("grant_type") === "refresh_token")
-          return Response.json({ error: "invalid_grant" }, { status: 400 });
-
-        return Response.json({
-          access_token: `access-${tokenRequests.length}`,
-          token_type: "Bearer",
-          refresh_token: "refresh-1",
-          expires_in: 3600,
-        });
-      }
-
-      // The MCP endpoint refuses every token, as it would once a sign-in has lapsed.
-      if (url.pathname === "/mcp")
-        return new Response("unauthorized", {
-          status: 401,
-          headers: {
-            "WWW-Authenticate": `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`,
-          },
-        });
-
-      return new Response("not found", { status: 404 });
+      return route
+        ? await route.respond(url, request)
+        : new Response("not found", { status: 404 });
     },
   });
 

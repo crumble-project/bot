@@ -88,10 +88,14 @@ export type TenantRuntime = {
   close: () => Promise<void>;
 };
 
+function isHttpsOrigin(url: URL) {
+  return url.protocol === "https:" && !url.search && !url.hash;
+}
+
 function httpsUrl(value: string) {
   const url = URL.canParse(value) ? new URL(value) : undefined;
 
-  if (url?.protocol !== "https:" || url.search || url.hash)
+  if (!url || !isHttpsOrigin(url))
     throw new Error(
       `publicUrl must be an https address without a query: ${value}`,
     );

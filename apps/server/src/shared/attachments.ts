@@ -58,6 +58,40 @@ export function attachmentKind(
   return null;
 }
 
+function attachmentBytes(item: AttachmentInput, kind: AttachmentInfo["kind"]) {
+  const bytes = Buffer.from(item.data, "base64");
+  const limit = kind === "image" ? MAX_IMAGE_BYTES : MAX_TEXT_BYTES;
+
+  if (bytes.length > limit)
+    throw new InvalidInput({
+      message: `${item.name} is larger than ${limit / 1024 / 1024 >= 1 ? `${limit / 1024 / 1024} MB` : `${limit / 1024} KB`}`,
+    });
+
+  return bytes;
+}
+
+function decodeText(item: AttachmentInput, bytes: Buffer) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new InvalidInput({ message: `${item.name} is not UTF-8 text` });
+  }
+}
+
+function attachmentBlock(
+  item: AttachmentInput,
+  bytes: Buffer,
+  kind: AttachmentInfo["kind"],
+): TextContent | ImageContent {
+  if (kind === "image")
+    return { type: "image", data: item.data, mimeType: item.mimeType };
+
+  return {
+    type: "text",
+    text: `<attachment name=${JSON.stringify(item.name)}>\n${decodeText(item, bytes)}\n</attachment>`,
+  };
+}
+
 /**
  * Turns uploads into model content: images as image blocks, text files as named text blocks.
  * Rejects types the models cannot read, oversized files, and text that is not UTF-8.
@@ -73,31 +107,10 @@ export function prepareAttachments(items: AttachmentInput[]) {
       throw new InvalidInput({
         message: `${item.name}: only images (PNG, JPEG, GIF, WebP) and text files can be attached`,
       });
-    const bytes = Buffer.from(item.data, "base64");
-    const limit = kind === "image" ? MAX_IMAGE_BYTES : MAX_TEXT_BYTES;
 
-    if (bytes.length > limit)
-      throw new InvalidInput({
-        message: `${item.name} is larger than ${limit / 1024 / 1024 >= 1 ? `${limit / 1024 / 1024} MB` : `${limit / 1024} KB`}`,
-      });
+    const bytes = attachmentBytes(item, kind);
 
-    if (kind === "image") {
-      blocks.push({ type: "image", data: item.data, mimeType: item.mimeType });
-    } else {
-      let text: string;
-
-      try {
-        text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      } catch {
-        throw new InvalidInput({ message: `${item.name} is not UTF-8 text` });
-      }
-
-      blocks.push({
-        type: "text",
-        text: `<attachment name=${JSON.stringify(item.name)}>\n${text}\n</attachment>`,
-      });
-    }
-
+    blocks.push(attachmentBlock(item, bytes, kind));
     info.push({
       name: item.name,
       mimeType: item.mimeType,

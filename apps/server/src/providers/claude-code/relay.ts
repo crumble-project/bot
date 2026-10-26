@@ -917,21 +917,19 @@ const INVALID_JSON_MESSAGES = [
   "Failed to parse request: could not parse request body as JSON",
 ];
 
+// The message prefix counts only in a full Anthropic error envelope.
+const invalidJsonEnvelope = ({ type, error }: z.infer<typeof anthropicError>) =>
+  type === "error" &&
+  error.type !== undefined &&
+  INVALID_JSON_MESSAGES.some((prefix) => error.message?.startsWith(prefix));
+
 function originBadJson(raw: z.input<typeof anthropicError>) {
   const go = goError.safeParse(raw);
 
   if (go.success) return GO_BAD_JSON.test(go.data.error);
   const parsed = anthropicError.safeParse(raw);
 
-  if (!parsed.success) return false;
-  const { type, error } = parsed.data;
-
-  // The message prefix counts only in a full Anthropic error envelope.
-  return (
-    type === "error" &&
-    error.type !== undefined &&
-    INVALID_JSON_MESSAGES.some((prefix) => error.message?.startsWith(prefix))
-  );
+  return parsed.success && invalidJsonEnvelope(parsed.data);
 }
 
 const encodingUnsupported = (raw: z.input<typeof anthropicError>) => {
@@ -946,12 +944,12 @@ const encodingUnsupported = (raw: z.input<typeof anthropicError>) => {
   );
 };
 
+const fromAnthropic = (headers: Headers) =>
+  (headers.get("request-id") ?? "").startsWith("req_") ||
+  Boolean(headers.get("cf-ray"));
+
 function headerRejection(status: number, headers: Headers) {
-  if (
-    !(headers.get("request-id") ?? "").startsWith("req_") &&
-    !headers.get("cf-ray")
-  )
-    return "non_anthropic_rejection";
+  if (!fromAnthropic(headers)) return "non_anthropic_rejection";
 
   return status === 415 ? "unsupported_encoding" : undefined;
 }

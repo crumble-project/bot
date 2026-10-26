@@ -240,39 +240,53 @@ export class Scheduler extends Context.Service<
           );
         });
 
+        const advancing = Effect.fnUntraced(function* (
+          schedule: Schedule,
+          now: Date,
+        ) {
+          const latest = yield* schedules.get(schedule.id);
+
+          if (!latest) return;
+
+          yield* schedules.updateNextRunAt(
+            schedule.id,
+            latest.cron
+              ? nextOccurrence(latest.cron, latest.timezone, now)
+              : null,
+          );
+        });
+
+        const passOne = Effect.fnUntraced(function* (
+          schedule: Schedule,
+          now: Date,
+        ) {
+          if (
+            !schedule.enabled ||
+            !schedule.nextRunAt ||
+            !(yield* agents.get(schedule.agentId))?.enabled
+          )
+            return;
+          const due = new Date(schedule.nextRunAt);
+
+          if (Number.isNaN(due.valueOf()) || due > now) return;
+          const key = `schedule:${schedule.id}:${due.toISOString()}`;
+          const failedAt = failed.get(key);
+
+          if (
+            (failedAt !== undefined &&
+              now.valueOf() - failedAt < RETRY_AFTER_MS) ||
+            inFlight.has(schedule.id)
+          )
+            return;
+
+          if (!(yield* dispatchOnce(schedule, key, now.valueOf()))) return;
+
+          yield* advancing(schedule, now);
+        });
+
         const pass = Effect.fnUntraced(function* (now: Date) {
-          for (const schedule of yield* schedules.list()) {
-            if (
-              !schedule.enabled ||
-              !schedule.nextRunAt ||
-              !(yield* agents.get(schedule.agentId))?.enabled
-            )
-              continue;
-            const due = new Date(schedule.nextRunAt);
-
-            if (Number.isNaN(due.valueOf()) || due > now) continue;
-            const key = `schedule:${schedule.id}:${due.toISOString()}`;
-            const failedAt = failed.get(key);
-
-            if (
-              (failedAt !== undefined &&
-                now.valueOf() - failedAt < RETRY_AFTER_MS) ||
-              inFlight.has(schedule.id)
-            )
-              continue;
-
-            if (!(yield* dispatchOnce(schedule, key, now.valueOf()))) continue;
-            const latest = yield* schedules.get(schedule.id);
-
-            if (!latest) continue;
-
-            yield* schedules.updateNextRunAt(
-              schedule.id,
-              latest.cron
-                ? nextOccurrence(latest.cron, latest.timezone, now)
-                : null,
-            );
-          }
+          for (const schedule of yield* schedules.list())
+            yield* passOne(schedule, now);
         });
 
         const tick = Effect.fn("Scheduler.tick")(function* (now?: Date) {

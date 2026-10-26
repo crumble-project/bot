@@ -10,9 +10,55 @@ import {
   CLIENT_DOCUMENT_PATH,
   clientDocument,
   clientDocumentBody,
+  type ClientDocument,
 } from "../integrations/mcp-oauth";
 import type { Effect, Scope } from "effect";
 import type { Workspaces } from "../workspaces/workspace";
+
+const TENANT_PREFIXES = ["/v1/", "/desktop-viewer/", "/api/auth/"];
+
+/** The paths the host answers itself, before any account sees the request. */
+function hostedResponse(
+  path: string,
+  oauthClient: ClientDocument | undefined,
+): Response | undefined {
+  if (path === "/health") return Response.json({ status: "ok", apiVersion: 1 });
+
+  if (path === CLIENT_DOCUMENT_PATH)
+    return oauthClient
+      ? Response.json(clientDocumentBody(oauthClient))
+      : new Response("Not found", { status: 404 });
+
+  return undefined;
+}
+
+/** A request from another site, whether by its origin header or the browser's own mark. */
+function untrustedOrigin(
+  request: Request,
+  requestOrigin: string | null,
+  origin: string,
+) {
+  if (request.headers.get("sec-fetch-site") === "cross-site") return true;
+
+  return Boolean(requestOrigin) && requestOrigin !== origin;
+}
+
+function needsOriginForWrite(request: Request, requestOrigin: string | null) {
+  return (
+    !["GET", "HEAD", "OPTIONS"].includes(request.method) &&
+    !requestOrigin &&
+    request.headers.has("cookie") &&
+    !request.headers.has("authorization")
+  );
+}
+
+// A viewer link is its own credential: a web view cannot send the owner's session, so without one the link
+// goes to the account it names. A session keeps it within the session's account.
+function ticketOwnerOf(path: string) {
+  return ticketOwner(
+    /^\/desktop-viewer\/([^/]+)(?:\/websockify)?$/.exec(path)?.[1] ?? "",
+  );
+}
 
 export async function startServer(
   options: {
@@ -127,27 +173,15 @@ export async function startServer(
       async fetch(request, bunServer) {
         await ready;
         const path = new URL(request.url).pathname;
+        const hosted = hostedResponse(path, oauthClient);
 
-        if (path === "/health")
-          return Response.json({ status: "ok", apiVersion: 1 });
+        if (hosted) return hosted;
 
-        if (path === CLIENT_DOCUMENT_PATH)
-          return oauthClient
-            ? Response.json(clientDocumentBody(oauthClient))
-            : new Response("Not found", { status: 404 });
-
-        if (
-          !path.startsWith("/v1/") &&
-          !path.startsWith("/desktop-viewer/") &&
-          !path.startsWith("/api/auth/")
-        )
+        if (!TENANT_PREFIXES.some((prefix) => path.startsWith(prefix)))
           return new Response("Not found", { status: 404 });
         const requestOrigin = request.headers.get("origin");
 
-        if (
-          (requestOrigin && requestOrigin !== origin) ||
-          request.headers.get("sec-fetch-site") === "cross-site"
-        )
+        if (untrustedOrigin(request, requestOrigin, origin))
           return Response.json({ error: "Untrusted origin" }, { status: 403 });
 
         if (path.startsWith("/api/auth/"))
@@ -157,12 +191,7 @@ export async function startServer(
 
         if (novnc) return novnc;
 
-        if (
-          !["GET", "HEAD", "OPTIONS"].includes(request.method) &&
-          !requestOrigin &&
-          request.headers.has("cookie") &&
-          !request.headers.has("authorization")
-        )
+        if (needsOriginForWrite(request, requestOrigin))
           return Response.json(
             { error: "Origin is required for cookie-authenticated writes" },
             { status: 403 },
@@ -172,14 +201,7 @@ export async function startServer(
           headers: request.headers,
         });
 
-        // A viewer link is its own credential: a web view cannot send the owner's session, so without one the link
-        // goes to the account it names. A session keeps it within the session's account.
-        const owner =
-          !session &&
-          ticketOwner(
-            /^\/desktop-viewer\/([^/]+)(?:\/websockify)?$/.exec(path)?.[1] ??
-              "",
-          );
+        const owner = session ? undefined : ticketOwnerOf(path);
 
         if (owner && identity!.hasUser(owner) && !closed) {
           const context = await tenant(owner);

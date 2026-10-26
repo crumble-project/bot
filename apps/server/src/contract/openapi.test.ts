@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import Ajv2020 from "ajv/dist/2020";
 import { openAPIDocument } from "./api-contract";
+import { changelogPayload, checksumManifest } from "./openapi";
 
 describe("exported response and parameter schemas", () => {
   test("nullable resource responses accept null", () => {
@@ -67,5 +68,56 @@ describe("exported response and parameter schemas", () => {
         }
       }
     }
+  });
+});
+
+describe("contract bundle payloads", () => {
+  const changelog = [
+    "# Changelog",
+    "",
+    "## Contract 1.5.0",
+    "",
+    "- Added group chat snapshots",
+    "",
+    "## Contract 1.4.0",
+    "",
+    "- Older release",
+    "",
+  ].join("\n");
+
+  test("wraps the changelog section of the contract version", () => {
+    expect(changelogPayload(changelog, "1.5.0")).toBe(
+      "# Contract 1.5.0\n\n- Added group chat snapshots\n",
+    );
+    expect(changelogPayload(changelog, "1.4.0")).toBe(
+      "# Contract 1.4.0\n\n- Older release\n",
+    );
+  });
+
+  test("rejects a changelog without a section for the contract version", () => {
+    expect(() => changelogPayload(changelog, "1.6.0")).toThrow(
+      "Missing CHANGELOG.md section: Contract 1.6.0",
+    );
+    expect(() =>
+      changelogPayload(
+        "## Contract 1.6.0\n\n\n## Contract 1.5.0\n- x\n",
+        "1.6.0",
+      ),
+    ).toThrow("Missing CHANGELOG.md section: Contract 1.6.0");
+  });
+
+  test("checksums every payload in asset name order", () => {
+    expect(
+      checksumManifest({
+        "openapi.json": "second",
+        "CHANGELOG.md": "first",
+      }),
+    ).toBe(
+      [
+        "a7937b64b8caa58f03721bb6bacf5c78cb235febe0e70b1b84cd99541461a08e  CHANGELOG.md",
+        "16367aacb67a4a017c8da8ab95682ccb390863780f7114dda0a0e0c55644c7c4  openapi.json",
+        "",
+      ].join("\n"),
+    );
   });
 });

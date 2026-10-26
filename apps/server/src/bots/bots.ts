@@ -124,6 +124,8 @@ type Page<K extends keyof AgentRuntime> = AgentRuntime[K] extends (
   ? A
   : never;
 
+type SubmissionOutcome = Awaited<ReturnType<AgentRuntime["wait"]>>;
+
 /** The bots' chats: admission of each input as a durable execution, its outcome, and who hears about it. */
 export class Bots extends Context.Service<
   Bots,
@@ -499,6 +501,51 @@ export class Bots extends Context.Service<
         );
       });
 
+      const outcomeError = (result: SubmissionOutcome) =>
+        result.status === "done"
+          ? null
+          : "detail" in result
+            ? Predicate.isString(result.detail)
+              ? result.detail
+              : result.reason
+            : "The agent could not answer this input";
+
+      const recordFailure = Effect.fnUntraced(function* (
+        execution: Execution,
+        cause: unknown,
+      ) {
+        if (yield* executions.get(execution.id))
+          yield* executions.update(execution.id, {
+            status: "failed",
+            error: String(cause instanceof Error ? cause.message : cause),
+          });
+        yield* changed(execution.conversationId);
+        yield* settled(execution.id);
+      });
+
+      const recordOutcome = Effect.fnUntraced(function* (
+        execution: Execution,
+        result: SubmissionOutcome,
+      ) {
+        const current = yield* executions.get(execution.id);
+
+        if (!current || current.status === "cancelled")
+          return yield* settled(execution.id);
+
+        yield* executions.update(execution.id, {
+          status: result.status === "done" ? "done" : "failed",
+          error: outcomeError(result),
+        });
+        yield* changed(execution.conversationId);
+        yield* settled(execution.id);
+
+        if (result.status === "done" && !isGroupTurn(execution))
+          yield* announceReply(execution).pipe(
+            background("Reply announcement failed", execution.id),
+            Effect.forkIn(scope),
+          );
+      });
+
       /** Waits for a submission's outcome and records it; closing the bots interrupts the wait, never the recording. */
       const monitor = Effect.fnUntraced(function* (
         execution: Execution,
@@ -513,49 +560,9 @@ export class Bots extends Context.Service<
         );
 
         yield* Effect.uninterruptible(
-          Effect.gen(function* () {
-            if (Result.isFailure(outcome)) {
-              if (yield* executions.get(execution.id))
-                yield* executions.update(execution.id, {
-                  status: "failed",
-                  error: String(
-                    outcome.failure instanceof Error
-                      ? outcome.failure.message
-                      : outcome.failure,
-                  ),
-                });
-              yield* changed(execution.conversationId);
-              yield* settled(execution.id);
-
-              return;
-            }
-
-            const result = outcome.success;
-            const current = yield* executions.get(execution.id);
-
-            if (!current || current.status === "cancelled")
-              return yield* settled(execution.id);
-
-            yield* executions.update(execution.id, {
-              status: result.status === "done" ? "done" : "failed",
-              error:
-                result.status === "done"
-                  ? null
-                  : "detail" in result
-                    ? Predicate.isString(result.detail)
-                      ? result.detail
-                      : result.reason
-                    : "The agent could not answer this input",
-            });
-            yield* changed(execution.conversationId);
-            yield* settled(execution.id);
-
-            if (result.status === "done" && !isGroupTurn(execution))
-              yield* announceReply(execution).pipe(
-                background("Reply announcement failed", execution.id),
-                Effect.forkIn(scope),
-              );
-          }),
+          Result.isFailure(outcome)
+            ? recordFailure(execution, outcome.failure)
+            : recordOutcome(execution, outcome.success),
         );
       });
 
