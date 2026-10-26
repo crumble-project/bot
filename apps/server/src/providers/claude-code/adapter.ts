@@ -703,6 +703,33 @@ function prepareCli(
 
 type Receive = () => Promise<StreamJson | null>;
 
+async function awaitReplayAck(
+  receive: Receive,
+  cli: ChildProcessWithoutNullStreams,
+  signal: AbortSignal,
+  stderrTail: () => string,
+) {
+  for (;;) {
+    const ack = await receive();
+
+    if (ack === null) {
+      if (signal.aborted) throw new Error("Claude request cancelled");
+      throw new Error(
+        `Native exited before replay acknowledgment (exit=${cli.exitCode})${stderrTail()}`,
+      );
+    }
+
+    if (ack.type !== "result") continue;
+
+    if (ack.num_turns !== 0 || ack.is_error)
+      throw new Error(
+        `Native history replay not supported: expected zero-turn acknowledgment${stderrTail()}`,
+      );
+
+    return;
+  }
+}
+
 async function replayHistory(
   frames: NativeFrame[],
   send: (data: string) => Promise<void>,
@@ -718,26 +745,7 @@ async function replayHistory(
       `${JSON.stringify(replayed ? { ...frame, shouldQuery: false } : frame)}\n`,
     );
 
-    if (!replayed) continue;
-
-    for (;;) {
-      const ack = await receive();
-
-      if (ack === null) {
-        if (signal.aborted) throw new Error("Claude request cancelled");
-        throw new Error(
-          `Native exited before replay acknowledgment (exit=${cli.exitCode})${stderrTail()}`,
-        );
-      }
-
-      if (ack.type === "result") {
-        if (ack.num_turns !== 0 || ack.is_error)
-          throw new Error(
-            `Native history replay not supported: expected zero-turn acknowledgment${stderrTail()}`,
-          );
-        break;
-      }
-    }
+    if (replayed) await awaitReplayAck(receive, cli, signal, stderrTail);
   }
 }
 
@@ -794,37 +802,48 @@ class IncrementalResponse {
   ) {
     const contentIndex = this.blocks.get(index);
 
-    const target =
-      contentIndex === undefined
-        ? undefined
-        : this.partial.content[contentIndex];
+    if (contentIndex === undefined) return;
+    const target = this.partial.content[contentIndex];
 
-    if (
-      contentIndex !== undefined &&
-      target?.type === "text" &&
-      delta?.type === "text_delta"
-    ) {
-      target.text += delta.text ?? "";
-      this.streamed += delta.text ?? "";
-      this.stream.push({
-        type: "text_delta",
-        contentIndex,
-        delta: delta.text ?? "",
-        partial: this.partial,
-      });
-    } else if (
-      contentIndex !== undefined &&
-      target?.type === "thinking" &&
-      delta?.type === "thinking_delta"
-    ) {
-      target.thinking += delta.thinking ?? "";
-      this.stream.push({
-        type: "thinking_delta",
-        contentIndex,
-        delta: delta.thinking ?? "",
-        partial: this.partial,
-      });
-    }
+    if (delta?.type === "text_delta")
+      this.textDelta(contentIndex, target, delta.text);
+    else if (delta?.type === "thinking_delta")
+      this.thinkingDelta(contentIndex, target, delta.thinking);
+  }
+
+  private textDelta(
+    contentIndex: number,
+    target: AssistantMessage["content"][number] | undefined,
+    delta: string | undefined,
+  ) {
+    if (target?.type !== "text") return;
+    const text = delta ?? "";
+
+    target.text += text;
+    this.streamed += text;
+    this.stream.push({
+      type: "text_delta",
+      contentIndex,
+      delta: text,
+      partial: this.partial,
+    });
+  }
+
+  private thinkingDelta(
+    contentIndex: number,
+    target: AssistantMessage["content"][number] | undefined,
+    delta: string | undefined,
+  ) {
+    if (target?.type !== "thinking") return;
+    const thinking = delta ?? "";
+
+    target.thinking += thinking;
+    this.stream.push({
+      type: "thinking_delta",
+      contentIndex,
+      delta: thinking,
+      partial: this.partial,
+    });
   }
 
   private stop(index: number) {
@@ -852,6 +871,14 @@ class IncrementalResponse {
   }
 }
 
+const carriesNativeError = (event: StreamJson) =>
+  event.type === "assistant" && Boolean(event.error || event.message?.error);
+
+const nativeErrorText = (event: StreamJson) =>
+  (event.message?.content ?? [])
+    .flatMap((item) => (item.type === "text" ? [item.text ?? ""] : []))
+    .join("\n");
+
 async function receiveResponse(
   receive: Receive,
   admission: Admission,
@@ -867,10 +894,8 @@ async function receiveResponse(
 
     if (event === null) break;
 
-    if (event.type === "assistant" && (event.error || event.message?.error)) {
-      nativeError = (event.message?.content ?? [])
-        .flatMap((item) => (item.type === "text" ? [item.text ?? ""] : []))
-        .join("\n");
+    if (carriesNativeError(event)) {
+      nativeError = nativeErrorText(event);
       nativeErrorCode = event.error ?? undefined;
     } else if (event.type === "result") {
       results.push(event);
@@ -889,6 +914,40 @@ async function receiveResponse(
 
 type NativeResponse = Awaited<ReturnType<typeof receiveResponse>>;
 
+const nativeFailure = (code: string | undefined, error: string) =>
+  new Error(
+    `Claude Code ${NATIVE_ERRORS.get(code ?? "") ?? "error"}: ${error}`,
+  );
+
+function failUnused(
+  adapter: AdapterOptions,
+  { nativeError, nativeErrorCode }: NativeResponse,
+  stderrTail: () => string,
+): never {
+  if (nativeErrorCode === "authentication_failed") {
+    adapter.invalidateStatus();
+    throw new Error(
+      `Claude Code has no usable login (native: ${nativeError})${stderrTail()}`,
+    );
+  }
+
+  if (nativeError) throw nativeFailure(nativeErrorCode, nativeError);
+  throw new Error(`Claude Code made no model request${stderrTail()}`);
+}
+
+// The CLI's last error is the admission denial; name the first attempt's outcome so reports are diagnosable.
+function firstAttemptSummary(admission: Admission) {
+  const upstream = admission.errorText();
+
+  return [
+    `first upstream attempt: status ${admission.status ?? "none"}`,
+    `capture ${admission.capture.complete ? "complete" : "incomplete"}`,
+    ...(admission.failure ? [`relay failure ${admission.failure}`] : []),
+    `native retries denied: ${admission.denied}`,
+    ...(upstream ? [`upstream said: ${upstream.slice(0, 500)}`] : []),
+  ].join(", ");
+}
+
 function validateResponse(
   adapter: AdapterOptions,
   admission: Admission,
@@ -896,39 +955,15 @@ function validateResponse(
   exitCode: number | null,
   stderrTail: () => string,
 ) {
-  const { nativeError, nativeErrorCode } = response;
+  const { nativeError } = response;
   const captured = admission.capture.message;
 
-  if (!admission.used) {
-    if (nativeErrorCode === "authentication_failed") {
-      adapter.invalidateStatus();
-      throw new Error(
-        `Claude Code has no usable login (native: ${nativeError})${stderrTail()}`,
-      );
-    }
-
-    if (nativeError)
-      throw new Error(
-        `Claude Code ${NATIVE_ERRORS.get(nativeErrorCode ?? "") ?? "error"}: ${nativeError}`,
-      );
-    throw new Error(`Claude Code made no model request${stderrTail()}`);
-  }
+  if (!admission.used) failUnused(adapter, response, stderrTail);
 
   if (admission.status !== 200 || !admission.capture.complete || !captured) {
-    // The CLI's last error is the admission denial; name the first attempt's outcome so reports are diagnosable.
-    const upstream = admission.errorText();
-
-    const first = [
-      `first upstream attempt: status ${admission.status ?? "none"}`,
-      `capture ${admission.capture.complete ? "complete" : "incomplete"}`,
-      ...(admission.failure ? [`relay failure ${admission.failure}`] : []),
-      `native retries denied: ${admission.denied}`,
-      ...(upstream ? [`upstream said: ${upstream.slice(0, 500)}`] : []),
-    ].join(", ");
-
     if (admission.status === 401) adapter.invalidateStatus();
     throw new Error(
-      `Incomplete upstream response (${first})${nativeError ? `: ${nativeError}` : ""}`,
+      `Incomplete upstream response (${firstAttemptSummary(admission)})${nativeError ? `: ${nativeError}` : ""}`,
     );
   }
 
@@ -949,6 +984,33 @@ function validateResponse(
   return captured;
 }
 
+function nativeResultFailed(
+  final: StreamJson | undefined,
+  fast: boolean,
+  exitCode: number | null,
+) {
+  return (
+    (!fast && exitCode !== 0) || final?.is_error || final?.subtype !== "success"
+  );
+}
+
+function singleResult(results: StreamJson[]) {
+  if (results.length !== 1)
+    throw new Error("Incomplete native response: one result required");
+
+  return results[0];
+}
+
+const toolBoundary = (
+  captured: CapturedMessage,
+  final: StreamJson | undefined,
+  fast: boolean,
+  exitCode: number | null,
+) =>
+  captured.content.some((item) => item.type === "tool_use") &&
+  final?.subtype === "error_max_turns" &&
+  (fast || exitCode === 1);
+
 function validateNativeResult(
   captured: CapturedMessage,
   denied: number,
@@ -957,86 +1019,98 @@ function validateNativeResult(
   stderrTail: () => string,
 ) {
   const { results, nativeError, nativeErrorCode, fast } = response;
-  const refused = captured.stop_reason === "refusal";
   // A refusal or a denied recovery attempt makes the CLI report an error of its own; the first response stands.
-  const handled = denied > 0 || refused;
+  const handled = denied > 0 || captured.stop_reason === "refusal";
 
   if (nativeError !== undefined && !handled)
-    throw new Error(
-      `Claude Code ${NATIVE_ERRORS.get(nativeErrorCode ?? "") ?? "error"}: ${nativeError}`,
-    );
+    throw nativeFailure(nativeErrorCode, nativeError);
 
-  if (results.length !== 1)
-    throw new Error("Incomplete native response: one result required");
-  const final = results[0];
+  const final = singleResult(results);
 
-  const toolCalls = captured.content.filter((item) => item.type === "tool_use");
+  const boundary = toolBoundary(captured, final, fast, exitCode);
 
-  const boundary =
-    toolCalls.length > 0 &&
-    final?.subtype === "error_max_turns" &&
-    (fast || exitCode === 1);
-
-  if (
-    !boundary &&
-    !handled &&
-    ((!fast && exitCode !== 0) ||
-      final?.is_error ||
-      final?.subtype !== "success")
-  )
+  if (!boundary && !handled && nativeResultFailed(final, fast, exitCode))
     throw new Error(
       `Native request failed: ${final?.subtype ?? "no result"}${stderrTail()}`,
     );
 }
 
+type NativeBlock = CapturedMessage["content"][number];
+
+function thinkingBlock(item: NativeBlock): ThinkingContent {
+  const block: ThinkingContent = {
+    type: "thinking",
+    thinking: item.thinking ?? "",
+  };
+
+  if (item.signature) block.thinkingSignature = item.signature;
+
+  return block;
+}
+
+function toolCallBlock(item: NativeBlock, crumble: Map<string, string>) {
+  // Built-ins are off, so any other name is the model's; Crumble answers an unknown name with an error.
+  const offered = (item.name ?? "").replace(new RegExp(`^${PREFIX}`), "");
+
+  const input = toolInput.safeParse(item.input ?? {});
+
+  const call: ToolCall = {
+    type: "toolCall",
+    id: item.id ?? "",
+    name: crumble.get(offered) ?? offered,
+    arguments: input.success ? input.data : {},
+  };
+
+  if (!input.success)
+    call.argumentsError = `Tool arguments were not a JSON object: ${JSON.stringify(item.input)}`;
+
+  return call;
+}
+
 function responseContentBlock(
-  item: CapturedMessage["content"][number],
+  item: NativeBlock,
   refused: boolean,
   crumble: Map<string, string>,
 ): AssistantMessage["content"] {
-  if (item.type === "text") return [{ type: "text", text: item.text ?? "" }];
-
-  if (item.type === "thinking") {
-    const block: ThinkingContent = {
-      type: "thinking",
-      thinking: item.thinking ?? "",
-    };
-
-    if (item.signature) block.thinkingSignature = item.signature;
-
-    return [block];
+  switch (item.type) {
+    case "text":
+      return [{ type: "text", text: item.text ?? "" }];
+    case "thinking":
+      return [thinkingBlock(item)];
+    case "redacted_thinking":
+      return [
+        {
+          type: "thinking",
+          thinking: "",
+          thinkingSignature: item.data ?? "",
+          redacted: true,
+        },
+      ];
+    case "tool_use":
+      return refused ? [] : [toolCallBlock(item, crumble)];
+    default:
+      return [];
   }
+}
 
-  if (item.type === "redacted_thinking")
-    return [
-      {
-        type: "thinking",
-        thinking: "",
-        thinkingSignature: item.data ?? "",
-        redacted: true,
-      },
-    ];
+function refusalMessage(details: CapturedMessage["stop_details"]) {
+  if (details?.explanation?.trim()) return details.explanation.trim();
 
-  if (item.type === "tool_use" && !refused) {
-    // Built-ins are off, so any other name is the model's; Crumble answers an unknown name with an error.
-    const offered = (item.name ?? "").replace(new RegExp(`^${PREFIX}`), "");
+  return details?.category
+    ? `provider refusal category: ${details.category}`
+    : "The model refused to complete the request";
+}
 
-    const input = toolInput.safeParse(item.input ?? {});
+function doneReason(
+  hasCalls: boolean,
+  stopReason: string | null | undefined,
+): "stop" | "length" | "toolUse" {
+  if (hasCalls) return "toolUse";
 
-    const call: ToolCall = {
-      type: "toolCall",
-      id: item.id ?? "",
-      name: crumble.get(offered) ?? offered,
-      arguments: input.success ? input.data : {},
-    };
-
-    if (!input.success)
-      call.argumentsError = `Tool arguments were not a JSON object: ${JSON.stringify(item.input)}`;
-
-    return [call];
-  }
-
-  return [];
+  return stopReason === "max_tokens" ||
+    stopReason === "model_context_window_exceeded"
+    ? "length"
+    : "stop";
 }
 
 function finishResponse(
@@ -1088,38 +1162,80 @@ function finishResponse(
 
   if (refused) {
     // A refusal is terminal: Pi AI's Anthropic adapter reports it as an error with the explanation.
-    const details = captured.stop_details;
-
     stream.push({
       type: "error",
       reason: "error",
       error: {
         ...message,
         stopReason: "error",
-        errorMessage:
-          details?.explanation?.trim() ||
-          (details?.category
-            ? `provider refusal category: ${details.category}`
-            : "The model refused to complete the request"),
+        errorMessage: refusalMessage(captured.stop_details),
       },
     });
 
     return;
   }
 
-  const reason: "stop" | "length" | "toolUse" =
-    calls.length > 0
-      ? "toolUse"
-      : captured.stop_reason === "max_tokens" ||
-          captured.stop_reason === "model_context_window_exceeded"
-        ? "length"
-        : "stop";
+  const reason = doneReason(calls.length > 0, captured.stop_reason);
 
   stream.push({
     type: "done",
     reason,
     message: { ...message, stopReason: reason },
   });
+}
+
+function openAdmission(
+  adapter: AdapterOptions,
+  frames: NativeFrame[],
+  manifest: unknown[],
+  timeoutMs: number,
+) {
+  const admission = new Admission(
+    adapter.upstream ?? "https://api.anthropic.com",
+    timeoutMs,
+    frames.at(-1)?.message.content,
+  );
+
+  admission.oneShot = manifest.length === 0 && frames.length === 1;
+
+  return admission;
+}
+
+function stderrCollector() {
+  const chunks: string[] = [];
+
+  const stderr = (chunk: string) => {
+    if (chunks.length < 40) chunks.push(chunk);
+  };
+
+  const stderrTail = () => {
+    const text = chunks.join("").trim().replaceAll(/\s+/g, " ");
+
+    return text ? ` (native stderr: ${text.slice(0, 400)})` : "";
+  };
+
+  return { stderr, stderrTail };
+}
+
+const stdinWriter =
+  (cli: ChildProcessWithoutNullStreams, signal: AbortSignal) =>
+  (data: string) =>
+    new Promise<void>((resolve, reject) =>
+      cli.stdin.write(data, (error) =>
+        error && !signal.aborted ? reject(error) : resolve(),
+      ),
+    );
+
+async function release(
+  child: ChildProcessWithoutNullStreams | undefined,
+  admission: Admission,
+) {
+  if (child) {
+    killTree(child);
+    await exited(child);
+  }
+
+  await admission.close();
 }
 
 async function run(
@@ -1135,26 +1251,12 @@ async function run(
   const request = prepareRequest(model, context, options);
   const { frames, manifest, crumble } = request;
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const queried = frames.at(-1)?.message.content;
-
-  const admission = new Admission(
-    adapter.upstream ?? "https://api.anthropic.com",
-    timeoutMs,
-    queried,
-  );
-
-  admission.oneShot = manifest.length === 0 && frames.length === 1;
+  const admission = openAdmission(adapter, frames, manifest, timeoutMs);
   const signal = options?.signal ?? new AbortController().signal;
   const scratch = mkdtempSync(join(tmpdir(), "crumble-claude-"));
   let child: ChildProcessWithoutNullStreams | undefined;
   let handedOff = false;
-  const stderr: string[] = [];
-
-  const stderrTail = () => {
-    const text = stderr.join("").trim().replaceAll(/\s+/g, " ");
-
-    return text ? ` (native stderr: ${text.slice(0, 400)})` : "";
-  };
+  const { stderr, stderrTail } = stderrCollector();
 
   const cancel = () => {
     admission.abort();
@@ -1183,9 +1285,7 @@ async function run(
     });
     const cli = child;
 
-    cli.stderr.setEncoding("utf8").on("data", (chunk: string) => {
-      if (stderr.length < 40) stderr.push(chunk);
-    });
+    cli.stderr.setEncoding("utf8").on("data", stderr);
 
     const spawnError = new Promise<never>((_, reject) =>
       cli.once("error", reject),
@@ -1196,14 +1296,14 @@ async function run(
     const receive = () =>
       Promise.race([lines.next(timeoutMs, signal), spawnError]);
 
-    const send = (data: string) =>
-      new Promise<void>((resolve, reject) =>
-        cli.stdin.write(data, (error) =>
-          error && !signal.aborted ? reject(error) : resolve(),
-        ),
-      );
-
-    await replayHistory(frames, send, receive, cli, signal, stderrTail);
+    await replayHistory(
+      frames,
+      stdinWriter(cli, signal),
+      receive,
+      cli,
+      signal,
+      stderrTail,
+    );
 
     cli.stdin.end();
 
@@ -1234,14 +1334,7 @@ async function run(
   } finally {
     signal.removeEventListener("abort", cancel);
 
-    if (!handedOff) {
-      if (child) {
-        killTree(child);
-        await exited(child);
-      }
-
-      await admission.close();
-    }
+    if (!handedOff) await release(child, admission);
 
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -1265,11 +1358,14 @@ function fastEligible(
     admission.denied === 0 &&
     message !== undefined &&
     message.stop_reason !== "refusal" &&
-    ((result.subtype === "success" && !result.is_error) ||
-      (result.subtype === "error_max_turns" &&
-        message.content.some((item) => item.type === "tool_use")))
+    resultEndsCleanly(result, message)
   );
 }
+
+const resultEndsCleanly = (result: StreamJson, message: CapturedMessage) =>
+  (result.subtype === "success" && !result.is_error) ||
+  (result.subtype === "error_max_turns" &&
+    message.content.some((item) => item.type === "tool_use"));
 
 /** Lets a finished CLI exit on its own, killing it after a grace period; the consumed admission stays up until then. */
 function handOff(child: ChildProcessWithoutNullStreams, admission: Admission) {

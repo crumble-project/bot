@@ -305,32 +305,36 @@ const handshake = z.object({
   }),
 });
 
-/**
- * The account's live picker from the CLI's `initialize` handshake, behind an admission relay that proves no Messages
- * request was made. Undefined when the CLI is missing, signed out, or the handshake fails: callers fall back to the
- * pinned catalog. Pinned routes the picker omits are appended, so older models stay selectable.
- */
 export async function discoverModels(
   options: ClaudeCodeOptions,
 ): Promise<DiscoveredModel[] | undefined> {
+  const command = await signedInCommand(options);
+
+  if (!command) return undefined;
+  const picker = await readPicker(command, options);
+
+  return picker && pickerModels(picker.rows, picker.plan);
+}
+
+async function signedInCommand(options: ClaudeCodeOptions) {
   const status = await claudeCodeStatus(options);
   const command = resolveClaude(options);
 
   // Logged out, the handshake still answers with a generic default list.
-  if (status.status !== "signed_in" || !command) return undefined;
+  return status.status === "signed_in" ? command : undefined;
+}
+
+type PickerContent = { rows: z.infer<typeof pickerRow>[]; plan: string };
+
+async function readPicker(command: string, options: ClaudeCodeOptions) {
   const env = childEnv(options);
   const gate = new Admission("https://api.anthropic.com", 40_000);
   const cwd = mkdtempSync(join(tmpdir(), "crumble-claude-picker-"));
-  let rows: z.infer<typeof pickerRow>[];
-  let plan: string;
+  let content: PickerContent = { rows: [], plan: "" };
 
   try {
     env["ANTHROPIC_BASE_URL"] = gate.url;
-
-    const response = await pickerHandshake(command, env, cwd);
-
-    rows = response?.models ?? [];
-    plan = (response?.account?.subscriptionType ?? "").toLowerCase();
+    content = pickerContent(await pickerHandshake(command, env, cwd));
   } catch {
     return undefined;
   } finally {
@@ -338,9 +342,16 @@ export async function discoverModels(
     rmSync(cwd, { recursive: true, force: true });
   }
 
-  if (gate.used || rows.length === 0) return undefined;
+  return gate.used || content.rows.length === 0 ? undefined : content;
+}
 
-  return pickerModels(rows, plan);
+function pickerContent(
+  response: Awaited<ReturnType<typeof pickerHandshake>>,
+): PickerContent {
+  return {
+    rows: response?.models ?? [],
+    plan: (response?.account?.subscriptionType ?? "").toLowerCase(),
+  };
 }
 
 async function pickerHandshake(
@@ -381,59 +392,79 @@ async function pickerHandshake(
     .find((parsed) => parsed.success)?.data?.response.response;
 }
 
+type PickerRoute = { route: string; known: boolean; base: string };
+
+function unpinnedRoute(
+  row: z.infer<typeof pickerRow>,
+  base: string,
+  route: string,
+  longContext: Set<string>,
+): PickerRoute | undefined {
+  // A value the CLI did not resolve (`default`, `best`) is an alias row, not a model.
+  if (!row.resolvedModel) return undefined;
+
+  return {
+    route: longContext.has(base) ? `${base}[1m]` : route,
+    known: false,
+    base,
+  };
+}
+
 function pickerRoute(
   row: z.infer<typeof pickerRow>,
   announced: string,
   pinned: Set<string>,
   longContext: Set<string>,
-) {
+): PickerRoute | undefined {
   const base = announced.replace(/\[1m\]$/, "");
 
   if (!base) return undefined;
-  let route = nativeModel(base);
-  const known = pinned.has(route);
+  const route = nativeModel(base);
 
-  if (!known) {
-    // A value the CLI did not resolve (`default`, `best`) is an alias row, not a model.
-    if (!row.resolvedModel) return undefined;
-
-    if (longContext.has(base)) route = `${base}[1m]`;
-  }
-
-  return { route, known, base };
+  return pinned.has(route)
+    ? { route, known: true, base }
+    : unpinnedRoute(row, base, route, longContext);
 }
+
+const pickerLabel = (description: string | null | undefined, route: string) =>
+  (description ?? "").split("·")[0]?.trim() || route;
+
+const billedToCredits = (
+  description: string | null | undefined,
+  base: string,
+  creditBilled: Set<string>,
+) =>
+  (description ?? "").toLowerCase().includes("usage credit") ||
+  creditBilled.has(base);
+
+const creditNote = (known: boolean) =>
+  known ? "usage credits" : "usage credits · unpinned";
 
 function mergePickerRow(
   row: z.infer<typeof pickerRow>,
-  resolved: NonNullable<ReturnType<typeof pickerRoute>>,
+  resolved: PickerRoute,
   routes: Map<string, DiscoveredModel>,
   creditBilled: Set<string>,
 ) {
   const { route, known, base } = resolved;
-  const label = (row.description ?? "").split("·")[0]?.trim() || route;
 
   const entry = routes.get(route) ?? {
     id: route,
-    label,
+    label: pickerLabel(row.description, route),
     note: known ? "" : "unpinned",
   };
 
-  if (
-    (row.description ?? "").toLowerCase().includes("usage credit") ||
-    creditBilled.has(base)
-  )
-    entry.note = known ? "usage credits" : "usage credits · unpinned";
+  if (billedToCredits(row.description, base, creditBilled))
+    entry.note = creditNote(known);
   routes.set(route, entry);
 }
 
-function pickerModels(rows: z.infer<typeof pickerRow>[], plan: string) {
-  // Pro and Team standard seats bill Fable to usage credits from the first request.
-
-  const creditBilled = new Set(
-    plan && !plan.includes("max") ? ["claude-fable-5-1"] : [],
-  );
-
-  const announced = rows.map((row) => row.resolvedModel ?? row.value ?? "");
+function mergePickerRows(
+  rows: z.infer<typeof pickerRow>[],
+  announced: string[],
+  creditBilled: Set<string>,
+) {
+  const pinned = new Set(pinnedRoutes().map((entry) => entry.route));
 
   const longContext = new Set(
     announced.flatMap((model) =>
@@ -441,7 +472,6 @@ function pickerModels(rows: z.infer<typeof pickerRow>[], plan: string) {
     ),
   );
 
-  const pinned = new Set(pinnedRoutes().map((entry) => entry.route));
   const routes = new Map<string, DiscoveredModel>();
 
   for (const [index, row] of rows.entries()) {
@@ -452,12 +482,16 @@ function pickerModels(rows: z.infer<typeof pickerRow>[], plan: string) {
       longContext,
     );
 
-    if (!resolved) continue;
-    mergePickerRow(row, resolved, routes, creditBilled);
+    if (resolved) mergePickerRow(row, resolved, routes, creditBilled);
   }
 
-  if (routes.size === 0) return undefined;
+  return routes;
+}
 
+function addPinnedRoutes(
+  routes: Map<string, DiscoveredModel>,
+  creditBilled: Set<string>,
+) {
   for (const { route, canonical } of pinnedRoutes())
     if (!routes.has(route))
       routes.set(route, {
@@ -465,6 +499,19 @@ function pickerModels(rows: z.infer<typeof pickerRow>[], plan: string) {
         label: catalogLabel(canonical),
         note: creditBilled.has(canonical) ? "usage credits" : "",
       });
+}
+
+function pickerModels(rows: z.infer<typeof pickerRow>[], plan: string) {
+  // Pro and Team standard seats bill Fable to usage credits from the first request.
+  const creditBilled = new Set(
+    plan && !plan.includes("max") ? ["claude-fable-5-1"] : [],
+  );
+
+  const announced = rows.map((row) => row.resolvedModel ?? row.value ?? "");
+  const routes = mergePickerRows(rows, announced, creditBilled);
+
+  if (routes.size === 0) return undefined;
+  addPinnedRoutes(routes, creditBilled);
 
   return [...routes.values()];
 }
