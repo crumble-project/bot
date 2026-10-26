@@ -10,10 +10,8 @@ import {
   type CredentialGrant,
   type CredentialUse,
 } from "../shared/domain";
-import {
-  isPublicAddress,
-  type WorkspaceInterceptor,
-} from "../workspaces/workspace-proxy";
+import { isPublicAddress } from "../workspaces/public-address";
+import type { WorkspaceInterceptor } from "../workspaces/workspace-proxy";
 
 export type CredentialProxyOptions = {
   agentId: string;
