@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Crumble API",
-    "version": "3.1.0",
+    "version": "3.2.0",
     "description": "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime."
   },
   "components": {
@@ -49,7 +49,7 @@
           },
           "origin": {
             "type": "string",
-            "description": "What the bot answered: owner (a message from the owner), task (a scheduled task), bot (another bot's request), group (a group chat turn), or coding or desktop (a job's report; jobName names the job). Clients may receive other values later."
+            "description": "What the bot answered: owner (a message from the owner), task (a scheduled task), script (a script task's result), bot (another bot's request), group (a group chat turn), or coding or desktop (a job's report; jobName names the job). Clients may receive other values later."
           },
           "preview": {
             "type": "string"
@@ -643,7 +643,8 @@
         "type": "object",
         "properties": {
           "kind": {
-            "type": "string"
+            "type": "string",
+            "description": "Where the message came from: owner, task, script (a script task's result), credential, bot, or group. Clients may receive other values later."
           },
           "name": {
             "type": "string"
@@ -1651,6 +1652,25 @@
           "prompt": {
             "type": "string"
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "prompt",
+              "script"
+            ]
+          },
+          "command": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeoutSeconds": {
+            "type": "integer"
+          },
+          "notify": {
+            "type": "boolean"
+          },
           "cron": {
             "type": [
               "string",
@@ -1690,6 +1710,10 @@
           "agentId",
           "name",
           "prompt",
+          "kind",
+          "command",
+          "timeoutSeconds",
+          "notify",
           "cron",
           "timezone",
           "runAt",
@@ -1772,6 +1796,75 @@
           }
         },
         "additionalProperties": {}
+      },
+      "ScriptRun": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "scheduleId": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "succeeded",
+              "failed",
+              "timed_out",
+              "interrupted"
+            ]
+          },
+          "exitCode": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "output": {
+            "type": "string",
+            "description": "The last 64 KiB and 2000 lines of combined output."
+          },
+          "droppedBytes": {
+            "type": "integer",
+            "description": "Bytes dropped from the output tail."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "finishedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "scheduleId",
+          "agentId",
+          "command",
+          "status",
+          "exitCode",
+          "output",
+          "droppedBytes",
+          "error",
+          "startedAt",
+          "finishedAt"
+        ]
       },
       "ActivityFeed": {
         "type": "object",
@@ -9891,25 +9984,6 @@
         "parameters": [
           {
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                {
-                  "type": "string",
-                  "enum": [
-                    "shared"
-                  ]
-                }
-              ]
-            },
-            "required": false,
-            "name": "agentId",
-            "in": "query"
-          },
-          {
-            "schema": {
               "type": "integer",
               "minimum": 1,
               "maximum": 200,
@@ -9927,6 +10001,25 @@
             },
             "required": false,
             "name": "before",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "shared"
+                  ]
+                }
+              ]
+            },
+            "required": false,
+            "name": "agentId",
             "in": "query"
           }
         ],
@@ -10939,10 +11032,36 @@
                     "minLength": 1,
                     "maxLength": 200
                   },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "prompt",
+                      "script"
+                    ],
+                    "default": "prompt"
+                  },
                   "prompt": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 32000
+                    "maxLength": 32000,
+                    "default": ""
+                  },
+                  "command": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 8000,
+                    "default": null
+                  },
+                  "timeoutSeconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3600,
+                    "default": 600
+                  },
+                  "notify": {
+                    "type": "boolean",
+                    "default": true
                   },
                   "cron": {
                     "type": [
@@ -10972,8 +11091,7 @@
                 },
                 "required": [
                   "agentId",
-                  "name",
-                  "prompt"
+                  "name"
                 ]
               }
             }
@@ -11006,6 +11124,16 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Script tasks need coding jobs and must stay with their creator",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -11110,10 +11238,31 @@
                     "minLength": 1,
                     "maxLength": 200
                   },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "prompt",
+                      "script"
+                    ]
+                  },
                   "prompt": {
                     "type": "string",
-                    "minLength": 1,
                     "maxLength": 32000
+                  },
+                  "command": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 8000
+                  },
+                  "timeoutSeconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3600
+                  },
+                  "notify": {
+                    "type": "boolean"
                   },
                   "cron": {
                     "type": [
@@ -11175,6 +11324,16 @@
               "text/plain": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Script tasks need coding jobs and must stay with their creator",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -11376,6 +11535,146 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScheduleRun"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/schedules/{id}/runs": {
+      "get": {
+        "operationId": "listScriptRuns",
+        "description": "Script task runs from the last 90 days, newest first. Page with `before` set to the last run's ID. An unknown ID returns an empty list.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 20
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "before",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ScriptRun"
+                  }
                 }
               }
             }

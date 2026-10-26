@@ -11,6 +11,11 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+      security-events: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -22,6 +27,31 @@ jobs:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
       # Only findings this change introduces fail; the repository's older ones are reported as inherited.
-      - run: bunx fallow audit --base "$BASE"
+      - uses: fallow-rs/fallow@3c6e45b55ae60a52caa2b586ea3fae44f3e5a44e # v3
+        id: fallow
+        with:
+          command: audit
+          args: --base ${{ github.event.pull_request.base.sha || github.event.before }}
+          auto-changed-since: false
+          format: sarif
+          sarif: false
+          comment: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+          branded-token: false
+      # Fallow audit emits multiple runs; Code Scanning requires a category for each.
+      - name: Assign SARIF run categories
+        id: sarif
+        if: always() && steps.fallow.outputs.sarif != ''
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          SARIF_FILE: ${{ steps.fallow.outputs.sarif }}
+        run: |
+          jq '.runs |= (to_entries | map(
+            .key as $index | .value |
+            .automationDetails.id = ("fallow/audit/" + ($index | tostring) + "/")
+          ))' "$SARIF_FILE" > fallow-upload.sarif
+      - name: Upload SARIF
+        if: >-
+          always() && steps.sarif.outcome == 'success' &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
+        with:
+          sarif_file: fallow-upload.sarif

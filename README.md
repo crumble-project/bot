@@ -107,7 +107,7 @@ bun run contract:bundle        # Export a checksummed release bundle
 - [API contract maintenance](docs/api-contract.md) and [generated OpenAPI spec](openapi/openapi.json)
 - [Native push notifications](docs/native-push.md)
 - [Bundled default skills](apps/server/skills/README.md)
-- [Specifications and glossary](https://github.com/crumble-project/spec)
+- [Glossary](GLOSSARY.md)
 
 ## License
 

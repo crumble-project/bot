@@ -51,12 +51,16 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   type Bot,
   type Schedule,
+  type ScriptRun,
   botsQuery,
   call,
+  capabilitiesQuery,
   queryClient,
   schedulesQuery,
+  scriptRunsQuery,
   send,
 } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { BotAvatar } from "@/features/bots/avatar";
 import { ConfirmDelete, Section, WorkspacePage } from "@/components/workspace";
 
@@ -268,6 +272,13 @@ function agendaOf(schedules: Schedule[], now: Date) {
       ),
       upcoming: false,
     },
+    {
+      title: "Completed",
+      list: schedules.filter(
+        (schedule) => schedule.kind === "script" && finished(schedule),
+      ),
+      upcoming: false,
+    },
   ].filter((group) => group.list.length > 0);
 }
 
@@ -377,7 +388,10 @@ function TasksBody({
 }) {
   const firstBot = bots.data?.[0];
   const byId = new Map(bots.data?.map((bot) => [bot.id, bot]));
-  const shown = schedules.data?.filter((schedule) => !finished(schedule));
+
+  const shown = schedules.data?.filter(
+    (schedule) => schedule.kind === "script" || !finished(schedule),
+  );
 
   if (bots.isPending || schedules.isPending)
     return <Skeleton className="h-40" />;
@@ -503,8 +517,13 @@ function TaskSummary({
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
       <span className="truncate text-sm font-medium">{schedule.name}</span>
-      <p className="line-clamp-1 text-sm text-muted-foreground">
-        {schedule.prompt}
+      <p
+        className={cn(
+          "line-clamp-1 text-sm text-muted-foreground",
+          schedule.kind === "script" && "font-mono",
+        )}
+      >
+        {schedule.kind === "script" ? schedule.command : schedule.prompt}
       </p>
       <span className="truncate text-xs text-muted-foreground">
         {bot.name},{" "}
@@ -561,6 +580,23 @@ function TaskControls({
   );
 }
 
+function TaskToggle({
+  schedule,
+  toggle,
+}: {
+  schedule: Schedule;
+  toggle: ReturnType<typeof useTaskActions>["toggle"];
+}) {
+  return (
+    <Switch
+      aria-label={schedule.enabled ? "Pause task" : "Resume task"}
+      checked={toggle.isPending ? toggle.variables : schedule.enabled}
+      disabled={toggle.isPending}
+      onCheckedChange={(enabled) => toggle.mutate(enabled)}
+    />
+  );
+}
+
 function TaskRow({
   schedule,
   bot,
@@ -580,27 +616,101 @@ function TaskRow({
   const { toggle, run, remove } = actions;
 
   return (
-    <div className="group/task flex items-center gap-3 p-3">
-      {now && <NextRun next={next} now={now} />}
-      <BotAvatar
-        bot={bot}
-        size={32}
-        state={schedule.enabled ? "idle" : "sleeping"}
-      />
-      <TaskSummary
-        schedule={schedule}
-        bot={bot}
-        creator={creator}
-        next={next}
-        failure={toggle.error ?? run.error ?? remove.error}
-      />
-      <TaskControls schedule={schedule} actions={actions} onEdit={onEdit} />
-      <Switch
-        aria-label={schedule.enabled ? "Pause task" : "Resume task"}
-        checked={toggle.isPending ? toggle.variables : schedule.enabled}
-        disabled={toggle.isPending}
-        onCheckedChange={(enabled) => toggle.mutate(enabled)}
-      />
+    <div className="group/task min-w-0">
+      <div className="flex items-center gap-3 p-3">
+        {now && <NextRun next={next} now={now} />}
+        <BotAvatar
+          bot={bot}
+          size={32}
+          state={schedule.enabled ? "idle" : "sleeping"}
+        />
+        <TaskSummary
+          schedule={schedule}
+          bot={bot}
+          creator={creator}
+          next={next}
+          failure={toggle.error ?? run.error ?? remove.error}
+        />
+        <TaskControls schedule={schedule} actions={actions} onEdit={onEdit} />
+        <TaskToggle schedule={schedule} toggle={toggle} />
+      </div>
+      {schedule.kind === "script" && <TaskRuns scheduleId={schedule.id} />}
+    </div>
+  );
+}
+
+function runDuration(run: ScriptRun) {
+  const end = run.finishedAt ? Date.parse(run.finishedAt) : Date.now();
+
+  return `${Math.max(0, (end - Date.parse(run.startedAt)) / 1000).toFixed(1)} s`;
+}
+
+function RunDetails({ run }: { run: ScriptRun }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-2 py-2 text-xs">
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground">
+        <span>{run.status.replaceAll("_", " ")}</span>
+        <span>Exit code: {run.exitCode ?? "—"}</span>
+        <time dateTime={run.startedAt}>
+          {new Date(run.startedAt).toLocaleString()}
+        </time>
+        <span>Duration: {runDuration(run)}</span>
+      </div>
+      {run.error && <p className="text-destructive">{run.error}</p>}
+      <details>
+        <summary className="cursor-pointer">Output</summary>
+        {run.droppedBytes > 0 && (
+          <p className="py-1 text-muted-foreground">
+            {run.droppedBytes} bytes omitted
+          </p>
+        )}
+        <pre className="max-h-80 overflow-auto rounded-md bg-muted p-3 font-mono whitespace-pre-wrap break-all">
+          {run.output || "No output"}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
+function TaskRuns({ scheduleId }: { scheduleId: string }) {
+  const [open, setOpen] = useState(false);
+
+  const runs = useQuery({
+    ...scriptRunsQuery(scheduleId),
+    enabled: open,
+    refetchInterval: open ? 5000 : false,
+  });
+
+  return (
+    <div className="min-w-0 px-3 pb-3">
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        Runs
+      </Button>
+      {open && (
+        <div className="flex min-w-0 flex-col gap-2">
+          {runs.isPending && <Skeleton className="h-12" />}
+          {runs.isError && (
+            <Alert variant="destructive">
+              <AlertDescription>{runs.error.message}</AlertDescription>
+            </Alert>
+          )}
+          {runs.data?.length === 0 && (
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>No runs yet</EmptyTitle>
+              </EmptyHeader>
+            </Empty>
+          )}
+          {runs.data?.map((run) => (
+            <RunDetails key={run.id} run={run} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -610,6 +720,10 @@ type TaskDraft = {
   name: string;
   enabled: boolean;
   prompt: string;
+  kind: Schedule["kind"];
+  command: string;
+  timeoutSeconds: string;
+  notify: boolean;
   repeat: boolean;
   cron: string;
   timezone: string;
@@ -620,6 +734,10 @@ type TaskBody = {
   agentId: string;
   name: string;
   prompt: string;
+  kind: Schedule["kind"];
+  command: string | null;
+  timeoutSeconds: number;
+  notify: boolean;
   timezone: string;
   enabled: boolean;
   cron: string | null;
@@ -634,6 +752,10 @@ function blankDraft(agentId: string): TaskDraft {
     name: "",
     enabled: true,
     prompt: "",
+    kind: "prompt",
+    command: "",
+    timeoutSeconds: "600",
+    notify: true,
     repeat: false,
     cron: DEFAULT_CRON,
     timezone: LOCAL_ZONE,
@@ -647,6 +769,10 @@ function draftOf(agentId: string, schedule: Schedule): TaskDraft {
     name: schedule.name,
     enabled: schedule.enabled,
     prompt: schedule.prompt,
+    kind: schedule.kind,
+    command: schedule.command ?? "",
+    timeoutSeconds: String(schedule.timeoutSeconds),
+    notify: schedule.notify,
     repeat: schedule.cron !== null,
     cron: schedule.cron ?? DEFAULT_CRON,
     timezone: schedule.timezone,
@@ -671,9 +797,43 @@ function runTimeError(draft: TaskDraft) {
   return null;
 }
 
+function kindFields(
+  draft: TaskDraft,
+):
+  | { error: string }
+  | { fields: Pick<TaskBody, "prompt" | "command" | "timeoutSeconds"> } {
+  if (draft.kind === "prompt") {
+    if (!draft.name.trim() || !draft.prompt.trim())
+      return { error: "Task name and prompt are required." };
+
+    return {
+      fields: {
+        prompt: draft.prompt.trim(),
+        command: null,
+        timeoutSeconds: 600,
+      },
+    };
+  }
+
+  if (!draft.name.trim() || !draft.command.trim())
+    return { error: "Task name and command are required." };
+
+  const timeoutSeconds = Number(draft.timeoutSeconds);
+
+  if (
+    !Number.isInteger(timeoutSeconds) ||
+    timeoutSeconds < 1 ||
+    timeoutSeconds > 3600
+  )
+    return { error: "Timeout must be between 1 and 3600 seconds." };
+
+  return { fields: { prompt: "", command: draft.command, timeoutSeconds } };
+}
+
 function taskBody(draft: TaskDraft): { error: string } | { body: TaskBody } {
-  if (!draft.name.trim() || !draft.prompt.trim())
-    return { error: "Task name and prompt are required." };
+  const content = kindFields(draft);
+
+  if ("error" in content) return content;
 
   const error = runTimeError(draft);
 
@@ -689,7 +849,9 @@ function taskBody(draft: TaskDraft): { error: string } | { body: TaskBody } {
     body: {
       agentId: draft.agentId,
       name: draft.name.trim(),
-      prompt: draft.prompt.trim(),
+      ...content.fields,
+      kind: draft.kind,
+      notify: draft.notify,
       timezone,
       enabled: draft.enabled,
       cron: draft.repeat ? draft.cron.trim() : null,
@@ -761,7 +923,12 @@ function TaskDialog({
           }}
         >
           <FieldGroup>
-            <TaskFields bots={bots} draft={draft} patch={patch} />
+            <TaskFields
+              bots={bots}
+              draft={draft}
+              patch={patch}
+              editingScript={initial?.kind === "script"}
+            />
             {failure && (
               <Alert variant="destructive">
                 <AlertDescription>{failure}</AlertDescription>
@@ -782,15 +949,73 @@ function TaskDialog({
   );
 }
 
+function ScriptFields({
+  draft,
+  patch,
+}: {
+  draft: TaskDraft;
+  patch: (change: Partial<TaskDraft>) => void;
+}) {
+  return (
+    <>
+      <Field>
+        <FieldLabel htmlFor="task-command">Command</FieldLabel>
+        <Textarea
+          id="task-command"
+          className="min-h-24 font-mono"
+          maxLength={8000}
+          value={draft.command}
+          onChange={(event) => patch({ command: event.target.value })}
+        />
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="task-timeout">Timeout (seconds)</FieldLabel>
+        <Input
+          id="task-timeout"
+          type="number"
+          required
+          min={1}
+          max={3600}
+          step={1}
+          value={draft.timeoutSeconds}
+          onChange={(event) => patch({ timeoutSeconds: event.target.value })}
+        />
+      </Field>
+      <Field orientation="horizontal">
+        <FieldContent>
+          <FieldLabel htmlFor="task-notify">
+            Send results to the chat
+          </FieldLabel>
+        </FieldContent>
+        <Switch
+          id="task-notify"
+          checked={draft.notify}
+          onCheckedChange={(notify) => patch({ notify })}
+        />
+      </Field>
+    </>
+  );
+}
+
 function TaskFields({
   bots,
   draft,
   patch,
+  editingScript,
 }: {
   bots: Bot[];
   draft: TaskDraft;
   patch: (change: Partial<TaskDraft>) => void;
+  editingScript: boolean;
 }) {
+  const capabilities = useQuery(capabilitiesQuery).data;
+
+  const canScript =
+    capabilities?.coding === true &&
+    bots.some(
+      (bot) => bot.id === draft.agentId && bot.tools.includes("coding"),
+    );
+
   const botItems = bots.map((bot) => ({ label: bot.name, value: bot.id }));
 
   return (
@@ -800,7 +1025,17 @@ function TaskFields({
         <Select
           items={botItems}
           value={draft.agentId}
-          onValueChange={(value) => value && patch({ agentId: value })}
+          onValueChange={(value) => {
+            if (!value) return;
+
+            const coding =
+              capabilities?.coding === true &&
+              bots.some(
+                (bot) => bot.id === value && bot.tools.includes("coding"),
+              );
+
+            patch({ agentId: value, kind: coding ? draft.kind : "prompt" });
+          }}
         >
           <SelectTrigger className="w-full">
             <SelectValue />
@@ -825,16 +1060,35 @@ function TaskFields({
           onChange={(event) => patch({ name: event.target.value })}
         />
       </Field>
-      <Field>
-        <FieldLabel htmlFor="task-prompt">Prompt</FieldLabel>
-        <Textarea
-          id="task-prompt"
-          className="min-h-24"
-          maxLength={32000}
-          value={draft.prompt}
-          onChange={(event) => patch({ prompt: event.target.value })}
-        />
-      </Field>
+      {(canScript || editingScript) && (
+        <Tabs
+          value={draft.kind}
+          onValueChange={(value) =>
+            patch({ kind: value === "script" ? "script" : "prompt" })
+          }
+        >
+          <TabsList aria-label="Task kind">
+            <TabsTrigger value="prompt">Prompt</TabsTrigger>
+            <TabsTrigger value="script" disabled={!canScript}>
+              Script
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      )}
+      {draft.kind === "script" ? (
+        <ScriptFields draft={draft} patch={patch} />
+      ) : (
+        <Field>
+          <FieldLabel htmlFor="task-prompt">Prompt</FieldLabel>
+          <Textarea
+            id="task-prompt"
+            className="min-h-24"
+            maxLength={32000}
+            value={draft.prompt}
+            onChange={(event) => patch({ prompt: event.target.value })}
+          />
+        </Field>
+      )}
       <Field>
         <FieldLabel>Frequency</FieldLabel>
         <Tabs

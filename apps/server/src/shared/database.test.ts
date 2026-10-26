@@ -143,12 +143,56 @@ function migrationsOf(file: string) {
 }
 
 describe("product database migrations", () => {
-  test("a new database gets the schema servers before Drizzle created", () => {
+  test("a new database matches the migrated legacy schema", () => {
     const fresh = databaseFile();
     migrateStore(fresh);
+    const legacy = databaseFile(fixture("legacy-store-schema.sql"));
+    migrateStore(legacy);
 
-    expect(schemaOf(fresh)).toEqual(
-      schemaOf(databaseFile(fixture("legacy-store-schema.sql"))),
+    expect(schemaOf(fresh)).toEqual(schemaOf(legacy));
+    const schema = schemaOf(fresh);
+    expect(schema["schedules"]?.columns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "kind",
+          notnull: 1,
+          dflt_value: "'prompt'",
+        }),
+        expect.objectContaining({ name: "command", notnull: 0 }),
+        expect.objectContaining({
+          name: "timeout_seconds",
+          notnull: 1,
+          dflt_value: "600",
+        }),
+        expect.objectContaining({
+          name: "notify",
+          notnull: 1,
+          dflt_value: "1",
+        }),
+      ]),
+    );
+    expect(schema["script_runs"]?.foreignKeys).toContain(
+      JSON.stringify({
+        table: "schedules",
+        from: "schedule_id",
+        to: "id",
+        on_update: "NO ACTION",
+        on_delete: "CASCADE",
+      }),
+    );
+    expect(schema["script_runs"]?.indexes).toEqual(
+      expect.arrayContaining([
+        JSON.stringify({
+          name: "script_runs_by_schedule",
+          unique: 0,
+          columns: ["schedule_id", "started_at"],
+        }),
+        JSON.stringify({
+          name: "script_runs_by_time",
+          unique: 0,
+          columns: ["started_at"],
+        }),
+      ]),
     );
   });
 
@@ -157,6 +201,9 @@ describe("product database migrations", () => {
     const db = new Database(existing);
     db.run(
       "INSERT INTO agents (id,name,avatar,description,instructions,provider,model,enabled,tools,skills,mcp_servers,created_at,updated_at) VALUES ('a','A','','','','p','m',1,'[]','[]','[]','t','t')",
+    );
+    db.run(
+      "INSERT INTO schedules (id,agent_id,name,prompt,timezone,enabled,created_at) VALUES ('s','a','Task','Hello','UTC',1,'t')",
     );
     db.close();
 
@@ -170,6 +217,21 @@ describe("product database migrations", () => {
     const reopened = new Database(existing, { readonly: true });
     expect(reopened.query("SELECT id FROM agents").all()).toEqual([
       { id: "a" },
+    ]);
+    expect(
+      reopened
+        .query(
+          "SELECT kind, command, timeout_seconds, notify, prompt FROM schedules",
+        )
+        .all(),
+    ).toEqual([
+      {
+        kind: "prompt",
+        command: null,
+        timeout_seconds: 600,
+        notify: 1,
+        prompt: "Hello",
+      },
     ]);
     reopened.close();
   });
@@ -207,10 +269,11 @@ describe("product database migrations", () => {
     const file = databaseFile();
     migrateStore(file);
     const before = schemaOf(file);
+    const migrations = migrationsOf(file);
 
     migrateStore(file);
     expect(schemaOf(file)).toEqual(before);
-    expect(migrationsOf(file)).toHaveLength(1);
+    expect(migrationsOf(file)).toEqual(migrations);
   });
 });
 

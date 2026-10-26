@@ -8,6 +8,15 @@ import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { createAPI } from "./api";
 import { memoryResponse } from "../contract/api-responses";
+import { Effect } from "effect";
+import { ScriptRuns } from "../schedules/script-runs";
+import { ScriptRunRepository } from "../schedules/script-run-repository";
+import {
+  scheduleInput,
+  type ScheduleInput,
+  type ScriptRun,
+} from "../shared/domain";
+import type { MessageOrigin } from "../bots/transcript";
 
 // Plain header records, so they spread into the defaults.
 type TestRequestInit = Omit<RequestInit, "headers"> & {
@@ -39,6 +48,7 @@ const agentInput = (name: string, enabled = true) => ({
   tools: [],
   skills: [],
   mcpServers: [],
+  delegates: [],
 });
 
 const dirs: string[] = [];
@@ -47,7 +57,7 @@ afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
 
-function setup() {
+function setup(options: Parameters<typeof createAPI>[4] = {}) {
   const dir = mkdtempSync(join("/tmp", "bot-api-"));
   dirs.push(dir);
   let sequence = 0;
@@ -72,6 +82,7 @@ function setup() {
     deleteAgent: async () => {},
     history: async () => ({ messages: [] }),
     desktopJobs: async () => [],
+    close: async () => {},
   };
 
   const store = new Store(dir);
@@ -81,7 +92,13 @@ function setup() {
     service.dispatch(a, p, r, s),
   );
 
-  return { app: createAPI(service, scheduler, token), store, runtime };
+  return {
+    app: createAPI(service, scheduler, token, undefined, options),
+    store,
+    runtime,
+    service,
+    scheduler,
+  };
 }
 
 /** Reads a stream until its text so far contains `text`, then returns that text. */
@@ -1046,6 +1063,248 @@ describe("HTTP API", () => {
       ]),
     );
     store.close();
+  });
+
+  test("owner script tasks require coding jobs and workspaces on create and update", async () => {
+    const { app, store, scheduler } = setup({ coding: true });
+    const plain = store.createAgent(agentInput("Plain"));
+
+    const coder = store.createAgent({
+      ...agentInput("Coder"),
+      tools: ["coding"],
+    });
+
+    const draft = {
+      agentId: plain.id,
+      name: "Check",
+      kind: "script" as const,
+      command: "echo ok",
+      runAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+
+    const create = (body: Partial<ScheduleInput>) =>
+      req(app, "/v1/schedules", { method: "POST", body: JSON.stringify(body) });
+
+    const denied = await create(draft);
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toEqual({
+      error: "Script tasks need coding jobs",
+    });
+
+    const prompt = scheduler.create(
+      scheduleInput.parse({
+        ...draft,
+        kind: "prompt",
+        command: null,
+        prompt: "Check",
+      }),
+    );
+
+    const patch = (id: string, body: Partial<ScheduleInput>) =>
+      req(app, `/v1/schedules/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+
+    expect(
+      (await patch(prompt.id, { kind: "script", command: "echo ok" })).status,
+    ).toBe(403);
+    const saved = await create({ ...draft, agentId: coder.id });
+    expect(saved.status).toBe(201);
+    const task = await saved.json();
+    expect(task).toMatchObject({
+      kind: "script",
+      command: "echo ok",
+      prompt: "",
+      timeoutSeconds: 600,
+      notify: true,
+    });
+    expect((await patch(task.id, { agentId: plain.id })).status).toBe(403);
+
+    const delegated = scheduler.create(
+      scheduleInput.parse({
+        ...draft,
+        agentId: coder.id,
+        kind: "prompt",
+        command: null,
+        prompt: "Check",
+      }),
+      plain.id,
+    );
+
+    expect(
+      (await patch(delegated.id, { kind: "script", command: "echo ok" }))
+        .status,
+    ).toBe(403);
+    store.close();
+
+    const without = setup();
+
+    const bot = without.store.createAgent({
+      ...agentInput("Coder"),
+      tools: ["coding"],
+    });
+
+    const unavailable = await req(without.app, "/v1/schedules", {
+      method: "POST",
+      body: JSON.stringify({ ...draft, agentId: bot.id }),
+    });
+
+    expect(unavailable.status).toBe(409);
+    expect(await unavailable.json()).toEqual({
+      error: "This server has no workspaces",
+    });
+
+    const existing = without.scheduler.create(
+      scheduleInput.parse({ ...draft, agentId: bot.id }),
+    );
+
+    const update = await req(without.app, `/v1/schedules/${existing.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ notify: false }),
+    });
+
+    expect(update.status).toBe(409);
+    without.store.close();
+  });
+
+  test("converting a script task requires a prompt and clears its command without workspaces", async () => {
+    const { app, store, scheduler } = setup();
+    const agent = store.createAgent(agentInput("Former coder"));
+
+    const script = scheduler.create(
+      scheduleInput.parse({
+        agentId: agent.id,
+        name: "Check",
+        kind: "script",
+        command: "true",
+        cron: "0 9 * * *",
+      }),
+    );
+
+    const patch = (body: Partial<ScheduleInput>) =>
+      req(app, `/v1/schedules/${script.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+
+    expect((await patch({ kind: "prompt" })).status).toBe(400);
+    expect(store.getSchedule(script.id)?.kind).toBe("script");
+    const converted = await patch({ kind: "prompt", prompt: "Check results" });
+    expect(converted.status).toBe(200);
+    expect(await converted.json()).toMatchObject({
+      kind: "prompt",
+      prompt: "Check results",
+      command: null,
+    });
+    store.close();
+  });
+
+  test("lists script runs newest first, pages and validates queries, and rejects an unknown task", async () => {
+    const { store, service, scheduler } = setup();
+
+    const repository = store.runtime.runSync(
+      ScriptRunRepository.use(Effect.succeed),
+    );
+
+    const scriptRuns = ScriptRuns.of({
+      start: () => Effect.succeed({ admitted: false }),
+      recover: Effect.void,
+      list: repository.list,
+    });
+
+    const app = createAPI(service, scheduler, token, undefined, { scriptRuns });
+
+    const agent = store.createAgent({
+      ...agentInput("Coder"),
+      tools: ["coding"],
+    });
+
+    const schedule = scheduler.create(
+      scheduleInput.parse({
+        agentId: agent.id,
+        name: "Check",
+        kind: "script",
+        command: "echo ok",
+        cron: "0 9 * * *",
+      }),
+    );
+
+    const startedAt = new Date().toISOString();
+    const olderAt = new Date(Date.now() - 1000).toISOString();
+
+    const run = (id: string, at: string): ScriptRun => ({
+      id,
+      scheduleId: schedule.id,
+      agentId: agent.id,
+      command: "echo ok",
+      status: "succeeded",
+      exitCode: 0,
+      output: "ok",
+      droppedBytes: 0,
+      error: null,
+      startedAt: at,
+      finishedAt: at,
+    });
+
+    const older = run("older", olderAt);
+    const newest = run("newest", startedAt);
+    store.runtime.runSync(repository.create(older));
+    store.runtime.runSync(repository.create(newest));
+    const path = `/v1/schedules/${schedule.id}/runs`;
+    expect(await (await req(app, path)).json()).toEqual([newest, older]);
+    expect(await (await req(app, `${path}?limit=1`)).json()).toEqual([newest]);
+    expect(
+      await (await req(app, `${path}?before=${newest.id}`)).json(),
+    ).toEqual([older]);
+    expect(await (await req(app, `${path}?before=unknown`)).json()).toEqual([]);
+
+    for (const query of ["limit=0", "limit=201", "limit=bad", "before="])
+      expect((await req(app, `${path}?${query}`)).status).toBe(400);
+    expect(
+      (await req(app, `/v1/schedules/${crypto.randomUUID()}/runs`)).status,
+    ).toBe(404);
+    store.close();
+  });
+
+  test("a script result notice reaches the bot with the script origin and task name", async () => {
+    const { store, service, scheduler, runtime } = setup();
+
+    const agent = store.createAgent({
+      ...agentInput("Coder"),
+      tools: ["coding"],
+    });
+
+    const task = scheduler.create(
+      scheduleInput.parse({
+        agentId: agent.id,
+        name: "Daily check",
+        kind: "script",
+        command: "echo ok",
+        cron: "0 9 * * *",
+      }),
+    );
+
+    let origin: MessageOrigin | undefined;
+    runtime.submit = async (
+      _agent: RuntimeAgent,
+      _chat: string,
+      _text: string,
+      _requestId: string,
+      options: { origin: MessageOrigin },
+    ) => {
+      origin = options.origin;
+
+      return "submission-script";
+    };
+
+    await service.notice(
+      agent.id,
+      "Daily check succeeded",
+      `script:${task.id}:run-1`,
+    );
+    expect(origin).toEqual({ kind: "script", name: "Daily check" });
+    await service.close();
   });
 
   test("creates and runs schedules through the scheduler API", async () => {

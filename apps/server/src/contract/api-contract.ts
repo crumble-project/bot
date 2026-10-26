@@ -57,11 +57,13 @@ export const credentialUsesInput = z.object({
   before: z.string().min(1).max(200).optional(),
 });
 
-export const changesInput = z.object({
+export const scriptRunsInput = credentialUsesInput.extend({
+  limit: credentialUsesInput.shape.limit.default(20),
+});
+
+export const changesInput = credentialUsesInput.extend({
   /** One bot's changes; `shared` for the shared library; omit for every change. */
   agentId: z.union([z.uuid(), z.literal("shared")]).optional(),
-  limit: z.coerce.number().int().min(1).max(200).default(50),
-  before: z.string().min(1).max(200).optional(),
 });
 
 export const reviewsInput = z.object({
@@ -698,7 +700,13 @@ export const routes = {
     path: "/v1/schedules",
     operationId: "createSchedule",
     request: { body: body(scheduleInput) },
-    responses: { 201: json(response.scheduleResponse) },
+    responses: {
+      201: json(response.scheduleResponse),
+      403: json(
+        error,
+        "Script tasks need coding jobs and must stay with their creator",
+      ),
+    },
   }),
   updateSchedule: define({
     method: "patch",
@@ -708,7 +716,13 @@ export const routes = {
       params: id,
       body: body(patchInput(z.object(scheduleInput.shape))),
     },
-    responses: { 200: json(z.union([response.scheduleResponse, z.null()])) },
+    responses: {
+      200: json(z.union([response.scheduleResponse, z.null()])),
+      403: json(
+        error,
+        "Script tasks need coding jobs and must stay with their creator",
+      ),
+    },
   }),
   deleteSchedule: define({
     method: "delete",
@@ -723,6 +737,15 @@ export const routes = {
     operationId: "runSchedule",
     request: { params: id },
     responses: { 202: json(response.scheduleRunResponse) },
+  }),
+  listScriptRuns: define({
+    method: "get",
+    path: "/v1/schedules/{id}/runs",
+    operationId: "listScriptRuns",
+    description:
+      "Script task runs from the last 90 days, newest first. Page with `before` set to the last run's ID. An unknown ID returns an empty list.",
+    request: { params: id, query: scriptRunsInput },
+    responses: { 200: json(z.array(response.scriptRunResponse)) },
   }),
   executions: define({
     method: "get",
@@ -887,7 +910,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "3.1.0",
+      version: "3.2.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },

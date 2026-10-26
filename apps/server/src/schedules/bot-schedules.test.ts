@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Forbidden } from "../shared/errors";
+import { Effect } from "effect";
+import type { Workspaces } from "../workspaces/workspace";
 import { scheduleExtension, standaloneBotSchedules } from "./bot-schedules";
 import { Store } from "../../test/support/store";
 
@@ -34,7 +36,19 @@ const input = (
   delegates,
 });
 
-function setup() {
+const workspaces: Workspaces = {
+  desktop: false,
+  env: () => {
+    throw new Error("Policy tests never execute commands");
+  },
+  restart: () => Effect.void,
+  openDesktop: () => Effect.die("No desktop in policy tests"),
+  startDesktop: () => Effect.void,
+  keepAwake: () => () => {},
+  sync: () => Effect.void,
+};
+
+function setup(backend?: Workspaces) {
   const dir = mkdtempSync(join(tmpdir(), "bot-schedules-"));
   dirs.push(dir);
   const store = new Store(dir);
@@ -42,6 +56,8 @@ function setup() {
   const { service, schedules, scheduler } = standaloneBotSchedules(
     store.runtime,
     async () => ({ id: "exec-1" }),
+    undefined,
+    backend,
   );
 
   return { store, service, schedules, scheduler };
@@ -50,6 +66,140 @@ function setup() {
 const later = () => new Date(Date.now() + 60_000).toISOString();
 
 describe("bot schedules", () => {
+  test("script tasks need coding jobs and cannot target another bot, even with messaging", () => {
+    const { store, schedules } = setup(workspaces);
+    const plain = store.createAgent(input("Plain", ["schedule"]), uuid(1));
+
+    const coder = store.createAgent(
+      input("Coder", ["schedule", "coding", "delegate"]),
+      uuid(2),
+    );
+
+    const draft = {
+      name: "Check",
+      kind: "script" as const,
+      command: "echo ok",
+      runAt: later(),
+    };
+
+    expect(() => schedules.create(plain.id, draft)).toThrow(
+      "Script tasks need coding jobs",
+    );
+    expect(() =>
+      schedules.create(coder.id, { ...draft, agentId: plain.id }),
+    ).toThrow("You can only give yourself a script task");
+
+    const task = schedules.create(coder.id, {
+      ...draft,
+      timeoutSeconds: 42,
+      notify: false,
+    });
+
+    expect(task).toMatchObject({
+      kind: "script",
+      command: "echo ok",
+      prompt: "",
+      timeoutSeconds: 42,
+      notify: false,
+    });
+    expect(schedules.list(coder.id)).toEqual([task]);
+    expect(() =>
+      schedules.update(coder.id, task.id, { agentId: plain.id }),
+    ).toThrow("You can only give yourself a script task");
+    store.close();
+  });
+
+  test("turning a prompt task into a script applies the same policy", () => {
+    const { store, schedules } = setup(workspaces);
+    const plain = store.createAgent(input("Plain", ["schedule"]), uuid(1));
+
+    const coder = store.createAgent(
+      input("Coder", ["schedule", "coding", "delegate"]),
+      uuid(2),
+    );
+
+    const task = schedules.create(plain.id, {
+      name: "Check",
+      prompt: "Check",
+      runAt: later(),
+    });
+
+    expect(() =>
+      schedules.update(plain.id, task.id, {
+        kind: "script",
+        command: "echo ok",
+      }),
+    ).toThrow("Script tasks need coding jobs");
+
+    const delegated = schedules.create(coder.id, {
+      name: "Check",
+      prompt: "Check",
+      agentId: plain.id,
+      runAt: later(),
+    });
+
+    expect(() =>
+      schedules.update(coder.id, delegated.id, {
+        kind: "script",
+        command: "echo ok",
+      }),
+    ).toThrow("You can only give yourself a script task");
+
+    const own = schedules.create(coder.id, {
+      name: "Own",
+      prompt: "Check",
+      runAt: later(),
+    });
+
+    expect(
+      schedules.update(coder.id, own.id, {
+        kind: "script",
+        command: "echo ok",
+      }),
+    ).toMatchObject({
+      kind: "script",
+      command: "echo ok",
+      prompt: "",
+      timeoutSeconds: 600,
+      notify: true,
+    });
+    store.close();
+  });
+
+  test("script creation and conversion fail without workspaces", () => {
+    const { store, schedules } = setup();
+
+    const coder = store.createAgent(
+      input("Coder", ["schedule", "coding"]),
+      uuid(1),
+    );
+
+    const draft = {
+      name: "Check",
+      kind: "script" as const,
+      command: "echo ok",
+      runAt: later(),
+    };
+
+    expect(() => schedules.create(coder.id, draft)).toThrow(
+      "This server has no workspaces",
+    );
+
+    const prompt = schedules.create(coder.id, {
+      name: "Check",
+      prompt: "Check",
+      runAt: later(),
+    });
+
+    expect(() =>
+      schedules.update(coder.id, prompt.id, {
+        kind: "script",
+        command: "echo ok",
+      }),
+    ).toThrow("This server has no workspaces");
+    store.close();
+  });
+
   test("an offset timestamp runs at the intended instant in the target chat", async () => {
     const { store } = setup();
     const self = store.createAgent(input("Self", ["schedule"]), uuid(1));
@@ -97,6 +247,10 @@ describe("bot schedules", () => {
     const owner = scheduler.create({
       agentId: self.id,
       name: "Digest",
+      kind: "prompt",
+      command: null,
+      timeoutSeconds: 600,
+      notify: true,
       prompt: "Summarize",
       cron: null,
       timezone: "UTC",

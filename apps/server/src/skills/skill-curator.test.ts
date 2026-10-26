@@ -90,6 +90,10 @@ test("stale and archive bot-created skills by idle time, sparing pinned, schedul
   store.createSchedule({
     agentId: agent.id,
     name: "Weekly",
+    kind: "prompt",
+    command: null,
+    timeoutSeconds: 600,
+    notify: true,
     prompt: "Use the Report Digest skill every Monday",
     cron: null,
     timezone: "UTC",

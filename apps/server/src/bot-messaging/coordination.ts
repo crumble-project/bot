@@ -11,6 +11,25 @@ const output = (value: JsonValue) => ({
   output: [{ type: "text" as const, text: JSON.stringify(value) }],
 });
 
+const receiptSchema = Type.Object({
+  executionId: Type.String(),
+  agentId: Type.String(),
+  agent: Type.String(),
+  status: Type.Union([
+    Type.Literal("pending"),
+    Type.Literal("running"),
+    Type.Literal("done"),
+    Type.Literal("failed"),
+    Type.Literal("cancelled"),
+  ]),
+});
+
+const resultSchema = Type.Object({
+  ...receiptSchema.properties,
+  error: Type.Union([Type.String(), Type.Null()]),
+  response: Type.Array(Type.String()),
+});
+
 /** Model tools adapt the bot-messaging interface; addressing and exchange policy live there. */
 export function coordinationExtension(
   agent: Agent,
@@ -26,6 +45,7 @@ export function coordinationExtension(
       agentId: Type.String(),
       task: Type.String({ minLength: 1, maxLength: 32000 }),
     }),
+    structuredOutputSchema: receiptSchema,
     replay: "safe",
     execute: async (args, api, context) =>
       output(
@@ -49,6 +69,7 @@ export function coordinationExtension(
       executionId: Type.String(),
       waitSeconds: Type.Optional(Type.Integer({ minimum: 0, maximum: 60 })),
     }),
+    structuredOutputSchema: resultSchema,
     replay: "safe",
     execute: async (args, _api, context) =>
       output(
@@ -64,6 +85,13 @@ export function coordinationExtension(
     description:
       "List the enabled bots you may message, with their names, IDs, and descriptions. Use this to identify a bot named or @mentioned by the owner. Sending requires permission configured in your profile.",
     parameters: Type.Object({}),
+    structuredOutputSchema: Type.Array(
+      Type.Object({
+        id: Type.String(),
+        name: Type.String(),
+        description: Type.String(),
+      }),
+    ),
     replay: "safe",
     execute: async () => output(messaging.recipients(agent.id)),
   });
@@ -76,6 +104,7 @@ export function coordinationExtension(
       recipient: Type.String({ minLength: 1, maxLength: 100 }),
       message: Type.String({ minLength: 1, maxLength: 32000 }),
     }),
+    structuredOutputSchema: resultSchema,
     replay: "safe",
     execute: async (args, api, context) => {
       context.abortSignal?.throwIfAborted();

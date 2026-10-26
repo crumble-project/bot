@@ -25,6 +25,12 @@ export const botsOrigin = (context: BotsContext) => {
 
       const [prefix, subject] = execution.requestId.split(":");
 
+      if (prefix === "script" && subject) {
+        const schedule = yield* schedules.get(subject);
+
+        return { kind: "script", name: schedule?.name ?? "Script task" };
+      }
+
       if (prefix === "credential" && subject)
         return { kind: "credential", name: subject };
 

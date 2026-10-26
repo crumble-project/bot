@@ -13,6 +13,7 @@ export default defineConfig({
     "./src/memory/schema.ts",
     "./src/providers/schema.ts",
     "./src/schedules/schema.ts",
+    "./src/schedules/script-run-schema.ts",
     "./src/shared/schema.ts",
     "./src/skills/schema.ts",
   ],

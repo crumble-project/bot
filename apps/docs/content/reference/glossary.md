@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-These definitions are copied from the canonical [glossary](https://github.com/crumble-project/spec/blob/main/GLOSSARY.md) in `crumble-project/spec`. If they differ, the spec wins.
+These definitions are copied from the canonical [glossary](https://github.com/crumble-project/bot/blob/main/GLOSSARY.md) in `crumble-project/bot`. If they differ, that file wins.
 
 ### Bot
 
@@ -78,6 +78,12 @@ Avoid: Auto-save, self-update.
 Background work a bot hands to a separate agent that edits files and runs commands in the bot's workspace. The job's answer returns to the bot's chat.
 
 Avoid: Subagent, session, sub-chat.
+
+### Script task
+
+A scheduled task that runs a shell command in its bot's workspace instead of sending a prompt to the bot chat. Only a bot with coding jobs has script tasks, and only for itself.
+
+Avoid: Cron job, routine, script job.
 
 ### Workspace
 

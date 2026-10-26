@@ -45,6 +45,7 @@ import { Push, type PushRuntime } from "../push/push";
 import { registerPushRoutes } from "../push/push-api";
 import { registerScheduleRoutes } from "../schedules/schedules-api";
 import type { SchedulerAccess } from "../schedules/scheduler";
+import type { ScriptRuns } from "../schedules/script-runs";
 import { MAX_MESSAGE_BODY } from "../shared/attachments";
 import type { CoreServices } from "../shared/core-layer";
 import type { CommonSkill } from "../skills/common-skills";
@@ -69,6 +70,8 @@ type ApiOptions = {
   commonSkills?: CommonSkill[];
   /** Whether the server can give bots the coding tool. */
   coding?: boolean;
+  /** Script run history; its route answers 503 without it. */
+  scriptRuns?: ScriptRuns["Service"];
   /** Whether the server can give bots the desktop tool. */
   desktop?: boolean;
   /** Stops a bot's workspace machine, so its next use boots the image its tools need now. */

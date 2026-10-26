@@ -73,7 +73,7 @@ function Home() {
 
       <p>
         <a href={`${docs}/getting-started/server`}>Run the server</a>, read the{" "}
-        <a href={docs}>docs</a>, or browse the code and specifications on{" "}
+        <a href={docs}>docs</a>, or browse the code on{" "}
         <a href="https://github.com/crumble-project">GitHub</a>.
       </p>
 

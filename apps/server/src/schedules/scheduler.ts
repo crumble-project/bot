@@ -12,12 +12,14 @@ import {
 } from "effect";
 import {
   scheduleInput,
+  mergeScheduleInput,
   type Schedule,
   type ScheduleInput,
 } from "../shared/domain";
 import { AgentRepository } from "../bots/agent-repository";
 import type { Runner } from "../shared/runner";
 import { ScheduleRepository } from "./schedule-repository";
+import { ScriptRuns } from "./script-runs";
 import { TaskDispatch, type ScheduleDispatchResult } from "./task-dispatch";
 import {
   InvalidInput,
@@ -99,6 +101,7 @@ export class Scheduler extends Context.Service<
         const schedules = yield* ScheduleRepository;
         const agents = yield* AgentRepository;
         const dispatch = yield* TaskDispatch;
+        const scriptRuns = yield* ScriptRuns;
         const scope = yield* Effect.scope;
         const inFlight = new Set<string>();
         const failed = new Map<string, number>();
@@ -153,7 +156,7 @@ export class Scheduler extends Context.Service<
             return yield* Effect.fail(
               new NotFound({ message: "Schedule not found" }),
             );
-          const value = yield* validate({ ...old, ...input });
+          const value = yield* validate(mergeScheduleInput(old, input));
 
           if (!(yield* agents.get(value.agentId)))
             return yield* Effect.fail(
@@ -197,17 +200,28 @@ export class Scheduler extends Context.Service<
           const due = new Date(yield* Clock.currentTimeMillis).toISOString();
           inFlight.add(id);
 
-          const result = yield* dispatch(
-            schedule.agentId,
-            schedule.prompt,
-            `schedule:${id}:${due}`,
-            schedule.id,
-          ).pipe(
+          return yield* Effect.gen(function* () {
+            if (schedule.kind === "script") {
+              const { admitted, run } = yield* scriptRuns.start(schedule);
+
+              return {
+                admitted,
+                ...(run && { result: { id: run.id, status: "running" } }),
+              };
+            }
+
+            const result = yield* dispatch(
+              schedule.agentId,
+              schedule.prompt,
+              `schedule:${id}:${due}`,
+              schedule.id,
+            );
+
+            return { admitted: true, result };
+          }).pipe(
             Effect.tapError((cause) => logDispatchError(schedule.id, cause)),
             Effect.ensuring(Effect.sync(() => inFlight.delete(id))),
           );
-
-          return { admitted: true, result };
         });
 
         const dispatchOnce = Effect.fnUntraced(function* (
@@ -218,13 +232,19 @@ export class Scheduler extends Context.Service<
           if (inFlight.has(schedule.id)) return false;
           inFlight.add(schedule.id);
 
-          return yield* dispatch(
-            schedule.agentId,
-            schedule.prompt,
-            requestId,
-            schedule.id,
-          ).pipe(
-            Effect.as(true),
+          const admission =
+            schedule.kind === "script"
+              ? scriptRuns
+                  .start(schedule)
+                  .pipe(Effect.map(({ admitted }) => admitted))
+              : dispatch(
+                  schedule.agentId,
+                  schedule.prompt,
+                  requestId,
+                  schedule.id,
+                ).pipe(Effect.as(true));
+
+          return yield* admission.pipe(
             Effect.catchCause((cause) =>
               logDispatchError(schedule.id, Cause.squash(cause)).pipe(
                 Effect.andThen(
@@ -256,6 +276,16 @@ export class Scheduler extends Context.Service<
           );
         });
 
+        const dispatchBlocked = (id: string, key: string, now: Date) => {
+          const failedAt = failed.get(key);
+
+          return (
+            (failedAt !== undefined &&
+              now.valueOf() - failedAt < RETRY_AFTER_MS) ||
+            inFlight.has(id)
+          );
+        };
+
         const passOne = Effect.fnUntraced(function* (
           schedule: Schedule,
           now: Date,
@@ -270,14 +300,8 @@ export class Scheduler extends Context.Service<
 
           if (Number.isNaN(due.valueOf()) || due > now) return;
           const key = `schedule:${schedule.id}:${due.toISOString()}`;
-          const failedAt = failed.get(key);
 
-          if (
-            (failedAt !== undefined &&
-              now.valueOf() - failedAt < RETRY_AFTER_MS) ||
-            inFlight.has(schedule.id)
-          )
-            return;
+          if (dispatchBlocked(schedule.id, key, now)) return;
 
           if (!(yield* dispatchOnce(schedule, key, now.valueOf()))) return;
 
@@ -368,11 +392,12 @@ export function standaloneScheduler(
   core: Runner<ScheduleRepository | AgentRepository>,
   dispatch: StandaloneDispatch,
   intervalMs?: number,
+  scriptRuns?: ScriptRuns["Service"],
 ): SchedulerAccess {
   return schedulerAccess(
     ManagedRuntime.make(
       Scheduler.layer(intervalMs).pipe(
-        Layer.provide(standaloneDependencies(core, dispatch)),
+        Layer.provide(standaloneDependencies(core, dispatch, scriptRuns)),
       ),
     ),
   );
@@ -382,8 +407,14 @@ export function standaloneScheduler(
 export const standaloneDependencies = (
   core: Runner<ScheduleRepository | AgentRepository>,
   dispatch: StandaloneDispatch,
+  scriptRuns: ScriptRuns["Service"] = ScriptRuns.of({
+    start: () => Effect.succeed({ admitted: false }),
+    recover: Effect.void,
+    list: () => Effect.succeed([]),
+  }),
 ) =>
-  Layer.merge(
+  Layer.mergeAll(
+    Layer.succeed(ScriptRuns, scriptRuns),
     Layer.succeed(TaskDispatch, (agentId, prompt, requestId, scheduleId) =>
       Effect.tryPromise({
         try: () => dispatch(agentId, prompt, requestId, scheduleId),

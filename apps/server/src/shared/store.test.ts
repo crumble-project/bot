@@ -3,7 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
+import { Effect } from "effect";
 import { Store } from "../../test/support/store";
+import { migrateFile, migrationsFolder } from "./database";
+import { upgradeLegacyStore } from "./legacy-schema";
 
 const dirs: string[] = [];
 
@@ -81,6 +84,10 @@ describe("Store", () => {
       {
         agentId: agent.id,
         name: "Routine",
+        kind: "prompt",
+        command: null,
+        timeoutSeconds: 600,
+        notify: true,
         prompt: "go",
         cron: "0 * * * *",
         timezone: "UTC",
@@ -473,7 +480,12 @@ describe("Store memory sources", () => {
 
     const db = new Database(join(dir, "store.sqlite"));
     // A server before Drizzle had no migrations table.
-    db.run("DROP TABLE __drizzle_migrations");
+    db.run(`DROP TABLE __drizzle_migrations;
+      DROP TABLE script_runs;
+      ALTER TABLE schedules DROP COLUMN kind;
+      ALTER TABLE schedules DROP COLUMN command;
+      ALTER TABLE schedules DROP COLUMN timeout_seconds;
+      ALTER TABLE schedules DROP COLUMN notify;`);
     db.run("ALTER TABLE memories DROP COLUMN source");
     db.close();
 
@@ -559,7 +571,7 @@ describe("Store group chats", () => {
     db.close();
   });
 
-  test("upgrades a milestone 1 database and keeps its groups", () => {
+  test("upgrades a milestone 1 database and keeps its groups", async () => {
     const dir = make();
     const first = new Store(dir);
     const a = first.createAgent({ ...input, name: "A" });
@@ -575,6 +587,11 @@ describe("Store group chats", () => {
     const db = new Database(join(dir, "store.sqlite"));
     // A server before Drizzle had no migrations table.
     db.run(`DROP TABLE __drizzle_migrations;
+      DROP TABLE script_runs;
+      ALTER TABLE schedules DROP COLUMN kind;
+      ALTER TABLE schedules DROP COLUMN command;
+      ALTER TABLE schedules DROP COLUMN timeout_seconds;
+      ALTER TABLE schedules DROP COLUMN notify;
       DROP TABLE group_turns;
       ALTER TABLE group_chats DROP COLUMN bot_turns;
       ALTER TABLE group_chats DROP COLUMN paused;
@@ -585,6 +602,13 @@ describe("Store group chats", () => {
       ALTER TABLE group_members DROP COLUMN pending_bot_started;
       ALTER TABLE group_members DROP COLUMN summary;`);
     db.close();
+
+    await Effect.runPromise(
+      migrateFile(join(dir, "store.sqlite"), migrationsFolder("store"), {
+        table: "agents",
+        upgrade: upgradeLegacyStore,
+      }),
+    );
 
     const second = new Store(dir);
     expect(second.getGroupChat(group.id)?.memberIds).toEqual([a.id, b.id]);

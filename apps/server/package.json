@@ -7,6 +7,10 @@
   "exports": {
     "./*": "./src/*.ts"
   },
+  "scripts": {
+    "db:generate": "drizzle-kit generate --config drizzle.store.config.ts",
+    "db:generate:push": "drizzle-kit generate --config drizzle.push.config.ts"
+  },
   "dependencies": {
     "@crumble/web": "workspace:*",
     "@earendil-works/chord": "1.4.0",

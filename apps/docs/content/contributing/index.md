@@ -1,24 +1,13 @@
 ---
 title: Contributing
-description: How features get proposed and built, how the server repository is laid out, and which checks to run.
+description: How the server repository is laid out, which checks to run, and how to release.
 sidebar:
   order: 1
 ---
 
-Crumble is split across repositories in [`crumble-project`](https://github.com/crumble-project). The server and web app live in `bot`. Specifications and the [glossary](/reference/glossary) live in `spec`.
+Crumble is split across repositories in [`crumble-project`](https://github.com/crumble-project). The server and web app live in `bot`. So does the canonical glossary, `GLOSSARY.md`, which the [glossary](/reference/glossary) page copies.
 
 The server and web app are licensed under the [GNU Affero General Public License v3.0](https://github.com/crumble-project/bot/blob/main/LICENSE) (`AGPL-3.0-only`). Contributions to `bot` are accepted under the same license.
-
-## Propose a feature
-
-New user-visible features go through [`crumble-project/spec`](https://github.com/crumble-project/spec/blob/main/features/README.md) before any code is written:
-
-1. **Idea:** open an issue in `spec`.
-2. **Draft:** write `features/NNNN-short-name.md`, and add any new terms to `spec/GLOSSARY.md`.
-3. **Accepted:** the owner approves the specification. Don't build from a draft.
-4. **Build:** implement it in `bot`, update the API contract if routes or events changed, and check every acceptance criterion.
-
-See [Specifications](/contributing/specifications) for the existing ones.
 
 ## Repository layout
 
@@ -46,7 +35,18 @@ bun run check   # lint, format check, typecheck, contract drift, and unit tests
 bun run fix     # format and apply lint fixes
 ```
 
-`bun install` sets up Git hooks: commits run lint and typecheck, and pushes run `check`. Unit test jobs in CI must finish in two minutes or less.
+`bun install` sets up Git hooks: commits run the steering-file path check, lint and typecheck, and pushes run `check`. Unit test jobs in CI must finish in two minutes or less.
+
+## Change the database schema
+
+Edit the feature's `schema.ts`, then generate the migration from the `bot` root:
+
+```bash
+bun run --cwd apps/server db:generate --name short_description       # store.sqlite
+bun run --cwd apps/server db:generate:push --name short_description  # push.sqlite
+```
+
+A new `schema.ts` must also be listed in `apps/server/drizzle.store.config.ts`.
 
 ## Change the API contract
 

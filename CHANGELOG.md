@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Fix Fallow Code Scanning uploads by assigning each SARIF run a distinct category before uploading. PR comments and audit gating remain enabled; fork pull requests skip the upload.
+
+- With code mode on, a bot asks for a credential with a direct tool call again, so the chat shows the request card where the owner enters the value.
+- In the web app, messages from tasks, script tasks, credentials, and other bots appear as a centered line you can expand, instead of a bubble that looks like the owner's own message.
+- Fix `schedule`, `ask_bot`, `delegate`, `delegation_status`, and `list_bots` in code mode: a successful call returns its result instead of failing with it as the error. The bundled tasks and bot messaging skills call these tools from code mode when it is on, instead of sending the owner to the app.
+
+- Add script tasks: a bot with coding jobs can run a command in its workspace on a schedule, with a configurable timeout and optional results sent to its chat. The Tasks page lists script task runs. Existing script tasks can be converted to prompt tasks without coding jobs or workspaces. Updates validate the complete task before saving; shutdown stops admitting script runs and finalizes runs recorded during shutdown.
+
+- `bun run check` and the pre-commit hook fail when an `AGENTS.md` or `CLAUDE.md` names a path that does not exist. `AGENTS.md` now points at Effect under `apps/server/node_modules/`, where Bun installs it. `bun run --cwd apps/server db:generate` (and `db:generate:push`) generates migrations, and the contributing docs describe it.
+- New features no longer start as specifications in `crumble-project/spec`, which is archived. The contributing docs drop the proposal process and the Specifications page, which now redirects to Contributing.
+- The canonical glossary moves from `crumble-project/spec` to `GLOSSARY.md` in this repository. The Android and Apple glossaries and the docs site's Glossary page link here.
 - Crumble is licensed under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). The repository has a `LICENSE` file, each `package.json` has a `license` field, and the published images carry the `org.opencontainers.image.licenses` label. Anyone who runs a modified server for others must offer them its source.
 - Deploy the documentation site and the landing page from `main`. When a push to `main` changes `apps/docs`, the Docs workflow deploys it to `docs.crumbli.ng` with Wrangler after the check and build pass; when it changes `apps/site`, the Site workflow deploys it to `crumbli.ng` after the build passes. Pull requests still only check and build them.
 
@@ -112,6 +123,13 @@
 - Add the generated OpenAPI 3.1 contract at `openapi/openapi.json` for all 49 HTTP endpoints, including authentication and event payload schemas.
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
+
+## Contract 3.2.0
+
+- Add `kind` (`prompt` or `script`, default `prompt`), nullable `command` (up to 8000 characters), `timeoutSeconds` (1–3600, default 600), and `notify` (default `true`) to schedule inputs and `Schedule`. Script tasks need a command instead of a prompt, coding jobs, and workspaces. A bot can give a script task only to itself.
+- Add `GET /v1/schedules/{id}/runs` (`listScriptRuns`), returning the last 90 days of runs, newest first. `limit` defaults to 20 (maximum 200); `before` takes the last run's ID, including runs with identical start times. An unknown ID returns an empty list.
+- Add `ScriptRun`: `id`, `scheduleId`, `agentId`, `command`, `status` (`running`, `succeeded`, `failed`, `timed_out`, or `interrupted`), nullable `exitCode`, `output`, `droppedBytes`, nullable `error`, `startedAt`, and nullable `finishedAt`.
+- Add message origin kind `script` for script task results, with the task's name.
 
 ## Contract 3.1.0
 

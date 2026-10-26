@@ -302,6 +302,10 @@ test("turns below the threshold and scheduled runs are not reviewed, and a resta
   const schedule = store.createSchedule({
     agentId: agent.id,
     name: "Daily",
+    kind: "prompt",
+    command: null,
+    timeoutSeconds: 600,
+    notify: true,
     prompt: "do it",
     cron: null,
     timezone: "UTC",

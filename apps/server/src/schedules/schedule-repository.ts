@@ -1,6 +1,11 @@
 import { asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import type { Schedule, ScheduleInput } from "../shared/domain";
+import {
+  mergeScheduleInput,
+  scheduleInput,
+  type Schedule,
+  type ScheduleInput,
+} from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { schedules } from "./schema";
@@ -9,7 +14,11 @@ const scheduleOf = (row: typeof schedules.$inferSelect): Schedule => ({
   id: row.id,
   agentId: row.agentId,
   name: row.name,
+  kind: row.kind,
   prompt: row.prompt,
+  command: row.command,
+  timeoutSeconds: row.timeoutSeconds,
+  notify: row.notify,
   cron: row.cron,
   timezone: row.timezone,
   runAt: row.runAt,
@@ -78,7 +87,11 @@ export class ScheduleRepository extends Context.Service<
           id: scheduleId,
           agentId: input.agentId,
           name: input.name,
-          prompt: input.prompt,
+          kind: input.kind,
+          prompt: input.kind === "script" ? "" : input.prompt,
+          command: input.command,
+          timeoutSeconds: input.timeoutSeconds,
+          notify: input.notify,
           cron: input.cron,
           timezone: input.timezone,
           runAt: input.runAt,
@@ -98,14 +111,18 @@ export class ScheduleRepository extends Context.Service<
         const schedule = yield* get(scheduleId);
 
         if (!schedule) return null;
-        const next = { ...schedule, ...patch };
+        const next = scheduleInput.parse(mergeScheduleInput(schedule, patch));
 
         yield* db
           .update(schedules)
           .set({
             agentId: next.agentId,
             name: next.name,
-            prompt: next.prompt,
+            kind: next.kind,
+            prompt: next.kind === "script" ? "" : next.prompt,
+            command: next.command,
+            timeoutSeconds: next.timeoutSeconds,
+            notify: next.notify,
             cron: next.cron,
             timezone: next.timezone,
             runAt: next.runAt,

@@ -23,6 +23,7 @@ import type {
   modelResponse,
   providerResponse,
   scheduleResponse,
+  scriptRunResponse,
 } from "@crumble/server/contract/api-responses";
 import type { agentInput } from "@crumble/server/shared/domain";
 import type { ChartLayout } from "@crumble/server/display/charts";
@@ -60,6 +61,8 @@ export type Change = z.infer<typeof learnedChangeResponse>;
 export type ListedSkill = z.infer<typeof listedSkillResponse>;
 
 export type Schedule = z.infer<typeof scheduleResponse>;
+
+export type ScriptRun = z.infer<typeof scriptRunResponse>;
 
 export type McpServer = z.infer<typeof describedMcpServerResponse>;
 
@@ -238,6 +241,18 @@ export const schedulesQuery = queryOptions({
   queryKey: ["schedules"],
   queryFn: ({ signal }) => api<Schedule[]>("/v1/schedules", { signal }),
 });
+
+export const scriptRunsQuery = (id: string) =>
+  queryOptions({
+    queryKey: ["script-runs", id],
+    queryFn: ({ signal }) =>
+      api<ScriptRun[]>(
+        `/v1/schedules/${encodeURIComponent(id)}/runs?limit=20`,
+        {
+          signal,
+        },
+      ),
+  });
 
 export const botMemoriesQuery = (id: string) =>
   queryOptions({

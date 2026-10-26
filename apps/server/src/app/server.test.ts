@@ -1,5 +1,10 @@
 import { expect, spyOn, test } from "bun:test";
 import { Effect } from "effect";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
+import { Store } from "../../test/support/store";
+import { agentInput, scheduleInput } from "../shared/domain";
+import { ScriptRunRepository } from "../schedules/script-run-repository";
+import { createTenant } from "./tenant";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +12,7 @@ import {
   agentResponse,
   groupChatResponse,
   historyResponse,
+  scriptRunResponse,
 } from "../contract/api-responses";
 import { startServer } from "./server";
 import type { Workspaces } from "../workspaces/workspace";
@@ -468,6 +474,139 @@ test.serial(
       await running.close();
     } finally {
       for (const spy of spies) spy.mockRestore();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.serial(
+  "an account recovers script runs and dispatches due scripts into the bot chat",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-account-scripts-"));
+    let tenant: Awaited<ReturnType<typeof createTenant>> | undefined;
+
+    try {
+      const store = new Store(dataDir);
+      let agentId: string;
+      let scheduleId: string;
+
+      try {
+        const agent = store.createAgent(
+          agentInput.parse({ name: "Runner", tools: ["coding"] }),
+        );
+
+        const schedule = store.createSchedule(
+          scheduleInput.parse({
+            agentId: agent.id,
+            name: "Due script",
+            kind: "script",
+            command: "printf 'account script output'",
+            runAt: "2020-01-01T00:00:00.000Z",
+          }),
+        );
+
+        agentId = agent.id;
+        scheduleId = schedule.id;
+        store.run(
+          ScriptRunRepository.use((runs) =>
+            runs.create({
+              id: "leftover-run",
+              scheduleId,
+              agentId,
+              command: schedule.command!,
+              status: "running",
+              exitCode: null,
+              output: "",
+              droppedBytes: 0,
+              error: null,
+              startedAt: new Date().toISOString(),
+              finishedAt: null,
+            }),
+          ),
+        );
+      } finally {
+        store.close();
+      }
+
+      const workspaces: Workspaces = {
+        ...desktopWorkspaces(() =>
+          Effect.fail(new DesktopNotConfigured({ message: "No desktop" })),
+        ),
+        desktop: false,
+        env: (_agentId, shellEnv = {}) => {
+          const env = new NodeExecutionEnv({ cwd: dataDir, shellEnv });
+          const exec = env.exec.bind(env);
+          env.exec = (command, options, context) =>
+            exec(command, { ...options, cwd: dataDir }, context);
+
+          return env;
+        },
+      };
+
+      tenant = await createTenant({
+        dataDir,
+        tenantId: "script-test",
+        workspaces: Effect.succeed(workspaces),
+      });
+      const headers = { authorization: `Bearer ${tenant.token}` };
+
+      const runs = async () => {
+        const response = await tenant!.app.request(
+          `/v1/schedules/${scheduleId}/runs`,
+          { headers },
+        );
+
+        expect(response.status).toBe(200);
+
+        return scriptRunResponse.array().parse(await response.json());
+      };
+
+      expect(
+        (await runs()).find((run) => run.id === "leftover-run"),
+      ).toMatchObject({
+        status: "interrupted",
+        finishedAt: expect.any(String),
+      });
+
+      let messages: ReturnType<typeof historyResponse.parse>["messages"] = [];
+
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const response = await tenant.app.request(
+          `/v1/agents/${agentId}/chat/history`,
+          {
+            headers,
+          },
+        );
+
+        expect(response.status).toBe(200);
+        messages = historyResponse.parse(await response.json()).messages;
+
+        if (messages.some((message) => message.origin?.kind === "script"))
+          break;
+        await Bun.sleep(20);
+      }
+
+      expect(await runs()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            scheduleId,
+            agentId,
+            status: "succeeded",
+            exitCode: 0,
+            output: "account script output",
+          }),
+        ]),
+      );
+      expect(messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            content: expect.stringContaining("account script output"),
+            origin: { kind: "script", name: "Due script" },
+          }),
+        ]),
+      );
+    } finally {
+      await tenant?.close();
       rmSync(dataDir, { recursive: true, force: true });
     }
   },
