@@ -56,11 +56,10 @@ import { credentialProxy } from "../credentials/credential-proxy";
 import { coreLayer, type CoreServices } from "../shared/core-layer";
 import { runnerOf } from "../shared/runner";
 import { builtinPlugins } from "./builtin-plugins";
+import { jobAnswers, jobTools } from "./plugin-layers";
 import {
-  jobAnswers,
   jobEnv,
   jobExtensions,
-  jobTools,
   pluginJobKinds,
   pluginProviders,
   Plugins,
@@ -89,10 +88,14 @@ export type TenantRuntime = {
   close: () => Promise<void>;
 };
 
+function isHttpsOrigin(url: URL) {
+  return url.protocol === "https:" && !url.search && !url.hash;
+}
+
 function httpsUrl(value: string) {
   const url = URL.canParse(value) ? new URL(value) : undefined;
 
-  if (url?.protocol !== "https:" || url.search || url.hash)
+  if (!url || !isHttpsOrigin(url))
     throw new Error(
       `publicUrl must be an https address without a query: ${value}`,
     );

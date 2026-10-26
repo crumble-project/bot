@@ -10,10 +10,8 @@ import {
   type CredentialGrant,
   type CredentialUse,
 } from "../shared/domain";
-import {
-  isPublicAddress,
-  type WorkspaceInterceptor,
-} from "../workspaces/workspace-proxy";
+import { isPublicAddress } from "../workspaces/public-address";
+import type { WorkspaceInterceptor } from "../workspaces/workspace-proxy";
 
 export type CredentialProxyOptions = {
   agentId: string;
@@ -67,6 +65,62 @@ function replacing(pairs: ReadonlyArray<readonly [string, string]>) {
     },
   });
 }
+
+const swappedHeaderValue = (
+  key: string,
+  value: string,
+  swap: (text: string) => string,
+) => {
+  const basic = key === "authorization" && /^basic\s+(\S+)$/i.exec(value);
+
+  if (!basic) return swap(value);
+
+  const decoded = Buffer.from(basic[1]!, "base64").toString("utf8");
+
+  return `Basic ${Buffer.from(swap(decoded)).toString("base64")}`;
+};
+
+/** The headers towards the upstream server, with credentials swapped in and hop-by-hop headers dropped. */
+export const requestHeaders = (
+  rawHeaders: string[],
+  swap: (text: string) => string,
+) => {
+  const headers: Record<string, string[]> = {};
+
+  for (let index = 0; index < rawHeaders.length; index += 2) {
+    const key = rawHeaders[index]!.toLowerCase();
+
+    if (HOP_BY_HOP.has(key)) continue;
+
+    (headers[key] ??= []).push(
+      swappedHeaderValue(key, rawHeaders[index + 1]!, swap),
+    );
+  }
+
+  return headers;
+};
+
+// A scrubbed body can change length; Node frames it anew.
+const forwardable = (key: string, scrubbing: boolean) =>
+  !HOP_BY_HOP.has(key) && !(scrubbing && key === "content-length");
+
+/** The headers towards the workspace, with credential values scrubbed and hop-by-hop headers dropped. */
+export const responseHeaders = (
+  rawHeaders: string[],
+  scrubbing: boolean,
+  scrubText: (text: string) => string,
+) => {
+  const headers: Record<string, string[]> = {};
+
+  for (let index = 0; index < rawHeaders.length; index += 2) {
+    const key = rawHeaders[index]!.toLowerCase();
+
+    if (!forwardable(key, scrubbing)) continue;
+    (headers[key] ??= []).push(scrubText(rawHeaders[index + 1]!));
+  }
+
+  return headers;
+};
 
 /**
  * Swaps a bot's credential placeholders for their values on requests to the credentials' hosts, and the values back
@@ -130,23 +184,7 @@ export function credentialProxy(
           return current.replaceAll(grant.placeholder, grant.value);
         }, text);
 
-      const headers: Record<string, string[]> = {};
-
-      for (let index = 0; index < request.rawHeaders.length; index += 2) {
-        const name = request.rawHeaders[index]!;
-        const value = request.rawHeaders[index + 1]!;
-        const key = name.toLowerCase();
-
-        if (HOP_BY_HOP.has(key)) continue;
-
-        const basic = key === "authorization" && /^basic\s+(\S+)$/i.exec(value);
-
-        const swapped = basic
-          ? `Basic ${Buffer.from(swap(Buffer.from(basic[1]!, "base64").toString("utf8"))).toString("base64")}`
-          : swap(value);
-
-        (headers[key] ??= []).push(swapped);
-      }
+      const headers = requestHeaders(request.rawHeaders, swap);
 
       // Uncompressed responses, so the value can be scrubbed from them.
       headers["accept-encoding"] = ["identity"];
@@ -191,21 +229,12 @@ export function credentialProxy(
         },
         (reply) => {
           record(reply.statusCode ?? null);
-          const replyHeaders: Record<string, string[]> = {};
 
-          for (let index = 0; index < reply.rawHeaders.length; index += 2) {
-            const key = reply.rawHeaders[index]!.toLowerCase();
-
-            // A scrubbed body can change length; Node frames it anew.
-            if (
-              HOP_BY_HOP.has(key) ||
-              (scrub.length && key === "content-length")
-            )
-              continue;
-            (replyHeaders[key] ??= []).push(
-              scrubText(reply.rawHeaders[index + 1]!),
-            );
-          }
+          const replyHeaders = responseHeaders(
+            reply.rawHeaders,
+            scrub.length > 0,
+            scrubText,
+          );
 
           response.writeHead(
             reply.statusCode ?? 502,

@@ -28,31 +28,29 @@ export const desktopControlInput = z.object({
   holder: z.enum(["bot", "owner"]),
 });
 
-export const messageInput = z
-  .object({
-    content: z.string().trim().max(32000),
-    requestId: z.uuid(),
-    replyTo: z.string().min(1).max(200).optional(),
-    attachments: z.array(attachmentInput).max(MAX_ATTACHMENTS).default([]),
-    timezone: z.string().min(1).max(100).optional(),
-  })
-  .refine((value) => value.content || value.attachments.length, {
+const messageFields = z.object({
+  content: z.string().trim().max(32000),
+  requestId: z.uuid(),
+  replyTo: z.string().min(1).max(200).optional(),
+  attachments: z.array(attachmentInput).max(MAX_ATTACHMENTS).default([]),
+});
+
+const hasContent = <T extends z.infer<typeof messageFields>>(
+  schema: z.ZodType<T>,
+) =>
+  schema.refine((value) => value.content || value.attachments.length, {
     message: "Write a message or attach a file",
     path: ["content"],
   });
 
-export const groupMessageInput = z
-  .object({
-    content: z.string().trim().max(32000),
-    requestId: z.uuid(),
-    /** A message in the same group; replying to a bot's message also wakes that bot. */
-    replyTo: z.string().min(1).max(200).optional(),
-    attachments: z.array(attachmentInput).max(MAX_ATTACHMENTS).default([]),
-  })
-  .refine((value) => value.content || value.attachments.length, {
-    message: "Write a message or attach a file",
-    path: ["content"],
-  });
+export const messageInput = hasContent(
+  messageFields.extend({
+    timezone: z.string().min(1).max(100).optional(),
+  }),
+);
+
+/** `replyTo` names a message in the same group; replying to a bot's message also wakes that bot. */
+export const groupMessageInput = hasContent(messageFields);
 
 export const credentialUsesInput = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),

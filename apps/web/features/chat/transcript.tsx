@@ -1,0 +1,700 @@
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  ArrowRight01Icon,
+  ComputerIcon,
+  Copy01Icon,
+  File02Icon,
+  HammerIcon,
+  Key01Icon,
+  ReplyIcon,
+  Tick02Icon,
+  UserGroupIcon,
+} from "@hugeicons/core-free-icons";
+import { Bubble, BubbleContent, BubbleReactions } from "@/components/ui/bubble";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Marker, MarkerContent } from "@/components/ui/marker";
+import {
+  Message as MessageRow,
+  MessageContent,
+  MessageFooter,
+  MessageHeader,
+} from "@/components/ui/message";
+import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
+import { type Message, blobUrl } from "@/lib/api";
+import { botStyle } from "@/features/bots/avatar";
+import type { Upload } from "./composer";
+import { DisplayCard, displayOf } from "./display";
+import { Reply } from "@/components/markdown";
+
+/** Orders `agent:entry:index` message IDs numerically; others keep their place at the end. */
+function position(id: string) {
+  const parts = id.split(":");
+  const entry = Number(parts.at(-2));
+  const index = Number(parts.at(-1));
+
+  return Number.isFinite(entry) && Number.isFinite(index)
+    ? [entry, index]
+    : [Infinity, 0];
+}
+
+/** Merges older pages into the live page by ID, in transcript order. */
+export function mergeMessages(older: Message[], live: Message[]) {
+  const byId = new Map<string, Message>();
+
+  for (const message of [...older, ...live]) byId.set(message.id, message);
+
+  return [...byId.values()].sort((a, b) => {
+    const [ae, ai] = position(a.id);
+    const [be, bi] = position(b.id);
+
+    return ae! - be! || ai! - bi!;
+  });
+}
+
+function hasText(message: Message) {
+  if (!Array.isArray(message.blocks)) return message.content.trim() !== "";
+
+  // SAFETY: Provider content blocks are objects with a `type`; text blocks carry `text`.
+  const blocks = message.blocks as { type?: string; text?: string }[];
+
+  return blocks.some(
+    (block) => block.type === "text" && Boolean(block.text?.trim()),
+  );
+}
+
+export type JobDetails = { name: string; status?: string };
+
+/** A coding or desktop job a tool result started or messaged. */
+export function jobOf(message: Message) {
+  if (message.role !== "toolResult" || message.isError) return null;
+
+  if (message.toolName !== "coding" && message.toolName !== "desktop")
+    return null;
+
+  // SAFETY: Job tool results carry the job's name and status in their details.
+  const details = message.toolDetails as Partial<JobDetails> | undefined;
+
+  const kind: "coding" | "desktop" =
+    message.toolName === "coding" ? "coding" : "desktop";
+
+  return details?.name
+    ? {
+        kind,
+        name: details.name,
+        status: details.status,
+      }
+    : null;
+}
+
+/** The credential a `request_credential` result asked the owner for. */
+export function credentialRequestOf(message: Message) {
+  if (
+    message.role !== "toolResult" ||
+    message.isError ||
+    message.toolName !== "request_credential"
+  )
+    return null;
+
+  // SAFETY: The tool stores the saved request, with its name and hosts, as its details.
+  const details = message.toolDetails as
+    | { name?: string; hosts?: string[] }
+    | undefined;
+
+  return details?.name
+    ? { name: details.name, hosts: details.hosts ?? [] }
+    : null;
+}
+
+function userShown(message: Message) {
+  return (
+    (message.content.trim() !== "" || Boolean(message.attachments?.length)) &&
+    message.origin?.kind !== "coding" &&
+    message.origin?.kind !== "desktop"
+  );
+}
+
+function toolResultShown(message: Message) {
+  return (
+    displayOf(message) !== null ||
+    jobOf(message) !== null ||
+    credentialRequestOf(message) !== null
+  );
+}
+
+export function shownInChat(message: Message) {
+  switch (message.role) {
+    case "user":
+      return userShown(message);
+    case "assistant":
+      return hasText(message);
+    case "toolResult":
+      return toolResultShown(message);
+    case "event":
+      return message.content.trim() !== "";
+    default:
+      return false;
+  }
+}
+
+function reactionEmoji(message: Message) {
+  if (message.role !== "toolResult" || message.toolName !== "react") return;
+
+  if (message.isError) return;
+
+  // SAFETY: The react tool records the emoji it sent in its details.
+  return (message.toolDetails as { emoji?: string } | undefined)?.emoji;
+}
+
+function reactionLabel(message: Message, emoji: string, group: boolean) {
+  return group && message.origin?.name
+    ? `${message.origin.name} ${emoji}`
+    : emoji;
+}
+
+function addReaction(
+  reactions: Map<string, string[]>,
+  target: string,
+  label: string,
+) {
+  reactions.set(target, [...(reactions.get(target) ?? []), label]);
+}
+
+/** Emoji reactions from the `react` tool, keyed by the message they react to. */
+export function reactionsOf(messages: Message[], group: boolean) {
+  const reactions = new Map<string, string[]>();
+  let lastUser: string | undefined;
+
+  for (const message of messages) {
+    if (message.role === "user" && message.entryId) lastUser = message.entryId;
+
+    const emoji = reactionEmoji(message);
+    const target = group ? message.replyTo : lastUser;
+
+    if (!emoji || !target) continue;
+
+    addReaction(reactions, target, reactionLabel(message, emoji, group));
+  }
+
+  return reactions;
+}
+
+function timeLabel(timestamp: number) {
+  const date = new Date(timestamp);
+  const now = new Date();
+
+  const time = date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  if (date.toDateString() === now.toDateString()) return `Today ${time}`;
+
+  return date.getFullYear() === now.getFullYear()
+    ? `${date.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })} ${time}`
+    : date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
+
+/** Rows for a transcript, with a time marker where more than 30 minutes pass. */
+export function withTimeMarkers(messages: Message[]) {
+  const rows: (
+    | { kind: "time"; key: string; label: string }
+    | { kind: "message"; message: Message }
+  )[] = [];
+
+  let last = 0;
+
+  for (const message of messages) {
+    if (message.timestamp && message.timestamp - last > 30 * 60_000)
+      rows.push({
+        kind: "time",
+        key: `time-${message.id}`,
+        label: timeLabel(message.timestamp),
+      });
+
+    if (message.timestamp) last = message.timestamp;
+    rows.push({ kind: "message", message });
+  }
+
+  return rows;
+}
+
+export const ARRIVAL =
+  "animate-in fade-in slide-in-from-bottom-2 duration-200 ease-out";
+
+/**
+ * Animates only messages that arrive while the transcript is open, not the
+ * history already there when it loaded or pages fetched by scrolling back.
+ */
+export function useArrivals(live: Message[] | undefined) {
+  const seen = useRef<Set<string> | null>(null);
+
+  if (live && !seen.current)
+    seen.current = new Set(live.map((message) => message.id));
+
+  return {
+    remember: (messages: Message[]) =>
+      messages.forEach((message) => seen.current?.add(message.id)),
+    // A confirmed owner message replaces its outgoing copy, which already animated.
+    arrival: (message: Message) =>
+      seen.current &&
+      !seen.current.has(message.id) &&
+      !(message.role === "user" && message.requestId)
+        ? ARRIVAL
+        : undefined,
+  };
+}
+
+export function TimeMarker({ label }: { label: string }) {
+  return (
+    <Marker variant="separator">
+      <MarkerContent className="tabular-nums">{label}</MarkerContent>
+    </Marker>
+  );
+}
+
+export function EventRow({ message }: { message: Message }) {
+  const [open, setOpen] = useState(false);
+  const communication = message.communication;
+
+  const title =
+    message.kind === "bot-message" && communication
+      ? `Bot communication: ${communication.fromName} → ${communication.toName}`
+      : message.kind === "reset"
+        ? "Context reset"
+        : "Earlier messages summarized";
+
+  const status =
+    communication &&
+    {
+      sent: "Sent",
+      done: "Reply",
+      failed: "Failed",
+      cancelled: "Cancelled",
+    }[communication.status];
+
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        className="flex items-center justify-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <HugeiconsIcon
+          icon={ArrowRight01Icon}
+          className={cn("size-3 transition-transform", open && "rotate-90")}
+        />
+        {title}
+        {status && <Badge variant="outline">{status}</Badge>}
+      </button>
+      {open && (
+        <div className="rounded-lg bg-muted/50 p-3 text-sm">
+          <Reply source={message.content} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AttachmentImage({ path, name }: { path: string; name: string }) {
+  const image = useQuery({
+    queryKey: ["attachment", path],
+    queryFn: ({ signal }) => blobUrl(path, signal),
+    staleTime: Infinity,
+    gcTime: 10 * 60_000,
+  });
+
+  return image.data ? (
+    <img
+      src={image.data}
+      alt={name}
+      className="max-h-64 max-w-full rounded-lg object-contain outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
+    />
+  ) : (
+    <div className="size-32 animate-pulse rounded-lg bg-muted" />
+  );
+}
+
+export function Attachments({
+  message,
+  attachmentPath,
+}: {
+  message: Message;
+  attachmentPath: (entryId: string, index: number) => string;
+}) {
+  if (!message.attachments?.length) return null;
+
+  return (
+    <div className="flex flex-wrap justify-end gap-2">
+      {message.attachments.map((attachment, index) =>
+        attachment.kind === "image" ? (
+          <AttachmentImage
+            key={index}
+            name={attachment.name}
+            path={attachmentPath(message.entryId, index)}
+          />
+        ) : (
+          <Badge key={index} variant="outline">
+            <HugeiconsIcon icon={File02Icon} data-icon="inline-start" />
+            {attachment.name}
+          </Badge>
+        ),
+      )}
+    </div>
+  );
+}
+
+function originLabel(message: Message) {
+  const origin = message.origin;
+
+  if (!origin || origin.kind === "owner") return null;
+
+  if (origin.kind === "task") return `Task · ${origin.name ?? ""}`;
+
+  if (origin.kind === "credential")
+    return (
+      <span className="flex items-center gap-1">
+        <HugeiconsIcon icon={Key01Icon} className="size-3" />
+        Credential · {origin.name}
+      </span>
+    );
+
+  if (origin.kind === "bot")
+    return (
+      <span className="flex items-center gap-1">
+        <HugeiconsIcon icon={UserGroupIcon} className="size-3" />
+        From {origin.name}
+      </span>
+    );
+
+  return null;
+}
+
+export function MessageActions({
+  message,
+  onReply,
+}: {
+  message: Message;
+  onReply?: ((message: Message) => void) | undefined;
+}) {
+  const canReply =
+    onReply &&
+    message.entryId &&
+    (message.role === "user" || message.role === "assistant");
+
+  return (
+    <div className="flex gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
+      {canReply && (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          title="Reply"
+          onClick={() => onReply(message)}
+        >
+          <HugeiconsIcon icon={ReplyIcon} />
+        </Button>
+      )}
+      <CopyButton text={message.content} />
+    </div>
+  );
+}
+
+const ICON_SWAP =
+  "transition-[opacity,scale,filter] duration-200 ease-[cubic-bezier(0.2,0,0,1)]";
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+
+    const timer = setTimeout(() => setCopied(false), 1500);
+
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon-xs"
+      title={copied ? "Copied" : "Copy"}
+      className="relative"
+      onClick={() =>
+        void navigator.clipboard.writeText(text).then(() => setCopied(true))
+      }
+    >
+      <HugeiconsIcon
+        icon={Copy01Icon}
+        className={cn(ICON_SWAP, copied && "scale-25 opacity-0 blur-[4px]")}
+      />
+      <HugeiconsIcon
+        icon={Tick02Icon}
+        className={cn(
+          ICON_SWAP,
+          "absolute",
+          !copied && "scale-25 opacity-0 blur-[4px]",
+        )}
+      />
+    </Button>
+  );
+}
+
+function MessageReactions({
+  reactions,
+  align,
+}: {
+  reactions: string[] | undefined;
+  align: "start" | "end";
+}) {
+  if (!reactions || reactions.length === 0) return null;
+
+  return (
+    <BubbleReactions side="bottom" align={align}>
+      <Badge variant="secondary" title={reactions.join(", ")}>
+        {reactions.map((reaction) => reaction.split(" ").at(-1)).join("")}
+      </Badge>
+    </BubbleReactions>
+  );
+}
+
+export type Delivery = "sending" | "failed";
+
+/** An owner message: right-aligned bubble with origin, reply quote, attachments, reactions, and delivery state. */
+export function OwnerMessage({
+  message,
+  uploads,
+  quote,
+  reactions,
+  delivery,
+  onRetry,
+  onReply,
+  attachmentPath,
+}: {
+  message: Message;
+  /** Files of a message not confirmed yet, shown from local data. */
+  uploads?: Upload[];
+  quote?: string | undefined;
+  reactions?: string[] | undefined;
+  delivery?: Delivery;
+  onRetry?: () => void;
+  onReply?: ((message: Message) => void) | undefined;
+  attachmentPath: (entryId: string, index: number) => string;
+}) {
+  const label = originLabel(message);
+
+  return (
+    <MessageRow align="end">
+      <MessageContent>
+        {label && <MessageHeader>{label}</MessageHeader>}
+        {quote && (
+          <div className="line-clamp-2 self-end border-r-2 pr-2 text-xs text-muted-foreground">
+            {quote}
+          </div>
+        )}
+        <Attachments message={message} attachmentPath={attachmentPath} />
+        {uploads && uploads.length > 0 && (
+          <div className="flex flex-wrap justify-end gap-2">
+            {uploads.map((upload, index) =>
+              upload.preview ? (
+                <img
+                  key={index}
+                  src={upload.preview}
+                  alt={upload.name}
+                  className="max-h-64 max-w-full rounded-lg object-contain"
+                />
+              ) : (
+                <Badge key={index} variant="outline">
+                  <HugeiconsIcon icon={File02Icon} data-icon="inline-start" />
+                  {upload.name}
+                </Badge>
+              ),
+            )}
+          </div>
+        )}
+        {message.content.trim() && (
+          <Bubble variant="secondary" align="end">
+            <BubbleContent className="whitespace-pre-wrap">
+              {message.content}
+            </BubbleContent>
+            <MessageReactions reactions={reactions} align="end" />
+          </Bubble>
+        )}
+        <MessageFooter className="gap-2">
+          {delivery === "sending" && (
+            <span className="flex items-center gap-1">
+              <Spinner className="size-3" />
+              Sending…
+            </span>
+          )}
+          {delivery === "failed" && (
+            <span className="flex items-center gap-1 text-destructive">
+              Not sent
+              <Button variant="link" size="xs" onClick={onRetry}>
+                Retry
+              </Button>
+            </span>
+          )}
+          {!delivery && <MessageActions message={message} onReply={onReply} />}
+        </MessageFooter>
+      </MessageContent>
+    </MessageRow>
+  );
+}
+
+/** A bot's message: Markdown bubble, optionally with the sender for group chats. */
+export function BotMessage({
+  message,
+  sender,
+  color,
+  reactions,
+  onReply,
+}: {
+  message: Message;
+  sender?: ReactNode;
+  /** The sender's color, where the transcript mixes bots. */
+  color?: string | undefined;
+  reactions?: string[] | undefined;
+  onReply?: ((message: Message) => void) | undefined;
+}) {
+  return (
+    <MessageRow align="start">
+      <MessageContent>
+        {sender && <MessageHeader>{sender}</MessageHeader>}
+        <Bubble
+          variant="secondary"
+          className="*:data-[slot=bubble-content]:bg-bot-soft!"
+          style={color ? botStyle(color) : undefined}
+        >
+          <BubbleContent>
+            <Reply source={message.content} />
+          </BubbleContent>
+          <MessageReactions reactions={reactions} align="start" />
+        </Bubble>
+        <MessageFooter>
+          <MessageActions message={message} onReply={onReply} />
+        </MessageFooter>
+      </MessageContent>
+    </MessageRow>
+  );
+}
+
+function CredentialRequestCard({
+  credential,
+  botId,
+}: {
+  credential: { name: string; hosts: string[] };
+  botId: string;
+}) {
+  return (
+    <Link
+      to="/bots/$botId/credentials"
+      params={{ botId }}
+      className="flex w-full max-w-sm items-center gap-3 rounded-xl border p-3 text-left hover:bg-muted/50"
+    >
+      <HugeiconsIcon
+        icon={Key01Icon}
+        className="size-4 text-muted-foreground"
+      />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm font-medium">{credential.name}</span>
+        <span className="truncate text-xs text-muted-foreground">
+          Credential request · {credential.hosts.join(", ")}
+        </span>
+      </span>
+      <span className="text-xs text-muted-foreground">Review</span>
+    </Link>
+  );
+}
+
+function JobCard({
+  job,
+  jobStatus,
+  onOpenJob,
+}: {
+  job: {
+    kind: "coding" | "desktop";
+    name: string;
+    status?: string | undefined;
+  };
+  jobStatus?: string | undefined;
+  onOpenJob?:
+    | ((job: { kind: "coding" | "desktop"; name: string }) => void)
+    | undefined;
+}) {
+  const status = jobStatus ?? job.status;
+  const working = status === "working" || status === "running";
+  const Icon = job.kind === "coding" ? HammerIcon : ComputerIcon;
+
+  return (
+    <button
+      type="button"
+      className="flex w-full max-w-sm items-center gap-3 rounded-xl border p-3 text-left hover:bg-muted/50"
+      onClick={() => onOpenJob?.(job)}
+    >
+      <HugeiconsIcon icon={Icon} className="size-4 text-muted-foreground" />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm font-medium">{job.name}</span>
+        <span className="text-xs text-muted-foreground">
+          {job.kind === "coding" ? "Coding job" : "Desktop job"}
+        </span>
+      </span>
+      {working ? (
+        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Spinner className="size-3" />
+          Working
+        </span>
+      ) : (
+        <span className="text-xs text-muted-foreground">Idle</span>
+      )}
+    </button>
+  );
+}
+
+export function ToolResultRow({
+  message,
+  botId,
+  jobStatus,
+  onOpenJob,
+}: {
+  message: Message;
+  /** The bot whose chat this is; a credential request links to its credentials. */
+  botId?: string;
+  jobStatus?: string | undefined;
+  onOpenJob?: (job: { kind: "coding" | "desktop"; name: string }) => void;
+}) {
+  const display = displayOf(message);
+
+  if (display) return <DisplayCard display={display} />;
+
+  const credential = credentialRequestOf(message);
+
+  if (credential)
+    return botId ? (
+      <CredentialRequestCard credential={credential} botId={botId} />
+    ) : null;
+
+  const job = jobOf(message);
+
+  if (!job) return null;
+
+  return <JobCard job={job} jobStatus={jobStatus} onOpenJob={onOpenJob} />;
+}
+
+export function TypingDots() {
+  return (
+    <div className="flex gap-1 px-3 py-2" aria-label="Working">
+      {[0, 1, 2].map((index) => (
+        <span
+          key={index}
+          className="size-1.5 animate-bounce rounded-full bg-bot-strong"
+          style={{ animationDelay: `${index * 150}ms` }}
+        />
+      ))}
+    </div>
+  );
+}

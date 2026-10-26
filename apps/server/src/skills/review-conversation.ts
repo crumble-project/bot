@@ -1,10 +1,10 @@
 import {
   defineDoc,
   defineExtension,
-  defineTask,
   GenerationTask,
   hook,
 } from "@earendil-works/pi-durable";
+import { defineAnchorTask } from "../shared/anchor-task";
 
 export const REVIEW_EXTENSION = "learning-review";
 
@@ -33,26 +33,7 @@ export const ReviewConversation = defineDoc<{
 });
 
 // Owns a review conversation, so it stays out of the bot chat transcript, like a group conversation's anchor.
-export const ReviewAnchor = defineTask<null, { phase: "done" }, null>({
-  name: "crumble.review-anchor",
-  version: 1,
-  initial: () => ({ phase: "done" }),
-  phases: {
-    done: (_anchor, runtime, taskContext) =>
-      runtime.commit(
-        () => ({
-          status: "terminal",
-          outcome: { status: "completed", result: null },
-        }),
-        taskContext,
-      ),
-  },
-  abort: (_anchor, runtime, taskContext) =>
-    runtime.commit(
-      () => ({ status: "terminal", outcome: { status: "aborted" } }),
-      taskContext,
-    ),
-});
+export const ReviewAnchor = defineAnchorTask("crumble.review-anchor");
 
 export class ReviewBudgetExceeded extends Error {
   constructor(spent: number, budget: number) {

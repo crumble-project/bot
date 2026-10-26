@@ -240,39 +240,53 @@ export class Scheduler extends Context.Service<
           );
         });
 
+        const advancing = Effect.fnUntraced(function* (
+          schedule: Schedule,
+          now: Date,
+        ) {
+          const latest = yield* schedules.get(schedule.id);
+
+          if (!latest) return;
+
+          yield* schedules.updateNextRunAt(
+            schedule.id,
+            latest.cron
+              ? nextOccurrence(latest.cron, latest.timezone, now)
+              : null,
+          );
+        });
+
+        const passOne = Effect.fnUntraced(function* (
+          schedule: Schedule,
+          now: Date,
+        ) {
+          if (
+            !schedule.enabled ||
+            !schedule.nextRunAt ||
+            !(yield* agents.get(schedule.agentId))?.enabled
+          )
+            return;
+          const due = new Date(schedule.nextRunAt);
+
+          if (Number.isNaN(due.valueOf()) || due > now) return;
+          const key = `schedule:${schedule.id}:${due.toISOString()}`;
+          const failedAt = failed.get(key);
+
+          if (
+            (failedAt !== undefined &&
+              now.valueOf() - failedAt < RETRY_AFTER_MS) ||
+            inFlight.has(schedule.id)
+          )
+            return;
+
+          if (!(yield* dispatchOnce(schedule, key, now.valueOf()))) return;
+
+          yield* advancing(schedule, now);
+        });
+
         const pass = Effect.fnUntraced(function* (now: Date) {
-          for (const schedule of yield* schedules.list()) {
-            if (
-              !schedule.enabled ||
-              !schedule.nextRunAt ||
-              !(yield* agents.get(schedule.agentId))?.enabled
-            )
-              continue;
-            const due = new Date(schedule.nextRunAt);
-
-            if (Number.isNaN(due.valueOf()) || due > now) continue;
-            const key = `schedule:${schedule.id}:${due.toISOString()}`;
-            const failedAt = failed.get(key);
-
-            if (
-              (failedAt !== undefined &&
-                now.valueOf() - failedAt < RETRY_AFTER_MS) ||
-              inFlight.has(schedule.id)
-            )
-              continue;
-
-            if (!(yield* dispatchOnce(schedule, key, now.valueOf()))) continue;
-            const latest = yield* schedules.get(schedule.id);
-
-            if (!latest) continue;
-
-            yield* schedules.updateNextRunAt(
-              schedule.id,
-              latest.cron
-                ? nextOccurrence(latest.cron, latest.timezone, now)
-                : null,
-            );
-          }
+          for (const schedule of yield* schedules.list())
+            yield* passOne(schedule, now);
         });
 
         const tick = Effect.fn("Scheduler.tick")(function* (now?: Date) {
@@ -352,35 +366,38 @@ export function schedulerAccess(runtime: Runner<Scheduler>): SchedulerAccess {
 /** A scheduler over the tasks `core` reaches, dispatching with `dispatch`, for an API or a test without an account. */
 export function standaloneScheduler(
   core: Runner<ScheduleRepository | AgentRepository>,
-  dispatch: (
-    agentId: string,
-    prompt: string,
-    requestId: string,
-    scheduleId: string,
-  ) => Promise<ScheduleDispatchResult>,
+  dispatch: StandaloneDispatch,
   intervalMs?: number,
 ): SchedulerAccess {
   return schedulerAccess(
     ManagedRuntime.make(
       Scheduler.layer(intervalMs).pipe(
-        Layer.provide(
-          Layer.succeed(
-            TaskDispatch,
-            (agentId, prompt, requestId, scheduleId) =>
-              Effect.tryPromise({
-                try: () => dispatch(agentId, prompt, requestId, scheduleId),
-                catch: (error) => error,
-              }),
-          ),
-        ),
-        Layer.provide(
-          Layer.succeedContext(
-            core.runSync(
-              Effect.context<ScheduleRepository | AgentRepository>(),
-            ),
-          ),
-        ),
+        Layer.provide(standaloneDependencies(core, dispatch)),
       ),
     ),
   );
 }
+
+/** What a scheduler needs outside an account: the repositories `core` reaches, and `dispatch` as its TaskDispatch. */
+export const standaloneDependencies = (
+  core: Runner<ScheduleRepository | AgentRepository>,
+  dispatch: StandaloneDispatch,
+) =>
+  Layer.merge(
+    Layer.succeed(TaskDispatch, (agentId, prompt, requestId, scheduleId) =>
+      Effect.tryPromise({
+        try: () => dispatch(agentId, prompt, requestId, scheduleId),
+        catch: (error) => error,
+      }),
+    ),
+    Layer.succeedContext(
+      core.runSync(Effect.context<ScheduleRepository | AgentRepository>()),
+    ),
+  );
+
+export type StandaloneDispatch = (
+  agentId: string,
+  prompt: string,
+  requestId: string,
+  scheduleId: string,
+) => Promise<ScheduleDispatchResult>;

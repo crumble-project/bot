@@ -7,64 +7,56 @@ const HANDSHAKE_BYTES = 14;
 // KeyEvent, PointerEvent, ClientCutText, xvp (power operations), SetDesktopSize, QEMU extended key event.
 const INPUT = new Set([4, 5, 6, 250, 251, 255]);
 
+type Length = (bytes: Uint8Array, view: DataView) => number;
+
+/** Message types whose length is fixed; the number is the message's size in bytes. */
+const FIXED_LENGTH = new Map([
+  [0, 20], // SetPixelFormat
+  [3, 10], // FramebufferUpdateRequest
+  [4, 8], // KeyEvent
+  [5, 6], // PointerEvent
+  [150, 10], // EnableContinuousUpdates
+  [250, 4], // xvp
+]);
+
+/** Message types whose length comes from their own header; 0 until enough bytes are buffered. */
+const COMPUTED_LENGTH = new Map<number, Length>([
+  [2, (bytes, view) => (bytes.length < 4 ? 0 : 4 + 4 * view.getUint16(2))], // SetEncodings
+  // The extended clipboard (noVNC, TigerVNC) sends a negative length: the payload is its absolute value.
+  [6, (bytes, view) => (bytes.length < 8 ? 0 : 8 + Math.abs(view.getInt32(4)))],
+  [248, (bytes) => (bytes.length < 9 ? 0 : 9 + (bytes[8] ?? 0))], // ClientFence
+  [251, (bytes) => (bytes.length < 7 ? 0 : 8 + 16 * (bytes[6] ?? 0))], // SetDesktopSize
+  [255, qemuLength],
+]);
+
+/** A QEMU client message; only the extended key event is known. */
+function qemuLength(bytes: Uint8Array): number {
+  if (bytes.length < 2) return 0;
+
+  if (bytes[1] === 0) return 12;
+
+  throw new RfbProtocolError(`unknown QEMU client message ${bytes[1]}`);
+}
+
 /** Length of the client message at the start of `bytes`; 0 when more bytes are needed to tell. */
 function messageLength(bytes: Uint8Array): number {
-  if (bytes.length < 1) return 0;
+  const type = bytes[0];
 
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (type === undefined) return 0;
 
-  switch (bytes[0]) {
-    // SetPixelFormat
-    case 0:
-      return 20;
+  const fixed = FIXED_LENGTH.get(type);
 
-    // SetEncodings
-    case 2:
-      return bytes.length < 4 ? 0 : 4 + 4 * view.getUint16(2);
+  if (fixed !== undefined) return fixed;
 
-    // FramebufferUpdateRequest
-    case 3:
-      return 10;
+  const computed = COMPUTED_LENGTH.get(type);
 
-    // KeyEvent
-    case 4:
-      return 8;
+  if (!computed)
+    throw new RfbProtocolError(`unknown RFB client message ${type}`);
 
-    // PointerEvent
-    case 5:
-      return 6;
-
-    // ClientCutText. The extended clipboard (noVNC, TigerVNC) sends a negative length: the payload is its absolute value.
-    case 6:
-      return bytes.length < 8 ? 0 : 8 + Math.abs(view.getInt32(4));
-
-    // EnableContinuousUpdates
-    case 150:
-      return 10;
-
-    // ClientFence
-    case 248:
-      return bytes.length < 9 ? 0 : 9 + (bytes[8] ?? 0);
-
-    // xvp
-    case 250:
-      return 4;
-
-    // SetDesktopSize
-    case 251:
-      return bytes.length < 7 ? 0 : 8 + 16 * (bytes[6] ?? 0);
-
-    // QEMU client message; only the extended key event is known.
-    case 255:
-      if (bytes.length < 2) return 0;
-
-      if (bytes[1] === 0) return 12;
-
-      throw new RfbProtocolError(`unknown QEMU client message ${bytes[1]}`);
-
-    default:
-      throw new RfbProtocolError(`unknown RFB client message ${bytes[0]}`);
-  }
+  return computed(
+    bytes,
+    new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+  );
 }
 
 function concat(parts: Uint8Array[]) {

@@ -302,6 +302,12 @@ describe("HTTP API", () => {
     });
 
     expect(mutation.status).toBe(405);
+
+    const deletion = await req(app, "/v1/skills/common:tasks%2FSKILL.md", {
+      method: "DELETE",
+    });
+
+    expect(deletion.status).toBe(405);
     store.close();
   });
 
@@ -629,6 +635,116 @@ describe("HTTP API", () => {
     });
 
     expect((await signedOut.json()).auth).toBe("token");
+  });
+
+  test("deletes a shared skill and drops it from every bot that used it", async () => {
+    const { app, store } = setup();
+
+    const agent = await req(app, "/v1/agents", {
+      method: "POST",
+      body: JSON.stringify(agentInput("Reader")),
+    }).then((r: Response) => r.json());
+
+    const own = await req(app, `/v1/agents/${agent.id}/skills`, {
+      method: "POST",
+      body: JSON.stringify({ name: "Own", instructions: "x" }),
+    }).then((r: Response) => r.json());
+
+    const shared = await req(app, "/v1/skills", {
+      method: "POST",
+      body: JSON.stringify({ name: "Shared", instructions: "Read me" }),
+    }).then((r: Response) => r.json());
+
+    store.updateAgent(agent.id, { sharedSkills: [shared.id] });
+
+    // A bot's own skill is not in the shared library, so this route leaves it alone.
+    expect(
+      (await req(app, `/v1/skills/${own.id}`, { method: "DELETE" })).status,
+    ).toBe(404);
+    expect(
+      (await req(app, "/v1/skills/missing", { method: "DELETE" })).status,
+    ).toBe(404);
+
+    const deleted = await req(app, `/v1/skills/${shared.id}`, {
+      method: "DELETE",
+    });
+
+    expect(deleted.status).toBe(204);
+    expect(store.getSkill(shared.id)).toBeNull();
+    expect(store.getAgent(agent.id)?.sharedSkills).toEqual([]);
+    store.close();
+  });
+
+  test("changes an MCP server's settings and keeps its secrets write-only", async () => {
+    const { app, store } = setup();
+
+    const created = await req(app, "/v1/mcp-servers", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Docs",
+        url: "https://docs.example.com/mcp",
+        token: "token-secret",
+      }),
+    }).then((r: Response) => r.json());
+
+    const patch = (body: {
+      name?: string;
+      oauthClientId?: string;
+      oauthClientSecret?: string;
+    }) =>
+      req(app, `/v1/mcp-servers/${created.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+
+    const renamed = await patch({ name: "Docs 2" });
+
+    expect(renamed.status).toBe(200);
+    expect(await renamed.json()).toMatchObject({
+      name: "Docs 2",
+      oauthClientId: null,
+    });
+
+    // The client secret is write-only; writing one replaces whatever was stored.
+    const secretWritten = await patch({
+      oauthClientId: "client-id",
+      oauthClientSecret: "client-secret",
+    });
+
+    expect(secretWritten.status).toBe(200);
+    expect(JSON.stringify(await secretWritten.json())).not.toContain(
+      "client-secret",
+    );
+
+    const described = async () =>
+      (await req(app, "/v1/mcp-servers").then((r: Response) => r.json()))[0];
+
+    expect(await described()).toMatchObject({
+      auth: "token",
+      authenticated: true,
+      oauthClientId: "client-id",
+      hasOAuthClientSecret: true,
+    });
+
+    // A new client ID invalidates the tokens the old client obtained.
+    const otherClient = await patch({ oauthClientId: "other-client-id" });
+
+    expect(otherClient.status).toBe(200);
+    expect((await otherClient.json()).oauthClientId).toBe("other-client-id");
+
+    const secretRemoved = await patch({ oauthClientSecret: "" });
+
+    expect(secretRemoved.status).toBe(200);
+    expect((await described()).hasOAuthClientSecret).toBe(false);
+    expect(
+      (
+        await req(app, "/v1/mcp-servers/missing", {
+          method: "PATCH",
+          body: JSON.stringify({ name: "Nobody" }),
+        })
+      ).status,
+    ).toBe(404);
+    store.close();
   });
 
   test("isolates memories and never returns provider secrets", async () => {

@@ -69,6 +69,26 @@ const railwaySandboxId = (agentId: string): string | undefined => {
   }
 };
 
+// Only the sandboxes this run recorded: the environment may hold others.
+const destroyRecordedSandboxes = async () => {
+  const files = existsSync(railwayRecords) ? readdirSync(railwayRecords) : [];
+
+  for (const file of files) {
+    const id = railwaySandboxId(path.basename(file, ".json"));
+
+    if (id)
+      await RailwaySandbox.connect(id)
+        .then((sandbox) => sandbox.destroy())
+        .catch(() => undefined);
+  }
+};
+
+const deleteRunCheckpoints = async (namePrefix: string) => {
+  for (const checkpoint of await RailwaySandbox.checkpoints())
+    if (checkpoint.key.startsWith(`${namePrefix}-`))
+      await RailwaySandbox.deleteCheckpoint(checkpoint.id);
+};
+
 const railway: WorkspaceBackend = {
   name: "Railway",
   // Live runs create billed sandboxes, so they need an explicit opt-in besides the credentials.
@@ -96,21 +116,8 @@ const railway: WorkspaceBackend = {
     },
   }),
   cleanup: async (namePrefix) => {
-    // Only the sandboxes this run recorded: the environment may hold others.
-    for (const file of existsSync(railwayRecords)
-      ? readdirSync(railwayRecords)
-      : []) {
-      const id = railwaySandboxId(path.basename(file, ".json"));
-
-      if (id)
-        await RailwaySandbox.connect(id)
-          .then((sandbox) => sandbox.destroy())
-          .catch(() => undefined);
-    }
-
-    for (const checkpoint of await RailwaySandbox.checkpoints())
-      if (checkpoint.key.startsWith(`${namePrefix}-`))
-        await RailwaySandbox.deleteCheckpoint(checkpoint.id);
+    await destroyRecordedSandboxes();
+    await deleteRunCheckpoints(namePrefix);
   },
 };
 

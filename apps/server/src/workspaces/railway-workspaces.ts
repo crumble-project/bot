@@ -777,19 +777,31 @@ class ByteQueue implements AsyncIterable<Uint8Array> {
 
   async *[Symbol.asyncIterator]() {
     while (true) {
+      const chunk = await this.next();
+
+      if (!chunk) return;
+
+      yield chunk;
+    }
+  }
+
+  /** The next chunk, waiting for one while the queue is open; undefined once it ended or threw. */
+  private async next(): Promise<Uint8Array | undefined> {
+    while (true) {
       const chunk = this.chunks.shift();
 
-      if (chunk) {
-        yield chunk;
-        continue;
-      }
+      if (chunk) return chunk;
 
-      if (this.error) throw this.error;
-
-      if (this.done) return;
+      if (this.done) return this.stop();
 
       await new Promise<void>((resolve) => (this.wake = resolve));
       this.wake = undefined;
     }
+  }
+
+  private stop(): undefined {
+    if (this.error) throw this.error;
+
+    return undefined;
   }
 }

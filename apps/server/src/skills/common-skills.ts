@@ -62,6 +62,40 @@ function unquote(value: string) {
   return trimmed;
 }
 
+const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
+
+function frontmatterFields(lines: string[]) {
+  const fields = new Map<string, string>();
+
+  for (const line of lines) {
+    const field = line.match(/^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$/);
+
+    if (!field) continue;
+    const value = unquote(field[2] ?? "");
+
+    if (value) fields.set(field[1]!, value);
+  }
+
+  return fields;
+}
+
+/** The frontmatter fields and the instructions that follow them. */
+function splitFrontmatter(source: string, file: string) {
+  const trimmed = source.trim();
+
+  if (!trimmed.startsWith("---\n") && !trimmed.startsWith("---\r\n"))
+    return { fields: new Map<string, string>(), body: trimmed };
+
+  const match = trimmed.match(FRONTMATTER);
+
+  if (!match) throw new Error(`Invalid common skill frontmatter: ${file}`);
+
+  return {
+    fields: frontmatterFields(match[1]!.split(/\r?\n/)),
+    body: trimmed.slice(match[0].length).trim(),
+  };
+}
+
 function parseSkill(
   file: string,
   root: string,
@@ -71,36 +105,16 @@ function parseSkill(
 
   if (Buffer.byteLength(source, "utf8") > MAX_FILE_BYTES)
     throw new Error(`Common skill is too large: ${file}`);
-  let body = source.trim();
-  let name = directory;
-  let description: string | undefined;
 
-  if (body.startsWith("---\n") || body.startsWith("---\r\n")) {
-    const match = body.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-
-    if (!match) throw new Error(`Invalid common skill frontmatter: ${file}`);
-
-    for (const line of match[1]!.split(/\r?\n/)) {
-      const field = line.match(/^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$/);
-
-      if (!field) continue;
-      const value = unquote(field[2] ?? "");
-
-      if (field[1] === "name" && value) name = value;
-
-      if (field[1] === "description" && value) description = value;
-    }
-
-    body = body.slice(match[0].length).trim();
-  }
+  const { fields, body } = splitFrontmatter(source, file);
 
   if (!body) throw new Error(`Common skill has no instructions: ${file}`);
   const path = relative(root, file);
 
   return {
     id: `common:${path}`,
-    name,
-    description,
+    name: fields.get("name") ?? directory,
+    description: fields.get("description"),
     instructions: body,
     documents: loadDocuments(join(root, directory)),
     path,

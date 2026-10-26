@@ -6,9 +6,26 @@
     "apps/server/test/fixtures/*.ts",
     "apps/server/tools/*.ts"
   ],
-  "ignoreFindings": [
-    "tools/oxlint/anti-slop/**",
-    "apps/web/components/ui/**"
-  ],
-  "ignoreExportsUsedInFile": true
+  // Vendored oxlint plugins; tools/oxlint/anti-slop/UPSTREAM.md tracks them by checksum, so they stay as upstream wrote them.
+  "ignorePatterns": ["tools/oxlint/**"],
+  // Imported only by the ignored oxlint plugins.
+  "ignoreDependencies": ["@oxlint/plugins"],
+  "ignoreFindings": ["apps/web/components/ui/**"],
+  "ignoreExportsUsedInFile": true,
+  "health": {
+    "thresholdOverrides": [
+      {
+        "files": ["apps/**/*.test.ts", "apps/**/*.test.tsx"],
+        "maxUnitSize": 1000,
+        "reason": "A describe() callback counts every test inside it; complexity and CRAP limits still apply to tests."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      // The server serves the web UI's bundle, and the web UI imports only the server's API types; nothing builds packages in dependency order.
+      "files": ["apps/server/src/app/web-ui.ts", "apps/web/lib/api.ts"],
+      "rules": { "package-cycle": "off" }
+    }
+  ]
 }

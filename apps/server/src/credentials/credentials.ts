@@ -298,6 +298,21 @@ export function jobCredentialSection(credentials: readonly AgentCredential[]) {
   ].join("\n");
 }
 
+const grantedLines = (granted: readonly AgentCredential[]) =>
+  granted.length
+    ? ["Credentials your coding jobs have:", ...credentialLines(granted)]
+    : [];
+
+const pendingLines = (requests: readonly CredentialRequest[]) =>
+  requests.length
+    ? [
+        "Credentials you asked for that the owner has not answered:",
+        ...requests.map(
+          (pending) => `- ${pending.name}: ${hostsText(pending.hosts)}`,
+        ),
+      ]
+    : [];
+
 const output = (value: JsonValue) => ({
   structuredOutput: value,
   output: [{ type: "text" as const, text: JSON.stringify(value) }],
@@ -343,23 +358,9 @@ export function credentialExtension(
 
           if (!granted.length && !requests.length) return undefined;
 
-          return [
-            ...(granted.length
-              ? [
-                  "Credentials your coding jobs have:",
-                  ...credentialLines(granted),
-                ]
-              : []),
-            ...(requests.length
-              ? [
-                  "Credentials you asked for that the owner has not answered:",
-                  ...requests.map(
-                    (pending) =>
-                      `- ${pending.name}: ${hostsText(pending.hosts)}`,
-                  ),
-                ]
-              : []),
-          ].join("\n");
+          return [...grantedLines(granted), ...pendingLines(requests)].join(
+            "\n",
+          );
         },
       },
     ],

@@ -1,4 +1,5 @@
 import { z } from "@hono/zod-openapi";
+import { botCommunication } from "../bots/transcript";
 
 const strings = z.array(z.string());
 
@@ -114,15 +115,9 @@ const origin = z
   })
   .openapi("MessageOrigin");
 
+// Rebuilt with the OpenAPI-extended `z`: a schema made before the extension loads has no `.openapi`.
 const communication = z
-  .object({
-    executionId: z.string(),
-    fromAgentId: z.string(),
-    fromName: z.string(),
-    toAgentId: z.string(),
-    toName: z.string(),
-    status: z.enum(["sent", "done", "failed", "cancelled"]),
-  })
+  .object(botCommunication.shape)
   .openapi("BotCommunication");
 
 const attachment = z
@@ -170,45 +165,30 @@ export const historyResponse = z
   })
   .openapi("TranscriptPage");
 
-export const codingJobsResponse = z
-  .object({
-    jobs: z
-      .array(
-        z
-          .object({
-            name: z.string(),
-            conversationId: z.string(),
-            status: z.enum(["working", "idle"]),
-            usage: z.unknown().optional().openapi({
-              description:
-                "Pi Durable usage document of the job's own conversation: tokens and cost per model and tool. Absent before its first request.",
-            }),
-          })
-          .openapi("CodingJob"),
-      )
-      .openapi({ description: "Oldest job first." }),
-  })
-  .openapi("CodingJobs");
+const jobsResponse = (kind: "Coding" | "Desktop") =>
+  z
+    .object({
+      jobs: z
+        .array(
+          z
+            .object({
+              name: z.string(),
+              conversationId: z.string(),
+              status: z.enum(["working", "idle"]),
+              usage: z.unknown().optional().openapi({
+                description:
+                  "Pi Durable usage document of the job's own conversation: tokens and cost per model and tool. Absent before its first request.",
+              }),
+            })
+            .openapi(`${kind}Job`),
+        )
+        .openapi({ description: "Oldest job first." }),
+    })
+    .openapi(`${kind}Jobs`);
 
-export const desktopJobsResponse = z
-  .object({
-    jobs: z
-      .array(
-        z
-          .object({
-            name: z.string(),
-            conversationId: z.string(),
-            status: z.enum(["working", "idle"]),
-            usage: z.unknown().optional().openapi({
-              description:
-                "Pi Durable usage document of the job's own conversation: tokens and cost per model and tool. Absent before its first request.",
-            }),
-          })
-          .openapi("DesktopJob"),
-      )
-      .openapi({ description: "Oldest job first." }),
-  })
-  .openapi("DesktopJobs");
+export const codingJobsResponse = jobsResponse("Coding");
+
+export const desktopJobsResponse = jobsResponse("Desktop");
 
 export const desktopControlResponse = z
   .object({

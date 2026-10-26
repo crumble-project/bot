@@ -2,9 +2,9 @@ import { Type } from "@earendil-works/pi-ai";
 import {
   defineDoc,
   defineExtension,
-  defineTask,
   defineTool,
 } from "@earendil-works/pi-durable";
+import { defineAnchorTask } from "../shared/anchor-task";
 
 export const PASS_TOOL_NAME = "pass";
 
@@ -35,26 +35,7 @@ export const GroupConversation = defineDoc<{ groupId: string | null }>({
 });
 
 // Owns a member's group conversation, so it outlives the bot chat's turns and Esc, like a coding job's anchor.
-export const GroupAnchor = defineTask<null, { phase: "done" }, null>({
-  name: "crumble.group-anchor",
-  version: 1,
-  initial: () => ({ phase: "done" }),
-  phases: {
-    done: (_anchor, runtime, taskContext) =>
-      runtime.commit(
-        () => ({
-          status: "terminal",
-          outcome: { status: "completed", result: null },
-        }),
-        taskContext,
-      ),
-  },
-  abort: (_anchor, runtime, taskContext) =>
-    runtime.commit(
-      () => ({ status: "terminal", outcome: { status: "aborted" } }),
-      taskContext,
-    ),
-});
+export const GroupAnchor = defineAnchorTask("crumble.group-anchor");
 
 /** The `pass` tool and the anchor task; installed for every bot and offered only in group conversations. */
 export function groupTurnExtension() {

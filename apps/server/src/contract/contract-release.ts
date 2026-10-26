@@ -364,36 +364,47 @@ async function checkPublished(repo: string, current: string, reports: string) {
   return releases;
 }
 
-async function assertTagTarget(repo: string, tag: string, commit: string) {
-  const refs = z
-    .array(
-      z.object({
-        ref: z.string(),
-        object: z.object({ type: z.string(), sha: z.string() }),
-      }),
-    )
-    .parse(
-      JSON.parse(gh(["api", `repos/${repo}/git/matching-refs/tags/${tag}`])),
-    );
+const gitObjectSchema = z.object({ type: z.string(), sha: z.string() });
 
-  const ref = refs.find((entry) => entry.ref === `refs/tags/${tag}`);
+const tagRefsSchema = z.array(
+  z.object({ ref: z.string(), object: gitObjectSchema }),
+);
 
-  if (!ref) return;
-  let object = ref.object;
+// An annotated tag points at a tag object, which points at commit, tag, ... until a commit.
+function dereferenceTag(repo: string, start: z.infer<typeof gitObjectSchema>) {
+  let object = start;
 
   while (object.type === "tag") {
     object = z
-      .object({ object: z.object({ type: z.string(), sha: z.string() }) })
+      .object({ object: gitObjectSchema })
       .parse(
         JSON.parse(gh(["api", `repos/${repo}/git/tags/${object.sha}`])),
       ).object;
   }
 
+  return object;
+}
+
+function matchingTagRef(repo: string, tag: string) {
+  const refs = tagRefsSchema.parse(
+    JSON.parse(gh(["api", `repos/${repo}/git/matching-refs/tags/${tag}`])),
+  );
+
+  return refs.find((entry) => entry.ref === `refs/tags/${tag}`);
+}
+
+async function assertTagTarget(repo: string, tag: string, commit: string) {
+  const ref = matchingTagRef(repo, tag);
+
+  if (!ref) return;
+
+  const object = dereferenceTag(repo, ref.object);
+
   if (object.type !== "commit" || object.sha !== commit)
     throw new Error(`Existing tag ${tag} targets another source commit`);
 }
 
-async function publish(repo: string, current: string, reports: string) {
+function assertPublishWorkflow() {
   if (
     process.env["GITHUB_ACTIONS"] !== "true" ||
     process.env["GITHUB_REF"] !== "refs/heads/main" ||
@@ -401,95 +412,145 @@ async function publish(repo: string, current: string, reports: string) {
   ) {
     throw new Error("Publishing is restricted to the main push workflow");
   }
+}
 
-  await validateContract(current);
-  const releases = await checkPublished(repo, current, reports);
-  const version = await documentVersion(current);
-  const tag = `contract-v${version}`;
-  let existing = releases.find((release) => release.tag_name === tag);
+async function confirmPublished(repo: string, release: Release, tag: string) {
+  if (release.prerelease)
+    throw new Error(`Refusing to replace prerelease ${tag}`);
 
-  if (existing && !existing.draft) {
-    if (existing.prerelease)
-      throw new Error(`Refusing to replace prerelease ${tag}`);
-    await downloadRelease(repo, existing);
-    console.log(`${tag} is already published; leaving its assets unchanged.`);
+  await downloadRelease(repo, release);
+  console.log(`${tag} is already published; leaving its assets unchanged.`);
+}
 
-    return;
-  }
+async function alreadyPublished(
+  repo: string,
+  existing: Release | undefined,
+  tag: string,
+) {
+  if (!existing || existing.draft) return false;
 
-  const directory = await exportBundle();
-  await verifyBundle(directory);
+  await confirmPublished(repo, existing, tag);
 
+  return true;
+}
+
+async function bundleCommit(directory: string) {
   const commit = (
     await Bun.file(join(directory, "source-commit.txt")).text()
   ).trim();
 
   if (commit !== process.env["GITHUB_SHA"])
     throw new Error("Checkout differs from the workflow source commit");
-  await assertTagTarget(repo, tag, commit);
 
-  if (existing) {
-    if (existing.target_commitish !== commit || existing.prerelease)
-      throw new Error(
-        "Draft belongs to a different source commit or prerelease",
-      );
-  } else {
-    existing = releaseSchema.parse(
-      JSON.parse(
-        gh([
-          "api",
-          "--method",
-          "POST",
-          `repos/${repo}/releases`,
-          "-f",
-          `tag_name=${tag}`,
-          "-f",
-          `target_commitish=${commit}`,
-          "-f",
-          `name=${tag}`,
-          "-F",
-          "draft=true",
-          "-F",
-          "prerelease=false",
-          "-f",
-          `body=${await Bun.file(join(directory, "CHANGELOG.md")).text()}`,
-        ]),
-      ),
+  return commit;
+}
+
+function assertDraftMatches(draft: Release, commit: string) {
+  if (draft.target_commitish !== commit || draft.prerelease)
+    throw new Error("Draft belongs to a different source commit or prerelease");
+
+  return draft;
+}
+
+async function createDraft(
+  repo: string,
+  tag: string,
+  commit: string,
+  directory: string,
+) {
+  return releaseSchema.parse(
+    JSON.parse(
+      gh([
+        "api",
+        "--method",
+        "POST",
+        `repos/${repo}/releases`,
+        "-f",
+        `tag_name=${tag}`,
+        "-f",
+        `target_commitish=${commit}`,
+        "-f",
+        `name=${tag}`,
+        "-F",
+        "draft=true",
+        "-F",
+        "prerelease=false",
+        "-f",
+        `body=${await Bun.file(join(directory, "CHANGELOG.md")).text()}`,
+      ]),
+    ),
+  );
+}
+
+async function assertExistingAsset(
+  repo: string,
+  tag: string,
+  directory: string,
+  downloaded: string,
+  name: string,
+) {
+  gh([
+    "release",
+    "download",
+    tag,
+    "--repo",
+    repo,
+    "--pattern",
+    name,
+    "--dir",
+    downloaded,
+  ]);
+
+  if (
+    !Buffer.from(await Bun.file(join(downloaded, name)).arrayBuffer()).equals(
+      Buffer.from(await Bun.file(join(directory, name)).arrayBuffer()),
+    )
+  ) {
+    throw new Error(
+      `Existing draft asset differs: ${name}; refusing to overwrite`,
     );
   }
+}
 
+async function uploadDraftAssets(
+  repo: string,
+  tag: string,
+  directory: string,
+  draft: Release,
+) {
   const downloaded = await mkdtemp(join(tmpdir(), "crumble-draft-"));
 
   for (const name of [...payloadNamesOf(schemaNames), "SHA256SUMS"]) {
-    if (existing.assets.some((asset) => asset.name === name)) {
-      gh([
-        "release",
-        "download",
-        tag,
-        "--repo",
-        repo,
-        "--pattern",
-        name,
-        "--dir",
-        downloaded,
-      ]);
-
-      if (
-        !Buffer.from(
-          await Bun.file(join(downloaded, name)).arrayBuffer(),
-        ).equals(
-          Buffer.from(await Bun.file(join(directory, name)).arrayBuffer()),
-        )
-      ) {
-        throw new Error(
-          `Existing draft asset differs: ${name}; refusing to overwrite`,
-        );
-      }
+    if (draft.assets.some((asset) => asset.name === name)) {
+      await assertExistingAsset(repo, tag, directory, downloaded, name);
     } else {
       gh(["release", "upload", tag, join(directory, name), "--repo", repo]);
     }
   }
+}
 
+async function publish(repo: string, current: string, reports: string) {
+  assertPublishWorkflow();
+  await validateContract(current);
+
+  const releases = await checkPublished(repo, current, reports);
+  const version = await documentVersion(current);
+  const tag = `contract-v${version}`;
+  const existing = releases.find((release) => release.tag_name === tag);
+
+  if (await alreadyPublished(repo, existing, tag)) return;
+
+  const directory = await exportBundle();
+  await verifyBundle(directory);
+
+  const commit = await bundleCommit(directory);
+  await assertTagTarget(repo, tag, commit);
+
+  const draft = existing
+    ? assertDraftMatches(existing, commit)
+    : await createDraft(repo, tag, commit, directory);
+
+  await uploadDraftAssets(repo, tag, directory, draft);
   await assertTagTarget(repo, tag, commit);
   gh([
     "release",

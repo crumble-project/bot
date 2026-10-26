@@ -42,6 +42,11 @@ type Paint = Pick<
   | "dash"
 >;
 
+type NodeOf<Kind extends SceneNode["kind"]> = Extract<
+  SceneNode,
+  { kind: Kind }
+>;
+
 type Placement = {
   dx: number;
   dy: number;
@@ -83,6 +88,23 @@ const tidy = (value: string) =>
     ? String(Math.round(Number(value) * 1000) / 1000)
     : value;
 
+/** A group's opacity composites with its children's instead of replacing it. */
+const compositeOpacity = (
+  parent: Paint["opacity"],
+  opacity: SceneStyle["opacity"],
+): Paint["opacity"] =>
+  opacity === undefined ? parent : (parent ?? 1) * opacity;
+
+const dashOf = (
+  strokeDasharray: SceneStyle["strokeDasharray"],
+  parent: Paint["dash"],
+): Paint["dash"] =>
+  strokeDasharray === undefined
+    ? parent
+    : strokeDasharray === "none"
+      ? undefined
+      : strokeDasharray.split(/[\s,]+/).map(Number);
+
 function inherit(parent: Paint, style: SceneStyle | undefined): Paint {
   if (!style) return parent;
 
@@ -93,18 +115,10 @@ function inherit(parent: Paint, style: SceneStyle | undefined): Paint {
     stroke: style.stroke ?? parent.stroke,
     strokeOpacity: style.strokeOpacity ?? parent.strokeOpacity,
     strokeWidth: style.strokeWidth ?? parent.strokeWidth,
-    opacity:
-      style.opacity === undefined
-        ? parent.opacity
-        : (parent.opacity ?? 1) * style.opacity,
+    opacity: compositeOpacity(parent.opacity, style.opacity),
     lineCap: style.lineCap ?? parent.lineCap,
     lineJoin: style.lineJoin ?? parent.lineJoin,
-    dash:
-      style.strokeDasharray === undefined
-        ? parent.dash
-        : style.strokeDasharray === "none"
-          ? undefined
-          : style.strokeDasharray.split(/[\s,]+/).map(Number),
+    dash: dashOf(style.strokeDasharray, parent.dash),
   };
 }
 
@@ -239,95 +253,166 @@ function roundedRect(
   ];
 }
 
+function linePrimitive(
+  node: NodeOf<"rule">,
+  paint: Paint,
+  place: Placement,
+): Primitive {
+  const { dx, dy, clip } = place;
+
+  return {
+    kind: "line",
+    x1: round(node.x1 + dx),
+    y1: round(node.y1 + dy),
+    x2: round(node.x2 + dx),
+    y2: round(node.y2 + dy),
+    ...paint,
+    clip,
+  };
+}
+
+function polylinePrimitive(
+  node: NodeOf<"polyline">,
+  paint: Paint,
+  place: Placement,
+): Primitive {
+  const { dx, dy, clip } = place;
+
+  return {
+    kind: "path",
+    commands: node.path
+      ? pathCommands(node.path, dx, dy)
+      : ring(node.points, dx, dy, false),
+    ...paint,
+    fill: "none",
+    clip,
+  };
+}
+
+function areaCommands(node: NodeOf<"area">, place: Placement): Command[] {
+  const { dx, dy } = place;
+
+  if (node.polygons)
+    return node.polygons.flatMap((polygon) =>
+      polygon.flatMap((rings) => ring(rings, dx, dy, true)),
+    );
+
+  return node.path
+    ? pathCommands(node.path, dx, dy)
+    : ring(node.points, dx, dy, true);
+}
+
+function areaPrimitive(
+  node: NodeOf<"area">,
+  paint: Paint,
+  place: Placement,
+): Primitive {
+  return {
+    kind: "path",
+    commands: areaCommands(node, place),
+    evenOdd: node.polygons !== undefined,
+    ...paint,
+    clip: place.clip,
+  };
+}
+
+function circlePrimitive(
+  node: NodeOf<"dot">,
+  paint: Paint,
+  place: Placement,
+): Primitive {
+  const { dx, dy, clip } = place;
+
+  return {
+    kind: "circle",
+    x: round(node.x + dx),
+    y: round(node.y + dy),
+    radius: round(node.radius),
+    ...paint,
+    clip,
+  };
+}
+
+/** Corner radii that differ, which a single rect radius cannot express. */
+const unevenCorners = (node: NodeOf<"rect">) =>
+  node.cornerRadii && new Set(node.cornerRadii).size > 1
+    ? node.cornerRadii
+    : undefined;
+
+function rectPrimitive(
+  node: NodeOf<"rect">,
+  paint: Paint,
+  place: Placement,
+): Primitive {
+  const { dx, dy, clip } = place;
+  const radii = unevenCorners(node);
+
+  if (radii)
+    return {
+      kind: "path",
+      commands: roundedRect(
+        node.x + dx,
+        node.y + dy,
+        node.width,
+        node.height,
+        radii,
+      ),
+      ...paint,
+      clip,
+    };
+
+  return {
+    kind: "rect",
+    x: round(node.x + dx),
+    y: round(node.y + dy),
+    width: round(node.width),
+    height: round(node.height),
+    radius: round(node.cornerRadii?.[0] ?? node.radius ?? 0),
+    ...paint,
+    clip,
+  };
+}
+
+function textPrimitive(
+  node: NodeOf<"label">,
+  paint: Paint,
+  place: Placement,
+): Primitive {
+  const { dx, dy, clip } = place;
+
+  return {
+    kind: "text",
+    x: round(node.x + dx),
+    y: round(node.y + dy),
+    text: node.text,
+    anchor: node.anchor ?? "start",
+    baseline: node.baseline ?? "auto",
+    rotate: node.rotate ?? 0,
+    size: node.fontSize ?? 11,
+    weight: node.fontWeight ?? 400,
+    ...paint,
+    clip,
+  };
+}
+
 function primitive(node: SceneNode, place: Placement): Primitive | undefined {
   const paint = inherit(place.paint, node.style);
-  const { dx, dy, clip } = place;
 
   if (paint.opacity === 0) return undefined;
 
   switch (node.kind) {
     case "rule":
-      return {
-        kind: "line",
-        x1: round(node.x1 + dx),
-        y1: round(node.y1 + dy),
-        x2: round(node.x2 + dx),
-        y2: round(node.y2 + dy),
-        ...paint,
-        clip,
-      };
+      return linePrimitive(node, paint, place);
     case "polyline":
-      return {
-        kind: "path",
-        commands: node.path
-          ? pathCommands(node.path, dx, dy)
-          : ring(node.points, dx, dy, false),
-        ...paint,
-        fill: "none",
-        clip,
-      };
+      return polylinePrimitive(node, paint, place);
     case "area":
-      return {
-        kind: "path",
-        commands: node.polygons
-          ? node.polygons.flatMap((polygon) =>
-              polygon.flatMap((rings) => ring(rings, dx, dy, true)),
-            )
-          : node.path
-            ? pathCommands(node.path, dx, dy)
-            : ring(node.points, dx, dy, true),
-        evenOdd: node.polygons !== undefined,
-        ...paint,
-        clip,
-      };
+      return areaPrimitive(node, paint, place);
     case "dot":
-      return {
-        kind: "circle",
-        x: round(node.x + dx),
-        y: round(node.y + dy),
-        radius: round(node.radius),
-        ...paint,
-        clip,
-      };
+      return circlePrimitive(node, paint, place);
     case "rect":
-      if (node.cornerRadii && new Set(node.cornerRadii).size > 1)
-        return {
-          kind: "path",
-          commands: roundedRect(
-            node.x + dx,
-            node.y + dy,
-            node.width,
-            node.height,
-            node.cornerRadii,
-          ),
-          ...paint,
-          clip,
-        };
-
-      return {
-        kind: "rect",
-        x: round(node.x + dx),
-        y: round(node.y + dy),
-        width: round(node.width),
-        height: round(node.height),
-        radius: round(node.cornerRadii?.[0] ?? node.radius ?? 0),
-        ...paint,
-        clip,
-      };
+      return rectPrimitive(node, paint, place);
     case "label":
-      return {
-        kind: "text",
-        x: round(node.x + dx),
-        y: round(node.y + dy),
-        text: node.text,
-        anchor: node.anchor ?? "start",
-        baseline: node.baseline ?? "auto",
-        rotate: node.rotate ?? 0,
-        size: node.fontSize ?? 11,
-        weight: node.fontWeight ?? 400,
-        ...paint,
-        clip,
-      };
+      return textPrimitive(node, paint, place);
     case "group":
       return undefined;
   }

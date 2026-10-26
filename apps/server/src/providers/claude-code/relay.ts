@@ -165,6 +165,111 @@ function frameFirst(messages: Message[], queried: readonly Block[]) {
 // The only trailing system text moved: native's date line, exactly as its opening request ends the environment.
 const DATE_LINE = /^Today's date is \d{4}-\d{2}-\d{2}\.$/;
 
+function singleBlock(content: Message["content"] | undefined) {
+  if (content === undefined) return undefined;
+
+  if (Array.isArray(content))
+    return content.length === 1 ? content[0] : undefined;
+
+  return { type: "text", text: content };
+}
+
+function dateTail(last: Message | undefined) {
+  const tail: Block | undefined = singleBlock(last?.content);
+
+  return last?.role === "system" &&
+    tail?.type === "text" &&
+    DATE_LINE.test(tail.text ?? "")
+    ? tail
+    : undefined;
+}
+
+function appendToEnvironment(environment: Message, line: string) {
+  const original = environment.content;
+
+  const target: Block | undefined = Array.isArray(original)
+    ? original.at(-1)
+    : { type: "text", text: original };
+
+  if (target?.type !== "text" || (target.text ?? "").endsWith(line))
+    return false;
+
+  if (Array.isArray(original)) target.text = `${target.text ?? ""}\n\n${line}`;
+  else environment.content = `${original}\n\n${line}`;
+
+  return true;
+}
+
+function carryMark(target: Block | undefined, mark: Block["cache_control"]) {
+  if (mark && target) target.cache_control ??= mark;
+}
+
+function relocateDate(messages: Message[]) {
+  const last = messages.at(-1);
+
+  const environment = messages
+    .slice(0, -1)
+    .find((item) => item.role === "system");
+
+  const tail = dateTail(last);
+
+  if (!last || !environment || !tail) return false;
+
+  const line = tail.text ?? "";
+
+  if (!appendToEnvironment(environment, line)) return false;
+  const mark = tail.cache_control ?? cacheControlOf(last);
+
+  messages.pop();
+  carryMark(listContent(messages.at(-1))?.at(-1), mark);
+
+  return true;
+}
+
+function uniqueFrameStart(blocks: Block[], queried: readonly Block[]) {
+  const hits = [];
+
+  for (let start = 0; start <= blocks.length - queried.length; start++)
+    if (sameBlocks(blocks.slice(start, start + queried.length), queried))
+      hits.push(start);
+
+  return hits.length === 1 ? hits[0] : undefined;
+}
+
+const contextText = (entry: Block) =>
+  entry.type === "text" &&
+  Object.keys(entry).every((key) =>
+    ["type", "text", "cache_control"].includes(key),
+  );
+
+function dropHistoricalContext(
+  messages: Message[],
+  queried: readonly Block[] | undefined,
+) {
+  const newest = messages.findLast((item) => item.role === "user");
+  const blocks = listContent(newest);
+
+  if (
+    !queried?.some((entry) => entry.type !== "tool_result") ||
+    !blocks ||
+    !messages.some((item) => item.role === "assistant")
+  )
+    return false;
+
+  const start = uniqueFrameStart(blocks, queried);
+
+  if (!start || !blocks.slice(0, start).every(contextText)) return false;
+
+  const mark = blocks
+    .slice(0, start)
+    .find((entry) => entry.cache_control)?.cache_control;
+
+  blocks.splice(0, start);
+  carryMark(blocks[0], mark);
+
+  return true;
+}
+
 /**
  * Keep native's per-request context in the prefix later requests replay: append the trailing date line to the
  * environment message, and drop plain text before the queried frame on later user turns. Anything unexpected
@@ -177,94 +282,10 @@ export function stableRequestContext(
   const value = decode(payload);
 
   if (!value) return payload;
-  const { messages } = value;
-  let changed = false;
-  const last = messages.at(-1);
+  const relocated = relocateDate(value.messages);
+  const dropped = dropHistoricalContext(value.messages, queried);
 
-  const environment = messages
-    .slice(0, -1)
-    .find((item) => item.role === "system");
-
-  const content = last?.content;
-
-  const tail: Block | undefined =
-    content === undefined
-      ? undefined
-      : Array.isArray(content)
-        ? content.length === 1
-          ? content[0]
-          : undefined
-        : { type: "text", text: content };
-
-  if (
-    last?.role === "system" &&
-    environment &&
-    tail?.type === "text" &&
-    DATE_LINE.test(tail.text ?? "")
-  ) {
-    const line = tail.text ?? "";
-    const original = environment.content;
-
-    const target: Block | undefined = Array.isArray(original)
-      ? original.at(-1)
-      : { type: "text", text: original };
-
-    if (target?.type === "text" && !(target.text ?? "").endsWith(line)) {
-      if (Array.isArray(original))
-        target.text = `${target.text ?? ""}\n\n${line}`;
-      else environment.content = `${original}\n\n${line}`;
-      const mark = tail.cache_control ?? cacheControlOf(last);
-      messages.pop();
-      const previous = listContent(messages.at(-1));
-      const end = previous?.at(-1);
-
-      if (mark && end) end.cache_control ??= mark;
-      changed = true;
-    }
-  }
-
-  const newest = messages.findLast((item) => item.role === "user");
-  const blocks = listContent(newest);
-
-  if (
-    queried?.length &&
-    queried.some((entry) => entry.type !== "tool_result") &&
-    blocks &&
-    messages.some((item) => item.role === "assistant")
-  ) {
-    const hits = [];
-
-    for (let start = 0; start <= blocks.length - queried.length; start++)
-      if (sameBlocks(blocks.slice(start, start + queried.length), queried))
-        hits.push(start);
-
-    const start = hits.length === 1 ? hits[0] : undefined;
-
-    if (
-      start &&
-      blocks
-        .slice(0, start)
-        .every(
-          (entry) =>
-            entry.type === "text" &&
-            Object.keys(entry).every((key) =>
-              ["type", "text", "cache_control"].includes(key),
-            ),
-        )
-    ) {
-      const mark = blocks
-        .slice(0, start)
-        .find((entry) => entry.cache_control)?.cache_control;
-
-      blocks.splice(0, start);
-      const head = blocks[0];
-
-      if (mark && head) head.cache_control ??= mark;
-      changed = true;
-    }
-  }
-
-  return changed ? encode(value) : payload;
+  return relocated || dropped ? encode(value) : payload;
 }
 
 // A top-level message mark, which the schema leaves among the unread fields.
@@ -280,6 +301,62 @@ const opensTurn = (item: Message) =>
   (!Array.isArray(item.content) ||
     item.content.some((entry) => entry.type !== "tool_result"));
 
+/** The user message right before the open turn's first assistant message with thinking, or the turn's opening. */
+function turnFrameIndex(messages: Message[], last: number) {
+  const opening = messages.slice(0, last).findLastIndex(opensTurn);
+
+  if (opening < 0) return undefined;
+
+  const offset = messages
+    .slice(opening + 1, last + 1)
+    .findIndex(
+      (item) =>
+        item.role === "assistant" &&
+        listContent(item)?.some((entry) => UNCACHEABLE.has(entry.type)),
+    );
+
+  if (offset < 0) return undefined;
+  const thought = opening + 1 + offset;
+
+  const user = messages
+    .slice(opening + 1, thought)
+    .findLastIndex((item) => item.role === "user");
+
+  return user < 0 ? opening : opening + 1 + user;
+}
+
+const blockCount = (item: Message) =>
+  Array.isArray(item.content) ? item.content.length : 1;
+
+function moveTurnMark(
+  value: Body,
+  messages: Message[],
+  from: Position,
+  target: Position,
+) {
+  const later = positions(messages).filter(
+    (entry) => entry.block.cache_control && before(from, entry),
+  );
+
+  const next = later[0]?.block.cache_control;
+
+  if (!next) return false;
+
+  if (breakpoints(value) < MAX_BREAKPOINTS) {
+    from.block.cache_control = structuredClone(next);
+
+    return true;
+  }
+
+  const spare = later.find((entry) => before(entry, target));
+
+  if (!spare?.block.cache_control || !target.block.cache_control) return false;
+  from.block.cache_control = spare.block.cache_control;
+  delete spare.block.cache_control;
+
+  return true;
+}
+
 /**
  * Keep a breakpoint where the open turn's thinking starts, so the next turn still reads it: after a tool loop longer
  * than the cache lookback, the recurring breakpoint cannot reach that entry. The mark goes on the last cacheable
@@ -292,89 +369,67 @@ function keepTurnMark(
   last: number,
   target: Position,
 ) {
-  let opening: number | undefined;
+  const frame = turnFrameIndex(messages, last);
 
-  for (let index = 0; index < last; index++)
-    if (opensTurn(messages[index] ?? { role: "assistant", content: "" }))
-      opening = index;
-
-  if (opening === undefined) return false;
-  let thought: number | undefined;
-
-  for (let index = opening + 1; index <= last; index++) {
-    const item = messages[index];
-
-    if (
-      item?.role === "assistant" &&
-      listContent(item)?.some((entry) => UNCACHEABLE.has(entry.type))
-    ) {
-      thought = index;
-      break;
-    }
-  }
-
-  if (thought === undefined) return false;
-  let frame = opening;
-
-  for (let index = thought - 1; index > opening; index--)
-    if (messages[index]?.role === "user") {
-      frame = index;
-      break;
-    }
-
+  if (frame === undefined) return false;
   const content = listContent(messages[frame]);
 
   if (!content) return false;
-  let mark: number | undefined;
 
-  for (let index = content.length - 1; index >= 0; index--)
-    if (!UNCACHEABLE.has(content[index]?.type ?? "thinking")) {
-      mark = index;
-      break;
-    }
+  const mark = content.findLastIndex((entry) => !UNCACHEABLE.has(entry.type));
 
-  const marked = mark === undefined ? undefined : content[mark];
+  const marked = content[mark];
 
-  if (
-    mark === undefined ||
-    !marked ||
-    marked.cache_control ||
-    !before({ message: frame, index: mark }, target)
-  )
-    return false;
+  if (!marked || marked.cache_control) return false;
+  const from = { message: frame, index: mark, block: marked };
+
+  if (!before(from, target)) return false;
 
   const span = messages
     .slice(frame, target.message)
-    .reduce(
-      (total, item) =>
-        total + (Array.isArray(item.content) ? item.content.length : 1),
-      0,
-    );
+    .reduce((total, item) => total + blockCount(item), 0);
 
   // The recurring breakpoint's own lookback still reaches it.
   if (span - mark + target.index + 1 <= LOOKBACK) return false;
 
-  const later = positions(messages).filter(
-    (entry) =>
-      entry.block.cache_control &&
-      before({ message: frame, index: mark }, entry),
-  );
+  return moveTurnMark(value, messages, from, target);
+}
 
-  const next = later[0]?.block.cache_control;
+function stableSpan(
+  messages: Message[],
+  last: number,
+  queried: readonly Block[],
+) {
+  const stable = positions(messages).filter((entry) => entry.message <= last);
+  const newest = messages[last + 1];
 
-  if (!next) return false;
+  const newestContent =
+    newest?.role === "user" ? listContent(newest) : undefined;
 
-  if (breakpoints(value) < MAX_BREAKPOINTS) {
-    marked.cache_control = structuredClone(next);
+  if (!newestContent) return stable;
+  const prefix: Position[] = [];
 
-    return true;
+  for (const [index, sent] of newestContent.entries()) {
+    const host = queried[index];
+
+    if (!host || !Bun.deepEquals(plain(sent), plain(host))) break;
+    prefix.push({ message: last + 1, index, block: sent });
   }
 
-  const spare = later.find((entry) => before(entry, target));
+  if (newestContent[prefix.length]?.type !== "tool_result")
+    stable.push(...prefix);
 
-  if (!spare?.block.cache_control || !target.block.cache_control) return false;
-  marked.cache_control = spare.block.cache_control;
-  delete spare.block.cache_control;
+  return stable;
+}
+
+function foldMarks(marked: readonly Position[], target: Position | undefined) {
+  const after = target ? marked.filter((entry) => before(target, entry)) : [];
+  const moved = after[0]?.block.cache_control;
+
+  if (target === undefined || moved === undefined) return false;
+
+  for (const entry of after) delete entry.block.cache_control;
+  target.block.cache_control ??= moved;
 
   return true;
 }
@@ -394,40 +449,19 @@ export function pinMessageBreakpoint(
   if (!value) return payload;
   const { messages } = value;
   const reordered = frameFirst(messages, queried);
-  const all = positions(messages);
-  const marked = all.filter((entry) => entry.block.cache_control);
+
+  const marked = positions(messages).filter(
+    (entry) => entry.block.cache_control,
+  );
 
   if (marked.length === 0) return payload;
   const last = messages.findLastIndex((item) => item.role === "assistant");
-  const stable = all.filter((entry) => entry.message <= last);
-  const newest = messages[last + 1];
 
-  const newestContent =
-    newest?.role === "user" ? listContent(newest) : undefined;
+  const target = stableSpan(messages, last, queried).findLast(
+    (entry) => !UNCACHEABLE.has(entry.block.type),
+  );
 
-  if (newestContent) {
-    const prefix: Position[] = [];
-
-    for (const [index, sent] of newestContent.entries()) {
-      const host = queried[index];
-
-      if (!host || !Bun.deepEquals(plain(sent), plain(host))) break;
-      prefix.push({ message: last + 1, index, block: sent });
-    }
-
-    if (newestContent[prefix.length]?.type !== "tool_result")
-      stable.push(...prefix);
-  }
-
-  const target = stable.findLast((entry) => !UNCACHEABLE.has(entry.block.type));
-  const after = target ? marked.filter((entry) => before(target, entry)) : [];
-  const moved = after[0]?.block.cache_control;
-  const folded = target !== undefined && moved !== undefined;
-
-  if (folded) {
-    for (const entry of after) delete entry.block.cache_control;
-    target.block.cache_control ??= moved;
-  }
+  const folded = foldMarks(marked, target);
 
   const turn =
     target !== undefined && keepTurnMark(value, messages, last, target);
@@ -513,24 +547,26 @@ function restoreContent(sent: Block["content"], host: Block["content"]) {
   return restoreSequence(sent, host);
 }
 
+function restoreToolResult(sent: Block, host: Block, restored: Block) {
+  // Missing means false.
+  if ((sent.is_error ?? false) !== (host.is_error ?? false)) return unmatched();
+
+  const ignored = ["content", "is_error", "cache_control"];
+
+  if (!Bun.deepEquals(without(sent, ...ignored), without(host, ...ignored)))
+    return unmatched();
+
+  if ("content" in sent !== "content" in host) return unmatched();
+
+  if ("content" in host)
+    restored.content = restoreContent(sent.content, host.content);
+}
+
 function restoreBlock(sent: Block, host: Block): Block {
   const restored = structuredClone(host);
 
-  if (host.type === "tool_result") {
-    // Missing means false.
-    if ((sent.is_error ?? false) !== (host.is_error ?? false))
-      return unmatched();
-
-    const ignored = ["content", "is_error", "cache_control"];
-
-    if (!Bun.deepEquals(without(sent, ...ignored), without(host, ...ignored)))
-      return unmatched();
-
-    if ("content" in sent !== "content" in host) return unmatched();
-
-    if ("content" in host)
-      restored.content = restoreContent(sent.content, host.content);
-  } else if (!Bun.deepEquals(plain(sent), plain(host))) return unmatched();
+  if (host.type === "tool_result") restoreToolResult(sent, host, restored);
+  else if (!Bun.deepEquals(plain(sent), plain(host))) return unmatched();
 
   if (sent.cache_control) {
     if (
@@ -542,6 +578,19 @@ function restoreBlock(sent: Block, host: Block): Block {
   }
 
   return restored;
+}
+
+function bareTextRun(blocks: Block[], start: number) {
+  let end = start + 1;
+
+  while (end < blocks.length && bareText(blocks[end] ?? { type: "" })) end++;
+
+  const text = blocks
+    .slice(start, end)
+    .map((entry) => entry.text ?? "")
+    .join("");
+
+  return { end, text };
 }
 
 function restoreSequence(sent: Block[], host: Block[]): Block[] {
@@ -556,35 +605,19 @@ function restoreSequence(sent: Block[], host: Block[]): Block[] {
     if (!hostBlock || !sentBlock) return unmatched();
 
     if (bareText(hostBlock) && bareText(sentBlock)) {
-      let hostEnd = hostIndex + 1;
-      let sentEnd = sentIndex + 1;
-
-      while (hostEnd < host.length && bareText(host[hostEnd] ?? hostBlock))
-        hostEnd++;
-
-      while (sentEnd < sent.length && bareText(sent[sentEnd] ?? sentBlock))
-        sentEnd++;
-
-      const original = host
-        .slice(hostIndex, hostEnd)
-        .map((entry) => entry.text ?? "")
-        .join("");
-
-      const actual = sent
-        .slice(sentIndex, sentEnd)
-        .map((entry) => entry.text ?? "")
-        .join("");
+      const original = bareTextRun(host, hostIndex);
+      const actual = bareTextRun(sent, sentIndex);
 
       // Extensions before a protected host block are insertions, not suffixes.
       if (
-        !(hostEnd === host.length
-          ? actual.startsWith(original)
-          : actual === original)
+        !(original.end === host.length
+          ? actual.text.startsWith(original.text)
+          : actual.text === original.text)
       )
         return unmatched();
-      restored.push(...structuredClone(host.slice(hostIndex, hostEnd)));
-      hostIndex = hostEnd;
-      sentIndex = sentEnd;
+      restored.push(...structuredClone(host.slice(hostIndex, original.end)));
+      hostIndex = original.end;
+      sentIndex = actual.end;
     } else {
       restored.push(restoreBlock(sentBlock, hostBlock));
       hostIndex++;
@@ -596,6 +629,24 @@ function restoreSequence(sent: Block[], host: Block[]): Block[] {
     return unmatched();
 
   return restored;
+}
+
+function newestToolTurn(messages: Message[]) {
+  const newest =
+    messages[messages.findLastIndex((item) => item.role === "assistant") + 1];
+
+  return newest?.role === "user" ? newest : undefined;
+}
+
+function queriedResultIds(queried: readonly Block[]) {
+  const ids = queried.flatMap((entry) =>
+    entry.type === "tool_result" ? [entry.tool_use_id ?? ""] : [],
+  );
+
+  if (ids.some((id) => !id) || new Set(ids).size !== ids.length)
+    return unmatched();
+
+  return ids;
 }
 
 /**
@@ -614,31 +665,16 @@ export function restoreQueriedTurn(
   const value = decode(payload);
 
   if (!value) return unmatched();
-
-  const last = value.messages.findLastIndex(
-    (item) => item.role === "assistant",
-  );
-
-  const newest = value.messages[last + 1];
-  const native = newest?.role === "user" ? listContent(newest) : undefined;
+  const newest = newestToolTurn(value.messages);
+  const native = listContent(newest);
 
   if (!newest || !native) return unmatched();
-
-  const resultIds = queried.flatMap((entry) =>
-    entry.type === "tool_result" ? [entry.tool_use_id ?? ""] : [],
-  );
-
-  if (
-    resultIds.some((id) => !id) ||
-    new Set(resultIds).size !== resultIds.length
-  )
-    return unmatched();
 
   const nativeIds = native.flatMap((entry) =>
     entry.type === "tool_result" ? [entry.tool_use_id] : [],
   );
 
-  if (!Bun.deepEquals(resultIds, nativeIds)) return unmatched();
+  if (!Bun.deepEquals(queriedResultIds(queried), nativeIds)) return unmatched();
   const restored = restoreSequence(native, [...queried]);
 
   if (Bun.deepEquals(native, restored)) return payload;
@@ -668,6 +704,8 @@ const capturedBlock = z.looseObject({
   input: z.json().optional(),
   citations: z.array(z.json()).optional(),
 });
+
+type CapturedBlock = z.infer<typeof capturedBlock>;
 
 const capturedMessage = z.looseObject({
   id: z.string().optional(),
@@ -717,6 +755,16 @@ const streamEvent = z.discriminatedUnion("type", [
   z.object({ type: z.literal("message_stop") }),
 ]);
 
+type ContentDelta = Extract<
+  z.infer<typeof streamEvent>,
+  { type: "content_block_delta" }
+>;
+
+type MessageDelta = Extract<
+  z.infer<typeof streamEvent>,
+  { type: "message_delta" }
+>;
+
 const knownEvents = new Set([
   "message_start",
   "content_block_start",
@@ -724,6 +772,12 @@ const knownEvents = new Set([
   "content_block_stop",
   "message_delta",
   "message_stop",
+]);
+
+const TEXT_DELTA_FIELDS = new Map<string, "text" | "thinking" | "signature">([
+  ["text_delta", "text"],
+  ["thinking_delta", "thinking"],
+  ["signature_delta", "signature"],
 ]);
 
 const eventType = z.looseObject({ type: z.string() });
@@ -773,67 +827,77 @@ export class Capture {
       case "content_block_start":
         this.message?.content.push(structuredClone(event.content_block));
         break;
-      case "content_block_delta": {
-        const { delta, index } = event;
-        const target = this.message?.content[index];
-
-        if (!target) throw new Error("Delta for an unknown content block");
-
-        if (delta.type === "text_delta")
-          target.text = (target.text ?? "") + (delta.text ?? "");
-        else if (delta.type === "thinking_delta")
-          target.thinking = (target.thinking ?? "") + (delta.thinking ?? "");
-        else if (delta.type === "signature_delta")
-          target.signature = (target.signature ?? "") + (delta.signature ?? "");
-        else if (delta.type === "input_json_delta")
-          this.arguments.set(
-            index,
-            (this.arguments.get(index) ?? "") + (delta.partial_json ?? ""),
-          );
-        else if (
-          delta.type === "citations_delta" &&
-          delta.citation !== undefined
-        )
-          (target.citations ??= []).push(structuredClone(delta.citation));
+      case "content_block_delta":
+        this.applyDelta(event);
         break;
-      }
-
-      case "content_block_stop": {
-        const raw = this.arguments.get(event.index);
-
-        if (raw === undefined) break;
-        this.arguments.delete(event.index);
-        const target = this.message?.content[event.index];
-
-        try {
-          // A no-argument tool call streams one empty partial_json.
-          const input = raw.trim() ? z.json().parse(JSON.parse(raw)) : {};
-
-          if (target) target.input = input;
-        } catch {
-          // Streamed tool input is not validated: a reply cut off at max_tokens ends mid-argument. The call is
-          // dropped at message_stop, never run with guessed arguments.
-          this.unparsed.push(event.index);
-        }
-
+      case "content_block_stop":
+        this.finishArguments(event.index);
         break;
-      }
 
       case "message_delta":
-        if (this.message) {
-          Object.assign(this.message, event.delta);
-          Object.assign(this.message.usage, event.usage ?? {});
-        }
-
+        this.applyMessageDelta(event);
         break;
       case "message_stop":
-        for (const index of this.unparsed.toSorted((a, b) => b - a))
-          this.message?.content.splice(index, 1);
-        this.complete = Boolean(
-          this.message?.stop_reason && this.arguments.size === 0,
-        );
+        this.finishMessage();
         break;
     }
+  }
+
+  private applyMessageDelta({ delta, usage }: MessageDelta) {
+    if (!this.message) return;
+    Object.assign(this.message, delta);
+    Object.assign(this.message.usage, usage ?? {});
+  }
+
+  private applyDelta({ delta, index }: ContentDelta) {
+    const target = this.message?.content[index];
+
+    if (!target) throw new Error("Delta for an unknown content block");
+    const field = TEXT_DELTA_FIELDS.get(delta.type);
+
+    if (field) target[field] = (target[field] ?? "") + (delta[field] ?? "");
+    else this.applyStructuredDelta(target, index, delta);
+  }
+
+  private applyStructuredDelta(
+    target: CapturedBlock,
+    index: number,
+    delta: ContentDelta["delta"],
+  ) {
+    if (delta.type === "input_json_delta")
+      this.arguments.set(
+        index,
+        (this.arguments.get(index) ?? "") + (delta.partial_json ?? ""),
+      );
+    else if (delta.type === "citations_delta" && delta.citation !== undefined)
+      (target.citations ??= []).push(structuredClone(delta.citation));
+  }
+
+  private finishArguments(index: number) {
+    const raw = this.arguments.get(index);
+
+    if (raw === undefined) return;
+    this.arguments.delete(index);
+    const target = this.message?.content[index];
+
+    try {
+      // A no-argument tool call streams one empty partial_json.
+      const input = raw.trim() ? z.json().parse(JSON.parse(raw)) : {};
+
+      if (target) target.input = input;
+    } catch {
+      // Streamed tool input is not validated: a reply cut off at max_tokens ends mid-argument. The call is
+      // dropped at message_stop, never run with guessed arguments.
+      this.unparsed.push(index);
+    }
+  }
+
+  private finishMessage() {
+    for (const index of this.unparsed.toSorted((a, b) => b - a))
+      this.message?.content.splice(index, 1);
+    this.complete = Boolean(
+      this.message?.stop_reason && this.arguments.size === 0,
+    );
   }
 }
 
@@ -848,58 +912,78 @@ const anthropicError = z.object({
   }),
 });
 
-/** Why the origin refused a gzip body, when it did; then the latch turns compression off for the process. */
-function rejectionKind(status: number, headers: Headers, text: string) {
-  if (![400, 403, 415].includes(status)) return undefined;
+const INVALID_JSON_MESSAGES = [
+  "The request body is not valid JSON",
+  "Failed to parse request: could not parse request body as JSON",
+];
 
-  if (
-    !(headers.get("request-id") ?? "").startsWith("req_") &&
-    !headers.get("cf-ray")
-  )
-    return "non_anthropic_rejection";
+// The message prefix counts only in a full Anthropic error envelope.
+const invalidJsonEnvelope = ({ type, error }: z.infer<typeof anthropicError>) =>
+  type === "error" &&
+  error.type !== undefined &&
+  INVALID_JSON_MESSAGES.some((prefix) => error.message?.startsWith(prefix));
 
-  if (status === 415) return "unsupported_encoding";
+function originBadJson(raw: z.input<typeof anthropicError>) {
+  const go = goError.safeParse(raw);
 
-  if (status !== 400) return undefined;
+  if (go.success) return GO_BAD_JSON.test(go.data.error);
+  const parsed = anthropicError.safeParse(raw);
+
+  return parsed.success && invalidJsonEnvelope(parsed.data);
+}
+
+const encodingUnsupported = (raw: z.input<typeof anthropicError>) => {
+  const parsed = anthropicError.safeParse(raw);
+
+  return (
+    parsed.success &&
+    (parsed.data.error.details?.error_code ===
+      "request_body_encoding_unsupported" ||
+      parsed.data.error.message?.startsWith("Unsupported Content-Encoding") ===
+        true)
+  );
+};
+
+const fromAnthropic = (headers: Headers) =>
+  (headers.get("request-id") ?? "").startsWith("req_") ||
+  Boolean(headers.get("cf-ray"));
+
+function headerRejection(status: number, headers: Headers) {
+  if (!fromAnthropic(headers)) return "non_anthropic_rejection";
+
+  return status === 415 ? "unsupported_encoding" : undefined;
+}
+
+const badJsonText = (text: string) =>
+  GO_BAD_JSON.test(text.trimEnd()) ? "invalid_json_at_origin" : undefined;
+
+function originRejection(raw: z.input<typeof anthropicError>) {
+  if (!goError.safeParse(raw).success && encodingUnsupported(raw))
+    return "unsupported_encoding";
+
+  return originBadJson(raw) ? "invalid_json_at_origin" : undefined;
+}
+
+function bodyRejection(text: string) {
   let raw: z.input<typeof anthropicError>;
 
   try {
     raw = JSON.parse(text);
   } catch {
-    return GO_BAD_JSON.test(text.trimEnd())
-      ? "invalid_json_at_origin"
-      : undefined;
+    return badJsonText(text);
   }
 
-  const go = goError.safeParse(raw);
+  return originRejection(raw);
+}
 
-  if (go.success)
-    return GO_BAD_JSON.test(go.data.error)
-      ? "invalid_json_at_origin"
-      : undefined;
-  const parsed = anthropicError.safeParse(raw);
+/** Why the origin refused a gzip body, when it did; then the latch turns compression off for the process. */
+function rejectionKind(status: number, headers: Headers, text: string) {
+  if (![400, 403, 415].includes(status)) return undefined;
 
-  if (!parsed.success) return undefined;
-  const { type, error } = parsed.data;
-
-  if (
-    error.details?.error_code === "request_body_encoding_unsupported" ||
-    error.message?.startsWith("Unsupported Content-Encoding")
-  )
-    return "unsupported_encoding";
-
-  // The message prefix counts only in a full Anthropic error envelope.
-  if (
-    type === "error" &&
-    error.type !== undefined &&
-    (error.message?.startsWith("The request body is not valid JSON") ||
-      error.message?.startsWith(
-        "Failed to parse request: could not parse request body as JSON",
-      ))
-  )
-    return "invalid_json_at_origin";
-
-  return undefined;
+  return (
+    headerRejection(status, headers) ??
+    (status === 400 ? bodyRejection(text) : undefined)
+  );
 }
 
 const FORWARDED_REQUEST_HEADERS_EXCLUDED = new Set([
@@ -921,6 +1005,45 @@ const FORWARDED_RESPONSE_HEADERS_EXCLUDED = new Set([
   "content-length",
   "content-encoding",
 ]);
+
+function forwardedRequestHeaders(request: Request) {
+  const headers = new Headers();
+
+  for (const [key, value] of request.headers)
+    if (!FORWARDED_REQUEST_HEADERS_EXCLUDED.has(key)) headers.set(key, value);
+  headers.set("accept-encoding", "identity");
+
+  return headers;
+}
+
+function forwardedResponseHeaders(response: Response) {
+  const forwarded = new Headers();
+
+  for (const [key, value] of response.headers)
+    if (!FORWARDED_RESPONSE_HEADERS_EXCLUDED.has(key))
+      forwarded.set(key, value);
+  forwarded.set("connection", "close");
+
+  return forwarded;
+}
+
+function gzipPayload(payload: string) {
+  const padding = Array.from({ length: randomInt(257) }, () =>
+    randomInt(2) ? " " : "\t",
+  ).join("");
+
+  return Bun.gzipSync(Buffer.from(`${payload}\n${padding}`), { level: 3 });
+}
+
+function gzipAllowedByEnv(env: Record<string, string | undefined>) {
+  const opt = (env["CLAUDE_CODE_GZIP_REQUEST_BODIES"] ?? "").toLowerCase();
+
+  return (
+    !PROXY_ENV.some((name) => env[name]) &&
+    !GZIP_CA_ENV.some((name) => name in env) &&
+    !["0", "false", "no", "off"].includes(opt)
+  );
+}
 
 class UpstreamIdle extends Error {
   constructor(seconds: number) {
@@ -1012,11 +1135,7 @@ export class Admission {
     return (
       GZIP_HOSTS.has(this.upstream.hostname) &&
       this.upstream.port === "" &&
-      !PROXY_ENV.some((name) => this.env[name]) &&
-      !GZIP_CA_ENV.some((name) => name in this.env) &&
-      !["0", "false", "no", "off"].includes(
-        (this.env["CLAUDE_CODE_GZIP_REQUEST_BODIES"] ?? "").toLowerCase(),
-      ) &&
+      gzipAllowedByEnv(this.env) &&
       Buffer.byteLength(payload) >= 4096 &&
       gzipLatched === undefined &&
       !headers.has("content-encoding")
@@ -1069,24 +1188,11 @@ export class Admission {
     payload = stableRequestContext(payload, this.queried);
     payload = pinMessageBreakpoint(payload, this.queried);
     payload = streamToolInput(payload);
-    const headers = new Headers();
-
-    for (const [key, value] of request.headers)
-      if (!FORWARDED_REQUEST_HEADERS_EXCLUDED.has(key)) headers.set(key, value);
-    headers.set("accept-encoding", "identity");
+    const headers = forwardedRequestHeaders(request);
     const route = `${this.upstream.origin}${this.upstream.pathname.replace(/\/$/, "")}/v1/messages${path.search}`;
     const compressed = this.gzipEligible(payload, request.headers);
 
     const send = (gzip: boolean) => {
-      const wire = gzip
-        ? Bun.gzipSync(
-            Buffer.from(
-              `${payload}\n${Array.from({ length: randomInt(257) }, () => (randomInt(2) ? " " : "\t")).join("")}`,
-            ),
-            { level: 3 },
-          )
-        : payload;
-
       const sent = new Headers(headers);
 
       if (gzip) sent.set("content-encoding", "gzip");
@@ -1094,7 +1200,7 @@ export class Admission {
       return fetch(route, {
         method: "POST",
         headers: sent,
-        body: wire,
+        body: gzip ? gzipPayload(payload) : payload,
         signal: this.controller.signal,
       });
     };
@@ -1130,12 +1236,6 @@ export class Admission {
 
     this.requestId = requestIdOf(response.headers);
     this.status = response.status;
-    const forwarded = new Headers();
-
-    for (const [key, value] of response.headers)
-      if (!FORWARDED_RESPONSE_HEADERS_EXCLUDED.has(key))
-        forwarded.set(key, value);
-    forwarded.set("connection", "close");
 
     const { readable, writable } = new TransformStream<
       Uint8Array,
@@ -1146,7 +1246,7 @@ export class Admission {
 
     return new Response(readable, {
       status: response.status,
-      headers: forwarded,
+      headers: forwardedResponseHeaders(response),
     });
   }
 

@@ -125,6 +125,10 @@ type MatchKey = z.infer<typeof keySchema>;
 
 type Token = z.infer<typeof tokenSchema>;
 
+type MatchToken = Extract<Token, { type: "match" }>;
+
+type ReadToken = Extract<Token, { type: "read" }>;
+
 type Direction = "before" | "after";
 
 type Row = {
@@ -162,66 +166,121 @@ function entryNumber(chat: HistoryChat, entryId: string): number {
   return entry;
 }
 
-function rowOf(chat: HistoryChat, message: TranscriptMessage): Row {
-  const entry = entryNumber(chat, message.entryId);
-  const prefix = `${message.entryId}:`;
-  const suffix = message.id.slice(prefix.length);
+function messageIndex(entryId: string, messageId: string): number {
+  const prefix = `${entryId}:`;
+  const suffix = messageId.slice(prefix.length);
   const index = Number(suffix);
 
   if (
-    !message.id.startsWith(prefix) ||
+    !messageId.startsWith(prefix) ||
     !/^(0|[1-9][0-9]*)$/.test(suffix) ||
     !Number.isSafeInteger(index)
   )
     throw new Error("History source returned an invalid message identifier");
 
+  return index;
+}
+
+function blockList(message: TranscriptMessage): unknown[] | null {
   const blocks = z.array(z.unknown()).safeParse(message.blocks);
 
-  const toolActivity =
-    chat.kind === "bot" &&
-    (message.role === "toolResult" ||
-      (message.kind === "pi.assistant" &&
-        blocks.success &&
-        blocks.data.some((block) => toolCallSchema.safeParse(block).success)));
+  return blocks.success ? blocks.data : null;
+}
 
-  let body: string | null = null;
+function hasToolCall(blocks: unknown[] | null): boolean {
+  return (
+    blocks?.some((block) => toolCallSchema.safeParse(block).success) ?? false
+  );
+}
 
-  if (chat.kind === "group") {
-    if (
-      message.kind === GROUP_MESSAGE_KIND &&
-      (message.role === "user" || message.role === "assistant") &&
-      (message.origin?.kind === "owner" || message.origin?.kind === "bot")
-    )
-      body = message.content;
-  } else if (
-    message.kind === "crumble.message" &&
+function toolActivityOf(
+  chat: HistoryChat,
+  message: TranscriptMessage,
+  blocks: unknown[] | null,
+): boolean {
+  if (chat.kind !== "bot") return false;
+
+  if (message.role === "toolResult") return true;
+
+  return message.kind === "pi.assistant" && hasToolCall(blocks);
+}
+
+function groupBody(message: TranscriptMessage): string | null {
+  if (message.kind !== GROUP_MESSAGE_KIND) return null;
+
+  if (message.role !== "user" && message.role !== "assistant") return null;
+
+  if (message.origin?.kind !== "owner" && message.origin?.kind !== "bot")
+    return null;
+
+  return message.content;
+}
+
+function isOwnerMessage(message: TranscriptMessage): boolean {
+  if (message.kind !== "crumble.message" || message.role !== "user")
+    return false;
+
+  return message.origin?.kind !== "bot";
+}
+
+function isConversational(message: TranscriptMessage): boolean {
+  if (message.kind === "pi.assistant" && message.role === "assistant")
+    return true;
+
+  return (
+    message.kind === "pi.user" &&
     message.role === "user" &&
     message.origin?.kind !== "bot"
-  ) {
-    // Reply context lives in blocks; normalize preserves the owner's metadata text in content.
-    body = message.content;
-  } else if (
-    (message.kind === "pi.user" &&
-      message.role === "user" &&
-      message.origin?.kind !== "bot") ||
-    (message.kind === "pi.assistant" && message.role === "assistant")
-  ) {
-    if (blocks.success) {
-      body = blocks.data
-        .flatMap((block) => {
-          const parsed = textBlockSchema.safeParse(block);
+  );
+}
 
-          return parsed.success ? [parsed.data.text] : [];
-        })
-        .join("\n");
-    } else if (message.role === "user") {
-      const text = z.string().safeParse(message.blocks);
+function textBody(
+  message: TranscriptMessage,
+  blocks: unknown[] | null,
+): string | null {
+  if (blocks)
+    return blocks
+      .flatMap((block) => {
+        const parsed = textBlockSchema.safeParse(block);
 
-      if (text.success) body = text.data;
-    }
-  }
+        return parsed.success ? [parsed.data.text] : [];
+      })
+      .join("\n");
 
-  return { original: message, entry, index, body, toolActivity };
+  if (message.role !== "user") return null;
+
+  const text = z.string().safeParse(message.blocks);
+
+  return text.success ? text.data : null;
+}
+
+function bodyOf(
+  chat: HistoryChat,
+  message: TranscriptMessage,
+  blocks: unknown[] | null,
+): string | null {
+  if (chat.kind === "group") return groupBody(message);
+
+  // Reply context lives in blocks; normalize preserves the owner's metadata text in content.
+  if (isOwnerMessage(message)) return message.content;
+
+  if (!isConversational(message)) return null;
+
+  return textBody(message, blocks);
+}
+
+function rowOf(chat: HistoryChat, message: TranscriptMessage): Row {
+  const entry = entryNumber(chat, message.entryId);
+  const index = messageIndex(message.entryId, message.id);
+  const blocks = blockList(message);
+
+  return {
+    original: message,
+    entry,
+    index,
+    body: bodyOf(chat, message, blocks),
+    toolActivity: toolActivityOf(chat, message, blocks),
+  };
 }
 
 function timestamp(message: TranscriptMessage): number | null {
@@ -259,17 +318,20 @@ function keyOf(chat: HistoryChat, row: Row): MatchKey {
   };
 }
 
+// Undated originals remain undated; they sort after dated messages.
+function compareTimestamps(a: MatchKey, b: MatchKey): number {
+  if (a.timestamp === b.timestamp) return 0;
+
+  if (a.timestamp === null) return 1;
+
+  if (b.timestamp === null) return -1;
+
+  return b.timestamp - a.timestamp;
+}
+
 function compareKeys(a: MatchKey, b: MatchKey): number {
-  // Undated originals remain undated; they sort after dated messages, then by durable identity.
-  if (a.timestamp !== b.timestamp) {
-    if (a.timestamp === null) return 1;
-
-    if (b.timestamp === null) return -1;
-
-    return b.timestamp - a.timestamp;
-  }
-
   return (
+    compareTimestamps(a, b) ||
     ordinal(a.chatId, b.chatId) ||
     b.entry - a.entry ||
     b.index - a.index ||
@@ -326,11 +388,141 @@ function positionIndex(rows: Row[], position: Position): number {
   return index;
 }
 
-function windowFrom(
+function validQuery(query: string | undefined): string {
+  if (query === undefined || !query.trim() || Array.from(query).length > 500)
+    throw new Error(
+      "History query must contain non-whitespace text and at most 500 Unicode code points",
+    );
+
+  return query;
+}
+
+function pageCutoff(chat: HistoryChat, page: TranscriptPage): number {
+  let cutoff =
+    page.oldestEntryId === null ? 0 : entryNumber(chat, page.oldestEntryId);
+
+  for (const message of page.messages)
+    cutoff = Math.max(cutoff, entryNumber(chat, message.entryId));
+
+  if (page.hasMore && page.oldestEntryId === null)
+    throw new Error("History source did not provide a complete page cursor");
+
+  return cutoff;
+}
+
+function isAvailable(available: HistoryChat[], chat: HistoryChat): boolean {
+  return available.some(
+    (candidate) => candidate.id === chat.id && candidate.kind === chat.kind,
+  );
+}
+
+function matchesIn(
+  snapshot: Snapshot,
+  rows: Row[],
+  query: string,
+  last: MatchKey | undefined,
+): Candidate[] {
+  const lowered = query.toLowerCase();
+  const candidates: Candidate[] = [];
+
+  for (const row of rows) {
+    if (!row.body || !row.body.toLowerCase().includes(lowered)) continue;
+
+    const key = keyOf(snapshot.chat, row);
+
+    if (!last || compareKeys(key, last) > 0)
+      candidates.push({ snapshot, row, key });
+  }
+
+  return candidates;
+}
+
+function invalidDirection(direction: Direction | undefined): boolean {
+  return (
+    direction !== undefined && direction !== "before" && direction !== "after"
+  );
+}
+
+function readRequest(args: {
+  match?: string;
+  cursor?: string;
+  direction?: Direction;
+}) {
+  if ((args.match === undefined) === (args.cursor === undefined))
+    throw new Error("Provide exactly one history match or read cursor");
+
+  if (invalidDirection(args.direction))
+    throw new Error("Invalid history read direction");
+
+  return {
+    token: args.match ?? args.cursor ?? "",
+    match: args.match,
+    cursor: args.cursor,
+  };
+}
+
+function narrowToken(
+  token: Token,
+  request: { match: string | undefined; cursor: string | undefined },
+): MatchToken | ReadToken {
+  if (token.type === "search")
+    throw new Error("Expected a history match or read cursor");
+
+  if (request.match !== undefined && token.type !== "match")
+    throw new Error("Expected a history match or read cursor");
+
+  if (request.cursor !== undefined && token.type !== "read")
+    throw new Error("Expected a history match or read cursor");
+
+  return token;
+}
+
+function pageCursor(chat: HistoryChat, page: TranscriptPage): number | null {
+  return page.oldestEntryId === null
+    ? null
+    : entryNumber(chat, page.oldestEntryId);
+}
+
+function addPageRows(
+  chat: HistoryChat,
+  page: TranscriptPage,
+  cutoff: number,
+  seen: Set<string>,
+  rows: Row[],
+): void {
+  // Every message is validated before any overlap check, so a malformed page reports its invalid identifier.
+  const pageRows = page.messages.map((message) => rowOf(chat, message));
+
+  for (const row of pageRows) {
+    if (row.entry > cutoff) continue;
+
+    if (seen.has(row.original.id))
+      throw new Error("History source returned overlapping pages");
+
+    seen.add(row.original.id);
+    rows.push(row);
+  }
+}
+
+function nextCursor(
+  chat: HistoryChat,
+  before: string | undefined,
+  oldest: number | null,
+  oldestEntryId: string | null,
+): string | undefined {
+  if (
+    oldest === null ||
+    (before !== undefined && oldest >= entryNumber(chat, before))
+  )
+    throw new Error("History source did not provide a complete page cursor");
+
+  return oldestEntryId ?? undefined;
+}
+
+function windowAfter(
   chat: HistoryChat,
   rows: Row[],
   position: Position,
-  direction: Direction,
   count: number,
   budget: number,
 ): Window {
@@ -348,36 +540,187 @@ function windowFrom(
     const row = rows[index]!;
     const points = Array.from(row.body ?? "");
 
-    if (direction === "after") {
-      if (offset < points.length) {
-        const finish = Math.min(points.length, offset + budget);
-        messages.push(messagePart(chat, row, points, offset, finish));
-        budget -= finish - offset;
-        boundary = { messageId: row.original.id, offset: finish };
+    if (offset < points.length) {
+      const finish = Math.min(points.length, offset + budget);
 
-        if (finish < points.length) break;
-      }
+      messages.push(messagePart(chat, row, points, offset, finish));
+      budget -= finish - offset;
+      boundary = { messageId: row.original.id, offset: finish };
 
-      index += 1;
-      offset = 0;
-    } else {
-      if (offset > 0) {
-        const start = Math.max(0, offset - budget);
-        messages.unshift(messagePart(chat, row, points, start, offset));
-        budget -= offset - start;
-        boundary = { messageId: row.original.id, offset: start };
-
-        if (start > 0) break;
-      }
-
-      index -= 1;
-      offset = index >= 0 ? Array.from(rows[index]!.body ?? "").length : 0;
+      if (finish < points.length) break;
     }
+
+    index += 1;
+    offset = 0;
   }
 
+  return { messages, start: position, finish: boundary };
+}
+
+function windowBefore(
+  chat: HistoryChat,
+  rows: Row[],
+  position: Position,
+  count: number,
+  budget: number,
+): Window {
+  let index = positionIndex(rows, position);
+  let offset = position.offset;
+  let boundary = position;
+  const messages: HistoryReadMessage[] = [];
+
+  while (
+    index >= 0 &&
+    index < rows.length &&
+    messages.length < count &&
+    budget > 0
+  ) {
+    const row = rows[index]!;
+    const points = Array.from(row.body ?? "");
+
+    if (offset > 0) {
+      const start = Math.max(0, offset - budget);
+
+      messages.unshift(messagePart(chat, row, points, start, offset));
+      budget -= offset - start;
+      boundary = { messageId: row.original.id, offset: start };
+
+      if (start > 0) break;
+    }
+
+    index -= 1;
+    offset = index >= 0 ? Array.from(rows[index]!.body ?? "").length : 0;
+  }
+
+  return { messages, start: boundary, finish: position };
+}
+
+function windowFrom(
+  chat: HistoryChat,
+  rows: Row[],
+  position: Position,
+  direction: Direction,
+  count: number,
+  budget: number,
+): Window {
   return direction === "after"
-    ? { messages, start: position, finish: boundary }
-    : { messages, start: boundary, finish: position };
+    ? windowAfter(chat, rows, position, count, budget)
+    : windowBefore(chat, rows, position, count, budget);
+}
+
+function readWindow(
+  chat: HistoryChat,
+  rows: Row[],
+  token: ReadToken,
+  direction: Direction | undefined,
+): Window {
+  return windowFrom(
+    chat,
+    rows,
+    token.position,
+    direction ?? token.direction,
+    30,
+    20000,
+  );
+}
+
+function aroundWindow(
+  chat: HistoryChat,
+  rows: Row[],
+  position: Position,
+): Window {
+  const older = windowFrom(chat, rows, position, "before", 14, 10000);
+
+  const used = older.messages.reduce(
+    (sum, message) => sum + Array.from(message.text).length,
+    0,
+  );
+
+  const newer = windowFrom(
+    chat,
+    rows,
+    position,
+    "after",
+    30 - older.messages.length,
+    20000 - used,
+  );
+
+  return {
+    messages: [...older.messages, ...newer.messages],
+    start: older.start,
+    finish: newer.finish,
+  };
+}
+
+function matchWindow(
+  chat: HistoryChat,
+  rows: Row[],
+  messageId: string,
+  direction: Direction | undefined,
+): Window {
+  const anchor = rows.find((row) => row.original.id === messageId);
+
+  if (!anchor)
+    throw new Error(
+      "History message is no longer available; start a new search",
+    );
+
+  const position: Position = { messageId, offset: 0 };
+
+  if (direction === undefined) return aroundWindow(chat, rows, position);
+
+  if (direction === "after")
+    position.offset = Array.from(anchor.body ?? "").length;
+
+  return windowFrom(chat, rows, position, direction, 30, 20000);
+}
+
+function atBeginning(index: number, position: Position): boolean {
+  return index === 0 && position.offset === 0;
+}
+
+function atEnd(rows: Row[], index: number, position: Position): boolean {
+  return (
+    index === rows.length - 1 &&
+    position.offset === Array.from(rows[index]!.body ?? "").length
+  );
+}
+
+function withinWindow(
+  row: Row,
+  first: Row,
+  final: Row,
+  beginning: boolean,
+  end: boolean,
+): boolean {
+  const afterStart =
+    beginning ||
+    row.entry > first.entry ||
+    (row.entry === first.entry && row.index >= first.index);
+
+  const beforeEnd =
+    end ||
+    row.entry < final.entry ||
+    (row.entry === final.entry && row.index <= final.index);
+
+  return afterStart && beforeEnd;
+}
+
+function omitsToolActivity(
+  chat: HistoryChat,
+  rows: Row[],
+  first: Row,
+  final: Row,
+  beginning: boolean,
+  end: boolean,
+): boolean {
+  return (
+    chat.kind === "bot" &&
+    rows.some(
+      (row) =>
+        row.toolActivity && withinWindow(row, first, final, beginning, end),
+    )
+  );
 }
 
 export class HistorySearch {
@@ -454,40 +797,20 @@ export class HistorySearch {
     const rows: Row[] = [];
     const seen = new Set<string>();
 
+    if (cutoff === 0) return { snapshot: { chat, cutoff }, rows };
+
     let before =
       cutoff < Number.MAX_SAFE_INTEGER ? `${chat.id}:${cutoff + 1}` : undefined;
 
-    if (cutoff === 0) return { snapshot: { chat, cutoff }, rows };
-
     for (;;) {
       const page = await this.source.page(context, chat, before);
+      const oldest = pageCursor(chat, page);
 
-      const oldest =
-        page.oldestEntryId === null
-          ? null
-          : entryNumber(chat, page.oldestEntryId);
-
-      const pageRows = page.messages.map((message) => rowOf(chat, message));
-
-      for (const row of pageRows) {
-        if (row.entry > cutoff) continue;
-
-        if (seen.has(row.original.id))
-          throw new Error("History source returned overlapping pages");
-        seen.add(row.original.id);
-        rows.push(row);
-      }
+      addPageRows(chat, page, cutoff, seen, rows);
 
       if (!page.hasMore) break;
 
-      if (
-        oldest === null ||
-        (before !== undefined && oldest >= entryNumber(chat, before))
-      )
-        throw new Error(
-          "History source did not provide a complete page cursor",
-        );
-      before = page.oldestEntryId ?? undefined;
+      before = nextCursor(chat, before, oldest, page.oldestEntryId);
     }
 
     rows.sort((a, b) => a.entry - b.entry || a.index - b.index);
@@ -495,74 +818,85 @@ export class HistorySearch {
     return { snapshot: { chat, cutoff }, rows };
   }
 
-  async search(
+  private async searchScope(
     context: HistoryContext,
     args: { query?: string; chatId?: string; cursor?: string },
-  ): Promise<HistorySearchResult> {
-    let query: string;
-    let snapshots: Snapshot[];
-    let last: MatchKey | undefined;
-    const available = await this.chats(context);
+    available: HistoryChat[],
+  ): Promise<{
+    query: string;
+    snapshots: Snapshot[];
+    last: MatchKey | undefined;
+  }> {
+    return args.cursor !== undefined
+      ? this.cursorScope(context, args.cursor, args)
+      : this.freshScope(context, args, available);
+  }
 
-    if (args.cursor !== undefined) {
-      if (args.query !== undefined || args.chatId !== undefined)
-        throw new Error("Use only cursor when continuing a history search");
-      const token = this.open(context, args.cursor);
+  private cursorScope(
+    context: HistoryContext,
+    cursor: string,
+    args: { query?: string; chatId?: string },
+  ) {
+    if (args.query !== undefined || args.chatId !== undefined)
+      throw new Error("Use only cursor when continuing a history search");
 
-      if (token.type !== "search")
-        throw new Error("Expected a history search cursor");
-      query = token.query;
-      snapshots = token.snapshots;
-      last = token.last;
-    } else {
-      if (
-        args.query === undefined ||
-        !args.query.trim() ||
-        Array.from(args.query).length > 500
-      )
-        throw new Error(
-          "History query must contain non-whitespace text and at most 500 Unicode code points",
-        );
-      query = args.query;
+    const token = this.open(context, cursor);
 
-      const chats = available.filter(
-        (chat) => args.chatId === undefined || chat.id === args.chatId,
-      );
+    if (token.type !== "search")
+      throw new Error("Expected a history search cursor");
 
-      if (args.chatId !== undefined && chats.length === 0)
-        throw new Error("History chat is unavailable or access is denied");
-      snapshots = await Promise.all(
-        chats.map(async (chat) => {
-          const page = await this.source.page(context, chat);
+    return { query: token.query, snapshots: token.snapshots, last: token.last };
+  }
 
-          let cutoff =
-            page.oldestEntryId === null
-              ? 0
-              : entryNumber(chat, page.oldestEntryId);
+  private async freshScope(
+    context: HistoryContext,
+    args: { query?: string; chatId?: string },
+    available: HistoryChat[],
+  ): Promise<{
+    query: string;
+    snapshots: Snapshot[];
+    last: MatchKey | undefined;
+  }> {
+    const query = validQuery(args.query);
 
-          for (const message of page.messages)
-            cutoff = Math.max(cutoff, entryNumber(chat, message.entryId));
+    const chats = available.filter(
+      (chat) => args.chatId === undefined || chat.id === args.chatId,
+    );
 
-          if (page.hasMore && page.oldestEntryId === null)
-            throw new Error(
-              "History source did not provide a complete page cursor",
-            );
+    if (args.chatId !== undefined && chats.length === 0)
+      throw new Error("History chat is unavailable or access is denied");
 
-          return { chat, cutoff };
-        }),
-      );
-    }
+    return {
+      query,
+      snapshots: await this.freshSnapshots(context, chats),
+      last: undefined,
+    };
+  }
 
+  private async freshSnapshots(
+    context: HistoryContext,
+    chats: HistoryChat[],
+  ): Promise<Snapshot[]> {
+    return Promise.all(
+      chats.map(async (chat) => ({
+        chat,
+        cutoff: pageCutoff(chat, await this.source.page(context, chat)),
+      })),
+    );
+  }
+
+  private async collectCandidates(
+    context: HistoryContext,
+    available: HistoryChat[],
+    snapshots: Snapshot[],
+    query: string,
+    last: MatchKey | undefined,
+  ): Promise<{ candidates: Candidate[]; frozen: Snapshot[] }> {
     const candidates: Candidate[] = [];
     const frozen: Snapshot[] = [];
 
     for (const snapshot of snapshots) {
-      if (
-        !available.some(
-          (chat) =>
-            chat.id === snapshot.chat.id && chat.kind === snapshot.chat.kind,
-        )
-      ) {
+      if (!isAvailable(available, snapshot.chat)) {
         frozen.push(snapshot);
         continue;
       }
@@ -571,20 +905,25 @@ export class HistorySearch {
 
       frozen.push(scanned.snapshot);
 
-      for (const row of scanned.rows) {
-        if (!row.body || !row.body.toLowerCase().includes(query.toLowerCase()))
-          continue;
-        const key = keyOf(snapshot.chat, row);
-
-        if (!last || compareKeys(key, last) > 0)
-          candidates.push({ snapshot: scanned.snapshot, row, key });
-      }
+      // One push per match: a whole transcript's matches can exceed the engine's argument limit.
+      for (const candidate of matchesIn(
+        scanned.snapshot,
+        scanned.rows,
+        query,
+        last,
+      ))
+        candidates.push(candidate);
     }
 
-    candidates.sort((a, b) => compareKeys(a.key, b.key));
-    const selected = candidates.slice(0, 20);
+    return { candidates, frozen };
+  }
 
-    const matches = selected.map(({ snapshot, row }) => ({
+  private matchOf(
+    context: HistoryContext,
+    { snapshot, row }: Candidate,
+    query: string,
+  ): HistorySearchMatch {
+    return {
       match: this.token({
         ...context,
         type: "match",
@@ -597,12 +936,46 @@ export class HistorySearch {
       sender: sender(snapshot.chat, row.original),
       timestamp: timestamp(row.original),
       ...excerpt(row.body ?? "", query),
-    }));
+    };
+  }
 
+  private readToken(
+    context: HistoryContext,
+    args: { match?: string; cursor?: string; direction?: Direction },
+  ): MatchToken | ReadToken {
+    const request = readRequest(args);
+
+    return narrowToken(this.open(context, request.token), request);
+  }
+
+  async search(
+    context: HistoryContext,
+    args: { query?: string; chatId?: string; cursor?: string },
+  ): Promise<HistorySearchResult> {
+    const available = await this.chats(context);
+
+    const { query, snapshots, last } = await this.searchScope(
+      context,
+      args,
+      available,
+    );
+
+    const { candidates, frozen } = await this.collectCandidates(
+      context,
+      available,
+      snapshots,
+      query,
+      last,
+    );
+
+    candidates.sort((a, b) => compareKeys(a.key, b.key));
+    const selected = candidates.slice(0, 20);
     const tail = selected.at(-1);
 
     return {
-      matches,
+      matches: selected.map((candidate) =>
+        this.matchOf(context, candidate, query),
+      ),
       cursor:
         candidates.length > 20 && tail
           ? this.token({
@@ -620,125 +993,28 @@ export class HistorySearch {
     context: HistoryContext,
     args: { match?: string; cursor?: string; direction?: Direction },
   ): Promise<HistoryReadResult> {
-    if ((args.match === undefined) === (args.cursor === undefined))
-      throw new Error("Provide exactly one history match or read cursor");
-
-    if (
-      args.direction !== undefined &&
-      args.direction !== "before" &&
-      args.direction !== "after"
-    )
-      throw new Error("Invalid history read direction");
-    const token = this.open(context, args.match ?? args.cursor ?? "");
-
-    if (
-      (args.match !== undefined && token.type !== "match") ||
-      (args.cursor !== undefined && token.type !== "read") ||
-      token.type === "search"
-    )
-      throw new Error("Expected a history match or read cursor");
+    const token = this.readToken(context, args);
     const { snapshot } = token;
     const available = await this.chats(context);
 
-    if (
-      !available.some(
-        (chat) =>
-          chat.id === snapshot.chat.id && chat.kind === snapshot.chat.kind,
-      )
-    )
+    if (!isAvailable(available, snapshot.chat))
       throw new Error("History chat is unavailable or access is denied");
+
     const scanned = await this.scan(context, snapshot.chat, snapshot.cutoff);
 
     const rows = scanned.rows.filter(
       (row) => row.body !== null && row.body.length > 0,
     );
 
-    let window: Window;
-
-    if (token.type === "read") {
-      window = windowFrom(
-        snapshot.chat,
-        rows,
-        token.position,
-        args.direction ?? token.direction,
-        30,
-        20000,
-      );
-    } else {
-      const anchor = rows.find((row) => row.original.id === token.messageId);
-
-      if (!anchor)
-        throw new Error(
-          "History message is no longer available; start a new search",
-        );
-      const position = { messageId: token.messageId, offset: 0 };
-
-      if (args.direction) {
-        if (args.direction === "after")
-          position.offset = Array.from(anchor.body ?? "").length;
-        window = windowFrom(
-          snapshot.chat,
-          rows,
-          position,
-          args.direction,
-          30,
-          20000,
-        );
-      } else {
-        const older = windowFrom(
-          snapshot.chat,
-          rows,
-          position,
-          "before",
-          14,
-          10000,
-        );
-
-        const used = older.messages.reduce(
-          (sum, message) => sum + Array.from(message.text).length,
-          0,
-        );
-
-        const newer = windowFrom(
-          snapshot.chat,
-          rows,
-          position,
-          "after",
-          30 - older.messages.length,
-          20000 - used,
-        );
-
-        window = {
-          messages: [...older.messages, ...newer.messages],
-          start: older.start,
-          finish: newer.finish,
-        };
-      }
-    }
+    const window =
+      token.type === "read"
+        ? readWindow(snapshot.chat, rows, token, args.direction)
+        : matchWindow(snapshot.chat, rows, token.messageId, args.direction);
 
     const startIndex = positionIndex(rows, window.start);
     const finishIndex = positionIndex(rows, window.finish);
-    const beginning = startIndex === 0 && window.start.offset === 0;
-
-    const end =
-      finishIndex === rows.length - 1 &&
-      window.finish.offset === Array.from(rows[finishIndex]!.body ?? "").length;
-
-    const first = rows[startIndex]!;
-    const final = rows[finishIndex]!;
-
-    const omittedToolActivity =
-      snapshot.chat.kind === "bot" &&
-      scanned.rows.some(
-        (row) =>
-          row.toolActivity &&
-          (beginning ||
-            row.entry > first.entry ||
-            (row.entry === first.entry && row.index >= first.index)) &&
-          (end ||
-            row.entry < final.entry ||
-            (row.entry === final.entry && row.index <= final.index)),
-      );
+    const beginning = atBeginning(startIndex, window.start);
+    const end = atEnd(rows, finishIndex, window.finish);
 
     return {
       chat: snapshot.chat,
@@ -763,7 +1039,14 @@ export class HistorySearch {
           }),
       beginning,
       end,
-      omittedToolActivity,
+      omittedToolActivity: omitsToolActivity(
+        snapshot.chat,
+        scanned.rows,
+        rows[startIndex]!,
+        rows[finishIndex]!,
+        beginning,
+        end,
+      ),
     };
   }
 }
