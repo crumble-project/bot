@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `bun run check` and the pre-commit hook fail when an `AGENTS.md` or `CLAUDE.md` names a path that does not exist. `AGENTS.md` now points at Effect under `apps/server/node_modules/`, where Bun installs it. `bun run --cwd apps/server db:generate` (and `db:generate:push`) generates migrations, and the contributing docs describe it.
 - New features no longer start as specifications in `crumble-project/spec`, which is archived. The contributing docs drop the proposal process and the Specifications page, which now redirects to Contributing.
 - The canonical glossary moves from `crumble-project/spec` to `GLOSSARY.md` in this repository. The Android and Apple glossaries and the docs site's Glossary page link here.
 - Crumble is licensed under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). The repository has a `LICENSE` file, each `package.json` has a `license` field, and the published images carry the `org.opencontainers.image.licenses` label. Anyone who runs a modified server for others must offer them its source.

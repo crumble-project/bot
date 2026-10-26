@@ -35,7 +35,18 @@ bun run check   # lint, format check, typecheck, contract drift, and unit tests
 bun run fix     # format and apply lint fixes
 ```
 
-`bun install` sets up Git hooks: commits run lint and typecheck, and pushes run `check`. Unit test jobs in CI must finish in two minutes or less.
+`bun install` sets up Git hooks: commits run the steering-file path check, lint and typecheck, and pushes run `check`. Unit test jobs in CI must finish in two minutes or less.
+
+## Change the database schema
+
+Edit the feature's `schema.ts`, then generate the migration from the `bot` root:
+
+```bash
+bun run --cwd apps/server db:generate --name short_description       # store.sqlite
+bun run --cwd apps/server db:generate:push --name short_description  # push.sqlite
+```
+
+A new `schema.ts` must also be listed in `apps/server/drizzle.store.config.ts`.
 
 ## Change the API contract
 

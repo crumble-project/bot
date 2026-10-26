@@ -32,6 +32,7 @@
     "contract:bundle": "bun apps/server/src/contract/openapi.ts --bundle",
     "contract:validate": "bun apps/server/src/contract/contract-release.ts validate",
     "contract:compatibility": "bun apps/server/src/contract/contract-release.ts compatibility",
-    "check": "bun run lint && bun run format:check && bun run typecheck && bun run openapi:check && bun test"
+    "agents:check": "bun tools/agents-paths.ts",
+    "check": "bun run agents:check && bun run lint && bun run format:check && bun run typecheck && bun run openapi:check && bun test"
   }
 }
