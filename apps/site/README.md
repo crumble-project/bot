@@ -25,7 +25,7 @@ The Site workflow runs `build` when `apps/site` changes.
 
 ## Deployment (Cloudflare Workers)
 
-The Worker (`wrangler.jsonc`) is attached to `crumbli.ng`:
+The Worker (`wrangler.jsonc`) is attached to `crumbli.ng`. A push to `main` that changes `apps/site` deploys it once `build` passes. The Site workflow reads the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. To deploy by hand:
 
 ```sh
 bun run deploy

@@ -25,6 +25,8 @@ The Docs workflow runs `check` and `build` when `apps/docs` changes.
 
 ## Deployment
 
+A push to `main` that changes `apps/docs` deploys the site once `check` and `build` pass. The Docs workflow reads the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. To deploy by hand:
+
 ```sh
 bun run deploy
 ```

@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Crumble is licensed under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). The repository has a `LICENSE` file, each `package.json` has a `license` field, and the published images carry the `org.opencontainers.image.licenses` label. Anyone who runs a modified server for others must offer them its source.
+- Deploy the documentation site and the landing page from `main`. When a push to `main` changes `apps/docs`, the Docs workflow deploys it to `docs.crumbli.ng` with Wrangler after the check and build pass; when it changes `apps/site`, the Site workflow deploys it to `crumbli.ng` after the build passes. Pull requests still only check and build them.
 
 ## 0.1.0
 
