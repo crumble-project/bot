@@ -52,9 +52,9 @@ import {
   queryClient,
   schedulesQuery,
   send,
-} from "./api";
-import { BotAvatar } from "./avatar";
-import { ConfirmDelete, Section, WorkspacePage } from "./workspace";
+} from "@/lib/api";
+import { BotAvatar } from "@/features/bots/avatar";
+import { ConfirmDelete, Section, WorkspacePage } from "@/components/workspace";
 
 const LOCAL_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 

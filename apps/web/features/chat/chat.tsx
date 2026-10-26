@@ -19,8 +19,8 @@ import {
   chatQuery,
   jobsQuery,
   send,
-} from "./api";
-import { BotAvatar, botColor, botStyle } from "./avatar";
+} from "@/lib/api";
+import { BotAvatar, botColor, botStyle } from "@/features/bots/avatar";
 import { type Outgoing, confirm, useOutgoing } from "./delivery";
 import {
   ConversationEmpty,
@@ -33,9 +33,9 @@ import {
   useMessageSending,
 } from "./conversation";
 import { DetailsPanel } from "./details";
-import { type JobRef, JobDialog } from "./jobs";
-import { useChatStream } from "./live";
-import { BotReasoning } from "./reasoning";
+import { type JobRef, JobDialog } from "@/features/jobs/jobs";
+import { useChatStream } from "@/lib/live";
+import { BotReasoning } from "@/features/bots/reasoning";
 import {
   BotMessage,
   Composer,

@@ -24,7 +24,7 @@ import {
   providersQuery,
   queryClient,
   send,
-} from "./api";
+} from "@/lib/api";
 
 export async function refreshProviders() {
   await queryClient.invalidateQueries({ queryKey: providersQuery.queryKey });

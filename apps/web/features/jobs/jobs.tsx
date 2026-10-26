@@ -19,8 +19,8 @@ import {
   type Message,
   agentPath,
   api,
-} from "./api";
-import { Reply } from "./markdown";
+} from "@/lib/api";
+import { Reply } from "@/components/markdown";
 
 export type JobRef = { kind: "coding" | "desktop"; name: string };
 

@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/message-scroller";
 import { Skeleton } from "@/components/ui/skeleton";
 import { randomId } from "@/lib/utils";
-import { type HistoryPage, type Message, api } from "./api";
+import { type HistoryPage, type Message, api } from "@/lib/api";
 import { deliver } from "./delivery";
 import {
   OwnerMessage,

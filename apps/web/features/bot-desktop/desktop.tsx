@@ -13,7 +13,7 @@ import {
   botsQuery,
   call,
   follow,
-} from "./api";
+} from "@/lib/api";
 
 /** Watch a bot's desktop, and take control from its desktop job or hand it back. */
 export function BotDesktop({ botId }: { botId: string }) {

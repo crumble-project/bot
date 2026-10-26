@@ -29,12 +29,17 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { type Provider, capabilitiesQuery, providersQuery, send } from "./api";
-import { authClient } from "./auth-client";
-import { clearUserData } from "./api";
-import { clearLiveStreams, notifications } from "./live";
+import {
+  type Provider,
+  capabilitiesQuery,
+  providersQuery,
+  send,
+} from "@/lib/api";
+import { authClient } from "@/lib/auth-client";
+import { clearUserData } from "@/lib/api";
+import { clearLiveStreams, notifications } from "@/lib/live";
 import { LoginDialog, refreshProviders } from "./provider-login";
-import { Section, WorkspacePage } from "./workspace";
+import { Section, WorkspacePage } from "@/components/workspace";
 
 const SECTIONS = [
   { to: "/settings/general", label: "General", icon: SlidersHorizontalIcon },

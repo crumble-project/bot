@@ -23,7 +23,7 @@ import {
   FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { OwnerSelectField, SaveDialogFooter } from "./form-fields";
+import { OwnerSelectField, SaveDialogFooter } from "@/components/form-fields";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -35,13 +35,13 @@ import {
   queryClient,
   send,
   skillsQuery,
-} from "./api";
+} from "@/lib/api";
 import {
   ConfirmDelete,
   Section,
   SectionEmpty,
   WorkspacePage,
-} from "./workspace";
+} from "@/components/workspace";
 
 const SHARED = "shared";
 

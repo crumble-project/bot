@@ -40,15 +40,15 @@ import {
   api,
   botsQuery,
   queryClient,
-} from "./api";
-import { BotAvatar } from "./avatar";
+} from "@/lib/api";
+import { BotAvatar } from "@/features/bots/avatar";
 import {
   ChangeDiff,
   RevertChange,
   changeSummary,
   changeTitle,
 } from "./changes";
-import { WorkspacePage } from "./workspace";
+import { WorkspacePage } from "@/components/workspace";
 
 type Activity = ActivityFeed["activities"][number];
 

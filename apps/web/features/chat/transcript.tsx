@@ -30,10 +30,10 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { type Bot, type Message, blobUrl } from "./api";
-import { botStyle } from "./avatar";
+import { type Bot, type Message, blobUrl } from "@/lib/api";
+import { botStyle } from "@/features/bots/avatar";
 import { DisplayCard, displayOf } from "./display";
-import { Reply } from "./markdown";
+import { Reply } from "@/components/markdown";
 
 /** Orders `agent:entry:index` message IDs numerically; others keep their place at the end. */
 function position(id: string) {

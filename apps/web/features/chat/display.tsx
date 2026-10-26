@@ -6,7 +6,7 @@ import {
   ArrowUp02Icon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
-import type { ChartLayout, Message } from "./api";
+import type { ChartLayout, Message } from "@/lib/api";
 
 type Stat = {
   label: string;

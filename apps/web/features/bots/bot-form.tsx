@@ -54,9 +54,9 @@ import {
   providersQuery,
   queryClient,
   send,
-} from "./api";
+} from "@/lib/api";
 import { BotAvatar } from "./avatar";
-import { ConfirmDeleteContent, WorkspacePage } from "./workspace";
+import { ConfirmDeleteContent, WorkspacePage } from "@/components/workspace";
 import {
   type AvatarChoice,
   PALETTE,

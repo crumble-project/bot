@@ -22,7 +22,7 @@ import {
   FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { OwnerSelectField, SaveDialogFooter } from "./form-fields";
+import { OwnerSelectField, SaveDialogFooter } from "@/components/form-fields";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
@@ -34,13 +34,13 @@ import {
   mcpServersQuery,
   queryClient,
   send,
-} from "./api";
+} from "@/lib/api";
 import {
   ConfirmDelete,
   Section,
   SectionEmpty,
   WorkspacePage,
-} from "./workspace";
+} from "@/components/workspace";
 
 const SHARED = "shared";
 const OAUTH_SERVER_KEY = "crumble.oauth.server";

@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { type Change, queryClient, send } from "./api";
+import { type Change, queryClient, send } from "@/lib/api";
 
 type State = Change["before"];
 

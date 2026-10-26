@@ -16,7 +16,7 @@ import {
   call,
   modelsQuery,
   queryClient,
-} from "./api";
+} from "@/lib/api";
 
 export const THINKING_LEVELS = [
   { label: "Off", value: "off" },

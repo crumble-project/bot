@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import webUI from "@crumble/web/index.html";
 
-/** Where the browser loads Pele's ES modules from; `apps/web/markdown.tsx` imports this path at runtime. */
+/** Where the browser loads Pele's ES modules from; `apps/web/components/markdown.tsx` imports this path at runtime. */
 export const PELE_PREFIX = "/ui-modules/pele";
 
 const PELE = path.join(

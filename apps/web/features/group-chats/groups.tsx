@@ -38,11 +38,11 @@ import {
   groupsQuery,
   queryClient,
   send,
-} from "./api";
-import { BotAvatar, botColor } from "./avatar";
-import { ConfirmDeleteContent } from "./workspace";
-import { outgoingMessage } from "./chat";
-import { confirm, useOutgoing } from "./delivery";
+} from "@/lib/api";
+import { BotAvatar, botColor } from "@/features/bots/avatar";
+import { ConfirmDeleteContent } from "@/components/workspace";
+import { outgoingMessage } from "@/features/chat/chat";
+import { confirm, useOutgoing } from "@/features/chat/delivery";
 import {
   ConversationEmpty,
   ConversationError,
@@ -52,7 +52,7 @@ import {
   LoadEarlier,
   useHistory,
   useMessageSending,
-} from "./conversation";
+} from "@/features/chat/conversation";
 import {
   BotMessage,
   Composer,
@@ -62,7 +62,7 @@ import {
   useArrivals,
   mergeMessages,
   reactionsOf,
-} from "./transcript";
+} from "@/features/chat/transcript";
 
 const MEMBER_STATUS = {
   running: "is answering",

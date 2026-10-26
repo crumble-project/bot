@@ -9,11 +9,11 @@ import {
   queryClient,
   schedulesQuery,
   send,
-} from "./api";
-import { BotAvatar } from "./avatar";
-import { useWorking } from "./live";
-import { sourceLabel } from "./memory";
-import { finished, taskTiming } from "./tasks";
+} from "@/lib/api";
+import { BotAvatar } from "@/features/bots/avatar";
+import { useWorking } from "@/lib/live";
+import { sourceLabel } from "@/features/memory/memory";
+import { finished, taskTiming } from "@/features/schedules/tasks";
 
 function Routine({ schedule }: { schedule: Schedule }) {
   const toggle = useMutation({

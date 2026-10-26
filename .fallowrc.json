@@ -15,7 +15,7 @@
   "overrides": [
     {
       // The server serves the web UI's bundle, and the web UI imports only the server's API types; nothing builds packages in dependency order.
-      "files": ["apps/server/src/app/web-ui.ts", "apps/web/api.ts"],
+      "files": ["apps/server/src/app/web-ui.ts", "apps/web/lib/api.ts"],
       "rules": { "package-cycle": "off" }
     }
   ]

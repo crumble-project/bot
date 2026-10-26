@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { send } from "./api";
+import { send } from "@/lib/api";
 import type { Upload } from "./transcript";
 
 export type Outgoing = {

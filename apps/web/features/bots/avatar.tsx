@@ -1,6 +1,6 @@
 import { type CSSProperties, useEffect, useLayoutEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import type { Bot } from "./api";
+import type { Bot } from "@/lib/api";
 import {
   type Blend,
   type BotState,

@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { OwnerSelectField, SaveDialogFooter } from "./form-fields";
+import { OwnerSelectField, SaveDialogFooter } from "@/components/form-fields";
 import {
   Select,
   SelectContent,
@@ -36,14 +36,14 @@ import {
   queryClient,
   send,
   sharedMemoriesQuery,
-} from "./api";
-import { BotAvatar } from "./avatar";
+} from "@/lib/api";
+import { BotAvatar } from "@/features/bots/avatar";
 import {
   ConfirmDelete,
   Section,
   SectionEmpty,
   WorkspacePage,
-} from "./workspace";
+} from "@/components/workspace";
 
 const SHARED = "shared";
 const ALL = "all";

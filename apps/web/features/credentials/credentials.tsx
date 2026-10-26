@@ -57,8 +57,8 @@ import {
   credentialsQuery,
   queryClient,
   send,
-} from "./api";
-import { WorkspacePage } from "./workspace";
+} from "@/lib/api";
+import { WorkspacePage } from "@/components/workspace";
 
 const USES_PAGE = 50;
 
