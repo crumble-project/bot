@@ -298,6 +298,45 @@ type StreamHandlers = {
   onGone?: () => void;
 };
 
+function dispatchStreamFrame(frame: string, handlers: StreamHandlers) {
+  const lines = frame.split("\n");
+
+  const event =
+    lines
+      .find((line) => line.startsWith("event:"))
+      ?.slice(6)
+      .trim() ?? "message";
+
+  if (event === "heartbeat") return;
+
+  const data = lines
+    .flatMap((line) =>
+      line.startsWith("data:") ? [line.slice(5).replace(/^ /, "")] : [],
+    )
+    .join("\n");
+
+  handlers.onEvent(event, data);
+}
+
+async function readEventStream(response: Response, handlers: StreamHandlers) {
+  const reader = response
+    .body!.pipeThrough(new TextDecoderStream())
+    .getReader();
+
+  let buffer = "";
+
+  for (;;) {
+    const { value, done } = await reader.read();
+
+    if (done) break;
+    buffer += value;
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+
+    for (const frame of frames) dispatchStreamFrame(frame, handlers);
+  }
+}
+
 /** Follows a server-sent event stream with the session cookie, reconnecting with backoff until `signal` aborts. */
 export async function follow(
   path: string,
@@ -313,40 +352,7 @@ export async function follow(
       handlers.onOpen?.();
       delay = 500;
 
-      const reader = response
-        .body!.pipeThrough(new TextDecoderStream())
-        .getReader();
-
-      let buffer = "";
-
-      for (;;) {
-        const { value, done } = await reader.read();
-
-        if (done) break;
-        buffer += value;
-        const frames = buffer.split("\n\n");
-        buffer = frames.pop() ?? "";
-
-        for (const frame of frames) {
-          const lines = frame.split("\n");
-
-          const event =
-            lines
-              .find((line) => line.startsWith("event:"))
-              ?.slice(6)
-              .trim() ?? "message";
-
-          if (event === "heartbeat") continue;
-
-          const data = lines
-            .flatMap((line) =>
-              line.startsWith("data:") ? [line.slice(5).replace(/^ /, "")] : [],
-            )
-            .join("\n");
-
-          handlers.onEvent(event, data);
-        }
-      }
+      await readEventStream(response, handlers);
     } catch (error) {
       if (signal.aborted) return;
 
