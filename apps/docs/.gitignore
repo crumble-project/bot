@@ -1,0 +1,8 @@
+node_modules/
+.blume/
+.wrangler/
+dist/
+.env
+.env.*
+.DS_Store
+.blume-verify/

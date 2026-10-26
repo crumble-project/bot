@@ -3,7 +3,8 @@
   "type": "module",
   "private": true,
   "workspaces": [
-    "apps/*"
+    "apps/server",
+    "apps/web"
   ],
   "devDependencies": {
     "@oxlint/plugins": "1.88.0",

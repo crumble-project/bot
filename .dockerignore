@@ -13,6 +13,7 @@ ios
 openapi
 tools
 apps/*/node_modules
+apps/docs
 apps/server/test
 apps/server/src/**/*.test.ts
 apps/server/tools
