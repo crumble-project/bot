@@ -222,6 +222,83 @@ const nativeStop = (reason: StopReason) =>
     Match.orElse(() => "end_turn"),
   );
 
+function assistantHistoryBlock(
+  item: AssistantMessage["content"][number],
+  names: Map<string, string>,
+): Block[] {
+  if (item.type === "text")
+    return item.text.trim() ? [{ type: "text", text: item.text }] : [];
+
+  if (item.type === "thinking") {
+    if (item.redacted)
+      return [
+        { type: "redacted_thinking", data: item.thinkingSignature ?? "" },
+      ];
+
+    if (item.thinkingSignature?.trim())
+      return [
+        {
+          type: "thinking",
+          thinking: item.thinking,
+          signature: item.thinkingSignature,
+        },
+      ];
+
+    return item.thinking.trim() ? [{ type: "text", text: item.thinking }] : [];
+  }
+
+  // A call outside the inventory replays as the model named it.
+  const name = names.get(item.name);
+
+  return [
+    {
+      type: "tool_use",
+      id: item.id,
+      name: name === undefined ? item.name : `${PREFIX}${name}`,
+      input: item.arguments,
+    },
+  ];
+}
+
+function toolResultHistoryBlock(
+  message: Extract<Message, { role: "toolResult" }>,
+): Block {
+  const text = message.content.every((item) => item.type === "text");
+
+  const result: Block = {
+    type: "tool_result",
+    tool_use_id: message.toolCallId,
+    content: text
+      ? message.content
+          .map((item) => (item.type === "text" ? item.text : ""))
+          .join("\n")
+      : contentBlocks(message.content),
+  };
+
+  if (message.isError) result.is_error = true;
+
+  return result;
+}
+
+function historyContent(
+  message: Exclude<Message, { role: "system" }>,
+  names: Map<string, string>,
+): Block[] {
+  if (message.role === "user")
+    return Array.isArray(message.content)
+      ? contentBlocks(message.content)
+      : message.content.trim()
+        ? [{ type: "text", text: message.content }]
+        : [];
+
+  if (message.role === "assistant")
+    return message.content.flatMap((item) =>
+      assistantHistoryBlock(item, names),
+    );
+
+  return [toolResultHistoryBlock(message)];
+}
+
 /** The system prompt and the conversation as stream-json frames, ending in the frame that queries. */
 export function prepareHistory(
   context: TranscriptContext,
@@ -249,75 +326,18 @@ export function prepareHistory(
   ) satisfies Message[]) {
     if (message.role === "system") continue;
 
-    if (message.role === "user") {
-      const content = Array.isArray(message.content)
-        ? contentBlocks(message.content)
-        : message.content.trim()
-          ? [{ type: "text", text: message.content }]
-          : [];
+    const content = historyContent(message, names);
 
-      if (content.length > 0) append("user", content);
-    } else if (message.role === "assistant") {
-      const content = message.content.flatMap((item): Block[] => {
-        if (item.type === "text")
-          return item.text.trim() ? [{ type: "text", text: item.text }] : [];
+    if (content.length === 0) continue;
 
-        if (item.type === "thinking") {
-          if (item.redacted)
-            return [
-              { type: "redacted_thinking", data: item.thinkingSignature ?? "" },
-            ];
-
-          if (item.thinkingSignature?.trim())
-            return [
-              {
-                type: "thinking",
-                thinking: item.thinking,
-                signature: item.thinkingSignature,
-              },
-            ];
-
-          return item.thinking.trim()
-            ? [{ type: "text", text: item.thinking }]
-            : [];
-        }
-
-        // A call outside the inventory replays as the model named it.
-        const name = names.get(item.name);
-
-        return [
-          {
-            type: "tool_use",
-            id: item.id,
-            name: name === undefined ? item.name : `${PREFIX}${name}`,
-            input: item.arguments,
-          },
-        ];
+    if (message.role === "assistant")
+      append("assistant", content, {
+        id: message.responseId ?? `msg_replayed_${frames.length}`,
+        type: "message",
+        model: message.responseModel ?? nativeModel(model.id),
+        stop_reason: nativeStop(message.stopReason),
       });
-
-      if (content.length > 0)
-        append("assistant", content, {
-          id: message.responseId ?? `msg_replayed_${frames.length}`,
-          type: "message",
-          model: message.responseModel ?? nativeModel(model.id),
-          stop_reason: nativeStop(message.stopReason),
-        });
-    } else {
-      const text = message.content.every((item) => item.type === "text");
-
-      const result: Block = {
-        type: "tool_result",
-        tool_use_id: message.toolCallId,
-        content: text
-          ? message.content
-              .map((item) => (item.type === "text" ? item.text : ""))
-              .join("\n")
-          : contentBlocks(message.content),
-      };
-
-      if (message.isError) result.is_error = true;
-      append("user", [result]);
-    }
+    else append("user", content);
   }
 
   const last = frames.at(-1);
@@ -548,15 +568,7 @@ export function streamClaudeCode(
   return stream;
 }
 
-async function run(
-  adapter: AdapterOptions,
-  model: Model<Api>,
-  context: TranscriptContext,
-  options: SimpleStreamOptions | undefined,
-  stream: AssistantMessageEventStream,
-  partial: AssistantMessage,
-) {
-  stream.push({ type: "start", partial });
+async function requireClaudeCommand(adapter: AdapterOptions) {
   const status = await adapter.status();
 
   if (status.status === "signed_out")
@@ -571,6 +583,15 @@ async function run(
   const command = resolveClaude(adapter);
 
   if (!command) throw new Error(installHint(adapter));
+
+  return command;
+}
+
+function prepareRequest(
+  model: Model<Api>,
+  context: TranscriptContext,
+  options: SimpleStreamOptions | undefined,
+) {
   const tools = getCurrentTools(context.messages);
   const { names, crumble } = toolNames(tools);
   const { system, frames } = prepareHistory(context, model, names);
@@ -594,6 +615,525 @@ async function run(
     description: tool.description,
     input_schema: tool.inputSchema,
   }));
+
+  return { system, frames, body, effort, manifest, crumble };
+}
+
+type PreparedRequest = ReturnType<typeof prepareRequest>;
+
+function prepareCli(
+  adapter: AdapterOptions,
+  model: Model<Api>,
+  options: SimpleStreamOptions | undefined,
+  request: PreparedRequest,
+  scratch: string,
+  admission: Admission,
+) {
+  const { manifest, body, system, frames, effort } = request;
+  writeFileSync(join(scratch, "tools.json"), JSON.stringify(manifest));
+  // Settings apply env inside the process, avoiding the per-argument limit for large schemas.
+  writeFileSync(
+    join(scratch, "settings.json"),
+    JSON.stringify({ env: { CLAUDE_CODE_EXTRA_BODY: JSON.stringify(body) } }),
+  );
+  writeFileSync(join(scratch, "system.md"), system);
+  mkdirSync(adapter.workDir, { recursive: true, mode: 0o700 });
+
+  const env = childEnv(adapter);
+
+  Object.assign(env, adapter.fixtureEnv, {
+    ENABLE_TOOL_SEARCH: "false",
+    CLAUDE_CODE_MAX_RETRIES: "0",
+    DISABLE_AUTO_COMPACT: "1",
+    DISABLE_COMPACT: "1",
+    // Crumble owns budgets; the replayed reminder invalidates cached history.
+    CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off",
+    ANTHROPIC_BASE_URL: admission.url,
+  });
+
+  if (options?.maxTokens !== undefined)
+    env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = String(options.maxTokens);
+
+  const mcp = {
+    mcpServers: {
+      crumble: {
+        command: process.execPath,
+        args: [INERT_MCP, join(scratch, "tools.json")],
+      },
+    },
+  };
+
+  const args = [
+    "-p",
+    "--model",
+    nativeModel(model.id),
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--include-partial-messages",
+    "--tools",
+    "",
+    "--system-prompt-file",
+    join(scratch, "system.md"),
+    "--settings",
+    join(scratch, "settings.json"),
+    "--setting-sources",
+    "",
+    "--strict-mcp-config",
+    "--disable-slash-commands",
+    "--max-turns",
+    "1",
+    "--permission-mode",
+    "dontAsk",
+    "--no-session-persistence",
+    "--mcp-config",
+    JSON.stringify(mcp),
+    // The CLI applies its own effort message, which overrides the request body's effort.
+    ...(effort ? ["--effort", effort] : []),
+    // One native session per conversation: the CLI names a per-session scratch directory near the top of every
+    // request, so a new id per spawn would move the cache prefix on every call.
+    "--session-id",
+    conversationSessionId(system, frames),
+  ];
+
+  return { env, args };
+}
+
+type Receive = () => Promise<StreamJson | null>;
+
+async function replayHistory(
+  frames: NativeFrame[],
+  send: (data: string) => Promise<void>,
+  receive: Receive,
+  cli: ChildProcessWithoutNullStreams,
+  signal: AbortSignal,
+  stderrTail: () => string,
+) {
+  for (const [index, frame] of frames.entries()) {
+    const replayed = frame.type === "user" && index < frames.length - 1;
+
+    await send(
+      `${JSON.stringify(replayed ? { ...frame, shouldQuery: false } : frame)}\n`,
+    );
+
+    if (!replayed) continue;
+
+    for (;;) {
+      const ack = await receive();
+
+      if (ack === null) {
+        if (signal.aborted) throw new Error("Claude request cancelled");
+        throw new Error(
+          `Native exited before replay acknowledgment (exit=${cli.exitCode})${stderrTail()}`,
+        );
+      }
+
+      if (ack.type === "result") {
+        if (ack.num_turns !== 0 || ack.is_error)
+          throw new Error(
+            `Native history replay not supported: expected zero-turn acknowledgment${stderrTail()}`,
+          );
+        break;
+      }
+    }
+  }
+}
+
+class IncrementalResponse {
+  stopped = false;
+  streamed = "";
+  private readonly blocks = new Map<number, number>();
+
+  constructor(
+    private readonly stream: AssistantMessageEventStream,
+    private readonly partial: AssistantMessage,
+  ) {}
+
+  accept(native: NonNullable<StreamJson["event"]>) {
+    const index = native.index ?? -1;
+
+    switch (native.type) {
+      case "message_stop":
+        this.stopped = true;
+        break;
+      case "content_block_start":
+        this.start(index, native.content_block?.type);
+        break;
+      case "content_block_delta":
+        this.delta(index, native.delta);
+        break;
+      case "content_block_stop":
+        this.stop(index);
+        break;
+    }
+  }
+
+  private start(index: number, kind: string | undefined) {
+    if (kind === "text" || kind === "thinking") {
+      const contentIndex = this.partial.content.length;
+
+      this.partial.content.push(
+        kind === "text"
+          ? { type: "text", text: "" }
+          : { type: "thinking", thinking: "" },
+      );
+      this.blocks.set(index, contentIndex);
+      this.stream.push({
+        type: kind === "text" ? "text_start" : "thinking_start",
+        contentIndex,
+        partial: this.partial,
+      });
+    }
+  }
+
+  private delta(
+    index: number,
+    delta: NonNullable<StreamJson["event"]>["delta"],
+  ) {
+    const contentIndex = this.blocks.get(index);
+
+    const target =
+      contentIndex === undefined
+        ? undefined
+        : this.partial.content[contentIndex];
+
+    if (
+      contentIndex !== undefined &&
+      target?.type === "text" &&
+      delta?.type === "text_delta"
+    ) {
+      target.text += delta.text ?? "";
+      this.streamed += delta.text ?? "";
+      this.stream.push({
+        type: "text_delta",
+        contentIndex,
+        delta: delta.text ?? "",
+        partial: this.partial,
+      });
+    } else if (
+      contentIndex !== undefined &&
+      target?.type === "thinking" &&
+      delta?.type === "thinking_delta"
+    ) {
+      target.thinking += delta.thinking ?? "";
+      this.stream.push({
+        type: "thinking_delta",
+        contentIndex,
+        delta: delta.thinking ?? "",
+        partial: this.partial,
+      });
+    }
+  }
+
+  private stop(index: number) {
+    const contentIndex = this.blocks.get(index);
+
+    const target =
+      contentIndex === undefined
+        ? undefined
+        : this.partial.content[contentIndex];
+
+    if (contentIndex !== undefined && target?.type === "text")
+      this.stream.push({
+        type: "text_end",
+        contentIndex,
+        content: target.text,
+        partial: this.partial,
+      });
+    else if (contentIndex !== undefined && target?.type === "thinking")
+      this.stream.push({
+        type: "thinking_end",
+        contentIndex,
+        content: target.thinking,
+        partial: this.partial,
+      });
+  }
+}
+
+async function receiveResponse(
+  receive: Receive,
+  admission: Admission,
+  incremental: IncrementalResponse,
+) {
+  const results: StreamJson[] = [];
+  let nativeError: string | undefined;
+  let nativeErrorCode: string | undefined;
+  let fast = false;
+
+  for (;;) {
+    const event = await receive();
+
+    if (event === null) break;
+
+    if (event.type === "assistant" && (event.error || event.message?.error)) {
+      nativeError = (event.message?.content ?? [])
+        .flatMap((item) => (item.type === "text" ? [item.text ?? ""] : []))
+        .join("\n");
+      nativeErrorCode = event.error ?? undefined;
+    } else if (event.type === "result") {
+      results.push(event);
+
+      if (fastEligible(event, admission, incremental.stopped, nativeError)) {
+        fast = true;
+        break;
+      }
+    } else if (event.type === "stream_event" && event.event) {
+      incremental.accept(event.event);
+    }
+  }
+
+  return { results, nativeError, nativeErrorCode, fast };
+}
+
+type NativeResponse = Awaited<ReturnType<typeof receiveResponse>>;
+
+function validateResponse(
+  adapter: AdapterOptions,
+  admission: Admission,
+  response: NativeResponse,
+  exitCode: number | null,
+  stderrTail: () => string,
+) {
+  const { nativeError, nativeErrorCode } = response;
+  const captured = admission.capture.message;
+
+  if (!admission.used) {
+    if (nativeErrorCode === "authentication_failed") {
+      adapter.invalidateStatus();
+      throw new Error(
+        `Claude Code has no usable login (native: ${nativeError})${stderrTail()}`,
+      );
+    }
+
+    if (nativeError)
+      throw new Error(
+        `Claude Code ${NATIVE_ERRORS.get(nativeErrorCode ?? "") ?? "error"}: ${nativeError}`,
+      );
+    throw new Error(`Claude Code made no model request${stderrTail()}`);
+  }
+
+  if (admission.status !== 200 || !admission.capture.complete || !captured) {
+    // The CLI's last error is the admission denial; name the first attempt's outcome so reports are diagnosable.
+    const upstream = admission.errorText();
+
+    const first = [
+      `first upstream attempt: status ${admission.status ?? "none"}`,
+      `capture ${admission.capture.complete ? "complete" : "incomplete"}`,
+      ...(admission.failure ? [`relay failure ${admission.failure}`] : []),
+      `native retries denied: ${admission.denied}`,
+      ...(upstream ? [`upstream said: ${upstream.slice(0, 500)}`] : []),
+    ].join(", ");
+
+    if (admission.status === 401) adapter.invalidateStatus();
+    throw new Error(
+      `Incomplete upstream response (${first})${nativeError ? `: ${nativeError}` : ""}`,
+    );
+  }
+
+  // Stricter than Hermes, which drops only the cut-off call: no tool from a response with a broken call runs.
+  if (admission.capture.dropped > 0)
+    throw new Error(
+      `Incomplete tool call: ${admission.capture.dropped} tool call(s) ended before their arguments were complete (stop reason ${captured.stop_reason ?? "none"})`,
+    );
+
+  validateNativeResult(
+    captured,
+    admission.denied,
+    response,
+    exitCode,
+    stderrTail,
+  );
+
+  return captured;
+}
+
+function validateNativeResult(
+  captured: CapturedMessage,
+  denied: number,
+  response: NativeResponse,
+  exitCode: number | null,
+  stderrTail: () => string,
+) {
+  const { results, nativeError, nativeErrorCode, fast } = response;
+  const refused = captured.stop_reason === "refusal";
+  // A refusal or a denied recovery attempt makes the CLI report an error of its own; the first response stands.
+  const handled = denied > 0 || refused;
+
+  if (nativeError !== undefined && !handled)
+    throw new Error(
+      `Claude Code ${NATIVE_ERRORS.get(nativeErrorCode ?? "") ?? "error"}: ${nativeError}`,
+    );
+
+  if (results.length !== 1)
+    throw new Error("Incomplete native response: one result required");
+  const final = results[0];
+
+  const toolCalls = captured.content.filter((item) => item.type === "tool_use");
+
+  const boundary =
+    toolCalls.length > 0 &&
+    final?.subtype === "error_max_turns" &&
+    (fast || exitCode === 1);
+
+  if (
+    !boundary &&
+    !handled &&
+    ((!fast && exitCode !== 0) ||
+      final?.is_error ||
+      final?.subtype !== "success")
+  )
+    throw new Error(
+      `Native request failed: ${final?.subtype ?? "no result"}${stderrTail()}`,
+    );
+}
+
+function responseContentBlock(
+  item: CapturedMessage["content"][number],
+  refused: boolean,
+  crumble: Map<string, string>,
+): AssistantMessage["content"] {
+  if (item.type === "text") return [{ type: "text", text: item.text ?? "" }];
+
+  if (item.type === "thinking") {
+    const block: ThinkingContent = {
+      type: "thinking",
+      thinking: item.thinking ?? "",
+    };
+
+    if (item.signature) block.thinkingSignature = item.signature;
+
+    return [block];
+  }
+
+  if (item.type === "redacted_thinking")
+    return [
+      {
+        type: "thinking",
+        thinking: "",
+        thinkingSignature: item.data ?? "",
+        redacted: true,
+      },
+    ];
+
+  if (item.type === "tool_use" && !refused) {
+    // Built-ins are off, so any other name is the model's; Crumble answers an unknown name with an error.
+    const offered = (item.name ?? "").replace(new RegExp(`^${PREFIX}`), "");
+
+    const input = toolInput.safeParse(item.input ?? {});
+
+    const call: ToolCall = {
+      type: "toolCall",
+      id: item.id ?? "",
+      name: crumble.get(offered) ?? offered,
+      arguments: input.success ? input.data : {},
+    };
+
+    if (!input.success)
+      call.argumentsError = `Tool arguments were not a JSON object: ${JSON.stringify(item.input)}`;
+
+    return [call];
+  }
+
+  return [];
+}
+
+function finishResponse(
+  captured: CapturedMessage,
+  crumble: Map<string, string>,
+  streamed: string,
+  stream: AssistantMessageEventStream,
+  partial: AssistantMessage,
+) {
+  const refused = captured.stop_reason === "refusal";
+
+  const content = captured.content.flatMap((item) =>
+    responseContentBlock(item, refused, crumble),
+  );
+
+  const text = content
+    .flatMap((item) => (item.type === "text" ? [item.text] : []))
+    .join("");
+
+  if (!text.startsWith(streamed))
+    throw new Error("Native final text differs from incremental stream");
+
+  const calls = content.filter((item) => item.type === "toolCall");
+
+  const message: AssistantMessage = {
+    ...partial,
+    content,
+    usage: piUsage(captured.usage),
+    stopReason: "stop",
+  };
+
+  if (captured.id) message.responseId = captured.id;
+
+  if (captured.model) message.responseModel = captured.model;
+
+  if (captured.stop_reason) message.rawStopReason = captured.stop_reason;
+
+  for (const call of calls) {
+    const contentIndex = message.content.indexOf(call);
+
+    stream.push({ type: "toolcall_start", contentIndex, partial: message });
+    stream.push({
+      type: "toolcall_end",
+      contentIndex,
+      toolCall: call,
+      partial: message,
+    });
+  }
+
+  if (refused) {
+    // A refusal is terminal: Pi AI's Anthropic adapter reports it as an error with the explanation.
+    const details = captured.stop_details;
+
+    stream.push({
+      type: "error",
+      reason: "error",
+      error: {
+        ...message,
+        stopReason: "error",
+        errorMessage:
+          details?.explanation?.trim() ||
+          (details?.category
+            ? `provider refusal category: ${details.category}`
+            : "The model refused to complete the request"),
+      },
+    });
+
+    return;
+  }
+
+  const reason: "stop" | "length" | "toolUse" =
+    calls.length > 0
+      ? "toolUse"
+      : captured.stop_reason === "max_tokens" ||
+          captured.stop_reason === "model_context_window_exceeded"
+        ? "length"
+        : "stop";
+
+  stream.push({
+    type: "done",
+    reason,
+    message: { ...message, stopReason: reason },
+  });
+}
+
+async function run(
+  adapter: AdapterOptions,
+  model: Model<Api>,
+  context: TranscriptContext,
+  options: SimpleStreamOptions | undefined,
+  stream: AssistantMessageEventStream,
+  partial: AssistantMessage,
+) {
+  stream.push({ type: "start", partial });
+  const command = await requireClaudeCommand(adapter);
+  const request = prepareRequest(model, context, options);
+  const { frames, manifest, crumble } = request;
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const queried = frames.at(-1)?.message.content;
 
@@ -625,73 +1165,14 @@ async function run(
   signal.addEventListener("abort", cancel, { once: true });
 
   try {
-    writeFileSync(join(scratch, "tools.json"), JSON.stringify(manifest));
-    // Settings apply env inside the process, avoiding the per-argument limit for large schemas.
-    writeFileSync(
-      join(scratch, "settings.json"),
-      JSON.stringify({ env: { CLAUDE_CODE_EXTRA_BODY: JSON.stringify(body) } }),
+    const { env, args } = prepareCli(
+      adapter,
+      model,
+      options,
+      request,
+      scratch,
+      admission,
     );
-    writeFileSync(join(scratch, "system.md"), system);
-    mkdirSync(adapter.workDir, { recursive: true, mode: 0o700 });
-
-    const env = childEnv(adapter);
-
-    Object.assign(env, adapter.fixtureEnv, {
-      ENABLE_TOOL_SEARCH: "false",
-      CLAUDE_CODE_MAX_RETRIES: "0",
-      DISABLE_AUTO_COMPACT: "1",
-      DISABLE_COMPACT: "1",
-      // Crumble owns budgets; the replayed reminder invalidates cached history.
-      CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off",
-      ANTHROPIC_BASE_URL: admission.url,
-    });
-
-    if (options?.maxTokens !== undefined)
-      env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = String(options.maxTokens);
-
-    const mcp = {
-      mcpServers: {
-        crumble: {
-          command: process.execPath,
-          args: [INERT_MCP, join(scratch, "tools.json")],
-        },
-      },
-    };
-
-    const args = [
-      "-p",
-      "--model",
-      nativeModel(model.id),
-      "--input-format",
-      "stream-json",
-      "--output-format",
-      "stream-json",
-      "--verbose",
-      "--include-partial-messages",
-      "--tools",
-      "",
-      "--system-prompt-file",
-      join(scratch, "system.md"),
-      "--settings",
-      join(scratch, "settings.json"),
-      "--setting-sources",
-      "",
-      "--strict-mcp-config",
-      "--disable-slash-commands",
-      "--max-turns",
-      "1",
-      "--permission-mode",
-      "dontAsk",
-      "--no-session-persistence",
-      "--mcp-config",
-      JSON.stringify(mcp),
-      // The CLI applies its own effort message, which overrides the request body's effort.
-      ...(effort ? ["--effort", effort] : []),
-      // One native session per conversation: the CLI names a per-session scratch directory near the top of every
-      // request, so a new id per spawn would move the cache prefix on every call.
-      "--session-id",
-      conversationSessionId(system, frames),
-    ];
 
     if (signal.aborted) throw new Error("Claude request cancelled");
     child = spawn(command, args, {
@@ -722,148 +1203,13 @@ async function run(
         ),
       );
 
-    for (const [index, frame] of frames.entries()) {
-      const replayed = frame.type === "user" && index < frames.length - 1;
-
-      await send(
-        `${JSON.stringify(replayed ? { ...frame, shouldQuery: false } : frame)}\n`,
-      );
-
-      if (!replayed) continue;
-
-      for (;;) {
-        const ack = await receive();
-
-        if (ack === null) {
-          if (signal.aborted) throw new Error("Claude request cancelled");
-          throw new Error(
-            `Native exited before replay acknowledgment (exit=${cli.exitCode})${stderrTail()}`,
-          );
-        }
-
-        if (ack.type === "result") {
-          if (ack.num_turns !== 0 || ack.is_error)
-            throw new Error(
-              `Native history replay not supported: expected zero-turn acknowledgment${stderrTail()}`,
-            );
-          break;
-        }
-      }
-    }
+    await replayHistory(frames, send, receive, cli, signal, stderrTail);
 
     cli.stdin.end();
-    const assistants: StreamJson[] = [];
-    const results: StreamJson[] = [];
-    let stopped = false;
-    let nativeError: string | undefined;
-    let nativeErrorCode: string | undefined;
-    let fast = false;
-    let streamed = "";
-    const blocks = new Map<number, number>();
 
-    for (;;) {
-      const event = await receive();
-
-      if (event === null) break;
-
-      if (event.type === "assistant") {
-        if (event.error || event.message?.error) {
-          nativeError = (event.message?.content ?? [])
-            .flatMap((item) => (item.type === "text" ? [item.text ?? ""] : []))
-            .join("\n");
-          nativeErrorCode = event.error ?? undefined;
-        } else assistants.push(event);
-      } else if (event.type === "result") {
-        results.push(event);
-
-        if (fastEligible(event, admission, stopped, nativeError)) {
-          fast = true;
-          break;
-        }
-      } else if (event.type === "stream_event" && event.event) {
-        const native = event.event;
-        const index = native.index ?? -1;
-
-        if (native.type === "message_stop") stopped = true;
-        else if (native.type === "content_block_start") {
-          const kind = native.content_block?.type;
-
-          if (kind === "text" || kind === "thinking") {
-            const contentIndex = partial.content.length;
-
-            partial.content.push(
-              kind === "text"
-                ? { type: "text", text: "" }
-                : { type: "thinking", thinking: "" },
-            );
-            blocks.set(index, contentIndex);
-            stream.push({
-              type: kind === "text" ? "text_start" : "thinking_start",
-              contentIndex,
-              partial,
-            });
-          }
-        } else if (native.type === "content_block_delta") {
-          const contentIndex = blocks.get(index);
-
-          const target =
-            contentIndex === undefined
-              ? undefined
-              : partial.content[contentIndex];
-
-          const delta = native.delta;
-
-          if (
-            contentIndex !== undefined &&
-            target?.type === "text" &&
-            delta?.type === "text_delta"
-          ) {
-            target.text += delta.text ?? "";
-            streamed += delta.text ?? "";
-            stream.push({
-              type: "text_delta",
-              contentIndex,
-              delta: delta.text ?? "",
-              partial,
-            });
-          } else if (
-            contentIndex !== undefined &&
-            target?.type === "thinking" &&
-            delta?.type === "thinking_delta"
-          ) {
-            target.thinking += delta.thinking ?? "";
-            stream.push({
-              type: "thinking_delta",
-              contentIndex,
-              delta: delta.thinking ?? "",
-              partial,
-            });
-          }
-        } else if (native.type === "content_block_stop") {
-          const contentIndex = blocks.get(index);
-
-          const target =
-            contentIndex === undefined
-              ? undefined
-              : partial.content[contentIndex];
-
-          if (contentIndex !== undefined && target?.type === "text")
-            stream.push({
-              type: "text_end",
-              contentIndex,
-              content: target.text,
-              partial,
-            });
-          else if (contentIndex !== undefined && target?.type === "thinking")
-            stream.push({
-              type: "thinking_end",
-              contentIndex,
-              content: target.thinking,
-              partial,
-            });
-        }
-      }
-    }
+    const incremental = new IncrementalResponse(stream, partial);
+    const response = await receiveResponse(receive, admission, incremental);
+    const { fast } = response;
 
     let exitCode: number | null = null;
 
@@ -875,199 +1221,16 @@ async function run(
     }
 
     if (signal.aborted) throw new Error("Claude request cancelled");
-    const captured = admission.capture.message;
 
-    if (!admission.used) {
-      if (nativeErrorCode === "authentication_failed") {
-        adapter.invalidateStatus();
-        throw new Error(
-          `Claude Code has no usable login (native: ${nativeError})${stderrTail()}`,
-        );
-      }
-
-      if (nativeError)
-        throw new Error(
-          `Claude Code ${NATIVE_ERRORS.get(nativeErrorCode ?? "") ?? "error"}: ${nativeError}`,
-        );
-      throw new Error(`Claude Code made no model request${stderrTail()}`);
-    }
-
-    if (admission.status !== 200 || !admission.capture.complete || !captured) {
-      // The CLI's last error is the admission denial; name the first attempt's outcome so reports are diagnosable.
-      const upstream = admission.errorText();
-
-      const first = [
-        `first upstream attempt: status ${admission.status ?? "none"}`,
-        `capture ${admission.capture.complete ? "complete" : "incomplete"}`,
-        ...(admission.failure ? [`relay failure ${admission.failure}`] : []),
-        `native retries denied: ${admission.denied}`,
-        ...(upstream ? [`upstream said: ${upstream.slice(0, 500)}`] : []),
-      ].join(", ");
-
-      if (admission.status === 401) adapter.invalidateStatus();
-      throw new Error(
-        `Incomplete upstream response (${first})${nativeError ? `: ${nativeError}` : ""}`,
-      );
-    }
-
-    // Stricter than Hermes, which drops only the cut-off call: no tool from a response with a broken call runs.
-    if (admission.capture.dropped > 0)
-      throw new Error(
-        `Incomplete tool call: ${admission.capture.dropped} tool call(s) ended before their arguments were complete (stop reason ${captured.stop_reason ?? "none"})`,
-      );
-
-    const refused = captured.stop_reason === "refusal";
-    // A refusal or a denied recovery attempt makes the CLI report an error of its own; the first response stands.
-    const handled = admission.denied > 0 || refused;
-
-    if (nativeError !== undefined && !handled)
-      throw new Error(
-        `Claude Code ${NATIVE_ERRORS.get(nativeErrorCode ?? "") ?? "error"}: ${nativeError}`,
-      );
-
-    if (results.length !== 1)
-      throw new Error("Incomplete native response: one result required");
-    const final = results[0];
-
-    const toolCalls = captured.content.filter(
-      (item) => item.type === "tool_use",
+    const captured = validateResponse(
+      adapter,
+      admission,
+      response,
+      exitCode,
+      stderrTail,
     );
 
-    const boundary =
-      toolCalls.length > 0 &&
-      final?.subtype === "error_max_turns" &&
-      (fast || exitCode === 1);
-
-    if (
-      !boundary &&
-      !handled &&
-      ((!fast && exitCode !== 0) ||
-        final?.is_error ||
-        final?.subtype !== "success")
-    )
-      throw new Error(
-        `Native request failed: ${final?.subtype ?? "no result"}${stderrTail()}`,
-      );
-
-    const content = captured.content.flatMap(
-      (item): AssistantMessage["content"] => {
-        if (item.type === "text")
-          return [{ type: "text", text: item.text ?? "" }];
-
-        if (item.type === "thinking") {
-          const block: ThinkingContent = {
-            type: "thinking",
-            thinking: item.thinking ?? "",
-          };
-
-          if (item.signature) block.thinkingSignature = item.signature;
-
-          return [block];
-        }
-
-        if (item.type === "redacted_thinking")
-          return [
-            {
-              type: "thinking",
-              thinking: "",
-              thinkingSignature: item.data ?? "",
-              redacted: true,
-            },
-          ];
-
-        if (item.type === "tool_use" && !refused) {
-          // Built-ins are off, so any other name is the model's; Crumble answers an unknown name with an error.
-          const offered = (item.name ?? "").replace(
-            new RegExp(`^${PREFIX}`),
-            "",
-          );
-
-          const input = toolInput.safeParse(item.input ?? {});
-
-          const call: ToolCall = {
-            type: "toolCall",
-            id: item.id ?? "",
-            name: crumble.get(offered) ?? offered,
-            arguments: input.success ? input.data : {},
-          };
-
-          if (!input.success)
-            call.argumentsError = `Tool arguments were not a JSON object: ${JSON.stringify(item.input)}`;
-
-          return [call];
-        }
-
-        return [];
-      },
-    );
-
-    const text = content
-      .flatMap((item) => (item.type === "text" ? [item.text] : []))
-      .join("");
-
-    if (!text.startsWith(streamed))
-      throw new Error("Native final text differs from incremental stream");
-    const calls = content.filter((item) => item.type === "toolCall");
-
-    const message: AssistantMessage = {
-      ...partial,
-      content,
-      usage: piUsage(captured.usage),
-      stopReason: "stop",
-    };
-
-    if (captured.id) message.responseId = captured.id;
-
-    if (captured.model) message.responseModel = captured.model;
-
-    if (captured.stop_reason) message.rawStopReason = captured.stop_reason;
-
-    for (const call of calls) {
-      const contentIndex = message.content.indexOf(call);
-
-      stream.push({ type: "toolcall_start", contentIndex, partial: message });
-      stream.push({
-        type: "toolcall_end",
-        contentIndex,
-        toolCall: call,
-        partial: message,
-      });
-    }
-
-    if (refused) {
-      // A refusal is terminal: Pi AI's Anthropic adapter reports it as an error with the explanation.
-      const details = captured.stop_details;
-
-      stream.push({
-        type: "error",
-        reason: "error",
-        error: {
-          ...message,
-          stopReason: "error",
-          errorMessage:
-            details?.explanation?.trim() ||
-            (details?.category
-              ? `provider refusal category: ${details.category}`
-              : "The model refused to complete the request"),
-        },
-      });
-
-      return;
-    }
-
-    const reason: "stop" | "length" | "toolUse" =
-      calls.length > 0
-        ? "toolUse"
-        : captured.stop_reason === "max_tokens" ||
-            captured.stop_reason === "model_context_window_exceeded"
-          ? "length"
-          : "stop";
-
-    stream.push({
-      type: "done",
-      reason,
-      message: { ...message, stopReason: reason },
-    });
+    finishResponse(captured, crumble, incremental.streamed, stream, partial);
   } finally {
     signal.removeEventListener("abort", cancel);
 

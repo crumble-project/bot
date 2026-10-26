@@ -327,37 +327,7 @@ export async function discoverModels(
   try {
     env["ANTHROPIC_BASE_URL"] = gate.url;
 
-    const result = await run(
-      command,
-      [
-        "-p",
-        "--model",
-        "sonnet",
-        "--input-format",
-        "stream-json",
-        "--output-format",
-        "stream-json",
-        "--verbose",
-        "--tools",
-        "",
-        "--setting-sources",
-        "",
-        "--strict-mcp-config",
-        "--mcp-config",
-        '{"mcpServers":{}}',
-        "--disable-slash-commands",
-        "--no-session-persistence",
-      ],
-      env,
-      40_000,
-      `${JSON.stringify({ type: "control_request", request_id: "crumble-picker", request: { subtype: "initialize" } })}\n`,
-      cwd,
-    );
-
-    const response = result.stdout
-      .split("\n")
-      .map((line) => handshake.safeParse(jsonLine(line)))
-      .find((parsed) => parsed.success)?.data?.response.response;
+    const response = await pickerHandshake(command, env, cwd);
 
     rows = response?.models ?? [];
     plan = (response?.account?.subscriptionType ?? "").toLowerCase();
@@ -369,6 +339,94 @@ export async function discoverModels(
   }
 
   if (gate.used || rows.length === 0) return undefined;
+
+  return pickerModels(rows, plan);
+}
+
+async function pickerHandshake(
+  command: string,
+  env: Record<string, string>,
+  cwd: string,
+) {
+  const result = await run(
+    command,
+    [
+      "-p",
+      "--model",
+      "sonnet",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--tools",
+      "",
+      "--setting-sources",
+      "",
+      "--strict-mcp-config",
+      "--mcp-config",
+      '{"mcpServers":{}}',
+      "--disable-slash-commands",
+      "--no-session-persistence",
+    ],
+    env,
+    40_000,
+    `${JSON.stringify({ type: "control_request", request_id: "crumble-picker", request: { subtype: "initialize" } })}\n`,
+    cwd,
+  );
+
+  return result.stdout
+    .split("\n")
+    .map((line) => handshake.safeParse(jsonLine(line)))
+    .find((parsed) => parsed.success)?.data?.response.response;
+}
+
+function pickerRoute(
+  row: z.infer<typeof pickerRow>,
+  announced: string,
+  pinned: Set<string>,
+  longContext: Set<string>,
+) {
+  const base = announced.replace(/\[1m\]$/, "");
+
+  if (!base) return undefined;
+  let route = nativeModel(base);
+  const known = pinned.has(route);
+
+  if (!known) {
+    // A value the CLI did not resolve (`default`, `best`) is an alias row, not a model.
+    if (!row.resolvedModel) return undefined;
+
+    if (longContext.has(base)) route = `${base}[1m]`;
+  }
+
+  return { route, known, base };
+}
+
+function mergePickerRow(
+  row: z.infer<typeof pickerRow>,
+  resolved: NonNullable<ReturnType<typeof pickerRoute>>,
+  routes: Map<string, DiscoveredModel>,
+  creditBilled: Set<string>,
+) {
+  const { route, known, base } = resolved;
+  const label = (row.description ?? "").split("·")[0]?.trim() || route;
+
+  const entry = routes.get(route) ?? {
+    id: route,
+    label,
+    note: known ? "" : "unpinned",
+  };
+
+  if (
+    (row.description ?? "").toLowerCase().includes("usage credit") ||
+    creditBilled.has(base)
+  )
+    entry.note = known ? "usage credits" : "usage credits · unpinned";
+  routes.set(route, entry);
+}
+
+function pickerModels(rows: z.infer<typeof pickerRow>[], plan: string) {
   // Pro and Team standard seats bill Fable to usage credits from the first request.
 
   const creditBilled = new Set(
@@ -378,42 +436,24 @@ export async function discoverModels(
   const announced = rows.map((row) => row.resolvedModel ?? row.value ?? "");
 
   const longContext = new Set(
-    announced
-      .filter((model) => model.endsWith("[1m]"))
-      .map((model) => model.replace(/\[1m\]$/, "")),
+    announced.flatMap((model) =>
+      model.endsWith("[1m]") ? [model.replace(/\[1m\]$/, "")] : [],
+    ),
   );
 
   const pinned = new Set(pinnedRoutes().map((entry) => entry.route));
   const routes = new Map<string, DiscoveredModel>();
 
   for (const [index, row] of rows.entries()) {
-    const base = (announced[index] ?? "").replace(/\[1m\]$/, "");
+    const resolved = pickerRoute(
+      row,
+      announced[index] ?? "",
+      pinned,
+      longContext,
+    );
 
-    if (!base) continue;
-    let route = nativeModel(base);
-    const known = pinned.has(route);
-
-    if (!known) {
-      // A value the CLI did not resolve (`default`, `best`) is an alias row, not a model.
-      if (!row.resolvedModel) continue;
-
-      if (longContext.has(base)) route = `${base}[1m]`;
-    }
-
-    const label = (row.description ?? "").split("·")[0]?.trim() || route;
-
-    const entry = routes.get(route) ?? {
-      id: route,
-      label,
-      note: known ? "" : "unpinned",
-    };
-
-    if (
-      (row.description ?? "").toLowerCase().includes("usage credit") ||
-      creditBilled.has(base)
-    )
-      entry.note = known ? "usage credits" : "usage credits · unpinned";
-    routes.set(route, entry);
+    if (!resolved) continue;
+    mergePickerRow(row, resolved, routes, creditBilled);
   }
 
   if (routes.size === 0) return undefined;

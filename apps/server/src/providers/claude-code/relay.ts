@@ -165,6 +165,101 @@ function frameFirst(messages: Message[], queried: readonly Block[]) {
 // The only trailing system text moved: native's date line, exactly as its opening request ends the environment.
 const DATE_LINE = /^Today's date is \d{4}-\d{2}-\d{2}\.$/;
 
+function singleBlock(content: Message["content"] | undefined) {
+  if (content === undefined) return undefined;
+
+  if (Array.isArray(content))
+    return content.length === 1 ? content[0] : undefined;
+
+  return { type: "text", text: content };
+}
+
+function relocateDate(messages: Message[]) {
+  const last = messages.at(-1);
+
+  const environment = messages
+    .slice(0, -1)
+    .find((item) => item.role === "system");
+
+  const tail: Block | undefined = singleBlock(last?.content);
+
+  if (
+    last?.role !== "system" ||
+    !environment ||
+    tail?.type !== "text" ||
+    !DATE_LINE.test(tail.text ?? "")
+  )
+    return false;
+
+  const line = tail.text ?? "";
+  const original = environment.content;
+
+  const target: Block | undefined = Array.isArray(original)
+    ? original.at(-1)
+    : { type: "text", text: original };
+
+  if (target?.type !== "text" || (target.text ?? "").endsWith(line))
+    return false;
+
+  if (Array.isArray(original)) target.text = `${target.text ?? ""}\n\n${line}`;
+  else environment.content = `${original}\n\n${line}`;
+  const mark = tail.cache_control ?? cacheControlOf(last);
+
+  messages.pop();
+  const end = listContent(messages.at(-1))?.at(-1);
+
+  if (mark && end) end.cache_control ??= mark;
+
+  return true;
+}
+
+function uniqueFrameStart(blocks: Block[], queried: readonly Block[]) {
+  const hits = [];
+
+  for (let start = 0; start <= blocks.length - queried.length; start++)
+    if (sameBlocks(blocks.slice(start, start + queried.length), queried))
+      hits.push(start);
+
+  return hits.length === 1 ? hits[0] : undefined;
+}
+
+const contextText = (entry: Block) =>
+  entry.type === "text" &&
+  Object.keys(entry).every((key) =>
+    ["type", "text", "cache_control"].includes(key),
+  );
+
+function dropHistoricalContext(
+  messages: Message[],
+  queried: readonly Block[] | undefined,
+) {
+  const newest = messages.findLast((item) => item.role === "user");
+  const blocks = listContent(newest);
+
+  if (
+    !queried?.length ||
+    !queried.some((entry) => entry.type !== "tool_result") ||
+    !blocks ||
+    !messages.some((item) => item.role === "assistant")
+  )
+    return false;
+
+  const start = uniqueFrameStart(blocks, queried);
+
+  if (!start || !blocks.slice(0, start).every(contextText)) return false;
+
+  const mark = blocks
+    .slice(0, start)
+    .find((entry) => entry.cache_control)?.cache_control;
+
+  blocks.splice(0, start);
+  const head = blocks[0];
+
+  if (mark && head) head.cache_control ??= mark;
+
+  return true;
+}
+
 /**
  * Keep native's per-request context in the prefix later requests replay: append the trailing date line to the
  * environment message, and drop plain text before the queried frame on later user turns. Anything unexpected
@@ -177,94 +272,10 @@ export function stableRequestContext(
   const value = decode(payload);
 
   if (!value) return payload;
-  const { messages } = value;
-  let changed = false;
-  const last = messages.at(-1);
+  const relocated = relocateDate(value.messages);
+  const dropped = dropHistoricalContext(value.messages, queried);
 
-  const environment = messages
-    .slice(0, -1)
-    .find((item) => item.role === "system");
-
-  const content = last?.content;
-
-  const tail: Block | undefined =
-    content === undefined
-      ? undefined
-      : Array.isArray(content)
-        ? content.length === 1
-          ? content[0]
-          : undefined
-        : { type: "text", text: content };
-
-  if (
-    last?.role === "system" &&
-    environment &&
-    tail?.type === "text" &&
-    DATE_LINE.test(tail.text ?? "")
-  ) {
-    const line = tail.text ?? "";
-    const original = environment.content;
-
-    const target: Block | undefined = Array.isArray(original)
-      ? original.at(-1)
-      : { type: "text", text: original };
-
-    if (target?.type === "text" && !(target.text ?? "").endsWith(line)) {
-      if (Array.isArray(original))
-        target.text = `${target.text ?? ""}\n\n${line}`;
-      else environment.content = `${original}\n\n${line}`;
-      const mark = tail.cache_control ?? cacheControlOf(last);
-      messages.pop();
-      const previous = listContent(messages.at(-1));
-      const end = previous?.at(-1);
-
-      if (mark && end) end.cache_control ??= mark;
-      changed = true;
-    }
-  }
-
-  const newest = messages.findLast((item) => item.role === "user");
-  const blocks = listContent(newest);
-
-  if (
-    queried?.length &&
-    queried.some((entry) => entry.type !== "tool_result") &&
-    blocks &&
-    messages.some((item) => item.role === "assistant")
-  ) {
-    const hits = [];
-
-    for (let start = 0; start <= blocks.length - queried.length; start++)
-      if (sameBlocks(blocks.slice(start, start + queried.length), queried))
-        hits.push(start);
-
-    const start = hits.length === 1 ? hits[0] : undefined;
-
-    if (
-      start &&
-      blocks
-        .slice(0, start)
-        .every(
-          (entry) =>
-            entry.type === "text" &&
-            Object.keys(entry).every((key) =>
-              ["type", "text", "cache_control"].includes(key),
-            ),
-        )
-    ) {
-      const mark = blocks
-        .slice(0, start)
-        .find((entry) => entry.cache_control)?.cache_control;
-
-      blocks.splice(0, start);
-      const head = blocks[0];
-
-      if (mark && head) head.cache_control ??= mark;
-      changed = true;
-    }
-  }
-
-  return changed ? encode(value) : payload;
+  return relocated || dropped ? encode(value) : payload;
 }
 
 // A top-level message mark, which the schema leaves among the unread fields.
@@ -717,6 +728,11 @@ const streamEvent = z.discriminatedUnion("type", [
   z.object({ type: z.literal("message_stop") }),
 ]);
 
+type ContentDelta = Extract<
+  z.infer<typeof streamEvent>,
+  { type: "content_block_delta" }
+>;
+
 const knownEvents = new Set([
   "message_start",
   "content_block_start",
@@ -773,51 +789,12 @@ export class Capture {
       case "content_block_start":
         this.message?.content.push(structuredClone(event.content_block));
         break;
-      case "content_block_delta": {
-        const { delta, index } = event;
-        const target = this.message?.content[index];
-
-        if (!target) throw new Error("Delta for an unknown content block");
-
-        if (delta.type === "text_delta")
-          target.text = (target.text ?? "") + (delta.text ?? "");
-        else if (delta.type === "thinking_delta")
-          target.thinking = (target.thinking ?? "") + (delta.thinking ?? "");
-        else if (delta.type === "signature_delta")
-          target.signature = (target.signature ?? "") + (delta.signature ?? "");
-        else if (delta.type === "input_json_delta")
-          this.arguments.set(
-            index,
-            (this.arguments.get(index) ?? "") + (delta.partial_json ?? ""),
-          );
-        else if (
-          delta.type === "citations_delta" &&
-          delta.citation !== undefined
-        )
-          (target.citations ??= []).push(structuredClone(delta.citation));
+      case "content_block_delta":
+        this.applyDelta(event);
         break;
-      }
-
-      case "content_block_stop": {
-        const raw = this.arguments.get(event.index);
-
-        if (raw === undefined) break;
-        this.arguments.delete(event.index);
-        const target = this.message?.content[event.index];
-
-        try {
-          // A no-argument tool call streams one empty partial_json.
-          const input = raw.trim() ? z.json().parse(JSON.parse(raw)) : {};
-
-          if (target) target.input = input;
-        } catch {
-          // Streamed tool input is not validated: a reply cut off at max_tokens ends mid-argument. The call is
-          // dropped at message_stop, never run with guessed arguments.
-          this.unparsed.push(event.index);
-        }
-
+      case "content_block_stop":
+        this.finishArguments(event.index);
         break;
-      }
 
       case "message_delta":
         if (this.message) {
@@ -827,13 +804,64 @@ export class Capture {
 
         break;
       case "message_stop":
-        for (const index of this.unparsed.toSorted((a, b) => b - a))
-          this.message?.content.splice(index, 1);
-        this.complete = Boolean(
-          this.message?.stop_reason && this.arguments.size === 0,
-        );
+        this.finishMessage();
         break;
     }
+  }
+
+  private applyDelta({ delta, index }: ContentDelta) {
+    const target = this.message?.content[index];
+
+    if (!target) throw new Error("Delta for an unknown content block");
+
+    switch (delta.type) {
+      case "text_delta":
+        target.text = (target.text ?? "") + (delta.text ?? "");
+        break;
+      case "thinking_delta":
+        target.thinking = (target.thinking ?? "") + (delta.thinking ?? "");
+        break;
+      case "signature_delta":
+        target.signature = (target.signature ?? "") + (delta.signature ?? "");
+        break;
+      case "input_json_delta":
+        this.arguments.set(
+          index,
+          (this.arguments.get(index) ?? "") + (delta.partial_json ?? ""),
+        );
+        break;
+      case "citations_delta":
+        if (delta.citation !== undefined)
+          (target.citations ??= []).push(structuredClone(delta.citation));
+        break;
+    }
+  }
+
+  private finishArguments(index: number) {
+    const raw = this.arguments.get(index);
+
+    if (raw === undefined) return;
+    this.arguments.delete(index);
+    const target = this.message?.content[index];
+
+    try {
+      // A no-argument tool call streams one empty partial_json.
+      const input = raw.trim() ? z.json().parse(JSON.parse(raw)) : {};
+
+      if (target) target.input = input;
+    } catch {
+      // Streamed tool input is not validated: a reply cut off at max_tokens ends mid-argument. The call is
+      // dropped at message_stop, never run with guessed arguments.
+      this.unparsed.push(index);
+    }
+  }
+
+  private finishMessage() {
+    for (const index of this.unparsed.toSorted((a, b) => b - a))
+      this.message?.content.splice(index, 1);
+    this.complete = Boolean(
+      this.message?.stop_reason && this.arguments.size === 0,
+    );
   }
 }
 
