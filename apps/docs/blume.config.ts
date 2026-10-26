@@ -18,14 +18,11 @@ export default defineConfig({
     { from: "/features", to: "/concepts" },
     { from: "/features/workspaces", to: "/concepts/workspaces" },
     { from: "/architecture", to: "/contributing/architecture" },
+    { from: "/contributing/specifications", to: "/contributing" },
   ],
   footer: {
     links: [
       { label: "GitHub", href: "https://github.com/crumble-project" },
-      {
-        label: "Specifications",
-        href: "https://github.com/crumble-project/spec",
-      },
     ],
   },
 });

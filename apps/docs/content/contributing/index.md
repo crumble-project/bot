@@ -1,24 +1,13 @@
 ---
 title: Contributing
-description: How features get proposed and built, how the server repository is laid out, and which checks to run.
+description: How the server repository is laid out, which checks to run, and how to release.
 sidebar:
   order: 1
 ---
 
-Crumble is split across repositories in [`crumble-project`](https://github.com/crumble-project). The server and web app live in `bot`. Specifications and the [glossary](/reference/glossary) live in `spec`.
+Crumble is split across repositories in [`crumble-project`](https://github.com/crumble-project). The server and web app live in `bot`. The [glossary](/reference/glossary) lives in `spec`.
 
 The server and web app are licensed under the [GNU Affero General Public License v3.0](https://github.com/crumble-project/bot/blob/main/LICENSE) (`AGPL-3.0-only`). Contributions to `bot` are accepted under the same license.
-
-## Propose a feature
-
-New user-visible features go through [`crumble-project/spec`](https://github.com/crumble-project/spec/blob/main/features/README.md) before any code is written:
-
-1. **Idea:** open an issue in `spec`.
-2. **Draft:** write `features/NNNN-short-name.md`, and add any new terms to `spec/GLOSSARY.md`.
-3. **Accepted:** the owner approves the specification. Don't build from a draft.
-4. **Build:** implement it in `bot`, update the API contract if routes or events changed, and check every acceptance criterion.
-
-See [Specifications](/contributing/specifications) for the existing ones.
 
 ## Repository layout
 
