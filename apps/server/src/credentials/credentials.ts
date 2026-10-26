@@ -335,6 +335,8 @@ export function credentialExtension(
       }),
       reason: Type.String({ minLength: 1, maxLength: 1000 }),
     }),
+    // The chat offers the owner the form from this call's own result, so code mode keeps it a direct model tool.
+    callers: ["model"],
     replay: "unsafe",
     execute: async (args) => {
       const request = credentials.request(

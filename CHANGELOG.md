@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- With code mode on, a bot asks for a credential with a direct tool call again, so the chat shows the request card where the owner enters the value.
+- In the web app, messages from tasks, script tasks, credentials, and other bots appear as a centered line you can expand, instead of a bubble that looks like the owner's own message.
+- Fix `schedule`, `ask_bot`, `delegate`, `delegation_status`, and `list_bots` in code mode: a successful call returns its result instead of failing with it as the error. The bundled tasks and bot messaging skills call these tools from code mode when it is on, instead of sending the owner to the app.
+
 - Add script tasks: a bot with coding jobs can run a command in its workspace on a schedule, with a configurable timeout and optional results sent to its chat. The Tasks page lists script task runs. Existing script tasks can be converted to prompt tasks without coding jobs or workspaces. Updates validate the complete task before saving; shutdown stops admitting script runs and finalizes runs recorded during shutdown.
 
 - `bun run check` and the pre-commit hook fail when an `AGENTS.md` or `CLAUDE.md` names a path that does not exist. `AGENTS.md` now points at Effect under `apps/server/node_modules/`, where Bun installs it. `bun run --cwd apps/server db:generate` (and `db:generate:push`) generates migrations, and the contributing docs describe it.

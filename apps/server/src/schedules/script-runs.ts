@@ -45,7 +45,7 @@ const noticeText = (schedule: Schedule, result: Outcome, output: string) => {
     maxBytes: 8192,
   }).text.trimEnd();
 
-  return `${schedule.name}\nStatus: ${result.status}\nExit code: ${result.exitCode ?? "none"}\n\`\`\`\n${tail}\n\`\`\``;
+  return `${schedule.name}\n\nStatus: ${result.status}\n\nExit code: ${result.exitCode ?? "none"}\n\n\`\`\`\n${tail}\n\`\`\``;
 };
 
 export class ScriptRuns extends Context.Service<

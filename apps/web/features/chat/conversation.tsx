@@ -22,8 +22,10 @@ import { type HistoryPage, type Message, api } from "@/lib/api";
 import type { Upload } from "./composer";
 import { deliver } from "./delivery";
 import {
+  NoticeRow,
   OwnerMessage,
   TimeMarker,
+  isNotice,
   mergeMessages,
   withTimeMarkers,
 } from "./transcript";
@@ -170,7 +172,9 @@ export function ConversationRows({
         messageId={row.message.id}
         className={arrival(row.message)}
       >
-        {row.message.role === "user" ? (
+        {isNotice(row.message) ? (
+          <NoticeRow message={row.message} />
+        ) : row.message.role === "user" ? (
           <OwnerMessage
             message={row.message}
             quote={quoteOf(row.message, byEntry)}

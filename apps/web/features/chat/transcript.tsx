@@ -258,7 +258,6 @@ export function TimeMarker({ label }: { label: string }) {
 }
 
 export function EventRow({ message }: { message: Message }) {
-  const [open, setOpen] = useState(false);
   const communication = message.communication;
 
   const title =
@@ -278,6 +277,41 @@ export function EventRow({ message }: { message: Message }) {
     }[communication.status];
 
   return (
+    <CenteredDisclosure
+      title={title}
+      badge={status}
+      content={message.content}
+    />
+  );
+}
+
+/** A turn the owner didn't send, such as a task or another bot's message: centered, with its text on demand. */
+export function NoticeRow({ message }: { message: Message }) {
+  return (
+    <CenteredDisclosure
+      title={originLabel(message)}
+      content={message.content}
+    />
+  );
+}
+
+/** Whether a user-role message came from somewhere other than the owner. */
+export function isNotice(message: Message) {
+  return message.role === "user" && originLabel(message) !== null;
+}
+
+function CenteredDisclosure({
+  title,
+  badge,
+  content,
+}: {
+  title: ReactNode;
+  badge?: string | undefined;
+  content: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
     <div className="flex flex-col gap-2">
       <button
         type="button"
@@ -290,11 +324,11 @@ export function EventRow({ message }: { message: Message }) {
           className={cn("size-3 transition-transform", open && "rotate-90")}
         />
         {title}
-        {status && <Badge variant="outline">{status}</Badge>}
+        {badge && <Badge variant="outline">{badge}</Badge>}
       </button>
       {open && (
         <div className="rounded-lg bg-muted/50 p-3 text-sm">
-          <Reply source={message.content} />
+          <Reply source={content} />
         </div>
       )}
     </div>
@@ -390,7 +424,7 @@ export function MessageActions({
     (message.role === "user" || message.role === "assistant");
 
   return (
-    <div className="flex gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
+    <div className="flex gap-1">
       {canReply && (
         <Button
           variant="ghost"
@@ -466,7 +500,7 @@ function MessageReactions({
 
 export type Delivery = "sending" | "failed";
 
-/** An owner message: right-aligned bubble with origin, reply quote, attachments, reactions, and delivery state. */
+/** An owner message: right-aligned bubble with reply quote, attachments, reactions, and delivery state. */
 export function OwnerMessage({
   message,
   uploads,
@@ -487,12 +521,9 @@ export function OwnerMessage({
   onReply?: ((message: Message) => void) | undefined;
   attachmentPath: (entryId: string, index: number) => string;
 }) {
-  const label = originLabel(message);
-
   return (
     <MessageRow align="end">
       <MessageContent>
-        {label && <MessageHeader>{label}</MessageHeader>}
         {quote && (
           <div className="line-clamp-2 self-end border-r-2 pr-2 text-xs text-muted-foreground">
             {quote}
@@ -519,18 +550,19 @@ export function OwnerMessage({
           </div>
         )}
         {message.content.trim() && (
-          <Bubble variant="secondary" align="end">
-            {message.origin?.kind === "script" ? (
-              <BubbleContent>
-                <Reply source={message.content} />
-              </BubbleContent>
-            ) : (
+          <div className="flex w-full min-w-0 items-center justify-end gap-1">
+            {!delivery && (
+              <MessageFooter className="shrink-0 px-0">
+                <MessageActions message={message} onReply={onReply} />
+              </MessageFooter>
+            )}
+            <Bubble variant="secondary" align="end">
               <BubbleContent className="whitespace-pre-wrap">
                 {message.content}
               </BubbleContent>
-            )}
-            <MessageReactions reactions={reactions} align="end" />
-          </Bubble>
+              <MessageReactions reactions={reactions} align="end" />
+            </Bubble>
+          </div>
         )}
         <MessageFooter className="gap-2">
           {delivery === "sending" && (
@@ -547,7 +579,9 @@ export function OwnerMessage({
               </Button>
             </span>
           )}
-          {!delivery && <MessageActions message={message} onReply={onReply} />}
+          {!delivery && !message.content.trim() && (
+            <MessageActions message={message} onReply={onReply} />
+          )}
         </MessageFooter>
       </MessageContent>
     </MessageRow>
@@ -573,19 +607,21 @@ export function BotMessage({
     <MessageRow align="start">
       <MessageContent>
         {sender && <MessageHeader>{sender}</MessageHeader>}
-        <Bubble
-          variant="secondary"
-          className="*:data-[slot=bubble-content]:bg-bot-soft!"
-          style={color ? botStyle(color) : undefined}
-        >
-          <BubbleContent>
-            <Reply source={message.content} />
-          </BubbleContent>
-          <MessageReactions reactions={reactions} align="start" />
-        </Bubble>
-        <MessageFooter>
-          <MessageActions message={message} onReply={onReply} />
-        </MessageFooter>
+        <div className="flex w-full min-w-0 items-center gap-1">
+          <Bubble
+            variant="secondary"
+            className="*:data-[slot=bubble-content]:bg-bot-soft!"
+            style={color ? botStyle(color) : undefined}
+          >
+            <BubbleContent>
+              <Reply source={message.content} />
+            </BubbleContent>
+            <MessageReactions reactions={reactions} align="start" />
+          </Bubble>
+          <MessageFooter className="shrink-0 px-0">
+            <MessageActions message={message} onReply={onReply} />
+          </MessageFooter>
+        </div>
       </MessageContent>
     </MessageRow>
   );

@@ -375,13 +375,16 @@ test("notify false stays silent and notify true posts once with a bounded tail",
     requestId: `script:${schedule.id}:${run!.id}`,
   });
 
-  const [name, status, exitCode, fence, output, closing] =
+  const [name, gap1, status, gap2, exitCode, gap3, fence, output, closing] =
     notices[0]!.text.split("\n");
 
-  expect([name, status, exitCode, fence, closing]).toEqual([
+  expect([name, gap1, status, gap2, exitCode, gap3, fence, closing]).toEqual([
     schedule.name,
+    "",
     "Status: succeeded",
+    "",
     "Exit code: 0",
+    "",
     "```",
     "```",
   ]);

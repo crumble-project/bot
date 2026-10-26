@@ -65,6 +65,24 @@ type PresentedTask = {
   createdByAgentId: string | null;
 };
 
+const presentedTaskSchema = Type.Object({
+  id: Type.String(),
+  agentId: Type.String(),
+  agentName: Type.String(),
+  name: Type.String(),
+  prompt: Type.String(),
+  kind: Type.Union([Type.Literal("prompt"), Type.Literal("script")]),
+  command: Type.Union([Type.String(), Type.Null()]),
+  timeoutSeconds: Type.Number(),
+  notify: Type.Boolean(),
+  cron: Type.Union([Type.String(), Type.Null()]),
+  timezone: Type.String(),
+  runAt: Type.Union([Type.String(), Type.Null()]),
+  enabled: Type.Boolean(),
+  nextRunAt: Type.Union([Type.String(), Type.Null()]),
+  createdByAgentId: Type.Union([Type.String(), Type.Null()]),
+});
+
 const visible = (source: Agent, schedule: Schedule) =>
   schedule.agentId === source.id || schedule.createdByAgentId === source.id;
 
@@ -446,6 +464,16 @@ export function scheduleExtension(
       timezone: Type.Optional(Type.String({ maxLength: 100 })),
       enabled: Type.Optional(Type.Boolean()),
     }),
+    structuredOutputSchema: Type.Union([
+      presentedTaskSchema,
+      Type.Array(presentedTaskSchema),
+      Type.Object({ deleted: Type.Literal(true), id: Type.String() }),
+      Type.Object({
+        admitted: Type.Boolean(),
+        executionId: Type.Union([Type.String(), Type.Null()]),
+        status: Type.Union([Type.String(), Type.Null()]),
+      }),
+    ]),
     replay: "unsafe",
     execute: async (args) => {
       const draft: ScheduleDraft = {
