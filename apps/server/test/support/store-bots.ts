@@ -2,10 +2,7 @@ import {
   AgentRepository,
   type AgentPatch,
 } from "../../src/bots/agent-repository";
-import {
-  ConversationRepository,
-  type ConversationPatch,
-} from "../../src/bots/conversation-repository";
+import { ConversationRepository } from "../../src/bots/conversation-repository";
 import {
   ExecutionRepository,
   type NewExecution,
@@ -33,9 +30,6 @@ import type {
 import type { StoreRun } from "./store";
 
 export const botStore = (run: StoreRun) => ({
-  listAgents: (): Agent[] => {
-    return run(AgentRepository.use((r) => r.list));
-  },
   getAgent: (agentId: string) => {
     return run(AgentRepository.use((r) => r.get(agentId)));
   },
@@ -71,11 +65,6 @@ export const botStore = (run: StoreRun) => ({
       ConversationRepository.use((r) => r.create(input, conversationId)),
     );
   },
-  updateConversation: (conversationId: string, patch: ConversationPatch) => {
-    return run(
-      ConversationRepository.use((r) => r.update(conversationId, patch)),
-    );
-  },
   archiveConversation: (conversationId: string) => {
     return run(
       ConversationRepository.use((r) => r.setArchived(conversationId, true)),
@@ -85,13 +74,6 @@ export const botStore = (run: StoreRun) => ({
     return run(
       ConversationRepository.use((r) => r.setArchived(conversationId, false)),
     );
-  },
-  deleteConversation: (conversationId: string) => {
-    return run(ConversationRepository.use((r) => r.delete(conversationId)));
-  },
-
-  listSchedules: (agentId?: string): Schedule[] => {
-    return run(ScheduleRepository.use((r) => r.list(agentId)));
   },
   getSchedule: (scheduleId: string) => {
     return run(ScheduleRepository.use((r) => r.get(scheduleId)));
@@ -107,12 +89,6 @@ export const botStore = (run: StoreRun) => ({
       ),
     );
   },
-  updateSchedule: (scheduleId: string, patch: Partial<ScheduleInput>) => {
-    return run(ScheduleRepository.use((r) => r.update(scheduleId, patch)));
-  },
-  deleteSchedule: (scheduleId: string) => {
-    return run(ScheduleRepository.use((r) => r.delete(scheduleId)));
-  },
   updateNextRunAt: (scheduleId: string, nextRunAt: string | null) => {
     return run(
       ScheduleRepository.use((r) => r.updateNextRunAt(scheduleId, nextRunAt)),
@@ -126,9 +102,6 @@ export const botStore = (run: StoreRun) => ({
   executionAttachments: (executionId: string): AttachmentInput[] => {
     return run(ExecutionRepository.use((r) => r.attachments(executionId)));
   },
-  clearExecutionAttachments: (executionId: string) => {
-    run(ExecutionRepository.use((r) => r.clearAttachments(executionId)));
-  },
   getExecution: (executionId: string) => {
     return run(ExecutionRepository.use((r) => r.get(executionId)));
   },
@@ -137,21 +110,12 @@ export const botStore = (run: StoreRun) => ({
       ExecutionRepository.use((r) => r.getByRequest(conversationId, requestId)),
     );
   },
-  findExecutionBySubmission: (agentId: string, submissionId: string) => {
-    return run(
-      ExecutionRepository.use((r) => r.findBySubmission(agentId, submissionId)),
-    );
-  },
   createExecution: (input: NewExecution, executionId?: string): Execution => {
     return run(ExecutionRepository.use((r) => r.create(input, executionId)));
   },
   updateExecution: (executionId: string, patch: Partial<Execution>) => {
     return run(ExecutionRepository.use((r) => r.update(executionId, patch)));
   },
-  deleteExecution: (executionId: string) => {
-    return run(ExecutionRepository.use((r) => r.delete(executionId)));
-  },
-
   listGroupChats: (): GroupChat[] => {
     return run(GroupChatRepository.use((r) => r.list));
   },
