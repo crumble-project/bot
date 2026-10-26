@@ -11,6 +11,11 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+      security-events: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -22,6 +27,12 @@ jobs:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
       # Only findings this change introduces fail; the repository's older ones are reported as inherited.
-      - run: bunx fallow audit --base "$BASE"
-        env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      - uses: fallow-rs/fallow@3c6e45b55ae60a52caa2b586ea3fae44f3e5a44e # v3
+        with:
+          command: audit
+          args: --base ${{ github.event.pull_request.base.sha || github.event.before }}
+          auto-changed-since: false
+          format: human
+          sarif: true
+          comment: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+          branded-token: false
