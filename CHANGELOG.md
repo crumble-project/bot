@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0
 
 - Publish the server image. `ghcr.io/crumble-project/crumble-server` is built for `linux/amd64` and `linux/arm64`. A `vX.Y.Z` tag publishes it and both workspace images as `X.Y.Z` and `latest`, and the tag must match `apps/server/package.json`. Pushes to `main` publish `main` and `sha-…` tags; the workspace images previously had only `sha-…` tags from manual runs, so the untagged references in the README pulled a `latest` that did not exist. Pull requests build the images on `linux/amd64` without publishing them. The README and docs pin images to `0.1.0`, and the docs describe the release steps.
 - The landing page at `crumbli.ng` lives in `apps/site` instead of its own repository. Like `apps/docs`, it has its own lockfile outside the root Bun workspace. It now uses the Crumble green palette, the Crumble icon as its favicon, a screenshot of the web app, squircle corners, and a highlighted tagline. A Site workflow builds and type-checks it when `apps/site` changes.
