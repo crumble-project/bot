@@ -740,6 +740,60 @@ const memoryWriteCall = z.object({
   action: z.enum(["create", "update", "delete"]),
 });
 
+type ToolCall = Extract<
+  Extract<ModelContent, unknown[]>[number],
+  { type: "toolCall" }
+>;
+
+function recordToolRound(calls: ToolCall[], counters: TurnReport): void {
+  counters.rounds++;
+
+  if (counters.roundsSinceSkillWrite !== null) counters.roundsSinceSkillWrite++;
+
+  if (counters.roundsSinceMemoryWrite !== null)
+    counters.roundsSinceMemoryWrite++;
+
+  for (const call of calls) {
+    if (call.name === "skill_manage") counters.roundsSinceSkillWrite = 0;
+
+    const memoryWrite = memoryWriteCall.safeParse(call.arguments);
+
+    if (call.name === "memory" && memoryWrite.success)
+      counters.roundsSinceMemoryWrite = 0;
+  }
+}
+
+function assistantLines(
+  content: ModelContent,
+  counters?: TurnReport,
+): string[] {
+  const lines: string[] = [];
+  const text = textOf(content).trim();
+
+  if (text) lines.push(`Assistant:\n${text}`);
+
+  const calls = Array.isArray(content)
+    ? content.filter((block) => block?.type === "toolCall")
+    : [];
+
+  if (calls.length && counters) recordToolRound(calls, counters);
+
+  for (const call of calls)
+    lines.push(
+      `Tool call ${String(call.name ?? "unknown")}: ${clip(JSON.stringify(call.arguments ?? {}), 2000)}`,
+    );
+
+  return lines;
+}
+
+function toolResultLine(
+  message: NonNullable<EntryRecord["model"]>[number],
+): string {
+  const { toolName, isError } = toolMetadata.parse(message);
+
+  return `${isError ? "Tool error" : "Tool result"} ${toolName ?? "unknown"}: ${clip(textOf(message.content).trim(), 4000)}`;
+}
+
 function entryLines(entry: EntryRecord, counters?: TurnReport): string[] {
   const lines: string[] = [];
 
@@ -752,43 +806,9 @@ function entryLines(entry: EntryRecord, counters?: TurnReport): string[] {
 
   for (const message of entry.model ?? []) {
     if (message.role === "assistant") {
-      const text = textOf(message.content).trim();
-
-      if (text) lines.push(`Assistant:\n${text}`);
-
-      const calls = Array.isArray(message.content)
-        ? message.content.filter((block) => block?.type === "toolCall")
-        : [];
-
-      if (calls.length && counters) {
-        counters.rounds++;
-
-        if (counters.roundsSinceSkillWrite !== null)
-          counters.roundsSinceSkillWrite++;
-
-        if (counters.roundsSinceMemoryWrite !== null)
-          counters.roundsSinceMemoryWrite++;
-
-        for (const call of calls) {
-          if (call.name === "skill_manage") counters.roundsSinceSkillWrite = 0;
-
-          const memoryWrite = memoryWriteCall.safeParse(call.arguments);
-
-          if (call.name === "memory" && memoryWrite.success)
-            counters.roundsSinceMemoryWrite = 0;
-        }
-      }
-
-      for (const call of calls)
-        lines.push(
-          `Tool call ${String(call.name ?? "unknown")}: ${clip(JSON.stringify(call.arguments ?? {}), 2000)}`,
-        );
+      lines.push(...assistantLines(message.content, counters));
     } else if (message.role === "toolResult") {
-      const { toolName, isError } = toolMetadata.parse(message);
-
-      lines.push(
-        `${isError ? "Tool error" : "Tool result"} ${toolName ?? "unknown"}: ${clip(textOf(message.content).trim(), 4000)}`,
-      );
+      lines.push(toolResultLine(message));
     } else if (message.role === "user") {
       const text = textOf(message.content).trim();
 

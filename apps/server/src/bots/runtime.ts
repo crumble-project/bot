@@ -42,6 +42,7 @@ import {
   SkillReads,
   skillIndex,
   skillTool,
+  type AvailableSkill,
 } from "../skills/skill-library";
 import { BotSkills } from "../skills/skills";
 import { skillManageTool } from "../skills/skill-manage";
@@ -361,6 +362,118 @@ function localConversationId(agentId: string, reference: string): never {
   return numericId(reference.slice(prefix.length));
 }
 
+type ConversationScope = { group: boolean; review: ReviewScope | null };
+
+async function conversationScope(
+  harness: Harness,
+  localId: ConversationId,
+): Promise<ConversationScope> {
+  const group = Boolean(
+    (await harness.snapshot(GroupConversation, localId, BACKGROUND_CONTEXT))
+      ?.groupId,
+  );
+
+  const reviewDoc = await harness.snapshot(
+    ReviewConversation,
+    localId,
+    BACKGROUND_CONTEXT,
+  );
+
+  const review: ReviewScope | null = reviewDoc?.executionId
+    ? { skills: reviewDoc.skills, memory: reviewDoc.memory }
+    : null;
+
+  return { group, review };
+}
+
+async function ensureModel(
+  models: Models,
+  choice: Pick<Agent, "provider" | "model">,
+) {
+  if (!models.getModel(choice.provider, choice.model))
+    await models.refresh({ providers: [choice.provider] });
+}
+
+// The bot can always write its first skill, so management does not wait for the index.
+function chatTools(
+  record: HarnessRecord,
+  agent: Agent,
+  offered: Extension[],
+  hasSkills: boolean,
+  group: boolean,
+) {
+  return [
+    ...(agent.tools.includes("memory") ? [record.memory] : []),
+    ...(hasSkills ? [record.skill] : []),
+    ...(record.skillManage ? [record.skillManage] : []),
+    ...offered.flatMap((extension) => extension.tools ?? []),
+    ...(group ? (record.groupExtension.tools ?? []) : []),
+  ];
+}
+
+// A review gets only the stores it reviews, never chat actions, jobs, delegation, or integrations.
+function reviewTools(
+  record: HarnessRecord,
+  agent: Agent,
+  hasSkills: boolean,
+  review: ReviewScope,
+) {
+  return [
+    ...(agent.tools.includes("memory") && review.memory ? [record.memory] : []),
+    ...(hasSkills ? [record.skill] : []),
+    ...(record.skillManage && review.skills ? [record.skillManage] : []),
+  ];
+}
+
+function clockInstructions(ownerTimezoneOf: () => string | undefined) {
+  const now = new Date();
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const ownerTimezone = ownerTimezoneOf();
+
+  const owner = ownerTimezone
+    ? `\nOwner timezone: ${ownerTimezone}\nOwner local time: ${now.toLocaleString("sv-SE", { timeZone: ownerTimezone, hour12: false })}`
+    : "";
+
+  const clock = `Current server time (UTC): ${now.toISOString()}\nServer timezone: ${timezone}\nServer local time: ${now.toLocaleString("sv-SE", { timeZone: timezone, hour12: false })}${owner}\nUse this fresh clock for dates and relative times. The owner's timezone may differ from the server or external tools; use their known timezone, or ask if it is unknown. For one-time schedules, runAt must include Z (UTC) or an explicit offset such as +02:00. The timezone field controls recurring cron schedules; it does not reinterpret a one-time runAt timestamp.`;
+
+  return clock;
+}
+
+function conversationInstructions(
+  agent: Agent,
+  skills: AvailableSkill[],
+  memory: MemoryRecord[],
+  scope: ConversationScope & { canWriteSkills: boolean; clock: string },
+) {
+  const { group, review, canWriteSkills, clock } = scope;
+
+  const lines = (items: MemoryRecord[]) =>
+    items.map((item) => `- ${item.content}`).join("\n");
+
+  const shared = memory.filter((item) => item.shared);
+
+  // Stable parts first and the clock last, following Hermes Agent's prompt order.
+  return [
+    identity(agent.name),
+    review ? "" : VOICE_GUIDANCE,
+    review ? reviewInstructions(review) : agent.instructions,
+    review
+      ? `Your standing instructions in the owner's chat, which the turn followed:\n${agent.instructions}`
+      : CONTEXT_GUIDANCE,
+    group ? GROUP_INSTRUCTIONS : "",
+    skillIndex(skills),
+    canWriteSkills && (!review || review.skills) ? SKILL_WRITING_GUIDANCE : "",
+    MEMORY_GUIDANCE,
+    `Persistent memory:\n${lines(memory.filter((item) => !item.shared))}`,
+    shared.length
+      ? `Shared memory (other agents see it too):\n${lines(shared)}`
+      : "",
+    clock,
+  ]
+    .filter((part) => part.trim())
+    .join("\n\n");
+}
+
 export class AgentRuntime {
   /** Skills each turn has loaded, checked before a bot changes one. */
   private readonly skillReads = new SkillReads();
@@ -601,22 +714,7 @@ export class AgentRuntime {
     }
   }
 
-  private async configure(
-    record: HarnessRecord,
-    agent: Agent,
-    conversationId: string,
-  ) {
-    record.choices.agent = agent;
-
-    // Dynamic catalogs (Melious) list models only after a refresh with the saved key.
-    if (!record.models.getModel(agent.provider, agent.model))
-      await record.models.refresh({ providers: [agent.provider] });
-
-    // The desktop job model may come from another provider with a dynamic catalog.
-    const desktop = agent.desktopModel;
-
-    if (desktop && !record.models.getModel(desktop.provider, desktop.model))
-      await record.models.refresh({ providers: [desktop.provider] });
+  private async installExtensions(record: HarnessRecord, agent: Agent) {
     const next = (await this.callbacks.extensions?.(agent)) ?? [];
 
     const installed = [
@@ -631,35 +729,32 @@ export class AgentRuntime {
     for (const extension of installed) record.registry.install(extension);
     record.extensions = installed;
 
+    return next;
+  }
+
+  private async configure(
+    record: HarnessRecord,
+    agent: Agent,
+    conversationId: string,
+  ) {
+    record.choices.agent = agent;
+
+    // Dynamic catalogs (Melious) list models only after a refresh with the saved key.
+    await ensureModel(record.models, agent);
+
+    // The desktop job model may come from another provider with a dynamic catalog.
+    if (agent.desktopModel)
+      await ensureModel(record.models, agent.desktopModel);
+    const next = await this.installExtensions(record, agent);
+
     const localId = localConversationId(agent.id, conversationId);
 
-    const group = Boolean(
-      (
-        await record.harness.snapshot(
-          GroupConversation,
-          localId,
-          BACKGROUND_CONTEXT,
-        )
-      )?.groupId,
-    );
-
-    const reviewDoc = await record.harness.snapshot(
-      ReviewConversation,
-      localId,
-      BACKGROUND_CONTEXT,
-    );
-
-    const review: ReviewScope | null = reviewDoc?.executionId
-      ? { skills: reviewDoc.skills, memory: reviewDoc.memory }
-      : null;
+    const scope = await conversationScope(record.harness, localId);
+    const { group, review } = scope;
 
     const reviewModel = review ? this.reviewModelOf(agent) : null;
 
-    if (
-      reviewModel &&
-      !record.models.getModel(reviewModel.provider, reviewModel.model)
-    )
-      await record.models.refresh({ providers: [reviewModel.provider] });
+    if (reviewModel) await ensureModel(record.models, reviewModel);
 
     // A group turn can neither delegate nor start coding jobs, and may pass instead of answering.
     const offered = group
@@ -674,23 +769,9 @@ export class AgentRuntime {
       ? await Effect.runPromise(library.available(agent))
       : [];
 
-    // The bot can always write its first skill, so the management tool does not wait for the index.
-    // A review gets only the stores it reviews: it cannot act in the chat, run jobs, delegate, or reach integrations.
     const tools = review
-      ? [
-          ...(agent.tools.includes("memory") && review.memory
-            ? [record.memory]
-            : []),
-          ...(skills.length ? [record.skill] : []),
-          ...(record.skillManage && review.skills ? [record.skillManage] : []),
-        ]
-      : [
-          ...(agent.tools.includes("memory") ? [record.memory] : []),
-          ...(skills.length ? [record.skill] : []),
-          ...(record.skillManage ? [record.skillManage] : []),
-          ...offered.flatMap((extension) => extension.tools ?? []),
-          ...(group ? (record.groupExtension.tools ?? []) : []),
-        ];
+      ? reviewTools(record, agent, skills.length > 0, review)
+      : chatTools(record, agent, offered, skills.length > 0, group);
 
     // With code mode the model writes one script that calls the other tools, instead of calling them itself.
     // Model-only tools, such as code mode itself, stay direct.
@@ -708,20 +789,8 @@ export class AgentRuntime {
     if (!conversation) throw new Error("Conversation not found");
     const memory = (await this.callbacks.listMemory?.(agent.id)) ?? [];
 
-    const lines = (items: MemoryRecord[]) =>
-      items.map((item) => `- ${item.content}`).join("\n");
+    const clock = clockInstructions(() => this.callbacks.ownerTimezone?.());
 
-    const shared = memory.filter((item) => item.shared);
-
-    const now = new Date();
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const ownerTimezone = this.callbacks.ownerTimezone?.();
-
-    const owner = ownerTimezone
-      ? `\nOwner timezone: ${ownerTimezone}\nOwner local time: ${now.toLocaleString("sv-SE", { timeZone: ownerTimezone, hour12: false })}`
-      : "";
-
-    const clock = `Current server time (UTC): ${now.toISOString()}\nServer timezone: ${timezone}\nServer local time: ${now.toLocaleString("sv-SE", { timeZone: timezone, hour12: false })}${owner}\nUse this fresh clock for dates and relative times. The owner's timezone may differ from the server or external tools; use their known timezone, or ask if it is unknown. For one-time schedules, runAt must include Z (UTC) or an explicit offset such as +02:00. The timezone field controls recurring cron schedules; it does not reinterpret a one-time runAt timestamp.`;
     await conversation.configure(
       {
         model: reviewModel
@@ -743,28 +812,11 @@ export class AgentRuntime {
             record.reviewExtension,
           ],
         }),
-        // Stable parts first and the clock last, following Hermes Agent's prompt order.
-        instructions: [
-          identity(agent.name),
-          review ? "" : VOICE_GUIDANCE,
-          review ? reviewInstructions(review) : agent.instructions,
-          review
-            ? `Your standing instructions in the owner's chat, which the turn followed:\n${agent.instructions}`
-            : CONTEXT_GUIDANCE,
-          group ? GROUP_INSTRUCTIONS : "",
-          skillIndex(skills),
-          record.skillManage && (!review || review.skills)
-            ? SKILL_WRITING_GUIDANCE
-            : "",
-          MEMORY_GUIDANCE,
-          `Persistent memory:\n${lines(memory.filter((item) => !item.shared))}`,
-          shared.length
-            ? `Shared memory (other agents see it too):\n${lines(shared)}`
-            : "",
+        instructions: conversationInstructions(agent, skills, memory, {
+          ...scope,
+          canWriteSkills: Boolean(record.skillManage),
           clock,
-        ]
-          .filter((part) => part.trim())
-          .join("\n\n"),
+        }),
         tools,
         modelTools: codemode ? modelOnly : tools,
       },

@@ -273,13 +273,7 @@ type HistoryPage = {
 const HISTORY_PAGES = 5;
 const HISTORY_PAGE_SIZE = 200;
 
-/**
- * One page of the activity feed: every bot's operational activity and the skill and memory changes, newest first.
- * Each source is merged as a queue, so a page is a prefix of every source and the cursor resumes each one exactly.
- */
-export async function activityPage<
-  A extends Pick<Agent, "id" | "name">,
->(options: {
+type ActivityPageOptions<A extends Pick<Agent, "id" | "name">> = {
   agents: A[];
   history: (
     agent: A,
@@ -292,9 +286,113 @@ export async function activityPage<
   limit: number;
   cursor: Cursor | null;
   kind?: FeedItem["kind"] | undefined;
-}) {
+};
+
+type ActivityQueue = { items: FeedItem[]; tags: (string | null)[] };
+
+function oldestMessageKey(messages: TranscriptMessage[]) {
+  return messages.reduce<Key | null>((min, message) => {
+    const key = {
+      t: message.timestamp ?? 0,
+      e: entryNumber(message.entryId),
+      id: "",
+    };
+
+    return !min || compareKeys(key, min) < 0 ? key : min;
+  }, null);
+}
+
+async function agentActivityQueue<A extends Pick<Agent, "id" | "name">>(
+  agent: A,
+  start: string | null | undefined,
+  options: ActivityPageOptions<A>,
+) {
   const { limit, cursor, kind } = options;
-  const queues: { items: FeedItem[]; tags: (string | null)[] }[] = [];
+  let before = start ?? undefined;
+  const items: FeedItem[] = [];
+  const tags: (string | null)[] = [];
+  let page: HistoryPage | null = null;
+
+  for (let index = 0; index < HISTORY_PAGES; index++) {
+    page = await options.history(agent, before, HISTORY_PAGE_SIZE);
+
+    const fresh = operationalActivity(agent, page.messages).filter(
+      (item) =>
+        (!kind || item.kind === kind) &&
+        (!cursor?.k || compareKeys(keyOf(item), cursor.k) < 0),
+    );
+
+    items.push(...fresh);
+    tags.push(...fresh.map(() => before ?? null));
+
+    if (!page.hasMore || !page.oldestEntryId || items.length >= limit) break;
+    before = page.oldestEntryId;
+  }
+
+  const more = Boolean(page?.hasMore && page.oldestEntryId);
+  // Unread history is older than the oldest message read, so nothing older may be returned yet.
+  const floor = more && page ? oldestMessageKey(page.messages) : null;
+
+  const order = items
+    .map((item, index) => ({ item, tag: tags[index]! }))
+    .sort((a, b) => compareKeys(keyOf(b.item), keyOf(a.item)));
+
+  const queue = {
+    items: order.map(({ item }) => item),
+    tags: order.map(({ tag }) => tag),
+  };
+
+  return { queue, floor, next: more ? page!.oldestEntryId! : (false as const) };
+}
+
+function newestQueueHead(all: FeedItem[][], heads: number[]) {
+  let best = -1;
+
+  for (let index = 0; index < all.length; index++) {
+    const item = all[index]![heads[index]!];
+
+    if (
+      item &&
+      (best < 0 ||
+        compareKeys(keyOf(item), keyOf(all[best]![heads[best]!]!)) > 0)
+    )
+      best = index;
+  }
+
+  return best;
+}
+
+function mergeActivityQueues(
+  all: FeedItem[][],
+  limit: number,
+  floor: Key | null,
+) {
+  const heads = all.map(() => 0);
+  const activities: FeedItem[] = [];
+
+  while (activities.length < limit) {
+    const best = newestQueueHead(all, heads);
+
+    if (best < 0) break;
+    const item = all[best]![heads[best]!]!;
+
+    if (floor && compareKeys(keyOf(item), floor) <= 0) break;
+    activities.push(item);
+    heads[best]!++;
+  }
+
+  return { heads, activities };
+}
+
+/**
+ * One page of the activity feed: every bot's operational activity and the skill and memory changes, newest first.
+ * Each source is merged as a queue, so a page is a prefix of every source and the cursor resumes each one exactly.
+ */
+export async function activityPage<A extends Pick<Agent, "id" | "name">>(
+  options: ActivityPageOptions<A>,
+) {
+  const { limit, cursor, kind } = options;
+  const queues: ActivityQueue[] = [];
   const hints: Cursor["h"] = {};
 
   const fetched: { agentId: string; queue: number; next: string | false }[] =
@@ -310,57 +408,16 @@ export async function activityPage<
       continue;
     }
 
-    let before = start ?? undefined;
-    const items: FeedItem[] = [];
-    const tags: (string | null)[] = [];
-    let page: HistoryPage | null = null;
+    const loaded = await agentActivityQueue(agent, start, options);
 
-    for (let index = 0; index < HISTORY_PAGES; index++) {
-      page = await options.history(agent, before, HISTORY_PAGE_SIZE);
-
-      const fresh = operationalActivity(agent, page.messages).filter(
-        (item) =>
-          (!kind || item.kind === kind) &&
-          (!cursor?.k || compareKeys(keyOf(item), cursor.k) < 0),
-      );
-
-      items.push(...fresh);
-      tags.push(...fresh.map(() => before ?? null));
-
-      if (!page.hasMore || !page.oldestEntryId || items.length >= limit) break;
-      before = page.oldestEntryId;
-    }
-
-    const more = Boolean(page?.hasMore && page.oldestEntryId);
-
-    // Unread history is older than the oldest message read, so nothing older may be returned yet.
-    if (more && page) {
-      const oldest = page.messages.reduce<Key | null>((min, message) => {
-        const key = {
-          t: message.timestamp ?? 0,
-          e: entryNumber(message.entryId),
-          id: "",
-        };
-
-        return !min || compareKeys(key, min) < 0 ? key : min;
-      }, null);
-
-      if (oldest && (!floor || compareKeys(oldest, floor) > 0)) floor = oldest;
-    }
-
-    const order = items
-      .map((item, index) => ({ item, tag: tags[index]! }))
-      .sort((a, b) => compareKeys(keyOf(b.item), keyOf(a.item)));
-
-    queues.push({
-      items: order.map(({ item }) => item),
-      tags: order.map(({ tag }) => tag),
-    });
+    if (loaded.floor && (!floor || compareKeys(loaded.floor, floor) > 0))
+      floor = loaded.floor;
+    queues.push(loaded.queue);
 
     fetched.push({
       agentId: agent.id,
       queue: queues.length - 1,
-      next: more ? page!.oldestEntryId! : false,
+      next: loaded.next,
     });
   }
 
@@ -379,30 +436,7 @@ export async function activityPage<
   }));
 
   const all = [...queues.map((queue) => queue.items), changeQueue];
-  const heads = all.map(() => 0);
-  const activities: FeedItem[] = [];
-
-  while (activities.length < limit) {
-    let best = -1;
-
-    for (let index = 0; index < all.length; index++) {
-      const item = all[index]![heads[index]!];
-
-      if (
-        item &&
-        (best < 0 ||
-          compareKeys(keyOf(item), keyOf(all[best]![heads[best]!]!)) > 0)
-      )
-        best = index;
-    }
-
-    if (best < 0) break;
-    const item = all[best]![heads[best]!]!;
-
-    if (floor && compareKeys(keyOf(item), floor) <= 0) break;
-    activities.push(item);
-    heads[best]!++;
-  }
+  const { heads, activities } = mergeActivityQueues(all, limit, floor);
 
   for (const { agentId, queue, next } of fetched) {
     const head = heads[queue]!;
