@@ -35,9 +35,9 @@ function Home() {
               border: "1px solid",
               borderColor: "border",
             })}
-            src="/image.png"
-            width={5382}
-            height={2948}
+            src="/screenshot.webp"
+            width={2000}
+            height={1096}
             alt="The Crumble web app with a chat open to a bot named Otis"
           />
         </SmoothCorners>
@@ -67,11 +67,8 @@ function Home() {
 
       <p>
         You run one server and chat from the{" "}
-        <a href={`${docs}/clients/web`}>web app</a>,{" "}
-        <a href={`${docs}/clients/macos`}>macOS</a>,{" "}
-        <a href={`${docs}/clients/ios`}>iOS</a>, or{" "}
-        <a href={`${docs}/clients/android`}>Android</a>. Bring an API key or
-        sign in with a provider account.
+        <a href={`${docs}/clients/web`}>web app</a>. Bring an API key or sign in
+        with a provider account.
       </p>
 
       <p>
