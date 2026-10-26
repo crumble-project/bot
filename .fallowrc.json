@@ -12,6 +12,15 @@
   "ignoreDependencies": ["@oxlint/plugins"],
   "ignoreFindings": ["apps/web/components/ui/**"],
   "ignoreExportsUsedInFile": true,
+  "health": {
+    "thresholdOverrides": [
+      {
+        "files": ["apps/**/*.test.ts", "apps/**/*.test.tsx"],
+        "maxUnitSize": 1000,
+        "reason": "A describe() callback counts every test inside it; complexity and CRAP limits still apply to tests."
+      }
+    ]
+  },
   "overrides": [
     {
       // The server serves the web UI's bundle, and the web UI imports only the server's API types; nothing builds packages in dependency order.
