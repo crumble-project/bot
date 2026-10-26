@@ -24,6 +24,7 @@
     "lint": "oxlint --deny-warnings",
     "format": "oxfmt apps",
     "format:check": "oxfmt --check apps",
+    "fix": "oxfmt apps && oxlint --fix",
     "openapi:generate": "bun apps/server/src/contract/openapi.ts",
     "openapi:check": "bun apps/server/src/contract/openapi.ts --check",
     "contract:bundle": "bun apps/server/src/contract/openapi.ts --bundle",
