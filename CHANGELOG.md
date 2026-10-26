@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix Fallow Code Scanning uploads by assigning each SARIF run a distinct category before uploading. PR comments and audit gating remain enabled; fork pull requests skip the upload.
+
 - With code mode on, a bot asks for a credential with a direct tool call again, so the chat shows the request card where the owner enters the value.
 - In the web app, messages from tasks, script tasks, credentials, and other bots appear as a centered line you can expand, instead of a bubble that looks like the owner's own message.
 - Fix `schedule`, `ask_bot`, `delegate`, `delegation_status`, and `list_bots` in code mode: a successful call returns its result instead of failing with it as the error. The bundled tasks and bot messaging skills call these tools from code mode when it is on, instead of sending the owner to the app.
