@@ -21,8 +21,6 @@ export default defineConfig({
     { from: "/contributing/specifications", to: "/contributing" },
   ],
   footer: {
-    links: [
-      { label: "GitHub", href: "https://github.com/crumble-project" },
-    ],
+    links: [{ label: "GitHub", href: "https://github.com/crumble-project" }],
   },
 });
