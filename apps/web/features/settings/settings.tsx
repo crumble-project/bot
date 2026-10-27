@@ -1,5 +1,9 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  type UseQueryResult,
+  useMutation,
+  useQuery,
+} from "@tanstack/react-query";
 import { Link, Outlet, useMatchRoute } from "@tanstack/react-router";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -248,6 +252,47 @@ function PasskeyRow({
   );
 }
 
+const PASSKEYS_FOOTER = passkeysAvailable ? (
+  <>
+    Passkeys belong to {location.hostname}. They stop working if the server's
+    address changes.
+  </>
+) : (
+  <>
+    Adding a passkey needs a secure address with a hostname, not an IP address.
+    Open Crumble at localhost, or set CRUMBLE_PUBLIC_URL on the server.
+  </>
+);
+
+function PasskeyList({
+  passkeys,
+  removing,
+  onRemove,
+}: {
+  passkeys: UseQueryResult<Passkey[] | null>;
+  removing: boolean;
+  onRemove: (id: string) => void;
+}) {
+  if (passkeys.isPending) return <Skeleton className="m-3 h-5 w-40" />;
+
+  if (!passkeys.data?.length)
+    return (
+      <SectionEmpty>
+        Sign in with your device's screen lock or a security key instead of a
+        password.
+      </SectionEmpty>
+    );
+
+  return passkeys.data.map((passkey) => (
+    <PasskeyRow
+      key={passkey.id}
+      passkey={passkey}
+      removing={removing}
+      onRemove={() => onRemove(passkey.id)}
+    />
+  ));
+}
+
 function Passkeys() {
   const passkeys = useQuery(passkeysQuery);
 
@@ -274,40 +319,12 @@ function Passkeys() {
 
   // Listing, renaming, and removing need only a session; adding needs WebAuthn.
   return (
-    <Section
-      title="Passkeys"
-      footer={
-        passkeysAvailable ? (
-          <>
-            Passkeys belong to {location.hostname}. They stop working if the
-            server's address changes.
-          </>
-        ) : (
-          <>
-            Adding a passkey needs a secure address with a hostname, not an IP
-            address. Open Crumble at localhost, or set CRUMBLE_PUBLIC_URL on the
-            server.
-          </>
-        )
-      }
-    >
-      {passkeys.isPending ? (
-        <Skeleton className="m-3 h-5 w-40" />
-      ) : passkeys.data?.length ? (
-        passkeys.data.map((passkey) => (
-          <PasskeyRow
-            key={passkey.id}
-            passkey={passkey}
-            removing={remove.isPending}
-            onRemove={() => remove.mutate(passkey.id)}
-          />
-        ))
-      ) : (
-        <SectionEmpty>
-          Sign in with your device's screen lock or a security key instead of a
-          password.
-        </SectionEmpty>
-      )}
+    <Section title="Passkeys" footer={PASSKEYS_FOOTER}>
+      <PasskeyList
+        passkeys={passkeys}
+        removing={remove.isPending}
+        onRemove={(id) => remove.mutate(id)}
+      />
       {(passkeysAvailable || error) && (
         <div className="flex flex-col gap-2 p-3">
           {passkeysAvailable && (
