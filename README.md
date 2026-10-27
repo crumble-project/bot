@@ -98,7 +98,7 @@ bun run contract:validate      # Validate OpenAPI and JSON Schemas offline
 bun run contract:compatibility BASELINE_DIRECTORY # Compare against a baseline OpenAPI directory
 ```
 
-`bun install` points Git at the hooks in `.githooks/`: each commit runs `bun run lint` and `bun run typecheck`, and each push runs `bun run check`, tests included. Skip them once with `--no-verify`.
+`bun install` points Git at the hooks in `.githooks/`: each commit generates and stages the OpenAPI artifacts from staged sources, then runs `bun run lint` and `bun run typecheck`, and each push runs `bun run check`, tests included. Skip them once with `--no-verify`.
 
 ## Documentation
 

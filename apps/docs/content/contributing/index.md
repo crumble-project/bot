@@ -35,7 +35,7 @@ bun run check   # lint, format check, typecheck, contract drift, and unit tests
 bun run fix     # format and apply lint fixes
 ```
 
-`bun install` sets up Git hooks: commits run the steering-file path check, lint and typecheck, and pushes run `check`. Unit test jobs in CI must finish in two minutes or less.
+`bun install` sets up Git hooks: commits generate and stage OpenAPI artifacts from staged sources, then run the steering-file path check, lint, and typecheck, and pushes run `check`. Unit test jobs in CI must finish in two minutes or less.
 
 ## Change the database schema
 

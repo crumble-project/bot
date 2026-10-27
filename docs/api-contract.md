@@ -23,11 +23,13 @@ bun run contract:validate
 ## Change workflow
 
 1. Update the Zod schema and route handler together, using stable operation IDs.
-2. Run `bun run openapi:generate` and commit the generated artifacts with the source changes.
+2. Stage the source changes and commit them. The pre-commit hook generates and stages the artifacts from the staged source.
 3. Run `bun run check` and `bun run contract:validate`.
 4. Compare against the base branch's `openapi` directory with `bun run contract:compatibility BASELINE_DIRECTORY`.
 
 Replace `BASELINE_DIRECTORY` with the path to the base commit's `openapi` directory. Pull request CI checks out the exact base commit and runs this comparison automatically. It rejects breaking HTTP and event schema changes and saves the reports as a workflow artifact. Coordinate intentional breaking changes before merging them. A comparison with the base commit does not establish compatibility with every older deployed server or client.
+
+The hook preserves unstaged edits to generated files. If you skip the hook, run `bun run openapi:generate` and stage the artifacts yourself.
 
 The repository does not publish contract releases or bundles. To retrieve the specification for a server revision, use that revision's committed `openapi/` directory.
 
