@@ -249,7 +249,7 @@ function PasskeyRow({
 }
 
 function Passkeys() {
-  const passkeys = useQuery({ ...passkeysQuery, enabled: passkeysAvailable });
+  const passkeys = useQuery(passkeysQuery);
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: passkeysQuery.queryKey });
@@ -272,24 +272,23 @@ function Passkeys() {
 
   const error = add.error ?? remove.error ?? passkeys.error;
 
-  if (!passkeysAvailable)
-    return (
-      <Section title="Passkeys">
-        <SectionEmpty>
-          Passkeys need a secure address with a hostname, not an IP address.
-          Open Crumble at localhost, or set CRUMBLE_PUBLIC_URL on the server.
-        </SectionEmpty>
-      </Section>
-    );
-
+  // Listing, renaming, and removing need only a session; adding needs WebAuthn.
   return (
     <Section
       title="Passkeys"
       footer={
-        <>
-          Passkeys belong to {location.hostname}. They stop working if the
-          server's address changes.
-        </>
+        passkeysAvailable ? (
+          <>
+            Passkeys belong to {location.hostname}. They stop working if the
+            server's address changes.
+          </>
+        ) : (
+          <>
+            Adding a passkey needs a secure address with a hostname, not an IP
+            address. Open Crumble at localhost, or set CRUMBLE_PUBLIC_URL on the
+            server.
+          </>
+        )
       }
     >
       {passkeys.isPending ? (
@@ -309,18 +308,22 @@ function Passkeys() {
           password.
         </SectionEmpty>
       )}
-      <div className="flex flex-col gap-2 p-3">
-        <Button
-          variant="outline"
-          size="sm"
-          className="self-start"
-          disabled={add.isPending}
-          onClick={() => add.mutate()}
-        >
-          Add a passkey
-        </Button>
-        {error && <FieldError>{error.message}</FieldError>}
-      </div>
+      {(passkeysAvailable || error) && (
+        <div className="flex flex-col gap-2 p-3">
+          {passkeysAvailable && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="self-start"
+              disabled={add.isPending}
+              onClick={() => add.mutate()}
+            >
+              Add a passkey
+            </Button>
+          )}
+          {error && <FieldError>{error.message}</FieldError>}
+        </div>
+      )}
     </Section>
   );
 }

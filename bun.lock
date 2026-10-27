@@ -65,6 +65,7 @@
         "@hugeicons/core-free-icons": "4.3.5",
         "@hugeicons/react": "1.1.10",
         "@shadcn/react": "0.3.1",
+        "@simplewebauthn/browser": "13.3.0",
         "@tailwindcss/node": "4.3.3",
         "@tailwindcss/oxide": "4.3.3",
         "@tanstack/markdown": "1.0.0",

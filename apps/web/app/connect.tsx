@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { WebAuthnAbortService } from "@simplewebauthn/browser";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -37,17 +38,24 @@ function enter() {
 
 /** Signs in with a passkey: from the button, or from the browser's autofill on the email field. */
 function usePasskeySignIn(mode: Mode) {
+  // Bumped after a manual attempt that didn't sign in, which aborted the autofill request.
+  const [attempt, setAttempt] = useState(0);
+
   const signIn = useMutation({
     mutationFn: async () => passkeyDone(await authClient.signIn.passkey()),
-    onSuccess: (done) => done && enter(),
+    onSuccess: (done) => (done ? enter() : setAttempt((n) => n + 1)),
+    onError: () => setAttempt((n) => n + 1),
   });
 
   useEffect(() => {
     if (mode !== "sign-in" || !passkeysAvailable) return;
+    let cancelled = false;
 
     void (async () => {
-      if (!(await PublicKeyCredential.isConditionalMediationAvailable?.()))
-        return;
+      const available =
+        await PublicKeyCredential.isConditionalMediationAvailable?.();
+
+      if (!available || cancelled) return;
 
       try {
         if (passkeyDone(await authClient.signIn.passkey({ autoFill: true })))
@@ -56,7 +64,12 @@ function usePasskeySignIn(mode: Mode) {
         // A failed autofill sign-in leaves the form for another try.
       }
     })();
-  }, [mode]);
+
+    return () => {
+      cancelled = true;
+      WebAuthnAbortService.cancelCeremony();
+    };
+  }, [mode, attempt]);
 
   return signIn;
 }
