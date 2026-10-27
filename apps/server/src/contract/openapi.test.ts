@@ -72,6 +72,16 @@ describe("exported response and parameter schemas", () => {
 });
 
 describe("contract bundle payloads", () => {
+  test("the current contract has release notes", async () => {
+    const changelog = await Bun.file(
+      new URL("../../../../CHANGELOG.md", import.meta.url),
+    ).text();
+
+    expect(() =>
+      changelogPayload(changelog, openAPIDocument().info.version),
+    ).not.toThrow();
+  });
+
   const changelog = [
     "# Changelog",
     "",

@@ -128,6 +128,11 @@
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
 
+## Contract 3.3.0
+
+- Add `GET /v1/agents/{id}/bot-requests` to list bot creation requests, and `POST /v1/agents/{id}/bot-requests/{requestId}/approve` and `/decline` to decide them. Approval can include an edited proposal and returns the request and created bot.
+- Add `POST /v1/agents/{id}/credentials/{name}/decline` to decline a pending credential request without changing a saved credential.
+
 ## Contract 3.2.0
 
 - Add `kind` (`prompt` or `script`, default `prompt`), nullable `command` (up to 8000 characters), `timeoutSeconds` (1–3600, default 600), and `notify` (default `true`) to schedule inputs and `Schedule`. Script tasks need a command instead of a prompt, coding jobs, and workspaces. A bot can give a script task only to itself.
