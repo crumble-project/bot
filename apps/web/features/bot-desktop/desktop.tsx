@@ -10,6 +10,7 @@ import { ArrowLeft02Icon, RefreshIcon } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { MobileSidebarTrigger } from "@/components/workspace";
 import {
   type DesktopControl,
   type DesktopViewer,
@@ -125,6 +126,7 @@ export function BotDesktop({ botId }: { botId: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+        <MobileSidebarTrigger />
         <Button
           variant="ghost"
           size="icon-sm"

@@ -477,7 +477,7 @@ export function Composer({
   return (
     <form
       className={cn(
-        "mx-auto flex w-full max-w-3xl flex-col gap-2 p-4",
+        "mx-auto flex w-full max-w-3xl flex-col gap-2 p-4 pb-[max(--spacing(4),env(safe-area-inset-bottom))]",
         drop.dragging && "rounded-xl outline-2 outline-dashed outline-ring",
       )}
       onSubmit={(event) => {

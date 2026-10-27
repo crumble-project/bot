@@ -50,6 +50,7 @@ import {
   shownInChat,
 } from "./transcript";
 import { Composer } from "./composer";
+import { MobileSidebarTrigger } from "@/components/workspace";
 
 const DETAILS_KEY = "crumble.details";
 
@@ -159,6 +160,7 @@ function ChatHeader({
 }) {
   return (
     <header className="flex h-14 shrink-0 items-center gap-2.5 border-b px-4">
+      <MobileSidebarTrigger />
       <BotAvatar
         bot={bot}
         size={32}

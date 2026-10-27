@@ -13,7 +13,22 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { FieldError } from "@/components/ui/field";
+import { cn } from "@/lib/utils";
+
+/**
+ * Opens the sidebar on phones from a page's own header. The shell hides its
+ * fallback header row while a page renders one of these.
+ */
+export function MobileSidebarTrigger({ className }: { className?: string }) {
+  return (
+    <SidebarTrigger
+      data-page-trigger
+      className={cn("-ml-2 size-9 shrink-0 md:hidden", className)}
+    />
+  );
+}
 
 /** The header row and scrolling body every workspace and settings page shares. */
 export function WorkspacePage({
@@ -38,7 +53,13 @@ export function WorkspacePage({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b px-4">
-        <h1 className="font-heading text-base font-semibold">{title}</h1>
+        <div className="flex min-w-0 items-center gap-1">
+          {/* Settings pages open the sidebar from the section nav above. */}
+          <MobileSidebarTrigger className="in-data-[slot=settings-page]:hidden" />
+          <h1 className="truncate font-heading text-base font-semibold">
+            {title}
+          </h1>
+        </div>
         <div className="flex items-center gap-1">
           {onRefresh && (
             <Button

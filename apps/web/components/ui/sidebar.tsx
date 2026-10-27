@@ -162,6 +162,9 @@ function Sidebar({
   collapsible?: "offcanvas" | "icon" | "none";
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  // The trigger opens the sheet programmatically, so Base UI can't tell it was a
+  // tap and would focus the search field, raising the keyboard on phones.
+  const sheet = React.useRef<HTMLDivElement>(null);
 
   if (collapsible === "none") {
     return (
@@ -186,6 +189,8 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
+          ref={sheet}
+          initialFocus={sheet}
           className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
           style={
             {
@@ -198,7 +203,9 @@ function Sidebar({
             <SheetTitle>Sidebar</SheetTitle>
             <SheetDescription>Displays the mobile sidebar.</SheetDescription>
           </SheetHeader>
-          <div className="flex h-full w-full flex-col">{children}</div>
+          <div className="flex h-full w-full flex-col pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
+            {children}
+          </div>
         </SheetContent>
       </Sheet>
     );
@@ -206,7 +213,9 @@ function Sidebar({
 
   return (
     <div
-      className="group peer hidden text-sidebar-foreground md:block"
+      // A landscape iPhone is wide enough for this branch, so the sidebar widens
+      // by the safe area on its side to keep clear of the notch.
+      className="group peer hidden text-sidebar-foreground [--sidebar-inset:env(safe-area-inset-left)] data-[side=right]:[--sidebar-inset:env(safe-area-inset-right)] md:block"
       data-state={state}
       data-collapsible={state === "collapsed" ? collapsible : ""}
       data-variant={variant}
@@ -217,7 +226,7 @@ function Sidebar({
       <div
         data-slot="sidebar-gap"
         className={cn(
-          "relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear",
+          "relative w-[calc(var(--sidebar-width)+var(--sidebar-inset))] bg-transparent transition-[width] duration-200 ease-linear",
           "group-data-[collapsible=offcanvas]:w-0",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset"
@@ -229,10 +238,10 @@ function Sidebar({
         data-slot="sidebar-container"
         data-side={side}
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
+          "fixed inset-y-0 z-10 hidden h-svh w-[calc(var(--sidebar-width)+var(--sidebar-inset))] transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-0 data-[side=left]:pl-(--sidebar-inset) data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc((var(--sidebar-width)+var(--sidebar-inset))*-1)] data-[side=right]:right-0 data-[side=right]:pr-(--sidebar-inset) data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc((var(--sidebar-width)+var(--sidebar-inset))*-1)] md:flex",
           // Adjust the padding for floating and inset variants.
           variant === "floating" || variant === "inset"
-            ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
+            ? "p-2 data-[side=left]:pl-[calc(--spacing(2)+var(--sidebar-inset))] data-[side=right]:pr-[calc(--spacing(2)+var(--sidebar-inset))] group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
             : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
           className,
         )}

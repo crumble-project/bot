@@ -41,7 +41,10 @@ import {
   send,
 } from "@/lib/api";
 import { BotAvatar, botColor } from "@/features/bots/avatar";
-import { ConfirmDeleteContent } from "@/components/workspace";
+import {
+  ConfirmDeleteContent,
+  MobileSidebarTrigger,
+} from "@/components/workspace";
 import { outgoingMessage } from "@/features/chat/chat";
 import { confirm, useOutgoing } from "@/features/chat/delivery";
 import {
@@ -136,6 +139,7 @@ function GroupHeader({
 }) {
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
+      <MobileSidebarTrigger />
       <span className="truncate font-heading font-semibold">{name}</span>
       <div className="flex -space-x-1.5">
         {members.map((member) => {

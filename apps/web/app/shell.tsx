@@ -91,6 +91,41 @@ function useFollowActivity() {
   }, [navigate]);
 }
 
+/** The sidebar's background, as `--sidebar` in styles.css, per color scheme. */
+const SIDEBAR_THEME_COLOR = { light: "#f3f4f5", dark: "#040405" };
+
+/**
+ * Tints the browser chrome, which in an installed iPhone app is the status
+ * bar, to match the sidebar sheet while it is open on phones.
+ */
+function SidebarThemeColor() {
+  const { isMobile, openMobile } = useSidebar();
+  const tinted = isMobile && openMobile;
+
+  useEffect(() => {
+    if (!tinted) return;
+
+    const metas = [
+      ...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]'),
+    ];
+
+    const previous = metas.map((meta) => meta.content);
+
+    for (const meta of metas)
+      meta.content = meta.media.includes("dark")
+        ? SIDEBAR_THEME_COLOR.dark
+        : SIDEBAR_THEME_COLOR.light;
+
+    return () => {
+      metas.forEach((meta, index) => {
+        meta.content = previous[index] ?? meta.content;
+      });
+    };
+  }, [tinted]);
+
+  return null;
+}
+
 function matchesBot(bot: Bot, needle: string) {
   return (
     !needle ||
@@ -154,9 +189,10 @@ export function Shell() {
           </SidebarContent>
           <SettingsFooter />
         </Sidebar>
-        <SidebarInset className="h-dvh min-w-0 overflow-hidden md:h-[calc(100dvh-1rem)] md:ring-1 md:ring-sidebar-border">
-          <header className="flex h-12 shrink-0 items-center px-2 md:hidden">
-            <SidebarTrigger />
+        <SidebarThemeColor />
+        <SidebarInset className="group/inset h-dvh min-w-0 overflow-hidden pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:peer-data-[state=expanded]:pl-0 md:h-[calc(100dvh-1rem)] md:ring-1 md:ring-sidebar-border">
+          <header className="flex h-12 shrink-0 items-center px-2 group-has-[[data-page-trigger]]/inset:hidden md:hidden">
+            <SidebarTrigger className="size-9" />
           </header>
           <Outlet />
         </SidebarInset>
