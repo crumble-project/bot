@@ -21,7 +21,7 @@
     "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "dev": "bun --watch apps/server/src/app/server.ts",
     "start": "bun apps/server/src/app/server.ts",
-    "test": "bun test --parallel=20",
+    "test": "bun test --parallel",
     "typecheck": "tsc --noEmit -p apps/server && tsc --noEmit -p apps/web",
     "lint": "oxlint --deny-warnings",
     "format": "oxfmt apps",
