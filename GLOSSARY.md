@@ -70,6 +70,14 @@ _Avoid_: Sandbox, container, VM (in product language)
 A secret value the owner gives one bot for a list of hosts. The bot's jobs use it through a placeholder, so the value never enters the workspace.
 _Avoid_: Secret, API key, environment variable (in product language)
 
+**Web search provider**:
+The service the owner chooses for the account through which every bot searches the web and reads pages.
+_Avoid_: Search backend, search engine
+
+**Mixed**:
+The default web search provider, which spreads each account's searches across services that are free to use without a key.
+_Avoid_: Free tier, keyless provider
+
 **Bot desktop**:
 A bot's own graphical desktop, with a browser and apps, inside its workspace. Not the Crumble desktop client.
 _Avoid_: Den, bot screen, virtual desktop, computer
