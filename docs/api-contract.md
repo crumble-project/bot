@@ -1,15 +1,6 @@
 # API contract maintenance
 
-`bot` owns and publishes the HTTP and server-sent event (SSE) contract from its Zod route and response schemas. The contract version (`info.version` in `apps/server/src/contract/api-contract.ts`) is independent of the server version.
-
-```mermaid
-flowchart LR
-  Schemas["Zod Schemas\napps/server/src/contract/api-contract.ts\napps/server/src/contract/api-responses.ts"] --> Gen["bun run openapi:generate\nopenapi/ (7 artifacts)"]
-  Gen --> Check["oasdiff & Ajv\nValidation & compatibility"]
-  Check --> Release["GitHub Release\ncontract-vX.Y.Z bundle"]
-  Release --> Apple["apple/apfelkern\nscripts/contract.py"]
-  Release --> Android["android\nscripts/contract.py"]
-```
+`bot` generates the HTTP and server-sent event (SSE) specifications from its Zod route and response schemas. Each Git commit identifies its generated artifacts. The OpenAPI `info.version` remains a required document field; it is not a release identifier and does not need a bump for each change.
 
 ## Exported artifacts
 
@@ -32,20 +23,13 @@ bun run contract:validate
 ## Change workflow
 
 1. Update the Zod schema and route handler together, using stable operation IDs.
-2. Bump `info.version` in `apps/server/src/contract/api-contract.ts` (major for breaking HTTP/SSE changes or removed event schemas; minor/patch for compatible additions).
-3. Add a `## Contract X.Y.Z` section to `CHANGELOG.md`.
-4. Run `bun run openapi:generate`, `bun run check`, `bun run contract:validate`, and `bun run contract:compatibility`.
-5. Commit the source changes and all seven generated `openapi/` artifacts together.
+2. Run `bun run openapi:generate` and commit the generated artifacts with the source changes.
+3. Run `bun run check` and `bun run contract:validate`.
+4. Compare against the base branch's `openapi` directory with `bun run contract:compatibility BASELINE_DIRECTORY`.
 
-## Bundles and releases
+Replace `BASELINE_DIRECTORY` with the path to the base commit's `openapi` directory. Pull request CI checks out the exact base commit and runs this comparison automatically. It rejects breaking HTTP and event schema changes and saves the reports as a workflow artifact. Coordinate intentional breaking changes before merging them. A comparison with the base commit does not establish compatibility with every older deployed server or client.
 
-Export a local provenance bundle (requires a clean working tree):
-
-```bash
-bun run contract:bundle [DIRECTORY]
-```
-
-Every `contract-vX.Y.Z` release and local bundle contains the seven `openapi/` artifacts plus `CHANGELOG.md` (the current contract version's section), `source-commit.txt`, and `SHA256SUMS`. Pushing a new contract version to `main` publishes an immutable `contract-vX.Y.Z` GitHub release via `.github/workflows/contract.yml` after `oasdiff` compatibility checks pass.
+The repository does not publish contract releases or bundles. To retrieve the specification for a server revision, use that revision's committed `openapi/` directory.
 
 ## Server-sent events
 

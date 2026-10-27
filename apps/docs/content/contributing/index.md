@@ -55,8 +55,7 @@ Route and event schemas in `apps/server/src/contract/` generate everything in `o
 ```bash
 bun run openapi:generate        # regenerate openapi/
 bun run contract:validate       # validate the OpenAPI and JSON Schemas offline
-bun run contract:compatibility  # compare against the latest contract-vX.Y.Z release
-bun run contract:bundle         # export a checksummed release bundle
+bun run contract:compatibility BASELINE_DIRECTORY  # compare against a baseline OpenAPI directory
 ```
 
 `bun run openapi:check` fails if the generated files are out of date. `bun run check` runs it for you.

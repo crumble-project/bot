@@ -95,8 +95,7 @@ bun run check                  # Lint, format, typecheck, contract drift, and un
 bun run format                 # Format source and tests
 bun run openapi:generate       # Regenerate OpenAPI and six SSE JSON Schemas
 bun run contract:validate      # Validate OpenAPI and JSON Schemas offline
-bun run contract:compatibility # Compare against the latest stable contract-vX.Y.Z release
-bun run contract:bundle        # Export a checksummed release bundle
+bun run contract:compatibility BASELINE_DIRECTORY # Compare against a baseline OpenAPI directory
 ```
 
 `bun install` points Git at the hooks in `.githooks/`: each commit runs `bun run lint` and `bun run typecheck`, and each push runs `bun run check`, tests included. Skip them once with `--no-verify`.
