@@ -435,37 +435,45 @@ export function Attachments({
   );
 }
 
-// fallow-ignore-next-line complexity -- maps persisted notice origins to compact UI labels.
 function originLabel(message: Message) {
   const origin = message.origin;
 
-  if (origin?.kind === "owner")
-    return message.requestId?.startsWith("bot-request:") ? "Bot request" : null;
+  if (!origin) return null;
 
-  switch (origin?.kind) {
-    case "bot_request":
-      return "Bot request";
-    case "task":
-      return `Task · ${origin.name ?? ""}`;
-    case "script":
-      return `Script task · ${origin.name ?? ""}`;
-    case "credential":
-      return (
-        <span className="flex items-center gap-1">
-          <HugeiconsIcon icon={Key01Icon} className="size-3" />
-          Credential · {origin.name}
-        </span>
-      );
-    case "bot":
-      return (
-        <span className="flex items-center gap-1">
-          <HugeiconsIcon icon={UserGroupIcon} className="size-3" />
-          From {origin.name}
-        </span>
-      );
-    default:
-      return null;
-  }
+  if (origin.kind === "owner")
+    return botRequestNotice(message) ? "Bot request" : null;
+
+  if (origin.kind === "bot_request") return "Bot request";
+
+  return originContent(origin);
+}
+
+function botRequestNotice(message: Message) {
+  return message.requestId?.startsWith("bot-request:") === true;
+}
+
+function originContent(origin: NonNullable<Message["origin"]>) {
+  if (origin.kind === "task") return `Task · ${origin.name ?? ""}`;
+
+  if (origin.kind === "script") return `Script task · ${origin.name ?? ""}`;
+
+  if (origin.kind === "credential")
+    return (
+      <span className="flex items-center gap-1">
+        <HugeiconsIcon icon={Key01Icon} className="size-3" />
+        Credential · {origin.name}
+      </span>
+    );
+
+  if (origin.kind === "bot")
+    return (
+      <span className="flex items-center gap-1">
+        <HugeiconsIcon icon={UserGroupIcon} className="size-3" />
+        From {origin.name}
+      </span>
+    );
+
+  return null;
 }
 
 export function MessageActions({
@@ -558,7 +566,6 @@ function MessageReactions({
 export type Delivery = "sending" | "failed";
 
 /** An owner message: right-aligned bubble with reply quote, attachments, reactions, and delivery state. */
-// fallow-ignore-next-line complexity -- renders the complete owner message state matrix.
 export function OwnerMessage({
   message,
   uploads,
@@ -582,67 +589,150 @@ export function OwnerMessage({
   return (
     <MessageRow align="end">
       <MessageContent>
-        {quote && (
-          <div className="line-clamp-2 self-end border-r-2 pr-2 text-xs text-muted-foreground">
-            {quote}
-          </div>
-        )}
-        <Attachments message={message} attachmentPath={attachmentPath} />
-        {uploads && uploads.length > 0 && (
-          <div className="flex flex-wrap justify-end gap-2">
-            {uploads.map((upload, index) =>
-              upload.preview ? (
-                <img
-                  key={index}
-                  src={upload.preview}
-                  alt={upload.name}
-                  className="max-h-64 max-w-full rounded-lg object-contain"
-                />
-              ) : (
-                <Badge key={index} variant="outline">
-                  <HugeiconsIcon icon={File02Icon} data-icon="inline-start" />
-                  {upload.name}
-                </Badge>
-              ),
-            )}
-          </div>
-        )}
-        {message.content.trim() && (
-          <div className="flex w-full min-w-0 items-center justify-end gap-1">
-            {!delivery && (
-              <MessageFooter className="shrink-0 px-0">
-                <MessageActions message={message} onReply={onReply} />
-              </MessageFooter>
-            )}
-            <Bubble variant="secondary" align="end">
-              <BubbleContent className="whitespace-pre-wrap">
-                {message.content}
-              </BubbleContent>
-              <MessageReactions reactions={reactions} align="end" />
-            </Bubble>
-          </div>
-        )}
-        <MessageFooter className="gap-2">
-          {delivery === "sending" && (
-            <span className="flex items-center gap-1">
-              <Spinner className="size-3" />
-              Sending…
-            </span>
-          )}
-          {delivery === "failed" && (
-            <span className="flex items-center gap-1 text-destructive">
-              Not sent
-              <Button variant="link" size="xs" onClick={onRetry}>
-                Retry
-              </Button>
-            </span>
-          )}
-          {!delivery && !message.content.trim() && (
-            <MessageActions message={message} onReply={onReply} />
-          )}
-        </MessageFooter>
+        <OwnerMessageBody
+          message={message}
+          uploads={uploads}
+          quote={quote}
+          reactions={reactions}
+          delivery={delivery}
+          onRetry={onRetry}
+          onReply={onReply}
+          attachmentPath={attachmentPath}
+        />
       </MessageContent>
     </MessageRow>
+  );
+}
+
+function OwnerMessageBody({
+  message,
+  uploads,
+  quote,
+  reactions,
+  delivery,
+  onRetry,
+  onReply,
+  attachmentPath,
+}: {
+  message: Message;
+  uploads?: Upload[] | undefined;
+  quote?: string | undefined;
+  reactions?: string[] | undefined;
+  delivery?: Delivery | undefined;
+  onRetry?: (() => void) | undefined;
+  onReply?: ((message: Message) => void) | undefined;
+  attachmentPath: (entryId: string, index: number) => string;
+}) {
+  return (
+    <>
+      {quote && (
+        <div className="line-clamp-2 self-end border-r-2 pr-2 text-xs text-muted-foreground">
+          {quote}
+        </div>
+      )}
+      <Attachments message={message} attachmentPath={attachmentPath} />
+      <OwnerUploads uploads={uploads} />
+      <OwnerContent
+        message={message}
+        delivery={delivery}
+        reactions={reactions}
+        onReply={onReply}
+      />
+      <OwnerDelivery
+        message={message}
+        delivery={delivery}
+        onRetry={onRetry}
+        onReply={onReply}
+      />
+    </>
+  );
+}
+
+function OwnerUploads({ uploads }: { uploads?: Upload[] | undefined }) {
+  if (!uploads?.length) return null;
+
+  return (
+    <div className="flex flex-wrap justify-end gap-2">
+      {uploads.map((upload, index) =>
+        upload.preview ? (
+          <img
+            key={index}
+            src={upload.preview}
+            alt={upload.name}
+            className="max-h-64 max-w-full rounded-lg object-contain"
+          />
+        ) : (
+          <Badge key={index} variant="outline">
+            <HugeiconsIcon icon={File02Icon} data-icon="inline-start" />
+            {upload.name}
+          </Badge>
+        ),
+      )}
+    </div>
+  );
+}
+
+function OwnerContent({
+  message,
+  delivery,
+  reactions,
+  onReply,
+}: {
+  message: Message;
+  delivery?: Delivery | undefined;
+  reactions?: string[] | undefined;
+  onReply?: ((message: Message) => void) | undefined;
+}) {
+  if (!message.content.trim()) return null;
+
+  return (
+    <div className="flex w-full min-w-0 items-center justify-end gap-1">
+      {!delivery && (
+        <MessageFooter className="shrink-0 px-0">
+          <MessageActions message={message} onReply={onReply} />
+        </MessageFooter>
+      )}
+      <Bubble variant="secondary" align="end">
+        <BubbleContent className="whitespace-pre-wrap">
+          {message.content}
+        </BubbleContent>
+        <MessageReactions reactions={reactions} align="end" />
+      </Bubble>
+    </div>
+  );
+}
+
+function OwnerDelivery({
+  message,
+  delivery,
+  onRetry,
+  onReply,
+}: {
+  message: Message;
+  delivery?: Delivery | undefined;
+  onRetry?: (() => void) | undefined;
+  onReply?: ((message: Message) => void) | undefined;
+}) {
+  return (
+    <MessageFooter className="gap-2">
+      {delivery === "sending" && (
+        <span className="flex items-center gap-1">
+          <Spinner className="size-3" />
+          Sending…
+        </span>
+      )}
+      {delivery === "failed" && (
+        <span className="flex items-center gap-1 text-destructive">
+          Not sent
+          <Button variant="link" size="xs" onClick={onRetry}>
+            Retry
+          </Button>
+        </span>
+      )}
+      {!delivery && !message.content.trim() && (
+        <MessageActions message={message} onReply={onReply} />
+      )}
+    </MessageFooter>
   );
 }
 
@@ -708,7 +798,6 @@ function SettledCard({
   );
 }
 
-// fallow-ignore-next-line complexity -- keeps request loading, decision, and input states together.
 function CredentialRequestCard({
   credential,
   botId,
@@ -716,8 +805,6 @@ function CredentialRequestCard({
   credential: { name: string; hosts: string[]; requestedAt?: string };
   botId: string;
 }) {
-  const [value, setValue] = useState("");
-  const [expanded, setExpanded] = useState(false);
   const state = useQuery(credentialsQuery(botId));
 
   const current = state.data;
@@ -731,32 +818,6 @@ function CredentialRequestCard({
   const saved = current?.credentials.find(
     (item) => item.name === credential.name,
   );
-
-  const liveCredential = request ?? credential;
-
-  const save = useMutation({
-    mutationFn: () =>
-      call<Credential, { hosts: string[]; value: string }>(
-        credentialPath(botId, credential.name),
-        "PUT",
-        { hosts: liveCredential.hosts, value },
-      ),
-    onSuccess: async () => {
-      setValue("");
-      await queryClient.invalidateQueries({
-        queryKey: credentialsQuery(botId).queryKey,
-      });
-    },
-  });
-
-  const decline = useMutation({
-    mutationFn: () =>
-      send(`${credentialPath(botId, credential.name)}/decline`, "POST"),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: credentialsQuery(botId).queryKey,
-      }),
-  });
 
   if (!state.isSuccess)
     return (
@@ -781,18 +842,59 @@ function CredentialRequestCard({
       />
     );
 
-  const hosts = expanded
-    ? liveCredential.hosts
-    : liveCredential.hosts.slice(0, 1);
+  return (
+    <CredentialPendingCard
+      credential={credential}
+      request={request}
+      botId={botId}
+    />
+  );
+}
 
-  const more = liveCredential.hosts.length - 1;
+function CredentialPendingCard({
+  credential,
+  request,
+  botId,
+}: {
+  credential: { name: string; hosts: string[] };
+  request: { hosts: string[] };
+  botId: string;
+}) {
+  const [value, setValue] = useState("");
+  const [expanded, setExpanded] = useState(false);
+
+  const save = useMutation({
+    mutationFn: () =>
+      call<Credential, { hosts: string[]; value: string }>(
+        credentialPath(botId, credential.name),
+        "PUT",
+        { hosts: request.hosts, value },
+      ),
+    onSuccess: async () => {
+      setValue("");
+      await queryClient.invalidateQueries({
+        queryKey: credentialsQuery(botId).queryKey,
+      });
+    },
+  });
+
+  const decline = useMutation({
+    mutationFn: () =>
+      send(`${credentialPath(botId, credential.name)}/decline`, "POST"),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: credentialsQuery(botId).queryKey,
+      }),
+  });
+
+  const hosts = expanded ? request.hosts : request.hosts.slice(0, 1);
 
   return (
     <div className="flex w-full max-w-sm flex-col gap-3 rounded-xl border p-4">
       <CredentialRequestHeader
         name={credential.name}
         hosts={hosts}
-        more={more}
+        more={request.hosts.length - 1}
         expanded={expanded}
         onToggle={() => setExpanded(!expanded)}
       />
@@ -877,7 +979,6 @@ function CredentialRequestActions({
   );
 }
 
-// fallow-ignore-next-line complexity -- keeps live status, mutations, and approval editing together.
 function BotRequestCard({
   request,
   botId,
@@ -888,77 +989,132 @@ function BotRequestCard({
   const [open, setOpen] = useState(false);
   const [proposalValid, setProposalValid] = useState(false);
   const current = useQuery(botRequestsQuery(botId));
-  const servers = useQuery(mcpServersQuery);
-
   const live = current.data?.find((item) => item.id === request.id) ?? request;
 
-  const serverNames = new Map(
-    (servers.data ?? []).map((server) => [server.id, server.name]),
+  const { approve, decline } = useBotRequestMutations(
+    botId,
+    request.id,
+    setOpen,
   );
+
+  if (live.status !== "pending") return <BotRequestSettled request={live} />;
+
+  return (
+    <BotPendingCard
+      live={live}
+      requestId={request.id}
+      open={open}
+      setOpen={setOpen}
+      proposalValid={proposalValid}
+      setProposalValid={setProposalValid}
+      onApprove={(proposal) => approve.mutate(proposal)}
+      onDecline={() => decline.mutate()}
+      approvePending={approve.isPending}
+      declinePending={decline.isPending}
+      approveError={approve.isError ? (approve.error?.message ?? "") : ""}
+      declineError={decline.isError ? (decline.error?.message ?? "") : ""}
+    />
+  );
+}
+
+function BotRequestSettled({ request }: { request: BotRequest }) {
+  return (
+    <SettledCard
+      icon={UserGroupIcon}
+      title={request.proposal.name}
+      outcome={request.status === "approved" ? "Approved" : "Declined"}
+      action={
+        request.createdAgentId ? (
+          <Button
+            render={
+              <Link
+                to="/bots/$botId"
+                params={{ botId: request.createdAgentId }}
+              />
+            }
+            size="xs"
+            variant="outline"
+          >
+            Open chat
+          </Button>
+        ) : undefined
+      }
+    />
+  );
+}
+
+function useBotRequestMutations(
+  botId: string,
+  requestId: string,
+  setOpen: (open: boolean) => void,
+) {
+  const refresh = () =>
+    queryClient.invalidateQueries({
+      queryKey: botRequestsQuery(botId).queryKey,
+    });
 
   const approve = useMutation({
     mutationFn: (proposal?: BotInput) =>
       call<{ request: BotRequest; agent: Bot }, { proposal?: BotInput }>(
-        `${botRequestPath(botId, request.id)}/approve`,
+        `${botRequestPath(botId, requestId)}/approve`,
         "POST",
         proposal ? { proposal } : undefined,
       ),
     onSuccess: ({ agent }) => {
       setOpen(false);
-      queryClient.setQueryData<Bot[]>(botsQuery.queryKey, (bots) => {
-        if (!bots || bots.some((bot) => bot.id === agent.id)) return bots;
-
-        return [...bots, agent];
-      });
-      void queryClient.invalidateQueries({
-        queryKey: botRequestsQuery(botId).queryKey,
-      });
+      queryClient.setQueryData<Bot[]>(botsQuery.queryKey, (bots) =>
+        !bots || bots.some((bot) => bot.id === agent.id)
+          ? bots
+          : [...bots, agent],
+      );
+      void refresh();
       void queryClient.invalidateQueries({ queryKey: botsQuery.queryKey });
     },
-    onError: () => {
-      void queryClient.invalidateQueries({
-        queryKey: botRequestsQuery(botId).queryKey,
-      });
-    },
+    onError: refresh,
   });
 
   const decline = useMutation({
     mutationFn: () =>
-      call<BotRequest>(`${botRequestPath(botId, request.id)}/decline`, "POST"),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: botRequestsQuery(botId).queryKey,
-      }),
-    onError: () =>
-      queryClient.invalidateQueries({
-        queryKey: botRequestsQuery(botId).queryKey,
-      }),
+      call<BotRequest>(`${botRequestPath(botId, requestId)}/decline`, "POST"),
+    onSuccess: refresh,
+    onError: refresh,
   });
 
-  if (live.status !== "pending")
-    return (
-      <SettledCard
-        icon={UserGroupIcon}
-        title={live.proposal.name}
-        outcome={live.status === "approved" ? "Approved" : "Declined"}
-        action={
-          live.createdAgentId ? (
-            <Button
-              render={
-                <Link
-                  to="/bots/$botId"
-                  params={{ botId: live.createdAgentId }}
-                />
-              }
-              size="xs"
-              variant="outline"
-            >
-              Open chat
-            </Button>
-          ) : undefined
-        }
-      />
-    );
+  return { approve, decline };
+}
+
+function BotPendingCard({
+  live,
+  requestId,
+  open,
+  setOpen,
+  proposalValid,
+  setProposalValid,
+  onApprove,
+  onDecline,
+  approvePending,
+  declinePending,
+  approveError,
+  declineError,
+}: {
+  live: BotRequest;
+  requestId: string;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+  proposalValid: boolean;
+  setProposalValid: (valid: boolean) => void;
+  onApprove: (proposal?: BotInput) => void;
+  onDecline: () => void;
+  approvePending: boolean;
+  declinePending: boolean;
+  approveError: string;
+  declineError: string;
+}) {
+  const servers = useQuery(mcpServersQuery);
+
+  const serverNames = new Map(
+    (servers.data ?? []).map((server) => [server.id, server.name]),
+  );
 
   return (
     <div className="flex w-full max-w-sm flex-col gap-3 rounded-xl border p-4">
@@ -967,15 +1123,15 @@ function BotRequestCard({
         {live.proposal.description}
       </p>
       <BotRequestBadges proposal={live.proposal} serverNames={serverNames} />
-      {approve.isError || decline.isError ? (
+      {(approveError || declineError) && (
         <p className="text-xs text-destructive">
-          {(approve.error ?? decline.error)?.message}
+          {approveError || declineError}
         </p>
-      ) : null}
+      )}
       <BotRequestActions
-        onDecline={() => decline.mutate()}
-        onApprove={() => approve.mutate()}
-        busy={approve.isPending || decline.isPending}
+        onDecline={onDecline}
+        onApprove={() => onApprove()}
+        busy={approvePending || declinePending}
       />
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent className="overflow-y-auto">
@@ -986,14 +1142,14 @@ function BotRequestCard({
             </SheetDescription>
           </SheetHeader>
           <BotRequestEditor
-            requestId={request.id}
-            // SAFETY: Server bot requests store proposals decoded from agentInput.
+            requestId={requestId}
             proposal={live.proposal}
-            error={approve.isError ? approve.error.message : ""}
-            pending={approve.isPending}
+            error={approveError}
+            pending={approvePending}
             valid={proposalValid}
             onValidityChange={setProposalValid}
-            onSubmit={(proposal) => approve.mutate(proposal)}
+            // SAFETY: BotFields validates and emits the API bot input shape.
+            onSubmit={onApprove}
           />
         </SheetContent>
       </Sheet>
