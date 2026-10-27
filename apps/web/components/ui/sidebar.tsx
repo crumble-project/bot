@@ -162,6 +162,9 @@ function Sidebar({
   collapsible?: "offcanvas" | "icon" | "none";
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  // The trigger opens the sheet programmatically, so Base UI can't tell it was a
+  // tap and would focus the search field, raising the keyboard on phones.
+  const sheet = React.useRef<HTMLDivElement>(null);
 
   if (collapsible === "none") {
     return (
@@ -186,6 +189,8 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
+          ref={sheet}
+          initialFocus={sheet}
           className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
           style={
             {
@@ -198,7 +203,9 @@ function Sidebar({
             <SheetTitle>Sidebar</SheetTitle>
             <SheetDescription>Displays the mobile sidebar.</SheetDescription>
           </SheetHeader>
-          <div className="flex h-full w-full flex-col">{children}</div>
+          <div className="flex h-full w-full flex-col pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
+            {children}
+          </div>
         </SheetContent>
       </Sheet>
     );

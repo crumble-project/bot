@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Improve the web app on iPhone when installed to the home screen: pages no longer stack an extra header row above their own, the sidebar no longer focuses Search when it opens, the status bar matches the open sidebar, and the message box clears the home indicator.
+- Fix emoji reactions being cut off below chat bubbles, and long setting descriptions pushing badges out of their card.
 - Show bot request decisions as centered notices in the chat.
 - Show newly approved bots in the sidebar without reloading the page.
 - Fix Fallow Code Scanning uploads by assigning each SARIF run a distinct category before uploading. PR comments and audit gating remain enabled; fork pull requests skip the upload.

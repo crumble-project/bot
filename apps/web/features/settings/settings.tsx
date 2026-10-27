@@ -39,7 +39,11 @@ import { authClient } from "@/lib/auth-client";
 import { clearUserData } from "@/lib/api";
 import { clearLiveStreams, notifications } from "@/lib/live";
 import { LoginDialog, refreshProviders } from "./provider-login";
-import { Section, WorkspacePage } from "@/components/workspace";
+import {
+  MobileSidebarTrigger,
+  Section,
+  WorkspacePage,
+} from "@/components/workspace";
 
 const SECTIONS = [
   { to: "/settings/general", label: "General", icon: SlidersHorizontalIcon },
@@ -58,6 +62,7 @@ export function SettingsLayout() {
         aria-label="Settings"
         className="flex shrink-0 gap-1 overflow-x-auto border-b p-2 md:w-52 md:flex-col md:border-r md:border-b-0 md:p-3"
       >
+        <MobileSidebarTrigger className="ml-0" />
         <h2 className="hidden px-2 pt-1 pb-2 font-heading font-semibold md:block">
           Settings
         </h2>
@@ -74,7 +79,10 @@ export function SettingsLayout() {
           </Button>
         ))}
       </nav>
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div
+        data-slot="settings-page"
+        className="flex min-h-0 min-w-0 flex-1 flex-col"
+      >
         <Outlet />
       </div>
     </div>
@@ -170,9 +178,11 @@ export function GeneralSettings() {
         </Field>
         {features.map((feature) => (
           <Field key={feature.name} orientation="horizontal" className="p-3">
-            <FieldContent>
+            <FieldContent className="min-w-0">
               <FieldLabel>{feature.name}</FieldLabel>
-              <FieldDescription>{feature.help}</FieldDescription>
+              <FieldDescription className="wrap-break-word">
+                {feature.help}
+              </FieldDescription>
             </FieldContent>
             {capabilities.isPending ? (
               <Skeleton className="h-5 w-16" />
