@@ -68,6 +68,7 @@ import {
 import { BotWorkspaces } from "../workspaces/workspace";
 import { desktopKeepAwake } from "../bot-desktop/keep-awake";
 import { AgentRepository } from "../bots/agent-repository";
+import { BotRequests, botRequestTools } from "../bot-requests/bot-requests";
 
 export type TenantOptions = {
   dataDir: string;
@@ -234,6 +235,7 @@ function accountLayer(
   );
 
   const schedules = BotSchedules.layer;
+  const botRequests = BotRequests.layer;
 
   const push = PushDelivery.pipe(Layer.provideMerge(Push.layer(dataDir)));
 
@@ -244,12 +246,14 @@ function accountLayer(
     jobTools,
     coordinationTools,
     scheduleTools,
+    botRequestTools,
     groupLookupTools,
     historyTools,
     desktopKeepAwake,
     push,
   ).pipe(
     Layer.provideMerge(schedules),
+    Layer.provideMerge(botRequests),
     Layer.provideMerge(Layer.mergeAll(scheduler, groups, activity)),
     Layer.provideMerge(ScriptRuns.layer),
     Layer.provideMerge(bots),
@@ -353,6 +357,7 @@ export async function createTenant(
             providerAuth: providerSignInsAccess(run),
             oauthClient,
             credentials: credentialsAccess(run),
+            botRequests: yield* BotRequests,
           },
           run,
         );

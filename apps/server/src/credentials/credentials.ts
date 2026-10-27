@@ -58,6 +58,10 @@ export class Credentials extends Context.Service<
       agentId: string,
       name: string,
     ) => Effect.Effect<void, AppError>;
+    readonly decline: (
+      agentId: string,
+      name: string,
+    ) => Effect.Effect<void, AppError>;
     readonly uses: (
       agentId: string,
       name: string,
@@ -179,6 +183,24 @@ export class Credentials extends Context.Service<
         );
       });
 
+      const decline = Effect.fn("Credentials.decline")(function* (
+        agentId: string,
+        name: string,
+      ) {
+        if (!(yield* repository.deleteRequest(agentId, name)))
+          return yield* Effect.fail(
+            new Conflict({
+              message: "Credential request has already been answered",
+            }),
+          );
+
+        yield* notify(
+          agentId,
+          name,
+          `The owner declined your request for credential ${name}.`,
+        );
+      });
+
       const prune = Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
 
@@ -223,6 +245,7 @@ export class Credentials extends Context.Service<
         request,
         save,
         delete: remove,
+        decline,
         uses,
         env,
         grants: repository.grants,
@@ -246,6 +269,7 @@ export type CredentialsAccess = {
     input: CredentialSaveInput,
   ): Promise<AgentCredential>;
   delete(agentId: string, name: string): Promise<void>;
+  decline(agentId: string, name: string): Promise<void>;
   uses(
     agentId: string,
     name: string,
@@ -273,6 +297,8 @@ export function credentialsAccess(
       runtime.runPromise(credentials.save(agentId, name, input)),
     delete: (agentId, name) =>
       runtime.runPromise(credentials.delete(agentId, name)),
+    decline: (agentId, name) =>
+      runtime.runPromise(credentials.decline(agentId, name)),
     uses: (agentId, name, options) =>
       runtime.runSync(credentials.uses(agentId, name, options)),
     env: (agentId) => runtime.runSync(credentials.env(agentId)),

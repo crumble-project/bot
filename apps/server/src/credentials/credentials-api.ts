@@ -34,6 +34,12 @@ export function registerCredentialRoutes(options: CredentialRoutesOptions) {
 
     return c.body(null, 204);
   });
+  register(routes.declineAgentCredential, async (c) => {
+    service.agent(c.req.param("id"));
+    await credentials.decline(c.req.param("id"), c.req.param("name"));
+
+    return c.body(null, 204);
+  });
   register(routes.agentCredentialUses, (c) => {
     service.agent(c.req.param("id"));
     const query = credentialUsesInput.parse(c.req.query());

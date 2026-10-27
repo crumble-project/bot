@@ -20,6 +20,7 @@ Every bot can [schedule tasks](/concepts/schedules-and-integrations#scheduled-ta
 | **Coding**       | Start coding jobs that edit files and run commands in its workspace. See [Workspaces and jobs](/concepts/workspaces).                      |
 | **Bot desktop**  | Use a graphical desktop with a browser in its workspace. See [Workspaces and jobs](/concepts/workspaces).                                  |
 | **Integrations** | Use tools from MCP servers you connect. See [MCP integrations](/concepts/schedules-and-integrations#mcp-integrations).                     |
+| **Create bots**  | Propose new bots for your approval in the bot chat. You can edit, approve, or decline each request.                                        |
 
 Coding and bot desktop also need the server to support workspaces. See [Set up workspaces](/self-hosting/workspaces).
 

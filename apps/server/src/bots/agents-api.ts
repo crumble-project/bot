@@ -6,7 +6,7 @@ import type { McpIntegrations } from "../integrations/integrations";
 import { signOut, type SecretStorage } from "../integrations/mcp-oauth";
 import { McpServerRepository } from "../integrations/mcp-server-repository";
 import type { CoreServices } from "../shared/core-layer";
-import { agentInput } from "../shared/domain";
+import { agentInput, type AgentInput } from "../shared/domain";
 import { InvalidInput } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import { AgentRepository } from "./agent-repository";
@@ -29,21 +29,38 @@ type AgentRoutesOptions = {
 };
 
 /** A bot may use shared servers and its own, never another bot's. */
-const checkServers = (
+export const checkServers = (
   exec: Exec,
   agentId: string | null,
   serverIds: string[],
+  requireExisting = false,
 ) => {
   for (const serverId of serverIds) {
-    const owner = exec(
-      McpServerRepository.use((r) => r.get(serverId)),
-    )?.agentId;
+    const server = exec(McpServerRepository.use((r) => r.get(serverId)));
+
+    if (!server && requireExisting)
+      throw new InvalidInput({ message: "That MCP server does not exist" });
+
+    if (!server) continue;
+
+    const owner = server.agentId;
 
     if (owner && owner !== agentId)
       throw new InvalidInput({
         message: "That MCP server belongs to another bot",
       });
   }
+};
+
+export const validateAgentProposal = (
+  exec: Exec,
+  provider: { parse(value: string): string },
+  input: AgentInput,
+) => {
+  provider.parse(input.provider);
+  checkServers(exec, null, input.mcpServers, true);
+
+  return input;
 };
 
 /** The owner's view of every bot, and the editing of a bot's own configuration. */
@@ -60,9 +77,11 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
     ),
   );
   register(routes.createAgent, async (c) => {
-    const input = agentInput.parse(await c.req.json());
-    options.provider.parse(input.provider);
-    checkServers(exec, null, input.mcpServers);
+    const input = validateAgentProposal(
+      exec,
+      options.provider,
+      agentInput.parse(await c.req.json()),
+    );
 
     return c.json(exec(AgentRepository.use((r) => r.create(input))), 201);
   });

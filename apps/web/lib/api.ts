@@ -13,6 +13,7 @@ import type {
   desktopControlResponse,
   desktopJobsResponse,
   desktopViewerResponse,
+  botRequestResponse,
   groupChatResponse,
   groupChatSnapshotResponse,
   historyResponse,
@@ -55,6 +56,8 @@ export type Credential = Credentials["credentials"][number];
 export type CredentialRequest = Credentials["requests"][number];
 
 export type CredentialUse = z.infer<typeof credentialUseResponse>;
+
+export type BotRequest = z.infer<typeof botRequestResponse>;
 
 export type Change = z.infer<typeof learnedChangeResponse>;
 
@@ -267,6 +270,16 @@ export const credentialsQuery = (id: string) =>
     queryFn: ({ signal }) =>
       api<Credentials>(`${agentPath(id)}/credentials`, { signal }),
   });
+
+export const botRequestsQuery = (id: string) =>
+  queryOptions({
+    queryKey: ["bot-requests", id],
+    queryFn: ({ signal }) =>
+      api<BotRequest[]>(`${agentPath(id)}/bot-requests`, { signal }),
+  });
+
+export const botRequestPath = (id: string, requestId: string) =>
+  `${agentPath(id)}/bot-requests/${encodeURIComponent(requestId)}`;
 
 export const credentialPath = (id: string, name: string) =>
   `${agentPath(id)}/credentials/${encodeURIComponent(name)}`;

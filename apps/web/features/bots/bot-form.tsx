@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -72,7 +72,7 @@ import {
   levelsOf,
 } from "./reasoning";
 
-const CAPABILITIES = [
+export const CAPABILITIES = [
   { tool: "memory", label: "Memory", help: "Remembers facts across chats." },
   {
     tool: "delegate",
@@ -88,6 +88,11 @@ const CAPABILITIES = [
     tool: "desktop",
     label: "Bot desktop",
     help: "Runs desktop jobs on its own computer.",
+  },
+  {
+    tool: "create_bots",
+    label: "Create bots",
+    help: "Asks you to approve new bots.",
   },
 ] as const;
 
@@ -871,111 +876,238 @@ function botInput(
   };
 }
 
+function BotSettingsLinks({ bot }: { bot: Bot | undefined }) {
+  return (
+    <>
+      <Link
+        to="/settings/skills"
+        className="flex items-center justify-between gap-4 p-3 text-sm transition-colors hover:bg-muted/50"
+      >
+        <span className="font-medium">Skills</span>
+        <span className="flex items-center gap-1 text-muted-foreground">
+          Manage in Settings{" "}
+          <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
+        </span>
+      </Link>
+      {bot && (
+        <Link
+          to="/bots/$botId/credentials"
+          params={{ botId: bot.id }}
+          className="flex items-center justify-between gap-4 p-3 text-sm transition-colors hover:bg-muted/50"
+        >
+          <span className="font-medium">Credentials</span>
+          <span className="flex items-center gap-1 text-muted-foreground">
+            For coding jobs{" "}
+            <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
+          </span>
+        </Link>
+      )}
+    </>
+  );
+}
+
+function BotEnabledField({
+  formId,
+  enabled,
+  onEnabledChange,
+}: {
+  formId: string;
+  enabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+}) {
+  return (
+    <Field orientation="horizontal" className="p-3">
+      <FieldContent>
+        <FieldLabel htmlFor={`${formId}-enabled`}>Enabled</FieldLabel>
+        <FieldDescription>
+          A paused bot keeps its chat but takes no new work. Pausing stops what
+          it is doing.
+        </FieldDescription>
+      </FieldContent>
+      <Switch
+        id={`${formId}-enabled`}
+        checked={enabled}
+        onCheckedChange={onEnabledChange}
+      />
+    </Field>
+  );
+}
+
+function BotFieldSections({
+  bot,
+  formId,
+  details,
+  selection,
+  access,
+  providers,
+  capabilities,
+  servers,
+  includeSettingsLinks,
+  failed,
+}: {
+  bot: Bot | undefined;
+  formId: string;
+  details: ReturnType<typeof useBotDetails>;
+  selection: ReturnType<typeof useBotModel>;
+  access: ReturnType<typeof useBotAccess>;
+  providers: Provider[];
+  capabilities: Capabilities | undefined;
+  servers: McpServer[];
+  includeSettingsLinks: boolean;
+  failed: boolean;
+}) {
+  return (
+    <>
+      <BotIdentityFields bot={bot} details={details} failed={failed} />
+      <ModelSettings providers={providers} selection={selection} />
+      <Field>
+        <FieldLabel htmlFor={`${formId}-instructions`}>Instructions</FieldLabel>
+        <Textarea
+          id={`${formId}-instructions`}
+          className="min-h-32"
+          maxLength={32000}
+          value={details.instructions}
+          onChange={(event) => details.setInstructions(event.target.value)}
+        />
+      </Field>
+      <div className="flex flex-col divide-y rounded-lg border">
+        <CapabilitiesSection
+          bot={bot}
+          capabilities={capabilities}
+          providers={providers}
+          access={access}
+        />
+        <IntegrationsSection
+          bot={bot}
+          servers={servers}
+          value={access.mcpServers}
+          onChange={access.setMcpServers}
+        />
+        {includeSettingsLinks && <BotSettingsLinks bot={bot} />}
+        <BotEnabledField
+          formId={formId}
+          enabled={details.enabled}
+          onEnabledChange={details.setEnabled}
+        />
+      </div>
+    </>
+  );
+}
+
 /** Creates a bot, or edits `bot` when given. */
-export function BotForm({ bot }: { bot?: Bot }) {
+export function BotFields({
+  initial,
+  onSubmit,
+  formId,
+  botId,
+  failed = false,
+  includeSettingsLinks = false,
+  onValidityChange,
+}: {
+  initial?: BotInput | undefined;
+  onSubmit: (input: BotInput) => void;
+  formId: string;
+  botId?: string | undefined;
+  failed?: boolean;
+  includeSettingsLinks?: boolean;
+  onValidityChange?: (valid: boolean) => void;
+}) {
+  // SAFETY: The fields below only read properties shared by BotInput and Bot.
+  const bot = initial
+    ? ({ ...initial, id: botId ?? "", createdAt: "", updatedAt: "" } as Bot)
+    : undefined;
+
   const providers = useQuery(providersQuery).data ?? [];
+
   const capabilities = useQuery(capabilitiesQuery).data;
+
   const servers = useQuery(mcpServersQuery).data ?? [];
   const details = useBotDetails(bot);
-
-  const { name, enabled, setEnabled, instructions, setInstructions } = details;
   const selection = useBotModel(bot, providers);
-  const { provider, model } = selection;
   const access = useBotAccess(bot);
-  const { mcpServers } = access;
 
-  const { save, duplicate, remove } = useBotMutations(bot, () =>
-    botInput(bot, details, selection, access),
+  const invalid =
+    !details.name.trim() || !selection.provider || !selection.model.trim();
+
+  useEffect(() => {
+    onValidityChange?.(!invalid);
+  }, [invalid, onValidityChange]);
+
+  return (
+    <form
+      id={formId}
+      className="flex flex-col gap-8"
+      onSubmit={(event) => {
+        event.preventDefault();
+
+        if (!invalid) onSubmit(botInput(bot, details, selection, access));
+      }}
+    >
+      <BotFieldSections
+        bot={bot}
+        formId={formId}
+        details={details}
+        selection={selection}
+        access={access}
+        providers={providers}
+        capabilities={capabilities}
+        servers={servers}
+        includeSettingsLinks={includeSettingsLinks}
+        failed={failed}
+      />
+    </form>
   );
+}
 
-  const invalid = !name.trim() || !provider || !model.trim();
+export function BotForm({ bot }: { bot?: Bot }) {
+  const inputRef = useRef<BotInput | undefined>(undefined);
+  const [valid, setValid] = useState(false);
+
+  const { save, duplicate, remove } = useBotMutations(bot, () => {
+    if (!inputRef.current) throw new Error("Bot form was not submitted");
+
+    return inputRef.current;
+  });
 
   return (
     <WorkspacePage
       title={bot ? `Edit ${bot.name}` : "New bot"}
-      actions={
-        <BotFormActions bot={bot} disabled={invalid || save.isPending} />
-      }
+      actions={<BotFormActions bot={bot} disabled={!valid || save.isPending} />}
     >
-      <form
-        id="bot-form"
-        className="flex flex-col gap-8"
-        onSubmit={(event) => {
-          event.preventDefault();
-
-          if (!invalid) save.mutate();
+      <BotFields
+        formId="bot-form"
+        initial={
+          bot
+            ? {
+                name: bot.name,
+                description: bot.description,
+                instructions: bot.instructions,
+                provider: bot.provider,
+                model: bot.model,
+                enabled: bot.enabled,
+                tools: bot.tools,
+                mcpServers: bot.mcpServers,
+                ...(bot.avatar !== undefined && { avatar: bot.avatar }),
+                ...(bot.inference !== undefined && {
+                  inference: bot.inference,
+                }),
+                ...(bot.desktopModel !== undefined && {
+                  desktopModel: bot.desktopModel,
+                }),
+              }
+            : undefined
+        }
+        botId={bot?.id}
+        failed={save.isError}
+        includeSettingsLinks
+        onValidityChange={setValid}
+        onSubmit={(input) => {
+          inputRef.current = input;
+          save.mutate();
         }}
-      >
-        <BotIdentityFields bot={bot} details={details} failed={save.isError} />
-
-        <ModelSettings providers={providers} selection={selection} />
-
-        <Field>
-          <FieldLabel htmlFor="instructions">Instructions</FieldLabel>
-          <Textarea
-            id="instructions"
-            className="min-h-32"
-            maxLength={32000}
-            value={instructions}
-            onChange={(event) => setInstructions(event.target.value)}
-          />
-        </Field>
-
-        <div className="flex flex-col divide-y rounded-lg border">
-          <CapabilitiesSection
-            bot={bot}
-            capabilities={capabilities}
-            providers={providers}
-            access={access}
-          />
-          <IntegrationsSection
-            bot={bot}
-            servers={servers}
-            value={mcpServers}
-            onChange={access.setMcpServers}
-          />
-          <Link
-            to="/settings/skills"
-            className="flex items-center justify-between gap-4 p-3 text-sm transition-colors hover:bg-muted/50"
-          >
-            <span className="font-medium">Skills</span>
-            <span className="flex items-center gap-1 text-muted-foreground">
-              Manage in Settings
-              <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
-            </span>
-          </Link>
-          {bot && (
-            <Link
-              to="/bots/$botId/credentials"
-              params={{ botId: bot.id }}
-              className="flex items-center justify-between gap-4 p-3 text-sm transition-colors hover:bg-muted/50"
-            >
-              <span className="font-medium">Credentials</span>
-              <span className="flex items-center gap-1 text-muted-foreground">
-                For coding jobs
-                <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
-              </span>
-            </Link>
-          )}
-          <Field orientation="horizontal" className="p-3">
-            <FieldContent>
-              <FieldLabel htmlFor="enabled">Enabled</FieldLabel>
-              <FieldDescription>
-                A paused bot keeps its chat but takes no new work. Pausing stops
-                what it is doing.
-              </FieldDescription>
-            </FieldContent>
-            <Switch
-              id="enabled"
-              checked={enabled}
-              onCheckedChange={setEnabled}
-            />
-          </Field>
-        </div>
-
-        {save.isError && <FieldError>{save.error.message}</FieldError>}
-        <BotManagementActions bot={bot} duplicate={duplicate} remove={remove} />
-      </form>
+      />
+      {save.isError && <FieldError>{save.error.message}</FieldError>}
+      <BotManagementActions bot={bot} duplicate={duplicate} remove={remove} />
     </WorkspacePage>
   );
 }

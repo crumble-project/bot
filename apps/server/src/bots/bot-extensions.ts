@@ -66,5 +66,6 @@ export const ExtensionPosition = {
   display: 60,
   reaction: 70,
   jobs: 80,
+  botRequests: 85,
   codemode: 90,
 } as const;
