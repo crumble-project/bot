@@ -13,6 +13,12 @@ An independently configured assistant with its own identity, memory, capabilitie
 
 Avoid: Persona, session.
 
+### Bot request
+
+A bot's proposal for a new bot, which the owner approves, edits, or declines in the bot chat. An approved bot is independent of the bot that asked for it.
+
+Avoid: Bot creation request.
+
 ### Bot chat
 
 The continuous direct-message exchange between a bot and its owner, including work the bot performs in the background.

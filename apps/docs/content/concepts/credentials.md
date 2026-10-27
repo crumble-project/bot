@@ -17,4 +17,6 @@ Every use is logged for 90 days.
 
 Open the bot's **Credentials** page from its chat and add the secret with the hosts it's for.
 
-A bot can also ask you for a credential when it needs one. The request shows up in the chat, and you answer it there.
+A bot can also ask you for a credential when it needs one. The request shows up as a card in the bot chat. Enter the value or decline the request there, or answer it from the bot's **Credentials** page in settings.
+
+The value never appears in the transcript, notices, or logs.

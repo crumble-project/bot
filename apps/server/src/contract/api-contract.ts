@@ -504,6 +504,49 @@ export const routes = {
     request: { params: id },
     responses: { 200: json(response.credentialsResponse) },
   }),
+  listBotRequests: define({
+    method: "get",
+    path: "/v1/agents/{id}/bot-requests",
+    operationId: "listBotRequests",
+    description:
+      "Lists bot requests, newest first, including their current approval status.",
+    request: { params: id },
+    responses: { 200: json(z.array(response.botRequestResponse)) },
+  }),
+  approveBotRequest: define({
+    method: "post",
+    path: "/v1/agents/{id}/bot-requests/{requestId}/approve",
+    operationId: "approveBotRequest",
+    description:
+      "Approves a pending bot request, optionally saving an edited proposal and creating the new bot.",
+    request: {
+      params: id.extend({ requestId: z.string() }),
+      body: {
+        required: false,
+        content: {
+          "application/json": {
+            schema: z.object({ proposal: agentInput.optional() }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(
+        z.object({
+          request: response.botRequestResponse,
+          agent: response.agentResponse,
+        }),
+      ),
+    },
+  }),
+  declineBotRequest: define({
+    method: "post",
+    path: "/v1/agents/{id}/bot-requests/{requestId}/decline",
+    operationId: "declineBotRequest",
+    description: "Declines a pending bot request.",
+    request: { params: id.extend({ requestId: z.string() }) },
+    responses: { 200: json(response.botRequestResponse) },
+  }),
   saveAgentCredential: define({
     method: "put",
     path: "/v1/agents/{id}/credentials/{name}",
@@ -519,6 +562,15 @@ export const routes = {
     operationId: "deleteAgentCredential",
     description:
       "Deletes a credential and its use records, or declines a request for one, which starts a bot turn with a notice.",
+    request: { params: credentialParams },
+    responses: { 204: empty },
+  }),
+  declineAgentCredential: define({
+    method: "post",
+    path: "/v1/agents/{id}/credentials/{name}/decline",
+    operationId: "declineAgentCredential",
+    description:
+      "Declines a pending credential request without changing a saved credential.",
     request: { params: credentialParams },
     responses: { 204: empty },
   }),
@@ -910,7 +962,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "3.2.0",
+      version: "3.3.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },

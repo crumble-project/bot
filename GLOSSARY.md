@@ -10,6 +10,10 @@ This is the canonical glossary for every Crumble repository. Other repositories 
 An independently configured assistant with its own identity, memory, capabilities, and responsibilities.
 _Avoid_: Persona, session
 
+**Bot request**:
+A bot's proposal for a new bot, which the owner approves, edits, or declines in the bot chat. An approved bot is independent of the bot that asked for it.
+_Avoid_: Bot creation request
+
 **Bot chat**:
 The continuous direct-message exchange between a bot and its owner, including work the bot performs in the background.
 _Avoid_: Conversation session, new chat

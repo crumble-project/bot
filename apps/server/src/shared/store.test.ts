@@ -464,7 +464,7 @@ describe("Store", () => {
 });
 
 describe("Store memory sources", () => {
-  test("keeps a memory's source and reports older memories without one", () => {
+  test("keeps a memory's source and reports older memories without one", async () => {
     const dir = make();
     const first = new Store(dir);
     const agent = first.createAgent(input);
@@ -481,6 +481,7 @@ describe("Store memory sources", () => {
     const db = new Database(join(dir, "store.sqlite"));
     // A server before Drizzle had no migrations table.
     db.run(`DROP TABLE __drizzle_migrations;
+      DROP TABLE bot_requests;
       DROP TABLE script_runs;
       ALTER TABLE schedules DROP COLUMN kind;
       ALTER TABLE schedules DROP COLUMN command;
@@ -488,6 +489,13 @@ describe("Store memory sources", () => {
       ALTER TABLE schedules DROP COLUMN notify;`);
     db.run("ALTER TABLE memories DROP COLUMN source");
     db.close();
+
+    await Effect.runPromise(
+      migrateFile(join(dir, "store.sqlite"), migrationsFolder("store"), {
+        table: "agents",
+        upgrade: upgradeLegacyStore,
+      }),
+    );
 
     const upgraded = new Store(dir);
     expect(upgraded.getMemory(sourced.id)?.source).toBeNull();
@@ -587,6 +595,7 @@ describe("Store group chats", () => {
     const db = new Database(join(dir, "store.sqlite"));
     // A server before Drizzle had no migrations table.
     db.run(`DROP TABLE __drizzle_migrations;
+      DROP TABLE bot_requests;
       DROP TABLE script_runs;
       ALTER TABLE schedules DROP COLUMN kind;
       ALTER TABLE schedules DROP COLUMN command;

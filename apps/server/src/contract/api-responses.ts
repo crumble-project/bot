@@ -1,5 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { botCommunication } from "../bots/transcript";
+import { agentInput } from "../shared/domain";
 
 const strings = z.array(z.string());
 
@@ -396,6 +397,19 @@ export const credentialUseResponse = z
     status: z.number().int().nullable(),
   })
   .openapi("CredentialUse");
+
+export const botRequestResponse = z
+  .object({
+    id: z.string(),
+    agentId: z.string(),
+    proposal: agentInput,
+    reason: z.string(),
+    status: z.enum(["pending", "approved", "declined"]),
+    createdAgentId: z.string().nullable(),
+    requestedAt: z.string(),
+    decidedAt: z.string().nullable(),
+  })
+  .openapi("BotRequest");
 
 export const memoryResponse = z
   .object({

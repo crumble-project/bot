@@ -88,6 +88,17 @@ export type Agent = Omit<AgentInput, "desktopModel" | "reviewModel"> & {
   updatedAt: string;
 };
 
+export type BotRequest = {
+  id: string;
+  agentId: string;
+  proposal: AgentInput;
+  reason: string;
+  status: "pending" | "approved" | "declined";
+  createdAgentId: string | null;
+  requestedAt: string;
+  decidedAt: string | null;
+};
+
 export type Conversation = {
   id: string;
   agentId: string;

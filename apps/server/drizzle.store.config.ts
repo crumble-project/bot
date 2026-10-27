@@ -7,6 +7,7 @@ export default defineConfig({
     "./src/bots/schema.ts",
     "./src/bots/execution-schema.ts",
     "./src/bot-desktop/schema.ts",
+    "./src/bot-requests/schema.ts",
     "./src/credentials/schema.ts",
     "./src/group-chats/schema.ts",
     "./src/integrations/schema.ts",

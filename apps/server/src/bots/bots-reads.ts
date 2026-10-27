@@ -34,6 +34,8 @@ export const botsOrigin = (context: BotsContext) => {
       if (prefix === "credential" && subject)
         return { kind: "credential", name: subject };
 
+      if (prefix === "bot-request" && subject) return { kind: "bot_request" };
+
       if (prefix === "delegate" && subject) {
         const source = yield* agents.get(subject);
 

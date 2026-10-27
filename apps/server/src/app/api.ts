@@ -18,6 +18,8 @@ import {
 } from "../bot-desktop/desktop-control";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import { registerCredentialRoutes } from "../credentials/credentials-api";
+import { registerBotRequestRoutes } from "../bot-requests/bot-requests-api";
+import type { BotRequests } from "../bot-requests/bot-requests";
 import {
   credentialsAccess,
   type CredentialsAccess,
@@ -96,6 +98,7 @@ type ApiOptions = {
   externalAuth?: ReadonlyMap<string, () => Promise<ExternalAuth>>;
   /** The bots' credentials; API-only fixtures get their own. */
   credentials?: CredentialsAccess;
+  botRequests?: BotRequests["Service"];
 };
 
 /** The register function that keeps merge-before-validation PATCH semantics and the existing JSON error handling. */
@@ -241,6 +244,9 @@ export function createAPI(
   registerBotActivityRoutes(api);
   registerGroupChatRoutes(api);
   registerCredentialRoutes(api);
+
+  if (options.botRequests)
+    registerBotRequestRoutes({ ...api, botRequests: options.botRequests });
   registerMemoryRoutes(api);
   registerSkillRoutes(api);
   registerScheduleRoutes(api);
