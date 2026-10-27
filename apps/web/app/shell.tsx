@@ -190,7 +190,7 @@ export function Shell() {
           <SettingsFooter />
         </Sidebar>
         <SidebarThemeColor />
-        <SidebarInset className="group/inset h-dvh min-w-0 overflow-hidden md:h-[calc(100dvh-1rem)] md:ring-1 md:ring-sidebar-border">
+        <SidebarInset className="group/inset h-dvh min-w-0 overflow-hidden pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:h-[calc(100dvh-1rem)] md:ring-1 md:ring-sidebar-border">
           <header className="flex h-12 shrink-0 items-center px-2 group-has-[[data-page-trigger]]/inset:hidden md:hidden">
             <SidebarTrigger className="size-9" />
           </header>
