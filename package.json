@@ -21,7 +21,7 @@
     "dev": "bun --watch apps/server/src/app/server.ts",
     "start": "bun apps/server/src/app/server.ts",
     "test": "bun test --parallel",
-    "typecheck": "tsc --noEmit -p apps/server && tsc --noEmit -p apps/web",
+    "typecheck": "bun check -p apps/server && bun check -p apps/web",
     "lint": "oxlint --deny-warnings",
     "format": "bun fmt apps",
     "format:check": "bun fmt --check apps",
