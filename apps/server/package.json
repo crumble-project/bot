@@ -12,6 +12,7 @@
     "db:generate:push": "drizzle-kit generate --config drizzle.push.config.ts"
   },
   "dependencies": {
+    "@better-auth/passkey": "1.7.14",
     "@crumble/web": "workspace:*",
     "@earendil-works/chord": "1.4.0",
     "@earendil-works/pi-ai": "1.4.0",
@@ -25,7 +26,7 @@
     "@novnc/novnc": "1.7.0",
     "@tanstack/charts": "1.1.0",
     "asn1js": "4.0.0",
-    "better-auth": "^1.7.12",
+    "better-auth": "^1.7.14",
     "cron-parser": "5.10.2",
     "d3-scale": "4.0.2",
     "drizzle-orm": "1.0.0-rc.5",

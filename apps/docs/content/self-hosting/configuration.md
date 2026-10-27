@@ -14,6 +14,10 @@ The server listens on `127.0.0.1` and has open registration, so anyone who can r
 1. Put the server behind a reverse proxy that serves HTTPS.
 2. Set `CRUMBLE_PUBLIC_URL` to the public `https://` address. Sign-in fails through a proxy or another hostname without it.
 
+## Passkeys
+
+Passkeys belong to the hostname of the server's address: `CRUMBLE_PUBLIC_URL`, then `BETTER_AUTH_URL`, then `localhost` when the server listens on loopback. Browsers don't offer passkeys at an IP address, or at a plain `http://` address other than `localhost`. Changing the hostname later invalidates every passkey, and accounts sign in with their passwords until they add new ones.
+
 ## Environment variables
 
 | Variable                          | Default            | Purpose                                                                                           |
