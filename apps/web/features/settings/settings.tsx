@@ -35,13 +35,14 @@ import {
   providersQuery,
   send,
 } from "@/lib/api";
-import { authClient } from "@/lib/auth-client";
-import { clearUserData } from "@/lib/api";
+import { authClient, passkeyDone, passkeysAvailable } from "@/lib/auth-client";
+import { clearUserData, queryClient } from "@/lib/api";
 import { clearLiveStreams, notifications } from "@/lib/live";
 import { LoginDialog, refreshProviders } from "./provider-login";
 import {
   MobileSidebarTrigger,
   Section,
+  SectionEmpty,
   WorkspacePage,
 } from "@/components/workspace";
 
@@ -123,6 +124,207 @@ function Notifications() {
   );
 }
 
+const passkeysQuery = {
+  queryKey: ["passkeys"],
+  queryFn: async () => {
+    const result = await authClient.passkey.listUserPasskeys();
+
+    if (result.error) throw new Error(result.error.message);
+
+    return result.data;
+  },
+};
+
+type Passkey = NonNullable<
+  Awaited<ReturnType<typeof passkeysQuery.queryFn>>
+>[number];
+
+function PasskeyRow({
+  passkey,
+  removing,
+  onRemove,
+}: {
+  passkey: Passkey;
+  removing: boolean;
+  onRemove: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState("");
+  const id = `passkey-${passkey.id}`;
+
+  const rename = useMutation({
+    mutationFn: async (next: string) => {
+      const result = await authClient.passkey.updatePasskey({
+        id: passkey.id,
+        name: next,
+      });
+
+      if (result.error) throw new Error(result.error.message);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: passkeysQuery.queryKey,
+      });
+      setEditing(false);
+    },
+  });
+
+  return (
+    <div className="flex flex-col gap-3 p-3">
+      {editing ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+
+            if (name.trim()) rename.mutate(name.trim());
+          }}
+        >
+          <Field data-invalid={rename.isError || undefined}>
+            <FieldLabel htmlFor={id} className="sr-only">
+              Passkey name
+            </FieldLabel>
+            <div className="flex gap-2">
+              <Input
+                id={id}
+                autoFocus
+                autoComplete="off"
+                maxLength={100}
+                placeholder="Passkey name"
+                aria-invalid={rename.isError || undefined}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
+              <Button type="submit" disabled={!name.trim() || rename.isPending}>
+                Save
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setEditing(false);
+                  rename.reset();
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </Field>
+        </form>
+      ) : (
+        <Field orientation="horizontal">
+          <FieldContent className="min-w-0">
+            <FieldLabel className="truncate">
+              {passkey.name || "Passkey"}
+            </FieldLabel>
+            <FieldDescription>
+              Added {new Date(passkey.createdAt).toLocaleDateString()}
+              {passkey.backedUp && " · Synced"}
+            </FieldDescription>
+          </FieldContent>
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setName(passkey.name ?? "");
+                setEditing(true);
+              }}
+            >
+              Rename
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={removing}
+              onClick={onRemove}
+            >
+              Remove
+            </Button>
+          </div>
+        </Field>
+      )}
+      {rename.isError && <FieldError>{rename.error.message}</FieldError>}
+    </div>
+  );
+}
+
+function Passkeys() {
+  const passkeys = useQuery({ ...passkeysQuery, enabled: passkeysAvailable });
+
+  const refresh = () =>
+    queryClient.invalidateQueries({ queryKey: passkeysQuery.queryKey });
+
+  const add = useMutation({
+    mutationFn: async () => {
+      passkeyDone(await authClient.passkey.addPasskey());
+    },
+    onSettled: refresh,
+  });
+
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      const result = await authClient.passkey.deletePasskey({ id });
+
+      if (result.error) throw new Error(result.error.message);
+    },
+    onSettled: refresh,
+  });
+
+  const error = add.error ?? remove.error ?? passkeys.error;
+
+  if (!passkeysAvailable)
+    return (
+      <Section title="Passkeys">
+        <SectionEmpty>
+          Passkeys need a secure address with a hostname, not an IP address.
+          Open Crumble at localhost, or set CRUMBLE_PUBLIC_URL on the server.
+        </SectionEmpty>
+      </Section>
+    );
+
+  return (
+    <Section
+      title="Passkeys"
+      footer={
+        <>
+          Passkeys belong to {location.hostname}. They stop working if the
+          server's address changes.
+        </>
+      }
+    >
+      {passkeys.isPending ? (
+        <Skeleton className="m-3 h-5 w-40" />
+      ) : passkeys.data?.length ? (
+        passkeys.data.map((passkey) => (
+          <PasskeyRow
+            key={passkey.id}
+            passkey={passkey}
+            removing={remove.isPending}
+            onRemove={() => remove.mutate(passkey.id)}
+          />
+        ))
+      ) : (
+        <SectionEmpty>
+          Sign in with your device's screen lock or a security key instead of a
+          password.
+        </SectionEmpty>
+      )}
+      <div className="flex flex-col gap-2 p-3">
+        <Button
+          variant="outline"
+          size="sm"
+          className="self-start"
+          disabled={add.isPending}
+          onClick={() => add.mutate()}
+        >
+          Add a passkey
+        </Button>
+        {error && <FieldError>{error.message}</FieldError>}
+      </div>
+    </Section>
+  );
+}
+
 export function GeneralSettings() {
   const capabilities = useQuery(capabilitiesQuery);
 
@@ -169,6 +371,7 @@ export function GeneralSettings() {
           </Button>
         </Field>
       </Section>
+      <Passkeys />
       <Section title="Server">
         <Field orientation="horizontal" className="p-3">
           <FieldContent>

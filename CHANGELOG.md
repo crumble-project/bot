@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add passkeys: after signing in with a password, add, rename, and remove passkeys in **Settings** > **General**, then sign in with it from the sign-in page or the browser's autofill. Passwords keep working. On a server with no configured address, passkeys use `localhost`, because browsers don't accept an IP address for them, and the server accepts sign-ins from `localhost` as well as `127.0.0.1`.
 - Improve the web app on iPhone when installed to the home screen: pages no longer stack an extra header row above their own, the sidebar no longer focuses Search when it opens, the status bar matches the open sidebar, and the message box clears the home indicator.
 - Fix emoji reactions being cut off below chat bubbles, and long setting descriptions pushing badges out of their card.
 - Show bot request decisions as centered notices in the chat.

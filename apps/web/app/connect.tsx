@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { clearUserData } from "@/lib/api";
-import { authClient } from "@/lib/auth-client";
+import { authClient, passkeyDone, passkeysAvailable } from "@/lib/auth-client";
 
 type Mode = "sign-in" | "sign-up";
 
@@ -19,14 +19,47 @@ const MODE_COPY = {
     switch: "Create an account",
     other: "sign-up",
     autoComplete: "current-password",
+    emailAutoComplete: passkeysAvailable ? "email webauthn" : "email",
   },
   "sign-up": {
     submit: "Create account",
     switch: "Already have an account? Sign in",
     other: "sign-in",
     autoComplete: "new-password",
+    emailAutoComplete: "email",
   },
 } as const;
+
+function enter() {
+  clearUserData();
+  window.location.assign("/ui/");
+}
+
+/** Signs in with a passkey: from the button, or from the browser's autofill on the email field. */
+function usePasskeySignIn(mode: Mode) {
+  const signIn = useMutation({
+    mutationFn: async () => passkeyDone(await authClient.signIn.passkey()),
+    onSuccess: (done) => done && enter(),
+  });
+
+  useEffect(() => {
+    if (mode !== "sign-in" || !passkeysAvailable) return;
+
+    void (async () => {
+      if (!(await PublicKeyCredential.isConditionalMediationAvailable?.()))
+        return;
+
+      try {
+        if (passkeyDone(await authClient.signIn.passkey({ autoFill: true })))
+          enter();
+      } catch {
+        // A failed autofill sign-in leaves the form for another try.
+      }
+    })();
+  }, [mode]);
+
+  return signIn;
+}
 
 function useConnect(
   mode: Mode,
@@ -43,10 +76,7 @@ function useConnect(
 
       if (result.error) throw new Error(result.error.message);
     },
-    onSuccess: async () => {
-      clearUserData();
-      window.location.assign("/ui/");
-    },
+    onSuccess: enter,
   });
 }
 
@@ -68,6 +98,8 @@ export function Connect() {
   const copy = MODE_COPY[mode];
 
   const connect = useConnect(mode, credentials);
+  const passkey = usePasskeySignIn(mode);
+  const error = connect.error ?? passkey.error;
 
   return (
     <form
@@ -96,7 +128,7 @@ export function Connect() {
             id="email"
             type="email"
             autoFocus
-            autoComplete="email"
+            autoComplete={copy.emailAutoComplete}
             aria-invalid={connect.isError || undefined}
             value={email}
             onChange={(event) => setEmail(event.target.value)}
@@ -112,7 +144,7 @@ export function Connect() {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
-          {connect.isError && <FieldError>{connect.error.message}</FieldError>}
+          {error && <FieldError>{error.message}</FieldError>}
         </Field>
         <Button
           type="submit"
@@ -120,12 +152,26 @@ export function Connect() {
         >
           {copy.submit}
         </Button>
+        {mode === "sign-in" && passkeysAvailable && (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={passkey.isPending}
+            onClick={() => {
+              connect.reset();
+              passkey.mutate();
+            }}
+          >
+            Sign in with a passkey
+          </Button>
+        )}
         <Button
           type="button"
           variant="ghost"
           onClick={() => {
             setMode(copy.other);
             connect.reset();
+            passkey.reset();
           }}
         >
           {copy.switch}
