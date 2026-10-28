@@ -8,8 +8,8 @@ import { Link } from "@tanstack/react-router";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowLeft02Icon,
-  ComputerIcon,
   RefreshIcon,
+  ZzzIcon,
 } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -201,14 +201,16 @@ export function DesktopPreview({ botId }: { botId: string }) {
 
   if (!live)
     return (
-      <Button
-        variant="outline"
-        className="aspect-video h-auto w-full flex-col gap-1.5 text-muted-foreground"
+      <button
+        type="button"
+        title="Wake the bot desktop"
+        className="flex aspect-video w-full cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border bg-black text-white/60 transition-colors hover:text-white/85 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
         onClick={() => setAsked(true)}
       >
-        <HugeiconsIcon icon={ComputerIcon} />
-        Show desktop
-      </Button>
+        <HugeiconsIcon icon={ZzzIcon} />
+        <span className="text-sm">Sleeping</span>
+        <span className="text-xs text-white/40">Click to wake</span>
+      </button>
     );
 
   return (
