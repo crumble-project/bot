@@ -6,13 +6,12 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  Delete02Icon,
-  PencilEdit01Icon,
-  PlayIcon,
-  PlusSignIcon,
-} from "@hugeicons/core-free-icons";
+  IconTrash,
+  IconPencil,
+  IconPlayerPlay,
+  IconPlus,
+} from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -254,7 +253,7 @@ function TasksEmpty({
       {firstBot && (
         <EmptyContent>
           <Button onClick={onCreate}>
-            <HugeiconsIcon icon={PlusSignIcon} data-icon="inline-start" />
+            <IconPlus data-icon="inline-start" />
             New task
           </Button>
         </EmptyContent>
@@ -485,10 +484,10 @@ function TaskControls({
         disabled={!schedule.enabled || run.isPending}
         onClick={() => run.mutate()}
       >
-        <HugeiconsIcon icon={PlayIcon} />
+        <IconPlayerPlay />
       </Button>
       <Button variant="ghost" size="icon-sm" title="Edit" onClick={onEdit}>
-        <HugeiconsIcon icon={PencilEdit01Icon} />
+        <IconPencil />
       </Button>
       <ConfirmDelete
         title={`Delete ${schedule.name}?`}
@@ -496,7 +495,7 @@ function TaskControls({
         onConfirm={() => remove.mutate()}
         trigger={
           <Button variant="ghost" size="icon-sm" title="Delete">
-            <HugeiconsIcon icon={Delete02Icon} />
+            <IconTrash />
           </Button>
         }
       />

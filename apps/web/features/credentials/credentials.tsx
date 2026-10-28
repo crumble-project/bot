@@ -1,7 +1,6 @@
 import { type ReactNode, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { MoreHorizontalIcon } from "@hugeicons/core-free-icons";
+import { IconDots } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -311,7 +310,7 @@ function RowMenu({ children }: { children: ReactNode }) {
       <DropdownMenuTrigger
         render={
           <Button variant="ghost" size="icon-sm" title="More">
-            <HugeiconsIcon icon={MoreHorizontalIcon} />
+            <IconDots />
           </Button>
         }
       />

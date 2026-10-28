@@ -5,12 +5,7 @@ import {
   useQueries,
   useQuery,
 } from "@tanstack/react-query";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  Delete02Icon,
-  PencilEdit01Icon,
-  Search01Icon,
-} from "@hugeicons/core-free-icons";
+import { IconTrash, IconPencil, IconSearch } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -115,10 +110,7 @@ function MemoryFilters({
         </SelectContent>
       </Select>
       <div className="relative flex-1">
-        <HugeiconsIcon
-          icon={Search01Icon}
-          className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-        />
+        <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           aria-label="Search memories"
           placeholder="Search"
@@ -322,7 +314,7 @@ function MemorySection({
             title="Edit"
             onClick={() => onEdit(memory)}
           >
-            <HugeiconsIcon icon={PencilEdit01Icon} />
+            <IconPencil />
           </Button>
           <ConfirmDelete
             title="Delete this memory?"
@@ -330,7 +322,7 @@ function MemorySection({
             onConfirm={() => onDelete(memory)}
             trigger={
               <Button variant="ghost" size="icon-sm" title="Delete">
-                <HugeiconsIcon icon={Delete02Icon} />
+                <IconTrash />
               </Button>
             }
           />

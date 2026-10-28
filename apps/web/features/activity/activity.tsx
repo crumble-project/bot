@@ -5,12 +5,11 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  ArrowDown01Icon,
-  ArrowRight01Icon,
-  BrainIcon,
-} from "@hugeicons/core-free-icons";
+  IconChevronDown,
+  IconChevronRight,
+  IconBrain,
+} from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -378,7 +377,7 @@ function ActivityRow({
   bot?: Bot | undefined;
 }) {
   const [open, setOpen] = useState(false);
-  const Icon = open ? ArrowDown01Icon : ArrowRight01Icon;
+  const Icon = open ? IconChevronDown : IconChevronRight;
 
   return (
     <div className="flex flex-col gap-2 p-3">
@@ -387,7 +386,7 @@ function ActivityRow({
           <BotAvatar bot={bot} size={28} />
         ) : (
           <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <HugeiconsIcon icon={BrainIcon} className="size-4" />
+            <IconBrain className="size-4" />
           </span>
         )}
         <div className="flex min-w-0 flex-1 flex-col">
@@ -412,7 +411,7 @@ function ActivityRow({
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <HugeiconsIcon icon={Icon} className="size-3.5" />
+        <Icon className="size-3.5" />
         Details
       </button>
       {open &&

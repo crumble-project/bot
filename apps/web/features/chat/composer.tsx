@@ -7,15 +7,14 @@ import {
   useRef,
   useState,
 } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  ArrowUp02Icon,
-  Attachment01Icon,
-  Cancel01Icon,
-  File02Icon,
-  ReplyIcon,
-  StopIcon,
-} from "@hugeicons/core-free-icons";
+  IconArrowUp,
+  IconPaperclip,
+  IconX,
+  IconFileText,
+  IconArrowBackUp,
+  IconPlayerStop,
+} from "@tabler/icons-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -244,7 +243,7 @@ function ReplyBanner({
 
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
-      <HugeiconsIcon icon={ReplyIcon} className="size-3" />
+      <IconArrowBackUp className="size-3" />
       <span className="truncate">Replying to {replyingTo}</span>
       <Button
         type="button"
@@ -253,7 +252,7 @@ function ReplyBanner({
         title="Cancel reply"
         onClick={onCancel}
       >
-        <HugeiconsIcon icon={Cancel01Icon} />
+        <IconX />
       </Button>
     </div>
   );
@@ -279,7 +278,7 @@ function UploadChips({
               className="size-6 rounded object-cover"
             />
           ) : (
-            <HugeiconsIcon icon={File02Icon} data-icon="inline-start" />
+            <IconFileText data-icon="inline-start" />
           )}
           <span className="max-w-40 truncate">{upload.name}</span>
           <Button
@@ -289,7 +288,7 @@ function UploadChips({
             title={`Remove ${upload.name}`}
             onClick={() => onRemove(index)}
           >
-            <HugeiconsIcon icon={Cancel01Icon} />
+            <IconX />
           </Button>
         </Badge>
       ))}
@@ -359,7 +358,7 @@ function AttachControl({
         disabled={disabled || full}
         onClick={() => picker.current?.click()}
       >
-        <HugeiconsIcon icon={Attachment01Icon} />
+        <IconPaperclip />
       </Button>
     </>
   );
@@ -385,7 +384,7 @@ function SendControls({
           title="Stop"
           onClick={onStop}
         >
-          <HugeiconsIcon icon={StopIcon} />
+          <IconPlayerStop />
         </Button>
       )}
       {(!running || canSend) && (
@@ -396,7 +395,7 @@ function SendControls({
           title="Send"
           disabled={!canSend}
         >
-          <HugeiconsIcon icon={ArrowUp02Icon} />
+          <IconArrowUp />
         </Button>
       )}
     </>

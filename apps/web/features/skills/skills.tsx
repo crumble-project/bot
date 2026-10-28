@@ -4,13 +4,12 @@ import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  ArrowDown01Icon,
-  ArrowRight01Icon,
-  Delete02Icon,
-  PencilEdit01Icon,
-} from "@hugeicons/core-free-icons";
+  IconChevronDown,
+  IconChevronRight,
+  IconTrash,
+  IconPencil,
+} from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -110,7 +109,7 @@ function PersonalRow({
         body={skill.instructions}
       />
       <Button variant="ghost" size="icon-sm" title="Edit" onClick={onEdit}>
-        <HugeiconsIcon icon={PencilEdit01Icon} />
+        <IconPencil />
       </Button>
       <ConfirmDelete
         title={`Delete ${skill.name}?`}
@@ -118,7 +117,7 @@ function PersonalRow({
         onConfirm={onDelete}
         trigger={
           <Button variant="ghost" size="icon-sm" title="Delete">
-            <HugeiconsIcon icon={Delete02Icon} />
+            <IconTrash />
           </Button>
         }
       />
@@ -274,7 +273,7 @@ function Expandable({
   children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const Icon = open ? ArrowDown01Icon : ArrowRight01Icon;
+  const Icon = open ? IconChevronDown : IconChevronRight;
 
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-2">
@@ -284,10 +283,7 @@ function Expandable({
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <HugeiconsIcon
-          icon={Icon}
-          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-        />
+        <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <span className="flex min-w-0 flex-col">
           <span className="text-sm font-medium">{title}</span>
           <span className="text-xs text-muted-foreground">{subtitle}</span>
@@ -375,7 +371,7 @@ function SharedRow({
         )}
       </Expandable>
       <Button variant="ghost" size="icon-sm" title="Edit" onClick={onEdit}>
-        <HugeiconsIcon icon={PencilEdit01Icon} />
+        <IconPencil />
       </Button>
       <ConfirmDelete
         title={`Delete ${skill.name}?`}
@@ -383,7 +379,7 @@ function SharedRow({
         onConfirm={onDelete}
         trigger={
           <Button variant="ghost" size="icon-sm" title="Delete">
-            <HugeiconsIcon icon={Delete02Icon} />
+            <IconTrash />
           </Button>
         }
       />

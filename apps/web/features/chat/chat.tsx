@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  ComputerIcon,
-  PencilEdit01Icon,
-  SidebarRightIcon,
-} from "@hugeicons/core-free-icons";
+  IconDeviceDesktop,
+  IconPencil,
+  IconLayoutSidebarRight,
+} from "@tabler/icons-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { MessageScrollerItem } from "@/components/ui/message-scroller";
@@ -187,7 +186,7 @@ function ChatHeader({
             }
             nativeButton={false}
           >
-            <HugeiconsIcon icon={ComputerIcon} />
+            <IconDeviceDesktop />
           </Button>
         )}
         <Button
@@ -197,7 +196,7 @@ function ChatHeader({
           render={<Link to="/bots/$botId/edit" params={{ botId: bot.id }} />}
           nativeButton={false}
         >
-          <HugeiconsIcon icon={PencilEdit01Icon} />
+          <IconPencil />
         </Button>
         <Button
           variant={details ? "secondary" : "ghost"}
@@ -207,7 +206,7 @@ function ChatHeader({
           className="hidden lg:inline-flex"
           onClick={onToggleDetails}
         >
-          <HugeiconsIcon icon={SidebarRightIcon} />
+          <IconLayoutSidebarRight />
         </Button>
       </div>
     </header>

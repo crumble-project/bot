@@ -1,7 +1,6 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ComputerIcon, RefreshIcon } from "@hugeicons/core-free-icons";
+import { IconDeviceDesktop, IconRefresh } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -223,7 +222,7 @@ function JobActions({
   return (
     <div className="flex gap-2">
       <Button variant="outline" size="sm" onClick={onRefresh}>
-        <HugeiconsIcon icon={RefreshIcon} data-icon="inline-start" />
+        <IconRefresh data-icon="inline-start" />
         Refresh
       </Button>
       {kind === "desktop" && (
@@ -233,7 +232,7 @@ function JobActions({
           render={<Link to="/bots/$botId/desktop" params={{ botId }} />}
           nativeButton={false}
         >
-          <HugeiconsIcon icon={ComputerIcon} data-icon="inline-start" />
+          <IconDeviceDesktop data-icon="inline-start" />
           Open bot desktop
         </Button>
       )}

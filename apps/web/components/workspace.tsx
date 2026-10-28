@@ -1,6 +1,5 @@
 import type { ReactElement, ReactNode } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { PlusSignIcon, RefreshIcon } from "@hugeicons/core-free-icons";
+import { IconPlus, IconRefresh } from "@tabler/icons-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -69,8 +68,7 @@ export function WorkspacePage({
               disabled={refreshing}
               onClick={onRefresh}
             >
-              <HugeiconsIcon
-                icon={RefreshIcon}
+              <IconRefresh
                 className={refreshing ? "animate-spin" : undefined}
               />
             </Button>
@@ -83,7 +81,7 @@ export function WorkspacePage({
               disabled={newDisabled}
               onClick={onNew}
             >
-              <HugeiconsIcon icon={PlusSignIcon} />
+              <IconPlus />
             </Button>
           )}
           {actions}

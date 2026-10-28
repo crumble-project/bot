@@ -5,12 +5,7 @@ import {
   type UseMutationResult,
 } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  ArrowLeft02Icon,
-  RefreshIcon,
-  ZzzIcon,
-} from "@hugeicons/core-free-icons";
+import { IconArrowLeft, IconRefresh, IconZzz } from "@tabler/icons-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -96,7 +91,7 @@ function DesktopControls({
         disabled={viewer.isPending}
         onClick={onReconnect}
       >
-        <HugeiconsIcon icon={RefreshIcon} data-icon="inline-start" />
+        <IconRefresh data-icon="inline-start" />
         Reconnect
       </Button>
       <Button
@@ -139,7 +134,7 @@ export function BotDesktop({ botId }: { botId: string }) {
           render={<Link to="/bots/$botId" params={{ botId }} />}
           nativeButton={false}
         >
-          <HugeiconsIcon icon={ArrowLeft02Icon} />
+          <IconArrowLeft />
         </Button>
         <span className="truncate font-medium">
           {bot ? `${bot.name}'s desktop` : "Bot desktop"}
@@ -207,7 +202,7 @@ export function DesktopPreview({ botId }: { botId: string }) {
         className="flex aspect-video w-full cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border bg-black text-white/60 transition-colors hover:text-white/85 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
         onClick={() => setAsked(true)}
       >
-        <HugeiconsIcon icon={ZzzIcon} />
+        <IconZzz />
         <span className="text-sm">Sleeping</span>
         <span className="text-xs text-white/40">Click to wake</span>
       </button>

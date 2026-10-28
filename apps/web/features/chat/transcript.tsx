@@ -7,19 +7,19 @@ import {
 } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  ArrowRight01Icon,
-  ComputerIcon,
-  Copy01Icon,
-  File02Icon,
-  HammerIcon,
-  Key01Icon,
-  PencilEdit01Icon,
-  ReplyIcon,
-  Tick02Icon,
-  UserGroupIcon,
-} from "@hugeicons/core-free-icons";
+  IconChevronRight,
+  IconDeviceDesktop,
+  IconCopy,
+  IconFileText,
+  IconHammer,
+  IconKey,
+  IconPencil,
+  IconArrowBackUp,
+  IconCheck,
+  IconUsersGroup,
+  type TablerIcon,
+} from "@tabler/icons-react";
 import { Bubble, BubbleContent, BubbleReactions } from "@/components/ui/bubble";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -372,8 +372,7 @@ function CenteredDisclosure({
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <HugeiconsIcon
-          icon={ArrowRight01Icon}
+        <IconChevronRight
           className={cn("size-3 transition-transform", open && "rotate-90")}
         />
         {title}
@@ -427,7 +426,7 @@ export function Attachments({
           />
         ) : (
           <Badge key={index} variant="outline">
-            <HugeiconsIcon icon={File02Icon} data-icon="inline-start" />
+            <IconFileText data-icon="inline-start" />
             {attachment.name}
           </Badge>
         ),
@@ -461,7 +460,7 @@ function originContent(origin: NonNullable<Message["origin"]>) {
   if (origin.kind === "credential")
     return (
       <span className="flex items-center gap-1">
-        <HugeiconsIcon icon={Key01Icon} className="size-3" />
+        <IconKey className="size-3" />
         Credential · {origin.name}
       </span>
     );
@@ -469,7 +468,7 @@ function originContent(origin: NonNullable<Message["origin"]>) {
   if (origin.kind === "bot")
     return (
       <span className="flex items-center gap-1">
-        <HugeiconsIcon icon={UserGroupIcon} className="size-3" />
+        <IconUsersGroup className="size-3" />
         From {origin.name}
       </span>
     );
@@ -498,7 +497,7 @@ export function MessageActions({
           title="Reply"
           onClick={() => onReply(message)}
         >
-          <HugeiconsIcon icon={ReplyIcon} />
+          <IconArrowBackUp />
         </Button>
       )}
       <CopyButton text={message.content} />
@@ -530,12 +529,10 @@ function CopyButton({ text }: { text: string }) {
         void navigator.clipboard.writeText(text).then(() => setCopied(true))
       }
     >
-      <HugeiconsIcon
-        icon={Copy01Icon}
+      <IconCopy
         className={cn(ICON_SWAP, copied && "scale-25 opacity-0 blur-[4px]")}
       />
-      <HugeiconsIcon
-        icon={Tick02Icon}
+      <IconCheck
         className={cn(
           ICON_SWAP,
           "absolute",
@@ -664,7 +661,7 @@ function OwnerUploads({ uploads }: { uploads?: Upload[] | undefined }) {
           />
         ) : (
           <Badge key={index} variant="outline">
-            <HugeiconsIcon icon={File02Icon} data-icon="inline-start" />
+            <IconFileText data-icon="inline-start" />
             {upload.name}
           </Badge>
         ),
@@ -779,19 +776,19 @@ export function BotMessage({
 }
 
 function SettledCard({
-  icon,
+  icon: Icon,
   title,
   outcome,
   action,
 }: {
-  icon: typeof Key01Icon;
+  icon: TablerIcon;
   title: string;
   outcome: string;
   action?: ReactNode;
 }) {
   return (
     <div className="flex w-full max-w-sm items-center gap-3 rounded-xl border p-3">
-      <HugeiconsIcon icon={icon} className="size-4 text-muted-foreground" />
+      <Icon className="size-4 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate text-sm font-medium">
         {title}
       </span>
@@ -825,7 +822,7 @@ function CredentialRequestCard({
   if (!state.isSuccess)
     return (
       <SettledCard
-        icon={Key01Icon}
+        icon={IconKey}
         title={credential.name}
         outcome={state.isError ? "Unavailable" : "Loading…"}
       />
@@ -833,16 +830,12 @@ function CredentialRequestCard({
 
   if (!request && saved)
     return (
-      <SettledCard icon={Key01Icon} title={credential.name} outcome="Saved" />
+      <SettledCard icon={IconKey} title={credential.name} outcome="Saved" />
     );
 
   if (!request)
     return (
-      <SettledCard
-        icon={Key01Icon}
-        title={credential.name}
-        outcome="Declined"
-      />
+      <SettledCard icon={IconKey} title={credential.name} outcome="Declined" />
     );
 
   return (
@@ -938,10 +931,7 @@ function CredentialRequestHeader({
 }) {
   return (
     <div className="flex items-start gap-3">
-      <HugeiconsIcon
-        icon={Key01Icon}
-        className="mt-0.5 size-4 text-muted-foreground"
-      />
+      <IconKey className="mt-0.5 size-4 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium">{name}</div>
         <div className="flex flex-wrap gap-x-1 text-xs text-muted-foreground">
@@ -1023,7 +1013,7 @@ function BotRequestCard({
 function BotRequestSettled({ request }: { request: BotRequest }) {
   return (
     <SettledCard
-      icon={UserGroupIcon}
+      icon={IconUsersGroup}
       title={request.proposal.name}
       outcome={request.status === "approved" ? "Approved" : "Declined"}
       action={
@@ -1180,7 +1170,7 @@ function BotRequestHeader({
         </div>
       </div>
       <Button variant="ghost" size="icon-xs" title="Edit" onClick={onEdit}>
-        <HugeiconsIcon icon={PencilEdit01Icon} />
+        <IconPencil />
       </Button>
     </div>
   );
@@ -1288,7 +1278,7 @@ function JobCard({
 }) {
   const status = jobStatus ?? job.status;
   const working = status === "working" || status === "running";
-  const Icon = job.kind === "coding" ? HammerIcon : ComputerIcon;
+  const Icon = job.kind === "coding" ? IconHammer : IconDeviceDesktop;
 
   return (
     <button
@@ -1296,7 +1286,7 @@ function JobCard({
       className="flex w-full max-w-sm items-center gap-3 rounded-xl border p-3 text-left hover:bg-muted/50"
       onClick={() => onOpenJob?.(job)}
     >
-      <HugeiconsIcon icon={Icon} className="size-4 text-muted-foreground" />
+      <Icon className="size-4 text-muted-foreground" />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm font-medium">{job.name}</span>
         <span className="text-xs text-muted-foreground">
