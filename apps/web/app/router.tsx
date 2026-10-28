@@ -6,6 +6,7 @@ import {
   createRouter,
   redirect,
 } from "@tanstack/react-router";
+import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -29,7 +30,7 @@ import { authClient } from "@/lib/auth-client";
 import { ActivityPage } from "@/features/activity/activity";
 import { BotForm } from "@/features/bots/bot-form";
 import { Chat } from "@/features/chat/chat";
-import { CredentialsPage } from "@/features/credentials/credentials";
+import { CredentialsSettings } from "@/features/credentials/credentials";
 import { BotDesktop } from "@/features/bot-desktop/desktop";
 import { GroupChatView, GroupForm } from "@/features/group-chats/groups";
 import {
@@ -120,13 +121,16 @@ const desktopRoute = createRoute({
   },
 });
 
+// Credentials moved into settings; a bot's old link opens them with the bot picked.
 const credentialsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/bots/$botId/credentials",
-  component: function BotCredentialsPage() {
-    const { botId } = credentialsRoute.useParams();
-
-    return <CredentialsPage key={botId} botId={botId} />;
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/settings/credentials",
+      search: { bot: params.botId },
+      replace: true,
+    });
   },
 });
 
@@ -251,6 +255,17 @@ const webSearchRoute = createRoute({
   component: WebSearchPage,
 });
 
+const settingsCredentialsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/credentials",
+  validateSearch: z.object({ bot: z.string().optional() }),
+  component: function CredentialsSettingsPage() {
+    const { bot } = settingsCredentialsRoute.useSearch();
+
+    return <CredentialsSettings key={bot ?? "all"} initialBot={bot} />;
+  },
+});
+
 const settingsIntegrationsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/integrations",
@@ -288,6 +303,7 @@ export const router = createRouter({
         generalRoute,
         providersRoute,
         webSearchRoute,
+        settingsCredentialsRoute,
         settingsIntegrationsRoute,
         settingsSkillsRoute,
       ]),

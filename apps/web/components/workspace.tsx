@@ -130,7 +130,7 @@ export type FilterPill = {
   count?: number;
 };
 
-/** A scrolling row of rounded filter buttons, one pressed. */
+/** A scrolling row of rounded filter buttons, one pressed. Empty choices hide, and so does a row with one left. */
 export function FilterPills({
   label,
   pills,
@@ -142,13 +142,20 @@ export function FilterPills({
   value: string;
   onChange: (value: string) => void;
 }) {
+  // The pressed pill stays even when empty, so a filter never vanishes from under its page.
+  const shown = pills.filter(
+    (pill) => pill.count !== 0 || pill.value === value,
+  );
+
+  if (shown.length < 2) return null;
+
   return (
     <div
       role="group"
       aria-label={label}
       className="-mx-1 flex min-w-0 gap-1 overflow-x-auto px-1 pb-1"
     >
-      {pills.map((pill) => (
+      {shown.map((pill) => (
         <Button
           key={pill.value}
           type="button"

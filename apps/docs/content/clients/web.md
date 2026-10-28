@@ -10,14 +10,14 @@ The server serves the web app at `/ui`, for example `http://127.0.0.1:7337/ui`. 
 
 ## Sidebar
 
-| Section         | What's there                                                                                    |
-| --------------- | ----------------------------------------------------------------------------------------------- |
-| **Bots**        | Each bot's chat, with its jobs, desktop, and credentials.                                       |
-| **Group chats** | Chats with several bots.                                                                        |
-| **Memory**      | Every bot's memories and your shared memories. Edit or delete them here.                        |
-| **Automations** | Every automation with its schedule, next run, and status, plus a **Runs** tab with recent runs. |
-| **Activity**    | Everything bots did, by day. Filter by kind or bot, and revert a change to a skill or memory.   |
-| **Settings**    | Providers, web search, MCP integrations, skills, notifications, passkeys, and sign-out.         |
+| Section         | What's there                                                                                         |
+| --------------- | ---------------------------------------------------------------------------------------------------- |
+| **Bots**        | Each bot's chat, with its jobs and desktop.                                                          |
+| **Group chats** | Chats with several bots.                                                                             |
+| **Memory**      | Every bot's memories and your shared memories. Edit or delete them here.                             |
+| **Automations** | Every automation with its schedule, next run, and status, plus a **Runs** tab with recent runs.      |
+| **Activity**    | Everything bots did, by day. Filter by kind or bot, and revert a change to a skill or memory.        |
+| **Settings**    | Providers, web search, credentials, MCP integrations, skills, notifications, passkeys, and sign-out. |
 
 Press `⌘K` (or `Ctrl+K`) to jump to a bot or group chat. To search inside conversations, ask a bot.
 

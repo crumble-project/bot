@@ -905,13 +905,13 @@ function BotSettingsLinks({ bot }: { bot: Bot | undefined }) {
       </Link>
       {bot && (
         <Link
-          to="/bots/$botId/credentials"
-          params={{ botId: bot.id }}
+          to="/settings/credentials"
+          search={{ bot: bot.id }}
           className="flex items-center justify-between gap-4 p-3 text-sm transition-colors hover:bg-muted/50"
         >
           <span className="font-medium">Credentials</span>
           <span className="flex items-center gap-1 text-muted-foreground">
-            For coding jobs <IconChevronRight className="size-4" />
+            Manage in Settings <IconChevronRight className="size-4" />
           </span>
         </Link>
       )}

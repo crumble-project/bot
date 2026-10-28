@@ -283,12 +283,7 @@ function PersonalSections({
       ? bots.filter((bot) => bot.skills.some((skill) => matches(skill, needle)))
       : bots.filter((bot) => bot.id === scope);
 
-  if (!owners.length)
-    return scope === ALL && !needle ? (
-      <Section title="Personal">
-        <SectionEmpty>No bot has a skill of its own yet.</SectionEmpty>
-      </Section>
-    ) : null;
+  if (!owners.length) return null;
 
   return owners.map((bot) => (
     <Section

@@ -355,10 +355,6 @@ function MemoryGroups({
 }) {
   const shown = owners.filter((owner) => groupShown(owner, scope, needle));
 
-  const empty = owners.filter(
-    (owner) => owner.bot && !owner.memories.data?.length,
-  );
-
   return (
     <>
       {shown.map((owner) => (
@@ -371,12 +367,6 @@ function MemoryGroups({
           onDelete={onDelete}
         />
       ))}
-      {scope === ALL && needle === "" && empty.length > 0 && (
-        <p className="text-sm text-muted-foreground">
-          Nothing remembered yet by{" "}
-          {empty.map((owner) => owner.name).join(", ")}.
-        </p>
-      )}
       {needle !== "" && shown.length === 0 && (
         <p className="text-sm text-muted-foreground">
           No memories match your search.

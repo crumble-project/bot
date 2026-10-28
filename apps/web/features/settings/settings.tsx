@@ -12,6 +12,7 @@ import {
   IconFingerprint,
   IconHammer,
   IconKey,
+  IconLock,
   IconLogin,
   IconLogout,
   IconPencil,
@@ -71,6 +72,7 @@ const SECTIONS = [
   },
   { to: "/settings/providers", label: "Providers", icon: IconKey },
   { to: "/settings/web-search", label: "Web search", icon: IconWorld },
+  { to: "/settings/credentials", label: "Credentials", icon: IconLock },
   { to: "/settings/integrations", label: "Integrations", icon: IconPlug },
   { to: "/settings/skills", label: "Skills", icon: IconSparkles },
 ] as const;

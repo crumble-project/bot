@@ -15,8 +15,8 @@ Every use is logged for 90 days.
 
 ## Add a credential
 
-Open the bot's **Credentials** page from its chat and add the secret with the hosts it's for.
+Open **Settings** > **Credentials**, select **New credential**, pick the bot, and add the secret with the hosts it's for.
 
-A bot can also ask you for a credential when it needs one. The request shows up as a card in the bot chat. Enter the value or decline the request there, or answer it from the bot's **Credentials** page in settings.
+A bot can also ask you for a credential when it needs one. The request shows up as a card in the bot chat. Enter the value or decline the request there, or answer it under **Waiting for you** in **Settings** > **Credentials**.
 
 The value never appears in the transcript, notices, or logs.
