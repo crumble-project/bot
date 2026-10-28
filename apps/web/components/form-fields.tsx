@@ -1,7 +1,9 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
+import { IconCheck, IconCopy } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -150,5 +152,69 @@ export function EditorSheet({
         </form>
       </SheetContent>
     </Sheet>
+  );
+}
+
+/** A one-line form for an API key or other secret; the value is never shown again. */
+export function SecretForm({
+  label,
+  value,
+  pending,
+  onChange,
+  onSave,
+  onCancel,
+}: {
+  label: string;
+  value: string;
+  pending: boolean;
+  onChange: (value: string) => void;
+  onSave: () => void;
+  onCancel?: () => void;
+}) {
+  return (
+    <form
+      className="flex gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+
+        if (value.trim()) onSave();
+      }}
+    >
+      <Input
+        type="password"
+        aria-label={label}
+        autoFocus
+        autoComplete="off"
+        placeholder="API key"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <Button type="submit" disabled={!value.trim() || pending}>
+        Save
+      </Button>
+      {onCancel && (
+        <Button type="button" variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+      )}
+    </form>
+  );
+}
+
+/** Copies `text` and shows a check once it did. */
+export function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      title={copied ? "Copied" : "Copy"}
+      onClick={() =>
+        void navigator.clipboard.writeText(text).then(() => setCopied(true))
+      }
+    >
+      {copied ? <IconCheck /> : <IconCopy />}
+    </Button>
   );
 }

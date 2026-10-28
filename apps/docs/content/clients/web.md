@@ -17,7 +17,7 @@ The server serves the web app at `/ui`, for example `http://127.0.0.1:7337/ui`. 
 | **Memory**      | Every bot's memories and your shared memories. Edit or delete them here.                        |
 | **Automations** | Every automation with its schedule, next run, and status, plus a **Runs** tab with recent runs. |
 | **Activity**    | Everything bots did, by day. Filter by kind or bot, and revert a change to a skill or memory.   |
-| **Settings**    | Providers, MCP integrations, skills, notifications, passkeys, and sign-out.                     |
+| **Settings**    | Providers, web search, MCP integrations, skills, notifications, passkeys, and sign-out.         |
 
 Press `⌘K` (or `Ctrl+K`) to jump to a bot or group chat. To search inside conversations, ask a bot.
 
@@ -29,7 +29,7 @@ Credential requests use a card too. Review the host list, enter the value in the
 
 ## Passkeys
 
-Sign in with your device's screen lock or a security key instead of your password. To add a passkey, sign in with your password, then select **Add a passkey** in **Settings** > **General**. Next time, select **Sign in with a passkey**, or pick the passkey your browser offers in the email field. Select **Rename** to tell your passkeys apart, or **Remove** to delete one. Your password keeps working.
+Sign in with your device's screen lock or a security key instead of your password. To add a passkey, sign in with your password, then select **Add passkey** in **Settings** > **General**. Next time, select **Sign in with a passkey**, or pick the passkey your browser offers in the email field. Open a passkey's **More** menu to **Rename** it or **Remove** it. Your password keeps working.
 
 Passkeys need an address with a hostname, so on the server's own machine open `http://localhost:7337/ui` rather than `127.0.0.1`. You can rename or remove passkeys from any address. A passkey belongs to the address you added it on, and stops working if the server's address changes. See [Configuration](/self-hosting/configuration#passkeys).
 

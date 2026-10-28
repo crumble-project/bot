@@ -42,6 +42,7 @@ import {
   ProvidersSettings,
   SettingsLayout,
 } from "@/features/settings/settings";
+import { WebSearchPage } from "@/features/settings/web-search-settings";
 import { SkillsPage } from "@/features/skills/skills";
 import { AutomationsPage } from "@/features/schedules/automations";
 
@@ -244,6 +245,12 @@ const providersRoute = createRoute({
   component: ProvidersSettings,
 });
 
+const webSearchRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/web-search",
+  component: WebSearchPage,
+});
+
 const settingsIntegrationsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/integrations",
@@ -280,6 +287,7 @@ export const router = createRouter({
         settingsIndexRoute,
         generalRoute,
         providersRoute,
+        webSearchRoute,
         settingsIntegrationsRoute,
         settingsSkillsRoute,
       ]),

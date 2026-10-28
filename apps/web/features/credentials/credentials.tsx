@@ -1,6 +1,5 @@
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
-import { IconDots } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -24,11 +23,8 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -52,7 +48,12 @@ import {
   queryClient,
   send,
 } from "@/lib/api";
-import { WorkspacePage } from "@/components/workspace";
+import {
+  NewButton,
+  PageToolbar,
+  RowMenu,
+  WorkspacePage,
+} from "@/components/workspace";
 
 const USES_PAGE = 50;
 
@@ -121,9 +122,13 @@ export function CredentialsPage({ botId }: { botId: string }) {
       title={bot ? `${bot.name}: Credentials` : "Credentials"}
       onRefresh={() => credentials.refetch()}
       refreshing={credentials.isFetching}
-      onNew={() => setEditing({ kind: "new" })}
-      newLabel="New Credential"
     >
+      <PageToolbar>
+        <NewButton
+          label="New credential"
+          onClick={() => setEditing({ kind: "new" })}
+        />
+      </PageToolbar>
       {credentials.isPending ? (
         <Skeleton className="h-40" />
       ) : credentials.isError ? (
@@ -296,21 +301,6 @@ export function CredentialsPage({ botId }: { botId: string }) {
         </AlertDialogContent>
       </AlertDialog>
     </WorkspacePage>
-  );
-}
-
-function RowMenu({ children }: { children: ReactNode }) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button variant="ghost" size="icon-sm" title="More">
-            <IconDots />
-          </Button>
-        }
-      />
-      <DropdownMenuContent align="end">{children}</DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 

@@ -8,9 +8,7 @@ import {
 import {
   IconCalendarRepeat,
   IconMessage,
-  IconPlus,
   IconRobot,
-  IconSearch,
   IconTrash,
   IconUser,
   IconUsersGroup,
@@ -19,7 +17,6 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { EditorSheet, OwnerSelectField } from "@/components/form-fields";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
@@ -41,6 +38,8 @@ import {
 import { BotAvatar } from "@/features/bots/avatar";
 import {
   ConfirmDelete,
+  NewButton,
+  PageToolbar,
   SectionEmpty,
   WorkspacePage,
 } from "@/components/workspace";
@@ -436,28 +435,6 @@ function useDeleteMemory() {
   });
 }
 
-function SearchField({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="relative flex-1">
-      <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        type="search"
-        aria-label="Search memories"
-        placeholder="Search memories"
-        className="pl-8"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </div>
-  );
-}
-
 export function MemoryPage() {
   const { bots, shared, owners, refreshing } = useMemoryData();
   const [scope, setScope] = useState(ALL);
@@ -474,20 +451,21 @@ export function MemoryPage() {
       }
     >
       <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <SearchField value={search} onChange={setSearch} />
-          <Button
+        <PageToolbar
+          search={search}
+          searchLabel="Search memories"
+          onSearch={setSearch}
+        >
+          <NewButton
+            label="New memory"
             onClick={() =>
               setEditing({
                 memory: null,
                 owner: scope === ALL ? SHARED : scope,
               })
             }
-          >
-            <IconPlus data-icon="inline-start" />
-            New memory
-          </Button>
-        </div>
+          />
+        </PageToolbar>
         <OwnerPills owners={owners} scope={scope} onScope={setScope} />
       </div>
       {remove.isError && (

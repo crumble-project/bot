@@ -431,7 +431,6 @@ export function AutomationsPage() {
   return (
     <WorkspacePage
       title="Automations"
-      wide
       refreshing={
         bots.isFetching || schedules.isFetching || executions.isFetching
       }

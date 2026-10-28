@@ -5,24 +5,22 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import {
-  IconChevronDown,
   IconChevronRight,
-  IconTrash,
   IconPencil,
+  IconSparkles,
+  IconTrash,
 } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertDialog } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
-  Field,
-  FieldGroup,
-  FieldLabel,
-  FieldLegend,
-  FieldSet,
-} from "@/components/ui/field";
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { EditorSheet, OwnerSelectField } from "@/components/form-fields";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   type Bot,
@@ -34,11 +32,17 @@ import {
   skillsQuery,
 } from "@/lib/api";
 import {
-  ConfirmDelete,
+  ConfirmDeleteContent,
+  NewButton,
+  PageToolbar,
+  RowMenu,
+  RowTile,
   Section,
   SectionEmpty,
   WorkspacePage,
 } from "@/components/workspace";
+import { BotAvatar } from "@/features/bots/avatar";
+import { cn } from "@/lib/utils";
 
 const SHARED = "shared";
 
@@ -84,49 +88,180 @@ function useRemoveSkills() {
   return { shared, personal };
 }
 
-function PersonalRow({
-  bot,
-  skill,
+/** Whether a skill's name or instructions contain `needle`. */
+const matches = (
+  skill: { name: string; instructions: string },
+  needle: string,
+) =>
+  !needle ||
+  skill.name.toLowerCase().includes(needle) ||
+  skill.instructions.toLowerCase().includes(needle);
+
+/** The first line of a skill's instructions, as a glimpse of what it does. */
+const glimpse = (instructions: string) =>
+  instructions
+    .split("\n")
+    .map((line) => line.replace(/^#+\s*/, "").trim())
+    .find(Boolean) ?? "No instructions.";
+
+function SkillMenu({
   onEdit,
   onDelete,
 }: {
-  bot: Bot;
-  skill: BotSkill;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   return (
-    <div className="flex items-start gap-2 p-3">
-      <Expandable
-        title={skill.name}
-        subtitle={`Only ${bot.name}`}
-        body={skill.instructions}
-      />
-      <Button variant="ghost" size="icon-sm" title="Edit" onClick={onEdit}>
+    <RowMenu>
+      <DropdownMenuItem onClick={onEdit}>
         <IconPencil />
-      </Button>
-      <ConfirmDelete
-        title={`Delete ${skill.name}?`}
-        description={`${bot.name} loses this skill. This cannot be undone.`}
-        onConfirm={onDelete}
-        trigger={
-          <Button variant="ghost" size="icon-sm" title="Delete">
-            <IconTrash />
-          </Button>
-        }
-      />
+        Edit
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem variant="destructive" onClick={onDelete}>
+        <IconTrash />
+        Delete
+      </DropdownMenuItem>
+    </RowMenu>
+  );
+}
+
+/** A skill row: a sparkle tile, its name and first line, and what follows on the right. */
+function SkillRow({
+  name,
+  line,
+  onOpen,
+  expanded,
+  actions,
+  children,
+}: {
+  name: string;
+  line: string;
+  onOpen: () => void;
+  expanded?: boolean | undefined;
+  actions?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col transition-colors hover:bg-muted/50">
+      <div className="flex items-center gap-3 px-3 py-3">
+        <RowTile>
+          <IconSparkles />
+        </RowTile>
+        <button
+          type="button"
+          aria-expanded={expanded}
+          className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          onClick={onOpen}
+        >
+          <span className="truncate text-sm font-medium">{name}</span>
+          <span className="truncate text-sm text-muted-foreground">{line}</span>
+        </button>
+        {actions}
+      </div>
+      {children && (
+        <div className="flex flex-col gap-3 px-3 pb-3 pl-14">{children}</div>
+      )}
     </div>
   );
+}
+
+/** A skill the owner can edit, with Edit and a confirmed Delete in its menu. */
+function EditableSkillRow({
+  name,
+  instructions,
+  deleteDescription,
+  onEdit,
+  onDelete,
+  children,
+}: {
+  name: string;
+  instructions: string;
+  deleteDescription: string;
+  onEdit: () => void;
+  onDelete: () => void;
+  children?: ReactNode;
+}) {
+  const [deleting, setDeleting] = useState(false);
+
+  return (
+    <SkillRow
+      name={name}
+      line={glimpse(instructions)}
+      onOpen={onEdit}
+      actions={
+        <>
+          <SkillMenu onEdit={onEdit} onDelete={() => setDeleting(true)} />
+          <AlertDialog open={deleting} onOpenChange={setDeleting}>
+            <ConfirmDeleteContent
+              title={`Delete ${name}?`}
+              description={deleteDescription}
+              onConfirm={onDelete}
+            />
+          </AlertDialog>
+        </>
+      }
+    >
+      {children}
+    </SkillRow>
+  );
+}
+
+function PersonalSections({
+  bots,
+  needle,
+  remove,
+  onEdit,
+}: {
+  bots: Bot[];
+  needle: string;
+  remove: ReturnType<typeof useRemoveSkills>;
+  onEdit: (editing: Editing) => void;
+}) {
+  const owners = bots.filter((bot) =>
+    bot.skills.some((skill) => matches(skill, needle)),
+  );
+
+  if (!owners.length)
+    return (
+      <Section title="Personal">
+        <SectionEmpty>No bot has a skill of its own yet.</SectionEmpty>
+      </Section>
+    );
+
+  return owners.map((bot) => (
+    <Section
+      key={bot.id}
+      title={bot.name}
+      icon={<BotAvatar bot={bot} size={22} />}
+      description={`Only ${bot.name} has these.`}
+    >
+      {bot.skills.map((skill, index) =>
+        matches(skill, needle) ? (
+          <EditableSkillRow
+            key={index}
+            name={skill.name}
+            instructions={skill.instructions}
+            deleteDescription={`${bot.name} loses this skill. This cannot be undone.`}
+            onEdit={() => onEdit({ kind: "personal", bot, index })}
+            onDelete={() => remove.personal.mutate({ bot, index })}
+          />
+        ) : null,
+      )}
+    </Section>
+  ));
 }
 
 function SkillSections({
   bots,
   skills,
+  needle,
   remove,
   onEdit,
 }: {
   bots: Bot[];
   skills: ListedSkill[];
+  needle: string;
   remove: ReturnType<typeof useRemoveSkills>;
   onEdit: (editing: Editing) => void;
 }) {
@@ -138,24 +273,12 @@ function SkillSections({
     skill.source === "shared" ? [skill] : [],
   );
 
-  const personal = bots.flatMap((bot) =>
-    bot.skills.map((skill, index) => ({ bot, skill, index })),
-  );
-
   return (
     <>
       <Section
-        title="Default · Every bot"
-        footer="Default skills are files on the server. Edit them there and restart the server."
+        title="Shared"
+        description="Turn a shared skill on for the bots that should have it."
       >
-        {bundled.length === 0 && (
-          <SectionEmpty>No default skills.</SectionEmpty>
-        )}
-        {bundled.map((skill) => (
-          <BundledRow key={skill.id} skill={skill} />
-        ))}
-      </Section>
-      <Section title="Shared">
         {shared.length === 0 && (
           <SectionEmpty>No shared skills yet.</SectionEmpty>
         )}
@@ -169,18 +292,21 @@ function SkillSections({
           />
         ))}
       </Section>
-      <Section title="Personal">
-        {personal.length === 0 && (
-          <SectionEmpty>No personal skills yet.</SectionEmpty>
+      <PersonalSections
+        bots={bots}
+        needle={needle}
+        remove={remove}
+        onEdit={onEdit}
+      />
+      <Section
+        title="Default"
+        description="Every bot has these. They're files on the server: edit them there and restart it."
+      >
+        {bundled.length === 0 && (
+          <SectionEmpty>No default skills.</SectionEmpty>
         )}
-        {personal.map(({ bot, skill, index }) => (
-          <PersonalRow
-            key={`${bot.id}:${index}`}
-            bot={bot}
-            skill={skill}
-            onEdit={() => onEdit({ kind: "personal", bot, index })}
-            onDelete={() => remove.personal.mutate({ bot, index })}
-          />
+        {bundled.map((skill) => (
+          <BundledRow key={skill.id} skill={skill} />
         ))}
       </Section>
     </>
@@ -190,11 +316,13 @@ function SkillSections({
 function SkillsBody({
   bots,
   skills,
+  needle,
   remove,
   onEdit,
 }: {
   bots: UseQueryResult<Bot[]>;
   skills: UseQueryResult<ListedSkill[]>;
+  needle: string;
   remove: ReturnType<typeof useRemoveSkills>;
   onEdit: (editing: Editing) => void;
 }) {
@@ -210,7 +338,8 @@ function SkillsBody({
   return (
     <SkillSections
       bots={bots.data ?? []}
-      skills={skills.data ?? []}
+      skills={(skills.data ?? []).filter((skill) => matches(skill, needle))}
+      needle={needle}
       remove={remove}
       onEdit={onEdit}
     />
@@ -221,6 +350,7 @@ export function SkillsPage() {
   const bots = useQuery(botsQuery);
   const skills = useQuery(skillsQuery);
   const [editing, setEditing] = useState<Editing | null>(null);
+  const [search, setSearch] = useState("");
   const remove = useRemoveSkills();
 
   const failure = remove.shared.error ?? remove.personal.error;
@@ -230,9 +360,17 @@ export function SkillsPage() {
       title="Skills"
       refreshing={bots.isFetching || skills.isFetching}
       onRefresh={() => void refresh()}
-      newLabel="New skill"
-      onNew={() => setEditing({ kind: "new" })}
     >
+      <PageToolbar
+        search={search}
+        searchLabel="Search skills"
+        onSearch={setSearch}
+      >
+        <NewButton
+          label="New skill"
+          onClick={() => setEditing({ kind: "new" })}
+        />
+      </PageToolbar>
       {failure && (
         <Alert variant="destructive">
           <AlertDescription>{failure.message}</AlertDescription>
@@ -241,6 +379,7 @@ export function SkillsPage() {
       <SkillsBody
         bots={bots}
         skills={skills}
+        needle={search.trim().toLowerCase()}
         remove={remove}
         onEdit={setEditing}
       />
@@ -255,55 +394,89 @@ export function SkillsPage() {
   );
 }
 
-function Expandable({
-  title,
-  subtitle,
-  body,
-  children,
-}: {
-  title: string;
-  subtitle: string;
-  body: string;
-  children?: ReactNode;
-}) {
+function BundledRow({ skill }: { skill: BundledSkill }) {
   const [open, setOpen] = useState(false);
-  const Icon = open ? IconChevronDown : IconChevronRight;
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-2">
-      <button
-        type="button"
-        className="flex items-start gap-1.5 text-left"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-        <span className="flex min-w-0 flex-col">
-          <span className="text-sm font-medium">{title}</span>
-          <span className="text-xs text-muted-foreground">{subtitle}</span>
-        </span>
-      </button>
+    <SkillRow
+      name={skill.name}
+      line={skill.description || glimpse(skill.instructions)}
+      expanded={open}
+      onOpen={() => setOpen(!open)}
+      actions={
+        <IconChevronRight
+          className={cn(
+            "size-4 shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-90",
+          )}
+        />
+      }
+    >
       {open && (
-        <div className="flex flex-col gap-3 pl-5.5">
+        <>
           <p className="text-sm whitespace-pre-wrap text-muted-foreground">
-            {body || "No instructions."}
+            {skill.instructions || "No instructions."}
           </p>
-          {children}
-        </div>
+          <span className="font-mono text-xs text-muted-foreground">
+            {skill.path}
+          </span>
+        </>
       )}
-    </div>
+    </SkillRow>
   );
 }
 
-function BundledRow({ skill }: { skill: BundledSkill }) {
+/** Pressed pills, one per bot, that turn a shared skill on or off for it. */
+function BotToggles({ skill, bots }: { skill: SharedSkill; bots: Bot[] }) {
+  const assign = useMutation({
+    mutationFn: ({ bot, on }: { bot: Bot; on: boolean }) => {
+      const others = (bot.sharedSkills ?? []).filter((id) => id !== skill.id);
+
+      return send(agentPath(bot.id), "PATCH", {
+        sharedSkills: (on ? [...others, skill.id] : others).toSorted(),
+      });
+    },
+    onSettled: refresh,
+  });
+
   return (
-    <div className="flex p-3">
-      <Expandable
-        title={skill.name}
-        subtitle={`Source: ${skill.path}`}
-        body={skill.instructions}
-      />
-    </div>
+    <>
+      <div
+        role="group"
+        aria-label={`Bots with ${skill.name}`}
+        className="flex flex-wrap gap-1.5"
+      >
+        {bots.map((bot) => {
+          const on = bot.sharedSkills?.includes(skill.id) ?? false;
+
+          return (
+            <Button
+              key={bot.id}
+              type="button"
+              size="sm"
+              variant={on ? "secondary" : "ghost"}
+              aria-pressed={on}
+              disabled={assign.isPending}
+              className={cn(
+                "rounded-full border",
+                on ? "border-transparent" : "text-muted-foreground",
+              )}
+              onClick={() => assign.mutate({ bot, on: !on })}
+            >
+              <BotAvatar
+                bot={bot}
+                size={18}
+                className={cn(!on && "opacity-50 grayscale")}
+              />
+              {bot.name}
+            </Button>
+          );
+        })}
+      </div>
+      {assign.isError && (
+        <p className="text-sm text-destructive">{assign.error.message}</p>
+      )}
+    </>
   );
 }
 
@@ -318,66 +491,16 @@ function SharedRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const users = bots.flatMap((bot) =>
-    bot.sharedSkills?.includes(skill.id) ? [bot.name] : [],
-  );
-
-  const assign = useMutation({
-    mutationFn: ({ bot, on }: { bot: Bot; on: boolean }) => {
-      const others = (bot.sharedSkills ?? []).filter((id) => id !== skill.id);
-
-      return send(agentPath(bot.id), "PATCH", {
-        sharedSkills: (on ? [...others, skill.id] : others).toSorted(),
-      });
-    },
-    onSettled: refresh,
-  });
-
   return (
-    <div className="flex items-start gap-2 p-3">
-      <Expandable
-        title={skill.name}
-        subtitle={
-          users.length ? `Enabled for: ${users.join(", ")}` : "No bots enabled"
-        }
-        body={skill.instructions}
-      >
-        <FieldSet>
-          <FieldLegend variant="label">Assign to bots</FieldLegend>
-          <FieldGroup className="gap-2">
-            {bots.map((bot) => (
-              <Field key={bot.id} orientation="horizontal">
-                <Switch
-                  id={`${skill.id}-${bot.id}`}
-                  checked={bot.sharedSkills?.includes(skill.id) ?? false}
-                  disabled={assign.isPending}
-                  onCheckedChange={(on) => assign.mutate({ bot, on })}
-                />
-                <FieldLabel htmlFor={`${skill.id}-${bot.id}`}>
-                  {bot.name}
-                </FieldLabel>
-              </Field>
-            ))}
-          </FieldGroup>
-        </FieldSet>
-        {assign.isError && (
-          <p className="text-sm text-destructive">{assign.error.message}</p>
-        )}
-      </Expandable>
-      <Button variant="ghost" size="icon-sm" title="Edit" onClick={onEdit}>
-        <IconPencil />
-      </Button>
-      <ConfirmDelete
-        title={`Delete ${skill.name}?`}
-        description="Every bot that uses it loses it. This cannot be undone."
-        onConfirm={onDelete}
-        trigger={
-          <Button variant="ghost" size="icon-sm" title="Delete">
-            <IconTrash />
-          </Button>
-        }
-      />
-    </div>
+    <EditableSkillRow
+      name={skill.name}
+      instructions={skill.instructions}
+      deleteDescription="Every bot that uses it loses it. This cannot be undone."
+      onEdit={onEdit}
+      onDelete={onDelete}
+    >
+      {bots.length > 0 && <BotToggles skill={skill} bots={bots} />}
+    </EditableSkillRow>
   );
 }
 
