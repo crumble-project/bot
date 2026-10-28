@@ -75,6 +75,11 @@ import {
 export const CAPABILITIES = [
   { tool: "memory", label: "Memory", help: "Remembers facts across chats." },
   {
+    tool: "web",
+    label: "Web search",
+    help: "Searches the web and reads pages.",
+  },
+  {
     tool: "delegate",
     label: "Message other bots",
     help: "Asks the other bots for help.",
@@ -96,7 +101,7 @@ export const CAPABILITIES = [
   },
 ] as const;
 
-const DEFAULT_TOOLS = ["memory", "delegate"];
+const DEFAULT_TOOLS = ["memory", "web", "delegate"];
 
 const DEFAULT_INSTRUCTIONS =
   "You are a thoughtful, capable personal assistant.";

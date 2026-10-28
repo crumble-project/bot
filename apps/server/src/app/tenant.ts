@@ -10,6 +10,7 @@ import { BotActivity } from "../bots/bot-activity";
 import { BotExtensions } from "../bots/bot-extensions";
 import { reactionTools } from "../bots/reaction";
 import { codemodeTools } from "../bots/codemode";
+import { webSearchTools } from "../web-search/web-search-tools";
 import {
   Scheduler,
   schedulerAccess,
@@ -265,6 +266,7 @@ function accountLayer(
         integrationTools,
         codemodeTools,
         displayTools,
+        webSearchTools,
         reactionTools,
       ),
     ),

@@ -1,0 +1,172 @@
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
+import { Type } from "@earendil-works/pi-ai";
+import { defineExtension, defineTool } from "@earendil-works/pi-durable";
+import { Effect, Layer } from "effect";
+import { Plugins, pluginWebSearchProviders } from "../app/plugins";
+import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { isPublicAddress } from "../workspaces/public-address";
+import type { WebPage, WebSearchProvider } from "./provider";
+
+const refused = "Crumble does not read private or local addresses.";
+const date = Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" }));
+
+const publicUrl = Effect.fnUntraced(function* (value: string) {
+  let url: URL;
+
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  const hostname = url.hostname.replace(/^\[|\]$/g, "");
+
+  if (hostname === "localhost" || hostname.endsWith(".localhost")) return false;
+
+  if (isIP(hostname)) return isPublicAddress(hostname);
+
+  const addresses = yield* Effect.tryPromise({
+    try: () => lookup(hostname, { all: true }),
+    catch: () => new Error("DNS lookup failed"),
+  }).pipe(Effect.catch(() => Effect.succeed([])));
+
+  return (
+    addresses.length > 0 &&
+    addresses.every(({ address }) => isPublicAddress(address))
+  );
+});
+
+const extractPage = Effect.fnUntraced(function* (
+  url: string,
+  extract: NonNullable<WebSearchProvider["extract"]>,
+) {
+  if (!(yield* publicUrl(url)))
+    return { url, error: refused } satisfies WebPage;
+
+  const page = yield* extract(url).pipe(
+    Effect.catch((error) =>
+      Effect.succeed({ url, error: error.message } satisfies WebPage),
+    ),
+  );
+
+  if ("error" in page || page.text.length <= 20000) return page;
+
+  return {
+    ...page,
+    text: `${page.text.slice(0, 20000)}\n\n[Text truncated at 20,000 characters.]`,
+  };
+});
+
+const searchTool = (
+  search: NonNullable<WebSearchProvider["search"]>,
+  bot: string,
+) =>
+  defineTool({
+    name: "web_search",
+    description:
+      "Search the web for current information. Returns titles, links, dates, and short excerpts. Use web_extract to read a result in full.",
+    parameters: Type.Object({
+      query: Type.String({ minLength: 1, maxLength: 400 }),
+      limit: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 10, default: 5 }),
+      ),
+      domains: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 20 }),
+      ),
+      after: date,
+      before: date,
+    }),
+    callers: ["model"],
+    replay: "safe",
+    execute: async (input, _api, context) => {
+      const results = await Effect.runPromise(
+        search({ ...input, limit: input.limit ?? 5 }, bot),
+        { signal: context.abortSignal },
+      );
+
+      return {
+        output: [
+          {
+            type: "text" as const,
+            text:
+              results
+                .map((result) =>
+                  [result.title, result.url, result.published, result.excerpt]
+                    .filter(Boolean)
+                    .join("\n"),
+                )
+                .join("\n\n") || "No results.",
+          },
+        ],
+        details: results,
+      };
+    },
+  });
+
+const extractTool = (extract: NonNullable<WebSearchProvider["extract"]>) =>
+  defineTool({
+    name: "web_extract",
+    description:
+      "Read web pages as text. Give the full http or https links, up to 5.",
+    parameters: Type.Object({
+      urls: Type.Array(Type.String({ minLength: 1 }), {
+        minItems: 1,
+        maxItems: 5,
+      }),
+    }),
+    callers: ["model"],
+    replay: "safe",
+    execute: async ({ urls }, _api, context) => {
+      const pages = await Effect.runPromise(
+        Effect.forEach(urls, (url) => extractPage(url, extract), {
+          concurrency: "unbounded",
+        }),
+        { signal: context.abortSignal },
+      );
+
+      return {
+        output: [
+          {
+            type: "text" as const,
+            text: pages
+              .map((page) =>
+                "error" in page
+                  ? `${page.url}\n${page.error}`
+                  : `${page.title}\n${page.url}\n${page.text}`,
+              )
+              .join("\n\n"),
+          },
+        ],
+      };
+    },
+  });
+
+export function webSearchExtension(
+  providers: WebSearchProvider[],
+  bot: string,
+) {
+  const search = providers.find((provider) => provider.search)?.search;
+  const extract = providers.find((provider) => provider.extract)?.extract;
+  const tools = [];
+
+  if (search) tools.push(searchTool(search, bot));
+
+  if (extract) tools.push(extractTool(extract));
+
+  return defineExtension({ name: "web-search", tools });
+}
+
+export const webSearchTools = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const providers = pluginWebSearchProviders(yield* Plugins);
+    yield* (yield* BotExtensions).register(
+      ExtensionPosition.webSearch,
+      (agent) =>
+        agent.tools.includes("web")
+          ? [webSearchExtension(providers, agent.id)]
+          : [],
+    );
+  }),
+);

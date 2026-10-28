@@ -64,6 +64,7 @@ export const ExtensionPosition = {
   historyTools: 40,
   schedules: 50,
   display: 60,
+  webSearch: 65,
   reaction: 70,
   jobs: 80,
   botRequests: 85,
