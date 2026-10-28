@@ -5,7 +5,7 @@ import { Store } from "../../test/support/store";
 import { agentInput, scheduleInput } from "../shared/domain";
 import { ScriptRunRepository } from "../schedules/script-run-repository";
 import { createTenant } from "./tenant";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -100,14 +100,36 @@ test.serial(
       expect((await fetch(new URL("/health", running.server.url))).status).toBe(
         200,
       );
-      await expect(startServer({ dataDir, port })).rejects.toThrow(
-        "already being held",
-      );
+      await expect(
+        startServer({ dataDir, port, lockWaitMs: 0 }),
+      ).rejects.toThrow("already being held");
       await running.close();
       const reopened = await startServer({ dataDir, port });
       await reopened.close();
     } finally {
       rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.serial(
+  "server takes over a lock left by a process that died without releasing it",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-"));
+    const port = 18000 + Math.floor(Math.random() * 1000);
+    const lock = `${dataDir}.lock`;
+    const refreshed = new Date(Date.now() - 28_000);
+
+    mkdirSync(lock);
+    utimesSync(lock, refreshed, refreshed);
+
+    try {
+      const running = await startServer({ dataDir, port });
+
+      await running.close();
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+      rmSync(lock, { recursive: true, force: true });
     }
   },
 );

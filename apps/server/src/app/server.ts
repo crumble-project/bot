@@ -68,6 +68,8 @@ export async function startServer(
     port?: number;
     publicUrl?: string;
     skillsDir?: string;
+    /** How long to wait for another server's lock on the data directory before failing. */
+    lockWaitMs?: number;
     /** Each account's workspaces instead of those from the environment, owned by the account's scope. */
     workspaces?: (
       userId: string,
@@ -81,10 +83,15 @@ export async function startServer(
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   chmodSync(dataDir, 0o700);
 
+  // A process killed without cleanup, as on a watch restart, leaves a fresh lock; outwait its staleness.
   const release = await lockfile.lock(dataDir, {
     stale: 30000,
     update: 10000,
-    retries: 0,
+    retries: {
+      retries: Math.ceil((options.lockWaitMs ?? 35_000) / 1000),
+      factor: 1,
+      minTimeout: 1000,
+    },
   });
 
   const tenants = new Map<
