@@ -11,6 +11,12 @@ bun install
 bun run dev    # or `bun run start` without file watching
 ```
 
+`bun run dev` enables coding and desktop workspaces using the published `:main`
+images. Microsandbox downloads them when first needed. Workspaces require Apple
+silicon on macOS or `/dev/kvm` on Linux. Set either image variable to override
+the default, or to an empty string to disable it. `bun run start` keeps both
+images unset by default.
+
 - **API:** `http://127.0.0.1:7337` (`/v1` requires an account session; `GET /health` is public).
 - **Web UI:** `http://127.0.0.1:7337/ui` (bundled on demand by Bun with Tailwind CSS; set `NODE_ENV=production` to minify).
 
