@@ -5,19 +5,15 @@ import {
 } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   type Bot,
-  type Memory,
   type Schedule,
-  botMemoriesQuery,
   queryClient,
   schedulesQuery,
   send,
 } from "@/lib/api";
 import { BotAvatar } from "@/features/bots/avatar";
 import { useWorking } from "@/lib/live";
-import { sourceLabel } from "@/features/memory/memory";
 import { finished, taskTiming } from "@/features/schedules/tasks";
 
 function Routine({ schedule }: { schedule: Schedule }) {
@@ -99,32 +95,10 @@ function RoutineList({
   );
 }
 
-function MemoryNotes({ memories }: { memories: UseQueryResult<Memory[]> }) {
-  return (
-    <>
-      {memories.isPending && <Skeleton className="h-16" />}
-      {memories.data?.map((memory) => (
-        <div key={memory.id} className="flex flex-col gap-0.5">
-          <p className="line-clamp-4 text-sm">{memory.content}</p>
-          {sourceLabel(memory) && (
-            <span className="text-xs text-muted-foreground">
-              {sourceLabel(memory)}
-            </span>
-          )}
-        </div>
-      ))}
-      {memories.data?.length === 0 && (
-        <p className="text-sm text-muted-foreground">Nothing remembered yet</p>
-      )}
-    </>
-  );
-}
-
-/** The bot inspector beside its chat: profile, routines, and memory. */
+/** The bot inspector beside its chat: profile and routines. */
 export function DetailsPanel({ bot }: { bot: Bot }) {
   const working = useWorking(bot.id);
   const schedules = useQuery(schedulesQuery);
-  const memories = useQuery(botMemoriesQuery(bot.id));
 
   const routines =
     schedules.data?.filter(
@@ -134,18 +108,10 @@ export function DetailsPanel({ bot }: { bot: Bot }) {
   return (
     <aside className="hidden w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l p-4 lg:flex">
       <ProfileSummary bot={bot} working={working} />
-      <Tabs defaultValue="routines">
-        <TabsList className="w-full">
-          <TabsTrigger value="routines">Routines</TabsTrigger>
-          <TabsTrigger value="memory">Memory</TabsTrigger>
-        </TabsList>
-        <TabsContent value="routines" className="flex flex-col gap-3 pt-3">
-          <RoutineList schedules={schedules} routines={routines} />
-        </TabsContent>
-        <TabsContent value="memory" className="flex flex-col gap-3 pt-3">
-          <MemoryNotes memories={memories} />
-        </TabsContent>
-      </Tabs>
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-muted-foreground">Routines</h2>
+        <RoutineList schedules={schedules} routines={routines} />
+      </section>
     </aside>
   );
 }
