@@ -1,2 +1,6 @@
 [serve.static]
 plugins = ["./apps/web/tailwind-plugin.ts"]
+
+[install]
+minimumReleaseAge = 259200
+
