@@ -5,6 +5,7 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { Agent } from "../shared/domain";
 import { Context } from "effect";
 import type { JobAnswer, JobExtensions } from "../jobs/jobs";
+import type { WebSearchProvider } from "../web-search/provider";
 
 /** How a provider that signs in outside Crumble stands, shown to the owner instead of sign-in methods. */
 export type ExternalAuth = {
@@ -45,12 +46,13 @@ export type JobKindContribution = {
   onAnswer: (listener: (answer: JobAnswer) => void) => () => void;
 };
 
-/** A compiled-in module contributing providers and job kinds. See docs/adr/0004-plugin-interfaces.md. */
+/** A compiled-in module contributing model providers, job kinds, and web search providers. See docs/adr/0004-plugin-interfaces.md. */
 export type CrumblePlugin = {
   /** Stored data and settings key on it: never rename. */
   id: string;
   providers?: ProviderContribution[];
   jobKinds?: JobKindContribution[];
+  webSearchProviders?: WebSearchProvider[];
 };
 
 export const pluginProviders = (plugins: readonly CrumblePlugin[]) =>
@@ -58,6 +60,9 @@ export const pluginProviders = (plugins: readonly CrumblePlugin[]) =>
 
 export const pluginJobKinds = (plugins: readonly CrumblePlugin[]) =>
   plugins.flatMap((plugin) => plugin.jobKinds ?? []);
+
+export const pluginWebSearchProviders = (plugins: readonly CrumblePlugin[]) =>
+  plugins.flatMap((plugin) => plugin.webSearchProviders ?? []);
 
 /** The chat and job extensions of every job kind the bot may use. */
 export const jobExtensions = (

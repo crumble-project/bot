@@ -75,6 +75,11 @@ import {
 export const CAPABILITIES = [
   { tool: "memory", label: "Memory", help: "Remembers facts across chats." },
   {
+    tool: "web",
+    label: "Web search",
+    help: "Searches the web and reads pages.",
+  },
+  {
     tool: "delegate",
     label: "Message other bots",
     help: "Asks the other bots for help.",
@@ -96,7 +101,7 @@ export const CAPABILITIES = [
   },
 ] as const;
 
-const DEFAULT_TOOLS = ["memory", "delegate"];
+const DEFAULT_TOOLS = ["memory", "web", "delegate"];
 
 const DEFAULT_INSTRUCTIONS =
   "You are a thoughtful, capable personal assistant.";
@@ -341,6 +346,10 @@ function useBotAccess(bot?: Bot) {
   const [tools, setTools] = useState<string[]>(bot?.tools ?? DEFAULT_TOOLS);
   const [mcpServers, setMcpServers] = useState<string[]>(bot?.mcpServers ?? []);
 
+  const [webSearchProvider, setWebSearchProvider] = useState<
+    "mixed" | "exa" | null
+  >(bot?.webSearchProvider ?? null);
+
   const [desktopProvider, setDesktopProvider] = useState(
     bot?.desktopModel?.provider ?? "",
   );
@@ -354,6 +363,8 @@ function useBotAccess(bot?: Bot) {
     setTools,
     mcpServers,
     setMcpServers,
+    webSearchProvider,
+    setWebSearchProvider,
     desktopProvider,
     setDesktopProvider,
     desktopModel,
@@ -868,6 +879,7 @@ function botInput(
     model: model.trim(),
     inference: { ...bot?.inference, thinkingLevel: level },
     tools,
+    webSearchProvider: access.webSearchProvider,
     mcpServers: [...mcpServers].sort(),
     desktopModel:
       desktopProvider && desktopModel.trim()
@@ -977,6 +989,40 @@ function BotFieldSections({
           providers={providers}
           access={access}
         />
+        {access.tools.includes("web") && (
+          <Field className="p-3">
+            <FieldLabel htmlFor={`${formId}-web-provider`}>
+              Web search provider
+            </FieldLabel>
+            <Select
+              items={[
+                { label: "Account default", value: "default" },
+                { label: "Mixed", value: "mixed" },
+                { label: "Exa", value: "exa" },
+              ]}
+              value={access.webSearchProvider ?? "default"}
+              onValueChange={(value) =>
+                access.setWebSearchProvider(
+                  value === "mixed" || value === "exa" ? value : null,
+                )
+              }
+            >
+              <SelectTrigger id={`${formId}-web-provider`} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="default">Account default</SelectItem>
+                  <SelectItem value="mixed">Mixed</SelectItem>
+                  <SelectItem value="exa">Exa</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              Manage the default and Exa key in Settings → Providers.
+            </FieldDescription>
+          </Field>
+        )}
         <IntegrationsSection
           bot={bot}
           servers={servers}
@@ -1086,6 +1132,7 @@ export function BotForm({ bot }: { bot?: Bot }) {
                 model: bot.model,
                 enabled: bot.enabled,
                 tools: bot.tools,
+                webSearchProvider: bot.webSearchProvider ?? null,
                 mcpServers: bot.mcpServers,
                 ...(bot.avatar !== undefined && { avatar: bot.avatar }),
                 ...(bot.inference !== undefined && {

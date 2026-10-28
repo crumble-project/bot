@@ -17,7 +17,7 @@ import {
 } from "./group-chat-context";
 import type { GroupChatMembers } from "./group-chat-members";
 import { mentionsOwner } from "./group-mentions";
-import type { GroupEntry } from "./group-transcripts";
+import type { GroupEntry, GroupPost } from "./group-transcripts";
 import type { GroupTurnInput } from "./group-turn-input";
 
 /** Everything that leads one turn to the next: the group's context, its members, and what a turn tells its bot. */
@@ -357,12 +357,12 @@ const publish = (
       return;
     }
 
+    const post: GroupPost = { text: outcome.text, sender };
+
+    if (outcome.sources.length > 0) post.sources = outcome.sources;
+
     const entryId = yield* pi(() =>
-      context.transcripts.post(
-        group.id,
-        { text: outcome.text, sender },
-        requestId,
-      ),
+      context.transcripts.post(group.id, post, requestId),
     );
 
     yield* context.changed(group.id);

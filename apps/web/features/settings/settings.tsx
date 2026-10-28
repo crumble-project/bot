@@ -43,6 +43,7 @@ import { authClient, passkeyDone, passkeysAvailable } from "@/lib/auth-client";
 import { clearUserData, queryClient } from "@/lib/api";
 import { clearLiveStreams, notifications } from "@/lib/live";
 import { LoginDialog, refreshProviders } from "./provider-login";
+import { WebSearchSettingsSection } from "./web-search-settings";
 import {
   MobileSidebarTrigger,
   Section,
@@ -706,6 +707,8 @@ export function ProvidersSettings() {
         encrypted on the server, are never shown again, and are shared by every
         bot on the provider.
       </p>
+      <WebSearchSettingsSection />
+      <Separator />
       <div className="relative">
         <HugeiconsIcon
           icon={Search01Icon}

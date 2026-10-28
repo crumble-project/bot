@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Bots cite web pages inline. In bot chats and group chats in the web app, links to pages the bot searched or read in that turn show as source chips with the site's name at the end of the message. Group messages from bots carry these pages in the new optional `sources` field of `TranscriptMessage`.
+- Choose a default web search provider for the account and override it per bot. Add an Exa API key shared by bots on the account.
+- Add web search and page reading through Mixed. New bots created in the web app have **Web search** on by default; owners can turn it off per bot. Existing bots keep their capabilities. Mixed uses free, rate-limited services without an API key.
 - Add passkeys: after signing in with a password, add, rename, and remove passkeys in **Settings** > **General**, then sign in with it from the sign-in page or the browser's autofill. Passwords keep working. On a server with no configured address, passkeys use `localhost`, because browsers don't accept an IP address for them, and the server accepts sign-ins from `localhost` as well as `127.0.0.1`.
 - Improve the web app on iPhone when installed to the home screen: pages no longer stack an extra header row above their own, the sidebar no longer focuses Search when it opens, the status bar matches the open sidebar, and the message box clears the home indicator.
 - Fix emoji reactions being cut off below chat bubbles, and long setting descriptions pushing badges out of their card.

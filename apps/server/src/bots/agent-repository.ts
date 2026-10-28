@@ -65,6 +65,7 @@ export class AgentRepository extends Context.Service<
           instructions: row.instructions,
           provider: row.provider,
           model: row.model,
+          webSearchProvider: row.webSearchProvider,
           enabled: row.enabled,
           tools,
           skills: skills.map(({ name, instructions }) => ({
@@ -113,6 +114,7 @@ export class AgentRepository extends Context.Service<
         instructions: input.instructions,
         provider: input.provider,
         model: input.model,
+        webSearchProvider: input.webSearchProvider ?? null,
         enabled: input.enabled,
         tools: JSON.stringify(input.tools),
         skills: "[]",

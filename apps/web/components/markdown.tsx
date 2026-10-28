@@ -2,6 +2,7 @@ import {
   type ComponentProps,
   isValidElement,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -9,6 +10,7 @@ import { Markdown, type MarkdownComponents } from "@tanstack/markdown/react";
 import type * as Pele from "pele/lazy";
 import { streamingMarkdownExtension } from "@tanstack/markdown/extensions/streaming";
 import type { MarkdownExtension } from "@tanstack/markdown";
+import { type Sources, splitSources } from "@/features/chat/sources";
 
 // Served unbundled by src/web-ui.ts (PELE_PREFIX), so each diagram type loads only when shown.
 const PELE = "/ui-modules/pele/lazy.js";
@@ -62,6 +64,8 @@ function Diagram({ source }: { source: string }) {
 const link = (props: ComponentProps<"a">) => (
   <a {...props} target="_blank" rel="noopener noreferrer" />
 );
+
+const siteOf = (href: string) => new URL(href).hostname.replace(/^www\./, "");
 
 /** Finished replies draw Mermaid blocks; a streaming one keeps them as code until it completes. */
 const components = {
@@ -149,18 +153,43 @@ const streaming = [streamingMarkdownExtension(), autolinks];
 export function Reply({
   source,
   streaming: partial = false,
+  sources,
 }: {
   source: string;
   streaming?: boolean;
+  /** Pages the reply's turn searched or read; links to them show as source chips after the reply. */
+  sources?: Sources | undefined;
 }) {
+  const { text, chips } = useMemo(
+    () =>
+      sources ? splitSources(source, sources) : { text: source, chips: [] },
+    [source, sources],
+  );
+
   return (
     <div className="markdown">
       <Markdown
         components={partial ? streamingComponents : components}
         extensions={partial ? streaming : finished}
       >
-        {source}
+        {text}
       </Markdown>
+      {chips.length > 0 && (
+        <div className="source-chips">
+          {chips.map((chip) => (
+            <a
+              key={chip.href}
+              href={chip.href}
+              title={chip.title || chip.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="source-chip"
+            >
+              {siteOf(chip.href)}
+            </a>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -45,6 +45,7 @@ export const agentResponse = z
     instructions: z.string(),
     provider: z.string(),
     model: z.string(),
+    webSearchProvider: z.enum(["mixed", "exa"]).nullable().optional(),
     enabled: z.boolean(),
     tools: strings.openapi({
       description:
@@ -158,6 +159,13 @@ const message = z
       description:
         "Provider-specific tool details, including nested code-mode calls.",
     }),
+    sources: z
+      .array(z.object({ url: z.string(), title: z.string() }))
+      .optional()
+      .openapi({
+        description:
+          "In a group chat, the pages the sending bot searched or read in the turn that wrote the message.",
+      }),
   })
   .openapi("TranscriptMessage");
 

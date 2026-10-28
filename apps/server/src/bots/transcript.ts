@@ -16,6 +16,12 @@ import { codingJobOf } from "../jobs/coding";
 import { desktopJobOf } from "../jobs/desktop";
 import { REACTION_TOOL_NAME, reactionOf } from "./reaction";
 import { PASS_TOOL_NAME } from "../group-chats/group-turns";
+import {
+  WEB_EXTRACT_TOOL_NAME,
+  WEB_SEARCH_TOOL_NAME,
+  webSource,
+  type WebSource,
+} from "../web-search/provider";
 
 type ModelContent = NonNullable<EntryRecord["model"]>[number]["content"];
 
@@ -79,6 +85,8 @@ export const groupMessageData = z.object({
   attachments: z.array(attachmentInput).exactOptional(),
   /** What pages show for each upload, without its bytes. */
   files: z.array(attachmentInfo).exactOptional(),
+  /** Pages the bot's turn searched or read, which the message may cite. */
+  sources: z.array(webSource).exactOptional(),
 });
 
 export type GroupMessageData = z.infer<typeof groupMessageData>;
@@ -136,6 +144,8 @@ export type TranscriptMessage = {
   isError?: boolean | undefined;
   /** Provider-specific details, including codemode nested tool calls. */
   toolDetails?: unknown;
+  /** A group message's pages that its bot searched or read. */
+  sources?: WebSource[];
 };
 
 export type TranscriptPage = {
@@ -369,9 +379,15 @@ function normalizeGroupMessage(
 
   if (replyPreview !== undefined) message.replyPreview = replyPreview;
 
-  if (parsed.data.files?.length) message.attachments = parsed.data.files;
+  addGroupExtras(message, parsed.data);
 
   return [message];
+}
+
+function addGroupExtras(message: TranscriptMessage, data: GroupMessageData) {
+  if (data.files?.length) message.attachments = data.files;
+
+  if (data.sources?.length) message.sources = data.sources;
 }
 
 type ModelMessage = NonNullable<EntryRecord["model"]>[number];
@@ -970,7 +986,7 @@ export async function readTurnReport(
 }
 
 export type TurnOutcome =
-  | { kind: "message"; text: string }
+  | { kind: "message"; text: string; sources: WebSource[] }
   | { kind: "reaction"; emoji: string }
   | { kind: "pass" };
 
@@ -991,6 +1007,46 @@ function toolOutcome(message: ModelMessage): TurnOutcome | null {
   return emoji ? { kind: "reaction", emoji } : null;
 }
 
+const pages = z.array(
+  z.object({
+    url: z.string(),
+    title: z.string().catch(""),
+    error: z.unknown().optional(),
+  }),
+);
+
+function isWebResult(message: ModelMessage) {
+  const { toolName, isError } = toolMetadata.parse(message);
+
+  return (
+    message.role === "toolResult" &&
+    !isError &&
+    (toolName === WEB_SEARCH_TOOL_NAME || toolName === WEB_EXTRACT_TOOL_NAME)
+  );
+}
+
+/** The pages a turn's web searches and page reads returned, once each and without the ones that failed. */
+function webSourcesOf(messages: ModelMessage[]): WebSource[] {
+  const sources = new Map<string, WebSource>();
+
+  for (const message of messages.filter(isWebResult))
+    for (const { url, title, error } of pages.safeParse(
+      toolMetadata.parse(message).details,
+    ).data ?? [])
+      if (error === undefined) sources.set(url, { url, title });
+
+  return [...sources.values()];
+}
+
+/** The model messages after a turn's input, up to the next input. */
+function turnMessages(entries: readonly EntryRecord[]) {
+  const end = entries.findIndex((entry) => INPUT_KINDS.has(entry.kind));
+
+  return (end === -1 ? entries : entries.slice(0, end)).flatMap(
+    (entry) => entry.model ?? [],
+  );
+}
+
 /** A group turn's result after its input: a pass or reaction wins, else the final answer, else nothing. */
 export async function readTurnOutcome(
   conversation: Conversation,
@@ -1004,18 +1060,17 @@ export async function readTurnOutcome(
     BACKGROUND_CONTEXT,
   );
 
+  const messages = turnMessages(page.items);
   let text = "";
 
-  for (const entry of page.items) {
-    if (INPUT_KINDS.has(entry.kind)) break;
+  for (const message of messages) {
+    if (message.role === "assistant") text = textOf(message.content).trim();
+    const outcome = toolOutcome(message);
 
-    for (const message of entry.model ?? []) {
-      if (message.role === "assistant") text = textOf(message.content).trim();
-      const outcome = toolOutcome(message);
-
-      if (outcome) return outcome;
-    }
+    if (outcome) return outcome;
   }
 
-  return text ? { kind: "message", text } : { kind: "pass" };
+  return text
+    ? { kind: "message", text, sources: webSourcesOf(messages) }
+    : { kind: "pass" };
 }

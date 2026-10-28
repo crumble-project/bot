@@ -67,6 +67,7 @@ import {
   reactionsOf,
 } from "@/features/chat/transcript";
 import { Composer } from "@/features/chat/composer";
+import { groupSourcesOf } from "@/features/chat/sources";
 
 function isShown(message: Message) {
   return (
@@ -414,6 +415,7 @@ export function GroupChatView({ groupId }: { groupId: string }) {
               sender={<GroupSender message={message} byId={byId} />}
               color={colorOf(message, byId)}
               reactions={reactions.get(message.entryId)}
+              sources={groupSourcesOf(message)}
               onReply={setReplyTo}
             />
           )}

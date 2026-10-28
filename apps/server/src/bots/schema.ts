@@ -8,6 +8,7 @@ export const agents = sqliteTable("agents", {
   instructions: text("instructions").notNull(),
   provider: text("provider").notNull(),
   model: text("model").notNull(),
+  webSearchProvider: text("web_search_provider", { enum: ["mixed", "exa"] }),
   enabled: integer("enabled", { mode: "boolean" }).notNull(),
   tools: text("tools").notNull(),
   // Inline skills moved to the skill library; the column stays `[]` for databases that predate it.
