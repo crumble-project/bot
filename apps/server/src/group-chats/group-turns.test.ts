@@ -11,6 +11,10 @@ import {
   type FauxResponseFactory,
 } from "@earendil-works/pi-ai/providers/faux";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
+import { Effect, Layer } from "effect";
+import { Plugins } from "../app/plugins";
+import { BotExtensions } from "../bots/bot-extensions";
+import { webSearchTools } from "../web-search/web-search-tools";
 import type { Agent } from "../shared/domain";
 import { reactionExtension } from "../bots/reaction";
 import { AgentRuntime } from "../bots/runtime";
@@ -92,7 +96,9 @@ const coordination = defineExtension({
   ],
 });
 
-function open() {
+function open(
+  extensions?: (agent: Agent) => Promise<ReturnType<typeof defineExtension>[]>,
+) {
   const dir = mkdtempSync(join(tmpdir(), "bot-group-turns-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   const offered: string[][] = [];
@@ -103,7 +109,7 @@ function open() {
 
   const runtime = new AgentRuntime(dir, {
     models,
-    extensions: () => [coordination, reactionExtension()],
+    extensions: extensions ?? (() => [coordination, reactionExtension()]),
   });
 
   cleanups.push(() => runtime.close());
@@ -132,6 +138,64 @@ test("a group conversation offers pass and react but no delegation", async () =>
   await turn(runtime, chat, "hi");
   expect(offered.at(-1)).toContain("delegate");
   expect(offered.at(-1)).not.toContain("pass");
+});
+
+test("web tools are offered in bot chat and group turns", async () => {
+  const layers = webSearchTools.pipe(
+    Layer.provideMerge(BotExtensions.layer),
+    Layer.provide(
+      Layer.succeed(Plugins, [
+        {
+          id: "offline",
+          webSearchProviders: [
+            {
+              id: "offline",
+              search: () => Effect.succeed([]),
+              extract: (url) => Effect.succeed({ url, title: "", text: "" }),
+            },
+          ],
+        },
+      ]),
+    ),
+  );
+
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* BotExtensions;
+        const enabled = { ...agent, tools: [...agent.tools, "web"] };
+        const { runtime, offered } = open((bot) => registry.forAgent(bot));
+        const chat = yield* Effect.promise(() => runtime.openChat(enabled));
+
+        const group = yield* Effect.promise(() =>
+          runtime.openGroupConversation(enabled, "group-1"),
+        );
+
+        yield* Effect.promise(async () => {
+          const submission = await runtime.submit(enabled, chat, "hi", "hi");
+
+          await runtime.wait(submission, enabled);
+        });
+        expect(offered.at(-1)).toEqual(
+          expect.arrayContaining(["web_search", "web_extract"]),
+        );
+
+        yield* Effect.promise(async () => {
+          const submission = await runtime.submit(
+            enabled,
+            group,
+            "hello",
+            "hello",
+          );
+
+          await runtime.wait(submission, enabled);
+        });
+        expect(offered.at(-1)).toEqual(
+          expect.arrayContaining(["web_search", "web_extract"]),
+        );
+      }).pipe(Effect.provide(layers)),
+    ),
+  );
 });
 
 test("a group conversation stays out of the bot chat", async () => {

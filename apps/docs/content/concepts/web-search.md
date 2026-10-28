@@ -5,7 +5,7 @@ sidebar:
   order: 8
 ---
 
-A bot with the **Web search** capability can search the web and read pages. New bots created in the web app have this capability on by default. Existing bots keep their current settings.
+A bot with the **Web search** capability can search the web and read pages in bot chats and group chats. New bots created in the web app have this capability on by default. Existing bots keep their current settings.
 
 Mixed, the default web search provider, works without setup or an API key. Its free services are rate-limited, and every account on a server shares their limits. A later release will let you add a free Exa key.
 
