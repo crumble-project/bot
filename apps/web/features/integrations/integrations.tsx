@@ -237,20 +237,7 @@ function ServerRow({
       <RowTile>
         <IconPlug />
       </RowTile>
-      <button
-        type="button"
-        className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-        onClick={onEdit}
-      >
-        <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
-          <span className="truncate">{server.name}</span>
-          {!server.enabled && <Badge variant="outline">Disabled</Badge>}
-        </span>
-        <span className="truncate font-mono text-xs text-muted-foreground">
-          {server.url}
-        </span>
-        {failure && <span className="text-xs text-destructive">{failure}</span>}
-      </button>
+      <ServerDetails server={server} failure={failure} onEdit={onEdit} />
       <span className="hidden text-sm text-muted-foreground sm:block">
         {authLabel(server)}
       </span>
@@ -296,6 +283,33 @@ function ServerRow({
         />
       </AlertDialog>
     </div>
+  );
+}
+
+function ServerDetails({
+  server,
+  failure,
+  onEdit,
+}: {
+  server: McpServer;
+  failure: string | undefined;
+  onEdit: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      onClick={onEdit}
+    >
+      <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
+        <span className="truncate">{server.name}</span>
+        {!server.enabled && <Badge variant="outline">Disabled</Badge>}
+      </span>
+      <span className="truncate font-mono text-xs text-muted-foreground">
+        {server.url}
+      </span>
+      {failure && <span className="text-xs text-destructive">{failure}</span>}
+    </button>
   );
 }
 

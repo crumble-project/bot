@@ -81,29 +81,59 @@ function ExaKey({ configured }: { configured: boolean }) {
           </Button>
         )}
       </SettingRow>
-      {(editing || save.isError) && (
-        <div className="flex flex-col gap-2 px-3 pb-3 pl-14">
-          {editing && (
-            <SecretForm
-              label="Exa API key"
-              value={key}
-              pending={save.isPending}
-              onChange={setKey}
-              onSave={() => save.mutate(key.trim())}
-              onCancel={() => {
-                setEditing(false);
-                setKey("");
-              }}
-            />
-          )}
-          {save.isError && <FieldError>{save.error.message}</FieldError>}
-        </div>
-      )}
+      <ExaKeyEditor
+        editing={editing}
+        error={save.isError ? save.error.message : undefined}
+        value={key}
+        pending={save.isPending}
+        onChange={setKey}
+        onSave={() => save.mutate(key.trim())}
+        onCancel={() => {
+          setEditing(false);
+          setKey("");
+        }}
+      />
     </div>
   );
 }
 
 /** The account's web search: which provider bots use, and the Exa key. */
+function ExaKeyEditor({
+  editing,
+  error,
+  value,
+  pending,
+  onChange,
+  onSave,
+  onCancel,
+}: {
+  editing: boolean;
+  error: string | undefined;
+  value: string;
+  pending: boolean;
+  onChange: (value: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  if (!editing && error === undefined) return null;
+
+  return (
+    <div className="flex flex-col gap-2 px-3 pb-3 pl-14">
+      {editing && (
+        <SecretForm
+          label="Exa API key"
+          value={value}
+          pending={pending}
+          onChange={onChange}
+          onSave={onSave}
+          onCancel={onCancel}
+        />
+      )}
+      {error !== undefined && <FieldError>{error}</FieldError>}
+    </div>
+  );
+}
+
 export function WebSearchPage() {
   const settings = useQuery(webSearchSettingsQuery);
 

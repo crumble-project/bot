@@ -105,17 +105,24 @@ const previewOf = (text = "") =>
   text.replace(/\s+/g, " ").slice(0, PREVIEW_CHARS);
 
 /** What the bot did, as the verb and object of a sentence that starts with its name. */
+function toolLabel(toolName: string | undefined, name: string | undefined) {
+  return toolName ?? name ?? "a tool";
+}
+
+function resultVerb(isError: boolean | undefined) {
+  return isError ? "got an error from" : "got a result from";
+}
+
 function sentenceOf(activity: Operational) {
   const { toolName, name, isError, communication } = details(activity);
-  const tool = toolName ?? name ?? "a tool";
 
   switch (activity.kind) {
     case "tool-call":
-      return { verb: "used", object: tool };
+      return { verb: "used", object: toolLabel(toolName, name) };
     case "tool-result":
       return {
-        verb: isError ? "got an error from" : "got a result from",
-        object: tool,
+        verb: resultVerb(isError),
+        object: toolLabel(toolName, name),
       };
     case "mcp-call":
       return { verb: "called", object: name ?? "an MCP tool" };
