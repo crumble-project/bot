@@ -16,6 +16,11 @@ Without either, bots still chat, but can't start coding jobs or use a desktop.
 
 ## Microsandbox
 
+For development from a checkout, `bun run dev` selects the published `:main`
+coding and desktop images automatically. Microsandbox downloads each image when
+it is first needed. You can override either image variable, or set it to an
+empty string to disable that image.
+
 Start the server with the published workspace images. Use the same version as your server:
 
 ```bash

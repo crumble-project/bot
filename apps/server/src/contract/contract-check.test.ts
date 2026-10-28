@@ -1,9 +1,8 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { compareContracts, verifyBundle } from "./contract-release";
+import { compareContracts } from "./contract-check";
 
 const dirs: string[] = [];
 
@@ -72,18 +71,7 @@ const reports = () => {
   return dir;
 };
 
-test("accepts an added event schema with a minor version increase", async () => {
-  const base = await contract("1.4.0", ["chat-snapshot.schema.json"]);
-
-  const current = await contract("1.5.0", [
-    "chat-snapshot.schema.json",
-    "group-chat-snapshot.schema.json",
-  ]);
-
-  await compareContracts(base, current, reports());
-});
-
-test("requires a version increase for an added event schema", async () => {
+test("accepts an added event schema without a version increase", async () => {
   const base = await contract("1.4.0", ["chat-snapshot.schema.json"]);
 
   const current = await contract("1.4.0", [
@@ -91,68 +79,41 @@ test("requires a version increase for an added event schema", async () => {
     "group-chat-snapshot.schema.json",
   ]);
 
-  await expect(compareContracts(base, current, reports())).rejects.toThrow(
-    "Changed contract requires a version increase",
-  );
+  await compareContracts(base, current, reports());
 });
 
-test("treats a removed event schema as breaking", async () => {
+test("rejects a removed event schema", async () => {
   const base = await contract("1.4.0", [
     "chat-snapshot.schema.json",
     "heartbeat.schema.json",
   ]);
 
-  const current = await contract("1.5.0", ["chat-snapshot.schema.json"]);
+  const current = await contract("1.4.0", ["chat-snapshot.schema.json"]);
 
   await expect(compareContracts(base, current, reports())).rejects.toThrow(
-    "higher contract major version",
-  );
-  await compareContracts(
-    base,
-    await contract("2.0.0", ["chat-snapshot.schema.json"]),
-    reports(),
+    "removed event schemas: heartbeat.schema.json",
   );
 });
 
-test("verifies a bundle by the event schemas it carries", async () => {
-  const dir = await contract("1.4.0", [
-    "chat-snapshot.schema.json",
-    "group-chat-snapshot.schema.json",
-  ]);
+test("rejects breaking changes reported by oasdiff", async () => {
+  const base = await contract("1.4.0", ["chat-snapshot.schema.json"]);
 
-  await Bun.write(join(dir, "CHANGELOG.md"), "## Contract 1.4.0\n");
-  await Bun.write(join(dir, "source-commit.txt"), `${"a".repeat(40)}\n`);
+  const current = await contract("1.4.0", ["chat-snapshot.schema.json"]);
+  const tool = join(tools, "breaking-oasdiff");
+  await Bun.write(
+    tool,
+    `#!/bin/sh
+if [ "$1" = "--version" ]; then echo "oasdiff version 1.34.1"; elif [ "$1" = "breaking" ]; then echo '[{"id":"response-property-removed"}]'; fi
+`,
+  );
+  chmodSync(tool, 0o755);
+  process.env["OASDIFF"] = tool;
 
-  const names = [
-    "CHANGELOG.md",
-    "chat-snapshot.schema.json",
-    "group-chat-snapshot.schema.json",
-    "openapi.json",
-    "source-commit.txt",
-  ];
-
-  const sums = async (listed: string[]) => {
-    const lines = await Promise.all(
-      listed.map(
-        async (name) =>
-          `${createHash("sha256")
-            .update(
-              new Uint8Array(await Bun.file(join(dir, name)).arrayBuffer()),
-            )
-            .digest("hex")}  ${name}`,
-      ),
+  try {
+    await expect(compareContracts(base, current, reports())).rejects.toThrow(
+      "Breaking HTTP or event changes detected",
     );
-
-    await Bun.write(join(dir, "SHA256SUMS"), `${lines.join("\n")}\n`);
-  };
-
-  await sums(names);
-  await verifyBundle(dir);
-
-  await sums(
-    names.filter((name) => name !== "group-chat-snapshot.schema.json"),
-  );
-  await expect(verifyBundle(dir)).rejects.toThrow(
-    "SHA256SUMS must cover exactly every payload asset",
-  );
+  } finally {
+    process.env["OASDIFF"] = join(tools, "oasdiff");
+  }
 });

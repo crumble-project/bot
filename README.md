@@ -11,6 +11,12 @@ bun install
 bun run dev    # or `bun run start` without file watching
 ```
 
+`bun run dev` enables coding and desktop workspaces using the published `:main`
+images. Microsandbox downloads them when first needed. Workspaces require Apple
+silicon on macOS or `/dev/kvm` on Linux. Set either image variable to override
+the default, or to an empty string to disable it. `bun run start` keeps both
+images unset by default.
+
 - **API:** `http://127.0.0.1:7337` (`/v1` requires an account session; `GET /health` is public).
 - **Web UI:** `http://127.0.0.1:7337/ui` (bundled on demand by Bun with Tailwind CSS; set `NODE_ENV=production` to minify).
 
@@ -95,11 +101,10 @@ bun run check                  # Lint, format, typecheck, contract drift, and un
 bun run format                 # Format source and tests
 bun run openapi:generate       # Regenerate OpenAPI and six SSE JSON Schemas
 bun run contract:validate      # Validate OpenAPI and JSON Schemas offline
-bun run contract:compatibility # Compare against the latest stable contract-vX.Y.Z release
-bun run contract:bundle        # Export a checksummed release bundle
+bun run contract:compatibility BASELINE_DIRECTORY # Compare against a baseline OpenAPI directory
 ```
 
-`bun install` points Git at the hooks in `.githooks/`: each commit runs `bun run lint` and `bun run typecheck`, and each push runs `bun run check`, tests included. Skip them once with `--no-verify`.
+`bun install` points Git at the hooks in `.githooks/`: each commit generates and stages the OpenAPI artifacts from staged sources, then runs `bun run lint` and `bun run typecheck`, and each push runs `bun run check`, tests included. Skip them once with `--no-verify`.
 
 ## Documentation
 

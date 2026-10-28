@@ -20,40 +20,21 @@ jobs:
       - run: bun run contract:validate
       - name: Validate HTTP document with oasdiff
         run: oasdiff validate openapi/openapi.json --allow-external-refs=false
-      - name: Check compatibility with the latest stable contract release
-        run: bun run contract:compatibility
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Check out pull request base
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .contract-base
+          sparse-checkout: openapi
+          persist-credentials: false
+      - name: Check compatibility with the pull request base
+        if: github.event_name == 'pull_request'
+        run: bun run contract:compatibility .contract-base/openapi
       - name: Preserve compatibility reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: contract-compatibility
-          path: contract-reports/
-          if-no-files-found: ignore
-
-  release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: check
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    concurrency:
-      group: contract-release
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/contract-tools
-      - name: Publish a new contract version or resume its draft
-        run: bun apps/server/src/contract/contract-release.ts publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-      - name: Preserve release compatibility reports
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: contract-release-compatibility
           path: contract-reports/
           if-no-files-found: ignore

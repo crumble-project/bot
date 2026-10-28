@@ -2,7 +2,7 @@
 
 - Status: Accepted
 
-Bots have no web search: the Claude Code provider runs without built-in tools, and other providers bring none. Crumble ships its own web search and page reading behind web search providers, with Mixed as the default so search works on a fresh install with nothing set up. Research: [web search providers](../research/web-search-providers.md), [free web search services](../research/free-web-search-services.md).
+Bots have no web search: the Claude Code provider runs without built-in tools, and other providers bring none. Crumble ships its own web search and page reading behind web search providers, with Mixed as the default so search works on a fresh install with nothing set up.
 
 ## Decision
 

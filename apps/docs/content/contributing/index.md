@@ -35,7 +35,7 @@ bun run check   # lint, format check, typecheck, contract drift, and unit tests
 bun run fix     # format and apply lint fixes
 ```
 
-`bun install` sets up Git hooks: commits run the steering-file path check, lint and typecheck, and pushes run `check`. Unit test jobs in CI must finish in two minutes or less.
+`bun install` sets up Git hooks: commits generate and stage OpenAPI artifacts from staged sources, then run the steering-file path check, lint, and typecheck, and pushes run `check`. Unit test jobs in CI must finish in two minutes or less.
 
 ## Change the database schema
 
@@ -55,8 +55,7 @@ Route and event schemas in `apps/server/src/contract/` generate everything in `o
 ```bash
 bun run openapi:generate        # regenerate openapi/
 bun run contract:validate       # validate the OpenAPI and JSON Schemas offline
-bun run contract:compatibility  # compare against the latest contract-vX.Y.Z release
-bun run contract:bundle         # export a checksummed release bundle
+bun run contract:compatibility BASELINE_DIRECTORY  # compare against a baseline OpenAPI directory
 ```
 
 `bun run openapi:check` fails if the generated files are out of date. `bun run check` runs it for you.

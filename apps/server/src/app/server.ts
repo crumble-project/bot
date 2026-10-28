@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import lockfile from "proper-lockfile";
 import { websocket } from "@hono/bun";
-import { createAuth } from "./auth";
+import { createAuth, trustedOriginsFor } from "./auth";
 import { novncResponse, ticketOwner } from "../bot-desktop/desktop-viewer";
 import { createTenant } from "./tenant";
 import { webUIRoutes } from "./web-ui";
@@ -14,6 +14,7 @@ import {
 } from "../integrations/mcp-oauth";
 import type { Effect, Scope } from "effect";
 import type { Workspaces } from "../workspaces/workspace";
+import { configureDevWorkspaces } from "./dev-workspaces";
 
 const TENANT_PREFIXES = ["/v1/", "/desktop-viewer/", "/api/auth/"];
 
@@ -36,11 +37,11 @@ function hostedResponse(
 function untrustedOrigin(
   request: Request,
   requestOrigin: string | null,
-  origin: string,
+  trusted: readonly string[],
 ) {
   if (request.headers.get("sec-fetch-site") === "cross-site") return true;
 
-  return Boolean(requestOrigin) && requestOrigin !== origin;
+  return !!requestOrigin && !trusted.includes(requestOrigin);
 }
 
 function needsOriginForWrite(request: Request, requestOrigin: string | null) {
@@ -96,6 +97,7 @@ export async function startServer(
   let closed = false;
   const publicUrl = options.publicUrl ?? process.env["CRUMBLE_PUBLIC_URL"];
   let origin = "";
+  let trustedOrigins: string[] = [];
   let ready: Promise<void>;
 
   const tenant = (userId: string) => {
@@ -181,7 +183,7 @@ export async function startServer(
           return new Response("Not found", { status: 404 });
         const requestOrigin = request.headers.get("origin");
 
-        if (untrustedOrigin(request, requestOrigin, origin))
+        if (untrustedOrigin(request, requestOrigin, trustedOrigins))
           return Response.json({ error: "Untrusted origin" }, { status: 403 });
 
         if (path.startsWith("/api/auth/"))
@@ -228,6 +230,7 @@ export async function startServer(
     origin = new URL(
       publicUrl ?? process.env["BETTER_AUTH_URL"] ?? server.url.origin,
     ).origin;
+    trustedOrigins = trustedOriginsFor(origin);
     ready = (async () => {
       identity = await createAuth(dataDir, origin);
       const usersDir = join(dataDir, "users");
@@ -249,6 +252,8 @@ export async function startServer(
 }
 
 if (import.meta.main) {
+  if (process.argv.includes("--dev-workspaces"))
+    configureDevWorkspaces(process.env);
   const running = await startServer();
   console.log(`Crumble server listening on ${running.server.url}`);
   console.log("Open /ui to create an account or sign in.");

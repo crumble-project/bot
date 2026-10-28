@@ -12,6 +12,9 @@
     "apps/site/src/router.tsx",
     "apps/site/src/routes/**/*.tsx"
   ],
+  "workspaces": {
+    "patterns": ["apps/docs", "apps/site"]
+  },
   // Vendored oxlint plugins; tools/oxlint/anti-slop/UPSTREAM.md tracks them by checksum, so they stay as upstream wrote them.
   "ignorePatterns": ["tools/oxlint/**"],
   // Imported only by the ignored oxlint plugins.

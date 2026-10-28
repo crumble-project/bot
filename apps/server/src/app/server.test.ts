@@ -112,6 +112,59 @@ test.serial(
   },
 );
 
+test.serial("accepts requests from the localhost origin", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-origin-"));
+  const port = 19000 + Math.floor(Math.random() * 1000);
+
+  try {
+    const running = await startServer({ dataDir, port });
+
+    const signUpFrom = (origin: string) =>
+      fetch(new URL("/api/auth/sign-up/email", running.server.url), {
+        method: "POST",
+        headers: { "content-type": "application/json", origin },
+        body: JSON.stringify({
+          name: "Test",
+          email: `${crypto.randomUUID()}@example.test`,
+          password: "correct horse battery staple",
+        }),
+      });
+
+    expect((await signUpFrom(`http://localhost:${port}`)).status).toBe(200);
+    expect((await signUpFrom(`http://127.0.0.1:${port}`)).status).toBe(200);
+    expect((await signUpFrom("https://evil.example")).status).toBe(403);
+    await running.close();
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test.serial("offers passkey registration on localhost", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-passkey-"));
+  const port = 19000 + Math.floor(Math.random() * 1000);
+
+  try {
+    const running = await startServer({ dataDir, port });
+    const headers = await signUp(running);
+
+    const response = await fetch(
+      new URL(
+        "/api/auth/passkey/generate-register-options",
+        running.server.url,
+      ),
+      { headers },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      rp: { id: "localhost", name: "Crumble" },
+    });
+    await running.close();
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
 test.serial("loads the workspace skills directory by default", async () => {
   const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-skills-"));
   const port = 19000 + Math.floor(Math.random() * 1000);
