@@ -7,8 +7,9 @@ import {
 import {
   IconChevronRight,
   IconPencil,
-  IconSparkles,
+  IconServer,
   IconTrash,
+  IconUsersGroup,
 } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog } from "@/components/ui/alert-dialog";
@@ -33,10 +34,10 @@ import {
 } from "@/lib/api";
 import {
   ConfirmDeleteContent,
+  FilterPills,
   NewButton,
   PageToolbar,
   RowMenu,
-  RowTile,
   Section,
   SectionEmpty,
   WorkspacePage,
@@ -45,6 +46,11 @@ import { BotAvatar } from "@/features/bots/avatar";
 import { cn } from "@/lib/utils";
 
 const SHARED = "shared";
+const ALL = "all";
+const DEFAULT = "default";
+
+/** What the page shows: whose skills (all, shared, default, or a bot's id) and the search. */
+type SkillFilter = { scope: string; needle: string };
 
 type SharedSkill = Extract<ListedSkill, { source: "shared" }>;
 
@@ -88,6 +94,51 @@ function useRemoveSkills() {
   return { shared, personal };
 }
 
+function SkillPills({
+  bots,
+  skills,
+  scope,
+  onScope,
+}: {
+  bots: Bot[];
+  skills: ListedSkill[];
+  scope: string;
+  onScope: (scope: string) => void;
+}) {
+  const shared = skills.filter((skill) => skill.source === "shared").length;
+  const bundled = skills.filter((skill) => skill.source === "bundled").length;
+  const own = bots.reduce((sum, bot) => sum + bot.skills.length, 0);
+
+  return (
+    <FilterPills
+      label="Whose skills"
+      value={scope}
+      onChange={onScope}
+      pills={[
+        { value: ALL, label: "All", count: shared + own + bundled },
+        {
+          value: SHARED,
+          label: "Shared",
+          icon: <IconUsersGroup />,
+          count: shared,
+        },
+        ...bots.map((bot) => ({
+          value: bot.id,
+          label: bot.name,
+          icon: <BotAvatar bot={bot} size={18} />,
+          count: bot.skills.length,
+        })),
+        {
+          value: DEFAULT,
+          label: "Default",
+          icon: <IconServer />,
+          count: bundled,
+        },
+      ]}
+    />
+  );
+}
+
 /** Whether a skill's name or instructions contain `needle`. */
 const matches = (
   skill: { name: string; instructions: string },
@@ -126,7 +177,7 @@ function SkillMenu({
   );
 }
 
-/** A skill row: a sparkle tile, its name and first line, and what follows on the right. */
+/** A skill row: its name and first line on one line, and what follows on the right. */
 function SkillRow({
   name,
   line,
@@ -144,23 +195,20 @@ function SkillRow({
 }) {
   return (
     <div className="flex flex-col transition-colors hover:bg-muted/50">
-      <div className="flex items-center gap-3 px-3 py-3">
-        <RowTile>
-          <IconSparkles />
-        </RowTile>
+      <div className="flex items-center gap-2 px-3 py-2">
         <button
           type="button"
           aria-expanded={expanded}
-          className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="flex min-w-0 flex-1 cursor-pointer items-baseline gap-2 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           onClick={onOpen}
         >
-          <span className="truncate text-sm font-medium">{name}</span>
-          <span className="truncate text-sm text-muted-foreground">{line}</span>
+          <span className="shrink-0 text-sm font-medium">{name}</span>
+          <span className="truncate text-xs text-muted-foreground">{line}</span>
         </button>
         {actions}
       </div>
       {children && (
-        <div className="flex flex-col gap-3 px-3 pb-3 pl-14">{children}</div>
+        <div className="flex flex-col gap-2 px-3 pb-2.5">{children}</div>
       )}
     </div>
   );
@@ -207,27 +255,40 @@ function EditableSkillRow({
   );
 }
 
+/** The empty note of a bot's own skills: none at all, or none that match. */
+const personalEmpty = (bot: Bot, needle: string) => {
+  if (bot.skills.some((skill) => matches(skill, needle))) return null;
+
+  return bot.skills.length
+    ? "No skills match your search."
+    : "No skills of its own yet.";
+};
+
 function PersonalSections({
   bots,
-  needle,
+  filter,
   remove,
   onEdit,
 }: {
   bots: Bot[];
-  needle: string;
+  filter: SkillFilter;
   remove: ReturnType<typeof useRemoveSkills>;
   onEdit: (editing: Editing) => void;
 }) {
-  const owners = bots.filter((bot) =>
-    bot.skills.some((skill) => matches(skill, needle)),
-  );
+  const { scope, needle } = filter;
+
+  // A picked bot shows even when empty; under All, only bots with matching skills do.
+  const owners =
+    scope === ALL
+      ? bots.filter((bot) => bot.skills.some((skill) => matches(skill, needle)))
+      : bots.filter((bot) => bot.id === scope);
 
   if (!owners.length)
-    return (
+    return scope === ALL && !needle ? (
       <Section title="Personal">
         <SectionEmpty>No bot has a skill of its own yet.</SectionEmpty>
       </Section>
-    );
+    ) : null;
 
   return owners.map((bot) => (
     <Section
@@ -236,6 +297,9 @@ function PersonalSections({
       icon={<BotAvatar bot={bot} size={22} />}
       description={`Only ${bot.name} has these.`}
     >
+      {personalEmpty(bot, needle) && (
+        <SectionEmpty>{personalEmpty(bot, needle)}</SectionEmpty>
+      )}
       {bot.skills.map((skill, index) =>
         matches(skill, needle) ? (
           <EditableSkillRow
@@ -255,13 +319,13 @@ function PersonalSections({
 function SkillSections({
   bots,
   skills,
-  needle,
+  filter,
   remove,
   onEdit,
 }: {
   bots: Bot[];
   skills: ListedSkill[];
-  needle: string;
+  filter: SkillFilter;
   remove: ReturnType<typeof useRemoveSkills>;
   onEdit: (editing: Editing) => void;
 }) {
@@ -273,42 +337,53 @@ function SkillSections({
     skill.source === "shared" ? [skill] : [],
   );
 
+  const shows = (scope: string) =>
+    filter.scope === ALL || filter.scope === scope;
+
+  const ownScope = filter.scope !== SHARED && filter.scope !== DEFAULT;
+
   return (
     <>
-      <Section
-        title="Shared"
-        description="Turn a shared skill on for the bots that should have it."
-      >
-        {shared.length === 0 && (
-          <SectionEmpty>No shared skills yet.</SectionEmpty>
-        )}
-        {shared.map((skill) => (
-          <SharedRow
-            key={skill.id}
-            skill={skill}
-            bots={bots}
-            onEdit={() => onEdit({ kind: "shared", skill })}
-            onDelete={() => remove.shared.mutate(skill)}
-          />
-        ))}
-      </Section>
-      <PersonalSections
-        bots={bots}
-        needle={needle}
-        remove={remove}
-        onEdit={onEdit}
-      />
-      <Section
-        title="Default"
-        description="Every bot has these. They're files on the server: edit them there and restart it."
-      >
-        {bundled.length === 0 && (
-          <SectionEmpty>No default skills.</SectionEmpty>
-        )}
-        {bundled.map((skill) => (
-          <BundledRow key={skill.id} skill={skill} />
-        ))}
-      </Section>
+      {shows(SHARED) && (
+        <Section
+          title="Shared"
+          description="Turn a shared skill on for the bots that should have it."
+        >
+          {shared.length === 0 && (
+            <SectionEmpty>No shared skills yet.</SectionEmpty>
+          )}
+          {shared.map((skill) => (
+            <SharedRow
+              key={skill.id}
+              skill={skill}
+              bots={bots}
+              onEdit={() => onEdit({ kind: "shared", skill })}
+              onDelete={() => remove.shared.mutate(skill)}
+            />
+          ))}
+        </Section>
+      )}
+      {ownScope && (
+        <PersonalSections
+          bots={bots}
+          filter={filter}
+          remove={remove}
+          onEdit={onEdit}
+        />
+      )}
+      {shows(DEFAULT) && (
+        <Section
+          title="Default"
+          description="Every bot has these. They're files on the server: edit them there and restart it."
+        >
+          {bundled.length === 0 && (
+            <SectionEmpty>No default skills.</SectionEmpty>
+          )}
+          {bundled.map((skill) => (
+            <BundledRow key={skill.id} skill={skill} />
+          ))}
+        </Section>
+      )}
     </>
   );
 }
@@ -316,13 +391,13 @@ function SkillSections({
 function SkillsBody({
   bots,
   skills,
-  needle,
+  filter,
   remove,
   onEdit,
 }: {
   bots: UseQueryResult<Bot[]>;
   skills: UseQueryResult<ListedSkill[]>;
-  needle: string;
+  filter: SkillFilter;
   remove: ReturnType<typeof useRemoveSkills>;
   onEdit: (editing: Editing) => void;
 }) {
@@ -338,8 +413,10 @@ function SkillsBody({
   return (
     <SkillSections
       bots={bots.data ?? []}
-      skills={(skills.data ?? []).filter((skill) => matches(skill, needle))}
-      needle={needle}
+      skills={(skills.data ?? []).filter((skill) =>
+        matches(skill, filter.needle),
+      )}
+      filter={filter}
       remove={remove}
       onEdit={onEdit}
     />
@@ -351,6 +428,7 @@ export function SkillsPage() {
   const skills = useQuery(skillsQuery);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [search, setSearch] = useState("");
+  const [scope, setScope] = useState(ALL);
   const remove = useRemoveSkills();
 
   const failure = remove.shared.error ?? remove.personal.error;
@@ -361,16 +439,24 @@ export function SkillsPage() {
       refreshing={bots.isFetching || skills.isFetching}
       onRefresh={() => void refresh()}
     >
-      <PageToolbar
-        search={search}
-        searchLabel="Search skills"
-        onSearch={setSearch}
-      >
-        <NewButton
-          label="New skill"
-          onClick={() => setEditing({ kind: "new" })}
+      <div className="flex flex-col gap-3">
+        <PageToolbar
+          search={search}
+          searchLabel="Search skills"
+          onSearch={setSearch}
+        >
+          <NewButton
+            label="New skill"
+            onClick={() => setEditing({ kind: "new" })}
+          />
+        </PageToolbar>
+        <SkillPills
+          bots={bots.data ?? []}
+          skills={skills.data ?? []}
+          scope={scope}
+          onScope={setScope}
         />
-      </PageToolbar>
+      </div>
       {failure && (
         <Alert variant="destructive">
           <AlertDescription>{failure.message}</AlertDescription>
@@ -379,7 +465,7 @@ export function SkillsPage() {
       <SkillsBody
         bots={bots}
         skills={skills}
-        needle={search.trim().toLowerCase()}
+        filter={{ scope, needle: search.trim().toLowerCase() }}
         remove={remove}
         onEdit={setEditing}
       />
@@ -453,7 +539,7 @@ function BotToggles({ skill, bots }: { skill: SharedSkill; bots: Bot[] }) {
             <Button
               key={bot.id}
               type="button"
-              size="sm"
+              size="xs"
               variant={on ? "secondary" : "ghost"}
               aria-pressed={on}
               disabled={assign.isPending}
@@ -465,7 +551,7 @@ function BotToggles({ skill, bots }: { skill: SharedSkill; bots: Bot[] }) {
             >
               <BotAvatar
                 bot={bot}
-                size={18}
+                size={14}
                 className={cn(!on && "opacity-50 grayscale")}
               />
               {bot.name}

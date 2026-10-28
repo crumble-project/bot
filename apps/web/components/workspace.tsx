@@ -122,6 +122,55 @@ export function PageToolbar({
   );
 }
 
+/** One filter choice: its label, and an optional icon and count. */
+export type FilterPill = {
+  value: string;
+  label: string;
+  icon?: ReactNode;
+  count?: number;
+};
+
+/** A scrolling row of rounded filter buttons, one pressed. */
+export function FilterPills({
+  label,
+  pills,
+  value,
+  onChange,
+}: {
+  label: string;
+  pills: FilterPill[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="-mx-1 flex min-w-0 gap-1 overflow-x-auto px-1 pb-1"
+    >
+      {pills.map((pill) => (
+        <Button
+          key={pill.value}
+          type="button"
+          size="sm"
+          variant={value === pill.value ? "secondary" : "ghost"}
+          aria-pressed={value === pill.value}
+          className="shrink-0 rounded-full"
+          onClick={() => onChange(pill.value)}
+        >
+          {pill.icon}
+          {pill.label}
+          {pill.count !== undefined && (
+            <span className="text-muted-foreground tabular-nums">
+              {pill.count}
+            </span>
+          )}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 /** A page's create button, such as "New memory". */
 export function NewButton({
   label,

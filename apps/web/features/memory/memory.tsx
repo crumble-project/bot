@@ -38,6 +38,7 @@ import {
 import { BotAvatar } from "@/features/bots/avatar";
 import {
   ConfirmDelete,
+  FilterPills,
   NewButton,
   PageToolbar,
   SectionEmpty,
@@ -160,44 +161,25 @@ function OwnerPills({
     0,
   );
 
-  const pills = [
-    { id: ALL, name: "All", count: total, icon: null },
-    ...owners.map((owner) => ({
-      id: owner.id,
-      name: owner.name,
-      count: owner.memories.data?.length ?? 0,
-      icon: owner.bot ? (
-        <BotAvatar bot={owner.bot} size={18} />
-      ) : (
-        <IconUsersGroup />
-      ),
-    })),
-  ];
-
   return (
-    <div
-      role="group"
-      aria-label="Whose memories"
-      className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1"
-    >
-      {pills.map((pill) => (
-        <Button
-          key={pill.id}
-          type="button"
-          size="sm"
-          variant={scope === pill.id ? "secondary" : "ghost"}
-          aria-pressed={scope === pill.id}
-          className="shrink-0 rounded-full"
-          onClick={() => onScope(pill.id)}
-        >
-          {pill.icon}
-          {pill.name}
-          <span className="text-muted-foreground tabular-nums">
-            {pill.count}
-          </span>
-        </Button>
-      ))}
-    </div>
+    <FilterPills
+      label="Whose memories"
+      value={scope}
+      onChange={onScope}
+      pills={[
+        { value: ALL, label: "All", count: total },
+        ...owners.map((owner) => ({
+          value: owner.id,
+          label: owner.name,
+          count: owner.memories.data?.length ?? 0,
+          icon: owner.bot ? (
+            <BotAvatar bot={owner.bot} size={18} />
+          ) : (
+            <IconUsersGroup />
+          ),
+        })),
+      ]}
+    />
   );
 }
 

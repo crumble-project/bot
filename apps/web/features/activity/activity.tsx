@@ -51,7 +51,7 @@ import {
   changeSummary,
   changeTitle,
 } from "./changes";
-import { WorkspacePage } from "@/components/workspace";
+import { FilterPills, WorkspacePage } from "@/components/workspace";
 
 type Activity = ActivityFeed["activities"][number];
 
@@ -244,36 +244,20 @@ function KindPills({
   kind: string;
   onChange: (kind: string) => void;
 }) {
-  const pills = [
-    { value: ALL, label: "All", icon: null },
-    ...KIND_ORDER.map((value) => {
-      const Icon = KINDS[value].icon;
-
-      return { value, label: KINDS[value].label, icon: <Icon /> };
-    }),
-  ];
-
   return (
-    <div
-      role="group"
-      aria-label="Kind of activity"
-      className="-mx-1 flex min-w-0 gap-1 overflow-x-auto px-1 pb-1"
-    >
-      {pills.map((pill) => (
-        <Button
-          key={pill.value}
-          type="button"
-          size="sm"
-          variant={kind === pill.value ? "secondary" : "ghost"}
-          aria-pressed={kind === pill.value}
-          className="shrink-0 rounded-full"
-          onClick={() => onChange(pill.value)}
-        >
-          {pill.icon}
-          {pill.label}
-        </Button>
-      ))}
-    </div>
+    <FilterPills
+      label="Kind of activity"
+      value={kind}
+      onChange={onChange}
+      pills={[
+        { value: ALL, label: "All" },
+        ...KIND_ORDER.map((value) => {
+          const Icon = KINDS[value].icon;
+
+          return { value, label: KINDS[value].label, icon: <Icon /> };
+        }),
+      ]}
+    />
   );
 }
 
