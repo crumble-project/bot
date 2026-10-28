@@ -489,7 +489,7 @@ export function MessageActions({
     (message.role === "user" || message.role === "assistant");
 
   return (
-    <div className="flex gap-1">
+    <div className="flex gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
       {canReply && (
         <Button
           variant="ghost"
