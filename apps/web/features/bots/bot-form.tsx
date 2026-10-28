@@ -108,19 +108,20 @@ const DEFAULT_INSTRUCTIONS =
 
 const seedAvatar = () => `bot:${randomId()}`;
 
+/** Set-up providers, plus the current one when it is not, so a bot's choice never silently changes. */
 function providerItems(providers: Provider[], current: string) {
-  const sorted = [...providers].sort(
-    (a, b) => Number(b.configured) - Number(a.configured),
+  const items = providers.flatMap((each) =>
+    each.configured ? [{ label: each.name, value: each.provider }] : [],
   );
 
-  const items = sorted.map((each) => ({
-    label: each.configured ? each.name : `${each.name} (not set up)`,
-    value: each.provider,
-  }));
+  if (!current || items.some((item) => item.value === current)) return items;
 
-  return current && !items.some((item) => item.value === current)
-    ? [{ label: current, value: current }, ...items]
-    : items;
+  const name = providers.find((each) => each.provider === current)?.name;
+
+  return [
+    { label: `${name ?? current} (not set up)`, value: current },
+    ...items,
+  ];
 }
 
 function ProviderSelect({
@@ -701,6 +702,15 @@ function ModelSettings({
               setModel("");
             }}
           />
+          {!providers.some((each) => each.configured) && (
+            <FieldDescription>
+              No provider is set up yet.{" "}
+              <Link to="/settings/providers" className="underline">
+                Add one in Settings
+              </Link>
+              .
+            </FieldDescription>
+          )}
         </Field>
         <Field>
           <FieldLabel htmlFor="model">Model</FieldLabel>
