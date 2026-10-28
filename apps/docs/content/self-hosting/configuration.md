@@ -6,6 +6,8 @@ sidebar:
 ---
 
 Configure the server with environment variables.
+When you run `bun run dev`, coding and desktop images default to their published
+`:main` versions. Other startup commands leave both images unset.
 
 ## Expose the server
 

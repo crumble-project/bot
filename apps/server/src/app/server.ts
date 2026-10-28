@@ -14,6 +14,7 @@ import {
 } from "../integrations/mcp-oauth";
 import type { Effect, Scope } from "effect";
 import type { Workspaces } from "../workspaces/workspace";
+import { configureDevWorkspaces } from "./dev-workspaces";
 
 const TENANT_PREFIXES = ["/v1/", "/desktop-viewer/", "/api/auth/"];
 
@@ -251,6 +252,8 @@ export async function startServer(
 }
 
 if (import.meta.main) {
+  if (process.argv.includes("--dev-workspaces"))
+    configureDevWorkspaces(process.env);
   const running = await startServer();
   console.log(`Crumble server listening on ${running.server.url}`);
   console.log("Open /ui to create an account or sign in.");
