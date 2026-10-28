@@ -69,7 +69,7 @@ export type ApiBots = BotsAccess & {
 type ApiApp = ReturnType<typeof contractApp>;
 
 /** Everything the API can be built with beyond the bots, the scheduler, and the token. */
-type ApiOptions = {
+export type ApiOptions = {
   commonSkills?: CommonSkill[];
   /** Whether the server can give bots the coding tool. */
   coding?: boolean;
@@ -85,10 +85,13 @@ type ApiOptions = {
   desktopControl?: DesktopControlAccess;
   /** Single-use viewer links. */
   viewerTickets?: ViewerTickets;
-  /** Connects to a bot desktop's VNC server, for viewers. */
+  /** Connects to a bot desktop's VNC server, for viewers; a passive one only watches a running machine. */
   openDesktop?: (
     agentId: string,
+    options: { passive: boolean },
   ) => Effect.Effect<DesktopStream, DesktopOpenError>;
+  /** Whether a bot's machine runs its bot desktop now. */
+  desktopRunning?: (agentId: string) => boolean;
   /** Boots a bot's machine ahead of a viewer's connection. */
   startDesktop?: (agentId: string) => Effect.Effect<void, DesktopOpenError>;
   /** The server's provider sign-ins; API-only fixtures get one of their own. */
@@ -185,6 +188,7 @@ const desktopRouteOptions = (
   tickets: options.viewerTickets ?? new ViewerTickets(),
   ...(options.openDesktop && { openDesktop: options.openDesktop }),
   ...(options.startDesktop && { startDesktop: options.startDesktop }),
+  ...(options.desktopRunning && { desktopRunning: options.desktopRunning }),
 });
 
 const pushServerIdOf = (push: PushRuntime | undefined) =>

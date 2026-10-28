@@ -6,7 +6,7 @@ test("a ticket is redeemed once, and not after it expires", () => {
   const tickets = new ViewerTickets(() => now);
   const { ticket } = tickets.issue("bot-a");
 
-  expect(tickets.redeem(ticket)).toBe("bot-a");
+  expect(tickets.redeem(ticket)).toEqual({ agentId: "bot-a", passive: false });
   expect(tickets.redeem(ticket)).toBeUndefined();
 
   const late = tickets.issue("bot-a").ticket;

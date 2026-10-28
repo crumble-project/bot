@@ -52,6 +52,10 @@ class DirectoryWorkspaces implements Workspaces {
     return Effect.void;
   }
 
+  desktopRunning(_agentId: string) {
+    return false;
+  }
+
   keepAwake(_agentId: string) {
     return () => {};
   }

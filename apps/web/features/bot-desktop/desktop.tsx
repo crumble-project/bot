@@ -6,7 +6,11 @@ import {
 } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft02Icon, RefreshIcon } from "@hugeicons/core-free-icons";
+import {
+  ArrowLeft02Icon,
+  ComputerIcon,
+  RefreshIcon,
+} from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -17,6 +21,7 @@ import {
   agentPath,
   botsQuery,
   call,
+  desktopStatusQuery,
   follow,
 } from "@/lib/api";
 
@@ -162,6 +167,77 @@ export function BotDesktop({ botId }: { botId: string }) {
         </p>
       )}
     </div>
+  );
+}
+
+/** A small live view of a bot's desktop that opens the full desktop. */
+export function DesktopPreview({ botId }: { botId: string }) {
+  const path = agentPath(botId);
+  const [asked, setAsked] = useState(false);
+
+  // Machine state has no live event, so poll it.
+  const status = useQuery({
+    ...desktopStatusQuery(botId),
+    refetchInterval: 10_000,
+  });
+
+  const live = asked || status.data?.running === true;
+
+  // Until asked, the link only watches: it neither boots the machine nor keeps it awake.
+  const viewer = useMutation({
+    mutationFn: () =>
+      call<DesktopViewer>(
+        `${path}/desktop/viewer${asked ? "" : "?passive=true"}`,
+        "POST",
+      ),
+  });
+
+  const { mutate: connect, reset } = viewer;
+
+  useEffect(() => {
+    if (live) connect();
+    else reset();
+  }, [live, connect, reset]);
+
+  if (!live)
+    return (
+      <Button
+        variant="outline"
+        className="aspect-video h-auto w-full flex-col gap-1.5 text-muted-foreground"
+        onClick={() => setAsked(true)}
+      >
+        <HugeiconsIcon icon={ComputerIcon} />
+        Show desktop
+      </Button>
+    );
+
+  return (
+    <Link
+      to="/bots/$botId/desktop"
+      params={{ botId }}
+      title="Open the bot desktop"
+      className="relative block aspect-video overflow-hidden rounded-lg border bg-black"
+    >
+      {viewer.isPending && (
+        <span className="absolute inset-0 flex items-center justify-center">
+          <Spinner className="text-white/70" />
+        </span>
+      )}
+      {viewer.isError && (
+        <span className="absolute inset-0 flex items-center justify-center p-3 text-center text-xs text-white/60">
+          {viewer.error.message}
+        </span>
+      )}
+      {viewer.data && (
+        <iframe
+          key={viewer.data.path}
+          title="Bot desktop preview"
+          src={viewer.data.path}
+          tabIndex={-1}
+          className="pointer-events-none size-full border-0"
+        />
+      )}
+    </Link>
   );
 }
 

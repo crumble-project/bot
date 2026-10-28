@@ -19,6 +19,7 @@ import {
 import {
   DesktopNotConfigured,
   DesktopNotEnabled,
+  DesktopNotRunning,
   WorkspaceBootFailed,
   WorkspacesClosed,
   messageOf,
@@ -385,21 +386,63 @@ class Workspace {
     return this.desktopImage().pipe(Effect.andThen(this.start(true)));
   }
 
-  /** A stream to Xvnc in the guest, through socat on an exec stream like the pi-env relay: no guest port. */
+  /**
+   * A stream to Xvnc in the guest, through socat on an exec stream like the pi-env relay: no guest port. A passive
+   * stream neither boots nor holds the machine, so it ends when the machine stops.
+   */
   readonly openDesktop = Effect.fn("Workspace.openDesktop")(function* (
     this: Workspace,
+    passive: boolean,
   ): Effect.fn.Return<DesktopStream, DesktopOpenError> {
     const desktopImage = yield* this.desktopImage();
+
+    if (passive)
+      return yield* this.connectDesktop(
+        desktopImage,
+        this.runningDesktop(desktopImage),
+        () => {},
+      );
+
     const release = this.hold();
 
-    return yield* this.connectDesktop(desktopImage, release).pipe(
-      Effect.onError(() => Effect.sync(release)),
-    );
+    return yield* this.connectDesktop(
+      desktopImage,
+      this.start(true),
+      release,
+    ).pipe(Effect.onError(() => Effect.sync(release)));
   });
 
+  /** Whether the machine runs the bot desktop now. */
+  desktopRunning() {
+    const desktopImage = this.owner.desktopImageName();
+
+    return (
+      desktopImage !== undefined && this.running?.machine.image === desktopImage
+    );
+  }
+
+  private runningDesktop(desktopImage: string) {
+    return Effect.suspend(() => {
+      const running = this.running;
+
+      return running?.machine.image === desktopImage
+        ? Effect.succeed(running)
+        : Effect.fail(
+            new DesktopNotRunning({
+              message: "The bot desktop is not running",
+            }),
+          );
+    });
+  }
+
   private readonly connectDesktop = Effect.fn("Workspace.connectDesktop")(
-    function* (this: Workspace, desktopImage: string, release: () => void) {
-      const running = yield* this.start(true);
+    function* (
+      this: Workspace,
+      desktopImage: string,
+      machine: Effect.Effect<Running, DesktopOpenError>,
+      release: () => void,
+    ) {
+      const running = yield* machine;
 
       // The bot lost its bot desktop while the machine booted.
       if (running.machine.image !== desktopImage)
@@ -504,8 +547,14 @@ export class MachineWorkspaces implements Workspaces {
       : this.image;
   }
 
-  openDesktop(agentId: string) {
-    return Effect.suspend(() => this.workspace(agentId).openDesktop());
+  openDesktop(agentId: string, options: { passive?: boolean } = {}) {
+    return Effect.suspend(() =>
+      this.workspace(agentId).openDesktop(options.passive === true),
+    );
+  }
+
+  desktopRunning(agentId: string) {
+    return this.workspaces.get(agentId)?.desktopRunning() ?? false;
   }
 
   startDesktop(agentId: string) {

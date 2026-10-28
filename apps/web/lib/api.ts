@@ -12,6 +12,7 @@ import type {
   describedMcpServerResponse,
   desktopControlResponse,
   desktopJobsResponse,
+  desktopStatusResponse,
   desktopViewerResponse,
   botRequestResponse,
   groupChatResponse,
@@ -80,6 +81,8 @@ export type DesktopJob = z.infer<typeof desktopJobsResponse>["jobs"][number];
 export type DesktopControl = z.infer<typeof desktopControlResponse>;
 
 export type DesktopViewer = z.infer<typeof desktopViewerResponse>;
+
+export type DesktopStatus = z.infer<typeof desktopStatusResponse>;
 
 export type ActivityFeed = z.infer<typeof activityFeedResponse>;
 
@@ -255,6 +258,13 @@ export const scriptRunsQuery = (id: string) =>
           signal,
         },
       ),
+  });
+
+export const desktopStatusQuery = (id: string) =>
+  queryOptions({
+    queryKey: ["desktop-status", id],
+    queryFn: ({ signal }) =>
+      api<DesktopStatus>(`${agentPath(id)}/desktop/status`, { signal }),
   });
 
 export const botMemoriesQuery = (id: string) =>

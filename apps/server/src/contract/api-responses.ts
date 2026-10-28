@@ -216,6 +216,15 @@ export const desktopControlResponse = z
   })
   .openapi("DesktopControl");
 
+export const desktopStatusResponse = z
+  .object({
+    running: z.boolean().openapi({
+      description:
+        "Whether the bot's machine runs its bot desktop now, so a passive viewer can connect. Always false for a bot without a bot desktop.",
+    }),
+  })
+  .openapi("DesktopStatus");
+
 export const desktopViewerResponse = z
   .object({
     path: z.string().openapi({

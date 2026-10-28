@@ -355,9 +355,12 @@ export async function createTenant(
               ),
             ),
             ...(workspaces && {
-              openDesktop: (agentId: string) => workspaces.openDesktop(agentId),
+              openDesktop: (agentId: string, desktop: { passive: boolean }) =>
+                workspaces.openDesktop(agentId, desktop),
               startDesktop: (agentId: string) =>
                 workspaces.startDesktop(agentId),
+              desktopRunning: (agentId: string) =>
+                workspaces.desktopRunning(agentId),
             }),
             providerAuth: providerSignInsAccess(run),
             oauthClient,

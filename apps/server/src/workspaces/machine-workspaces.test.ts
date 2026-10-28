@@ -127,6 +127,37 @@ test("a VNC stream that does not open releases the machine for its idle stop", a
   await Effect.runPromise(workspaces.close());
 });
 
+test("a passive viewer watches a running bot desktop without booting or holding it", async () => {
+  const { machines, booted, stopped, stopping } = fakeMachines();
+
+  const workspaces = new MachineWorkspaces(machines, BASE, {
+    desktopImage: DESKTOP,
+    wantsDesktop: () => true,
+    idleTimeoutMs: 0,
+  });
+
+  const passive = workspaces.openDesktop("bot", { passive: true });
+
+  expect(await failureOf(passive)).toBe("DesktopNotRunning");
+  expect(booted).toEqual([]);
+
+  const release = workspaces.keepAwake("bot");
+
+  await Effect.runPromise(workspaces.startDesktop("bot"));
+  expect(workspaces.desktopRunning("bot")).toBe(true);
+
+  const stream = await Effect.runPromise(passive);
+
+  release();
+  // A hold the passive stream kept would block the idle stop, and this would time out.
+  await Effect.runPromise(Deferred.await(stopping));
+  expect(stopped).toEqual([DESKTOP]);
+  expect(booted).toEqual([DESKTOP]);
+  expect(workspaces.desktopRunning("bot")).toBe(false);
+  await stream.close();
+  await Effect.runPromise(workspaces.close());
+});
+
 test("closed workspaces boot nothing more", async () => {
   const { machines, booted } = fakeMachines();
 

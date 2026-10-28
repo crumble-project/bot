@@ -13,6 +13,7 @@ import {
   send,
 } from "@/lib/api";
 import { BotAvatar } from "@/features/bots/avatar";
+import { DesktopPreview } from "@/features/bot-desktop/desktop";
 import { useWorking } from "@/lib/live";
 import { finished, taskTiming } from "@/features/schedules/tasks";
 
@@ -95,7 +96,7 @@ function RoutineList({
   );
 }
 
-/** The bot inspector beside its chat: profile and routines. */
+/** The bot inspector beside its chat: profile, desktop, and routines. */
 export function DetailsPanel({ bot }: { bot: Bot }) {
   const working = useWorking(bot.id);
   const schedules = useQuery(schedulesQuery);
@@ -108,6 +109,12 @@ export function DetailsPanel({ bot }: { bot: Bot }) {
   return (
     <aside className="hidden w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l p-4 lg:flex">
       <ProfileSummary bot={bot} working={working} />
+      {bot.tools.includes("desktop") && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-medium text-muted-foreground">Desktop</h2>
+          <DesktopPreview key={bot.id} botId={bot.id} />
+        </section>
+      )}
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium text-muted-foreground">Routines</h2>
         <RoutineList schedules={schedules} routines={routines} />

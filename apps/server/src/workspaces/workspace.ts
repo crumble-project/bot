@@ -52,9 +52,14 @@ export interface Workspaces {
   restart(agentId: string): Effect.Effect<void, WorkspaceStopFailed>;
   /**
    * Connects to the bot desktop's VNC server, booting the machine if needed. The machine stays awake until the stream
-   * closes.
+   * closes. A `passive` stream neither boots nor holds the machine, and ends when it stops.
    */
-  openDesktop(agentId: string): Effect.Effect<DesktopStream, DesktopOpenError>;
+  openDesktop(
+    agentId: string,
+    options?: { passive?: boolean },
+  ): Effect.Effect<DesktopStream, DesktopOpenError>;
+  /** Whether the bot's machine runs its bot desktop now. */
+  desktopRunning(agentId: string): boolean;
   /** Boots the bot's machine ahead of `openDesktop`, so a viewer about to connect waits less. */
   startDesktop(agentId: string): Effect.Effect<void, DesktopOpenError>;
   /** Keeps the bot's machine from its idle stop until the returned release is called. */

@@ -52,6 +52,9 @@ export async function novncResponse(requestPath: string) {
 export const ticketOwner = (ticket: string) =>
   /^([A-Za-z0-9_-]{1,128})\.[A-Za-z0-9_-]+$/.exec(ticket)?.[1];
 
+/** Whom a viewer link shows, and whether it only watches: no boot, no keeping the machine awake. */
+export type Viewer = { agentId: string; passive: boolean };
+
 /**
  * Single-use viewer links. A web view cannot add the owner's bearer token to a WebSocket, so the ticket in the URL is
  * the credential: issued to the authenticated owner, valid for a minute, and spent when its WebSocket connects.
@@ -59,7 +62,7 @@ export const ticketOwner = (ticket: string) =>
 export class ViewerTickets {
   private readonly tickets = new Map<
     string,
-    { agentId: string; expires: number }
+    { viewer: Viewer; expires: number }
   >();
 
   /** `owner` names the account in each ticket, so a link opens without the account's session. */
@@ -68,32 +71,32 @@ export class ViewerTickets {
     private readonly owner?: string,
   ) {}
 
-  issue(agentId: string) {
+  issue(agentId: string, passive = false) {
     this.prune();
 
     const secret = randomBytes(32).toString("base64url");
     const ticket = this.owner ? `${this.owner}.${secret}` : secret;
     const expires = this.now() + VIEWER_TICKET_MS;
 
-    this.tickets.set(ticket, { agentId, expires });
+    this.tickets.set(ticket, { viewer: { agentId, passive }, expires });
 
     return { ticket, expiresAt: new Date(expires).toISOString() };
   }
 
-  /** The bot the ticket was issued for, if it is valid; the page may load it before the WebSocket redeems it. */
+  /** The viewer the ticket was issued for, if it is valid; the page may load it before the WebSocket redeems it. */
   peek(ticket: string) {
     const entry = this.tickets.get(ticket);
 
-    return entry && entry.expires > this.now() ? entry.agentId : undefined;
+    return entry && entry.expires > this.now() ? entry.viewer : undefined;
   }
 
-  /** The bot the ticket was issued for, once: the ticket is spent whether or not it was still valid. */
+  /** The viewer the ticket was issued for, once: the ticket is spent whether or not it was still valid. */
   redeem(ticket: string) {
-    const agentId = this.peek(ticket);
+    const viewer = this.peek(ticket);
 
     this.tickets.delete(ticket);
 
-    return agentId;
+    return viewer;
   }
 
   private prune() {

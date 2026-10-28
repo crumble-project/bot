@@ -12,6 +12,12 @@ export class DesktopNotEnabled extends Schema.TaggedError<DesktopNotEnabled>()(
   { message: Schema.String },
 ) {}
 
+/** A watch-only viewer found the bot's machine stopped; it does not boot one. */
+export class DesktopNotRunning extends Schema.TaggedError<DesktopNotRunning>()(
+  "DesktopNotRunning",
+  { message: Schema.String },
+) {}
+
 /** The backend could not start the bot's machine, or set it up before the bot desktop starts. */
 export class WorkspaceBootFailed extends Schema.TaggedError<WorkspaceBootFailed>()(
   "WorkspaceBootFailed",
@@ -66,6 +72,7 @@ export type WorkspaceStartError =
 export type DesktopOpenError =
   | DesktopNotConfigured
   | DesktopNotEnabled
+  | DesktopNotRunning
   | WorkspaceStreamFailed
   | WorkspaceStartError;
 
