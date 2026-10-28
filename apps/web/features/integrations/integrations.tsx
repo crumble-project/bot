@@ -1,28 +1,30 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Delete02Icon, PencilEdit01Icon } from "@hugeicons/core-free-icons";
+import {
+  IconLogout,
+  IconPencil,
+  IconPlug,
+  IconTrash,
+} from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertDialog } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import {
   Field,
   FieldContent,
   FieldDescription,
-  FieldGroup,
   FieldLabel,
   FieldLegend,
   FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { OwnerSelectField, SaveDialogFooter } from "@/components/form-fields";
+import { EditorSheet, OwnerSelectField } from "@/components/form-fields";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
@@ -36,11 +38,16 @@ import {
   send,
 } from "@/lib/api";
 import {
-  ConfirmDelete,
+  ConfirmDeleteContent,
+  NewButton,
+  PageToolbar,
+  RowMenu,
+  RowTile,
   Section,
   SectionEmpty,
   WorkspacePage,
 } from "@/components/workspace";
+import { BotAvatar } from "@/features/bots/avatar";
 
 const SHARED = "shared";
 const OAUTH_SERVER_KEY = "crumble.oauth.server";
@@ -57,9 +64,9 @@ async function refresh() {
 }
 
 function authLabel(server: McpServer) {
-  if (server.auth === "oauth") return "Signed in with OAuth";
+  if (server.auth === "oauth") return "Signed in";
 
-  return server.auth === "token" ? "Uses a token" : "No sign-in";
+  return server.auth === "token" ? "Token" : "No sign-in";
 }
 
 function validUrl(value: string) {
@@ -95,7 +102,7 @@ function IntegrationSections({
     <>
       <Section
         title="Shared"
-        footer="Shared MCP servers can be turned on for any bot in its profile."
+        description="Turn a shared server on for any bot in its profile."
       >
         {shared.length === 0 && (
           <SectionEmpty>No shared MCP servers yet.</SectionEmpty>
@@ -104,18 +111,21 @@ function IntegrationSections({
           <ServerRow
             key={server.id}
             server={server}
-            owner={null}
             onEdit={() => onEdit(server)}
           />
         ))}
       </Section>
       {personal.map(({ bot, servers: own }) => (
-        <Section key={bot.id} title={`Only ${bot.name}`}>
+        <Section
+          key={bot.id}
+          title={bot.name}
+          icon={<BotAvatar bot={bot} size={22} />}
+          description={`Only ${bot.name} can use these.`}
+        >
           {own.map((server) => (
             <ServerRow
               key={server.id}
               server={server}
-              owner={bot}
               onEdit={() => onEdit(server)}
             />
           ))}
@@ -129,16 +139,32 @@ export function IntegrationsPage() {
   const bots = useQuery(botsQuery);
   const servers = useQuery(mcpServersQuery);
   const [editing, setEditing] = useState<Editing | null>(null);
-  const list = servers.data ?? [];
+  const [search, setSearch] = useState("");
+  const needle = search.trim().toLowerCase();
+
+  const list = (servers.data ?? []).filter(
+    (server) =>
+      !needle ||
+      server.name.toLowerCase().includes(needle) ||
+      server.url.toLowerCase().includes(needle),
+  );
 
   return (
     <WorkspacePage
       title="Integrations"
       refreshing={bots.isFetching || servers.isFetching}
       onRefresh={() => void refresh()}
-      newLabel="New MCP server"
-      onNew={() => setEditing({ server: null })}
     >
+      <PageToolbar
+        search={search}
+        searchLabel="Search MCP servers"
+        onSearch={setSearch}
+      >
+        <NewButton
+          label="New MCP server"
+          onClick={() => setEditing({ server: null })}
+        />
+      </PageToolbar>
       {servers.isPending || bots.isPending ? (
         <Skeleton className="h-40" />
       ) : servers.isError ? (
@@ -163,15 +189,7 @@ export function IntegrationsPage() {
   );
 }
 
-function ServerRow({
-  server,
-  owner,
-  onEdit,
-}: {
-  server: McpServer;
-  owner: Bot | null;
-  onEdit: () => void;
-}) {
+function useServerActions(server: McpServer) {
   const signIn = useMutation({
     mutationFn: async () => {
       const result = await call<OAuthStart, { redirectUri: string }>(
@@ -198,38 +216,32 @@ function ServerRow({
     onSettled: refresh,
   });
 
-  const failure = signIn.error ?? signOut.error ?? remove.error;
+  return { signIn, signOut, remove };
+}
+
+function ServerRow({
+  server,
+  onEdit,
+}: {
+  server: McpServer;
+  onEdit: () => void;
+}) {
+  const { signIn, signOut, remove } = useServerActions(server);
+  const [deleting, setDeleting] = useState(false);
+
+  const failure =
+    server.error ?? (signIn.error ?? signOut.error ?? remove.error)?.message;
 
   return (
-    <div className="flex items-start gap-3 p-3">
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="flex items-center gap-2 text-sm font-medium">
-          {server.name}
-          {!server.enabled && <Badge variant="outline">Disabled</Badge>}
-        </span>
-        <span className="truncate text-xs text-muted-foreground">
-          {server.url}
-        </span>
-        <span className="text-xs text-muted-foreground">
-          {owner ? `Only ${owner.name}` : "Shared"} · {authLabel(server)}
-        </span>
-        {server.error && (
-          <span className="text-xs text-destructive">{server.error}</span>
-        )}
-        {failure && (
-          <span className="text-xs text-destructive">{failure.message}</span>
-        )}
-      </div>
-      {server.auth === "oauth" ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={signOut.isPending}
-          onClick={() => signOut.mutate()}
-        >
-          Sign Out
-        </Button>
-      ) : (
+    <div className="flex items-center gap-3 px-3 py-3 transition-colors hover:bg-muted/50">
+      <RowTile>
+        <IconPlug />
+      </RowTile>
+      <ServerDetails server={server} failure={failure} onEdit={onEdit} />
+      <span className="hidden text-sm text-muted-foreground sm:block">
+        {authLabel(server)}
+      </span>
+      {server.auth !== "oauth" && (
         <Button
           variant="outline"
           size="sm"
@@ -237,23 +249,67 @@ function ServerRow({
           onClick={() => signIn.mutate()}
         >
           {signIn.isPending && <Spinner data-icon="inline-start" />}
-          Sign In…
+          Sign in
         </Button>
       )}
-      <Button variant="ghost" size="icon-sm" title="Edit" onClick={onEdit}>
-        <HugeiconsIcon icon={PencilEdit01Icon} />
-      </Button>
-      <ConfirmDelete
-        title={`Delete ${server.name}?`}
-        description="Bots lose its tools and its sign-in is removed. This cannot be undone."
-        onConfirm={() => remove.mutate()}
-        trigger={
-          <Button variant="ghost" size="icon-sm" title="Delete">
-            <HugeiconsIcon icon={Delete02Icon} />
-          </Button>
-        }
-      />
+      <RowMenu>
+        <DropdownMenuItem onClick={onEdit}>
+          <IconPencil />
+          Edit
+        </DropdownMenuItem>
+        {server.auth === "oauth" && (
+          <DropdownMenuItem
+            disabled={signOut.isPending}
+            onClick={() => signOut.mutate()}
+          >
+            <IconLogout />
+            Sign out
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          onClick={() => setDeleting(true)}
+        >
+          <IconTrash />
+          Delete
+        </DropdownMenuItem>
+      </RowMenu>
+      <AlertDialog open={deleting} onOpenChange={setDeleting}>
+        <ConfirmDeleteContent
+          title={`Delete ${server.name}?`}
+          description="Bots lose its tools and its sign-in is removed. This cannot be undone."
+          onConfirm={() => remove.mutate()}
+        />
+      </AlertDialog>
     </div>
+  );
+}
+
+function ServerDetails({
+  server,
+  failure,
+  onEdit,
+}: {
+  server: McpServer;
+  failure: string | undefined;
+  onEdit: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      onClick={onEdit}
+    >
+      <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
+        <span className="truncate">{server.name}</span>
+        {!server.enabled && <Badge variant="outline">Disabled</Badge>}
+      </span>
+      <span className="truncate font-mono text-xs text-muted-foreground">
+        {server.url}
+      </span>
+      {failure && <span className="text-xs text-destructive">{failure}</span>}
+    </button>
   );
 }
 
@@ -366,48 +422,27 @@ function ServerDialog({
   const valid = Boolean(draft.name.trim() && validUrl(draft.url.trim()));
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {server ? "Edit MCP Server" : "New MCP Server"}
-          </DialogTitle>
-        </DialogHeader>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-
-            if (valid) save.mutate();
-          }}
-        >
-          <FieldGroup>
-            <ServerFields
-              bots={bots}
-              server={server}
-              draft={draft}
-              patch={patch}
-            />
-            <OAuthAppFields server={server} draft={draft} patch={patch} />
-            <Field orientation="horizontal">
-              <FieldContent>
-                <FieldLabel htmlFor="mcp-enabled">Enabled</FieldLabel>
-              </FieldContent>
-              <Switch
-                id="mcp-enabled"
-                checked={draft.enabled}
-                onCheckedChange={(enabled) => patch({ enabled })}
-              />
-            </Field>
-            <SaveDialogFooter
-              error={save.isError ? save.error : null}
-              onCancel={onClose}
-              disabled={!valid || save.isPending}
-              label={server ? "Save" : "Add"}
-            />
-          </FieldGroup>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <EditorSheet
+      title={server ? "Edit MCP Server" : "New MCP Server"}
+      error={save.error?.message}
+      submitLabel={server ? "Save" : "Add"}
+      submitDisabled={!valid || save.isPending}
+      onSubmit={() => valid && save.mutate()}
+      onClose={onClose}
+    >
+      <ServerFields bots={bots} server={server} draft={draft} patch={patch} />
+      <OAuthAppFields server={server} draft={draft} patch={patch} />
+      <Field orientation="horizontal">
+        <FieldContent>
+          <FieldLabel htmlFor="mcp-enabled">Enabled</FieldLabel>
+        </FieldContent>
+        <Switch
+          id="mcp-enabled"
+          checked={draft.enabled}
+          onCheckedChange={(enabled) => patch({ enabled })}
+        />
+      </Field>
+    </EditorSheet>
   );
 }
 

@@ -6,14 +6,13 @@ import {
   useNavigate,
   Outlet,
 } from "@tanstack/react-router";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  Activity01Icon,
-  BrainIcon,
-  Calendar03Icon,
-  PlusSignIcon,
-  Settings01Icon,
-} from "@hugeicons/core-free-icons";
+  IconActivity,
+  IconBrain,
+  IconCalendarRepeat,
+  IconPlus,
+  IconSettings,
+} from "@tabler/icons-react";
 import {
   Sidebar,
   SidebarContent,
@@ -52,9 +51,9 @@ import {
 import { BotAvatar, botColor, botStyle } from "@/features/bots/avatar";
 
 const WORKSPACE = [
-  { to: "/memory", label: "Memory", icon: BrainIcon },
-  { to: "/tasks", label: "Tasks", icon: Calendar03Icon },
-  { to: "/activity", label: "Activity", icon: Activity01Icon },
+  { to: "/memory", label: "Memory", icon: IconBrain },
+  { to: "/automations", label: "Automations", icon: IconCalendarRepeat },
+  { to: "/activity", label: "Activity", icon: IconActivity },
 ] as const;
 
 function useResetOnUserChange(userId: string | undefined) {
@@ -216,7 +215,7 @@ function BotsSection({
     <SidebarGroup>
       <SidebarGroupLabel>Bots</SidebarGroupLabel>
       <SidebarGroupAction title="New bot" render={<Link to="/bots/new" />}>
-        <HugeiconsIcon icon={PlusSignIcon} />
+        <IconPlus />
         <span className="sr-only">New bot</span>
       </SidebarGroupAction>
       <SidebarGroupContent>
@@ -274,7 +273,7 @@ function GroupsSection({
           title="New group chat"
           render={<Link to="/groups/new" />}
         >
-          <HugeiconsIcon icon={PlusSignIcon} />
+          <IconPlus />
           <span className="sr-only">New group chat</span>
         </SidebarGroupAction>
       )}
@@ -350,7 +349,7 @@ function WorkspaceSection() {
                 isActive={Boolean(matchRoute({ to: item.to }))}
                 render={<Link to={item.to} />}
               >
-                <HugeiconsIcon icon={item.icon} />
+                <item.icon />
                 {item.label}
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -372,7 +371,7 @@ function SettingsFooter() {
             isActive={Boolean(matchRoute({ to: "/settings", fuzzy: true }))}
             render={<Link to="/settings" />}
           >
-            <HugeiconsIcon icon={Settings01Icon} />
+            <IconSettings />
             Settings
             <ConnectionStatus />
           </SidebarMenuButton>

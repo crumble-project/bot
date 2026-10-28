@@ -1,10 +1,9 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  ArrowDown02Icon,
-  ArrowRight02Icon,
-  ArrowUp02Icon,
-} from "@hugeicons/core-free-icons";
+  IconArrowDown,
+  IconArrowRight,
+  IconArrowUp,
+} from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { ChartLayout, Message } from "@/lib/api";
 
@@ -54,9 +53,9 @@ export function DisplayCard({ display }: { display: Display }) {
 }
 
 const TREND = {
-  up: ArrowUp02Icon,
-  down: ArrowDown02Icon,
-  flat: ArrowRight02Icon,
+  up: IconArrowUp,
+  down: IconArrowDown,
+  flat: IconArrowRight,
 };
 
 function Stats({ items }: { items: Stat[] }) {
@@ -82,7 +81,7 @@ function Stats({ items }: { items: Stat[] }) {
                     "text-muted-foreground",
                 )}
               >
-                {Icon && <HugeiconsIcon icon={Icon} className="size-3" />}
+                {Icon && <Icon className="size-3" />}
                 {item.change}
               </span>
             )}

@@ -10,8 +10,10 @@ import type {
   credentialUseResponse,
   credentialsResponse,
   describedMcpServerResponse,
+  executionResponse,
   desktopControlResponse,
   desktopJobsResponse,
+  desktopStatusResponse,
   desktopViewerResponse,
   botRequestResponse,
   groupChatResponse,
@@ -67,6 +69,8 @@ export type Schedule = z.infer<typeof scheduleResponse>;
 
 export type ScriptRun = z.infer<typeof scriptRunResponse>;
 
+export type Execution = z.infer<typeof executionResponse>;
+
 export type McpServer = z.infer<typeof describedMcpServerResponse>;
 
 export type GroupChat = z.infer<typeof groupChatResponse>;
@@ -80,6 +84,8 @@ export type DesktopJob = z.infer<typeof desktopJobsResponse>["jobs"][number];
 export type DesktopControl = z.infer<typeof desktopControlResponse>;
 
 export type DesktopViewer = z.infer<typeof desktopViewerResponse>;
+
+export type DesktopStatus = z.infer<typeof desktopStatusResponse>;
 
 export type ActivityFeed = z.infer<typeof activityFeedResponse>;
 
@@ -245,6 +251,11 @@ export const schedulesQuery = queryOptions({
   queryFn: ({ signal }) => api<Schedule[]>("/v1/schedules", { signal }),
 });
 
+export const executionsQuery = queryOptions({
+  queryKey: ["executions"],
+  queryFn: ({ signal }) => api<Execution[]>("/v1/executions", { signal }),
+});
+
 export const scriptRunsQuery = (id: string) =>
   queryOptions({
     queryKey: ["script-runs", id],
@@ -255,6 +266,13 @@ export const scriptRunsQuery = (id: string) =>
           signal,
         },
       ),
+  });
+
+export const desktopStatusQuery = (id: string) =>
+  queryOptions({
+    queryKey: ["desktop-status", id],
+    queryFn: ({ signal }) =>
+      api<DesktopStatus>(`${agentPath(id)}/desktop/status`, { signal }),
   });
 
 export const botMemoriesQuery = (id: string) =>

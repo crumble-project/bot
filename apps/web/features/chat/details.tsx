@@ -5,22 +5,19 @@ import {
 } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   type Bot,
-  type Memory,
   type Schedule,
-  botMemoriesQuery,
   queryClient,
   schedulesQuery,
   send,
 } from "@/lib/api";
 import { BotAvatar } from "@/features/bots/avatar";
+import { DesktopPreview } from "@/features/bot-desktop/desktop";
 import { useWorking } from "@/lib/live";
-import { sourceLabel } from "@/features/memory/memory";
-import { finished, taskTiming } from "@/features/schedules/tasks";
+import { automationTiming, finished } from "@/features/schedules/automations";
 
-function Routine({ schedule }: { schedule: Schedule }) {
+function Automation({ schedule }: { schedule: Schedule }) {
   const toggle = useMutation({
     mutationFn: (enabled: boolean) =>
       send(`/v1/schedules/${encodeURIComponent(schedule.id)}`, "PATCH", {
@@ -49,7 +46,7 @@ function Routine({ schedule }: { schedule: Schedule }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm font-medium">{schedule.name}</span>
         <span className="text-xs text-muted-foreground">
-          {taskTiming(schedule)}
+          {automationTiming(schedule)}
         </span>
       </div>
       <Switch
@@ -79,54 +76,32 @@ function ProfileSummary({ bot, working }: { bot: Bot; working: boolean }) {
   );
 }
 
-function RoutineList({
+function AutomationList({
   schedules,
-  routines,
+  automations,
 }: {
   schedules: UseQueryResult<Schedule[]>;
-  routines: Schedule[];
+  automations: Schedule[];
 }) {
   return (
     <>
       {schedules.isPending && <Skeleton className="h-10" />}
-      {routines.map((schedule) => (
-        <Routine key={schedule.id} schedule={schedule} />
+      {automations.map((schedule) => (
+        <Automation key={schedule.id} schedule={schedule} />
       ))}
-      {schedules.isSuccess && routines.length === 0 && (
-        <p className="text-sm text-muted-foreground">No routines yet</p>
+      {schedules.isSuccess && automations.length === 0 && (
+        <p className="text-sm text-muted-foreground">No automations yet</p>
       )}
     </>
   );
 }
 
-function MemoryNotes({ memories }: { memories: UseQueryResult<Memory[]> }) {
-  return (
-    <>
-      {memories.isPending && <Skeleton className="h-16" />}
-      {memories.data?.map((memory) => (
-        <div key={memory.id} className="flex flex-col gap-0.5">
-          <p className="line-clamp-4 text-sm">{memory.content}</p>
-          {sourceLabel(memory) && (
-            <span className="text-xs text-muted-foreground">
-              {sourceLabel(memory)}
-            </span>
-          )}
-        </div>
-      ))}
-      {memories.data?.length === 0 && (
-        <p className="text-sm text-muted-foreground">Nothing remembered yet</p>
-      )}
-    </>
-  );
-}
-
-/** The bot inspector beside its chat: profile, routines, and memory. */
+/** The bot inspector beside its chat: profile, desktop, and automations. */
 export function DetailsPanel({ bot }: { bot: Bot }) {
   const working = useWorking(bot.id);
   const schedules = useQuery(schedulesQuery);
-  const memories = useQuery(botMemoriesQuery(bot.id));
 
-  const routines =
+  const automations =
     schedules.data?.filter(
       (schedule) => schedule.agentId === bot.id && !finished(schedule),
     ) ?? [];
@@ -134,18 +109,18 @@ export function DetailsPanel({ bot }: { bot: Bot }) {
   return (
     <aside className="hidden w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l p-4 lg:flex">
       <ProfileSummary bot={bot} working={working} />
-      <Tabs defaultValue="routines">
-        <TabsList className="w-full">
-          <TabsTrigger value="routines">Routines</TabsTrigger>
-          <TabsTrigger value="memory">Memory</TabsTrigger>
-        </TabsList>
-        <TabsContent value="routines" className="flex flex-col gap-3 pt-3">
-          <RoutineList schedules={schedules} routines={routines} />
-        </TabsContent>
-        <TabsContent value="memory" className="flex flex-col gap-3 pt-3">
-          <MemoryNotes memories={memories} />
-        </TabsContent>
-      </Tabs>
+      {bot.tools.includes("desktop") && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-medium text-muted-foreground">Desktop</h2>
+          <DesktopPreview key={bot.id} botId={bot.id} />
+        </section>
+      )}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-muted-foreground">
+          Automations
+        </h2>
+        <AutomationList schedules={schedules} automations={automations} />
+      </section>
     </aside>
   );
 }

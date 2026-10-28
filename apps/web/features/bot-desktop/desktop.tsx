@@ -5,8 +5,7 @@ import {
   type UseMutationResult,
 } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft02Icon, RefreshIcon } from "@hugeicons/core-free-icons";
+import { IconArrowLeft, IconRefresh, IconZzz } from "@tabler/icons-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -17,6 +16,7 @@ import {
   agentPath,
   botsQuery,
   call,
+  desktopStatusQuery,
   follow,
 } from "@/lib/api";
 
@@ -91,7 +91,7 @@ function DesktopControls({
         disabled={viewer.isPending}
         onClick={onReconnect}
       >
-        <HugeiconsIcon icon={RefreshIcon} data-icon="inline-start" />
+        <IconRefresh data-icon="inline-start" />
         Reconnect
       </Button>
       <Button
@@ -134,7 +134,7 @@ export function BotDesktop({ botId }: { botId: string }) {
           render={<Link to="/bots/$botId" params={{ botId }} />}
           nativeButton={false}
         >
-          <HugeiconsIcon icon={ArrowLeft02Icon} />
+          <IconArrowLeft />
         </Button>
         <span className="truncate font-medium">
           {bot ? `${bot.name}'s desktop` : "Bot desktop"}
@@ -162,6 +162,79 @@ export function BotDesktop({ botId }: { botId: string }) {
         </p>
       )}
     </div>
+  );
+}
+
+/** A small live view of a bot's desktop that opens the full desktop. */
+export function DesktopPreview({ botId }: { botId: string }) {
+  const path = agentPath(botId);
+  const [asked, setAsked] = useState(false);
+
+  // Machine state has no live event, so poll it.
+  const status = useQuery({
+    ...desktopStatusQuery(botId),
+    refetchInterval: 10_000,
+  });
+
+  const live = asked || status.data?.running === true;
+
+  // Until asked, the link only watches: it neither boots the machine nor keeps it awake.
+  const viewer = useMutation({
+    mutationFn: () =>
+      call<DesktopViewer>(
+        `${path}/desktop/viewer${asked ? "" : "?passive=true"}`,
+        "POST",
+      ),
+  });
+
+  const { mutate: connect, reset } = viewer;
+
+  useEffect(() => {
+    if (live) connect();
+    else reset();
+  }, [live, connect, reset]);
+
+  if (!live)
+    return (
+      <button
+        type="button"
+        title="Wake the bot desktop"
+        className="flex aspect-video w-full cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border bg-black text-white/60 transition-colors hover:text-white/85 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+        onClick={() => setAsked(true)}
+      >
+        <IconZzz />
+        <span className="text-sm">Sleeping</span>
+        <span className="text-xs text-white/40">Click to wake</span>
+      </button>
+    );
+
+  return (
+    <Link
+      to="/bots/$botId/desktop"
+      params={{ botId }}
+      title="Open the bot desktop"
+      className="relative block aspect-video overflow-hidden rounded-lg border bg-black"
+    >
+      {viewer.isPending && (
+        <span className="absolute inset-0 flex items-center justify-center">
+          <Spinner className="text-white/70" />
+        </span>
+      )}
+      {viewer.isError && (
+        <span className="absolute inset-0 flex items-center justify-center p-3 text-center text-xs text-white/60">
+          {viewer.error.message}
+        </span>
+      )}
+      {viewer.data && (
+        <iframe
+          key={viewer.data.path}
+          title="Bot desktop preview"
+          src={viewer.data.path}
+          tabIndex={-1}
+          className="pointer-events-none size-full border-0"
+        />
+      )}
+    </Link>
   );
 }
 

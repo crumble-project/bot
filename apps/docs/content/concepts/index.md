@@ -11,7 +11,7 @@ Each bot is separate from your other bots. It has its own chat, its own [workspa
 
 ## Capabilities
 
-Every bot can [schedule tasks](/concepts/schedules-and-integrations#scheduled-tasks) and run code in code mode. Turn on the rest per bot in its settings:
+Every bot can have [automations](/concepts/schedules-and-integrations#automations) and run code in code mode. Turn on the rest per bot in its settings:
 
 | Capability       | What the bot can do                                                                                                                        |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |

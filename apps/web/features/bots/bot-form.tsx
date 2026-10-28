@@ -1,14 +1,13 @@
 import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  ArrowDown01Icon,
-  ArrowRight01Icon,
-  Copy01Icon,
-  PencilEdit01Icon,
-  ShuffleIcon,
-} from "@hugeicons/core-free-icons";
+  IconChevronDown,
+  IconChevronRight,
+  IconCopy,
+  IconPencil,
+  IconArrowsShuffle,
+} from "@tabler/icons-react";
 import { AlertDialog, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -56,6 +55,7 @@ import {
   send,
 } from "@/lib/api";
 import { BotAvatar } from "./avatar";
+import { SelectOptions } from "@/components/form-fields";
 import { ConfirmDeleteContent, WorkspacePage } from "@/components/workspace";
 import {
   type AvatarChoice,
@@ -108,19 +108,20 @@ const DEFAULT_INSTRUCTIONS =
 
 const seedAvatar = () => `bot:${randomId()}`;
 
+/** Set-up providers, plus the current one when it is not, so a bot's choice never silently changes. */
 function providerItems(providers: Provider[], current: string) {
-  const sorted = [...providers].sort(
-    (a, b) => Number(b.configured) - Number(a.configured),
+  const items = providers.flatMap((each) =>
+    each.configured ? [{ label: each.name, value: each.provider }] : [],
   );
 
-  const items = sorted.map((each) => ({
-    label: each.configured ? each.name : `${each.name} (not set up)`,
-    value: each.provider,
-  }));
+  if (!current || items.some((item) => item.value === current)) return items;
 
-  return current && !items.some((item) => item.value === current)
-    ? [{ label: current, value: current }, ...items]
-    : items;
+  const name = providers.find((each) => each.provider === current)?.name;
+
+  return [
+    { label: `${name ?? current} (not set up)`, value: current },
+    ...items,
+  ];
 }
 
 function ProviderSelect({
@@ -147,15 +148,7 @@ function ProviderSelect({
       <SelectTrigger id={id} className="w-full">
         <SelectValue />
       </SelectTrigger>
-      <SelectContent>
-        <SelectGroup>
-          {items.map((item) => (
-            <SelectItem key={item.value} value={item.value}>
-              {item.label}
-            </SelectItem>
-          ))}
-        </SelectGroup>
-      </SelectContent>
+      <SelectOptions items={items} />
     </Select>
   );
 }
@@ -279,10 +272,11 @@ function DisclosureRow({
         <span className="font-medium">{title}</span>
         <span className="flex items-center gap-1 text-muted-foreground">
           {summary}
-          <HugeiconsIcon
-            icon={open ? ArrowDown01Icon : ArrowRight01Icon}
-            className="size-4"
-          />
+          {open ? (
+            <IconChevronDown className="size-4" />
+          ) : (
+            <IconChevronRight className="size-4" />
+          )}
         </span>
       </button>
       {open && <div className="flex flex-col divide-y">{children}</div>}
@@ -456,7 +450,7 @@ function AvatarPicker({
       >
         <BotAvatar bot={{ id, avatar }} size={96} live />
         <span className="absolute -right-1 -bottom-1 grid size-8 place-items-center rounded-full bg-background text-muted-foreground shadow-sm ring-1 ring-foreground/10 transition-colors group-hover:text-foreground">
-          <HugeiconsIcon icon={PencilEdit01Icon} className="size-4" />
+          <IconPencil className="size-4" />
         </span>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-auto">
@@ -523,7 +517,7 @@ function AvatarPicker({
             )
           }
         >
-          <HugeiconsIcon icon={ShuffleIcon} data-icon="inline-start" />
+          <IconArrowsShuffle data-icon="inline-start" />
           New face
         </Button>
       </PopoverContent>
@@ -708,6 +702,15 @@ function ModelSettings({
               setModel("");
             }}
           />
+          {!providers.some((each) => each.configured) && (
+            <FieldDescription>
+              No provider is set up yet.{" "}
+              <Link to="/settings/providers" className="underline">
+                Add one in Settings
+              </Link>
+              .
+            </FieldDescription>
+          )}
         </Field>
         <Field>
           <FieldLabel htmlFor="model">Model</FieldLabel>
@@ -837,7 +840,7 @@ function BotManagementActions({
               </AlertDialogTrigger>
               <ConfirmDeleteContent
                 title={`Delete ${bot.name}?`}
-                description="The bot, its chat, memories and tasks will be removed. This cannot be undone."
+                description="The bot, its chat, memories and automations will be removed. This cannot be undone."
                 error={remove.error}
                 pending={remove.isPending}
                 onConfirm={() => remove.mutate(bot.id)}
@@ -849,7 +852,7 @@ function BotManagementActions({
               disabled={duplicate.isPending}
               onClick={() => duplicate.mutate(bot.id)}
             >
-              <HugeiconsIcon icon={Copy01Icon} data-icon="inline-start" />
+              <IconCopy data-icon="inline-start" />
               Duplicate
             </Button>
           </>
@@ -897,20 +900,18 @@ function BotSettingsLinks({ bot }: { bot: Bot | undefined }) {
       >
         <span className="font-medium">Skills</span>
         <span className="flex items-center gap-1 text-muted-foreground">
-          Manage in Settings{" "}
-          <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
+          Manage in Settings <IconChevronRight className="size-4" />
         </span>
       </Link>
       {bot && (
         <Link
-          to="/bots/$botId/credentials"
-          params={{ botId: bot.id }}
+          to="/settings/credentials"
+          search={{ bot: bot.id }}
           className="flex items-center justify-between gap-4 p-3 text-sm transition-colors hover:bg-muted/50"
         >
           <span className="font-medium">Credentials</span>
           <span className="flex items-center gap-1 text-muted-foreground">
-            For coding jobs{" "}
-            <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
+            Manage in Settings <IconChevronRight className="size-4" />
           </span>
         </Link>
       )}

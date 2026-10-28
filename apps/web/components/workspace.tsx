@@ -1,6 +1,10 @@
 import type { ReactElement, ReactNode } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { PlusSignIcon, RefreshIcon } from "@hugeicons/core-free-icons";
+import {
+  IconDots,
+  IconPlus,
+  IconRefresh,
+  IconSearch,
+} from "@tabler/icons-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,8 +17,14 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { FieldError } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 /**
@@ -35,18 +45,12 @@ export function WorkspacePage({
   title,
   onRefresh,
   refreshing,
-  onNew,
-  newLabel,
-  newDisabled,
   actions,
   children,
 }: {
   title: string;
   onRefresh?: () => void;
   refreshing?: boolean;
-  onNew?: () => void;
-  newLabel?: string;
-  newDisabled?: boolean;
   actions?: ReactNode;
   children: ReactNode;
 }) {
@@ -69,32 +73,126 @@ export function WorkspacePage({
               disabled={refreshing}
               onClick={onRefresh}
             >
-              <HugeiconsIcon
-                icon={RefreshIcon}
+              <IconRefresh
                 className={refreshing ? "animate-spin" : undefined}
               />
-            </Button>
-          )}
-          {onNew && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              title={newLabel}
-              disabled={newDisabled}
-              onClick={onNew}
-            >
-              <HugeiconsIcon icon={PlusSignIcon} />
             </Button>
           )}
           {actions}
         </div>
       </header>
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 p-6">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 p-6">
           {children}
         </div>
       </div>
     </div>
+  );
+}
+
+/** The row above a page's list: a search field, and the page's main action at the end. */
+export function PageToolbar({
+  search,
+  searchLabel,
+  onSearch,
+  children,
+}: {
+  search?: string;
+  searchLabel?: string;
+  onSearch?: (search: string) => void;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-end gap-2">
+      {onSearch && (
+        <div className="relative flex-1">
+          <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            aria-label={searchLabel}
+            placeholder={searchLabel}
+            className="pl-8"
+            value={search}
+            onChange={(event) => onSearch(event.target.value)}
+          />
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+/** One filter choice: its label, and an optional icon and count. */
+export type FilterPill = {
+  value: string;
+  label: string;
+  icon?: ReactNode;
+  count?: number;
+};
+
+/** A scrolling row of rounded filter buttons, one pressed. Empty choices hide, and so does a row with one left. */
+export function FilterPills({
+  label,
+  pills,
+  value,
+  onChange,
+}: {
+  label: string;
+  pills: FilterPill[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  // The pressed pill stays even when empty, so a filter never vanishes from under its page.
+  const shown = pills.filter(
+    (pill) => pill.count !== 0 || pill.value === value,
+  );
+
+  if (shown.length < 2) return null;
+
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="-mx-1 flex min-w-0 gap-1 overflow-x-auto px-1 pb-1"
+    >
+      {shown.map((pill) => (
+        <Button
+          key={pill.value}
+          type="button"
+          size="sm"
+          variant={value === pill.value ? "secondary" : "ghost"}
+          aria-pressed={value === pill.value}
+          className="shrink-0 rounded-full"
+          onClick={() => onChange(pill.value)}
+        >
+          {pill.icon}
+          {pill.label}
+          {pill.count !== undefined && (
+            <span className="text-muted-foreground tabular-nums">
+              {pill.count}
+            </span>
+          )}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+/** A page's create button, such as "New memory". */
+export function NewButton({
+  label,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button disabled={disabled} onClick={onClick}>
+      <IconPlus data-icon="inline-start" />
+      {label}
+    </Button>
   );
 }
 
@@ -156,26 +254,41 @@ export function ConfirmDeleteContent({
   );
 }
 
-/** A titled group of rows, like a Mac settings section. */
+/** A titled group of rows in a tinted frame, like a Mac settings section. */
 export function Section({
   title,
   icon,
+  description,
+  action,
   footer,
   children,
 }: {
   title: string;
   /** Shown before the title, such as the avatar of the bot a section belongs to. */
   icon?: ReactNode;
+  description?: ReactNode;
+  /** A control at the end of the heading, such as an Add button. */
+  action?: ReactNode;
   footer?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <section className="flex flex-col gap-2">
-      <h2 className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-        {icon}
-        {title}
-      </h2>
-      <div className="flex flex-col divide-y rounded-lg border">{children}</div>
+      <div className="flex min-h-8 items-end justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <h2 className="flex items-center gap-2 text-sm font-medium">
+            {icon}
+            {title}
+          </h2>
+          {description && (
+            <p className="text-sm text-muted-foreground">{description}</p>
+          )}
+        </div>
+        {action}
+      </div>
+      <div className="flex flex-col divide-y overflow-hidden rounded-xl border bg-muted/30">
+        {children}
+      </div>
       {footer && <p className="text-xs text-muted-foreground">{footer}</p>}
     </section>
   );
@@ -183,4 +296,87 @@ export function Section({
 
 export function SectionEmpty({ children }: { children: ReactNode }) {
   return <p className="p-3 text-sm text-muted-foreground">{children}</p>;
+}
+
+/** A square tile that leads a row: an icon or a letter on a soft background. */
+export function RowTile({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "flex size-7 shrink-0 items-center justify-center rounded-md border bg-background text-xs text-muted-foreground [&_svg:not([class*='size-'])]:size-3.5",
+        className,
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** One setting: what it is on the left, its control on the right. */
+export function SettingRow({
+  tile,
+  title,
+  description,
+  children,
+}: {
+  tile?: ReactNode;
+  title: ReactNode;
+  description?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="flex min-h-12 items-center gap-3 px-3 py-2">
+      {tile}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
+          {title}
+        </span>
+        {description && (
+          <span className="text-xs wrap-break-word text-muted-foreground">
+            {description}
+          </span>
+        )}
+      </div>
+      {children && (
+        <div className="flex shrink-0 items-center gap-1">{children}</div>
+      )}
+    </div>
+  );
+}
+
+/** A green dot for on, a hollow one for off, with its label. */
+export function StatusDot({ on, label }: { on: boolean; label: string }) {
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <span
+        className={cn(
+          "size-1.5 rounded-full",
+          on ? "bg-emerald-500" : "border border-muted-foreground/50",
+        )}
+      />
+      {label}
+    </span>
+  );
+}
+
+/** The "…" menu at the end of a row. */
+export function RowMenu({ children }: { children: ReactNode }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="ghost" size="icon-sm" title="More">
+            <IconDots />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="end">{children}</DropdownMenuContent>
+    </DropdownMenu>
+  );
 }

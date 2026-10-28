@@ -28,6 +28,10 @@ export const desktopControlInput = z.object({
   holder: z.enum(["bot", "owner"]),
 });
 
+export const desktopViewerInput = z.object({
+  passive: z.stringbool().optional(),
+});
+
 const messageFields = z.object({
   content: z.string().trim().max(32000),
   requestId: z.uuid(),
@@ -326,13 +330,20 @@ export const routes = {
       },
     },
   }),
+  desktopStatus: define({
+    method: "get",
+    path: "/v1/agents/{id}/desktop/status",
+    operationId: "getDesktopStatus",
+    request: { params: id },
+    responses: { 200: json(response.desktopStatusResponse) },
+  }),
   createDesktopViewer: define({
     method: "post",
     path: "/v1/agents/{id}/desktop/viewer",
     operationId: "createDesktopViewer",
     description:
-      "Issue a single-use viewer link for the bot desktop. The page and its WebSocket live outside /v1 and need no Authorization header: the link is the credential. 409 when the bot has no bot desktop.",
-    request: { params: id },
+      "Issue a single-use viewer link for the bot desktop. The page and its WebSocket live outside /v1 and need no Authorization header: the link is the credential. With passive=true the link is watch-only: it neither boots the bot's machine nor keeps it awake, and its connection ends when the machine stops. 409 when the bot has no bot desktop.",
+    request: { params: id, query: desktopViewerInput },
     responses: { 201: json(response.desktopViewerResponse) },
   }),
   desktopJobHistory: define({

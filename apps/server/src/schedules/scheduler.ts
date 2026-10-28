@@ -47,6 +47,17 @@ const assertTimezone = (timezone: string) => {
   }
 };
 
+// cron-parser reads weekday `1/2` as `1-7/2`, Sunday included; other cron tools disagree.
+const assertWeekdaySteps = (cron: string) => {
+  const fields = cron.trim().split(/\s+/);
+
+  const weekday =
+    fields.length === 5 || fields.length === 6 ? fields.at(-1) : undefined;
+
+  if (weekday?.split(",").some((part) => /^[^*-]+\//.test(part)))
+    throw new Error(`Weekday steps need * or a range, like 1-5/2: ${cron}`);
+};
+
 const validate = (input: ScheduleInput) =>
   Effect.try({
     try: () => {
@@ -54,7 +65,10 @@ const validate = (input: ScheduleInput) =>
 
       assertTimezone(value.timezone);
 
-      if (value.cron) nextOccurrence(value.cron, value.timezone, new Date());
+      if (value.cron) {
+        assertWeekdaySteps(value.cron);
+        nextOccurrence(value.cron, value.timezone, new Date());
+      }
 
       return value;
     },

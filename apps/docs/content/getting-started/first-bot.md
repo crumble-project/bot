@@ -16,6 +16,6 @@ The bot's chat opens. Send it a message.
 
 ## What to try next
 
-- Ask the bot to remind you of something next week. Every bot can [schedule tasks](/concepts/schedules-and-integrations#scheduled-tasks).
+- Ask the bot to remind you of something next week. Every bot can run [automations](/concepts/schedules-and-integrations#automations).
 - Tell it something about yourself and ask it to remember. This needs the **Memory** capability.
 - Add a second bot and start a [group chat](/concepts/group-chats).

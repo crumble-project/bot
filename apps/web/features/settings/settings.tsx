@@ -5,57 +5,76 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { Link, Outlet, useMatchRoute } from "@tanstack/react-router";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  Copy01Icon,
-  Key01Icon,
-  Plug01Icon,
-  Search01Icon,
-  SlidersHorizontalIcon,
-  SparklesIcon,
-} from "@hugeicons/core-free-icons";
-import { Badge } from "@/components/ui/badge";
+  IconAdjustmentsHorizontal,
+  IconBell,
+  IconDeviceDesktop,
+  IconFingerprint,
+  IconHammer,
+  IconKey,
+  IconLock,
+  IconLogin,
+  IconLogout,
+  IconPencil,
+  IconPlug,
+  IconPlus,
+  IconSearch,
+  IconServer,
+  IconSparkles,
+  IconTrash,
+  IconWorld,
+} from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
-import {
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldError,
-  FieldLabel,
-} from "@/components/ui/field";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
   type Provider,
   capabilitiesQuery,
+  clearUserData,
   providersQuery,
+  queryClient,
   send,
 } from "@/lib/api";
-import { authClient, passkeyDone, passkeysAvailable } from "@/lib/auth-client";
-import { clearUserData, queryClient } from "@/lib/api";
+import {
+  authClient,
+  passkeyDone,
+  passkeysAvailable,
+  useSession,
+} from "@/lib/auth-client";
 import { clearLiveStreams, notifications } from "@/lib/live";
+import { CopyButton, SecretForm } from "@/components/form-fields";
 import { LoginDialog, refreshProviders } from "./provider-login";
-import { WebSearchSettingsSection } from "./web-search-settings";
 import {
   MobileSidebarTrigger,
+  RowMenu,
+  RowTile,
   Section,
   SectionEmpty,
+  SettingRow,
+  StatusDot,
   WorkspacePage,
 } from "@/components/workspace";
 
 const SECTIONS = [
-  { to: "/settings/general", label: "General", icon: SlidersHorizontalIcon },
-  { to: "/settings/providers", label: "Providers", icon: Key01Icon },
-  { to: "/settings/integrations", label: "Integrations", icon: Plug01Icon },
-  { to: "/settings/skills", label: "Skills", icon: SparklesIcon },
+  {
+    to: "/settings/general",
+    label: "General",
+    icon: IconAdjustmentsHorizontal,
+  },
+  { to: "/settings/providers", label: "Providers", icon: IconKey },
+  { to: "/settings/web-search", label: "Web search", icon: IconWorld },
+  { to: "/settings/credentials", label: "Credentials", icon: IconLock },
+  { to: "/settings/integrations", label: "Integrations", icon: IconPlug },
+  { to: "/settings/skills", label: "Skills", icon: IconSparkles },
 ] as const;
 
 /** Settings: a section list beside the open section. */
@@ -80,7 +99,7 @@ export function SettingsLayout() {
             render={<Link to={section.to} />}
             nativeButton={false}
           >
-            <HugeiconsIcon icon={section.icon} data-icon="inline-start" />
+            <section.icon data-icon="inline-start" />
             {section.label}
           </Button>
         ))}
@@ -96,8 +115,8 @@ export function SettingsLayout() {
 }
 
 const PERMISSION = {
-  granted: "Bot replies show as browser notifications.",
-  denied: "Notifications are blocked for this site in the browser's settings.",
+  granted: "Replies from chats you don't have open show as notifications.",
+  denied: "Blocked for this site in the browser's settings.",
   default: "The browser asks for permission when you turn this on.",
   unsupported: "This browser doesn't support notifications.",
 };
@@ -107,25 +126,28 @@ function Notifications() {
   const [permission, setPermission] = useState(notifications.permission);
 
   return (
-    <Field orientation="horizontal" className="p-3">
-      <FieldContent>
-        <FieldLabel htmlFor="notifications">Notifications</FieldLabel>
-        <FieldDescription>
-          {on ? PERMISSION[permission] : "Notifications are off."} Only replies
-          from chats that aren't open notify.
-        </FieldDescription>
-      </FieldContent>
-      <Switch
-        id="notifications"
-        checked={on}
-        disabled={permission === "unsupported"}
-        onCheckedChange={async (next) => {
-          setOn(next);
-          await notifications.setEnabled(next);
-          setPermission(notifications.permission());
-        }}
-      />
-    </Field>
+    <Section title="Notifications">
+      <SettingRow
+        tile={
+          <RowTile>
+            <IconBell />
+          </RowTile>
+        }
+        title={<label htmlFor="notifications">Bot replies</label>}
+        description={on ? PERMISSION[permission] : "Off on this browser."}
+      >
+        <Switch
+          id="notifications"
+          checked={on}
+          disabled={permission === "unsupported"}
+          onCheckedChange={async (next) => {
+            setOn(next);
+            await notifications.setEnabled(next);
+            setPermission(notifications.permission());
+          }}
+        />
+      </SettingRow>
+    </Section>
   );
 }
 
@@ -144,17 +166,17 @@ type Passkey = NonNullable<
   Awaited<ReturnType<typeof passkeysQuery.queryFn>>
 >[number];
 
-function PasskeyRow({
+const refreshPasskeys = () =>
+  queryClient.invalidateQueries({ queryKey: passkeysQuery.queryKey });
+
+function RenamePasskey({
   passkey,
-  removing,
-  onRemove,
+  onDone,
 }: {
   passkey: Passkey;
-  removing: boolean;
-  onRemove: () => void;
+  onDone: () => void;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(passkey.name ?? "");
   const id = `passkey-${passkey.id}`;
 
   const rename = useMutation({
@@ -167,89 +189,94 @@ function PasskeyRow({
       if (result.error) throw new Error(result.error.message);
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: passkeysQuery.queryKey,
-      });
-      setEditing(false);
+      await refreshPasskeys();
+      onDone();
     },
   });
 
   return (
-    <div className="flex flex-col gap-3 p-3">
-      {editing ? (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
+    <form
+      className="flex flex-col gap-2 p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
 
-            if (name.trim()) rename.mutate(name.trim());
-          }}
-        >
-          <Field data-invalid={rename.isError || undefined}>
-            <FieldLabel htmlFor={id} className="sr-only">
-              Passkey name
-            </FieldLabel>
-            <div className="flex gap-2">
-              <Input
-                id={id}
-                autoFocus
-                autoComplete="off"
-                maxLength={100}
-                placeholder="Passkey name"
-                aria-invalid={rename.isError || undefined}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-              <Button type="submit" disabled={!name.trim() || rename.isPending}>
-                Save
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setEditing(false);
-                  rename.reset();
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </Field>
-        </form>
-      ) : (
-        <Field orientation="horizontal">
-          <FieldContent className="min-w-0">
-            <FieldLabel className="truncate">
-              {passkey.name || "Passkey"}
-            </FieldLabel>
-            <FieldDescription>
-              Added {new Date(passkey.createdAt).toLocaleDateString()}
-              {passkey.backedUp && " · Synced"}
-            </FieldDescription>
-          </FieldContent>
-          <div className="flex gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setName(passkey.name ?? "");
-                setEditing(true);
-              }}
-            >
-              Rename
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={removing}
-              onClick={onRemove}
-            >
-              Remove
-            </Button>
-          </div>
-        </Field>
-      )}
+        if (name.trim()) rename.mutate(name.trim());
+      }}
+    >
+      <Field data-invalid={rename.isError || undefined}>
+        <FieldLabel htmlFor={id} className="sr-only">
+          Passkey name
+        </FieldLabel>
+        <div className="flex gap-2">
+          <Input
+            id={id}
+            autoFocus
+            autoComplete="off"
+            maxLength={100}
+            placeholder="Passkey name"
+            aria-invalid={rename.isError || undefined}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+          <Button type="submit" disabled={!name.trim() || rename.isPending}>
+            Save
+          </Button>
+          <Button type="button" variant="ghost" onClick={onDone}>
+            Cancel
+          </Button>
+        </div>
+      </Field>
       {rename.isError && <FieldError>{rename.error.message}</FieldError>}
-    </div>
+    </form>
+  );
+}
+
+function PasskeyRow({
+  passkey,
+  removing,
+  onRemove,
+}: {
+  passkey: Passkey;
+  removing: boolean;
+  onRemove: () => void;
+}) {
+  const [renaming, setRenaming] = useState(false);
+
+  if (renaming)
+    return (
+      <RenamePasskey passkey={passkey} onDone={() => setRenaming(false)} />
+    );
+
+  return (
+    <SettingRow
+      tile={
+        <RowTile>
+          <IconFingerprint />
+        </RowTile>
+      }
+      title={<span className="truncate">{passkey.name || "Passkey"}</span>}
+      description={
+        <>
+          Added {new Date(passkey.createdAt).toLocaleDateString()}
+          {passkey.backedUp && " · Synced"}
+        </>
+      }
+    >
+      <RowMenu>
+        <DropdownMenuItem onClick={() => setRenaming(true)}>
+          <IconPencil />
+          Rename
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          variant="destructive"
+          disabled={removing}
+          onClick={onRemove}
+        >
+          <IconTrash />
+          Remove
+        </DropdownMenuItem>
+      </RowMenu>
+    </SettingRow>
   );
 }
 
@@ -297,14 +324,11 @@ function PasskeyList({
 function Passkeys() {
   const passkeys = useQuery(passkeysQuery);
 
-  const refresh = () =>
-    queryClient.invalidateQueries({ queryKey: passkeysQuery.queryKey });
-
   const add = useMutation({
     mutationFn: async () => {
       passkeyDone(await authClient.passkey.addPasskey());
     },
-    onSettled: refresh,
+    onSettled: refreshPasskeys,
   });
 
   const remove = useMutation({
@@ -313,41 +337,47 @@ function Passkeys() {
 
       if (result.error) throw new Error(result.error.message);
     },
-    onSettled: refresh,
+    onSettled: refreshPasskeys,
   });
 
   const error = add.error ?? remove.error ?? passkeys.error;
 
   // Listing, renaming, and removing need only a session; adding needs WebAuthn.
   return (
-    <Section title="Passkeys" footer={PASSKEYS_FOOTER}>
+    <Section
+      title="Passkeys"
+      footer={PASSKEYS_FOOTER}
+      action={
+        passkeysAvailable && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={add.isPending}
+            onClick={() => add.mutate()}
+          >
+            <IconPlus data-icon="inline-start" />
+            Add passkey
+          </Button>
+        )
+      }
+    >
       <PasskeyList
         passkeys={passkeys}
         removing={remove.isPending}
         onRemove={(id) => remove.mutate(id)}
       />
-      {(passkeysAvailable || error) && (
-        <div className="flex flex-col gap-2 p-3">
-          {passkeysAvailable && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="self-start"
-              disabled={add.isPending}
-              onClick={() => add.mutate()}
-            >
-              Add a passkey
-            </Button>
-          )}
-          {error && <FieldError>{error.message}</FieldError>}
+      {error && (
+        <div className="p-3">
+          <FieldError>{error.message}</FieldError>
         </div>
       )}
     </Section>
   );
 }
 
-export function GeneralSettings() {
-  const capabilities = useQuery(capabilitiesQuery);
+function Account() {
+  const session = useSession();
+  const user = session.data?.user;
 
   const signOut = useMutation({
     mutationFn: () => authClient.signOut(),
@@ -358,69 +388,105 @@ export function GeneralSettings() {
     },
   });
 
+  const shown = user?.name || user?.email || "Signed in";
+
+  return (
+    <Section title="Account">
+      <SettingRow
+        tile={
+          <RowTile className="font-heading text-sm font-semibold text-foreground">
+            {shown.slice(0, 1).toUpperCase()}
+          </RowTile>
+        }
+        title={<span className="truncate">{shown}</span>}
+        description={user?.name ? user.email : undefined}
+      >
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={signOut.isPending}
+          onClick={() => signOut.mutate()}
+        >
+          <IconLogout data-icon="inline-start" />
+          Sign out
+        </Button>
+      </SettingRow>
+    </Section>
+  );
+}
+
+function Server() {
+  const capabilities = useQuery(capabilitiesQuery);
+
   const features = [
     {
       name: "Coding jobs",
-      on: capabilities.data?.coding,
+      icon: IconHammer,
+      on: capabilities.data?.coding === true,
       help: "Needs CRUMBLE_WORKSPACE_IMAGE on the server.",
     },
     {
       name: "Desktop jobs",
-      on: capabilities.data?.desktop,
+      icon: IconDeviceDesktop,
+      on: capabilities.data?.desktop === true,
       help: "Needs CRUMBLE_WORKSPACE_DESKTOP_IMAGE on the server.",
     },
   ];
 
   return (
-    <WorkspacePage title="General">
-      <Section title="This browser">
-        <Notifications />
-        <Field orientation="horizontal" className="p-3">
-          <FieldContent>
-            <FieldLabel>Sign out</FieldLabel>
-            <FieldDescription>
-              Sign out of this account on this device.
-            </FieldDescription>
-          </FieldContent>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={signOut.isPending}
-            onClick={() => signOut.mutate()}
-          >
-            Sign out
-          </Button>
-        </Field>
-      </Section>
-      <Passkeys />
-      <Section title="Server">
-        <Field orientation="horizontal" className="p-3">
-          <FieldContent>
-            <FieldLabel>Address</FieldLabel>
-            <FieldDescription>{location.origin}</FieldDescription>
-          </FieldContent>
-        </Field>
-        {features.map((feature) => (
-          <Field key={feature.name} orientation="horizontal" className="p-3">
-            <FieldContent className="min-w-0">
-              <FieldLabel>{feature.name}</FieldLabel>
-              <FieldDescription className="wrap-break-word">
-                {feature.help}
-              </FieldDescription>
-            </FieldContent>
-            {capabilities.isPending ? (
-              <Skeleton className="h-5 w-16" />
-            ) : (
-              <Badge variant={feature.on ? "secondary" : "outline"}>
-                {feature.on ? "Available" : "Off"}
-              </Badge>
-            )}
-          </Field>
-        ))}
-      </Section>
+    <Section title="Server">
+      <SettingRow
+        tile={
+          <RowTile>
+            <IconServer />
+          </RowTile>
+        }
+        title="Address"
+        description={<span className="font-mono">{location.origin}</span>}
+      >
+        <CopyButton text={location.origin} />
+      </SettingRow>
+      {features.map((feature) => (
+        <SettingRow
+          key={feature.name}
+          tile={
+            <RowTile>
+              <feature.icon />
+            </RowTile>
+          }
+          title={feature.name}
+          description={
+            capabilities.isSuccess && !feature.on ? (
+              <span className="font-mono text-xs">{feature.help}</span>
+            ) : undefined
+          }
+        >
+          {capabilities.isPending ? (
+            <Skeleton className="h-5 w-16" />
+          ) : (
+            <StatusDot
+              on={feature.on}
+              label={feature.on ? "Available" : "Off"}
+            />
+          )}
+        </SettingRow>
+      ))}
       {capabilities.isError && (
-        <FieldError>{capabilities.error.message}</FieldError>
+        <div className="p-3">
+          <FieldError>{capabilities.error.message}</FieldError>
+        </div>
       )}
+    </Section>
+  );
+}
+
+export function GeneralSettings() {
+  return (
+    <WorkspacePage title="General">
+      <Account />
+      <Notifications />
+      <Passkeys />
+      <Server />
     </WorkspacePage>
   );
 }
@@ -468,6 +534,20 @@ function useProviderCredential(provider: Provider) {
 
 type ProviderCredential = ReturnType<typeof useProviderCredential>;
 
+/** Set-up providers keep their actions in the row menu; others show how to set them up. */
+function providerSignInAvailable(provider: Provider) {
+  return (
+    provider.authMethods.some((method) => method.type === "oauth") &&
+    provider.credentialType !== "oauth"
+  );
+}
+
+function providerKeyAvailable(provider: Provider, editing: boolean) {
+  return (
+    !editing && provider.authMethods.some((method) => method.type === "api_key")
+  );
+}
+
 function ProviderActions({
   provider,
   credential,
@@ -479,89 +559,51 @@ function ProviderActions({
 }) {
   const { editing, setEditing, save } = credential;
 
-  const hasOAuth = provider.authMethods.some(
-    (method) => method.type === "oauth",
-  );
+  const signIn = providerSignInAvailable(provider);
 
-  const takesKey = provider.authMethods.some(
-    (method) => method.type === "api_key",
-  );
+  const addKey = providerKeyAvailable(provider, editing);
+
+  const signInLabel = provider.activeLoginId ? "Continue sign-in" : "Sign in";
+
+  if (!provider.credentialType)
+    return (
+      <>
+        {addKey && (
+          <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
+            Add key
+          </Button>
+        )}
+        {signIn && (
+          <Button variant="outline" size="sm" onClick={onSignIn}>
+            {signInLabel}
+          </Button>
+        )}
+      </>
+    );
 
   return (
-    <div className="flex gap-1">
-      {hasOAuth && provider.credentialType !== "oauth" && (
-        <Button variant="outline" size="sm" onClick={onSignIn}>
-          {provider.activeLoginId ? "Continue sign-in" : "Sign in"}
-        </Button>
+    <RowMenu>
+      {signIn && (
+        <DropdownMenuItem onClick={onSignIn}>
+          <IconLogin />
+          {signInLabel}
+        </DropdownMenuItem>
       )}
-      {takesKey && !editing && (
-        <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
-          {provider.credentialType === "api_key" ? "Replace key" : "Add key"}
-        </Button>
+      {addKey && (
+        <DropdownMenuItem onClick={() => setEditing(true)}>
+          <IconKey />
+          {provider.credentialType === "api_key" ? "Replace key" : "Use a key"}
+        </DropdownMenuItem>
       )}
-      {provider.credentialType && (
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={save.isPending}
-          onClick={() => save.mutate(null)}
-        >
-          {provider.credentialType === "oauth" ? "Sign out" : "Remove key"}
-        </Button>
-      )}
-    </div>
-  );
-}
-
-function KeyForm({
-  provider,
-  credential,
-}: {
-  provider: Provider;
-  credential: ProviderCredential;
-}) {
-  const { setEditing, key, setKey, save } = credential;
-  const id = `key-${provider.provider}`;
-
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-
-        if (key.trim()) save.mutate(key.trim());
-      }}
-    >
-      <Field data-invalid={save.isError || undefined}>
-        <FieldLabel htmlFor={id} className="sr-only">
-          {provider.name} API key
-        </FieldLabel>
-        <div className="flex gap-2">
-          <Input
-            id={id}
-            type="password"
-            autoFocus
-            autoComplete="off"
-            placeholder="API key"
-            aria-invalid={save.isError || undefined}
-            value={key}
-            onChange={(event) => setKey(event.target.value)}
-          />
-          <Button type="submit" disabled={!key.trim() || save.isPending}>
-            Save
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              setEditing(false);
-              setKey("");
-            }}
-          >
-            Cancel
-          </Button>
-        </div>
-      </Field>
-    </form>
+      <DropdownMenuItem
+        variant="destructive"
+        disabled={save.isPending}
+        onClick={() => save.mutate(null)}
+      >
+        <IconTrash />
+        {provider.credentialType === "oauth" ? "Sign out" : "Remove key"}
+      </DropdownMenuItem>
+    </RowMenu>
   );
 }
 
@@ -577,37 +619,55 @@ function ProviderRow({
   const label = status(provider);
 
   return (
-    <div className="flex flex-col gap-3 py-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="flex min-w-0 flex-1 flex-col">
-          <span className="flex items-center gap-2 font-medium">
-            {provider.name}
+    <div className="flex flex-col">
+      <SettingRow
+        tile={
+          <RowTile className="font-heading text-sm font-semibold text-foreground">
+            {provider.name.slice(0, 1).toUpperCase()}
+          </RowTile>
+        }
+        title={
+          <>
+            <span className="truncate">{provider.name}</span>
             {label && (
-              <Badge variant={provider.configured ? "secondary" : "outline"}>
-                {label}
-              </Badge>
+              <span className="font-normal">
+                <StatusDot on={provider.configured} label={label} />
+              </span>
             )}
-          </span>
-          {oauth && (
-            <span className="truncate text-sm text-muted-foreground">
-              {oauth.label}
-            </span>
-          )}
-        </div>
+          </>
+        }
+        description={oauth?.label}
+      >
         <ProviderActions
           provider={provider}
           credential={credential}
           onSignIn={onSignIn}
         />
-      </div>
-      {credential.editing && (
-        <KeyForm provider={provider} credential={credential} />
-      )}
-      {credential.save.isError && (
-        <FieldError>{credential.save.error.message}</FieldError>
-      )}
-      {provider.externalAuth && (
-        <ExternalSignIn external={provider.externalAuth} />
+      </SettingRow>
+      {(credential.editing ||
+        credential.save.isError ||
+        provider.externalAuth) && (
+        <div className="flex flex-col gap-2 px-3 pb-3 pl-14">
+          {credential.editing && (
+            <SecretForm
+              label={`${provider.name} API key`}
+              value={credential.key}
+              pending={credential.save.isPending}
+              onChange={credential.setKey}
+              onSave={() => credential.save.mutate(credential.key.trim())}
+              onCancel={() => {
+                credential.setEditing(false);
+                credential.setKey("");
+              }}
+            />
+          )}
+          {credential.save.isError && (
+            <FieldError>{credential.save.error.message}</FieldError>
+          )}
+          {provider.externalAuth && (
+            <ExternalSignIn external={provider.externalAuth} />
+          )}
+        </div>
       )}
     </div>
   );
@@ -638,22 +698,52 @@ function ExternalSignIn({
               ? "To sign out, run on the server:"
               : "To sign in, run on the server:"}
           </span>
-          <div className="flex items-start gap-1">
-            <code className="flex-1 rounded bg-muted px-2 py-1 font-mono text-xs break-all">
+          <div className="flex items-center gap-1 rounded-lg border bg-background py-1 pr-1 pl-3">
+            <code className="flex-1 font-mono text-xs break-all text-foreground">
               {command}
             </code>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              title="Copy"
-              onClick={() => void navigator.clipboard.writeText(command)}
-            >
-              <HugeiconsIcon icon={Copy01Icon} />
-            </Button>
+            <CopyButton text={command} />
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function matching(providers: Provider[], needle: string) {
+  return providers
+    .filter(
+      (provider) =>
+        !needle ||
+        provider.name.toLowerCase().includes(needle) ||
+        provider.provider.includes(needle),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function ProviderSection({
+  title,
+  description,
+  providers,
+  onSignIn,
+}: {
+  title: string;
+  description?: string;
+  providers: Provider[];
+  onSignIn: (provider: Provider) => void;
+}) {
+  if (!providers.length) return null;
+
+  return (
+    <Section title={title} description={description}>
+      {providers.map((provider) => (
+        <ProviderRow
+          key={provider.provider}
+          provider={provider}
+          onSignIn={() => onSignIn(provider)}
+        />
+      ))}
+    </Section>
   );
 }
 
@@ -662,39 +752,8 @@ export function ProvidersSettings() {
   const providers = useQuery(providersQuery);
   const [search, setSearch] = useState("");
   const [signingIn, setSigningIn] = useState<Provider | null>(null);
-  const needle = search.trim().toLowerCase();
-
-  const shown = (providers.data ?? [])
-    .filter(
-      (provider) =>
-        !needle ||
-        provider.name.toLowerCase().includes(needle) ||
-        provider.provider.includes(needle),
-    )
-    .sort(
-      (a, b) =>
-        Number(b.configured) - Number(a.configured) ||
-        a.name.localeCompare(b.name),
-    );
-
+  const shown = matching(providers.data ?? [], search.trim().toLowerCase());
   const ready = shown.filter((provider) => provider.configured);
-  const others = shown.filter((provider) => !provider.configured);
-
-  const list = (title: string, group: Provider[]) =>
-    group.length > 0 && (
-      <section className="flex flex-col">
-        <h2 className="text-xs font-medium text-muted-foreground">{title}</h2>
-        {group.map((provider, index) => (
-          <div key={provider.provider}>
-            {index > 0 && <Separator />}
-            <ProviderRow
-              provider={provider}
-              onSignIn={() => setSigningIn(provider)}
-            />
-          </div>
-        ))}
-      </section>
-    );
 
   return (
     <WorkspacePage
@@ -702,19 +761,10 @@ export function ProvidersSettings() {
       onRefresh={() => void providers.refetch()}
       refreshing={providers.isFetching}
     >
-      <p className="text-sm text-muted-foreground">
-        Bots use these providers' models. Keys and account sign-ins are stored
-        encrypted on the server, are never shown again, and are shared by every
-        bot on the provider.
-      </p>
-      <WebSearchSettingsSection />
-      <Separator />
       <div className="relative">
-        <HugeiconsIcon
-          icon={Search01Icon}
-          className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-        />
+        <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
+          type="search"
           aria-label="Search providers"
           placeholder="Search providers"
           className="pl-8"
@@ -722,18 +772,27 @@ export function ProvidersSettings() {
           onChange={(event) => setSearch(event.target.value)}
         />
       </div>
-      {providers.isPending && <Skeleton className="h-40" />}
+      {providers.isPending && <Skeleton className="h-40 rounded-xl" />}
       {providers.isError && <FieldError>{providers.error.message}</FieldError>}
       {providers.isSuccess && shown.length === 0 && (
-        <Empty>
+        <Empty className="rounded-xl border">
           <EmptyHeader>
             <EmptyTitle>No providers match</EmptyTitle>
             <EmptyDescription>Try another name.</EmptyDescription>
           </EmptyHeader>
         </Empty>
       )}
-      {list("Set up", ready)}
-      {list(ready.length ? "Available" : "Providers", others)}
+      <ProviderSection
+        title="Set up"
+        description="Bots use these providers' models. Keys and sign-ins are stored encrypted on the server and shared by every bot."
+        providers={ready}
+        onSignIn={setSigningIn}
+      />
+      <ProviderSection
+        title={ready.length ? "Available" : "Providers"}
+        providers={shown.filter((provider) => !provider.configured)}
+        onSignIn={setSigningIn}
+      />
       {signingIn && (
         <LoginDialog
           key={signingIn.provider}

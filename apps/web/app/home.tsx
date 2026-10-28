@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { BotIcon, PlusSignIcon } from "@hugeicons/core-free-icons";
+import { IconRobot, IconPlus } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -44,7 +43,7 @@ export function Home() {
               className="flex h-full w-36 flex-col items-center justify-center gap-3 rounded-3xl p-4 text-sm text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
             >
               <span className="flex size-[88px] items-center justify-center rounded-full border-2 border-dashed">
-                <HugeiconsIcon icon={PlusSignIcon} className="size-6" />
+                <IconPlus className="size-6" />
               </span>
               New bot
             </Link>
@@ -57,7 +56,7 @@ export function Home() {
     <Empty>
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          <HugeiconsIcon icon={BotIcon} />
+          <IconRobot />
         </EmptyMedia>
         <EmptyTitle className="font-heading text-lg">
           {bots.isPending
@@ -71,7 +70,7 @@ export function Home() {
       {bots.data && (
         <EmptyContent>
           <Button render={<Link to="/bots/new" />} nativeButton={false}>
-            <HugeiconsIcon icon={PlusSignIcon} data-icon="inline-start" />
+            <IconPlus data-icon="inline-start" />
             Create a bot
           </Button>
         </EmptyContent>

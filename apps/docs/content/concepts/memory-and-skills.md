@@ -25,7 +25,7 @@ There are three kinds:
 
 A bot can write its own skills. When it changes a shared or default skill, it makes its own copy, which takes the original's place for that bot only.
 
-Manage skills in **Settings** > **Skills**.
+Manage skills in **Settings** > **Skills**. Turn a shared skill on for a bot by selecting the bot under the skill.
 
 ## Learned changes
 

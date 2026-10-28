@@ -14,6 +14,8 @@ All provider settings are in the web app under **Settings** > **Providers**.
 1. Click **Add key** next to the provider.
 2. Paste the key and save.
 
+To replace or remove a saved key, open the provider's **More** menu.
+
 ## Sign in with a provider account
 
 Some providers let you sign in with an existing account instead of a key, for example ChatGPT, Codex, Claude, or GitHub Copilot.

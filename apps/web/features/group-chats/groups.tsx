@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { PencilEdit01Icon } from "@hugeicons/core-free-icons";
+import { IconPencil } from "@tabler/icons-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -171,7 +170,7 @@ function GroupHeader({
         render={<Link to="/groups/$groupId/edit" params={{ groupId }} />}
         nativeButton={false}
       >
-        <HugeiconsIcon icon={PencilEdit01Icon} />
+        <IconPencil />
       </Button>
     </header>
   );
@@ -607,7 +606,7 @@ export function GroupForm({ group }: { group?: GroupChat }) {
   return (
     <div className="flex-1 overflow-y-auto">
       <form
-        className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6"
+        className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6"
         onSubmit={(event) => {
           event.preventDefault();
 

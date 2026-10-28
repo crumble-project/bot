@@ -913,6 +913,18 @@
           "updatedAt"
         ]
       },
+      "DesktopStatus": {
+        "type": "object",
+        "properties": {
+          "running": {
+            "type": "boolean",
+            "description": "Whether the bot's machine runs its bot desktop now, so a passive viewer can connect. Always false for a bot without a bot desktop."
+          }
+        },
+        "required": [
+          "running"
+        ]
+      },
       "DesktopViewer": {
         "type": "object",
         "properties": {
@@ -6073,10 +6085,9 @@
         }
       }
     },
-    "/v1/agents/{id}/desktop/viewer": {
-      "post": {
-        "operationId": "createDesktopViewer",
-        "description": "Issue a single-use viewer link for the bot desktop. The page and its WebSocket live outside /v1 and need no Authorization header: the link is the credential. 409 when the bot has no bot desktop.",
+    "/v1/agents/{id}/desktop/status": {
+      "get": {
+        "operationId": "getDesktopStatus",
         "security": [
           {
             "BearerAuth": []
@@ -6093,6 +6104,130 @@
             "required": true,
             "name": "id",
             "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/desktop/viewer": {
+      "post": {
+        "operationId": "createDesktopViewer",
+        "description": "Issue a single-use viewer link for the bot desktop. The page and its WebSocket live outside /v1 and need no Authorization header: the link is the credential. With passive=true the link is watch-only: it neither boots the bot's machine nor keeps it awake, and its connection ends when the machine stops. 409 when the bot has no bot desktop.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "passive",
+            "in": "query"
           }
         ],
         "responses": {

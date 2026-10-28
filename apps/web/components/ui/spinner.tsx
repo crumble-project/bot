@@ -1,14 +1,9 @@
 import { cn } from "cn";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Loading03Icon } from "@hugeicons/core-free-icons";
+import { IconLoader2, type IconProps } from "@tabler/icons-react";
 
-function Spinner({
-  className,
-  ...props
-}: Omit<React.ComponentProps<"svg">, "strokeWidth">) {
+function Spinner({ className, ...props }: IconProps) {
   return (
-    <HugeiconsIcon
-      icon={Loading03Icon}
+    <IconLoader2
       data-slot="spinner"
       role="status"
       aria-label="Loading"

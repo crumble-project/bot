@@ -8,9 +8,7 @@
     "apps/docs/blume.config.ts",
     "apps/docs/theme.css",
     "apps/docs/content/**/*.{ts,mdx}",
-    "apps/site/panda.config.ts",
-    "apps/site/src/router.tsx",
-    "apps/site/src/routes/**/*.tsx"
+    "apps/site/panda.config.ts"
   ],
   "workspaces": {
     "patterns": ["apps/docs", "apps/site"]

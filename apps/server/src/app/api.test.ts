@@ -6,7 +6,7 @@ import { desktopControlAccess } from "../bot-desktop/desktop-control";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
-import { createAPI } from "./api";
+import { createAPI, type ApiOptions } from "./api";
 import { memoryResponse } from "../contract/api-responses";
 import { Effect } from "effect";
 import { ScriptRuns } from "../schedules/script-runs";
@@ -1340,7 +1340,10 @@ describe("HTTP API", () => {
 });
 
 describe("bot desktop control and viewer", () => {
-  function desktopApp(tools = ["desktop"]) {
+  function desktopApp(
+    tools = ["desktop"],
+    workspace: Pick<ApiOptions, "desktopRunning" | "startDesktop"> = {},
+  ) {
     const { store, runtime } = setup();
     const service = standaloneBots(store, runtime);
 
@@ -1355,6 +1358,7 @@ describe("bot desktop control and viewer", () => {
       desktop: true,
       desktopControl,
       viewerTickets,
+      ...workspace,
     });
 
     const agent = store.createAgent({
@@ -1437,9 +1441,60 @@ describe("bot desktop control and viewer", () => {
     expect(await page.text()).toContain(`${path}/websockify`);
 
     // The WebSocket redeems the ticket; afterwards the link is dead.
-    expect(viewerTickets.redeem(path.split("/").at(-1))).toBe(agent.id);
+    expect(viewerTickets.redeem(path.split("/").at(-1))).toEqual({
+      agentId: agent.id,
+      passive: false,
+    });
     expect((await app.request(path)).status).toBe(404);
     expect((await app.request(`${path}/websockify`)).status).toBe(404);
+  });
+
+  test("the desktop status reports a running bot desktop", async () => {
+    const running = new Set<string>();
+
+    const { app, agent } = desktopApp(["desktop"], {
+      desktopRunning: (id) => running.has(id),
+    });
+
+    const url = `/v1/agents/${agent.id}/desktop/status`;
+
+    expect(await (await req(app, url)).json()).toEqual({ running: false });
+
+    running.add(agent.id);
+
+    expect(await (await req(app, url)).json()).toEqual({ running: true });
+
+    const plain = desktopApp([], { desktopRunning: () => true });
+
+    expect(
+      await (
+        await req(plain.app, `/v1/agents/${plain.agent.id}/desktop/status`)
+      ).json(),
+    ).toEqual({ running: false });
+  });
+
+  test("a passive viewer link watches without booting the machine", async () => {
+    const booted: string[] = [];
+
+    const { app, agent, viewerTickets } = desktopApp(["desktop"], {
+      startDesktop: (id) => Effect.sync(() => void booted.push(id)),
+    });
+
+    const url = `/v1/agents/${agent.id}/desktop/viewer`;
+
+    const passive = await req(app, `${url}?passive=true`, { method: "POST" });
+    const { path } = await passive.json();
+
+    expect(passive.status).toBe(201);
+    expect(viewerTickets.redeem(path.split("/").at(-1))).toEqual({
+      agentId: agent.id,
+      passive: true,
+    });
+
+    await req(app, url, { method: "POST" });
+    await Bun.sleep(0);
+
+    expect(booted).toEqual([agent.id]);
   });
 
   test("only noVNC's core and vendored files are served", async () => {
