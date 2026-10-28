@@ -359,6 +359,34 @@ describe("Scheduler", () => {
     store.close();
   });
 
+  test("rejects weekday steps without a range", () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const scheduler = standaloneScheduler(store.runtime, async () => undefined);
+
+    const create = (cron: string) =>
+      scheduler.create({
+        agentId: agent.id,
+        name: "steps",
+        kind: "prompt",
+        command: null,
+        timeoutSeconds: 600,
+        notify: true,
+        prompt: "x",
+        cron,
+        timezone: "UTC",
+        runAt: null,
+        enabled: true,
+      });
+
+    expect(() => create("0 9 * * 7/2")).toThrow();
+    expect(() => create("0 9 * * 1,3/2")).toThrow();
+    expect(() => create("0 0 9 * * 1/2")).toThrow();
+    expect(() => create("0 9 * * */2")).not.toThrow();
+    expect(() => create("0 9 * * 1-5/2")).not.toThrow();
+    store.close();
+  });
+
   test("retries a failed dispatch with the same occurrence key after backoff", async () => {
     const store = new Store(make());
     const agent = store.createAgent(agentInput);

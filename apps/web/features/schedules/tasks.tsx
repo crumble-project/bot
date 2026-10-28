@@ -1,4 +1,5 @@
 import { useState } from "react";
+import cronstrue from "cronstrue";
 import {
   type UseQueryResult,
   useMutation,
@@ -66,105 +67,28 @@ import { ConfirmDelete, Section, WorkspacePage } from "@/components/workspace";
 
 const LOCAL_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-const DAYS = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
-
-function clock(hour: string, minute: string) {
-  return `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
-}
-
-const NUMBER = /^\d+$/;
-
-const WEEKDAY_PHRASES = new Map([
-  ["*", "Every day"],
-  ["1-5", "Weekdays"],
-  ["0,6", "Weekends"],
-  ["6,0", "Weekends"],
-]);
-
-function weekdayPhrase(weekday: string) {
-  const phrase = WEEKDAY_PHRASES.get(weekday);
-
-  if (phrase) return phrase;
-
-  return /^[0-7]$/.test(weekday) ? `Every ${DAYS[Number(weekday) % 7]}` : null;
-}
-
-type CronFields = {
-  minute: string;
-  hour: string;
-  dayOfMonth: string | undefined;
-  weekday: string | undefined;
-};
-
-function describeMonthly(
-  { minute, hour, dayOfMonth, weekday }: CronFields,
-  zone: string,
-) {
-  if (
-    !dayOfMonth ||
-    !NUMBER.test(dayOfMonth) ||
-    !NUMBER.test(minute) ||
-    !NUMBER.test(hour) ||
-    weekday !== "*"
-  )
-    return null;
-
-  return `Monthly on day ${dayOfMonth} at ${clock(hour, minute)}${zone}`;
-}
-
-function describeFrequent({ minute, hour, weekday }: CronFields) {
-  if (hour !== "*" || weekday !== "*") return null;
-
-  const every = /^\*\/(\d+)$/.exec(minute);
-
-  if (every) return `Every ${every[1]} minutes`;
-
-  return NUMBER.test(minute)
-    ? `Every hour at :${minute.padStart(2, "0")}`
-    : null;
-}
-
-function describeRecurring(fields: CronFields, zone: string) {
-  const { minute, hour, weekday } = fields;
-
-  const frequent = describeFrequent(fields);
-
-  if (frequent) return frequent;
-
-  if (!NUMBER.test(minute) || !NUMBER.test(hour)) return null;
-
-  const phrase = weekdayPhrase(weekday ?? "");
-
-  return phrase && `${phrase} at ${clock(hour, minute)}${zone}`;
-}
-
-/** Describes common cron shapes in words, like the Mac app; anything else stays as written. */
 export function describeCron(cron: string, timezone: string) {
-  const [minute, hour, dayOfMonth, month, weekday, ...rest] = cron
-    .trim()
-    .split(/\s+/);
-
   const zone = timezone !== LOCAL_ZONE ? ` (${timezone})` : "";
   const plain = `${cron}${zone}`;
+  const fields = cron.trim().split(/\s+/);
 
-  if (rest.length || !minute || !hour || month !== "*") return plain;
+  const days =
+    fields.length === 6 ? [fields[3], fields[5]] : [fields[2], fields[4]];
 
-  const fields = { minute, hour, dayOfMonth, weekday };
+  if (
+    (fields.length === 5 || fields.length === 6) &&
+    days.every((day) => day !== "*" && day !== "?")
+  )
+    return plain;
 
-  const described =
-    dayOfMonth !== "*"
-      ? describeMonthly(fields, zone)
-      : describeRecurring(fields, zone);
+  // The scheduler reads weekday `1/2` as `1-7/2`; cronstrue stops at Saturday.
+  if (days[1]?.split(",").some((part) => /^[^*-]+\//.test(part))) return plain;
 
-  return described ?? plain;
+  try {
+    return `${cronstrue.toString(cron, { use24HourTimeFormat: true })}${zone}`;
+  } catch {
+    return plain;
+  }
 }
 
 export function describeTiming(schedule: Schedule) {
