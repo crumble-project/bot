@@ -1,4 +1,14 @@
 import type { Effect } from "effect";
+import { z } from "zod";
+
+export const WEB_SEARCH_TOOL_NAME = "web_search";
+
+export const WEB_EXTRACT_TOOL_NAME = "web_extract";
+
+/** A page a bot searched or read, which its reply may cite. */
+export const webSource = z.object({ url: z.string(), title: z.string() });
+
+export type WebSource = z.infer<typeof webSource>;
 
 export class WebSearchError extends Error {}
 

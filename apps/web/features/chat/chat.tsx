@@ -50,6 +50,7 @@ import {
   shownInChat,
 } from "./transcript";
 import { Composer } from "./composer";
+import { type Sources, sourcesOf } from "./sources";
 import { MobileSidebarTrigger } from "@/components/workspace";
 
 const DETAILS_KEY = "crumble.details";
@@ -104,6 +105,7 @@ function useChatMessages(botId: string, snapshot: ChatSnapshot | undefined) {
     hasMore: older ? older.hasMore : snapshot?.hasMore,
     oldest: older ? older.oldestEntryId : snapshot?.oldestEntryId,
     reactions: reactionsOf(messages, false),
+    sources: sourcesOf(messages),
     byEntry: new Map(messages.map((message) => [message.entryId, message])),
     shown: messages.filter(shownInChat),
     attachmentPath: (entryId: string, index: number) =>
@@ -216,17 +218,19 @@ function ChatMessage({
   message,
   botId,
   jobFor,
+  sources,
   onReply,
   onOpenJob,
 }: {
   message: Message;
   botId: string;
   jobFor: ReturnType<typeof useChatJobs>;
+  sources: Sources | undefined;
   onReply: (message: Message) => void;
   onOpenJob: (job: JobRef) => void;
 }) {
   if (message.role === "assistant")
-    return <BotMessage message={message} onReply={onReply} />;
+    return <BotMessage message={message} sources={sources} onReply={onReply} />;
 
   if (message.role === "event") return <EventRow message={message} />;
 
@@ -324,6 +328,7 @@ function ChatTranscript({
     arrival,
     byEntry,
     reactions,
+    sources,
     attachmentPath,
   } = transcript;
 
@@ -352,6 +357,7 @@ function ChatTranscript({
             message={message}
             botId={bot.id}
             jobFor={jobFor}
+            sources={sources.get(message.id)}
             onReply={onReply}
             onOpenJob={onOpenJob}
           />

@@ -641,6 +641,25 @@
           },
           "toolDetails": {
             "description": "Provider-specific tool details, including nested code-mode calls."
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "url",
+                "title"
+              ]
+            },
+            "description": "In a group chat, the pages the sending bot searched or read in the turn that wrote the message."
           }
         },
         "required": [

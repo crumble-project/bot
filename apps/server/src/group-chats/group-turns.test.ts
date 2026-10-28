@@ -220,6 +220,7 @@ test("a turn's outcome is its answer, a reaction, or a pass", async () => {
   expect(await turn(runtime, group, "plans")).toEqual({
     kind: "message",
     text: "Answer to plans",
+    sources: [],
   });
   expect(await turn(runtime, group, "react")).toEqual({
     kind: "reaction",

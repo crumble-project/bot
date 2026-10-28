@@ -7,6 +7,8 @@ import { Plugins, pluginWebSearchProviders } from "../app/plugins";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import { isPublicAddress } from "../workspaces/public-address";
 import {
+  WEB_EXTRACT_TOOL_NAME,
+  WEB_SEARCH_TOOL_NAME,
   WebExtractionError,
   WebSearchError,
   type WebPage,
@@ -72,9 +74,9 @@ const searchTool = (
   bot: string,
 ) =>
   defineTool({
-    name: "web_search",
+    name: WEB_SEARCH_TOOL_NAME,
     description:
-      "Search the web for current information. Returns titles, links, dates, and short excerpts. Use web_extract to read a result in full.",
+      "Search the web for current information. Returns titles, links, dates, and short excerpts. Use web_extract to read a result in full. Cite each fact you take from a page right after it with a Markdown link labeled source, such as [source](https://en.wikipedia.org/wiki/Bun_(software)). Give any link you want the owner to open descriptive text instead.",
     parameters: Type.Object({
       query: Type.String({ minLength: 1, maxLength: 400 }),
       limit: Type.Optional(
@@ -115,9 +117,9 @@ const searchTool = (
 
 const extractTool = (extract: NonNullable<WebSearchProvider["extract"]>) =>
   defineTool({
-    name: "web_extract",
+    name: WEB_EXTRACT_TOOL_NAME,
     description:
-      "Read web pages as text. Give the full http or https links, up to 5.",
+      "Read web pages as text. Give the full http or https links, up to 5. Cite each fact you take from a page right after it with a Markdown link labeled source, such as [source](https://en.wikipedia.org/wiki/Bun_(software)). Give any link you want the owner to open descriptive text instead.",
     parameters: Type.Object({
       urls: Type.Array(Type.String({ minLength: 1 }), {
         minItems: 1,
@@ -147,6 +149,9 @@ const extractTool = (extract: NonNullable<WebSearchProvider["extract"]>) =>
               .join("\n\n"),
           },
         ],
+        details: pages.map((page) =>
+          "error" in page ? page : { url: page.url, title: page.title },
+        ),
       };
     },
   });

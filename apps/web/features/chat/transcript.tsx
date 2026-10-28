@@ -63,6 +63,7 @@ import { Input } from "@/components/ui/input";
 import type { Upload } from "./composer";
 import { DisplayCard, displayOf } from "./display";
 import { Reply } from "@/components/markdown";
+import type { Sources } from "./sources";
 
 /** Orders `agent:entry:index` message IDs numerically; others keep their place at the end. */
 function position(id: string) {
@@ -742,6 +743,7 @@ export function BotMessage({
   sender,
   color,
   reactions,
+  sources,
   onReply,
 }: {
   message: Message;
@@ -749,6 +751,7 @@ export function BotMessage({
   /** The sender's color, where the transcript mixes bots. */
   color?: string | undefined;
   reactions?: string[] | undefined;
+  sources?: Sources | undefined;
   onReply?: ((message: Message) => void) | undefined;
 }) {
   return (
@@ -762,7 +765,7 @@ export function BotMessage({
             style={color ? botStyle(color) : undefined}
           >
             <BubbleContent>
-              <Reply source={message.content} />
+              <Reply source={message.content} sources={sources} />
             </BubbleContent>
             <MessageReactions reactions={reactions} align="start" />
           </Bubble>

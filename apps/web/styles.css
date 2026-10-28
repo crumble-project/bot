@@ -224,6 +224,14 @@
     @apply text-primary underline underline-offset-2;
   }
 
+  .markdown .source-chips {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+
+  .markdown a.source-chip {
+    @apply inline-flex h-6 max-w-48 items-center truncate rounded-full bg-background/70 px-2.5 text-xs leading-none font-medium text-muted-foreground no-underline transition-colors hover:bg-background hover:text-foreground;
+  }
+
   .markdown :not(pre) > code {
     @apply rounded bg-muted px-1 py-0.5 font-mono text-[0.85em];
   }
