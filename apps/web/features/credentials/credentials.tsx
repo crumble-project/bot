@@ -433,7 +433,7 @@ export function CredentialsSettings({
   const [scope, setScope] = useState(initialBot ?? ALL);
   const [search, setSearch] = useState("");
   const actions = useCredentialActions();
-  const { editing, uses, deleting, remove } = actions;
+  const { editing, uses, remove } = actions;
   const needle = search.trim().toLowerCase();
 
   return (
@@ -493,17 +493,29 @@ export function CredentialsSettings({
           onClose={() => actions.setUses(null)}
         />
       )}
-      <AlertDialog
-        open={deleting !== null}
-        onOpenChange={(open) => !open && actions.setDeleting(null)}
-      >
-        <ConfirmDeleteContent
-          title={`Delete ${deleting?.item ?? ""}?`}
-          description="Requests with its placeholder stop working at once, and its uses are deleted. This cannot be undone."
-          onConfirm={() => deleting && remove.mutate(deleting)}
-        />
-      </AlertDialog>
+      <DeleteCredentialDialog actions={actions} />
     </WorkspacePage>
+  );
+}
+
+function DeleteCredentialDialog({
+  actions,
+}: {
+  actions: ReturnType<typeof useCredentialActions>;
+}) {
+  const { deleting, remove } = actions;
+
+  return (
+    <AlertDialog
+      open={deleting !== null}
+      onOpenChange={(open) => !open && actions.setDeleting(null)}
+    >
+      <ConfirmDeleteContent
+        title={`Delete ${deleting?.item ?? ""}?`}
+        description="Requests with its placeholder stop working at once, and its uses are deleted. This cannot be undone."
+        onConfirm={() => deleting && remove.mutate(deleting)}
+      />
+    </AlertDialog>
   );
 }
 
@@ -544,6 +556,21 @@ function credentialDraft(editing: Editing) {
   };
 }
 
+function credentialReady(
+  name: string,
+  hosts: string,
+  value: string,
+  existing: Credential | null,
+  pending: boolean,
+) {
+  return (
+    NAME.test(name) &&
+    hostList(hosts).length > 0 &&
+    (existing !== null || value !== "") &&
+    !pending
+  );
+}
+
 function CredentialDialog({
   bots,
   botId,
@@ -564,11 +591,7 @@ function CredentialDialog({
 
   const save = useSaveCredential(owner, { name, hosts, value }, onClose);
 
-  const ready =
-    NAME.test(name) &&
-    hostList(hosts).length > 0 &&
-    (existing !== null || value !== "") &&
-    !save.isPending;
+  const ready = credentialReady(name, hosts, value, existing, save.isPending);
 
   return (
     <EditorSheet

@@ -535,6 +535,19 @@ function useProviderCredential(provider: Provider) {
 type ProviderCredential = ReturnType<typeof useProviderCredential>;
 
 /** Set-up providers keep their actions in the row menu; others show how to set them up. */
+function providerSignInAvailable(provider: Provider) {
+  return (
+    provider.authMethods.some((method) => method.type === "oauth") &&
+    provider.credentialType !== "oauth"
+  );
+}
+
+function providerKeyAvailable(provider: Provider, editing: boolean) {
+  return (
+    !editing && provider.authMethods.some((method) => method.type === "api_key")
+  );
+}
+
 function ProviderActions({
   provider,
   credential,
@@ -546,13 +559,9 @@ function ProviderActions({
 }) {
   const { editing, setEditing, save } = credential;
 
-  const signIn =
-    provider.authMethods.some((method) => method.type === "oauth") &&
-    provider.credentialType !== "oauth";
+  const signIn = providerSignInAvailable(provider);
 
-  const addKey =
-    !editing &&
-    provider.authMethods.some((method) => method.type === "api_key");
+  const addKey = providerKeyAvailable(provider, editing);
 
   const signInLabel = provider.activeLoginId ? "Continue sign-in" : "Sign in";
 

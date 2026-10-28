@@ -61,6 +61,10 @@ function ticketOwnerOf(path: string) {
   );
 }
 
+function lockRetries(waitMs = 35_000) {
+  return { retries: Math.ceil(waitMs / 1000), factor: 1, minTimeout: 1000 };
+}
+
 export async function startServer(
   options: {
     dataDir?: string;
@@ -87,11 +91,7 @@ export async function startServer(
   const release = await lockfile.lock(dataDir, {
     stale: 30000,
     update: 10000,
-    retries: {
-      retries: Math.ceil((options.lockWaitMs ?? 35_000) / 1000),
-      factor: 1,
-      minTimeout: 1000,
-    },
+    retries: lockRetries(options.lockWaitMs),
   });
 
   const tenants = new Map<
