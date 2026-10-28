@@ -6,7 +6,15 @@ import { Effect, Layer } from "effect";
 import { Plugins, pluginWebSearchProviders } from "../app/plugins";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import { isPublicAddress } from "../workspaces/public-address";
-import type { WebPage, WebSearchProvider } from "./provider";
+import {
+  WebExtractionError,
+  WebSearchError,
+  type WebPage,
+  type WebSearchProvider,
+} from "./provider";
+import { AgentRepository } from "../bots/agent-repository";
+import { SettingsRepository } from "../shared/settings-repository";
+import { DEFAULT_PROVIDER } from "./settings";
 
 const refused = "Crumble does not read private or local addresses.";
 const date = Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" }));
@@ -157,6 +165,59 @@ export function webSearchExtension(
 
   return defineExtension({ name: "web-search", tools });
 }
+
+export const configuredWebSearchTools = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const providers = pluginWebSearchProviders(yield* Plugins);
+    const agents = yield* AgentRepository;
+    const settings = yield* SettingsRepository;
+    const extensions = yield* BotExtensions;
+    yield* extensions.register(ExtensionPosition.webSearch, (agent) => {
+      if (!agent.tools.includes("web")) return [];
+
+      const resolve = Effect.fnUntraced(function* () {
+        const current = yield* agents.get(agent.id);
+
+        const id =
+          current?.webSearchProvider ??
+          (yield* settings.get(DEFAULT_PROVIDER)) ??
+          "mixed";
+
+        return providers.find((provider) => provider.id === id);
+      });
+
+      const dynamic: WebSearchProvider = {
+        id: "selected",
+        search: (query, bot) =>
+          resolve().pipe(
+            Effect.flatMap((provider) =>
+              provider?.search
+                ? provider.search(query, bot)
+                : Effect.fail(
+                    new WebSearchError(
+                      "The selected web search provider is unavailable or its API key is missing.",
+                    ),
+                  ),
+            ),
+          ),
+        extract: (url) =>
+          resolve().pipe(
+            Effect.flatMap((provider) =>
+              provider?.extract
+                ? provider.extract(url)
+                : Effect.fail(
+                    new WebExtractionError(
+                      "The selected web search provider is unavailable or its API key is missing.",
+                    ),
+                  ),
+            ),
+          ),
+      };
+
+      return [webSearchExtension([dynamic], agent.id)];
+    });
+  }),
+);
 
 export const webSearchTools = Layer.effectDiscard(
   Effect.gen(function* () {

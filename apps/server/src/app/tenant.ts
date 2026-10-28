@@ -10,7 +10,7 @@ import { BotActivity } from "../bots/bot-activity";
 import { BotExtensions } from "../bots/bot-extensions";
 import { reactionTools } from "../bots/reaction";
 import { codemodeTools } from "../bots/codemode";
-import { webSearchTools } from "../web-search/web-search-tools";
+import { configuredWebSearchTools } from "../web-search/web-search-tools";
 import {
   Scheduler,
   schedulerAccess,
@@ -70,6 +70,8 @@ import { BotWorkspaces } from "../workspaces/workspace";
 import { desktopKeepAwake } from "../bot-desktop/keep-awake";
 import { AgentRepository } from "../bots/agent-repository";
 import { BotRequests, botRequestTools } from "../bot-requests/bot-requests";
+import { SecretRepository } from "../credentials/secret-repository";
+import { EXA_KEY } from "../web-search/settings";
 
 export type TenantOptions = {
   dataDir: string;
@@ -171,6 +173,7 @@ function accountLayer(
 
       return builtinPlugins({
         dataDir,
+        exaKey: (yield* SecretRepository).get(EXA_KEY),
         env: process.env,
         workspaces: yield* BotWorkspaces,
         desktopControl: desktopControlAccess(run),
@@ -266,7 +269,7 @@ function accountLayer(
         integrationTools,
         codemodeTools,
         displayTools,
-        webSearchTools,
+        configuredWebSearchTools,
         reactionTools,
       ),
     ),

@@ -58,6 +58,7 @@ import { registerSkillRoutes } from "../skills/skills-api";
 import type { DesktopStream } from "../workspaces/workspace";
 import type { DesktopOpenError } from "../workspaces/workspace-errors";
 import type { ExternalAuth } from "./plugins";
+import { registerWebSearchRoutes } from "../web-search/settings";
 
 /** The bots the API serves, with the account's repositories and bot runtime its handlers read directly. */
 export type ApiBots = BotsAccess & {
@@ -221,6 +222,7 @@ export function createAPI(
 
   register(routes.capabilities, (c) => c.json(capabilitiesOf(options), 200));
   registerPushRoutes(register, push);
+  registerWebSearchRoutes(register, core);
 
   const pushServerId = pushServerIdOf(push);
 

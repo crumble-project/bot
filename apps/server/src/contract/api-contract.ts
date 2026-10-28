@@ -174,6 +174,48 @@ export const routes = {
     responses: { 200: json(response.capabilitiesResponse) },
   }),
   ...pushRoutes,
+  getWebSearch: define({
+    method: "get",
+    path: "/v1/web-search",
+    operationId: "getWebSearch",
+    responses: {
+      200: json(
+        z.object({
+          defaultProvider: z.enum(["mixed", "exa"]),
+          exaKeyConfigured: z.boolean(),
+        }),
+      ),
+    },
+  }),
+  updateWebSearch: define({
+    method: "put",
+    path: "/v1/web-search",
+    operationId: "updateWebSearch",
+    request: {
+      body: body(z.object({ defaultProvider: z.enum(["mixed", "exa"]) })),
+    },
+    responses: {
+      200: json(
+        z.object({
+          defaultProvider: z.enum(["mixed", "exa"]),
+          exaKeyConfigured: z.boolean(),
+        }),
+      ),
+    },
+  }),
+  setExaKey: define({
+    method: "put",
+    path: "/v1/web-search/exa-key",
+    operationId: "setExaKey",
+    request: { body: body(providerKeyInput) },
+    responses: { 200: json(z.object({ exaKeyConfigured: z.boolean() })) },
+  }),
+  deleteExaKey: define({
+    method: "delete",
+    path: "/v1/web-search/exa-key",
+    operationId: "deleteExaKey",
+    responses: { 200: json(z.object({ exaKeyConfigured: z.boolean() })) },
+  }),
   listAgents: define({
     method: "get",
     path: "/v1/agents",

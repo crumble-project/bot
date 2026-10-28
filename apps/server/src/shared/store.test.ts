@@ -486,7 +486,8 @@ describe("Store memory sources", () => {
       ALTER TABLE schedules DROP COLUMN kind;
       ALTER TABLE schedules DROP COLUMN command;
       ALTER TABLE schedules DROP COLUMN timeout_seconds;
-      ALTER TABLE schedules DROP COLUMN notify;`);
+      ALTER TABLE schedules DROP COLUMN notify;
+      ALTER TABLE agents DROP COLUMN web_search_provider;`);
     db.run("ALTER TABLE memories DROP COLUMN source");
     db.close();
 
@@ -609,7 +610,8 @@ describe("Store group chats", () => {
       ALTER TABLE group_members DROP COLUMN cursor;
       ALTER TABLE group_members DROP COLUMN pending;
       ALTER TABLE group_members DROP COLUMN pending_bot_started;
-      ALTER TABLE group_members DROP COLUMN summary;`);
+      ALTER TABLE group_members DROP COLUMN summary;
+      ALTER TABLE agents DROP COLUMN web_search_provider;`);
     db.close();
 
     await Effect.runPromise(

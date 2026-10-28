@@ -33,6 +33,7 @@ export const agentInput = z.object({
     .regex(/^[a-z0-9-]+$/)
     .default("openai"),
   model: z.string().trim().min(1).max(200).default("gpt-4.1"),
+  webSearchProvider: z.enum(["mixed", "exa"]).nullable().optional(),
   enabled: z.boolean().default(true),
   tools: z.array(z.string().min(1).max(200)).max(100).default(["memory"]),
   /** The bot's own skills by name; the full records live in the skill library. Writing replaces them by name. */

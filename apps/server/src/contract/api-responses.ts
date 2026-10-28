@@ -45,6 +45,7 @@ export const agentResponse = z
     instructions: z.string(),
     provider: z.string(),
     model: z.string(),
+    webSearchProvider: z.enum(["mixed", "exa"]).nullable().optional(),
     enabled: z.boolean(),
     tools: strings.openapi({
       description:

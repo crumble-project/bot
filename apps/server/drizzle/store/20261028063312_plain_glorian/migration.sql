@@ -1,0 +1,1 @@
+ALTER TABLE `agents` ADD `web_search_provider` text;
