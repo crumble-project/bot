@@ -21,6 +21,7 @@
     "better-auth": "^1.7.14",
     "class-variance-authority": "0.7.1",
     "cn": "0.5.0",
+    "cron-parser": "5.10.2",
     "cronstrue": "3.38.0",
     "pele": "1.9.0",
     "react": "19.3.1",

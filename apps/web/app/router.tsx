@@ -43,7 +43,7 @@ import {
   SettingsLayout,
 } from "@/features/settings/settings";
 import { SkillsPage } from "@/features/skills/skills";
-import { TasksPage } from "@/features/schedules/tasks";
+import { AutomationsPage } from "@/features/schedules/automations";
 
 const rootRoute = createRootRoute();
 
@@ -184,10 +184,18 @@ const skillsRoute = createRoute({
   },
 });
 
+const automationsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/automations",
+  component: AutomationsPage,
+});
+
 const tasksRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/tasks",
-  component: TasksPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/automations", replace: true });
+  },
 });
 
 const activityRoute = createRoute({
@@ -263,6 +271,7 @@ export const router = createRouter({
       editGroupRoute,
       memoryRoute,
       skillsRoute,
+      automationsRoute,
       tasksRoute,
       activityRoute,
       integrationsRoute,

@@ -13,12 +13,6 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   Field,
   FieldGroup,
   FieldLabel,
@@ -26,7 +20,7 @@ import {
   FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { OwnerSelectField, SaveDialogFooter } from "@/components/form-fields";
+import { EditorSheet, OwnerSelectField } from "@/components/form-fields";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -463,56 +457,40 @@ function SkillDialog({
   });
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {editing.kind === "new" ? "New Skill" : "Edit Skill"}
-          </DialogTitle>
-        </DialogHeader>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-
-            if (valid) save.mutate();
-          }}
-        >
-          <FieldGroup>
-            <OwnerSelectField
-              label="Available to"
-              owners={owners}
-              value={owner}
-              disabled={editing.kind !== "new"}
-              onValueChange={(value) => setOwner(value ?? SHARED)}
-            />
-            <Field>
-              <FieldLabel htmlFor="skill-name">Name</FieldLabel>
-              <Input
-                id="skill-name"
-                maxLength={100}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="skill-instructions">Instructions</FieldLabel>
-              <Textarea
-                id="skill-instructions"
-                className="min-h-40"
-                maxLength={32000}
-                value={instructions}
-                onChange={(event) => setInstructions(event.target.value)}
-              />
-            </Field>
-            <SaveDialogFooter
-              error={save.isError ? save.error : null}
-              onCancel={onClose}
-              disabled={!valid || save.isPending}
-              label={editing.kind === "new" ? "Add" : "Save"}
-            />
-          </FieldGroup>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <EditorSheet
+      title={editing.kind === "new" ? "New Skill" : "Edit Skill"}
+      error={save.error?.message}
+      submitLabel={editing.kind === "new" ? "Add" : "Save"}
+      submitDisabled={!valid || save.isPending}
+      onSubmit={() => valid && save.mutate()}
+      onClose={onClose}
+    >
+      <OwnerSelectField
+        label="Available to"
+        owners={owners}
+        value={owner}
+        disabled={editing.kind !== "new"}
+        onValueChange={(value) => setOwner(value ?? SHARED)}
+      />
+      <Field>
+        <FieldLabel htmlFor="skill-name">Name</FieldLabel>
+        <Input
+          id="skill-name"
+          maxLength={100}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="skill-instructions">Instructions</FieldLabel>
+        <Textarea
+          id="skill-instructions"
+          className="min-h-40"
+          maxLength={32000}
+          value={instructions}
+          onChange={(event) => setInstructions(event.target.value)}
+        />
+      </Field>
+    </EditorSheet>
   );
 }

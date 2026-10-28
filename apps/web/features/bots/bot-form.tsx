@@ -55,6 +55,7 @@ import {
   send,
 } from "@/lib/api";
 import { BotAvatar } from "./avatar";
+import { SelectOptions } from "@/components/form-fields";
 import { ConfirmDeleteContent, WorkspacePage } from "@/components/workspace";
 import {
   type AvatarChoice,
@@ -146,15 +147,7 @@ function ProviderSelect({
       <SelectTrigger id={id} className="w-full">
         <SelectValue />
       </SelectTrigger>
-      <SelectContent>
-        <SelectGroup>
-          {items.map((item) => (
-            <SelectItem key={item.value} value={item.value}>
-              {item.label}
-            </SelectItem>
-          ))}
-        </SelectGroup>
-      </SelectContent>
+      <SelectOptions items={items} />
     </Select>
   );
 }
@@ -837,7 +830,7 @@ function BotManagementActions({
               </AlertDialogTrigger>
               <ConfirmDeleteContent
                 title={`Delete ${bot.name}?`}
-                description="The bot, its chat, memories and tasks will be removed. This cannot be undone."
+                description="The bot, its chat, memories and automations will be removed. This cannot be undone."
                 error={remove.error}
                 pending={remove.isPending}
                 onConfirm={() => remove.mutate(bot.id)}

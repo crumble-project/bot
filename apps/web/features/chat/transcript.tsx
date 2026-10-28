@@ -338,7 +338,7 @@ export function EventRow({ message }: { message: Message }) {
   );
 }
 
-/** A turn the owner didn't send, such as a task or another bot's message: centered, with its text on demand. */
+/** A turn the owner didn't send, such as an automation or another bot's message: centered, with its text on demand. */
 export function NoticeRow({ message }: { message: Message }) {
   return (
     <CenteredDisclosure
@@ -453,9 +453,10 @@ function botRequestNotice(message: Message) {
 }
 
 function originContent(origin: NonNullable<Message["origin"]>) {
-  if (origin.kind === "task") return `Task · ${origin.name ?? ""}`;
+  if (origin.kind === "task") return `Automation · ${origin.name ?? ""}`;
 
-  if (origin.kind === "script") return `Script task · ${origin.name ?? ""}`;
+  if (origin.kind === "script")
+    return `Script automation · ${origin.name ?? ""}`;
 
   if (origin.kind === "credential")
     return (

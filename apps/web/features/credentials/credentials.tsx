@@ -14,20 +14,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EditorSheet } from "@/components/form-fields";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -379,48 +374,25 @@ function CredentialDialog({
     !save.isPending;
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {existing ? `Edit ${existing.name}` : "Add Credential"}
-          </DialogTitle>
-          {request && <DialogDescription>{request.reason}</DialogDescription>}
-        </DialogHeader>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-
-            if (ready) save.mutate();
-          }}
-        >
-          <FieldGroup>
-            <CredentialFields
-              locked={editing.kind !== "new"}
-              proposed={request !== null}
-              replacing={existing !== null}
-              draft={{ name, hosts, value }}
-              onName={setName}
-              onHosts={setHosts}
-              onValue={setValue}
-            />
-            {save.isError && (
-              <Alert variant="destructive">
-                <AlertDescription>{save.error.message}</AlertDescription>
-              </Alert>
-            )}
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={!ready}>
-                {existing ? "Save" : "Add"}
-              </Button>
-            </DialogFooter>
-          </FieldGroup>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <EditorSheet
+      title={existing ? `Edit ${existing.name}` : "Add Credential"}
+      description={request?.reason}
+      error={save.error?.message}
+      submitLabel={existing ? "Save" : "Add"}
+      submitDisabled={!ready}
+      onSubmit={() => ready && save.mutate()}
+      onClose={onClose}
+    >
+      <CredentialFields
+        locked={editing.kind !== "new"}
+        proposed={request !== null}
+        replacing={existing !== null}
+        draft={{ name, hosts, value }}
+        onName={setName}
+        onHosts={setHosts}
+        onValue={setValue}
+      />
+    </EditorSheet>
   );
 }
 

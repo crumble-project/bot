@@ -6,22 +6,15 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   Field,
   FieldContent,
   FieldDescription,
-  FieldGroup,
   FieldLabel,
   FieldLegend,
   FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { OwnerSelectField, SaveDialogFooter } from "@/components/form-fields";
+import { EditorSheet, OwnerSelectField } from "@/components/form-fields";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
@@ -365,48 +358,27 @@ function ServerDialog({
   const valid = Boolean(draft.name.trim() && validUrl(draft.url.trim()));
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {server ? "Edit MCP Server" : "New MCP Server"}
-          </DialogTitle>
-        </DialogHeader>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-
-            if (valid) save.mutate();
-          }}
-        >
-          <FieldGroup>
-            <ServerFields
-              bots={bots}
-              server={server}
-              draft={draft}
-              patch={patch}
-            />
-            <OAuthAppFields server={server} draft={draft} patch={patch} />
-            <Field orientation="horizontal">
-              <FieldContent>
-                <FieldLabel htmlFor="mcp-enabled">Enabled</FieldLabel>
-              </FieldContent>
-              <Switch
-                id="mcp-enabled"
-                checked={draft.enabled}
-                onCheckedChange={(enabled) => patch({ enabled })}
-              />
-            </Field>
-            <SaveDialogFooter
-              error={save.isError ? save.error : null}
-              onCancel={onClose}
-              disabled={!valid || save.isPending}
-              label={server ? "Save" : "Add"}
-            />
-          </FieldGroup>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <EditorSheet
+      title={server ? "Edit MCP Server" : "New MCP Server"}
+      error={save.error?.message}
+      submitLabel={server ? "Save" : "Add"}
+      submitDisabled={!valid || save.isPending}
+      onSubmit={() => valid && save.mutate()}
+      onClose={onClose}
+    >
+      <ServerFields bots={bots} server={server} draft={draft} patch={patch} />
+      <OAuthAppFields server={server} draft={draft} patch={patch} />
+      <Field orientation="horizontal">
+        <FieldContent>
+          <FieldLabel htmlFor="mcp-enabled">Enabled</FieldLabel>
+        </FieldContent>
+        <Switch
+          id="mcp-enabled"
+          checked={draft.enabled}
+          onCheckedChange={(enabled) => patch({ enabled })}
+        />
+      </Field>
+    </EditorSheet>
   );
 }
 

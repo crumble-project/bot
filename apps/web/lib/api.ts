@@ -10,6 +10,7 @@ import type {
   credentialUseResponse,
   credentialsResponse,
   describedMcpServerResponse,
+  executionResponse,
   desktopControlResponse,
   desktopJobsResponse,
   desktopStatusResponse,
@@ -67,6 +68,8 @@ export type ListedSkill = z.infer<typeof listedSkillResponse>;
 export type Schedule = z.infer<typeof scheduleResponse>;
 
 export type ScriptRun = z.infer<typeof scriptRunResponse>;
+
+export type Execution = z.infer<typeof executionResponse>;
 
 export type McpServer = z.infer<typeof describedMcpServerResponse>;
 
@@ -246,6 +249,11 @@ export const capabilitiesQuery = queryOptions({
 export const schedulesQuery = queryOptions({
   queryKey: ["schedules"],
   queryFn: ({ signal }) => api<Schedule[]>("/v1/schedules", { signal }),
+});
+
+export const executionsQuery = queryOptions({
+  queryKey: ["executions"],
+  queryFn: ({ signal }) => api<Execution[]>("/v1/executions", { signal }),
 });
 
 export const scriptRunsQuery = (id: string) =>

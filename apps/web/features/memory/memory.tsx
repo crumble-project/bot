@@ -8,15 +8,9 @@ import {
 import { IconTrash, IconPencil, IconSearch } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { OwnerSelectField, SaveDialogFooter } from "@/components/form-fields";
+import { EditorSheet, OwnerSelectField } from "@/components/form-fields";
 import {
   Select,
   SelectContent,
@@ -63,7 +57,7 @@ const SOURCE_LABELS: Record<
 > = {
   chat: () => "From the bot chat",
   owner: () => "Added by you",
-  task: (name) => `From the task ${name ?? ""}`.trim(),
+  task: (name) => `From the automation ${name ?? ""}`.trim(),
   bot: (name) => `From a request by ${name ?? "a bot"}`,
   group: (name) => `From the group chat ${name ?? ""}`.trim(),
 };
@@ -361,47 +355,31 @@ function MemoryDialog({
   });
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {editing.memory ? "Edit Memory" : "New Memory"}
-          </DialogTitle>
-        </DialogHeader>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-
-            if (content.trim()) save.mutate();
-          }}
-        >
-          <FieldGroup>
-            <OwnerSelectField
-              label="Remembered by"
-              owners={owners}
-              value={owner}
-              disabled={editing.memory !== null}
-              onValueChange={(value) => setOwner(value ?? SHARED)}
-            />
-            <Field>
-              <FieldLabel htmlFor="memory-content">Memory</FieldLabel>
-              <Textarea
-                id="memory-content"
-                className="min-h-32"
-                maxLength={32000}
-                value={content}
-                onChange={(event) => setContent(event.target.value)}
-              />
-            </Field>
-            <SaveDialogFooter
-              error={save.isError ? save.error : null}
-              onCancel={onClose}
-              disabled={!content.trim() || save.isPending}
-              label={editing.memory ? "Save" : "Add"}
-            />
-          </FieldGroup>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <EditorSheet
+      title={editing.memory ? "Edit Memory" : "New Memory"}
+      error={save.error?.message}
+      submitLabel={editing.memory ? "Save" : "Add"}
+      submitDisabled={!content.trim() || save.isPending}
+      onSubmit={() => content.trim() && save.mutate()}
+      onClose={onClose}
+    >
+      <OwnerSelectField
+        label="Remembered by"
+        owners={owners}
+        value={owner}
+        disabled={editing.memory !== null}
+        onValueChange={(value) => setOwner(value ?? SHARED)}
+      />
+      <Field>
+        <FieldLabel htmlFor="memory-content">Memory</FieldLabel>
+        <Textarea
+          id="memory-content"
+          className="min-h-32"
+          maxLength={32000}
+          value={content}
+          onChange={(event) => setContent(event.target.value)}
+        />
+      </Field>
+    </EditorSheet>
   );
 }

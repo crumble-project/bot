@@ -1,21 +1,21 @@
 ---
-title: Schedules, messaging, and integrations
-description: Run tasks on a schedule, let bots talk to each other, and connect external tools over MCP.
+title: Automations, messaging, and integrations
+description: Run automations on a schedule, let bots talk to each other, and connect external tools over MCP.
 sidebar:
   order: 7
 ---
 
-## Scheduled tasks
+## Automations
 
-Every bot can schedule tasks. A task is a prompt that runs once at a set time or repeatedly on a cron schedule, and the result appears in the bot's chat.
+Every bot can have automations. An automation is a prompt that runs once at a set time or repeatedly on a cron schedule, and the result appears in the bot's chat.
 
-Ask the bot directly, for example "Every Monday at 9, summarize my open pull requests." See and pause upcoming tasks on the **Tasks** page.
+Ask the bot directly, for example "Every Monday at 9, summarize my open pull requests," or select **New automation** on the **Automations** page. The page lists every automation with its schedule, next run, and status. Select an automation to edit it, or use its **More** menu to run, pause, resume, or delete it. The **Runs** tab lists recent runs: select a prompt run to open the bot's chat, or a script run to see its output.
 
-### Script tasks
+### Script automations
 
-A script task runs a shell command in its bot's [workspace](/concepts/workspaces) at the scheduled time instead of sending a prompt to the bot's chat. The bot needs coding jobs enabled, and it can create script tasks only for itself. The command runs in `/workspace` with that bot's [credentials](/concepts/credentials).
+A script automation runs a shell command in its bot's [workspace](/concepts/workspaces) at the scheduled time instead of sending a prompt to the bot's chat. The bot needs coding jobs enabled, and it can create script automations only for itself. The command runs in `/workspace` with that bot's [credentials](/concepts/credentials).
 
-To convert an existing script task, edit it on the **Tasks** page, select **Prompt**, and enter a prompt. This remains available when coding jobs are disabled or the server has no workspaces.
+To convert an existing script automation, edit it on the **Automations** page, select **Prompt**, and enter a prompt. This remains available when coding jobs are disabled or the server has no workspaces.
 
 The timeout defaults to 600 seconds and can be set from 1 to 3600 seconds. When it expires, the command's process tree is killed. Processes the command starts with `setsid` survive the timeout.
 

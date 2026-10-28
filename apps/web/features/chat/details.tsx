@@ -15,9 +15,9 @@ import {
 import { BotAvatar } from "@/features/bots/avatar";
 import { DesktopPreview } from "@/features/bot-desktop/desktop";
 import { useWorking } from "@/lib/live";
-import { finished, taskTiming } from "@/features/schedules/tasks";
+import { automationTiming, finished } from "@/features/schedules/automations";
 
-function Routine({ schedule }: { schedule: Schedule }) {
+function Automation({ schedule }: { schedule: Schedule }) {
   const toggle = useMutation({
     mutationFn: (enabled: boolean) =>
       send(`/v1/schedules/${encodeURIComponent(schedule.id)}`, "PATCH", {
@@ -46,7 +46,7 @@ function Routine({ schedule }: { schedule: Schedule }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm font-medium">{schedule.name}</span>
         <span className="text-xs text-muted-foreground">
-          {taskTiming(schedule)}
+          {automationTiming(schedule)}
         </span>
       </div>
       <Switch
@@ -76,32 +76,32 @@ function ProfileSummary({ bot, working }: { bot: Bot; working: boolean }) {
   );
 }
 
-function RoutineList({
+function AutomationList({
   schedules,
-  routines,
+  automations,
 }: {
   schedules: UseQueryResult<Schedule[]>;
-  routines: Schedule[];
+  automations: Schedule[];
 }) {
   return (
     <>
       {schedules.isPending && <Skeleton className="h-10" />}
-      {routines.map((schedule) => (
-        <Routine key={schedule.id} schedule={schedule} />
+      {automations.map((schedule) => (
+        <Automation key={schedule.id} schedule={schedule} />
       ))}
-      {schedules.isSuccess && routines.length === 0 && (
-        <p className="text-sm text-muted-foreground">No routines yet</p>
+      {schedules.isSuccess && automations.length === 0 && (
+        <p className="text-sm text-muted-foreground">No automations yet</p>
       )}
     </>
   );
 }
 
-/** The bot inspector beside its chat: profile, desktop, and routines. */
+/** The bot inspector beside its chat: profile, desktop, and automations. */
 export function DetailsPanel({ bot }: { bot: Bot }) {
   const working = useWorking(bot.id);
   const schedules = useQuery(schedulesQuery);
 
-  const routines =
+  const automations =
     schedules.data?.filter(
       (schedule) => schedule.agentId === bot.id && !finished(schedule),
     ) ?? [];
@@ -116,8 +116,10 @@ export function DetailsPanel({ bot }: { bot: Bot }) {
         </section>
       )}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-muted-foreground">Routines</h2>
-        <RoutineList schedules={schedules} routines={routines} />
+        <h2 className="text-sm font-medium text-muted-foreground">
+          Automations
+        </h2>
+        <AutomationList schedules={schedules} automations={automations} />
       </section>
     </aside>
   );

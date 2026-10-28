@@ -38,6 +38,7 @@ export function WorkspacePage({
   newLabel,
   newDisabled,
   actions,
+  wide,
   children,
 }: {
   title: string;
@@ -47,6 +48,8 @@ export function WorkspacePage({
   newLabel?: string;
   newDisabled?: boolean;
   actions?: ReactNode;
+  /** Room for a table, wider than the reading width of other pages. */
+  wide?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -88,7 +91,12 @@ export function WorkspacePage({
         </div>
       </header>
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 p-6">
+        <div
+          className={cn(
+            "mx-auto flex w-full flex-col gap-8 p-6",
+            wide ? "max-w-5xl" : "max-w-3xl",
+          )}
+        >
           {children}
         </div>
       </div>

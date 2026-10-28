@@ -9,7 +9,7 @@ import {
 import {
   IconActivity,
   IconBrain,
-  IconCalendar,
+  IconCalendarRepeat,
   IconPlus,
   IconSettings,
 } from "@tabler/icons-react";
@@ -52,7 +52,7 @@ import { BotAvatar, botColor, botStyle } from "@/features/bots/avatar";
 
 const WORKSPACE = [
   { to: "/memory", label: "Memory", icon: IconBrain },
-  { to: "/tasks", label: "Tasks", icon: IconCalendar },
+  { to: "/automations", label: "Automations", icon: IconCalendarRepeat },
   { to: "/activity", label: "Activity", icon: IconActivity },
 ] as const;
 
