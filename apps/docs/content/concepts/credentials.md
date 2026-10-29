@@ -23,9 +23,9 @@ The value never appears in the transcript, notices, or logs.
 
 ## Read the value from a password manager
 
-Instead of storing the value in Crumble, a credential can point at a secret in 1Password or Bitwarden Secrets Manager. The web app doesn't offer this yet; use the API.
+Instead of storing the value in Crumble, a credential can point at a secret in 1Password or Bitwarden Secrets Manager. The web app can connect a password manager, but saving a credential as a reference still needs the API.
 
-1. Connect the password manager with `PUT /v1/password-managers/{id}`, where `{id}` is `1password` or `bitwarden`, and send `{"token": "..."}`: a 1Password service account token or a Bitwarden access token. Crumble signs in once to check it.
+1. Open **Settings** > **Password managers**, select **Connect** next to the password manager, and paste a 1Password service account token or a Bitwarden access token. Crumble signs in once to check it. Over the API, send `{"token": "..."}` to `PUT /v1/password-managers/{id}`, where `{id}` is `1password` or `bitwarden`.
 2. Save the credential with `PUT /v1/agents/{id}/credentials/{name}` and send `reference` instead of `value`:
 
    ```json
@@ -44,4 +44,4 @@ Crumble reads the reference once when you save it and rejects the save if it can
 
 When the value can't be read, the server doesn't send the request and records why in the credential's uses. The credential's `lastError` shows the newest such error.
 
-A password manager can't be disconnected while a credential still reads from it. Save a value instead, or delete the credential, first.
+A password manager can't be disconnected while a credential still reads from it; **Settings** > **Password managers** shows how many secrets use it. Save a value instead, or delete the credential, first.

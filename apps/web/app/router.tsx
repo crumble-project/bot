@@ -44,6 +44,7 @@ import {
   SettingsLayout,
 } from "@/features/settings/settings";
 import { WebSearchPage } from "@/features/settings/web-search-settings";
+import { PasswordManagersPage } from "@/features/settings/password-managers";
 import { SkillsPage } from "@/features/skills/skills";
 import { AutomationsPage } from "@/features/schedules/automations";
 
@@ -249,6 +250,12 @@ const providersRoute = createRoute({
   component: ProvidersSettings,
 });
 
+const passwordManagersRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/password-managers",
+  component: PasswordManagersPage,
+});
+
 const webSearchRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/web-search",
@@ -302,6 +309,7 @@ export const router = createRouter({
         settingsIndexRoute,
         generalRoute,
         providersRoute,
+        passwordManagersRoute,
         webSearchRoute,
         settingsCredentialsRoute,
         settingsIntegrationsRoute,

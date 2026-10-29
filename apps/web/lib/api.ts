@@ -24,6 +24,7 @@ import type {
   loginSessionResponse,
   memoryResponse,
   modelResponse,
+  passwordManagersResponse,
   providerResponse,
   scheduleResponse,
   scriptRunResponse,
@@ -50,6 +51,12 @@ export type Message = HistoryPage["messages"][number];
 export type Provider = z.infer<typeof providerResponse>;
 
 export type Memory = z.infer<typeof memoryResponse>;
+
+export type PasswordManager = z.infer<
+  typeof passwordManagersResponse
+>["passwordManagers"][number];
+
+export type PasswordManagerId = PasswordManager["id"];
 
 export type Credentials = z.infer<typeof credentialsResponse>;
 
@@ -227,6 +234,20 @@ export const providersQuery = queryOptions({
   queryKey: ["providers"],
   queryFn: ({ signal }) => api<Provider[]>("/v1/providers", { signal }),
 });
+
+export const passwordManagersQuery = queryOptions({
+  queryKey: ["password-managers"],
+  queryFn: async ({ signal }) =>
+    (
+      await api<z.infer<typeof passwordManagersResponse>>(
+        "/v1/password-managers",
+        { signal },
+      )
+    ).passwordManagers,
+});
+
+export const passwordManagerPath = (id: PasswordManagerId) =>
+  `/v1/password-managers/${encodeURIComponent(id)}`;
 
 export const loginQuery = (id: string) =>
   queryOptions({

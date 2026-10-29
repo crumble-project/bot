@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Connect 1Password or Bitwarden Secrets Manager in **Settings** > **Password managers**. Each row shows how many secrets read from it, and it can't be disconnected while any do. Adds the `simple-icons` dependency to the web app for their logos.
 - Connect 1Password or Bitwarden Secrets Manager over the API with `GET`, `PUT`, and `DELETE /v1/password-managers/{id}`. Connecting signs in once to check the token, and a new token drops values read with the old one. A password manager can't be disconnected while a secret reads from it. Contract 3.4.0.
 - Save a bot credential as a password manager reference instead of a value. Saving one reads it once to check it, and a reference that can't be read is rejected without saving anything. Credentials show where their value comes from and why their newest use couldn't read it.
 - Save a provider API key as a password manager reference with `PUT /v1/providers/{provider}`. A reference that can't be read is rejected, and the previous key stays.
