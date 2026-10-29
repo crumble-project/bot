@@ -93,11 +93,18 @@ export const apiKeyInput = z.object({
   apiKey: z.string().trim().min(1).max(16000),
 });
 
-/** A provider's API key, or where to read it from a password manager. Strict, so a body mixing the two matches neither. */
-export const providerKeyInput = z.xor([
-  apiKeyInput.strict(),
-  secretReferenceInput.strict(),
-]);
+/** A provider's API key, or where to read it from a password manager. */
+export const providerKeyInput = z
+  .object({
+    /** Write-only. */
+    apiKey: apiKeyInput.shape.apiKey.optional(),
+    /** Read the key from a password manager instead of storing it. */
+    reference: secretReferenceInput.optional(),
+  })
+  .refine((input) => (input.apiKey === undefined) !== !input.reference, {
+    message: "Send an API key or a reference, not both",
+    path: ["reference"],
+  });
 
 /** Write-only: the token never appears in a response. */
 export const passwordManagerTokenInput = z.object({

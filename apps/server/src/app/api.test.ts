@@ -1634,8 +1634,7 @@ describe("provider API keys from a password manager", () => {
   const REFERENCE = "op://Vault/OpenAI/key";
 
   const reference = {
-    passwordManager: "1password",
-    reference: REFERENCE,
+    reference: { passwordManager: "1password", reference: REFERENCE },
   } as const;
 
   /** The API with provider sign-ins over a fake 1Password, connected with its token. */

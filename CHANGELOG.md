@@ -152,7 +152,7 @@
 - Add `DELETE /v1/password-managers/{id}` (`disconnectPasswordManager`). It answers 409 while any secret reads from the password manager.
 - Add optional `reference` (`{ passwordManager, reference }`) to the credential save input, exclusive with `value`. A new credential needs one of them. 400 when the reference can't be read now.
 - Add nullable `passwordManager`, `reference`, and `lastError` to `Credential`. `lastError` is the `error` of the credential's newest use.
-- `PUT /v1/providers/{provider}` takes either `{ apiKey }` or `{ passwordManager, reference }`, not both. 400 when the reference can't be read now. `PUT /v1/web-search/exa-key` still takes only `{ apiKey }`.
+- `PUT /v1/providers/{provider}` takes either `apiKey` or `reference` (`{ passwordManager, reference }`), not both; `apiKey` is now optional. 400 when the reference can't be read now. `PUT /v1/web-search/exa-key` still takes only `{ apiKey }`.
 - Add nullable `passwordManager` and `reference` to `Provider`.
 - Add `tokenReference` (`{ passwordManager, reference }`, or null to remove it) to MCP server create and update inputs, exclusive with `token`. 400 when the reference can't be read now.
 - Add optional, nullable `tokenPasswordManager` and `tokenReference` to `McpServer` and `McpServerStatus`.

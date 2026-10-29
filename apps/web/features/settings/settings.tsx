@@ -532,11 +532,15 @@ function status(provider: Provider, managers: PasswordManager[]) {
 }
 
 /** The key to save, or null to remove the saved credential. */
-const providerKeyBody = (source: SecretSourceDraft) =>
-  referenceOf(source) ??
-  (source.kind === "value" && source.value.trim()
+const providerKeyBody = (source: SecretSourceDraft) => {
+  const reference = referenceOf(source);
+
+  if (reference) return { reference };
+
+  return source.kind === "value" && source.value.trim()
     ? { apiKey: source.value.trim() }
-    : null);
+    : null;
+};
 
 function useProviderCredential(provider: Provider) {
   const [editing, setEditing] = useState(false);

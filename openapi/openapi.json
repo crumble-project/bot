@@ -14156,22 +14156,14 @@
           "content": {
             "application/json": {
               "schema": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "apiKey": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 16000
-                      }
-                    },
-                    "required": [
-                      "apiKey"
-                    ],
-                    "additionalProperties": false
+                "type": "object",
+                "properties": {
+                  "apiKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16000
                   },
-                  {
+                  "reference": {
                     "type": "object",
                     "properties": {
                       "passwordManager": {
@@ -14190,10 +14182,9 @@
                     "required": [
                       "passwordManager",
                       "reference"
-                    ],
-                    "additionalProperties": false
+                    ]
                   }
-                ]
+                }
               }
             }
           }

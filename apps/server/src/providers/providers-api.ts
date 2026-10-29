@@ -113,8 +113,8 @@ const registerProviderCredentialRoutes = (options: ProviderRoutesOptions) => {
 
     const input = providerKeyInput.parse(await c.req.json());
 
-    if ("apiKey" in input) await providerAuth.setApiKey(name, input.apiKey);
-    else await providerAuth.setReference(name, input);
+    if (input.reference) await providerAuth.setReference(name, input.reference);
+    else if (input.apiKey) await providerAuth.setApiKey(name, input.apiKey);
 
     return c.json({ provider: name, configured: true }, 200);
   });
