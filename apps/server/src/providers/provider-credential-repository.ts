@@ -1,8 +1,10 @@
 import type { Credential, CredentialInfo } from "@earendil-works/pi-ai";
 import { asc, eq } from "drizzle-orm";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Redacted } from "effect";
 import { z } from "zod";
 import { SecretRepository } from "../credentials/secret-repository";
+import type { PasswordManagerId } from "../password-managers/password-manager";
+import { secretSourceOf } from "../password-managers/secret-values";
 import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
 import { providerCredentials } from "./schema";
@@ -26,11 +28,21 @@ const providerCredential = z.discriminatedUnion("type", [
     .loose(),
 ]);
 
+/** Where a provider's credential comes from: stored in Crumble, or an API key read from a password manager. */
+export type ProviderCredentialSource =
+  | { readonly credential: Credential }
+  | {
+      readonly passwordManager: PasswordManagerId;
+      readonly reference: string;
+    };
+
 /** Each model provider's sign-in or API key, encrypted at rest. */
 export class ProviderCredentialRepository extends Context.Service<
   ProviderCredentialRepository,
   {
-    readonly get: (providerId: string) => Effect.Effect<Credential | undefined>;
+    readonly get: (
+      providerId: string,
+    ) => Effect.Effect<ProviderCredentialSource | undefined>;
     readonly set: (
       providerId: string,
       credential: Credential,
@@ -55,13 +67,25 @@ export class ProviderCredentialRepository extends Context.Service<
         providerId: string,
       ) {
         const [row] = yield* db
-          .select({ value: providerCredentials.value })
+          .select({
+            value: providerCredentials.value,
+            passwordManager: providerCredentials.passwordManager,
+            reference: providerCredentials.reference,
+          })
           .from(providerCredentials)
           .where(eq(providerCredentials.provider, providerId));
 
-        return row
-          ? providerCredential.parse(JSON.parse(box.decryptStored(row.value)))
-          : undefined;
+        if (!row) return undefined;
+
+        const source = secretSourceOf(box, row);
+
+        return "stored" in source
+          ? {
+              credential: providerCredential.parse(
+                JSON.parse(Redacted.value(source.stored)),
+              ),
+            }
+          : source;
       }, Effect.orDie);
 
       const set = Effect.fn("ProviderCredentialRepository.set")(function* (
@@ -70,9 +94,12 @@ export class ProviderCredentialRepository extends Context.Service<
       ) {
         const typed = providerCredential.parse(credential);
 
+        // Saving a credential in Crumble replaces a password manager reference.
         const row = {
           type: typed.type,
           value: box.encrypt(JSON.stringify(typed)),
+          passwordManager: null,
+          reference: null,
         };
 
         yield* db
