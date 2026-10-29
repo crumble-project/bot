@@ -23,9 +23,10 @@ import {
 } from "@earendil-works/pi-durable";
 import type { Context as PiContext } from "@earendil-works/chord/context";
 import type { Agent, MCPServer } from "../shared/domain";
-import { Context, Effect, Layer, ManagedRuntime } from "effect";
+import { Context, Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { AgentRepository } from "../bots/agent-repository";
 import { SecretRepository } from "../credentials/secret-repository";
+import { SecretValues } from "../password-managers/secret-values";
 import { runnerOf, type Runner } from "../shared/runner";
 import { McpServerRepository } from "./mcp-server-repository";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
@@ -146,9 +147,7 @@ const credentialPayload = z.object({
   token: z.string().optional(),
 });
 
-function credentials(secrets: SecretStorage, server: MCPServer) {
-  const raw = secrets.get(`mcp:${server.id}`);
-
+function credentials(raw: string | undefined) {
   if (!raw) return {};
 
   try {
@@ -175,10 +174,38 @@ type IntegrationData = {
   usableServer(agentId: string, serverId: string): MCPServer | null;
   agent(agentId: string): Agent | null;
   secrets: SecretStorage;
+  /** The server's token, read from its password manager when it is a reference. */
+  token(serverId: string): Promise<string | undefined>;
 };
+
+type IntegrationServices =
+  | McpServerRepository
+  | AgentRepository
+  | SecretRepository
+  | SecretValues;
+
+const tokenOf = (serverId: string) =>
+  Effect.gen(function* () {
+    const source = yield* SecretRepository.use((r) =>
+      r.source(`mcp:${serverId}`),
+    );
+
+    if (!source) return undefined;
+
+    return Redacted.value(
+      yield* SecretValues.use((values) => values.read(source)),
+    );
+  }).pipe(
+    // Shown as the server's failure under Integrations, after its name.
+    Effect.mapError(
+      (error) => new Error(`Token could not be read: ${error.message}`),
+    ),
+  );
 
 class McpConnections {
   private readonly failures = new Map<string, string>();
+  private readonly disconnects = new Map<string, number>();
+  private closes = 0;
   private readonly connections = new Map<
     string,
     {
@@ -281,10 +308,27 @@ class McpConnections {
     }
   }
 
+  // Kept as the server's failure even when a tool call reads it, since the token can become unreadable after listing.
+  private async token(serverId: string) {
+    try {
+      return await this.data.token(serverId);
+    } catch (error) {
+      this.failures.set(
+        serverId,
+        error instanceof Error ? error.message : String(error),
+      );
+
+      throw error;
+    }
+  }
+
   private async connection(server: MCPServer) {
+    const generation = this.generation(server.id);
     // A signed-in server authenticates through OAuth, which refreshes its own access token.
     const oauth = hasOAuthTokens(this.data.secrets, server.id);
-    const headers = oauth ? {} : credentials(this.data.secrets, server);
+
+    const headers = oauth ? {} : credentials(await this.token(server.id));
+
     const hadCredentials = oauth || Object.keys(headers).length > 0;
     const fingerprint = digest({ url: server.url, headers, oauth });
     const existing = this.connections.get(server.id);
@@ -307,15 +351,27 @@ class McpConnections {
 
     try {
       await this.withTimeout(value.client.connect(value.transport));
-      const cached = { ...value, fingerprint };
-      this.connections.set(server.id, cached);
-
-      return cached;
     } catch (error) {
       await value.client.close().catch(() => undefined);
       await value.transport.close().catch(() => undefined);
       throwAuthFailure(server, error, hadCredentials);
     }
+
+    // A disconnect while this one opened means its credentials may be stale.
+    if (this.generation(server.id) !== generation) {
+      await value.client.close().catch(() => undefined);
+      await value.transport.close().catch(() => undefined);
+      throw new Error("MCP server credentials changed; retry this task");
+    }
+
+    const cached = { ...value, fingerprint };
+    this.connections.set(server.id, cached);
+
+    return cached;
+  }
+
+  private generation(serverId: string) {
+    return `${this.closes}:${this.disconnects.get(serverId) ?? 0}`;
   }
 
   /** Why a server's tools were left out of a bot's last turn, until it connects again. */
@@ -471,6 +527,7 @@ class McpConnections {
 
   /** Drops a server's open connection, so the next use picks up new credentials. */
   async disconnect(serverId: string) {
+    this.disconnects.set(serverId, (this.disconnects.get(serverId) ?? 0) + 1);
     const existing = this.connections.get(serverId);
     this.connections.delete(serverId);
     this.failures.delete(serverId);
@@ -479,6 +536,7 @@ class McpConnections {
   }
 
   async close() {
+    this.closes++;
     const values = [...this.connections.values()];
     this.connections.clear();
     await Promise.all(
@@ -510,11 +568,7 @@ export class McpIntegrations extends Context.Service<
     return Layer.effect(
       McpIntegrations,
       Effect.gen(function* () {
-        const run = runnerOf(
-          yield* Effect.context<
-            McpServerRepository | AgentRepository | SecretRepository
-          >(),
-        );
+        const run = runnerOf(yield* Effect.context<IntegrationServices>());
 
         const connections = yield* Effect.acquireRelease(
           Effect.sync(
@@ -532,6 +586,7 @@ export class McpIntegrations extends Context.Service<
                       AgentRepository.use((agents) => agents.get(agentId)),
                     ),
                   secrets: secretStorage(run),
+                  token: (serverId) => run.runPromise(tokenOf(serverId)),
                 },
                 options,
               ),
@@ -553,18 +608,14 @@ export class McpIntegrations extends Context.Service<
 
 /** MCP integrations over the data `core` reaches, for an API or a test that runs without an account. */
 export function standaloneIntegrations(
-  core: Runner<McpServerRepository | AgentRepository | SecretRepository>,
+  core: Runner<IntegrationServices>,
   options: IntegrationsOptions = {},
 ) {
   const runtime = ManagedRuntime.make(
     McpIntegrations.layer(options).pipe(
       Layer.provide(
         Layer.succeedContext(
-          core.runSync(
-            Effect.context<
-              McpServerRepository | AgentRepository | SecretRepository
-            >(),
-          ),
+          core.runSync(Effect.context<IntegrationServices>()),
         ),
       ),
     ),

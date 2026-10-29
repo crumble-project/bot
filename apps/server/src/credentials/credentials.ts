@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { Clock, Context, Effect, Layer } from "effect";
+import { Clock, Context, Effect, Layer, Predicate, Redacted } from "effect";
 import type { Runner } from "../shared/runner";
 import { BotNotices } from "../bots/bot-notices";
 import {
@@ -15,6 +15,12 @@ import {
   type CredentialSaveInput,
   type CredentialUse,
 } from "../shared/domain";
+import { PasswordManagers } from "../password-managers/password-manager";
+import { checkSecretReference } from "../password-managers/secret-references";
+import {
+  SecretValues,
+  type SecretUnavailable,
+} from "../password-managers/secret-values";
 import { AgentCredentialRepository } from "./agent-credential-repository";
 import { GUEST_CA_BUNDLE, GUEST_CA_PATH } from "../workspaces/workspace";
 import {
@@ -69,8 +75,13 @@ export class Credentials extends Context.Service<
     ) => Effect.Effect<CredentialUse[], AppError>;
     /** The variables every command of the bot's coding jobs sees: placeholders, and where to find the bot's authority. */
     readonly env: (agentId: string) => Effect.Effect<Record<string, string>>;
-    /** What the credential proxy swaps in for the bot's placeholders. */
+    /** The placeholders the credential proxy may swap, without their values. */
     readonly grants: (agentId: string) => Effect.Effect<CredentialGrant[]>;
+    /** The value the credential proxy swaps in, read only for a request that uses its placeholder. */
+    readonly value: (
+      agentId: string,
+      name: string,
+    ) => Effect.Effect<Redacted.Redacted, SecretUnavailable | NotFound>;
     readonly recordUse: (
       agentId: string,
       name: string,
@@ -85,6 +96,32 @@ export class Credentials extends Context.Service<
     Effect.gen(function* () {
       const repository = yield* AgentCredentialRepository;
       const notices = yield* BotNotices;
+      const values = yield* SecretValues;
+      const managers = yield* PasswordManagers;
+
+      /** Drops the cached value of a reference the credential no longer reads. */
+      const forgetReplaced = (
+        previous: AgentCredential | undefined,
+        next: AgentCredential | undefined,
+      ) =>
+        previous?.passwordManager &&
+        previous.reference &&
+        (previous.passwordManager !== next?.passwordManager ||
+          previous.reference !== next.reference)
+          ? values.forget(previous.passwordManager, previous.reference)
+          : Effect.void;
+
+      const value = Effect.fn("Credentials.value")(function* (
+        agentId: string,
+        name: string,
+      ) {
+        const source = yield* repository.source(agentId, name);
+
+        if (!source)
+          return yield* new NotFound({ message: `${name} was deleted` });
+
+        return yield* values.read(source);
+      });
 
       const notify = (agentId: string, name: string, text: string) =>
         notices
@@ -132,7 +169,15 @@ export class Credentials extends Context.Service<
           catch: (cause) => cause,
         }).pipe(Effect.orDie);
 
-        const { hosts, value } = input;
+        const { hosts, value, reference } = input;
+
+        // Checked before reading the saved credential, so a save made during the read isn't overwritten.
+        if (reference)
+          yield* checkSecretReference(reference).pipe(
+            Effect.provideService(PasswordManagers, managers),
+            Effect.provideService(SecretValues, values),
+          );
+
         const pending = yield* repository.getRequest(agentId, checkedName);
         const existing = yield* repository.get(agentId, checkedName);
         const resolvedHosts = hosts ?? existing?.hosts ?? pending?.hosts;
@@ -142,16 +187,21 @@ export class Credentials extends Context.Service<
             new InvalidInput({ message: "Name at least one host" }),
           );
 
-        if (!existing && value === undefined)
+        if (!existing && value === undefined && !reference)
           return yield* Effect.fail(
-            new InvalidInput({ message: "A new credential needs a value" }),
+            new InvalidInput({
+              message: "A new credential needs a value or a reference",
+            }),
           );
 
         const credential = yield* repository.save(agentId, checkedName, {
           hosts: resolvedHosts,
           value,
+          reference,
           placeholder: `crumble-credential-${randomBytes(24).toString("hex")}`,
         });
+
+        yield* forgetReplaced(existing, credential);
 
         if (pending) {
           yield* repository.deleteRequest(agentId, checkedName);
@@ -169,7 +219,10 @@ export class Credentials extends Context.Service<
         agentId: string,
         name: string,
       ) {
-        if (yield* repository.delete(agentId, name)) return;
+        const existing = yield* repository.get(agentId, name);
+
+        if (yield* repository.delete(agentId, name))
+          return yield* forgetReplaced(existing, undefined);
 
         if (!(yield* repository.deleteRequest(agentId, name)))
           return yield* Effect.fail(
@@ -249,6 +302,7 @@ export class Credentials extends Context.Service<
         uses,
         env,
         grants: repository.grants,
+        value,
         recordUse: repository.addUse,
         prune,
       });
@@ -277,6 +331,8 @@ export type CredentialsAccess = {
   ): CredentialUse[];
   env(agentId: string): Record<string, string>;
   grants(agentId: string): CredentialGrant[];
+  /** Rejects with the message the credential proxy answers with. */
+  value(agentId: string, name: string): Promise<string>;
   recordUse(
     agentId: string,
     name: string,
@@ -303,6 +359,20 @@ export function credentialsAccess(
       runtime.runSync(credentials.uses(agentId, name, options)),
     env: (agentId) => runtime.runSync(credentials.env(agentId)),
     grants: (agentId) => runtime.runSync(credentials.grants(agentId)),
+    value: (agentId, name) =>
+      runtime.runPromise(
+        credentials.value(agentId, name).pipe(
+          Effect.map(Redacted.value),
+          Effect.mapError(
+            (error) =>
+              new Error(
+                Predicate.isTagged(error, "SecretUnavailable")
+                  ? `${name} could not be read: ${error.message}`
+                  : error.message,
+              ),
+          ),
+        ),
+      ),
     recordUse: (agentId, name, use) =>
       runtime.runSync(credentials.recordUse(agentId, name, use)),
   };

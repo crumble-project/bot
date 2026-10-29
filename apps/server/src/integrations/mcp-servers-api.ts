@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { Effect } from "effect";
+import { Effect, Redacted } from "effect";
 import {
   routes,
   mcpCreateInput,
@@ -11,6 +11,14 @@ import type { Register } from "../contract/route";
 import { AgentRepository } from "../bots/agent-repository";
 import type { BotsAccess } from "../bots/bots";
 import { SecretRepository } from "../credentials/secret-repository";
+import {
+  checkSecretReference,
+  type SecretReference,
+} from "../password-managers/secret-references";
+import {
+  SecretValues,
+  type SecretSource,
+} from "../password-managers/secret-values";
 import type { CoreServices } from "../shared/core-layer";
 import type { MCPServer } from "../shared/domain";
 import { InvalidInput, NotFound } from "../shared/errors";
@@ -49,12 +57,13 @@ const describeServer = (
 ) => {
   const auth = hasOAuthTokens(secrets, server.id)
     ? "oauth"
-    : exec(SecretRepository.use((r) => r.get(`mcp:${server.id}`)))
+    : exec(SecretRepository.use((r) => r.source(`mcp:${server.id}`)))
       ? "token"
       : "none";
 
   return {
     ...server,
+    ...tokenSourceOf(exec, server.id),
     auth,
     authenticated: auth !== "none",
     error: integrations?.failure(server.id) ?? null,
@@ -72,6 +81,84 @@ const mcpServer = (exec: Exec, id: string) => {
   return server;
 };
 
+const tokenKey = (serverId: string) => `mcp:${serverId}`;
+
+/** Where the server's token is read from, for responses; never its value. */
+const tokenSourceOf = (exec: Exec, serverId: string) => {
+  const source = exec(
+    SecretRepository.use((r) => r.source(tokenKey(serverId))),
+  );
+
+  return source && "reference" in source
+    ? {
+        tokenPasswordManager: source.passwordManager,
+        tokenReference: source.reference,
+      }
+    : { tokenPasswordManager: null, tokenReference: null };
+};
+
+/** Equal for sources that hold the same value or name the same reference; kept in memory only. */
+const sourceKey = (source: SecretSource | undefined) => {
+  if (!source) return "";
+
+  return "stored" in source
+    ? `stored:${Redacted.value(source.stored)}`
+    : `${source.passwordManager}:${source.reference}`;
+};
+
+type TokenInput = {
+  token?: string | undefined;
+  tokenReference?: SecretReference | null | undefined;
+};
+
+/** Fails before anything is written: a token and a reference together, or a reference that can't be read now. */
+const checkToken = async (run: Runner<CoreServices>, input: TokenInput) => {
+  if (input.token !== undefined && input.tokenReference)
+    throw new InvalidInput({
+      message: "Send a token or a token reference, not both",
+    });
+
+  if (input.tokenReference)
+    await run.runPromise(checkSecretReference(input.tokenReference));
+};
+
+/**
+ * Saves a checked token or reference. When the source changes, the old reference's cached value is dropped and the
+ * open connection closed, so the next use reads the new one.
+ */
+const storeToken = async (
+  run: Runner<CoreServices>,
+  integrations: McpIntegrations["Service"] | undefined,
+  serverId: string,
+  input: TokenInput,
+) => {
+  const exec: Exec = (effect) => run.runSync(effect);
+  const key = tokenKey(serverId);
+  const before = exec(SecretRepository.use((r) => r.source(key)));
+
+  if (input.tokenReference)
+    exec(
+      SecretRepository.use((r) => r.setReference(key, input.tokenReference!)),
+    );
+  else if (input.tokenReference === null && before && "reference" in before)
+    exec(SecretRepository.use((r) => r.delete(key)));
+
+  storeSecret(exec, key, input.token);
+
+  const after = exec(SecretRepository.use((r) => r.source(key)));
+
+  if (sourceKey(before) === sourceKey(after)) return;
+
+  if (before && "reference" in before)
+    exec(
+      SecretValues.use((values) =>
+        values.forget(before.passwordManager, before.reference),
+      ),
+    );
+
+  if (integrations) await Effect.runPromise(integrations.disconnect(serverId));
+};
+
 /** Writing an empty secret removes the stored one. */
 const storeSecret = (exec: Exec, key: string, value: string | undefined) => {
   if (value === undefined) return;
@@ -81,11 +168,15 @@ const storeSecret = (exec: Exec, key: string, value: string | undefined) => {
 };
 
 /** Adding a server, storing its secrets, and letting the bot that owns it use it right away. */
-const addMcpServer = (
-  exec: Exec,
+const addMcpServer = async (
+  run: Runner<CoreServices>,
   service: BotsAccess,
   input: z.output<typeof mcpCreateInput>,
 ) => {
+  const exec: Exec = (effect) => run.runSync(effect);
+
+  await checkToken(run, input);
+
   const owner = input.agentId ? service.agent(input.agentId) : null;
 
   if (owner && owner.mcpServers.length >= 30)
@@ -94,7 +185,7 @@ const addMcpServer = (
     });
   const server = exec(McpServerRepository.use((r) => r.create(input)));
 
-  storeSecret(exec, `mcp:${server.id}`, input.token);
+  await storeToken(run, undefined, server.id, input);
   storeSecret(exec, clientSecretKey(server.id), input.oauthClientSecret);
 
   if (owner)
@@ -106,7 +197,7 @@ const addMcpServer = (
       ),
     );
 
-  return server;
+  return { ...server, ...tokenSourceOf(exec, server.id) };
 };
 
 /** The account's MCP servers, and the OAuth sign-in flow for the ones that need it. */
@@ -171,13 +262,14 @@ const registerMcpServerEditRoutes = (options: McpServerRoutesOptions) => {
   register(routes.createMcpServer, async (c) => {
     const input = mcpCreateInput.parse(await c.req.json());
 
-    return c.json(addMcpServer(exec, service, input), 201);
+    return c.json(await addMcpServer(options.run, service, input), 201);
   });
   register(routes.updateMcpServer, async (c) => {
     const old = mcpServer(exec, c.req.param("id"));
     const input = mcpInput.parse({ ...old, ...(await c.req.json()) });
 
-    storeSecret(exec, `mcp:${old.id}`, input.token);
+    await checkToken(options.run, input);
+    await storeToken(options.run, integrations, old.id, input);
 
     const secretChanged =
       input.oauthClientSecret !== undefined &&
@@ -194,22 +286,35 @@ const registerMcpServerEditRoutes = (options: McpServerRoutesOptions) => {
         await Effect.runPromise(integrations.disconnect(old.id));
     }
 
-    return c.json(
-      exec(
-        McpServerRepository.use((r) =>
-          r.update(old.id, {
-            ...input,
-            oauthClientId: input.oauthClientId ?? null,
-          }),
-        ),
+    const updated = exec(
+      McpServerRepository.use((r) =>
+        r.update(old.id, {
+          ...input,
+          oauthClientId: input.oauthClientId ?? null,
+        }),
       ),
+    );
+
+    return c.json(
+      updated && { ...updated, ...tokenSourceOf(exec, updated.id) },
       200,
     );
   });
   register(routes.deleteMcpServer, (c) => {
+    const token = exec(
+      SecretRepository.use((r) => r.source(tokenKey(c.req.param("id")))),
+    );
+
     if (!exec(McpServerRepository.use((r) => r.delete(c.req.param("id")))))
       throw new NotFound({ message: "MCP server not found" });
-    exec(SecretRepository.use((r) => r.delete(`mcp:${c.req.param("id")}`)));
+    exec(SecretRepository.use((r) => r.delete(tokenKey(c.req.param("id")))));
+
+    if (token && "reference" in token)
+      exec(
+        SecretValues.use((values) =>
+          values.forget(token.passwordManager, token.reference),
+        ),
+      );
     exec(
       SecretRepository.use((r) => r.delete(clientSecretKey(c.req.param("id")))),
     );

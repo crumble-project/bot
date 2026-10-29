@@ -25,6 +25,14 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { EditorSheet, OwnerSelectField } from "@/components/form-fields";
+import {
+  EMPTY_SOURCE,
+  SecretSourceField,
+  referenceOf,
+  sourceDraftOf,
+  useConnectedPasswordManagers,
+  type SecretSourceDraft,
+} from "@/components/secret-source-field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
@@ -317,7 +325,7 @@ type ServerDraft = {
   owner: string;
   name: string;
   url: string;
-  token: string;
+  token: SecretSourceDraft;
   enabled: boolean;
   clientId: string;
   clientSecret: string;
@@ -327,7 +335,7 @@ const BLANK_DRAFT: ServerDraft = {
   owner: SHARED,
   name: "",
   url: "",
-  token: "",
+  token: EMPTY_SOURCE,
   enabled: true,
   clientId: "",
   clientSecret: "",
@@ -343,6 +351,7 @@ function initialDraft(server: McpServer | null): ServerDraft {
     url: server.url,
     enabled: server.enabled,
     clientId: server.oauthClientId ?? "",
+    token: sourceDraftOf(server.tokenPasswordManager, server.tokenReference),
   };
 }
 
@@ -361,14 +370,26 @@ function oauthClientPatch(draft: ServerDraft, server: McpServer | null) {
   };
 }
 
-function serverBody(draft: ServerDraft, server: McpServer | null) {
-  const token = draft.token.trim();
+/** Sends the token only when it changes: a typed value, or a reference other than the saved one. */
+function tokenPatch(draft: ServerDraft, server: McpServer | null) {
+  const reference = referenceOf(draft.token);
 
+  if (draft.token.kind === "value")
+    return draft.token.value.trim() ? { token: draft.token.value.trim() } : {};
+
+  return reference &&
+    (reference.passwordManager !== server?.tokenPasswordManager ||
+      reference.reference !== server.tokenReference)
+    ? { tokenReference: reference }
+    : {};
+}
+
+function serverBody(draft: ServerDraft, server: McpServer | null) {
   return {
     name: draft.name.trim(),
     url: draft.url.trim(),
     enabled: draft.enabled,
-    ...(token && { token }),
+    ...tokenPatch(draft, server),
     ...oauthClientPatch(draft, server),
   };
 }
@@ -415,7 +436,7 @@ function ServerDialog({
   const save = useSaveServer(
     draft,
     server,
-    () => patch({ token: "", clientSecret: "" }),
+    () => patch({ token: EMPTY_SOURCE, clientSecret: "" }),
     onClose,
   );
 
@@ -464,6 +485,7 @@ function ServerFields({
   ];
 
   const urlInvalid = draft.url.trim() !== "" && !validUrl(draft.url.trim());
+  const connected = useConnectedPasswordManagers();
 
   return (
     <>
@@ -497,23 +519,19 @@ function ServerFields({
           <FieldDescription>Use an HTTP or HTTPS URL.</FieldDescription>
         )}
       </Field>
-      <Field>
-        <FieldLabel htmlFor="mcp-token">Token</FieldLabel>
-        <Input
-          id="mcp-token"
-          type="password"
-          autoComplete="off"
-          placeholder={
-            server?.auth === "token" ? "Replace the saved token" : "Optional"
-          }
-          value={draft.token}
-          onChange={(event) => patch({ token: event.target.value })}
-        />
-        <FieldDescription>
-          Sent as a bearer token. Leave it empty for servers that need no
-          sign-in or use OAuth.
-        </FieldDescription>
-      </Field>
+      <SecretSourceField
+        id="mcp-token"
+        label="Token"
+        value={draft.token}
+        onChange={(token) => patch({ token })}
+        connected={connected}
+        valuePlaceholder={
+          server?.auth === "token" && !server.tokenReference
+            ? "Replace the saved token"
+            : "Optional"
+        }
+        valueDescription="Sent as a bearer token. Leave it empty for servers that need no sign-in or use OAuth."
+      />
     </>
   );
 }

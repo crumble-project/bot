@@ -149,6 +149,7 @@ function accountLayer(
             agentId,
             authorities,
             grants: () => credentials.grants(agentId),
+            value: (name) => credentials.value(agentId, name),
             recordUse: (name, use) => credentials.recordUse(agentId, name, use),
           }),
       };

@@ -4,13 +4,16 @@ import type {
   CredentialInfo,
   CredentialStore,
 } from "@earendil-works/pi-ai";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Redacted } from "effect";
+import type { SecretReference } from "../password-managers/secret-references";
+import { SecretValues } from "../password-managers/secret-values";
 import { runnerOf, type Runner } from "../shared/runner";
 import { ProviderCredentialRepository } from "./provider-credential-repository";
 
 /** Pi AI's credential store, with what sign-in flows need beyond it. */
 export type ProviderCredentialStore = CredentialStore & {
   commitLogin: QueuedCredentialStore["commitLogin"];
+  setReference: QueuedCredentialStore["setReference"];
   idle: QueuedCredentialStore["idle"];
 };
 
@@ -27,7 +30,7 @@ export class ProviderCredentials extends Context.Service<
     ProviderCredentials,
     Effect.gen(function* () {
       const run = runnerOf(
-        yield* Effect.context<ProviderCredentialRepository>(),
+        yield* Effect.context<ProviderCredentialRepository | SecretValues>(),
       );
 
       return new QueuedCredentialStore(run);
@@ -38,7 +41,9 @@ export class ProviderCredentials extends Context.Service<
 class QueuedCredentialStore implements CredentialStore {
   private readonly queues = new Map<string, Promise<unknown>>();
 
-  constructor(private readonly run: Runner<ProviderCredentialRepository>) {}
+  constructor(
+    private readonly run: Runner<ProviderCredentialRepository | SecretValues>,
+  ) {}
 
   private repository<A>(
     use: (
@@ -48,10 +53,66 @@ class QueuedCredentialStore implements CredentialStore {
     return this.run.runSync(ProviderCredentialRepository.use(use));
   }
 
+  /** The credential stored in Crumble; a password manager reference has none. */
+  private stored(providerId: string) {
+    const source = this.source(providerId);
+
+    return source && "credential" in source ? source.credential : undefined;
+  }
+
+  /** Writes through `write`, then drops the cached value of a password manager reference it replaced. */
+  private replace(providerId: string, write: () => void) {
+    const reference = (source: ReturnType<typeof this.source>) =>
+      source && "reference" in source ? source : undefined;
+
+    const before = reference(this.source(providerId));
+
+    write();
+
+    const after = reference(this.source(providerId));
+
+    if (
+      before &&
+      (before.passwordManager !== after?.passwordManager ||
+        before.reference !== after.reference)
+    )
+      this.run.runSync(
+        SecretValues.use((values) =>
+          values.forget(before.passwordManager, before.reference),
+        ),
+      );
+  }
+
+  private source(providerId: string) {
+    return this.repository((r) => r.get(providerId));
+  }
+
+  /** The provider's credential, reading an API key from its password manager when it is a reference. */
+  private async resolve(providerId: string): Promise<Credential | undefined> {
+    const source = this.source(providerId);
+
+    if (!source) return undefined;
+
+    if ("credential" in source) return source.credential;
+
+    const key = await this.run.runPromise(
+      SecretValues.use((values) => values.read(source)).pipe(
+        Effect.map(Redacted.value),
+        Effect.mapError(
+          (error) =>
+            // Pi AI puts this after "Credential store read failed for <provider>: ", which names the provider.
+            new Error(`API key could not be read: ${error.message}`),
+        ),
+      ),
+    );
+
+    return { type: "api_key", key };
+  }
+
   async read(providerId: string, options?: AuthOperationOptions) {
     options?.signal?.throwIfAborted();
 
-    return this.repository((r) => r.get(providerId));
+    return this.resolve(providerId);
   }
 
   async list(
@@ -72,12 +133,16 @@ class QueuedCredentialStore implements CredentialStore {
     return this.enqueue(
       providerId,
       async () => {
-        const next = await update(this.repository((r) => r.get(providerId)));
+        // Only OAuth refresh reads the current credential, and a reference is never OAuth, so modify reads no password manager.
+        const next = await update(this.stored(providerId));
 
         // A started refresh persists even if its caller went away, so a rotated token is never lost.
-        if (next !== undefined) this.repository((r) => r.set(providerId, next));
+        if (next !== undefined)
+          this.replace(providerId, () =>
+            this.repository((r) => r.set(providerId, next)),
+          );
 
-        return this.repository((r) => r.get(providerId));
+        return this.stored(providerId);
       },
       options?.signal,
     );
@@ -87,7 +152,9 @@ class QueuedCredentialStore implements CredentialStore {
     await this.enqueue(
       providerId,
       async () => {
-        this.repository((r) => r.delete(providerId));
+        this.replace(providerId, () =>
+          this.repository((r) => r.delete(providerId)),
+        );
       },
       options?.signal,
     );
@@ -105,10 +172,21 @@ class QueuedCredentialStore implements CredentialStore {
   ) {
     return this.enqueue(providerId, async () => {
       if (!isCurrent()) return false;
-      this.repository((r) => r.set(providerId, credential));
+      this.replace(providerId, () =>
+        this.repository((r) => r.set(providerId, credential)),
+      );
       onCommitted();
 
       return true;
+    });
+  }
+
+  /** Reads the API key from a password manager from now on; the caller checks the reference first. */
+  setReference(providerId: string, source: SecretReference) {
+    return this.enqueue(providerId, async () => {
+      this.replace(providerId, () =>
+        this.repository((r) => r.setReference(providerId, source)),
+      );
     });
   }
 

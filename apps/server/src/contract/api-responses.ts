@@ -382,9 +382,20 @@ export const credentialResponse = z
   .object({
     name: z.string(),
     hosts: z.array(z.string()),
+    passwordManager: z.enum(["1password", "bitwarden"]).nullable().openapi({
+      description:
+        "The password manager the value is read from; null for a value stored in Crumble.",
+    }),
+    reference: z.string().nullable().openapi({
+      description: "Where in `passwordManager` the value is read from.",
+    }),
     createdAt: z.string(),
     updatedAt: z.string(),
     lastUsedAt: z.string().nullable(),
+    lastError: z.string().nullable().openapi({
+      description:
+        "Why the newest use couldn't read the value from its password manager; null when it could.",
+    }),
   })
   .openapi("Credential");
 
@@ -412,6 +423,12 @@ export const credentialUseResponse = z
     host: z.string(),
     path: z.string(),
     status: z.number().int().nullable(),
+    error: z
+      .string()
+      .nullable()
+      .describe(
+        "Why the value couldn't be read from its password manager; the request was never sent.",
+      ),
   })
   .openapi("CredentialUse");
 
@@ -617,6 +634,13 @@ export const providerResponse = z
     authMethods: z.array(loginMethod),
     /** The provider's saved credential; ambient credentials have none. */
     credentialType: authType.nullable(),
+    passwordManager: z.enum(["1password", "bitwarden"]).nullable().openapi({
+      description:
+        "The password manager the saved API key is read from; null for a credential stored in Crumble.",
+    }),
+    reference: z.string().nullable().openapi({
+      description: "Where in `passwordManager` the API key is read from.",
+    }),
     activeLoginId: z.string().nullable(),
     /** Set for providers whose sign-in happens outside Crumble; they have no `authMethods`. */
     externalAuth: externalAuthResponse.nullable(),
@@ -707,6 +731,46 @@ export const providerConfiguredResponse = z
   .object({ provider: z.string(), configured: z.boolean() })
   .openapi("ProviderConfigured");
 
+// One object with optional fields rather than a union, so client generators keep it.
+const secretUsingPasswordManagerResponse = z
+  .object({
+    kind: z.enum(["botCredential", "providerCredential", "secret"]),
+    agentId: z
+      .string()
+      .optional()
+      .openapi({ description: "For `botCredential`." }),
+    name: z
+      .string()
+      .optional()
+      .openapi({ description: "The credential's name, for `botCredential`." }),
+    provider: z
+      .string()
+      .optional()
+      .openapi({ description: "For `providerCredential`." }),
+    key: z.string().optional().openapi({
+      description:
+        "For `secret`, such as `mcp:<server ID>` for an MCP server token.",
+    }),
+  })
+  .openapi("SecretUsingPasswordManager");
+
+export const passwordManagerResponse = z
+  .object({
+    id: z.enum(["1password", "bitwarden"]),
+    name: z.string(),
+    connected: z.boolean(),
+    connectedAt: z.string().nullable(),
+    usedBy: z.array(secretUsingPasswordManagerResponse).openapi({
+      description:
+        "Secrets that read their value from this password manager; it can't be disconnected while any remain.",
+    }),
+  })
+  .openapi("PasswordManager");
+
+export const passwordManagersResponse = z
+  .object({ passwordManagers: z.array(passwordManagerResponse) })
+  .openapi("PasswordManagers");
+
 export const mcpServerResponse = z
   .object({
     id: z.string(),
@@ -717,6 +781,17 @@ export const mcpServerResponse = z
     oauthClientId: z.string().nullable().openapi({
       description:
         "The client ID of an OAuth app the owner registered with the server's authorization server, used instead of registering Crumble.",
+    }),
+    tokenPasswordManager: z
+      .enum(["1password", "bitwarden"])
+      .nullable()
+      .optional()
+      .openapi({
+        description:
+          "The password manager the token is read from; null for a token stored in Crumble or no token.",
+      }),
+    tokenReference: z.string().nullable().optional().openapi({
+      description: "Where in `tokenPasswordManager` the token is read from.",
     }),
   })
   .openapi("McpServer");

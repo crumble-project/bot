@@ -109,6 +109,12 @@ A secret value the owner gives one bot for a list of hosts. The bot's jobs use i
 
 Avoid: Secret, API key, environment variable (in product language).
 
+### Password manager
+
+1Password or Bitwarden Secrets Manager, connected to an account so credentials, provider API keys, and MCP server tokens can be read from it instead of stored in Crumble.
+
+Avoid: Vault provider, secret store.
+
 ### Bot desktop
 
 A bot's own graphical desktop, with a browser and apps, inside its workspace. Not the Crumble desktop client.

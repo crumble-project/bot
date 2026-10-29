@@ -20,3 +20,21 @@ Open **Settings** > **Credentials**, select **New credential**, pick the bot, an
 A bot can also ask you for a credential when it needs one. The request shows up as a card in the bot chat. Enter the value or decline the request there, or answer it under **Waiting for you** in **Settings** > **Credentials**.
 
 The value never appears in the transcript, notices, or logs.
+
+## Read the value from a password manager
+
+Instead of storing the value in Crumble, a credential can read it from 1Password or Bitwarden Secrets Manager. [Connect the password manager](/concepts/password-managers), then select it above **Value** in the credential's editor and paste the reference.
+
+Over the API, send `reference` instead of `value` to `PUT /v1/agents/{id}/credentials/{name}`:
+
+```json
+{
+  "hosts": ["api.example.com"],
+  "reference": {
+    "passwordManager": "1password",
+    "reference": "op://Private/Acme/credential"
+  }
+}
+```
+
+When the value can't be read, the server doesn't send the request and records why in the credential's uses. The credential's row shows the newest such error, and the API returns it as `lastError`.

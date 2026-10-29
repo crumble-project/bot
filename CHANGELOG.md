@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Fix the credential proxy failing about one host certificate in 128 (an OpenSSL `INVALID_INTEGER` error): a random serial number that started with a zero byte wasn't valid DER.
+- An MCP server connection that opened while its token or settings changed is closed instead of kept, so the bot's next use connects with the new credentials. The tool call that hit it fails with "MCP server credentials changed; retry this task".
+- Document password managers on a new **Password managers** concepts page (connecting, reference formats, cache timings, and what each kind of secret does when it can't be read), and add **Password manager** to the glossary.
+- Read a credential's value, a provider's API key, or an MCP server's token from a connected password manager: their editors offer **Crumble** or each connected password manager. A credential whose newest use couldn't read its value shows the error in its row.
+- Show provider logos in **Settings** > **Providers** from LobeHub Icons (`@lobehub/icons-static-svg`, MIT), inlined into the web bundle. Radius, TypeSafe, and Melious have no logo there and keep their letter tile.
+- Connect 1Password or Bitwarden Secrets Manager in **Settings** > **Password managers**. Each row shows how many secrets read from it, and it can't be disconnected while any do. Adds the `simple-icons` dependency to the web app for their logos.
+- Connect 1Password or Bitwarden Secrets Manager over the API with `GET`, `PUT`, and `DELETE /v1/password-managers/{id}`. Connecting signs in once to check the token, and a new token drops values read with the old one. A password manager can't be disconnected while a secret reads from it. Contract 3.4.0.
+- Save a bot credential as a password manager reference instead of a value. Saving one reads it once to check it, and a reference that can't be read is rejected without saving anything. Credentials show where their value comes from and why their newest use couldn't read it.
+- Save a provider API key as a password manager reference with `PUT /v1/providers/{provider}`. A reference that can't be read is rejected, and the previous key stays.
+- Read an MCP server's bearer token from a password manager with `tokenReference` when creating or updating the server. A reference that can't be read is rejected without changing the server. Changing a server's token or reference, including saving a new token in Crumble, now closes its open connection, so the next use signs in with the new one.
+- Add `CRUMBLE_MASTER_KEY` to keep a usable encryption key out of the data directory. When it's set, each account's key is stored wrapped in `.secret.key.wrapped`, existing plain `.secret.key` files are wrapped and deleted on start, and the server refuses to start an account whose key the master key can't unwrap. Without it, nothing changes, and the server logs at startup that keys are stored next to the data.
 - Bots cite web pages inline. In bot chats and group chats in the web app, links to pages the bot searched or read in that turn show as source chips with the site's name at the end of the message. Group messages from bots carry these pages in the new optional `sources` field of `TranscriptMessage`.
 - Choose a default web search provider for the account and override it per bot. Add an Exa API key shared by bots on the account.
 - Add web search and page reading through Mixed. New bots created in the web app have **Web search** on by default; owners can turn it off per bot. Existing bots keep their capabilities. Mixed uses free, rate-limited services without an API key.
@@ -133,6 +144,19 @@
 - Add the generated OpenAPI 3.1 contract at `openapi/openapi.json` for all 49 HTTP endpoints, including authentication and event payload schemas.
 - Add offline `bun run openapi:generate` and `bun run openapi:check` commands. Include contract drift detection in `bun run check`.
 - Bind HTTP handlers to shared route definitions while preserving existing request parsing and PATCH behavior.
+
+## Contract 3.4.0
+
+- Add `GET /v1/password-managers` (`listPasswordManagers`), listing each supported password manager (`1password`, `bitwarden`) with its `name`, `connected`, nullable `connectedAt`, and `usedBy`, the secrets that read from it.
+- Add `PUT /v1/password-managers/{id}` (`connectPasswordManager`) with a write-only `token` (1-16000 characters). It answers 400 when the password manager rejects the token and 503 when it can't be reached.
+- Add `DELETE /v1/password-managers/{id}` (`disconnectPasswordManager`). It answers 409 while any secret reads from the password manager.
+- Add optional `reference` (`{ passwordManager, reference }`) to the credential save input, exclusive with `value`. A new credential needs one of them. 400 when the reference can't be read now.
+- Add nullable `passwordManager`, `reference`, and `lastError` to `Credential`. `lastError` is the `error` of the credential's newest use.
+- `PUT /v1/providers/{provider}` takes either `apiKey` or `reference` (`{ passwordManager, reference }`), not both; `apiKey` is now optional. 400 when the reference can't be read now. `PUT /v1/web-search/exa-key` still takes only `{ apiKey }`.
+- Add nullable `passwordManager` and `reference` to `Provider`.
+- Add `tokenReference` (`{ passwordManager, reference }`, or null to remove it) to MCP server create and update inputs, exclusive with `token`. 400 when the reference can't be read now.
+- Add optional, nullable `tokenPasswordManager` and `tokenReference` to `McpServer` and `McpServerStatus`.
+- Add nullable `error` to `CredentialUse`: why the value couldn't be read from its password manager, in which case the request was never sent.
 
 ## Contract 3.3.0
 

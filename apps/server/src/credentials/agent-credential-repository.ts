@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, lt } from "drizzle-orm";
+import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { z } from "zod";
 import type {
@@ -8,6 +8,12 @@ import type {
   CredentialUse,
 } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
+import {
+  secretSourceOf,
+  type SecretSource,
+} from "../password-managers/secret-values";
+import type { PasswordManagerId } from "../password-managers/password-manager";
+import type { SecretReference } from "../password-managers/secret-references";
 import { SecretBox } from "../shared/secret-box";
 import { nowIso } from "../shared/time";
 import {
@@ -22,15 +28,15 @@ const hostList = z.array(z.string());
 const credentialOf = (row: {
   name: string;
   hosts: string;
+  passwordManager: PasswordManagerId | null;
+  reference: string | null;
   createdAt: string;
   updatedAt: string;
   lastUsedAt: string | null;
+  lastError: string | null;
 }): AgentCredential => ({
-  name: row.name,
+  ...row,
   hosts: hostList.parse(JSON.parse(row.hosts)),
-  createdAt: row.createdAt,
-  updatedAt: row.updatedAt,
-  lastUsedAt: row.lastUsedAt,
 });
 
 const requestOf = (
@@ -47,9 +53,20 @@ export type CredentialAuthority = { certificate: string; key: string };
 const metadata = {
   name: agentCredentials.name,
   hosts: agentCredentials.hosts,
+  passwordManager: agentCredentials.passwordManager,
+  reference: agentCredentials.reference,
   createdAt: agentCredentials.createdAt,
   updatedAt: agentCredentials.updatedAt,
   lastUsedAt: agentCredentials.lastUsedAt,
+  lastError: sql<
+    string | null
+  >`(SELECT ${credentialUses.error} FROM ${credentialUses} WHERE ${credentialUses.agentId} = ${agentCredentials.agentId} AND ${credentialUses.name} = ${agentCredentials.name} ORDER BY ${credentialUses.id} DESC LIMIT 1)`,
+};
+
+/** The columns a save writes for its source; the database allows a value or a reference, never both. */
+type SaveSource = {
+  value?: string | undefined;
+  reference?: SecretReference | undefined;
 };
 
 /** The credentials the owner gave each bot, their requests, uses, and each bot's certificate authority. */
@@ -62,23 +79,27 @@ export class AgentCredentialRepository extends Context.Service<
       agentId: string,
       name: string,
     ) => Effect.Effect<AgentCredential | undefined>;
-    /** Creating needs a value; updating keeps the stored one when `value` is omitted. The placeholder never changes. */
+    /**
+     * Creating needs a value or a reference; updating keeps the saved source when both are omitted, and either one
+     * replaces the other. The placeholder never changes.
+     */
     readonly save: (
       agentId: string,
       name: string,
-      input: {
-        hosts: string[];
-        value?: string | undefined;
-        placeholder: string;
-      },
+      input: SaveSource & { hosts: string[]; placeholder: string },
     ) => Effect.Effect<AgentCredential>;
     readonly delete: (agentId: string, name: string) => Effect.Effect<boolean>;
     /** Each credential's placeholder by name, for the bot's job environments. */
     readonly placeholders: (
       agentId: string,
     ) => Effect.Effect<Record<string, string>>;
-    /** Every credential with its placeholder and decrypted value, for the credential proxy only. */
+    /** Every credential with its hosts and placeholder, without its value. */
     readonly grants: (agentId: string) => Effect.Effect<CredentialGrant[]>;
+    /** Where the credential's value comes from, decrypting a stored one; for the credential proxy only. */
+    readonly source: (
+      agentId: string,
+      name: string,
+    ) => Effect.Effect<SecretSource | undefined>;
     /** The bot's certificate authority for the credential proxy, with its private key in PKCS #8 PEM. */
     readonly getAuthority: (
       agentId: string,
@@ -163,35 +184,28 @@ export class AgentCredentialRepository extends Context.Service<
       const save = Effect.fn("AgentCredentialRepository.save")(function* (
         agentId: string,
         name: string,
-        input: {
-          hosts: string[];
-          value?: string | undefined;
-          placeholder: string;
-        },
+        input: SaveSource & { hosts: string[]; placeholder: string },
       ) {
         const at = yield* nowIso;
         const hosts = JSON.stringify(input.hosts);
+        const source = sourceColumns(input);
 
         if (yield* get(agentId, name)) {
           yield* db
             .update(agentCredentials)
-            .set(
-              input.value === undefined
-                ? { hosts, updatedAt: at }
-                : { hosts, value: box.encrypt(input.value), updatedAt: at },
-            )
+            .set({ hosts, ...source, updatedAt: at })
             .where(credential(agentId, name));
         } else {
-          if (input.value === undefined)
+          if (!source)
             return yield* Effect.die(
-              new Error("A new credential needs a value"),
+              new Error("A new credential needs a value or a reference"),
             );
 
           yield* db.insert(agentCredentials).values({
             agentId,
             name,
             hosts,
-            value: box.encrypt(input.value),
+            ...source,
             placeholder: input.placeholder,
             createdAt: at,
             updatedAt: at,
@@ -200,6 +214,24 @@ export class AgentCredentialRepository extends Context.Service<
 
         return (yield* get(agentId, name))!;
       }, Effect.orDie);
+
+      const sourceColumns = (input: SaveSource) => {
+        if (input.value !== undefined)
+          return {
+            value: box.encrypt(input.value),
+            passwordManager: null,
+            reference: null,
+          };
+
+        if (input.reference)
+          return {
+            value: null,
+            passwordManager: input.reference.passwordManager,
+            reference: input.reference.reference,
+          };
+
+        return undefined;
+      };
 
       const remove = Effect.fn("AgentCredentialRepository.delete")(function* (
         agentId: string,
@@ -239,7 +271,6 @@ export class AgentCredentialRepository extends Context.Service<
             name: agentCredentials.name,
             hosts: agentCredentials.hosts,
             placeholder: agentCredentials.placeholder,
-            value: agentCredentials.value,
           })
           .from(agentCredentials)
           .where(eq(agentCredentials.agentId, agentId))
@@ -249,8 +280,23 @@ export class AgentCredentialRepository extends Context.Service<
           name: row.name,
           hosts: hostList.parse(JSON.parse(row.hosts)),
           placeholder: row.placeholder,
-          value: box.decrypt(row.value),
         }));
+      }, Effect.orDie);
+
+      const source = Effect.fn("AgentCredentialRepository.source")(function* (
+        agentId: string,
+        name: string,
+      ) {
+        const [row] = yield* db
+          .select({
+            value: agentCredentials.value,
+            passwordManager: agentCredentials.passwordManager,
+            reference: agentCredentials.reference,
+          })
+          .from(agentCredentials)
+          .where(credential(agentId, name));
+
+        return row && secretSourceOf(box, row);
       }, Effect.orDie);
 
       const getAuthority = Effect.fn("AgentCredentialRepository.getAuthority")(
@@ -357,6 +403,7 @@ export class AgentCredentialRepository extends Context.Service<
               host: use.host,
               path: use.path,
               status: use.status,
+              error: use.error,
             });
             yield* db
               .update(agentCredentials)
@@ -382,6 +429,7 @@ export class AgentCredentialRepository extends Context.Service<
               host: credentialUses.host,
               path: credentialUses.path,
               status: credentialUses.status,
+              error: credentialUses.error,
             })
             .from(credentialUses)
             .where(
@@ -420,6 +468,7 @@ export class AgentCredentialRepository extends Context.Service<
         delete: remove,
         placeholders,
         grants,
+        source,
         getAuthority,
         saveAuthority,
         listRequests,

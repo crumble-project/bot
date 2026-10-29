@@ -11,6 +11,10 @@ import { attachmentInput, MAX_ATTACHMENTS } from "../shared/attachments";
 import * as response from "./api-responses";
 import { body, define, empty, error, json } from "./route";
 import { pushRoutes } from "../push/push-contract";
+import {
+  passwordManagerIdInput,
+  secretReferenceInput,
+} from "../password-managers/secret-references";
 
 export const memoryInput = z.object({
   content: z.string().trim().min(1).max(32000),
@@ -85,9 +89,29 @@ export const activityInput = z.object({
   cursor: z.string().min(1).max(8000).optional(),
 });
 
-export const providerKeyInput = z.object({
+export const apiKeyInput = z.object({
   apiKey: z.string().trim().min(1).max(16000),
 });
+
+/** A provider's API key, or where to read it from a password manager. */
+export const providerKeyInput = z
+  .object({
+    /** Write-only. */
+    apiKey: apiKeyInput.shape.apiKey.optional(),
+    /** Read the key from a password manager instead of storing it. */
+    reference: secretReferenceInput.optional(),
+  })
+  .refine((input) => (input.apiKey === undefined) !== !input.reference, {
+    message: "Send an API key or a reference, not both",
+    path: ["reference"],
+  });
+
+/** Write-only: the token never appears in a response. */
+export const passwordManagerTokenInput = z.object({
+  token: z.string().trim().min(1).max(16000),
+});
+
+const passwordManagerParams = z.object({ id: passwordManagerIdInput });
 
 /** Login answers may be pasted callback URLs, never larger than this. */
 const MAX_LOGIN_VALUE = 16384;
@@ -127,7 +151,10 @@ export const mcpInput = z.object({
       "Use an HTTP or HTTPS URL",
     ),
   enabled: z.boolean().default(true),
+  /** Write-only; an empty string removes it. Exclusive with `tokenReference`. */
   token: z.string().max(16000).optional(),
+  /** Read the token from a password manager instead of storing it; null removes it. */
+  tokenReference: secretReferenceInput.nullable().optional(),
   /** The client ID of an OAuth app the owner registered with the server's authorization server; null removes it. */
   oauthClientId: z.string().trim().min(1).max(500).nullable().optional(),
   /** Write-only; an empty string removes it. */
@@ -211,7 +238,7 @@ export const routes = {
     method: "put",
     path: "/v1/web-search/exa-key",
     operationId: "setExaKey",
-    request: { body: body(providerKeyInput) },
+    request: { body: body(apiKeyInput) },
     responses: { 200: json(z.object({ exaKeyConfigured: z.boolean() })) },
   }),
   deleteExaKey: define({
@@ -885,6 +912,8 @@ export const routes = {
     method: "put",
     path: "/v1/providers/{provider}",
     operationId: "putProviderKey",
+    description:
+      "Saves the provider's API key, or a password manager reference to read it from. A reference is read once to check it; 400 when it can't be read, keeping the previous credential.",
     request: {
       params: z.object({ provider: z.string() }),
       body: body(providerKeyInput),
@@ -930,6 +959,35 @@ export const routes = {
     operationId: "cancelProviderLogin",
     request: { params: id },
     responses: { 200: json(response.loginSessionResponse), 410: gone },
+  }),
+  passwordManagers: define({
+    method: "get",
+    path: "/v1/password-managers",
+    operationId: "listPasswordManagers",
+    description:
+      "Every password manager this server supports, whether it is connected, and which secrets read from it.",
+    responses: { 200: json(response.passwordManagersResponse) },
+  }),
+  connectPasswordManager: define({
+    method: "put",
+    path: "/v1/password-managers/{id}",
+    operationId: "connectPasswordManager",
+    description:
+      "Signs in with the token to check it, then connects the password manager or replaces its token. A new token drops the values read with the old one. 400 when the password manager rejects the token; 503 when it can't be reached.",
+    request: {
+      params: passwordManagerParams,
+      body: body(passwordManagerTokenInput),
+    },
+    responses: { 200: json(response.passwordManagerResponse) },
+  }),
+  disconnectPasswordManager: define({
+    method: "delete",
+    path: "/v1/password-managers/{id}",
+    operationId: "disconnectPasswordManager",
+    description:
+      "Disconnects the password manager and drops its token. 409 while any secret still reads from it; `usedBy` in the list names them.",
+    request: { params: passwordManagerParams },
+    responses: { 204: empty },
   }),
   mcpServers: define({
     method: "get",
@@ -1015,7 +1073,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "3.3.0",
+      version: "3.4.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },

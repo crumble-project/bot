@@ -35,6 +35,7 @@ import {
   type ClientDocument,
 } from "../integrations/mcp-oauth";
 import { registerMemoryRoutes } from "../memory/memory-api";
+import { registerPasswordManagerRoutes } from "../password-managers/password-managers-api";
 import {
   registerProviderRoutes,
   providerSchema,
@@ -127,7 +128,7 @@ const limitBodies = (app: ApiApp) => {
 };
 
 /** Every error leaves as JSON with the status its type maps to, until the last resort. */
-const handleApiError: ErrorHandler = (error, c) => {
+export const handleApiError: ErrorHandler = (error, c) => {
   if (error instanceof HTTPException) return error.getResponse();
 
   if (error instanceof z.ZodError)
@@ -258,6 +259,7 @@ export function createAPI(
   registerScheduleRoutes(api);
   registerActivityRoutes(api);
   registerProviderRoutes(api);
+  registerPasswordManagerRoutes(api);
   registerMcpServerRoutes(api);
 
   return app;

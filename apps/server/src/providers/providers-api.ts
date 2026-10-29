@@ -61,7 +61,7 @@ const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
     const saved = new Map(
       exec(ProviderCredentialRepository.use((r) => r.list)).map((info) => [
         info.providerId,
-        info.type,
+        info,
       ]),
     );
 
@@ -74,7 +74,9 @@ const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
             await models.checkAuth(item.id).catch(() => undefined),
           ),
           authMethods: loginMethods(item),
-          credentialType: saved.get(item.id) ?? null,
+          credentialType: saved.get(item.id)?.type ?? null,
+          passwordManager: saved.get(item.id)?.passwordManager ?? null,
+          reference: saved.get(item.id)?.reference ?? null,
           activeLoginId: providerAuth.activeLoginId(item.id),
           externalAuth: (await options.externalAuth?.get(item.id)?.()) ?? null,
         })),
@@ -111,7 +113,8 @@ const registerProviderCredentialRoutes = (options: ProviderRoutesOptions) => {
 
     const input = providerKeyInput.parse(await c.req.json());
 
-    await providerAuth.setApiKey(name, input.apiKey);
+    if (input.reference) await providerAuth.setReference(name, input.reference);
+    else if (input.apiKey) await providerAuth.setApiKey(name, input.apiKey);
 
     return c.json({ provider: name, configured: true }, 200);
   });

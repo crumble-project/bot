@@ -1,4 +1,6 @@
 import { z } from "zod";
+import type { PasswordManagerId } from "../password-managers/password-manager";
+import { secretReferenceInput } from "../password-managers/secret-references";
 
 /** Tools every bot has, whatever its saved `tools` say. */
 export const STANDARD_TOOLS = ["schedule", "codemode"];
@@ -309,12 +311,19 @@ export const credentialRequestInput = z.object({
 
 export type CredentialRequestInput = z.infer<typeof credentialRequestInput>;
 
-export const credentialSaveInput = z.object({
-  /** Kept when omitted; required for a credential nobody asked for. */
-  hosts: credentialHosts.optional(),
-  /** Write-only. Required to create; omit to keep the saved value. */
-  value: z.string().min(1).max(16000).optional(),
-});
+export const credentialSaveInput = z
+  .object({
+    /** Kept when omitted; required for a credential nobody asked for. */
+    hosts: credentialHosts.optional(),
+    /** Write-only. A new credential needs it or `reference`; omit both to keep the saved source. */
+    value: z.string().min(1).max(16000).optional(),
+    /** Read the value from a password manager instead of storing it. */
+    reference: secretReferenceInput.optional(),
+  })
+  .refine((input) => !(input.value !== undefined && input.reference), {
+    message: "Send a value or a reference, not both",
+    path: ["reference"],
+  });
 
 export type CredentialSaveInput = z.infer<typeof credentialSaveInput>;
 
@@ -322,9 +331,14 @@ export type CredentialSaveInput = z.infer<typeof credentialSaveInput>;
 export type AgentCredential = {
   name: string;
   hosts: string[];
+  /** Where the value is read from; both null for a value stored in Crumble. */
+  passwordManager: PasswordManagerId | null;
+  reference: string | null;
   createdAt: string;
   updatedAt: string;
   lastUsedAt: string | null;
+  /** Why the newest use couldn't read the value; null when it could. */
+  lastError: string | null;
 };
 
 /** A bot's request for a credential, waiting for the owner. */
@@ -336,11 +350,11 @@ export type CredentialRequest = {
 };
 
 /** What the credential proxy needs to swap a credential in: never leaves the server. */
+/** A credential the proxy may swap in; its value is read only when a request uses the placeholder. */
 export type CredentialGrant = {
   name: string;
   hosts: string[];
   placeholder: string;
-  value: string;
 };
 
 /** Whether `host` is one of `hosts`; `*.example.com` covers every subdomain, not the name itself. */
@@ -359,6 +373,8 @@ export type CredentialUse = {
   host: string;
   path: string;
   status: number | null;
+  /** Why the value couldn't be read, so the request was never sent. */
+  error: string | null;
 };
 
 export const MAX_SKILL_DOCUMENTS = 20;

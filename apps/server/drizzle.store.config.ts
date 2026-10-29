@@ -12,6 +12,7 @@ export default defineConfig({
     "./src/group-chats/schema.ts",
     "./src/integrations/schema.ts",
     "./src/memory/schema.ts",
+    "./src/password-managers/schema.ts",
     "./src/providers/schema.ts",
     "./src/schedules/schema.ts",
     "./src/schedules/script-run-schema.ts",

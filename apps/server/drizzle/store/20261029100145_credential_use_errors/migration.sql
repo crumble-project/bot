@@ -1,0 +1,1 @@
+ALTER TABLE `credential_uses` ADD `error` text;

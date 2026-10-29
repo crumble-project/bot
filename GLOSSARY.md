@@ -74,6 +74,10 @@ _Avoid_: Sandbox, container, VM (in product language)
 A secret value the owner gives one bot for a list of hosts. The bot's jobs use it through a placeholder, so the value never enters the workspace.
 _Avoid_: Secret, API key, environment variable (in product language)
 
+**Password manager**:
+1Password or Bitwarden Secrets Manager, connected to an account so credentials, provider API keys, and MCP server tokens can be read from it instead of stored in Crumble.
+_Avoid_: Vault provider, secret store
+
 **Web search provider**:
 The service the owner chooses for the account through which every bot searches the web and reads pages.
 _Avoid_: Search backend, search engine

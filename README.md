@@ -20,23 +20,23 @@ images unset by default.
 - **API:** `http://127.0.0.1:7337` (`/v1` requires an account session; `GET /health` is public).
 - **Web UI:** `http://127.0.0.1:7337/ui` (bundled on demand by Bun with Tailwind CSS; set `NODE_ENV=production` to minify).
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `CRUMBLE_DATA_DIR` | `./data` | Account database, auth secret, and private per-user data directories |
-| `CRUMBLE_HOST` | `127.0.0.1` | Listen address (keep on loopback unless behind TLS) |
-| `CRUMBLE_PORT` | `7337` | Listen port |
-| `BETTER_AUTH_URL` | Local listener origin | Canonical browser origin for authentication; `CRUMBLE_PUBLIC_URL` takes precedence |
-| `CRUMBLE_PUBLIC_URL` | Unset | Public `https://` origin for authentication and OAuth client metadata |
-| `CRUMBLE_SKILLS_DIR` | `./skills` | Directory of bundled default skills |
-| `CRUMBLE_WORKSPACE_IMAGE` | Unset | Microsandbox OCI image enabling the `coding` tool |
-| `CRUMBLE_WORKSPACE_DESKTOP_IMAGE` | Unset | Microsandbox OCI image enabling the `desktop` tool |
-| `CRUMBLE_WORKSPACE_BACKEND` | Microsandbox | `railway` runs workspaces in Railway sandboxes and enables the `coding` and `desktop` tools |
-| `CRUMBLE_RAILWAY_REGION` | Railway's default | Region of new Railway sandboxes, such as `europe-west4` |
-| `CRUMBLE_CLAUDE_COMMAND` | `claude` | Claude Code executable, when it is not on `PATH` |
-| `CRUMBLE_CLAUDE_TELEMETRY` | Enabled | Set to `0`, `false`, `no`, or `off` to disable Claude Code telemetry and feature-flag traffic |
+| Variable                          | Default               | Purpose                                                                                                               |
+| --------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `CRUMBLE_DATA_DIR`                | `./data`              | Account database, auth secret, and private per-user data directories                                                  |
+| `CRUMBLE_HOST`                    | `127.0.0.1`           | Listen address (keep on loopback unless behind TLS)                                                                   |
+| `CRUMBLE_PORT`                    | `7337`                | Listen port                                                                                                           |
+| `BETTER_AUTH_URL`                 | Local listener origin | Canonical browser origin for authentication; `CRUMBLE_PUBLIC_URL` takes precedence                                    |
+| `CRUMBLE_PUBLIC_URL`              | Unset                 | Public `https://` origin for authentication and OAuth client metadata                                                 |
+| `CRUMBLE_MASTER_KEY`              | Unset                 | 32 random bytes in base64 that wrap each user's encryption key, so the data directory alone can't decrypt credentials |
+| `CRUMBLE_SKILLS_DIR`              | `./skills`            | Directory of bundled default skills                                                                                   |
+| `CRUMBLE_WORKSPACE_IMAGE`         | Unset                 | Microsandbox OCI image enabling the `coding` tool                                                                     |
+| `CRUMBLE_WORKSPACE_DESKTOP_IMAGE` | Unset                 | Microsandbox OCI image enabling the `desktop` tool                                                                    |
+| `CRUMBLE_WORKSPACE_BACKEND`       | Microsandbox          | `railway` runs workspaces in Railway sandboxes and enables the `coding` and `desktop` tools                           |
+| `CRUMBLE_RAILWAY_REGION`          | Railway's default     | Region of new Railway sandboxes, such as `europe-west4`                                                               |
+| `CRUMBLE_CLAUDE_COMMAND`          | `claude`              | Claude Code executable, when it is not on `PATH`                                                                      |
+| `CRUMBLE_CLAUDE_TELEMETRY`        | Enabled               | Set to `0`, `false`, `no`, or `off` to disable Claude Code telemetry and feature-flag traffic                         |
 
-
-Back up the entire `CRUMBLE_DATA_DIR`, including `.auth-secret` and each user’s `.secret.key`, plus `MSB_HOME` (`~/.microsandbox`).
+Back up the entire `CRUMBLE_DATA_DIR`, including `.auth-secret` and each user’s `.secret.key` (or `.secret.key.wrapped`), plus `MSB_HOME` (`~/.microsandbox`). With `CRUMBLE_MASTER_KEY` set, back up the master key separately.
 
 ## Workspaces (`coding` and `desktop`)
 
