@@ -547,6 +547,73 @@ describe("MCP integrations", () => {
     store.close();
   });
 
+  test("a disconnect during a token read leaves no connection open", async () => {
+    const dir = (await tempDir()).trim();
+    const store = new Store(dir);
+
+    const server = store.createMCPServer({
+      name: "Linear",
+      url: "https://mcp.example.test",
+      enabled: true,
+    });
+
+    const vault = withVaultToken(store, dir, server.id, {
+      [REFERENCE]: "lin-vault",
+    });
+
+    const release = Promise.withResolvers<void>();
+    vault.state.held = release.promise;
+    let opened = 0;
+    let closed = 0;
+
+    const { integrations, close } = standaloneIntegrations(vault.run, {
+      clientFactory: () => {
+        opened++;
+
+        return {
+          transport: unusedTransport,
+          client: {
+            async connect() {},
+            async close() {
+              closed++;
+            },
+            async listTools() {
+              return [
+                { name: "echo", inputSchema: { type: "object" as const } },
+              ];
+            },
+            async callTool() {
+              return { content: [] };
+            },
+          } satisfies MCPClient,
+        };
+      },
+    });
+
+    const listing = integrations.extensionsForAgent(agent("a1", [server.id]));
+
+    while (vault.state.reads === 0) await Bun.sleep(1);
+    await Effect.runPromise(integrations.disconnect(server.id));
+    release.resolve();
+    await listing;
+
+    expect(opened).toBe(1);
+    expect(closed).toBe(1);
+    expect(integrations.failure(server.id)).toBe(
+      "MCP server credentials changed; retry this task",
+    );
+
+    delete vault.state.held;
+    await integrations.extensionsForAgent(agent("a1", [server.id]));
+
+    expect(opened).toBe(2);
+    expect(closed).toBe(1);
+    expect(integrations.failure(server.id)).toBeNull();
+    await close();
+    vault.close();
+    store.close();
+  });
+
   test("a token saved in Crumble replaces its password manager reference", async () => {
     const dir = (await tempDir()).trim();
     const store = new Store(dir);

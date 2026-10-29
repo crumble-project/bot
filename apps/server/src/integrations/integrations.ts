@@ -204,6 +204,8 @@ const tokenOf = (serverId: string) =>
 
 class McpConnections {
   private readonly failures = new Map<string, string>();
+  private readonly disconnects = new Map<string, number>();
+  private closes = 0;
   private readonly connections = new Map<
     string,
     {
@@ -321,6 +323,7 @@ class McpConnections {
   }
 
   private async connection(server: MCPServer) {
+    const generation = this.generation(server.id);
     // A signed-in server authenticates through OAuth, which refreshes its own access token.
     const oauth = hasOAuthTokens(this.data.secrets, server.id);
 
@@ -348,15 +351,27 @@ class McpConnections {
 
     try {
       await this.withTimeout(value.client.connect(value.transport));
-      const cached = { ...value, fingerprint };
-      this.connections.set(server.id, cached);
-
-      return cached;
     } catch (error) {
       await value.client.close().catch(() => undefined);
       await value.transport.close().catch(() => undefined);
       throwAuthFailure(server, error, hadCredentials);
     }
+
+    // A disconnect while this one opened means its credentials may be stale.
+    if (this.generation(server.id) !== generation) {
+      await value.client.close().catch(() => undefined);
+      await value.transport.close().catch(() => undefined);
+      throw new Error("MCP server credentials changed; retry this task");
+    }
+
+    const cached = { ...value, fingerprint };
+    this.connections.set(server.id, cached);
+
+    return cached;
+  }
+
+  private generation(serverId: string) {
+    return `${this.closes}:${this.disconnects.get(serverId) ?? 0}`;
   }
 
   /** Why a server's tools were left out of a bot's last turn, until it connects again. */
@@ -512,6 +527,7 @@ class McpConnections {
 
   /** Drops a server's open connection, so the next use picks up new credentials. */
   async disconnect(serverId: string) {
+    this.disconnects.set(serverId, (this.disconnects.get(serverId) ?? 0) + 1);
     const existing = this.connections.get(serverId);
     this.connections.delete(serverId);
     this.failures.delete(serverId);
@@ -520,6 +536,7 @@ class McpConnections {
   }
 
   async close() {
+    this.closes++;
     const values = [...this.connections.values()];
     this.connections.clear();
     await Promise.all(

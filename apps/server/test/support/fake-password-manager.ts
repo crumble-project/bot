@@ -13,6 +13,8 @@ export type FakePasswordManager = {
   values: Map<string, string>;
   /** `hang` never answers, so only a timeout or an interruption ends the read. */
   mode: "answer" | "unreachable" | "hang";
+  /** When set, a read answers only after it resolves, so a test can act while the read is in flight. */
+  held?: Promise<void>;
   signIns: number;
   reads: number;
   interrupted: number;
@@ -66,23 +68,28 @@ export const fakeVendor = (
                 }),
               );
 
-            return Effect.succeed(
-              new Map(
-                references.map((reference) => {
-                  const value = state.values.get(reference);
+            const held = state.held;
 
-                  return [
-                    reference,
-                    value === undefined
-                      ? Result.fail(
-                          new SecretUnreadable({
-                            reference,
-                            message: "has no item that matches",
-                          }),
-                        )
-                      : Result.succeed(Redacted.make(value)),
-                  ];
-                }),
+            return Effect.promise(() => held ?? Promise.resolve()).pipe(
+              Effect.map(
+                () =>
+                  new Map(
+                    references.map((reference) => {
+                      const value = state.values.get(reference);
+
+                      return [
+                        reference,
+                        value === undefined
+                          ? Result.fail(
+                              new SecretUnreadable({
+                                reference,
+                                message: "has no item that matches",
+                              }),
+                            )
+                          : Result.succeed(Redacted.make(value)),
+                      ];
+                    }),
+                  ),
               ),
             );
           }),
