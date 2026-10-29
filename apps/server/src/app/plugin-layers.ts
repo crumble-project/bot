@@ -1,7 +1,7 @@
 import { Effect, Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import { Bots } from "../bots/bots";
-import { jobExtensions, pluginJobKinds, Plugins } from "./plugins";
+import { jobExtensions, pluginJobKinds, Plugins } from "../plugins/plugins";
 
 /** Offers bots the job tools of the plugins' job kinds. */
 export const jobTools = Layer.effectDiscard(

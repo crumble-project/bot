@@ -36,6 +36,8 @@ export function useHistory(
 ) {
   const [older, setOlder] = useState<HistoryPage | null>(null);
 
+  // A read kept in local state: pages merge into `older`, not a query cache.
+  // react-doctor-disable-next-line query-mutation-missing-invalidation
   const loadEarlier = useMutation({
     mutationFn: (before: string) =>
       api<HistoryPage>(

@@ -3,7 +3,9 @@ import {
   agentInput,
   credentialSaveInput,
   groupChatInput,
+  passwordManagerIdInput,
   scheduleInput,
+  secretReferenceInput,
   skillInput,
   skillLifecycleInput,
 } from "../shared/domain";
@@ -11,10 +13,8 @@ import { attachmentInput, MAX_ATTACHMENTS } from "../shared/attachments";
 import * as response from "./api-responses";
 import { body, define, empty, error, json } from "./route";
 import { pushRoutes } from "../push/push-contract";
-import {
-  passwordManagerIdInput,
-  secretReferenceInput,
-} from "../password-managers/secret-references";
+
+export type BotInput = z.input<typeof agentInput>;
 
 export const memoryInput = z.object({
   content: z.string().trim().min(1).max(32000),

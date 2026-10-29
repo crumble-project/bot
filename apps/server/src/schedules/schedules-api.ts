@@ -3,7 +3,6 @@ import { routes, scriptRunsInput } from "../contract/api-contract";
 import type { scheduleRunResponse } from "../contract/api-responses";
 import type { Register } from "../contract/route";
 import { ExecutionRepository } from "../bots/execution-repository";
-import type { CoreServices } from "../shared/core-layer";
 import {
   mergeScheduleInput,
   scheduleInput,
@@ -16,12 +15,14 @@ import type { Runner } from "../shared/runner";
 import { ScheduleRepository } from "./schedule-repository";
 import type { SchedulerAccess } from "./scheduler";
 
-type Exec = Runner<CoreServices>["runSync"];
+type Services = AgentRepository | ExecutionRepository | ScheduleRepository;
+
+type Exec = Runner<Services>["runSync"];
 
 /** The schedules one bot or the owner created, and running one now. */
 export function registerScheduleRoutes(options: {
   register: Register;
-  run: Runner<CoreServices>;
+  run: Runner<Services>;
   scheduler: SchedulerAccess;
   coding?: boolean;
   scriptRuns?: ScriptRuns["Service"];

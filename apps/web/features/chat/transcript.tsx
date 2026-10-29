@@ -2,7 +2,6 @@ import {
   type ComponentProps,
   type ReactNode,
   useEffect,
-  useRef,
   useState,
 } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -38,7 +37,7 @@ import {
   type BotRequest,
   type Credential,
   type Message,
-  blobUrl,
+  apiBlob,
   botRequestPath,
   botRequestsQuery,
   botsQuery,
@@ -50,7 +49,11 @@ import {
   send,
 } from "@/lib/api";
 import { BotAvatar, botStyle } from "@/features/bots/avatar";
-import { BotFields, CAPABILITIES } from "@/features/bots/bot-form";
+import {
+  BotFields,
+  CAPABILITIES,
+  useBotFields,
+} from "@/features/bots/bot-form";
 import {
   Sheet,
   SheetContent,
@@ -284,18 +287,21 @@ export const ARRIVAL =
  * history already there when it loaded or pages fetched by scrolling back.
  */
 export function useArrivals(live: Message[] | undefined) {
-  const seen = useRef<Set<string> | null>(null);
+  const [seen, setSeen] = useState<Set<string> | null>(null);
 
-  if (live && !seen.current)
-    seen.current = new Set(live.map((message) => message.id));
+  if (live && !seen) setSeen(new Set(live.map((message) => message.id)));
 
   return {
     remember: (messages: Message[]) =>
-      messages.forEach((message) => seen.current?.add(message.id)),
+      setSeen((current) =>
+        current
+          ? new Set([...current, ...messages.map((message) => message.id)])
+          : current,
+      ),
     // A confirmed owner message replaces its outgoing copy, which already animated.
     arrival: (message: Message) =>
-      seen.current &&
-      !seen.current.has(message.id) &&
+      seen &&
+      !seen.has(message.id) &&
       !(message.role === "user" && message.requestId)
         ? ARRIVAL
         : undefined,
@@ -390,14 +396,25 @@ function CenteredDisclosure({
 function AttachmentImage({ path, name }: { path: string; name: string }) {
   const image = useQuery({
     queryKey: ["attachment", path],
-    queryFn: ({ signal }) => blobUrl(path, signal),
+    queryFn: ({ signal }) => apiBlob(path, signal),
     staleTime: Infinity,
     gcTime: 10 * 60_000,
   });
 
-  return image.data ? (
+  const [objectUrl, setObjectUrl] = useState<{ blob: Blob; url: string }>();
+
+  useEffect(() => {
+    if (!image.data) return;
+
+    const url = URL.createObjectURL(image.data);
+    setObjectUrl({ blob: image.data, url });
+
+    return () => URL.revokeObjectURL(url);
+  }, [image.data]);
+
+  return objectUrl && objectUrl.blob === image.data ? (
     <img
-      src={image.data}
+      src={objectUrl.url}
       alt={name}
       className="max-h-64 max-w-full rounded-lg object-contain outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
     />
@@ -417,20 +434,18 @@ export function Attachments({
 
   return (
     <div className="flex flex-wrap justify-end gap-2">
-      {message.attachments.map((attachment, index) =>
-        attachment.kind === "image" ? (
-          <AttachmentImage
-            key={index}
-            name={attachment.name}
-            path={attachmentPath(message.entryId, index)}
-          />
+      {message.attachments.map((attachment, index) => {
+        const path = attachmentPath(message.entryId, index);
+
+        return attachment.kind === "image" ? (
+          <AttachmentImage key={path} name={attachment.name} path={path} />
         ) : (
-          <Badge key={index} variant="outline">
+          <Badge key={path} variant="outline">
             <IconFileText data-icon="inline-start" />
             {attachment.name}
           </Badge>
-        ),
-      )}
+        );
+      })}
     </div>
   );
 }
@@ -650,17 +665,20 @@ function OwnerMessageBody({
 function OwnerUploads({ uploads }: { uploads?: Upload[] | undefined }) {
   if (!uploads?.length) return null;
 
+  // A sent message's uploads never change.
   return (
     <div className="flex flex-wrap justify-end gap-2">
       {uploads.map((upload, index) =>
         upload.preview ? (
           <img
+            // react-doctor-disable-next-line no-array-index-as-key
             key={index}
             src={upload.preview}
             alt={upload.name}
             className="max-h-64 max-w-full rounded-lg object-contain"
           />
         ) : (
+          // react-doctor-disable-next-line no-array-index-as-key
           <Badge key={index} variant="outline">
             <IconFileText data-icon="inline-start" />
             {upload.name}
@@ -981,7 +999,6 @@ function BotRequestCard({
   botId: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [proposalValid, setProposalValid] = useState(false);
   const current = useQuery(botRequestsQuery(botId));
   const live = current.data?.find((item) => item.id === request.id) ?? request;
 
@@ -999,8 +1016,6 @@ function BotRequestCard({
       requestId={request.id}
       open={open}
       setOpen={setOpen}
-      proposalValid={proposalValid}
-      setProposalValid={setProposalValid}
       onApprove={(proposal) => approve.mutate(proposal)}
       onDecline={() => decline.mutate()}
       approvePending={approve.isPending}
@@ -1082,8 +1097,6 @@ function BotPendingCard({
   requestId,
   open,
   setOpen,
-  proposalValid,
-  setProposalValid,
   onApprove,
   onDecline,
   approvePending,
@@ -1095,8 +1108,6 @@ function BotPendingCard({
   requestId: string;
   open: boolean;
   setOpen: (open: boolean) => void;
-  proposalValid: boolean;
-  setProposalValid: (valid: boolean) => void;
   onApprove: (proposal?: BotInput) => void;
   onDecline: () => void;
   approvePending: boolean;
@@ -1140,8 +1151,6 @@ function BotPendingCard({
             proposal={live.proposal}
             error={approveError}
             pending={approvePending}
-            valid={proposalValid}
-            onValidityChange={setProposalValid}
             // SAFETY: BotFields validates and emits the API bot input shape.
             onSubmit={onApprove}
           />
@@ -1227,34 +1236,30 @@ function BotRequestEditor({
   proposal,
   error,
   pending,
-  valid,
-  onValidityChange,
   onSubmit,
 }: {
   requestId: string;
   proposal: BotRequest["proposal"];
   error?: string;
   pending: boolean;
-  valid: boolean;
-  onValidityChange: (valid: boolean) => void;
   onSubmit: NonNullable<ComponentProps<typeof BotFields>["onSubmit"]>;
 }) {
   const formId = `bot-request-${requestId}`;
+  // SAFETY: Request proposals are validated agent inputs from the server.
+  const fields = useBotFields(proposal as BotInput);
 
   return (
     <>
       <div className="p-4">
-        <BotFields
-          formId={formId}
-          // SAFETY: Request proposals are validated agent inputs from the server.
-          initial={proposal as ComponentProps<typeof BotFields>["initial"]}
-          onValidityChange={onValidityChange}
-          onSubmit={onSubmit}
-        />
+        <BotFields formId={formId} fields={fields} onSubmit={onSubmit} />
         {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
       </div>
       <SheetFooter>
-        <Button type="submit" form={formId} disabled={pending || !valid}>
+        <Button
+          type="submit"
+          form={formId}
+          disabled={pending || fields.invalid}
+        >
           Approve
         </Button>
       </SheetFooter>

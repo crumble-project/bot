@@ -41,14 +41,16 @@ export function clampLevel(
   level: ThinkingLevel,
   levels: readonly ThinkingLevel[],
 ): ThinkingLevel {
-  if (levels.includes(level)) return level;
+  const supported = new Set(levels);
+
+  if (supported.has(level)) return level;
   const index = ORDER.indexOf(level);
 
   return (
-    ORDER.slice(index + 1).find((each) => levels.includes(each)) ??
+    ORDER.slice(index + 1).find((each) => supported.has(each)) ??
     ORDER.slice(0, index)
       .reverse()
-      .find((each) => levels.includes(each)) ??
+      .find((each) => supported.has(each)) ??
     levels[0] ??
     "off"
   );

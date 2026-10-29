@@ -6,7 +6,7 @@ import {
   snapshotInput,
 } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import { snapshotSender, streamEvents } from "../app/event-stream";
+import { snapshotSender, streamEvents } from "../shared/event-stream";
 import { groupChatInput } from "../shared/domain";
 import { Unavailable } from "../shared/errors";
 import type { GroupChatsAccess } from "./group-chats";

@@ -1,4 +1,10 @@
-import { type CSSProperties, useEffect, useLayoutEffect, useRef } from "react";
+import {
+  type CSSProperties,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+} from "react";
 import { cn } from "@/lib/utils";
 import type { Bot } from "@/lib/api";
 import {
@@ -154,6 +160,8 @@ export function BotAvatar({
   const canvas = useRef<HTMLCanvasElement>(null);
   const avatar = useRef<Live | null>(null);
   const moving = animated && !reducedMotion();
+  const { id, avatar: appearance } = bot;
+  const initialState = useEffectEvent(() => state);
 
   useLayoutEffect(() => {
     const element = canvas.current;
@@ -161,19 +169,14 @@ export function BotAvatar({
     if (!element) return;
 
     const ratio = Math.min(3, Math.ceil(devicePixelRatio || 1));
-    const painter = new BotPainter(lookOf(bot), size);
+    const painter = new BotPainter(lookOf({ id, avatar: appearance }), size);
 
     element.width = size * ratio;
     element.height = size * ratio;
 
-    if (!moving) {
-      const context = element.getContext("2d")!;
+    if (!moving) return;
 
-      context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      painter.paint(context, REST, [[expressionOf(state), 1]]);
-
-      return;
-    }
+    const state = initialState();
 
     const entry: Live = {
       canvas: element,
@@ -195,8 +198,20 @@ export function BotAvatar({
       live.delete(entry);
       avatar.current = null;
     };
-    // `state` is left out on purpose: the effect below eases into a new state without a restart.
-  }, [bot.id, bot.avatar, size, moving]);
+  }, [id, appearance, size, moving]);
+
+  useLayoutEffect(() => {
+    const element = canvas.current;
+
+    if (!element || moving) return;
+
+    const ratio = Math.min(3, Math.ceil(devicePixelRatio || 1));
+    const painter = new BotPainter(lookOf({ id, avatar: appearance }), size);
+    const context = element.getContext("2d")!;
+
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    painter.paint(context, REST, [[expressionOf(state), 1]]);
+  }, [id, appearance, size, moving, state]);
 
   useEffect(() => {
     const entry = avatar.current;

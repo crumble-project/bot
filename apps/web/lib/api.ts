@@ -28,13 +28,13 @@ import type {
   providerResponse,
   scheduleResponse,
   scriptRunResponse,
+  ChartLayout,
 } from "@crumble/server/contract/api-responses";
-import type { agentInput } from "@crumble/server/shared/domain";
-import type { ChartLayout } from "@crumble/server/display/charts";
+import type { BotInput } from "@crumble/server/contract/api-contract";
 
 export type Bot = z.infer<typeof agentPreviewResponse>;
 
-export type BotInput = z.input<typeof agentInput>;
+export type { BotInput };
 
 export type Model = z.infer<typeof modelResponse>;
 
@@ -184,11 +184,11 @@ export async function send<Body>(path: string, method: string, body?: Body) {
   });
 }
 
-/** Fetches an authenticated binary, such as an attachment image, as an object URL. */
-export async function blobUrl(path: string, signal?: AbortSignal) {
+/** Fetches an authenticated binary, such as an attachment image. */
+export async function apiBlob(path: string, signal?: AbortSignal) {
   const response = await request(path, { signal: signal ?? null });
 
-  return URL.createObjectURL(await response.blob());
+  return response.blob();
 }
 
 export const agentPath = (id: string) => `/v1/agents/${encodeURIComponent(id)}`;

@@ -12,7 +12,7 @@ import type {
   desktopJobsResponse,
 } from "../contract/api-responses";
 import type { Register } from "../contract/route";
-import { snapshotSender, streamEvents } from "../app/event-stream";
+import { snapshotSender, streamEvents } from "../shared/event-stream";
 import type { AgentRuntime } from "./runtime";
 import type { BotsAccess } from "./bots";
 

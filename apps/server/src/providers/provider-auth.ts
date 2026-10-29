@@ -16,7 +16,7 @@ import type {
   loginSessionResponse,
 } from "../contract/api-responses";
 import { Context, Effect, Layer, ManagedRuntime, Predicate } from "effect";
-import type { ProviderContribution } from "../app/plugins";
+import type { ProviderContribution } from "../plugins/plugins";
 import { ProviderCredentialRepository } from "./provider-credential-repository";
 import { appErrors } from "../shared/app-errors";
 import { SettingsRepository } from "../shared/settings-repository";
@@ -27,10 +27,8 @@ import {
 } from "./provider-credentials";
 import { ProviderModels } from "./providers";
 import { PasswordManagers } from "../password-managers/password-manager";
-import {
-  checkSecretReference,
-  type SecretReference,
-} from "../password-managers/secret-references";
+import { checkSecretReference } from "../password-managers/secret-references";
+import type { SecretReference } from "../shared/domain";
 import { SecretValues } from "../password-managers/secret-values";
 import {
   InvalidInput,

@@ -15,7 +15,7 @@ import {
 } from "effect";
 import { BotNotices } from "../bots/bot-notices";
 import { agentInput } from "../shared/domain";
-import type { CoreServices } from "../shared/core-layer";
+import type { CoreServices } from "../app/core-layer";
 import { runnerOf } from "../shared/runner";
 import {
   PasswordManagers,

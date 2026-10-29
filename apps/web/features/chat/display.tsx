@@ -97,6 +97,8 @@ function Stats({ items }: { items: Stat[] }) {
   );
 }
 
+const numberFormat = new Intl.NumberFormat();
+
 const isNumber = (cell: string | number | undefined): cell is number =>
   Number.isFinite(cell);
 
@@ -110,8 +112,6 @@ function Table({
   const numeric = columns.map((_, index) =>
     rows.every((row) => isNumber(row[index])),
   );
-
-  const format = new Intl.NumberFormat();
 
   return (
     <div className="overflow-x-auto">
@@ -142,7 +142,7 @@ function Table({
                     numeric[index] && "text-right tabular-nums",
                   )}
                 >
-                  {isNumber(cell) ? format.format(cell) : cell}
+                  {isNumber(cell) ? numberFormat.format(cell) : cell}
                 </td>
               ))}
             </tr>
@@ -335,6 +335,8 @@ function Chart({ layouts }: { layouts: ChartLayout[] }) {
         }}
       >
         {layout.nodes.map((node, index) => (
+          // Nodes have no identity beyond their position in the layout.
+          // react-doctor-disable-next-line no-array-index-as-key
           <ChartNode key={index} node={node} id={`${clipPrefix}-${index}`} />
         ))}
         {hover && (

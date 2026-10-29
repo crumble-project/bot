@@ -294,19 +294,23 @@ const jobDocuments = (kind: string) => ({
 });
 
 // A delivery is stopped when its job is gone or was stopped after the delivery was queued.
+// A delivery whose job was stopped since it was queued is settled here, so it no longer keeps the job busy.
 const deliveryTarget = async (
   Jobs: JobsDoc,
   tx: Tx,
   chatId: ConversationId,
-  name: string,
-  stops: number,
+  reporter: ReporterTask<"wait" | "deliver">,
 ) => {
+  const { name, stops = 0 } = reporter.input;
   const state = await tx.doc(Jobs, chatId);
   const job = state.jobs[name];
 
-  return !job || (job.stops ?? 0) !== stops
-    ? { state, job, stopped: true as const }
-    : { state, job, stopped: false as const };
+  if (job && (job.stops ?? 0) === stops)
+    return { state, job, stopped: false as const };
+
+  settleDelivery(job, reporter.id);
+
+  return { state, job, stopped: true as const };
 };
 
 // Drops a delivery whose job was stopped since, and for an exclusive kind takes the screen in the same commit, so two
@@ -318,28 +322,24 @@ const jobReporterWait =
     runtime: ReporterRuntime,
     taskContext: Context,
   ): Promise<void> => {
-    const { name, stops = 0 } = reporter.input;
+    const { name } = reporter.input;
 
     for (;;) {
       let waiting = false;
 
       await runtime.commit(async (tx) => {
-        const { state, job, stopped } = await deliveryTarget(
+        const { state, stopped } = await deliveryTarget(
           kindState.Jobs,
           tx,
           runtime.conversationId,
-          name,
-          stops,
+          reporter,
         );
 
-        if (stopped) {
-          settleDelivery(job, reporter.id);
-
+        if (stopped)
           return {
             status: "terminal",
             outcome: { status: "completed", result: null },
           };
-        }
 
         if (kindState.options.exclusive) {
           if (state.holder && state.holder.name !== name) {
@@ -374,7 +374,7 @@ const admitDelivery = async (
   runtime: ReporterRuntime,
   taskContext: Context,
 ): Promise<boolean> => {
-  const { name, stops = 0 } = reporter.input;
+  const { name } = reporter.input;
   let admitted = false;
 
   await runtime.commit(async (tx) => {
@@ -382,12 +382,10 @@ const admitDelivery = async (
       kindState.Jobs,
       tx,
       runtime.conversationId,
-      name,
-      stops,
+      reporter,
     );
 
     if (stopped) {
-      settleDelivery(job, reporter.id);
       releaseHolder(state, name);
 
       return { status: "running", checkpoint: { phase: "report" } };

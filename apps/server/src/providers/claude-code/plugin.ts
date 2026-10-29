@@ -1,7 +1,7 @@
 import { createProvider, type Model } from "@earendil-works/pi-ai";
 import { join } from "node:path";
 import { chmodSync, mkdirSync } from "node:fs";
-import type { CrumblePlugin, ExternalAuth } from "../../app/plugins";
+import type { CrumblePlugin, ExternalAuth } from "../../plugins/plugins";
 import { CLAUDE_CODE_API, claudeCodeStreams } from "./adapter";
 import {
   catalogLabel,

@@ -10,7 +10,7 @@ import { computerUseTool } from "../bot-desktop/computer-use";
 import type { DesktopControlAccess } from "../bot-desktop/desktop-control";
 import type { Agent } from "../shared/domain";
 import { defineJobKind, type JobExtensions } from "./jobs";
-import type { CrumblePlugin } from "../app/plugins";
+import type { CrumblePlugin } from "../plugins/plugins";
 import type { Workspaces } from "../workspaces/workspace";
 
 export const DESKTOP_TOOL_NAME = "desktop";

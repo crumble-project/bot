@@ -1,17 +1,18 @@
 import { routes, apiKeyInput } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import { SecretRepository } from "../credentials/secret-repository";
-import type { CoreServices } from "../shared/core-layer";
 import type { Runner } from "../shared/runner";
 import { SettingsRepository } from "../shared/settings-repository";
 import { z } from "zod";
+
+type Services = SecretRepository | SettingsRepository;
 
 export const DEFAULT_PROVIDER = "web-search:default-provider";
 export const EXA_KEY = "web-search:exa-key";
 
 export function registerWebSearchRoutes(
   register: Register,
-  run: Runner<CoreServices>,
+  run: Runner<Services>,
 ) {
   const status = () => ({
     defaultProvider:

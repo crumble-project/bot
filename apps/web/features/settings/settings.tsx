@@ -515,16 +515,22 @@ const EXTERNAL_STATUS = {
   error: "Unavailable",
 } as const;
 
+function keyStatus(provider: Provider, managers: PasswordManager[]) {
+  if (!provider.passwordManager) return "Key saved";
+
+  const manager = managers.find((item) => item.id === provider.passwordManager);
+
+  return `Key in ${manager?.name ?? "a password manager"}`;
+}
+
 function status(provider: Provider, managers: PasswordManager[]) {
   if (provider.externalAuth)
     return EXTERNAL_STATUS[provider.externalAuth.status];
 
   if (provider.credentialType === "oauth") return "Signed in";
 
-  if (provider.credentialType === "api_key" && provider.passwordManager)
-    return `Key in ${managers.find((item) => item.id === provider.passwordManager)?.name ?? "a password manager"}`;
-
-  if (provider.credentialType === "api_key") return "Key saved";
+  if (provider.credentialType === "api_key")
+    return keyStatus(provider, managers);
 
   if (provider.configured) return "From environment";
 
@@ -547,6 +553,8 @@ function useProviderCredential(provider: Provider) {
   const [source, setSource] = useState<SecretSourceDraft>(EMPTY_SOURCE);
   const path = `/v1/providers/${encodeURIComponent(provider.provider)}`;
 
+  // `refreshProviders` invalidates the provider and model queries.
+  // react-doctor-disable-next-line query-mutation-missing-invalidation
   const save = useMutation({
     mutationFn: (body: ReturnType<typeof providerKeyBody>) =>
       body === null ? send(path, "DELETE") : send(path, "PUT", body),
@@ -692,16 +700,28 @@ function ProviderRow({
           managers={managers}
         />
       )}
-      {((credential.save.isError && !credential.editing) ||
-        provider.externalAuth) && (
-        <div className="flex flex-col gap-2 px-3 pb-3 pl-14">
-          {credential.save.isError && !credential.editing && (
-            <FieldError>{credential.save.error.message}</FieldError>
-          )}
-          {provider.externalAuth && (
-            <ExternalSignIn external={provider.externalAuth} />
-          )}
-        </div>
+      <ProviderNotes provider={provider} credential={credential} />
+    </div>
+  );
+}
+
+/** A failed save outside the key sheet, and how to sign in outside Crumble. */
+function ProviderNotes({
+  provider,
+  credential,
+}: {
+  provider: Provider;
+  credential: ProviderCredential;
+}) {
+  const failed = credential.save.isError && !credential.editing;
+
+  if (!failed && !provider.externalAuth) return null;
+
+  return (
+    <div className="flex flex-col gap-2 px-3 pb-3 pl-14">
+      {failed && <FieldError>{credential.save.error?.message}</FieldError>}
+      {provider.externalAuth && (
+        <ExternalSignIn external={provider.externalAuth} />
       )}
     </div>
   );

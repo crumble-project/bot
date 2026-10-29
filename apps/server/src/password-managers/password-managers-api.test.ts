@@ -14,7 +14,7 @@ import { Store } from "../../test/support/store";
 import { handleApiError } from "../app/api";
 import { contractApp } from "../contract/api-contract";
 import { passwordManagersResponse } from "../contract/api-responses";
-import type { CoreServices } from "../shared/core-layer";
+import type { CoreServices } from "../app/core-layer";
 import { runnerOf } from "../shared/runner";
 import { PasswordManagers } from "./password-manager";
 import { registerPasswordManagerRoutes } from "./password-managers-api";

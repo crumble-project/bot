@@ -12,8 +12,8 @@ import {
   secretSourceOf,
   type SecretSource,
 } from "../password-managers/secret-values";
-import type { PasswordManagerId } from "../password-managers/password-manager";
-import type { SecretReference } from "../password-managers/secret-references";
+import type { PasswordManagerId } from "../shared/domain";
+import type { SecretReference } from "../shared/domain";
 import { SecretBox } from "../shared/secret-box";
 import { nowIso } from "../shared/time";
 import {

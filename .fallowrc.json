@@ -21,6 +21,23 @@
   "ignoreUnresolvedImports": ["styled-system/*"],
   "ignoreFindings": ["apps/web/components/ui/**"],
   "ignoreExportsUsedInFile": true,
+  "rules": { "boundary-violation": "error" },
+  "boundaries": {
+    // A file joins the first zone it matches; tests boot the whole app, so they match first and stay unrestricted.
+    "zones": [
+      { "name": "tests", "patterns": ["apps/**/*.test.ts", "apps/**/*.test.tsx"] },
+      { "name": "app", "patterns": ["apps/server/src/app/**"] },
+      { "name": "shared", "patterns": ["apps/server/src/shared/**"] },
+      { "name": "contract", "patterns": ["apps/server/src/contract/**"] },
+      { "name": "features", "patterns": ["apps/server/src/**"] },
+      { "name": "web", "patterns": ["apps/web/**"] }
+    ],
+    "rules": [
+      { "from": "shared", "allow": [] },
+      { "from": "features", "allow": ["shared", "contract"] },
+      { "from": "web", "allow": ["contract"] }
+    ]
+  },
   "health": {
     "thresholdOverrides": [
       {

@@ -24,7 +24,7 @@ import { PasswordManagerRepository } from "../password-managers/password-manager
 import { SecretValues } from "../password-managers/secret-values";
 import { standaloneSignIns } from "../providers/provider-auth";
 import { ProviderCredentials } from "../providers/provider-credentials";
-import type { CoreServices } from "../shared/core-layer";
+import type { CoreServices } from "./core-layer";
 import { runnerOf } from "../shared/runner";
 import { ScriptRuns } from "../schedules/script-runs";
 import { ScriptRunRepository } from "../schedules/script-run-repository";
@@ -146,7 +146,7 @@ const req = (app: any, path: string, init: TestRequestInit = {}) =>
     },
   });
 
-describe("HTTP API", () => {
+describe("HTTP API for bots, chats, and activity", () => {
   test("reports whether the server can run coding jobs", async () => {
     const { app, store, runtime } = setup();
     const service = standaloneBots(store, runtime);
@@ -625,7 +625,9 @@ describe("HTTP API", () => {
     expect(text).toContain('"lastMessage":"hello sidebar"');
     await reader.cancel();
   });
+});
 
+describe("HTTP API for MCP servers, skills, and memory", () => {
   test("describes how each MCP server signs in", async () => {
     const { app } = setup();
 
@@ -1081,7 +1083,9 @@ describe("HTTP API", () => {
     );
     store.close();
   });
+});
 
+describe("HTTP API for script tasks and schedules", () => {
   test("owner script tasks require coding jobs and workspaces on create and update", async () => {
     const { app, store, scheduler } = setup({ coding: true });
     const plain = store.createAgent(agentInput("Plain"));

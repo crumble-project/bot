@@ -8,10 +8,8 @@ import {
 } from "../../test/support/fake-password-manager";
 import { PasswordManagers } from "./password-manager";
 import { PasswordManagerRepository } from "./password-manager-repository";
-import {
-  checkSecretReference,
-  type SecretReference,
-} from "./secret-references";
+import { checkSecretReference } from "./secret-references";
+import type { SecretReference } from "../shared/domain";
 import { SecretValues } from "./secret-values";
 
 const REFERENCE = "op://Vault/Linear/token";

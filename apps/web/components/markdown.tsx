@@ -36,15 +36,23 @@ function Diagram({ source }: { source: string }) {
           links: false,
           images: false,
           zoom: "auto",
-          onError: () => setFailed(true),
+          onError: () => {
+            if (!stopped) setFailed(true);
+          },
         });
 
-        if (mounted.error) setFailed(true);
+        if (stopped) {
+          mounted.destroy();
 
-        if (stopped) mounted.destroy();
-        else destroy = () => mounted.destroy();
+          return;
+        }
+
+        if (mounted.error) setFailed(true);
+        destroy = () => mounted.destroy();
       })
-      .catch(() => setFailed(true));
+      .catch(() => {
+        if (!stopped) setFailed(true);
+      });
 
     return () => {
       stopped = true;

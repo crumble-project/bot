@@ -12,15 +12,9 @@ import {
 import { dirname, join } from "node:path";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { count } from "drizzle-orm";
+import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 import { Context, Effect, Layer } from "effect";
 import { ProductDatabase } from "./product-database";
-import {
-  agentCredentials,
-  credentialAuthorities,
-  secrets,
-} from "../credentials/schema";
-import { passwordManagers } from "../password-managers/schema";
-import { providerCredentials } from "../providers/schema";
 
 export const MASTER_KEY_VARIABLE = "CRUMBLE_MASTER_KEY";
 
@@ -196,8 +190,10 @@ export class SecretBox extends Context.Service<
     readonly decryptStored: (packed: string | null) => string;
   }
 >()("crumble/shared/SecretBox") {
+  /** `encrypted` holds the tables with values sealed by this key; any rows there stop a new key from replacing a lost one. */
   static layer(
     dataDir: string,
+    encrypted: readonly SQLiteTable[],
     masterKeyValue: string | undefined = process.env[MASTER_KEY_VARIABLE],
   ) {
     return Layer.effect(
@@ -222,19 +218,12 @@ export class SecretBox extends Context.Service<
           );
 
         if (!keyExists && !wrappedExists) {
-          const encrypted = yield* Effect.forEach(
-            [
-              secrets,
-              providerCredentials,
-              agentCredentials,
-              credentialAuthorities,
-              passwordManagers,
-            ],
-            (table) => db.select({ n: count() }).from(table),
+          const counts = yield* Effect.forEach(encrypted, (table) =>
+            db.select({ n: count() }).from(table),
           ).pipe(Effect.orDie);
 
           // A new key cannot read what an old one encrypted; refusing keeps those values recoverable.
-          if (encrypted.some(([row]) => (row?.n ?? 0) > 0))
+          if (counts.some(([row]) => (row?.n ?? 0) > 0))
             return yield* Effect.die(
               new Error(
                 "Credential encryption key is missing; refusing to overwrite it",

@@ -321,6 +321,8 @@ function useGroupChatSession(groupId: string) {
 
   useConfirmed(groupId, live);
 
+  // The live transcript reports the stopped turn.
+  // react-doctor-disable-next-line query-mutation-missing-invalidation
   const stop = useMutation({ mutationFn: () => send(`${path}/stop`, "POST") });
 
   return {
@@ -572,6 +574,7 @@ export function GroupForm({ group }: { group?: GroupChat }) {
   const [memberIds, setMemberIds] = useState<string[]>(group?.memberIds ?? []);
 
   const valid = isValidGroup(name, memberIds);
+  const selected = new Set(memberIds);
 
   const save = useMutation({
     mutationFn: () => {
@@ -641,7 +644,7 @@ export function GroupForm({ group }: { group?: GroupChat }) {
               <GroupMemberField
                 key={bot.id}
                 bot={bot}
-                on={memberIds.includes(bot.id)}
+                on={selected.has(bot.id)}
                 full={memberIds.length >= 6}
                 onToggle={(next) => toggle(bot, next)}
               />

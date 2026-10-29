@@ -5,7 +5,7 @@ import type {
   CredentialStore,
 } from "@earendil-works/pi-ai";
 import { Context, Effect, Layer, Redacted } from "effect";
-import type { SecretReference } from "../password-managers/secret-references";
+import type { SecretReference } from "../shared/domain";
 import { SecretValues } from "../password-managers/secret-values";
 import { runnerOf, type Runner } from "../shared/runner";
 import { ProviderCredentialRepository } from "./provider-credential-repository";

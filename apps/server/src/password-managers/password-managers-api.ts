@@ -4,9 +4,12 @@ import type { Register } from "../contract/route";
 import { InvalidInput, Unavailable } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import { nowIso } from "../shared/time";
-import { PasswordManagers, type PasswordManagerId } from "./password-manager";
+import { PasswordManagers } from "./password-manager";
 import { PasswordManagerRepository } from "./password-manager-repository";
-import { passwordManagerIdInput } from "./secret-references";
+import {
+  passwordManagerIdInput,
+  type PasswordManagerId,
+} from "../shared/domain";
 import { SecretValues } from "./secret-values";
 
 type PasswordManagerServices =

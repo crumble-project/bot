@@ -9,10 +9,8 @@ import {
   Schema,
   type Scope,
 } from "effect";
+import type { PasswordManagerId } from "../shared/domain";
 import { InvalidInput } from "../shared/errors";
-
-/** Settings key of a password manager: never rename. */
-export type PasswordManagerId = "1password" | "bitwarden";
 
 /** How long a sign-in or read may take; the 1Password SDK otherwise waits minutes when the network is gone. */
 export const PASSWORD_MANAGER_TIMEOUT = "10 seconds";

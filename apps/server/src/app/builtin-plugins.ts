@@ -3,7 +3,7 @@ import { codingPlugin } from "../jobs/coding";
 import type { CredentialsAccess } from "../credentials/credentials";
 import { desktopPlugin } from "../jobs/desktop";
 import type { DesktopControlAccess } from "../bot-desktop/desktop-control";
-import type { CrumblePlugin } from "./plugins";
+import type { CrumblePlugin } from "../plugins/plugins";
 import { meliousPlugin } from "../providers/providers";
 import type { Workspaces } from "../workspaces/workspace";
 import { webSearchPlugin } from "../web-search/mixed";

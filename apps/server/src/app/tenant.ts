@@ -55,7 +55,7 @@ import {
 import { credentialsAccess } from "../credentials/credentials";
 import { credentialAuthoritiesAccess } from "../credentials/credential-authority";
 import { credentialProxy } from "../credentials/credential-proxy";
-import { coreLayer, type CoreServices } from "../shared/core-layer";
+import { coreLayer, type CoreServices } from "./core-layer";
 import { runnerOf } from "../shared/runner";
 import { builtinPlugins } from "./builtin-plugins";
 import { jobAnswers, jobTools } from "./plugin-layers";
@@ -65,7 +65,7 @@ import {
   pluginJobKinds,
   pluginProviders,
   Plugins,
-} from "./plugins";
+} from "../plugins/plugins";
 import { BotWorkspaces } from "../workspaces/workspace";
 import { desktopKeepAwake } from "../bot-desktop/keep-awake";
 import { AgentRepository } from "../bots/agent-repository";

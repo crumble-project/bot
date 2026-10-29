@@ -18,7 +18,7 @@ import {
 } from "./catalog";
 import { claudeCodePlugin, claudeCodeOptions } from "./plugin";
 import { childEnv, claudeCodeStatus } from "./setup";
-import { pluginProviders } from "../../app/plugins";
+import { pluginProviders } from "../../plugins/plugins";
 import { standaloneSignIns } from "../provider-auth";
 import type { AgentRuntime } from "../../bots/runtime";
 import { standaloneScheduler } from "../../schedules/scheduler";

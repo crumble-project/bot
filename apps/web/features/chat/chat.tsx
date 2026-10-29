@@ -142,9 +142,10 @@ function useChatJobs(botId: string, messages: Message[]) {
 function mentionableBots(bot: Bot, bots: Bot[]) {
   if (!bot.tools.includes("delegate")) return [];
 
+  const delegates = new Set(bot.delegates);
+
   return bots.filter(
-    (other) =>
-      other.enabled && other.id !== bot.id && bot.delegates.includes(other.id),
+    (other) => other.enabled && other.id !== bot.id && delegates.has(other.id),
   );
 }
 
@@ -433,6 +434,8 @@ function useChatDelivery(botId: string) {
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   }));
 
+  // The live transcript reports the stopped turn.
+  // react-doctor-disable-next-line query-mutation-missing-invalidation
   const stop = useMutation({ mutationFn: () => send(`${path}/abort`, "POST") });
 
   return { outgoing, sending, stop };
