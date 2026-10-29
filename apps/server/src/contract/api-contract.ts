@@ -11,7 +11,10 @@ import { attachmentInput, MAX_ATTACHMENTS } from "../shared/attachments";
 import * as response from "./api-responses";
 import { body, define, empty, error, json } from "./route";
 import { pushRoutes } from "../push/push-contract";
-import { passwordManagerIdInput } from "../password-managers/secret-references";
+import {
+  passwordManagerIdInput,
+  secretReferenceInput,
+} from "../password-managers/secret-references";
 
 export const memoryInput = z.object({
   content: z.string().trim().min(1).max(32000),
@@ -86,9 +89,15 @@ export const activityInput = z.object({
   cursor: z.string().min(1).max(8000).optional(),
 });
 
-export const providerKeyInput = z.object({
+export const apiKeyInput = z.object({
   apiKey: z.string().trim().min(1).max(16000),
 });
+
+/** A provider's API key, or where to read it from a password manager. Strict, so a body mixing the two matches neither. */
+export const providerKeyInput = z.xor([
+  apiKeyInput.strict(),
+  secretReferenceInput.strict(),
+]);
 
 /** Write-only: the token never appears in a response. */
 export const passwordManagerTokenInput = z.object({
@@ -219,7 +228,7 @@ export const routes = {
     method: "put",
     path: "/v1/web-search/exa-key",
     operationId: "setExaKey",
-    request: { body: body(providerKeyInput) },
+    request: { body: body(apiKeyInput) },
     responses: { 200: json(z.object({ exaKeyConfigured: z.boolean() })) },
   }),
   deleteExaKey: define({
@@ -893,6 +902,8 @@ export const routes = {
     method: "put",
     path: "/v1/providers/{provider}",
     operationId: "putProviderKey",
+    description:
+      "Saves the provider's API key, or a password manager reference to read it from. A reference is read once to check it; 400 when it can't be read, keeping the previous credential.",
     request: {
       params: z.object({ provider: z.string() }),
       body: body(providerKeyInput),

@@ -2354,6 +2354,25 @@
               null
             ]
           },
+          "passwordManager": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "1password",
+              "bitwarden",
+              null
+            ],
+            "description": "The password manager the saved API key is read from; null for a credential stored in Crumble."
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where in `passwordManager` the API key is read from."
+          },
           "activeLoginId": {
             "type": [
               "string",
@@ -2370,6 +2389,8 @@
           "configured",
           "authMethods",
           "credentialType",
+          "passwordManager",
+          "reference",
           "activeLoginId",
           "externalAuth"
         ]
@@ -14092,6 +14113,7 @@
     "/v1/providers/{provider}": {
       "put": {
         "operationId": "putProviderKey",
+        "description": "Saves the provider's API key, or a password manager reference to read it from. A reference is read once to check it; 400 when it can't be read, keeping the previous credential.",
         "security": [
           {
             "BearerAuth": []
@@ -14115,16 +14137,43 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "apiKey": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16000
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "apiKey": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16000
+                      }
+                    },
+                    "required": [
+                      "apiKey"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "passwordManager": {
+                        "type": "string",
+                        "enum": [
+                          "1password",
+                          "bitwarden"
+                        ]
+                      },
+                      "reference": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      }
+                    },
+                    "required": [
+                      "passwordManager",
+                      "reference"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "apiKey"
                 ]
               }
             }

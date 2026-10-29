@@ -4,6 +4,7 @@ import { Context, Effect, Layer, Redacted } from "effect";
 import { z } from "zod";
 import { SecretRepository } from "../credentials/secret-repository";
 import type { PasswordManagerId } from "../password-managers/password-manager";
+import type { SecretReference } from "../password-managers/secret-references";
 import { secretSourceOf } from "../password-managers/secret-values";
 import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
@@ -36,6 +37,12 @@ export type ProviderCredentialSource =
       readonly reference: string;
     };
 
+/** A saved credential's metadata, with the password manager reference an API key is read from. */
+export type ProviderCredentialInfo = CredentialInfo & {
+  passwordManager: PasswordManagerId | null;
+  reference: string | null;
+};
+
 /** Each model provider's sign-in or API key, encrypted at rest. */
 export class ProviderCredentialRepository extends Context.Service<
   ProviderCredentialRepository,
@@ -47,9 +54,14 @@ export class ProviderCredentialRepository extends Context.Service<
       providerId: string,
       credential: Credential,
     ) => Effect.Effect<void>;
+    /** Reads the API key from a password manager, replacing any credential stored in Crumble. */
+    readonly setReference: (
+      providerId: string,
+      source: SecretReference,
+    ) => Effect.Effect<void>;
     readonly delete: (providerId: string) => Effect.Effect<boolean>;
     /** Metadata only: listing never decrypts a credential. */
-    readonly list: Effect.Effect<CredentialInfo[]>;
+    readonly list: Effect.Effect<ProviderCredentialInfo[]>;
     /** Moves API keys saved before typed credentials into the provider table; MCP keys never match a provider ID. */
     readonly migrateApiKeys: (
       providerIds: readonly string[],
@@ -111,6 +123,25 @@ export class ProviderCredentialRepository extends Context.Service<
           });
       }, Effect.orDie);
 
+      const setReference = Effect.fn(
+        "ProviderCredentialRepository.setReference",
+      )(function* (providerId: string, source: SecretReference) {
+        const row = {
+          type: "api_key" as const,
+          value: null,
+          passwordManager: source.passwordManager,
+          reference: source.reference,
+        };
+
+        yield* db
+          .insert(providerCredentials)
+          .values({ provider: providerId, ...row })
+          .onConflictDoUpdate({
+            target: providerCredentials.provider,
+            set: row,
+          });
+      }, Effect.orDie);
+
       const remove = Effect.fn("ProviderCredentialRepository.delete")(
         function* (providerId: string) {
           const deleted = yield* db
@@ -127,6 +158,8 @@ export class ProviderCredentialRepository extends Context.Service<
         .select({
           providerId: providerCredentials.provider,
           type: providerCredentials.type,
+          passwordManager: providerCredentials.passwordManager,
+          reference: providerCredentials.reference,
         })
         .from(providerCredentials)
         .orderBy(asc(providerCredentials.provider))
@@ -160,6 +193,7 @@ export class ProviderCredentialRepository extends Context.Service<
       return ProviderCredentialRepository.of({
         get,
         set,
+        setReference,
         delete: remove,
         list,
         migrateApiKeys,

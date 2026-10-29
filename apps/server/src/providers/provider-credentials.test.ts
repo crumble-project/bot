@@ -95,3 +95,34 @@ test("saving a key replaces the reference without asking the password manager", 
     key: "sk-typed",
   });
 });
+
+test("replacing or deleting a reference forgets its cached key", async () => {
+  const state = fakePasswordManager({
+    [REFERENCE]: "sk-vault",
+    "op://Vault/OpenAI/other": "sk-other",
+  });
+
+  const credentials = setup(state);
+
+  const source = {
+    passwordManager: "1password",
+    reference: REFERENCE,
+  } as const;
+
+  await credentials.read("openai");
+  await credentials.read("openai");
+  expect(state.reads).toBe(1);
+
+  await credentials.setReference("openai", {
+    ...source,
+    reference: "op://Vault/OpenAI/other",
+  });
+  await credentials.setReference("openai", source);
+  await credentials.read("openai");
+  expect(state.reads).toBe(2);
+
+  await credentials.delete("openai");
+  await credentials.setReference("openai", source);
+  await credentials.read("openai");
+  expect(state.reads).toBe(3);
+});

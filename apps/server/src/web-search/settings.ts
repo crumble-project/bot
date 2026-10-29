@@ -1,4 +1,4 @@
-import { routes, providerKeyInput } from "../contract/api-contract";
+import { routes, apiKeyInput } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import { SecretRepository } from "../credentials/secret-repository";
 import type { CoreServices } from "../shared/core-layer";
@@ -39,7 +39,7 @@ export function registerWebSearchRoutes(
     return c.json(status(), 200);
   });
   register(routes.setExaKey, async (c) => {
-    const input = providerKeyInput.parse(await c.req.json());
+    const input = apiKeyInput.parse(await c.req.json());
     run.runSync(SecretRepository.use((r) => r.set(EXA_KEY, input.apiKey)));
 
     return c.json({ exaKeyConfigured: true }, 200);

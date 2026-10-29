@@ -8,7 +8,20 @@ import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { createAPI, type ApiOptions } from "./api";
 import { memoryResponse } from "../contract/api-responses";
-import { Effect } from "effect";
+import { Context, Effect, Exit, Layer, Redacted, Scope } from "effect";
+import {
+  FAKE_TOKEN,
+  fakePasswordManager,
+  fakeVendor,
+  type FakePasswordManager,
+} from "../../test/support/fake-password-manager";
+import { PasswordManagers } from "../password-managers/password-manager";
+import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
+import { SecretValues } from "../password-managers/secret-values";
+import { standaloneSignIns } from "../providers/provider-auth";
+import { ProviderCredentials } from "../providers/provider-credentials";
+import type { CoreServices } from "../shared/core-layer";
+import { runnerOf } from "../shared/runner";
 import { ScriptRuns } from "../schedules/script-runs";
 import { ScriptRunRepository } from "../schedules/script-run-repository";
 import {
@@ -1610,5 +1623,136 @@ describe("job answer notifications", () => {
         createdAt: expect.any(String),
       },
     ]);
+  });
+});
+
+describe("provider API keys from a password manager", () => {
+  const REFERENCE = "op://Vault/OpenAI/key";
+
+  const reference = {
+    passwordManager: "1password",
+    reference: REFERENCE,
+  } as const;
+
+  /** The API with provider sign-ins over a fake 1Password, connected with its token. */
+  function vaultSetup(state: FakePasswordManager) {
+    const { store, service, scheduler } = setup();
+    const core = store.run(Effect.context<CoreServices>());
+    const scope = Scope.makeUnsafe();
+
+    const vault = Effect.runSync(
+      Layer.buildWithScope(
+        ProviderCredentials.layer.pipe(
+          Layer.provideMerge(
+            SecretValues.layer.pipe(
+              Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
+            ),
+          ),
+          Layer.provide(Layer.succeedContext(core)),
+        ),
+        scope,
+      ),
+    );
+
+    store.run(
+      PasswordManagerRepository.use((repository) =>
+        repository.save("1password", Redacted.make(FAKE_TOKEN), "t"),
+      ),
+    );
+
+    const providerAuth = standaloneSignIns(
+      runnerOf(Context.merge(core, vault)),
+    );
+
+    const app = createAPI(service, scheduler, token, undefined, {
+      providerAuth,
+    });
+
+    return {
+      app,
+      credentials: Context.get(vault, ProviderCredentials),
+      put: (
+        body:
+          | { apiKey: string }
+          | typeof reference
+          | ({ apiKey: string } & typeof reference),
+      ) =>
+        req(app, "/v1/providers/openai", {
+          method: "PUT",
+          body: JSON.stringify(body),
+        }),
+      openai: async () =>
+        (await req(app, "/v1/providers").then((r: Response) => r.json())).find(
+          (provider: { provider: string }) => provider.provider === "openai",
+        ),
+      close: () => {
+        Effect.runSync(Scope.close(scope, Exit.void));
+        store.close();
+      },
+    };
+  }
+
+  test("a reference is stored and the model's key is read from the password manager", async () => {
+    const api = vaultSetup(fakePasswordManager({ [REFERENCE]: "sk-vault" }));
+
+    expect((await api.put(reference)).status).toBe(200);
+    expect(await api.openai()).toMatchObject({
+      credentialType: "api_key",
+      passwordManager: "1password",
+      reference: REFERENCE,
+    });
+    expect(await api.credentials.read("openai")).toEqual({
+      type: "api_key",
+      key: "sk-vault",
+    });
+    api.close();
+  });
+
+  test("a reference that can't be read answers 400 and keeps the previous key", async () => {
+    const state = fakePasswordManager();
+    const api = vaultSetup(state);
+
+    await api.put({ apiKey: "sk-stored" });
+    state.mode = "unreachable";
+
+    const response = await api.put(reference);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "Fake could not be reached",
+    });
+    expect(await api.openai()).toMatchObject({
+      passwordManager: null,
+      reference: null,
+    });
+    expect(await api.credentials.read("openai")).toEqual({
+      type: "api_key",
+      key: "sk-stored",
+    });
+    api.close();
+  });
+
+  test("a body with both a key and a reference is rejected, even an empty key", async () => {
+    const api = vaultSetup(fakePasswordManager({ [REFERENCE]: "sk-vault" }));
+
+    for (const apiKey of ["sk-typed", ""])
+      expect((await api.put({ apiKey, ...reference })).status).toBe(400);
+
+    expect(await api.openai()).toMatchObject({ credentialType: null });
+    api.close();
+  });
+
+  test("the Exa key route rejects a reference", async () => {
+    const api = vaultSetup(fakePasswordManager({ [REFERENCE]: "sk-vault" }));
+
+    expect(
+      (
+        await req(api.app, "/v1/web-search/exa-key", {
+          method: "PUT",
+          body: JSON.stringify(reference),
+        })
+      ).status,
+    ).toBe(400);
+    api.close();
   });
 });

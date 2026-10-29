@@ -16,6 +16,16 @@ All provider settings are in the web app under **Settings** > **Providers**.
 
 To replace or remove a saved key, open the provider's **More** menu.
 
+### Read the key from a password manager
+
+Instead of storing the key in Crumble, you can read it from 1Password or Bitwarden Secrets Manager. The web app doesn't offer this yet; use the API. Connect the password manager first, as described in [Credentials](/concepts/credentials#read-the-value-from-a-password-manager), then send the reference instead of `apiKey` to `PUT /v1/providers/{provider}`:
+
+```json
+{ "passwordManager": "1password", "reference": "op://Vault/OpenAI/key" }
+```
+
+Crumble reads the reference once to check it and keeps the previous key if the reference can't be read. A model call that can't read the key fails with a message that names the provider and the password manager's error.
+
 ## Sign in with a provider account
 
 Some providers let you sign in with an existing account instead of a key, for example ChatGPT, Codex, Claude, or GitHub Copilot.

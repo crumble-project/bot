@@ -634,6 +634,13 @@ export const providerResponse = z
     authMethods: z.array(loginMethod),
     /** The provider's saved credential; ambient credentials have none. */
     credentialType: authType.nullable(),
+    passwordManager: z.enum(["1password", "bitwarden"]).nullable().openapi({
+      description:
+        "The password manager the saved API key is read from; null for a credential stored in Crumble.",
+    }),
+    reference: z.string().nullable().openapi({
+      description: "Where in `passwordManager` the API key is read from.",
+    }),
     activeLoginId: z.string().nullable(),
     /** Set for providers whose sign-in happens outside Crumble; they have no `authMethods`. */
     externalAuth: externalAuthResponse.nullable(),
