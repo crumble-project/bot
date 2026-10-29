@@ -32,11 +32,19 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  SecretSourceField,
+  referenceOf,
+  sourceDraftOf,
+  useConnectedPasswordManagers,
+  type SecretSourceDraft,
+} from "@/components/secret-source-field";
+import {
   type Bot,
   type Credential,
   type CredentialRequest,
   type Credentials,
   type CredentialUse,
+  type PasswordManagerId,
   api,
   botsQuery,
   call,
@@ -233,14 +241,25 @@ function CredentialRow({
           {credential.hosts.join(", ")}
         </span>
       </button>
-      <span
-        className="hidden shrink-0 text-xs text-muted-foreground sm:block"
-        title={credential.lastUsedAt ? when(credential.lastUsedAt) : undefined}
-      >
-        {credential.lastUsedAt
-          ? `Used ${ago(credential.lastUsedAt)}`
-          : "Never used"}
-      </span>
+      {credential.lastError ? (
+        <span
+          className="hidden max-w-64 shrink truncate text-xs text-destructive sm:block"
+          title={credential.lastError}
+        >
+          {credential.lastError}
+        </span>
+      ) : (
+        <span
+          className="hidden shrink-0 text-xs text-muted-foreground sm:block"
+          title={
+            credential.lastUsedAt ? when(credential.lastUsedAt) : undefined
+          }
+        >
+          {credential.lastUsedAt
+            ? `Used ${ago(credential.lastUsedAt)}`
+            : "Never used"}
+        </span>
+      )}
       <RowMenu>
         <DropdownMenuItem onClick={onUses}>
           <IconHistory />
@@ -519,20 +538,43 @@ function DeleteCredentialDialog({
   );
 }
 
+type CredentialBody = {
+  hosts: string[];
+  value?: string;
+  reference?: { passwordManager: PasswordManagerId; reference: string };
+};
+
+/** Sends the source only when it changes: a typed value, or a reference other than the saved one. */
+function credentialBody(
+  draft: { hosts: string; source: SecretSourceDraft },
+  existing: Credential | null,
+): CredentialBody {
+  const reference = referenceOf(draft.source);
+
+  const unchanged =
+    reference?.passwordManager === existing?.passwordManager &&
+    reference?.reference === existing?.reference;
+
+  return {
+    hosts: hostList(draft.hosts),
+    ...(draft.source.kind === "value" &&
+      draft.source.value && { value: draft.source.value }),
+    ...(reference && !unchanged && { reference }),
+  };
+}
+
 function useSaveCredential(
   botId: string,
-  draft: { name: string; hosts: string; value: string },
+  draft: { name: string; hosts: string; source: SecretSourceDraft },
+  existing: Credential | null,
   onClose: () => void,
 ) {
   return useMutation({
     mutationFn: () =>
-      call<Credential, { hosts: string[]; value?: string }>(
+      call<Credential, CredentialBody>(
         credentialPath(botId, draft.name),
         "PUT",
-        {
-          hosts: hostList(draft.hosts),
-          ...(draft.value && { value: draft.value }),
-        },
+        credentialBody(draft, existing),
       ),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
@@ -559,14 +601,19 @@ function credentialDraft(editing: Editing) {
 function credentialReady(
   name: string,
   hosts: string,
-  value: string,
+  source: SecretSourceDraft,
   existing: Credential | null,
   pending: boolean,
 ) {
+  const hasSource =
+    source.kind === "value"
+      ? source.value !== ""
+      : referenceOf(source) !== null;
+
   return (
     NAME.test(name) &&
     hostList(hosts).length > 0 &&
-    (existing !== null || value !== "") &&
+    (existing !== null || hasSource) &&
     !pending
   );
 }
@@ -587,11 +634,21 @@ function CredentialDialog({
   const [owner, setOwner] = useState(botId ?? bots[0]?.id ?? "");
   const [name, setName] = useState(initial.name);
   const [hosts, setHosts] = useState(initial.hosts);
-  const [value, setValue] = useState("");
 
-  const save = useSaveCredential(owner, { name, hosts, value }, onClose);
+  const [source, setSource] = useState(() =>
+    sourceDraftOf(existing?.passwordManager, existing?.reference),
+  );
 
-  const ready = credentialReady(name, hosts, value, existing, save.isPending);
+  const connected = useConnectedPasswordManagers();
+
+  const save = useSaveCredential(
+    owner,
+    { name, hosts, source },
+    existing,
+    onClose,
+  );
+
+  const ready = credentialReady(name, hosts, source, existing, save.isPending);
 
   return (
     <EditorSheet
@@ -615,11 +672,22 @@ function CredentialDialog({
       <CredentialFields
         locked={editing.kind !== "new"}
         proposed={request !== null}
-        replacing={existing !== null}
-        draft={{ name, hosts, value }}
+        draft={{ name, hosts }}
         onName={setName}
         onHosts={setHosts}
-        onValue={setValue}
+      />
+      <SecretSourceField
+        id="credential-value"
+        label="Value"
+        value={source}
+        onChange={setSource}
+        connected={connected}
+        valuePlaceholder={
+          existing?.passwordManager === null
+            ? "Keep the saved value"
+            : undefined
+        }
+        valueDescription="Stored encrypted and never shown again."
       />
     </EditorSheet>
   );
@@ -628,19 +696,15 @@ function CredentialDialog({
 function CredentialFields({
   locked,
   proposed,
-  replacing,
   draft,
   onName,
   onHosts,
-  onValue,
 }: {
   locked: boolean;
   proposed: boolean;
-  replacing: boolean;
-  draft: { name: string; hosts: string; value: string };
+  draft: { name: string; hosts: string };
   onName: (name: string) => void;
   onHosts: (hosts: string) => void;
-  onValue: (value: string) => void;
 }) {
   const nameInvalid = draft.name !== "" && !NAME.test(draft.name);
 
@@ -674,20 +738,6 @@ function CredentialFields({
           {proposed
             ? "The bot proposed these. The value goes only to them, so check they belong to the service."
             : "The value goes only to these hosts. *.example.com covers every subdomain."}
-        </FieldDescription>
-      </Field>
-      <Field>
-        <FieldLabel htmlFor="credential-value">Value</FieldLabel>
-        <Input
-          id="credential-value"
-          type="password"
-          autoComplete="off"
-          placeholder={replacing ? "Keep the saved value" : undefined}
-          value={draft.value}
-          onChange={(event) => onValue(event.target.value)}
-        />
-        <FieldDescription>
-          Stored encrypted and never shown again.
         </FieldDescription>
       </Field>
     </>

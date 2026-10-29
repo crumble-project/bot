@@ -23,10 +23,10 @@ The value never appears in the transcript, notices, or logs.
 
 ## Read the value from a password manager
 
-Instead of storing the value in Crumble, a credential can point at a secret in 1Password or Bitwarden Secrets Manager. The web app can connect a password manager, but saving a credential as a reference still needs the API.
+Instead of storing the value in Crumble, a credential can point at a secret in 1Password or Bitwarden Secrets Manager.
 
 1. Open **Settings** > **Password managers**, select **Connect** next to the password manager, and paste a 1Password service account token or a Bitwarden access token. Crumble signs in once to check it. Over the API, send `{"token": "..."}` to `PUT /v1/password-managers/{id}`, where `{id}` is `1password` or `bitwarden`.
-2. Save the credential with `PUT /v1/agents/{id}/credentials/{name}` and send `reference` instead of `value`:
+2. In the credential's editor, select the password manager above **Value** and paste the reference: `op://vault/item/field` for 1Password, or the secret's ID for Bitwarden. Over the API, send `reference` instead of `value` to `PUT /v1/agents/{id}/credentials/{name}`:
 
    ```json
    {
@@ -38,10 +38,8 @@ Instead of storing the value in Crumble, a credential can point at a secret in 1
    }
    ```
 
-   A Bitwarden reference is the secret's ID.
-
 Crumble reads the reference once when you save it and rejects the save if it can't be read. After that, it reads the value only when a request uses the credential, and keeps it in memory for an hour. If the password manager can't be reached, a value read in the last two hours is still used.
 
-When the value can't be read, the server doesn't send the request and records why in the credential's uses. The credential's `lastError` shows the newest such error.
+When the value can't be read, the server doesn't send the request and records why in the credential's uses. The credential's row shows the newest such error, and the API returns it as `lastError`.
 
 A password manager can't be disconnected while a credential still reads from it; **Settings** > **Password managers** shows how many secrets use it. Save a value instead, or delete the credential, first.

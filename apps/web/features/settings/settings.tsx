@@ -40,6 +40,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
+  type PasswordManager,
   type Provider,
   capabilitiesQuery,
   clearUserData,
@@ -54,7 +55,14 @@ import {
   useSession,
 } from "@/lib/auth-client";
 import { clearLiveStreams, notifications } from "@/lib/live";
-import { CopyButton, SecretForm } from "@/components/form-fields";
+import { CopyButton, EditorSheet } from "@/components/form-fields";
+import {
+  EMPTY_SOURCE,
+  SecretSourceField,
+  referenceOf,
+  useConnectedPasswordManagers,
+  type SecretSourceDraft,
+} from "@/components/secret-source-field";
 import { LoginDialog, refreshProviders } from "./provider-login";
 import {
   MobileSidebarTrigger,
@@ -507,11 +515,14 @@ const EXTERNAL_STATUS = {
   error: "Unavailable",
 } as const;
 
-function status(provider: Provider) {
+function status(provider: Provider, managers: PasswordManager[]) {
   if (provider.externalAuth)
     return EXTERNAL_STATUS[provider.externalAuth.status];
 
   if (provider.credentialType === "oauth") return "Signed in";
+
+  if (provider.credentialType === "api_key" && provider.passwordManager)
+    return `Key in ${managers.find((item) => item.id === provider.passwordManager)?.name ?? "a password manager"}`;
 
   if (provider.credentialType === "api_key") return "Key saved";
 
@@ -520,16 +531,23 @@ function status(provider: Provider) {
   return provider.activeLoginId ? "Signing in…" : null;
 }
 
+/** The key to save, or null to remove the saved credential. */
+const providerKeyBody = (source: SecretSourceDraft) =>
+  referenceOf(source) ??
+  (source.kind === "value" && source.value.trim()
+    ? { apiKey: source.value.trim() }
+    : null);
+
 function useProviderCredential(provider: Provider) {
   const [editing, setEditing] = useState(false);
-  const [key, setKey] = useState("");
+  const [source, setSource] = useState<SecretSourceDraft>(EMPTY_SOURCE);
   const path = `/v1/providers/${encodeURIComponent(provider.provider)}`;
 
   const save = useMutation({
-    mutationFn: (apiKey: string | null) =>
-      apiKey === null ? send(path, "DELETE") : send(path, "PUT", { apiKey }),
+    mutationFn: (body: ReturnType<typeof providerKeyBody>) =>
+      body === null ? send(path, "DELETE") : send(path, "PUT", body),
     onSuccess: async () => {
-      setKey("");
+      setSource(EMPTY_SOURCE);
       setEditing(false);
       await refreshProviders();
       // Drop the submitted key from the mutation state.
@@ -537,7 +555,7 @@ function useProviderCredential(provider: Provider) {
     },
   });
 
-  return { editing, setEditing, key, setKey, save };
+  return { editing, setEditing, source, setSource, save };
 }
 
 type ProviderCredential = ReturnType<typeof useProviderCredential>;
@@ -638,7 +656,8 @@ function ProviderRow({
 }) {
   const credential = useProviderCredential(provider);
   const oauth = provider.authMethods.find((method) => method.type === "oauth");
-  const label = status(provider);
+  const managers = useConnectedPasswordManagers();
+  const label = status(provider, managers);
 
   return (
     <div className="flex flex-col">
@@ -662,24 +681,17 @@ function ProviderRow({
           onSignIn={onSignIn}
         />
       </SettingRow>
-      {(credential.editing ||
-        credential.save.isError ||
+      {credential.editing && (
+        <ProviderKeySheet
+          provider={provider}
+          credential={credential}
+          managers={managers}
+        />
+      )}
+      {((credential.save.isError && !credential.editing) ||
         provider.externalAuth) && (
         <div className="flex flex-col gap-2 px-3 pb-3 pl-14">
-          {credential.editing && (
-            <SecretForm
-              label={`${provider.name} API key`}
-              value={credential.key}
-              pending={credential.save.isPending}
-              onChange={credential.setKey}
-              onSave={() => credential.save.mutate(credential.key.trim())}
-              onCancel={() => {
-                credential.setEditing(false);
-                credential.setKey("");
-              }}
-            />
-          )}
-          {credential.save.isError && (
+          {credential.save.isError && !credential.editing && (
             <FieldError>{credential.save.error.message}</FieldError>
           )}
           {provider.externalAuth && (
@@ -688,6 +700,44 @@ function ProviderRow({
         </div>
       )}
     </div>
+  );
+}
+
+/** The provider's API key, typed in or read from a connected password manager. */
+function ProviderKeySheet({
+  provider,
+  credential,
+  managers,
+}: {
+  provider: Provider;
+  credential: ProviderCredential;
+  managers: PasswordManager[];
+}) {
+  const body = providerKeyBody(credential.source);
+
+  return (
+    <EditorSheet
+      title={`${provider.credentialType === "api_key" ? "Replace" : "Add"} ${provider.name} API key`}
+      error={credential.save.error?.message}
+      submitLabel="Save"
+      submitDisabled={!body || credential.save.isPending}
+      onSubmit={() => body && credential.save.mutate(body)}
+      onClose={() => {
+        credential.setEditing(false);
+        credential.setSource(EMPTY_SOURCE);
+        credential.save.reset();
+      }}
+    >
+      <SecretSourceField
+        id={`provider-key-${provider.provider}`}
+        label="API key"
+        value={credential.source}
+        onChange={credential.setSource}
+        connected={managers}
+        valuePlaceholder="API key"
+        valueDescription="Stored encrypted and never shown again."
+      />
+    </EditorSheet>
   );
 }
 

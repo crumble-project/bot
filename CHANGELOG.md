@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Read a credential's value, a provider's API key, or an MCP server's token from a connected password manager: their editors offer **Crumble** or each connected password manager. A credential whose newest use couldn't read its value shows the error in its row.
 - Show provider logos in **Settings** > **Providers** from LobeHub Icons (`@lobehub/icons-static-svg`, MIT), inlined into the web bundle. Radius, TypeSafe, and Melious have no logo there and keep their letter tile.
 - Connect 1Password or Bitwarden Secrets Manager in **Settings** > **Password managers**. Each row shows how many secrets read from it, and it can't be disconnected while any do. Adds the `simple-icons` dependency to the web app for their logos.
 - Connect 1Password or Bitwarden Secrets Manager over the API with `GET`, `PUT`, and `DELETE /v1/password-managers/{id}`. Connecting signs in once to check the token, and a new token drops values read with the old one. A password manager can't be disconnected while a secret reads from it. Contract 3.4.0.
