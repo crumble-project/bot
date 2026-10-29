@@ -1,5 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
+import type { SecretReference } from "../password-managers/secret-references";
 import {
   secretSourceOf,
   type SecretSource,
@@ -13,6 +14,11 @@ export class SecretRepository extends Context.Service<
   SecretRepository,
   {
     readonly set: (key: string, value: string) => Effect.Effect<void>;
+    /** Reads the value from a password manager, replacing one stored in Crumble. */
+    readonly setReference: (
+      key: string,
+      source: SecretReference,
+    ) => Effect.Effect<void>;
     /** A value stored in Crumble; reading one that comes from a password manager is a defect. */
     readonly get: (key: string) => Effect.Effect<string | undefined>;
     /** Where the value comes from: stored in Crumble, or a password manager reference. */
@@ -43,6 +49,22 @@ export class SecretRepository extends Context.Service<
           .values({ key, ...row })
           .onConflictDoUpdate({ target: secrets.key, set: row });
       }, Effect.orDie);
+
+      const setReference = Effect.fn("SecretRepository.setReference")(
+        function* (key: string, source: SecretReference) {
+          const row = {
+            value: null,
+            passwordManager: source.passwordManager,
+            reference: source.reference,
+          };
+
+          yield* db
+            .insert(secrets)
+            .values({ key, ...row })
+            .onConflictDoUpdate({ target: secrets.key, set: row });
+        },
+        Effect.orDie,
+      );
 
       const get = Effect.fn("SecretRepository.get")(function* (key: string) {
         const [row] = yield* db
@@ -91,6 +113,7 @@ export class SecretRepository extends Context.Service<
 
       return SecretRepository.of({
         set,
+        setReference,
         get,
         source,
         delete: remove,

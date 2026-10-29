@@ -782,6 +782,17 @@ export const mcpServerResponse = z
       description:
         "The client ID of an OAuth app the owner registered with the server's authorization server, used instead of registering Crumble.",
     }),
+    tokenPasswordManager: z
+      .enum(["1password", "bitwarden"])
+      .nullable()
+      .optional()
+      .openapi({
+        description:
+          "The password manager the token is read from; null for a token stored in Crumble or no token.",
+      }),
+    tokenReference: z.string().nullable().optional().openapi({
+      description: "Where in `tokenPasswordManager` the token is read from.",
+    }),
   })
   .openapi("McpServer");
 

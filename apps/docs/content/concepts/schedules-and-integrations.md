@@ -37,3 +37,16 @@ Crumble connects to MCP servers over HTTP or HTTPS and supports these sign-in me
 - OAuth with your own client ID and secret.
 
 If a server is offline or its sign-in has expired, the bot answers without that server's tools.
+
+A bearer token can also be read from 1Password or Bitwarden Secrets Manager instead of being stored in Crumble. The web app doesn't offer this yet; use the API. Connect the password manager first, as described in [Credentials](/concepts/credentials#read-the-value-from-a-password-manager), then send `tokenReference` instead of `token` when you create or update the server with `/v1/mcp-servers`:
+
+```json
+{
+  "tokenReference": {
+    "passwordManager": "1password",
+    "reference": "op://Vault/Linear/token"
+  }
+}
+```
+
+Crumble reads the reference once to check it and changes nothing if it can't be read. Send `"tokenReference": null` to remove it. When a token can't be read later, the bot answers without that server's tools, and the server's `error` says why.

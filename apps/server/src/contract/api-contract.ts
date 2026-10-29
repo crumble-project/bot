@@ -144,7 +144,10 @@ export const mcpInput = z.object({
       "Use an HTTP or HTTPS URL",
     ),
   enabled: z.boolean().default(true),
+  /** Write-only; an empty string removes it. Exclusive with `tokenReference`. */
   token: z.string().max(16000).optional(),
+  /** Read the token from a password manager instead of storing it; null removes it. */
+  tokenReference: secretReferenceInput.nullable().optional(),
   /** The client ID of an OAuth app the owner registered with the server's authorization server; null removes it. */
   oauthClientId: z.string().trim().min(1).max(500).nullable().optional(),
   /** Write-only; an empty string removes it. */

@@ -6,7 +6,11 @@ import { desktopControlAccess } from "../bot-desktop/desktop-control";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
-import { createAPI, type ApiOptions } from "./api";
+import { createAPI, handleApiError, type ApiOptions } from "./api";
+import { contractApp } from "../contract/api-contract";
+import { registerMcpServerRoutes } from "../integrations/mcp-servers-api";
+import type { McpIntegrations } from "../integrations/integrations";
+import { secretStorage } from "../integrations/mcp-oauth";
 import { memoryResponse } from "../contract/api-responses";
 import { Context, Effect, Exit, Layer, Redacted, Scope } from "effect";
 import {
@@ -1753,6 +1757,205 @@ describe("provider API keys from a password manager", () => {
         })
       ).status,
     ).toBe(400);
+    api.close();
+  });
+});
+
+describe("MCP server tokens from a password manager", () => {
+  const REFERENCE = "op://Vault/Linear/token";
+  const OTHER_REFERENCE = "op://Vault/Linear/other";
+
+  const reference = (path = REFERENCE) => ({
+    passwordManager: "1password" as const,
+    reference: path,
+  });
+
+  type ServerBody = {
+    name?: string;
+    url?: string;
+    token?: string;
+    tokenReference?: ReturnType<typeof reference> | null;
+  };
+
+  /** The MCP server routes over a fake 1Password, recording which servers were disconnected. */
+  function mcpSetup(state: FakePasswordManager) {
+    const { store, service } = setup();
+    const core = store.run(Effect.context<CoreServices>());
+    const scope = Scope.makeUnsafe();
+
+    const vault = Effect.runSync(
+      Layer.buildWithScope(
+        SecretValues.layer.pipe(
+          Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
+          Layer.provide(Layer.succeedContext(core)),
+        ),
+        scope,
+      ),
+    );
+
+    store.run(
+      PasswordManagerRepository.use((repository) =>
+        repository.save("1password", Redacted.make(FAKE_TOKEN), "t"),
+      ),
+    );
+
+    const run = runnerOf(Context.merge(core, vault));
+    const disconnected: string[] = [];
+
+    const integrations: McpIntegrations["Service"] = {
+      failure: () => null,
+      extensionsForAgent: async () => [],
+      codemodeNamespaces: () => [],
+      disconnect: (serverId) =>
+        Effect.sync(() => {
+          disconnected.push(serverId);
+        }),
+    };
+
+    const app = contractApp();
+
+    app.onError(handleApiError);
+    registerMcpServerRoutes({
+      register: (definition, handler) =>
+        app.on(definition.method, definition.getRoutingPath(), handler),
+      service,
+      run,
+      secrets: secretStorage(run),
+      integrations,
+    });
+
+    const send = (method: string, path: string, body?: ServerBody) =>
+      app.request(path, {
+        method,
+        headers: { "content-type": "application/json" },
+        ...(body && { body: JSON.stringify(body) }),
+      });
+
+    return {
+      state,
+      disconnected,
+      create: (body: ServerBody) =>
+        send("POST", "/v1/mcp-servers", {
+          name: "Linear",
+          url: "https://mcp.linear.app/mcp",
+          ...body,
+        }),
+      patch: (id: string, body: ServerBody) =>
+        send("PATCH", `/v1/mcp-servers/${id}`, body),
+      list: async () => (await send("GET", "/v1/mcp-servers")).json(),
+      read: (path: string) =>
+        run.runPromise(
+          SecretValues.use((values) => values.read(reference(path))),
+        ),
+      close: () => {
+        Effect.runSync(Scope.close(scope, Exit.void));
+        store.close();
+      },
+    };
+  }
+
+  test("a server created with a token reference lists where its token is read from", async () => {
+    const api = mcpSetup(fakePasswordManager({ [REFERENCE]: "lin_vault" }));
+    const response = await api.create({ tokenReference: reference() });
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({
+      tokenPasswordManager: "1password",
+      tokenReference: REFERENCE,
+    });
+    expect(await api.list()).toMatchObject([
+      {
+        auth: "token",
+        tokenPasswordManager: "1password",
+        tokenReference: REFERENCE,
+      },
+    ]);
+    api.close();
+  });
+
+  test("replacing a token reference with a token reads nothing and closes the connection", async () => {
+    const api = mcpSetup(fakePasswordManager({ [REFERENCE]: "lin_vault" }));
+
+    const { id } = await (
+      await api.create({ tokenReference: reference() })
+    ).json();
+
+    api.state.mode = "unreachable";
+
+    const response = await api.patch(id, { token: "lin_stored" });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      tokenPasswordManager: null,
+      tokenReference: null,
+    });
+    expect(api.state.reads).toBe(1);
+    expect(api.disconnected).toEqual([id]);
+    api.close();
+  });
+
+  test("a new token reference closes the connection and forgets the old value", async () => {
+    const api = mcpSetup(
+      fakePasswordManager({
+        [REFERENCE]: "lin_vault",
+        [OTHER_REFERENCE]: "lin_other",
+      }),
+    );
+
+    const { id } = await (
+      await api.create({ tokenReference: reference() })
+    ).json();
+
+    await api.read(REFERENCE);
+    expect(api.state.reads).toBe(1);
+
+    expect(
+      (await api.patch(id, { tokenReference: reference(OTHER_REFERENCE) }))
+        .status,
+    ).toBe(200);
+    expect(api.disconnected).toEqual([id]);
+
+    await api.read(REFERENCE);
+    expect(api.state.reads).toBe(3);
+    api.close();
+  });
+
+  test("a token reference that can't be read answers 400 and changes nothing", async () => {
+    const api = mcpSetup(fakePasswordManager({ [REFERENCE]: "lin_vault" }));
+
+    const { id } = await (
+      await api.create({ tokenReference: reference() })
+    ).json();
+
+    api.state.mode = "unreachable";
+
+    const response = await api.patch(id, {
+      name: "Renamed",
+      tokenReference: reference(OTHER_REFERENCE),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "Fake could not be reached",
+    });
+    expect((await api.create({ tokenReference: reference() })).status).toBe(
+      400,
+    );
+    expect(await api.list()).toMatchObject([
+      { id, name: "Linear", tokenReference: REFERENCE },
+    ]);
+    expect(api.disconnected).toEqual([]);
+    api.close();
+  });
+
+  test("a token and a token reference together are rejected", async () => {
+    const api = mcpSetup(fakePasswordManager({ [REFERENCE]: "lin_vault" }));
+
+    expect(
+      (await api.create({ token: "lin_stored", tokenReference: reference() }))
+        .status,
+    ).toBe(400);
+    expect(await api.list()).toEqual([]);
     api.close();
   });
 });

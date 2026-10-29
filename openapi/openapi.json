@@ -2916,6 +2916,25 @@
               "null"
             ],
             "description": "The client ID of an OAuth app the owner registered with the server's authorization server, used instead of registering Crumble."
+          },
+          "tokenPasswordManager": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "1password",
+              "bitwarden",
+              null
+            ],
+            "description": "The password manager the token is read from; null for a token stored in Crumble or no token."
+          },
+          "tokenReference": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where in `tokenPasswordManager` the token is read from."
           }
         },
         "required": [
@@ -15412,6 +15431,30 @@
                     "type": "string",
                     "maxLength": 16000
                   },
+                  "tokenReference": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "passwordManager": {
+                        "type": "string",
+                        "enum": [
+                          "1password",
+                          "bitwarden"
+                        ]
+                      },
+                      "reference": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      }
+                    },
+                    "required": [
+                      "passwordManager",
+                      "reference"
+                    ]
+                  },
                   "oauthClientId": {
                     "type": [
                       "string",
@@ -15972,6 +16015,30 @@
                   "token": {
                     "type": "string",
                     "maxLength": 16000
+                  },
+                  "tokenReference": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "passwordManager": {
+                        "type": "string",
+                        "enum": [
+                          "1password",
+                          "bitwarden"
+                        ]
+                      },
+                      "reference": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      }
+                    },
+                    "required": [
+                      "passwordManager",
+                      "reference"
+                    ]
                   },
                   "oauthClientId": {
                     "type": [
