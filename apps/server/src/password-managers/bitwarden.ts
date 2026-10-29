@@ -18,7 +18,7 @@ const sdk = Effect.tryPromise({
   try: () => import("@bitwarden/sdk-napi"),
   catch: (cause) =>
     new PasswordManagerUnsupported({
-      message: `${NAME} isn't supported on ${process.platform} ${process.arch}: ${messageOf(cause)}`,
+      message: `isn't supported on ${process.platform} ${process.arch}: ${messageOf(cause)}`,
       cause,
     }),
 });
@@ -39,10 +39,10 @@ export const bitwarden: PasswordManagerVendor = {
         catch: (cause) =>
           /access token/i.test(messageOf(cause))
             ? new PasswordManagerTokenRejected({
-                message: `${NAME} rejected the access token: ${messageOf(cause)}`,
+                message: `rejected the access token: ${messageOf(cause)}`,
               })
             : new PasswordManagerUnreachable({
-                message: `${NAME} could not be reached: ${messageOf(cause)}`,
+                message: `could not be reached: ${messageOf(cause)}`,
                 cause,
               }),
       });
@@ -54,7 +54,7 @@ export const bitwarden: PasswordManagerVendor = {
             try: () => client.secrets().getByIds([...references]),
             catch: (cause) =>
               new PasswordManagerUnreachable({
-                message: `${NAME} could not be reached: ${messageOf(cause)}`,
+                message: `could not be reached: ${messageOf(cause)}`,
                 cause,
               }),
           }).pipe(
@@ -74,7 +74,8 @@ export const bitwarden: PasswordManagerVendor = {
                       ? Result.fail(
                           new SecretUnreadable({
                             reference,
-                            message: `${NAME} could not read ${reference}: no secret the machine account can read has this ID`,
+                            message:
+                              "has no secret the machine account can read with this ID",
                           }),
                         )
                       : Result.succeed(Redacted.make(value)),

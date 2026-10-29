@@ -412,6 +412,12 @@ export const credentialUseResponse = z
     host: z.string(),
     path: z.string(),
     status: z.number().int().nullable(),
+    error: z
+      .string()
+      .nullable()
+      .describe(
+        "Why the value couldn't be read from its password manager; the request was never sent.",
+      ),
   })
   .openapi("CredentialUse");
 

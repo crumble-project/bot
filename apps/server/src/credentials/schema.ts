@@ -76,6 +76,8 @@ export const credentialUses = sqliteTable(
     host: text("host").notNull(),
     path: text("path").notNull(),
     status: integer("status"),
+    /** Why the value couldn't be read from its password manager; the request was never sent. */
+    error: text("error"),
   },
   (table) => [
     foreignKey({

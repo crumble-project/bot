@@ -484,6 +484,7 @@ describe("Store memory sources", () => {
       DROP TABLE bot_requests;
       DROP TABLE script_runs;
       DROP TABLE password_managers;
+      ALTER TABLE credential_uses DROP COLUMN error;
       ALTER TABLE schedules DROP COLUMN kind;
       ALTER TABLE schedules DROP COLUMN command;
       ALTER TABLE schedules DROP COLUMN timeout_seconds;
@@ -600,6 +601,7 @@ describe("Store group chats", () => {
       DROP TABLE bot_requests;
       DROP TABLE script_runs;
       DROP TABLE password_managers;
+      ALTER TABLE credential_uses DROP COLUMN error;
       ALTER TABLE schedules DROP COLUMN kind;
       ALTER TABLE schedules DROP COLUMN command;
       ALTER TABLE schedules DROP COLUMN timeout_seconds;

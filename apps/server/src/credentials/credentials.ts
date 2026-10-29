@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { Clock, Context, Effect, Layer } from "effect";
+import { Clock, Context, Effect, Layer, Predicate, Redacted } from "effect";
 import type { Runner } from "../shared/runner";
 import { BotNotices } from "../bots/bot-notices";
 import {
@@ -15,6 +15,10 @@ import {
   type CredentialSaveInput,
   type CredentialUse,
 } from "../shared/domain";
+import {
+  SecretValues,
+  type SecretUnavailable,
+} from "../password-managers/secret-values";
 import { AgentCredentialRepository } from "./agent-credential-repository";
 import { GUEST_CA_BUNDLE, GUEST_CA_PATH } from "../workspaces/workspace";
 import {
@@ -69,8 +73,13 @@ export class Credentials extends Context.Service<
     ) => Effect.Effect<CredentialUse[], AppError>;
     /** The variables every command of the bot's coding jobs sees: placeholders, and where to find the bot's authority. */
     readonly env: (agentId: string) => Effect.Effect<Record<string, string>>;
-    /** What the credential proxy swaps in for the bot's placeholders. */
+    /** The placeholders the credential proxy may swap, without their values. */
     readonly grants: (agentId: string) => Effect.Effect<CredentialGrant[]>;
+    /** The value the credential proxy swaps in, read only for a request that uses its placeholder. */
+    readonly value: (
+      agentId: string,
+      name: string,
+    ) => Effect.Effect<Redacted.Redacted, SecretUnavailable | NotFound>;
     readonly recordUse: (
       agentId: string,
       name: string,
@@ -85,6 +94,19 @@ export class Credentials extends Context.Service<
     Effect.gen(function* () {
       const repository = yield* AgentCredentialRepository;
       const notices = yield* BotNotices;
+      const values = yield* SecretValues;
+
+      const value = Effect.fn("Credentials.value")(function* (
+        agentId: string,
+        name: string,
+      ) {
+        const source = yield* repository.source(agentId, name);
+
+        if (!source)
+          return yield* new NotFound({ message: `${name} was deleted` });
+
+        return yield* values.read(source);
+      });
 
       const notify = (agentId: string, name: string, text: string) =>
         notices
@@ -249,6 +271,7 @@ export class Credentials extends Context.Service<
         uses,
         env,
         grants: repository.grants,
+        value,
         recordUse: repository.addUse,
         prune,
       });
@@ -277,6 +300,8 @@ export type CredentialsAccess = {
   ): CredentialUse[];
   env(agentId: string): Record<string, string>;
   grants(agentId: string): CredentialGrant[];
+  /** Rejects with the message the credential proxy answers with. */
+  value(agentId: string, name: string): Promise<string>;
   recordUse(
     agentId: string,
     name: string,
@@ -303,6 +328,20 @@ export function credentialsAccess(
       runtime.runSync(credentials.uses(agentId, name, options)),
     env: (agentId) => runtime.runSync(credentials.env(agentId)),
     grants: (agentId) => runtime.runSync(credentials.grants(agentId)),
+    value: (agentId, name) =>
+      runtime.runPromise(
+        credentials.value(agentId, name).pipe(
+          Effect.map(Redacted.value),
+          Effect.mapError(
+            (error) =>
+              new Error(
+                Predicate.isTagged(error, "SecretUnavailable")
+                  ? `${name} could not be read: ${error.message}`
+                  : error.message,
+              ),
+          ),
+        ),
+      ),
     recordUse: (agentId, name, use) =>
       runtime.runSync(credentials.recordUse(agentId, name, use)),
   };

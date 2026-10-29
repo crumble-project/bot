@@ -336,11 +336,11 @@ export type CredentialRequest = {
 };
 
 /** What the credential proxy needs to swap a credential in: never leaves the server. */
+/** A credential the proxy may swap in; its value is read only when a request uses the placeholder. */
 export type CredentialGrant = {
   name: string;
   hosts: string[];
   placeholder: string;
-  value: string;
 };
 
 /** Whether `host` is one of `hosts`; `*.example.com` covers every subdomain, not the name itself. */
@@ -359,6 +359,8 @@ export type CredentialUse = {
   host: string;
   path: string;
   status: number | null;
+  /** Why the value couldn't be read, so the request was never sent. */
+  error: string | null;
 };
 
 export const MAX_SKILL_DOCUMENTS = 20;

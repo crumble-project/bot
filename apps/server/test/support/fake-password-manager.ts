@@ -61,7 +61,7 @@ export const fakeVendor = (
             if (state.mode === "unreachable")
               return Effect.fail(
                 new PasswordManagerUnreachable({
-                  message: "Fake could not be reached",
+                  message: "could not be reached",
                   cause: undefined,
                 }),
               );
@@ -77,7 +77,7 @@ export const fakeVendor = (
                       ? Result.fail(
                           new SecretUnreadable({
                             reference,
-                            message: "no item matches",
+                            message: "has no item that matches",
                           }),
                         )
                       : Result.succeed(Redacted.make(value)),

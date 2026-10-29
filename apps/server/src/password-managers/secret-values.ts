@@ -17,6 +17,7 @@ import {
   type ConnectedClient,
   type PasswordManagerId,
 } from "./password-manager";
+import type { SecretBox } from "../shared/secret-box";
 import { PasswordManagerRepository } from "./password-manager-repository";
 
 /** Where a secret's value comes from: stored in Crumble, or read from a password manager. */
@@ -26,6 +27,27 @@ export type SecretSource =
       readonly passwordManager: PasswordManagerId;
       readonly reference: string;
     };
+
+/** A row with `secretSource` columns. */
+type SecretSourceRow = {
+  value: string | null;
+  passwordManager: PasswordManagerId | null;
+  reference: string | null;
+};
+
+/** The row's source, decrypting a stored value; the database allows exactly one of the two. */
+export const secretSourceOf = (
+  box: SecretBox["Service"],
+  row: SecretSourceRow,
+): SecretSource => {
+  if (row.value !== null)
+    return { stored: Redacted.make(box.decrypt(row.value)) };
+
+  if (row.passwordManager === null || row.reference === null)
+    throw new Error("A secret has neither a stored value nor a reference");
+
+  return { passwordManager: row.passwordManager, reference: row.reference };
+};
 
 /** A read value is used without asking the password manager again for this long. */
 export const FRESH_FOR = Duration.hours(1);
@@ -45,6 +67,7 @@ export class SecretUnavailable extends Schema.TaggedError<SecretUnavailable>()(
   {
     /** The password manager's name, such as 1Password. */
     passwordManager: Schema.String,
+    /** What follows the name, such as "has no item that matches". */
     reason: Schema.String,
     message: Schema.String,
   },
@@ -106,7 +129,7 @@ export class SecretValues extends Context.Service<
 
             if (!token)
               return yield* Effect.fail<ReadFailure>({
-                reason: "it isn't connected",
+                reason: "isn't connected",
                 retainCache: false,
               });
 
@@ -141,7 +164,8 @@ export class SecretValues extends Context.Service<
               return Effect.succeed(read.success);
 
             return Effect.fail<ReadFailure>({
-              reason: read?.failure.message ?? "no answer for this reference",
+              reason:
+                read?.failure.message ?? "didn't answer for this reference",
               retainCache: false,
             });
           }),
@@ -188,7 +212,7 @@ export class SecretValues extends Context.Service<
         return new SecretUnavailable({
           passwordManager,
           reason,
-          message: `${passwordManager}: ${reason}`,
+          message: `${passwordManager} ${reason}`,
         });
       };
 

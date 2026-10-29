@@ -8,6 +8,10 @@ import type {
   CredentialUse,
 } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
+import {
+  secretSourceOf,
+  type SecretSource,
+} from "../password-managers/secret-values";
 import { SecretBox } from "../shared/secret-box";
 import { nowIso } from "../shared/time";
 import {
@@ -77,8 +81,13 @@ export class AgentCredentialRepository extends Context.Service<
     readonly placeholders: (
       agentId: string,
     ) => Effect.Effect<Record<string, string>>;
-    /** Every credential with its placeholder and decrypted value, for the credential proxy only. */
+    /** Every credential with its hosts and placeholder, without its value. */
     readonly grants: (agentId: string) => Effect.Effect<CredentialGrant[]>;
+    /** Where the credential's value comes from, decrypting a stored one; for the credential proxy only. */
+    readonly source: (
+      agentId: string,
+      name: string,
+    ) => Effect.Effect<SecretSource | undefined>;
     /** The bot's certificate authority for the credential proxy, with its private key in PKCS #8 PEM. */
     readonly getAuthority: (
       agentId: string,
@@ -239,7 +248,6 @@ export class AgentCredentialRepository extends Context.Service<
             name: agentCredentials.name,
             hosts: agentCredentials.hosts,
             placeholder: agentCredentials.placeholder,
-            value: agentCredentials.value,
           })
           .from(agentCredentials)
           .where(eq(agentCredentials.agentId, agentId))
@@ -249,8 +257,23 @@ export class AgentCredentialRepository extends Context.Service<
           name: row.name,
           hosts: hostList.parse(JSON.parse(row.hosts)),
           placeholder: row.placeholder,
-          value: box.decryptStored(row.value),
         }));
+      }, Effect.orDie);
+
+      const source = Effect.fn("AgentCredentialRepository.source")(function* (
+        agentId: string,
+        name: string,
+      ) {
+        const [row] = yield* db
+          .select({
+            value: agentCredentials.value,
+            passwordManager: agentCredentials.passwordManager,
+            reference: agentCredentials.reference,
+          })
+          .from(agentCredentials)
+          .where(credential(agentId, name));
+
+        return row && secretSourceOf(box, row);
       }, Effect.orDie);
 
       const getAuthority = Effect.fn("AgentCredentialRepository.getAuthority")(
@@ -357,6 +380,7 @@ export class AgentCredentialRepository extends Context.Service<
               host: use.host,
               path: use.path,
               status: use.status,
+              error: use.error,
             });
             yield* db
               .update(agentCredentials)
@@ -382,6 +406,7 @@ export class AgentCredentialRepository extends Context.Service<
               host: credentialUses.host,
               path: credentialUses.path,
               status: credentialUses.status,
+              error: credentialUses.error,
             })
             .from(credentialUses)
             .where(
@@ -420,6 +445,7 @@ export class AgentCredentialRepository extends Context.Service<
         delete: remove,
         placeholders,
         grants,
+        source,
         getAuthority,
         saveAuthority,
         listRequests,

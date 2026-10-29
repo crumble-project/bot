@@ -139,7 +139,7 @@ describe("SecretValues", () => {
     const [stale, expired] = valueOf(exit);
 
     expect(stale).toBe("hunter2");
-    expect(failureOf(expired)).toBe("Fake: Fake could not be reached");
+    expect(failureOf(expired)).toBe("Fake could not be reached");
   });
 
   test("stops using a value at once when its item is gone", async () => {
@@ -159,7 +159,7 @@ describe("SecretValues", () => {
       }),
     );
 
-    expect(failureOf(valueOf(exit))).toBe("Fake: no item matches");
+    expect(failureOf(valueOf(exit))).toBe("Fake has no item that matches");
   });
 
   test("forget makes the next read ask the password manager", async () => {
@@ -204,7 +204,7 @@ describe("SecretValues", () => {
 
     const [interrupted, after] = valueOf(exit);
 
-    expect(failureOf(interrupted)).toBe("Fake: Fake was disconnected");
+    expect(failureOf(interrupted)).toBe("Fake was disconnected");
     expect(after).toBe("hunter2");
     expect(state.interrupted).toBe(1);
     expect(state.signIns).toBe(2);
@@ -244,13 +244,13 @@ describe("SecretValues", () => {
 
     const [rejected, after] = valueOf(exit);
 
-    expect(failureOf(rejected)).toBe("Fake: rejected");
+    expect(failureOf(rejected)).toBe("Fake rejected");
     expect(after).toBe("hunter2");
   });
 
   test("a password manager that isn't connected fails the read", async () => {
     const exit = await run(fakePasswordManager(), read, { connected: false });
 
-    expect(failureOf(exit)).toBe("Fake: it isn't connected");
+    expect(failureOf(exit)).toBe("Fake isn't connected");
   });
 });

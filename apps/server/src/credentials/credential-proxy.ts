@@ -20,6 +20,8 @@ export type CredentialProxyOptions = {
   };
   /** Read for every request, so a changed or deleted credential applies at once. */
   grants: () => CredentialGrant[];
+  /** Reads a used credential's value; rejects with the reason the request can't be sent. */
+  value: (name: string) => Promise<string>;
   recordUse: (name: string, use: Omit<CredentialUse, "id">) => void;
   lookup?: (host: string) => Promise<string[]>;
   isPublicAddress?: (address: string) => boolean;
@@ -122,6 +124,73 @@ export const responseHeaders = (
   return headers;
 };
 
+/** A used credential with the value read for it. */
+type SwappedValue = { grant: CredentialGrant; value: string };
+
+type ReadFailure = { name: string; message: string };
+
+/** The credentials whose placeholder the request carries in its headers or path: the only ones it reads. */
+const usedGrants = (
+  grants: readonly CredentialGrant[],
+  request: http.IncomingMessage,
+) => {
+  const used = new Map<string, CredentialGrant>();
+
+  const detect = (text: string) => {
+    for (const grant of grants)
+      if (text.includes(grant.placeholder)) used.set(grant.name, grant);
+
+    return text;
+  };
+
+  requestHeaders(request.rawHeaders, detect);
+  detect(request.url ?? "/");
+
+  return [...used.values()];
+};
+
+/** Reads every used credential's value; any failure keeps the request from being sent. */
+const readValues = async (
+  used: readonly CredentialGrant[],
+  read: (name: string) => Promise<string>,
+) => {
+  const reads = await Promise.allSettled(used.map((grant) => read(grant.name)));
+  const values: SwappedValue[] = [];
+  const failures: ReadFailure[] = [];
+
+  reads.forEach((outcome, index) => {
+    const grant = used[index]!;
+
+    if (outcome.status === "fulfilled")
+      values.push({ grant, value: outcome.value });
+    else
+      failures.push({
+        name: grant.name,
+        message:
+          outcome.reason instanceof Error
+            ? outcome.reason.message
+            : String(outcome.reason),
+      });
+  });
+
+  return { values, failures };
+};
+
+/** Answers 502 without sending the request, naming each credential that couldn't be read. */
+const refuse = (
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  failures: readonly ReadFailure[],
+) => {
+  request.resume();
+  response.writeHead(502, { "content-type": "text/plain" });
+  response.end(
+    failures
+      .map((failure) => `Crumble credential proxy: ${failure.message}\n`)
+      .join(""),
+  );
+};
+
 /**
  * Swaps a bot's credential placeholders for their values on requests to the credentials' hosts, and the values back
  * in responses. It sees only TLS connections the workspace proxy hands it, so a placeholder sent anywhere else, or from
@@ -170,91 +239,113 @@ export function credentialProxy(
   const relevant = (host: string) =>
     options.grants().filter((grant) => hostMatches(grant.hosts, host));
 
+  const relay = (
+    target: { host: string; port: number },
+    request: http.IncomingMessage,
+    response: http.ServerResponse,
+    values: readonly SwappedValue[],
+    record: (path: string, status: number | null) => void,
+  ) => {
+    const swap = (text: string) =>
+      values.reduce(
+        (current, { grant, value }) =>
+          current.replaceAll(grant.placeholder, value),
+        text,
+      );
+
+    const headers = requestHeaders(request.rawHeaders, swap);
+
+    // Uncompressed responses, so the value can be scrubbed from them.
+    headers["accept-encoding"] = ["identity"];
+    const path = swap(request.url ?? "/");
+
+    const scrub = values.flatMap(({ grant, value }) =>
+      value.length >= MIN_SCRUBBED_LENGTH
+        ? [[latin1(value), latin1(grant.placeholder)] as const]
+        : [],
+    );
+
+    const scrubText = (text: string) =>
+      scrub.reduce((current, [from, to]) => current.replaceAll(from, to), text);
+
+    const upstream = https.request(
+      {
+        host: target.host,
+        port: target.port,
+        servername: target.host,
+        method: request.method ?? "GET",
+        path,
+        headers,
+        lookup: publicLookup,
+        ...(options.upstreamCa && {
+          ca: [...tls.rootCertificates, options.upstreamCa],
+        }),
+      },
+      (reply) => {
+        record(path, reply.statusCode ?? null);
+
+        response.writeHead(
+          reply.statusCode ?? 502,
+          reply.statusMessage,
+          responseHeaders(reply.rawHeaders, scrub.length > 0, scrubText),
+        );
+
+        if (scrub.length) reply.pipe(replacing(scrub)).pipe(response);
+        else reply.pipe(response);
+      },
+    );
+
+    upstream.on("error", (error) => {
+      record(path, null);
+
+      if (response.headersSent) return void response.destroy();
+      response.writeHead(502, { "content-type": "text/plain" });
+      response.end(`Crumble credential proxy: ${error.message}\n`);
+    });
+    request.pipe(upstream);
+  };
+
+  const send = async (
+    host: string,
+    port: number,
+    request: http.IncomingMessage,
+    response: http.ServerResponse,
+  ) => {
+    const used = usedGrants(relevant(host), request);
+
+    const recordUse = (
+      name: string,
+      path: string,
+      status: number | null,
+      error: string | null,
+    ) =>
+      options.recordUse(name, {
+        at: new Date().toISOString(),
+        method: request.method ?? "GET",
+        host,
+        path: path.split("?")[0]!,
+        status,
+        error,
+      });
+
+    const { values, failures } = await readValues(used, options.value);
+
+    if (failures.length) {
+      for (const failure of failures)
+        recordUse(failure.name, request.url ?? "/", null, failure.message);
+
+      return refuse(request, response, failures);
+    }
+
+    relay({ host, port }, request, response, values, (path, status) => {
+      for (const grant of used) recordUse(grant.name, path, status, null);
+    });
+  };
+
   const forward =
     (host: string, port: number) =>
     (request: http.IncomingMessage, response: http.ServerResponse) => {
-      const grants = relevant(host);
-      const used = new Set<string>();
-
-      const swap = (text: string) =>
-        grants.reduce((current, grant) => {
-          if (!current.includes(grant.placeholder)) return current;
-          used.add(grant.name);
-
-          return current.replaceAll(grant.placeholder, grant.value);
-        }, text);
-
-      const headers = requestHeaders(request.rawHeaders, swap);
-
-      // Uncompressed responses, so the value can be scrubbed from them.
-      headers["accept-encoding"] = ["identity"];
-      const path = swap(request.url ?? "/");
-      const method = request.method ?? "GET";
-
-      const record = (status: number | null) => {
-        for (const name of used)
-          options.recordUse(name, {
-            at: new Date().toISOString(),
-            method,
-            host,
-            path: path.split("?")[0]!,
-            status,
-          });
-      };
-
-      const scrub = grants
-        .filter((grant) => grant.value.length >= MIN_SCRUBBED_LENGTH)
-        .map(
-          (grant) => [latin1(grant.value), latin1(grant.placeholder)] as const,
-        );
-
-      const scrubText = (text: string) =>
-        scrub.reduce(
-          (current, [from, to]) => current.replaceAll(from, to),
-          text,
-        );
-
-      const upstream = https.request(
-        {
-          host,
-          port,
-          servername: host,
-          method,
-          path,
-          headers,
-          lookup: publicLookup,
-          ...(options.upstreamCa && {
-            ca: [...tls.rootCertificates, options.upstreamCa],
-          }),
-        },
-        (reply) => {
-          record(reply.statusCode ?? null);
-
-          const replyHeaders = responseHeaders(
-            reply.rawHeaders,
-            scrub.length > 0,
-            scrubText,
-          );
-
-          response.writeHead(
-            reply.statusCode ?? 502,
-            reply.statusMessage,
-            replyHeaders,
-          );
-
-          if (scrub.length) reply.pipe(replacing(scrub)).pipe(response);
-          else reply.pipe(response);
-        },
-      );
-
-      upstream.on("error", (error) => {
-        record(null);
-
-        if (response.headersSent) return void response.destroy();
-        response.writeHead(502, { "content-type": "text/plain" });
-        response.end(`Crumble credential proxy: ${error.message}\n`);
-      });
-      request.pipe(upstream);
+      send(host, port, request, response).catch(() => response.destroy());
     };
 
   return {

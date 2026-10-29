@@ -26,24 +26,24 @@ const rejectsToken = (cause: unknown) =>
 const failure = (cause: unknown) =>
   rejectsToken(cause)
     ? new PasswordManagerTokenRejected({
-        message: `${NAME} rejected the service account token: ${messageOf(cause)}`,
+        message: `rejected the service account token: ${messageOf(cause)}`,
       })
     : new PasswordManagerUnreachable({
         message:
           cause instanceof RateLimitExceededError
-            ? `${NAME} limited this account's requests: ${messageOf(cause)}`
-            : `${NAME} could not be reached: ${messageOf(cause)}`,
+            ? `limited this account's requests: ${messageOf(cause)}`
+            : `could not be reached: ${messageOf(cause)}`,
         cause,
       });
 
 const reasons: Partial<Record<ResolveReferenceError["type"], string>> = {
-  vaultNotFound: "no vault the service account can read matches",
-  itemNotFound: "no item matches",
-  fieldNotFound: "the item has no such field",
-  tooManyVaults: "more than one vault matches",
-  tooManyItems: "more than one item matches",
-  tooManyMatchingFields: "more than one field matches",
-  parsing: "the reference isn't valid",
+  vaultNotFound: "has no vault the service account can read that matches",
+  itemNotFound: "has no item that matches",
+  fieldNotFound: "has no such field on the item",
+  tooManyVaults: "has more than one vault that matches",
+  tooManyItems: "has more than one item that matches",
+  tooManyMatchingFields: "has more than one field that matches",
+  parsing: "can't parse the reference",
 };
 
 /** 1Password, read with a service account token through `@1password/sdk`. */
@@ -87,7 +87,8 @@ export const onePassword: PasswordManagerVendor = {
                       Result.fail(
                         new SecretUnreadable({
                           reference,
-                          message: `${NAME} could not read ${reference}: ${reasons[type] ?? type}`,
+                          message:
+                            reasons[type] ?? `could not read it: ${type}`,
                         }),
                       ),
                     ];

@@ -1526,6 +1526,13 @@
               "integer",
               "null"
             ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the value couldn't be read from its password manager; the request was never sent."
           }
         },
         "required": [
@@ -1534,7 +1541,8 @@
           "method",
           "host",
           "path",
-          "status"
+          "status",
+          "error"
         ]
       },
       "Memory": {

@@ -17,6 +17,8 @@ export type PasswordManagerId = "1password" | "bitwarden";
 /** How long a sign-in or read may take; the 1Password SDK otherwise waits minutes when the network is gone. */
 export const PASSWORD_MANAGER_TIMEOUT = "10 seconds";
 
+// Error messages follow the password manager's name, as in "1Password could not be reached: ...".
+
 /** The password manager refused the token: it is malformed, expired, or revoked. */
 export class PasswordManagerTokenRejected extends Schema.TaggedError<PasswordManagerTokenRejected>()(
   "PasswordManagerTokenRejected",
@@ -85,14 +87,14 @@ export interface PasswordManagerVendor {
   ): Effect.Effect<PasswordManagerClient, PasswordManagerError>;
 }
 
-const timed = <A, E>(name: string, effect: Effect.Effect<A, E>) =>
+const timed = <A, E>(effect: Effect.Effect<A, E>) =>
   effect.pipe(
     Effect.timeoutOrElse({
       duration: PASSWORD_MANAGER_TIMEOUT,
       orElse: () =>
         Effect.fail(
           new PasswordManagerUnreachable({
-            message: `${name} did not answer within ${PASSWORD_MANAGER_TIMEOUT}`,
+            message: `did not answer within ${PASSWORD_MANAGER_TIMEOUT}`,
             cause: undefined,
           }),
         ),
@@ -111,14 +113,14 @@ const connected = (
     const closed = yield* Deferred.make<never, PasswordManagerDisconnected>();
 
     const held = yield* Effect.acquireRelease(
-      timed(vendor.name, vendor.signIn(token)).pipe(
+      timed(vendor.signIn(token)).pipe(
         Effect.map((client) => ({ client: Option.some(client) })),
       ),
       (held) =>
         Deferred.fail(
           closed,
           new PasswordManagerDisconnected({
-            message: `${vendor.name} was disconnected`,
+            message: "was disconnected",
           }),
         ).pipe(
           Effect.andThen(
@@ -136,7 +138,7 @@ const connected = (
             onNone: () => Deferred.await(closed),
             // Racing the close signal interrupts a read still running when the scope closes.
             onSome: (client) =>
-              timed(vendor.name, client.read(references)).pipe(
+              timed(client.read(references)).pipe(
                 Effect.raceFirst(Deferred.await(closed)),
               ),
           }),
