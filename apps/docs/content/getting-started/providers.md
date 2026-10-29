@@ -18,7 +18,7 @@ To replace or remove a saved key, open the provider's **More** menu.
 
 ### Read the key from a password manager
 
-Instead of storing the key in Crumble, you can read it from 1Password or Bitwarden Secrets Manager. Connect the password manager first, as described in [Credentials](/concepts/credentials#read-the-value-from-a-password-manager). Then click **Add key**, or **Replace key** in the provider's **More** menu, select the password manager, and paste the reference. Over the API, send the reference instead of `apiKey` to `PUT /v1/providers/{provider}`:
+Instead of storing the key in Crumble, you can read it from 1Password or Bitwarden Secrets Manager. Connect the password manager first, as described in [Password managers](/concepts/password-managers). Then click **Add key**, or **Replace key** in the provider's **More** menu, select the password manager, and paste the reference. Over the API, send the reference instead of `apiKey` to `PUT /v1/providers/{provider}`:
 
 ```json
 { "passwordManager": "1password", "reference": "op://Vault/OpenAI/key" }

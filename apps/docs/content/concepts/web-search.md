@@ -2,7 +2,7 @@
 title: Web search
 description: Let a bot search the web and read pages with Mixed.
 sidebar:
-  order: 8
+  order: 9
 ---
 
 A bot with the **Web search** capability can search the web and read pages in bot chats and group chats. New bots created in the web app have this capability on by default. Existing bots keep their current settings.
