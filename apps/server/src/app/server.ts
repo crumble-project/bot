@@ -66,24 +66,69 @@ function lockRetries(waitMs = 35_000) {
   return { retries: Math.ceil(waitMs / 1000), factor: 1, minTimeout: 1000 };
 }
 
-export async function startServer(
-  options: {
-    dataDir?: string;
-    hostname?: string;
-    port?: number;
-    publicUrl?: string;
-    skillsDir?: string;
-    /** How long to wait for another server's lock on the data directory before failing. */
-    lockWaitMs?: number;
-    /** Each account's workspaces instead of those from the environment, owned by the account's scope. */
-    workspaces?: (
-      userId: string,
-    ) => Effect.Effect<Workspaces | undefined, never, Scope.Scope>;
-  } = {},
-) {
-  const dataDir = resolve(
-    options.dataDir ?? process.env["CRUMBLE_DATA_DIR"] ?? "./data",
+type Tenant = Awaited<ReturnType<typeof createTenant>>;
+
+/** The origin `publicUrl` names; it must be https, without a path, query, or fragment. */
+function publicOrigin(publicUrl: string) {
+  const url = new URL(publicUrl);
+
+  if (
+    url.protocol !== "https:" ||
+    url.search ||
+    url.hash ||
+    url.pathname !== "/"
+  )
+    throw new Error(
+      "CRUMBLE_PUBLIC_URL must be an https origin without a path, query, or fragment",
+    );
+
+  return url;
+}
+
+async function closeTenants(tenants: Iterable<Promise<Tenant>>) {
+  const settled = await Promise.allSettled(tenants);
+
+  const results = await Promise.allSettled(
+    settled.flatMap((result) =>
+      result.status === "fulfilled" ? [result.value.close()] : [],
+    ),
   );
+
+  const failed = results.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+
+  if (failed.length) throw new AggregateError(failed, "Tenant shutdown failed");
+}
+
+type ServerOptions = {
+  dataDir?: string;
+  hostname?: string;
+  port?: number;
+  publicUrl?: string;
+  skillsDir?: string;
+  /** How long to wait for another server's lock on the data directory before failing. */
+  lockWaitMs?: number;
+  /** Each account's workspaces instead of those from the environment, owned by the account's scope. */
+  workspaces?: (
+    userId: string,
+  ) => Effect.Effect<Workspaces | undefined, never, Scope.Scope>;
+};
+
+/** Where the server listens and keeps its data: `options`, else the environment, else the defaults. */
+function listenSettings(options: ServerOptions) {
+  return {
+    dataDir: resolve(
+      options.dataDir ?? process.env["CRUMBLE_DATA_DIR"] ?? "./data",
+    ),
+    publicUrl: options.publicUrl ?? process.env["CRUMBLE_PUBLIC_URL"],
+    hostname: options.hostname ?? process.env["CRUMBLE_HOST"] ?? "127.0.0.1",
+    port: options.port ?? Number(process.env["CRUMBLE_PORT"] ?? 7337),
+  };
+}
+
+export async function startServer(options: ServerOptions = {}) {
+  const { dataDir, publicUrl, hostname, port } = listenSettings(options);
 
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   chmodSync(dataDir, 0o700);
@@ -95,15 +140,11 @@ export async function startServer(
     retries: lockRetries(options.lockWaitMs),
   });
 
-  const tenants = new Map<
-    string,
-    Promise<Awaited<ReturnType<typeof createTenant>>>
-  >();
+  const tenants = new Map<string, Promise<Tenant>>();
 
   let identity: Awaited<ReturnType<typeof createAuth>> | undefined;
   let server: ReturnType<typeof Bun.serve> | undefined;
   let closed = false;
-  const publicUrl = options.publicUrl ?? process.env["CRUMBLE_PUBLIC_URL"];
   let origin = "";
   let trustedOrigins: string[] = [];
   let ready: Promise<void>;
@@ -134,51 +175,73 @@ export async function startServer(
 
     try {
       await server?.stop(true);
-      const settled = await Promise.allSettled(tenants.values());
-
-      const results = await Promise.allSettled(
-        settled.flatMap((result) =>
-          result.status === "fulfilled" ? [result.value.close()] : [],
-        ),
-      );
-
-      const failed = results.flatMap((result) =>
-        result.status === "rejected" ? [result.reason] : [],
-      );
-
-      if (failed.length)
-        throw new AggregateError(failed, "Tenant shutdown failed");
+      await closeTenants(tenants.values());
     } finally {
       identity?.close();
       await release();
     }
   };
 
-  try {
-    if (publicUrl) {
-      const url = new URL(publicUrl);
+  // Bun upgrades require the original incoming Request instance.
+  const forward = async (
+    request: Request,
+    bunServer: Bun.Server<unknown>,
+    userId: string,
+  ) => {
+    const context = await tenant(userId);
 
-      if (
-        url.protocol !== "https:" ||
-        url.search ||
-        url.hash ||
-        url.pathname !== "/"
-      )
-        throw new Error(
-          "CRUMBLE_PUBLIC_URL must be an https origin without a path, query, or fragment",
-        );
+    request.headers.set("authorization", `Bearer ${context.token}`);
+
+    return context.app.fetch(request, bunServer);
+  };
+
+  const accountResponse = async (
+    request: Request,
+    bunServer: Bun.Server<unknown>,
+    path: string,
+  ) => {
+    const session = await identity!.auth.api.getSession({
+      headers: request.headers,
+    });
+
+    const owner = session ? undefined : ticketOwnerOf(path);
+
+    if (owner && identity!.hasUser(owner) && !closed)
+      return forward(request, bunServer, owner);
+
+    if (!session)
+      return Response.json({ error: "Sign in required" }, { status: 401 });
+
+    if (closed) return new Response("Server is closing", { status: 503 });
+    const response = await forward(request, bunServer, session.user.id);
+
+    if (response) response.headers.set("Cache-Control", "no-store");
+
+    return response;
+  };
+
+  const restoreTenants = async (accounts: NonNullable<typeof identity>) => {
+    const usersDir = join(dataDir, "users");
+
+    if (!existsSync(usersDir)) return;
+
+    for (const entry of readdirSync(usersDir, { withFileTypes: true })) {
+      if (entry.isDirectory() && accounts.hasUser(entry.name))
+        await tenant(entry.name);
     }
+  };
 
+  try {
     const oauthClient = publicUrl
-      ? clientDocument(new URL(publicUrl))
+      ? clientDocument(publicOrigin(publicUrl))
       : undefined;
 
     server = Bun.serve({
       routes: webUIRoutes,
       development: process.env.NODE_ENV !== "production" && { hmr: false },
       websocket,
-      hostname: options.hostname ?? process.env["CRUMBLE_HOST"] ?? "127.0.0.1",
-      port: options.port ?? Number(process.env["CRUMBLE_PORT"] ?? 7337),
+      hostname,
+      port,
       idleTimeout: 60,
       async fetch(request, bunServer) {
         await ready;
@@ -207,32 +270,7 @@ export async function startServer(
             { status: 403 },
           );
 
-        const session = await identity!.auth.api.getSession({
-          headers: request.headers,
-        });
-
-        const owner = session ? undefined : ticketOwnerOf(path);
-
-        if (owner && identity!.hasUser(owner) && !closed) {
-          const context = await tenant(owner);
-
-          request.headers.set("authorization", `Bearer ${context.token}`);
-
-          return context.app.fetch(request, bunServer);
-        }
-
-        if (!session)
-          return Response.json({ error: "Sign in required" }, { status: 401 });
-
-        if (closed) return new Response("Server is closing", { status: 503 });
-        const context = await tenant(session.user.id);
-        // Bun upgrades require the original incoming Request instance.
-        request.headers.set("authorization", `Bearer ${context.token}`);
-        const response = await context.app.fetch(request, bunServer);
-
-        if (response) response.headers.set("Cache-Control", "no-store");
-
-        return response;
+        return accountResponse(request, bunServer, path);
       },
     });
     origin = new URL(
@@ -241,14 +279,7 @@ export async function startServer(
     trustedOrigins = trustedOriginsFor(origin);
     ready = (async () => {
       identity = await createAuth(dataDir, origin);
-      const usersDir = join(dataDir, "users");
-
-      if (existsSync(usersDir)) {
-        for (const entry of readdirSync(usersDir, { withFileTypes: true })) {
-          if (entry.isDirectory() && identity.hasUser(entry.name))
-            await tenant(entry.name);
-        }
-      }
+      await restoreTenants(identity);
     })();
     await ready;
 

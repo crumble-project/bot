@@ -460,28 +460,36 @@ function SkillsBody({
   );
 }
 
-export function SkillsPage() {
+/** Every bot with its personal skills, and the bots whose skills failed to load. */
+function usePersonalSkills() {
   const bots = useQuery(botsQuery);
-  const skills = useQuery(skillsQuery);
+  const list = bots.data ?? [];
 
   const personal = useQueries({
-    queries: (bots.data ?? []).map((bot) => ({
+    queries: list.map((bot) => ({
       queryKey: [...personalSkillsKey, bot.id],
       queryFn: ({ signal }: { signal: AbortSignal }) =>
         api<BotSkill[]>(`${agentPath(bot.id)}/skills`, { signal }),
     })),
   });
 
-  const skillBots = (bots.data ?? []).map((bot, index) => ({
+  const skillBots = list.map((bot, index) => ({
     ...bot,
     skills: personal[index]?.data ?? [],
   }));
 
-  const personalErrors = (bots.data ?? []).flatMap((bot, index) => {
+  const personalErrors = list.flatMap((bot, index) => {
     const query = personal[index];
 
     return query?.isError ? [{ bot, error: query.error }] : [];
   });
+
+  return { bots, personal, skillBots, personalErrors };
+}
+
+export function SkillsPage() {
+  const { bots, personal, skillBots, personalErrors } = usePersonalSkills();
+  const skills = useQuery(skillsQuery);
 
   const unavailable = new Set(personalErrors.map(({ bot }) => bot.id));
   const [editing, setEditing] = useState<Editing | null>(null);

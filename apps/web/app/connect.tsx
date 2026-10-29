@@ -113,6 +113,7 @@ export function Connect() {
   const connect = useConnect(mode, credentials);
   const passkey = usePasskeySignIn(mode);
   const error = connect.error ?? passkey.error;
+  const invalid = connect.isError || undefined;
 
   return (
     <form
@@ -135,25 +136,25 @@ export function Connect() {
             />
           </Field>
         )}
-        <Field data-invalid={connect.isError || undefined}>
+        <Field data-invalid={invalid}>
           <FieldLabel htmlFor="email">Email</FieldLabel>
           <Input
             id="email"
             type="email"
             autoFocus
             autoComplete={copy.emailAutoComplete}
-            aria-invalid={connect.isError || undefined}
+            aria-invalid={invalid}
             value={email}
             onChange={(event) => setEmail(event.target.value)}
           />
         </Field>
-        <Field data-invalid={connect.isError || undefined}>
+        <Field data-invalid={invalid}>
           <FieldLabel htmlFor="password">Password</FieldLabel>
           <Input
             id="password"
             type="password"
             autoComplete={copy.autoComplete}
-            aria-invalid={connect.isError || undefined}
+            aria-invalid={invalid}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />

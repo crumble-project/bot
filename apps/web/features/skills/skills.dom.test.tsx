@@ -59,6 +59,23 @@ test("deleting the first same-name skill keeps the second", async () => {
     { id: "second", name: "Duplicate", instructions: "Second instructions" },
   ];
 
+  const patchSkills = (patch: { name: string; instructions: string }[]) => {
+    const kept = new Set<string>();
+
+    for (const input of patch) {
+      const match = skills.find(
+        (skill) => skill.name === input.name && !kept.has(skill.id),
+      );
+
+      if (match) {
+        kept.add(match.id);
+        match.instructions = input.instructions;
+      }
+    }
+
+    skills = skills.filter((skill) => kept.has(skill.id));
+  };
+
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -68,20 +85,7 @@ test("deleting the first same-name skill keeps the second", async () => {
           const body: { skills: { name: string; instructions: string }[] } =
             JSON.parse(await new Response(init.body).text());
 
-          const kept = new Set<string>();
-
-          for (const input of body.skills) {
-            const match = skills.find(
-              (skill) => skill.name === input.name && !kept.has(skill.id),
-            );
-
-            if (match) {
-              kept.add(match.id);
-              match.instructions = input.instructions;
-            }
-          }
-
-          skills = skills.filter((skill) => kept.has(skill.id));
+          patchSkills(body.skills);
 
           return Response.json({});
         }
@@ -94,16 +98,15 @@ test("deleting the first same-name skill keeps the second", async () => {
           return new Response(null, { status: 204 });
         }
 
-        if (path === "/v1/agents/bot/skills") return Response.json(skills);
+        const listings = new Map<string, unknown>([
+          ["/v1/agents/bot/skills", skills],
+          ["/v1/agents", [{ id: "bot", name: "Bot", avatar: "", skills }]],
+          ["/v1/skills", []],
+        ]);
 
-        if (path === "/v1/agents")
-          return Response.json([
-            { id: "bot", name: "Bot", avatar: "", skills },
-          ]);
-
-        if (path === "/v1/skills") return Response.json([]);
-
-        return new Response("unexpected request", { status: 500 });
+        return listings.has(path)
+          ? Response.json(listings.get(path))
+          : new Response("unexpected request", { status: 500 });
       },
       { preconnect: globalThis.fetch.preconnect },
     ),

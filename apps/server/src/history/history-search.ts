@@ -519,6 +519,27 @@ function nextCursor(
   return oldestEntryId ?? undefined;
 }
 
+/** Visits rows from `position`, one `step` at a time, with the offset to read from, until `visit` returns false. */
+function walkRows(
+  rows: Row[],
+  position: Position,
+  step: 1 | -1,
+  visit: (row: Row, points: string[], offset: number) => boolean,
+) {
+  let index = positionIndex(rows, position);
+  let offset = position.offset;
+
+  while (index >= 0 && index < rows.length) {
+    const row = rows[index]!;
+
+    if (!visit(row, Array.from(row.body ?? ""), offset)) return;
+
+    index += step;
+    offset =
+      step === 1 || index < 0 ? 0 : Array.from(rows[index]!.body ?? "").length;
+  }
+}
+
 function windowAfter(
   chat: HistoryChat,
   rows: Row[],
@@ -526,33 +547,22 @@ function windowAfter(
   count: number,
   budget: number,
 ): Window {
-  let index = positionIndex(rows, position);
-  let offset = position.offset;
   let boundary = position;
   const messages: HistoryReadMessage[] = [];
 
-  while (
-    index >= 0 &&
-    index < rows.length &&
-    messages.length < count &&
-    budget > 0
-  ) {
-    const row = rows[index]!;
-    const points = Array.from(row.body ?? "");
+  walkRows(rows, position, 1, (row, points, offset) => {
+    if (messages.length >= count || budget <= 0) return false;
 
-    if (offset < points.length) {
-      const finish = Math.min(points.length, offset + budget);
+    if (offset >= points.length) return true;
 
-      messages.push(messagePart(chat, row, points, offset, finish));
-      budget -= finish - offset;
-      boundary = { messageId: row.original.id, offset: finish };
+    const finish = Math.min(points.length, offset + budget);
 
-      if (finish < points.length) break;
-    }
+    messages.push(messagePart(chat, row, points, offset, finish));
+    budget -= finish - offset;
+    boundary = { messageId: row.original.id, offset: finish };
 
-    index += 1;
-    offset = 0;
-  }
+    return finish === points.length;
+  });
 
   return { messages, start: position, finish: boundary };
 }
@@ -564,33 +574,22 @@ function windowBefore(
   count: number,
   budget: number,
 ): Window {
-  let index = positionIndex(rows, position);
-  let offset = position.offset;
   let boundary = position;
   const messages: HistoryReadMessage[] = [];
 
-  while (
-    index >= 0 &&
-    index < rows.length &&
-    messages.length < count &&
-    budget > 0
-  ) {
-    const row = rows[index]!;
-    const points = Array.from(row.body ?? "");
+  walkRows(rows, position, -1, (row, points, offset) => {
+    if (messages.length >= count || budget <= 0) return false;
 
-    if (offset > 0) {
-      const start = Math.max(0, offset - budget);
+    if (offset <= 0) return true;
 
-      messages.unshift(messagePart(chat, row, points, start, offset));
-      budget -= offset - start;
-      boundary = { messageId: row.original.id, offset: start };
+    const start = Math.max(0, offset - budget);
 
-      if (start > 0) break;
-    }
+    messages.unshift(messagePart(chat, row, points, start, offset));
+    budget -= offset - start;
+    boundary = { messageId: row.original.id, offset: start };
 
-    index -= 1;
-    offset = index >= 0 ? Array.from(rows[index]!.body ?? "").length : 0;
-  }
+    return start === 0;
+  });
 
   return { messages, start: boundary, finish: position };
 }

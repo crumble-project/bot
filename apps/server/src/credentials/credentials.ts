@@ -37,6 +37,27 @@ export const CREDENTIAL_USE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
 const hostsText = (hosts: readonly string[]) => hosts.join(", ");
 
+/** The hosts a save covers: the input's, else the saved credential's, else the pending request's. */
+const savedHosts = (
+  input: CredentialSaveInput,
+  existing: AgentCredential | undefined,
+  pending: CredentialRequest | undefined,
+) => {
+  const hosts = input.hosts ?? existing?.hosts ?? pending?.hosts;
+
+  if (!hosts)
+    return Effect.fail(new InvalidInput({ message: "Name at least one host" }));
+
+  if (!existing && input.value === undefined && !input.reference)
+    return Effect.fail(
+      new InvalidInput({
+        message: "A new credential needs a value or a reference",
+      }),
+    );
+
+  return Effect.succeed(hosts);
+};
+
 /**
  * Credentials the owner gives a bot for named hosts. Jobs see only a placeholder per credential; the credential proxy
  * swaps it for the value on requests to those hosts.
@@ -169,7 +190,7 @@ export class Credentials extends Context.Service<
           catch: (cause) => cause,
         }).pipe(Effect.orDie);
 
-        const { hosts, value, reference } = input;
+        const { value, reference } = input;
 
         // Checked before reading the saved credential, so a save made during the read isn't overwritten.
         if (reference)
@@ -180,19 +201,7 @@ export class Credentials extends Context.Service<
 
         const pending = yield* repository.getRequest(agentId, checkedName);
         const existing = yield* repository.get(agentId, checkedName);
-        const resolvedHosts = hosts ?? existing?.hosts ?? pending?.hosts;
-
-        if (!resolvedHosts)
-          return yield* Effect.fail(
-            new InvalidInput({ message: "Name at least one host" }),
-          );
-
-        if (!existing && value === undefined && !reference)
-          return yield* Effect.fail(
-            new InvalidInput({
-              message: "A new credential needs a value or a reference",
-            }),
-          );
+        const resolvedHosts = yield* savedHosts(input, existing, pending);
 
         const credential = yield* repository.save(agentId, checkedName, {
           hosts: resolvedHosts,

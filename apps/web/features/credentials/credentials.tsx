@@ -544,22 +544,33 @@ type CredentialBody = {
   reference?: { passwordManager: PasswordManagerId; reference: string };
 };
 
+/** The draft's reference, unless it is the one already saved. */
+function changedReference(
+  source: SecretSourceDraft,
+  existing: Credential | null,
+) {
+  const reference = referenceOf(source);
+
+  if (!reference || !existing) return reference;
+
+  return reference.passwordManager === existing.passwordManager &&
+    reference.reference === existing.reference
+    ? null
+    : reference;
+}
+
 /** Sends the source only when it changes: a typed value, or a reference other than the saved one. */
 function credentialBody(
   draft: { hosts: string; source: SecretSourceDraft },
   existing: Credential | null,
 ): CredentialBody {
-  const reference = referenceOf(draft.source);
-
-  const unchanged =
-    reference?.passwordManager === existing?.passwordManager &&
-    reference?.reference === existing?.reference;
+  const reference = changedReference(draft.source, existing);
 
   return {
     hosts: hostList(draft.hosts),
     ...(draft.source.kind === "value" &&
       draft.source.value && { value: draft.source.value }),
-    ...(reference && !unchanged && { reference }),
+    ...(reference && { reference }),
   };
 }
 
@@ -585,7 +596,13 @@ function useSaveCredential(
   });
 }
 
-function credentialDraft(editing: Editing) {
+const defaultOwner = (botId: string | null, bots: Bot[]) =>
+  botId ?? bots[0]?.id ?? "";
+
+const savedSource = (existing: Credential | null) =>
+  sourceDraftOf(existing?.passwordManager, existing?.reference);
+
+function credentialDraft(editing: Editing, botId: string | null, bots: Bot[]) {
   const existing = editing.kind === "credential" ? editing.credential : null;
   const request = editing.kind === "request" ? editing.request : null;
   const source = existing ?? request;
@@ -593,8 +610,10 @@ function credentialDraft(editing: Editing) {
   return {
     existing,
     request,
+    owner: defaultOwner(botId, bots),
     name: source?.name ?? "",
     hosts: (source?.hosts ?? []).join(", "),
+    source: savedSource(existing),
   };
 }
 
@@ -618,6 +637,12 @@ function credentialReady(
   );
 }
 
+function sheetLabels(existing: Credential | null) {
+  return existing
+    ? { title: `Edit ${existing.name}`, submitLabel: "Save" }
+    : { title: "New Credential", submitLabel: "Add" };
+}
+
 function CredentialDialog({
   bots,
   botId,
@@ -630,14 +655,16 @@ function CredentialDialog({
   editing: Editing;
   onClose: () => void;
 }) {
-  const { existing, request, ...initial } = credentialDraft(editing);
-  const [owner, setOwner] = useState(botId ?? bots[0]?.id ?? "");
+  const { existing, request, ...initial } = credentialDraft(
+    editing,
+    botId,
+    bots,
+  );
+
+  const [owner, setOwner] = useState(initial.owner);
   const [name, setName] = useState(initial.name);
   const [hosts, setHosts] = useState(initial.hosts);
-
-  const [source, setSource] = useState(() =>
-    sourceDraftOf(existing?.passwordManager, existing?.reference),
-  );
+  const [source, setSource] = useState(initial.source);
 
   const connected = useConnectedPasswordManagers();
 
@@ -652,10 +679,9 @@ function CredentialDialog({
 
   return (
     <EditorSheet
-      title={existing ? `Edit ${existing.name}` : "New Credential"}
+      {...sheetLabels(existing)}
       description={request?.reason}
       error={save.error?.message}
-      submitLabel={existing ? "Save" : "Add"}
       submitDisabled={!ready}
       onSubmit={() => ready && save.mutate()}
       onClose={onClose}

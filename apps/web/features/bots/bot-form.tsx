@@ -336,21 +336,27 @@ function useBotModel(bot: Bot | undefined, providers: Provider[]) {
   };
 }
 
+const accessOf = (bot?: Bot) => ({
+  tools: bot?.tools ?? DEFAULT_TOOLS,
+  mcpServers: bot?.mcpServers ?? [],
+  webSearchProvider: bot?.webSearchProvider ?? null,
+});
+
 function useBotAccess(bot?: Bot) {
-  const [tools, setTools] = useState<string[]>(bot?.tools ?? DEFAULT_TOOLS);
-  const [mcpServers, setMcpServers] = useState<string[]>(bot?.mcpServers ?? []);
+  const initial = accessOf(bot);
+  const desktop = bot?.desktopModel;
+  const [tools, setTools] = useState<string[]>(initial.tools);
+  const [mcpServers, setMcpServers] = useState<string[]>(initial.mcpServers);
 
   const [webSearchProvider, setWebSearchProvider] = useState<
     "mixed" | "exa" | null
-  >(bot?.webSearchProvider ?? null);
+  >(initial.webSearchProvider);
 
   const [desktopProvider, setDesktopProvider] = useState(
-    bot?.desktopModel?.provider ?? "",
+    desktop?.provider ?? "",
   );
 
-  const [desktopModel, setDesktopModel] = useState(
-    bot?.desktopModel?.model ?? "",
-  );
+  const [desktopModel, setDesktopModel] = useState(desktop?.model ?? "");
 
   return {
     tools,
@@ -1104,32 +1110,30 @@ export function BotFields({
   );
 }
 
+function inputOf(bot: Bot): BotInput {
+  return {
+    name: bot.name,
+    description: bot.description,
+    instructions: bot.instructions,
+    provider: bot.provider,
+    model: bot.model,
+    enabled: bot.enabled,
+    tools: bot.tools,
+    webSearchProvider: bot.webSearchProvider ?? null,
+    mcpServers: bot.mcpServers,
+    ...(bot.avatar !== undefined && { avatar: bot.avatar }),
+    ...(bot.inference !== undefined && {
+      inference: bot.inference,
+    }),
+    ...(bot.desktopModel !== undefined && {
+      desktopModel: bot.desktopModel,
+    }),
+  };
+}
+
 export function BotForm({ bot }: { bot?: Bot }) {
   const inputRef = useRef<BotInput | undefined>(undefined);
-
-  const fields = useBotFields(
-    bot
-      ? {
-          name: bot.name,
-          description: bot.description,
-          instructions: bot.instructions,
-          provider: bot.provider,
-          model: bot.model,
-          enabled: bot.enabled,
-          tools: bot.tools,
-          webSearchProvider: bot.webSearchProvider ?? null,
-          mcpServers: bot.mcpServers,
-          ...(bot.avatar !== undefined && { avatar: bot.avatar }),
-          ...(bot.inference !== undefined && {
-            inference: bot.inference,
-          }),
-          ...(bot.desktopModel !== undefined && {
-            desktopModel: bot.desktopModel,
-          }),
-        }
-      : undefined,
-    bot?.id,
-  );
+  const fields = useBotFields(bot && inputOf(bot), bot?.id);
 
   const { save, duplicate, remove } = useBotMutations(bot, () => {
     if (!inputRef.current) throw new Error("Bot form was not submitted");
