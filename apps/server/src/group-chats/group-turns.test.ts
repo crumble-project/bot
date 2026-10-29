@@ -12,7 +12,7 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
-import { Plugins } from "../app/plugins";
+import { Plugins } from "../plugins/plugins";
 import { BotExtensions } from "../bots/bot-extensions";
 import { webSearchTools } from "../web-search/web-search-tools";
 import type { Agent } from "../shared/domain";

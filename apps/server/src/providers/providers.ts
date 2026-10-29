@@ -15,7 +15,7 @@ import {
   pluginProviders,
   type CrumblePlugin,
   type ProviderContribution,
-} from "../app/plugins";
+} from "../plugins/plugins";
 
 const MELIOUS_URL = "https://api.melious.ai/v1";
 

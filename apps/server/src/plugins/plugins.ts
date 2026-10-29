@@ -99,4 +99,4 @@ export async function jobEnv(
 export class Plugins extends Context.Service<
   Plugins,
   readonly CrumblePlugin[]
->()("crumble/app/Plugins") {}
+>()("crumble/plugins/Plugins") {}

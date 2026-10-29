@@ -7,19 +7,23 @@ import { AgentRepository } from "../bots/agent-repository";
 import type { AgentRuntime } from "../bots/runtime";
 import type { BotsAccess } from "../bots/bots";
 import { ConversationRepository } from "../bots/conversation-repository";
-import type { CoreServices } from "../shared/core-layer";
 import { InvalidInput } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import { LearnedChangeRepository } from "../skills/learned-change-repository";
 
-type Exec = Runner<CoreServices>["runSync"];
+type Services =
+  | AgentRepository
+  | ConversationRepository
+  | LearnedChangeRepository;
+
+type Exec = Runner<Services>["runSync"];
 
 /** The account-wide activity feed, oldest pages first, from the bots' chat history and learned changes. */
 export function registerActivityRoutes(options: {
   register: Register;
   service: BotsAccess;
   runtime: AgentRuntime;
-  run: Runner<CoreServices>;
+  run: Runner<Services>;
 }) {
   const { register, service, runtime } = options;
   const exec: Exec = (effect) => options.run.runSync(effect);

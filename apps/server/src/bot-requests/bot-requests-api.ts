@@ -4,7 +4,6 @@ import type { Register } from "../contract/route";
 import type { BotsAccess } from "../bots/bots";
 import { validateAgentProposal } from "../bots/agents-api";
 import type { Runner } from "../shared/runner";
-import type { CoreServices } from "../shared/core-layer";
 import { BotRequests } from "./bot-requests";
 import { z } from "zod";
 import { agentInput } from "../shared/domain";
@@ -13,15 +12,14 @@ type Options = {
   register: Register;
   service: BotsAccess;
   botRequests: BotRequests["Service"];
-  run: Runner<CoreServices>;
+  run: Runner<never>;
   provider: { parse(value: string): string };
 };
 
 export function registerBotRequestRoutes(options: Options) {
   const { register, service, botRequests, run, provider } = options;
 
-  const exec = <A, E>(effect: Effect.Effect<A, E, CoreServices>) =>
-    run.runSync(effect);
+  const exec = <A, E>(effect: Effect.Effect<A, E>) => run.runSync(effect);
 
   register(routes.listBotRequests, (c) => {
     service.agent(c.req.param("id"));

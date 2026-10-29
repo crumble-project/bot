@@ -10,7 +10,7 @@ import { bitwarden } from "../password-managers/bitwarden";
 import { onePassword } from "../password-managers/one-password";
 import { PasswordManagers } from "../password-managers/password-manager";
 import { SecretValues } from "../password-managers/secret-values";
-import { productLayer } from "./product-layer";
+import { productLayer } from "../shared/product-layer";
 
 /** The account's repositories and the services that need nothing else: the base every account runtime starts from. */
 export const coreLayer = (dataDir: string) =>

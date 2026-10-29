@@ -7,8 +7,7 @@ import {
   providerLoginInput,
 } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import type { ExternalAuth } from "../app/plugins";
-import type { CoreServices } from "../shared/core-layer";
+import type { ExternalAuth } from "../plugins/plugins";
 import {
   Conflict,
   InvalidInput,
@@ -19,13 +18,15 @@ import type { Runner } from "../shared/runner";
 import { loginMethods, type ProviderSignInsAccess } from "./provider-auth";
 import { ProviderCredentialRepository } from "./provider-credential-repository";
 
-type Exec = Runner<CoreServices>["runSync"];
+type Services = ProviderCredentialRepository;
+
+type Exec = Runner<Services>["runSync"];
 
 type ProviderRoutesOptions = {
   register: Register;
   providerAuth: ProviderSignInsAccess;
   /** Runs the repository effects the provider routes read. */
-  run: Runner<CoreServices>;
+  run: Runner<Services>;
   /** Providers whose sign-in happens outside Crumble, by provider ID. */
   externalAuth?: ReadonlyMap<string, () => Promise<ExternalAuth>>;
 };

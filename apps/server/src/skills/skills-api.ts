@@ -2,7 +2,6 @@ import { routes, changesInput, reviewsInput } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import { AgentRepository } from "../bots/agent-repository";
 import type { BotsAccess } from "../bots/bots";
-import type { CoreServices } from "../shared/core-layer";
 import { skillInput, skillLifecycleInput } from "../shared/domain";
 import { NotFound, ReadOnly } from "../shared/errors";
 import type { Runner } from "../shared/runner";
@@ -11,13 +10,19 @@ import type { CommonSkill } from "./common-skills";
 import { LearnedChangeRepository } from "./learned-change-repository";
 import { SkillRepository } from "./skill-repository";
 
-type Exec = Runner<CoreServices>["runSync"];
+type Services =
+  | AgentRepository
+  | ChangeReverter
+  | LearnedChangeRepository
+  | SkillRepository;
+
+type Exec = Runner<Services>["runSync"];
 
 type SkillRoutesOptions = {
   register: Register;
   service: BotsAccess;
   /** Runs the repository effects the skill routes read and write. */
-  run: Runner<CoreServices>;
+  run: Runner<Services>;
   /** Skills the server ships with; they are read-only. */
   commonSkills?: CommonSkill[];
 };

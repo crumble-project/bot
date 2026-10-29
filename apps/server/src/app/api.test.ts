@@ -24,7 +24,7 @@ import { PasswordManagerRepository } from "../password-managers/password-manager
 import { SecretValues } from "../password-managers/secret-values";
 import { standaloneSignIns } from "../providers/provider-auth";
 import { ProviderCredentials } from "../providers/provider-credentials";
-import type { CoreServices } from "../shared/core-layer";
+import type { CoreServices } from "./core-layer";
 import { runnerOf } from "../shared/runner";
 import { ScriptRuns } from "../schedules/script-runs";
 import { ScriptRunRepository } from "../schedules/script-run-repository";

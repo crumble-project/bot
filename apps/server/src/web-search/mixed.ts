@@ -1,5 +1,5 @@
 import { Effect, Result, Semaphore } from "effect";
-import type { CrumblePlugin } from "../app/plugins";
+import type { CrumblePlugin } from "../plugins/plugins";
 import {
   WebExtractionError,
   WebSearchError,

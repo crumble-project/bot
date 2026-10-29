@@ -1,7 +1,6 @@
 import { Context, Effect, Layer, ManagedRuntime } from "effect";
 import type { JobAnswer } from "../jobs/jobs";
 import type { AttachmentInput } from "../shared/attachments";
-import type { CoreServices } from "../shared/core-layer";
 import type { Agent, Conversation, Execution } from "../shared/domain";
 import type { AppError } from "../shared/errors";
 import type { Runner } from "../shared/runner";
@@ -341,15 +340,17 @@ type StandaloneServices =
   | ScheduleRepository
   | BotNotices;
 
+type StoreServices = Exclude<StandaloneServices, Bots | BotRuntime>;
+
 export function standaloneBots<
-  S extends { runtime: Runner<CoreServices>; close(): void },
+  S extends { runtime: Runner<StoreServices>; close(): void },
 >(
   store: S,
   runtime: AgentRuntime,
 ): BotsAccess & {
   store: S;
   /** The store's account, for code that reads its repositories. */
-  core: Runner<CoreServices>;
+  core: S["runtime"];
   runtime: AgentRuntime;
   /** Runs effects over the bots and what they stand on, such as features built on the bots in a test. */
   effects: Runner<StandaloneServices>;
@@ -360,9 +361,7 @@ export function standaloneBots<
       Layer.provideMerge(Layer.succeed(BotRuntime, runtime)),
       Layer.provideMerge(
         Layer.succeedContext(
-          store.runtime.runSync(
-            Effect.context<Exclude<StandaloneServices, Bots | BotRuntime>>(),
-          ),
+          store.runtime.runSync(Effect.context<StoreServices>()),
         ),
       ),
     ),

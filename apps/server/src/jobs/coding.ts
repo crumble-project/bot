@@ -17,7 +17,7 @@ import {
 } from "../credentials/credentials";
 import type { Agent } from "../shared/domain";
 import { defineJobKind, type JobExtensions, type JobInfo } from "./jobs";
-import type { CrumblePlugin } from "../app/plugins";
+import type { CrumblePlugin } from "../plugins/plugins";
 import { WORKSPACE_PATH, type Workspaces } from "../workspaces/workspace";
 
 export const CODING_TOOL_NAME = "coding";

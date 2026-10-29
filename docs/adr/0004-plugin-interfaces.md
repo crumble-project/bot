@@ -10,7 +10,7 @@ Extension points are hard-wired. `providers.ts` adds Melious to Pi AI's built-in
 
 ## Decision
 
-A plugin is a compiled-in module that exports a factory returning one `CrumblePlugin` (`src/plugins.ts`). `builtinPlugins` (`src/builtin-plugins.ts`) holds the static list and hands each factory only the part of `PluginHost` it needs; the server reads contributions from the list instead of naming modules.
+A plugin is a compiled-in module that exports a factory returning one `CrumblePlugin` (`apps/server/src/plugins/plugins.ts`). `builtinPlugins` (`apps/server/src/app/builtin-plugins.ts`) holds the static list and hands each factory only the part of `PluginHost` it needs; the server reads contributions from the list instead of naming modules.
 
 ```ts
 type CrumblePlugin = {

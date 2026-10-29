@@ -3,7 +3,7 @@ import { isIP } from "node:net";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
-import { Plugins, pluginWebSearchProviders } from "../app/plugins";
+import { Plugins, pluginWebSearchProviders } from "../plugins/plugins";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import { isPublicAddress } from "../workspaces/public-address";
 import {

@@ -50,7 +50,7 @@ import { registerScheduleRoutes } from "../schedules/schedules-api";
 import type { SchedulerAccess } from "../schedules/scheduler";
 import type { ScriptRuns } from "../schedules/script-runs";
 import { MAX_MESSAGE_BODY } from "../shared/attachments";
-import type { CoreServices } from "../shared/core-layer";
+import type { CoreServices } from "./core-layer";
 import type { CommonSkill } from "../skills/common-skills";
 import { httpStatus, isAppError } from "../shared/errors";
 import type { Runner } from "../shared/runner";
@@ -58,7 +58,7 @@ import { registerActivityRoutes } from "../activity/activity-api";
 import { registerSkillRoutes } from "../skills/skills-api";
 import type { DesktopStream } from "../workspaces/workspace";
 import type { DesktopOpenError } from "../workspaces/workspace-errors";
-import type { ExternalAuth } from "./plugins";
+import type { ExternalAuth } from "../plugins/plugins";
 import { registerWebSearchRoutes } from "../web-search/settings";
 
 /** The bots the API serves, with the account's repositories and bot runtime its handlers read directly. */

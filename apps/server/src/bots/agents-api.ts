@@ -5,7 +5,6 @@ import { SecretRepository } from "../credentials/secret-repository";
 import type { McpIntegrations } from "../integrations/integrations";
 import { signOut, type SecretStorage } from "../integrations/mcp-oauth";
 import { McpServerRepository } from "../integrations/mcp-server-repository";
-import type { CoreServices } from "../shared/core-layer";
 import { agentInput, type AgentInput } from "../shared/domain";
 import { InvalidInput } from "../shared/errors";
 import type { Runner } from "../shared/runner";
@@ -13,13 +12,19 @@ import { AgentRepository } from "./agent-repository";
 import type { BotsAccess } from "./bots";
 import { ConversationRepository } from "./conversation-repository";
 
-type Exec = Runner<CoreServices>["runSync"];
+type Services =
+  | AgentRepository
+  | ConversationRepository
+  | McpServerRepository
+  | SecretRepository;
+
+type Exec = Runner<Services>["runSync"];
 
 type AgentRoutesOptions = {
   register: Register;
   service: BotsAccess;
   /** Runs the repository effects the bot routes read and write. */
-  run: Runner<CoreServices>;
+  run: Runner<Services>;
   /** Accepts a provider ID only if this server can serve it. */
   provider: { parse(value: string): string };
   secrets: SecretStorage;

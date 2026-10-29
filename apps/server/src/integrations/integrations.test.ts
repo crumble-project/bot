@@ -18,7 +18,7 @@ import {
   fakePasswordManager,
   fakeVendor,
 } from "../../test/support/fake-password-manager";
-import type { CoreServices } from "../shared/core-layer";
+import type { CoreServices } from "../app/core-layer";
 import { runnerOf } from "../shared/runner";
 import { PasswordManagers } from "../password-managers/password-manager";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";

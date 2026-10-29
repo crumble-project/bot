@@ -1,5 +1,5 @@
 import { Effect, Exit, Layer, Predicate, Scope } from "effect";
-import { coreLayer, type CoreServices } from "../../src/shared/core-layer";
+import { coreLayer, type CoreServices } from "../../src/app/core-layer";
 import { runnerOf, type Runner } from "../../src/shared/runner";
 import { botStore } from "./store-bots";
 import { configurationStore } from "./store-configuration";

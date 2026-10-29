@@ -11,6 +11,7 @@ import type { Register } from "../contract/route";
 import { AgentRepository } from "../bots/agent-repository";
 import type { BotsAccess } from "../bots/bots";
 import { SecretRepository } from "../credentials/secret-repository";
+import type { PasswordManagers } from "../password-managers/password-manager";
 import {
   checkSecretReference,
   type SecretReference,
@@ -19,7 +20,6 @@ import {
   SecretValues,
   type SecretSource,
 } from "../password-managers/secret-values";
-import type { CoreServices } from "../shared/core-layer";
 import type { MCPServer } from "../shared/domain";
 import { InvalidInput, NotFound } from "../shared/errors";
 import type { Runner } from "../shared/runner";
@@ -35,13 +35,20 @@ import {
 } from "./mcp-oauth";
 import { McpServerRepository } from "./mcp-server-repository";
 
-type Exec = Runner<CoreServices>["runSync"];
+type Services =
+  | AgentRepository
+  | McpServerRepository
+  | PasswordManagers
+  | SecretRepository
+  | SecretValues;
+
+type Exec = Runner<Services>["runSync"];
 
 type McpServerRoutesOptions = {
   register: Register;
   service: BotsAccess;
   /** Runs the repository effects the MCP server routes read and write. */
-  run: Runner<CoreServices>;
+  run: Runner<Services>;
   secrets: SecretStorage;
   integrations?: McpIntegrations["Service"] | undefined;
   /** The server's OAuth client metadata document, when it has a public address. */
@@ -112,7 +119,7 @@ type TokenInput = {
 };
 
 /** Fails before anything is written: a token and a reference together, or a reference that can't be read now. */
-const checkToken = async (run: Runner<CoreServices>, input: TokenInput) => {
+const checkToken = async (run: Runner<Services>, input: TokenInput) => {
   if (input.token !== undefined && input.tokenReference)
     throw new InvalidInput({
       message: "Send a token or a token reference, not both",
@@ -127,7 +134,7 @@ const checkToken = async (run: Runner<CoreServices>, input: TokenInput) => {
  * open connection closed, so the next use reads the new one.
  */
 const storeToken = async (
-  run: Runner<CoreServices>,
+  run: Runner<Services>,
   integrations: McpIntegrations["Service"] | undefined,
   serverId: string,
   input: TokenInput,
@@ -169,7 +176,7 @@ const storeSecret = (exec: Exec, key: string, value: string | undefined) => {
 
 /** Adding a server, storing its secrets, and letting the bot that owns it use it right away. */
 const addMcpServer = async (
-  run: Runner<CoreServices>,
+  run: Runner<Services>,
   service: BotsAccess,
   input: z.output<typeof mcpCreateInput>,
 ) => {
