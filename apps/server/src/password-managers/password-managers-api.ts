@@ -1,15 +1,12 @@
 import { Effect, Predicate, Redacted } from "effect";
-import {
-  passwordManagerIdInput,
-  passwordManagerTokenInput,
-  routes,
-} from "../contract/api-contract";
+import { passwordManagerTokenInput, routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import { InvalidInput, Unavailable } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import { nowIso } from "../shared/time";
 import { PasswordManagers, type PasswordManagerId } from "./password-manager";
 import { PasswordManagerRepository } from "./password-manager-repository";
+import { passwordManagerIdInput } from "./secret-references";
 import { SecretValues } from "./secret-values";
 
 type PasswordManagerServices =

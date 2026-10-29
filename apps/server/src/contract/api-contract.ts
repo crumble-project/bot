@@ -11,6 +11,7 @@ import { attachmentInput, MAX_ATTACHMENTS } from "../shared/attachments";
 import * as response from "./api-responses";
 import { body, define, empty, error, json } from "./route";
 import { pushRoutes } from "../push/push-contract";
+import { passwordManagerIdInput } from "../password-managers/secret-references";
 
 export const memoryInput = z.object({
   content: z.string().trim().min(1).max(32000),
@@ -88,8 +89,6 @@ export const activityInput = z.object({
 export const providerKeyInput = z.object({
   apiKey: z.string().trim().min(1).max(16000),
 });
-
-export const passwordManagerIdInput = z.enum(["1password", "bitwarden"]);
 
 /** Write-only: the token never appears in a response. */
 export const passwordManagerTokenInput = z.object({

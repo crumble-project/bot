@@ -98,6 +98,11 @@ export class SecretValues extends Context.Service<
     readonly read: (
       source: SecretSource,
     ) => Effect.Effect<Redacted.Redacted, SecretUnavailable>;
+    /** Asks the password manager now, ignoring any cached value, and caches what it answers; use to check a reference. */
+    readonly readNow: (source: {
+      readonly passwordManager: PasswordManagerId;
+      readonly reference: string;
+    }) => Effect.Effect<Redacted.Redacted, SecretUnavailable>;
     /** Drops a reference's cached value, such as when its secret is edited or deleted. */
     readonly forget: (
       passwordManager: PasswordManagerId,
@@ -268,6 +273,12 @@ export class SecretValues extends Context.Service<
           "stored" in source
             ? Effect.succeed(source.stored)
             : readReference(source.passwordManager, source.reference),
+        readNow: ({ passwordManager, reference }) =>
+          fetchAndStore(passwordManager, reference).pipe(
+            Effect.mapError((failure) =>
+              unavailable(passwordManager, failure.reason),
+            ),
+          ),
         forget: (id, reference) =>
           Effect.sync(() => {
             epoch++;
