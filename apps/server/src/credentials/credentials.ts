@@ -15,6 +15,8 @@ import {
   type CredentialSaveInput,
   type CredentialUse,
 } from "../shared/domain";
+import { PasswordManagers } from "../password-managers/password-manager";
+import { checkSecretReference } from "../password-managers/secret-references";
 import {
   SecretValues,
   type SecretUnavailable,
@@ -95,6 +97,19 @@ export class Credentials extends Context.Service<
       const repository = yield* AgentCredentialRepository;
       const notices = yield* BotNotices;
       const values = yield* SecretValues;
+      const managers = yield* PasswordManagers;
+
+      /** Drops the cached value of a reference the credential no longer reads. */
+      const forgetReplaced = (
+        previous: AgentCredential | undefined,
+        next: AgentCredential | undefined,
+      ) =>
+        previous?.passwordManager &&
+        previous.reference &&
+        (previous.passwordManager !== next?.passwordManager ||
+          previous.reference !== next.reference)
+          ? values.forget(previous.passwordManager, previous.reference)
+          : Effect.void;
 
       const value = Effect.fn("Credentials.value")(function* (
         agentId: string,
@@ -154,7 +169,15 @@ export class Credentials extends Context.Service<
           catch: (cause) => cause,
         }).pipe(Effect.orDie);
 
-        const { hosts, value } = input;
+        const { hosts, value, reference } = input;
+
+        // Checked before reading the saved credential, so a save made during the read isn't overwritten.
+        if (reference)
+          yield* checkSecretReference(reference).pipe(
+            Effect.provideService(PasswordManagers, managers),
+            Effect.provideService(SecretValues, values),
+          );
+
         const pending = yield* repository.getRequest(agentId, checkedName);
         const existing = yield* repository.get(agentId, checkedName);
         const resolvedHosts = hosts ?? existing?.hosts ?? pending?.hosts;
@@ -164,16 +187,21 @@ export class Credentials extends Context.Service<
             new InvalidInput({ message: "Name at least one host" }),
           );
 
-        if (!existing && value === undefined)
+        if (!existing && value === undefined && !reference)
           return yield* Effect.fail(
-            new InvalidInput({ message: "A new credential needs a value" }),
+            new InvalidInput({
+              message: "A new credential needs a value or a reference",
+            }),
           );
 
         const credential = yield* repository.save(agentId, checkedName, {
           hosts: resolvedHosts,
           value,
+          reference,
           placeholder: `crumble-credential-${randomBytes(24).toString("hex")}`,
         });
+
+        yield* forgetReplaced(existing, credential);
 
         if (pending) {
           yield* repository.deleteRequest(agentId, checkedName);
@@ -191,7 +219,10 @@ export class Credentials extends Context.Service<
         agentId: string,
         name: string,
       ) {
-        if (yield* repository.delete(agentId, name)) return;
+        const existing = yield* repository.get(agentId, name);
+
+        if (yield* repository.delete(agentId, name))
+          return yield* forgetReplaced(existing, undefined);
 
         if (!(yield* repository.deleteRequest(agentId, name)))
           return yield* Effect.fail(

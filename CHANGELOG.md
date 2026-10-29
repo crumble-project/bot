@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Connect 1Password or Bitwarden Secrets Manager over the API with `GET`, `PUT`, and `DELETE /v1/password-managers/{id}`. Connecting signs in once to check the token, and a new token drops values read with the old one. A password manager can't be disconnected while a secret reads from it. Contract 3.4.0.
+- Save a bot credential as a password manager reference instead of a value. Saving one reads it once to check it, and a reference that can't be read is rejected without saving anything. Credentials show where their value comes from and why their newest use couldn't read it.
 - Add `CRUMBLE_MASTER_KEY` to keep a usable encryption key out of the data directory. When it's set, each account's key is stored wrapped in `.secret.key.wrapped`, existing plain `.secret.key` files are wrapped and deleted on start, and the server refuses to start an account whose key the master key can't unwrap. Without it, nothing changes, and the server logs at startup that keys are stored next to the data.
 - Bots cite web pages inline. In bot chats and group chats in the web app, links to pages the bot searched or read in that turn show as source chips with the site's name at the end of the message. Group messages from bots carry these pages in the new optional `sources` field of `TranscriptMessage`.
 - Choose a default web search provider for the account and override it per bot. Add an Exa API key shared by bots on the account.
@@ -141,6 +142,8 @@
 - Add `GET /v1/password-managers` (`listPasswordManagers`), listing each supported password manager (`1password`, `bitwarden`) with its `name`, `connected`, nullable `connectedAt`, and `usedBy`, the secrets that read from it.
 - Add `PUT /v1/password-managers/{id}` (`connectPasswordManager`) with a write-only `token` (1-16000 characters). It answers 400 when the password manager rejects the token and 503 when it can't be reached.
 - Add `DELETE /v1/password-managers/{id}` (`disconnectPasswordManager`). It answers 409 while any secret reads from the password manager.
+- Add optional `reference` (`{ passwordManager, reference }`) to the credential save input, exclusive with `value`. A new credential needs one of them. 400 when the reference can't be read now.
+- Add nullable `passwordManager`, `reference`, and `lastError` to `Credential`. `lastError` is the `error` of the credential's newest use.
 - Add nullable `error` to `CredentialUse`: why the value couldn't be read from its password manager, in which case the request was never sent.
 
 ## Contract 3.3.0

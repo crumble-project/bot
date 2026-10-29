@@ -47,6 +47,7 @@ The API calls bots `agents`, so bot endpoints start with `/v1/agents`.
 | **Reviews & changes**    | `/v1/agents/{id}/reviews`, `/v1/changes`, `POST /v1/changes/{id}/revert`                                                                                                                                                             |
 | **Schedules & activity** | `/v1/schedules`, `POST /v1/schedules/{id}/run`, `/v1/executions`, `/v1/activity/feed`                                                                                                                                                |
 | **Providers & models**   | `/v1/providers`, `/v1/providers/{provider}`, `POST /v1/providers/{provider}/login`, `/v1/provider-logins/{id}`, `POST /v1/provider-logins/{id}/responses`, `/v1/models`                                                              |
+| **Password managers**    | `/v1/password-managers`, `/v1/password-managers/{id}`                                                                                                                                                                                |
 | **MCP servers**          | `/v1/mcp-servers`, `/v1/mcp-servers/{id}`, `/v1/mcp-servers/{id}/oauth`, `POST /v1/mcp-servers/{id}/oauth/callback`                                                                                                                  |
 
 ## Event streams

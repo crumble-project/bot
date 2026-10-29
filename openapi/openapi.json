@@ -1189,6 +1189,25 @@
               "type": "string"
             }
           },
+          "passwordManager": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "1password",
+              "bitwarden",
+              null
+            ],
+            "description": "The password manager the value is read from; null for a value stored in Crumble."
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where in `passwordManager` the value is read from."
+          },
           "createdAt": {
             "type": "string"
           },
@@ -1200,14 +1219,24 @@
               "string",
               "null"
             ]
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the newest use couldn't read the value from its password manager; null when it could."
           }
         },
         "required": [
           "name",
           "hosts",
+          "passwordManager",
+          "reference",
           "createdAt",
           "updatedAt",
-          "lastUsedAt"
+          "lastUsedAt",
+          "lastError"
         ]
       },
       "CredentialRequest": {
@@ -9557,6 +9586,27 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 16000
+                  },
+                  "reference": {
+                    "type": "object",
+                    "properties": {
+                      "passwordManager": {
+                        "type": "string",
+                        "enum": [
+                          "1password",
+                          "bitwarden"
+                        ]
+                      },
+                      "reference": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      }
+                    },
+                    "required": [
+                      "passwordManager",
+                      "reference"
+                    ]
                   }
                 }
               }

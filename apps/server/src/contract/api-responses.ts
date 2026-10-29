@@ -382,9 +382,20 @@ export const credentialResponse = z
   .object({
     name: z.string(),
     hosts: z.array(z.string()),
+    passwordManager: z.enum(["1password", "bitwarden"]).nullable().openapi({
+      description:
+        "The password manager the value is read from; null for a value stored in Crumble.",
+    }),
+    reference: z.string().nullable().openapi({
+      description: "Where in `passwordManager` the value is read from.",
+    }),
     createdAt: z.string(),
     updatedAt: z.string(),
     lastUsedAt: z.string().nullable(),
+    lastError: z.string().nullable().openapi({
+      description:
+        "Why the newest use couldn't read the value from its password manager; null when it could.",
+    }),
   })
   .openapi("Credential");
 

@@ -20,3 +20,28 @@ Open **Settings** > **Credentials**, select **New credential**, pick the bot, an
 A bot can also ask you for a credential when it needs one. The request shows up as a card in the bot chat. Enter the value or decline the request there, or answer it under **Waiting for you** in **Settings** > **Credentials**.
 
 The value never appears in the transcript, notices, or logs.
+
+## Read the value from a password manager
+
+Instead of storing the value in Crumble, a credential can point at a secret in 1Password or Bitwarden Secrets Manager. The web app doesn't offer this yet; use the API.
+
+1. Connect the password manager with `PUT /v1/password-managers/{id}`, where `{id}` is `1password` or `bitwarden`, and send `{"token": "..."}`: a 1Password service account token or a Bitwarden access token. Crumble signs in once to check it.
+2. Save the credential with `PUT /v1/agents/{id}/credentials/{name}` and send `reference` instead of `value`:
+
+   ```json
+   {
+     "hosts": ["api.example.com"],
+     "reference": {
+       "passwordManager": "1password",
+       "reference": "op://Vault/Item/field"
+     }
+   }
+   ```
+
+   A Bitwarden reference is the secret's ID.
+
+Crumble reads the reference once when you save it and rejects the save if it can't be read. After that, it reads the value only when a request uses the credential, and keeps it in memory for an hour. If the password manager can't be reached, a value read in the last two hours is still used.
+
+When the value can't be read, the server doesn't send the request and records why in the credential's uses. The credential's `lastError` shows the newest such error.
+
+A password manager can't be disconnected while a credential still reads from it. Save a value instead, or delete the credential, first.
