@@ -1,67 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import {
-  Effect,
-  Exit,
-  Fiber,
-  Option,
-  Redacted,
-  Result,
-  Schema,
-  Scope,
-} from "effect";
+import { Effect, Exit, Fiber, Option, Redacted, Result, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { bitwarden } from "./bitwarden";
 import { onePassword } from "./one-password";
 import {
+  FAKE_TOKEN,
+  fakePasswordManager,
+  fakeVendor,
+} from "../../test/support/fake-password-manager";
+import {
   PasswordManagers,
-  PasswordManagerTokenRejected,
-  SecretUnreadable,
   type PasswordManagerVendor,
 } from "./password-manager";
-
-const TOKEN = "fake-token";
-
-/** Counts the fake's reads that were interrupted before they finished. */
-type Probe = { interrupted: number };
-
-/** A password manager that holds `values` in memory and accepts only `TOKEN`. A `hang` read never answers. */
-const fakeVendor = (
-  values: Record<string, string>,
-  options: { hang?: boolean; probe?: Probe } = {},
-): PasswordManagerVendor => ({
-  id: "1password",
-  name: "Fake",
-  reference: Schema.String,
-  signIn: (token) =>
-    Redacted.value(token) === TOKEN
-      ? Effect.succeed({
-          read: (references) =>
-            options.hang
-              ? Effect.never.pipe(
-                  Effect.onInterrupt(() =>
-                    Effect.sync(() => {
-                      if (options.probe) options.probe.interrupted++;
-                    }),
-                  ),
-                )
-              : Effect.succeed(
-                  new Map(
-                    references.map((reference) => [
-                      reference,
-                      reference in values
-                        ? Result.succeed(Redacted.make(values[reference]!))
-                        : Result.fail(
-                            new SecretUnreadable({
-                              reference,
-                              message: "gone",
-                            }),
-                          ),
-                    ]),
-                  ),
-                ),
-        })
-      : Effect.fail(new PasswordManagerTokenRejected({ message: "rejected" })),
-});
 
 const failureTag = (exit: Exit.Exit<unknown, { readonly _tag: string }>) =>
   Option.getOrUndefined(
@@ -79,13 +29,13 @@ const run = <A, E>(
   );
 
 const connect = PasswordManagers.use((managers) =>
-  managers.connect("1password", Redacted.make(TOKEN)),
+  managers.connect("1password", Redacted.make(FAKE_TOKEN)),
 );
 
 describe("PasswordManagers", () => {
   test("reads each reference, failing only the ones that are gone", async () => {
     const exit = await run(
-      fakeVendor({ "op://v/i/password": "hunter2" }),
+      fakeVendor(fakePasswordManager({ "op://v/i/password": "hunter2" })),
       Effect.gen(function* () {
         const client = yield* connect;
 
@@ -108,7 +58,7 @@ describe("PasswordManagers", () => {
 
   test("rejects a token the password manager refuses", async () => {
     const exit = await run(
-      fakeVendor({}),
+      fakeVendor(fakePasswordManager()),
       PasswordManagers.use((managers) =>
         managers.connect("1password", Redacted.make("wrong")),
       ),
@@ -119,7 +69,7 @@ describe("PasswordManagers", () => {
 
   test("a read that hangs fails as unreachable after the timeout", async () => {
     const exit = await run(
-      fakeVendor({}, { hang: true }),
+      fakeVendor({ ...fakePasswordManager(), mode: "hang" }),
       Effect.gen(function* () {
         const client = yield* connect;
         const reading = yield* Effect.forkChild(client.read(["op://v/i/f"]));
@@ -135,7 +85,7 @@ describe("PasswordManagers", () => {
 
   test("a read after the scope closes fails as disconnected", async () => {
     const exit = await run(
-      fakeVendor({ "op://v/i/password": "hunter2" }),
+      fakeVendor(fakePasswordManager({ "op://v/i/password": "hunter2" })),
       Effect.gen(function* () {
         const client = yield* Effect.scoped(connect);
 
@@ -147,10 +97,10 @@ describe("PasswordManagers", () => {
   });
 
   test("closing the scope interrupts a read in flight", async () => {
-    const probe: Probe = { interrupted: 0 };
+    const probe = { ...fakePasswordManager(), mode: "hang" as const };
 
     const exit = await run(
-      fakeVendor({}, { hang: true, probe }),
+      fakeVendor(probe),
       Effect.gen(function* () {
         const scope = yield* Scope.make();
         const client = yield* connect.pipe(Scope.provide(scope));
@@ -168,10 +118,10 @@ describe("PasswordManagers", () => {
   });
 
   test("interrupting a read interrupts the password manager's read", async () => {
-    const probe: Probe = { interrupted: 0 };
+    const probe = { ...fakePasswordManager(), mode: "hang" as const };
 
     await run(
-      fakeVendor({}, { hang: true, probe }),
+      fakeVendor(probe),
       Effect.gen(function* () {
         const client = yield* connect;
         const reading = yield* Effect.forkChild(client.read(["op://v/i/f"]));

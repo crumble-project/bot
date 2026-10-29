@@ -110,6 +110,79 @@ function writeSecret(path: string, data: string | Buffer) {
   syncDirectory(dirname(path));
 }
 
+type KeyFiles = { dataDir: string; keyPath: string; wrappedPath: string };
+
+/** The account's key without a master key: `.secret.key`, created on first start. */
+function plainKey(keyPath: string, exists: boolean) {
+  if (exists) {
+    restrict(keyPath);
+
+    return readFileSync(keyPath);
+  }
+
+  const fresh = randomBytes(32);
+  writeSecret(keyPath, fresh);
+
+  return fresh;
+}
+
+/** Deletes `.secret.key` once the wrapped key is on disk. */
+function removePlainKey({ dataDir, keyPath }: KeyFiles) {
+  syncDirectory(dataDir);
+  rmSync(keyPath);
+  syncDirectory(dataDir);
+}
+
+/** A start that stopped mid-migration leaves both files; the plain one may go only if they agree. */
+function unwrapExisting(
+  masterKey: Buffer,
+  { wrappedPath }: KeyFiles,
+  plain: Buffer | undefined,
+) {
+  const unwrapped = unwrap(masterKey, wrappedPath);
+
+  if (plain && !plain.equals(unwrapped))
+    throw new Error(
+      "Credential encryption key differs between .secret.key and .secret.key.wrapped; refusing to start the account",
+    );
+
+  return unwrapped;
+}
+
+/** Wraps the plain key, or a new one, and checks the wrapped file reads back the same. */
+function wrapNew(
+  masterKey: Buffer,
+  { wrappedPath }: KeyFiles,
+  plain: Buffer | undefined,
+) {
+  const accountKey = plain ?? randomBytes(32);
+  writeSecret(wrappedPath, seal(masterKey, accountKey));
+
+  if (!unwrap(masterKey, wrappedPath).equals(accountKey))
+    throw new Error(
+      "Credential encryption key did not survive wrapping; refusing to start the account",
+    );
+
+  return accountKey;
+}
+
+/** The account's key with a master key: from `.secret.key.wrapped`, wrapping and deleting a plain `.secret.key`. */
+function wrappedKey(
+  files: KeyFiles,
+  masterKey: Buffer,
+  exists: { plain: boolean; wrapped: boolean },
+) {
+  const plain = exists.plain ? readFileSync(files.keyPath) : undefined;
+
+  const key = exists.wrapped
+    ? unwrapExisting(masterKey, files, plain)
+    : wrapNew(masterKey, files, plain);
+
+  if (plain) removePlainKey(files);
+
+  return key;
+}
+
 /**
  * Encrypts values at rest with the account's key (AES-256-GCM). The key lives in `.secret.key`,
  * or in `.secret.key.wrapped`, sealed with `CRUMBLE_MASTER_KEY`, when that variable is set.
@@ -169,55 +242,16 @@ export class SecretBox extends Context.Service<
             );
         }
 
-        const key = yield* Effect.sync(() => {
-          if (!masterKey) {
-            if (keyExists) {
-              restrict(keyPath);
+        const files = { dataDir, keyPath, wrappedPath };
 
-              return readFileSync(keyPath);
-            }
-
-            const fresh = randomBytes(32);
-            writeSecret(keyPath, fresh);
-
-            return fresh;
-          }
-
-          const plain = keyExists ? readFileSync(keyPath) : undefined;
-
-          if (wrappedExists) {
-            const unwrapped = unwrap(masterKey, wrappedPath);
-
-            // A start that stopped mid-migration leaves both files; drop the plain one only if they agree.
-            if (plain && !plain.equals(unwrapped))
-              throw new Error(
-                "Credential encryption key differs between .secret.key and .secret.key.wrapped; refusing to start the account",
-              );
-
-            if (plain) {
-              syncDirectory(dataDir);
-              rmSync(keyPath);
-              syncDirectory(dataDir);
-            }
-
-            return unwrapped;
-          }
-
-          const accountKey = plain ?? randomBytes(32);
-          writeSecret(wrappedPath, seal(masterKey, accountKey));
-
-          if (!unwrap(masterKey, wrappedPath).equals(accountKey))
-            throw new Error(
-              "Credential encryption key did not survive wrapping; refusing to start the account",
-            );
-
-          if (plain) {
-            rmSync(keyPath);
-            syncDirectory(dataDir);
-          }
-
-          return accountKey;
-        });
+        const key = yield* Effect.sync(() =>
+          masterKey
+            ? wrappedKey(files, masterKey, {
+                plain: keyExists,
+                wrapped: wrappedExists,
+              })
+            : plainKey(keyPath, keyExists),
+        );
 
         const encrypt = (value: string) =>
           seal(key, Buffer.from(value, "utf8"));
