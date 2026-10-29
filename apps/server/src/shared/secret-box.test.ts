@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { Context, Effect, Exit, Layer, Scope } from "effect";
 import { ProductDatabase } from "./product-database";
 import { SecretBox } from "./secret-box";
 
@@ -35,16 +35,22 @@ const withBox = <A>(
   key: string | undefined,
   use: (box: SecretBox["Service"]) => A,
 ) => {
-  const runtime = ManagedRuntime.make(
-    SecretBox.layer(dir, key).pipe(
-      Layer.provideMerge(ProductDatabase.layer(dir)),
-    ),
-  );
+  // Built in this fiber, like the test Store, so runSync outlasts the migration's scheduler yields.
+  const scope = Scope.makeUnsafe();
 
   try {
-    return runtime.runSync(SecretBox.use((box) => Effect.sync(() => use(box))));
+    const context = Effect.runSync(
+      Layer.buildWithScope(
+        SecretBox.layer(dir, key).pipe(
+          Layer.provideMerge(ProductDatabase.layer(dir)),
+        ),
+        scope,
+      ),
+    );
+
+    return use(Context.get(context, SecretBox));
   } finally {
-    Effect.runSync(runtime.disposeEffect);
+    Effect.runSync(Scope.close(scope, Exit.void));
   }
 };
 

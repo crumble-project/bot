@@ -60,7 +60,7 @@ export class ProviderCredentialRepository extends Context.Service<
           .where(eq(providerCredentials.provider, providerId));
 
         return row
-          ? providerCredential.parse(JSON.parse(box.decrypt(row.value)))
+          ? providerCredential.parse(JSON.parse(box.decryptStored(row.value)))
           : undefined;
       }, Effect.orDie);
 

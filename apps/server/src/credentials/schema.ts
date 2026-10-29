@@ -7,12 +7,19 @@ import {
   text,
 } from "drizzle-orm/sqlite-core";
 import { agents } from "../bots/schema";
+import { oneSecretSource, secretSource } from "../password-managers/schema";
 
 /** Encrypted secrets by key, such as an MCP server's token. */
-export const secrets = sqliteTable("credentials", {
-  key: text("key").primaryKey(),
-  value: text("value").notNull(),
-});
+export const secrets = sqliteTable(
+  "credentials",
+  {
+    key: text("key").primaryKey(),
+    value: secretSource.value(),
+    passwordManager: secretSource.passwordManager(),
+    reference: secretSource.reference(),
+  },
+  (table) => [oneSecretSource("credentials_source", table)],
+);
 
 export const agentCredentials = sqliteTable(
   "agent_credentials",
@@ -22,13 +29,18 @@ export const agentCredentials = sqliteTable(
       .references(() => agents.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     hosts: text("hosts").notNull(),
-    value: text("value").notNull(),
+    value: secretSource.value(),
+    passwordManager: secretSource.passwordManager(),
+    reference: secretSource.reference(),
     placeholder: text("placeholder").notNull().unique(),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
     lastUsedAt: text("last_used_at"),
   },
-  (table) => [primaryKey({ columns: [table.agentId, table.name] })],
+  (table) => [
+    primaryKey({ columns: [table.agentId, table.name] }),
+    oneSecretSource("agent_credentials_source", table),
+  ],
 );
 
 export const credentialAuthorities = sqliteTable("credential_authorities", {

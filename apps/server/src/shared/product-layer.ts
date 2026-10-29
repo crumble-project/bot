@@ -8,6 +8,7 @@ import { SecretRepository } from "../credentials/secret-repository";
 import { GroupChatRepository } from "../group-chats/group-chat-repository";
 import { McpServerRepository } from "../integrations/mcp-server-repository";
 import { MemoryRepository } from "../memory/memory-repository";
+import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
 import { ProviderCredentialRepository } from "../providers/provider-credential-repository";
 import { ScheduleRepository } from "../schedules/schedule-repository";
 import { ScriptRunRepository } from "../schedules/script-run-repository";
@@ -40,6 +41,7 @@ export const productLayer = (dataDir: string) => {
 
   const onChanges = Layer.mergeAll(
     SecretRepository.layer,
+    PasswordManagerRepository.layer,
     AgentCredentialRepository.layer,
     SkillRepository.layer,
     MemoryRepository.layer,

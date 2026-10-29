@@ -41,7 +41,7 @@ export class SecretRepository extends Context.Service<
           .from(secrets)
           .where(eq(secrets.key, key));
 
-        return row ? box.decrypt(row.value) : undefined;
+        return row ? box.decryptStored(row.value) : undefined;
       }, Effect.orDie);
 
       const remove = Effect.fn("SecretRepository.delete")(function* (

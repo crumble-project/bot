@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+} from "node:fs";
 import { join } from "node:path";
 import { Effect, Match } from "effect";
 import { z } from "zod";
@@ -263,6 +269,49 @@ describe("product database migrations", () => {
         .all(),
     ).toEqual([{ cursor: 0, pending: 0, summary: null }]);
     upgraded.close();
+  });
+
+  test("adding password managers keeps credentials and their use log", () => {
+    // Rebuilding agent_credentials inside the migration's transaction would cascade into credential_uses.
+    const before = mkdtempSync("/tmp/crumble-migrations-");
+    dirs.push(before);
+
+    for (const name of readdirSync(migrationsFolder("store")))
+      if (name < "20261029092910_password_managers")
+        cpSync(join(migrationsFolder("store"), name), join(before, name), {
+          recursive: true,
+        });
+
+    const file = databaseFile();
+    Effect.runSync(migrateFile(file, before));
+
+    const db = new Database(file);
+    db.run(`INSERT INTO agents (id,name,avatar,description,instructions,provider,model,enabled,tools,skills,mcp_servers,created_at,updated_at) VALUES ('a','A','','','','p','m',1,'[]','[]','[]','t','t');
+      INSERT INTO agent_credentials (agent_id,name,hosts,value,placeholder,created_at,updated_at) VALUES ('a','TOKEN','[]','sealed','ph','t','t');
+      INSERT INTO credential_uses (agent_id,name,at,method,host,path,status) VALUES ('a','TOKEN','t','GET','api.example.com','/',200);
+      INSERT INTO credentials (key,value) VALUES ('mcp:s','sealed');
+      INSERT INTO provider_credentials (provider,type,value) VALUES ('openai','api_key','sealed');`);
+    db.close();
+
+    migrateStore(file);
+
+    const migrated = new Database(file, { readonly: true });
+    expect(
+      migrated
+        .query("SELECT name, value, reference FROM agent_credentials")
+        .all(),
+    ).toEqual([{ name: "TOKEN", value: "sealed", reference: null }]);
+    expect(
+      migrated.query("SELECT name, host, status FROM credential_uses").all(),
+    ).toEqual([{ name: "TOKEN", host: "api.example.com", status: 200 }]);
+    expect(migrated.query("SELECT key, value FROM credentials").all()).toEqual([
+      { key: "mcp:s", value: "sealed" },
+    ]);
+    expect(
+      migrated.query("SELECT provider, value FROM provider_credentials").all(),
+    ).toEqual([{ provider: "openai", value: "sealed" }]);
+    expect(migrated.query("PRAGMA foreign_key_check").all()).toEqual([]);
+    migrated.close();
   });
 
   test("migrating again changes nothing", () => {

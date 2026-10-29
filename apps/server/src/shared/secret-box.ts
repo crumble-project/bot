@@ -19,6 +19,7 @@ import {
   credentialAuthorities,
   secrets,
 } from "../credentials/schema";
+import { passwordManagers } from "../password-managers/schema";
 import { providerCredentials } from "../providers/schema";
 
 export const MASTER_KEY_VARIABLE = "CRUMBLE_MASTER_KEY";
@@ -118,6 +119,8 @@ export class SecretBox extends Context.Service<
   {
     readonly encrypt: (value: string) => string;
     readonly decrypt: (packed: string) => string;
+    /** Decrypts a secret's stored value; one read from a password manager has none, and reading it here is a defect. */
+    readonly decryptStored: (packed: string | null) => string;
   }
 >()("crumble/shared/SecretBox") {
   static layer(
@@ -152,6 +155,7 @@ export class SecretBox extends Context.Service<
               providerCredentials,
               agentCredentials,
               credentialAuthorities,
+              passwordManagers,
             ],
             (table) => db.select({ n: count() }).from(table),
           ).pipe(Effect.orDie);
@@ -220,7 +224,16 @@ export class SecretBox extends Context.Service<
 
         const decrypt = (packed: string) => open(key, packed).toString("utf8");
 
-        return SecretBox.of({ encrypt, decrypt });
+        const decryptStored = (packed: string | null) => {
+          if (packed === null)
+            throw new Error(
+              "This secret comes from a password manager, so it has no stored value",
+            );
+
+          return decrypt(packed);
+        };
+
+        return SecretBox.of({ encrypt, decrypt, decryptStored });
       }),
     );
   }

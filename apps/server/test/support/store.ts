@@ -1,6 +1,6 @@
-import { Effect, ManagedRuntime, Predicate } from "effect";
+import { Effect, Exit, Layer, Predicate, Scope } from "effect";
 import { coreLayer, type CoreServices } from "../../src/shared/core-layer";
-import type { Runner } from "../../src/shared/runner";
+import { runnerOf, type Runner } from "../../src/shared/runner";
 import { botStore } from "./store-bots";
 import { configurationStore } from "./store-configuration";
 import { learningStore } from "./store-learning";
@@ -12,29 +12,27 @@ export class Store {
   /** Runs effects on the account's services, such as the standalone features a test builds. */
   readonly runtime: Runner<CoreServices>;
   // Only a store that opened its own database closes it; a shared runner belongs to the account.
-  private readonly owned:
-    | ManagedRuntime.ManagedRuntime<CoreServices, unknown>
-    | undefined;
+  private readonly owned: Scope.Closeable | undefined;
 
   /** Opens the product database in `source`, or runs over the account's services. */
   constructor(source: string | Runner<CoreServices>) {
     if (Predicate.isString(source)) {
-      this.owned = ManagedRuntime.make(coreLayer(source));
-      this.runtime = this.owned;
+      // Built in this fiber, unlike a ManagedRuntime's forked build, so runSync outlasts a long migration's yields.
+      this.owned = Scope.makeUnsafe();
+      this.runtime = runnerOf(
+        Effect.runSync(Layer.buildWithScope(coreLayer(source), this.owned)),
+      );
     } else {
       this.owned = undefined;
       this.runtime = source;
     }
-
-    // Built now, so a migration or key error fails construction.
-    this.runtime.runSync(Effect.void);
   }
   /** Runs `effect` now on the account's services. */
   run<A>(effect: Effect.Effect<A, never, CoreServices>): A {
     return this.runtime.runSync(effect);
   }
   close() {
-    if (this.owned) Effect.runSync(this.owned.disposeEffect);
+    if (this.owned) Effect.runSync(Scope.close(this.owned, Exit.void));
   }
   private readonly bots = botStore((effect) => this.run(effect));
   private readonly learning = learningStore((effect) => this.run(effect));

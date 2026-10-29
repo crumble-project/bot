@@ -249,7 +249,7 @@ export class AgentCredentialRepository extends Context.Service<
           name: row.name,
           hosts: hostList.parse(JSON.parse(row.hosts)),
           placeholder: row.placeholder,
-          value: box.decrypt(row.value),
+          value: box.decryptStored(row.value),
         }));
       }, Effect.orDie);
 
