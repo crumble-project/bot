@@ -15,6 +15,7 @@ import {
 import type { Effect, Scope } from "effect";
 import type { Workspaces } from "../workspaces/workspace";
 import { configureDevWorkspaces } from "./dev-workspaces";
+import { MASTER_KEY_VARIABLE } from "../shared/secret-box";
 
 const TENANT_PREFIXES = ["/v1/", "/desktop-viewer/", "/api/auth/"];
 
@@ -264,6 +265,11 @@ if (import.meta.main) {
   const running = await startServer();
   console.log(`Crumble server listening on ${running.server.url}`);
   console.log("Open /ui to create an account or sign in.");
+
+  if (!process.env[MASTER_KEY_VARIABLE])
+    console.log(
+      `${MASTER_KEY_VARIABLE} is unset: account encryption keys are stored next to the data they protect.`,
+    );
 
   const close = async () => {
     await running.close();

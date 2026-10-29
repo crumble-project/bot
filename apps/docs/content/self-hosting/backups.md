@@ -9,6 +9,8 @@ sidebar:
 
 Back up the whole `CRUMBLE_DATA_DIR`. It includes the auth secret (`.auth-secret`) and each account's encryption key (`.secret.key`). Without the keys, encrypted provider sign-ins and credentials can't be read.
 
+With [`CRUMBLE_MASTER_KEY`](/self-hosting/configuration#encryption-key) set, each account's key is stored wrapped in `.secret.key.wrapped`, and a backup of the data directory alone can't decrypt anything. Back up the master key separately, away from the data backups. Without it, the backups can't be restored.
+
 If you use Microsandbox workspaces, also back up `MSB_HOME` (`~/.microsandbox` by default), where workspace disks live.
 
 ## Move single-user data into an account

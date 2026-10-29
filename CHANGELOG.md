@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `CRUMBLE_MASTER_KEY` to keep a usable encryption key out of the data directory. When it's set, each account's key is stored wrapped in `.secret.key.wrapped`, existing plain `.secret.key` files are wrapped and deleted on start, and the server refuses to start an account whose key the master key can't unwrap. Without it, nothing changes, and the server logs at startup that keys are stored next to the data.
 - Bots cite web pages inline. In bot chats and group chats in the web app, links to pages the bot searched or read in that turn show as source chips with the site's name at the end of the message. Group messages from bots carry these pages in the new optional `sources` field of `TranscriptMessage`.
 - Choose a default web search provider for the account and override it per bot. Add an Exa API key shared by bots on the account.
 - Add web search and page reading through Mixed. New bots created in the web app have **Web search** on by default; owners can turn it off per bot. Existing bots keep their capabilities. Mixed uses free, rate-limited services without an API key.
