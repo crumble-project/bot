@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
+import { join } from "node:path";
+import { Context, Effect, Exit, Layer, Redacted, Scope } from "effect";
 import {
   BACKGROUND_CONTEXT,
   withAbortSignal,
@@ -10,6 +13,17 @@ import {
   type MCPClient,
 } from "./integrations";
 import { Store } from "../../test/support/store";
+import {
+  FAKE_TOKEN,
+  fakePasswordManager,
+  fakeVendor,
+} from "../../test/support/fake-password-manager";
+import type { CoreServices } from "../shared/core-layer";
+import { runnerOf } from "../shared/runner";
+import { PasswordManagers } from "../password-managers/password-manager";
+import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
+import { SecretValues } from "../password-managers/secret-values";
+import { SecretRepository } from "../credentials/secret-repository";
 import type { McpTransport } from "@earendil-works/pi-mcp";
 
 const agent = (id: string, mcpServers: string[]): Agent => ({
@@ -35,6 +49,69 @@ const unusedTransport = { close: async () => {} } as McpTransport;
 
 function tempDir() {
   return Bun.$`mktemp -d`.text();
+}
+
+const REFERENCE = "op://Vault/Linear/token";
+
+/** The store's services with a fake 1Password holding `values`, and the server's token pointing at `REFERENCE`. */
+function withVaultToken(
+  store: Store,
+  dir: string,
+  serverId: string,
+  values: Record<string, string>,
+) {
+  const core = store.run(Effect.context<CoreServices>());
+  const state = fakePasswordManager(values);
+  const scope = Scope.makeUnsafe();
+
+  const vault = Effect.runSync(
+    Layer.buildWithScope(
+      SecretValues.layer.pipe(
+        Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
+        Layer.provide(Layer.succeedContext(core)),
+      ),
+      scope,
+    ),
+  );
+
+  store.run(
+    PasswordManagerRepository.use((r) =>
+      r.save("1password", Redacted.make(FAKE_TOKEN), "t"),
+    ),
+  );
+
+  const db = new Database(join(dir, "store.sqlite"));
+  db.run(
+    `INSERT INTO credentials (key, password_manager, reference) VALUES ('mcp:${serverId}', '1password', '${REFERENCE}')`,
+  );
+  db.close();
+
+  return {
+    run: runnerOf(Context.merge(core, vault)),
+    state,
+    close: () => Effect.runSync(Scope.close(scope, Exit.void)),
+  };
+}
+
+/** A server with one `echo` tool that records the headers of every connection. */
+function recordingServer(sent: Record<string, string>[]) {
+  return (_server: MCPServer, headers: Record<string, string>) => {
+    sent.push(headers);
+
+    return {
+      transport: unusedTransport,
+      client: {
+        async connect() {},
+        async close() {},
+        async listTools() {
+          return [{ name: "echo", inputSchema: { type: "object" as const } }];
+        },
+        async callTool() {
+          return { content: [] };
+        },
+      } satisfies MCPClient,
+    };
+  };
 }
 
 describe("MCP integrations", () => {
@@ -361,6 +438,143 @@ describe("MCP integrations", () => {
     await expect(pending).rejects.toBe(reason);
     expect(called).toBe(1);
     await close();
+    store.close();
+  });
+
+  test("sends a token read from a password manager", async () => {
+    const dir = (await tempDir()).trim();
+    const store = new Store(dir);
+
+    const server = store.createMCPServer({
+      name: "Linear",
+      url: "https://mcp.example.test",
+      enabled: true,
+    });
+
+    const vault = withVaultToken(store, dir, server.id, {
+      [REFERENCE]: "lin-vault",
+    });
+
+    const sent: Record<string, string>[] = [];
+
+    const { integrations, close } = standaloneIntegrations(vault.run, {
+      clientFactory: recordingServer(sent),
+    });
+
+    await integrations.extensionsForAgent(agent("a1", [server.id]));
+
+    expect(sent).toEqual([{ Authorization: "Bearer lin-vault" }]);
+    expect(integrations.failure(server.id)).toBeNull();
+    await close();
+    vault.close();
+    store.close();
+  });
+
+  test("shows why a token couldn't be read from its password manager", async () => {
+    const dir = (await tempDir()).trim();
+    const store = new Store(dir);
+
+    const server = store.createMCPServer({
+      name: "Linear",
+      url: "https://mcp.example.test",
+      enabled: true,
+    });
+
+    const vault = withVaultToken(store, dir, server.id, {});
+
+    const { integrations, close } = standaloneIntegrations(vault.run, {
+      clientFactory: () => {
+        throw new Error("connected without a token");
+      },
+    });
+
+    await integrations.extensionsForAgent(agent("a1", [server.id]));
+
+    expect(integrations.failure(server.id)).toBe(
+      "Token could not be read: Fake has no item that matches",
+    );
+    await close();
+    vault.close();
+    store.close();
+  });
+
+  test("shows a token that became unreadable after its tools were listed", async () => {
+    const dir = (await tempDir()).trim();
+    const store = new Store(dir);
+
+    const server = store.createMCPServer({
+      name: "Linear",
+      url: "https://mcp.example.test",
+      enabled: true,
+    });
+
+    const vault = withVaultToken(store, dir, server.id, {
+      [REFERENCE]: "lin-vault",
+    });
+
+    const sent: Record<string, string>[] = [];
+
+    const { integrations, close } = standaloneIntegrations(vault.run, {
+      clientFactory: recordingServer(sent),
+    });
+
+    const agentId = "00000000-0000-4000-8000-000000000006";
+
+    const [extension] = await integrations.extensionsForAgent(
+      store.createAgent(agent(agentId, [server.id]), agentId),
+    );
+
+    vault.state.values.delete(REFERENCE);
+    vault.run.runSync(
+      SecretValues.use((values) => values.forget("1password", REFERENCE)),
+    );
+
+    // SAFETY: MCP extensions expose their registered tool list.
+    const tool = ((extension as any).tools as any[])[0];
+
+    await expect(
+      tool.execute(
+        {},
+        { taskId: "unreadable", conversationId: "conversation-a" },
+        BACKGROUND_CONTEXT,
+      ),
+    ).rejects.toThrow("Token could not be read: Fake has no item that matches");
+    expect(integrations.failure(server.id)).toBe(
+      "Token could not be read: Fake has no item that matches",
+    );
+    await close();
+    vault.close();
+    store.close();
+  });
+
+  test("a token saved in Crumble replaces its password manager reference", async () => {
+    const dir = (await tempDir()).trim();
+    const store = new Store(dir);
+
+    const server = store.createMCPServer({
+      name: "Linear",
+      url: "https://mcp.example.test",
+      enabled: true,
+    });
+
+    const vault = withVaultToken(store, dir, server.id, {});
+
+    store.run(
+      SecretRepository.use((r) => r.set(`mcp:${server.id}`, "lin-typed")),
+    );
+
+    const sent: Record<string, string>[] = [];
+
+    const { integrations, close } = standaloneIntegrations(vault.run, {
+      clientFactory: recordingServer(sent),
+    });
+
+    await integrations.extensionsForAgent(agent("a1", [server.id]));
+
+    expect(sent).toEqual([{ Authorization: "Bearer lin-typed" }]);
+    expect(vault.state.reads).toBe(0);
+    await close();
+    vault.close();
     store.close();
   });
 });

@@ -49,7 +49,7 @@ const describeServer = (
 ) => {
   const auth = hasOAuthTokens(secrets, server.id)
     ? "oauth"
-    : exec(SecretRepository.use((r) => r.get(`mcp:${server.id}`)))
+    : exec(SecretRepository.use((r) => r.source(`mcp:${server.id}`)))
       ? "token"
       : "none";
 
