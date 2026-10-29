@@ -1,6 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import type { SecretReference } from "../password-managers/secret-references";
+import type { SecretReference } from "../shared/domain";
 import {
   secretSourceOf,
   type SecretSource,

@@ -23,7 +23,7 @@ const withRepository = <A, E>(
 
   const runtime = ManagedRuntime.make(
     PasswordManagerRepository.layer.pipe(
-      Layer.provideMerge(SecretBox.layer(dir, undefined)),
+      Layer.provideMerge(SecretBox.layer(dir, [], undefined)),
       Layer.provideMerge(ProductDatabase.layer(dir)),
     ),
   );

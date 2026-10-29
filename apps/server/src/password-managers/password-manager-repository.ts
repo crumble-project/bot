@@ -5,7 +5,7 @@ import { providerCredentials } from "../providers/schema";
 import { Conflict } from "../shared/errors";
 import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
-import type { PasswordManagerId } from "./password-manager";
+import type { PasswordManagerId } from "../shared/domain";
 import { passwordManagers } from "./schema";
 
 export type PasswordManagerConnection = {

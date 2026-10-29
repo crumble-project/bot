@@ -21,8 +21,7 @@
   "ignoreUnresolvedImports": ["styled-system/*"],
   "ignoreFindings": ["apps/web/components/ui/**"],
   "ignoreExportsUsedInFile": true,
-  // Warn until the existing violations are fixed, then switch to error.
-  "rules": { "boundary-violation": "warn" },
+  "rules": { "boundary-violation": "error" },
   "boundaries": {
     // A file joins the first zone it matches; tests boot the whole app, so they match first and stay unrestricted.
     "zones": [

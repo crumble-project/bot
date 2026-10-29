@@ -13,7 +13,7 @@ import {
 import { PasswordManagers } from "../password-managers/password-manager";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
 import { SecretValues } from "../password-managers/secret-values";
-import { productLayer } from "../shared/product-layer";
+import { productLayer } from "../app/product-layer";
 import { ProviderCredentials } from "./provider-credentials";
 import { providerModels } from "./providers";
 

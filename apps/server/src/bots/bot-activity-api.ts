@@ -1,7 +1,7 @@
 import type { SSEStreamingApi } from "hono/streaming";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import { sendHeartbeat, streamEvents } from "../app/event-stream";
+import { sendHeartbeat, streamEvents } from "../shared/event-stream";
 import { canonicalReplyEvent } from "../push/push-model";
 import type { Activity, BotsAccess } from "./bots";
 

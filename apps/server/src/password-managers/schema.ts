@@ -5,7 +5,7 @@ import {
   text,
   type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
-import type { PasswordManagerId } from "./password-manager";
+import type { PasswordManagerId } from "../shared/domain";
 
 /** The account's connected password managers, at most one per vendor. */
 export const passwordManagers = sqliteTable(

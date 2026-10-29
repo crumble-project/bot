@@ -41,7 +41,7 @@ const withBox = <A>(
   try {
     const context = Effect.runSync(
       Layer.buildWithScope(
-        SecretBox.layer(dir, key).pipe(
+        SecretBox.layer(dir, [], key).pipe(
           Layer.provideMerge(ProductDatabase.layer(dir)),
         ),
         scope,

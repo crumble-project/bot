@@ -28,13 +28,13 @@ import type {
   providerResponse,
   scheduleResponse,
   scriptRunResponse,
+  ChartLayout,
 } from "@crumble/server/contract/api-responses";
-import type { agentInput } from "@crumble/server/shared/domain";
-import type { ChartLayout } from "@crumble/server/display/charts";
+import type { BotInput } from "@crumble/server/contract/api-contract";
 
 export type Bot = z.infer<typeof agentPreviewResponse>;
 
-export type BotInput = z.input<typeof agentInput>;
+export type { BotInput };
 
 export type Model = z.infer<typeof modelResponse>;
 

@@ -1,6 +1,14 @@
 import { z } from "@hono/zod-openapi";
 import { botCommunication } from "../bots/transcript";
 import { agentInput } from "../shared/domain";
+import type * as charts from "../display/charts";
+import type * as webSearch from "../web-search/provider";
+
+export type ChartLayout = charts.ChartLayout;
+
+export type WebPage = webSearch.WebPage;
+
+export type WebSearchResult = webSearch.WebSearchResult;
 
 const strings = z.array(z.string());
 

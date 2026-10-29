@@ -1,6 +1,4 @@
 import { z } from "zod";
-import type { PasswordManagerId } from "../password-managers/password-manager";
-import { secretReferenceInput } from "../password-managers/secret-references";
 
 /** Tools every bot has, whatever its saved `tools` say. */
 export const STANDARD_TOOLS = ["schedule", "codemode"];
@@ -310,6 +308,19 @@ export const credentialRequestInput = z.object({
 });
 
 export type CredentialRequestInput = z.infer<typeof credentialRequestInput>;
+
+export const passwordManagerIdInput = z.enum(["1password", "bitwarden"]);
+
+/** Settings key of a password manager: never rename. */
+export type PasswordManagerId = z.infer<typeof passwordManagerIdInput>;
+
+/** Where to read a secret's value instead of storing it: a password manager and a reference it understands. */
+export const secretReferenceInput = z.object({
+  passwordManager: passwordManagerIdInput,
+  reference: z.string().trim().min(1).max(1000),
+});
+
+export type SecretReference = z.infer<typeof secretReferenceInput>;
 
 export const credentialSaveInput = z
   .object({

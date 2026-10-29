@@ -17,16 +17,29 @@ import { InlineSkillsTransfer } from "../skills/inline-skills";
 import { LearnedChangeRepository } from "../skills/learned-change-repository";
 import { ReviewRepository } from "../skills/review-repository";
 import { SkillRepository } from "../skills/skill-repository";
-import { ProductDatabase } from "./product-database";
-import { SecretBox } from "./secret-box";
-import { SettingsRepository } from "./settings-repository";
+import {
+  agentCredentials,
+  credentialAuthorities,
+  secrets,
+} from "../credentials/schema";
+import { passwordManagers } from "../password-managers/schema";
+import { providerCredentials } from "../providers/schema";
+import { ProductDatabase } from "../shared/product-database";
+import { SecretBox } from "../shared/secret-box";
+import { SettingsRepository } from "../shared/settings-repository";
 
 /** Every repository of an account's product database, on one migrated connection. */
 export const productLayer = (dataDir: string) => {
   const database = ProductDatabase.layer(dataDir);
 
   const independent = Layer.mergeAll(
-    SecretBox.layer(dataDir),
+    SecretBox.layer(dataDir, [
+      secrets,
+      providerCredentials,
+      agentCredentials,
+      credentialAuthorities,
+      passwordManagers,
+    ]),
     LearnedChangeRepository.layer,
     ReviewRepository.layer,
     McpServerRepository.layer,

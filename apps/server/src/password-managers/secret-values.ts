@@ -12,11 +12,8 @@ import {
   Schema,
   Scope,
 } from "effect";
-import {
-  PasswordManagers,
-  type ConnectedClient,
-  type PasswordManagerId,
-} from "./password-manager";
+import { PasswordManagers, type ConnectedClient } from "./password-manager";
+import type { PasswordManagerId } from "../shared/domain";
 import type { SecretBox } from "../shared/secret-box";
 import { PasswordManagerRepository } from "./password-manager-repository";
 

@@ -12,10 +12,8 @@ import { AgentRepository } from "../bots/agent-repository";
 import type { BotsAccess } from "../bots/bots";
 import { SecretRepository } from "../credentials/secret-repository";
 import type { PasswordManagers } from "../password-managers/password-manager";
-import {
-  checkSecretReference,
-  type SecretReference,
-} from "../password-managers/secret-references";
+import { checkSecretReference } from "../password-managers/secret-references";
+import type { SecretReference } from "../shared/domain";
 import {
   SecretValues,
   type SecretSource,
