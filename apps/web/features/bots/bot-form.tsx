@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import { Fragment, type ReactNode, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
@@ -625,13 +625,15 @@ function IntegrationsSection({
     (server) => server.agentId === null || server.agentId === bot?.id,
   );
 
+  const on = new Set(value);
+
   return (
     <DisclosureRow
       title="Integrations"
       summary={
         usableServers.length === 0
           ? "None set up"
-          : `${usableServers.filter((server) => value.includes(server.id)).length} of ${usableServers.length} on`
+          : `${usableServers.filter((server) => on.has(server.id)).length} of ${usableServers.length} on`
       }
     >
       {usableServers.map((server) => (
@@ -647,7 +649,7 @@ function IntegrationsSection({
           }
           description={server.url}
           disabled={!server.enabled}
-          checked={value.includes(server.id)}
+          checked={on.has(server.id)}
           onChange={(on) => onChange(toggle(value, server.id, on))}
         />
       ))}
@@ -1041,34 +1043,14 @@ function BotFieldSections({
   );
 }
 
-/** Creates a bot, or edits `bot` when given. */
-export function BotFields({
-  initial,
-  onSubmit,
-  formId,
-  botId,
-  failed = false,
-  includeSettingsLinks = false,
-  onValidityChange,
-}: {
-  initial?: BotInput | undefined;
-  onSubmit: (input: BotInput) => void;
-  formId: string;
-  botId?: string | undefined;
-  failed?: boolean;
-  includeSettingsLinks?: boolean;
-  onValidityChange?: (valid: boolean) => void;
-}) {
+/** The state of `BotFields`, held by its caller so the submit button outside the form can read `invalid`. */
+export function useBotFields(initial?: BotInput, botId?: string) {
   // SAFETY: The fields below only read properties shared by BotInput and Bot.
   const bot = initial
     ? ({ ...initial, id: botId ?? "", createdAt: "", updatedAt: "" } as Bot)
     : undefined;
 
   const providers = useQuery(providersQuery).data ?? [];
-
-  const capabilities = useQuery(capabilitiesQuery).data;
-
-  const servers = useQuery(mcpServersQuery).data ?? [];
   const details = useBotDetails(bot);
   const selection = useBotModel(bot, providers);
   const access = useBotAccess(bot);
@@ -1076,9 +1058,25 @@ export function BotFields({
   const invalid =
     !details.name.trim() || !selection.provider || !selection.model.trim();
 
-  useEffect(() => {
-    onValidityChange?.(!invalid);
-  }, [invalid, onValidityChange]);
+  return { bot, providers, details, selection, access, invalid };
+}
+
+/** Creates a bot, or edits `bot` when given. */
+export function BotFields({
+  fields: { bot, providers, details, selection, access, invalid },
+  onSubmit,
+  formId,
+  failed = false,
+  includeSettingsLinks = false,
+}: {
+  fields: ReturnType<typeof useBotFields>;
+  onSubmit: (input: BotInput) => void;
+  formId: string;
+  failed?: boolean;
+  includeSettingsLinks?: boolean;
+}) {
+  const capabilities = useQuery(capabilitiesQuery).data;
+  const servers = useQuery(mcpServersQuery).data ?? [];
 
   return (
     <form
@@ -1108,7 +1106,30 @@ export function BotFields({
 
 export function BotForm({ bot }: { bot?: Bot }) {
   const inputRef = useRef<BotInput | undefined>(undefined);
-  const [valid, setValid] = useState(false);
+
+  const fields = useBotFields(
+    bot
+      ? {
+          name: bot.name,
+          description: bot.description,
+          instructions: bot.instructions,
+          provider: bot.provider,
+          model: bot.model,
+          enabled: bot.enabled,
+          tools: bot.tools,
+          webSearchProvider: bot.webSearchProvider ?? null,
+          mcpServers: bot.mcpServers,
+          ...(bot.avatar !== undefined && { avatar: bot.avatar }),
+          ...(bot.inference !== undefined && {
+            inference: bot.inference,
+          }),
+          ...(bot.desktopModel !== undefined && {
+            desktopModel: bot.desktopModel,
+          }),
+        }
+      : undefined,
+    bot?.id,
+  );
 
   const { save, duplicate, remove } = useBotMutations(bot, () => {
     if (!inputRef.current) throw new Error("Bot form was not submitted");
@@ -1119,36 +1140,15 @@ export function BotForm({ bot }: { bot?: Bot }) {
   return (
     <WorkspacePage
       title={bot ? `Edit ${bot.name}` : "New bot"}
-      actions={<BotFormActions bot={bot} disabled={!valid || save.isPending} />}
+      actions={
+        <BotFormActions bot={bot} disabled={fields.invalid || save.isPending} />
+      }
     >
       <BotFields
         formId="bot-form"
-        initial={
-          bot
-            ? {
-                name: bot.name,
-                description: bot.description,
-                instructions: bot.instructions,
-                provider: bot.provider,
-                model: bot.model,
-                enabled: bot.enabled,
-                tools: bot.tools,
-                webSearchProvider: bot.webSearchProvider ?? null,
-                mcpServers: bot.mcpServers,
-                ...(bot.avatar !== undefined && { avatar: bot.avatar }),
-                ...(bot.inference !== undefined && {
-                  inference: bot.inference,
-                }),
-                ...(bot.desktopModel !== undefined && {
-                  desktopModel: bot.desktopModel,
-                }),
-              }
-            : undefined
-        }
-        botId={bot?.id}
+        fields={fields}
         failed={save.isError}
         includeSettingsLinks
-        onValidityChange={setValid}
         onSubmit={(input) => {
           inputRef.current = input;
           save.mutate();

@@ -45,6 +45,8 @@ type UsageModels = {
   >;
 };
 
+const numberFormat = new Intl.NumberFormat();
+
 /** Sums a job's token use and cost over its models, as `{in} in · {out} out · $cost`. */
 export function usageLine(usage: CodingJob["usage"]) {
   // SAFETY: Pi Durable usage documents keep per-model token counts and cost under `models`.
@@ -63,9 +65,7 @@ export function usageLine(usage: CodingJob["usage"]) {
     { input: 0, output: 0, cost: 0 },
   );
 
-  const format = new Intl.NumberFormat();
-
-  return `${format.format(totals.input)} in · ${format.format(totals.output)} out · $${totals.cost.toFixed(4)}`;
+  return `${numberFormat.format(totals.input)} in · ${numberFormat.format(totals.output)} out · $${totals.cost.toFixed(4)}`;
 }
 
 const VERBS = new Map([

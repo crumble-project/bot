@@ -173,6 +173,8 @@ export function ChangeDiff({ change }: { change: Change }) {
     <pre className="overflow-x-auto rounded-md bg-muted py-3 font-mono text-xs">
       {diff(lines(change.before), lines(change.after)).map((line, index) => (
         <div
+          // A diff is computed once per change and never reorders.
+          // react-doctor-disable-next-line no-array-index-as-key
           key={index}
           className={cn("px-3 whitespace-pre-wrap", LINE_STYLE[line.kind])}
         >

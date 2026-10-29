@@ -547,6 +547,8 @@ function useProviderCredential(provider: Provider) {
   const [source, setSource] = useState<SecretSourceDraft>(EMPTY_SOURCE);
   const path = `/v1/providers/${encodeURIComponent(provider.provider)}`;
 
+  // `refreshProviders` invalidates the provider and model queries.
+  // react-doctor-disable-next-line query-mutation-missing-invalidation
   const save = useMutation({
     mutationFn: (body: ReturnType<typeof providerKeyBody>) =>
       body === null ? send(path, "DELETE") : send(path, "PUT", body),

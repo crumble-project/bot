@@ -88,13 +88,13 @@ type Editing =
   | { kind: "request"; request: CredentialRequest }
   | { kind: "new" };
 
+const relative = new Intl.RelativeTimeFormat(undefined, {
+  numeric: "auto",
+  style: "short",
+});
+
 /** "2 hours ago", "yesterday": how long ago a credential was last used. */
 function ago(iso: string) {
-  const relative = new Intl.RelativeTimeFormat(undefined, {
-    numeric: "auto",
-    style: "short",
-  });
-
   const minutes = Math.round((Date.parse(iso) - Date.now()) / 60_000);
 
   if (minutes > -60) return relative.format(minutes, "minute");

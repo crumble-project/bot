@@ -28,6 +28,7 @@ export function MarkupLogo({ svg }: { svg: string }) {
       aria-hidden
       className="flex size-4 [&>svg]:size-full"
       // Markup comes from an icon package bundled at build time, never from users or the server.
+      // react-doctor-disable-next-line dangerous-html-sink
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );

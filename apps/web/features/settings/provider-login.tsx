@@ -167,74 +167,15 @@ function LoginSteps({ session }: { session: LoginSession }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {session.events.map((event, index) => {
-        switch (event.type) {
-          case "auth_url":
-            return (
-              <div key={index} className="flex flex-col gap-2">
-                {event.instructions && (
-                  <p className="text-sm">{event.instructions}</p>
-                )}
-                <Button
-                  render={
-                    <a
-                      href={event.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    />
-                  }
-                  nativeButton={false}
-                >
-                  Open sign-in page
-                  <IconExternalLink data-icon="inline-end" />
-                </Button>
-              </div>
-            );
-          case "device_code":
-            return (
-              <div key={index} className="flex flex-col gap-2 text-sm">
-                <p>
-                  Enter this code at{" "}
-                  <a
-                    className="underline underline-offset-2"
-                    href={event.verificationUri}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {event.verificationUri}
-                  </a>
-                  :
-                </p>
-                <code className="self-start rounded-md bg-muted px-3 py-2 font-mono text-lg tracking-widest">
-                  {event.userCode}
-                </code>
-              </div>
-            );
-          case "info":
-            return (
-              <p key={index} className="text-sm text-muted-foreground">
-                {event.message}{" "}
-                {event.links?.map((link) => (
-                  <a
-                    key={link.url}
-                    className="underline underline-offset-2"
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {link.label ?? link.url}
-                  </a>
-                ))}
-              </p>
-            );
-          case "progress":
-            return index === session.events.length - 1 ? (
-              <p key={index} className="shimmer text-sm">
-                {event.message}
-              </p>
-            ) : null;
-        }
-      })}
+      {session.events.map((event, index) => (
+        // The event log only grows, so an event's index is its identity.
+        // react-doctor-disable-next-line no-array-index-as-key
+        <LoginEvent
+          key={index}
+          event={event}
+          last={index === session.events.length - 1}
+        />
+      ))}
       {session.prompt ? (
         <PromptForm key={session.prompt.id} session={session} />
       ) : (
@@ -244,6 +185,75 @@ function LoginSteps({ session }: { session: LoginSession }) {
       )}
     </div>
   );
+}
+
+function LoginEvent({
+  event,
+  last,
+}: {
+  event: LoginSession["events"][number];
+  last: boolean;
+}) {
+  switch (event.type) {
+    case "auth_url":
+      return (
+        <div className="flex flex-col gap-2">
+          {event.instructions && (
+            <p className="text-sm">{event.instructions}</p>
+          )}
+          <Button
+            render={
+              // Button renders its children into this anchor.
+              // react-doctor-disable-next-line anchor-has-content
+              <a href={event.url} target="_blank" rel="noopener noreferrer" />
+            }
+            nativeButton={false}
+          >
+            Open sign-in page
+            <IconExternalLink data-icon="inline-end" />
+          </Button>
+        </div>
+      );
+    case "device_code":
+      return (
+        <div className="flex flex-col gap-2 text-sm">
+          <p>
+            Enter this code at{" "}
+            <a
+              className="underline underline-offset-2"
+              href={event.verificationUri}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {event.verificationUri}
+            </a>
+            :
+          </p>
+          <code className="self-start rounded-md bg-muted px-3 py-2 font-mono text-lg tracking-widest">
+            {event.userCode}
+          </code>
+        </div>
+      );
+    case "info":
+      return (
+        <p className="text-sm text-muted-foreground">
+          {event.message}{" "}
+          {event.links?.map((link) => (
+            <a
+              key={link.url}
+              className="underline underline-offset-2"
+              href={link.url}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {link.label ?? link.url}
+            </a>
+          ))}
+        </p>
+      );
+    case "progress":
+      return last ? <p className="shimmer text-sm">{event.message}</p> : null;
+  }
 }
 
 function PromptForm({ session }: { session: LoginSession }) {

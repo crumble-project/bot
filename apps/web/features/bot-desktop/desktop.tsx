@@ -56,6 +56,8 @@ function useDesktopControl(path: string) {
     };
   }, [path]);
 
+  // `apply` stores the returned control; no query caches it.
+  // react-doctor-disable-next-line query-mutation-missing-invalidation
   const take = useMutation({
     mutationFn: (next: DesktopControl["holder"]) =>
       call<DesktopControl, { holder: DesktopControl["holder"] }>(
@@ -113,6 +115,7 @@ export function BotDesktop({ botId }: { botId: string }) {
   const { control, take } = useDesktopControl(path);
 
   // The viewer link works once, so every connection needs a fresh one.
+  // react-doctor-disable-next-line query-mutation-missing-invalidation
   const viewer = useMutation({
     mutationFn: () => call<DesktopViewer>(`${path}/desktop/viewer`, "POST"),
   });
@@ -230,6 +233,9 @@ export function DesktopPreview({ botId }: { botId: string }) {
           key={viewer.data.path}
           title="Bot desktop preview"
           src={viewer.data.path}
+          // The viewer is our own noVNC page; its module imports need the real origin.
+          // react-doctor-disable-next-line iframe-missing-sandbox
+          sandbox="allow-scripts allow-same-origin"
           tabIndex={-1}
           className="pointer-events-none size-full border-0"
         />
@@ -265,6 +271,9 @@ function ViewerPane({
           key={viewer.data.path}
           title="Bot desktop"
           src={viewer.data.path}
+          // The viewer is our own noVNC page; its module imports need the real origin.
+          // react-doctor-disable-next-line iframe-missing-sandbox
+          sandbox="allow-scripts allow-same-origin"
           className="size-full border-0"
         />
       )}

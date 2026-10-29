@@ -32,6 +32,7 @@ const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 const MAX_IMAGE = 5 * 1024 * 1024;
 const MAX_TEXT = 512 * 1024;
 const MAX_FILES = 8;
+const uploadKeys = new WeakMap<Upload, string>();
 
 function base64(bytes: ArrayBuffer) {
   let binary = "";
@@ -67,12 +68,14 @@ async function imageUpload(file: File): Promise<UploadResult> {
   if (blob.size > MAX_IMAGE)
     return { error: `${file.name} is larger than 5 MB.` };
 
+  const data = base64(await blob.arrayBuffer());
+
   return {
     upload: {
       name: direct ? file.name : file.name.replace(/\.[^.]+$/, "") + ".jpg",
       mimeType: blob.type,
-      data: base64(await blob.arrayBuffer()),
-      preview: URL.createObjectURL(blob),
+      data,
+      preview: `data:${blob.type};base64,${data}`,
     },
   };
 }
@@ -102,18 +105,22 @@ export async function toUploads(files: File[]) {
   const uploads: Upload[] = [];
   const errors: string[] = [];
 
-  for (const file of files) {
-    try {
-      const result = await (file.type.startsWith("image/")
+  const results = await Promise.all(
+    files.map((file) =>
+      (file.type.startsWith("image/")
         ? imageUpload(file)
-        : textUpload(file));
+        : textUpload(file)
+      ).catch(() => ({
+        error: `${file.name} can't be attached. Attach images or text files.`,
+      })),
+    ),
+  );
 
-      if ("error" in result) errors.push(result.error);
-      else uploads.push(result.upload);
-    } catch {
-      errors.push(
-        `${file.name} can't be attached. Attach images or text files.`,
-      );
+  for (const result of results) {
+    if ("error" in result) errors.push(result.error);
+    else {
+      uploadKeys.set(result.upload, crypto.randomUUID());
+      uploads.push(result.upload);
     }
   }
 
@@ -123,24 +130,50 @@ export async function toUploads(files: File[]) {
 export type Mentionable = Pick<Bot, "id" | "name">;
 
 function useAttachments() {
-  const [uploads, setUploads] = useState<Upload[]>([]);
-  const [errors, setErrors] = useState<string[]>([]);
+  const [state, setState] = useState<{ uploads: Upload[]; errors: string[] }>({
+    uploads: [],
+    errors: [],
+  });
 
-  const add = async (files: File[]) => {
-    const room = MAX_FILES - uploads.length;
+  const recovery = useRef(0);
 
-    const { uploads: added, errors: failed } = await toUploads(
-      files.slice(0, room),
-    );
+  const setUploads = (update: (uploads: Upload[]) => Upload[]) =>
+    setState((current) => ({ ...current, uploads: update(current.uploads) }));
 
-    setUploads([...uploads, ...added]);
-    setErrors([
-      ...failed,
-      ...(files.length > room ? [`Attach at most ${MAX_FILES} files.`] : []),
-    ]);
+  const setErrors = (errors: string[]) =>
+    setState((current) => ({ ...current, errors }));
+
+  const restore = (pending: Upload[]) => {
+    recovery.current++;
+    setUploads((current) => [...pending, ...current]);
   };
 
-  return { uploads, setUploads, errors, setErrors, add };
+  const add = async (files: File[]) => {
+    const started = recovery.current;
+
+    const { uploads: added, errors: failed } = await toUploads(
+      files.slice(0, MAX_FILES),
+    );
+
+    setState((current) => {
+      const room =
+        started === recovery.current
+          ? Math.max(0, MAX_FILES - current.uploads.length)
+          : MAX_FILES;
+
+      return {
+        uploads: [...current.uploads, ...added.slice(0, room)],
+        errors: [
+          ...failed,
+          ...(files.length > room
+            ? [`Attach at most ${MAX_FILES} files.`]
+            : []),
+        ],
+      };
+    });
+  };
+
+  return { ...state, setUploads, setErrors, add, restore };
 }
 
 function useMentions(
@@ -180,9 +213,9 @@ function useMentions(
     if (!suggestions.length) return false;
 
     if (event.key === "Tab") accept();
-    else if (event.key === "ArrowDown") setSelected(selected + 1);
+    else if (event.key === "ArrowDown") setSelected((current) => current + 1);
     else if (event.key === "ArrowUp")
-      setSelected(selected + suggestions.length - 1);
+      setSelected((current) => current + suggestions.length - 1);
     else return false;
 
     event.preventDefault();
@@ -258,7 +291,7 @@ function ReplyBanner({
   );
 }
 
-function UploadChips({
+export function UploadChips({
   uploads,
   onRemove,
 }: {
@@ -270,7 +303,11 @@ function UploadChips({
   return (
     <div className="flex flex-wrap gap-2">
       {uploads.map((upload, index) => (
-        <Badge key={index} variant="outline" className="h-8 gap-1.5 pr-0.5">
+        <Badge
+          key={uploadKeys.get(upload)}
+          variant="outline"
+          className="h-8 gap-1.5 pr-0.5"
+        >
           {upload.preview ? (
             <img
               src={upload.preview}
@@ -417,7 +454,12 @@ function canSendDraft(
   draft: string,
   uploads: Upload[],
 ) {
-  return !disabled && !sending && (draft.trim() !== "" || uploads.length > 0);
+  return (
+    !disabled &&
+    !sending &&
+    uploads.length <= MAX_FILES &&
+    (draft.trim() !== "" || uploads.length > 0)
+  );
 }
 
 export function Composer({
@@ -443,7 +485,10 @@ export function Composer({
   onStop: () => void;
 }) {
   const [draft, setDraft] = useState("");
-  const { uploads, setUploads, errors, setErrors, add } = useAttachments();
+
+  const { uploads, setUploads, errors, setErrors, add, restore } =
+    useAttachments();
+
   const [sending, setSending] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
   const mentions = useMentions(draft, setDraft, mentionable);
@@ -461,16 +506,19 @@ export function Composer({
     const pending = uploads;
 
     setDraft("");
-    setUploads([]);
+    setUploads(() => []);
     setErrors([]);
 
-    // A failed send puts the message back when nothing new was typed.
-    if (!(await onSend(content, pending))) {
-      setDraft((current) => current || content);
-      setUploads((current) => (current.length ? current : pending));
+    try {
+      if (await onSend(content, pending)) return;
+    } catch {
+      // Rejected sends need the same recovery as unsuccessful sends.
+    } finally {
+      setSending(false);
     }
 
-    setSending(false);
+    setDraft((current) => [draft, current].filter(Boolean).join("\n"));
+    restore(pending);
   };
 
   return (
@@ -491,9 +539,15 @@ export function Composer({
       <UploadChips
         uploads={uploads}
         onRemove={(index) =>
-          setUploads(uploads.filter((_, other) => other !== index))
+          setUploads((current) => current.filter((_, other) => other !== index))
         }
       />
+      {uploads.length > MAX_FILES && (
+        <p className="text-xs text-destructive">
+          Attach at most {MAX_FILES} files. Remove {uploads.length - MAX_FILES}{" "}
+          to send.
+        </p>
+      )}
       {errors.map((error) => (
         <p key={error} className="text-xs text-destructive">
           {error}

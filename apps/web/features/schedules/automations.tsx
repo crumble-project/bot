@@ -489,6 +489,30 @@ export function AutomationsPage() {
 const refresh = () =>
   queryClient.invalidateQueries({ queryKey: schedulesQuery.queryKey });
 
+export function runAutomationOptions(
+  schedule: Pick<Schedule, "id">,
+  navigate: () => void,
+) {
+  const path = `/v1/schedules/${encodeURIComponent(schedule.id)}`;
+
+  return {
+    mutationFn: async () => {
+      const result = await call<{ admitted: boolean }>(`${path}/run`, "POST");
+
+      if (!result.admitted) throw new Error("Automation could not be started");
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: executionsQuery.queryKey,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: scriptRunsQuery(schedule.id).queryKey,
+      });
+      navigate();
+    },
+  };
+}
+
 function useAutomationActions(schedule: Schedule) {
   const navigate = useNavigate();
   const path = `/v1/schedules/${encodeURIComponent(schedule.id)}`;
@@ -498,15 +522,14 @@ function useAutomationActions(schedule: Schedule) {
     onSettled: refresh,
   });
 
-  const run = useMutation({
-    mutationFn: async () => {
-      const result = await call<{ admitted: boolean }>(`${path}/run`, "POST");
-
-      if (!result.admitted) throw new Error("Automation could not be started");
-    },
-    onSuccess: () =>
-      navigate({ to: "/bots/$botId", params: { botId: schedule.agentId } }),
-  });
+  const run = useMutation(
+    runAutomationOptions(schedule, () => {
+      void navigate({
+        to: "/bots/$botId",
+        params: { botId: schedule.agentId },
+      });
+    }),
+  );
 
   const remove = useMutation({
     mutationFn: () => send(path, "DELETE"),
