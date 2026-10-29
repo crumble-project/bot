@@ -11,6 +11,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { BrandLogo } from "@/components/brand-logo";
 import { EditorSheet } from "@/components/form-fields";
 import {
   RowMenu,
@@ -32,17 +33,6 @@ const LOGOS = {
   "1password": si1password,
   bitwarden: siBitwarden,
 } as const satisfies Record<PasswordManager["id"], SimpleIcon>;
-
-/** The password manager's own mark in its brand color, from Simple Icons. */
-function Logo({ id }: { id: PasswordManager["id"] }) {
-  const logo = LOGOS[id];
-
-  return (
-    <svg viewBox="0 0 24 24" className="size-4" aria-hidden>
-      <path d={logo.path} fill={`#${logo.hex}`} />
-    </svg>
-  );
-}
 
 const TOKEN_LABELS = {
   "1password": "Service account token",
@@ -119,7 +109,7 @@ function PasswordManagerRow({ manager }: { manager: PasswordManager }) {
     <SettingRow
       tile={
         <RowTile>
-          <Logo id={manager.id} />
+          <BrandLogo icon={LOGOS[manager.id]} />
         </RowTile>
       }
       title={

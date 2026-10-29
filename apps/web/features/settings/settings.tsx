@@ -27,6 +27,8 @@ import {
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { MarkupLogo } from "@/components/brand-logo";
+import { providerLogo } from "./provider-logos";
 import {
   Empty,
   EmptyDescription,
@@ -554,6 +556,20 @@ function providerKeyAvailable(provider: Provider, editing: boolean) {
   );
 }
 
+function ProviderTile({ provider }: { provider: Provider }) {
+  const logo = providerLogo(provider.provider);
+
+  return logo ? (
+    <RowTile className="text-foreground">
+      <MarkupLogo svg={logo} />
+    </RowTile>
+  ) : (
+    <RowTile className="font-heading text-sm font-semibold text-foreground">
+      {provider.name.slice(0, 1).toUpperCase()}
+    </RowTile>
+  );
+}
+
 function ProviderActions({
   provider,
   credential,
@@ -627,11 +643,7 @@ function ProviderRow({
   return (
     <div className="flex flex-col">
       <SettingRow
-        tile={
-          <RowTile className="font-heading text-sm font-semibold text-foreground">
-            {provider.name.slice(0, 1).toUpperCase()}
-          </RowTile>
-        }
+        tile={<ProviderTile provider={provider} />}
         title={
           <>
             <span className="truncate">{provider.name}</span>
