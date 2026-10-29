@@ -70,6 +70,16 @@ async function keyIdentifier(certificate: pkijs.Certificate) {
   );
 }
 
+/** A certificate serial from random `bytes`. */
+export function serialNumber(bytes: Uint8Array) {
+  const serial = Uint8Array.from(bytes);
+
+  // Positive (DER integers are signed) and without a leading zero byte, which BoringSSL rejects as non-minimal.
+  serial[0] = (serial[0]! & 0x7f) | 0x40;
+
+  return new asn1js.Integer({ valueHex: serial });
+}
+
 async function signed(
   options: {
     subject: string;
@@ -81,12 +91,8 @@ async function signed(
   extensions: (certificate: pkijs.Certificate) => Promise<pkijs.Extension[]>,
 ) {
   const certificate = new pkijs.Certificate();
-  const serial = randomBytes(16);
-
-  // A positive serial: DER integers are signed.
-  serial[0]! &= 0x7f;
   certificate.version = 2;
-  certificate.serialNumber = new asn1js.Integer({ valueHex: serial });
+  certificate.serialNumber = serialNumber(randomBytes(16));
   certificate.subject = commonName(options.subject);
   certificate.issuer = commonName(options.issuer);
   certificate.notBefore.value = new Date(Date.now() - DAY_MS);

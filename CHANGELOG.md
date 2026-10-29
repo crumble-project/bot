@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix the credential proxy failing about one host certificate in 128 (an OpenSSL `INVALID_INTEGER` error): a random serial number that started with a zero byte wasn't valid DER.
 - An MCP server connection that opened while its token or settings changed is closed instead of kept, so the bot's next use connects with the new credentials. The tool call that hit it fails with "MCP server credentials changed; retry this task".
 - Document password managers on a new **Password managers** concepts page (connecting, reference formats, cache timings, and what each kind of secret does when it can't be read), and add **Password manager** to the glossary.
 - Read a credential's value, a provider's API key, or an MCP server's token from a connected password manager: their editors offer **Crumble** or each connected password manager. A credential whose newest use couldn't read its value shows the error in its row.
