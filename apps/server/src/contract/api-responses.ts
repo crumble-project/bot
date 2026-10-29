@@ -713,6 +713,46 @@ export const providerConfiguredResponse = z
   .object({ provider: z.string(), configured: z.boolean() })
   .openapi("ProviderConfigured");
 
+// One object with optional fields rather than a union, so client generators keep it.
+const secretUsingPasswordManagerResponse = z
+  .object({
+    kind: z.enum(["botCredential", "providerCredential", "secret"]),
+    agentId: z
+      .string()
+      .optional()
+      .openapi({ description: "For `botCredential`." }),
+    name: z
+      .string()
+      .optional()
+      .openapi({ description: "The credential's name, for `botCredential`." }),
+    provider: z
+      .string()
+      .optional()
+      .openapi({ description: "For `providerCredential`." }),
+    key: z.string().optional().openapi({
+      description:
+        "For `secret`, such as `mcp:<server ID>` for an MCP server token.",
+    }),
+  })
+  .openapi("SecretUsingPasswordManager");
+
+export const passwordManagerResponse = z
+  .object({
+    id: z.enum(["1password", "bitwarden"]),
+    name: z.string(),
+    connected: z.boolean(),
+    connectedAt: z.string().nullable(),
+    usedBy: z.array(secretUsingPasswordManagerResponse).openapi({
+      description:
+        "Secrets that read their value from this password manager; it can't be disconnected while any remain.",
+    }),
+  })
+  .openapi("PasswordManager");
+
+export const passwordManagersResponse = z
+  .object({ passwordManagers: z.array(passwordManagerResponse) })
+  .openapi("PasswordManagers");
+
 export const mcpServerResponse = z
   .object({
     id: z.string(),

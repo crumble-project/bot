@@ -150,6 +150,8 @@ const connected = (
 export class PasswordManagers extends Context.Service<
   PasswordManagers,
   {
+    /** The password managers this server supports, in a stable order. */
+    readonly ids: ReadonlyArray<PasswordManagerId>;
     readonly name: (id: PasswordManagerId) => string;
     /** Fails with `InvalidInput` unless `reference` has the password manager's reference format. */
     readonly checkReference: (
@@ -177,6 +179,7 @@ export class PasswordManagers extends Context.Service<
     return Layer.succeed(
       PasswordManagers,
       PasswordManagers.of({
+        ids: vendors.map((vendor) => vendor.id),
         name: (id) => vendorOf(id).name,
         checkReference: (id, reference) => {
           const vendor = vendorOf(id);
