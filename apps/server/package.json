@@ -12,7 +12,9 @@
     "db:generate:push": "drizzle-kit generate --config drizzle.push.config.ts"
   },
   "dependencies": {
+    "@1password/sdk": "0.5.0",
     "@better-auth/passkey": "1.7.14",
+    "@bitwarden/sdk-napi": "1.0.0",
     "@crumble/web": "workspace:*",
     "@earendil-works/chord": "1.4.0",
     "@earendil-works/pi-ai": "1.4.0",
