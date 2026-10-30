@@ -986,6 +986,10 @@ export const replyEvent = z
         "Set when a bot answered in a group chat; open the group rather than the bot chat.",
     }),
     groupName: z.string().optional(),
+    waitingFor: z.enum(["approval", "credential", "login"]).optional().openapi({
+      description:
+        "Set when the bot waits for the owner's answer: approval (a desktop job action held by an intent check), credential, or login (a request the owner saves or declines). Clients may receive other values later.",
+    }),
   })
   .openapi("ReplyEvent");
 

@@ -70,6 +70,15 @@
           },
           "groupName": {
             "type": "string"
+          },
+          "waitingFor": {
+            "type": "string",
+            "enum": [
+              "approval",
+              "credential",
+              "login"
+            ],
+            "description": "Set when the bot waits for the owner's answer: approval (a desktop job action held by an intent check), credential, or login (a request the owner saves or declines). Clients may receive other values later."
           }
         },
         "required": [

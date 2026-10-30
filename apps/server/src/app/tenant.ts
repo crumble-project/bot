@@ -63,7 +63,7 @@ import { credentialProxy } from "../credentials/credential-proxy";
 import { coreLayer, type CoreServices } from "./core-layer";
 import { runnerOf } from "../shared/runner";
 import { builtinPlugins } from "./builtin-plugins";
-import { jobAnswers, jobTools } from "./plugin-layers";
+import { heldActionNotices, jobAnswers, jobTools } from "./plugin-layers";
 import {
   jobEnv,
   jobExtensions,
@@ -261,6 +261,7 @@ function accountLayer(
     reviews,
     curation,
     jobAnswers,
+    heldActionNotices,
     jobTools,
     coordinationTools,
     scheduleTools,

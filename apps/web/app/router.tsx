@@ -49,6 +49,7 @@ import { JudgeModelPage } from "@/features/settings/judge-model-settings";
 import { PasswordManagersPage } from "@/features/settings/password-managers";
 import { SkillsPage } from "@/features/skills/skills";
 import { AutomationsPage } from "@/features/schedules/automations";
+import { SoundsPage } from "@/features/sounds/sounds";
 
 const rootRoute = createRootRoute();
 
@@ -212,6 +213,13 @@ const activityRoute = createRoute({
   component: ActivityPage,
 });
 
+// Not linked from the navigation: a place to hear the notification sounds.
+const soundsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/sounds",
+  component: SoundsPage,
+});
+
 const integrationsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/integrations",
@@ -322,6 +330,7 @@ export const router = createRouter({
       automationsRoute,
       tasksRoute,
       activityRoute,
+      soundsRoute,
       integrationsRoute,
       oauthRoute,
       settingsRoute.addChildren([

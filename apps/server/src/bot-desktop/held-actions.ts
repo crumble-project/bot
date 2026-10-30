@@ -83,6 +83,8 @@ export class HeldActions extends Context.Service<
     readonly expire: (id: string) => Effect.Effect<void>;
     /** Succeeds with the owner's decision; a decision made earlier is returned at once. */
     readonly untilDecided: (id: string) => Effect.Effect<HoldDecision>;
+    /** Calls `listener` with each newly held action, until the returned function is called. */
+    readonly onHeld: (listener: (held: HeldAction) => void) => () => void;
   }
 >()("crumble/bot-desktop/HeldActions") {
   static readonly layer = Layer.effect(
@@ -90,6 +92,7 @@ export class HeldActions extends Context.Service<
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
       const listeners = new Map<string, Set<Listener>>();
+      const heldListeners = new Set<(held: HeldAction) => void>();
 
       // No wait outlives the process: a job's tool call ends with it.
       yield* db
@@ -125,7 +128,11 @@ export class HeldActions extends Context.Service<
 
         yield* db.insert(heldActions).values(values).pipe(Effect.orDie);
 
-        return heldOf(values);
+        const held = heldOf(values);
+
+        for (const listener of heldListeners) listener(held);
+
+        return held;
       });
 
       const list = Effect.fn("HeldActions.list")(function* (agentId: string) {
@@ -233,7 +240,20 @@ export class HeldActions extends Context.Service<
         return yield* Deferred.await(decided).pipe(Effect.ensuring(stop));
       });
 
-      return HeldActions.of({ hold, list, decide, expire, untilDecided });
+      const onHeld = (listener: (held: HeldAction) => void) => {
+        heldListeners.add(listener);
+
+        return () => void heldListeners.delete(listener);
+      };
+
+      return HeldActions.of({
+        hold,
+        list,
+        decide,
+        expire,
+        untilDecided,
+        onHeld,
+      });
     }),
   );
 }

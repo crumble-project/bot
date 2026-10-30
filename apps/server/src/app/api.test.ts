@@ -3,10 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { Store } from "../../test/support/store";
 import { desktopControlAccess } from "../bot-desktop/desktop-control";
+import { HeldActions, heldActionsAccess } from "../bot-desktop/held-actions";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { createAPI, handleApiError, type ApiOptions } from "./api";
+import { heldActionNotices } from "./plugin-layers";
 import { contractApp } from "../contract/api-contract";
 import { registerMcpServerRoutes } from "../integrations/mcp-servers-api";
 import type { McpIntegrations } from "../integrations/integrations";
@@ -1631,6 +1633,69 @@ describe("job answer notifications", () => {
         createdAt: expect.any(String),
       },
     ]);
+  });
+});
+
+describe("held action notifications", () => {
+  test("an action held for the owner's approval becomes a reply event naming the job", async () => {
+    const { store, runtime } = setup();
+    const service = standaloneBots(store, runtime);
+    const heard: unknown[] = [];
+    const scope = Scope.makeUnsafe();
+
+    const agent = store.createAgent({
+      name: "Desk",
+      avatar: "bot",
+      description: "",
+      instructions: "",
+      provider: "openai",
+      model: "gpt-4.1",
+      enabled: true,
+      tools: ["desktop"],
+      skills: [],
+      mcpServers: [],
+      delegates: [],
+    });
+
+    service.onActivity((event) => heard.push(event));
+
+    await service.effects.runPromise(
+      Layer.buildWithScope(heldActionNotices, scope).pipe(
+        Effect.provideService(
+          HeldActions,
+          store.runtime.runSync(HeldActions.use(Effect.succeed)),
+        ),
+      ),
+    );
+
+    const held = await heldActionsAccess(store.runtime).hold({
+      agentId: agent.id,
+      job: "github",
+      action: "click Delete repository",
+      page: null,
+      ownerMessages: [],
+      reason: "Irreversible",
+    });
+
+    while (!heard.length)
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+    expect(heard).toEqual([
+      {
+        type: "reply",
+        executionId: held.id,
+        agentId: agent.id,
+        agentName: "Desk",
+        entryId: null,
+        origin: "desktop",
+        jobName: "github",
+        waitingFor: "approval",
+        preview: "Waiting for your approval: click Delete repository",
+        createdAt: held.heldAt,
+      },
+    ]);
+
+    await Effect.runPromise(Scope.close(scope, Exit.void));
   });
 });
 

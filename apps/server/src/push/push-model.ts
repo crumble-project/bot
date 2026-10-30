@@ -34,6 +34,8 @@ export const ReplyPushEvent = Schema.Struct({
   groupName: Schema.optionalKey(Schema.String),
   /** Present for a bot's answer to a coding or desktop job's report. */
   jobName: Schema.optionalKey(Schema.String),
+  /** Present when the reply waits for the owner's answer. */
+  waitingFor: Schema.optionalKey(Schema.String),
 });
 
 export type ReplyPushEvent = typeof ReplyPushEvent.Type;
@@ -58,6 +60,7 @@ export function canonicalReplyEvent(
     groupId?: string;
     groupName?: string;
     jobName?: string;
+    waitingFor?: string;
   },
   serverId: string,
 ): ReplyPushEvent {
@@ -65,6 +68,7 @@ export function canonicalReplyEvent(
     ...(event.groupId && { groupId: event.groupId }),
     ...(event.groupName && { groupName: event.groupName }),
     ...(event.jobName && { jobName: event.jobName }),
+    ...(event.waitingFor && { waitingFor: event.waitingFor }),
     type: "reply",
     eventId: event.eventId ?? event.executionId!,
     serverId: event.serverId ?? serverId,
