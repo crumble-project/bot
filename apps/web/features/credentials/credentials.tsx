@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { IconHistory } from "@tabler/icons-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,6 +26,7 @@ import {
 import { NewButton, PageToolbar, WorkspacePage } from "@/components/workspace";
 import {
   ALL,
+  ActionFailure,
   BotPills,
   DeleteSecretDialog,
   LastUse,
@@ -185,11 +185,7 @@ export function CredentialsSettings({
           countOf={countOf}
         />
       </div>
-      {actions.remove.isError && (
-        <Alert variant="destructive">
-          <AlertDescription>{actions.remove.error.message}</AlertDescription>
-        </Alert>
-      )}
+      <ActionFailure actions={actions} />
       {bots.isPending ? (
         <Skeleton className="h-40 rounded-xl" />
       ) : (
@@ -203,7 +199,7 @@ export function CredentialsSettings({
             setEditing({ botId, editing: { kind: "request", request } })
           }
           onDecline={(botId, name) =>
-            actions.remove.mutate({ botId, item: name })
+            actions.decline.mutate({ botId, item: name })
           }
           empty="None yet. The bot asks for one when a coding job needs it."
           noMatch="No credentials match your search."
