@@ -7,6 +7,7 @@
 - Each intent check's token usage and cost is recorded on its `computer_use` call, so a desktop job's usage includes its judge. Jev is priced at TypeSafe's $0.042 per million input tokens, since pi-ai's catalog lists it at $0.
 - Add `bun tools/intent-eval.ts` in `apps/server`: it runs a judge model on 38 labeled desktop actions and reports latency, tokens, cost, and what each in-intent bar would hold. It makes paid calls with the provider's key from the environment, so it runs locally, never in CI.
 - The bot's model now sees each owner message and automation's instructions prefixed with `[message <request ID>]`; script automation output is not tagged and never counts as the owner's request, and the `desktop` tool's `start` and `send` take `owner_messages` to cite them. The job keeps those messages verbatim, plus the owner's latest message, for its intent checks; an ID that isn't an owner message of the chat is rejected.
+- The installed web app uses the Crumble icon on the home screen instead of the placeholder ring, with a maskable variant for Android.
 
 ## 0.2.0
 
