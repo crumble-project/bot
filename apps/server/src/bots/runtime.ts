@@ -24,6 +24,7 @@ import { CODEMODE_TOOL_NAME } from "@earendil-works/pi-durable/codemode";
 import { Context, Effect, Layer, Predicate } from "effect";
 import { codingJobs } from "../jobs/coding";
 import { desktopJobs } from "../jobs/desktop";
+import { messageTag } from "../jobs/owner-request";
 import {
   GROUP_EXCLUDED_EXTENSIONS,
   GROUP_INSTRUCTIONS,
@@ -1223,7 +1224,7 @@ export class AgentRuntime {
     const content = inputContent(
       options.origin?.kind === "bot"
         ? botRelayText(options.origin, prepared.modelContent)
-        : prepared.modelContent,
+        : messageTag(options.origin?.kind, requestId, prepared.modelContent),
       attached.blocks,
     );
 

@@ -1,6 +1,7 @@
 // Ported from Hermes Agent's computer_use tool (tools/computer_use/schema.py, MIT, Nous Research). Changes, measured in
 // the bot desktop spike: captures default to the accessibility tree with diff reads instead of screenshots, input
-// climbs from background to foreground on its own (the bot owns its display), and there is no per-action approval.
+// climbs from background to foreground on its own (the bot owns its display), and only actions an intent check holds
+// wait for approval.
 import type { Context } from "@earendil-works/chord";
 import {
   StringEnum,
@@ -8,8 +9,9 @@ import {
   type Static,
   type ImageContent,
   type TextContent,
+  type Usage,
 } from "@earendil-works/pi-ai";
-import { defineTool } from "@earendil-works/pi-durable";
+import { defineTool, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { ControlState } from "./desktop-control";
 import type { DesktopFills, LoginFill } from "./computer-use-login";
@@ -18,6 +20,7 @@ import {
   type ComputerUseOptions,
 } from "./computer-use-state";
 import { runAction } from "./computer-use-run";
+import type { IntentGate } from "./computer-use-intent";
 
 export const COMPUTER_USE_TOOL_NAME = "computer_use";
 
@@ -30,6 +33,8 @@ export type DesktopShell = Pick<
 export type ComputerUseResult = {
   content: (TextContent | ImageContent)[];
   isError: boolean;
+  /** Model calls the tool made itself, such as an intent check's judge. */
+  usage?: Usage;
 };
 
 const check = Type.Object({
@@ -249,8 +254,8 @@ export function createComputerUse(
   const state = computerUseState(shell, options);
 
   return {
-    run: (raw: ComputerUseArgs, context: Context) =>
-      runAction(state, raw, context),
+    run: (raw: ComputerUseArgs, context: Context, intent?: IntentGate) =>
+      runAction(state, raw, context, intent),
     reset: () => {
       state.snapshots.clear();
       state.lastRead = undefined;
@@ -263,10 +268,13 @@ export function computerUseTool({
   gateFor,
   logins,
   fills,
+  intentFor,
 }: {
   gateFor?: ((conversationId: string) => ControlGate) | undefined;
   logins?: LoginFill | undefined;
   fills?: DesktopFills | undefined;
+  /** The intent check of one call, which reads the job's request and posts a held action's card. */
+  intentFor?: ((api: ToolExecutionApi) => IntentGate) | undefined;
 } = {}) {
   const instances = new Map<string, ReturnType<typeof createComputerUse>>();
 
@@ -312,9 +320,13 @@ export function computerUseTool({
         instances.set(key, computer);
       }
 
-      const result = await computer.run(args, callContext);
+      const result = await computer.run(args, callContext, intentFor?.(api));
 
-      return { output: result.content, isError: result.isError };
+      return {
+        output: result.content,
+        isError: result.isError,
+        ...(result.usage && { usage: result.usage }),
+      };
     },
   });
 }

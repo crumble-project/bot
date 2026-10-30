@@ -19,6 +19,9 @@ import {
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import { registerCredentialRoutes } from "../credentials/credentials-api";
 import { registerLoginRoutes } from "../logins/logins-api";
+import { registerHeldActionRoutes } from "../bot-desktop/held-actions-api";
+import { heldActionsAccess } from "../bot-desktop/held-actions";
+import { registerJudgeModelRoutes } from "../bot-desktop/judge-settings";
 import { loginsAccess } from "../logins/logins";
 import { registerBotRequestRoutes } from "../bot-requests/bot-requests-api";
 import type { BotRequests } from "../bot-requests/bot-requests";
@@ -230,6 +233,7 @@ export function createAPI(
   register(routes.capabilities, (c) => c.json(capabilitiesOf(options), 200));
   registerPushRoutes(register, push);
   registerWebSearchRoutes(register, core);
+  registerJudgeModelRoutes(register, core, providerAuth.models);
 
   const pushServerId = pushServerIdOf(push);
 
@@ -254,6 +258,7 @@ export function createAPI(
   registerGroupChatRoutes(api);
   registerCredentialRoutes(api);
   registerLoginRoutes({ ...api, logins: loginsAccess(core) });
+  registerHeldActionRoutes({ ...api, held: heldActionsAccess(core) });
 
   if (options.botRequests)
     registerBotRequestRoutes({ ...api, botRequests: options.botRequests });

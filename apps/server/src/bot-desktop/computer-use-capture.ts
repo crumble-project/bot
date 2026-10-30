@@ -10,6 +10,7 @@ import {
   type DriverReply,
   type Window,
 } from "./computer-use-driver";
+import { recordElements } from "./computer-use-intent";
 import { passwordMayShow } from "./computer-use-login";
 import { scrubText, type ComputerUseState } from "./computer-use-state";
 
@@ -92,6 +93,7 @@ export function windowText(
   others: string[],
 ) {
   if (reply.snapshot_id) {
+    recordElements(state, target.window_id, reply.snapshot_id, reply);
     state.snapshots.set(target.window_id, reply.snapshot_id);
 
     if (query) state.queried.add(target.window_id);

@@ -823,7 +823,7 @@ export function BotMessage({
   );
 }
 
-function SettledCard({
+export function SettledCard({
   icon: Icon,
   title,
   outcome,

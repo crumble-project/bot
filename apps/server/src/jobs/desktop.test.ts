@@ -18,7 +18,11 @@ import {
   desktopExtensions,
   type DesktopLogins,
 } from "./desktop";
+import type { JsonObject } from "@earendil-works/pi-durable";
 import type { JobAnswer } from "./jobs";
+import type { DesktopIntent } from "./desktop-intent";
+import type { IntentRequest } from "../bot-desktop/intent-check";
+import type { MessageOrigin } from "../bots/transcript";
 import type { Agent, Login } from "../shared/domain";
 import type { LoginsAccess } from "../logins/logins";
 import { AgentRuntime } from "../bots/runtime";
@@ -115,6 +119,7 @@ function script(
   offered: Map<Role, string[]>,
   models: Map<Role, string>,
   sections: Map<Role, Record<string, string | null>>,
+  start: JsonObject,
 ): FauxResponseFactory {
   return async (context, _options, _state, model) => {
     const tools = context.messages.flatMap((message) =>
@@ -141,7 +146,7 @@ function script(
       (message) => message.role !== "system",
     )!;
 
-    const call = (name: string, args: Record<string, string | number>) =>
+    const call = (name: string, args: JsonObject) =>
       fauxAssistantMessage(fauxToolCall(name, args), {
         stopReason: "toolUse",
       });
@@ -163,17 +168,33 @@ function script(
     if (textOf(last).startsWith("[desktop job"))
       return fauxAssistantMessage([fauxText("The form is filled.")]);
 
+    // A start that succeeds ends the bot's turn, so only a failed one is answered.
+    if (last.role === "toolResult")
+      return fauxAssistantMessage([fauxText("The job did not start.")]);
+
     return call("desktop", {
       action: "start",
       name: "form",
       message: "Fill the form with Ada.",
+      ...start,
     });
   };
 }
 
+type OpenOptions = {
+  intent?: DesktopIntent;
+  /** Arguments the bot adds to its start call. */
+  start?: JsonObject;
+  /** The opening message's origin; unset, it has none. */
+  origin?: MessageOrigin;
+  /** The bot's answer that ends the test's wait. */
+  done?: string;
+};
+
 async function open(
   desktopModel?: Agent["desktopModel"],
   logins?: DesktopLogins,
+  options: OpenOptions = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), "bot-desktop-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
@@ -205,13 +226,21 @@ async function open(
   });
 
   faux.setResponses(
-    Array.from({ length: 40 }, () => script(offered, used, sections)),
+    Array.from({ length: 40 }, () =>
+      script(offered, used, sections, options.start ?? {}),
+    ),
   );
   const models = createModels();
   models.setProvider(faux.provider);
 
   const workspaces = new GuestWorkspaces(dir);
-  const extensions = desktopExtensions(agent, undefined, logins);
+
+  const extensions = desktopExtensions(
+    agent,
+    undefined,
+    logins,
+    options.intent,
+  );
 
   const runtime = new AgentRuntime(dir, {
     models,
@@ -225,11 +254,17 @@ async function open(
 
   const chat = await runtime.openChat(agent);
 
-  await runtime.submit(agent, chat, "Fill in the form", "req-1");
+  await runtime.submit(
+    agent,
+    chat,
+    "Fill in the form",
+    "req-1",
+    options.origin && { origin: options.origin },
+  );
 
   await until(async () =>
     (await runtime.snapshot(agent, chat)).messages.some(
-      (message) => message.content === "The form is filled.",
+      (message) => message.content === (options.done ?? "The form is filled."),
     ),
   );
 
@@ -392,4 +427,70 @@ test("without logins, a desktop job's prompt has no logins section", async () =>
   const { sections } = await open();
 
   expect(sections.get("job")?.["desktop_logins"]).toBeUndefined();
+});
+
+/** A judge that answers every check as asked for, recording what it read; nothing is ever held. */
+function recordingIntent(seen: IntentRequest[]): DesktopIntent {
+  return {
+    judgeFor: async () => ({
+      name: "Recording judge",
+      judge: async (request) => {
+        seen.push(request);
+
+        return { irreversible: 0, inIntent: 1, inIntentBar: 0.9 };
+      },
+    }),
+    held: {
+      list: () => [],
+      decide: () => Promise.reject(new Error("nothing is held")),
+      hold: () => Promise.reject(new Error("nothing is held")),
+      until: () => Promise.reject(new Error("nothing is held")),
+    },
+  };
+}
+
+test("a desktop job's intent check reads the owner's message verbatim and the job's task", async () => {
+  const seen: IntentRequest[] = [];
+
+  await open(undefined, undefined, {
+    intent: recordingIntent(seen),
+    origin: { kind: "owner" },
+  });
+
+  // Only the acting set_value is checked; capture observes.
+  expect(seen).toHaveLength(1);
+  expect(seen[0]).toMatchObject({
+    ownerMessages: [
+      { requestId: "req-1", text: "Fill in the form", from: "owner" },
+    ],
+    tasks: ["Fill the form with Ada."],
+    action: {
+      steps: [
+        {
+          action: "set_value",
+          target: { role: "entry", name: "Name" },
+          value: "Ada",
+        },
+      ],
+    },
+  });
+});
+
+test("a start citing a message that isn't the owner's is rejected and starts no job", async () => {
+  const seen: IntentRequest[] = [];
+
+  const { runtime, agent, chat } = await open(undefined, undefined, {
+    intent: recordingIntent(seen),
+    origin: { kind: "owner" },
+    start: { owner_messages: ["req-1", "made-up"] },
+    done: "The job did not start.",
+  });
+
+  const result = (await runtime.snapshot(agent, chat)).messages.find(
+    (message) => message.toolName === "desktop",
+  );
+
+  expect(result?.content).toContain("Not owner messages of this chat: made-up");
+  expect(await runtime.desktopJobs(agent)).toEqual([]);
+  expect(seen).toEqual([]);
 });

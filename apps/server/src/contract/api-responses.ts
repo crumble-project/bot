@@ -159,6 +159,13 @@ const message = z
     replyPreview: z.string().optional(),
     origin: origin.optional(),
     communication: communication.optional(),
+    heldAction: z
+      .object({ id: z.string(), job: z.string() })
+      .optional()
+      .openapi({
+        description:
+          "On a `held-action` event: the desktop job action waiting for the owner. Its state is under `/v1/agents/{id}/held-actions`.",
+      }),
     attachments: z.array(attachment).optional(),
     toolCallId: z.string().optional(),
     toolName: z.string().optional(),
@@ -487,6 +494,63 @@ export const loginRequestResponse = z
     requestedAt: z.string(),
   })
   .openapi("LoginRequest");
+
+export const heldActionResponse = z
+  .object({
+    id: z.string(),
+    job: z.string().openapi({ description: "The desktop job's name." }),
+    action: z.string().openapi({ description: "The action in plain words." }),
+    page: z.string().nullable().openapi({
+      description: "The URL of the page the job read last.",
+    }),
+    ownerMessages: z
+      .array(
+        z.object({
+          requestId: z.string(),
+          text: z.string(),
+          from: z.enum(["owner", "automation"]),
+        }),
+      )
+      .openapi({
+        description: "The owner messages the action was checked against.",
+      }),
+    reason: z
+      .string()
+      .openapi({ description: "Why the intent check held it." }),
+    status: z.enum(["pending", "approved", "declined", "expired"]),
+    declineReason: z.string().nullable(),
+    heldAt: z.string(),
+    decidedAt: z.string().nullable(),
+  })
+  .openapi("HeldAction");
+
+const judgeChoice = z
+  .object({
+    provider: z.string(),
+    model: z.string(),
+    name: z.string(),
+    kind: z.enum(["classifier", "chat"]),
+  })
+  .openapi("JudgeChoice");
+
+export const judgeModelResponse = z
+  .object({
+    judgeModel: z
+      .object({ provider: z.string(), model: z.string() })
+      .nullable()
+      .openapi({
+        description:
+          "The owner's classifier; null uses the default, GPT-6 Luna through OpenAI Decisions.",
+      }),
+    effective: judgeChoice.nullable().openapi({
+      description:
+        "The model that judges now: a classifier, or a small chat model when no key reaches one. Null when no model is available; then only commit points are held.",
+    }),
+    choices: z.array(judgeChoice).openapi({
+      description: "The classifier models the account's provider keys reach.",
+    }),
+  })
+  .openapi("JudgeModel");
 
 export const loginsResponse = z
   .object({

@@ -48,6 +48,7 @@ import {
   reactionsOf,
   shownInChat,
 } from "./transcript";
+import { HeldActionCard } from "./held-action";
 import { Composer } from "./composer";
 import { type Sources, sourcesOf } from "./sources";
 import { MobileSidebarTrigger } from "@/components/workspace";
@@ -232,7 +233,16 @@ function ChatMessage({
   if (message.role === "assistant")
     return <BotMessage message={message} sources={sources} onReply={onReply} />;
 
-  if (message.role === "event") return <EventRow message={message} />;
+  if (message.role === "event")
+    return message.kind === "held-action" && message.heldAction ? (
+      <HeldActionCard
+        held={message.heldAction}
+        title={message.content}
+        botId={botId}
+      />
+    ) : (
+      <EventRow message={message} />
+    );
 
   return (
     <ToolResultRow

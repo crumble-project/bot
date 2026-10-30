@@ -101,3 +101,11 @@ _Avoid_: Den job, computer use session, browser agent
 **Taking control**:
 The owner operating the bot desktop directly, which pauses desktop work until the owner hands control back.
 _Avoid_: Takeover, remote control, screen sharing
+
+**Intent check**:
+A check, before a desktop job's acting call runs, of whether the action is irreversible and whether it follows from the owner's request. Run by the judge model, never by the job itself. An action that fails it is held until the owner approves or declines it.
+_Avoid_: Guardrail, safety check, approval gate
+
+**Judge model**:
+The model the owner chooses for the account that runs every intent check.
+_Avoid_: Classifier, checker model, supervisor

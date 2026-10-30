@@ -323,6 +323,76 @@
           "remoteDelivery"
         ]
       },
+      "JudgeModel": {
+        "type": "object",
+        "properties": {
+          "judgeModel": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "provider": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "provider",
+              "model"
+            ],
+            "description": "The owner's classifier; null uses the default, GPT-6 Luna through OpenAI Decisions."
+          },
+          "effective": {
+            "$ref": "#/components/schemas/JudgeChoice"
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JudgeChoice"
+            },
+            "description": "The classifier models the account's provider keys reach."
+          }
+        },
+        "required": [
+          "judgeModel",
+          "effective",
+          "choices"
+        ]
+      },
+      "JudgeChoice": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "classifier",
+              "chat"
+            ]
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "name",
+          "kind"
+        ],
+        "description": "The model that judges now: a classifier, or a small chat model when no key reaches one. Null when no model is available; then only commit points are held."
+      },
       "AgentPreview": {
         "allOf": [
           {
@@ -623,6 +693,22 @@
           },
           "communication": {
             "$ref": "#/components/schemas/BotCommunication"
+          },
+          "heldAction": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "job": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "job"
+            ],
+            "description": "On a `held-action` event: the desktop job action waiting for the owner. Its state is under `/v1/agents/{id}/held-actions`."
           },
           "attachments": {
             "type": "array",
@@ -1745,6 +1831,96 @@
           "host",
           "field",
           "error"
+        ]
+      },
+      "HeldAction": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "job": {
+            "type": "string",
+            "description": "The desktop job's name."
+          },
+          "action": {
+            "type": "string",
+            "description": "The action in plain words."
+          },
+          "page": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The URL of the page the job read last."
+          },
+          "ownerMessages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "requestId": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "from": {
+                  "type": "string",
+                  "enum": [
+                    "owner",
+                    "automation"
+                  ]
+                }
+              },
+              "required": [
+                "requestId",
+                "text",
+                "from"
+              ]
+            },
+            "description": "The owner messages the action was checked against."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the intent check held it."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "declined",
+              "expired"
+            ]
+          },
+          "declineReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "heldAt": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "job",
+          "action",
+          "page",
+          "ownerMessages",
+          "reason",
+          "status",
+          "declineReason",
+          "heldAt",
+          "decidedAt"
         ]
       },
       "Memory": {
@@ -3968,6 +4144,253 @@
                     "defaultProvider",
                     "exaKeyConfigured"
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/judge-model": {
+      "get": {
+        "operationId": "getJudgeModel",
+        "description": "The account's judge model for desktop jobs' intent checks, and the models the account's provider keys reach.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JudgeModel"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateJudgeModel",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "judgeModel": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80,
+                        "pattern": "^[a-z0-9-]+$"
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "model"
+                    ]
+                  }
+                },
+                "required": [
+                  "judgeModel"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JudgeModel"
                 }
               }
             }
@@ -10975,6 +11398,389 @@
                   "items": {
                     "$ref": "#/components/schemas/LoginUse"
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/held-actions": {
+      "get": {
+        "operationId": "listAgentHeldActions",
+        "description": "Desktop job actions an intent check held for the owner, newest first, pending and decided.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HeldAction"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/held-actions/{actionId}/approve": {
+      "post": {
+        "operationId": "approveAgentHeldAction",
+        "description": "Runs the held action; the job continues where it stopped. Fails with 409 once the action was decided.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "actionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeldAction"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}/held-actions/{actionId}/decline": {
+      "post": {
+        "operationId": "declineAgentHeldAction",
+        "description": "Refuses the held action with an optional reason; the job reports back. Fails with 409 once the action was decided.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "actionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeldAction"
                 }
               }
             }

@@ -1,5 +1,6 @@
 import { Layer } from "effect";
 import { DesktopControl } from "../bot-desktop/desktop-control";
+import { HeldActions } from "../bot-desktop/held-actions";
 import { BotNotices } from "../bots/bot-notices";
 import { CredentialAuthorities } from "../credentials/credential-authority";
 import { Credentials } from "../credentials/credentials";
@@ -17,6 +18,7 @@ import { productLayer } from "./product-layer";
 export const coreLayer = (dataDir: string) =>
   Layer.mergeAll(
     DesktopControl.layer,
+    HeldActions.layer,
     Credentials.layer,
     Logins.layer,
     CredentialAuthorities.layer,

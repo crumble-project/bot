@@ -41,6 +41,9 @@ import { coordinationTools } from "../bot-messaging/coordination";
 import { displayTools } from "../display/display";
 import { DESKTOP_TOOL_NAME } from "../jobs/desktop";
 import { desktopControlAccess } from "../bot-desktop/desktop-control";
+import { heldActionsAccess } from "../bot-desktop/held-actions";
+import { chosenJudge } from "../bot-desktop/judge-settings";
+import { accountJudge } from "../jobs/desktop-intent";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import type { Workspaces } from "../workspaces/workspace";
 import { microsandboxWorkspacesFromEnv } from "../workspaces/microsandbox-workspaces";
@@ -184,6 +187,10 @@ function accountLayer(
         logins: {
           access: loginsAccess(run),
           fills: (agentId) => desktopFillsAccess(run, agentId),
+        },
+        intent: {
+          judgeFor: accountJudge(() => run.runPromise(chosenJudge)),
+          held: heldActionsAccess(run),
         },
       });
     }),

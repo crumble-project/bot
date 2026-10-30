@@ -3,19 +3,25 @@ import { z } from "zod";
 /** Tools every bot has, whatever its saved `tools` say. */
 export const STANDARD_TOOLS = ["schedule", "codemode"];
 
+const modelRef = z.object({
+  provider: z
+    .string()
+    .trim()
+    .min(1)
+    .max(80)
+    .regex(/^[a-z0-9-]+$/),
+  model: z.string().trim().min(1).max(200),
+});
+
 /** A model other than the bot's own; null clears it in a patch. */
-const modelChoice = z
-  .object({
-    provider: z
-      .string()
-      .trim()
-      .min(1)
-      .max(80)
-      .regex(/^[a-z0-9-]+$/),
-    model: z.string().trim().min(1).max(200),
-  })
-  .nullable()
-  .optional();
+const modelChoice = modelRef.nullable().optional();
+
+/** The account's judge model for intent checks; null goes back to the default. */
+export const judgeModelInput = z.object({ judgeModel: modelRef.nullable() });
+
+export const heldActionDeclineInput = z.object({
+  reason: z.string().trim().max(2000).optional(),
+});
 
 export const agentInput = z.object({
   name: z.string().trim().min(1).max(80),
