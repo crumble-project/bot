@@ -45,6 +45,7 @@ import {
   SettingsLayout,
 } from "@/features/settings/settings";
 import { WebSearchPage } from "@/features/settings/web-search-settings";
+import { JudgeModelPage } from "@/features/settings/judge-model-settings";
 import { PasswordManagersPage } from "@/features/settings/password-managers";
 import { SkillsPage } from "@/features/skills/skills";
 import { AutomationsPage } from "@/features/schedules/automations";
@@ -263,6 +264,12 @@ const webSearchRoute = createRoute({
   component: WebSearchPage,
 });
 
+const judgeModelRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/judge-model",
+  component: JudgeModelPage,
+});
+
 const settingsCredentialsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/credentials",
@@ -323,6 +330,7 @@ export const router = createRouter({
         providersRoute,
         passwordManagersRoute,
         webSearchRoute,
+        judgeModelRoute,
         settingsCredentialsRoute,
         settingsLoginsRoute,
         settingsIntegrationsRoute,

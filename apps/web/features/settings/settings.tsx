@@ -25,6 +25,7 @@ import {
   IconSparkles,
   IconTrash,
   IconWorld,
+  IconScale,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -91,6 +92,7 @@ const SECTIONS = [
   { to: "/settings/web-search", label: "Web search", icon: IconWorld },
   { to: "/settings/credentials", label: "Credentials", icon: IconLock },
   { to: "/settings/logins", label: "Logins", icon: IconLogin2 },
+  { to: "/settings/judge-model", label: "Judge model", icon: IconScale },
   { to: "/settings/integrations", label: "Integrations", icon: IconPlug },
   { to: "/settings/skills", label: "Skills", icon: IconSparkles },
 ] as const;

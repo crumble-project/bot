@@ -18,6 +18,8 @@ import type {
   botRequestResponse,
   groupChatResponse,
   groupChatSnapshotResponse,
+  heldActionResponse,
+  judgeModelResponse,
   loginUseResponse,
   loginsResponse,
   historyResponse,
@@ -77,6 +79,10 @@ export type LoginRequest = Logins["requests"][number];
 export type LoginUse = z.infer<typeof loginUseResponse>;
 
 export type BotRequest = z.infer<typeof botRequestResponse>;
+
+export type HeldAction = z.infer<typeof heldActionResponse>;
+
+export type JudgeModel = z.infer<typeof judgeModelResponse>;
 
 export type Change = z.infer<typeof learnedChangeResponse>;
 
@@ -325,6 +331,21 @@ export const loginsQuery = (id: string) =>
     queryKey: ["logins", id],
     queryFn: ({ signal }) => api<Logins>(`${agentPath(id)}/logins`, { signal }),
   });
+
+export const heldActionsQuery = (id: string) =>
+  queryOptions({
+    queryKey: ["held-actions", id],
+    queryFn: ({ signal }) =>
+      api<HeldAction[]>(`${agentPath(id)}/held-actions`, { signal }),
+  });
+
+export const heldActionPath = (id: string, actionId: string) =>
+  `${agentPath(id)}/held-actions/${encodeURIComponent(actionId)}`;
+
+export const judgeModelQuery = queryOptions({
+  queryKey: ["judge-model"],
+  queryFn: ({ signal }) => api<JudgeModel>("/v1/judge-model", { signal }),
+});
 
 export const botRequestsQuery = (id: string) =>
   queryOptions({
