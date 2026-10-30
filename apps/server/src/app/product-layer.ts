@@ -1,5 +1,7 @@
 import { Layer } from "effect";
 import { DesktopControlRepository } from "../bot-desktop/desktop-control-repository";
+import { DesktopFillRepository } from "../bot-desktop/desktop-fill-repository";
+import { desktopFills } from "../bot-desktop/schema";
 import { AgentRepository } from "../bots/agent-repository";
 import { ConversationRepository } from "../bots/conversation-repository";
 import { ExecutionRepository } from "../bots/execution-repository";
@@ -22,6 +24,8 @@ import {
   credentialAuthorities,
   secrets,
 } from "../credentials/schema";
+import { LoginRepository } from "../logins/login-repository";
+import { loginFields } from "../logins/schema";
 import { passwordManagers } from "../password-managers/schema";
 import { providerCredentials } from "../providers/schema";
 import { ProductDatabase } from "../shared/product-database";
@@ -39,6 +43,8 @@ export const productLayer = (dataDir: string) => {
       agentCredentials,
       credentialAuthorities,
       passwordManagers,
+      loginFields,
+      desktopFills,
     ]),
     LearnedChangeRepository.layer,
     ReviewRepository.layer,
@@ -56,6 +62,8 @@ export const productLayer = (dataDir: string) => {
     SecretRepository.layer,
     PasswordManagerRepository.layer,
     AgentCredentialRepository.layer,
+    LoginRepository.layer,
+    DesktopFillRepository.layer,
     SkillRepository.layer,
     MemoryRepository.layer,
   ).pipe(Layer.provideMerge(independent));

@@ -16,6 +16,7 @@ import type { PasswordManagerId } from "../shared/domain";
 import type { SecretReference } from "../shared/domain";
 import { SecretBox } from "../shared/secret-box";
 import { nowIso } from "../shared/time";
+import { usesBefore, withStringIds } from "../shared/use-log";
 import {
   agentCredentials,
   credentialAuthorities,
@@ -419,8 +420,6 @@ export class AgentCredentialRepository extends Context.Service<
           name: string,
           options: { limit: number; before?: string | undefined },
         ) {
-          const before = Number(options.before);
-
           const rows = yield* db
             .select({
               id: credentialUses.id,
@@ -432,22 +431,11 @@ export class AgentCredentialRepository extends Context.Service<
               error: credentialUses.error,
             })
             .from(credentialUses)
-            .where(
-              and(
-                eq(credentialUses.agentId, agentId),
-                eq(credentialUses.name, name),
-                lt(
-                  credentialUses.id,
-                  Number.isSafeInteger(before) && before > 0
-                    ? before
-                    : Number.MAX_SAFE_INTEGER,
-                ),
-              ),
-            )
+            .where(usesBefore(credentialUses, agentId, name, options.before))
             .orderBy(desc(credentialUses.id))
             .limit(options.limit);
 
-          return rows.map((row) => ({ ...row, id: String(row.id) }));
+          return withStringIds(rows);
         },
         Effect.orDie,
       );

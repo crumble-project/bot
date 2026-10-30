@@ -10,7 +10,8 @@ import {
   type DriverReply,
   type Window,
 } from "./computer-use-driver";
-import type { ComputerUseState } from "./computer-use-state";
+import { passwordMayShow } from "./computer-use-login";
+import { scrubText, type ComputerUseState } from "./computer-use-state";
 
 export const MAX_TREE_CHARS = 12_000;
 
@@ -51,9 +52,17 @@ const screenshotOf = (
   { type: "image", data: image, mimeType: "image/jpeg" },
 ];
 
-/** The window's tree, compacted and cut to fit this tool's result. */
-function treeOf(reply: DriverReply) {
-  const tree = compactTree(reply.tree_diff ?? reply.tree_markdown ?? "");
+const NO_SCREENSHOT: TextContent = {
+  type: "text",
+  text: "no screenshot: a password was typed into this Chromium, and a screenshot could show it; screenshots return once Chromium restarts",
+};
+
+/** The window's tree, compacted, scrubbed, and cut to fit this tool's result; scrubbed first, so no cut splits a value. */
+function treeOf(state: ComputerUseState, reply: DriverReply) {
+  const tree = scrubText(
+    state,
+    compactTree(reply.tree_diff ?? reply.tree_markdown ?? ""),
+  );
 
   return tree.length > MAX_TREE_CHARS
     ? `${tree.slice(0, MAX_TREE_CHARS)}\n[tree cut at ${MAX_TREE_CHARS} characters; scroll or capture a smaller window]`
@@ -89,7 +98,7 @@ export function windowText(
     else state.queried.delete(target.window_id);
   }
 
-  return `${headerOf(target, reply, since, query, others)}\n${treeOf(reply)}`;
+  return `${headerOf(target, reply, since, query, others)}\n${treeOf(state, reply)}`;
 }
 
 /** The snapshot a capture diffs against: none for vision, full, or query reads, or after a query read. */
@@ -104,6 +113,18 @@ const diffBase = (
     ? state.snapshots.get(target.window_id)
     : undefined;
 
+// A screenshot can't be scrubbed, so a vision capture goes without one while a password may show.
+const screenshotMode = async (
+  state: ComputerUseState,
+  mode: string,
+  context: Context,
+) =>
+  mode !== "vision"
+    ? "none"
+    : (await passwordMayShow(state, context))
+      ? "withheld"
+      : "taken";
+
 export async function captureWindow(
   state: ComputerUseState,
   target: Window,
@@ -113,8 +134,8 @@ export async function captureWindow(
   context: Context,
 ): Promise<(TextContent | ImageContent)[]> {
   const since = diffBase(state, target, mode, full, query);
-
-  const vision = mode === "vision";
+  const screenshot = await screenshotMode(state, mode, context);
+  const vision = screenshot === "taken";
 
   const { reply, image } = await driverCall(
     state,
@@ -148,6 +169,7 @@ export async function captureWindow(
   ];
 
   if (image) content.push(...screenshotOf(reply, image));
+  else if (screenshot === "withheld") content.push(NO_SCREENSHOT);
 
   return content;
 }

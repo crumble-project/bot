@@ -3,6 +3,7 @@ import { DesktopControl } from "../bot-desktop/desktop-control";
 import { BotNotices } from "../bots/bot-notices";
 import { CredentialAuthorities } from "../credentials/credential-authority";
 import { Credentials } from "../credentials/credentials";
+import { Logins } from "../logins/logins";
 import { ProviderCredentials } from "../providers/provider-credentials";
 import { McpOAuth } from "../integrations/mcp-oauth";
 import { BotMemory } from "../memory/bot-memory";
@@ -17,6 +18,7 @@ export const coreLayer = (dataDir: string) =>
   Layer.mergeAll(
     DesktopControl.layer,
     Credentials.layer,
+    Logins.layer,
     CredentialAuthorities.layer,
     ProviderCredentials.layer,
     McpOAuth.layer,

@@ -21,21 +21,26 @@ export const secrets = sqliteTable(
   (table) => [oneSecretSource("credentials_source", table)],
 );
 
+/** The columns of an agent's named secret that only goes to `hosts`, a JSON list: a credential, or a login. */
+export const hostBoundSecret = () => ({
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  hosts: text("hosts").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  lastUsedAt: text("last_used_at"),
+});
+
 export const agentCredentials = sqliteTable(
   "agent_credentials",
   {
-    agentId: text("agent_id")
-      .notNull()
-      .references(() => agents.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    hosts: text("hosts").notNull(),
+    ...hostBoundSecret(),
     value: secretSource.value(),
     passwordManager: secretSource.passwordManager(),
     reference: secretSource.reference(),
     placeholder: text("placeholder").notNull().unique(),
-    createdAt: text("created_at").notNull(),
-    updatedAt: text("updated_at").notNull(),
-    lastUsedAt: text("last_used_at"),
   },
   (table) => [
     primaryKey({ columns: [table.agentId, table.name] }),

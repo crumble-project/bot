@@ -11,6 +11,7 @@ export default defineConfig({
     "./src/credentials/schema.ts",
     "./src/group-chats/schema.ts",
     "./src/integrations/schema.ts",
+    "./src/logins/schema.ts",
     "./src/memory/schema.ts",
     "./src/password-managers/schema.ts",
     "./src/providers/schema.ts",

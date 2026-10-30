@@ -6,6 +6,7 @@ import { MAX_TREE_CHARS } from "./computer-use-capture";
 import {
   codeOf,
   driverCall,
+  isChromium,
   listWindows,
   messageOf,
   refusalOf,
@@ -14,7 +15,11 @@ import {
   type DriverReply,
   type Window,
 } from "./computer-use-driver";
-import { textResult, type ComputerUseState } from "./computer-use-state";
+import {
+  scrubText,
+  textResult,
+  type ComputerUseState,
+} from "./computer-use-state";
 
 const loose = <T extends z.ZodType>(schema: T) =>
   schema.optional().catch(undefined);
@@ -66,8 +71,6 @@ export type PageBinding = {
 
 const ATTACHED =
   "Chromium was attached for page actions; accessibility element numbers are stale.";
-
-const isChromium = (window: Window) => window.app_name.startsWith("Chromium");
 
 type Refused = { refused: string };
 
@@ -205,20 +208,23 @@ const refLine = (ref: PageRef) => {
   return `[${ref.ref}] ${ref.role ?? "element"} ${JSON.stringify(ref.name ?? "")}${value}${words.length ? ` (${words.join(", ")})` : ""}`;
 };
 
-/** A snapshot as the job reads it: the page, its outline, then one line per element it can act on. */
-export function pageText(read: SemanticSnapshot) {
-  const text = [
-    `page ${JSON.stringify(read.page?.title ?? "")} ${read.page?.url ?? ""}`,
-    read.outline?.trim(),
-    read.refs.length
-      ? ["elements (act with ref):", ...read.refs.map(refLine)].join("\n")
-      : undefined,
-    read.snapshot?.continuation
-      ? "more of the page is not shown: narrow the read with query or ref"
-      : undefined,
-  ]
-    .filter(Boolean)
-    .join("\n");
+/** A snapshot as the job reads it: the page, its outline, then one line per element it can act on. Scrubbed before the cut. */
+export function pageText(state: ComputerUseState, read: SemanticSnapshot) {
+  const text = scrubText(
+    state,
+    [
+      `page ${JSON.stringify(read.page?.title ?? "")} ${read.page?.url ?? ""}`,
+      read.outline?.trim(),
+      read.refs.length
+        ? ["elements (act with ref):", ...read.refs.map(refLine)].join("\n")
+        : undefined,
+      read.snapshot?.continuation
+        ? "more of the page is not shown: narrow the read with query or ref"
+        : undefined,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  );
 
   return text.length > MAX_TREE_CHARS
     ? `${text.slice(0, MAX_TREE_CHARS)}\n[page cut at ${MAX_TREE_CHARS} characters; read with query or ref]`
@@ -249,7 +255,7 @@ async function readBound(
 
   state.lastRead = { page, read };
 
-  return textResult(withAttachNote(page, pageText(read)));
+  return textResult(withAttachNote(page, pageText(state, read)));
 }
 
 export async function readPage(

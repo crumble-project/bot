@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import { z } from "zod";
-import type { ComputerUseState } from "./computer-use-state";
+import { scrubText, type ComputerUseState } from "./computer-use-state";
 
 const ENV_FILE = "/run/crumble-desktop.env";
 export const DRIVER_ARGS = "CRUMBLE_DRIVER_ARGS";
@@ -20,6 +20,9 @@ const windowSchema = z.object({
 });
 
 export type Window = z.infer<typeof windowSchema>;
+
+export const isChromium = (window: Window) =>
+  window.app_name.startsWith("Chromium");
 
 // cua-driver reports refusals in several shapes; an error is a message or an object with a code.
 const driverError = z.union([
@@ -69,7 +72,8 @@ type DriverValue =
 /** Arguments for a cua-driver tool. */
 export type DriverArgs = Record<string, DriverValue>;
 
-function parseReply(output: string): DriverReply {
+// The reply stays as cua-driver sent it: URLs in it decide which host a login is for. Text is scrubbed when formatted.
+function parseReply(state: ComputerUseState, output: string): DriverReply {
   try {
     const parsed = driverReply.safeParse(JSON.parse(output));
 
@@ -81,7 +85,9 @@ function parseReply(output: string): DriverReply {
   return {
     error: {
       code: undefined,
-      message: output.trim().slice(0, 500) || "cua-driver returned nothing",
+      message:
+        scrubText(state, output.trim()).slice(0, 500) ||
+        "cua-driver returned nothing",
     },
   };
 }
@@ -184,6 +190,7 @@ async function callDriver(
 
   // Arguments can hold a login's value: printf is a builtin, so they reach stdin without a file or an argv.
   const reply = parseReply(
+    state,
     await sh(
       state,
       `printf '%s' "$${DRIVER_ARGS}" | cua-driver call ${tool}${shot}`,

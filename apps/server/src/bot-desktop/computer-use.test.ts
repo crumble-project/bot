@@ -449,7 +449,7 @@ test("actions wait while the owner holds control, and a plan from before is refu
     set_value: [{ effect: "confirmed" }],
   });
 
-  const tool = createComputerUse(shell, gate);
+  const tool = createComputerUse(shell, { gate });
 
   await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
   gate.set("owner");
@@ -495,7 +495,7 @@ test("without a change of control, actions run as before", async () => {
     set_value: [{ effect: "confirmed" }],
   });
 
-  const tool = createComputerUse(shell, gate);
+  const tool = createComputerUse(shell, { gate });
 
   await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
 

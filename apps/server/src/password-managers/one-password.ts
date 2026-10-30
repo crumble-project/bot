@@ -36,10 +36,13 @@ const failure = (cause: unknown) =>
         cause,
       });
 
+/** The reason a 1Password item has no field with the reference's name. */
+export const FIELD_NOT_FOUND = "has no such field on the item";
+
 const reasons: Partial<Record<ResolveReferenceError["type"], string>> = {
   vaultNotFound: "has no vault the service account can read that matches",
   itemNotFound: "has no item that matches",
-  fieldNotFound: "has no such field on the item",
+  fieldNotFound: FIELD_NOT_FOUND,
   tooManyVaults: "has more than one vault that matches",
   tooManyItems: "has more than one item that matches",
   tooManyMatchingFields: "has more than one field that matches",

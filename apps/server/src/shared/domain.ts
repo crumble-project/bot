@@ -388,6 +388,95 @@ export type CredentialUse = {
   error: string | null;
 };
 
+export const loginName = z
+  .string()
+  .regex(
+    /^[a-z0-9][a-z0-9._-]{0,63}$/,
+    "Login names look like github or acme-portal",
+  );
+
+export const loginFieldInput = z.enum([
+  "username",
+  "password",
+  "one_time_code",
+]);
+
+export type LoginField = z.infer<typeof loginFieldInput>;
+
+/** One field's source: a value stored in Crumble, or a password manager reference. */
+const loginFieldSourceInput = z
+  .object({
+    /** Write-only. A one-time code field takes the TOTP secret, or an `otpauth://totp/` URI. */
+    value: z.string().min(1).max(16000).optional(),
+    reference: secretReferenceInput.optional(),
+  })
+  .refine((field) => (field.value === undefined) !== !field.reference, {
+    message: "Send a value or a reference",
+  });
+
+export type LoginFieldSourceInput = z.infer<typeof loginFieldSourceInput>;
+
+/** A 1Password item, `op://<vault>/<item>`, that fills every field of a login. */
+const loginItemInput = z.object({
+  passwordManager: z.literal("1password"),
+  reference: z
+    .string()
+    .trim()
+    .regex(
+      /^op:\/\/[^/]+\/[^/]+$/,
+      "An item reference looks like op://vault/item",
+    ),
+});
+
+export const loginSaveInput = z
+  .object({
+    /** Kept when omitted; required for a new login. */
+    hosts: credentialHosts.optional(),
+    item: loginItemInput.optional(),
+    /** Fields to change; null removes the one-time code. Omitted fields keep their source. */
+    fields: z
+      .object({
+        username: loginFieldSourceInput.optional(),
+        password: loginFieldSourceInput.optional(),
+        one_time_code: loginFieldSourceInput.nullable().optional(),
+      })
+      .optional(),
+  })
+  .refine((input) => !(input.item && input.fields), {
+    message: "Send an item or fields, not both",
+    path: ["item"],
+  });
+
+export type LoginSaveInput = z.infer<typeof loginSaveInput>;
+
+/** Where a login field's value is read from; both null for a value stored in Crumble. */
+export type LoginFieldSource = {
+  passwordManager: PasswordManagerId | null;
+  reference: string | null;
+};
+
+/** A login the owner gave one bot for its desktop jobs. Values are write-only and never part of this record. */
+export type Login = {
+  name: string;
+  hosts: string[];
+  fields: Partial<Record<LoginField, LoginFieldSource>>;
+  createdAt: string;
+  updatedAt: string;
+  lastUsedAt: string | null;
+  /** Why the newest fill couldn't read its value; null when it could. */
+  lastError: string | null;
+};
+
+/** One fill of a login field into a page. */
+export type LoginUse = {
+  id: string;
+  at: string;
+  host: string;
+  field: LoginField;
+  /** Why the value couldn't be read, so nothing was typed. */
+  error: string | null;
+};
+
 export const MAX_SKILL_DOCUMENTS = 20;
 
 /** A reference document inside a skill package, loaded only when the bot asks for it. */

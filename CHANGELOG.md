@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Bot desktops' Chromium no longer uses QUIC (HTTP/3) or Encrypted ClientHello, so all its traffic goes through the workspace proxy under the real host name. Before, QUIC went out over UDP past the proxy, and on ECH sites such as those behind Cloudflare the network policy and the credential proxy saw only the outer name, such as `cloudflare-ech.com`. Rebuild the desktop image to apply it.
 - Desktop jobs work faster on web pages: `computer_use` gains `open` and `read`, which load and read a page in Chromium with its elements as refs, and `click`, `type`, `set_value`, and `scroll` act on a `ref`. `capture` takes a `query` to read only matching elements, and `steps` runs several accessibility actions in one call. In a local test, filling and submitting a form took 2 s instead of 11 s. cua-driver now gets its arguments on stdin instead of a temporary file, and every job on a bot desktop shares one cua-driver session.
 - Fix the credential proxy failing about one host certificate in 128 (an OpenSSL `INVALID_INTEGER` error): a random serial number that started with a zero byte wasn't valid DER.
 - An MCP server connection that opened while its token or settings changed is closed instead of kept, so the bot's next use connects with the new credentials. The tool call that hit it fails with "MCP server credentials changed; retry this task".
@@ -158,6 +159,7 @@
 - Add `tokenReference` (`{ passwordManager, reference }`, or null to remove it) to MCP server create and update inputs, exclusive with `token`. 400 when the reference can't be read now.
 - Add optional, nullable `tokenPasswordManager` and `tokenReference` to `McpServer` and `McpServerStatus`.
 - Add nullable `error` to `CredentialUse`: why the value couldn't be read from its password manager, in which case the request was never sent.
+- Add `botLogin` to `SecretUsingPasswordManager.kind`, for a bot's login with a field read from the password manager; `agentId` and `name` name it.
 
 ## Contract 3.3.0
 

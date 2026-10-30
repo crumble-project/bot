@@ -7,8 +7,14 @@ import {
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { computerUseTool } from "../bot-desktop/computer-use";
+import type { DesktopFills } from "../bot-desktop/computer-use-login";
 import type { DesktopControlAccess } from "../bot-desktop/desktop-control";
 import type { Agent } from "../shared/domain";
+import {
+  jobLoginSection,
+  loginFill,
+  type LoginsAccess,
+} from "../logins/logins";
 import { defineJobKind, type JobExtensions } from "./jobs";
 import type { CrumblePlugin } from "../plugins/plugins";
 import type { Workspaces } from "../workspaces/workspace";
@@ -58,25 +64,38 @@ export const desktopEnv = (
 
 type ComputerUseTool = ReturnType<typeof computerUseTool>;
 
+/** What desktop jobs fill logins from, and where each bot desktop records the values typed on it. */
+export type DesktopLogins = {
+  access: LoginsAccess;
+  fills: (agentId: string) => DesktopFills;
+};
+
 const UNCONTROLLED = {};
 
 // One tool per bot and lease: the runtime rebuilds a bot's extensions whenever it reconfigures the bot, and a running
 // job must keep its snapshots and the lease change count it last saw.
 const tools = new WeakMap<object, Map<string, ComputerUseTool>>();
 
-function toolFor(agentId: string, control: DesktopControlAccess | undefined) {
+function toolFor(
+  agentId: string,
+  control: DesktopControlAccess | undefined,
+  logins: DesktopLogins | undefined,
+) {
   const scope = control ?? UNCONTROLLED;
   const byAgent = tools.get(scope) ?? new Map<string, ComputerUseTool>();
   let tool = byAgent.get(agentId);
 
   if (!tool) {
     // While the owner has control, every computer_use call waits for hand-back.
-    tool = computerUseTool(
-      control &&
+    tool = computerUseTool({
+      gateFor:
+        control &&
         (() => ({
           untilBot: (context) => control.untilBot(agentId, context),
         })),
-    );
+      logins: logins && loginFill(logins.access, agentId),
+      fills: logins?.fills(agentId),
+    });
     byAgent.set(agentId, tool);
     tools.set(scope, byAgent);
   }
@@ -88,10 +107,23 @@ function toolFor(agentId: string, control: DesktopControlAccess | undefined) {
 export function desktopExtensions(
   agent: Pick<Agent, "id" | "desktopModel">,
   control?: DesktopControlAccess,
+  logins?: DesktopLogins,
 ): JobExtensions {
   const job = defineExtension({
     name: "desktop-job",
-    tools: [toolFor(agent.id, control)],
+    tools: [toolFor(agent.id, control, logins)],
+    sections: logins
+      ? [
+          {
+            key: "desktop_logins",
+            // Installed job extensions render in the bot's chat too; only a job needs this.
+            render: async (input, context) =>
+              (await desktop.isJob(input.read, input.conversationId, context))
+                ? jobLoginSection(logins.access.list(agent.id))
+                : undefined,
+          },
+        ]
+      : [],
   });
 
   return desktop.extensions({
@@ -110,6 +142,7 @@ export function desktopExtensions(
 export const desktopPlugin = (
   workspaces: Workspaces | undefined,
   control: DesktopControlAccess,
+  logins?: DesktopLogins,
 ): CrumblePlugin => ({
   id: "desktop",
   jobKinds: workspaces?.desktop
@@ -117,7 +150,7 @@ export const desktopPlugin = (
         {
           kind: "desktop",
           enabled: (agent) => agent.tools.includes(DESKTOP_TOOL_NAME),
-          extensions: (agent) => desktopExtensions(agent, control),
+          extensions: (agent) => desktopExtensions(agent, control, logins),
           env: (agentId, target, context) =>
             desktopEnv(workspaces, agentId, target, context),
           onAnswer: desktopAnswers,

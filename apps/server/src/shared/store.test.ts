@@ -483,6 +483,10 @@ describe("Store memory sources", () => {
     db.run(`DROP TABLE __drizzle_migrations;
       DROP TABLE bot_requests;
       DROP TABLE script_runs;
+      DROP TABLE desktop_fills;
+      DROP TABLE login_uses;
+      DROP TABLE login_fields;
+      DROP TABLE logins;
       DROP TABLE password_managers;
       ALTER TABLE credential_uses DROP COLUMN error;
       ALTER TABLE schedules DROP COLUMN kind;
@@ -600,6 +604,10 @@ describe("Store group chats", () => {
     db.run(`DROP TABLE __drizzle_migrations;
       DROP TABLE bot_requests;
       DROP TABLE script_runs;
+      DROP TABLE desktop_fills;
+      DROP TABLE login_uses;
+      DROP TABLE login_fields;
+      DROP TABLE logins;
       DROP TABLE password_managers;
       ALTER TABLE credential_uses DROP COLUMN error;
       ALTER TABLE schedules DROP COLUMN kind;

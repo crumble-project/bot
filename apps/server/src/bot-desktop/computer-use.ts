@@ -12,7 +12,11 @@ import {
 import { defineTool } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { ControlState } from "./desktop-control";
-import { computerUseState, type PageLoad } from "./computer-use-state";
+import type { DesktopFills, LoginFill } from "./computer-use-login";
+import {
+  computerUseState,
+  type ComputerUseOptions,
+} from "./computer-use-state";
 import { runAction } from "./computer-use-run";
 
 export const COMPUTER_USE_TOOL_NAME = "computer_use";
@@ -99,12 +103,14 @@ export const computerUseParameters = Type.Object({
       "open",
       "read",
       "steps",
+      "fill_login",
     ],
     {
       description:
         "Which action to perform. `capture` and `read` have no side effects. Use `set_value` for text fields and select or combo boxes when the element supports it. " +
         "`open` loads a URL in Chromium's current tab and returns a read of the page; `read` returns the page's content and the elements to act on by ref. " +
-        "`steps` runs several accessibility actions in one call, each naming its element by role and name.",
+        "`steps` runs several accessibility actions in one call, each naming its element by role and name. " +
+        "`fill_login` types a field of one of the bot's logins into a page field by ref; you never see the value.",
     },
   ),
   mode: Type.Optional(
@@ -182,6 +188,14 @@ export const computerUseParameters = Type.Object({
   seconds: Type.Optional(
     Type.Number({ description: "wait: seconds to pause, at most 30." }),
   ),
+  login: Type.Optional(
+    Type.String({ description: "fill_login: the login's name." }),
+  ),
+  field: Type.Optional(
+    StringEnum(["username", "password", "one_time_code"], {
+      description: "fill_login: which field of the login to type.",
+    }),
+  ),
   steps: Type.Optional(
     Type.Array(step, {
       minItems: 1,
@@ -219,6 +233,8 @@ export type ComputerUseArgs = {
   name?: string;
   capture_after?: boolean;
   steps?: StepArgs[];
+  login?: string;
+  field?: string;
 };
 
 /** The bot's turn on its desktop: resolves once the bot holds control. */
@@ -228,10 +244,9 @@ export type ControlGate = {
 
 export function createComputerUse(
   shell: DesktopShell,
-  gate?: ControlGate,
-  pageLoad?: PageLoad,
+  options: ComputerUseOptions = {},
 ) {
-  const state = computerUseState(shell, gate, pageLoad);
+  const state = computerUseState(shell, options);
 
   return {
     run: (raw: ComputerUseArgs, context: Context) =>
@@ -244,9 +259,15 @@ export function createComputerUse(
 }
 
 /** The tool for a desktop job, over the job's environment. One instance per job conversation keeps its snapshots. */
-export function computerUseTool(
-  gateFor?: (conversationId: string) => ControlGate,
-) {
+export function computerUseTool({
+  gateFor,
+  logins,
+  fills,
+}: {
+  gateFor?: ((conversationId: string) => ControlGate) | undefined;
+  logins?: LoginFill | undefined;
+  fills?: DesktopFills | undefined;
+} = {}) {
   const instances = new Map<string, ReturnType<typeof createComputerUse>>();
 
   return defineTool({
@@ -283,7 +304,11 @@ export function computerUseTool(
       let computer = instances.get(key);
 
       if (!computer) {
-        computer = createComputerUse(env, gateFor?.(key));
+        computer = createComputerUse(env, {
+          gate: gateFor?.(key),
+          logins,
+          fills,
+        });
         instances.set(key, computer);
       }
 

@@ -1,6 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer, Redacted } from "effect";
 import { agentCredentials, secrets } from "../credentials/schema";
+import { loginFields } from "../logins/schema";
 import { providerCredentials } from "../providers/schema";
 import { Conflict } from "../shared/errors";
 import { ProductDatabase } from "../shared/product-database";
@@ -16,6 +17,7 @@ export type PasswordManagerConnection = {
 /** A secret that reads its value from a password manager. */
 export type SecretUsingPasswordManager =
   | { kind: "botCredential"; agentId: string; name: string }
+  | { kind: "botLogin"; agentId: string; name: string }
   | { kind: "providerCredential"; provider: string }
   | { kind: "secret"; key: string };
 
@@ -97,6 +99,15 @@ export class PasswordManagerRepository extends Context.Service<
           .where(eq(agentCredentials.passwordManager, id))
           .orderBy(asc(agentCredentials.agentId), asc(agentCredentials.name));
 
+        const botLogins = yield* db
+          .selectDistinct({
+            agentId: loginFields.agentId,
+            name: loginFields.name,
+          })
+          .from(loginFields)
+          .where(eq(loginFields.passwordManager, id))
+          .orderBy(asc(loginFields.agentId), asc(loginFields.name));
+
         const providers = yield* db
           .select({ provider: providerCredentials.provider })
           .from(providerCredentials)
@@ -112,6 +123,10 @@ export class PasswordManagerRepository extends Context.Service<
         return [
           ...bots.map((row): SecretUsingPasswordManager => ({
             kind: "botCredential",
+            ...row,
+          })),
+          ...botLogins.map((row): SecretUsingPasswordManager => ({
+            kind: "botLogin",
             ...row,
           })),
           ...providers.map((row): SecretUsingPasswordManager => ({

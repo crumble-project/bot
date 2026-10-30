@@ -12,6 +12,7 @@ import {
 } from "./computer-use-page";
 import { textResult, type ComputerUseState } from "./computer-use-state";
 import { runSteps } from "./computer-use-steps";
+import { fillLogin, restoreFilled, scrubFilled } from "./computer-use-login";
 
 // Actions that only look; they stay allowed right after control changed hands.
 const OBSERVE = new Set(["capture", "list_windows", "wait", "read"]);
@@ -27,7 +28,16 @@ const ZERO_UNSET = ["window_id", "element", "amount", "seconds"] as const;
 
 const POINTS = ["coordinate", "from_coordinate", "to_coordinate"] as const;
 
-const EMPTY_UNSET = ["keys", "name", "mode", "query", "url", "ref"] as const;
+const EMPTY_UNSET = [
+  "keys",
+  "name",
+  "mode",
+  "query",
+  "url",
+  "ref",
+  "login",
+  "field",
+] as const;
 
 /** Empty text means unset, except for the action that takes it: an empty set_value clears a field. */
 function dropEmptyText(args: ComputerUseArgs) {
@@ -185,6 +195,8 @@ async function dispatch(
   if (args.action === "wait")
     return textResult(`waited ${await pause(args.seconds)}s`);
 
+  if (args.action === "fill_login") return fillLogin(state, args, context);
+
   if (args.ref !== undefined && REF_ACTIONS.has(args.action))
     return refAction(state, args, context);
 
@@ -218,7 +230,9 @@ export async function runAction(
   if (stale) return textResult(stale, true);
 
   try {
-    return await dispatch(state, normalize(raw), context);
+    await restoreFilled(state);
+
+    return scrubFilled(state, await dispatch(state, normalize(raw), context));
   } catch (error) {
     return textResult(
       `error: ${error instanceof Error ? error.message : String(error)}`,

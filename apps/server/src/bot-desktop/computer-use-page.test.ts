@@ -171,7 +171,7 @@ test("open navigates and waits for the new page before reading it", async () => 
     browser_navigate: [{ status: "ok", refs_invalidated: true }],
   });
 
-  const result = await createComputerUse(shell, undefined, fast).run(
+  const result = await createComputerUse(shell, { pageLoad: fast }).run(
     { action: "open", url: "http://127.0.0.1:8123/task.html" },
     BACKGROUND_CONTEXT,
   );
@@ -194,7 +194,7 @@ test("open gives up waiting at the limit and says the page may still be loading"
     browser_navigate: [{ status: "ok" }],
   });
 
-  const result = await createComputerUse(shell, undefined, fast).run(
+  const result = await createComputerUse(shell, { pageLoad: fast }).run(
     { action: "open", url: "https://slow.example/" },
     BACKGROUND_CONTEXT,
   );

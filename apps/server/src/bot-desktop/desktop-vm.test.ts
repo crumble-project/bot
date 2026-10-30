@@ -224,6 +224,55 @@ for (const backend of WORKSPACE_BACKENDS) {
       expect(result).toContain("9 click");
     }, 120_000);
 
+    test("fill_login checks the real tab's URL and types nothing into an http page", async () => {
+      await serveTask();
+
+      let reads = 0;
+
+      const tool = createComputerUse(env(), {
+        logins: {
+          list: async () => [
+            { name: "local", hosts: ["127.0.0.1"], fields: ["username"] },
+          ],
+          read: async () => {
+            reads++;
+
+            return { value: "ada" };
+          },
+          recordUse: async () => undefined,
+        },
+      });
+
+      const read = text(
+        await tool.run(
+          { action: "open", url: "http://127.0.0.1:8123/task.html" },
+          BACKGROUND_CONTEXT,
+        ),
+      );
+
+      const ref = read
+        .split("\n")
+        .find((line) => line.startsWith("[p") && /textbox "Name"/.test(line))!
+        .match(/\[(p\d+:\d+)\]/)![1]!;
+
+      const filled = text(
+        await tool.run(
+          { action: "fill_login", login: "local", field: "username", ref },
+          BACKGROUND_CONTEXT,
+        ),
+      );
+
+      expect(filled).toBe(
+        "REFUSED: fill_login fills https pages only, and this page is http://127.0.0.1:8123/task.html",
+      );
+      expect(reads).toBe(0);
+      expect(
+        text(
+          await tool.run({ action: "read", query: "Name" }, BACKGROUND_CONTEXT),
+        ),
+      ).not.toContain("ada");
+    }, 120_000);
+
     test("operates a native GTK dialog", async () => {
       await env().exec(
         ". /run/crumble-desktop.env; rm -f /tmp/z.out; (setsid zenity --entry --title Ask --text Name > /tmp/z.out &); for i in $(seq 60); do xdotool search --name '^Ask$' >/dev/null && break; sleep 0.25; done",
@@ -540,7 +589,7 @@ for (const backend of WORKSPACE_BACKENDS) {
           },
         };
 
-        const tool = createComputerUse(workspaces.env(agentId), gate);
+        const tool = createComputerUse(workspaces.env(agentId), { gate });
 
         expect(
           (await tool.run({ action: "capture" }, BACKGROUND_CONTEXT)).isError,
