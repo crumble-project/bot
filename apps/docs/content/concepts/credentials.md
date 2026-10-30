@@ -11,6 +11,8 @@ A credential is a secret you give one bot for a list of hosts, like an API token
 
 The coding job sees a random placeholder in an environment variable, for example `$ACME_TOKEN`. When the job sends an HTTPS request to one of the credential's hosts, the server swaps the placeholder for the real value on the way out and removes the value from the response on the way back. Requests to any other host get only the placeholder.
 
+To let a desktop job sign in to a website, give the bot a [login](/concepts/logins) instead. A placeholder can't sign in through a page, because the page's own scripts read and send the password.
+
 The placeholder is swapped only in request headers, such as `Authorization` or `X-Api-Key`. A placeholder in the URL or the body is sent as it is, because services log, store, and echo URLs and bodies, which would let a job read the value back. An API that takes its key only as a query parameter can't use a credential.
 
 ## Give each credential the least access it needs

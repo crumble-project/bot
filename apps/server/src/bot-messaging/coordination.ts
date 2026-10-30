@@ -1,15 +1,10 @@
-import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import type { Agent } from "../shared/domain";
 import { Effect, Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import { BotMessaging, botMessagingAccess } from "./bot-messaging";
-
-const output = (value: JsonValue) => ({
-  structuredOutput: value,
-  output: [{ type: "text" as const, text: JSON.stringify(value) }],
-});
+import { toolOutput } from "../shared/tool-output";
 
 const receiptSchema = Type.Object({
   executionId: Type.String(),
@@ -48,7 +43,7 @@ export function coordinationExtension(
     structuredOutputSchema: receiptSchema,
     replay: "safe",
     execute: async (args, api, context) =>
-      output(
+      toolOutput(
         await messaging.send(
           agent.id,
           {
@@ -72,7 +67,7 @@ export function coordinationExtension(
     structuredOutputSchema: resultSchema,
     replay: "safe",
     execute: async (args, _api, context) =>
-      output(
+      toolOutput(
         await messaging.result(agent.id, args.executionId, {
           waitMs: (args.waitSeconds ?? 0) * 1000,
           context,
@@ -93,7 +88,7 @@ export function coordinationExtension(
       }),
     ),
     replay: "safe",
-    execute: async () => output(messaging.recipients(agent.id)),
+    execute: async () => toolOutput(messaging.recipients(agent.id)),
   });
 
   const ask = defineTool({
@@ -119,7 +114,7 @@ export function coordinationExtension(
         context,
       );
 
-      return output(
+      return toolOutput(
         await messaging.result(agent.id, sent.executionId, {
           waitMs: 60000,
           context,

@@ -12,6 +12,7 @@ import type { DesktopControlAccess } from "../bot-desktop/desktop-control";
 import type { Agent } from "../shared/domain";
 import {
   jobLoginSection,
+  loginExtension,
   loginFill,
   type LoginsAccess,
 } from "../logins/logins";
@@ -126,7 +127,7 @@ export function desktopExtensions(
       : [],
   });
 
-  return desktop.extensions({
+  const extensions = desktop.extensions({
     agentId: agent.id,
     job,
     ...(agent.desktopModel && {
@@ -136,6 +137,13 @@ export function desktopExtensions(
       },
     }),
   });
+
+  return logins
+    ? {
+        ...extensions,
+        chat: [...extensions.chat, loginExtension(agent.id, logins.access)],
+      }
+    : extensions;
 }
 
 /** Desktop jobs as a plugin: offered to bots with the `desktop` tool while workspaces have bot desktops. */

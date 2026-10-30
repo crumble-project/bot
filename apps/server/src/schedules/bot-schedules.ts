@@ -1,4 +1,3 @@
-import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import {
@@ -27,11 +26,7 @@ import {
   Conflict,
   type AppError,
 } from "../shared/errors";
-
-const output = (value: JsonValue) => ({
-  structuredOutput: value,
-  output: [{ type: "text" as const, text: JSON.stringify(value) }],
-});
+import { toolOutput } from "../shared/tool-output";
 
 export type ScheduleDraft = {
   agentId?: string | undefined;
@@ -491,27 +486,29 @@ export function scheduleExtension(
       };
 
       if (args.action === "list")
-        return output(await Effect.runPromise(schedules.list(agent.id)));
+        return toolOutput(await Effect.runPromise(schedules.list(agent.id)));
 
       if (!args.id && args.action !== "create")
         throw new InvalidInput({ message: "Task ID is required" });
 
       if (args.action === "create")
-        return output(
+        return toolOutput(
           await Effect.runPromise(schedules.create(agent.id, draft)),
         );
 
       if (args.action === "update")
-        return output(
+        return toolOutput(
           await Effect.runPromise(schedules.update(agent.id, args.id!, draft)),
         );
 
       if (args.action === "delete")
-        return output(
+        return toolOutput(
           await Effect.runPromise(schedules.delete(agent.id, args.id!)),
         );
 
-      return output(await Effect.runPromise(schedules.run(agent.id, args.id!)));
+      return toolOutput(
+        await Effect.runPromise(schedules.run(agent.id, args.id!)),
+      );
     },
   });
 

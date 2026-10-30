@@ -440,6 +440,74 @@ export const credentialUseResponse = z
   })
   .openapi("CredentialUse");
 
+const loginFieldSourceResponse = z
+  .object({
+    passwordManager: z.enum(["1password", "bitwarden"]).nullable().openapi({
+      description:
+        "The password manager the value is read from; null for a value stored in Crumble.",
+    }),
+    reference: z.string().nullable().openapi({
+      description: "Where in `passwordManager` the value is read from.",
+    }),
+  })
+  .openapi("LoginFieldSource");
+
+export const loginResponse = z
+  .object({
+    name: z.string(),
+    hosts: z.array(z.string()),
+    fields: z
+      .object({
+        username: loginFieldSourceResponse.optional(),
+        password: loginFieldSourceResponse.optional(),
+        one_time_code: loginFieldSourceResponse.optional(),
+      })
+      .openapi({
+        description:
+          "Where each field's value is read from. A login always has a username and a password; `one_time_code` only when it has one.",
+      }),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    lastUsedAt: z.string().nullable(),
+    lastError: z.string().nullable().openapi({
+      description:
+        "Why the newest fill couldn't read its value; null when it could.",
+    }),
+  })
+  .openapi("Login");
+
+export const loginRequestResponse = z
+  .object({
+    name: z.string(),
+    hosts: z.array(z.string()),
+    reason: z.string(),
+    oneTimeCode: z.boolean().openapi({
+      description: "Whether the bot says the site asks for a one-time code.",
+    }),
+    requestedAt: z.string(),
+  })
+  .openapi("LoginRequest");
+
+export const loginsResponse = z
+  .object({
+    logins: z.array(loginResponse),
+    requests: z.array(loginRequestResponse),
+  })
+  .openapi("Logins");
+
+export const loginUseResponse = z
+  .object({
+    id: z.string(),
+    at: z.string(),
+    host: z.string(),
+    field: z.enum(["username", "password", "one_time_code"]),
+    error: z
+      .string()
+      .nullable()
+      .describe("Why the value couldn't be read; nothing was typed."),
+  })
+  .openapi("LoginUse");
+
 export const botRequestResponse = z
   .object({
     id: z.string(),

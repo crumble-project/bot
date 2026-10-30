@@ -2,7 +2,7 @@
 title: Automations, messaging, and integrations
 description: Run automations on a schedule, let bots talk to each other, and connect external tools over MCP.
 sidebar:
-  order: 8
+  order: 9
 ---
 
 ## Automations

@@ -3,6 +3,7 @@ import {
   agentInput,
   credentialSaveInput,
   groupChatInput,
+  loginSaveInput,
   passwordManagerIdInput,
   scheduleInput,
   secretReferenceInput,
@@ -662,6 +663,51 @@ export const routes = {
       "Requests sent with the credential's value in the last 90 days, newest first. Page with `before` set to the last use's ID.",
     request: { params: credentialParams, query: credentialUsesInput },
     responses: { 200: json(z.array(response.credentialUseResponse)) },
+  }),
+  agentLogins: define({
+    method: "get",
+    path: "/v1/agents/{id}/logins",
+    operationId: "listAgentLogins",
+    description:
+      "The logins the bot's desktop jobs can fill into web pages, and its requests for logins the owner has not answered. Values are never returned.",
+    request: { params: id },
+    responses: { 200: json(response.loginsResponse) },
+  }),
+  saveAgentLogin: define({
+    method: "put",
+    path: "/v1/agents/{id}/logins/{name}",
+    operationId: "saveAgentLogin",
+    description:
+      "Creates or updates a login. Saving one the bot requested answers the request and starts a bot turn with a notice. Each field is a value stored in Crumble or a password manager reference; a 1Password `item` fills every field. Every reference is read once to check it, and nothing is saved if one fails.",
+    request: { params: credentialParams, body: body(loginSaveInput) },
+    responses: { 200: json(response.loginResponse) },
+  }),
+  deleteAgentLogin: define({
+    method: "delete",
+    path: "/v1/agents/{id}/logins/{name}",
+    operationId: "deleteAgentLogin",
+    description:
+      "Deletes a login and its fill records, or declines a request for one, which starts a bot turn with a notice.",
+    request: { params: credentialParams },
+    responses: { 204: empty },
+  }),
+  declineAgentLogin: define({
+    method: "post",
+    path: "/v1/agents/{id}/logins/{name}/decline",
+    operationId: "declineAgentLogin",
+    description:
+      "Declines a pending login request without changing a saved login.",
+    request: { params: credentialParams },
+    responses: { 204: empty },
+  }),
+  agentLoginUses: define({
+    method: "get",
+    path: "/v1/agents/{id}/logins/{name}/uses",
+    operationId: "listAgentLoginUses",
+    description:
+      "Fills of the login's fields in the last 90 days, newest first. Page with `before` set to the last use's ID.",
+    request: { params: credentialParams, query: credentialUsesInput },
+    responses: { 200: json(z.array(response.loginUseResponse)) },
   }),
   agentMemories: define({
     method: "get",

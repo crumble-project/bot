@@ -330,7 +330,7 @@ test("the bot's answer to a desktop job's report is announced once, for notifica
   }
 });
 
-test("a desktop job's prompt lists the bot's logins; the bot's chat doesn't", async () => {
+test("a desktop job's prompt lists the bot's logins; the bot's chat gets request_login and its own list", async () => {
   const login: Login = {
     name: "github",
     hosts: ["github.com", "*.github.com"],
@@ -346,6 +346,19 @@ test("a desktop job's prompt lists the bot's logins; the bot's chat doesn't", as
 
   const logins: LoginsAccess = {
     list: () => [login],
+    requests: () => [
+      {
+        name: "linear",
+        hosts: ["linear.app"],
+        reason: "Triage",
+        oneTimeCode: false,
+        requestedAt: "t",
+      },
+    ],
+    request: () => {
+      throw new Error("unused");
+    },
+    decline: async () => undefined,
     get: () => login,
     save: async () => login,
     delete: async () => undefined,
@@ -354,7 +367,7 @@ test("a desktop job's prompt lists the bot's logins; the bot's chat doesn't", as
     recordUse: () => undefined,
   };
 
-  const { sections } = await open(undefined, {
+  const { sections, offered } = await open(undefined, {
     access: logins,
     fills: () => ({ list: async () => [], add: async () => undefined }),
   });
@@ -363,6 +376,16 @@ test("a desktop job's prompt lists the bot's logins; the bot's chat doesn't", as
     "- github: github.com, *.github.com",
   );
   expect(sections.get("bot")?.["desktop_logins"] ?? null).toBeNull();
+  expect(offered.get("bot")).toContain("request_login");
+  expect(offered.get("job")).not.toContain("request_login");
+  expect(sections.get("bot")?.["logins"]).toContain(
+    [
+      "Logins your desktop jobs have:",
+      "- github: github.com, *.github.com",
+      "Logins you asked for that the owner has not answered:",
+      "- linear: linear.app",
+    ].join("\n"),
+  );
 });
 
 test("without logins, a desktop job's prompt has no logins section", async () => {

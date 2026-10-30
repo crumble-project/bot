@@ -18,6 +18,8 @@ import {
 } from "../bot-desktop/desktop-control";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import { registerCredentialRoutes } from "../credentials/credentials-api";
+import { registerLoginRoutes } from "../logins/logins-api";
+import { loginsAccess } from "../logins/logins";
 import { registerBotRequestRoutes } from "../bot-requests/bot-requests-api";
 import type { BotRequests } from "../bot-requests/bot-requests";
 import {
@@ -251,6 +253,7 @@ export function createAPI(
   registerBotActivityRoutes(api);
   registerGroupChatRoutes(api);
   registerCredentialRoutes(api);
+  registerLoginRoutes({ ...api, logins: loginsAccess(core) });
 
   if (options.botRequests)
     registerBotRequestRoutes({ ...api, botRequests: options.botRequests });

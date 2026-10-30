@@ -1,10 +1,9 @@
 import { randomBytes } from "node:crypto";
-import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Clock, Context, Effect, Layer, Predicate, Redacted } from "effect";
 import type { Runner } from "../shared/runner";
-import { BotNotices } from "../bots/bot-notices";
+import { BotNotices, requestAnswers } from "../bots/bot-notices";
 import {
   credentialName,
   credentialRequestInput,
@@ -29,6 +28,7 @@ import {
   Conflict,
   type AppError,
 } from "../shared/errors";
+import { toolOutput } from "../shared/tool-output";
 
 export const REQUEST_CREDENTIAL_TOOL = "request_credential";
 
@@ -144,15 +144,7 @@ export class Credentials extends Context.Service<
         return yield* values.read(source);
       });
 
-      const notify = (agentId: string, name: string, text: string) =>
-        notices
-          .notice(agentId, text, `credential:${name}:${crypto.randomUUID()}`)
-          .pipe(
-            // A disabled bot cannot take the turn; the owner already sees the outcome in its settings.
-            Effect.catchCause((cause) =>
-              Effect.logError("Credential notice failed", agentId, name, cause),
-            ),
-          );
+      const notify = requestAnswers(notices, "credential");
 
       const list = Effect.fn("Credentials.list")(function* (agentId: string) {
         return {
@@ -418,10 +410,15 @@ const pendingLines = (requests: readonly CredentialRequest[]) =>
       ]
     : [];
 
-const output = (value: JsonValue) => ({
-  structuredOutput: value,
-  output: [{ type: "text" as const, text: JSON.stringify(value) }],
-});
+/** What a bot names, for which hosts, and why, when it asks the owner for a secret. */
+export const requestParameters = {
+  name: Type.String({ minLength: 1, maxLength: 64 }),
+  hosts: Type.Array(Type.String({ minLength: 1, maxLength: 253 }), {
+    minItems: 1,
+    maxItems: 20,
+  }),
+  reason: Type.String({ minLength: 1, maxLength: 1000 }),
+};
 
 /** The bot's `request_credential` tool and what it knows about its credentials, for bots with coding jobs. */
 export function credentialExtension(
@@ -432,14 +429,7 @@ export function credentialExtension(
     name: REQUEST_CREDENTIAL_TOOL,
     description:
       "Ask the owner for a credential your coding jobs need, such as an API token for a service without an MCP server. Name it like an environment variable (ACME_TOKEN), list the hosts it is for (api.acme.com, *.acme.com), and say why. The owner enters the value outside the chat; you never see it. Coding jobs then get the variable with a placeholder that works only on requests to those hosts. After calling, tell the owner what you asked for and why, then end your turn: a message arrives when the owner answers.",
-    parameters: Type.Object({
-      name: Type.String({ minLength: 1, maxLength: 64 }),
-      hosts: Type.Array(Type.String({ minLength: 1, maxLength: 253 }), {
-        minItems: 1,
-        maxItems: 20,
-      }),
-      reason: Type.String({ minLength: 1, maxLength: 1000 }),
-    }),
+    parameters: Type.Object(requestParameters),
     // The chat offers the owner the form from this call's own result, so code mode keeps it a direct model tool.
     callers: ["model"],
     replay: "unsafe",
@@ -450,7 +440,7 @@ export function credentialExtension(
       );
 
       // Clients read the request from the details to offer the owner its form.
-      return { ...output({ request }), details: request };
+      return { ...toolOutput({ request }), details: request };
     },
   });
 

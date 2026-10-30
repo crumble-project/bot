@@ -467,6 +467,25 @@ export type Login = {
   lastError: string | null;
 };
 
+export const loginRequestInput = z.object({
+  name: loginName,
+  hosts: credentialHosts,
+  reason: z.string().trim().min(1).max(1000),
+  /** Whether the site asks for a one-time code too. */
+  one_time_code: z.boolean().optional(),
+});
+
+export type LoginRequestInput = z.infer<typeof loginRequestInput>;
+
+/** A bot's request for a login, waiting for the owner. */
+export type LoginRequest = {
+  name: string;
+  hosts: string[];
+  reason: string;
+  oneTimeCode: boolean;
+  requestedAt: string;
+};
+
 /** One fill of a login field into a page. */
 export type LoginUse = {
   id: string;

@@ -9,6 +9,8 @@ import {
   loginFieldInput,
   type Login,
   type LoginField,
+  type LoginRequest,
+  type LoginRequestInput,
   type LoginUse,
   type PasswordManagerId,
   type SecretReference,
@@ -17,7 +19,7 @@ import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
 import { nowIso } from "../shared/time";
 import { usesBefore, withStringIds } from "../shared/use-log";
-import { loginFields, loginUses, logins } from "./schema";
+import { loginFields, loginRequests, loginUses, logins } from "./schema";
 
 const hostList = z.array(z.string());
 
@@ -49,6 +51,14 @@ type FieldRow = {
   passwordManager: PasswordManagerId | null;
   reference: string | null;
 };
+
+const requestOf = (row: typeof loginRequests.$inferSelect): LoginRequest => ({
+  name: row.name,
+  hosts: hostList.parse(JSON.parse(row.hosts)),
+  reason: row.reason,
+  oneTimeCode: row.oneTimeCode,
+  requestedAt: row.requestedAt,
+});
 
 const loginOf = (
   row: Omit<Login, "hosts" | "fields"> & { hosts: string },
@@ -107,6 +117,20 @@ export class LoginRepository extends Context.Service<
       options: { limit: number; before?: string | undefined },
     ) => Effect.Effect<LoginUse[]>;
     readonly pruneUses: (olderThan: string) => Effect.Effect<void>;
+    readonly listRequests: (agentId: string) => Effect.Effect<LoginRequest[]>;
+    readonly getRequest: (
+      agentId: string,
+      name: string,
+    ) => Effect.Effect<LoginRequest | undefined>;
+    /** A repeated request replaces the earlier one. */
+    readonly setRequest: (
+      agentId: string,
+      request: LoginRequestInput,
+    ) => Effect.Effect<LoginRequest>;
+    readonly deleteRequest: (
+      agentId: string,
+      name: string,
+    ) => Effect.Effect<boolean>;
   }
 >()("crumble/logins/LoginRepository") {
   static readonly layer = Layer.effect(
@@ -308,6 +332,67 @@ export class LoginRepository extends Context.Service<
         yield* db.delete(loginUses).where(lt(loginUses.at, olderThan));
       }, Effect.orDie);
 
+      const request = (agentId: string, name: string) =>
+        and(eq(loginRequests.agentId, agentId), eq(loginRequests.name, name));
+
+      const listRequests = Effect.fn("LoginRepository.listRequests")(function* (
+        agentId: string,
+      ) {
+        const rows = yield* db
+          .select()
+          .from(loginRequests)
+          .where(eq(loginRequests.agentId, agentId))
+          .orderBy(asc(loginRequests.requestedAt));
+
+        return rows.map(requestOf);
+      }, Effect.orDie);
+
+      const getRequest = Effect.fn("LoginRepository.getRequest")(function* (
+        agentId: string,
+        name: string,
+      ) {
+        const [row] = yield* db
+          .select()
+          .from(loginRequests)
+          .where(request(agentId, name));
+
+        return row ? requestOf(row) : undefined;
+      }, Effect.orDie);
+
+      const setRequest = Effect.fn("LoginRepository.setRequest")(function* (
+        agentId: string,
+        input: LoginRequestInput,
+      ) {
+        const row = {
+          hosts: JSON.stringify(input.hosts),
+          reason: input.reason,
+          oneTimeCode: input.one_time_code ?? false,
+          requestedAt: yield* nowIso,
+        };
+
+        yield* db
+          .insert(loginRequests)
+          .values({ agentId, name: input.name, ...row })
+          .onConflictDoUpdate({
+            target: [loginRequests.agentId, loginRequests.name],
+            set: row,
+          });
+
+        return (yield* getRequest(agentId, input.name))!;
+      }, Effect.orDie);
+
+      const deleteRequest = Effect.fn("LoginRepository.deleteRequest")(
+        function* (agentId: string, name: string) {
+          const deleted = yield* db
+            .delete(loginRequests)
+            .where(request(agentId, name))
+            .returning({ name: loginRequests.name });
+
+          return deleted.length > 0;
+        },
+        Effect.orDie,
+      );
+
       return LoginRepository.of({
         list,
         get,
@@ -317,6 +402,10 @@ export class LoginRepository extends Context.Service<
         addUse,
         listUses,
         pruneUses,
+        listRequests,
+        getRequest,
+        setRequest,
+        deleteRequest,
       });
     }),
   );
