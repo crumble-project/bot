@@ -78,7 +78,7 @@ const RAILWAY_IDLE_TIMEOUT_MINUTES = 30;
 // Also how soon a sandbox Railway destroyed is noticed: its exec streams do not end by themselves.
 const HEARTBEAT_MS = 10_000;
 
-/** The base workspace image, close to `workspace-image/Dockerfile`; Railway's Ubuntu already has node and git. */
+/** The base workspace image, close to `workspace-image/Dockerfile`; Railway's Ubuntu also has node, which we leave. */
 const BASE_RECIPE = {
   packages: [
     "bash",
@@ -91,9 +91,12 @@ const BASE_RECIPE = {
     "python3",
     "python3-venv",
     "ripgrep",
+    "unzip",
   ],
   steps: [
     "curl -LsSf https://astral.sh/uv/0.13.1/install.sh | env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh",
+    "curl -fsSL https://bun.sh/install | env BUN_INSTALL=/usr/local bash -s bun-v1.4.4",
+    "ln -sf bun /usr/local/bin/bunx",
     `mkdir -p ${WORKSPACE_PATH}`,
   ],
 };
@@ -132,7 +135,6 @@ const DESKTOP_RECIPE: Recipe = {
     "at-spi2-core",
     "x11-utils",
     "zenity",
-    "unzip",
     "libnss3-tools",
   ],
   steps: [

@@ -5,7 +5,7 @@ sidebar:
   order: 5
 ---
 
-Each bot has a **workspace**: a Linux machine with a persistent `/workspace` disk that only that bot's jobs can reach. The machine starts when a job needs it and stops when it's idle. Files on the disk stay.
+Each bot has a **workspace**: a Linux machine with a persistent `/workspace` disk that only that bot's jobs can reach. The machine starts when a job needs it and stops when it's idle. Files on the disk stay. It comes with Bun, Python with uv, git, and build tools; Node isn't installed.
 
 The server must support workspaces before bots can use them. See [Set up workspaces](/self-hosting/workspaces).
 

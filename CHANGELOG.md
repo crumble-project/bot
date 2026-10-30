@@ -13,6 +13,7 @@
 - The web app plays a sound with each notification, using cuelume: `ready` for replies, `attention` for approvals, and `attention` in the `mech` theme for credential and login requests. Notifications that wait for you stay until dismissed. Hear them at `/ui/sounds`, a page outside the navigation. Turn it off in **Settings** > **General** > **Sound**. The tab title counts unseen replies and names the open chat, such as `(3) Atlas | Crumble`; opening a chat clears its replies from the count.
 - The web app draws its own scrollbars with shadcn's ScrollArea on pages, the sidebar, the bot details panel, and editor sheets: a thin bar that shows while you scroll or hover. The chat transcript, menus, and code blocks keep the browser's scrollbar, made thin and in the theme's muted text color.
 - Fix a coding or desktop job's activity opening at the top: it now opens at the newest step and follows new steps while the job works, like the bot chat.
+- Workspace images ship Bun 1.4.4 (`bun` and `bunx`) instead of Node: the base image is `debian:trixie-slim`. Railway workspaces install Bun too, and keep the Node their Ubuntu comes with. A new image recreates each bot's machine on its next boot: `/workspace` is kept, programs installed outside it are not.
 - The installed web app uses the Crumble icon on the home screen instead of the placeholder ring, with a maskable variant for Android.
 
 ## 0.2.0
