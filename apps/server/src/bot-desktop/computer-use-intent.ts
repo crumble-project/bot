@@ -1,4 +1,5 @@
 import type { Context } from "@earendil-works/chord";
+import type { Usage } from "@earendil-works/pi-ai";
 import { z } from "zod";
 import type { ComputerUseArgs, StepArgs } from "./computer-use";
 import type { DriverReply, Window } from "./computer-use-driver";
@@ -10,11 +11,11 @@ import {
   type ProposedAction,
 } from "./intent-check";
 
-/** Decides whether an acting call may run: undefined lets it run, text refuses it. Waits while the owner decides. */
+/** Whether an acting call may run: a refusal stops it. Waits while the owner decides. `usage` is the judge's spend. */
 export type IntentGate = (
   proposal: { action: ProposedAction; page: string | undefined },
   context: Context,
-) => Promise<string | undefined>;
+) => Promise<{ refusal?: string; usage?: Usage }>;
 
 // `- [3] push button "Pay now" [actions=...]` in a full tree; a diff marks lines `+`, `~`, or `-` (removed). The role
 // runs up to the name's quote or the first `[`, so it keeps every word.
@@ -31,6 +32,9 @@ const unquote = (name: string) => {
     return name;
   }
 };
+
+const treeOf = (reply: DriverReply) =>
+  reply.tree_diff ?? reply.tree_markdown ?? "";
 
 type ElementLine = { index: number; removed: boolean; target: IntentTarget };
 
@@ -61,12 +65,10 @@ export function recordElements(
   reply: DriverReply,
 ) {
   const diff = reply.tree_diff !== undefined;
-  const tree = reply.tree_diff ?? reply.tree_markdown ?? "";
   const previous = state.snapshots.get(windowId);
-  const base = diff && previous ? state.elements.get(previous) : undefined;
-  const known = new Map(base);
+  const known = new Map(diff ? state.elements.get(previous ?? "") : undefined);
 
-  for (const line of tree.split("\n")) {
+  for (const line of treeOf(reply).split("\n")) {
     const element = elementLine(line, diff);
 
     if (element?.removed) known.delete(element.index);

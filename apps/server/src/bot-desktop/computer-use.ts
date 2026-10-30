@@ -9,6 +9,7 @@ import {
   type Static,
   type ImageContent,
   type TextContent,
+  type Usage,
 } from "@earendil-works/pi-ai";
 import { defineTool, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
@@ -32,6 +33,8 @@ export type DesktopShell = Pick<
 export type ComputerUseResult = {
   content: (TextContent | ImageContent)[];
   isError: boolean;
+  /** Model calls the tool made itself, such as an intent check's judge. */
+  usage?: Usage;
 };
 
 const check = Type.Object({
@@ -319,7 +322,11 @@ export function computerUseTool({
 
       const result = await computer.run(args, callContext, intentFor?.(api));
 
-      return { output: result.content, isError: result.isError };
+      return {
+        output: result.content,
+        isError: result.isError,
+        ...(result.usage && { usage: result.usage }),
+      };
     },
   });
 }

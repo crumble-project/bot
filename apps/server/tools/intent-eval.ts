@@ -4,18 +4,20 @@
 //   bun tools/intent-eval.ts [provider/model ...] [--out results.json]
 // Defaults to typesafe/jev-latest.
 import { writeFileSync } from "node:fs";
-import type { ClassifierModel, ClassifierApi } from "@earendil-works/pi-ai";
+import type {
+  ClassifierModel,
+  ClassifierApi,
+  Usage,
+} from "@earendil-works/pi-ai";
 import { isCommitPoint } from "../src/bot-desktop/intent-check";
 import {
   classifierContext,
   inIntentBar,
+  judgeUsage,
 } from "../src/bot-desktop/intent-judge";
 import { providerModels } from "../src/providers/providers";
 import { z } from "zod";
 import { INTENT_CASES, type IntentCase } from "./intent-eval-cases";
-
-// $ per million input tokens, where pi-ai's catalog lists none: TypeSafe's stated price for Jev.
-const PRICE_OVERRIDES = new Map([["typesafe/jev-latest", 0.042]]);
 
 const THRESHOLDS = [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95];
 
@@ -28,6 +30,8 @@ type Result = {
   expected: { irreversible: boolean; inIntent: boolean };
   ms: number;
   inputTokens: number;
+  /** In $, priced as Crumble records it. */
+  cost: number;
 };
 
 const args = process.argv.slice(2);
@@ -65,8 +69,15 @@ const boolAnswer = z.object({
 const usable = z.object({
   stopReason: z.literal("stop"),
   answers: z.object({ irreversible: boolAnswer, in_intent: boolAnswer }),
-  usage: z.object({ input: z.number() }).catch({ input: 0 }),
 });
+
+const spendOf = (
+  model: ClassifierModel<ClassifierApi>,
+  usage: Usage | undefined,
+) =>
+  usage
+    ? { inputTokens: usage.input, cost: judgeUsage(model, usage).cost.total }
+    : { inputTokens: 0, cost: 0 };
 
 async function judged(
   model: ClassifierModel<ClassifierApi>,
@@ -88,7 +99,7 @@ async function judged(
     commitPoint: isCommitPoint(each.request.action),
     expected: { irreversible: each.irreversible, inIntent: each.inIntent },
     ms,
-    inputTokens: parsed.data.usage.input,
+    ...spendOf(model, result.usage),
   };
 }
 
@@ -107,9 +118,13 @@ const percentile = (values: number[], p: number) =>
 
 const pct = (value: number) => `${Math.round(value * 100)}%`;
 
-function summaryLines(ref: string, price: number, results: Result[]) {
+const sum = (values: number[]) =>
+  values.reduce((total, each) => total + each, 0);
+
+function summaryLines(ref: string, results: Result[]) {
   const ms = results.map((each) => each.ms);
-  const tokens = results.reduce((sum, each) => sum + each.inputTokens, 0);
+  const tokens = sum(results.map((each) => each.inputTokens));
+  const cost = sum(results.map((each) => each.cost));
 
   const irreversibleRight = results.filter(
     (each) => each.irreversible >= 0.5 === each.expected.irreversible,
@@ -118,7 +133,7 @@ function summaryLines(ref: string, price: number, results: Result[]) {
   return [
     `\n## ${ref}: ${results.length} cases`,
     `latency p50 ${percentile(ms, 0.5)} ms, p90 ${percentile(ms, 0.9)} ms, max ${Math.max(...ms)} ms`,
-    `input tokens ${tokens} (${Math.round(tokens / results.length)} per check), cost $${((tokens * price) / 1e6).toFixed(6)} at $${price}/MTok`,
+    `input tokens ${tokens} (${Math.round(tokens / results.length)} per check), cost $${cost.toFixed(6)}`,
     `irreversible right at 0.5: ${irreversibleRight}/${results.length}`,
   ];
 }
@@ -144,10 +159,10 @@ const want = (value: boolean) => (value ? "yes" : "no");
 const caseLine = (each: Result) =>
   `${each.name} | ${each.group} | ${pct(each.irreversible)} (want ${want(each.expected.irreversible)}) | ${pct(each.inIntent)} (want ${want(each.expected.inIntent)}) | ${each.commitPoint ? "commit point" : ""}`;
 
-function report(ref: string, price: number, bar: number, results: Result[]) {
+function report(ref: string, bar: number, results: Result[]) {
   console.log(
     [
-      ...summaryLines(ref, price, results),
+      ...summaryLines(ref, results),
       ...thresholdLines(bar, results),
       "\ncase | group | irreversible | in intent | rule",
       ...results.map(caseLine),
@@ -164,12 +179,7 @@ for (const ref of refs.length ? refs : ["typesafe/jev-latest"]) {
   // One at a time, so each latency is the judge's own.
   for (const each of INTENT_CASES) results.push(await judged(model, each));
 
-  report(
-    ref,
-    PRICE_OVERRIDES.get(ref) ?? model.cost.input,
-    inIntentBar(model),
-    results,
-  );
+  report(ref, inIntentBar(model), results);
   all[ref] = results;
 }
 

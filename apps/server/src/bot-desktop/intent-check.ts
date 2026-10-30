@@ -1,3 +1,4 @@
+import type { Usage } from "@earendil-works/pi-ai";
 import type { JsonObject } from "@earendil-works/pi-durable";
 import type { OwnerMessage } from "../jobs/owner-request";
 
@@ -27,6 +28,8 @@ export type JudgeAnswer = {
   irreversible: number;
   inIntent: number;
   inIntentBar: number;
+  /** What the judge's call spent, when its service reports token counts. */
+  usage?: Usage;
 };
 
 export type Judge = (

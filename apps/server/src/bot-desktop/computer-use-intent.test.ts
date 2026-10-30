@@ -15,7 +15,7 @@ function recording(refusal?: string) {
   const gate: IntentGate = async ({ action }) => {
     seen.push(action);
 
-    return refusal;
+    return refusal === undefined ? {} : { refusal };
   };
 
   return { seen, gate };
@@ -124,7 +124,7 @@ test("an approved action doesn't run when the owner took control while it was he
   const gate: IntentGate = async () => {
     changes += 2;
 
-    return undefined;
+    return {};
   };
 
   const computer = createComputerUse(shell, { gate: control });
@@ -142,4 +142,61 @@ test("an approved action doesn't run when the owner took control while it was he
     text: expect.stringContaining("Control changed hands"),
   });
   expect(calls.some((each) => each.tool === "click")).toBe(false);
+});
+
+test("the judge's spend is on the call's result, whether the action ran or was refused", async () => {
+  const { shell } = scriptedGuest({
+    list_windows: [{ windows: [shop] }],
+    get_window_state: [
+      { snapshot_id: "s1", tree_markdown: '- [3] push button "Pay now"' },
+    ],
+    click: [{ effect: "confirmed", summary: "Clicked [3]" }],
+  });
+
+  const usage = {
+    input: 600,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 600,
+    cost: {
+      input: 0.0000252,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      total: 0.0000252,
+    },
+  };
+
+  const computer = createComputerUse(shell);
+
+  await computer.run(
+    { action: "capture" },
+    BACKGROUND_CONTEXT,
+    async () => ({}),
+  );
+
+  const ran = await computer.run(
+    { action: "click", element: 3 },
+    BACKGROUND_CONTEXT,
+    async () => ({ usage }),
+  );
+
+  const refused = await computer.run(
+    { action: "click", element: 3 },
+    BACKGROUND_CONTEXT,
+    async () => ({ usage, refusal: "REFUSED: declined" }),
+  );
+
+  expect(ran).toMatchObject({ isError: false, usage });
+  expect(refused).toMatchObject({ isError: true, usage });
+
+  // An observing call isn't checked and spends nothing.
+  const read = await computer.run(
+    { action: "capture" },
+    BACKGROUND_CONTEXT,
+    async () => ({ usage }),
+  );
+
+  expect(read.usage).toBeUndefined();
 });

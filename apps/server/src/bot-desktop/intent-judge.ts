@@ -1,4 +1,5 @@
 import {
+  calculateCost,
   isModelType,
   type AnyModel,
   type ClassifierModel,
@@ -7,6 +8,7 @@ import {
   type Model,
   type Api,
   type Models,
+  type Usage,
 } from "@earendil-works/pi-ai";
 import { z } from "zod";
 import {
@@ -31,6 +33,26 @@ const UNEVALUATED_BAR = 0.9;
 
 // A chat judge answers 0 or 1, so any bar between them reads its answer.
 const CHAT_BAR = 0.5;
+
+// $ per million tokens where pi-ai's catalog lists none: TypeSafe's stated price for Jev.
+const JUDGE_PRICES = new Map([
+  [
+    "typesafe/jev-latest",
+    { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+  ],
+]);
+
+/** The call's usage priced at the catalog's price, or at the judge's known price where the catalog lists none. */
+export function judgeUsage(model: AnyModel, usage: Usage): Usage {
+  const price = JUDGE_PRICES.get(`${model.provider}/${model.id}`);
+
+  if (!price || model.cost.input > 0) return usage;
+
+  return {
+    ...usage,
+    cost: calculateCost({ ...model, cost: { ...model.cost, ...price } }, usage),
+  };
+}
 
 /** The in-intent probability a classifier must reach for an irreversible action to run. */
 export const inIntentBar = (model: AnyModel) =>
@@ -93,6 +115,7 @@ function classifierJudge(
       irreversible: irreversible.probability,
       inIntent: inIntent.probability,
       inIntentBar: inIntentBar(model),
+      ...(result.usage && { usage: judgeUsage(model, result.usage) }),
     };
   };
 }
@@ -140,6 +163,7 @@ function chatJudge(models: Models, model: Model<Api>): Judge {
       irreversible: parsed.data.irreversible ? 1 : 0,
       inIntent: parsed.data.in_intent ? 1 : 0,
       inIntentBar: CHAT_BAR,
+      usage: reply.usage,
     };
   };
 }

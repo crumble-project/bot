@@ -41,6 +41,21 @@ const buy = {
   page: "https://rail.example/checkout",
 };
 
+const usage = {
+  input: 600,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 600,
+  cost: {
+    input: 0.0000252,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    total: 0.0000252,
+  },
+};
+
 function setup(answer: JudgeAnswer) {
   const dir = mkdtempSync(join(tmpdir(), "bot-intent-"));
 
@@ -61,7 +76,10 @@ function setup(answer: JudgeAnswer) {
 
   const gate = desktopIntentGate(
     {
-      judgeFor: async () => ({ judge: async () => answer, name: "Fake judge" }),
+      judgeFor: async () => ({
+        judge: async () => ({ ...answer, usage }),
+        name: "Fake judge",
+      }),
       held,
     },
     agent.id,
@@ -82,7 +100,7 @@ test("an action the owner asked for runs without a card", async () => {
     inIntentBar: 0.9,
   });
 
-  expect(await gate(buy, BACKGROUND_CONTEXT)).toBeUndefined();
+  expect(await gate(buy, BACKGROUND_CONTEXT)).toEqual({ usage });
   expect(cards).toEqual([]);
   store.close();
 });
@@ -113,7 +131,7 @@ test("a held action shows a card and runs once the owner approves", async () => 
   expect(pending!.reason).toContain("Fake judge");
 
   await held.decide(agentId, cards[0]!.id, { status: "approved" });
-  expect(await waiting).toBeUndefined();
+  expect(await waiting).toEqual({ usage });
   expect(held.list(agentId)[0]!.status).toBe("approved");
   store.close();
 });
@@ -133,7 +151,9 @@ test("a declined action is refused with the owner's reason", async () => {
     reason: "Only look, don't buy",
   });
 
-  const refused = await waiting;
+  const { refusal: refused, usage: spent } = await waiting;
+
+  expect(spent).toEqual(usage);
 
   expect(refused).toStartWith("REFUSED: the owner declined");
   expect(refused).toContain("Only look, don't buy");

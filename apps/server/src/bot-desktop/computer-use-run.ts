@@ -240,10 +240,10 @@ async function pinned(
 }
 
 /**
- * Asks the intent check about an acting call; its refusal is the call's result. The owner may take control while an
+ * Asks the intent check about an acting call; a refusal is the call's result. The owner may take control while an
  * action is held, so an approved one runs only if the bot still holds the desktop it was checked on.
  */
-async function intentRefusal(
+async function intentVerdict(
   state: ComputerUseState,
   args: ComputerUseArgs,
   window: Window | undefined,
@@ -252,27 +252,40 @@ async function intentRefusal(
 ) {
   const proposal = proposedAction(state, args, window);
 
-  if (!proposal) return undefined;
+  if (!proposal) return {};
 
-  return (
-    (await intent(proposal, context)) ??
-    (await controlTurn(state, args.action, context))
-  );
+  const { refusal, usage } = await intent(proposal, context);
+
+  return {
+    refusal: refusal ?? (await controlTurn(state, args.action, context)),
+    usage,
+  };
 }
 
-/** Runs the call, after the intent check when there is one. */
+/** Runs the call, after the intent check when there is one; the result carries the judge's spend. */
 async function checkedDispatch(
   state: ComputerUseState,
   normalized: ComputerUseArgs,
   intent: IntentGate | undefined,
   context: Context,
-) {
+): Promise<ComputerUseResult> {
   if (!intent) return dispatch(state, normalized, context);
 
   const { args, window } = await pinned(state, normalized, context);
-  const refused = await intentRefusal(state, args, window, intent, context);
 
-  return refused ? textResult(refused, true) : dispatch(state, args, context);
+  const { refusal, usage } = await intentVerdict(
+    state,
+    args,
+    window,
+    intent,
+    context,
+  );
+
+  const result = refusal
+    ? textResult(refusal, true)
+    : await dispatch(state, args, context);
+
+  return usage ? { ...result, usage } : result;
 }
 
 export async function runAction(

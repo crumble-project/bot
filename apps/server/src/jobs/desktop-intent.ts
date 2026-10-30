@@ -117,14 +117,20 @@ export const desktopIntentGate =
       context.abortSignal,
     );
 
-    if (!verdict.held) return undefined;
+    const usage = verdict.answer?.usage;
+    const spent = usage ? { usage } : {};
+
+    if (!verdict.held) return spent;
 
     const words = describeAction(action);
     const job = request.job;
 
     // A job that got no start or send since intent checks began has nowhere to show the card.
     if (!job)
-      return `REFUSED: ${words} needs the owner's approval, and this job can't ask for it. Report what you did and what is left.`;
+      return {
+        ...spent,
+        refusal: `REFUSED: ${words} needs the owner's approval, and this job can't ask for it. Report what you did and what is left.`,
+      };
 
     const held = await intent.held.hold({
       agentId,
@@ -144,6 +150,6 @@ export const desktopIntentGate =
     const decision = await intent.held.until(held.id, context);
 
     return decision.status === "approved"
-      ? undefined
-      : refusal(words, decision);
+      ? spent
+      : { ...spent, refusal: refusal(words, decision) };
   };
