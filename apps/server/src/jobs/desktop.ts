@@ -29,8 +29,8 @@ const desktop = defineJobKind({
     "Desktop jobs share your workspace with coding jobs, localhost included: to test a web app a coding job serves, give the desktop job its URL and what to check, and send what fails to that coding job. If the app does not load, have a coding job start its server again.",
   instructions: [
     "You are a desktop job for another bot. You operate a Linux desktop: Openbox, Chromium maximized, a panel at the bottom. Use the computer_use tool.",
-    "Start with action='capture'. Prefer element indices and set_value over coordinates; use mode='vision' only when the tree lacks what you need.",
-    "To open a URL in Chromium: key 'ctrl+l' (selects the address bar), type the URL, key 'return'. Typing into a field appends to its text; use set_value to replace it.",
+    "For web pages, use open with the URL and read (with query on long pages), then act with ref from the latest read. Use capture and element for Chromium's own menus and dialogs and for other apps; prefer element indices and set_value over coordinates, and mode='vision' only when the tree lacks what you need.",
+    "When you know several steps in an app, run them in one steps call with expect checks instead of one call each. Typing into a field appends to its text; use set_value to replace it.",
     "Apps the bot's coding jobs serve open at their localhost URL. If such a page does not load, report that its server is not running instead of testing further.",
     "Use capture_after=true on actions whose effect you need to check. Omit parameters you don't use.",
     "When an action's effect is unverifiable, look at the screen before you rely on it; check that boxes and choices are set before you submit a form.",

@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import { z } from "zod";
-import { newSession, type ComputerUseState } from "./computer-use-state";
+import type { ComputerUseState } from "./computer-use-state";
 
 const ENV_FILE = "/run/crumble-desktop.env";
+export const DRIVER_ARGS = "CRUMBLE_DRIVER_ARGS";
 // cua-driver ends idle sessions; a call on an ended one is rejected with this message.
 
 const ENDED_SESSION = /session has ended/i;
@@ -26,8 +27,11 @@ const driverError = z.union([
   z.object({ code: loose(z.string()), message: loose(z.string()) }),
 ]);
 
-/** A cua-driver tool result: the fields this tool reads, each dropped when its shape is unexpected. */
-const driverReply = z.object({
+/**
+ * A cua-driver tool result: the fields every action reads, each dropped when its shape is unexpected. Other fields pass
+ * through for the tools that read them, such as the browser tools.
+ */
+export const driverReply = z.looseObject({
   status: loose(z.string()),
   effect: loose(z.string()),
   code: loose(z.string()),
@@ -41,6 +45,8 @@ const driverReply = z.object({
   ),
   escalation: loose(z.object({ recommended: loose(z.string()) })),
   snapshot_id: loose(z.string()),
+  since: loose(z.string()),
+  since_status: loose(z.string()),
   tree_markdown: loose(z.string()),
   tree_diff: loose(z.string()),
   degraded: loose(z.boolean()),
@@ -53,8 +59,15 @@ const driverReply = z.object({
 
 export type DriverReply = z.infer<typeof driverReply>;
 
+type DriverValue =
+  | string
+  | number
+  | boolean
+  | DriverValue[]
+  | { [key: string]: DriverValue };
+
 /** Arguments for a cua-driver tool. */
-export type DriverArgs = Record<string, string | number | boolean | string[]>;
+export type DriverArgs = Record<string, DriverValue>;
 
 function parseReply(output: string): DriverReply {
   try {
@@ -78,11 +91,13 @@ export const compactTree = (tree: string) =>
   tree.replace(/￼+/g, "").replace(/,showContextMenu|showContextMenu,?/g, "");
 
 // cua-driver's hints sometimes name its own tools (run_steps, get_window_state); keep only advice that fits ours.
-export const cleanHint = (hint = "") =>
-  hint
-    .replace(/\s*Three single actions in a row:.*$/s, "")
+export const ourNames = (text: string) =>
+  text
     .replace(/get_window_state/g, "capture")
-    .trim();
+    .replace(/get_browser_state/g, "read");
+
+export const cleanHint = (hint = "") =>
+  ourNames(hint.replace(/\s*Three single actions in a row:.*$/s, "")).trim();
 
 export const codeOf = (reply: DriverReply) =>
   reply.code ?? reply.refusal?.code ?? reply.error?.code;
@@ -117,12 +132,13 @@ export async function sh(
   state: ComputerUseState,
   command: string,
   context: Context,
+  env?: Record<string, string>,
 ) {
   let output = "";
 
   const result = await state.shell.exec(
     `. ${ENV_FILE}; ${command}`,
-    { onOutput: (text) => (output += text) },
+    { onOutput: (text) => (output += text), ...(env && { env }) },
     context,
   );
 
@@ -132,7 +148,7 @@ export async function sh(
 }
 
 /**
- * One cua-driver call; an ended session is replaced, its snapshots dropped, and the call retried once.
+ * One cua-driver call; an ended session is started again, its snapshots dropped, and the call retried once.
  */
 export async function driverCall(
   state: ComputerUseState,
@@ -145,8 +161,9 @@ export async function driverCall(
 
   if (!ENDED_SESSION.test(messageOf(first.reply) ?? "")) return first;
 
-  state.session = newSession();
+  await callDriver(state, "start_session", {}, context, false);
   state.snapshots.clear();
+  state.lastRead = undefined;
 
   return callDriver(state, tool, args, context, screenshot);
 }
@@ -160,25 +177,18 @@ async function callDriver(
 ) {
   // Unique per call: a file left by another job's call can never stand in for this one's.
   const id = randomUUID();
-  const argsFile = `/tmp/computer-use-${id}.json`;
   const png = `/tmp/computer-use-${id}.png`;
   const jpg = `/tmp/computer-use-${id}.jpg`;
 
-  const written = await state.shell.writeFile(
-    argsFile,
-    JSON.stringify({ session: state.session, ...args }),
-    context,
-  );
-
-  if (!written.ok) throw written.error;
-
   const shot = screenshot ? ` --screenshot-out-file ${png}` : "";
 
+  // Arguments can hold a login's value: printf is a builtin, so they reach stdin without a file or an argv.
   const reply = parseReply(
     await sh(
       state,
-      `cua-driver call ${tool}${shot} "$(cat ${argsFile})"; rm -f ${argsFile}`,
+      `printf '%s' "$${DRIVER_ARGS}" | cua-driver call ${tool}${shot}`,
       context,
+      { [DRIVER_ARGS]: JSON.stringify({ session: state.session, ...args }) },
     ),
   );
 

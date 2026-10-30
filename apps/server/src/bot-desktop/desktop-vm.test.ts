@@ -53,6 +53,16 @@ for (const backend of WORKSPACE_BACKENDS) {
           .match(/\[(\d+)\]/)![1],
       );
 
+    // A local web server for page actions, which open only http, https, and about: URLs.
+    const serveTask = async () => {
+      await env().writeFile("/workspace/task.html", page, BACKGROUND_CONTEXT);
+      await env().exec(
+        "cd /workspace && (setsid python3 -m http.server 8123 >/tmp/http.log 2>&1 &); for i in $(seq 40); do (: </dev/tcp/127.0.0.1/8123) 2>/dev/null && break; sleep 0.25; done",
+        undefined,
+        BACKGROUND_CONTEXT,
+      );
+    };
+
     test("opens a page, fills the form, and reads the result back", async () => {
       await env().writeFile("/workspace/task.html", page, BACKGROUND_CONTEXT);
       const tool = cu();
@@ -106,6 +116,112 @@ for (const backend of WORKSPACE_BACKENDS) {
             ).includes("Ada Lovelace|Berlin|yes"),
           )),
       ).toBe(true);
+    }, 120_000);
+
+    test("opens and reads a page with page actions", async () => {
+      await serveTask();
+      const tool = cu();
+
+      const opened = text(
+        await tool.run(
+          { action: "open", url: "http://127.0.0.1:8123/task.html" },
+          BACKGROUND_CONTEXT,
+        ),
+      );
+
+      expect(opened).toContain(
+        'page "Den task" http://127.0.0.1:8123/task.html',
+      );
+
+      const read = text(
+        await tool.run({ action: "read", query: "Name" }, BACKGROUND_CONTEXT),
+      );
+
+      expect(read).toMatch(/\[p\d+:\d+\] textbox "Name"/);
+    }, 120_000);
+
+    test("fills the form with page refs", async () => {
+      await serveTask();
+      const tool = cu();
+
+      const read = text(
+        await tool.run(
+          { action: "open", url: "http://127.0.0.1:8123/task.html" },
+          BACKGROUND_CONTEXT,
+        ),
+      );
+
+      const refOf = (pattern: RegExp) =>
+        read
+          .split("\n")
+          .find((line) => line.startsWith("[p") && pattern.test(line))!
+          .match(/\[(p\d+:\d+)\]/)![1]!;
+
+      const run = async (args: Parameters<typeof tool.run>[0]) => {
+        const result = await tool.run(args, BACKGROUND_CONTEXT);
+
+        expect(text(result)).not.toContain("REFUSED");
+      };
+
+      await run({
+        action: "type",
+        ref: refOf(/textbox "Name"/),
+        text: "Ada Lovelace",
+      });
+      await run({ action: "set_value", ref: refOf(/"City"/), value: "Berlin" });
+      await run({ action: "click", ref: refOf(/checkbox "Agree"/) });
+      await run({ action: "click", ref: refOf(/button "Submit"/) });
+
+      expect(
+        await eventually(async () =>
+          text(
+            await tool.run(
+              { action: "read", query: "Ada" },
+              BACKGROUND_CONTEXT,
+            ),
+          ).includes("Ada Lovelace|Berlin|yes"),
+        ),
+      ).toBe(true);
+    }, 120_000);
+
+    test("fills the form in one steps batch", async () => {
+      await serveTask();
+      const tool = cu();
+
+      const result = text(
+        await tool.run(
+          {
+            action: "steps",
+            query: "Ada",
+            steps: [
+              { action: "key", keys: "ctrl+l" },
+              { action: "type", text: "http://127.0.0.1:8123/task.html" },
+              { action: "key", keys: "return" },
+              {
+                action: "set_value",
+                role: "entry",
+                name: "Name",
+                value: "Ada Lovelace",
+                wait_for: { name: "Name", timeout_ms: 8000 },
+              },
+              { action: "click", role: "combo box", name: "City" },
+              { action: "type", text: "Berlin" },
+              { action: "key", keys: "return" },
+              { action: "click", role: "check box", name: "Agree" },
+              {
+                action: "click",
+                role: "button",
+                name: "Submit",
+                expect: [{ text: "Ada Lovelace|Berlin|yes", timeout_ms: 5000 }],
+              },
+            ],
+          },
+          BACKGROUND_CONTEXT,
+        ),
+      );
+
+      expect(result).not.toContain("failed");
+      expect(result).toContain("9 click");
     }, 120_000);
 
     test("operates a native GTK dialog", async () => {

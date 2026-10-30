@@ -283,7 +283,7 @@ test("set_value with an empty value clears the field", async () => {
   });
 });
 
-test("an ended cua-driver session is replaced and the call retried", async () => {
+test("an ended cua-driver session is started again and the call retried", async () => {
   const ended = {
     error:
       "session has ended; tool call 'list_windows' was rejected. Call start_session with session 'x' to start it again, or use a new session label.",
@@ -300,11 +300,11 @@ test("an ended cua-driver session is replaced and the call retried", async () =>
   expect(result.isError).toBe(false);
   expect(text(result)).toContain("window 101");
 
-  const sessions = calls
-    .filter((c) => c.tool === "list_windows")
-    .map((c) => c.args["session"]);
-
-  expect(sessions[0]).not.toBe(sessions[1]);
+  expect(calls.slice(0, 3).map((c) => [c.tool, c.args["session"]])).toEqual([
+    ["list_windows", "crumble-desktop"],
+    ["start_session", "crumble-desktop"],
+    ["list_windows", "crumble-desktop"],
+  ]);
 });
 
 test("a failed window listing reports cua-driver's error, not an empty desktop", async () => {
@@ -506,4 +506,58 @@ test("without a change of control, actions run as before", async () => {
 
   expect(result.isError).toBe(false);
   expect(calls.some((c) => c.tool === "set_value")).toBe(true);
+});
+
+test("cua-driver arguments reach it on stdin, never in a file or a command line", async () => {
+  const guest = scriptedGuest({
+    list_windows: [windows],
+    type_text: [{ effect: "confirmed", summary: "Typed" }],
+  });
+
+  const tool = createComputerUse(guest.shell);
+
+  await tool.run({ action: "type", text: "hunter2" }, BACKGROUND_CONTEXT);
+
+  expect(guest.calls.find((c) => c.tool === "type_text")?.args).toMatchObject({
+    text: "hunter2",
+  });
+  expect(guest.writes).toEqual([]);
+  expect(guest.commands.some((command) => command.includes("hunter2"))).toBe(
+    false,
+  );
+});
+
+test("a capture with a query reads only matching elements, and the next plain capture reads the whole tree", async () => {
+  const { shell, calls } = scriptedGuest({
+    list_windows: [windows],
+    get_window_state: [
+      { snapshot_id: "s1", tree_markdown: '- [0] frame "Form"' },
+      { snapshot_id: "s2", tree_markdown: '- [7] row header "Born"' },
+      { snapshot_id: "s3", tree_markdown: '- [0] frame "Form"' },
+    ],
+    click: [{ effect: "confirmed", summary: "Clicked [7]" }],
+  });
+
+  const tool = createComputerUse(shell);
+
+  await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+
+  const queried = await tool.run(
+    { action: "capture", query: "Born" },
+    BACKGROUND_CONTEXT,
+  );
+
+  await tool.run({ action: "click", element: 7 }, BACKGROUND_CONTEXT);
+  await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+
+  const reads = calls.filter((c) => c.tool === "get_window_state");
+
+  expect(text(queried)).toContain('matching "Born"');
+  expect(reads[1]!.args).toMatchObject({ query: "Born" });
+  expect(reads[1]!.args).not.toHaveProperty("since");
+  expect(calls.find((c) => c.tool === "click")!.args).toMatchObject({
+    element_token: "s2:7",
+  });
+  expect(reads[2]!.args).not.toHaveProperty("since");
+  expect(reads[2]!.args).not.toHaveProperty("query");
 });

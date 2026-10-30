@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Desktop jobs work faster on web pages: `computer_use` gains `open` and `read`, which load and read a page in Chromium with its elements as refs, and `click`, `type`, `set_value`, and `scroll` act on a `ref`. `capture` takes a `query` to read only matching elements, and `steps` runs several accessibility actions in one call. In a local test, filling and submitting a form took 2 s instead of 11 s. cua-driver now gets its arguments on stdin instead of a temporary file, and every job on a bot desktop shares one cua-driver session.
 - Fix the credential proxy failing about one host certificate in 128 (an OpenSSL `INVALID_INTEGER` error): a random serial number that started with a zero byte wasn't valid DER.
 - An MCP server connection that opened while its token or settings changed is closed instead of kept, so the bot's next use connects with the new credentials. The tool call that hit it fails with "MCP server credentials changed; retry this task".
 - Document password managers on a new **Password managers** concepts page (connecting, reference formats, cache timings, and what each kind of secret does when it can't be read), and add **Password manager** to the glossary.

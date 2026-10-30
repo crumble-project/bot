@@ -2,6 +2,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { ExecutionError, FileError } from "@earendil-works/pi-durable/env";
 import { z } from "zod";
 import type { DesktopShell } from "../../src/bot-desktop/computer-use";
+import { DRIVER_ARGS } from "../../src/bot-desktop/computer-use-driver";
 
 const jsonObject = z.record(z.string(), z.json());
 
@@ -9,21 +10,26 @@ export type GuestReply = z.infer<typeof jsonObject>;
 
 export type GuestCall = { tool: string; args: GuestReply };
 
-const CALL =
-  /cua-driver call (\w+)( --screenshot-out-file (\S+))? "\$\(cat (\S+)\)"/;
+const CALL = new RegExp(
+  `printf '%s' "\\$${DRIVER_ARGS}" \\| cua-driver call (\\w+)( --screenshot-out-file (\\S+))?$`,
+);
 
 /**
  * A bot desktop that runs only cua-driver and xdotool, answering each cua-driver tool from a queue of scripted replies.
  * The last reply of a queue repeats. The focused window is 101. Screenshots convert to JPEG unless `failConvert` is set.
+ * `commands` and `writes` record every command line and file written, so tests can check what a value reached.
  */
 export function scriptedGuest(replies: Record<string, GuestReply[]>) {
   const files = new Map<string, Uint8Array | string>();
   const calls: GuestCall[] = [];
+  const commands: string[] = [];
+  const writes: string[] = [];
   const state = { failConvert: false };
 
   const shell: DesktopShell = {
     async writeFile(path, content) {
       files.set(path, content);
+      writes.push(path);
 
       return { ok: true, value: undefined };
     },
@@ -36,6 +42,8 @@ export function scriptedGuest(replies: Record<string, GuestReply[]>) {
     },
     async exec(command, options) {
       const text = Array.isArray(command) ? command.join(" ") : String(command);
+
+      commands.push(text);
 
       const out = (output: string) =>
         options?.onOutput?.(output, BACKGROUND_CONTEXT, { stream: "stdout" });
@@ -74,9 +82,11 @@ export function scriptedGuest(replies: Record<string, GuestReply[]>) {
           error: new ExecutionError("unknown", `unexpected command: ${text}`),
         };
 
-      const [, tool = "", , screenshot, argsFile = ""] = match;
+      const [, tool = "", , screenshot] = match;
 
-      const args = jsonObject.parse(JSON.parse(String(files.get(argsFile))));
+      const args = jsonObject.parse(
+        JSON.parse(options?.env?.[DRIVER_ARGS] ?? "{}"),
+      );
 
       calls.push({ tool, args });
 
@@ -85,14 +95,11 @@ export function scriptedGuest(replies: Record<string, GuestReply[]>) {
 
       if (screenshot) files.set(screenshot, new Uint8Array([0x89, 0x50]));
 
-      // The tool removes its arguments file in the same command.
-      files.delete(argsFile);
-
       out(JSON.stringify(reply));
 
       return { ok: true, value: { exitCode: 0 } };
     },
   };
 
-  return { shell, calls, files, state };
+  return { shell, calls, commands, writes, files, state };
 }
