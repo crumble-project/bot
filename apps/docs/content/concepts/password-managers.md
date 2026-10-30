@@ -2,12 +2,13 @@
 title: Password managers
 description: Read credentials, provider API keys, and MCP server tokens from 1Password or Bitwarden instead of storing them in Crumble.
 sidebar:
-  order: 7
+  order: 8
 ---
 
-A password manager holds secrets that Crumble reads when it needs them, instead of storing them itself. Crumble supports 1Password and Bitwarden Secrets Manager. Three kinds of secrets can come from one:
+A password manager holds secrets that Crumble reads when it needs them, instead of storing them itself. Crumble supports 1Password and Bitwarden Secrets Manager. Four kinds of secrets can come from one:
 
 - A bot's [credential](/concepts/credentials).
+- A field of a bot's [login](/concepts/logins).
 - A [model provider's](/getting-started/providers) API key.
 - An [MCP server's](/concepts/schedules-and-integrations#mcp-integrations) bearer token.
 
@@ -51,6 +52,7 @@ Changing or removing a secret's reference drops its value too.
 What happens depends on the kind of secret:
 
 - **Credential**: the server doesn't send the request and answers it with an error that names the credential. The credential's row in **Settings** > **Credentials** shows the newest such error.
+- **Login**: nothing is typed, and the desktop job is told the value couldn't be read. The login's row in **Settings** > **Logins** shows the newest such error.
 - **Provider API key**: the model call fails with an error that names the provider and the password manager's message.
 - **MCP server token**: the bot answers without that server's tools, and the server's entry in **Integrations** shows why.
 

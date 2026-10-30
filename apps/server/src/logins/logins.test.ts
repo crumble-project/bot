@@ -15,6 +15,7 @@ import {
   fakeVendor,
   type FakePasswordManager,
 } from "../../test/support/fake-password-manager";
+import { takeNotices } from "../../test/support/notices";
 import { Store } from "../../test/support/store";
 import { Logins } from "./logins";
 import { oneTimeCode, parseOneTimeSecret } from "./one-time-codes";
@@ -61,6 +62,7 @@ function open(values: Record<string, string> = {}) {
   const logins = Context.get(context, Logins);
 
   return {
+    store,
     agentId,
     state,
     logins,
@@ -400,4 +402,127 @@ test("login names and hosts are checked", () => {
       fields: { username: { value: "ada" } },
     }).success,
   ).toBe(false);
+});
+
+const githubFields = {
+  fields: { username: stored("ada"), password: stored("pw") },
+};
+
+const githubRequest = (
+  bot: ReturnType<typeof open>,
+  hosts = ["github.com"],
+  oneTimeCode = true,
+) =>
+  bot.logins.request(bot.agentId, {
+    name: "github",
+    hosts,
+    reason: "To read private issues",
+    one_time_code: oneTimeCode,
+  });
+
+const askForGithub = (bot: ReturnType<typeof open>, hosts?: string[]) =>
+  bot.run(githubRequest(bot, hosts));
+
+test("saving a requested login answers the request with one notice", async () => {
+  const bot = open();
+  const { notices, stop } = takeNotices(bot.store);
+
+  expect(await askForGithub(bot)).toMatchObject({
+    name: "github",
+    hosts: ["github.com"],
+    reason: "To read private issues",
+    oneTimeCode: true,
+  });
+
+  // The request's hosts apply when the save names none.
+  await bot.run(bot.logins.save(bot.agentId, "github", githubFields));
+
+  expect(notices.map((notice) => notice.text)).toEqual([
+    "The owner saved login github for github.com. Desktop jobs can fill it with fill_login.",
+  ]);
+  expect(notices[0]!.requestId).toStartWith("login:github:");
+  expect(await bot.run(bot.logins.requests(bot.agentId))).toEqual([]);
+  stop();
+});
+
+test("declining a request notifies the bot, and so does deleting it", async () => {
+  const bot = open();
+  const { notices, stop } = takeNotices(bot.store);
+
+  await askForGithub(bot);
+  await bot.run(bot.logins.decline(bot.agentId, "github"));
+  await askForGithub(bot);
+  await bot.run(bot.logins.delete(bot.agentId, "github"));
+
+  expect(notices.map((notice) => notice.text)).toEqual([
+    "The owner declined your request for login github.",
+    "The owner declined your request for login github.",
+  ]);
+  expect(await failureOf(bot.logins.decline(bot.agentId, "github"))).toBe(
+    "Login request has already been answered",
+  );
+  stop();
+});
+
+test("a second request for the same name replaces the first", async () => {
+  const bot = open();
+
+  await askForGithub(bot);
+  await askForGithub(bot, ["github.com", "api.github.com"]);
+
+  expect(await bot.run(bot.logins.requests(bot.agentId))).toMatchObject([
+    { name: "github", hosts: ["github.com", "api.github.com"] },
+  ]);
+});
+
+test("a request for a login that already covers every host conflicts", async () => {
+  const bot = open();
+
+  await bot.run(
+    bot.logins.save(bot.agentId, "github", {
+      hosts: ["github.com"],
+      ...githubFields,
+    }),
+  );
+
+  expect(await failureOf(githubRequest(bot, ["github.com"], false))).toBe(
+    "Login github is already yours for github.com",
+  );
+  expect(
+    (await askForGithub(bot, ["github.com", "gist.github.com"])).hosts,
+  ).toEqual(["github.com", "gist.github.com"]);
+});
+
+test("saving a login under another name leaves the request open", async () => {
+  const bot = open();
+  const { notices, stop } = takeNotices(bot.store);
+
+  await askForGithub(bot);
+  await bot.run(
+    bot.logins.save(bot.agentId, "github-work", {
+      hosts: ["github.com"],
+      ...githubFields,
+    }),
+  );
+
+  expect(notices).toEqual([]);
+  expect(
+    (await bot.run(bot.logins.requests(bot.agentId))).map(
+      (request) => request.name,
+    ),
+  ).toEqual(["github"]);
+  stop();
+});
+
+test("a bot can ask for a one-time code its login for the same hosts lacks", async () => {
+  const bot = open();
+
+  await bot.run(
+    bot.logins.save(bot.agentId, "github", {
+      hosts: ["github.com"],
+      ...githubFields,
+    }),
+  );
+
+  expect((await askForGithub(bot)).oneTimeCode).toBe(true);
 });

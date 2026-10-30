@@ -18,6 +18,8 @@ import type {
   botRequestResponse,
   groupChatResponse,
   groupChatSnapshotResponse,
+  loginUseResponse,
+  loginsResponse,
   historyResponse,
   learnedChangeResponse,
   listedSkillResponse,
@@ -65,6 +67,14 @@ export type Credential = Credentials["credentials"][number];
 export type CredentialRequest = Credentials["requests"][number];
 
 export type CredentialUse = z.infer<typeof credentialUseResponse>;
+
+export type Logins = z.infer<typeof loginsResponse>;
+
+export type Login = Logins["logins"][number];
+
+export type LoginRequest = Logins["requests"][number];
+
+export type LoginUse = z.infer<typeof loginUseResponse>;
 
 export type BotRequest = z.infer<typeof botRequestResponse>;
 
@@ -310,6 +320,12 @@ export const credentialsQuery = (id: string) =>
       api<Credentials>(`${agentPath(id)}/credentials`, { signal }),
   });
 
+export const loginsQuery = (id: string) =>
+  queryOptions({
+    queryKey: ["logins", id],
+    queryFn: ({ signal }) => api<Logins>(`${agentPath(id)}/logins`, { signal }),
+  });
+
 export const botRequestsQuery = (id: string) =>
   queryOptions({
     queryKey: ["bot-requests", id],
@@ -322,6 +338,9 @@ export const botRequestPath = (id: string, requestId: string) =>
 
 export const credentialPath = (id: string, name: string) =>
   `${agentPath(id)}/credentials/${encodeURIComponent(name)}`;
+
+export const loginPath = (id: string, name: string) =>
+  `${agentPath(id)}/logins/${encodeURIComponent(name)}`;
 
 export const sharedMemoriesQuery = queryOptions({
   queryKey: ["memories", "shared"],

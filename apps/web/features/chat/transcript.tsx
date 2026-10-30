@@ -13,6 +13,7 @@ import {
   IconFileText,
   IconHammer,
   IconKey,
+  IconLogin2,
   IconPencil,
   IconArrowBackUp,
   IconCheck,
@@ -36,6 +37,7 @@ import {
   type BotInput,
   type BotRequest,
   type Credential,
+  type LoginRequest,
   type Message,
   apiBlob,
   botRequestPath,
@@ -44,11 +46,14 @@ import {
   call,
   credentialPath,
   credentialsQuery,
+  loginPath,
+  loginsQuery,
   mcpServersQuery,
   queryClient,
   send,
 } from "@/lib/api";
 import { BotAvatar, botStyle } from "@/features/bots/avatar";
+import { LoginSheet } from "@/features/logins/login-sheet";
 import {
   BotFields,
   CAPABILITIES,
@@ -151,6 +156,29 @@ export function credentialRequestOf(message: Message) {
     : null;
 }
 
+/** The login a `request_login` result asked the owner for. */
+export function loginRequestOf(message: Message) {
+  if (
+    message.role !== "toolResult" ||
+    message.isError ||
+    message.toolName !== "request_login"
+  )
+    return null;
+
+  // SAFETY: The tool stores the saved request, with its name and hosts, as its details.
+  const details = message.toolDetails as
+    | { name?: string; hosts?: string[]; requestedAt?: string }
+    | undefined;
+
+  return details?.name
+    ? {
+        name: details.name,
+        hosts: details.hosts ?? [],
+        ...(details.requestedAt && { requestedAt: details.requestedAt }),
+      }
+    : null;
+}
+
 export function botRequestOf(message: Message): BotRequest | null {
   if (
     message.role !== "toolResult" ||
@@ -178,6 +206,7 @@ function toolResultShown(message: Message) {
     displayOf(message) !== null ||
     jobOf(message) !== null ||
     credentialRequestOf(message) !== null ||
+    loginRequestOf(message) !== null ||
     botRequestOf(message) !== null
   );
 }
@@ -936,12 +965,14 @@ function CredentialPendingCard({
 }
 
 function CredentialRequestHeader({
+  icon: Icon = IconKey,
   name,
   hosts,
   more,
   expanded,
   onToggle,
 }: {
+  icon?: TablerIcon;
   name: string;
   hosts: string[];
   more: number;
@@ -950,7 +981,7 @@ function CredentialRequestHeader({
 }) {
   return (
     <div className="flex items-start gap-3">
-      <IconKey className="mt-0.5 size-4 text-muted-foreground" />
+      <Icon className="mt-0.5 size-4 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium">{name}</div>
         <div className="flex flex-wrap gap-x-1 text-xs text-muted-foreground">
@@ -987,6 +1018,102 @@ function CredentialRequestActions({
       <Button size="sm" onClick={onSave} disabled={!canSave || busy}>
         Save
       </Button>
+    </div>
+  );
+}
+
+function LoginRequestCard({
+  login,
+  botId,
+}: {
+  login: { name: string; hosts: string[]; requestedAt?: string };
+  botId: string;
+}) {
+  // The cached list can predate a request that just arrived; read it anew before calling the request answered.
+  const state = useQuery({ ...loginsQuery(botId), refetchOnMount: "always" });
+
+  const request = state.data?.requests.find(
+    (item) =>
+      item.name === login.name &&
+      (!login.requestedAt || item.requestedAt === login.requestedAt),
+  );
+
+  const saved = state.data?.logins.some((item) => item.name === login.name);
+
+  if (!state.isSuccess || (!request && !state.isFetchedAfterMount))
+    return (
+      <SettledCard
+        icon={IconLogin2}
+        title={login.name}
+        outcome={state.isError ? "Unavailable" : "Loading…"}
+      />
+    );
+
+  if (!request)
+    return (
+      <SettledCard
+        icon={IconLogin2}
+        title={login.name}
+        outcome={saved ? "Saved" : "Declined"}
+      />
+    );
+
+  return <LoginPendingCard request={request} botId={botId} />;
+}
+
+function LoginPendingCard({
+  request,
+  botId,
+}: {
+  request: LoginRequest;
+  botId: string;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  const decline = useMutation({
+    mutationFn: () => send(`${loginPath(botId, request.name)}/decline`, "POST"),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: loginsQuery(botId).queryKey,
+      }),
+  });
+
+  return (
+    <div className="flex w-full max-w-sm flex-col gap-3 rounded-xl border p-4">
+      <CredentialRequestHeader
+        icon={IconLogin2}
+        name={request.name}
+        hosts={expanded ? request.hosts : request.hosts.slice(0, 1)}
+        more={request.hosts.length - 1}
+        expanded={expanded}
+        onToggle={() => setExpanded(!expanded)}
+      />
+      {decline.isError && (
+        <p className="text-xs text-destructive">{decline.error.message}</p>
+      )}
+      <div className="flex justify-end gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => decline.mutate()}
+          disabled={decline.isPending}
+        >
+          Decline
+        </Button>
+        <Button size="sm" onClick={() => setAdding(true)}>
+          Add login
+        </Button>
+      </div>
+      {adding && (
+        <LoginSheet
+          bots={[]}
+          botId={botId}
+          existing={null}
+          request={request}
+          onClose={() => setAdding(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1333,6 +1460,11 @@ export function ToolResultRow({
     return botId ? (
       <CredentialRequestCard credential={credential} botId={botId} />
     ) : null;
+
+  const login = loginRequestOf(message);
+
+  if (login)
+    return botId ? <LoginRequestCard login={login} botId={botId} /> : null;
 
   const botRequest = botRequestOf(message);
 

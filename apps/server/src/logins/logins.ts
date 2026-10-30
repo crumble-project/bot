@@ -1,4 +1,8 @@
+import type { JsonValue } from "@earendil-works/chord";
+import { Type } from "@earendil-works/pi-ai";
+import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Clock, Context, Effect, Layer, Predicate, Redacted } from "effect";
+import { BotNotices } from "../bots/bot-notices";
 import type { LoginFill, LoginRead } from "../bot-desktop/computer-use-login";
 import type { Runner } from "../shared/runner";
 import { PasswordManagers } from "../password-managers/password-manager";
@@ -11,19 +15,29 @@ import {
 import {
   loginFieldInput,
   loginName,
+  loginRequestInput,
   type Login,
   type LoginField,
+  type LoginRequest,
+  type LoginRequestInput,
   type LoginSaveInput,
   type LoginUse,
   type SecretReference,
 } from "../shared/domain";
-import { InvalidInput, NotFound, type AppError } from "../shared/errors";
+import {
+  Conflict,
+  InvalidInput,
+  NotFound,
+  type AppError,
+} from "../shared/errors";
 import {
   LoginRepository,
   type FieldSource,
   type LoginWrite,
 } from "./login-repository";
 import { oneTimeCode, parseOneTimeSecret } from "./one-time-codes";
+
+export const REQUEST_LOGIN_TOOL = "request_login";
 
 /** How long the owner can look back at a login's fills. */
 export const LOGIN_USE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
@@ -66,12 +80,23 @@ export class Logins extends Context.Service<
       agentId: string,
       name: string,
     ) => Effect.Effect<Login | undefined>;
-    /** Creates or updates a login; every reference is read once to check it, and nothing is saved if one fails. */
+    /** The bot's requests for logins the owner has not answered. */
+    readonly requests: (agentId: string) => Effect.Effect<LoginRequest[]>;
+    readonly request: (
+      agentId: string,
+      request: LoginRequestInput,
+    ) => Effect.Effect<LoginRequest, AppError>;
+    readonly decline: (
+      agentId: string,
+      name: string,
+    ) => Effect.Effect<void, AppError>;
+    /** Creates or updates a login; saving one the bot asked for answers its request. every reference is read once to check it, and nothing is saved if one fails. */
     readonly save: (
       agentId: string,
       name: string,
       input: LoginSaveInput,
     ) => Effect.Effect<Login, AppError>;
+    /** Deletes a login, or declines a request for one. */
     readonly delete: (
       agentId: string,
       name: string,
@@ -105,6 +130,24 @@ export class Logins extends Context.Service<
       const repository = yield* LoginRepository;
       const values = yield* SecretValues;
       const managers = yield* PasswordManagers;
+      const notices = yield* BotNotices;
+
+      const notify = (agentId: string, name: string, text: string) =>
+        notices
+          .notice(agentId, text, `login:${name}:${crypto.randomUUID()}`)
+          .pipe(
+            // A disabled bot cannot take the turn; the owner already sees the outcome in its settings.
+            Effect.catchCause((cause) =>
+              Effect.logError("Login notice failed", agentId, name, cause),
+            ),
+          );
+
+      const declined = (agentId: string, name: string) =>
+        notify(
+          agentId,
+          name,
+          `The owner declined your request for login ${name}.`,
+        );
 
       const checkReference = (reference: SecretReference) =>
         checkSecretReference(reference).pipe(
@@ -232,36 +275,90 @@ export class Logins extends Context.Service<
         );
       };
 
+      const checkedName = (name: string) => {
+        const parsed = loginName.safeParse(name);
+
+        return parsed.success
+          ? Effect.succeed(parsed.data)
+          : Effect.fail(
+              new InvalidInput({
+                message:
+                  parsed.error.issues[0]?.message ?? "Invalid login name",
+              }),
+            );
+      };
+
+      /** Clears the bot's request for a login just saved, and tells the bot. */
+      const answerRequest = Effect.fnUntraced(function* (
+        agentId: string,
+        login: Login,
+      ) {
+        if (!(yield* repository.deleteRequest(agentId, login.name))) return;
+
+        yield* notify(
+          agentId,
+          login.name,
+          `The owner saved login ${login.name} for ${login.hosts.join(", ")}. Desktop jobs can fill it with fill_login.`,
+        );
+      });
+
       const save = Effect.fn("Logins.save")(function* (
         agentId: string,
         name: string,
         input: LoginSaveInput,
       ) {
-        const parsed = loginName.safeParse(name);
-
-        if (!parsed.success)
-          return yield* new InvalidInput({
-            message: parsed.error.issues[0]?.message ?? "Invalid login name",
-          });
-
+        const checked = yield* checkedName(name);
         // Checked before reading the saved login, so a save made during the reads isn't overwritten.
         const fields = yield* fieldsWrite(input);
-        const existing = yield* repository.get(agentId, parsed.data);
-        const hosts = input.hosts ?? existing?.hosts;
+        const pending = yield* repository.getRequest(agentId, checked);
+        const existing = yield* repository.get(agentId, checked);
+        const hosts = input.hosts ?? existing?.hosts ?? pending?.hosts;
 
         if (!hosts)
           return yield* new InvalidInput({ message: "Name at least one host" });
 
         yield* checkComplete(existing, fields);
 
-        const login = yield* repository.save(agentId, parsed.data, {
+        const login = yield* repository.save(agentId, checked, {
           hosts,
           fields,
         });
 
         yield* forgetReplaced(existing, login);
+        yield* answerRequest(agentId, login);
 
         return login;
+      });
+
+      const request = Effect.fn("Logins.request")(function* (
+        agentId: string,
+        input: LoginRequestInput,
+      ) {
+        const existing = yield* repository.get(agentId, input.name);
+
+        // A login that covers the hosts still answers a request for a one-time code it lacks.
+        if (
+          existing &&
+          input.hosts.every((host) => existing.hosts.includes(host)) &&
+          !(input.one_time_code && !existing.fields.one_time_code)
+        )
+          return yield* new Conflict({
+            message: `Login ${input.name} is already yours for ${existing.hosts.join(", ")}`,
+          });
+
+        return yield* repository.setRequest(agentId, input);
+      });
+
+      const decline = Effect.fn("Logins.decline")(function* (
+        agentId: string,
+        name: string,
+      ) {
+        if (!(yield* repository.deleteRequest(agentId, name)))
+          return yield* new Conflict({
+            message: "Login request has already been answered",
+          });
+
+        yield* declined(agentId, name);
       });
 
       const remove = Effect.fn("Logins.delete")(function* (
@@ -270,10 +367,13 @@ export class Logins extends Context.Service<
       ) {
         const existing = yield* repository.get(agentId, name);
 
-        if (!(yield* repository.delete(agentId, name)))
+        if (yield* repository.delete(agentId, name))
+          return yield* forgetReplaced(existing, undefined);
+
+        if (!(yield* repository.deleteRequest(agentId, name)))
           return yield* new NotFound({ message: "Login not found" });
 
-        yield* forgetReplaced(existing, undefined);
+        yield* declined(agentId, name);
       });
 
       const value = Effect.fn("Logins.value")(function* (
@@ -330,6 +430,9 @@ export class Logins extends Context.Service<
       return Logins.of({
         list: repository.list,
         get: repository.get,
+        requests: repository.listRequests,
+        request,
+        decline,
         save,
         delete: remove,
         uses,
@@ -344,6 +447,9 @@ export class Logins extends Context.Service<
 /** Logins for code outside Effect: HTTP handlers and the computer_use tool. */
 export type LoginsAccess = {
   list(agentId: string): Login[];
+  requests(agentId: string): LoginRequest[];
+  request(agentId: string, request: LoginRequestInput): LoginRequest;
+  decline(agentId: string, name: string): Promise<void>;
   get(agentId: string, name: string): Login | undefined;
   save(agentId: string, name: string, input: LoginSaveInput): Promise<Login>;
   delete(agentId: string, name: string): Promise<void>;
@@ -361,6 +467,11 @@ export function loginsAccess(runtime: Runner<Logins>): LoginsAccess {
 
   return {
     list: (agentId) => runtime.runSync(logins.list(agentId)),
+    requests: (agentId) => runtime.runSync(logins.requests(agentId)),
+    request: (agentId, request) =>
+      runtime.runSync(logins.request(agentId, request)),
+    decline: (agentId, name) =>
+      runtime.runPromise(logins.decline(agentId, name)),
     get: (agentId, name) => runtime.runSync(logins.get(agentId, name)),
     save: (agentId, name, input) =>
       runtime.runPromise(logins.save(agentId, name, input)),
@@ -403,13 +514,76 @@ export const loginFill = (
   recordUse: async (name, use) => logins.recordUse(agentId, name, use),
 });
 
+const loginLines = (items: readonly { name: string; hosts: string[] }[]) =>
+  items.map((item) => `- ${item.name}: ${item.hosts.join(", ")}`);
+
 /** What a desktop job reads about the bot's logins; undefined without any. */
 export function jobLoginSection(logins: readonly Login[]) {
   if (!logins.length) return undefined;
 
   return [
     "Logins the owner gave this bot, with the hosts each works for:",
-    ...logins.map((login) => `- ${login.name}: ${login.hosts.join(", ")}`),
+    ...loginLines(logins),
     "To sign in, read the sign-in page, then call computer_use with action='fill_login', login, field (username, password, or one_time_code), and the field's ref. You never see the values. If no login covers a sign-in page, stop and say so in your answer, naming the host.",
   ].join("\n");
+}
+
+const output = (value: JsonValue) => ({
+  structuredOutput: value,
+  output: [{ type: "text" as const, text: JSON.stringify(value) }],
+});
+
+/** The bot's `request_login` tool and what it knows about its logins, for bots with desktop jobs. */
+export function loginExtension(agentId: string, logins: LoginsAccess) {
+  const request = defineTool({
+    name: REQUEST_LOGIN_TOOL,
+    description:
+      "Ask the owner for a login your desktop jobs need to sign in to a website, for example when a desktop job reports a sign-in page no login covers. Name it like github or acme-portal, list the hosts it is for (github.com, *.github.com), say why, and set one_time_code when the site asks for a two-factor code. The owner enters it outside the chat; you never see the values. Desktop jobs can then fill it on those hosts. After calling, tell the owner what you asked for and why, then end your turn: a message arrives when the owner answers.",
+    parameters: Type.Object({
+      name: Type.String({ minLength: 1, maxLength: 64 }),
+      hosts: Type.Array(Type.String({ minLength: 1, maxLength: 253 }), {
+        minItems: 1,
+        maxItems: 20,
+      }),
+      reason: Type.String({ minLength: 1, maxLength: 1000 }),
+      one_time_code: Type.Optional(Type.Boolean()),
+    }),
+    // The chat offers the owner the form from this call's own result, so code mode keeps it a direct model tool.
+    callers: ["model"],
+    replay: "unsafe",
+    execute: async (args) => {
+      const request = logins.request(agentId, loginRequestInput.parse(args));
+
+      // Clients read the request from the details to offer the owner its form.
+      return { ...output({ request }), details: request };
+    },
+  });
+
+  return defineExtension({
+    name: "logins",
+    tools: [request],
+    sections: [
+      {
+        key: "logins",
+        render: () => {
+          const granted = logins.list(agentId);
+          const requests = logins.requests(agentId);
+
+          if (!granted.length && !requests.length) return undefined;
+
+          return [
+            ...(granted.length
+              ? ["Logins your desktop jobs have:", ...loginLines(granted)]
+              : []),
+            ...(requests.length
+              ? [
+                  "Logins you asked for that the owner has not answered:",
+                  ...loginLines(requests),
+                ]
+              : []),
+          ].join("\n");
+        },
+      },
+    ],
+  });
 }

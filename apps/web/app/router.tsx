@@ -31,6 +31,7 @@ import { ActivityPage } from "@/features/activity/activity";
 import { BotForm } from "@/features/bots/bot-form";
 import { Chat } from "@/features/chat/chat";
 import { CredentialsSettings } from "@/features/credentials/credentials";
+import { LoginsSettings } from "@/features/logins/logins";
 import { BotDesktop } from "@/features/bot-desktop/desktop";
 import { GroupChatView, GroupForm } from "@/features/group-chats/groups";
 import {
@@ -273,6 +274,17 @@ const settingsCredentialsRoute = createRoute({
   },
 });
 
+const settingsLoginsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/logins",
+  validateSearch: z.object({ bot: z.string().optional() }),
+  component: function LoginsSettingsPage() {
+    const { bot } = settingsLoginsRoute.useSearch();
+
+    return <LoginsSettings key={bot ?? "all"} initialBot={bot} />;
+  },
+});
+
 const settingsIntegrationsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/integrations",
@@ -312,6 +324,7 @@ export const router = createRouter({
         passwordManagersRoute,
         webSearchRoute,
         settingsCredentialsRoute,
+        settingsLoginsRoute,
         settingsIntegrationsRoute,
         settingsSkillsRoute,
       ]),

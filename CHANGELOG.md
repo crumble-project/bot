@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Bots ask for a login with the new `request_login` tool when a desktop job finds a sign-in page no login covers. The request shows as a card in the bot chat and under **Waiting for you** in **Settings** > **Logins**; saving or declining it starts a bot turn with a notice.
+- Manage a bot's logins in **Settings** > **Logins**: name, hosts, username, password, and an optional one-time code, each stored in Crumble or read from a password manager, or all from one 1Password item. Each login lists its fills from the last 90 days. Over the API: `GET /v1/agents/{id}/logins`, `PUT` and `DELETE /v1/agents/{id}/logins/{name}`, and `GET /v1/agents/{id}/logins/{name}/uses`. The new **Logins** docs page explains how desktop jobs fill them.
 - The credential proxy swaps a credential's placeholder only in request headers, no longer in the URL. A service could log, store, or echo a URL that held the value, so a job could read it back. An API that takes its key only as a query parameter can no longer use a credential. The credentials docs now advise scoping each credential's token to the work the bot does.
 - Microsandbox workspaces block outbound UDP except DNS. UDP left the machine past the workspace proxy and the network policy, which only see TCP. Machines made before this are created anew on their next boot: `/workspace` is kept, programs installed outside it are not.
 - Bot desktops' Chromium no longer uses QUIC (HTTP/3) or Encrypted ClientHello, so all its traffic goes through the workspace proxy under the real host name. Before, QUIC went out over UDP past the proxy, and on ECH sites such as those behind Cloudflare the network policy and the credential proxy saw only the outer name, such as `cloudflare-ech.com`. Rebuild the desktop image to apply it.
@@ -161,6 +163,8 @@
 - Add `tokenReference` (`{ passwordManager, reference }`, or null to remove it) to MCP server create and update inputs, exclusive with `token`. 400 when the reference can't be read now.
 - Add optional, nullable `tokenPasswordManager` and `tokenReference` to `McpServer` and `McpServerStatus`.
 - Add nullable `error` to `CredentialUse`: why the value couldn't be read from its password manager, in which case the request was never sent.
+- Add `GET /v1/agents/{id}/logins` (`listAgentLogins`), `PUT /v1/agents/{id}/logins/{name}` (`saveAgentLogin`), `DELETE /v1/agents/{id}/logins/{name}` (`deleteAgentLogin`), and `GET /v1/agents/{id}/logins/{name}/uses` (`listAgentLoginUses`), with the `Login`, `LoginFieldSource`, `Logins`, and `LoginUse` schemas. Field values are write-only.
+- Add `requests` (`LoginRequest`: `name`, `hosts`, `reason`, `oneTimeCode`, `requestedAt`) to `Logins`, and `POST /v1/agents/{id}/logins/{name}/decline` (`declineAgentLogin`). Saving a requested login answers the request; `DELETE` on a name with only a request declines it.
 - Add `botLogin` to `SecretUsingPasswordManager.kind`, for a bot's login with a field read from the password manager; `agentId` and `name` name it.
 
 ## Contract 3.3.0

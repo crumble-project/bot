@@ -13,7 +13,6 @@ import {
   Redacted,
   Scope,
 } from "effect";
-import { BotNotices } from "../bots/bot-notices";
 import { agentInput } from "../shared/domain";
 import type { CoreServices } from "../app/core-layer";
 import { runnerOf } from "../shared/runner";
@@ -29,6 +28,7 @@ import {
   fakeVendor,
   type FakePasswordManager,
 } from "../../test/support/fake-password-manager";
+import { takeNotices } from "../../test/support/notices";
 import { Store } from "../../test/support/store";
 import { Credentials } from "./credentials";
 
@@ -45,29 +45,6 @@ function open() {
   const agentId = store.createAgent(agentInput.parse({ name: "Bot" })).id;
 
   return { store, agentId };
-}
-
-type Notice = { agentId: string; text: string; requestId: string };
-
-/** Takes the account's bot notices until the returned scope closes. */
-function takeNotices(store: Store) {
-  const notices: Notice[] = [];
-  const scope = store.runtime.runSync(Scope.make());
-
-  store.runtime.runSync(
-    BotNotices.use((botNotices) =>
-      botNotices.handle((agentId, text, requestId) =>
-        Effect.sync(() => {
-          notices.push({ agentId, text, requestId });
-        }),
-      ),
-    ).pipe(Scope.provide(scope)),
-  );
-
-  return {
-    notices,
-    stop: () => store.runtime.runSync(Scope.close(scope, Exit.void)),
-  };
 }
 
 const credentials = (store: Store) =>

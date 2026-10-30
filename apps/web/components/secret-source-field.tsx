@@ -60,6 +60,7 @@ export function SecretSourceField({
   connected,
   valuePlaceholder,
   valueDescription,
+  concealed = true,
 }: {
   id: string;
   label: string;
@@ -68,6 +69,8 @@ export function SecretSourceField({
   connected: PasswordManager[];
   valuePlaceholder?: string | undefined;
   valueDescription: ReactNode;
+  /** False for a value that isn't secret, like a username. */
+  concealed?: boolean;
 }) {
   const source = value.kind === "value" ? "crumble" : value.passwordManager;
 
@@ -108,7 +111,7 @@ export function SecretSourceField({
       {value.kind === "value" ? (
         <Input
           id={id}
-          type="password"
+          type={concealed ? "password" : "text"}
           autoComplete="off"
           placeholder={valuePlaceholder}
           value={value.value}

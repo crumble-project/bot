@@ -109,6 +109,12 @@ A secret value the owner gives one bot for a list of hosts. The bot's jobs use i
 
 Avoid: Secret, API key, environment variable (in product language).
 
+### Login
+
+A username and password, with an optional one-time code, that a bot's desktop jobs can fill into web pages on given hosts. Unlike a credential's, the value enters the workspace, in the page it is filled into; the password never reaches the bot's model or transcript.
+
+Avoid: Account, saved password (in product language).
+
 ### Password manager
 
 1Password or Bitwarden Secrets Manager, connected to an account so credentials, provider API keys, and MCP server tokens can be read from it instead of stored in Crumble.
