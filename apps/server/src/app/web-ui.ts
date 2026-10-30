@@ -21,10 +21,20 @@ function peleFile(requested: string) {
   return file.startsWith(`${PELE}${path.sep}`) ? file : undefined;
 }
 
-/** The install icon `apps/web/manifest.webmanifest` names; Bun bundles only files the HTML links to. */
-const APP_ICON = fileURLToPath(
-  import.meta.resolve("@crumble/web/icon-512.png"),
-);
+/** The install icons `apps/web/manifest.webmanifest` names; Bun bundles only files the HTML links to. */
+const APP_ICONS = ["icon-192.png", "icon-512.png", "icon-maskable-512.png"];
+
+function appIcon(name: string) {
+  const file = fileURLToPath(import.meta.resolve(`@crumble/web/${name}`));
+
+  return () =>
+    new Response(Bun.file(file), {
+      headers: {
+        "Content-Type": "image/png",
+        "Cache-Control": "public, max-age=86400",
+      },
+    });
+}
 
 /**
  * The web UI and the modules it loads on demand. Bun bundles the UI without code splitting, so
@@ -33,13 +43,9 @@ const APP_ICON = fileURLToPath(
 export const webUIRoutes = {
   "/ui": webUI,
   "/ui/*": webUI,
-  "/ui/icon-512.png": () =>
-    new Response(Bun.file(APP_ICON), {
-      headers: {
-        "Content-Type": "image/png",
-        "Cache-Control": "public, max-age=86400",
-      },
-    }),
+  ...Object.fromEntries(
+    APP_ICONS.map((name) => [`/ui/${name}`, appIcon(name)]),
+  ),
   [`${PELE_PREFIX}/*`]: async (request: Request) => {
     const file = peleFile(
       new URL(request.url).pathname.slice(PELE_PREFIX.length + 1),

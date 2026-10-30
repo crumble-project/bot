@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The installed web app uses the Crumble icon on the home screen instead of the placeholder ring, with a maskable variant for Android.
+
 ## 0.2.0
 
 - Fix declining a credential request in **Settings** > **Credentials** deleting the saved credential of the same name, when the bot asked for it on more hosts. Fix a new credential request in the bot chat showing as saved or declined instead of offering its form, when the credentials were loaded just before the bot asked.
