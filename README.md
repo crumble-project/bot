@@ -42,7 +42,7 @@ Back up the entire `CRUMBLE_DATA_DIR`, including `.auth-secret` and each user’
 
 Bots with the `coding` or `desktop` capability run jobs inside a per-bot [Microsandbox](https://github.com/superradcompany/microsandbox) microVM with a persistent disk volume (`crumble-<user id>-<bot id>`). Requires Apple silicon on macOS or `/dev/kvm` on Linux.
 
-Use the published images for your server's version (`ghcr.io/crumble-project/crumble-workspace:0.1.0` and `ghcr.io/crumble-project/crumble-workspace-desktop:0.1.0`; `:main` follows `main`) or build and load locally from `apps/server/workspace-image/Dockerfile`:
+Use the published images for your server's version (`ghcr.io/crumble-project/crumble-workspace:0.2.0` and `ghcr.io/crumble-project/crumble-workspace-desktop:0.2.0`; `:main` follows `main`) or build and load locally from `apps/server/workspace-image/Dockerfile`:
 
 ```bash
 docker build --target base -t crumble-workspace:dev apps/server/workspace-image
@@ -79,7 +79,7 @@ Legacy data stays at the data-directory root until an operator assigns it to an 
 Run a published release:
 
 ```bash
-docker run -d --name crumble -p 127.0.0.1:7337:7337 -v crumble:/var/lib/crumble ghcr.io/crumble-project/crumble-server:0.1.0
+docker run -d --name crumble -p 127.0.0.1:7337:7337 -v crumble:/var/lib/crumble ghcr.io/crumble-project/crumble-server:0.2.0
 ```
 
 Or build from this checkout:

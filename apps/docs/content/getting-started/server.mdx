@@ -12,7 +12,7 @@ The Crumble server runs your bots, stores your data, and serves the web app. You
 ```bash
 docker run -d --name crumble --restart unless-stopped --stop-timeout 30 \
   -p 127.0.0.1:7337:7337 -v crumble:/var/lib/crumble \
-  ghcr.io/crumble-project/crumble-server:0.1.0
+  ghcr.io/crumble-project/crumble-server:0.2.0
 ```
 
 All data lives in the `crumble` volume. To upgrade, remove the container and run the same command with the new version.
