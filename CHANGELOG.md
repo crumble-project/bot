@@ -11,6 +11,7 @@
 - Reply events and push payloads gain an optional `waitingFor`: `approval` for a held desktop action, `credential` or `login` when the bot's turn asked for one with `request_credential` or `request_login`.
 - Fix web notifications never showing: the **Bot replies** switch looked on before the browser had granted permission, so turning it on never asked. It now shows off until permission is granted. Web notifications carry the Crumble icon.
 - The web app plays a sound with each notification, using cuelume: `ready` for replies, `attention` for approvals, and `attention` in the `mech` theme for credential and login requests. Notifications that wait for you stay until dismissed. Hear them at `/ui/sounds`, a page outside the navigation. Turn it off in **Settings** > **General** > **Sound**. The tab title counts unseen replies and names the open chat, such as `(3) Atlas | Crumble`; opening a chat clears its replies from the count.
+- The web app draws its own scrollbars with shadcn's ScrollArea on pages, the sidebar, the bot details panel, and editor sheets: a thin bar that shows while you scroll or hover. The chat transcript, menus, and code blocks keep the browser's scrollbar, made thin and in the theme's muted text color.
 - The installed web app uses the Crumble icon on the home screen instead of the placeholder ring, with a maskable variant for Android.
 
 ## 0.2.0

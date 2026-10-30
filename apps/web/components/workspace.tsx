@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { FieldError } from "@/components/ui/field";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
@@ -81,11 +82,11 @@ export function WorkspacePage({
           {actions}
         </div>
       </header>
-      <div className="flex-1 overflow-y-auto">
+      <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 p-6">
           {children}
         </div>
-      </div>
+      </ScrollArea>
     </div>
   );
 }

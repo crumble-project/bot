@@ -4,6 +4,7 @@ import { IconDeviceDesktop, IconRefresh } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
   DialogContent,
@@ -297,29 +298,34 @@ function JobHistoryBody({
   working: boolean;
 }) {
   return (
-    <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4">
-      {history.hasNextPage && (
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={history.isFetchingNextPage}
-          onClick={() => void history.fetchNextPage()}
-        >
-          Load earlier activity
-        </Button>
-      )}
-      {history.isPending && <Spinner className="mx-auto" />}
-      {history.isError && (
-        <JobHistoryError label={label} onRetry={() => void history.refetch()} />
-      )}
-      {history.isSuccess && items.length === 0 && (
-        <p className="text-sm text-muted-foreground">Nothing here yet.</p>
-      )}
-      {items.map((item) => (
-        <JobItem key={item.id} item={item} />
-      ))}
-      {working && <p className="shimmer text-sm">Working…</p>}
-    </div>
+    <ScrollArea className="-mx-4 min-h-0 flex-1">
+      <div className="flex flex-col gap-4 px-4">
+        {history.hasNextPage && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={history.isFetchingNextPage}
+            onClick={() => void history.fetchNextPage()}
+          >
+            Load earlier activity
+          </Button>
+        )}
+        {history.isPending && <Spinner className="mx-auto" />}
+        {history.isError && (
+          <JobHistoryError
+            label={label}
+            onRetry={() => void history.refetch()}
+          />
+        )}
+        {history.isSuccess && items.length === 0 && (
+          <p className="text-sm text-muted-foreground">Nothing here yet.</p>
+        )}
+        {items.map((item) => (
+          <JobItem key={item.id} item={item} />
+        ))}
+        {working && <p className="shimmer text-sm">Working…</p>}
+      </div>
+    </ScrollArea>
   );
 }
 

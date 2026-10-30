@@ -122,6 +122,14 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    /* Scroll areas the ScrollArea component can't wrap, such as the chat transcript and menus. */
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(
+        in oklab,
+        var(--muted-foreground) 40%,
+        transparent
+      )
+      transparent;
   }
   body {
     @apply bg-background text-foreground antialiased;

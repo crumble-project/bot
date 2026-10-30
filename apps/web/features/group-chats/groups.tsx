@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Field,
   FieldContent,
@@ -607,7 +608,7 @@ export function GroupForm({ group }: { group?: GroupChat }) {
     );
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <ScrollArea className="min-h-0 flex-1">
       <form
         className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6"
         onSubmit={(event) => {
@@ -668,6 +669,6 @@ export function GroupForm({ group }: { group?: GroupChat }) {
           />
         </div>
       </form>
-    </div>
+    </ScrollArea>
   );
 }
