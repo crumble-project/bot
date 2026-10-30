@@ -37,6 +37,12 @@ import { z } from "zod";
 import { conversationReference } from "../shared/domain";
 import { defineAnchorTask } from "../shared/anchor-task";
 import { WORKSPACE_PATH, type Workspaces } from "../workspaces/workspace";
+import {
+  addToRequest,
+  ownerMessages,
+  type JobRequest,
+  type OwnerMessage,
+} from "./owner-request";
 
 export type JobKindOptions = {
   /** Names the kind's documents, tasks, request IDs, and message origin. Stored data depends on it: never rename. */
@@ -50,6 +56,8 @@ export type JobKindOptions = {
   instructions: string;
   /** One job works at a time: a message to a job waits while another job of this kind works. */
   exclusive?: boolean;
+  /** Start and send take `owner_messages`, and the job keeps the owner messages it concerns with its tasks. */
+  ownerRequest?: boolean;
 };
 
 export type JobInfo = {
@@ -173,6 +181,8 @@ type StartOrSend = {
   name: string;
   message: string;
   followUp: boolean;
+  /** Request IDs of the owner messages the call cites. */
+  ownerMessages: string[];
   /** The job's own extension: its tools and hooks. */
   job: Extension;
   /** The job's model; unset, a job starts with the bot's model. */
@@ -215,6 +225,8 @@ type JobMarkerDoc = ConversationDocToken<{ job: boolean }>;
 
 type JobsDoc = ConversationDocToken<JobsState>;
 
+type JobRequestDoc = ConversationDocToken<JobRequest>;
+
 type JobAnchor = Task<null, { phase: "done" }, null, object>;
 
 type JobReporter = Task<ReporterInput, ReporterState, null, object>;
@@ -242,6 +254,7 @@ type JobToolArgs = {
   name?: string;
   message?: string;
   followUp?: boolean;
+  owner_messages?: string[];
 };
 
 type ToolResultMessage = {
@@ -262,6 +275,7 @@ type JobKindBase = {
   answerListeners: Set<(answer: JobAnswer) => void>;
   Marker: JobMarkerDoc;
   Jobs: JobsDoc;
+  Request: JobRequestDoc;
   Anchor: JobAnchor;
 };
 
@@ -290,6 +304,18 @@ const jobDocuments = (kind: string) => ({
     // Every job's status change is a delta; a periodic full value bounds the replay on open.
     checkpointWhen: (_value, _ops, { deltasSinceBase }) =>
       deltasSinceBase >= 32,
+  }),
+
+  /** What a job was asked, on the job's conversation: read by its tools, such as a desktop job's intent check. */
+  Request: defineDoc<JobRequest>({
+    kind: `crumble.${kind}-job-request`,
+    version: 1,
+    scope: "conversation",
+    history: "latest",
+    fork: "initial",
+    initial: () => ({ ownerMessages: [], tasks: [] }),
+    checkpointWhen: (_value, _ops, { deltasSinceBase }) =>
+      deltasSinceBase >= 16,
   }),
 });
 
@@ -728,6 +754,22 @@ const startOrSend = async (
 
   return api.commit(async (tx): Promise<Started> => {
     const state = await tx.doc(kindState.Jobs, api.conversationId);
+    let attached: OwnerMessage[] = [];
+
+    if (kindState.options.ownerRequest) {
+      const cited = await ownerMessages(
+        tx,
+        api.conversationId,
+        request.ownerMessages,
+      );
+
+      if ("unknown" in cited)
+        return {
+          text: `Not owner messages of this chat: ${cited.unknown.join(", ")}. Cite the request IDs shown as [message ID].`,
+          found: undefined,
+        };
+      attached = cited.messages;
+    }
 
     if (
       request.action === "start" &&
@@ -740,6 +782,14 @@ const startOrSend = async (
 
     const record = state.jobs[request.name]!;
     const conversationId = record.conversationId;
+
+    if (kindState.options.ownerRequest)
+      addToRequest(
+        await tx.doc(kindState.Request, conversationId),
+        { name: request.name, chatId: api.conversationId },
+        attached,
+        request.message,
+      );
 
     const reporter = await tx.createTask(
       kindState.Reporter,
@@ -876,21 +926,36 @@ const jobEnv = async (
   return marker?.job ? workspaces.env(agentId, shellEnv) : undefined;
 };
 
+const jobParameters = {
+  action: Type.Union([
+    Type.Literal("start"),
+    Type.Literal("send"),
+    Type.Literal("stop"),
+    Type.Literal("status"),
+  ]),
+  name: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+  message: Type.Optional(Type.String({ minLength: 1, maxLength: 32000 })),
+  followUp: Type.Optional(Type.Boolean()),
+};
+
+const ownerRequestParameters = Type.Object({
+  ...jobParameters,
+  owner_messages: Type.Optional(
+    Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
+      maxItems: 50,
+      description:
+        "start and send: request IDs of the owner messages in this chat the job concerns, shown as [message ID]. The owner's latest message is always attached.",
+    }),
+  ),
+});
+
 const jobTool = (kindState: JobKindState, input: JobToolInput) =>
   defineTool({
     name: kindState.toolName,
     description: kindState.options.description,
-    parameters: Type.Object({
-      action: Type.Union([
-        Type.Literal("start"),
-        Type.Literal("send"),
-        Type.Literal("stop"),
-        Type.Literal("status"),
-      ]),
-      name: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
-      message: Type.Optional(Type.String({ minLength: 1, maxLength: 32000 })),
-      followUp: Type.Optional(Type.Boolean()),
-    }),
+    parameters: kindState.options.ownerRequest
+      ? ownerRequestParameters
+      : Type.Object(jobParameters),
     callers: ["model"],
     // A rerun of stop or send after a crash could hit newer work; the model can check with status.
     replay: "unsafe",
@@ -937,6 +1002,7 @@ const runJobTool = async (
     name,
     message,
     followUp: args.followUp === true,
+    ownerMessages: args.owner_messages ?? [],
     job: input.job,
     model: input.model,
   });
@@ -984,6 +1050,17 @@ const jobKindApi = (state: JobKindState) => {
     /** The jobs of a bot's chat, oldest first: conversation IDs only grow, whereas record keys reorder numeric names. */
     list: (harness: Harness, chatId: ConversationId) =>
       listedJobs(state, harness, chatId),
+
+    /** What the job was asked: its owner messages and tasks. Empty for a kind without `ownerRequest`. */
+    request: async (
+      reader: DocumentReader,
+      conversationId: ConversationId,
+      context: Context,
+    ): Promise<JobRequest> =>
+      (await reader.snapshot(state.Request, conversationId, context)) ?? {
+        ownerMessages: [],
+        tasks: [],
+      },
 
     /** Whether the conversation is a job of this kind. */
     isJob: (

@@ -331,7 +331,7 @@ describe("attachments", () => {
 
     await settle(service, execution.id);
     expect(seen[0]).toEqual([
-      { type: "text", text: "what is this?" },
+      { type: "text", text: `[message ${uuid(1)}]\nwhat is this?` },
       { type: "image", data: png, mimeType: "image/png" },
       {
         type: "text",

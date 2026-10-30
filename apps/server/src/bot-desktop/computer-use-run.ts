@@ -13,6 +13,8 @@ import {
 import { textResult, type ComputerUseState } from "./computer-use-state";
 import { runSteps } from "./computer-use-steps";
 import { fillLogin, restoreFilled, scrubFilled } from "./computer-use-login";
+import { proposedAction, type IntentGate } from "./computer-use-intent";
+import { ACTING_ACTIONS } from "./intent-check";
 
 // Actions that only look; they stay allowed right after control changed hands.
 const OBSERVE = new Set(["capture", "list_windows", "wait", "read"]);
@@ -220,10 +222,64 @@ async function dispatch(
   );
 }
 
+/**
+ * The call with its window pinned, so the intent check and the action see the same one; a ref acts in the page of the
+ * latest read instead, and observing calls aren't checked.
+ */
+async function pinned(
+  state: ComputerUseState,
+  args: ComputerUseArgs,
+  context: Context,
+): Promise<{ args: ComputerUseArgs; window: Window | undefined }> {
+  if (!ACTING_ACTIONS.has(args.action) || args.ref !== undefined)
+    return { args, window: undefined };
+
+  const window = await targetWindow(state, args.window_id, context);
+
+  return { args: { ...args, window_id: window.window_id }, window };
+}
+
+/**
+ * Asks the intent check about an acting call; its refusal is the call's result. The owner may take control while an
+ * action is held, so an approved one runs only if the bot still holds the desktop it was checked on.
+ */
+async function intentRefusal(
+  state: ComputerUseState,
+  args: ComputerUseArgs,
+  window: Window | undefined,
+  intent: IntentGate,
+  context: Context,
+) {
+  const proposal = proposedAction(state, args, window);
+
+  if (!proposal) return undefined;
+
+  return (
+    (await intent(proposal, context)) ??
+    (await controlTurn(state, args.action, context))
+  );
+}
+
+/** Runs the call, after the intent check when there is one. */
+async function checkedDispatch(
+  state: ComputerUseState,
+  normalized: ComputerUseArgs,
+  intent: IntentGate | undefined,
+  context: Context,
+) {
+  if (!intent) return dispatch(state, normalized, context);
+
+  const { args, window } = await pinned(state, normalized, context);
+  const refused = await intentRefusal(state, args, window, intent, context);
+
+  return refused ? textResult(refused, true) : dispatch(state, args, context);
+}
+
 export async function runAction(
   state: ComputerUseState,
   raw: ComputerUseArgs,
   context: Context,
+  intent?: IntentGate,
 ): Promise<ComputerUseResult> {
   const stale = await controlTurn(state, raw.action, context);
 
@@ -232,7 +288,10 @@ export async function runAction(
   try {
     await restoreFilled(state);
 
-    return scrubFilled(state, await dispatch(state, normalize(raw), context));
+    return scrubFilled(
+      state,
+      await checkedDispatch(state, normalize(raw), intent, context),
+    );
   } catch (error) {
     return textResult(
       `error: ${error instanceof Error ? error.message : String(error)}`,

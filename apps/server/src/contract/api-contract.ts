@@ -3,6 +3,8 @@ import {
   agentInput,
   credentialSaveInput,
   groupChatInput,
+  heldActionDeclineInput,
+  judgeModelInput,
   loginSaveInput,
   passwordManagerIdInput,
   scheduleInput,
@@ -176,6 +178,7 @@ const id = z.object({ id: z.string() });
 const memoryParams = id.extend({ memoryId: z.string() });
 
 const credentialParams = id.extend({ name: z.string() });
+const heldActionParams = id.extend({ actionId: z.string() });
 const skillParams = id.extend({ skillId: z.string() });
 
 export function patchInput(schema: z.ZodObject) {
@@ -234,6 +237,21 @@ export const routes = {
         }),
       ),
     },
+  }),
+  getJudgeModel: define({
+    method: "get",
+    path: "/v1/judge-model",
+    operationId: "getJudgeModel",
+    description:
+      "The account's judge model for desktop jobs' intent checks, and the models the account's provider keys reach.",
+    responses: { 200: json(response.judgeModelResponse) },
+  }),
+  updateJudgeModel: define({
+    method: "put",
+    path: "/v1/judge-model",
+    operationId: "updateJudgeModel",
+    request: { body: body(judgeModelInput) },
+    responses: { 200: json(response.judgeModelResponse) },
   }),
   setExaKey: define({
     method: "put",
@@ -708,6 +726,33 @@ export const routes = {
       "Fills of the login's fields in the last 90 days, newest first. Page with `before` set to the last use's ID.",
     request: { params: credentialParams, query: credentialUsesInput },
     responses: { 200: json(z.array(response.loginUseResponse)) },
+  }),
+  agentHeldActions: define({
+    method: "get",
+    path: "/v1/agents/{id}/held-actions",
+    operationId: "listAgentHeldActions",
+    description:
+      "Desktop job actions an intent check held for the owner, newest first, pending and decided.",
+    request: { params: id },
+    responses: { 200: json(z.array(response.heldActionResponse)) },
+  }),
+  approveAgentHeldAction: define({
+    method: "post",
+    path: "/v1/agents/{id}/held-actions/{actionId}/approve",
+    operationId: "approveAgentHeldAction",
+    description:
+      "Runs the held action; the job continues where it stopped. Fails with 409 once the action was decided.",
+    request: { params: heldActionParams },
+    responses: { 200: json(response.heldActionResponse) },
+  }),
+  declineAgentHeldAction: define({
+    method: "post",
+    path: "/v1/agents/{id}/held-actions/{actionId}/decline",
+    operationId: "declineAgentHeldAction",
+    description:
+      "Refuses the held action with an optional reason; the job reports back. Fails with 409 once the action was decided.",
+    request: { params: heldActionParams, body: body(heldActionDeclineInput) },
+    responses: { 200: json(response.heldActionResponse) },
   }),
   agentMemories: define({
     method: "get",

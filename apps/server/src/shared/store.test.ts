@@ -484,6 +484,7 @@ describe("Store memory sources", () => {
       DROP TABLE bot_requests;
       DROP TABLE script_runs;
       DROP TABLE desktop_fills;
+      DROP TABLE held_actions;
       DROP TABLE login_requests;
       DROP TABLE login_uses;
       DROP TABLE login_fields;
@@ -606,6 +607,7 @@ describe("Store group chats", () => {
       DROP TABLE bot_requests;
       DROP TABLE script_runs;
       DROP TABLE desktop_fills;
+      DROP TABLE held_actions;
       DROP TABLE login_requests;
       DROP TABLE login_uses;
       DROP TABLE login_fields;

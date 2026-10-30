@@ -14,6 +14,7 @@ import type {
 import { attachmentInput, type AttachmentInfo } from "../shared/attachments";
 import { codingJobOf } from "../jobs/coding";
 import { desktopJobOf } from "../jobs/desktop";
+import { HELD_ACTION_ENTRY } from "../jobs/desktop-intent";
 import { REACTION_TOOL_NAME, reactionOf } from "./reaction";
 import { PASS_TOOL_NAME } from "../group-chats/group-turns";
 import {
@@ -61,6 +62,13 @@ export const botCommunication = z.object({
   toAgentId: z.string(),
   toName: z.string(),
   status: z.enum(["sent", "done", "failed", "cancelled"]),
+});
+
+const heldActionData = z.object({
+  id: z.string(),
+  job: z.string(),
+  action: z.string(),
+  timestamp: z.number().optional().catch(undefined),
 });
 
 const botMessage = z.object({
@@ -137,6 +145,8 @@ export type TranscriptMessage = {
   replyPreview?: string;
   origin?: MessageOrigin;
   communication?: BotCommunication;
+  /** On a `held-action` event: the desktop job action waiting for the owner. */
+  heldAction?: { id: string; job: string };
   attachments?: AttachmentInfo[];
   /** Tool result metadata is carried on the model message, rather than its content blocks. */
   toolCallId?: string;
@@ -338,6 +348,27 @@ function normalizeBotMessage(
   ];
 }
 
+function normalizeHeldAction(
+  entryId: string,
+  entry: EntryRecord,
+): TranscriptMessage[] {
+  const parsed = heldActionData.safeParse(entry.data);
+
+  if (!parsed.success) return [];
+
+  return [
+    {
+      id: `${entryId}:0`,
+      entryId,
+      role: "event",
+      kind: "held-action",
+      content: parsed.data.action,
+      timestamp: parsed.data.timestamp,
+      heldAction: { id: parsed.data.id, job: parsed.data.job },
+    },
+  ];
+}
+
 function normalizeGroupMessage(
   entryId: string,
   entry: EntryRecord,
@@ -487,6 +518,9 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
 
   if (entry.kind === GROUP_MESSAGE_KIND)
     return normalizeGroupMessage(entryId, entry);
+
+  if (entry.kind === HELD_ACTION_ENTRY)
+    return normalizeHeldAction(entryId, entry);
 
   return normalizeModelEntry(entryId, entry);
 }

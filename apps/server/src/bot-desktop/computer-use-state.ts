@@ -5,6 +5,7 @@ import type {
 } from "./computer-use";
 import type { DesktopFills, LoginFill } from "./computer-use-login";
 import type { PageBinding, SemanticSnapshot } from "./computer-use-page";
+import type { IntentTarget } from "./intent-check";
 
 /** How `open` waits for a page: every `pollMs`, for at most `timeoutMs`. */
 export type PageLoad = { pollMs: number; timeoutMs: number };
@@ -19,6 +20,9 @@ export type ComputerUseState = {
   lastChanges: number | undefined;
   // Latest snapshot per window: element tokens are `${snapshot}:${N}`, and the next capture diffs against it.
   snapshots: Map<number, string>;
+  // Role and name of each element [N] by snapshot, as captures showed them, for the intent check's target. Keyed like
+  // element tokens, so a cleared snapshot takes its labels with it.
+  elements: Map<string, Map<number, IntentTarget>>;
   // Windows whose latest snapshot came from a query: a diff against it would hide everything outside the query.
   queried: Set<number>;
   // The latest page read and the tab binding it came from. Binding again supersedes its refs, so ref actions reuse it.
@@ -60,6 +64,7 @@ export function computerUseState(
     restored: undefined,
     lastChanges: undefined,
     snapshots: new Map(),
+    elements: new Map(),
     queried: new Set(),
     lastRead: undefined,
     pageLoad,

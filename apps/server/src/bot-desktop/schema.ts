@@ -29,3 +29,29 @@ export const desktopFills = sqliteTable(
   },
   (table) => [index("desktop_fills_agent").on(table.agentId)],
 );
+
+/** Desktop job actions an intent check held for the owner, and the owner's decision. */
+export const heldActions = sqliteTable(
+  "held_actions",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    job: text("job").notNull(),
+    /** The action in plain words. */
+    action: text("action").notNull(),
+    /** The page's URL, or the app's name off the web. */
+    page: text("page"),
+    /** JSON list of the owner messages the action was checked against. */
+    ownerMessages: text("owner_messages").notNull(),
+    /** Why it was held: a commit point, the judge's answer, or a failed judge. */
+    reason: text("reason").notNull(),
+    /** pending, approved, declined, or expired: a restart ends every wait. */
+    status: text("status").notNull(),
+    declineReason: text("decline_reason"),
+    heldAt: text("held_at").notNull(),
+    decidedAt: text("decided_at"),
+  },
+  (table) => [index("held_actions_agent").on(table.agentId)],
+);

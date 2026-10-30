@@ -94,6 +94,22 @@
             ],
             "additionalProperties": true
           },
+          "heldAction": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "job": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "job"
+            ],
+            "additionalProperties": true
+          },
           "attachments": {
             "type": "array",
             "items": {
