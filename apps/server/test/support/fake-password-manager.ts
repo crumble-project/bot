@@ -5,12 +5,15 @@ import {
   SecretUnreadable,
   type PasswordManagerVendor,
 } from "../../src/password-managers/password-manager";
+import { FIELD_NOT_FOUND } from "../../src/password-managers/one-password";
 
 export const FAKE_TOKEN = "fake-token";
 
 /** What the fake password manager holds and how it answers; tests change it between reads. */
 export type FakePasswordManager = {
   values: Map<string, string>;
+  /** References that fail with this reason, as one 1Password can't resolve. */
+  unreadable: Map<string, string>;
   /** `hang` never answers, so only a timeout or an interruption ends the read. */
   mode: "answer" | "unreachable" | "hang";
   /** When set, a read answers only after it resolves, so a test can act while the read is in flight. */
@@ -24,11 +27,22 @@ export const fakePasswordManager = (
   values: Record<string, string> = {},
 ): FakePasswordManager => ({
   values: new Map(Object.entries(values)),
+  unreadable: new Map(),
   mode: "answer",
   signIns: 0,
   reads: 0,
   interrupted: 0,
 });
+
+const itemOf = (reference: string) =>
+  reference.split("/").slice(0, 4).join("/");
+
+/** As 1Password answers: a missing field on an item it holds, otherwise no such item. */
+const missingReason = (state: FakePasswordManager, reference: string) =>
+  state.unreadable.get(reference) ??
+  ([...state.values.keys()].some((held) => itemOf(held) === itemOf(reference))
+    ? FIELD_NOT_FOUND
+    : "has no item that matches");
 
 /** A 1Password stand-in over `state` that accepts only `FAKE_TOKEN`. */
 export const fakeVendor = (
@@ -79,11 +93,11 @@ export const fakeVendor = (
 
                       return [
                         reference,
-                        value === undefined
+                        value === undefined || state.unreadable.has(reference)
                           ? Result.fail(
                               new SecretUnreadable({
                                 reference,
-                                message: "has no item that matches",
+                                message: missingReason(state, reference),
                               }),
                             )
                           : Result.succeed(Redacted.make(value)),

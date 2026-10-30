@@ -1,6 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { Effect } from "effect";
-import { Sandbox, Volume, VolumeNotFoundError } from "microsandbox";
+import {
+  Rule,
+  Sandbox,
+  Volume,
+  VolumeNotFoundError,
+  type NetworkPolicy,
+} from "microsandbox";
 import { z } from "zod";
 import {
   DESKTOP_DISPLAY_ONLY,
@@ -40,6 +46,19 @@ import {
 const DISK_MIB = 8192;
 const MEMORY_MIB = 2048;
 const CPUS = 2;
+
+// The proxy carries only TCP; UDP would leave the machine past it and the network policy. DNS goes to the sandbox's resolver.
+// Bump TCP_THROUGH_PROXY_VERSION on a change: settings are fixed at creation, so older machines are created anew.
+const TCP_THROUGH_PROXY_VERSION = 1;
+
+const TCP_THROUGH_PROXY: NetworkPolicy = {
+  defaultEgress: "allow",
+  defaultIngress: "allow",
+  rules: [
+    Rule.allowDns(),
+    { ...Rule.denyEgress({ kind: "any" }), protocols: ["udp"] },
+  ],
+};
 
 export type MicrosandboxWorkspacesOptions = MachineWorkspacesOptions & {
   /** Decides each outbound connection; defaults to allowing all. */
@@ -195,7 +214,8 @@ class MicrosandboxMachines implements WorkspaceMachines {
   ) {
     const record = yield* Effect.promise(() => readMachineRecord(sandbox));
 
-    if (record?.image !== image) return undefined;
+    if (record?.image !== image || record.network !== TCP_THROUGH_PROXY_VERSION)
+      return undefined;
 
     // A machine's network settings are fixed at creation, so a restarted one needs its proxy at the same port.
     return yield* untilBooted(
@@ -237,6 +257,7 @@ class MicrosandboxMachines implements WorkspaceMachines {
           .memory(MEMORY_MIB)
           .volume(WORKSPACE_PATH, (mount) => mount.named(name))
           .proxy((outbound) => outbound.httpConnect(proxy.address))
+          .network((network) => network.policy(TCP_THROUGH_PROXY))
           .replace()
           .create(),
       ),
@@ -246,6 +267,7 @@ class MicrosandboxMachines implements WorkspaceMachines {
     const machineRecord: MachineRecord = {
       image,
       proxyPort: Number(proxy.address.split(":")[1]),
+      network: TCP_THROUGH_PROXY_VERSION,
     };
 
     yield* bootStep("Recording the machine's image", async () => {
@@ -386,6 +408,8 @@ const STOP_TIMEOUT_MS = 10_000;
 const machineRecord = z.object({
   image: z.string(),
   proxyPort: z.number().int(),
+  // Absent on machines created before the UDP rule.
+  network: z.number().int().optional(),
 });
 
 type MachineRecord = z.infer<typeof machineRecord>;

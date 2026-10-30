@@ -12,9 +12,15 @@ import {
   type FauxResponseFactory,
 } from "@earendil-works/pi-ai/providers/faux";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
-import { desktopAnswers, desktopEnv, desktopExtensions } from "./desktop";
+import {
+  desktopAnswers,
+  desktopEnv,
+  desktopExtensions,
+  type DesktopLogins,
+} from "./desktop";
 import type { JobAnswer } from "./jobs";
-import type { Agent } from "../shared/domain";
+import type { Agent, Login } from "../shared/domain";
+import type { LoginsAccess } from "../logins/logins";
 import { AgentRuntime } from "../bots/runtime";
 import { Store } from "../../test/support/store";
 import { latestMessagePreview } from "../bots/transcript";
@@ -108,6 +114,7 @@ type Role = "bot" | "job";
 function script(
   offered: Map<Role, string[]>,
   models: Map<Role, string>,
+  sections: Map<Role, Record<string, string | null>>,
 ): FauxResponseFactory {
   return async (context, _options, _state, model) => {
     const tools = context.messages.flatMap((message) =>
@@ -120,6 +127,15 @@ function script(
 
     offered.set(role, tools);
     models.set(role, model.id);
+    sections.set(
+      role,
+      Object.assign(
+        {},
+        ...context.messages.flatMap((message) =>
+          message.role === "system" ? [message.sections ?? {}] : [],
+        ),
+      ),
+    );
 
     const last = context.messages.findLast(
       (message) => message.role !== "system",
@@ -155,7 +171,10 @@ function script(
   };
 }
 
-async function open(desktopModel?: Agent["desktopModel"]) {
+async function open(
+  desktopModel?: Agent["desktopModel"],
+  logins?: DesktopLogins,
+) {
   const dir = mkdtempSync(join(tmpdir(), "bot-desktop-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   const store = new Store(dir);
@@ -178,18 +197,21 @@ async function open(desktopModel?: Agent["desktopModel"]) {
 
   const offered = new Map<Role, string[]>();
   const used = new Map<Role, string>();
+  const sections = new Map<Role, Record<string, string | null>>();
 
   const faux = fauxProvider({
     provider: "faux",
     models: [{ id: "chat" }, { id: "desk" }],
   });
 
-  faux.setResponses(Array.from({ length: 40 }, () => script(offered, used)));
+  faux.setResponses(
+    Array.from({ length: 40 }, () => script(offered, used, sections)),
+  );
   const models = createModels();
   models.setProvider(faux.provider);
 
   const workspaces = new GuestWorkspaces(dir);
-  const extensions = desktopExtensions(agent);
+  const extensions = desktopExtensions(agent, undefined, logins);
 
   const runtime = new AgentRuntime(dir, {
     models,
@@ -211,7 +233,15 @@ async function open(desktopModel?: Agent["desktopModel"]) {
     ),
   );
 
-  return { runtime, agent, chat, offered, used, calls: workspaces.calls };
+  return {
+    runtime,
+    agent,
+    chat,
+    offered,
+    used,
+    sections,
+    calls: workspaces.calls,
+  };
 }
 
 async function until(check: () => Promise<boolean>) {
@@ -298,4 +328,45 @@ test("the bot's answer to a desktop job's report is announced once, for notifica
   } finally {
     stop();
   }
+});
+
+test("a desktop job's prompt lists the bot's logins; the bot's chat doesn't", async () => {
+  const login: Login = {
+    name: "github",
+    hosts: ["github.com", "*.github.com"],
+    fields: {
+      username: { passwordManager: null, reference: null },
+      password: { passwordManager: null, reference: null },
+    },
+    createdAt: "t",
+    updatedAt: "t",
+    lastUsedAt: null,
+    lastError: null,
+  };
+
+  const logins: LoginsAccess = {
+    list: () => [login],
+    get: () => login,
+    save: async () => login,
+    delete: async () => undefined,
+    uses: () => [],
+    read: async () => ({ missing: "unused" }),
+    recordUse: () => undefined,
+  };
+
+  const { sections } = await open(undefined, {
+    access: logins,
+    fills: () => ({ list: async () => [], add: async () => undefined }),
+  });
+
+  expect(sections.get("job")?.["desktop_logins"]).toContain(
+    "- github: github.com, *.github.com",
+  );
+  expect(sections.get("bot")?.["desktop_logins"] ?? null).toBeNull();
+});
+
+test("without logins, a desktop job's prompt has no logins section", async () => {
+  const { sections } = await open();
+
+  expect(sections.get("job")?.["desktop_logins"]).toBeUndefined();
 });

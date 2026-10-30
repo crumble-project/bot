@@ -14,7 +14,7 @@ The server must support workspaces before bots can use them. See [Set up workspa
 A bot doesn't do long work in the chat itself. It hands the work to a job that runs in the background, and the job's answer comes back to the chat. There are two kinds:
 
 - A **coding job** edits files and runs shell commands. It needs the **Coding** capability.
-- A **desktop job** uses a graphical desktop with a Chromium browser, with mouse and keyboard. It needs the **Bot desktop** capability.
+- A **desktop job** uses a graphical desktop with a Chromium browser, with mouse and keyboard. It needs the **Bot desktop** capability. On web pages it reads the page and acts on its elements directly, which is faster than going through the screen; other apps and the browser's own menus it operates through their accessibility tree.
 
 Ask in plain language, for example "Clone my site's repository and fix the broken link on the about page." The bot decides which kind of job to start.
 

@@ -53,6 +53,8 @@ import {
   providerSignInsAccess,
 } from "../providers/provider-auth";
 import { credentialsAccess } from "../credentials/credentials";
+import { loginsAccess } from "../logins/logins";
+import { desktopFillsAccess } from "../bot-desktop/desktop-fill-repository";
 import { credentialAuthoritiesAccess } from "../credentials/credential-authority";
 import { credentialProxy } from "../credentials/credential-proxy";
 import { coreLayer, type CoreServices } from "./core-layer";
@@ -179,6 +181,10 @@ function accountLayer(
         workspaces: yield* BotWorkspaces,
         desktopControl: desktopControlAccess(run),
         credentials: credentialsAccess(run),
+        logins: {
+          access: loginsAccess(run),
+          fills: (agentId) => desktopFillsAccess(run, agentId),
+        },
       });
     }),
   );

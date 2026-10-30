@@ -5,13 +5,18 @@ import type { Context } from "@earendil-works/chord";
 import {
   StringEnum,
   Type,
+  type Static,
   type ImageContent,
   type TextContent,
 } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { ControlState } from "./desktop-control";
-import { computerUseState } from "./computer-use-state";
+import type { DesktopFills, LoginFill } from "./computer-use-login";
+import {
+  computerUseState,
+  type ComputerUseOptions,
+} from "./computer-use-state";
 import { runAction } from "./computer-use-run";
 
 export const COMPUTER_USE_TOOL_NAME = "computer_use";
@@ -26,6 +31,56 @@ export type ComputerUseResult = {
   content: (TextContent | ImageContent)[];
   isError: boolean;
 };
+
+const check = Type.Object({
+  role: Type.Optional(Type.String()),
+  name: Type.Optional(Type.String()),
+  text: Type.Optional(
+    Type.String({ description: "Any row of the tree, static text included." }),
+  ),
+  gone: Type.Optional(
+    Type.Boolean({ description: "Wait for it to disappear instead." }),
+  ),
+  timeout_ms: Type.Optional(Type.Integer({ minimum: 0, maximum: 10_000 })),
+});
+
+const step = Type.Object({
+  action: StringEnum([
+    "click",
+    "double_click",
+    "right_click",
+    "set_value",
+    "type",
+    "key",
+    "scroll",
+  ]),
+  role: Type.Optional(
+    Type.String({
+      description:
+        "The element's role as captures show it, such as 'button', 'entry', 'check box'.",
+    }),
+  ),
+  name: Type.Optional(
+    Type.String({
+      description: "The element's label; an exact match wins over a substring.",
+    }),
+  ),
+  nth: Type.Optional(
+    Type.Integer({
+      minimum: 0,
+      description: "0-based, when several elements match.",
+    }),
+  ),
+  text: Type.Optional(Type.String()),
+  keys: Type.Optional(Type.String()),
+  value: Type.Optional(Type.String()),
+  direction: Type.Optional(StringEnum(["up", "down", "left", "right"])),
+  amount: Type.Optional(Type.Integer()),
+  wait_for: Type.Optional(check),
+  expect: Type.Optional(Type.Array(check, { maxItems: 4 })),
+});
+
+export type StepArgs = Static<typeof step>;
 
 const point = (description: string) =>
   Type.Array(Type.Integer(), { minItems: 2, maxItems: 2, description });
@@ -45,10 +100,17 @@ export const computerUseParameters = Type.Object({
       "wait",
       "list_windows",
       "focus_window",
+      "open",
+      "read",
+      "steps",
+      "fill_login",
     ],
     {
       description:
-        "Which action to perform. `capture` has no side effects. Use `set_value` for text fields and select or combo boxes when the element supports it.",
+        "Which action to perform. `capture` and `read` have no side effects. Use `set_value` for text fields and select or combo boxes when the element supports it. " +
+        "`open` loads a URL in Chromium's current tab and returns a read of the page; `read` returns the page's content and the elements to act on by ref. " +
+        "`steps` runs several accessibility actions in one call, each naming its element by role and name. " +
+        "`fill_login` types a field of one of the bot's logins into a page field by ref; you never see the value.",
     },
   ),
   mode: Type.Optional(
@@ -60,6 +122,21 @@ export const computerUseParameters = Type.Object({
   full: Type.Optional(
     Type.Boolean({
       description: "capture: return the whole tree instead of a diff.",
+    }),
+  ),
+  query: Type.Optional(
+    Type.String({
+      description:
+        "capture and read: only elements whose role, name, or visible text matches, such as 'Born' or 'Sign in'. Use it on large pages instead of reading everything.",
+    }),
+  ),
+  url: Type.Optional(
+    Type.String({ description: "open: the http, https, or about: URL." }),
+  ),
+  ref: Type.Optional(
+    Type.String({
+      description:
+        "A page element ref like p5:0 from the latest read. click, double_click, right_click, scroll, type, and set_value act on it in the page instead of on an element; read with a ref reads only that part of the page.",
     }),
   ),
   window_id: Type.Optional(
@@ -111,6 +188,22 @@ export const computerUseParameters = Type.Object({
   seconds: Type.Optional(
     Type.Number({ description: "wait: seconds to pause, at most 30." }),
   ),
+  login: Type.Optional(
+    Type.String({ description: "fill_login: the login's name." }),
+  ),
+  field: Type.Optional(
+    StringEnum(["username", "password", "one_time_code"], {
+      description: "fill_login: which field of the login to type.",
+    }),
+  ),
+  steps: Type.Optional(
+    Type.Array(step, {
+      minItems: 1,
+      maxItems: 20,
+      description:
+        "steps: actions run in order in the target window, stopping at the first failure; then what changed in the window (narrowed by query). wait_for is checked before a step, expect after it.",
+    }),
+  ),
   capture_after: Type.Optional(
     Type.Boolean({
       description:
@@ -123,6 +216,9 @@ export type ComputerUseArgs = {
   action: string;
   mode?: string;
   full?: boolean;
+  query?: string;
+  url?: string;
+  ref?: string;
   window_id?: number;
   element?: number;
   coordinate?: number[];
@@ -136,6 +232,9 @@ export type ComputerUseArgs = {
   seconds?: number;
   name?: string;
   capture_after?: boolean;
+  steps?: StepArgs[];
+  login?: string;
+  field?: string;
 };
 
 /** The bot's turn on its desktop: resolves once the bot holds control. */
@@ -143,20 +242,32 @@ export type ControlGate = {
   untilBot(context: Context): Promise<ControlState>;
 };
 
-export function createComputerUse(shell: DesktopShell, gate?: ControlGate) {
-  const state = computerUseState(shell, gate);
+export function createComputerUse(
+  shell: DesktopShell,
+  options: ComputerUseOptions = {},
+) {
+  const state = computerUseState(shell, options);
 
   return {
     run: (raw: ComputerUseArgs, context: Context) =>
       runAction(state, raw, context),
-    reset: () => state.snapshots.clear(),
+    reset: () => {
+      state.snapshots.clear();
+      state.lastRead = undefined;
+    },
   };
 }
 
 /** The tool for a desktop job, over the job's environment. One instance per job conversation keeps its snapshots. */
-export function computerUseTool(
-  gateFor?: (conversationId: string) => ControlGate,
-) {
+export function computerUseTool({
+  gateFor,
+  logins,
+  fills,
+}: {
+  gateFor?: ((conversationId: string) => ControlGate) | undefined;
+  logins?: LoginFill | undefined;
+  fills?: DesktopFills | undefined;
+} = {}) {
   const instances = new Map<string, ReturnType<typeof createComputerUse>>();
 
   return defineTool({
@@ -166,8 +277,11 @@ export function computerUseTool(
       "Workflow: action='capture' returns the focused window's accessibility tree; every actionable element is tagged [N]. " +
       "Act on elements by index (element=N), which is more reliable than coordinates. Later captures of the same window list only what changed " +
       "(+ added, ~ changed, - removed) and keep earlier [N] unless a 'reindexed' line says otherwise. Use mode='vision' for a screenshot when the " +
-      "tree is missing something; coordinates are pixels of that screenshot. Each result carries a verdict: never repeat confirmed input; capture " +
-      "to check an unverified one before retrying.",
+      "tree is missing something; coordinates are pixels of that screenshot. Narrow a large capture with query. " +
+      "Web pages in Chromium: action='open' loads a URL and action='read' returns the page with its elements tagged [pN:M]; act on them with ref " +
+      "instead of element. Refs last until the page navigates or is read again. " +
+      "When you know several steps ahead, action='steps' runs them in one call, naming each element by role and name, with expect checks. " +
+      "Each result carries a verdict: never repeat confirmed input; capture or read to check an unverified one before retrying.",
     parameters: computerUseParameters,
     callers: ["model"],
     // Input already sent cannot be taken back; after a crash the job captures and decides.
@@ -190,7 +304,11 @@ export function computerUseTool(
       let computer = instances.get(key);
 
       if (!computer) {
-        computer = createComputerUse(env, gateFor?.(key));
+        computer = createComputerUse(env, {
+          gate: gateFor?.(key),
+          logins,
+          fills,
+        });
         instances.set(key, computer);
       }
 

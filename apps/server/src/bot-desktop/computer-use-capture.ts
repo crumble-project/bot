@@ -10,9 +10,10 @@ import {
   type DriverReply,
   type Window,
 } from "./computer-use-driver";
-import type { ComputerUseState } from "./computer-use-state";
+import { passwordMayShow } from "./computer-use-login";
+import { scrubText, type ComputerUseState } from "./computer-use-state";
 
-const MAX_TREE_CHARS = 12_000;
+export const MAX_TREE_CHARS = 12_000;
 
 const otherWindows = (target: Window, list: Window[]) =>
   list.flatMap((each) =>
@@ -25,10 +26,11 @@ function headerOf(
   target: Window,
   reply: DriverReply,
   since: string | undefined,
+  query: string | undefined,
   others: string[],
 ) {
   return [
-    `window ${target.window_id} ${target.app_name} "${target.title}" (snapshot ${reply.snapshot_id ?? "none"}${since ? `, changes since ${since}` : ""})`,
+    `window ${target.window_id} ${target.app_name} "${target.title}" (snapshot ${reply.snapshot_id ?? "none"}${since ? `, changes since ${since}` : ""}${query ? `, elements matching "${query}"` : ""})`,
     others.length ? `other windows: ${others.join("; ")}` : undefined,
     reply.degraded ? `degraded: ${reply.degraded_reason ?? ""}` : undefined,
     reply.truncated
@@ -50,9 +52,17 @@ const screenshotOf = (
   { type: "image", data: image, mimeType: "image/jpeg" },
 ];
 
-/** The window's tree, compacted and cut to fit this tool's result. */
-function treeOf(reply: DriverReply) {
-  const tree = compactTree(reply.tree_diff ?? reply.tree_markdown ?? "");
+const NO_SCREENSHOT: TextContent = {
+  type: "text",
+  text: "no screenshot: a password was typed into this Chromium, and a screenshot could show it; screenshots return once Chromium restarts",
+};
+
+/** The window's tree, compacted, scrubbed, and cut to fit this tool's result; scrubbed first, so no cut splits a value. */
+function treeOf(state: ComputerUseState, reply: DriverReply) {
+  const tree = scrubText(
+    state,
+    compactTree(reply.tree_diff ?? reply.tree_markdown ?? ""),
+  );
 
   return tree.length > MAX_TREE_CHARS
     ? `${tree.slice(0, MAX_TREE_CHARS)}\n[tree cut at ${MAX_TREE_CHARS} characters; scroll or capture a smaller window]`
@@ -72,17 +82,60 @@ export const elementToken = (
   return `${snapshot}:${element}`;
 };
 
+/** A window read as the job sees it; its snapshot becomes the window's latest, for element tokens and the next diff. */
+export function windowText(
+  state: ComputerUseState,
+  target: Window,
+  reply: DriverReply,
+  since: string | undefined,
+  query: string | undefined,
+  others: string[],
+) {
+  if (reply.snapshot_id) {
+    state.snapshots.set(target.window_id, reply.snapshot_id);
+
+    if (query) state.queried.add(target.window_id);
+    else state.queried.delete(target.window_id);
+  }
+
+  return `${headerOf(target, reply, since, query, others)}\n${treeOf(state, reply)}`;
+}
+
+/** The snapshot a capture diffs against: none for vision, full, or query reads, or after a query read. */
+const diffBase = (
+  state: ComputerUseState,
+  target: Window,
+  mode: string,
+  full: boolean,
+  query: string | undefined,
+) =>
+  mode === "ax" && !full && !query && !state.queried.has(target.window_id)
+    ? state.snapshots.get(target.window_id)
+    : undefined;
+
+// A screenshot can't be scrubbed, so a vision capture goes without one while a password may show.
+const screenshotMode = async (
+  state: ComputerUseState,
+  mode: string,
+  context: Context,
+) =>
+  mode !== "vision"
+    ? "none"
+    : (await passwordMayShow(state, context))
+      ? "withheld"
+      : "taken";
+
 export async function captureWindow(
   state: ComputerUseState,
   target: Window,
   mode: string,
   full: boolean,
+  query: string | undefined,
   context: Context,
 ): Promise<(TextContent | ImageContent)[]> {
-  const since =
-    mode === "ax" && !full ? state.snapshots.get(target.window_id) : undefined;
-
-  const vision = mode === "vision";
+  const since = diffBase(state, target, mode, full, query);
+  const screenshot = await screenshotMode(state, mode, context);
+  const vision = screenshot === "taken";
 
   const { reply, image } = await driverCall(
     state,
@@ -92,6 +145,7 @@ export async function captureWindow(
       window_id: target.window_id,
       include_screenshot: vision,
       ...(since && { since }),
+      ...(query && { query }),
     },
     context,
     vision,
@@ -105,17 +159,17 @@ export async function captureWindow(
       },
     ];
 
-  if (reply.snapshot_id)
-    state.snapshots.set(target.window_id, reply.snapshot_id);
-
   const others = otherWindows(target, await listWindows(state, context));
-  const header = headerOf(target, reply, since, others);
 
   const content: (TextContent | ImageContent)[] = [
-    { type: "text", text: `${header}\n${treeOf(reply)}` },
+    {
+      type: "text",
+      text: windowText(state, target, reply, since, query, others),
+    },
   ];
 
   if (image) content.push(...screenshotOf(reply, image));
+  else if (screenshot === "withheld") content.push(NO_SCREENSHOT);
 
   return content;
 }

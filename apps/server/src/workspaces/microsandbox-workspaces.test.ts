@@ -320,4 +320,48 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
       await Effect.runPromise(denying.close());
     }
   }, 120_000);
+
+  test("UDP leaves the machine only as DNS to its resolver", async () => {
+    const udp = (address: string, port: number) =>
+      sh(
+        env(),
+        `python3 -c "
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.settimeout(3)
+s.sendto(b'x', ('${address}', ${port}))
+try: print('reply', len(s.recv(512)))
+except OSError: print('none')"`,
+      );
+
+    expect((await udp("1.1.1.1", 443)).output).toBe("none");
+    expect((await sh(env(), "getent hosts example.com")).exitCode).toBe(0);
+  }, 60_000);
+
+  test("a machine created before the UDP rule is created anew, keeping the workspace", async () => {
+    const first = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
+
+    try {
+      await sh(
+        first.env("older"),
+        `echo kept > /workspace/note && echo installed > /usr/local/bin/marker &&
+         python3 -c "import json; p = '/etc/crumble-workspace.json'; r = json.load(open(p)); del r['network']; json.dump(r, open(p, 'w'))" && sync`,
+      );
+    } finally {
+      await Effect.runPromise(first.close());
+    }
+
+    const second = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
+
+    try {
+      const result = await sh(
+        second.env("older"),
+        "cat /workspace/note; cat /usr/local/bin/marker 2>/dev/null || echo none",
+      );
+
+      expect(result.output).toBe("kept\nnone");
+    } finally {
+      await Effect.runPromise(second.close());
+    }
+  }, 180_000);
 });

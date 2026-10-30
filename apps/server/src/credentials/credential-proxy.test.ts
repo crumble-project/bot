@@ -155,6 +155,7 @@ describe("credentialProxy", () => {
     const authorities = credentialAuthoritiesAccess(store.runtime);
     const credentials = credentialsAccess(store.runtime);
     const seen: string[] = [];
+    const paths: string[] = [];
     let reads = 0;
 
     await credentials.save(bot.id, "ECHO_TOKEN", {
@@ -181,6 +182,7 @@ describe("credentialProxy", () => {
             /^authorization: (.*)$/im.exec(head)?.[1]?.trim() ?? "";
 
           seen.push(authorization);
+          paths.push(/^\S+ (\S+)/.exec(head)?.[1] ?? "");
           socket.end(
             `HTTP/1.1 200 OK\r\ncontent-length: ${authorization.length}\r\nconnection: close\r\n\r\n${authorization}`,
           );
@@ -217,7 +219,7 @@ describe("credentialProxy", () => {
     const ca = await authorities.certificate(bot.id);
 
     /** Sends a request with `authorization` from the bot's workspace and returns the raw response. */
-    const request = (authorization: string) =>
+    const request = (authorization: string, path = "/check") =>
       new Promise<string>((done, fail) => {
         const socket = tls.connect({
           host: "127.0.0.1",
@@ -230,7 +232,7 @@ describe("credentialProxy", () => {
 
         socket.on("secureConnect", () =>
           socket.write(
-            `GET /check HTTP/1.1\r\nhost: example.com\r\nauthorization: ${authorization}\r\nconnection: close\r\n\r\n`,
+            `GET ${path} HTTP/1.1\r\nhost: example.com\r\nauthorization: ${authorization}\r\nconnection: close\r\n\r\n`,
           ),
         );
         socket.on("data", (data: Buffer) => {
@@ -249,6 +251,7 @@ describe("credentialProxy", () => {
       store,
       bot,
       seen,
+      paths,
       reads: () => reads,
       request,
       placeholder,
@@ -281,6 +284,23 @@ describe("credentialProxy", () => {
           limit: 10,
         }),
       ).toMatchObject([{ status: 200, error: null }]);
+    } finally {
+      proxy.close();
+    }
+  });
+
+  test("leaves a placeholder in the URL as it is", async () => {
+    const proxy = await setup();
+
+    try {
+      const path = `/check?key=${proxy.placeholder}`;
+
+      await proxy.request("Bearer none", path);
+      expect(proxy.reads()).toBe(0);
+
+      await proxy.request(`Bearer ${proxy.placeholder}`, path);
+      expect(proxy.seen).toEqual(["Bearer none", `Bearer ${value}`]);
+      expect(proxy.paths).toEqual([path, path]);
     } finally {
       proxy.close();
     }

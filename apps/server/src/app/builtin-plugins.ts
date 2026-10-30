@@ -1,7 +1,7 @@
 import { claudeCodePlugin } from "../providers/claude-code/plugin";
 import { codingPlugin } from "../jobs/coding";
 import type { CredentialsAccess } from "../credentials/credentials";
-import { desktopPlugin } from "../jobs/desktop";
+import { desktopPlugin, type DesktopLogins } from "../jobs/desktop";
 import type { DesktopControlAccess } from "../bot-desktop/desktop-control";
 import type { CrumblePlugin } from "../plugins/plugins";
 import { meliousPlugin } from "../providers/providers";
@@ -19,6 +19,8 @@ export type PluginHost = {
   desktopControl: DesktopControlAccess;
   /** The bots' credentials, offered to coding jobs. */
   credentials?: CredentialsAccess;
+  /** The bots' logins, filled by desktop jobs. */
+  logins?: DesktopLogins;
   /** Disable host-level Claude Code authentication for tenant runtimes. */
 };
 
@@ -27,7 +29,7 @@ export const builtinPlugins = (host: PluginHost): CrumblePlugin[] => [
   meliousPlugin(),
   claudeCodePlugin(host.dataDir, host.env),
   codingPlugin(host.workspaces, host.credentials),
-  desktopPlugin(host.workspaces, host.desktopControl),
+  desktopPlugin(host.workspaces, host.desktopControl, host.logins),
   webSearchPlugin(),
   { id: "web-search-exa", webSearchProviders: [exaProvider(host.exaKey)] },
 ];

@@ -2824,17 +2824,18 @@
             "type": "string",
             "enum": [
               "botCredential",
+              "botLogin",
               "providerCredential",
               "secret"
             ]
           },
           "agentId": {
             "type": "string",
-            "description": "For `botCredential`."
+            "description": "For `botCredential` and `botLogin`."
           },
           "name": {
             "type": "string",
-            "description": "The credential's name, for `botCredential`."
+            "description": "The credential's or login's name, for `botCredential` and `botLogin`."
           },
           "provider": {
             "type": "string",

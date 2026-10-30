@@ -34,3 +34,5 @@ RUN mkdir -p /opt/crumble \
     /etc/xdg/openbox/rc.xml > /opt/crumble/openbox-rc.xml
 COPY desktop/desktop-start.sh desktop/browser.sh /opt/crumble/
 RUN chmod 755 /opt/crumble/*.sh
+# Chromium would offer to save the logins desktop jobs fill into its profile on /workspace, where coding jobs can read it.
+COPY desktop/chromium-policy.json /etc/chromium/policies/managed/crumble.json

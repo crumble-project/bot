@@ -31,6 +31,8 @@ bun run start
 
 `CRUMBLE_WORKSPACE_IMAGE` enables coding jobs. Add `CRUMBLE_WORKSPACE_DESKTOP_IMAGE` for bot desktops too.
 
+Workspaces reach the network over TCP through Crumble's proxy. Outbound UDP is blocked, except DNS, so HTTP/3 and other UDP traffic can't bypass it. Upgrading recreates machines made before this rule; files in `/workspace` are kept, programs installed elsewhere are not.
+
 Workspace disks live in `MSB_HOME`, which defaults to `~/.microsandbox`. Include it in your [backups](/self-hosting/backups).
 
 ### With Docker on Linux

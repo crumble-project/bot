@@ -129,7 +129,7 @@ type SwappedValue = { grant: CredentialGrant; value: string };
 
 type ReadFailure = { name: string; message: string };
 
-/** The credentials whose placeholder the request carries in its headers or path: the only ones it reads. */
+/** The credentials whose placeholder the request carries in its headers: the only ones it reads. */
 const usedGrants = (
   grants: readonly CredentialGrant[],
   request: http.IncomingMessage,
@@ -144,7 +144,6 @@ const usedGrants = (
   };
 
   requestHeaders(request.rawHeaders, detect);
-  detect(request.url ?? "/");
 
   return [...used.values()];
 };
@@ -257,7 +256,8 @@ export function credentialProxy(
 
     // Uncompressed responses, so the value can be scrubbed from them.
     headers["accept-encoding"] = ["identity"];
-    const path = swap(request.url ?? "/");
+    // Never in the URL: services log, store, and echo URLs, which would let a job read the value back.
+    const path = request.url ?? "/";
 
     const scrub = values.flatMap(({ grant, value }) =>
       value.length >= MIN_SCRUBBED_LENGTH

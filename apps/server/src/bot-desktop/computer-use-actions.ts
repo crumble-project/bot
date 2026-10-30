@@ -5,6 +5,7 @@ import {
   cleanHint,
   driverCall,
   messageOf,
+  ourNames,
   refusalOf,
   wantsForeground,
   type DriverArgs,
@@ -13,7 +14,10 @@ import {
 } from "./computer-use-driver";
 import type { ComputerUseState } from "./computer-use-state";
 
-export type Acted = { reply: DriverReply; route: "background" | "foreground" };
+export type Acted = {
+  reply: DriverReply;
+  route: "background" | "foreground" | "page";
+};
 
 /** An action the tool refused before reaching cua-driver, such as a missing argument. */
 export type Invalid = { invalid: string };
@@ -64,7 +68,7 @@ export function verdict({ reply, route }: Acted) {
   const parts = [
     code ? `REFUSED (${code})` : `effect: ${reply.effect ?? "ok"}`,
     `delivery: ${route}`,
-    messageOf(reply),
+    ourNames(messageOf(reply) ?? ""),
     hint ? `hint: ${hint}` : undefined,
   ];
 

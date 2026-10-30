@@ -742,15 +742,15 @@ export const providerConfiguredResponse = z
 // One object with optional fields rather than a union, so client generators keep it.
 const secretUsingPasswordManagerResponse = z
   .object({
-    kind: z.enum(["botCredential", "providerCredential", "secret"]),
+    kind: z.enum(["botCredential", "botLogin", "providerCredential", "secret"]),
     agentId: z
       .string()
       .optional()
-      .openapi({ description: "For `botCredential`." }),
-    name: z
-      .string()
-      .optional()
-      .openapi({ description: "The credential's name, for `botCredential`." }),
+      .openapi({ description: "For `botCredential` and `botLogin`." }),
+    name: z.string().optional().openapi({
+      description:
+        "The credential's or login's name, for `botCredential` and `botLogin`.",
+    }),
     provider: z
       .string()
       .optional()

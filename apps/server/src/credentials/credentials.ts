@@ -399,7 +399,7 @@ export function jobCredentialSection(credentials: readonly AgentCredential[]) {
   return [
     "Credentials the owner gave this bot, as environment variables in every command, with the hosts each works for:",
     ...credentialLines(credentials),
-    "Each variable holds a placeholder. The workspace's HTTPS proxy replaces it with the real value in request headers and query parameters, only on requests to its hosts. Use the variable as if it held the value, and never print it or write it into files. A client that ignores HTTPS_PROXY sends the placeholder and gets an authentication error: route it through the proxy instead.",
+    "Each variable holds a placeholder. The workspace's HTTPS proxy replaces it with the real value in request headers, only on requests to its hosts; a placeholder in the URL or body is sent as it is. Use the variable as if it held the value, and never print it or write it into files. A client that ignores HTTPS_PROXY sends the placeholder and gets an authentication error: route it through the proxy instead.",
   ].join("\n");
 }
 
