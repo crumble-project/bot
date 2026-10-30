@@ -138,3 +138,15 @@ Avoid: Den job, computer use session, browser agent.
 The owner operating the bot desktop directly, which pauses desktop work until the owner hands control back.
 
 Avoid: Takeover, remote control, screen sharing.
+
+### Intent check
+
+A check, before a desktop job's acting call runs, of whether the action is irreversible and whether it follows from the owner's request. Run by the judge model, never by the job itself. An action that fails it is held until the owner approves or declines it.
+
+Avoid: Guardrail, safety check, approval gate.
+
+### Judge model
+
+The model the owner chooses for the account that runs every intent check.
+
+Avoid: Classifier, checker model, supervisor.

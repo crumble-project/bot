@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Desktop jobs check each acting call with an intent check before it runs. The account's judge model answers whether the action is irreversible and whether the owner asked for it, from the owner's messages, the job's task, and the action's target, never the page's text. Buttons and links named like Pay, Buy, Order, Send, Delete, or Confirm, and Enter in a form field, always count as irreversible. An irreversible action the judge isn't confident about is held: the bot chat shows a card to approve or decline it, and the job waits. Over the API: `GET /v1/agents/{id}/held-actions` and `POST .../{actionId}/approve` and `.../decline`. Held actions show as `held-action` events in `TranscriptMessage`, with the new `heldAction` field.
+- Choose the judge model in **Settings** > **Judge model** or with `GET` and `PUT /v1/judge-model`. The default is GPT-6 Luna through OpenAI Decisions, which needs an OpenAI API key. Without a classifier model, a small chat model such as Claude Haiku 5.5 judges. Each classifier has its own in-intent bar: 50% for Jev, 90% for models not yet evaluated.
+- Add `bun tools/intent-eval.ts` in `apps/server`: it runs a judge model on 38 labeled desktop actions and reports latency, tokens, cost, and what each in-intent bar would hold. It makes paid calls with the provider's key from the environment, so it runs locally, never in CI.
+- The bot's model now sees each owner message and automation's instructions prefixed with `[message <request ID>]`; script automation output is not tagged and never counts as the owner's request, and the `desktop` tool's `start` and `send` take `owner_messages` to cite them. The job keeps those messages verbatim, plus the owner's latest message, for its intent checks; an ID that isn't an owner message of the chat is rejected.
+
 ## 0.2.0
 
 - Fix declining a credential request in **Settings** > **Credentials** deleting the saved credential of the same name, when the bot asked for it on more hosts. Fix a new credential request in the bot chat showing as saved or declined instead of offering its form, when the credentials were loaded just before the bot asked.
