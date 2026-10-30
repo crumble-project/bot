@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Microsandbox workspaces block outbound UDP except DNS. UDP left the machine past the workspace proxy and the network policy, which only see TCP. Machines made before this are created anew on their next boot: `/workspace` is kept, programs installed outside it are not.
 - Bot desktops' Chromium no longer uses QUIC (HTTP/3) or Encrypted ClientHello, so all its traffic goes through the workspace proxy under the real host name. Before, QUIC went out over UDP past the proxy, and on ECH sites such as those behind Cloudflare the network policy and the credential proxy saw only the outer name, such as `cloudflare-ech.com`. Rebuild the desktop image to apply it.
 - Desktop jobs work faster on web pages: `computer_use` gains `open` and `read`, which load and read a page in Chromium with its elements as refs, and `click`, `type`, `set_value`, and `scroll` act on a `ref`. `capture` takes a `query` to read only matching elements, and `steps` runs several accessibility actions in one call. In a local test, filling and submitting a form took 2 s instead of 11 s. cua-driver now gets its arguments on stdin instead of a temporary file, and every job on a bot desktop shares one cua-driver session.
 - Fix the credential proxy failing about one host certificate in 128 (an OpenSSL `INVALID_INTEGER` error): a random serial number that started with a zero byte wasn't valid DER.
