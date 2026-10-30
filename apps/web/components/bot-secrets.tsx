@@ -579,6 +579,23 @@ export function useSecretActions<I>(
   return { uses, setUses, deleting, setDeleting, remove, decline };
 }
 
+/** Why the last delete or decline failed, if one did. */
+export function ActionFailure({
+  actions,
+}: {
+  actions: Pick<ReturnType<typeof useSecretActions>, "remove" | "decline">;
+}) {
+  const failed = actions.remove.error ?? actions.decline.error;
+
+  if (!failed) return null;
+
+  return (
+    <Alert variant="destructive">
+      <AlertDescription>{failed.message}</AlertDescription>
+    </Alert>
+  );
+}
+
 export function DeleteSecretDialog({
   actions,
   description,

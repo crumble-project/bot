@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix declining a credential request in **Settings** > **Credentials** deleting the saved credential of the same name, when the bot asked for it on more hosts. Fix a new credential request in the bot chat showing as saved or declined instead of offering its form, when the credentials were loaded just before the bot asked.
 - Bots ask for a login with the new `request_login` tool when a desktop job finds a sign-in page no login covers. The request shows as a card in the bot chat and under **Waiting for you** in **Settings** > **Logins**; saving or declining it starts a bot turn with a notice.
 - Manage a bot's logins in **Settings** > **Logins**: name, hosts, username, password, and an optional one-time code, each stored in Crumble or read from a password manager, or all from one 1Password item. Each login lists its fills from the last 90 days. Over the API: `GET /v1/agents/{id}/logins`, `PUT` and `DELETE /v1/agents/{id}/logins/{name}`, and `GET /v1/agents/{id}/logins/{name}/uses`. The new **Logins** docs page explains how desktop jobs fill them.
 - The credential proxy swaps a credential's placeholder only in request headers, no longer in the URL. A service could log, store, or echo a URL that held the value, so a job could read it back. An API that takes its key only as a query parameter can no longer use a credential. The credentials docs now advise scoping each credential's token to the work the bot does.

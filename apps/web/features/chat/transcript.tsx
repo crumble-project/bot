@@ -853,7 +853,11 @@ function CredentialRequestCard({
   credential: { name: string; hosts: string[]; requestedAt?: string };
   botId: string;
 }) {
-  const state = useQuery(credentialsQuery(botId));
+  // The cached list can predate a request that just arrived; read it anew before calling the request answered.
+  const state = useQuery({
+    ...credentialsQuery(botId),
+    refetchOnMount: "always",
+  });
 
   const current = state.data;
 
@@ -867,7 +871,7 @@ function CredentialRequestCard({
     (item) => item.name === credential.name,
   );
 
-  if (!state.isSuccess)
+  if (!state.isSuccess || (!request && !state.isFetchedAfterMount))
     return (
       <SettledCard
         icon={IconKey}

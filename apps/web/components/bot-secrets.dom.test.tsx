@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
-import { type Logins, queryClient } from "@/lib/api";
+import { type Credentials, type Logins, queryClient } from "@/lib/api";
 import { BotPainter } from "@/features/bots/bot-avatar";
 
 const GLOBALS = [
@@ -49,12 +49,33 @@ const moreHosts = {
   requestedAt: "2026-10-30T11:00:00.000Z",
 } satisfies Logins["requests"][number];
 
+const acme = {
+  name: "ACME_TOKEN",
+  hosts: ["api.acme.com"],
+  passwordManager: null,
+  reference: null,
+  createdAt: "2026-10-30T10:00:00.000Z",
+  updatedAt: "2026-10-30T10:00:00.000Z",
+  lastUsedAt: null,
+  lastError: null,
+} satisfies Credentials["credentials"][number];
+
+const moreAcmeHosts = {
+  name: "ACME_TOKEN",
+  hosts: ["api.acme.com", "uploads.acme.com"],
+  reason: "Uploads",
+  requestedAt: "2026-10-30T11:00:00.000Z",
+} satisfies Credentials["requests"][number];
+
 /**
- * Renders `ui` in a happy-dom window with `logins` as bot `bot`'s logins, and runs `check` on it.
+ * Renders `ui` in a happy-dom window with one bot, `bot`, whose API answers GETs from `listings`, and runs `check`.
  * Returns each non-GET request the page sent.
  */
 async function render(
-  logins: Logins,
+  listings: {
+    "/v1/agents/bot/logins"?: Logins;
+    "/v1/agents/bot/credentials"?: Credentials;
+  },
   ui: () => Promise<ReactNode>,
   check: (container: HTMLElement) => Promise<void>,
 ) {
@@ -120,14 +141,14 @@ async function render(
           return new Response(null, { status: 204 });
         }
 
-        const listings = new Map<string, unknown>([
+        const answers = new Map<string, unknown>([
           ["/v1/agents", [{ id: "bot", name: "Bot", avatar: "" }]],
-          ["/v1/agents/bot/logins", logins],
           ["/v1/password-managers", { passwordManagers: [] }],
+          ...Object.entries(listings),
         ]);
 
-        return listings.has(path)
-          ? Response.json(listings.get(path))
+        return answers.has(path)
+          ? Response.json(answers.get(path))
           : new Response("unexpected request", { status: 500 });
       },
       { preconnect: globalThis.fetch.preconnect },
@@ -169,43 +190,71 @@ async function render(
   return sent;
 }
 
+/** Opens the first "Waiting for you" row's menu and selects Decline. */
+async function declineFirstRequest(container: HTMLElement) {
+  const row = [...container.querySelectorAll("span")].find((span) =>
+    span.textContent?.includes("asks for"),
+  )?.parentElement?.parentElement?.parentElement;
+
+  expect(row).toBeTruthy();
+  await act(async () => {
+    row!
+      .querySelector<HTMLButtonElement>('[title="More"]')!
+      .dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+      );
+  });
+
+  const decline = [
+    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ].find((item) => item.textContent?.includes("Decline"));
+
+  expect(decline).toBeTruthy();
+  await act(async () => {
+    decline!.click();
+  });
+  await settle();
+}
+
+/** A settings page inside the sidebar it needs. */
+const page = async (load: () => Promise<ReactNode>) => {
+  const { SidebarProvider } = await import("@/components/ui/sidebar");
+
+  return <SidebarProvider>{await load()}</SidebarProvider>;
+};
+
+/** The chat card for a request tool's result. */
+const requestCard = async (
+  toolName: string,
+  toolDetails: Logins["requests"][number] | Credentials["requests"][number],
+) => {
+  const { ToolResultRow } = await import("@/features/chat/transcript");
+
+  return (
+    <ToolResultRow
+      botId="bot"
+      message={{
+        id: "m1",
+        role: "toolResult",
+        content: "",
+        entryId: "e1",
+        toolName,
+        toolDetails,
+      }}
+    />
+  );
+};
+
 test("declining a request for more hosts keeps the saved login", async () => {
   const sent = await render(
-    { logins: [github], requests: [moreHosts] },
-    async () => {
-      const { SidebarProvider } = await import("@/components/ui/sidebar");
-      const { LoginsSettings } = await import("./logins");
+    { "/v1/agents/bot/logins": { logins: [github], requests: [moreHosts] } },
+    () =>
+      page(async () => {
+        const { LoginsSettings } = await import("@/features/logins/logins");
 
-      return (
-        <SidebarProvider>
-          <LoginsSettings />
-        </SidebarProvider>
-      );
-    },
-    async (container) => {
-      const row = [...container.querySelectorAll("span")].find((span) =>
-        span.textContent?.includes("asks for"),
-      )?.parentElement?.parentElement?.parentElement;
-
-      expect(row).toBeTruthy();
-      await act(async () => {
-        row!
-          .querySelector<HTMLButtonElement>('[title="More"]')!
-          .dispatchEvent(
-            new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
-          );
-      });
-
-      const decline = [
-        ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-      ].find((item) => item.textContent?.includes("Decline"));
-
-      expect(decline).toBeTruthy();
-      await act(async () => {
-        decline!.click();
-      });
-      await settle();
-    },
+        return <LoginsSettings />;
+      }),
+    declineFirstRequest,
   );
 
   expect(sent).toEqual(["POST /v1/agents/bot/logins/github/decline"]);
@@ -219,26 +268,55 @@ test("a request newer than the cached logins offers its answers", async () => {
   });
 
   await render(
-    { logins: [github], requests: [moreHosts] },
-    async () => {
-      const { ToolResultRow } = await import("@/features/chat/transcript");
-
-      return (
-        <ToolResultRow
-          botId="bot"
-          message={{
-            id: "m1",
-            role: "toolResult",
-            content: "",
-            entryId: "e1",
-            toolName: "request_login",
-            toolDetails: moreHosts,
-          }}
-        />
-      );
-    },
+    { "/v1/agents/bot/logins": { logins: [github], requests: [moreHosts] } },
+    () => requestCard("request_login", moreHosts),
     async (container) => {
       expect(container.textContent).toContain("Add login");
+      expect(container.textContent).not.toContain("Saved");
+    },
+  );
+});
+
+test("declining a request for more hosts keeps the saved credential", async () => {
+  const sent = await render(
+    {
+      "/v1/agents/bot/credentials": {
+        credentials: [acme],
+        requests: [moreAcmeHosts],
+      },
+    },
+    () =>
+      page(async () => {
+        const { CredentialsSettings } =
+          await import("@/features/credentials/credentials");
+
+        return <CredentialsSettings />;
+      }),
+    declineFirstRequest,
+  );
+
+  expect(sent).toEqual(["POST /v1/agents/bot/credentials/ACME_TOKEN/decline"]);
+});
+
+test("a request newer than the cached credentials offers its answers", async () => {
+  // The cache was filled before the bot asked, and is still fresh.
+  queryClient.setQueryData(["credentials", "bot"], {
+    credentials: [acme],
+    requests: [],
+  });
+
+  await render(
+    {
+      "/v1/agents/bot/credentials": {
+        credentials: [acme],
+        requests: [moreAcmeHosts],
+      },
+    },
+    () => requestCard("request_credential", moreAcmeHosts),
+    async (container) => {
+      expect(
+        container.querySelector('input[placeholder="Credential value"]'),
+      ).toBeTruthy();
       expect(container.textContent).not.toContain("Saved");
     },
   );

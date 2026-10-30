@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { IconHistory } from "@tabler/icons-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   type Login,
@@ -14,6 +13,7 @@ import {
 import { NewButton, PageToolbar, WorkspacePage } from "@/components/workspace";
 import {
   ALL,
+  ActionFailure,
   BotPills,
   DeleteSecretDialog,
   LastUse,
@@ -135,7 +135,6 @@ export function LoginsSettings({
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Editing | null>(null);
   const actions = useSecretActions<Login>(loginPath, invalidate);
-  const failed = actions.remove.error ?? actions.decline.error;
 
   return (
     <WorkspacePage
@@ -167,11 +166,7 @@ export function LoginsSettings({
           countOf={countOf}
         />
       </div>
-      {failed && (
-        <Alert variant="destructive">
-          <AlertDescription>{failed.message}</AlertDescription>
-        </Alert>
-      )}
+      <ActionFailure actions={actions} />
       {bots.isPending ? (
         <Skeleton className="h-40 rounded-xl" />
       ) : (
