@@ -16,6 +16,7 @@ import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import { BotNotices } from "../bots/bot-notices";
 import { Conflict, NotFound, type AppError } from "../shared/errors";
 import { botRequests } from "./schema";
+import { toolOutput } from "../shared/tool-output";
 
 export const REQUEST_BOT_TOOL = "request_bot";
 export const CREATE_BOTS_CAPABILITY = "create_bots";
@@ -289,11 +290,6 @@ export class BotRequests extends Context.Service<
   );
 }
 
-const output = (value: JsonValue) => ({
-  structuredOutput: value,
-  output: [{ type: "text" as const, text: JSON.stringify(value) }],
-});
-
 export function botRequestExtension(
   agent: Agent,
   service: BotRequests["Service"],
@@ -343,7 +339,7 @@ export function botRequestExtension(
       // SAFETY: BotRequest contains only JSON data; serialization removes optional undefined fields.
       const details = JSON.parse(JSON.stringify(saved)) as JsonValue;
 
-      return { ...output({ request: details }), details };
+      return { ...toolOutput({ request: details }), details };
     },
   });
 

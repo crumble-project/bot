@@ -21,13 +21,18 @@ export const secrets = sqliteTable(
   (table) => [oneSecretSource("credentials_source", table)],
 );
 
-/** The columns of an agent's named secret that only goes to `hosts`, a JSON list: a credential, or a login. */
-export const hostBoundSecret = () => ({
+/** A bot's name for something that only goes to `hosts`, a JSON list. */
+const hostBound = () => ({
   agentId: text("agent_id")
     .notNull()
     .references(() => agents.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   hosts: text("hosts").notNull(),
+});
+
+/** The columns of an agent's named secret that only goes to `hosts`: a credential, or a login. */
+export const hostBoundSecret = () => ({
+  ...hostBound(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
   lastUsedAt: text("last_used_at"),
@@ -56,17 +61,16 @@ export const credentialAuthorities = sqliteTable("credential_authorities", {
   key: text("key").notNull(),
 });
 
+/** The columns of a bot's request for a host-bound secret, waiting for the owner. */
+export const hostBoundRequest = () => ({
+  ...hostBound(),
+  reason: text("reason").notNull(),
+  requestedAt: text("requested_at").notNull(),
+});
+
 export const credentialRequests = sqliteTable(
   "credential_requests",
-  {
-    agentId: text("agent_id")
-      .notNull()
-      .references(() => agents.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    hosts: text("hosts").notNull(),
-    reason: text("reason").notNull(),
-    requestedAt: text("requested_at").notNull(),
-  },
+  hostBoundRequest(),
   (table) => [primaryKey({ columns: [table.agentId, table.name] })],
 );
 

@@ -43,3 +43,18 @@ export class BotNotices extends Context.Service<
     }),
   );
 }
+
+/**
+ * Tells bots how the owner answered their requests for `kind` (such as `credential`). A bot that can't take the
+ * turn, such as a disabled one, is only logged: the owner already sees the outcome in its settings.
+ */
+export const requestAnswers =
+  (notices: BotNotices["Service"], kind: string) =>
+  (agentId: string, name: string, text: string) =>
+    notices
+      .notice(agentId, text, `${kind}:${name}:${crypto.randomUUID()}`)
+      .pipe(
+        Effect.catchCause((cause) =>
+          Effect.logError(`${kind} notice failed`, agentId, name, cause),
+        ),
+      );

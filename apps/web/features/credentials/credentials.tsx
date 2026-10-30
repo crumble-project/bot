@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { IconHistory } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { EditorSheet } from "@/components/form-fields";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -31,7 +30,8 @@ import {
   BotPills,
   DeleteSecretDialog,
   LastUse,
-  OwnerField,
+  SecretSheet,
+  defaultOwner,
   SecretGroups,
   SecretRowMenu,
   SecretRowName,
@@ -307,9 +307,6 @@ function useSaveCredential(
   });
 }
 
-const defaultOwner = (botId: string | null, bots: Bot[]) =>
-  botId ?? bots[0]?.id ?? "";
-
 const savedSource = (existing: Credential | null) =>
   sourceDraftOf(existing?.passwordManager, existing?.reference);
 
@@ -348,12 +345,6 @@ function credentialReady(
   );
 }
 
-function sheetLabels(existing: Credential | null) {
-  return existing
-    ? { title: `Edit ${existing.name}`, submitLabel: "Save" }
-    : { title: "New Credential", submitLabel: "Add" };
-}
-
 function CredentialDialog({
   bots,
   botId,
@@ -389,15 +380,19 @@ function CredentialDialog({
   const ready = credentialReady(name, hosts, source, existing, save.isPending);
 
   return (
-    <EditorSheet
-      {...sheetLabels(existing)}
-      description={request?.reason}
+    <SecretSheet
+      noun="Credential"
+      existing={existing?.name ?? null}
+      reason={request?.reason}
       error={save.error?.message}
-      submitDisabled={!ready}
-      onSubmit={() => ready && save.mutate()}
+      ready={ready}
+      bots={bots}
+      botId={botId}
+      owner={owner}
+      onOwner={setOwner}
+      onSubmit={() => save.mutate()}
       onClose={onClose}
     >
-      <OwnerField bots={bots} botId={botId} owner={owner} onOwner={setOwner} />
       <CredentialFields
         locked={editing.kind !== "new"}
         proposed={request !== null}
@@ -418,7 +413,7 @@ function CredentialDialog({
         }
         valueDescription="Stored encrypted and never shown again."
       />
-    </EditorSheet>
+    </SecretSheet>
   );
 }
 

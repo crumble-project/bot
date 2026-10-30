@@ -8,8 +8,7 @@ import {
   sqliteTable,
   text,
 } from "drizzle-orm/sqlite-core";
-import { agents } from "../bots/schema";
-import { hostBoundSecret } from "../credentials/schema";
+import { hostBoundRequest, hostBoundSecret } from "../credentials/schema";
 import { oneSecretSource, secretSource } from "../password-managers/schema";
 import type { LoginField } from "../shared/domain";
 
@@ -68,14 +67,8 @@ export const loginUses = sqliteTable(
 export const loginRequests = sqliteTable(
   "login_requests",
   {
-    agentId: text("agent_id")
-      .notNull()
-      .references(() => agents.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    hosts: text("hosts").notNull(),
-    reason: text("reason").notNull(),
+    ...hostBoundRequest(),
     oneTimeCode: integer("one_time_code", { mode: "boolean" }).notNull(),
-    requestedAt: text("requested_at").notNull(),
   },
   (table) => [primaryKey({ columns: [table.agentId, table.name] })],
 );

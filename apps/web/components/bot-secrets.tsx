@@ -23,7 +23,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { OwnerSelectField } from "@/components/form-fields";
+import { EditorSheet, OwnerSelectField } from "@/components/form-fields";
 import {
   ConfirmDeleteContent,
   FilterPills,
@@ -361,28 +361,63 @@ export function SecretRowMenu({
   );
 }
 
-/** The bot a new item is for, asked only when it isn't already known. */
-export function OwnerField({
+/** The bot a new item is for at first: the one given, else the first bot. */
+export const defaultOwner = (botId: string | null, bots: Bot[]) =>
+  botId ?? bots[0]?.id ?? "";
+
+/**
+ * The editor for one bot's item: `noun` titles a new one. With no `botId`, it first asks which bot the item is for.
+ */
+export function SecretSheet({
+  noun,
+  existing,
+  reason,
+  error,
+  ready,
   bots,
   botId,
   owner,
   onOwner,
+  onSubmit,
+  onClose,
+  children,
 }: {
+  noun: string;
+  /** The saved item's name, or null for a new one. */
+  existing: string | null;
+  /** Why the bot asked for it, when the sheet answers a request. */
+  reason?: string | undefined;
+  error: string | undefined;
+  ready: boolean;
   bots: Bot[];
   botId: string | null;
   owner: string;
   onOwner: (owner: string) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+  children: ReactNode;
 }) {
-  if (botId !== null) return null;
-
   return (
-    <OwnerSelectField
-      label="For bot"
-      owners={bots.map((bot) => ({ label: bot.name, value: bot.id }))}
-      value={owner}
-      disabled={false}
-      onValueChange={(next) => next && onOwner(next)}
-    />
+    <EditorSheet
+      title={existing ? `Edit ${existing}` : `New ${noun}`}
+      submitLabel={existing ? "Save" : "Add"}
+      description={reason}
+      error={error}
+      submitDisabled={!ready}
+      onSubmit={() => ready && onSubmit()}
+      onClose={onClose}
+    >
+      {botId === null && (
+        <OwnerSelectField
+          label="For bot"
+          owners={bots.map((bot) => ({ label: bot.name, value: bot.id }))}
+          value={owner}
+          disabled={false}
+          onValueChange={(next) => next && onOwner(next)}
+        />
+      )}
+      {children}
+    </EditorSheet>
   );
 }
 

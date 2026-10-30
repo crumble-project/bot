@@ -1,8 +1,7 @@
-import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Clock, Context, Effect, Layer, Predicate, Redacted } from "effect";
-import { BotNotices } from "../bots/bot-notices";
+import { BotNotices, requestAnswers } from "../bots/bot-notices";
 import type { LoginFill, LoginRead } from "../bot-desktop/computer-use-login";
 import type { Runner } from "../shared/runner";
 import { PasswordManagers } from "../password-managers/password-manager";
@@ -36,6 +35,8 @@ import {
   type LoginWrite,
 } from "./login-repository";
 import { oneTimeCode, parseOneTimeSecret } from "./one-time-codes";
+import { toolOutput } from "../shared/tool-output";
+import { requestParameters } from "../credentials/credentials";
 
 export const REQUEST_LOGIN_TOOL = "request_login";
 
@@ -132,15 +133,7 @@ export class Logins extends Context.Service<
       const managers = yield* PasswordManagers;
       const notices = yield* BotNotices;
 
-      const notify = (agentId: string, name: string, text: string) =>
-        notices
-          .notice(agentId, text, `login:${name}:${crypto.randomUUID()}`)
-          .pipe(
-            // A disabled bot cannot take the turn; the owner already sees the outcome in its settings.
-            Effect.catchCause((cause) =>
-              Effect.logError("Login notice failed", agentId, name, cause),
-            ),
-          );
+      const notify = requestAnswers(notices, "login");
 
       const declined = (agentId: string, name: string) =>
         notify(
@@ -367,13 +360,14 @@ export class Logins extends Context.Service<
       ) {
         const existing = yield* repository.get(agentId, name);
 
-        if (yield* repository.delete(agentId, name))
+        if (existing && (yield* repository.delete(agentId, name)))
           return yield* forgetReplaced(existing, undefined);
 
-        if (!(yield* repository.deleteRequest(agentId, name)))
-          return yield* new NotFound({ message: "Login not found" });
+        // Without a login, deleting declines the bot's request for one.
+        if (yield* repository.deleteRequest(agentId, name))
+          return yield* declined(agentId, name);
 
-        yield* declined(agentId, name);
+        return yield* new NotFound({ message: "Login not found" });
       });
 
       const value = Effect.fn("Logins.value")(function* (
@@ -528,11 +522,6 @@ export function jobLoginSection(logins: readonly Login[]) {
   ].join("\n");
 }
 
-const output = (value: JsonValue) => ({
-  structuredOutput: value,
-  output: [{ type: "text" as const, text: JSON.stringify(value) }],
-});
-
 /** The bot's `request_login` tool and what it knows about its logins, for bots with desktop jobs. */
 export function loginExtension(agentId: string, logins: LoginsAccess) {
   const request = defineTool({
@@ -540,12 +529,7 @@ export function loginExtension(agentId: string, logins: LoginsAccess) {
     description:
       "Ask the owner for a login your desktop jobs need to sign in to a website, for example when a desktop job reports a sign-in page no login covers. Name it like github or acme-portal, list the hosts it is for (github.com, *.github.com), say why, and set one_time_code when the site asks for a two-factor code. The owner enters it outside the chat; you never see the values. Desktop jobs can then fill it on those hosts. After calling, tell the owner what you asked for and why, then end your turn: a message arrives when the owner answers.",
     parameters: Type.Object({
-      name: Type.String({ minLength: 1, maxLength: 64 }),
-      hosts: Type.Array(Type.String({ minLength: 1, maxLength: 253 }), {
-        minItems: 1,
-        maxItems: 20,
-      }),
-      reason: Type.String({ minLength: 1, maxLength: 1000 }),
+      ...requestParameters,
       one_time_code: Type.Optional(Type.Boolean()),
     }),
     // The chat offers the owner the form from this call's own result, so code mode keeps it a direct model tool.
@@ -555,7 +539,7 @@ export function loginExtension(agentId: string, logins: LoginsAccess) {
       const request = logins.request(agentId, loginRequestInput.parse(args));
 
       // Clients read the request from the details to offer the owner its form.
-      return { ...output({ request }), details: request };
+      return { ...toolOutput({ request }), details: request };
     },
   });
 

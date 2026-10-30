@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { EditorSheet } from "@/components/form-fields";
-import { OwnerField, hostList } from "@/components/bot-secrets";
+import { SecretSheet, defaultOwner, hostList } from "@/components/bot-secrets";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -169,12 +168,6 @@ function useSaveLogin(
   });
 }
 
-function sheetLabels(existing: Login | null) {
-  return existing
-    ? { title: `Edit ${existing.name}`, submitLabel: "Save" }
-    : { title: "New Login", submitLabel: "Add" };
-}
-
 /** Creates or edits a login; values are written once and never shown again. */
 export function LoginSheet({
   bots,
@@ -191,7 +184,7 @@ export function LoginSheet({
   request?: LoginRequest | undefined;
   onClose: () => void;
 }) {
-  const [owner, setOwner] = useState(botId ?? bots[0]?.id ?? "");
+  const [owner, setOwner] = useState(() => defaultOwner(botId, bots));
   const [draft, setDraft] = useState(() => draftOf(existing, request));
   const save = useSaveLogin(owner, draft, existing, onClose);
   const ready = loginReady(draft, existing) && !save.isPending;
@@ -200,15 +193,19 @@ export function LoginSheet({
     setDraft((current) => ({ ...current, ...next }));
 
   return (
-    <EditorSheet
-      {...sheetLabels(existing)}
-      description={request?.reason}
+    <SecretSheet
+      noun="Login"
+      existing={existing?.name ?? null}
+      reason={request?.reason}
       error={save.error?.message}
-      submitDisabled={!ready}
-      onSubmit={() => ready && save.mutate()}
+      ready={ready}
+      bots={bots}
+      botId={botId}
+      owner={owner}
+      onOwner={setOwner}
+      onSubmit={() => save.mutate()}
       onClose={onClose}
     >
-      <OwnerField bots={bots} botId={botId} owner={owner} onOwner={setOwner} />
       <NameAndHosts
         draft={draft}
         locked={existing !== null || request !== undefined}
@@ -216,7 +213,7 @@ export function LoginSheet({
         onChange={change}
       />
       <LoginSource draft={draft} existing={existing} onChange={change} />
-    </EditorSheet>
+    </SecretSheet>
   );
 }
 
