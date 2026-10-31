@@ -30,7 +30,7 @@ This is the quickest way to a running server:
 ```bash
 docker run -d --name crumble --restart unless-stopped --stop-timeout 30 \
   -p 127.0.0.1:7337:7337 -v crumble:/var/lib/crumble \
-  ghcr.io/crumble-project/crumble-server:0.2.0
+  ghcr.io/crumble-project/crumble-server:0.3.0
 ```
 
 All data lives in the `crumble` volume, so the container itself is disposable.
