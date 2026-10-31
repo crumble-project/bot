@@ -99,12 +99,15 @@ export function registerPluginSettingRoutes(options: {
     const input = pluginSecretInput.parse(await c.req.json());
     const before = sourceOf(stored);
 
-    if ("reference" in input) {
-      await run.runPromise(checkSecretReference(input.reference));
+    const { value, reference } = input;
+
+    if (reference) {
+      await run.runPromise(checkSecretReference(reference));
       run.runSync(
-        SecretRepository.use((r) => r.setReference(stored, input.reference)),
+        SecretRepository.use((r) => r.setReference(stored, reference)),
       );
-    } else run.runSync(SecretRepository.use((r) => r.set(stored, input.value)));
+    } else if (value)
+      run.runSync(SecretRepository.use((r) => r.set(stored, value)));
 
     forgetReplaced(stored, before);
 

@@ -1983,6 +1983,15 @@ describe("MCP server tokens from a password manager", () => {
     });
 
     expect(missing.status).toBe(400);
+    expect(
+      (
+        await api.setPluginToken({
+          value: "chat_stored",
+          reference: reference(),
+        })
+      ).status,
+    ).toBe(400);
+    expect((await api.setPluginToken({})).status).toBe(400);
 
     const saved = await api.setPluginToken({ reference: reference() });
 

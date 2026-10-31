@@ -127,10 +127,19 @@ const pluginSettingParams = z.object({
   key: z.string().min(1).max(200),
 });
 
-export const pluginSecretInput = z.union([
-  z.object({ value: z.string().trim().min(1).max(16000) }).strict(),
-  z.object({ reference: secretReferenceInput }).strict(),
-]);
+// One object with optional fields rather than a union: `value` stays a compatible request property.
+export const pluginSecretInput = z
+  .object({
+    value: z.string().trim().min(1).max(16000).optional(),
+    reference: secretReferenceInput.optional(),
+  })
+  .strict()
+  .refine(
+    (input) => (input.value === undefined) !== (input.reference === undefined),
+    {
+      message: "Send exactly one of value or reference",
+    },
+  );
 
 /** Login answers may be pasted callback URLs, never larger than this. */
 const MAX_LOGIN_VALUE = 16384;
@@ -1133,7 +1142,7 @@ export const routes = {
     path: "/v1/plugin-settings/{pluginId}/{key}",
     operationId: "setPluginSetting",
     description:
-      "Sets a plugin setting to a value stored in Crumble, or to a `reference` read from a connected password manager, replacing the one before. A reference is checked by reading it once; 400 when it can't be read. 404 for a plugin or key the server doesn't have.",
+      "Sets a plugin setting to a `value` stored in Crumble, or to a `reference` read from a connected password manager, replacing the one before; send exactly one. A reference is checked by reading it once; 400 when it can't be read. 404 for a plugin or key the server doesn't have.",
     request: { params: pluginSettingParams, body: body(pluginSecretInput) },
     responses: { 200: json(response.pluginSettingResponse) },
   }),
