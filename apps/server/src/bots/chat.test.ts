@@ -306,6 +306,33 @@ describe("group turns", () => {
   });
 });
 
+describe("message gateways", () => {
+  test("a gateway message keeps owner authority and names its gateway", async () => {
+    const seen: unknown[] = [];
+
+    const record: FauxResponseStep = (context) => {
+      seen.push(context.messages.at(-1)?.content);
+
+      return fauxAssistantMessage("hi");
+    };
+
+    const { service, agent } = setup([record]);
+    const requestId = "gateway:discord:1";
+
+    await settle(
+      service,
+      (await service.sendChat(agent.id, "hello", requestId)).id,
+    );
+    expect(seen[0]).toBe(`[message ${requestId}]\nhello`);
+    expect(
+      (await service.chatSnapshot(agent.id)).messages.find(
+        (message) => message.role === "user",
+      )?.origin,
+    ).toEqual({ kind: "owner", via: "discord" });
+    await service.close();
+  });
+});
+
 describe("attachments", () => {
   test("reach the model as content blocks and stay out of snapshots", async () => {
     const seen: unknown[] = [];

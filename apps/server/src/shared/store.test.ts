@@ -481,6 +481,9 @@ describe("Store memory sources", () => {
     const db = new Database(join(dir, "store.sqlite"));
     // A server before Drizzle had no migrations table.
     db.run(`DROP TABLE __drizzle_migrations;
+      DROP TABLE gateway_cooldowns;
+      DROP TABLE gateway_sent_messages;
+      DROP TABLE gateway_receipts;
       DROP TABLE bot_requests;
       DROP TABLE script_runs;
       DROP TABLE desktop_fills;
@@ -508,6 +511,15 @@ describe("Store memory sources", () => {
 
     const upgraded = new Store(dir);
     expect(upgraded.getMemory(sourced.id)?.source).toBeNull();
+
+    const migrated = new Database(join(dir, "store.sqlite"), {
+      readonly: true,
+    });
+
+    expect(
+      migrated.query("SELECT COUNT(*) AS n FROM gateway_receipts").get(),
+    ).toEqual({ n: 0 });
+    migrated.close();
 
     const again = upgraded.createMemory({
       agentId: agent.id,
@@ -604,6 +616,9 @@ describe("Store group chats", () => {
     const db = new Database(join(dir, "store.sqlite"));
     // A server before Drizzle had no migrations table.
     db.run(`DROP TABLE __drizzle_migrations;
+      DROP TABLE gateway_cooldowns;
+      DROP TABLE gateway_sent_messages;
+      DROP TABLE gateway_receipts;
       DROP TABLE bot_requests;
       DROP TABLE script_runs;
       DROP TABLE desktop_fills;
@@ -639,6 +654,15 @@ describe("Store group chats", () => {
 
     const second = new Store(dir);
     expect(second.getGroupChat(group.id)?.memberIds).toEqual([a.id, b.id]);
+
+    const migrated = new Database(join(dir, "store.sqlite"), {
+      readonly: true,
+    });
+
+    expect(
+      migrated.query("SELECT COUNT(*) AS n FROM gateway_receipts").get(),
+    ).toEqual({ n: 0 });
+    migrated.close();
     expect(second.groupMember(group.id, a.id)).toEqual({
       groupId: group.id,
       agentId: a.id,

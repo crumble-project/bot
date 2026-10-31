@@ -36,6 +36,15 @@ import type {
   ChartLayout,
 } from "@crumble/server/contract/api-responses";
 import type { BotInput } from "@crumble/server/contract/api-contract";
+import type {
+  gatewayConfigInput,
+  gatewayResponse,
+  gatewaysResponse,
+} from "@crumble/server/contract/message-gateway";
+
+export type GatewayConfig = z.infer<typeof gatewayConfigInput>;
+
+export type MessageGateway = z.infer<typeof gatewayResponse>;
 
 export type Bot = z.infer<typeof agentPreviewResponse>;
 
@@ -358,6 +367,20 @@ export const pluginSettingsQuery = queryOptions({
 
 export const pluginSettingPath = (pluginId: string, key: string) =>
   `/v1/plugin-settings/${encodeURIComponent(pluginId)}/${encodeURIComponent(key)}`;
+
+export const messageGatewaysQuery = queryOptions({
+  queryKey: ["message-gateways"],
+  queryFn: async ({ signal }) =>
+    (
+      await api<z.infer<typeof gatewaysResponse>>("/v1/message-gateways", {
+        signal,
+      })
+    ).gateways,
+  refetchInterval: 5000,
+});
+
+export const messageGatewayPath = (id: string) =>
+  `/v1/message-gateways/${encodeURIComponent(id)}`;
 
 export const botRequestsQuery = (id: string) =>
   queryOptions({

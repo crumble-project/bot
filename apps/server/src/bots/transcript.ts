@@ -37,13 +37,16 @@ const messageOrigin = z
     kind: z.string(),
     name: z.string().optional().catch(undefined),
     agentId: z.string().optional().catch(undefined),
+    via: z.string().optional().catch(undefined),
   })
-  .transform(({ kind, name, agentId }) => {
+  .transform(({ kind, name, agentId, via }) => {
     const origin: MessageOrigin = { kind };
 
     if (name !== undefined) origin.name = name;
 
     if (agentId !== undefined) origin.agentId = agentId;
+
+    if (via !== undefined) origin.via = via;
 
     return origin;
   });
@@ -113,7 +116,13 @@ const toolMetadata = z.object({
   details: z.unknown().optional(),
 });
 
-export type MessageOrigin = { kind: string; name?: string; agentId?: string };
+export type MessageOrigin = {
+  kind: string;
+  name?: string;
+  agentId?: string;
+  /** The message gateway an owner message arrived through, such as `discord`. */
+  via?: string;
+};
 
 export type BotCommunication = {
   executionId: string;

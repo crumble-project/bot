@@ -58,6 +58,12 @@ Delegation goes one level deep. A bot that received delegated work can't pass
 it on, which keeps a chain of bots from handing a task around until nobody
 remembers who asked.
 
+## Discord Messages
+
+Connect Discord to your existing bot chats with a default bot, per-message
+aliases, and explicit sender and channel restrictions. See
+[Discord](/concepts/discord) for setup, routing, and delivery limits.
+
 ## MCP Integrations
 
 MCP servers give bots extra tools, like access to your calendar or issue

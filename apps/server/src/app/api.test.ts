@@ -9,10 +9,12 @@ import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { createAPI, handleApiError, type ApiOptions } from "./api";
 import { heldActionNotices } from "./plugin-layers";
-import { contractApp } from "../contract/api-contract";
+import { contractApp, pluginSecretInput } from "../contract/api-contract";
+import type { z } from "zod";
 import { registerMcpServerRoutes } from "../integrations/mcp-servers-api";
 import type { McpIntegrations } from "../integrations/integrations";
 import { secretStorage } from "../integrations/mcp-oauth";
+import { registerPluginSettingRoutes } from "../plugins/plugin-settings-api";
 import { memoryResponse } from "../contract/api-responses";
 import { Context, Effect, Exit, Layer, Redacted, Scope } from "effect";
 import {
@@ -1904,6 +1906,19 @@ describe("MCP server tokens from a password manager", () => {
       secrets: secretStorage(run),
       integrations,
     });
+    registerPluginSettingRoutes({
+      register: (definition, handler) =>
+        app.on(definition.method, definition.getRoutingPath(), handler),
+      run,
+      plugins: [
+        {
+          id: "chat",
+          settings: [
+            { key: "token", kind: "secret", label: "Token", whenMissing: "" },
+          ],
+        },
+      ],
+    });
 
     const send = (method: string, path: string, body?: ServerBody) =>
       app.request(path, {
@@ -1924,6 +1939,12 @@ describe("MCP server tokens from a password manager", () => {
       patch: (id: string, body: ServerBody) =>
         send("PATCH", `/v1/mcp-servers/${id}`, body),
       list: async () => (await send("GET", "/v1/mcp-servers")).json(),
+      setPluginToken: (body: z.input<typeof pluginSecretInput>) =>
+        app.request("/v1/plugin-settings/chat/token", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
       read: (path: string) =>
         run.runPromise(
           SecretValues.use((values) => values.read(reference(path))),
@@ -1951,6 +1972,42 @@ describe("MCP server tokens from a password manager", () => {
         tokenReference: REFERENCE,
       },
     ]);
+    api.close();
+  });
+
+  test("a plugin setting reads from a password manager only when its reference can be read", async () => {
+    const api = mcpSetup(fakePasswordManager({ [REFERENCE]: "chat_vault" }));
+
+    const missing = await api.setPluginToken({
+      reference: reference("op://vault/missing/token"),
+    });
+
+    expect(missing.status).toBe(400);
+    expect(
+      (
+        await api.setPluginToken({
+          value: "chat_stored",
+          reference: reference(),
+        })
+      ).status,
+    ).toBe(400);
+    expect((await api.setPluginToken({})).status).toBe(400);
+
+    const saved = await api.setPluginToken({ reference: reference() });
+
+    expect(await saved.json()).toMatchObject({
+      configured: true,
+      passwordManager: "1password",
+      reference: REFERENCE,
+    });
+
+    const stored = await api.setPluginToken({ value: "chat_stored" });
+
+    expect(await stored.json()).toMatchObject({
+      configured: true,
+      passwordManager: null,
+      reference: null,
+    });
     api.close();
   });
 

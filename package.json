@@ -21,7 +21,7 @@
     "dev": "bun --watch apps/server/src/app/server.ts --dev-workspaces",
     "start": "bun apps/server/src/app/server.ts",
     "test": "bun test --parallel",
-    "typecheck": "bun check -p apps/server && bun check -p apps/web",
+    "typecheck": "tsc -p apps/server && tsc -p apps/web",
     "lint": "oxlint --deny-warnings",
     "format": "bun fmt apps",
     "format:check": "bun fmt --check apps",

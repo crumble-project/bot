@@ -13,7 +13,9 @@ import { meliousPlugin } from "../providers/providers";
 import type { Workspaces } from "../workspaces/workspace";
 import { webSearchPlugin } from "../web-search/mixed";
 import { exaPlugin } from "../web-search/exa";
+import { discordPlugin } from "../message-gateway/discord/plugin";
 import type { Effect } from "effect";
+import type { SecretUnavailable } from "../password-managers/secret-values";
 
 /** The fixed parts of the plugins compiled into the server, in the order their vendors are listed. */
 export const builtinVendors: PluginVendors[] = [
@@ -26,8 +28,8 @@ export const builtinVendors: PluginVendors[] = [
 
 /** What the server hands the built-in plugins; each takes only the part it needs. */
 export type PluginHost = {
-  /** Reads a value from the account's secrets, such as a plugin setting. */
-  secret: (key: string) => Effect.Effect<string | undefined>;
+  /** Reads a value from the account's secrets, such as a plugin setting, from its password manager when it holds a reference. */
+  secret: (key: string) => Effect.Effect<string | undefined, SecretUnavailable>;
   dataDir: string;
   env: NodeJS.ProcessEnv;
   workspaces: Workspaces | undefined;
@@ -49,4 +51,5 @@ export const builtinPlugins = (host: PluginHost): CrumblePlugin[] => [
   desktopPlugin(host.workspaces, host.desktopControl, host.logins, host.intent),
   webSearchPlugin(),
   exaPlugin(host.secret),
+  discordPlugin(),
 ];

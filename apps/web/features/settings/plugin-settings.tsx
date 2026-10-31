@@ -1,12 +1,20 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { IconKey } from "@tabler/icons-react";
+import { IconKey, IconPencil, IconTrash } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { FieldError } from "@/components/ui/field";
-import { SecretForm } from "@/components/form-fields";
-import { RowTile, SettingRow, StatusDot } from "@/components/workspace";
+import { EditorSheet } from "@/components/form-fields";
+import {
+  SecretSourceField,
+  referenceOf,
+  sourceDraftOf,
+  useConnectedPasswordManagers,
+} from "@/components/secret-source-field";
+import { RowMenu, RowTile, SettingRow } from "@/components/workspace";
 import {
   type PluginSettings,
+  passwordManagersQuery,
   pluginSettingPath,
   pluginSettingsQuery,
   queryClient,
@@ -19,45 +27,54 @@ type Setting = Plugin["settings"][number];
 
 type Contribution = Plugin["contributes"][number];
 
-function SecretSettingEditor({
-  label,
-  editing,
+type SettingInput =
+  | { value: string }
+  | { reference: NonNullable<ReturnType<typeof referenceOf>> }
+  | null;
+
+function SecretSettingSheet({
+  setting,
   error,
-  value,
   pending,
-  onChange,
   onSave,
-  onCancel,
+  onClose,
 }: {
-  label: string;
-  editing: boolean;
+  setting: Setting;
   error: string | undefined;
-  value: string;
   pending: boolean;
-  onChange: (value: string) => void;
-  onSave: () => void;
-  onCancel: () => void;
+  onSave: (input: NonNullable<SettingInput>) => void;
+  onClose: () => void;
 }) {
-  if (!editing && error === undefined) return null;
+  const [source, setSource] = useState(() =>
+    sourceDraftOf(setting.passwordManager, setting.reference),
+  );
+
+  const connected = useConnectedPasswordManagers();
+  const reference = referenceOf(source);
+  const value = source.kind === "value" ? source.value.trim() : "";
 
   return (
-    <div className="flex flex-col gap-2 px-3 pb-3 pl-14">
-      {editing && (
-        <SecretForm
-          label={label}
-          value={value}
-          pending={pending}
-          onChange={onChange}
-          onSave={onSave}
-          onCancel={onCancel}
-        />
-      )}
-      {error !== undefined && <FieldError>{error}</FieldError>}
-    </div>
+    <EditorSheet
+      title={setting.label}
+      error={error}
+      submitLabel="Save"
+      submitDisabled={pending || (!reference && !value)}
+      onSubmit={() => onSave(reference ? { reference } : { value })}
+      onClose={onClose}
+    >
+      <SecretSourceField
+        id={`plugin-setting-${setting.key}`}
+        label="Value"
+        value={source}
+        onChange={setSource}
+        connected={connected}
+        valueDescription="Stored encrypted and never shown again."
+      />
+    </EditorSheet>
   );
 }
 
-/** One secret a plugin needs: its status, and adding, replacing, or removing it. */
+/** One secret a plugin needs: adding it, or editing and removing it from the row menu. */
 function SecretSetting({
   pluginId,
   setting,
@@ -68,19 +85,22 @@ function SecretSetting({
   onChange: (() => Promise<void>) | undefined;
 }) {
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState("");
   const path = pluginSettingPath(pluginId, setting.key);
-  const { configured } = setting;
+  const managers = useQuery(passwordManagersQuery).data ?? [];
+
+  const manager = managers.find((item) => item.id === setting.passwordManager);
 
   const save = useMutation({
-    mutationFn: (next: string | null) =>
-      next === null ? send(path, "DELETE") : send(path, "PUT", { value: next }),
+    mutationFn: (input: SettingInput) =>
+      input === null ? send(path, "DELETE") : send(path, "PUT", input),
     onSuccess: async () => {
-      setValue("");
       setEditing(false);
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: pluginSettingsQuery.queryKey,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: passwordManagersQuery.queryKey,
         }),
         onChange?.(),
       ]);
@@ -90,64 +110,74 @@ function SecretSetting({
   });
 
   return (
-    <div className="flex flex-col">
+    <>
       <SettingRow
         tile={
           <RowTile>
             <IconKey />
           </RowTile>
         }
-        title={setting.label}
+        title={
+          <>
+            {setting.label}
+            {manager && (
+              <span className="font-normal text-muted-foreground">
+                ({manager.name})
+              </span>
+            )}
+          </>
+        }
         description={
-          <StatusDot
-            on={configured}
-            label={configured ? "Saved" : setting.whenMissing}
-          />
+          !editing &&
+          save.isError && <FieldError>{save.error.message}</FieldError>
         }
       >
-        {!editing && (
-          <Button
-            variant={configured ? "ghost" : "outline"}
-            size="sm"
-            onClick={() => setEditing(true)}
-          >
-            {configured ? "Replace" : "Add key"}
-          </Button>
-        )}
-        {configured && !editing && (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={save.isPending}
-            onClick={() => save.mutate(null)}
-          >
-            Remove
+        {setting.configured ? (
+          <RowMenu>
+            <DropdownMenuItem onClick={() => setEditing(true)}>
+              <IconPencil />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={save.isPending}
+              onClick={() => save.mutate(null)}
+            >
+              <IconTrash />
+              Remove
+            </DropdownMenuItem>
+          </RowMenu>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+            Add
           </Button>
         )}
       </SettingRow>
-      <SecretSettingEditor
-        label={setting.label}
-        editing={editing}
-        error={save.isError ? save.error.message : undefined}
-        value={value}
-        pending={save.isPending}
-        onChange={setValue}
-        onSave={() => save.mutate(value.trim())}
-        onCancel={() => {
-          setEditing(false);
-          setValue("");
-        }}
-      />
-    </div>
+      {editing && (
+        <SecretSettingSheet
+          setting={setting}
+          error={save.isError ? save.error.message : undefined}
+          pending={save.isPending}
+          onSave={(input) => save.mutate(input)}
+          onClose={() => {
+            setEditing(false);
+            save.reset();
+          }}
+        />
+      )}
+    </>
   );
 }
 
 /** The settings of every plugin that contributes `contributes`, as the server declares them. */
 export function PluginSettingRows({
   contributes,
+  secretKey,
   onChange,
 }: {
   contributes: Contribution;
+  /** Limits the rows to the setting stored under this key, `pluginId:key`. */
+  secretKey?: string;
   /** Runs after a value is saved or removed, for pages whose own status depends on it. */
   onChange?: () => Promise<void>;
 }) {
@@ -163,13 +193,19 @@ export function PluginSettingRows({
   return settings.data?.plugins
     .filter((plugin) => plugin.contributes.includes(contributes))
     .flatMap((plugin) =>
-      plugin.settings.map((setting) => (
-        <SecretSetting
-          key={`${plugin.id}/${setting.key}`}
-          pluginId={plugin.id}
-          setting={setting}
-          onChange={onChange}
-        />
-      )),
+      plugin.settings
+        .filter(
+          (setting) =>
+            secretKey === undefined ||
+            `${plugin.id}:${setting.key}` === secretKey,
+        )
+        .map((setting) => (
+          <SecretSetting
+            key={`${plugin.id}/${setting.key}`}
+            pluginId={plugin.id}
+            setting={setting}
+            onChange={onChange}
+          />
+        )),
     );
 }

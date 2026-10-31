@@ -1,3 +1,4 @@
+import type { SecretUnavailable } from "../password-managers/secret-values";
 import { Effect, Schema } from "effect";
 import { pluginSettingKey, type CrumblePlugin } from "../plugins/plugins";
 import {
@@ -107,11 +108,12 @@ const keyedExaProvider = (key: string): WebSearchProvider => ({
 });
 
 const exaProvider = (
-  key: Effect.Effect<string | undefined>,
+  key: Effect.Effect<string | undefined, SecretUnavailable>,
 ): WebSearchProvider => ({
   id: "exa",
   search: (query, bot) =>
     key.pipe(
+      Effect.mapError((error) => new WebSearchError(error.message)),
       Effect.flatMap((value) =>
         value
           ? keyedExaProvider(value).search!(query, bot)
@@ -120,6 +122,7 @@ const exaProvider = (
     ),
   extract: (url) =>
     key.pipe(
+      Effect.mapError((error) => new WebExtractionError(error.message)),
       Effect.flatMap((value) =>
         value
           ? keyedExaProvider(value).extract!(url)
@@ -136,7 +139,7 @@ export const EXA_PLUGIN_ID = "web-search-exa";
 export const EXA_KEY = pluginSettingKey(EXA_PLUGIN_ID, "api-key");
 
 export const exaPlugin = (
-  secret: (key: string) => Effect.Effect<string | undefined>,
+  secret: (key: string) => Effect.Effect<string | undefined, SecretUnavailable>,
 ): CrumblePlugin => ({
   id: EXA_PLUGIN_ID,
   settings: [

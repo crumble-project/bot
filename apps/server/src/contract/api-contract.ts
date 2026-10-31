@@ -17,6 +17,11 @@ import { attachmentInput, MAX_ATTACHMENTS } from "../shared/attachments";
 import * as response from "./api-responses";
 import { body, define, empty, error, json } from "./route";
 import { pushRoutes } from "../push/push-contract";
+import {
+  gatewayConfigInput,
+  gatewayResponse,
+  gatewaysResponse,
+} from "./message-gateway";
 
 export type BotInput = z.input<typeof agentInput>;
 
@@ -122,9 +127,19 @@ const pluginSettingParams = z.object({
   key: z.string().min(1).max(200),
 });
 
-export const pluginSecretInput = z.object({
-  value: z.string().trim().min(1).max(16000),
-});
+// One object with optional fields rather than a union: `value` stays a compatible request property.
+export const pluginSecretInput = z
+  .object({
+    value: z.string().trim().min(1).max(16000).optional(),
+    reference: secretReferenceInput.optional(),
+  })
+  .strict()
+  .refine(
+    (input) => (input.value === undefined) !== (input.reference === undefined),
+    {
+      message: "Send exactly one of value or reference",
+    },
+  );
 
 /** Login answers may be pasted callback URLs, never larger than this. */
 const MAX_LOGIN_VALUE = 16384;
@@ -219,6 +234,22 @@ export const routes = {
     responses: { 200: json(response.capabilitiesResponse) },
   }),
   ...pushRoutes,
+  messageGateways: define({
+    method: "get",
+    path: "/v1/message-gateways",
+    operationId: "messageGateways",
+    responses: { 200: json(gatewaysResponse) },
+  }),
+  updateMessageGateway: define({
+    method: "put",
+    path: "/v1/message-gateways/{id}",
+    operationId: "updateMessageGateway",
+    request: {
+      params: z.object({ id: z.string().min(1).max(200) }),
+      body: body(gatewayConfigInput),
+    },
+    responses: { 200: json(gatewayResponse) },
+  }),
   getWebSearch: define({
     method: "get",
     path: "/v1/web-search",
@@ -1111,7 +1142,7 @@ export const routes = {
     path: "/v1/plugin-settings/{pluginId}/{key}",
     operationId: "setPluginSetting",
     description:
-      "Sets a plugin setting's value, replacing the one before. 404 for a plugin or key the server doesn't have.",
+      "Sets a plugin setting to a `value` stored in Crumble, or to a `reference` read from a connected password manager, replacing the one before; send exactly one. A reference is checked by reading it once; 400 when it can't be read. 404 for a plugin or key the server doesn't have.",
     request: { params: pluginSettingParams, body: body(pluginSecretInput) },
     responses: { 200: json(response.pluginSettingResponse) },
   }),
@@ -1208,7 +1239,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "3.4.0",
+      version: "3.5.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },
