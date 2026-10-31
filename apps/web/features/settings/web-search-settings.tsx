@@ -12,10 +12,26 @@ import {
   StatusDot,
   WorkspacePage,
 } from "@/components/workspace";
-import { api, call, queryClient, send } from "@/lib/api";
+import { api, type Bot, call, queryClient, send } from "@/lib/api";
+
+type WebSearchProviderId = NonNullable<Bot["webSearchProvider"]>;
+
+/** The name of each web search provider the server offers; a provider the server adds needs one here. */
+const providerNames: Record<WebSearchProviderId, string> = {
+  mixed: "Mixed",
+  exa: "Exa",
+};
+
+export const isWebSearchProviderId = (
+  value: string,
+): value is WebSearchProviderId => Object.hasOwn(providerNames, value);
+
+export const webSearchProviders = Object.entries(providerNames).flatMap(
+  ([id, name]) => (isWebSearchProviderId(id) ? [{ id, name }] : []),
+);
 
 export type WebSearchSettings = {
-  defaultProvider: "mixed" | "exa";
+  defaultProvider: WebSearchProviderId;
   exaKeyConfigured: boolean;
 };
 
@@ -177,13 +193,15 @@ export function WebSearchPage() {
               <Tabs
                 value={data.defaultProvider}
                 onValueChange={(value) => {
-                  if (value === "mixed" || value === "exa")
-                    change.mutate(value);
+                  if (isWebSearchProviderId(value)) change.mutate(value);
                 }}
               >
                 <TabsList aria-label="Default web search provider">
-                  <TabsTrigger value="mixed">Mixed</TabsTrigger>
-                  <TabsTrigger value="exa">Exa</TabsTrigger>
+                  {webSearchProviders.map((provider) => (
+                    <TabsTrigger key={provider.id} value={provider.id}>
+                      {provider.name}
+                    </TabsTrigger>
+                  ))}
                 </TabsList>
               </Tabs>
             </SettingRow>

@@ -4,6 +4,7 @@ import { SecretRepository } from "../credentials/secret-repository";
 import type { Runner } from "../shared/runner";
 import { SettingsRepository } from "../shared/settings-repository";
 import { z } from "zod";
+import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
 
 type Services = SecretRepository | SettingsRepository;
 
@@ -15,11 +16,12 @@ export function registerWebSearchRoutes(
   run: Runner<Services>,
 ) {
   const status = () => ({
-    defaultProvider:
-      run.runSync(SettingsRepository.use((r) => r.get(DEFAULT_PROVIDER))) ===
-      "exa"
-        ? ("exa" as const)
-        : ("mixed" as const),
+    defaultProvider: z
+      .enum(WEB_SEARCH_PROVIDER_IDS)
+      .catch("mixed")
+      .parse(
+        run.runSync(SettingsRepository.use((r) => r.get(DEFAULT_PROVIDER))),
+      ),
     exaKeyConfigured: run
       .runSync(SecretRepository.use((r) => r.listKeys))
       .includes(EXA_KEY),
@@ -28,7 +30,7 @@ export function registerWebSearchRoutes(
   register(routes.getWebSearch, (c) => c.json(status(), 200));
   register(routes.updateWebSearch, async (c) => {
     const input = z
-      .object({ defaultProvider: z.enum(["mixed", "exa"]) })
+      .object({ defaultProvider: z.enum(WEB_SEARCH_PROVIDER_IDS) })
       .parse(await c.req.json());
 
     run.runSync(

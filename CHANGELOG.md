@@ -15,6 +15,8 @@
 - Fix a coding or desktop job's activity opening at the top: it now opens at the newest step and follows new steps while the job works, like the bot chat.
 - Workspace images ship Bun 1.4.4 (`bun` and `bunx`) instead of Node: the base image is `debian:trixie-slim`. Railway workspaces install Bun too, and keep the Node their Ubuntu comes with. A new image recreates each bot's machine on its next boot: `/workspace` is kept, programs installed outside it are not.
 - The installed web app uses the Crumble icon on the home screen instead of the placeholder ring, with a maskable variant for Android.
+- Password managers and workspace backends are plugin contributions, like providers and job kinds. Web search provider and password manager IDs come from one list (`shared/vendors.ts`) that the contract, the domain, and the web UI derive from. Nothing changes for owners.
+- `GET /v1/capabilities` adds `jobKinds`, the kinds of background job bots can be given on this server, such as `coding` and `desktop`.
 
 ## 0.2.0
 

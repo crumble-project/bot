@@ -1,4 +1,8 @@
 import { z } from "@hono/zod-openapi";
+import {
+  PASSWORD_MANAGER_IDS,
+  WEB_SEARCH_PROVIDER_IDS,
+} from "../shared/vendors";
 import { botCommunication } from "../bots/transcript";
 import { agentInput } from "../shared/domain";
 import type * as charts from "../display/charts";
@@ -41,6 +45,10 @@ export const capabilitiesResponse = z
       description:
         "Whether bots can be given the desktop tool, and with it a bot desktop, on this server.",
     }),
+    jobKinds: z.array(z.string()).openapi({
+      description:
+        "The kinds of background job bots can be given on this server, such as `coding` and `desktop`.",
+    }),
   })
   .openapi("Capabilities");
 
@@ -53,7 +61,7 @@ export const agentResponse = z
     instructions: z.string(),
     provider: z.string(),
     model: z.string(),
-    webSearchProvider: z.enum(["mixed", "exa"]).nullable().optional(),
+    webSearchProvider: z.enum(WEB_SEARCH_PROVIDER_IDS).nullable().optional(),
     enabled: z.boolean(),
     tools: strings.openapi({
       description:
@@ -397,7 +405,7 @@ export const credentialResponse = z
   .object({
     name: z.string(),
     hosts: z.array(z.string()),
-    passwordManager: z.enum(["1password", "bitwarden"]).nullable().openapi({
+    passwordManager: z.enum(PASSWORD_MANAGER_IDS).nullable().openapi({
       description:
         "The password manager the value is read from; null for a value stored in Crumble.",
     }),
@@ -449,7 +457,7 @@ export const credentialUseResponse = z
 
 const loginFieldSourceResponse = z
   .object({
-    passwordManager: z.enum(["1password", "bitwarden"]).nullable().openapi({
+    passwordManager: z.enum(PASSWORD_MANAGER_IDS).nullable().openapi({
       description:
         "The password manager the value is read from; null for a value stored in Crumble.",
     }),
@@ -774,7 +782,7 @@ export const providerResponse = z
     authMethods: z.array(loginMethod),
     /** The provider's saved credential; ambient credentials have none. */
     credentialType: authType.nullable(),
-    passwordManager: z.enum(["1password", "bitwarden"]).nullable().openapi({
+    passwordManager: z.enum(PASSWORD_MANAGER_IDS).nullable().openapi({
       description:
         "The password manager the saved API key is read from; null for a credential stored in Crumble.",
     }),
@@ -896,7 +904,7 @@ const secretUsingPasswordManagerResponse = z
 
 export const passwordManagerResponse = z
   .object({
-    id: z.enum(["1password", "bitwarden"]),
+    id: z.enum(PASSWORD_MANAGER_IDS),
     name: z.string(),
     connected: z.boolean(),
     connectedAt: z.string().nullable(),
@@ -923,7 +931,7 @@ export const mcpServerResponse = z
         "The client ID of an OAuth app the owner registered with the server's authorization server, used instead of registering Crumble.",
     }),
     tokenPasswordManager: z
-      .enum(["1password", "bitwarden"])
+      .enum(PASSWORD_MANAGER_IDS)
       .nullable()
       .optional()
       .openapi({

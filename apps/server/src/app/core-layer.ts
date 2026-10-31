@@ -8,10 +8,10 @@ import { Logins } from "../logins/logins";
 import { ProviderCredentials } from "../providers/provider-credentials";
 import { McpOAuth } from "../integrations/mcp-oauth";
 import { BotMemory } from "../memory/bot-memory";
-import { bitwarden } from "../password-managers/bitwarden";
-import { onePassword } from "../password-managers/one-password";
 import { PasswordManagers } from "../password-managers/password-manager";
 import { SecretValues } from "../password-managers/secret-values";
+import { pluginPasswordManagers } from "../plugins/plugins";
+import { builtinVendors } from "./builtin-plugins";
 import { productLayer } from "./product-layer";
 
 /** The account's repositories and the services that need nothing else: the base every account runtime starts from. */
@@ -29,7 +29,9 @@ export const coreLayer = (dataDir: string) =>
     Layer.provideMerge(BotNotices.layer),
     Layer.provideMerge(
       SecretValues.layer.pipe(
-        Layer.provideMerge(PasswordManagers.layer([onePassword, bitwarden])),
+        Layer.provideMerge(
+          PasswordManagers.layer(pluginPasswordManagers(builtinVendors)),
+        ),
       ),
     ),
     Layer.provideMerge(productLayer(dataDir)),

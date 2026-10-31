@@ -239,11 +239,19 @@
           "desktop": {
             "type": "boolean",
             "description": "Whether bots can be given the desktop tool, and with it a bot desktop, on this server."
+          },
+          "jobKinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The kinds of background job bots can be given on this server, such as `coding` and `desktop`."
           }
         },
         "required": [
           "coding",
-          "desktop"
+          "desktop",
+          "jobKinds"
         ]
       },
       "Error": {

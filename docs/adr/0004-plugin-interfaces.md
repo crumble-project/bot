@@ -41,6 +41,19 @@ type JobKindContribution = {
 - **Job kinds wrap `defineJobKind`.** Coding and desktop are contributions offered only while their workspaces exist. The server builds chat and job extensions, job environments, and answer notifications by iterating them, so `taskExtensions` no longer names kinds.
 - **Narrow host interfaces.** Plugin factories take only what they need (the data directory and environment, workspaces, desktop control), never `CrumbleService` or `Store`. That surface is what a loadable plugin would later be versioned against.
 
+## Amendment: fixed and runtime parts
+
+Password managers and workspace backends were still hard-wired: `core-layer.ts` named 1Password and Bitwarden, and `tenant.ts` picked Railway or Microsandbox. They could not become contributions, because the plugin list is built from the account's workspaces and core services, and those services need password managers and a workspace backend first.
+
+A plugin now has up to two parts, sharing its ID:
+
+- **Fixed part (`PluginVendors`, `builtinVendors`):** vendors that need nothing from the account: `passwordManagers` and `workspaceBackends`. It is a module-level list, so `coreLayer` takes its password managers from it and the tenant runs the first workspace backend its environment configures (`pluginWorkspaces`).
+- **Runtime part (`CrumblePlugin`, `builtinPlugins(host)`):** model providers, job kinds, and web search providers, built from the `PluginHost` as before.
+
+Vendor IDs the contract, the domain, or stored data key on live in `shared/vendors.ts` (`WEB_SEARCH_PROVIDER_IDS`, `PASSWORD_MANAGER_IDS`). The contract's enums, the domain's inputs, and the Drizzle column derive from these lists, so the published contract keeps its enums, and adding a vendor changes one list plus its implementation. Strings validated at runtime were rejected: widening the enums would break generated clients. The web UI names each provider in a `Record` keyed by the contract's type, so a new ID fails its typecheck until it has a name.
+
+`GET /v1/capabilities` gains `jobKinds`, the kinds the runtime part offers, next to the `coding` and `desktop` flags it keeps.
+
 ## Not decided here
 
 Loading plugins from outside the codebase. That needs a manifest (ID, version, required host API version, requirements, settings schema), a trust and sandbox model for third-party code, and per-plugin settings storage. Hermes' `plugin.yaml` is a reference for the manifest fields. It gets its own ADR once a second-party plugin exists.

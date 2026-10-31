@@ -46,8 +46,6 @@ import { chosenJudge } from "../bot-desktop/judge-settings";
 import { accountJudge } from "../jobs/desktop-intent";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import type { Workspaces } from "../workspaces/workspace";
-import { microsandboxWorkspacesFromEnv } from "../workspaces/microsandbox-workspaces";
-import { railwayWorkspacesFromEnv } from "../workspaces/railway-workspaces";
 import { acquireWorkspaces } from "../workspaces/machine-workspaces";
 import { Push, PushDelivery } from "../push/push";
 import { ProviderModels } from "../providers/providers";
@@ -62,7 +60,7 @@ import { credentialAuthoritiesAccess } from "../credentials/credential-authority
 import { credentialProxy } from "../credentials/credential-proxy";
 import { coreLayer, type CoreServices } from "./core-layer";
 import { runnerOf } from "../shared/runner";
-import { builtinPlugins } from "./builtin-plugins";
+import { builtinPlugins, builtinVendors } from "./builtin-plugins";
 import { heldActionNotices, jobAnswers, jobTools } from "./plugin-layers";
 import {
   jobEnv,
@@ -70,6 +68,7 @@ import {
   pluginJobKinds,
   pluginProviders,
   Plugins,
+  pluginWorkspaces,
 } from "../plugins/plugins";
 import { BotWorkspaces } from "../workspaces/workspace";
 import { desktopKeepAwake } from "../bot-desktop/keep-awake";
@@ -143,6 +142,7 @@ function accountLayer(
       const authorities = credentialAuthoritiesAccess(run);
 
       const machineOptions = {
+        dataDir,
         namePrefix: `crumble-${options.tenantId.replace(/[^A-Za-z0-9_-]/g, "-")}`,
         wantsDesktop: (agentId: string) =>
           Effect.runSync(agents.get(agentId))?.tools.includes(
@@ -161,12 +161,8 @@ function accountLayer(
 
       return BotWorkspaces.layer(
         options.workspaces ??
-          acquireWorkspaces(
-            () =>
-              railwayWorkspacesFromEnv(process.env, {
-                ...machineOptions,
-                dataDir,
-              }) ?? microsandboxWorkspacesFromEnv(process.env, machineOptions),
+          acquireWorkspaces(() =>
+            pluginWorkspaces(builtinVendors, process.env, machineOptions),
           ),
       );
     }),
@@ -359,6 +355,7 @@ export async function createTenant(
             coding: workspaces !== undefined,
             scriptRuns: yield* ScriptRuns,
             desktop: workspaces?.desktop === true,
+            jobKinds: pluginJobKinds(plugins).map((kind) => kind.kind),
             restartWorkspace: async (agentId) =>
               workspaces && Effect.runPromise(workspaces.restart(agentId)),
             groupChats,

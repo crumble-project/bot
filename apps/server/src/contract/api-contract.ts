@@ -1,4 +1,5 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
 import {
   agentInput,
   credentialSaveInput,
@@ -216,7 +217,7 @@ export const routes = {
     responses: {
       200: json(
         z.object({
-          defaultProvider: z.enum(["mixed", "exa"]),
+          defaultProvider: z.enum(WEB_SEARCH_PROVIDER_IDS),
           exaKeyConfigured: z.boolean(),
         }),
       ),
@@ -227,12 +228,14 @@ export const routes = {
     path: "/v1/web-search",
     operationId: "updateWebSearch",
     request: {
-      body: body(z.object({ defaultProvider: z.enum(["mixed", "exa"]) })),
+      body: body(
+        z.object({ defaultProvider: z.enum(WEB_SEARCH_PROVIDER_IDS) }),
+      ),
     },
     responses: {
       200: json(
         z.object({
-          defaultProvider: z.enum(["mixed", "exa"]),
+          defaultProvider: z.enum(WEB_SEARCH_PROVIDER_IDS),
           exaKeyConfigured: z.boolean(),
         }),
       ),

@@ -1,4 +1,5 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
 
 export const agents = sqliteTable("agents", {
   id: text("id").primaryKey(),
@@ -8,7 +9,9 @@ export const agents = sqliteTable("agents", {
   instructions: text("instructions").notNull(),
   provider: text("provider").notNull(),
   model: text("model").notNull(),
-  webSearchProvider: text("web_search_provider", { enum: ["mixed", "exa"] }),
+  webSearchProvider: text("web_search_provider", {
+    enum: WEB_SEARCH_PROVIDER_IDS,
+  }),
   enabled: integer("enabled", { mode: "boolean" }).notNull(),
   tools: text("tools").notNull(),
   // Inline skills moved to the skill library; the column stays `[]` for databases that predate it.

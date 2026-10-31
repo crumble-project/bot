@@ -83,6 +83,8 @@ export type ApiOptions = {
   scriptRuns?: ScriptRuns["Service"];
   /** Whether the server can give bots the desktop tool. */
   desktop?: boolean;
+  /** The job kinds the server's plugins offer bots. */
+  jobKinds?: string[];
   /** Stops a bot's workspace machine, so its next use boots the image its tools need now. */
   restartWorkspace?: (agentId: string) => Promise<void>;
   /** Group chats; their routes answer 503 without it. */
@@ -204,6 +206,7 @@ const pushServerIdOf = (push: PushRuntime | undefined) =>
 const capabilitiesOf = (options: ApiOptions) => ({
   coding: options.coding === true,
   desktop: options.desktop === true,
+  jobKinds: options.jobKinds ?? [],
 });
 
 export function createAPI(

@@ -164,17 +164,24 @@ describe("HTTP API for bots, chats, and activity", () => {
     const withDesktop = createAPI(service, scheduler, token, undefined, {
       coding: true,
       desktop: true,
+      jobKinds: ["coding", "desktop"],
     });
 
     const without = await req(app, "/v1/capabilities");
-    expect(await without.json()).toEqual({ coding: false, desktop: false });
+    expect(await without.json()).toEqual({
+      coding: false,
+      desktop: false,
+      jobKinds: [],
+    });
     expect(await (await req(withCoding, "/v1/capabilities")).json()).toEqual({
       coding: true,
       desktop: false,
+      jobKinds: [],
     });
     expect(await (await req(withDesktop, "/v1/capabilities")).json()).toEqual({
       coding: true,
       desktop: true,
+      jobKinds: ["coding", "desktop"],
     });
   });
 
