@@ -17,6 +17,7 @@
 - The installed web app uses the Crumble icon on the home screen instead of the placeholder ring, with a maskable variant for Android.
 - Password managers and workspace backends are plugin contributions, like providers and job kinds. Web search provider and password manager IDs come from one list (`shared/vendors.ts`) that the contract, the domain, and the web UI derive from. Nothing changes for owners.
 - The API reads the services its routes need from the account instead of the tenant passing each one, and registers routes from one list; store schema files are collected by name. Nothing changes for owners or clients ([ADR 0008](docs/adr/0008-feature-wiring.md)).
+- Plugins declare the settings they need, such as the Exa API key. `GET /v1/plugin-settings` lists each plugin's settings and whether each has a value, and `PUT` and `DELETE /v1/plugin-settings/{pluginId}/{key}` set and remove one. **Settings** > **Web search** draws the Exa key from that list and looks the same. `PUT` and `DELETE /v1/web-search/exa-key` still work and are deprecated. A saved Exa key moves to its plugin on upgrade ([ADR 0009](docs/adr/0009-plugin-settings.md)).
 - `GET /v1/capabilities` adds `jobKinds`, the kinds of background job bots can be given on this server, such as `coding` and `desktop`.
 
 ## 0.2.0

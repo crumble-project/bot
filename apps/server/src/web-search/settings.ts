@@ -5,11 +5,11 @@ import type { Runner } from "../shared/runner";
 import { SettingsRepository } from "../shared/settings-repository";
 import { z } from "zod";
 import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
+import { EXA_KEY } from "./exa";
 
 type Services = SecretRepository | SettingsRepository;
 
 export const DEFAULT_PROVIDER = "web-search:default-provider";
-export const EXA_KEY = "web-search:exa-key";
 
 export function registerWebSearchRoutes(options: {
   register: Register;

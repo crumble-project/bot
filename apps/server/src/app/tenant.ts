@@ -71,7 +71,6 @@ import { desktopKeepAwake } from "../bot-desktop/keep-awake";
 import { AgentRepository } from "../bots/agent-repository";
 import { BotRequests, botRequestTools } from "../bot-requests/bot-requests";
 import { SecretRepository } from "../credentials/secret-repository";
-import { EXA_KEY } from "../web-search/settings";
 
 export type TenantOptions = {
   dataDir: string;
@@ -171,7 +170,7 @@ function accountLayer(
 
       const installed = builtinPlugins({
         dataDir,
-        exaKey: (yield* SecretRepository).get(EXA_KEY),
+        secret: (yield* SecretRepository).get,
         env: process.env,
         workspaces: yield* BotWorkspaces,
         desktopControl: desktopControlAccess(run),

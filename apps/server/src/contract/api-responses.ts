@@ -919,6 +919,37 @@ export const passwordManagersResponse = z
   .object({ passwordManagers: z.array(passwordManagerResponse) })
   .openapi("PasswordManagers");
 
+export const pluginSettingResponse = z
+  .object({
+    key: z.string(),
+    kind: z.enum(["secret"]).openapi({
+      description: "A secret is written once and never returned.",
+    }),
+    label: z.string(),
+    whenMissing: z.string().openapi({
+      description: "The status to show while the setting has no value.",
+    }),
+    configured: z.boolean(),
+  })
+  .openapi("PluginSetting");
+
+export const pluginSettingsResponse = z
+  .object({
+    plugins: z.array(
+      z.object({
+        id: z.string(),
+        contributes: z
+          .array(z.enum(["providers", "jobKinds", "webSearchProviders"]))
+          .openapi({
+            description:
+              "What the plugin adds to the server, so a client can show its settings where those are chosen.",
+          }),
+        settings: z.array(pluginSettingResponse),
+      }),
+    ),
+  })
+  .openapi("PluginSettings");
+
 export const mcpServerResponse = z
   .object({
     id: z.string(),

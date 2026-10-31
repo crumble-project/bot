@@ -45,6 +45,7 @@ import {
 } from "../integrations/mcp-oauth";
 import { registerMemoryRoutes } from "../memory/memory-api";
 import { registerPasswordManagerRoutes } from "../password-managers/password-managers-api";
+import { registerPluginSettingRoutes } from "../plugins/plugin-settings-api";
 import {
   registerProviderRoutes,
   providerSchema,
@@ -77,6 +78,7 @@ import {
   pluginJobKinds,
   pluginProviders,
   Plugins,
+  type CrumblePlugin,
   type ExternalAuth,
 } from "../plugins/plugins";
 import { BotWorkspaces } from "../workspaces/workspace";
@@ -105,6 +107,8 @@ export type ApiOptions = {
   scriptRuns?: ScriptRuns["Service"] | undefined;
   /** Whether the server can give bots the desktop tool. */
   desktop?: boolean | undefined;
+  /** The plugins compiled into the server, for their settings. */
+  plugins?: readonly CrumblePlugin[] | undefined;
   /** The job kinds the server's plugins offer bots. */
   jobKinds?: string[] | undefined;
   /** Stops a bot's workspace machine, so its next use boots the image its tools need now. */
@@ -145,10 +149,26 @@ const serviceIn =
   <I, S>(key: Context.Key<I, S>) =>
     Option.getOrUndefined(core.runSync(Effect.serviceOption(key)));
 
+/** The options the account's bot workspaces provide, when the server runs them. */
+const workspaceOptions = (
+  workspaces: BotWorkspaces["Service"] | undefined,
+): ApiOptions => ({
+  coding: workspaces !== undefined,
+  desktop: workspaces?.desktop === true,
+  restartWorkspace:
+    workspaces &&
+    (async (agentId) => Effect.runPromise(workspaces.restart(agentId))),
+  openDesktop:
+    workspaces &&
+    ((agentId, options) => workspaces.openDesktop(agentId, options)),
+  desktopRunning:
+    workspaces && ((agentId) => workspaces.desktopRunning(agentId)),
+  startDesktop: workspaces && ((agentId) => workspaces.startDesktop(agentId)),
+});
+
 /** The options the account's own services provide; a runner over only the repositories provides none of them. */
 function accountOptions(core: Runner<CoreServices>): ApiOptions {
   const service = serviceIn(core);
-  const workspaces = service(BotWorkspaces);
   const plugins = service(Plugins) ?? [];
   const scheduler = service(Scheduler);
   const push = service(Push);
@@ -156,26 +176,17 @@ function accountOptions(core: Runner<CoreServices>): ApiOptions {
   const groupChats = service(GroupChats);
 
   return {
+    ...workspaceOptions(service(BotWorkspaces)),
     scheduler:
       scheduler &&
       schedulerAccess(runnerOf(Context.make(Scheduler, scheduler))),
     integrations: service(McpIntegrations),
     push: push && runnerOf(Context.make(Push, push)),
     commonSkills: service(CommonSkills),
-    coding: workspaces !== undefined,
     scriptRuns: service(ScriptRuns),
-    desktop: workspaces?.desktop === true,
+    plugins,
     jobKinds: pluginJobKinds(plugins).map((kind) => kind.kind),
-    restartWorkspace:
-      workspaces &&
-      (async (agentId) => Effect.runPromise(workspaces.restart(agentId))),
     groupChats: groupChats && groupChatsAccess(groupChats),
-    openDesktop:
-      workspaces &&
-      ((agentId, options) => workspaces.openDesktop(agentId, options)),
-    desktopRunning:
-      workspaces && ((agentId) => workspaces.desktopRunning(agentId)),
-    startDesktop: workspaces && ((agentId) => workspaces.startDesktop(agentId)),
     providerAuth:
       signIns &&
       providerSignInsAccess(runnerOf(Context.make(ProviderSignIns, signIns))),
@@ -329,6 +340,7 @@ const featureRoutes: ReadonlyArray<(api: ApiContext) => void> = [
   registerActivityRoutes,
   registerProviderRoutes,
   registerPasswordManagerRoutes,
+  registerPluginSettingRoutes,
   registerMcpServerRoutes,
 ];
 

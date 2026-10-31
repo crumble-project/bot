@@ -12,7 +12,7 @@ import { railwayWorkspacesFromEnv } from "../workspaces/railway-workspaces";
 import { meliousPlugin } from "../providers/providers";
 import type { Workspaces } from "../workspaces/workspace";
 import { webSearchPlugin } from "../web-search/mixed";
-import { exaProvider } from "../web-search/exa";
+import { exaPlugin } from "../web-search/exa";
 import type { Effect } from "effect";
 
 /** The fixed parts of the plugins compiled into the server, in the order their vendors are listed. */
@@ -26,7 +26,8 @@ export const builtinVendors: PluginVendors[] = [
 
 /** What the server hands the built-in plugins; each takes only the part it needs. */
 export type PluginHost = {
-  exaKey: Effect.Effect<string | undefined>;
+  /** Reads a value from the account's secrets, such as a plugin setting. */
+  secret: (key: string) => Effect.Effect<string | undefined>;
   dataDir: string;
   env: NodeJS.ProcessEnv;
   workspaces: Workspaces | undefined;
@@ -47,5 +48,5 @@ export const builtinPlugins = (host: PluginHost): CrumblePlugin[] => [
   codingPlugin(host.workspaces, host.credentials),
   desktopPlugin(host.workspaces, host.desktopControl, host.logins, host.intent),
   webSearchPlugin(),
-  { id: "web-search-exa", webSearchProviders: [exaProvider(host.exaKey)] },
+  exaPlugin(host.secret),
 ];

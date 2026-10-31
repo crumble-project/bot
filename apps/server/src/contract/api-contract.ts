@@ -117,6 +117,15 @@ export const passwordManagerTokenInput = z.object({
 
 const passwordManagerParams = z.object({ id: passwordManagerIdInput });
 
+const pluginSettingParams = z.object({
+  pluginId: z.string().min(1).max(200),
+  key: z.string().min(1).max(200),
+});
+
+export const pluginSecretInput = z.object({
+  value: z.string().trim().min(1).max(16000),
+});
+
 /** Login answers may be pasted callback URLs, never larger than this. */
 const MAX_LOGIN_VALUE = 16384;
 
@@ -260,6 +269,9 @@ export const routes = {
     method: "put",
     path: "/v1/web-search/exa-key",
     operationId: "setExaKey",
+    deprecated: true,
+    description:
+      "Use `PUT /v1/plugin-settings/web-search-exa/api-key`; this sets the same value.",
     request: { body: body(apiKeyInput) },
     responses: { 200: json(z.object({ exaKeyConfigured: z.boolean() })) },
   }),
@@ -267,6 +279,9 @@ export const routes = {
     method: "delete",
     path: "/v1/web-search/exa-key",
     operationId: "deleteExaKey",
+    deprecated: true,
+    description:
+      "Use `DELETE /v1/plugin-settings/web-search-exa/api-key`; this removes the same value.",
     responses: { 200: json(z.object({ exaKeyConfigured: z.boolean() })) },
   }),
   listAgents: define({
@@ -1082,6 +1097,32 @@ export const routes = {
       "Disconnects the password manager and drops its token. 409 while any secret still reads from it; `usedBy` in the list names them.",
     request: { params: passwordManagerParams },
     responses: { 204: empty },
+  }),
+  pluginSettings: define({
+    method: "get",
+    path: "/v1/plugin-settings",
+    operationId: "listPluginSettings",
+    description:
+      "Each plugin that has settings, and whether each setting has a value. Values are never returned.",
+    responses: { 200: json(response.pluginSettingsResponse) },
+  }),
+  setPluginSetting: define({
+    method: "put",
+    path: "/v1/plugin-settings/{pluginId}/{key}",
+    operationId: "setPluginSetting",
+    description:
+      "Sets a plugin setting's value, replacing the one before. 404 for a plugin or key the server doesn't have.",
+    request: { params: pluginSettingParams, body: body(pluginSecretInput) },
+    responses: { 200: json(response.pluginSettingResponse) },
+  }),
+  deletePluginSetting: define({
+    method: "delete",
+    path: "/v1/plugin-settings/{pluginId}/{key}",
+    operationId: "deletePluginSetting",
+    description:
+      "Removes a plugin setting's value. 404 for a plugin or key the server doesn't have.",
+    request: { params: pluginSettingParams },
+    responses: { 200: json(response.pluginSettingResponse) },
   }),
   mcpServers: define({
     method: "get",

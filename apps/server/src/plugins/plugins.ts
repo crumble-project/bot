@@ -110,6 +110,21 @@ export function pluginWorkspaces(
   return undefined;
 }
 
+/** A value the owner sets for a plugin, such as an API key. See docs/adr/0009-plugin-settings.md. */
+export type PluginSetting = {
+  /** Stored data keys on it: never rename. */
+  key: string;
+  /** Written once and never read back by clients. */
+  kind: "secret";
+  label: string;
+  /** The status the owner sees while the setting has no value. */
+  whenMissing: string;
+};
+
+/** Where a plugin's setting is stored in the account's secrets. */
+export const pluginSettingKey = (pluginId: string, key: string) =>
+  `${pluginId}:${key}`;
+
 /**
  * A plugin's runtime part, built once the account's services exist: model providers, job kinds, and web search
  * providers. See docs/adr/0004-plugin-interfaces.md.
@@ -120,7 +135,14 @@ export type CrumblePlugin = {
   providers?: ProviderContribution[];
   jobKinds?: JobKindContribution[];
   webSearchProviders?: WebSearchProvider[];
+  settings?: PluginSetting[];
 };
+
+/** The kinds of contribution a plugin makes, as clients group plugins by. */
+export const pluginContributions = (plugin: CrumblePlugin) =>
+  (["providers", "jobKinds", "webSearchProviders"] as const).filter(
+    (kind) => (plugin[kind]?.length ?? 0) > 0,
+  );
 
 export const pluginProviders = (plugins: readonly CrumblePlugin[]) =>
   plugins.flatMap((plugin) => plugin.providers ?? []);

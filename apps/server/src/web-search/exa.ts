@@ -1,4 +1,5 @@
 import { Effect, Schema } from "effect";
+import { pluginSettingKey, type CrumblePlugin } from "../plugins/plugins";
 import {
   WebExtractionError,
   WebSearchError,
@@ -105,7 +106,7 @@ const keyedExaProvider = (key: string): WebSearchProvider => ({
     ),
 });
 
-export const exaProvider = (
+const exaProvider = (
   key: Effect.Effect<string | undefined>,
 ): WebSearchProvider => ({
   id: "exa",
@@ -127,4 +128,24 @@ export const exaProvider = (
             ),
       ),
     ),
+});
+
+export const EXA_PLUGIN_ID = "web-search-exa";
+
+/** Where the Exa key is stored; the deprecated /v1/web-search/exa-key routes read it too. */
+export const EXA_KEY = pluginSettingKey(EXA_PLUGIN_ID, "api-key");
+
+export const exaPlugin = (
+  secret: (key: string) => Effect.Effect<string | undefined>,
+): CrumblePlugin => ({
+  id: EXA_PLUGIN_ID,
+  settings: [
+    {
+      key: "api-key",
+      kind: "secret",
+      label: "Exa API key",
+      whenMissing: "Needed for Exa",
+    },
+  ],
+  webSearchProviders: [exaProvider(secret(EXA_KEY))],
 });

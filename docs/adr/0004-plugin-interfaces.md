@@ -56,7 +56,7 @@ Vendor IDs the contract, the domain, or stored data key on live in `shared/vendo
 
 ## Not decided here
 
-Loading plugins from outside the codebase. That needs a manifest (ID, version, required host API version, requirements, settings schema), a trust and sandbox model for third-party code, and per-plugin settings storage. Hermes' `plugin.yaml` is a reference for the manifest fields. It gets its own ADR once a second-party plugin exists.
+Loading plugins from outside the codebase. That needs a manifest (ID, version, required host API version, requirements, settings schema), a trust and sandbox model for third-party code, and per-plugin settings storage ([ADR 0009](0009-plugin-settings.md) covers settings for compiled-in plugins). Hermes' `plugin.yaml` is a reference for the manifest fields. It gets its own ADR once a second-party plugin exists.
 
 ## Considered options
 
