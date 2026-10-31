@@ -2,7 +2,7 @@ import { and, desc, eq, lt, or } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import type { ScriptRun } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
-import { scriptRuns } from "./script-run-schema";
+import { scriptRuns } from "./schema.script-runs";
 
 type FinishedRun = Pick<
   ScriptRun,

@@ -24,7 +24,7 @@ type SkillRoutesOptions = {
   /** Runs the repository effects the skill routes read and write. */
   run: Runner<Services>;
   /** Skills the server ships with; they are read-only. */
-  commonSkills?: CommonSkill[];
+  commonSkills?: CommonSkill[] | undefined;
 };
 
 /** The bot's own skill, which must belong to that bot. */

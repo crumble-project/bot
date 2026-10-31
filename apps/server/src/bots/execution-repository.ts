@@ -4,7 +4,7 @@ import type { AttachmentInput } from "../shared/attachments";
 import type { Execution } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
-import { executions } from "./execution-schema";
+import { executions } from "./schema.executions";
 
 export type NewExecution = Omit<Execution, "id" | "createdAt" | "updatedAt"> & {
   prompt?: string;

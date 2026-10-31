@@ -20,11 +20,7 @@ import { BotSchedules, scheduleTools } from "../schedules/bot-schedules";
 import { TaskDispatch } from "../schedules/task-dispatch";
 import { ScriptRuns } from "../schedules/script-runs";
 import { createAPI } from "./api";
-import {
-  GroupChats,
-  groupChatsAccess,
-  GroupTranscriptStore,
-} from "../group-chats/group-chats";
+import { GroupChats, GroupTranscriptStore } from "../group-chats/group-chats";
 import { groupLookupTools } from "../group-chats/group-lookup";
 import { GroupTranscripts } from "../group-chats/group-transcripts";
 import { historyTools } from "../history/history-tools";
@@ -49,10 +45,7 @@ import type { Workspaces } from "../workspaces/workspace";
 import { acquireWorkspaces } from "../workspaces/machine-workspaces";
 import { Push, PushDelivery } from "../push/push";
 import { ProviderModels } from "../providers/providers";
-import {
-  ProviderSignIns,
-  providerSignInsAccess,
-} from "../providers/provider-auth";
+import { ProviderSignIns } from "../providers/provider-auth";
 import { credentialsAccess } from "../credentials/credentials";
 import { loginsAccess } from "../logins/logins";
 import { desktopFillsAccess } from "../bot-desktop/desktop-fill-repository";
@@ -264,7 +257,8 @@ function accountLayer(
 
   const push = PushDelivery.pipe(Layer.provideMerge(Push.layer(dataDir)));
 
-  return Layer.mergeAll(
+  /** Background work and the bots' tool registrations: no other layer needs them. */
+  const leaves = Layer.mergeAll(
     reviews,
     curation,
     jobAnswers,
@@ -277,25 +271,32 @@ function accountLayer(
     historyTools,
     desktopKeepAwake,
     push,
-  ).pipe(
+  );
+
+  const conversations = Layer.mergeAll(scheduler, groups, activity);
+
+  /** Tools whose sandboxes must close after the bot runtime that uses them. */
+  const sandboxedTools = Layer.mergeAll(
+    integrationTools,
+    codemodeTools,
+    displayTools,
+    configuredWebSearchTools,
+    reactionTools,
+  );
+
+  const signIns = Layer.mergeAll(ProviderSignIns.layer, integrations);
+
+  // Tiers from top to bottom: each may use every tier below it, and the account closes them top first.
+  return leaves.pipe(
     Layer.provideMerge(schedules),
     Layer.provideMerge(botRequests),
-    Layer.provideMerge(Layer.mergeAll(scheduler, groups, activity)),
+    Layer.provideMerge(conversations),
     Layer.provideMerge(ScriptRuns.layer),
     Layer.provideMerge(bots),
     Layer.provideMerge(runtime),
     Layer.provideMerge(BotSkills.layer),
-    // Below the runtime, so their sandboxes close after it.
-    Layer.provideMerge(
-      Layer.mergeAll(
-        integrationTools,
-        codemodeTools,
-        displayTools,
-        configuredWebSearchTools,
-        reactionTools,
-      ),
-    ),
-    Layer.provideMerge(Layer.mergeAll(ProviderSignIns.layer, integrations)),
+    Layer.provideMerge(sandboxedTools),
+    Layer.provideMerge(signIns),
     Layer.provideMerge(models),
     Layer.provideMerge(plugins),
     Layer.provideMerge(workspaces),
@@ -341,56 +342,19 @@ export async function createTenant(
           runnerOf(yield* Effect.context<Scheduler>()),
         );
 
-        const workspaces = yield* BotWorkspaces;
         const chats = yield* GroupChats;
-        const groupChats = groupChatsAccess(chats);
-        const plugins = yield* Plugins;
-
-        const run = runnerOf(
-          yield* Effect.context<CoreServices | Push | ProviderSignIns>(),
-        );
-
+        // Typed as the core, but its context holds every account service, which createAPI reads.
+        const run = runnerOf(yield* Effect.context<CoreServices>());
         const token = randomBytes(32).toString("hex");
 
         const app = createAPI(
-          {
-            ...service,
-            core: run,
-            runtime: yield* BotRuntime,
-          },
-          scheduler,
+          { ...service, core: run, runtime: yield* BotRuntime },
           token,
-          yield* McpIntegrations,
           {
-            commonSkills: yield* CommonSkills,
-            coding: workspaces !== undefined,
-            scriptRuns: yield* ScriptRuns,
-            desktop: workspaces?.desktop === true,
-            jobKinds: pluginJobKinds(plugins).map((kind) => kind.kind),
-            restartWorkspace: async (agentId) =>
-              workspaces && Effect.runPromise(workspaces.restart(agentId)),
-            groupChats,
-            desktopControl: desktopControlAccess(run),
+            scheduler,
             viewerTickets: new ViewerTickets(Date.now, options.tenantId),
-            externalAuth: new Map(
-              pluginProviders(plugins).flatMap(({ provider, externalAuth }) =>
-                externalAuth ? [[provider.id, externalAuth] as const] : [],
-              ),
-            ),
-            ...(workspaces && {
-              openDesktop: (agentId: string, desktop: { passive: boolean }) =>
-                workspaces.openDesktop(agentId, desktop),
-              startDesktop: (agentId: string) =>
-                workspaces.startDesktop(agentId),
-              desktopRunning: (agentId: string) =>
-                workspaces.desktopRunning(agentId),
-            }),
-            providerAuth: providerSignInsAccess(run),
             oauthClient,
-            credentials: credentialsAccess(run),
-            botRequests: yield* BotRequests,
           },
-          run,
         );
 
         yield* bots.recover;

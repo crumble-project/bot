@@ -356,7 +356,7 @@ function serve(store: Store, runtime: AgentRuntime) {
     service.dispatch(a, p, r, s),
   );
 
-  const app = createAPI(service, scheduler, token);
+  const app = createAPI(service, token, { scheduler });
 
   return (path: string) =>
     app.request(path, { headers: { authorization: `Bearer ${token}` } });

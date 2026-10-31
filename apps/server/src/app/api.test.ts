@@ -76,7 +76,7 @@ afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
 
-function setup(options: Parameters<typeof createAPI>[4] = {}) {
+function setup(options: Parameters<typeof createAPI>[2] = {}) {
   const dir = mkdtempSync(join("/tmp", "bot-api-"));
   dirs.push(dir);
   let sequence = 0;
@@ -112,7 +112,7 @@ function setup(options: Parameters<typeof createAPI>[4] = {}) {
   );
 
   return {
-    app: createAPI(service, scheduler, token, undefined, options),
+    app: createAPI(service, token, { scheduler, ...options }),
     store,
     runtime,
     service,
@@ -157,11 +157,13 @@ describe("HTTP API for bots, chats, and activity", () => {
       service.dispatch(a, p, r, s),
     );
 
-    const withCoding = createAPI(service, scheduler, token, undefined, {
+    const withCoding = createAPI(service, token, {
+      scheduler,
       coding: true,
     });
 
-    const withDesktop = createAPI(service, scheduler, token, undefined, {
+    const withDesktop = createAPI(service, token, {
+      scheduler,
       coding: true,
       desktop: true,
       jobKinds: ["coding", "desktop"],
@@ -233,7 +235,8 @@ describe("HTTP API for bots, chats, and activity", () => {
 
     const restarted: string[] = [];
 
-    const app = createAPI(service, scheduler, token, undefined, {
+    const app = createAPI(service, token, {
+      scheduler,
       restartWorkspace: async (agentId) => void restarted.push(agentId),
     });
 
@@ -314,7 +317,8 @@ describe("HTTP API for bots, chats, and activity", () => {
       service.dispatch(a, p, r, s),
     );
 
-    const app = createAPI(service, scheduler, token, undefined, {
+    const app = createAPI(service, token, {
+      scheduler,
       commonSkills: [
         {
           id: "common:tasks/SKILL.md",
@@ -1243,7 +1247,7 @@ describe("HTTP API for script tasks and schedules", () => {
       list: repository.list,
     });
 
-    const app = createAPI(service, scheduler, token, undefined, { scriptRuns });
+    const app = createAPI(service, token, { scheduler, scriptRuns });
 
     const agent = store.createAgent({
       ...agentInput("Coder"),
@@ -1384,7 +1388,8 @@ describe("bot desktop control and viewer", () => {
     const desktopControl = desktopControlAccess(store.runtime);
     const viewerTickets = new ViewerTickets();
 
-    const app = createAPI(service, scheduler, token, undefined, {
+    const app = createAPI(service, token, {
+      scheduler,
       desktop: true,
       desktopControl,
       viewerTickets,
@@ -1743,7 +1748,8 @@ describe("provider API keys from a password manager", () => {
       runnerOf(Context.merge(core, vault)),
     );
 
-    const app = createAPI(service, scheduler, token, undefined, {
+    const app = createAPI(service, token, {
+      scheduler,
       providerAuth,
     });
 

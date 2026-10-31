@@ -71,7 +71,7 @@ describe("operational activity", () => {
     );
 
     const token = "t".repeat(40);
-    const app = createAPI(service, scheduler, token);
+    const app = createAPI(service, token, { scheduler });
 
     const agent = store.createAgent({
       name: "Helper",

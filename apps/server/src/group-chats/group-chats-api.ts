@@ -14,7 +14,7 @@ import type { GroupChatsAccess } from "./group-chats";
 type GroupChatRoutesOptions = {
   register: Register;
   /** Group chats; their routes answer 503 without it. */
-  groupChats?: GroupChatsAccess;
+  groupChats?: GroupChatsAccess | undefined;
 };
 
 /** Group chats are optional, so every route asks for them and answers 503 when the server has none. */

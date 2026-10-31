@@ -141,7 +141,7 @@ describe("push registration and durable delivery", () => {
       fcmOnly({ send: () => Effect.succeed("delivered") }),
     );
 
-    const app = createAPI(service, scheduler, token, undefined, {}, push);
+    const app = createAPI(service, token, { scheduler, push });
     const installationId = id();
 
     const request = (path: string, init: TestRequestInit = {}) =>

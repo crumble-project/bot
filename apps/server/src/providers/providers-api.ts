@@ -28,7 +28,7 @@ type ProviderRoutesOptions = {
   /** Runs the repository effects the provider routes read. */
   run: Runner<Services>;
   /** Providers whose sign-in happens outside Crumble, by provider ID. */
-  externalAuth?: ReadonlyMap<string, () => Promise<ExternalAuth>>;
+  externalAuth?: ReadonlyMap<string, () => Promise<ExternalAuth>> | undefined;
 };
 
 /** The providers this server can serve; a saved credential may name a provider that has since been dropped. */

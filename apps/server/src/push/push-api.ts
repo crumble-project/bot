@@ -7,10 +7,11 @@ import { presenceInput, pushInput, pushRoutes } from "./push-contract";
 import { NotFound, Unavailable } from "../shared/errors";
 
 /** The owner's push routes: delivery status, device registration, and presence. Without a runtime, push is unavailable. */
-export function registerPushRoutes(
-  register: Register,
-  runtime: PushRuntime | undefined,
-) {
+export function registerPushRoutes(options: {
+  register: Register;
+  push?: PushRuntime | undefined;
+}) {
+  const { register, push: runtime } = options;
   const push = runtime?.runSync(Push.use(Effect.succeed));
 
   register(pushRoutes.pushStatus, (c) =>

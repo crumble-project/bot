@@ -45,7 +45,7 @@ function setup() {
 
   const groupChats = standaloneGroupChats(service, transcripts);
 
-  const app = createAPI(service, scheduler, token, undefined, { groupChats });
+  const app = createAPI(service, token, { scheduler, groupChats });
 
   const bots = ["Planner", "Researcher", "Critic"].map((name) =>
     store.createAgent({

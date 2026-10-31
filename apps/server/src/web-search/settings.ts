@@ -11,10 +11,12 @@ type Services = SecretRepository | SettingsRepository;
 export const DEFAULT_PROVIDER = "web-search:default-provider";
 export const EXA_KEY = "web-search:exa-key";
 
-export function registerWebSearchRoutes(
-  register: Register,
-  run: Runner<Services>,
-) {
+export function registerWebSearchRoutes(options: {
+  register: Register;
+  run: Runner<Services>;
+}) {
+  const { register, run } = options;
+
   const status = () => ({
     defaultProvider: z
       .enum(WEB_SEARCH_PROVIDER_IDS)
