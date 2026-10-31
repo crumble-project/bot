@@ -17,6 +17,11 @@ import { attachmentInput, MAX_ATTACHMENTS } from "../shared/attachments";
 import * as response from "./api-responses";
 import { body, define, empty, error, json } from "./route";
 import { pushRoutes } from "../push/push-contract";
+import {
+  gatewayConfigInput,
+  gatewayResponse,
+  gatewaysResponse,
+} from "./message-gateway";
 
 export type BotInput = z.input<typeof agentInput>;
 
@@ -219,6 +224,22 @@ export const routes = {
     responses: { 200: json(response.capabilitiesResponse) },
   }),
   ...pushRoutes,
+  messageGateways: define({
+    method: "get",
+    path: "/v1/message-gateways",
+    operationId: "messageGateways",
+    responses: { 200: json(gatewaysResponse) },
+  }),
+  updateMessageGateway: define({
+    method: "put",
+    path: "/v1/message-gateways/{id}",
+    operationId: "updateMessageGateway",
+    request: {
+      params: z.object({ id: z.string().min(1).max(200) }),
+      body: body(gatewayConfigInput),
+    },
+    responses: { 200: json(gatewayResponse) },
+  }),
   getWebSearch: define({
     method: "get",
     path: "/v1/web-search",
@@ -1208,7 +1229,7 @@ export function openAPIDocument() {
     openapi: "3.1.0",
     info: {
       title: "Crumble API",
-      version: "3.4.0",
+      version: "3.5.0",
       description:
         "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime.",
     },

@@ -71,6 +71,7 @@ import { desktopKeepAwake } from "../bot-desktop/keep-awake";
 import { AgentRepository } from "../bots/agent-repository";
 import { BotRequests, botRequestTools } from "../bot-requests/bot-requests";
 import { SecretRepository } from "../credentials/secret-repository";
+import { MessageGateway } from "../message-gateway/message-gateway";
 
 export type TenantOptions = {
   dataDir: string;
@@ -270,6 +271,7 @@ function accountLayer(
     historyTools,
     desktopKeepAwake,
     push,
+    MessageGateway.layer,
   );
 
   const conversations = Layer.mergeAll(scheduler, groups, activity);
@@ -359,6 +361,7 @@ export async function createTenant(
         yield* bots.recover;
         yield* (yield* ScriptRuns).recover;
         yield* chats.recover;
+        yield* (yield* MessageGateway).start;
         scheduler.start();
 
         return {

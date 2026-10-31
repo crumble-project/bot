@@ -939,7 +939,14 @@ export const pluginSettingsResponse = z
       z.object({
         id: z.string(),
         contributes: z
-          .array(z.enum(["providers", "jobKinds", "webSearchProviders"]))
+          .array(
+            z.enum([
+              "providers",
+              "jobKinds",
+              "webSearchProviders",
+              "chatAdapters",
+            ]),
+          )
           .openapi({
             description:
               "What the plugin adds to the server, so a client can show its settings where those are chosen.",

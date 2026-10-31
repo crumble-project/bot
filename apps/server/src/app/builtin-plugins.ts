@@ -13,6 +13,7 @@ import { meliousPlugin } from "../providers/providers";
 import type { Workspaces } from "../workspaces/workspace";
 import { webSearchPlugin } from "../web-search/mixed";
 import { exaPlugin } from "../web-search/exa";
+import { discordPlugin } from "../message-gateway/discord/plugin";
 import type { Effect } from "effect";
 
 /** The fixed parts of the plugins compiled into the server, in the order their vendors are listed. */
@@ -49,4 +50,5 @@ export const builtinPlugins = (host: PluginHost): CrumblePlugin[] => [
   desktopPlugin(host.workspaces, host.desktopControl, host.logins, host.intent),
   webSearchPlugin(),
   exaPlugin(host.secret),
+  discordPlugin(),
 ];

@@ -77,7 +77,8 @@ configure, and Pi Durable holds what happens.
 ### Plugins and Claude Code
 
 `plugins.ts` and `providers/`. Compiled-in plugins contribute providers
-(Melious, Claude Code) and job kinds (coding, desktop). The Claude Code
+(Melious, Claude Code), job kinds (coding, desktop), and
+[message gateway adapters](/contributing/message-gateway-adapters). The Claude Code
 provider runs each model call through a fresh `claude -p` process with an
 inert MCP tool list, a loopback admission relay, and per-account
 `users/USER_ID/claude` config directories.
