@@ -1,13 +1,31 @@
 ---
-title: Install the server
-description: Run the Crumble server with Bun or Docker and create your account.
+title: Install the Server
+description: Run the Crumble server with Docker or Bun and create your account.
 sidebar:
   order: 1
 ---
 
-The Crumble server runs your bots, stores your data, and serves the web app. You need either Docker, or Bun 1.4 or later.
+The Crumble server runs your bots, stores your data, and serves the web app,
+all from one process.
 
-## Run the published image
+## System Requirements
+
+| Requirement | Supported                                                    |
+| ----------- | ------------------------------------------------------------ |
+| Runtime     | Docker, or Bun 1.4 or later                                  |
+| Workspaces  | Optional. See [Set Up Workspaces](/self-hosting/workspaces). |
+
+Without workspaces, bots still chat, remember, and run automations. They just
+can't start coding jobs or use a desktop.
+
+## Install
+
+Pick one of the three ways below. They all end with the server listening on
+`127.0.0.1:7337`.
+
+### The Published Image
+
+This is the quickest way to a running server:
 
 ```bash
 docker run -d --name crumble --restart unless-stopped --stop-timeout 30 \
@@ -15,9 +33,13 @@ docker run -d --name crumble --restart unless-stopped --stop-timeout 30 \
   ghcr.io/crumble-project/crumble-server:0.2.0
 ```
 
-All data lives in the `crumble` volume. To upgrade, remove the container and run the same command with the new version.
+All data lives in the `crumble` volume, so the container itself is disposable.
+To upgrade, remove the container and run the same command with the new
+version.
 
-## Build with Docker Compose
+### Docker Compose
+
+Build the image from a checkout:
 
 ```bash
 git clone https://github.com/crumble-project/bot.git
@@ -25,7 +47,9 @@ cd bot
 docker compose up -d --build
 ```
 
-## Run with Bun
+### Bun
+
+Run the server straight from a checkout:
 
 ```bash
 git clone https://github.com/crumble-project/bot.git
@@ -34,19 +58,22 @@ bun install
 bun run start
 ```
 
-Use `bun run dev` instead to restart on file changes while you work on the server.
+If you're working on the server itself, use `bun run dev` instead, which
+restarts on every file change.
 
-## Create your account
+## Create Your Account
 
-Open `http://127.0.0.1:7337/ui` and sign up with an email address and password.
+Open `http://127.0.0.1:7337/ui` and sign up with an email address and a
+password.
 
-:::caution
-Anyone who can reach the server can create an account. The server listens on `127.0.0.1` by default, so only your own machine can reach it. Before you open it to a network, put it behind HTTPS and read [Configuration](/self-hosting/configuration).
-:::
+**Anyone who can reach the server can create an account.** The server listens
+on `127.0.0.1` by default, so only your own machine can reach it. Before you
+open it to a network, put it behind HTTPS and read
+[Configuration](/self-hosting/configuration).
 
-Each account is separate. Bots, chats, memories, provider sign-ins, and workspaces in one account are invisible to every other account.
+Each account is a world of its own. Bots, chats, memories, provider sign-ins,
+and workspaces in one account are invisible to every other account on the
+server.
 
-## Next steps
-
-- [Connect a model provider](/getting-started/providers) so your bots can answer.
-- To let bots write code or use a desktop, [set up workspaces](/self-hosting/workspaces).
+Your bots can't answer yet, because they have no model. Next,
+[connect a model provider](/getting-started/providers).
