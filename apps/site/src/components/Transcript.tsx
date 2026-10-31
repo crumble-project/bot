@@ -1,5 +1,6 @@
 import { SmoothCorners } from "@lisse/react";
 import { css } from "styled-system/css";
+import { useColorScheme } from "~/color-scheme";
 
 type Message = { date: string; label: string; sender: string; text: string };
 
@@ -56,8 +57,11 @@ const time = css({ color: "faint", fontVariantNumeric: "tabular-nums" });
 const text = css({ gridColumn: { base: "2", sm: "auto" } });
 
 export function Transcript() {
+  const scheme = useColorScheme();
+
   return (
     <SmoothCorners
+      key={scheme}
       as="figure"
       corners={{ radius: 14, smoothing: 0.6 }}
       className={figure}
