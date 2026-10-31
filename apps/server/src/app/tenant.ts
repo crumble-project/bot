@@ -69,7 +69,10 @@ import {
   pluginProviders,
   Plugins,
   pluginWorkspaces,
+  pluginWebSearchProviders,
+  assertVendorIds,
 } from "../plugins/plugins";
+import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
 import { BotWorkspaces } from "../workspaces/workspace";
 import { desktopKeepAwake } from "../bot-desktop/keep-awake";
 import { AgentRepository } from "../bots/agent-repository";
@@ -173,7 +176,7 @@ function accountLayer(
     Effect.gen(function* () {
       const run = runnerOf(yield* Effect.context<CoreServices>());
 
-      return builtinPlugins({
+      const installed = builtinPlugins({
         dataDir,
         exaKey: (yield* SecretRepository).get(EXA_KEY),
         env: process.env,
@@ -189,6 +192,14 @@ function accountLayer(
           held: heldActionsAccess(run),
         },
       });
+
+      assertVendorIds(
+        "web search provider",
+        WEB_SEARCH_PROVIDER_IDS,
+        pluginWebSearchProviders(installed).map((provider) => provider.id),
+      );
+
+      return installed;
     }),
   );
 

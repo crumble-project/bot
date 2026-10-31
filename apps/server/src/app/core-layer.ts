@@ -10,9 +10,18 @@ import { McpOAuth } from "../integrations/mcp-oauth";
 import { BotMemory } from "../memory/bot-memory";
 import { PasswordManagers } from "../password-managers/password-manager";
 import { SecretValues } from "../password-managers/secret-values";
-import { pluginPasswordManagers } from "../plugins/plugins";
+import { assertVendorIds, pluginPasswordManagers } from "../plugins/plugins";
+import { PASSWORD_MANAGER_IDS } from "../shared/vendors";
 import { builtinVendors } from "./builtin-plugins";
 import { productLayer } from "./product-layer";
+
+const passwordManagers = pluginPasswordManagers(builtinVendors);
+
+assertVendorIds(
+  "password manager",
+  PASSWORD_MANAGER_IDS,
+  passwordManagers.map((vendor) => vendor.id),
+);
 
 /** The account's repositories and the services that need nothing else: the base every account runtime starts from. */
 export const coreLayer = (dataDir: string) =>
@@ -29,9 +38,7 @@ export const coreLayer = (dataDir: string) =>
     Layer.provideMerge(BotNotices.layer),
     Layer.provideMerge(
       SecretValues.layer.pipe(
-        Layer.provideMerge(
-          PasswordManagers.layer(pluginPasswordManagers(builtinVendors)),
-        ),
+        Layer.provideMerge(PasswordManagers.layer(passwordManagers)),
       ),
     ),
     Layer.provideMerge(productLayer(dataDir)),

@@ -69,6 +69,27 @@ export type PluginVendors = {
   workspaceBackends?: WorkspaceBackend[];
 };
 
+/** Fails startup unless the plugins implement each ID of `catalog` exactly once, and no other. */
+export function assertVendorIds(
+  kind: string,
+  catalog: readonly string[],
+  implemented: readonly string[],
+) {
+  const problems = [
+    ...catalog.flatMap((id) => {
+      const count = implemented.filter((other) => other === id).length;
+
+      return count === 1 ? [] : [`${id} is implemented ${count} times`];
+    }),
+    ...implemented.flatMap((id) =>
+      catalog.includes(id) ? [] : [`${id} is not in shared/vendors.ts`],
+    ),
+  ];
+
+  if (problems.length)
+    throw new Error(`Plugin ${kind} IDs: ${problems.join("; ")}`);
+}
+
 export const pluginPasswordManagers = (vendors: readonly PluginVendors[]) =>
   vendors.flatMap((vendor) => vendor.passwordManagers ?? []);
 
