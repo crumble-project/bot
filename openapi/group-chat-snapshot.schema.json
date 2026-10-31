@@ -49,6 +49,9 @@
               },
               "agentId": {
                 "type": "string"
+              },
+              "via": {
+                "type": "string"
               }
             },
             "required": [

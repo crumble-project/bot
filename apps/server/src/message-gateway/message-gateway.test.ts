@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect, Fiber, Layer, ManagedRuntime } from "effect";
+import { Effect, Fiber, Layer, ManagedRuntime, Redacted } from "effect";
 import { TestClock } from "effect/testing";
 import { productLayer } from "../app/product-layer";
 import { handleApiError } from "../app/api";
@@ -13,6 +13,14 @@ import { ExecutionRepository } from "../bots/execution-repository";
 import { BotRuntime, type AgentRuntime } from "../bots/runtime";
 import { SettingsRepository } from "../shared/settings-repository";
 import { SecretRepository } from "../credentials/secret-repository";
+import { PasswordManagers } from "../password-managers/password-manager";
+import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
+import { SecretValues } from "../password-managers/secret-values";
+import {
+  FAKE_TOKEN,
+  fakePasswordManager,
+  fakeVendor,
+} from "../../test/support/fake-password-manager";
 import { contractApp } from "../contract/api-contract";
 import { Plugins } from "../plugins/plugins";
 import { agentInput, type Execution } from "../shared/domain";
@@ -61,6 +69,12 @@ async function fixture(
   const sent: Parameters<GatewayConnection["send"]>[0][] = [];
   const attempts: Parameters<GatewayConnection["send"]>[0][] = [];
   const tokens: string[] = [];
+  const typing: string[] = [];
+
+  const vault = fakePasswordManager({
+    "op://vault/discord/token": "vault-token",
+  });
+
   const sendGates = new Map<string, Promise<void>>();
   const responseCalls: string[] = [];
   const submitted: { botId: string; text: string; requestId: string }[] = [];
@@ -94,6 +108,9 @@ async function fixture(
       let connectionClosed = false;
 
       return {
+        async typing(channelId) {
+          typing.push(channelId);
+        },
         async send(input) {
           attempts.push(input);
           await sendGates.get(input.channelId);
@@ -191,7 +208,14 @@ async function fixture(
         });
       }),
     ),
-  ).pipe(Layer.provideMerge(productLayer(folder)));
+  ).pipe(
+    Layer.provideMerge(
+      SecretValues.layer.pipe(
+        Layer.provideMerge(PasswordManagers.layer([fakeVendor(vault)])),
+      ),
+    ),
+    Layer.provideMerge(productLayer(folder)),
+  );
 
   const runtime = ManagedRuntime.make(
     MessageGateway.layer.pipe(
@@ -261,9 +285,27 @@ async function fixture(
       SecretRepository.use((secrets) => secrets.set(adapter.secretKey, value)),
     );
 
+  const tokenReference = (reference: string) =>
+    runtime.runPromise(
+      Effect.gen(function* () {
+        yield* PasswordManagerRepository.use((repository) =>
+          repository.save("1password", Redacted.make(FAKE_TOKEN), "t"),
+        );
+        yield* SecretRepository.use((secrets) =>
+          secrets.setReference(adapter.secretKey, {
+            passwordManager: "1password",
+            reference,
+          }),
+        );
+      }),
+    );
+
   await token("first-token");
 
   return {
+    typing,
+    vault,
+    tokenReference,
     folder,
     runtime,
     gateway,
@@ -427,7 +469,7 @@ test("authorization, routing, duplicate events, and concurrent passes submit onc
     expect.objectContaining({ botId: grace, text: input.text }),
   ]);
   expect(f.sent).toHaveLength(1);
-  expect(f.sent[0]?.text).toBe("**Grace**\nassociated answer");
+  expect(f.sent[0]?.text).toBe("associated answer");
   expect(f.responseCalls).toHaveLength(1);
   await f.receive(f.message("reply", { replyTo: "out-1" }));
   await f.tick();
@@ -535,7 +577,7 @@ test("long answers retain durable per-chunk progress and stable failed-send nonc
       .concat(reopened.sent)
       .map((entry) => entry.text)
       .join(""),
-  ).toBe(`**Ada**\n${"answer ".repeat(40)}`);
+  ).toBe(`${"answer ".repeat(40)}`);
   expect((await Effect.runPromise(reopened.gateway.list))[0]).toMatchObject({
     pendingCount: 0,
     error: null,
@@ -565,6 +607,21 @@ test("authorization revocation suspends accepted work and token replacement reti
   expect((await Effect.runPromise(f.gateway.list))[0]?.status).toBe(
     "disconnected",
   );
+  await f.close();
+});
+
+test("a token read from a password manager connects, and an unreadable one shows its reason", async () => {
+  const f = await fixture();
+  await f.tokenReference("op://vault/discord/token");
+  await f.update();
+  await f.tick();
+  expect(f.tokens).toEqual(["vault-token"]);
+  await f.tokenReference("op://vault/missing/token");
+  await f.tick();
+  expect(f.closes).toBe(1);
+  const [gateway] = await Effect.runPromise(f.gateway.list);
+  expect(gateway?.status).toBe("error");
+  expect(gateway?.error).toContain("has no item that matches");
   await f.close();
 });
 
@@ -732,6 +789,32 @@ test("429 adapter cooldown includes new receipts and survives restarting the cor
   await reopened.runtime.runPromise(TestClock.adjust(1));
   await reopened.tick();
   expect(reopened.attempts).toHaveLength(2);
+});
+
+test("the channel shows typing while the bot works, renewed every 8 seconds, until the answer is sent", async () => {
+  const f = await fixture(undefined, undefined, true);
+  await f.update();
+  await f.tick();
+  f.nextStatus = "running";
+  await f.receive(f.message("working"));
+  await f.tick();
+  await f.tick();
+  expect(f.typing).toEqual(["channel"]);
+  await f.runtime.runPromise(TestClock.adjust(8000));
+  await f.tick();
+  expect(f.typing).toEqual(["channel", "channel"]);
+  await f.runtime.runPromise(
+    ExecutionRepository.use((repository) =>
+      Effect.gen(function* () {
+        const [execution] = yield* repository.list(undefined);
+        yield* repository.update(execution!.id, { status: "done" });
+      }),
+    ),
+  );
+  await f.runtime.runPromise(TestClock.adjust(8000));
+  await f.tick();
+  expect(f.sent.map((entry) => entry.text)).toEqual(["associated answer"]);
+  expect(f.typing).toHaveLength(2);
 });
 
 test("failed login and brief successful sessions sustain bounded reconnect backoff", async () => {

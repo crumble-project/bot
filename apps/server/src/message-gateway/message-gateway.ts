@@ -21,6 +21,8 @@ import {
   type GatewayDescription,
 } from "../contract/message-gateway";
 import { SecretRepository } from "../credentials/secret-repository";
+import { keyedSecretReader } from "../password-managers/secret-references";
+import { SecretValues } from "../password-managers/secret-values";
 import { Plugins, pluginChatAdapters } from "../plugins/plugins";
 import type { Agent } from "../shared/domain";
 import { InvalidInput, NotFound, type AppError } from "../shared/errors";
@@ -260,7 +262,7 @@ export class MessageGateway extends Context.Service<
           senderId: message.senderId,
           isDirectMessage: message.isDirectMessage,
           botId,
-          requestId: crypto.randomUUID(),
+          requestId: `gateway:${adapterId}:${crypto.randomUUID()}`,
           text: message.text,
           executionId: null,
           chunks:
@@ -291,11 +293,27 @@ export class MessageGateway extends Context.Service<
         }
       });
 
+      const readSecret = keyedSecretReader(secrets, yield* SecretValues);
+      const readToken = (adapter: ChatAdapter) => readSecret(adapter.secretKey);
+
+      // A password manager that can't read the token explains itself instead of the generic missing-token error.
+      const tokenOrError = (adapter: ChatAdapter) =>
+        readToken(adapter).pipe(
+          Effect.match({
+            onFailure: (failure) => ({
+              token: undefined,
+              error: failure.message,
+            }),
+            onSuccess: (token) => ({ token, error: undefined }),
+          }),
+        );
+
       const configureConnection = Effect.fnUntraced(function* (
         adapter: ChatAdapter,
         state: ConnectionState,
         current: GatewayConfig,
         token: string | undefined,
+        tokenError?: string,
       ) {
         if (!current.enabled || !token) {
           yield* cancelWorkers(adapter.id);
@@ -305,7 +323,8 @@ export class MessageGateway extends Context.Service<
           state.status = current.enabled ? "error" : "disconnected";
 
           if (current.enabled)
-            state.error = "Configure the adapter token in plugin settings.";
+            state.error =
+              tokenError ?? "Configure the adapter token in plugin settings.";
 
           return false;
         }
@@ -409,10 +428,12 @@ export class MessageGateway extends Context.Service<
         if (reconfiguring.has(adapter.id)) return;
         const state = states.get(adapter.id)!;
         const current = yield* config(adapter.id);
-        const token = yield* secrets.get(adapter.secretKey);
+        const { token, error } = yield* tokenOrError(adapter);
         const now = yield* Clock.currentTimeMillis;
 
-        if (!(yield* configureConnection(adapter, state, current, token)))
+        if (
+          !(yield* configureConnection(adapter, state, current, token, error))
+        )
           return;
 
         if (!(yield* readyToConnect(adapter, state, now))) return;
@@ -516,10 +537,8 @@ export class MessageGateway extends Context.Service<
           ),
         );
 
-        const name = agent.name.replace(/[\\`*_{}[\]()<>#+.!|~-]/g, "\\$&");
-
         return gatewayChunks(
-          `**${name}**\n${response.join("\n\n") || "The bot completed without a text response."}`,
+          response.join("\n\n") || "The bot completed without a text response.",
           adapter.maxMessageLength,
         );
       });
@@ -606,6 +625,24 @@ export class MessageGateway extends Context.Service<
         return true;
       });
 
+      // Discord's indicator lasts 10 seconds; renewing at 8 keeps it steady while the bot works.
+      const typingAt = new Map<string, number>();
+
+      const showTyping = Effect.fnUntraced(function* (
+        key: string,
+        channelId: string,
+        connection: GatewayConnection,
+      ) {
+        const now = yield* Clock.currentTimeMillis;
+
+        if (!connection.typing || now - (typingAt.get(key) ?? -Infinity) < 8000)
+          return;
+        typingAt.set(key, now);
+        yield* transport(() => connection.typing!(channelId)).pipe(
+          Effect.ignore,
+        );
+      });
+
       const processReceipt = Effect.fn("MessageGateway.processReceipt")(
         function* (
           receipt: GatewayReceipt,
@@ -614,9 +651,7 @@ export class MessageGateway extends Context.Service<
           generation: number,
         ) {
           if (!generationCurrent(adapter.id, generation)) return;
-
-          if (!(yield* prepareReceipt(receipt, adapter, generation))) return;
-
+          const prepared = yield* prepareReceipt(receipt, adapter, generation);
           const state = states.get(adapter.id)!;
 
           if (!connectionCurrent(state, connection, generation)) return;
@@ -632,6 +667,16 @@ export class MessageGateway extends Context.Service<
             })
           )
             return;
+
+          const key = `${receipt.adapterId}:${receipt.messageId}`;
+
+          if (!prepared) {
+            yield* showTyping(key, receipt.channelId, connection);
+
+            return;
+          }
+
+          typingAt.delete(key);
 
           if (
             !(yield* sendReceiptChunk(receipt, adapter, connection, generation))
@@ -679,8 +724,11 @@ export class MessageGateway extends Context.Service<
         state: ConnectionState,
         now: number,
       ) {
-        if ((yield* secrets.get(adapter.secretKey)) !== state.token)
-          return false;
+        const token = yield* readToken(adapter).pipe(
+          Effect.orElseSucceed(() => undefined),
+        );
+
+        if (token !== state.token) return false;
         const current = yield* config(adapter.id);
 
         if (

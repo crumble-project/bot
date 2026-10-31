@@ -46,7 +46,10 @@ import {
 } from "@/features/settings/settings";
 import { WebSearchPage } from "@/features/settings/web-search-settings";
 import { JudgeModelPage } from "@/features/settings/judge-model-settings";
-import { MessageGatewaysPage } from "@/features/settings/message-gateways";
+import {
+  MessageGatewayPage,
+  MessageGatewaysPage,
+} from "@/features/settings/message-gateways";
 import { PasswordManagersPage } from "@/features/settings/password-managers";
 import { SkillsPage } from "@/features/skills/skills";
 import { AutomationsPage } from "@/features/schedules/automations";
@@ -313,6 +316,16 @@ const messageGatewaysRoute = createRoute({
   component: MessageGatewaysPage,
 });
 
+const messageGatewayRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/message-gateways/$gatewayId",
+  component: function MessageGatewayRoutePage() {
+    const { gatewayId } = messageGatewayRoute.useParams();
+
+    return <MessageGatewayPage key={gatewayId} gatewayId={gatewayId} />;
+  },
+});
+
 const settingsSkillsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/skills",
@@ -351,6 +364,7 @@ export const router = createRouter({
         settingsLoginsRoute,
         settingsIntegrationsRoute,
         messageGatewaysRoute,
+        messageGatewayRoute,
         settingsSkillsRoute,
       ]),
     ]),

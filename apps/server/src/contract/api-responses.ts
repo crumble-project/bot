@@ -133,6 +133,10 @@ const origin = z
     }),
     name: z.string().optional(),
     agentId: z.string().optional(),
+    via: z.string().optional().openapi({
+      description:
+        "On an owner message sent through a message gateway: the gateway's ID, such as `discord`.",
+    }),
   })
   .openapi("MessageOrigin");
 
@@ -930,6 +934,13 @@ export const pluginSettingResponse = z
       description: "The status to show while the setting has no value.",
     }),
     configured: z.boolean(),
+    passwordManager: z.enum(PASSWORD_MANAGER_IDS).nullable().openapi({
+      description:
+        "The password manager the value is read from; null for a value stored in Crumble or no value.",
+    }),
+    reference: z.string().nullable().openapi({
+      description: "Where in `passwordManager` the value is read from.",
+    }),
   })
   .openapi("PluginSetting");
 

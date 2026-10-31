@@ -264,6 +264,12 @@ export function discordAdapter(
       }
 
       const connection: GatewayConnection = {
+        async typing(channelId) {
+          if (closed) return;
+          await client.rest.post(Routes.channelTyping(channelId), {
+            signal: deadline(SEND_TIMEOUT_MS),
+          });
+        },
         async send(input) {
           if (closed) throw new Error("Discord connection is closed.");
           const controller = new AbortController();

@@ -44,12 +44,15 @@ export function MobileSidebarTrigger({ className }: { className?: string }) {
 /** The header row and scrolling body every workspace and settings page shares. */
 export function WorkspacePage({
   title,
+  back,
   onRefresh,
   refreshing,
   actions,
   children,
 }: {
   title: string;
+  /** A control before the title, such as a link back to the parent page. */
+  back?: ReactNode;
   onRefresh?: () => void;
   refreshing?: boolean;
   actions?: ReactNode;
@@ -61,6 +64,7 @@ export function WorkspacePage({
         <div className="flex min-w-0 items-center gap-1">
           {/* Settings pages open the sidebar from the section nav above. */}
           <MobileSidebarTrigger className="in-data-[slot=settings-page]:hidden" />
+          {back}
           <h1 className="truncate font-heading text-base font-semibold">
             {title}
           </h1>

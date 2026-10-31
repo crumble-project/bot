@@ -1,6 +1,9 @@
 import { pluginSecretInput, routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import { SecretRepository } from "../credentials/secret-repository";
+import type { PasswordManagers } from "../password-managers/password-manager";
+import { checkSecretReference } from "../password-managers/secret-references";
+import { SecretValues } from "../password-managers/secret-values";
 import { NotFound } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import {
@@ -13,7 +16,7 @@ import {
 /** Every plugin's settings: listing whether each has a value, setting one, and removing one. */
 export function registerPluginSettingRoutes(options: {
   register: Register;
-  run: Runner<SecretRepository>;
+  run: Runner<SecretRepository | SecretValues | PasswordManagers>;
   plugins?: readonly CrumblePlugin[] | undefined;
 }) {
   const { register, run } = options;
@@ -22,14 +25,41 @@ export function registerPluginSettingRoutes(options: {
     (plugin) => (plugin.settings?.length ?? 0) > 0,
   );
 
-  const describe = (
-    plugin: CrumblePlugin,
-    setting: PluginSetting,
-    stored: readonly string[],
-  ) => ({
-    ...setting,
-    configured: stored.includes(pluginSettingKey(plugin.id, setting.key)),
-  });
+  const sourceOf = (key: string) =>
+    run.runSync(SecretRepository.use((r) => r.source(key)));
+
+  const describe = (plugin: CrumblePlugin, setting: PluginSetting) => {
+    const source = sourceOf(pluginSettingKey(plugin.id, setting.key));
+    const reference = source && "reference" in source ? source : null;
+
+    return {
+      ...setting,
+      configured: source !== undefined,
+      passwordManager: reference?.passwordManager ?? null,
+      reference: reference?.reference ?? null,
+    };
+  };
+
+  /** Drops the cached value of a reference the setting no longer reads from. */
+  const forgetReplaced = (key: string, before: ReturnType<typeof sourceOf>) => {
+    const after = sourceOf(key);
+
+    if (
+      before &&
+      "reference" in before &&
+      !(
+        after &&
+        "reference" in after &&
+        after.passwordManager === before.passwordManager &&
+        after.reference === before.reference
+      )
+    )
+      run.runSync(
+        SecretValues.use((values) =>
+          values.forget(before.passwordManager, before.reference),
+        ),
+      );
+  };
 
   const find = (pluginId: string, key: string) => {
     const plugin = plugins.find((candidate) => candidate.id === pluginId);
@@ -46,35 +76,39 @@ export function registerPluginSettingRoutes(options: {
     return { plugin, setting, stored: pluginSettingKey(plugin.id, key) };
   };
 
-  const storedKeys = () => run.runSync(SecretRepository.use((r) => r.listKeys));
-
-  register(routes.pluginSettings, (c) => {
-    const stored = storedKeys();
-
-    return c.json(
+  register(routes.pluginSettings, (c) =>
+    c.json(
       {
         plugins: plugins.map((plugin) => ({
           id: plugin.id,
           contributes: pluginContributions(plugin),
           settings: (plugin.settings ?? []).map((setting) =>
-            describe(plugin, setting, stored),
+            describe(plugin, setting),
           ),
         })),
       },
       200,
-    );
-  });
+    ),
+  );
   register(routes.setPluginSetting, async (c) => {
     const { plugin, setting, stored } = find(
       c.req.param("pluginId"),
       c.req.param("key"),
     );
 
-    const { value } = pluginSecretInput.parse(await c.req.json());
+    const input = pluginSecretInput.parse(await c.req.json());
+    const before = sourceOf(stored);
 
-    run.runSync(SecretRepository.use((r) => r.set(stored, value)));
+    if ("reference" in input) {
+      await run.runPromise(checkSecretReference(input.reference));
+      run.runSync(
+        SecretRepository.use((r) => r.setReference(stored, input.reference)),
+      );
+    } else run.runSync(SecretRepository.use((r) => r.set(stored, input.value)));
 
-    return c.json(describe(plugin, setting, storedKeys()), 200);
+    forgetReplaced(stored, before);
+
+    return c.json(describe(plugin, setting), 200);
   });
   register(routes.deletePluginSetting, (c) => {
     const { plugin, setting, stored } = find(
@@ -82,8 +116,10 @@ export function registerPluginSettingRoutes(options: {
       c.req.param("key"),
     );
 
+    const before = sourceOf(stored);
     run.runSync(SecretRepository.use((r) => r.delete(stored)));
+    forgetReplaced(stored, before);
 
-    return c.json(describe(plugin, setting, storedKeys()), 200);
+    return c.json(describe(plugin, setting), 200);
   });
 }

@@ -80,7 +80,7 @@ test("owner validation, refresh, and failed disable preserve edits after its def
 
   const { createRoot } = await import("react-dom/client");
   const { SidebarProvider } = await import("@/components/ui/sidebar");
-  const { MessageGatewaysPage } = await import("./message-gateways");
+  const { MessageGatewaySettings } = await import("./message-gateways");
   const container = document.createElement("div");
 
   document.body.append(container);
@@ -97,7 +97,7 @@ test("owner validation, refresh, and failed disable preserve edits after its def
       root.render(
         <QueryClientProvider client={queryClient}>
           <SidebarProvider>
-            <MessageGatewaysPage />
+            <MessageGatewaySettings gatewayId="discord" />
           </SidebarProvider>
         </QueryClientProvider>,
       ),

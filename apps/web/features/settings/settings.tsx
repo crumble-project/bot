@@ -122,7 +122,11 @@ export function SettingsLayout() {
         {SECTIONS.map((section) => (
           <Button
             key={section.to}
-            variant={matchRoute({ to: section.to }) ? "secondary" : "ghost"}
+            variant={
+              matchRoute({ to: section.to, fuzzy: true })
+                ? "secondary"
+                : "ghost"
+            }
             className="justify-start"
             render={<Link to={section.to} />}
             nativeButton={false}

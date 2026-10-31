@@ -784,6 +784,10 @@
           },
           "agentId": {
             "type": "string"
+          },
+          "via": {
+            "type": "string",
+            "description": "On an owner message sent through a message gateway: the gateway's ID, such as `discord`."
           }
         },
         "required": [
@@ -3281,6 +3285,25 @@
           },
           "configured": {
             "type": "boolean"
+          },
+          "passwordManager": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "1password",
+              "bitwarden",
+              null
+            ],
+            "description": "The password manager the value is read from; null for a value stored in Crumble or no value."
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where in `passwordManager` the value is read from."
           }
         },
         "required": [
@@ -3288,7 +3311,9 @@
           "kind",
           "label",
           "whenMissing",
-          "configured"
+          "configured",
+          "passwordManager",
+          "reference"
         ]
       },
       "McpServerStatus": {
@@ -17767,7 +17792,7 @@
     "/v1/plugin-settings/{pluginId}/{key}": {
       "put": {
         "operationId": "setPluginSetting",
-        "description": "Sets a plugin setting's value, replacing the one before. 404 for a plugin or key the server doesn't have.",
+        "description": "Sets a plugin setting to a value stored in Crumble, or to a `reference` read from a connected password manager, replacing the one before. A reference is checked by reading it once; 400 when it can't be read. 404 for a plugin or key the server doesn't have.",
         "security": [
           {
             "BearerAuth": []
@@ -17803,16 +17828,51 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "value": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16000
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16000
+                      }
+                    },
+                    "required": [
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "reference": {
+                        "type": "object",
+                        "properties": {
+                          "passwordManager": {
+                            "type": "string",
+                            "enum": [
+                              "1password",
+                              "bitwarden"
+                            ]
+                          },
+                          "reference": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000
+                          }
+                        },
+                        "required": [
+                          "passwordManager",
+                          "reference"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "reference"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "value"
                 ]
               }
             }

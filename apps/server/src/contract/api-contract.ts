@@ -127,9 +127,10 @@ const pluginSettingParams = z.object({
   key: z.string().min(1).max(200),
 });
 
-export const pluginSecretInput = z.object({
-  value: z.string().trim().min(1).max(16000),
-});
+export const pluginSecretInput = z.union([
+  z.object({ value: z.string().trim().min(1).max(16000) }).strict(),
+  z.object({ reference: secretReferenceInput }).strict(),
+]);
 
 /** Login answers may be pasted callback URLs, never larger than this. */
 const MAX_LOGIN_VALUE = 16384;
@@ -1132,7 +1133,7 @@ export const routes = {
     path: "/v1/plugin-settings/{pluginId}/{key}",
     operationId: "setPluginSetting",
     description:
-      "Sets a plugin setting's value, replacing the one before. 404 for a plugin or key the server doesn't have.",
+      "Sets a plugin setting to a value stored in Crumble, or to a `reference` read from a connected password manager, replacing the one before. A reference is checked by reading it once; 400 when it can't be read. 404 for a plugin or key the server doesn't have.",
     request: { params: pluginSettingParams, body: body(pluginSecretInput) },
     responses: { 200: json(response.pluginSettingResponse) },
   }),

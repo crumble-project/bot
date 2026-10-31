@@ -33,19 +33,20 @@ and [installation documentation](https://docs.discord.com/developers/quick-start
 
 ## Connect Crumble
 
-1. Open **Settings** > **Message gateways**.
-2. In **Credentials**, save the token under **Discord bot token**.
-3. Select a **Default bot**.
-4. Enter your numeric Discord user ID in **Owner Discord user ID**.
-5. Enter each permitted channel ID in **Allowed channel IDs**.
-6. Turn on **Allow direct messages** if you want direct messages.
-7. Add any **Aliases** with a **Handle** and **Bot**.
-8. Turn on **Enabled** and select **Save changes**.
+1. Open **Settings** > **Message gateways**, and select **Discord**.
+2. Next to **Discord bot token**, select **Add**. Paste the token, or select a
+   connected [password manager](/concepts/password-managers) and paste a
+   reference to it.
+3. In **Bots**, choose a **Default bot**. Select **Alias** to add an alias.
+4. In **Access**, enter your numeric Discord user ID in **Owner Discord user
+   ID**. Select **Channel** for each permitted channel ID, and turn on **Direct
+   messages** if you want them.
+5. Turn on the **Discord** switch and select **Save**.
 
-Check **Connection status** after saving. The row shows pending deliveries and
-retained failed receipts. **Reset** discards unsaved gateway
-configuration edits. To stop receiving new messages, clear **Enabled** and
-select **Save changes**.
+The **Discord** row shows the connection status after saving, with pending
+deliveries and retained failed receipts. **Reset** discards unsaved edits. To
+stop receiving new messages, turn off the **Discord** switch and select
+**Save**.
 
 ## Owner access
 
@@ -60,7 +61,7 @@ checks. Don't enter another person's ID. Other Discord users can't submit work,
 even in an allowed channel or through direct messages.
 
 Server messages must come from an explicitly allowed channel. Direct messages
-also require **Allow direct messages**. An empty owner ID blocks every sender;
+also require **Direct messages**. An empty owner ID blocks every sender;
 an empty channel list blocks every server channel.
 
 Configurations using the previous sender allowlist are disabled on upgrade.
@@ -102,9 +103,9 @@ they don't silently select the default bot.
 ## Transcript and delivery
 
 Your original message, including a routing prefix, enters the selected bot's
-[continuous chat](/concepts/chats). The answer appears in that transcript and
-returns to the originating Discord channel or direct message, labeled with
-the answering bot's name.
+[continuous chat](/concepts/chats), marked **Sent from Discord** under it. The answer appears in that transcript and
+returns to the originating Discord channel or direct message as a reply to
+your message. While the bot works, the channel shows Crumble as typing.
 
 Only the answer associated with that Discord request returns to Discord.
 Messages sent in the web app, automations, and unrelated background activity

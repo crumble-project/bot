@@ -1,3 +1,4 @@
+import { GatewayIcon, gatewayLabel } from "@/components/gateway-brand";
 import {
   type ComponentProps,
   type ReactNode,
@@ -777,6 +778,12 @@ function OwnerDelivery({
       )}
       {!delivery && !message.content.trim() && (
         <MessageActions message={message} onReply={onReply} />
+      )}
+      {message.origin?.via && (
+        <span className="flex items-center gap-1 [&_svg]:size-3">
+          <GatewayIcon id={message.origin.via} />
+          Sent from {gatewayLabel(message.origin.via)}
+        </span>
       )}
     </MessageFooter>
   );
