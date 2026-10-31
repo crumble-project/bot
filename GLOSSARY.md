@@ -22,6 +22,10 @@ _Avoid_: Conversation session, new chat
 The progress of an owner's message from sending to confirmation in the bot chat's transcript, including failed sends and retries.
 _Avoid_: Message execution, completed bot work
 
+**Message gateway**:
+A connection that sends the owner's messages from an external platform to an existing bot chat and returns only their associated answers. Discord is the first supported platform.
+_Avoid_: Chat mirror, new session
+
 **Group chat**:
 A conversation between the owner and several bots, with one shared transcript in which every message shows its sender. It is separate from each member's bot chat.
 _Avoid_: Room, channel, group session

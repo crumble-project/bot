@@ -4,6 +4,7 @@ import type { EnvTarget } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { Agent } from "../shared/domain";
 import { Context } from "effect";
+import type { ChatAdapter } from "../message-gateway/adapter";
 import type { JobAnswer, JobExtensions } from "../jobs/jobs";
 import type { WebSearchProvider } from "../web-search/provider";
 import type { PasswordManagerVendor } from "../password-managers/password-manager";
@@ -136,13 +137,14 @@ export type CrumblePlugin = {
   jobKinds?: JobKindContribution[];
   webSearchProviders?: WebSearchProvider[];
   settings?: PluginSetting[];
+  chatAdapters?: ChatAdapter[];
 };
 
 /** The kinds of contribution a plugin makes, as clients group plugins by. */
 export const pluginContributions = (plugin: CrumblePlugin) =>
-  (["providers", "jobKinds", "webSearchProviders"] as const).filter(
-    (kind) => (plugin[kind]?.length ?? 0) > 0,
-  );
+  (
+    ["providers", "jobKinds", "webSearchProviders", "chatAdapters"] as const
+  ).filter((kind) => (plugin[kind]?.length ?? 0) > 0);
 
 export const pluginProviders = (plugins: readonly CrumblePlugin[]) =>
   plugins.flatMap((plugin) => plugin.providers ?? []);
@@ -152,6 +154,9 @@ export const pluginJobKinds = (plugins: readonly CrumblePlugin[]) =>
 
 export const pluginWebSearchProviders = (plugins: readonly CrumblePlugin[]) =>
   plugins.flatMap((plugin) => plugin.webSearchProviders ?? []);
+
+export const pluginChatAdapters = (plugins: readonly CrumblePlugin[]) =>
+  plugins.flatMap((plugin) => plugin.chatAdapters ?? []);
 
 /** The chat and job extensions of every job kind the bot may use. */
 export const jobExtensions = (

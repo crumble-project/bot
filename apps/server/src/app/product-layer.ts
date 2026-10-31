@@ -31,6 +31,7 @@ import { providerCredentials } from "../providers/schema";
 import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
 import { SettingsRepository } from "../shared/settings-repository";
+import { GatewayRepository } from "../message-gateway/gateway-repository";
 
 /** Every repository of an account's product database, on one migrated connection. */
 export const productLayer = (dataDir: string) => {
@@ -50,6 +51,7 @@ export const productLayer = (dataDir: string) => {
     ReviewRepository.layer,
     McpServerRepository.layer,
     SettingsRepository.layer,
+    GatewayRepository.layer,
     ScheduleRepository.layer,
     ScriptRunRepository.layer,
     DesktopControlRepository.layer,

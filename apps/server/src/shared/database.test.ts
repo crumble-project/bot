@@ -324,6 +324,162 @@ describe("product database migrations", () => {
     expect(schemaOf(file)).toEqual(before);
     expect(migrationsOf(file)).toEqual(migrations);
   });
+
+  test("adding gateway receipts preserves existing bot executions and records delivery progress across reopen", () => {
+    const before = mkdtempSync("/tmp/crumble-before-gateway-");
+    dirs.push(before);
+
+    for (const name of readdirSync(migrationsFolder("store")))
+      if (name < "20261031191531_aromatic_karen_page")
+        cpSync(join(migrationsFolder("store"), name), join(before, name), {
+          recursive: true,
+        });
+
+    const file = databaseFile();
+    Effect.runSync(migrateFile(file, before));
+    const db = new Database(file);
+    db.run(`INSERT INTO agents (id,name,avatar,description,instructions,provider,model,enabled,tools,skills,mcp_servers,created_at,updated_at) VALUES ('a','A','','','','p','m',1,'[]','[]','[]','t','t');
+      INSERT INTO conversations (id,agent_id,title,created_at,updated_at) VALUES ('c','a','Chat','t','t');
+      INSERT INTO executions (id,agent_id,conversation_id,submission_id,request_id,prompt,status,created_at,updated_at) VALUES ('e','a','c','s','r','Hello','done','t','t');`);
+    expect(
+      db
+        .query("SELECT name FROM sqlite_master WHERE name = 'gateway_receipts'")
+        .all(),
+    ).toEqual([]);
+    db.close();
+
+    migrateStore(file);
+    const upgraded = new Database(file);
+    expect(
+      upgraded
+        .query("SELECT id,submission_id,request_id,prompt FROM executions")
+        .all(),
+    ).toEqual([
+      { id: "e", submission_id: "s", request_id: "r", prompt: "Hello" },
+    ]);
+    upgraded.run(
+      `INSERT INTO gateway_receipts (adapter_id,message_id,channel_id,sender_id,is_direct_message,bot_id,request_id,text,execution_id,chunks,sent,state) VALUES ('platform','message','channel','owner',0,'a','r','Hello','e','["answer"]','["external-message"]','done')`,
+    );
+    upgraded.close();
+
+    migrateStore(file);
+    const reopened = new Database(file, { readonly: true });
+    expect(
+      reopened
+        .query(
+          "SELECT bot_id,execution_id,chunks,sent,state FROM gateway_receipts",
+        )
+        .all(),
+    ).toEqual([
+      {
+        bot_id: "a",
+        execution_id: "e",
+        chunks: '["answer"]',
+        sent: '["external-message"]',
+        state: "done",
+      },
+    ]);
+    expect(reopened.query("PRAGMA foreign_key_check").all()).toEqual([]);
+    reopened.close();
+  });
+
+  test("gateway retention migration backfills reply mappings before scrubbing completed payloads", () => {
+    const before = mkdtempSync("/tmp/crumble-before-gateway-retention-");
+    dirs.push(before);
+
+    for (const name of readdirSync(migrationsFolder("store")))
+      if (name < "20261031194829_futuristic_flatman")
+        cpSync(join(migrationsFolder("store"), name), join(before, name), {
+          recursive: true,
+        });
+
+    const file = databaseFile();
+    Effect.runSync(migrateFile(file, before));
+    const original = new Database(file);
+    original.run(`INSERT INTO gateway_receipts (adapter_id,message_id,channel_id,sender_id,is_direct_message,bot_id,request_id,text,execution_id,chunks,sent,state)
+      VALUES ('platform','finished','channel','owner',0,'a','original-finished-request','private input','execution','["private output"]','["sent-finished"]','done'),
+      ('platform','pending','channel','owner',0,'b','original-pending-request','keep input','pending-execution','["first","second"]','["sent-pending"]','pending');`);
+    original.close();
+
+    migrateStore(file);
+    const db = new Database(file, { readonly: true });
+    expect(
+      db
+        .query(
+          "SELECT message_id,request_id,text,chunks,sent,state,attempt_count,next_attempt_at,failed_at FROM gateway_receipts ORDER BY message_id",
+        )
+        .all(),
+    ).toEqual([
+      {
+        message_id: "finished",
+        request_id: "original-finished-request",
+        text: "",
+        chunks: null,
+        sent: "[]",
+        state: "done",
+        attempt_count: 0,
+        next_attempt_at: null,
+        failed_at: null,
+      },
+      {
+        message_id: "pending",
+        request_id: "original-pending-request",
+        text: "keep input",
+        chunks: '["first","second"]',
+        sent: '["sent-pending"]',
+        state: "pending",
+        attempt_count: 0,
+        next_attempt_at: null,
+        failed_at: null,
+      },
+    ]);
+    expect(
+      db
+        .query(
+          "SELECT COUNT(*) AS n FROM gateway_receipts WHERE created_at > 0 AND expires_at = created_at + 86400000 AND (state = 'pending' AND finished_at IS NULL OR state = 'done' AND finished_at = created_at)",
+        )
+        .get(),
+    ).toEqual({ n: 2 });
+    expect(
+      db
+        .query(
+          "SELECT adapter_id,channel_id,external_message_id,receipt_message_id,bot_id,expires_at IS NULL AS pending FROM gateway_sent_messages ORDER BY external_message_id",
+        )
+        .all(),
+    ).toEqual([
+      {
+        adapter_id: "platform",
+        channel_id: "channel",
+        external_message_id: "sent-finished",
+        receipt_message_id: "finished",
+        bot_id: "a",
+        pending: 0,
+      },
+      {
+        adapter_id: "platform",
+        channel_id: "channel",
+        external_message_id: "sent-pending",
+        receipt_message_id: "pending",
+        bot_id: "b",
+        pending: 1,
+      },
+    ]);
+    expect(
+      db
+        .query(
+          "SELECT COUNT(*) AS n FROM gateway_sent_messages s JOIN gateway_receipts r ON s.adapter_id = r.adapter_id AND s.receipt_message_id = r.message_id WHERE s.expires_at = r.finished_at + 2592000000",
+        )
+        .get(),
+    ).toEqual({ n: 1 });
+    expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
+    db.close();
+    migrateStore(file);
+    const reopened = new Database(file, { readonly: true });
+    expect(
+      reopened.query("SELECT COUNT(*) AS n FROM gateway_sent_messages").get(),
+    ).toEqual({ n: 2 });
+    reopened.close();
+  });
 });
 
 describe("push database migrations", () => {

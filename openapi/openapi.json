@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Crumble API",
-    "version": "3.4.0",
+    "version": "3.5.0",
     "description": "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime."
   },
   "components": {
@@ -3234,7 +3234,8 @@
                     "enum": [
                       "providers",
                       "jobKinds",
-                      "webSearchProviders"
+                      "webSearchProviders",
+                      "chatAdapters"
                     ]
                   },
                   "description": "What the plugin adds to the server, so a client can show its settings where those are chosen."
@@ -3976,6 +3977,546 @@
         "responses": {
           "204": {
             "description": "Success, no response body"
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/message-gateways": {
+      "get": {
+        "operationId": "messageGateways",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "gateways": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "secretKey": {
+                            "type": "string"
+                          },
+                          "tokenConfigured": {
+                            "type": "boolean"
+                          },
+                          "config": {
+                            "type": "object",
+                            "properties": {
+                              "enabled": {
+                                "type": "boolean"
+                              },
+                              "defaultBotId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
+                              },
+                              "ownerId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "minLength": 1,
+                                "maxLength": 200,
+                                "pattern": "^[^\\s,]+$/u"
+                              },
+                              "allowedChannelIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "maxItems": 1000
+                              },
+                              "allowDirectMessages": {
+                                "type": "boolean"
+                              },
+                              "aliases": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "handle": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100,
+                                      "pattern": "^[\\p{L}\\p{N}_-]+$/u"
+                                    },
+                                    "botId": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    }
+                                  },
+                                  "required": [
+                                    "handle",
+                                    "botId"
+                                  ]
+                                },
+                                "maxItems": 1000
+                              }
+                            },
+                            "required": [
+                              "enabled",
+                              "defaultBotId",
+                              "ownerId",
+                              "allowedChannelIds",
+                              "allowDirectMessages",
+                              "aliases"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "disconnected",
+                              "connecting",
+                              "connected",
+                              "error"
+                            ]
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "pendingCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "failedCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "secretKey",
+                          "tokenConfigured",
+                          "config",
+                          "status",
+                          "error",
+                          "pendingCount",
+                          "failedCount"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "gateways"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/message-gateways/{id}": {
+      "put": {
+        "operationId": "updateMessageGateway",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "defaultBotId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "ownerId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "pattern": "^[^\\s,]+$/u"
+                  },
+                  "allowedChannelIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "maxItems": 1000
+                  },
+                  "allowDirectMessages": {
+                    "type": "boolean"
+                  },
+                  "aliases": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "handle": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100,
+                          "pattern": "^[\\p{L}\\p{N}_-]+$/u"
+                        },
+                        "botId": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      },
+                      "required": [
+                        "handle",
+                        "botId"
+                      ]
+                    },
+                    "maxItems": 1000
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "defaultBotId",
+                  "ownerId",
+                  "allowedChannelIds",
+                  "allowDirectMessages",
+                  "aliases"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "secretKey": {
+                      "type": "string"
+                    },
+                    "tokenConfigured": {
+                      "type": "boolean"
+                    },
+                    "config": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "defaultBotId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "ownerId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1,
+                          "maxLength": 200,
+                          "pattern": "^[^\\s,]+$/u"
+                        },
+                        "allowedChannelIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "maxItems": 1000
+                        },
+                        "allowDirectMessages": {
+                          "type": "boolean"
+                        },
+                        "aliases": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "handle": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100,
+                                "pattern": "^[\\p{L}\\p{N}_-]+$/u"
+                              },
+                              "botId": {
+                                "type": "string",
+                                "format": "uuid"
+                              }
+                            },
+                            "required": [
+                              "handle",
+                              "botId"
+                            ]
+                          },
+                          "maxItems": 1000
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "defaultBotId",
+                        "ownerId",
+                        "allowedChannelIds",
+                        "allowDirectMessages",
+                        "aliases"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "disconnected",
+                        "connecting",
+                        "connected",
+                        "error"
+                      ]
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "pendingCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "failedCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "secretKey",
+                    "tokenConfigured",
+                    "config",
+                    "status",
+                    "error",
+                    "pendingCount",
+                    "failedCount"
+                  ]
+                }
+              }
+            }
           },
           "400": {
             "description": "Invalid request or operation",
