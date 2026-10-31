@@ -2,11 +2,17 @@ import { Highlight } from "@highlighters/react";
 import { SmoothCorners } from "@lisse/react";
 import { createFileRoute } from "@tanstack/react-router";
 import { css } from "styled-system/css";
+import { useColorScheme } from "~/color-scheme";
 import { Transcript } from "~/components/Transcript";
 
 export const Route = createFileRoute("/")({ component: Home });
 
 const docs = "https://docs.crumbli.ng";
+
+const highlight = {
+  light: { color: "#A8E2C0" },
+  dark: { color: "#346552", blendMode: "screen" },
+} as const;
 
 const main = css({
   "& > * + *": { mt: "1.65em" },
@@ -14,19 +20,25 @@ const main = css({
 });
 
 function Home() {
+  const scheme = useColorScheme();
+
   return (
     <main className={main}>
       <p>
         <strong>Crumble.</strong> Self-hosted bots with their own identity,
         memory, and{" "}
-        <Highlight options={{ color: "#A8E2C0" }}>
+        <Highlight options={highlight[scheme]}>
           one continuous chat with you
         </Highlight>
         .
       </p>
 
       <figure>
-        <SmoothCorners asChild corners={{ radius: 14, smoothing: 0.6 }}>
+        <SmoothCorners
+          key={scheme}
+          asChild
+          corners={{ radius: 14, smoothing: 0.6 }}
+        >
           <img
             className={css({
               display: "block",

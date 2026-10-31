@@ -21,12 +21,12 @@ export default defineConfig({
       },
       semanticTokens: {
         colors: {
-          bg: { value: { base: "#FAF8F1", _osDark: "#10261F" } },
-          card: { value: { base: "#FFFFFF", _osDark: "#17372C" } },
-          border: { value: { base: "#DCEBDB", _osDark: "#346552" } },
-          ink: { value: { base: "#10261F", _osDark: "#EDF5E7" } },
-          muted: { value: { base: "#346552", _osDark: "#DCEBDB" } },
-          faint: { value: { base: "#346552", _osDark: "#346552" } },
+          bg: { value: { base: "#FAF8F1", _osDark: "#141413" } },
+          card: { value: { base: "#FFFFFF", _osDark: "#1D1D1B" } },
+          border: { value: { base: "#DCEBDB", _osDark: "#33332F" } },
+          ink: { value: { base: "#10261F", _osDark: "#F2F1EC" } },
+          muted: { value: { base: "#346552", _osDark: "#C9C7BF" } },
+          faint: { value: { base: "#346552", _osDark: "#8A8880" } },
           mark: { value: { base: "#346552", _osDark: "#A8E2C0" } },
         },
       },
