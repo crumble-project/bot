@@ -402,7 +402,7 @@ export class MessageGateway extends Context.Service<
           return false;
         }
 
-        return state.retryAt <= now;
+        return !(state.retryAt > now);
       });
 
       const reconcile = Effect.fnUntraced(function* (adapter: ChatAdapter) {
@@ -651,7 +651,8 @@ export class MessageGateway extends Context.Service<
         state: ConnectionState | undefined,
         now: number,
       ) {
-        if (receipt.expiresAt > now && receipt.attemptCount < 10) return false;
+        if (!(receipt.expiresAt <= now || receipt.attemptCount >= 10))
+          return false;
         receipt.state = "failed";
         receipt.failedAt = now;
         yield* receipts.save(receipt);
@@ -693,7 +694,9 @@ export class MessageGateway extends Context.Service<
         )
           return false;
 
-        return (yield* receipts.cooldown(adapter.id, receipt.channelId)) <= now;
+        return !(
+          (yield* receipts.cooldown(adapter.id, receipt.channelId)) > now
+        );
       });
 
       const receiptConnection = Effect.fnUntraced(function* (
