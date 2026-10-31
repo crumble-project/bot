@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.0
+
 - Desktop jobs check each acting call with an intent check before it runs. The account's judge model answers whether the action is irreversible and whether the owner asked for it, from the owner's messages, the job's task, and the action's target, never the page's text. Buttons and links named like Pay, Buy, Order, Send, Delete, or Confirm, and Enter in a form field, always count as irreversible. An irreversible action the judge isn't confident about is held: the bot chat shows a card to approve or decline it, and the job waits. Over the API: `GET /v1/agents/{id}/held-actions` and `POST .../{actionId}/approve` and `.../decline`. Held actions show as `held-action` events in `TranscriptMessage`, with the new `heldAction` field.
 - Choose the judge model in **Settings** > **Judge model** or with `GET` and `PUT /v1/judge-model`. The default is GPT-6 Luna through OpenAI Decisions, which needs an OpenAI API key. Without a classifier model, a small chat model such as Claude Haiku 5.5 judges. Each classifier has its own in-intent bar: 50% for Jev, 90% for models not yet evaluated.
 - Each intent check's token usage and cost is recorded on its `computer_use` call, so a desktop job's usage includes its judge. Jev is priced at TypeSafe's $0.042 per million input tokens, since pi-ai's catalog lists it at $0.
