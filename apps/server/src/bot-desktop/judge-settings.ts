@@ -31,11 +31,14 @@ const choiceOf = (model: AnyModel) => ({
 });
 
 /** The account's judge model: the owner's choice, the model judging now, and every model that could. */
-export function registerJudgeModelRoutes(
-  register: Register,
-  run: Runner<SettingsRepository>,
-  models: Models,
-) {
+export function registerJudgeModelRoutes(options: {
+  register: Register;
+  run: Runner<SettingsRepository>;
+  providerAuth: { readonly models: Models };
+}) {
+  const { register, run } = options;
+  const models = options.providerAuth.models;
+
   const status = async () => {
     await models.refresh();
     const judgeModelRef = run.runSync(chosenJudge);

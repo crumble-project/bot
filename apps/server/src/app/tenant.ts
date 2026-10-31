@@ -20,11 +20,7 @@ import { BotSchedules, scheduleTools } from "../schedules/bot-schedules";
 import { TaskDispatch } from "../schedules/task-dispatch";
 import { ScriptRuns } from "../schedules/script-runs";
 import { createAPI } from "./api";
-import {
-  GroupChats,
-  groupChatsAccess,
-  GroupTranscriptStore,
-} from "../group-chats/group-chats";
+import { GroupChats, GroupTranscriptStore } from "../group-chats/group-chats";
 import { groupLookupTools } from "../group-chats/group-lookup";
 import { GroupTranscripts } from "../group-chats/group-transcripts";
 import { historyTools } from "../history/history-tools";
@@ -46,15 +42,10 @@ import { chosenJudge } from "../bot-desktop/judge-settings";
 import { accountJudge } from "../jobs/desktop-intent";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import type { Workspaces } from "../workspaces/workspace";
-import { microsandboxWorkspacesFromEnv } from "../workspaces/microsandbox-workspaces";
-import { railwayWorkspacesFromEnv } from "../workspaces/railway-workspaces";
 import { acquireWorkspaces } from "../workspaces/machine-workspaces";
 import { Push, PushDelivery } from "../push/push";
 import { ProviderModels } from "../providers/providers";
-import {
-  ProviderSignIns,
-  providerSignInsAccess,
-} from "../providers/provider-auth";
+import { ProviderSignIns } from "../providers/provider-auth";
 import { credentialsAccess } from "../credentials/credentials";
 import { loginsAccess } from "../logins/logins";
 import { desktopFillsAccess } from "../bot-desktop/desktop-fill-repository";
@@ -62,21 +53,24 @@ import { credentialAuthoritiesAccess } from "../credentials/credential-authority
 import { credentialProxy } from "../credentials/credential-proxy";
 import { coreLayer, type CoreServices } from "./core-layer";
 import { runnerOf } from "../shared/runner";
-import { builtinPlugins } from "./builtin-plugins";
-import { jobAnswers, jobTools } from "./plugin-layers";
+import { builtinPlugins, builtinVendors } from "./builtin-plugins";
+import { heldActionNotices, jobAnswers, jobTools } from "./plugin-layers";
 import {
   jobEnv,
   jobExtensions,
   pluginJobKinds,
   pluginProviders,
   Plugins,
+  pluginWorkspaces,
+  pluginWebSearchProviders,
+  assertVendorIds,
 } from "../plugins/plugins";
+import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
 import { BotWorkspaces } from "../workspaces/workspace";
 import { desktopKeepAwake } from "../bot-desktop/keep-awake";
 import { AgentRepository } from "../bots/agent-repository";
 import { BotRequests, botRequestTools } from "../bot-requests/bot-requests";
 import { SecretRepository } from "../credentials/secret-repository";
-import { EXA_KEY } from "../web-search/settings";
 
 export type TenantOptions = {
   dataDir: string;
@@ -143,6 +137,7 @@ function accountLayer(
       const authorities = credentialAuthoritiesAccess(run);
 
       const machineOptions = {
+        dataDir,
         namePrefix: `crumble-${options.tenantId.replace(/[^A-Za-z0-9_-]/g, "-")}`,
         wantsDesktop: (agentId: string) =>
           Effect.runSync(agents.get(agentId))?.tools.includes(
@@ -161,12 +156,8 @@ function accountLayer(
 
       return BotWorkspaces.layer(
         options.workspaces ??
-          acquireWorkspaces(
-            () =>
-              railwayWorkspacesFromEnv(process.env, {
-                ...machineOptions,
-                dataDir,
-              }) ?? microsandboxWorkspacesFromEnv(process.env, machineOptions),
+          acquireWorkspaces(() =>
+            pluginWorkspaces(builtinVendors, process.env, machineOptions),
           ),
       );
     }),
@@ -177,9 +168,9 @@ function accountLayer(
     Effect.gen(function* () {
       const run = runnerOf(yield* Effect.context<CoreServices>());
 
-      return builtinPlugins({
+      const installed = builtinPlugins({
         dataDir,
-        exaKey: (yield* SecretRepository).get(EXA_KEY),
+        secret: (yield* SecretRepository).get,
         env: process.env,
         workspaces: yield* BotWorkspaces,
         desktopControl: desktopControlAccess(run),
@@ -193,6 +184,14 @@ function accountLayer(
           held: heldActionsAccess(run),
         },
       });
+
+      assertVendorIds(
+        "web search provider",
+        WEB_SEARCH_PROVIDER_IDS,
+        pluginWebSearchProviders(installed).map((provider) => provider.id),
+      );
+
+      return installed;
     }),
   );
 
@@ -257,10 +256,12 @@ function accountLayer(
 
   const push = PushDelivery.pipe(Layer.provideMerge(Push.layer(dataDir)));
 
-  return Layer.mergeAll(
+  /** Background work and the bots' tool registrations: no other layer needs them. */
+  const leaves = Layer.mergeAll(
     reviews,
     curation,
     jobAnswers,
+    heldActionNotices,
     jobTools,
     coordinationTools,
     scheduleTools,
@@ -269,25 +270,32 @@ function accountLayer(
     historyTools,
     desktopKeepAwake,
     push,
-  ).pipe(
+  );
+
+  const conversations = Layer.mergeAll(scheduler, groups, activity);
+
+  /** Tools whose sandboxes must close after the bot runtime that uses them. */
+  const sandboxedTools = Layer.mergeAll(
+    integrationTools,
+    codemodeTools,
+    displayTools,
+    configuredWebSearchTools,
+    reactionTools,
+  );
+
+  const signIns = Layer.mergeAll(ProviderSignIns.layer, integrations);
+
+  // Tiers from top to bottom: each may use every tier below it, and the account closes them top first.
+  return leaves.pipe(
     Layer.provideMerge(schedules),
     Layer.provideMerge(botRequests),
-    Layer.provideMerge(Layer.mergeAll(scheduler, groups, activity)),
+    Layer.provideMerge(conversations),
     Layer.provideMerge(ScriptRuns.layer),
     Layer.provideMerge(bots),
     Layer.provideMerge(runtime),
     Layer.provideMerge(BotSkills.layer),
-    // Below the runtime, so their sandboxes close after it.
-    Layer.provideMerge(
-      Layer.mergeAll(
-        integrationTools,
-        codemodeTools,
-        displayTools,
-        configuredWebSearchTools,
-        reactionTools,
-      ),
-    ),
-    Layer.provideMerge(Layer.mergeAll(ProviderSignIns.layer, integrations)),
+    Layer.provideMerge(sandboxedTools),
+    Layer.provideMerge(signIns),
     Layer.provideMerge(models),
     Layer.provideMerge(plugins),
     Layer.provideMerge(workspaces),
@@ -333,55 +341,19 @@ export async function createTenant(
           runnerOf(yield* Effect.context<Scheduler>()),
         );
 
-        const workspaces = yield* BotWorkspaces;
         const chats = yield* GroupChats;
-        const groupChats = groupChatsAccess(chats);
-        const plugins = yield* Plugins;
-
-        const run = runnerOf(
-          yield* Effect.context<CoreServices | Push | ProviderSignIns>(),
-        );
-
+        // Typed as the core, but its context holds every account service, which createAPI reads.
+        const run = runnerOf(yield* Effect.context<CoreServices>());
         const token = randomBytes(32).toString("hex");
 
         const app = createAPI(
-          {
-            ...service,
-            core: run,
-            runtime: yield* BotRuntime,
-          },
-          scheduler,
+          { ...service, core: run, runtime: yield* BotRuntime },
           token,
-          yield* McpIntegrations,
           {
-            commonSkills: yield* CommonSkills,
-            coding: workspaces !== undefined,
-            scriptRuns: yield* ScriptRuns,
-            desktop: workspaces?.desktop === true,
-            restartWorkspace: async (agentId) =>
-              workspaces && Effect.runPromise(workspaces.restart(agentId)),
-            groupChats,
-            desktopControl: desktopControlAccess(run),
+            scheduler,
             viewerTickets: new ViewerTickets(Date.now, options.tenantId),
-            externalAuth: new Map(
-              pluginProviders(plugins).flatMap(({ provider, externalAuth }) =>
-                externalAuth ? [[provider.id, externalAuth] as const] : [],
-              ),
-            ),
-            ...(workspaces && {
-              openDesktop: (agentId: string, desktop: { passive: boolean }) =>
-                workspaces.openDesktop(agentId, desktop),
-              startDesktop: (agentId: string) =>
-                workspaces.startDesktop(agentId),
-              desktopRunning: (agentId: string) =>
-                workspaces.desktopRunning(agentId),
-            }),
-            providerAuth: providerSignInsAccess(run),
             oauthClient,
-            credentials: credentialsAccess(run),
-            botRequests: yield* BotRequests,
           },
-          run,
         );
 
         yield* bots.recover;

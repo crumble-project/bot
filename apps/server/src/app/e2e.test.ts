@@ -36,7 +36,7 @@ describe("HTTP/runtime persistence", () => {
         service.dispatch(a, p, r, s),
       );
 
-      return createAPI(service, scheduler, token);
+      return createAPI(service, token, { scheduler });
     };
 
     try {

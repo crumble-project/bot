@@ -438,12 +438,12 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
         `python3 -c 'import os,urllib.request as u; print(u.urlopen(u.Request("${url}", headers={"Authorization": "Bearer "+os.environ["ECHO_TOKEN"]})).read().decode())'`,
       );
 
-      const node = await sh(
+      const bun = await sh(
         env,
-        `node -e 'fetch("${url}",{headers:{authorization:"Bearer "+process.env.ECHO_TOKEN}}).then(r=>r.text()).then(console.log,e=>console.log("failed",e.cause?.message??e.message))'`,
+        `bun -e 'fetch("${url}",{headers:{authorization:"Bearer "+process.env.ECHO_TOKEN}}).then(r=>r.text()).then(console.log,e=>console.log("failed",e.cause?.message??e.message))'`,
       );
 
-      for (const result of [curl, python, node]) {
+      for (const result of [curl, python, bun]) {
         expect(result.output).toBe(
           JSON.stringify({ authorization: `Bearer ${placeholder}` }),
         );

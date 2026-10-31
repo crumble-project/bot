@@ -55,6 +55,10 @@ import {
   send,
 } from "@/lib/api";
 import { BotAvatar } from "./avatar";
+import {
+  isWebSearchProviderId,
+  webSearchProviders,
+} from "@/features/settings/web-search-settings";
 import { SelectOptions } from "@/components/form-fields";
 import { ConfirmDeleteContent, WorkspacePage } from "@/components/workspace";
 import {
@@ -348,9 +352,9 @@ function useBotAccess(bot?: Bot) {
   const [tools, setTools] = useState<string[]>(initial.tools);
   const [mcpServers, setMcpServers] = useState<string[]>(initial.mcpServers);
 
-  const [webSearchProvider, setWebSearchProvider] = useState<
-    "mixed" | "exa" | null
-  >(initial.webSearchProvider);
+  const [webSearchProvider, setWebSearchProvider] = useState(
+    initial.webSearchProvider,
+  );
 
   const [desktopProvider, setDesktopProvider] = useState(
     desktop?.provider ?? "",
@@ -1006,13 +1010,15 @@ function BotFieldSections({
             <Select
               items={[
                 { label: "Account default", value: "default" },
-                { label: "Mixed", value: "mixed" },
-                { label: "Exa", value: "exa" },
+                ...webSearchProviders.map((provider) => ({
+                  label: provider.name,
+                  value: provider.id,
+                })),
               ]}
               value={access.webSearchProvider ?? "default"}
               onValueChange={(value) =>
                 access.setWebSearchProvider(
-                  value === "mixed" || value === "exa" ? value : null,
+                  value && isWebSearchProviderId(value) ? value : null,
                 )
               }
             >
@@ -1022,8 +1028,11 @@ function BotFieldSections({
               <SelectContent>
                 <SelectGroup>
                   <SelectItem value="default">Account default</SelectItem>
-                  <SelectItem value="mixed">Mixed</SelectItem>
-                  <SelectItem value="exa">Exa</SelectItem>
+                  {webSearchProviders.map((provider) => (
+                    <SelectItem key={provider.id} value={provider.id}>
+                      {provider.name}
+                    </SelectItem>
+                  ))}
                 </SelectGroup>
               </SelectContent>
             </Select>

@@ -8,6 +8,7 @@ import { Link, Outlet, useMatchRoute } from "@tanstack/react-router";
 import {
   IconAdjustmentsHorizontal,
   IconBell,
+  IconVolume,
   IconDeviceDesktop,
   IconFingerprint,
   IconHammer,
@@ -56,6 +57,7 @@ import {
   passkeysAvailable,
   useSession,
 } from "@/lib/auth-client";
+import { unlock } from "cuelume";
 import { clearLiveStreams, notifications } from "@/lib/live";
 import { CopyButton, EditorSheet } from "@/components/form-fields";
 import {
@@ -142,8 +144,11 @@ const PERMISSION = {
 };
 
 function Notifications() {
-  const [on, setOn] = useState(notifications.enabled);
+  const [enabled, setEnabled] = useState(notifications.enabled);
   const [permission, setPermission] = useState(notifications.permission);
+  // Unset defaults to enabled, but nothing shows until the browser grants permission.
+  const on = enabled && permission === "granted";
+  const [sound, setSound] = useState(notifications.sound);
 
   return (
     <Section title="Notifications">
@@ -154,16 +159,40 @@ function Notifications() {
           </RowTile>
         }
         title={<label htmlFor="notifications">Bot replies</label>}
-        description={on ? PERMISSION[permission] : "Off on this browser."}
+        description={
+          enabled || permission !== "granted"
+            ? PERMISSION[permission]
+            : "Off on this browser."
+        }
       >
         <Switch
           id="notifications"
           checked={on}
           disabled={permission === "unsupported"}
           onCheckedChange={async (next) => {
-            setOn(next);
+            setEnabled(next);
             await notifications.setEnabled(next);
             setPermission(notifications.permission());
+          }}
+        />
+      </SettingRow>
+      <SettingRow
+        tile={
+          <RowTile>
+            <IconVolume />
+          </RowTile>
+        }
+        title={<label htmlFor="notification-sound">Sound</label>}
+      >
+        <Switch
+          id="notification-sound"
+          checked={sound}
+          disabled={!on}
+          onCheckedChange={async (next) => {
+            setSound(next);
+            notifications.setSound(next);
+
+            if (next) await unlock();
           }}
         />
       </SettingRow>

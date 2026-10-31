@@ -24,8 +24,8 @@ export function registerScheduleRoutes(options: {
   register: Register;
   run: Runner<Services>;
   scheduler: SchedulerAccess;
-  coding?: boolean;
-  scriptRuns?: ScriptRuns["Service"];
+  coding?: boolean | undefined;
+  scriptRuns?: ScriptRuns["Service"] | undefined;
 }) {
   const { register, scheduler } = options;
   const exec: Exec = (effect) => options.run.runSync(effect);

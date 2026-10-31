@@ -6,6 +6,11 @@ import type { Agent } from "../shared/domain";
 import { Context } from "effect";
 import type { JobAnswer, JobExtensions } from "../jobs/jobs";
 import type { WebSearchProvider } from "../web-search/provider";
+import type { PasswordManagerVendor } from "../password-managers/password-manager";
+import type {
+  MachineWorkspaces,
+  WorkspaceBackendOptions,
+} from "../workspaces/machine-workspaces";
 
 /** How a provider that signs in outside Crumble stands, shown to the owner instead of sign-in methods. */
 export type ExternalAuth = {
@@ -46,14 +51,98 @@ export type JobKindContribution = {
   onAnswer: (listener: (answer: JobAnswer) => void) => () => void;
 };
 
-/** A compiled-in module contributing model providers, job kinds, and web search providers. See docs/adr/0004-plugin-interfaces.md. */
+/** A machine backend: its workspaces when the server's environment configures it, otherwise undefined. */
+export type WorkspaceBackend = (
+  env: Record<string, string | undefined>,
+  options: WorkspaceBackendOptions,
+) => MachineWorkspaces | undefined;
+
+/**
+ * A plugin's fixed part: vendors that need nothing from the account, so they exist before the account's services, which
+ * read secrets and run workspaces through them. See docs/adr/0004-plugin-interfaces.md.
+ */
+export type PluginVendors = {
+  /** Stored data and settings key on it: never rename. */
+  id: string;
+  passwordManagers?: PasswordManagerVendor[];
+  /** Tried in list order; the first the environment configures runs the account's workspaces. */
+  workspaceBackends?: WorkspaceBackend[];
+};
+
+/** Fails startup unless the plugins implement each ID of `catalog` exactly once, and no other. */
+export function assertVendorIds(
+  kind: string,
+  catalog: readonly string[],
+  implemented: readonly string[],
+) {
+  const problems = [
+    ...catalog.flatMap((id) => {
+      const count = implemented.filter((other) => other === id).length;
+
+      return count === 1 ? [] : [`${id} is implemented ${count} times`];
+    }),
+    ...implemented.flatMap((id) =>
+      catalog.includes(id) ? [] : [`${id} is not in shared/vendors.ts`],
+    ),
+  ];
+
+  if (problems.length)
+    throw new Error(`Plugin ${kind} IDs: ${problems.join("; ")}`);
+}
+
+export const pluginPasswordManagers = (vendors: readonly PluginVendors[]) =>
+  vendors.flatMap((vendor) => vendor.passwordManagers ?? []);
+
+/** The workspaces of the first backend the environment configures, if any. */
+export function pluginWorkspaces(
+  vendors: readonly PluginVendors[],
+  env: Record<string, string | undefined>,
+  options: WorkspaceBackendOptions,
+) {
+  for (const backend of vendors.flatMap(
+    (vendor) => vendor.workspaceBackends ?? [],
+  )) {
+    const workspaces = backend(env, options);
+
+    if (workspaces) return workspaces;
+  }
+
+  return undefined;
+}
+
+/** A value the owner sets for a plugin, such as an API key. See docs/adr/0009-plugin-settings.md. */
+export type PluginSetting = {
+  /** Stored data keys on it: never rename. */
+  key: string;
+  /** Written once and never read back by clients. */
+  kind: "secret";
+  label: string;
+  /** The status the owner sees while the setting has no value. */
+  whenMissing: string;
+};
+
+/** Where a plugin's setting is stored in the account's secrets. */
+export const pluginSettingKey = (pluginId: string, key: string) =>
+  `${pluginId}:${key}`;
+
+/**
+ * A plugin's runtime part, built once the account's services exist: model providers, job kinds, and web search
+ * providers. See docs/adr/0004-plugin-interfaces.md.
+ */
 export type CrumblePlugin = {
   /** Stored data and settings key on it: never rename. */
   id: string;
   providers?: ProviderContribution[];
   jobKinds?: JobKindContribution[];
   webSearchProviders?: WebSearchProvider[];
+  settings?: PluginSetting[];
 };
+
+/** The kinds of contribution a plugin makes, as clients group plugins by. */
+export const pluginContributions = (plugin: CrumblePlugin) =>
+  (["providers", "jobKinds", "webSearchProviders"] as const).filter(
+    (kind) => (plugin[kind]?.length ?? 0) > 0,
+  );
 
 export const pluginProviders = (plugins: readonly CrumblePlugin[]) =>
   plugins.flatMap((plugin) => plugin.providers ?? []);

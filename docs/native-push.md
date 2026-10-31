@@ -13,7 +13,7 @@ Authenticated push notification registration and delivery for iOS and Android (a
 
 ## Outbox and payload
 
-Completed owner, task, job-report, and group replies create a durable outbox event in `push.sqlite`. Replies are suppressed for devices holding an active presence lease on the same bot chat. Retries use exponential backoff (1s to 64s, up to 8 attempts, 24h expiry); permanently rejected tokens disable only the matching registration.
+Completed owner, task, job-report, and group replies, and desktop job actions held for approval, create a durable outbox event in `push.sqlite`. Replies are suppressed for devices holding an active presence lease on the same bot chat. Retries use exponential backoff (1s to 64s, up to 8 attempts, 24h expiry); permanently rejected tokens disable only the matching registration.
 
 ```json
 {
@@ -27,6 +27,7 @@ Completed owner, task, job-report, and group replies create a durable outbox eve
   "jobName": "optional job name",
   "groupId": "optional group UUID",
   "groupName": "optional group name",
+  "waitingFor": "optional: approval|credential|login",
   "preview": "…",
   "createdAt": "ISO-8601"
 }

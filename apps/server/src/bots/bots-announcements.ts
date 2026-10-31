@@ -3,7 +3,14 @@ import type { Execution } from "../shared/domain";
 import type { botsActivity } from "./bots-activity";
 import { background, type BotsContext } from "./bots-context";
 import type { botsReads } from "./bots-reads";
-import { latestMessagePreview, latestReply } from "./transcript";
+import { REQUEST_CREDENTIAL_TOOL } from "../credentials/credentials";
+import { REQUEST_LOGIN_TOOL } from "../logins/logins";
+import type { WaitingFor } from "./bots";
+import {
+  latestMessagePreview,
+  latestReply,
+  type TranscriptMessage,
+} from "./transcript";
 
 type AnnouncementDeps = {
   notifications: ReturnType<typeof botsActivity>;
@@ -48,6 +55,23 @@ const botsPreviews = (context: BotsContext, deps: AnnouncementDeps) => {
   return { announcePreview, forkPreview };
 };
 
+const REQUEST_TOOLS = new Map<string | undefined, WaitingFor>([
+  [REQUEST_CREDENTIAL_TOOL, "credential"],
+  [REQUEST_LOGIN_TOOL, "login"],
+]);
+
+/** What the turn since the owner's last input asked the owner for, from its successful request tools. */
+function waitingFor(messages: TranscriptMessage[]) {
+  const input = messages.findLastIndex((message) => message.role === "user");
+
+  return messages
+    .slice(input + 1)
+    .map((message) =>
+      message.isError ? undefined : REQUEST_TOOLS.get(message.toolName),
+    )
+    .findLast(Boolean);
+}
+
 /** Tells activity listeners about a finished reply, unless the bot only reacted to the input. */
 const botsReplies = (context: BotsContext, deps: AnnouncementDeps) => {
   const { agents, activityListeners } = context;
@@ -69,6 +93,7 @@ const botsReplies = (context: BotsContext, deps: AnnouncementDeps) => {
     });
 
     const { reply, reaction } = latestReply(messages);
+    const waiting = waitingFor(messages);
 
     // A reaction acknowledges the input without an answer worth a notification.
     if (!reply && reaction) return;
@@ -82,6 +107,7 @@ const botsReplies = (context: BotsContext, deps: AnnouncementDeps) => {
       origin: (yield* origin(execution)).kind,
       preview: reply?.content.trim().slice(0, 240) ?? "",
       createdAt: execution.createdAt,
+      ...(waiting && { waitingFor: waiting }),
     });
   });
 

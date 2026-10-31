@@ -3,6 +3,7 @@ import { IconCheck, IconCopy } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -133,14 +134,16 @@ export function EditorSheet({
             onSubmit();
           }}
         >
-          <FieldGroup className="flex-1 overflow-y-auto p-4">
-            {children}
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-          </FieldGroup>
+          <ScrollArea className="min-h-0 flex-1">
+            <FieldGroup className="p-4">
+              {children}
+              {error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+            </FieldGroup>
+          </ScrollArea>
           <SheetFooter className="flex-row justify-end border-t">
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel

@@ -35,7 +35,7 @@ Passkeys need an address with a hostname, so on the server's own machine open `h
 
 ## Notifications
 
-Turn on browser notifications for bot replies in **Settings** > **General**.
+Turn on browser notifications in **Settings** > **General**; the browser asks for permission the first time. You're notified of bot replies from chats you don't have open, and of desktop job actions waiting for your approval. Each notification plays a sound: one for replies, a bell for approvals, and a mechanical bell when a bot asks for a credential or login; turn it off with **Sound** in the same section. The tab title counts replies you haven't seen yet, such as `(3) Atlas | Crumble`, until you open their chats. It also names the bot or group chat you have open.
 
 ## Install as an app
 

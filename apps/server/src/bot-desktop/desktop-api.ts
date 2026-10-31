@@ -70,12 +70,16 @@ export function registerDesktopRoutes(options: {
   desktop: boolean;
   control: DesktopControlAccess;
   tickets: ViewerTickets;
-  openDesktop?: (
-    agentId: string,
-    options: { passive: boolean },
-  ) => Effect.Effect<DesktopStream, DesktopOpenError>;
-  startDesktop?: (agentId: string) => Effect.Effect<void, DesktopOpenError>;
-  desktopRunning?: (agentId: string) => boolean;
+  openDesktop?:
+    | ((
+        agentId: string,
+        options: { passive: boolean },
+      ) => Effect.Effect<DesktopStream, DesktopOpenError>)
+    | undefined;
+  startDesktop?:
+    | ((agentId: string) => Effect.Effect<void, DesktopOpenError>)
+    | undefined;
+  desktopRunning?: ((agentId: string) => boolean) | undefined;
 }) {
   const { app, register, service, run, control, tickets } = options;
   // The viewer of each connection, from its redeemed ticket to its WebSocket.

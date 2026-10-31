@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from "react";
+import { play } from "cuelume";
 import {
   type ActivityEvent,
   type Bot,
@@ -85,10 +86,15 @@ export function useWorking(id: string) {
 }
 
 const NOTIFY_KEY = "crumble.notifications";
+const SOUND_KEY = "crumble.notification-sound";
 const SEEN_KEY = "crumble.notified";
 
 export const notifications = {
   enabled: () => localStorage.getItem(NOTIFY_KEY) !== "off",
+  sound: () => localStorage.getItem(SOUND_KEY) !== "off",
+  setSound(on: boolean) {
+    localStorage.setItem(SOUND_KEY, on ? "on" : "off");
+  },
   async setEnabled(on: boolean) {
     localStorage.setItem(NOTIFY_KEY, on ? "on" : "off");
 
@@ -128,15 +134,43 @@ function canNotify() {
   );
 }
 
-function isShowing(event: ReplyEvent) {
-  const path = location.pathname;
+const chatPath = (event: ReplyEvent) =>
+  event.groupId ? `/groups/${event.groupId}` : `/bots/${event.agentId}`;
 
-  const showing = event.groupId
-    ? path.endsWith(`/groups/${event.groupId}`)
-    : path.endsWith(`/bots/${event.agentId}`);
+const isShowing = (path: string) =>
+  document.visibilityState === "visible" && location.pathname.endsWith(path);
 
-  return document.visibilityState === "visible" && showing;
+// Replies the owner hasn't seen, by the path of their chat; the tab title counts them.
+const unread = new Map<string, number>();
+let unreadTotal = 0;
+const unreadListeners = new Set<() => void>();
+
+function showUnread() {
+  unreadTotal = [...unread.values()].reduce((sum, count) => sum + count, 0);
+
+  for (const listener of unreadListeners) listener();
 }
+
+/** How many replies arrived for chats the owner wasn't looking at. */
+export function useUnreadCount() {
+  return useSyncExternalStore(
+    (listener) => {
+      unreadListeners.add(listener);
+
+      return () => unreadListeners.delete(listener);
+    },
+    () => unreadTotal,
+  );
+}
+
+/** Clears the unread count of the chat on screen; call when the route or the tab's visibility changes. */
+export function markSeen() {
+  for (const path of unread.keys()) if (isShowing(path)) unread.delete(path);
+
+  showUnread();
+}
+
+document.addEventListener("visibilitychange", markSeen);
 
 function noticeTitle(event: ReplyEvent) {
   if (event.groupId)
@@ -150,13 +184,43 @@ function noticeTitle(event: ReplyEvent) {
   return `${event.agentName}${job}`;
 }
 
-function notify(event: ReplyEvent, open: Open) {
-  if (event.origin === "bot" || !canNotify()) return;
+/** What a notification is about: a reply, or a bot waiting for an approval or for a credential or login. */
+export type NoticeKind = "reply" | "approval" | "credential";
 
-  if (isShowing(event) || !firstNotice(event.eventId)) return;
+function noticeKind({ waitingFor }: ReplyEvent): NoticeKind {
+  if (!waitingFor) return "reply";
+
+  return waitingFor === "credential" || waitingFor === "login"
+    ? "credential"
+    : "approval";
+}
+
+/** Plays a notification's sound; each kind sounds different, so the owner hears what is asked before looking. */
+export function playNotice(kind: NoticeKind) {
+  if (kind === "approval") play("attention");
+  else if (kind === "credential") play("attention", { theme: "mech" });
+  else play("ready");
+}
+
+function notify(event: ReplyEvent, open: Open) {
+  const path = chatPath(event);
+
+  if (event.origin === "bot" || isShowing(path)) return;
+
+  unread.set(path, (unread.get(path) ?? 0) + 1);
+  showUnread();
+
+  if (!canNotify() || !firstNotice(event.eventId)) return;
+
+  const kind = noticeKind(event);
+
+  if (notifications.sound()) playNotice(kind);
 
   const notification = new Notification(noticeTitle(event), {
     body: plain(event.preview) || "Replied",
+    icon: "/ui/icon-192.png",
+    requireInteraction: kind !== "reply",
+    silent: notifications.sound(),
     tag: event.groupId
       ? `reply-group-${event.groupId}`
       : `reply-${event.agentId}`,
@@ -186,6 +250,8 @@ export function clearLiveStreams() {
 
   for (const stream of chatStreams.values()) stream.controller.abort();
   chatStreams.clear();
+  unread.clear();
+  showUnread();
 }
 
 /** Follows the server's activity stream: sidebar previews, notifications, and connection status. */

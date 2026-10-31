@@ -24,6 +24,7 @@
     "cn": "0.5.0",
     "cron-parser": "5.10.2",
     "cronstrue": "3.38.0",
+    "cuelume": "0.2.8",
     "pele": "1.9.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",

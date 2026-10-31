@@ -107,6 +107,17 @@ export type MachineWorkspacesOptions = {
   intercept?: (agentId: string) => WorkspaceInterceptor;
 };
 
+/** What the server gives every workspace backend; each backend reads its images and secrets from the environment. */
+export type WorkspaceBackendOptions = Omit<
+  MachineWorkspacesOptions,
+  "desktopImage"
+> & {
+  /** Where a backend may record its machines, so a restarted server finds them. */
+  dataDir: string;
+  /** Prefix of machine names, which may be global to the backend's account. */
+  namePrefix: string;
+};
+
 /** Throws for an agent id that could name another bot's machine. */
 export function assertAgentId(agentId: string) {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(agentId))

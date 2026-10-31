@@ -30,7 +30,7 @@ type AgentRoutesOptions = {
   secrets: SecretStorage;
   integrations?: McpIntegrations["Service"] | undefined;
   /** Stops a bot's workspace machine, so its next use boots the image its tools need now. */
-  restartWorkspace?: (agentId: string) => Promise<void>;
+  restartWorkspace?: ((agentId: string) => Promise<void>) | undefined;
 };
 
 /** A bot may use shared servers and its own, never another bot's. */

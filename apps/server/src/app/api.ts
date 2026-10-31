@@ -3,7 +3,7 @@ import { bearerAuth } from "hono/bearer-auth";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
-import { Effect } from "effect";
+import { Context, Effect, Option } from "effect";
 import { contractApp, routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import { registerAgentRoutes } from "../bots/agents-api";
@@ -24,15 +24,19 @@ import { heldActionsAccess } from "../bot-desktop/held-actions";
 import { registerJudgeModelRoutes } from "../bot-desktop/judge-settings";
 import { loginsAccess } from "../logins/logins";
 import { registerBotRequestRoutes } from "../bot-requests/bot-requests-api";
-import type { BotRequests } from "../bot-requests/bot-requests";
+import { BotRequests } from "../bot-requests/bot-requests";
 import {
   credentialsAccess,
   type CredentialsAccess,
 } from "../credentials/credentials";
 import { registerGroupChatRoutes } from "../group-chats/group-chats-api";
-import type { GroupChatsAccess } from "../group-chats/group-chats";
+import {
+  GroupChats,
+  groupChatsAccess,
+  type GroupChatsAccess,
+} from "../group-chats/group-chats";
 import { registerMcpServerRoutes } from "../integrations/mcp-servers-api";
-import type { McpIntegrations } from "../integrations/integrations";
+import { McpIntegrations } from "../integrations/integrations";
 import {
   CLIENT_DOCUMENT_PATH,
   clientDocumentBody,
@@ -41,29 +45,43 @@ import {
 } from "../integrations/mcp-oauth";
 import { registerMemoryRoutes } from "../memory/memory-api";
 import { registerPasswordManagerRoutes } from "../password-managers/password-managers-api";
+import { registerPluginSettingRoutes } from "../plugins/plugin-settings-api";
 import {
   registerProviderRoutes,
   providerSchema,
 } from "../providers/providers-api";
 import {
+  ProviderSignIns,
+  providerSignInsAccess,
   standaloneSignIns,
   type ProviderSignInsAccess,
 } from "../providers/provider-auth";
 import { Push, type PushRuntime } from "../push/push";
 import { registerPushRoutes } from "../push/push-api";
 import { registerScheduleRoutes } from "../schedules/schedules-api";
-import type { SchedulerAccess } from "../schedules/scheduler";
-import type { ScriptRuns } from "../schedules/script-runs";
+import {
+  Scheduler,
+  schedulerAccess,
+  type SchedulerAccess,
+} from "../schedules/scheduler";
+import { ScriptRuns } from "../schedules/script-runs";
 import { MAX_MESSAGE_BODY } from "../shared/attachments";
 import type { CoreServices } from "./core-layer";
-import type { CommonSkill } from "../skills/common-skills";
+import { CommonSkills, type CommonSkill } from "../skills/common-skills";
 import { httpStatus, isAppError } from "../shared/errors";
-import type { Runner } from "../shared/runner";
+import { runnerOf, type Runner } from "../shared/runner";
 import { registerActivityRoutes } from "../activity/activity-api";
 import { registerSkillRoutes } from "../skills/skills-api";
 import type { DesktopStream } from "../workspaces/workspace";
 import type { DesktopOpenError } from "../workspaces/workspace-errors";
-import type { ExternalAuth } from "../plugins/plugins";
+import {
+  pluginJobKinds,
+  pluginProviders,
+  Plugins,
+  type CrumblePlugin,
+  type ExternalAuth,
+} from "../plugins/plugins";
+import { BotWorkspaces } from "../workspaces/workspace";
 import { registerWebSearchRoutes } from "../web-search/settings";
 
 /** The bots the API serves, with the account's repositories and bot runtime its handlers read directly. */
@@ -74,42 +92,112 @@ export type ApiBots = BotsAccess & {
 
 type ApiApp = ReturnType<typeof contractApp>;
 
-/** Everything the API can be built with beyond the bots, the scheduler, and the token. */
+/**
+ * What the routes are built from besides the bots. `createAPI` reads each from the account's services in `core`; a
+ * value given here replaces it, as tests do. A missing optional service makes its routes answer 503.
+ */
 export type ApiOptions = {
-  commonSkills?: CommonSkill[];
+  scheduler?: SchedulerAccess | undefined;
+  integrations?: McpIntegrations["Service"] | undefined;
+  push?: PushRuntime | undefined;
+  commonSkills?: CommonSkill[] | undefined;
   /** Whether the server can give bots the coding tool. */
-  coding?: boolean;
+  coding?: boolean | undefined;
   /** Script run history; its route answers 503 without it. */
-  scriptRuns?: ScriptRuns["Service"];
+  scriptRuns?: ScriptRuns["Service"] | undefined;
   /** Whether the server can give bots the desktop tool. */
-  desktop?: boolean;
+  desktop?: boolean | undefined;
+  /** The plugins compiled into the server, for their settings. */
+  plugins?: readonly CrumblePlugin[] | undefined;
+  /** The job kinds the server's plugins offer bots. */
+  jobKinds?: string[] | undefined;
   /** Stops a bot's workspace machine, so its next use boots the image its tools need now. */
-  restartWorkspace?: (agentId: string) => Promise<void>;
+  restartWorkspace?: ((agentId: string) => Promise<void>) | undefined;
   /** Group chats; their routes answer 503 without it. */
-  groupChats?: GroupChatsAccess;
+  groupChats?: GroupChatsAccess | undefined;
   /** Who operates each bot desktop. */
-  desktopControl?: DesktopControlAccess;
+  desktopControl?: DesktopControlAccess | undefined;
   /** Single-use viewer links. */
-  viewerTickets?: ViewerTickets;
+  viewerTickets?: ViewerTickets | undefined;
   /** Connects to a bot desktop's VNC server, for viewers; a passive one only watches a running machine. */
-  openDesktop?: (
-    agentId: string,
-    options: { passive: boolean },
-  ) => Effect.Effect<DesktopStream, DesktopOpenError>;
+  openDesktop?:
+    | ((
+        agentId: string,
+        options: { passive: boolean },
+      ) => Effect.Effect<DesktopStream, DesktopOpenError>)
+    | undefined;
   /** Whether a bot's machine runs its bot desktop now. */
-  desktopRunning?: (agentId: string) => boolean;
+  desktopRunning?: ((agentId: string) => boolean) | undefined;
   /** Boots a bot's machine ahead of a viewer's connection. */
-  startDesktop?: (agentId: string) => Effect.Effect<void, DesktopOpenError>;
+  startDesktop?:
+    | ((agentId: string) => Effect.Effect<void, DesktopOpenError>)
+    | undefined;
   /** The server's provider sign-ins; API-only fixtures get one of their own. */
-  providerAuth?: ProviderSignInsAccess;
+  providerAuth?: ProviderSignInsAccess | undefined;
   /** The server's OAuth client metadata document, when it has a public address. */
   oauthClient?: ClientDocument | undefined;
   /** Providers whose sign-in happens outside Crumble, by provider ID. */
-  externalAuth?: ReadonlyMap<string, () => Promise<ExternalAuth>>;
+  externalAuth?: ReadonlyMap<string, () => Promise<ExternalAuth>> | undefined;
   /** The bots' credentials; API-only fixtures get their own. */
-  credentials?: CredentialsAccess;
-  botRequests?: BotRequests["Service"];
+  credentials?: CredentialsAccess | undefined;
+  botRequests?: BotRequests["Service"] | undefined;
 };
+
+/** A service of the account, or undefined when the runner's context lacks it, as in API-only fixtures. */
+const serviceIn =
+  (core: Runner<CoreServices>) =>
+  <I, S>(key: Context.Key<I, S>) =>
+    Option.getOrUndefined(core.runSync(Effect.serviceOption(key)));
+
+/** The options the account's bot workspaces provide, when the server runs them. */
+const workspaceOptions = (
+  workspaces: BotWorkspaces["Service"] | undefined,
+): ApiOptions => ({
+  coding: workspaces !== undefined,
+  desktop: workspaces?.desktop === true,
+  restartWorkspace:
+    workspaces &&
+    (async (agentId) => Effect.runPromise(workspaces.restart(agentId))),
+  openDesktop:
+    workspaces &&
+    ((agentId, options) => workspaces.openDesktop(agentId, options)),
+  desktopRunning:
+    workspaces && ((agentId) => workspaces.desktopRunning(agentId)),
+  startDesktop: workspaces && ((agentId) => workspaces.startDesktop(agentId)),
+});
+
+/** The options the account's own services provide; a runner over only the repositories provides none of them. */
+function accountOptions(core: Runner<CoreServices>): ApiOptions {
+  const service = serviceIn(core);
+  const plugins = service(Plugins) ?? [];
+  const scheduler = service(Scheduler);
+  const push = service(Push);
+  const signIns = service(ProviderSignIns);
+  const groupChats = service(GroupChats);
+
+  return {
+    ...workspaceOptions(service(BotWorkspaces)),
+    scheduler:
+      scheduler &&
+      schedulerAccess(runnerOf(Context.make(Scheduler, scheduler))),
+    integrations: service(McpIntegrations),
+    push: push && runnerOf(Context.make(Push, push)),
+    commonSkills: service(CommonSkills),
+    scriptRuns: service(ScriptRuns),
+    plugins,
+    jobKinds: pluginJobKinds(plugins).map((kind) => kind.kind),
+    groupChats: groupChats && groupChatsAccess(groupChats),
+    providerAuth:
+      signIns &&
+      providerSignInsAccess(runnerOf(Context.make(ProviderSignIns, signIns))),
+    externalAuth: new Map(
+      pluginProviders(plugins).flatMap(({ provider, externalAuth }) =>
+        externalAuth ? [[provider.id, externalAuth] as const] : [],
+      ),
+    ),
+    botRequests: service(BotRequests),
+  };
+}
 
 /** The register function that keeps merge-before-validation PATCH semantics and the existing JSON error handling. */
 const pathRegister =
@@ -177,98 +265,106 @@ const setupPipeline = (options: {
   app.onError(handleApiError);
 };
 
-/** The bot desktop routes get the server's own control state and viewer tickets unless a test supplies them. */
-const desktopRouteOptions = (
-  options: ApiOptions,
-  app: ApiApp,
-  register: Register,
-  service: ApiBots,
-  run: Runner<CoreServices>,
-) => ({
-  app,
-  register,
-  service,
-  run,
-  desktop: options.desktop === true,
-  control: options.desktopControl ?? desktopControlAccess(run),
-  tickets: options.viewerTickets ?? new ViewerTickets(),
-  ...(options.openDesktop && { openDesktop: options.openDesktop }),
-  ...(options.startDesktop && { startDesktop: options.startDesktop }),
-  ...(options.desktopRunning && { desktopRunning: options.desktopRunning }),
-});
-
-const pushServerIdOf = (push: PushRuntime | undefined) =>
-  push?.runSync(Push.use((service) => Effect.succeed(service.serverId)));
-
 /** What the server offers the bots' tools, as the clients probe it. */
 const capabilitiesOf = (options: ApiOptions) => ({
   coding: options.coding === true,
   desktop: options.desktop === true,
+  jobKinds: options.jobKinds ?? [],
 });
 
-export function createAPI(
+/** Every value the feature routes are built from; each feature's register function takes the part it needs. */
+function apiContext(
+  app: ApiApp,
   service: ApiBots,
-  scheduler: SchedulerAccess,
-  token: string,
-  integrations?: McpIntegrations["Service"],
-  options: ApiOptions = {},
-  push?: PushRuntime,
+  options: ApiOptions,
+  register: Register,
 ) {
-  if (token.length < 32)
-    throw new Error("Server token must contain at least 32 characters");
   const { core, runtime } = service;
-  const app = contractApp();
-
-  const credentials = options.credentials ?? credentialsAccess(core);
-  const secrets = secretStorage(core);
   const providerAuth = options.providerAuth ?? standaloneSignIns(core);
-  const provider = providerSchema(providerAuth.models);
-  const register = pathRegister(app);
+  const desktopControl = options.desktopControl ?? desktopControlAccess(core);
 
-  setupPipeline({ app, register, token, oauthClient: options.oauthClient });
-  registerDesktopRoutes(
-    desktopRouteOptions(options, app, register, service, core),
-  );
+  if (!options.scheduler)
+    throw new Error(
+      "The API needs a scheduler: none in the account or options",
+    );
 
-  register(routes.capabilities, (c) => c.json(capabilitiesOf(options), 200));
-  registerPushRoutes(register, push);
-  registerWebSearchRoutes(register, core);
-  registerJudgeModelRoutes(register, core, providerAuth.models);
-
-  const pushServerId = pushServerIdOf(push);
-
-  const api = {
+  return {
     ...options,
+    app,
     register,
     service,
     run: core,
-    scheduler,
+    scheduler: options.scheduler,
     runtime,
-    credentials,
-    secrets,
-    provider,
+    credentials: options.credentials ?? credentialsAccess(core),
+    secrets: secretStorage(core),
+    provider: providerSchema(providerAuth.models),
     providerAuth,
-    integrations,
-    pushServerId,
+    desktopControl,
+    viewerTickets: options.viewerTickets ?? new ViewerTickets(),
+    logins: loginsAccess(core),
+    held: heldActionsAccess(core),
+    pushServerId: options.push?.runSync(
+      Push.use((push) => Effect.succeed(push.serverId)),
+    ),
   };
+}
 
-  registerAgentRoutes(api);
-  registerChatRoutes(api);
-  registerBotActivityRoutes(api);
-  registerGroupChatRoutes(api);
-  registerCredentialRoutes(api);
-  registerLoginRoutes({ ...api, logins: loginsAccess(core) });
-  registerHeldActionRoutes({ ...api, held: heldActionsAccess(core) });
+type ApiContext = ReturnType<typeof apiContext>;
 
-  if (options.botRequests)
-    registerBotRequestRoutes({ ...api, botRequests: options.botRequests });
-  registerMemoryRoutes(api);
-  registerSkillRoutes(api);
-  registerScheduleRoutes(api);
-  registerActivityRoutes(api);
-  registerProviderRoutes(api);
-  registerPasswordManagerRoutes(api);
-  registerMcpServerRoutes(api);
+/** Every feature's routes, registered in this order. A new feature adds its register function here. */
+const featureRoutes: ReadonlyArray<(api: ApiContext) => void> = [
+  (api) =>
+    registerDesktopRoutes({
+      ...api,
+      desktop: api.desktop === true,
+      control: api.desktopControl,
+      tickets: api.viewerTickets,
+    }),
+  (api) =>
+    api.register(routes.capabilities, (c) => c.json(capabilitiesOf(api), 200)),
+  registerPushRoutes,
+  registerWebSearchRoutes,
+  registerJudgeModelRoutes,
+  registerAgentRoutes,
+  registerChatRoutes,
+  registerBotActivityRoutes,
+  registerGroupChatRoutes,
+  registerCredentialRoutes,
+  registerLoginRoutes,
+  registerHeldActionRoutes,
+  registerBotRequestRoutes,
+  registerMemoryRoutes,
+  registerSkillRoutes,
+  registerScheduleRoutes,
+  registerActivityRoutes,
+  registerProviderRoutes,
+  registerPasswordManagerRoutes,
+  registerPluginSettingRoutes,
+  registerMcpServerRoutes,
+];
+
+/** The account's API. Everything not in `options` comes from the account's services in `service.core`. */
+export function createAPI(
+  service: ApiBots,
+  token: string,
+  options: ApiOptions = {},
+) {
+  if (token.length < 32)
+    throw new Error("Server token must contain at least 32 characters");
+  const app = contractApp();
+  const register = pathRegister(app);
+
+  const api = apiContext(
+    app,
+    service,
+    { ...accountOptions(service.core), ...options },
+    register,
+  );
+
+  setupPipeline({ app, register, token, oauthClient: options.oauthClient });
+
+  for (const routes of featureRoutes) routes(api);
 
   return app;
 }

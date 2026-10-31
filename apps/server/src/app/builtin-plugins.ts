@@ -4,16 +4,30 @@ import type { CredentialsAccess } from "../credentials/credentials";
 import { desktopPlugin, type DesktopLogins } from "../jobs/desktop";
 import type { DesktopIntent } from "../jobs/desktop-intent";
 import type { DesktopControlAccess } from "../bot-desktop/desktop-control";
-import type { CrumblePlugin } from "../plugins/plugins";
+import type { CrumblePlugin, PluginVendors } from "../plugins/plugins";
+import { bitwarden } from "../password-managers/bitwarden";
+import { onePassword } from "../password-managers/one-password";
+import { microsandboxWorkspacesFromEnv } from "../workspaces/microsandbox-workspaces";
+import { railwayWorkspacesFromEnv } from "../workspaces/railway-workspaces";
 import { meliousPlugin } from "../providers/providers";
 import type { Workspaces } from "../workspaces/workspace";
 import { webSearchPlugin } from "../web-search/mixed";
-import { exaProvider } from "../web-search/exa";
+import { exaPlugin } from "../web-search/exa";
 import type { Effect } from "effect";
+
+/** The fixed parts of the plugins compiled into the server, in the order their vendors are listed. */
+export const builtinVendors: PluginVendors[] = [
+  { id: "1password", passwordManagers: [onePassword] },
+  { id: "bitwarden", passwordManagers: [bitwarden] },
+  // Railway first: it runs only when CRUMBLE_WORKSPACE_BACKEND asks for it, while dev servers always set an image.
+  { id: "railway", workspaceBackends: [railwayWorkspacesFromEnv] },
+  { id: "microsandbox", workspaceBackends: [microsandboxWorkspacesFromEnv] },
+];
 
 /** What the server hands the built-in plugins; each takes only the part it needs. */
 export type PluginHost = {
-  exaKey: Effect.Effect<string | undefined>;
+  /** Reads a value from the account's secrets, such as a plugin setting. */
+  secret: (key: string) => Effect.Effect<string | undefined>;
   dataDir: string;
   env: NodeJS.ProcessEnv;
   workspaces: Workspaces | undefined;
@@ -34,5 +48,5 @@ export const builtinPlugins = (host: PluginHost): CrumblePlugin[] => [
   codingPlugin(host.workspaces, host.credentials),
   desktopPlugin(host.workspaces, host.desktopControl, host.logins, host.intent),
   webSearchPlugin(),
-  { id: "web-search-exa", webSearchProviders: [exaProvider(host.exaKey)] },
+  exaPlugin(host.secret),
 ];

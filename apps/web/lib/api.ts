@@ -29,6 +29,7 @@ import type {
   memoryResponse,
   modelResponse,
   passwordManagersResponse,
+  pluginSettingsResponse,
   providerResponse,
   scheduleResponse,
   scriptRunResponse,
@@ -83,6 +84,8 @@ export type BotRequest = z.infer<typeof botRequestResponse>;
 export type HeldAction = z.infer<typeof heldActionResponse>;
 
 export type JudgeModel = z.infer<typeof judgeModelResponse>;
+
+export type PluginSettings = z.infer<typeof pluginSettingsResponse>;
 
 export type Change = z.infer<typeof learnedChangeResponse>;
 
@@ -346,6 +349,15 @@ export const judgeModelQuery = queryOptions({
   queryKey: ["judge-model"],
   queryFn: ({ signal }) => api<JudgeModel>("/v1/judge-model", { signal }),
 });
+
+export const pluginSettingsQuery = queryOptions({
+  queryKey: ["plugin-settings"],
+  queryFn: ({ signal }) =>
+    api<PluginSettings>("/v1/plugin-settings", { signal }),
+});
+
+export const pluginSettingPath = (pluginId: string, key: string) =>
+  `/v1/plugin-settings/${encodeURIComponent(pluginId)}/${encodeURIComponent(key)}`;
 
 export const botRequestsQuery = (id: string) =>
   queryOptions({

@@ -35,7 +35,11 @@ export type ReplyActivity = {
   /** Set for a bot's answer to a coding or desktop job's report (origin `coding` or `desktop`): the job's name. */
   jobName?: string;
   groupName?: string;
+  /** Set when the reply waits for the owner's answer: a held desktop action, or a credential or login request. */
+  waitingFor?: WaitingFor;
 };
+
+export type WaitingFor = "approval" | "credential" | "login";
 
 export type ChatPreviewActivity = {
   type: "chat-preview";

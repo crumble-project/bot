@@ -5,6 +5,14 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from "@/components/ui/message-scroller";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -297,29 +305,47 @@ function JobHistoryBody({
   working: boolean;
 }) {
   return (
-    <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4">
-      {history.hasNextPage && (
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={history.isFetchingNextPage}
-          onClick={() => void history.fetchNextPage()}
-        >
-          Load earlier activity
-        </Button>
-      )}
-      {history.isPending && <Spinner className="mx-auto" />}
-      {history.isError && (
-        <JobHistoryError label={label} onRetry={() => void history.refetch()} />
-      )}
-      {history.isSuccess && items.length === 0 && (
-        <p className="text-sm text-muted-foreground">Nothing here yet.</p>
-      )}
-      {items.map((item) => (
-        <JobItem key={item.id} item={item} />
-      ))}
-      {working && <p className="shimmer text-sm">Working…</p>}
-    </div>
+    <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+      <MessageScroller className="-mx-4 min-h-0 flex-1">
+        <MessageScrollerViewport preserveScrollOnPrepend>
+          <MessageScrollerContent className="gap-4 px-4">
+            {history.hasNextPage && (
+              <MessageScrollerItem messageId="earlier">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={history.isFetchingNextPage}
+                  onClick={() => void history.fetchNextPage()}
+                >
+                  Load earlier activity
+                </Button>
+              </MessageScrollerItem>
+            )}
+            {history.isPending && <Spinner className="mx-auto" />}
+            {history.isError && (
+              <JobHistoryError
+                label={label}
+                onRetry={() => void history.refetch()}
+              />
+            )}
+            {history.isSuccess && items.length === 0 && (
+              <p className="text-sm text-muted-foreground">Nothing here yet.</p>
+            )}
+            {items.map((item) => (
+              <MessageScrollerItem key={item.id} messageId={item.id}>
+                <JobItem item={item} />
+              </MessageScrollerItem>
+            ))}
+            {working && (
+              <MessageScrollerItem messageId="working">
+                <p className="shimmer text-sm">Working…</p>
+              </MessageScrollerItem>
+            )}
+          </MessageScrollerContent>
+        </MessageScrollerViewport>
+        <MessageScrollerButton />
+      </MessageScroller>
+    </MessageScrollerProvider>
   );
 }
 

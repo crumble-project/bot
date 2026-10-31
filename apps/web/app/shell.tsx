@@ -4,6 +4,7 @@ import {
   Link,
   useMatchRoute,
   useNavigate,
+  useRouterState,
   Outlet,
 } from "@tanstack/react-router";
 import {
@@ -45,7 +46,9 @@ import { authClient } from "@/lib/auth-client";
 import {
   clearLiveStreams,
   followActivity,
+  markSeen,
   useConnectionStatus,
+  useUnreadCount,
   useWorking,
 } from "@/lib/live";
 import { BotAvatar, botColor, botStyle } from "@/features/bots/avatar";
@@ -76,6 +79,9 @@ function useResetOnUserChange(userId: string | undefined) {
 
 function useFollowActivity() {
   const navigate = useNavigate();
+  const path = useRouterState({ select: (state) => state.location.pathname });
+
+  useEffect(markSeen, [path]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -88,6 +94,29 @@ function useFollowActivity() {
 
     return () => controller.abort();
   }, [navigate]);
+}
+
+/** Titles the tab with the unseen replies and the open chat, such as `(3) Atlas | Crumble`. */
+function useDocumentTitle(
+  bots: Bot[] | undefined,
+  groups: GroupChat[] | undefined,
+) {
+  const matchRoute = useMatchRoute();
+  const unread = useUnreadCount();
+  const bot = matchRoute({ to: "/bots/$botId" });
+  const group = matchRoute({ to: "/groups/$groupId" });
+
+  const chat = bot
+    ? bots?.find(({ id }) => id === bot.botId)?.name
+    : group
+      ? groups?.find(({ id }) => id === group.groupId)?.name
+      : undefined;
+
+  useEffect(() => {
+    const title = chat ? `${chat} | Crumble` : "Crumble";
+
+    document.title = unread ? `(${unread}) ${title}` : title;
+  }, [chat, unread]);
 }
 
 /** The sidebar's background, as `--sidebar` in styles.css, per color scheme. */
@@ -141,6 +170,7 @@ export function Shell() {
   const [search, setSearch] = useState("");
   useResetOnUserChange(session.data?.user.id);
   useFollowActivity();
+  useDocumentTitle(bots.data, groups.data);
   const needle = search.trim().toLowerCase();
 
   const shownBots = (bots.data ?? []).filter((bot) => matchesBot(bot, needle));

@@ -3,10 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { Store } from "../../test/support/store";
 import { desktopControlAccess } from "../bot-desktop/desktop-control";
+import { HeldActions, heldActionsAccess } from "../bot-desktop/held-actions";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { createAPI, handleApiError, type ApiOptions } from "./api";
+import { heldActionNotices } from "./plugin-layers";
 import { contractApp } from "../contract/api-contract";
 import { registerMcpServerRoutes } from "../integrations/mcp-servers-api";
 import type { McpIntegrations } from "../integrations/integrations";
@@ -74,7 +76,7 @@ afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
 
-function setup(options: Parameters<typeof createAPI>[4] = {}) {
+function setup(options: Parameters<typeof createAPI>[2] = {}) {
   const dir = mkdtempSync(join("/tmp", "bot-api-"));
   dirs.push(dir);
   let sequence = 0;
@@ -110,7 +112,7 @@ function setup(options: Parameters<typeof createAPI>[4] = {}) {
   );
 
   return {
-    app: createAPI(service, scheduler, token, undefined, options),
+    app: createAPI(service, token, { scheduler, ...options }),
     store,
     runtime,
     service,
@@ -155,24 +157,33 @@ describe("HTTP API for bots, chats, and activity", () => {
       service.dispatch(a, p, r, s),
     );
 
-    const withCoding = createAPI(service, scheduler, token, undefined, {
+    const withCoding = createAPI(service, token, {
+      scheduler,
       coding: true,
     });
 
-    const withDesktop = createAPI(service, scheduler, token, undefined, {
+    const withDesktop = createAPI(service, token, {
+      scheduler,
       coding: true,
       desktop: true,
+      jobKinds: ["coding", "desktop"],
     });
 
     const without = await req(app, "/v1/capabilities");
-    expect(await without.json()).toEqual({ coding: false, desktop: false });
+    expect(await without.json()).toEqual({
+      coding: false,
+      desktop: false,
+      jobKinds: [],
+    });
     expect(await (await req(withCoding, "/v1/capabilities")).json()).toEqual({
       coding: true,
       desktop: false,
+      jobKinds: [],
     });
     expect(await (await req(withDesktop, "/v1/capabilities")).json()).toEqual({
       coding: true,
       desktop: true,
+      jobKinds: ["coding", "desktop"],
     });
   });
 
@@ -224,7 +235,8 @@ describe("HTTP API for bots, chats, and activity", () => {
 
     const restarted: string[] = [];
 
-    const app = createAPI(service, scheduler, token, undefined, {
+    const app = createAPI(service, token, {
+      scheduler,
       restartWorkspace: async (agentId) => void restarted.push(agentId),
     });
 
@@ -305,7 +317,8 @@ describe("HTTP API for bots, chats, and activity", () => {
       service.dispatch(a, p, r, s),
     );
 
-    const app = createAPI(service, scheduler, token, undefined, {
+    const app = createAPI(service, token, {
+      scheduler,
       commonSkills: [
         {
           id: "common:tasks/SKILL.md",
@@ -1234,7 +1247,7 @@ describe("HTTP API for script tasks and schedules", () => {
       list: repository.list,
     });
 
-    const app = createAPI(service, scheduler, token, undefined, { scriptRuns });
+    const app = createAPI(service, token, { scheduler, scriptRuns });
 
     const agent = store.createAgent({
       ...agentInput("Coder"),
@@ -1375,7 +1388,8 @@ describe("bot desktop control and viewer", () => {
     const desktopControl = desktopControlAccess(store.runtime);
     const viewerTickets = new ViewerTickets();
 
-    const app = createAPI(service, scheduler, token, undefined, {
+    const app = createAPI(service, token, {
+      scheduler,
       desktop: true,
       desktopControl,
       viewerTickets,
@@ -1634,6 +1648,69 @@ describe("job answer notifications", () => {
   });
 });
 
+describe("held action notifications", () => {
+  test("an action held for the owner's approval becomes a reply event naming the job", async () => {
+    const { store, runtime } = setup();
+    const service = standaloneBots(store, runtime);
+    const heard: unknown[] = [];
+    const scope = Scope.makeUnsafe();
+
+    const agent = store.createAgent({
+      name: "Desk",
+      avatar: "bot",
+      description: "",
+      instructions: "",
+      provider: "openai",
+      model: "gpt-4.1",
+      enabled: true,
+      tools: ["desktop"],
+      skills: [],
+      mcpServers: [],
+      delegates: [],
+    });
+
+    service.onActivity((event) => heard.push(event));
+
+    await service.effects.runPromise(
+      Layer.buildWithScope(heldActionNotices, scope).pipe(
+        Effect.provideService(
+          HeldActions,
+          store.runtime.runSync(HeldActions.use(Effect.succeed)),
+        ),
+      ),
+    );
+
+    const held = await heldActionsAccess(store.runtime).hold({
+      agentId: agent.id,
+      job: "github",
+      action: "click Delete repository",
+      page: null,
+      ownerMessages: [],
+      reason: "Irreversible",
+    });
+
+    while (!heard.length)
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+    expect(heard).toEqual([
+      {
+        type: "reply",
+        executionId: held.id,
+        agentId: agent.id,
+        agentName: "Desk",
+        entryId: null,
+        origin: "desktop",
+        jobName: "github",
+        waitingFor: "approval",
+        preview: "Waiting for your approval: click Delete repository",
+        createdAt: held.heldAt,
+      },
+    ]);
+
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+  });
+});
+
 describe("provider API keys from a password manager", () => {
   const REFERENCE = "op://Vault/OpenAI/key";
 
@@ -1671,7 +1748,8 @@ describe("provider API keys from a password manager", () => {
       runnerOf(Context.merge(core, vault)),
     );
 
-    const app = createAPI(service, scheduler, token, undefined, {
+    const app = createAPI(service, token, {
+      scheduler,
       providerAuth,
     });
 

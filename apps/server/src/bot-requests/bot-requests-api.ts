@@ -11,13 +11,16 @@ import { agentInput } from "../shared/domain";
 type Options = {
   register: Register;
   service: BotsAccess;
-  botRequests: BotRequests["Service"];
+  /** Without it, the routes are not registered. */
+  botRequests?: BotRequests["Service"] | undefined;
   run: Runner<never>;
   provider: { parse(value: string): string };
 };
 
 export function registerBotRequestRoutes(options: Options) {
   const { register, service, botRequests, run, provider } = options;
+
+  if (!botRequests) return;
 
   const exec = <A, E>(effect: Effect.Effect<A, E>) => run.runSync(effect);
 

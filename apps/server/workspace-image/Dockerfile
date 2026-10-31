@@ -1,8 +1,10 @@
 # Guest images for workspaces. Debian (glibc), which cua-driver needs.
 #   base:    every bot with a workspace (coding jobs)
 #   desktop: base plus the bot desktop for desktop jobs: Xvnc, Openbox, tint2, Chromium, cua-driver
-FROM node:24-trixie-slim AS base
+FROM debian:trixie-slim AS base
 COPY --from=ghcr.io/astral-sh/uv:0.13.1 /uv /uvx /usr/local/bin/
+COPY --from=oven/bun:1.4.4-debian /usr/local/bin/bun /usr/local/bin/
+RUN ln -s bun /usr/local/bin/bunx
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     bash build-essential ca-certificates curl git make openssh-client python3 python3-venv ripgrep \

@@ -224,7 +224,8 @@ function api(fake: Record<string, string>) {
     service.dispatch(a, p, r, s),
   );
 
-  const app = createAPI(service, scheduler, token, undefined, {
+  const app = createAPI(service, token, {
+    scheduler,
     providerAuth,
     externalAuth: new Map(
       providers.flatMap(({ provider: item, externalAuth }) =>

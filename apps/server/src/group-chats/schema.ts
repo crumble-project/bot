@@ -4,7 +4,7 @@ import {
   sqliteTable,
   text,
 } from "drizzle-orm/sqlite-core";
-import { executions } from "../bots/execution-schema";
+import { executions } from "../bots/schema.executions";
 import { agents } from "../bots/schema";
 
 export const groupChats = sqliteTable("group_chats", {

@@ -46,6 +46,14 @@
         },
         "groupName": {
           "type": "string"
+        },
+        "waitingFor": {
+          "type": "string",
+          "enum": [
+            "approval",
+            "credential",
+            "login"
+          ]
         }
       },
       "required": [

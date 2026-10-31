@@ -3,6 +3,7 @@ import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -107,20 +108,27 @@ export function DetailsPanel({ bot }: { bot: Bot }) {
     ) ?? [];
 
   return (
-    <aside className="hidden w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l p-4 lg:flex">
-      <ProfileSummary bot={bot} working={working} />
-      {bot.tools.includes("desktop") && (
+    <ScrollArea
+      render={<aside />}
+      className="hidden w-72 shrink-0 border-l lg:block"
+    >
+      <div className="flex flex-col gap-4 p-4">
+        <ProfileSummary bot={bot} working={working} />
+        {bot.tools.includes("desktop") && (
+          <section className="flex flex-col gap-3">
+            <h2 className="text-sm font-medium text-muted-foreground">
+              Desktop
+            </h2>
+            <DesktopPreview key={bot.id} botId={bot.id} />
+          </section>
+        )}
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-medium text-muted-foreground">Desktop</h2>
-          <DesktopPreview key={bot.id} botId={bot.id} />
+          <h2 className="text-sm font-medium text-muted-foreground">
+            Automations
+          </h2>
+          <AutomationList schedules={schedules} automations={automations} />
         </section>
-      )}
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-muted-foreground">
-          Automations
-        </h2>
-        <AutomationList schedules={schedules} automations={automations} />
-      </section>
-    </aside>
+      </div>
+    </ScrollArea>
   );
 }

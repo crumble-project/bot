@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PASSWORD_MANAGER_IDS, WEB_SEARCH_PROVIDER_IDS } from "./vendors";
 
 /** Tools every bot has, whatever its saved `tools` say. */
 export const STANDARD_TOOLS = ["schedule", "codemode"];
@@ -39,7 +40,7 @@ export const agentInput = z.object({
     .regex(/^[a-z0-9-]+$/)
     .default("openai"),
   model: z.string().trim().min(1).max(200).default("gpt-4.1"),
-  webSearchProvider: z.enum(["mixed", "exa"]).nullable().optional(),
+  webSearchProvider: z.enum(WEB_SEARCH_PROVIDER_IDS).nullable().optional(),
   enabled: z.boolean().default(true),
   tools: z.array(z.string().min(1).max(200)).max(100).default(["memory"]),
   /** The bot's own skills by name; the full records live in the skill library. Writing replaces them by name. */
@@ -315,7 +316,7 @@ export const credentialRequestInput = z.object({
 
 export type CredentialRequestInput = z.infer<typeof credentialRequestInput>;
 
-export const passwordManagerIdInput = z.enum(["1password", "bitwarden"]);
+export const passwordManagerIdInput = z.enum(PASSWORD_MANAGER_IDS);
 
 /** Settings key of a password manager: never rename. */
 export type PasswordManagerId = z.infer<typeof passwordManagerIdInput>;
