@@ -88,6 +88,17 @@ Or build from this checkout:
 docker compose up -d --build
 ```
 
+Before deploying a locally built image, check that it serves the UI and its JavaScript and CSS bundles:
+
+```bash
+docker build -t crumble-server:check .
+docker run --rm --network none \
+  -v "$PWD/tools/check-web-ui.ts:/app/tools/check-web-ui.ts:ro" \
+  crumble-server:check bun tools/check-web-ui.ts
+```
+
+This check uses the image's production dependencies without connecting to external services or opening the data volume.
+
 On Linux with KVM workspaces, layer `compose.kvm.yaml` and pass `CRUMBLE_KVM_GID=$(getent group kvm | cut -d: -f3)` and `CRUMBLE_WORKSPACE_IMAGE`.
 
 ## Develop
