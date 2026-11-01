@@ -74,6 +74,8 @@ import { SecretRepository } from "../credentials/secret-repository";
 import { keyedSecretReader } from "../password-managers/secret-references";
 import { SecretValues } from "../password-managers/secret-values";
 import { MessageGateway } from "../message-gateway/message-gateway";
+import { EventRelay } from "../event-sources/event-relay";
+import { EventSources } from "../event-sources/event-sources";
 
 export type TenantOptions = {
   dataDir: string;
@@ -274,6 +276,7 @@ function accountLayer(
     desktopKeepAwake,
     push,
     MessageGateway.layer,
+    EventSources.layer.pipe(Layer.provideMerge(EventRelay.layer)),
   );
 
   const conversations = Layer.mergeAll(scheduler, groups, activity);
@@ -364,6 +367,7 @@ export async function createTenant(
         yield* (yield* ScriptRuns).recover;
         yield* chats.recover;
         yield* (yield* MessageGateway).start;
+        yield* (yield* EventRelay).start;
         scheduler.start();
 
         return {
