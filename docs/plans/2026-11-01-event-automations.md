@@ -181,8 +181,8 @@ Docs: `GLOSSARY.md`, `apps/docs/content/concepts/event-automations.md` (new), `a
 - Consumes: `ScriptRuns.start`; `ExecutionEnv.writeFile(path, content, context)` (`pi-durable/dist/env/index.d.ts:187`); `ShellExecOptions.env` (`:239`).
 - Produces: `ScriptRuns.start(schedule: Schedule, event?: { record: RelayEvent; sourceName: string })`.
 
-- [ ] Test `an event script run gets the payload`: before `exec`, the run writes `/tmp/crumble-events/<eventId>.json` containing `{ id, sourceId, sourceName, receivedAt, method, query, headers, body }` (body in base64). It then executes with env `CRUMBLE_EVENT_ID`, `CRUMBLE_EVENT_SOURCE`, `CRUMBLE_EVENT_FILE`.
-- [ ] Dispatcher: for a script run, `admitted: false` leaves the run `pending` without counting an attempt, so the next tick retries it once the previous run has finished.
+- [x] Test `an event script run gets the payload`: before `exec`, the run writes `/tmp/crumble-event-<eventId>.json` containing `{ id, sourceId, sourceName, receivedAt, method, query, headers, body }` (body in base64). It then executes with env `CRUMBLE_EVENT_ID`, `CRUMBLE_EVENT_SOURCE`, `CRUMBLE_EVENT_FILE`.
+- [x] Dispatcher: for a script run, `admitted: false` leaves the run `pending` without counting an attempt, so the next tick retries it once the previous run has finished.
 - [ ] Run `bun run check`. Checkpoint: `feat(automations): run script automations on events`.
 
 ### Task 6: The `event_payload` tool

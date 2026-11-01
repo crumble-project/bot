@@ -8,6 +8,7 @@ import { productLayer } from "../app/product-layer";
 import { AgentRepository } from "../bots/agent-repository";
 import { ScheduleRepository } from "../schedules/schedule-repository";
 import { TaskDispatch } from "../schedules/task-dispatch";
+import { ScriptRuns } from "../schedules/script-runs";
 import { agentInput, scheduleInput } from "../shared/domain";
 import {
   EVENT_MAX_ATTEMPTS,
@@ -39,6 +40,32 @@ async function fixture() {
   const folder = mkdtempSync(join(tmpdir(), "crumble-event-dispatcher-"));
   const dispatched: { prompt: string; requestId: string }[] = [];
   let failing = false;
+  let scriptAdmits = true;
+
+  const scripts: {
+    scheduleId: string;
+    eventId: string | undefined;
+    source: string | undefined;
+  }[] = [];
+
+  const scriptRuns = Layer.succeed(
+    ScriptRuns,
+    ScriptRuns.of({
+      start: (schedule, event) =>
+        Effect.sync(() => {
+          if (!scriptAdmits) return { admitted: false };
+          scripts.push({
+            scheduleId: schedule.id,
+            eventId: event?.record.id,
+            source: event?.sourceName,
+          });
+
+          return { admitted: true };
+        }),
+      recover: Effect.void,
+      list: () => Effect.succeed([]),
+    }),
+  );
 
   const dispatch = Layer.succeed(TaskDispatch, (_agentId, prompt, requestId) =>
     failing
@@ -51,6 +78,7 @@ async function fixture() {
   const runtime = ManagedRuntime.make(
     EventDispatcher.layer.pipe(
       Layer.provideMerge(dispatch),
+      Layer.provideMerge(scriptRuns),
       Layer.provideMerge(productLayer(folder)),
       Layer.provideMerge(TestClock.layer()),
     ),
@@ -83,7 +111,9 @@ async function fixture() {
     }),
   );
 
-  const automation = (overrides: { enabled?: boolean } = {}) =>
+  const automation = (
+    overrides: { enabled?: boolean; kind?: "script"; command?: string } = {},
+  ) =>
     run(
       ScheduleRepository.use((schedules) =>
         schedules.create(
@@ -117,6 +147,10 @@ async function fixture() {
     advance,
     fail: (value: boolean) => {
       failing = value;
+    },
+    scripts,
+    admitScripts: (value: boolean) => {
+      scriptAdmits = value;
     },
     run,
   };
@@ -190,5 +224,29 @@ test("a run whose automation was turned off fails without dispatching", async ()
   await tick();
 
   expect(dispatched).toEqual([]);
+  expect(await pending()).toEqual([]);
+});
+
+test("a script run starts with its event and waits, without an attempt, while the script is busy", async () => {
+  const { automation, store, tick, pending, scripts, admitScripts } =
+    await fixture();
+
+  const schedule = await automation({
+    kind: "script",
+    command: 'cat "$CRUMBLE_EVENT_FILE"',
+  });
+
+  await store("01A");
+  admitScripts(false);
+  await tick();
+
+  expect(scripts).toEqual([]);
+  expect(await pending()).toMatchObject([{ eventId: "01A", attempts: 0 }]);
+
+  admitScripts(true);
+  await tick();
+  expect(scripts).toEqual([
+    { scheduleId: schedule.id, eventId: "01A", source: "GitHub" },
+  ]);
   expect(await pending()).toEqual([]);
 });

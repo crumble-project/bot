@@ -23,6 +23,7 @@ import {
 import { DesktopNotConfigured } from "../workspaces/workspace-errors";
 import { ScriptRunRepository } from "./script-run-repository";
 import { ScriptRuns } from "./script-runs";
+import type { ScriptEvent } from "../event-sources/event-payload";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -35,6 +36,7 @@ class DirectoryWorkspaces implements Workspaces {
   readonly calls: Parameters<NodeExecutionEnv["exec"]>[] = [];
   readonly environments: { agentId: string; env: Record<string, string> }[] =
     [];
+  readonly writes: { path: string; content: string }[] = [];
   active = 0;
   maxActive = 0;
   awake = 0;
@@ -46,6 +48,13 @@ class DirectoryWorkspaces implements Workspaces {
     this.environments.push({ agentId, env: shellEnv });
     const env = new NodeExecutionEnv({ cwd: this.dir, shellEnv });
     const exec = env.exec.bind(env);
+
+    // Records files instead of writing to the host's absolute paths.
+    env.writeFile = async (path, content) => {
+      this.writes.push({ path, content: String(content) });
+
+      return ok(undefined);
+    };
 
     env.exec = async (command, options, context) => {
       this.calls.push([command, options, context]);
@@ -164,8 +173,8 @@ function open(
       }),
     );
 
-  const start = (schedule: Schedule) =>
-    store.runtime.runPromise(service.start(schedule));
+  const start = (schedule: Schedule, event?: ScriptEvent) =>
+    store.runtime.runPromise(service.start(schedule, event));
 
   const rows = (schedule: Schedule) =>
     store.run(repository.list(schedule.id, { limit: 20 }));
@@ -586,4 +595,34 @@ test("a workspace exception records its message and releases keepAwake", async (
   });
   expect(workspaces.awake).toBe(0);
   expect(workspaces.released).toBe(1);
+});
+
+test("an event script run gets the event in a file and its variables", async () => {
+  const { workspaces, task, start, finished } = open();
+
+  const schedule = task(
+    'printf "%s|%s|%s" "$CRUMBLE_EVENT_ID" "$CRUMBLE_EVENT_SOURCE" "$CRUMBLE_EVENT_FILE"',
+  );
+
+  const record = {
+    id: "01A",
+    sourceId: "source-1",
+    receivedAt: "2026-11-01T08:00:00.000Z",
+    method: "POST",
+    query: "a=1",
+    headers: [["x-github-event", "issues"]] satisfies [string, string][],
+    body: Buffer.from("{}").toString("base64"),
+  };
+
+  await start(schedule, { record, sourceName: "GitHub" });
+
+  expect((await finished(schedule)).output).toBe(
+    "01A|GitHub|/tmp/crumble-event-01A.json",
+  );
+  expect(workspaces.writes).toEqual([
+    {
+      path: "/tmp/crumble-event-01A.json",
+      content: JSON.stringify({ ...record, sourceName: "GitHub" }),
+    },
+  ]);
 });

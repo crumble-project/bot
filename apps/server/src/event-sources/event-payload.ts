@@ -86,3 +86,20 @@ export function eventRequest(requestId: string) {
     ? { eventId, scheduleId }
     : undefined;
 }
+
+/** An event as a script automation reads it, from the file named by `CRUMBLE_EVENT_FILE`; `body` is base64. */
+export function scriptEvent(event: RelayEvent, sourceName: string) {
+  const file = `/tmp/crumble-event-${event.id}.json`;
+
+  return {
+    file,
+    content: JSON.stringify({ ...event, sourceName }),
+    env: {
+      CRUMBLE_EVENT_ID: event.id,
+      CRUMBLE_EVENT_SOURCE: sourceName,
+      CRUMBLE_EVENT_FILE: file,
+    },
+  };
+}
+
+export type ScriptEvent = { record: RelayEvent; sourceName: string };

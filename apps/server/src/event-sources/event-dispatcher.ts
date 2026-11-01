@@ -1,6 +1,8 @@
 import { Cause, Clock, Context, Effect, Layer } from "effect";
 import { AgentRepository } from "../bots/agent-repository";
 import { ScheduleRepository } from "../schedules/schedule-repository";
+import { ScriptRuns } from "../schedules/script-runs";
+import type { Schedule } from "../shared/domain";
 import { TaskDispatch } from "../schedules/task-dispatch";
 import { startTicking } from "../shared/ticker";
 import { EventRepository, type EventRun } from "./event-repository";
@@ -14,7 +16,7 @@ export const EVENT_MAX_ATTEMPTS = 10;
 const errorText = (cause: unknown) =>
   cause instanceof Error ? cause.message : String(cause);
 
-/** Hands each automation's oldest pending event run to its bot chat, one run per automation at a time. */
+/** Hands each automation's oldest pending event run to its bot chat or its script, one run per automation at a time. */
 export class EventDispatcher extends Context.Service<
   EventDispatcher,
   {
@@ -30,6 +32,7 @@ export class EventDispatcher extends Context.Service<
       const schedules = yield* ScheduleRepository;
       const agents = yield* AgentRepository;
       const dispatch = yield* TaskDispatch;
+      const scripts = yield* ScriptRuns;
       const scope = yield* Effect.scope;
       const failedAt = new Map<string, number>();
 
@@ -56,6 +59,35 @@ export class EventDispatcher extends Context.Service<
         yield* events.markRun(run.id, { status: "pending", attempts, error });
       });
 
+      // A script still running its previous run admits nothing; the run waits for the next tick.
+      const admit = Effect.fnUntraced(function* (
+        run: EventRun,
+        schedule: Schedule,
+      ) {
+        if (schedule.kind === "prompt") {
+          yield* dispatch(
+            schedule.agentId,
+            schedule.prompt,
+            eventRequestId(run.eventId, schedule.id),
+            schedule.id,
+          );
+
+          return true;
+        }
+
+        const record = yield* events.getEvent(run.eventId);
+
+        if (!record) return yield* Effect.fail(new Error("The event is gone"));
+        const source = yield* events.getSource(record.sourceId);
+
+        const { admitted } = yield* scripts.start(schedule, {
+          record,
+          sourceName: source?.name ?? "Deleted source",
+        });
+
+        return admitted;
+      });
+
       const dispatchRun = Effect.fnUntraced(function* (run: EventRun) {
         const schedule = yield* schedules.get(run.scheduleId);
         const agent = schedule && (yield* agents.get(schedule.agentId));
@@ -66,17 +98,16 @@ export class EventDispatcher extends Context.Service<
             error: "The automation or its bot was turned off",
           });
 
-        // Script automations on events arrive in a later change.
-        if (schedule.kind === "script") return;
-
-        yield* dispatch(
-          schedule.agentId,
-          schedule.prompt,
-          eventRequestId(run.eventId, schedule.id),
-          schedule.id,
-        ).pipe(
-          Effect.andThen(events.markRun(run.id, { status: "dispatched" })),
-          Effect.andThen(Effect.sync(() => failedAt.delete(run.id))),
+        yield* admit(run, schedule).pipe(
+          Effect.flatMap((admitted) =>
+            admitted
+              ? events
+                  .markRun(run.id, { status: "dispatched" })
+                  .pipe(
+                    Effect.andThen(Effect.sync(() => failedAt.delete(run.id))),
+                  )
+              : Effect.void,
+          ),
           Effect.catchCause((cause) => failed(run, Cause.squash(cause))),
         );
       });
