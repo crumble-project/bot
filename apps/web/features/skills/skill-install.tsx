@@ -23,6 +23,12 @@ import {
   botsUsing,
   toggled,
 } from "./bot-pills";
+import {
+  invalidateSkills,
+  invalidateSkill,
+  skillKey,
+  skillUpdateKey,
+} from "./skill-cache";
 
 type SharedSkill = Extract<ListedSkill, { source: "shared" }>;
 
@@ -183,11 +189,11 @@ function CandidateList({
   );
 }
 
-/** Installs the `picked` folders of a listing for `botIds`. */
+/** Installs the `picked` folders of a listing for `botIds`, then refetches the skill lists. */
 function useInstall(
   picked: Set<string>,
   botIds: Set<string>,
-  onInstalled: () => Promise<void>,
+  onInstalled: () => void,
 ) {
   return useMutation({
     mutationFn: (found: SkillListing) =>
@@ -198,41 +204,53 @@ function useInstall(
         paths: [...picked],
         botIds: [...botIds],
       }),
-    onSuccess: onInstalled,
+    onSuccess: async () => {
+      await invalidateSkills();
+      onInstalled();
+    },
+  });
+}
+
+/** The skills at `location`, read once it's submitted; a read, so a query rather than a mutation. */
+function useListing(location: string | null) {
+  return useQuery({
+    queryKey: ["skill-listing", location],
+    queryFn: () =>
+      call<SkillListing, { location: string }>(
+        "/v1/skills/github/browse",
+        "POST",
+        { location: location ?? "" },
+      ),
+    enabled: location !== null,
+    retry: false,
   });
 }
 
 /** Finds the skills in a GitHub repository and installs the checked ones as shared skills. */
 export function InstallSkillsSheet({
   bots,
-  onInstalled,
   onClose,
 }: {
   bots: Bot[];
-  onInstalled: () => Promise<void>;
   onClose: () => void;
 }) {
   const [location, setLocation] = useState("");
-  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [submitted, setSubmitted] = useState<string | null>(null);
+  // Null until the owner changes a checkbox: every installable skill starts checked.
+  const [checked, setChecked] = useState<Set<string> | null>(null);
   const [botIds, setBotIds] = useState<Set<string>>(new Set());
-
-  const browse = useMutation({
-    mutationFn: () =>
-      call<SkillListing, { location: string }>(
-        "/v1/skills/github/browse",
-        "POST",
-        { location },
-      ),
-    onSuccess: (listing) => setPicked(newPaths(listing)),
-  });
-
-  const install = useInstall(picked, botIds, async () => {
-    await onInstalled();
-    onClose();
-  });
-
+  const browse = useListing(submitted);
   const listing = browse.data;
-  const pending = browse.isPending || install.isPending;
+  const picked = checked ?? (listing ? newPaths(listing) : new Set<string>());
+  const install = useInstall(picked, botIds, onClose);
+  const pending = browse.isFetching || install.isPending;
+
+  const find = () => {
+    setChecked(null);
+
+    if (submitted === location) void browse.refetch();
+    else setSubmitted(location);
+  };
 
   // Before a listing, the sheet's button finds skills; after, it installs the checked ones.
   const action = listing
@@ -244,7 +262,7 @@ export function InstallSkillsSheet({
     : {
         label: "Find skills",
         ready: Boolean(location.trim()),
-        run: () => browse.mutate(),
+        run: find,
       };
 
   return (
@@ -261,17 +279,18 @@ export function InstallSkillsSheet({
         location={location}
         onChange={(next) => {
           setLocation(next);
-          browse.reset();
+          setSubmitted(null);
+          setChecked(null);
         }}
-        onFind={listing ? () => browse.mutate() : null}
+        onFind={listing ? find : null}
       />
-      {browse.isPending && <Skeleton className="h-24" />}
+      {browse.isFetching && !listing && <Skeleton className="h-24" />}
       {listing && (
         <>
           <CandidateList
             listing={listing}
             picked={picked}
-            onToggle={(path, on) => setPicked(toggled(picked, path, on))}
+            onToggle={(path, on) => setChecked(toggled(picked, path, on))}
           />
           <UsedByField bots={bots} selected={botIds} onChange={setBotIds} />
         </>
@@ -363,7 +382,7 @@ function SkillContent({ skill }: { skill: SkillPackage }) {
 }
 
 const fullSkillQuery = (skillId: string) => ({
-  queryKey: ["skill", skillId],
+  queryKey: skillKey(skillId),
   queryFn: ({ signal }: { signal: AbortSignal }) =>
     api<SkillPackage>(skillPath(skillId), { signal }),
 });
@@ -372,28 +391,30 @@ const fullSkillQuery = (skillId: string) => ({
 export function InstalledSkillSheet({
   skill,
   bots,
-  onSaved,
-  onCopy,
   onUpdate,
   onClose,
 }: {
   skill: SharedSkill;
   bots: Bot[];
-  onSaved: () => Promise<void>;
-  onCopy: () => Promise<void>;
   onUpdate: () => void;
   onClose: () => void;
 }) {
   const [usedBy, setUsedBy] = useState(() => botsUsing(bots, skill.id));
   const full = useQuery(fullSkillQuery(skill.id));
-  const copy = useMutation({ mutationFn: onCopy, onSuccess: onClose });
+
+  const done = async () => {
+    await invalidateSkills();
+    onClose();
+  };
+
+  const copy = useMutation({
+    mutationFn: () => copySkill(skill),
+    onSuccess: done,
+  });
 
   const save = useMutation({
     mutationFn: () => assignSharedSkill(skill.id, bots, usedBy),
-    onSuccess: async () => {
-      await onSaved();
-      onClose();
-    },
+    onSuccess: done,
   });
 
   return (
@@ -451,17 +472,15 @@ function UpdatePreview({
 /** The changes an update brings, and applying it. */
 export function SkillUpdateSheet({
   skill,
-  onUpdated,
   onClose,
 }: {
   skill: SharedSkill;
-  onUpdated: () => Promise<void>;
   onClose: () => void;
 }) {
   const current = useQuery(fullSkillQuery(skill.id));
 
   const pending = useQuery({
-    queryKey: ["skill-update", skill.id],
+    queryKey: skillUpdateKey(skill.id),
     queryFn: ({ signal }) =>
       api<PendingSkillUpdate>(`${skillPath(skill.id)}/update`, { signal }),
   });
@@ -470,7 +489,7 @@ export function SkillUpdateSheet({
     mutationFn: () =>
       call<SkillPackage>(`${skillPath(skill.id)}/update`, "POST"),
     onSuccess: async () => {
-      await onUpdated();
+      await invalidateSkill(skill.id);
       onClose();
     },
   });

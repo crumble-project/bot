@@ -40,7 +40,6 @@ import {
   api,
   call,
   botsQuery,
-  queryClient,
   send,
   skillsQuery,
 } from "@/lib/api";
@@ -57,6 +56,7 @@ import {
 import { BotAvatar } from "@/features/bots/avatar";
 import { cn } from "@/lib/utils";
 import { UsedByField, assignSharedSkill, botsUsing } from "./bot-pills";
+import { personalSkillsKey, invalidateSkills } from "./skill-cache";
 import {
   InstallSkillsSheet,
   InstalledSkillSheet,
@@ -84,8 +84,6 @@ type BotSkill = {
 
 type SkillBot = Omit<Bot, "skills"> & { skills: BotSkill[] };
 
-const personalSkillsKey = ["personal-skills"];
-
 const personalSkillPath = (botId: string, skillId: string) =>
   `${agentPath(botId)}/skills/${encodeURIComponent(skillId)}`;
 
@@ -105,25 +103,17 @@ type Editing =
   | { kind: "shared"; skill: SharedSkill }
   | { kind: "personal"; bot: SkillBot; skill: BotSkill };
 
-async function refresh() {
-  await Promise.all([
-    queryClient.invalidateQueries({ queryKey: skillsQuery.queryKey }),
-    queryClient.invalidateQueries({ queryKey: botsQuery.queryKey }),
-    queryClient.invalidateQueries({ queryKey: personalSkillsKey }),
-  ]);
-}
-
 function useRemoveSkills() {
   const shared = useMutation({
     mutationFn: (skill: SharedSkill) =>
       send(`/v1/skills/${encodeURIComponent(skill.id)}`, "DELETE"),
-    onSettled: refresh,
+    onSettled: invalidateSkills,
   });
 
   const personal = useMutation({
     mutationFn: ({ bot, skill }: { bot: SkillBot; skill: BotSkill }) =>
       removePersonalSkill(bot.id, skill.id),
-    onSettled: refresh,
+    onSettled: invalidateSkills,
   });
 
   const pin = useMutation({
@@ -131,10 +121,13 @@ function useRemoveSkills() {
       send(personalSkillPath(bot.id, skill.id), "PATCH", {
         pinned: !skill.pinned,
       }),
-    onSettled: refresh,
+    onSettled: invalidateSkills,
   });
 
-  const copy = useMutation({ mutationFn: copySkill, onSettled: refresh });
+  const copy = useMutation({
+    mutationFn: copySkill,
+    onSettled: invalidateSkills,
+  });
 
   return { shared, personal, pin, copy };
 }
@@ -572,7 +565,7 @@ function usePersonalSkills() {
 function useUpdateCheck() {
   return useMutation({
     mutationFn: () => call<SkillCheck>("/v1/skills/updates/check", "POST"),
-    onSettled: refresh,
+    onSettled: invalidateSkills,
   });
 }
 
@@ -634,31 +627,18 @@ function InstalledSheets({
 
   switch (sheet.kind) {
     case "install":
-      return (
-        <InstallSkillsSheet bots={bots} onInstalled={refresh} onClose={close} />
-      );
+      return <InstallSkillsSheet bots={bots} onClose={close} />;
     case "view":
       return (
         <InstalledSkillSheet
           skill={sheet.skill}
           bots={bots}
-          onSaved={refresh}
-          onCopy={async () => {
-            await copySkill(sheet.skill);
-            await refresh();
-          }}
           onUpdate={() => onSheet({ kind: "update", skill: sheet.skill })}
           onClose={close}
         />
       );
     case "update":
-      return (
-        <SkillUpdateSheet
-          skill={sheet.skill}
-          onUpdated={refresh}
-          onClose={close}
-        />
-      );
+      return <SkillUpdateSheet skill={sheet.skill} onClose={close} />;
   }
 }
 
@@ -689,7 +669,7 @@ export function SkillsPage() {
         skills.isFetching ||
         personal.some((query) => query.isFetching)
       }
-      onRefresh={() => void refresh()}
+      onRefresh={() => void invalidateSkills()}
     >
       <div className="flex flex-col gap-3">
         <PageToolbar
@@ -978,7 +958,7 @@ function SkillDialog({
       if (sharedId) await assignSharedSkill(sharedId, bots, usedBy);
     },
     onSuccess: async () => {
-      await refresh();
+      await invalidateSkills();
       onClose();
     },
   });
