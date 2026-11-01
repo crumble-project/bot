@@ -18,6 +18,7 @@ import {
 } from "../bot-desktop/desktop-control";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import { registerCredentialRoutes } from "../credentials/credentials-api";
+import { registerGitHubAppRoutes } from "../github-apps/github-apps-api";
 import { registerLoginRoutes } from "../logins/logins-api";
 import { registerHeldActionRoutes } from "../bot-desktop/held-actions-api";
 import { heldActionsAccess } from "../bot-desktop/held-actions";
@@ -341,6 +342,7 @@ const featureRoutes: ReadonlyArray<(api: ApiContext) => void> = [
   registerBotActivityRoutes,
   registerGroupChatRoutes,
   registerCredentialRoutes,
+  registerGitHubAppRoutes,
   registerLoginRoutes,
   registerHeldActionRoutes,
   registerBotRequestRoutes,

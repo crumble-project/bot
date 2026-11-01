@@ -9,6 +9,20 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     bash build-essential ca-certificates curl git make openssh-client python3 python3-venv ripgrep \
   && rm -rf /var/lib/apt/lists/*
+# gh reads GH_TOKEN, the bot GitHub App's credential; Debian's package lags the API.
+ARG TARGETARCH
+ARG GH_VERSION=2.103.3
+ARG GH_SHA256_AMD64=4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d
+ARG GH_SHA256_ARM64=ee32df2323c8847f5fac6cb6b4b69ca75828e9329a8f22f677021f7b3306ce63
+RUN set -eu; \
+  case "$TARGETARCH" in arm64) sum=$GH_SHA256_ARM64 ;; amd64) sum=$GH_SHA256_AMD64 ;; *) echo "unsupported $TARGETARCH"; exit 1 ;; esac; \
+  dir="gh_${GH_VERSION}_linux_${TARGETARCH}"; \
+  curl -fsSLo "/tmp/$dir.tar.gz" "https://github.com/cli/cli/releases/download/v${GH_VERSION}/$dir.tar.gz"; \
+  echo "$sum  /tmp/$dir.tar.gz" | sha256sum -c -; \
+  tar -xzf "/tmp/$dir.tar.gz" -C /tmp; \
+  install -m 755 "/tmp/$dir/bin/gh" /usr/local/bin/gh; \
+  rm -rf "/tmp/$dir" "/tmp/$dir.tar.gz"
+ENV GH_NO_UPDATE_NOTIFIER=1 GH_PROMPT_DISABLED=1
 WORKDIR /workspace
 
 FROM base AS desktop

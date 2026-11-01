@@ -4,6 +4,7 @@ import { HeldActions } from "../bot-desktop/held-actions";
 import { BotNotices } from "../bots/bot-notices";
 import { CredentialAuthorities } from "../credentials/credential-authority";
 import { Credentials } from "../credentials/credentials";
+import { GitHubApps } from "../github-apps/github-apps";
 import { Logins } from "../logins/logins";
 import { ProviderCredentials } from "../providers/provider-credentials";
 import { McpOAuth } from "../integrations/mcp-oauth";
@@ -36,6 +37,7 @@ export const coreLayer = (dataDir: string) =>
     BotMemory.layer,
   ).pipe(
     Layer.provideMerge(BotNotices.layer),
+    Layer.provideMerge(GitHubApps.layer),
     Layer.provideMerge(
       SecretValues.layer.pipe(
         Layer.provideMerge(PasswordManagers.layer(passwordManagers)),

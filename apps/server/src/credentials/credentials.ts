@@ -21,6 +21,10 @@ import {
   type SecretUnavailable,
 } from "../password-managers/secret-values";
 import { AgentCredentialRepository } from "./agent-credential-repository";
+import {
+  GitHubApps,
+  type GitHubAppUnavailable,
+} from "../github-apps/github-apps";
 import { GUEST_CA_BUNDLE, GUEST_CA_PATH } from "../workspaces/workspace";
 import {
   InvalidInput,
@@ -102,7 +106,10 @@ export class Credentials extends Context.Service<
     readonly value: (
       agentId: string,
       name: string,
-    ) => Effect.Effect<Redacted.Redacted, SecretUnavailable | NotFound>;
+    ) => Effect.Effect<
+      Redacted.Redacted,
+      SecretUnavailable | GitHubAppUnavailable | NotFound
+    >;
     readonly recordUse: (
       agentId: string,
       name: string,
@@ -119,6 +126,7 @@ export class Credentials extends Context.Service<
       const notices = yield* BotNotices;
       const values = yield* SecretValues;
       const managers = yield* PasswordManagers;
+      const githubApps = yield* GitHubApps;
 
       /** Drops the cached value of a reference the credential no longer reads. */
       const forgetReplaced = (
@@ -140,6 +148,8 @@ export class Credentials extends Context.Service<
 
         if (!source)
           return yield* new NotFound({ message: `${name} was deleted` });
+
+        if ("githubApp" in source) return yield* githubApps.token(agentId);
 
         return yield* values.read(source);
       });
@@ -280,12 +290,16 @@ export class Credentials extends Context.Service<
 
       const env = Effect.fn("Credentials.env")(function* (agentId: string) {
         const placeholders = yield* repository.placeholders(agentId);
+        const git = yield* githubApps.gitEnv(agentId);
 
-        if (!Object.keys(placeholders).length) return {};
+        if (!Object.keys(placeholders).length) return git;
 
         return {
+          ...git,
           ...placeholders,
           SSL_CERT_FILE: GUEST_CA_BUNDLE,
+          // Debian's git uses GnuTLS, which ignores SSL_CERT_FILE.
+          GIT_SSL_CAINFO: GUEST_CA_BUNDLE,
           REQUESTS_CA_BUNDLE: GUEST_CA_BUNDLE,
           CURL_CA_BUNDLE: GUEST_CA_BUNDLE,
           NODE_EXTRA_CA_CERTS: GUEST_CA_PATH,

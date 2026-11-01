@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import type { UseNavigateResult } from "@tanstack/react-router";
 import {
   IconLogout,
   IconPencil,
@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { EditorSheet, OwnerSelectField } from "@/components/form-fields";
+import { RedirectReturn } from "@/components/redirect-return";
 import {
   EMPTY_SOURCE,
   SecretSourceField,
@@ -585,71 +586,43 @@ function OAuthAppFields({ server, draft, patch }: DraftFieldsProps) {
 }
 
 /** Finishes an MCP server's OAuth sign-in after the provider redirects back to the web UI. */
-export function OAuthCallback() {
-  const navigate = useNavigate();
-  const started = useRef(false);
-  const [error, setError] = useState<string | null>(null);
+function finishOAuth(
+  params: URLSearchParams,
+  navigate: UseNavigateResult<string>,
+) {
+  const serverId = sessionStorage.getItem(OAUTH_SERVER_KEY);
+  sessionStorage.removeItem(OAUTH_SERVER_KEY);
+  const denied = params.get("error");
 
-  useEffect(() => {
-    // StrictMode runs effects twice; a code can be exchanged only once.
-    if (started.current) return;
-    started.current = true;
+  if (denied)
+    return Promise.reject(new Error(params.get("error_description") ?? denied));
 
-    const params = new URLSearchParams(location.search);
-    const serverId = sessionStorage.getItem(OAUTH_SERVER_KEY);
-    sessionStorage.removeItem(OAUTH_SERVER_KEY);
-    const denied = params.get("error");
+  const code = params.get("code");
+  const state = params.get("state");
+  const iss = params.get("iss");
 
-    if (denied) {
-      setError(params.get("error_description") ?? denied);
-
-      return;
-    }
-
-    const code = params.get("code");
-    const state = params.get("state");
-    const iss = params.get("iss");
-
-    if (!serverId || !code || !state) {
-      setError("This sign-in link is incomplete or was already used.");
-
-      return;
-    }
-
-    send(`${serverPath(serverId)}/oauth/callback`, "POST", {
-      code,
-      state,
-      ...(iss && { iss }),
-    }).then(
-      async () => {
-        await refresh();
-        await navigate({ to: "/settings/integrations", replace: true });
-      },
-      (failure: Error) => setError(failure.message),
+  if (!serverId || !code || !state)
+    return Promise.reject(
+      new Error("This sign-in link is incomplete or was already used."),
     );
-  }, [navigate]);
 
+  return send(`${serverPath(serverId)}/oauth/callback`, "POST", {
+    code,
+    state,
+    ...(iss && { iss }),
+  }).then(async () => {
+    await refresh();
+    await navigate({ to: "/settings/integrations", replace: true });
+  });
+}
+
+export function OAuthCallback() {
   return (
-    <div className="m-auto flex max-w-sm flex-col items-center gap-4 p-6 text-center">
-      {error ? (
-        <>
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-          <Button
-            variant="outline"
-            render={<Link to="/settings/integrations" />}
-            nativeButton={false}
-          >
-            Back to Integrations
-          </Button>
-        </>
-      ) : (
-        <>
-          <Spinner />
-          <p className="text-sm text-muted-foreground">Finishing sign-in…</p>
-        </>
-      )}
-    </div>
+    <RedirectReturn
+      finish={finishOAuth}
+      pending="Finishing sign-in…"
+      backTo="/settings/integrations"
+      backLabel="Back to Integrations"
+    />
   );
 }

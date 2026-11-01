@@ -58,6 +58,7 @@ const acme = {
   updatedAt: "2026-10-30T10:00:00.000Z",
   lastUsedAt: null,
   lastError: null,
+  githubApp: false,
 } satisfies Credentials["credentials"][number];
 
 const moreAcmeHosts = {

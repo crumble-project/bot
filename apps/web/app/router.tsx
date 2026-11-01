@@ -31,6 +31,7 @@ import { ActivityPage } from "@/features/activity/activity";
 import { BotForm } from "@/features/bots/bot-form";
 import { Chat } from "@/features/chat/chat";
 import { CredentialsSettings } from "@/features/credentials/credentials";
+import { GitHubAppCallback } from "@/features/bots/github-app";
 import { LoginsSettings } from "@/features/logins/logins";
 import { BotDesktop } from "@/features/bot-desktop/desktop";
 import { GroupChatView, GroupForm } from "@/features/group-chats/groups";
@@ -247,6 +248,18 @@ const oauthRoute = createRoute({
   component: OAuthCallback,
 });
 
+const githubAppCallbackRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/github-app/callback",
+  component: GitHubAppCallback,
+});
+
+const githubAppInstalledRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/github-app/installed",
+  component: GitHubAppCallback,
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/settings",
@@ -369,6 +382,8 @@ export const router = createRouter({
       avatarsRoute,
       integrationsRoute,
       oauthRoute,
+      githubAppCallbackRoute,
+      githubAppInstalledRoute,
       settingsRoute.addChildren([
         settingsIndexRoute,
         generalRoute,

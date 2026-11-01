@@ -37,16 +37,16 @@ export const secretSource = {
   reference: () => text("reference"),
 };
 
+type SecretSourceColumns = {
+  value: AnySQLiteColumn;
+  passwordManager: AnySQLiteColumn;
+  reference: AnySQLiteColumn;
+};
+
+/** True when a row has exactly one of a stored value and a password manager reference. */
+export const hasOneSecretSource = (table: SecretSourceColumns) =>
+  sql`(${table.value} IS NOT NULL AND ${table.passwordManager} IS NULL AND ${table.reference} IS NULL) OR (${table.value} IS NULL AND ${table.passwordManager} IS NOT NULL AND ${table.reference} IS NOT NULL)`;
+
 /** The check a table with `secretSource` columns needs, so each row has one source. */
-export const oneSecretSource = (
-  name: string,
-  table: {
-    value: AnySQLiteColumn;
-    passwordManager: AnySQLiteColumn;
-    reference: AnySQLiteColumn;
-  },
-) =>
-  check(
-    name,
-    sql`(${table.value} IS NOT NULL AND ${table.passwordManager} IS NULL AND ${table.reference} IS NULL) OR (${table.value} IS NULL AND ${table.passwordManager} IS NOT NULL AND ${table.reference} IS NOT NULL)`,
-  );
+export const oneSecretSource = (name: string, table: SecretSourceColumns) =>
+  check(name, hasOneSecretSource(table));

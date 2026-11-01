@@ -269,6 +269,7 @@ const RESERVED_CREDENTIAL_NAMES = new Set([
   "SSL_CERT_DIR",
   "REQUESTS_CA_BUNDLE",
   "CURL_CA_BUNDLE",
+  "GIT_SSL_CAINFO",
   "LD_PRELOAD",
   "LD_LIBRARY_PATH",
 ]);
@@ -358,6 +359,8 @@ export type AgentCredential = {
   lastUsedAt: string | null;
   /** Why the newest use couldn't read the value; null when it could. */
   lastError: string | null;
+  /** The value is a token minted from the bot's GitHub App; neither stored nor referenced. */
+  githubApp: boolean;
 };
 
 /** A bot's request for a credential, waiting for the owner. */
