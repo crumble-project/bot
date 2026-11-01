@@ -730,6 +730,64 @@ const desktopTimes = [
   2500,
 ];
 
+function desktopTarget<T>(
+  verdict: Verdict,
+  atPay: boolean,
+  step: number,
+  payRef: T,
+  fieldRef: T,
+): T | null {
+  if (verdict === "declined") return null;
+
+  if (atPay) return payRef;
+
+  return step >= 1 ? fieldRef : null;
+}
+
+function pendingPayment(atPay: boolean, verdict: Verdict) {
+  return atPay && verdict === null ? "held" : "idle";
+}
+
+function desktopPayState(verdict: Verdict, pressed: boolean, atPay: boolean) {
+  if (verdict === "declined") return "off";
+
+  if (pressed) return "pressed";
+
+  return pendingPayment(atPay, verdict);
+}
+
+function cursorPosition(
+  frame: HTMLElement,
+  element: HTMLElement | null | undefined,
+  verdict: Verdict,
+): CSSProperties {
+  if (!element) {
+    return verdict === "declined"
+      ? { left: "30%", top: "80%" }
+      : { left: "85%", top: "110%" };
+  }
+
+  const box = frame.getBoundingClientRect();
+  const rect = element.getBoundingClientRect();
+
+  return {
+    left: rect.left - box.left + rect.width * 0.55,
+    top: rect.top - box.top + rect.height * 0.45,
+  };
+}
+
+function RenewalResult({
+  verdict,
+  pressed,
+}: {
+  verdict: Verdict;
+  pressed: boolean;
+}) {
+  if (verdict !== "approved" || pressed) return null;
+
+  return <div className={success}>✓ Renewed until Oct 24, 2027</div>;
+}
+
 function Desktop({ started, verdict }: { started: boolean; verdict: Verdict }) {
   const step = useTimeline(started, desktopTimes);
   const pageRef = useRef<HTMLDivElement>(null);
@@ -746,37 +804,13 @@ function Desktop({ started, verdict }: { started: boolean; verdict: Verdict }) {
   const filled = Math.min(password.length, Math.max(0, step - 1));
   const atPay = step >= desktopTimes.length;
 
-  const target =
-    verdict === "declined"
-      ? null
-      : atPay
-        ? payRef
-        : step >= 1
-          ? fieldRef
-          : null;
+  const target = desktopTarget(verdict, atPay, step, payRef, fieldRef);
 
   useEffect(() => {
     const frame = pageRef.current;
-    const element = target?.current;
 
     if (!frame) return;
-
-    if (!element) {
-      setPoint(
-        verdict === "declined"
-          ? { left: "30%", top: "80%" }
-          : { left: "85%", top: "110%" },
-      );
-
-      return;
-    }
-
-    const box = frame.getBoundingClientRect();
-    const rect = element.getBoundingClientRect();
-    setPoint({
-      left: rect.left - box.left + rect.width * 0.55,
-      top: rect.top - box.top + rect.height * 0.45,
-    });
+    setPoint(cursorPosition(frame, target?.current, verdict));
   }, [target, verdict]);
 
   useEffect(() => {
@@ -787,14 +821,7 @@ function Desktop({ started, verdict }: { started: boolean; verdict: Verdict }) {
     return () => clearTimeout(timer);
   }, [verdict]);
 
-  const payState =
-    verdict === "declined"
-      ? "off"
-      : pressed
-        ? "pressed"
-        : atPay && verdict === null
-          ? "held"
-          : "idle";
+  const payState = desktopPayState(verdict, pressed, atPay);
 
   return (
     <div className={wide}>
@@ -826,9 +853,7 @@ function Desktop({ started, verdict }: { started: boolean; verdict: Verdict }) {
               {payState === "held" && <span className={heldBadge}>Held</span>}
             </span>
           </div>
-          {verdict === "approved" && !pressed && (
-            <div className={success}>✓ Renewed until Oct 24, 2027</div>
-          )}
+          <RenewalResult verdict={verdict} pressed={pressed} />
           <Cursor style={point} />
         </div>
       </div>
@@ -865,6 +890,105 @@ function Terminal({ started, lines }: { started: boolean; lines: string[] }) {
   );
 }
 
+function scenarioOutcome(choice: Choice, picked: number | null) {
+  if (picked !== null) return choice.options[picked].outcome;
+
+  return choice.options.reduce((a, b) =>
+    b.outcome.length > a.outcome.length ? b : a,
+  ).outcome;
+}
+
+function choiceVerdict(choice: Choice, picked: number | null): Verdict {
+  if (picked === null) return null;
+
+  return choice.options[picked].primary ? "approved" : "declined";
+}
+
+function lineState(index: number, at: number, busy: boolean): State {
+  if (index < at) return "shown";
+
+  if (index !== at) return "hidden";
+
+  return busy ? "busy" : "hidden";
+}
+
+function MessageBody({
+  line,
+  current,
+}: {
+  line: Extract<Line, { kind: "message" }>;
+  current: State;
+}) {
+  return (
+    <>
+      <b>{line.sender}</b>
+      <span className={text}>
+        {current === "busy" && <Dots />}
+        <span className={current === "busy" ? hiddenText : undefined}>
+          {line.text}
+        </span>
+      </span>
+    </>
+  );
+}
+
+function ChoiceBody({
+  choice,
+  verdict,
+  picked,
+}: {
+  choice: Exclude<Choice, { kind: "reply" }>;
+  verdict: Verdict;
+  picked: number | null;
+}) {
+  const heading =
+    choice.kind === "learned"
+      ? `Learned change to the ${choice.skill} skill`
+      : "Held for your approval";
+
+  return (
+    <>
+      <div className={label}>
+        <span className={pulse} data-still={picked !== null} />
+        {heading}
+      </div>
+      {choice.kind === "held" ? (
+        <>
+          <div className={css({ color: "ink" })}>{choice.action}</div>
+          <div className={quote}>You asked: “{choice.quote}”</div>
+        </>
+      ) : (
+        <LearnedChange choice={choice} undone={verdict === "declined"} />
+      )}
+    </>
+  );
+}
+
+function LearnedChange({
+  choice,
+  undone,
+}: {
+  choice: Extract<Choice, { kind: "learned" }>;
+  undone: boolean;
+}) {
+  return (
+    <div className={diff}>
+      <div data-off={!undone}>− {choice.before}</div>
+      <div className={added} data-off={undone}>
+        + {choice.after}
+      </div>
+    </div>
+  );
+}
+
+function shouldPlay(inView: boolean, done: boolean, waiting: boolean) {
+  return inView && !done && !waiting;
+}
+
+function playbackProgress(inView: boolean, at: number, total: number) {
+  return inView ? Math.min(1, at / total) : 0;
+}
+
 export function Transcript() {
   const scheme = useColorScheme();
   const ref = useRef<HTMLElement>(null);
@@ -878,24 +1002,16 @@ export function Transcript() {
 
   const { intro, choice } = scenarios[active];
 
-  const longest = choice.options.reduce((a, b) =>
-    b.outcome.length > a.outcome.length ? b : a,
-  );
-
-  const outcome =
-    picked === null ? longest.outcome : choice.options[picked].outcome;
+  const outcome = scenarioOutcome(choice, picked);
 
   const lines: (Line | Choice)[] = [...intro, choice, ...outcome];
   const choiceIndex = intro.length;
   const waiting = at > choiceIndex && picked === null;
   const done = at >= lines.length;
 
-  const verdict: Verdict =
-    picked === null
-      ? null
-      : choice.options[picked].primary
-        ? "approved"
-        : "declined";
+  const verdict = choiceVerdict(choice, picked);
+  const playing = shouldPlay(inView, done, waiting);
+  const jumpTo = picked === null ? choiceIndex + 1 : lines.length;
 
   useEffect(() => {
     const element = ref.current;
@@ -918,11 +1034,11 @@ export function Transcript() {
   }, []);
 
   useEffect(() => {
-    if (!inView || done || waiting) return;
+    if (!playing) return;
 
     if (prefersReducedMotion()) {
       setBusy(false);
-      setAt(picked === null ? choiceIndex + 1 : lines.length);
+      setAt(jumpTo);
 
       return;
     }
@@ -964,9 +1080,7 @@ export function Transcript() {
   function state(index: number): State {
     if (!inView) return "hidden";
 
-    if (index < at) return "shown";
-
-    return index === at && busy ? "busy" : "hidden";
+    return lineState(index, at, busy);
   }
 
   function rowClass(index: number) {
@@ -981,17 +1095,7 @@ export function Transcript() {
     let body;
 
     if (line.kind === "message") {
-      body = (
-        <>
-          <b>{line.sender}</b>
-          <span className={text}>
-            {current === "busy" && <Dots />}
-            <span className={current === "busy" ? hiddenText : undefined}>
-              {line.text}
-            </span>
-          </span>
-        </>
-      );
+      body = <MessageBody line={line} current={current} />;
     } else if (line.kind === "desktop") {
       body = <Desktop started={started} verdict={verdict} />;
     } else if (line.kind === "terminal") {
@@ -1074,41 +1178,20 @@ export function Transcript() {
       );
     }
 
-    const learned = choice.kind === "learned";
-    const undone = learned && verdict === "declined";
-
     return (
       <li key={`${run}-choice`} {...common}>
         <time dateTime={choice.date} className={time}>
           {choice.label}
         </time>
         <div className={cx(wide, inset, shown ? pop : undefined)}>
-          <div className={label}>
-            <span className={pulse} data-still={picked !== null} />
-            {learned
-              ? `Learned change to the ${choice.skill} skill`
-              : "Held for your approval"}
-          </div>
-          {choice.kind === "held" ? (
-            <>
-              <div className={css({ color: "ink" })}>{choice.action}</div>
-              <div className={quote}>You asked: “{choice.quote}”</div>
-            </>
-          ) : (
-            <div className={diff}>
-              <div data-off={!undone}>− {choice.before}</div>
-              <div className={added} data-off={undone}>
-                + {choice.after}
-              </div>
-            </div>
-          )}
+          <ChoiceBody choice={choice} verdict={verdict} picked={picked} />
           {renderOptions(actions)}
         </div>
       </li>
     );
   }
 
-  const progress = inView ? Math.min(1, at / lines.length) : 0;
+  const progress = playbackProgress(inView, at, lines.length);
 
   return (
     <SmoothCorners
