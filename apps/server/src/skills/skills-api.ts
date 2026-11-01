@@ -1,4 +1,8 @@
 import { routes, changesInput, reviewsInput } from "../contract/api-contract";
+import {
+  skillInstallInput,
+  skillLocationInput,
+} from "../contract/skill-install";
 import type { Register } from "../contract/route";
 import { AgentRepository } from "../bots/agent-repository";
 import type { BotsAccess } from "../bots/bots";
@@ -8,12 +12,14 @@ import type { Runner } from "../shared/runner";
 import { ChangeReverter } from "./change-reverter";
 import type { CommonSkill } from "./common-skills";
 import { LearnedChangeRepository } from "./learned-change-repository";
+import { SkillInstaller } from "./skill-installer";
 import { SkillRepository } from "./skill-repository";
 
 type Services =
   | AgentRepository
   | ChangeReverter
   | LearnedChangeRepository
+  | SkillInstaller
   | SkillRepository;
 
 type Exec = Runner<Services>["runSync"];
@@ -176,11 +182,18 @@ const skillCatalog = (exec: Exec, commonSkills: CommonSkill[] | undefined) => [
       source: "bundled" as const,
     }),
   ),
-  ...exec(SkillRepository.use((r) => r.list(null))).map((skill) => ({
-    ...skill,
-    source: "shared" as const,
-  })),
+  ...sharedWithUpdates(exec),
 ];
+
+const sharedWithUpdates = (exec: Exec) => {
+  const updates = exec(SkillInstaller.use((r) => r.updates));
+
+  return exec(SkillRepository.use((r) => r.list(null))).map((skill) => ({
+    ...skill,
+    update: updates.get(skill.id) ?? null,
+    source: "shared" as const,
+  }));
+};
 
 /** The shared skills every bot may use, including the bundled ones the server ships with. */
 const registerSharedSkillRoutes = (options: SkillRoutesOptions) => {
@@ -209,6 +222,11 @@ const registerSharedSkillRoutes = (options: SkillRoutesOptions) => {
 
     if (!old || old.agentId) throw new NotFound({ message: "Skill not found" });
 
+    if (old.origin)
+      throw new ReadOnly({
+        message: "Installed skills are read-only. Make a copy to change one.",
+      });
+
     const input = skillInput.parse({ ...old, ...(await c.req.json()) });
 
     return c.json(
@@ -228,9 +246,78 @@ const registerSharedSkillRoutes = (options: SkillRoutesOptions) => {
   });
 };
 
+/** Adds `skillIds` to each bot's shared skills. */
+const shareWith = (exec: Exec, botIds: string[], skillIds: string[]) => {
+  for (const botId of botIds) {
+    const agent = exec(AgentRepository.use((r) => r.get(botId)));
+
+    if (agent)
+      exec(
+        AgentRepository.use((r) =>
+          r.update(agent.id, {
+            sharedSkills: [
+              ...new Set([...(agent.sharedSkills ?? []), ...skillIds]),
+            ].toSorted(),
+          }),
+        ),
+      );
+  }
+};
+
+/** Installing shared skills from GitHub and updating them from upstream. */
+const registerSkillInstallRoutes = (options: SkillRoutesOptions) => {
+  const { register, service, run } = options;
+  const exec: Exec = (effect) => run.runSync(effect);
+
+  register(routes.browseSkillRepository, async (c) => {
+    const { location } = skillLocationInput.parse(await c.req.json());
+
+    return c.json(
+      await run.runPromise(SkillInstaller.use((r) => r.browse(location))),
+      200,
+    );
+  });
+  register(routes.installSkills, async (c) => {
+    const { botIds, ...request } = skillInstallInput.parse(await c.req.json());
+    const bots = [...new Set(botIds)].map((botId) => service.agent(botId).id);
+
+    const installed = await run.runPromise(
+      SkillInstaller.use((r) => r.install(request)),
+    );
+
+    shareWith(
+      exec,
+      bots,
+      installed.map((skill) => skill.id),
+    );
+
+    return c.json(installed, 201);
+  });
+  register(routes.checkSkillUpdates, async (c) =>
+    c.json(await run.runPromise(SkillInstaller.use((r) => r.check())), 200),
+  );
+  register(routes.pendingSkillUpdate, async (c) =>
+    c.json(
+      await run.runPromise(
+        SkillInstaller.use((r) => r.pending(c.req.param("id"))),
+      ),
+      200,
+    ),
+  );
+  register(routes.applySkillUpdate, async (c) =>
+    c.json(
+      await run.runPromise(
+        SkillInstaller.use((r) => r.apply(c.req.param("id"))),
+      ),
+      200,
+    ),
+  );
+};
+
 /** The skill routes, in the order the contract document lists them. */
 export function registerSkillRoutes(options: SkillRoutesOptions) {
   registerBotSkillRoutes(options);
   registerSkillReviewRoutes(options);
   registerSharedSkillRoutes(options);
+  registerSkillInstallRoutes(options);
 }

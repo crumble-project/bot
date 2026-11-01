@@ -726,6 +726,53 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
     store.close();
   });
 
+  test("installed skills are read-only, and a bad repository location is the owner's to fix", async () => {
+    const { app, store } = setup();
+
+    const installed = store.createSkill({
+      name: "Review",
+      description: "",
+      instructions: "Read it all.",
+      documents: [],
+      origin: {
+        repository: "acme/skills",
+        branch: "main",
+        path: "skills/review",
+        commit: "a".repeat(40),
+        digest: "d",
+      },
+    });
+
+    const edit = await req(app, `/v1/skills/${installed.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ instructions: "Changed" }),
+    });
+
+    expect(edit.status).toBe(405);
+    expect(store.getSkill(installed.id)?.instructions).toBe("Read it all.");
+
+    const listed = await req(app, "/v1/skills").then((r: Response) => r.json());
+
+    expect(listed).toContainEqual(
+      expect.objectContaining({
+        id: installed.id,
+        origin: expect.objectContaining({ repository: "acme/skills" }),
+        update: null,
+      }),
+    );
+
+    const browse = await req(app, "/v1/skills/github/browse", {
+      method: "POST",
+      body: JSON.stringify({ location: "not a repository" }),
+    });
+
+    expect(browse.status).toBe(400);
+    expect((await browse.json()).error).toBe(
+      "Enter owner/repo or a github.com URL",
+    );
+    store.close();
+  });
+
   test("changes an MCP server's settings and keeps its secrets write-only", async () => {
     const { app, store } = setup();
 

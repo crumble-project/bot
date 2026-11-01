@@ -33,6 +33,7 @@ import type {
   providerResponse,
   scheduleResponse,
   scriptRunResponse,
+  skillPackageResponse,
   ChartLayout,
 } from "@crumble/server/contract/api-responses";
 import type { BotInput } from "@crumble/server/contract/api-contract";
@@ -51,6 +52,11 @@ import type {
   githubAppManifestResponse,
   githubAppResponse,
 } from "@crumble/server/contract/github-apps";
+import type {
+  pendingSkillUpdateResponse,
+  skillCheckResponse,
+  skillListingResponse,
+} from "@crumble/server/contract/skill-install";
 
 export type GatewayConfig = z.infer<typeof gatewayConfigInput>;
 
@@ -119,6 +125,14 @@ export type PluginSettings = z.infer<typeof pluginSettingsResponse>;
 export type Change = z.infer<typeof learnedChangeResponse>;
 
 export type ListedSkill = z.infer<typeof listedSkillResponse>;
+
+export type SkillPackage = z.infer<typeof skillPackageResponse>;
+
+export type SkillListing = z.infer<typeof skillListingResponse>;
+
+export type PendingSkillUpdate = z.infer<typeof pendingSkillUpdateResponse>;
+
+export type SkillCheck = z.infer<typeof skillCheckResponse>;
 
 export type Schedule = z.infer<typeof scheduleResponse>;
 

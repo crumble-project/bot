@@ -553,8 +553,22 @@ export const skillLifecycleInput = z.object({
   pinned: z.boolean().optional(),
 });
 
+/** Where an installed skill came from: a folder in a public GitHub repository, at one commit of a branch. */
+export type SkillOrigin = {
+  /** `owner/repo`. */
+  repository: string;
+  branch: string;
+  /** The skill's folder in the repository; empty for the root. */
+  path: string;
+  commit: string;
+  /** Fingerprint of the imported files, so a commit that changes nothing else doesn't count as an update. */
+  digest: string;
+};
+
 /** A skill package in the library: a bot's own when `agentId` is set, shared when null. */
 export type Skill = SkillInput & {
+  /** Set for a skill installed from GitHub, which nobody can edit. */
+  origin: SkillOrigin | null;
   id: string;
   agentId: string | null;
   /** Who wrote the skill first; a bot's skills carry the execution they were learned from. */

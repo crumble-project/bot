@@ -15,7 +15,16 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { type Change, queryClient, send } from "@/lib/api";
 
-type State = Change["before"];
+/** What a diff compares: a memory, or a skill's content. */
+type Diffable =
+  | { content: string }
+  | {
+      name: string;
+      description: string;
+      instructions: string;
+      documents: { path: string; content: string }[];
+    }
+  | null;
 
 const VERBS: Record<Change["action"], string> = {
   create: "added",
@@ -61,7 +70,7 @@ export function changeTitle(change: Change) {
 }
 
 /** The state as plain lines, so a skill's name, description, instructions, and documents diff together. */
-function lines(state: State) {
+function lines(state: Diffable) {
   if (!state) return [];
 
   if ("content" in state) return state.content.split("\n");
@@ -169,9 +178,19 @@ const LINE_STYLE: Record<DiffLine["kind"], string> = {
 };
 
 export function ChangeDiff({ change }: { change: Change }) {
+  return <StateDiff before={change.before} after={change.after} />;
+}
+
+export function StateDiff({
+  before,
+  after,
+}: {
+  before: Diffable;
+  after: Diffable;
+}) {
   return (
     <pre className="overflow-x-auto rounded-md bg-muted py-3 font-mono text-xs">
-      {diff(lines(change.before), lines(change.after)).map((line, index) => (
+      {diff(lines(before), lines(after)).map((line, index) => (
         <div
           // A diff is computed once per change and never reorders.
           // react-doctor-disable-next-line no-array-index-as-key

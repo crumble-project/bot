@@ -24,6 +24,18 @@ export const skills = sqliteTable("skills", {
   lastUsedAt: text("last_used_at"),
   state: text("state").notNull().default("active"),
   pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
+  // JSON SkillOrigin; set for skills installed from GitHub.
+  origin: text("origin"),
+});
+
+/** The latest upstream state of an installed skill; `digest` is null when its folder is gone. */
+export const skillUpdates = sqliteTable("skill_updates", {
+  skillId: text("skill_id")
+    .primaryKey()
+    .references(() => skills.id, { onDelete: "cascade" }),
+  commit: text("commit").notNull(),
+  digest: text("digest"),
+  checkedAt: text("checked_at").notNull(),
 });
 
 export const skillDocuments = sqliteTable(

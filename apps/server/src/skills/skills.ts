@@ -87,6 +87,18 @@ export class BotSkills extends Context.Service<
       return { ...skill, agentId: skill.agentId };
     });
 
+    /** The bot's own skill, which it may change unless the owner pinned it. */
+    const writableBy = Effect.fnUntraced(function* (skillId: string) {
+      const skill = yield* ownedBy(skillId);
+
+      if (skill.pinned)
+        return yield* new SkillToolError({
+          message: `${skill.name} is pinned by the owner, so bots can't change it`,
+        });
+
+      return skill;
+    });
+
     return BotSkills.of({
       available: Effect.fn("BotSkills.available")(function* (agent: Agent) {
         const shared = yield* Effect.forEach(agent.sharedSkills ?? [], (id) =>
@@ -137,7 +149,7 @@ export class BotSkills extends Context.Service<
         patch: Partial<SkillInput>,
         context: SkillToolContext,
       ) {
-        const skill = yield* ownedBy(skillId);
+        const skill = yield* writableBy(skillId);
 
         return (yield* skills.update(
           skill.id,
@@ -149,7 +161,7 @@ export class BotSkills extends Context.Service<
         skillId: string,
         context: SkillToolContext,
       ) {
-        const skill = yield* ownedBy(skillId);
+        const skill = yield* writableBy(skillId);
         yield* skills.delete(skill.id, yield* by(skill.agentId, context));
       }),
       transaction: (effect) =>

@@ -7,6 +7,7 @@ import {
   type Skill,
   type SkillDocument,
   type SkillInput,
+  type SkillOrigin,
 } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
@@ -19,11 +20,15 @@ export type NewSkill = SkillInput & {
   sourceExecutionId?: string | null;
   state?: Skill["state"];
   pinned?: boolean;
+  origin?: SkillOrigin | null;
 };
 
 export type SkillPatch = Partial<
   Omit<Skill, "id" | "agentId" | "createdAt" | "updatedAt">
 >;
+
+// SAFETY: the column only holds origins this repository wrote.
+const originOf = (json: string) => JSON.parse(json) as SkillOrigin;
 
 const isSkillState = (state: string): state is Skill["state"] =>
   skillStates.some((known) => known === state);
@@ -95,6 +100,7 @@ export class SkillRepository extends Context.Service<
           lastUsedAt: row.lastUsedAt ?? null,
           state: isSkillState(row.state) ? row.state : "active",
           pinned: row.pinned,
+          origin: row.origin ? originOf(row.origin) : null,
           createdAt: row.createdAt,
           updatedAt: row.updatedAt,
         };
@@ -160,6 +166,7 @@ export class SkillRepository extends Context.Service<
               sourceExecutionId: input.sourceExecutionId ?? null,
               state: input.state ?? "active",
               pinned: input.pinned ?? false,
+              origin: input.origin ? JSON.stringify(input.origin) : null,
               createdAt: at,
               updatedAt: at,
             });
@@ -205,6 +212,7 @@ export class SkillRepository extends Context.Service<
                 lastUsedAt: next.lastUsedAt,
                 state: next.state,
                 pinned: next.pinned,
+                origin: next.origin ? JSON.stringify(next.origin) : null,
                 updatedAt: at,
               })
               .where(eq(skills.id, skillId));
@@ -256,6 +264,7 @@ export class SkillRepository extends Context.Service<
               lastUsedAt: skill.lastUsedAt,
               state: skill.state,
               pinned: skill.pinned,
+              origin: skill.origin ? JSON.stringify(skill.origin) : null,
               createdAt: skill.createdAt,
               updatedAt: skill.updatedAt,
             });

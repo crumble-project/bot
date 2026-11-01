@@ -37,7 +37,31 @@ makes its own copy, which takes the original's place for that bot only. Your
 other bots keep the original.
 
 Manage skills in **Settings** > **Skills**. To turn a shared skill on for a
-bot, select the bot under the skill.
+bot, open the skill and select the bot under **Used by**.
+
+### Installing Skills from GitHub
+
+To add skills someone published on GitHub, select **Install from GitHub** on
+the **Skills** page and enter `owner/repo`, or a github.com link to a folder.
+Crumble lists every folder with a `SKILL.md`. Check the skills you want and
+the bots that should use them, then select **Install**.
+
+- **Only public repositories.** Crumble reads them without signing in.
+- **Only the instructions.** Each skill imports its `SKILL.md` and the
+  Markdown documents in `references/`. The list shows which other files, such
+  as scripts, are left out, so a skill that depends on them may not work.
+- **Installed skills are shared and read-only.** Nobody can edit them, not
+  you, not a bot. To change one, select **Make a copy**, which creates a
+  normal shared skill that doesn't get updates.
+- **One name, one skill.** A skill whose name a shared skill already has
+  can't be installed until you rename or delete the other one. An installed
+  skill can have the same name as a default skill, and replaces it.
+
+Crumble checks each installed skill's branch once a day, or when you select
+**Check for updates**. A skill whose files changed shows **Update available**.
+Updates never install on their own: open the skill, review the changes, and
+select **Update**. The update is recorded on the **Activity** page, so you can
+revert it.
 
 ## Learned Changes
 
@@ -57,3 +81,9 @@ makes it active again.
 
 Pinned skills and skills that a scheduled task uses are never archived.
 Archiving deletes nothing: an archived skill only leaves the bot's skill list.
+
+## Pinned Skills
+
+Pin one of a bot's own skills from its menu on the **Skills** page to keep it
+as it is. Bots and reviews can't change or delete a pinned skill, and cleanup
+never marks it stale. You can still edit it.

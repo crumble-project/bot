@@ -19,6 +19,8 @@ import { InlineSkillsTransfer } from "../skills/inline-skills";
 import { LearnedChangeRepository } from "../skills/learned-change-repository";
 import { ReviewRepository } from "../skills/review-repository";
 import { SkillRepository } from "../skills/skill-repository";
+import { GitHubSkillReader } from "../skills/github-skills";
+import { SkillInstaller } from "../skills/skill-installer";
 import {
   agentCredentials,
   credentialAuthorities,
@@ -78,6 +80,7 @@ export const productLayer = (dataDir: string) => {
   return Layer.mergeAll(
     ProviderCredentialRepository.layer,
     ChangeReverter.layer,
+    SkillInstaller.layer.pipe(Layer.provide(GitHubSkillReader.layer)),
     AgentRepository.layer,
     InlineSkillsTransfer,
   ).pipe(Layer.provideMerge(onChanges));

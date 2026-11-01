@@ -27,6 +27,7 @@ import { historyTools } from "../history/history-tools";
 import { BotSkills } from "../skills/skills";
 import { LearningReview, learningReviews } from "../skills/learning-review";
 import { SkillCurator, skillCuration } from "../skills/skill-curator";
+import { skillUpdateChecks } from "../skills/skill-installer";
 import { CommonSkills } from "../skills/common-skills";
 import {
   integrationTools,
@@ -267,6 +268,7 @@ function accountLayer(
   const leaves = Layer.mergeAll(
     reviews,
     curation,
+    skillUpdateChecks,
     jobAnswers,
     heldActionNotices,
     jobTools,
