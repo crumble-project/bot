@@ -61,7 +61,7 @@ test("an event automation names its source and never counts as finished", () => 
     describeTiming(eventAutomation, [
       { id: "source-1", name: "GitHub", createdAt: "", usedBy: 1 },
     ]),
-  ).toBe("When an event arrives at GitHub");
-  expect(describeTiming(eventAutomation)).toBe("When an event arrives");
+  ).toBe("On event · GitHub");
+  expect(describeTiming(eventAutomation)).toBe("On event");
   expect(finished(eventAutomation)).toBe(false);
 });

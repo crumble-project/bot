@@ -10,6 +10,7 @@ import {
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   IconCircleCheck,
+  IconClock,
   IconCircleCheckFilled,
   IconCircleXFilled,
   IconDots,
@@ -21,6 +22,7 @@ import {
   IconPlus,
   IconTerminal2,
   IconTrash,
+  IconWebhook,
   type TablerIcon,
 } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -130,9 +132,7 @@ export function describeTiming(schedule: Schedule, sources?: EventSource[]) {
   if (schedule.eventSourceId) {
     const source = sources?.find((each) => each.id === schedule.eventSourceId);
 
-    return source
-      ? `When an event arrives at ${source.name}`
-      : "When an event arrives";
+    return source ? `On event · ${source.name}` : "On event";
   }
 
   if (schedule.cron) return describeCron(schedule.cron, schedule.timezone);
@@ -365,7 +365,7 @@ function AutomationTable({
       <TableHeader>
         <TableRow className="border-0 hover:bg-transparent">
           <Heading>Automation</Heading>
-          <Heading className="hidden md:table-cell">Schedule</Heading>
+          <Heading className="hidden md:table-cell">When</Heading>
           <Heading className="hidden sm:table-cell">Next run</Heading>
           <Heading>Status</Heading>
           <TableHead className="w-10" />
@@ -680,7 +680,7 @@ function AutomationRow({
 
   return (
     <TableRow className="cursor-pointer border-0" onClick={onEdit}>
-      <TableCell className="w-full max-w-0 py-2.5">
+      <TableCell className="w-full max-w-0 md:w-1/2 py-2.5">
         <AutomationName
           schedule={schedule}
           bot={bot}
@@ -688,7 +688,7 @@ function AutomationRow({
           failure={toggle.error ?? run.error ?? remove.error}
         />
       </TableCell>
-      <TableCell className="hidden max-w-64 truncate text-muted-foreground md:table-cell">
+      <TableCell className="hidden w-1/3 max-w-0 truncate text-muted-foreground md:table-cell">
         {describeTiming(schedule, sources)}
       </TableCell>
       <TableCell className="hidden text-muted-foreground tabular-nums sm:table-cell">
@@ -1417,14 +1417,13 @@ function switchedTo(
 
 const pad = (value: number) => String(value).padStart(2, "0");
 
-type When = "once" | RepeatKind | "event";
+type When = "once" | RepeatKind;
 
 const WHEN = [
   { value: "once", label: "Once" },
   ...REPEATS.map((item) =>
     item.value === "custom" ? { ...item, label: "Custom (cron)" } : item,
   ),
-  { value: "event", label: "When an event arrives" },
 ];
 
 const MINUTES = Array.from({ length: 12 }, (_, index) => ({
@@ -1732,8 +1731,6 @@ const whenOf = (
   custom: boolean,
   recurrence: Recurrence | null,
 ): When => {
-  if (draft.onEvent) return "event";
-
   if (!draft.repeat) return "once";
 
   return custom || !recurrence ? "custom" : recurrence.kind;
@@ -1744,8 +1741,6 @@ function whenPatch(
   value: string,
   recurrence: Recurrence | null,
 ): Partial<AutomationDraft> {
-  if (value === "event") return { onEvent: true };
-
   if (value === "once") return { onEvent: false, repeat: false };
 
   const picked = KINDS.find((each) => each === value);
@@ -1770,14 +1765,6 @@ function WhenDetails({
   recurrence: Recurrence | null;
   patch: (change: Partial<AutomationDraft>) => void;
 }) {
-  if (when === "event")
-    return (
-      <EventSourcePicker
-        value={draft.eventSourceId}
-        onChange={(eventSourceId) => patch({ eventSourceId })}
-      />
-    );
-
   if (when === "once")
     return (
       <Input
@@ -1859,7 +1846,7 @@ function CronField({
   );
 }
 
-function ScheduleFields({
+function TimeFields({
   draft,
   patch,
 }: {
@@ -1891,13 +1878,57 @@ function ScheduleFields({
         />
       </div>
       {when === "custom" && <CronField draft={draft} patch={patch} />}
-      {when === "event" ? (
-        <p className="text-sm text-muted-foreground">
-          Runs each time an event arrives. The bot gets the event's headers and
-          body after the prompt, marked as untrusted data.
-        </p>
+      <NextRun draft={draft} />
+    </>
+  );
+}
+
+function EventFields({
+  draft,
+  patch,
+}: {
+  draft: AutomationDraft;
+  patch: (change: Partial<AutomationDraft>) => void;
+}) {
+  return (
+    <Field>
+      <FieldLabel>Event source</FieldLabel>
+      <EventSourcePicker
+        value={draft.eventSourceId}
+        onChange={(eventSourceId) => patch({ eventSourceId })}
+      />
+    </Field>
+  );
+}
+
+function ScheduleFields({
+  draft,
+  patch,
+}: {
+  draft: AutomationDraft;
+  patch: (change: Partial<AutomationDraft>) => void;
+}) {
+  return (
+    <>
+      <Tabs
+        value={draft.onEvent ? "event" : "time"}
+        onValueChange={(value) => patch({ onEvent: value === "event" })}
+      >
+        <TabsList aria-label="Trigger" className="w-full">
+          <TabsTrigger value="time">
+            <IconClock data-icon="inline-start" />
+            Time
+          </TabsTrigger>
+          <TabsTrigger value="event">
+            <IconWebhook data-icon="inline-start" />
+            Event
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+      {draft.onEvent ? (
+        <EventFields draft={draft} patch={patch} />
       ) : (
-        <NextRun draft={draft} />
+        <TimeFields draft={draft} patch={patch} />
       )}
     </>
   );
@@ -1971,7 +2002,7 @@ function AutomationFields({
           </Field>
         )}
       </EditorSection>
-      <EditorSection title="Schedule">
+      <EditorSection title="When">
         <ScheduleFields draft={draft} patch={patch} />
       </EditorSection>
       <EditorSection>

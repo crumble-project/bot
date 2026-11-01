@@ -46,8 +46,8 @@ delete a source only while no automation uses it.
 
 ## Create an event automation
 
-On the **Automations** page, select **New automation**. Under **When**, choose
-**When an event arrives** and pick a source. You can also ask a bot, such as
+On the **Automations** page, select **New automation**. Under **When**, select
+**Event** and pick a source. You can also ask a bot, such as
 "When an issue arrives from GitHub issues, label and summarize it."
 
 Every event from the source starts every enabled automation that uses it.
