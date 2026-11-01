@@ -11,6 +11,7 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: write
@@ -22,12 +23,12 @@ jobs:
           persist-credentials: false
           # The audit compares against the base commit, so it needs the history.
           fetch-depth: 0
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.2
+          bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
       # Only findings this change introduces fail; the repository's older ones are reported as inherited.
-      - uses: fallow-rs/fallow@3c6e45b55ae60a52caa2b586ea3fae44f3e5a44e # v3
+      - uses: fallow-rs/fallow@d052786ef2baf78fa5b196f06dbccd6f0d26798e # v3.38.1
         id: fallow
         with:
           command: audit
@@ -52,6 +53,6 @@ jobs:
         if: >-
           always() && steps.sarif.outcome == 'success' &&
           (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: fallow-upload.sarif
