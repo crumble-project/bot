@@ -1,7 +1,9 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Clock, Context, Effect, Layer, Predicate, Redacted } from "effect";
-import { BotNotices, requestAnswers } from "../bots/bot-notices";
+import { z } from "zod";
+import { BotSecretRequests } from "../bot-secrets/bot-secret-requests";
+import { BotSecretUses } from "../bot-secrets/bot-secret-uses";
 import type { LoginFill, LoginRead } from "../bot-desktop/computer-use-login";
 import type { Runner } from "../shared/runner";
 import { FIELD_NOT_FOUND } from "../password-managers/one-password";
@@ -41,8 +43,8 @@ import { requestParameters } from "../credentials/credentials";
 
 export const REQUEST_LOGIN_TOOL = "request_login";
 
-/** How long the owner can look back at a login's fills. */
-export const LOGIN_USE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+/** What a login's use records beyond its host: the field filled. */
+const useDetail = z.object({ field: loginFieldInput });
 
 // 1Password computes the current code for this attribute; any other one-time code source holds the TOTP secret.
 const COMPUTED_CODE = "?attribute=totp";
@@ -118,8 +120,6 @@ export class Logins extends Context.Service<
       name: string,
       use: Omit<LoginUse, "id">,
     ) => Effect.Effect<void>;
-    /** Drops fills older than the retention, counted back from now. */
-    readonly prune: Effect.Effect<void>;
   }
 >()("crumble/logins/Logins") {
   static readonly layer = Layer.effect(
@@ -128,16 +128,8 @@ export class Logins extends Context.Service<
       const repository = yield* LoginRepository;
       const values = yield* SecretValues;
       const secrets = yield* Secrets;
-      const notices = yield* BotNotices;
-
-      const notify = requestAnswers(notices, "login");
-
-      const declined = (agentId: string, name: string) =>
-        notify(
-          agentId,
-          name,
-          `The owner declined your request for login ${name}.`,
-        );
+      const requests = yield* BotSecretRequests;
+      const useLog = yield* BotSecretUses;
 
       const withFields = Effect.fnUntraced(function* (
         agentId: string,
@@ -239,20 +231,6 @@ export class Logins extends Context.Service<
             );
       };
 
-      /** Clears the bot's request for a login just saved, and tells the bot. */
-      const answerRequest = Effect.fnUntraced(function* (
-        agentId: string,
-        login: Login,
-      ) {
-        if (!(yield* repository.deleteRequest(agentId, login.name))) return;
-
-        yield* notify(
-          agentId,
-          login.name,
-          `The owner saved login ${login.name} for ${login.hosts.join(", ")}. Desktop jobs can fill it with fill_login.`,
-        );
-      });
-
       const save = Effect.fn("Logins.save")(function* (
         agentId: string,
         name: string,
@@ -262,7 +240,7 @@ export class Logins extends Context.Service<
         const writes = yield* fieldWrites(input);
 
         const hosts = Effect.gen(function* () {
-          const pending = yield* repository.getRequest(agentId, checked);
+          const pending = yield* requests.get(agentId, "login", checked);
           const existing = yield* get(agentId, checked);
           const found = input.hosts ?? existing?.hosts ?? pending?.hosts;
 
@@ -301,7 +279,12 @@ export class Logins extends Context.Service<
           yield* repository.save(agentId, checked, yield* hosts),
         );
 
-        yield* answerRequest(agentId, login);
+        yield* requests.answer(
+          agentId,
+          "login",
+          login.name,
+          `The owner saved login ${login.name} for ${login.hosts.join(", ")}. Desktop jobs can fill it with fill_login.`,
+        );
 
         return login;
       });
@@ -322,33 +305,35 @@ export class Logins extends Context.Service<
             message: `Login ${input.name} is already yours for ${existing.hosts.join(", ")}`,
           });
 
-        return yield* repository.setRequest(agentId, input);
+        return yield* requests.ask(agentId, "login", {
+          ...input,
+          oneTimeCode: input.one_time_code,
+        });
       });
 
       const decline = Effect.fn("Logins.decline")(function* (
         agentId: string,
         name: string,
       ) {
-        if (!(yield* repository.deleteRequest(agentId, name)))
+        if (!(yield* requests.decline(agentId, "login", name)))
           return yield* new Conflict({
             message: "Login request has already been answered",
           });
-
-        yield* declined(agentId, name);
       });
 
       const remove = Effect.fn("Logins.delete")(function* (
         agentId: string,
         name: string,
       ) {
-        if (yield* repository.delete(agentId, name))
-          return yield* secrets.deleteAll(loginFieldsPrefix(agentId, name));
+        if (yield* repository.delete(agentId, name)) {
+          yield* secrets.deleteAll(loginFieldsPrefix(agentId, name));
+
+          return yield* useLog.forget(agentId, "login", name);
+        }
 
         // Without a login, deleting declines the bot's request for one.
-        if (yield* repository.deleteRequest(agentId, name))
-          return yield* declined(agentId, name);
-
-        return yield* new NotFound({ message: "Login not found" });
+        if (!(yield* requests.decline(agentId, "login", name)))
+          return yield* new NotFound({ message: "Login not found" });
       });
 
       const value = Effect.fn("Logins.value")(function* (
@@ -378,14 +363,6 @@ export class Logins extends Context.Service<
         );
       });
 
-      const prune = Effect.gen(function* () {
-        const now = yield* Clock.currentTimeMillis;
-
-        yield* repository.pruneUses(
-          new Date(now - LOGIN_USE_RETENTION_MS).toISOString(),
-        );
-      }).pipe(Effect.withSpan("Logins.prune"));
-
       const uses = Effect.fn("Logins.uses")(function* (
         agentId: string,
         name: string,
@@ -394,9 +371,12 @@ export class Logins extends Context.Service<
         if (!(yield* repository.get(agentId, name)))
           return yield* new NotFound({ message: "Login not found" });
 
-        yield* prune;
+        const listed = yield* useLog.list(agentId, "login", name, options);
 
-        return yield* repository.listUses(agentId, name, options);
+        return listed.map(({ detail, ...use }): LoginUse => ({
+          ...use,
+          field: useDetail.parse(detail).field,
+        }));
       });
 
       return Logins.of({
@@ -405,15 +385,17 @@ export class Logins extends Context.Service<
             Effect.forEach(records, (record) => withFields(agentId, record)),
           ),
         get,
-        requests: repository.listRequests,
+        requests: (agentId) => requests.list(agentId, "login"),
         request,
         decline,
         save,
         delete: remove,
         uses,
         value,
-        recordUse: repository.addUse,
-        prune,
+        recordUse: (agentId, name, { field, ...use }) =>
+          useLog
+            .record(agentId, "login", name, { ...use, detail: { field } })
+            .pipe(Effect.andThen(repository.touch(agentId, name, use.at))),
       });
     }),
   );

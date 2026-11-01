@@ -14,6 +14,8 @@ import { BotMemory } from "../memory/bot-memory";
 import { PasswordManagers } from "../password-managers/password-manager";
 import { SecretValues } from "../password-managers/secret-values";
 import { Secrets } from "../password-managers/secrets";
+import { BotSecretRequests } from "../bot-secrets/bot-secret-requests";
+import { BotSecretUses } from "../bot-secrets/bot-secret-uses";
 import { assertVendorIds, pluginPasswordManagers } from "../plugins/plugins";
 import { PASSWORD_MANAGER_IDS } from "../shared/vendors";
 import { builtinVendors } from "./builtin-plugins";
@@ -39,6 +41,9 @@ export const coreLayer = (dataDir: string) =>
     McpOAuth.layer,
     BotMemory.layer,
   ).pipe(
+    Layer.provideMerge(
+      Layer.mergeAll(BotSecretRequests.layer, BotSecretUses.layer),
+    ),
     Layer.provideMerge(BotNotices.layer),
     Layer.provideMerge(GitHubApps.layer),
     Layer.provideMerge(GitHubAppUsers.layer),

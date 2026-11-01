@@ -1,23 +1,13 @@
-import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { z } from "zod";
-import type {
-  AgentCredential,
-  CredentialGrant,
-  CredentialRequest,
-  CredentialUse,
-} from "../shared/domain";
+import { lastUseError } from "../bot-secrets/bot-secret-uses";
+import type { AgentCredential, CredentialGrant } from "../shared/domain";
 import { secretKey } from "../password-managers/secrets";
 import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
 import { nowIso } from "../shared/time";
-import { usesBefore, withStringIds } from "../shared/use-log";
-import {
-  agentCredentials,
-  credentialAuthorities,
-  credentialRequests,
-  credentialUses,
-} from "./schema";
+import { agentCredentials, credentialAuthorities } from "./schema";
 
 const hostList = z.array(z.string());
 
@@ -41,15 +31,6 @@ const credentialOf = (row: {
   hosts: hostList.parse(JSON.parse(row.hosts)),
 });
 
-const requestOf = (
-  row: typeof credentialRequests.$inferSelect,
-): CredentialRequest => ({
-  name: row.name,
-  hosts: hostList.parse(JSON.parse(row.hosts)),
-  reason: row.reason,
-  requestedAt: row.requestedAt,
-});
-
 export type CredentialAuthority = { certificate: string; key: string };
 
 const metadata = {
@@ -59,12 +40,10 @@ const metadata = {
   updatedAt: agentCredentials.updatedAt,
   lastUsedAt: agentCredentials.lastUsedAt,
   github: agentCredentials.github,
-  lastError: sql<
-    string | null
-  >`(SELECT ${credentialUses.error} FROM ${credentialUses} WHERE ${credentialUses.agentId} = ${agentCredentials.agentId} AND ${credentialUses.name} = ${agentCredentials.name} ORDER BY ${credentialUses.id} DESC LIMIT 1)`,
+  lastError: lastUseError("credential", agentCredentials),
 };
 
-/** The credentials the owner gave each bot, their requests, uses, and each bot's certificate authority. */
+/** The credentials the owner gave each bot, and each bot's certificate authority. */
 export class AgentCredentialRepository extends Context.Service<
   AgentCredentialRepository,
   {
@@ -96,34 +75,12 @@ export class AgentCredentialRepository extends Context.Service<
       agentId: string,
       authority: CredentialAuthority,
     ) => Effect.Effect<CredentialAuthority>;
-    readonly listRequests: (
-      agentId: string,
-    ) => Effect.Effect<CredentialRequest[]>;
-    readonly getRequest: (
+    /** Marks the credential used at `at`. */
+    readonly touch: (
       agentId: string,
       name: string,
-    ) => Effect.Effect<CredentialRequest | undefined>;
-    /** A repeated request replaces the earlier one. */
-    readonly setRequest: (
-      agentId: string,
-      request: { name: string; hosts: string[]; reason: string },
-    ) => Effect.Effect<CredentialRequest>;
-    readonly deleteRequest: (
-      agentId: string,
-      name: string,
-    ) => Effect.Effect<boolean>;
-    readonly addUse: (
-      agentId: string,
-      name: string,
-      use: Omit<CredentialUse, "id">,
+      at: string,
     ) => Effect.Effect<void>;
-    /** Newest first; page with `before` set to the last use's ID. */
-    readonly listUses: (
-      agentId: string,
-      name: string,
-      options: { limit: number; before?: string | undefined },
-    ) => Effect.Effect<CredentialUse[]>;
-    readonly pruneUses: (olderThan: string) => Effect.Effect<void>;
   }
 >()("crumble/credentials/AgentCredentialRepository") {
   static readonly layer = Layer.effect(
@@ -136,12 +93,6 @@ export class AgentCredentialRepository extends Context.Service<
         and(
           eq(agentCredentials.agentId, agentId),
           eq(agentCredentials.name, name),
-        );
-
-      const request = (agentId: string, name: string) =>
-        and(
-          eq(credentialRequests.agentId, agentId),
-          eq(credentialRequests.name, name),
         );
 
       const list = Effect.fn("AgentCredentialRepository.list")(function* (
@@ -275,125 +226,16 @@ export class AgentCredentialRepository extends Context.Service<
         return (yield* getAuthority(agentId))!;
       }, Effect.orDie);
 
-      const listRequests = Effect.fn("AgentCredentialRepository.listRequests")(
-        function* (agentId: string) {
-          const rows = yield* db
-            .select()
-            .from(credentialRequests)
-            .where(eq(credentialRequests.agentId, agentId))
-            .orderBy(asc(credentialRequests.requestedAt));
-
-          return rows.map(requestOf);
-        },
-        Effect.orDie,
-      );
-
-      const getRequest = Effect.fn("AgentCredentialRepository.getRequest")(
-        function* (agentId: string, name: string) {
-          const [row] = yield* db
-            .select()
-            .from(credentialRequests)
-            .where(request(agentId, name));
-
-          return row ? requestOf(row) : undefined;
-        },
-        Effect.orDie,
-      );
-
-      const setRequest = Effect.fn("AgentCredentialRepository.setRequest")(
-        function* (
-          agentId: string,
-          input: { name: string; hosts: string[]; reason: string },
-        ) {
-          const row = {
-            hosts: JSON.stringify(input.hosts),
-            reason: input.reason,
-            requestedAt: yield* nowIso,
-          };
-
-          yield* db
-            .insert(credentialRequests)
-            .values({ agentId, name: input.name, ...row })
-            .onConflictDoUpdate({
-              target: [credentialRequests.agentId, credentialRequests.name],
-              set: row,
-            });
-
-          return (yield* getRequest(agentId, input.name))!;
-        },
-        Effect.orDie,
-      );
-
-      const deleteRequest = Effect.fn(
-        "AgentCredentialRepository.deleteRequest",
-      )(function* (agentId: string, name: string) {
-        const deleted = yield* db
-          .delete(credentialRequests)
-          .where(request(agentId, name))
-          .returning({ name: credentialRequests.name });
-
-        return deleted.length > 0;
-      }, Effect.orDie);
-
-      const addUse = Effect.fn("AgentCredentialRepository.addUse")(function* (
+      const touch = Effect.fn("AgentCredentialRepository.touch")(function* (
         agentId: string,
         name: string,
-        use: Omit<CredentialUse, "id">,
+        at: string,
       ) {
-        yield* db.transaction(() =>
-          Effect.gen(function* () {
-            yield* db.insert(credentialUses).values({
-              agentId,
-              name,
-              at: use.at,
-              method: use.method,
-              host: use.host,
-              path: use.path,
-              status: use.status,
-              error: use.error,
-            });
-            yield* db
-              .update(agentCredentials)
-              .set({ lastUsedAt: use.at })
-              .where(credential(agentId, name));
-          }),
-        );
+        yield* db
+          .update(agentCredentials)
+          .set({ lastUsedAt: at })
+          .where(credential(agentId, name));
       }, Effect.orDie);
-
-      const listUses = Effect.fn("AgentCredentialRepository.listUses")(
-        function* (
-          agentId: string,
-          name: string,
-          options: { limit: number; before?: string | undefined },
-        ) {
-          const rows = yield* db
-            .select({
-              id: credentialUses.id,
-              at: credentialUses.at,
-              method: credentialUses.method,
-              host: credentialUses.host,
-              path: credentialUses.path,
-              status: credentialUses.status,
-              error: credentialUses.error,
-            })
-            .from(credentialUses)
-            .where(usesBefore(credentialUses, agentId, name, options.before))
-            .orderBy(desc(credentialUses.id))
-            .limit(options.limit);
-
-          return withStringIds(rows);
-        },
-        Effect.orDie,
-      );
-
-      const pruneUses = Effect.fn("AgentCredentialRepository.pruneUses")(
-        function* (olderThan: string) {
-          yield* db
-            .delete(credentialUses)
-            .where(lt(credentialUses.at, olderThan));
-        },
-        Effect.orDie,
-      );
 
       return AgentCredentialRepository.of({
         list,
@@ -404,13 +246,7 @@ export class AgentCredentialRepository extends Context.Service<
         grants,
         getAuthority,
         saveAuthority,
-        listRequests,
-        getRequest,
-        setRequest,
-        deleteRequest,
-        addUse,
-        listUses,
-        pruneUses,
+        touch,
       });
     }),
   );

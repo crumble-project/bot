@@ -1,9 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { Clock, Context, Effect, Layer, Predicate, Redacted } from "effect";
+import { Context, Effect, Layer, Predicate, Redacted } from "effect";
+import { z } from "zod";
 import type { Runner } from "../shared/runner";
-import { BotNotices, requestAnswers } from "../bots/bot-notices";
+import { BotSecretRequests } from "../bot-secrets/bot-secret-requests";
+import { BotSecretUses } from "../bot-secrets/bot-secret-uses";
 import {
   credentialName,
   credentialRequestInput,
@@ -38,10 +40,14 @@ import { toolOutput } from "../shared/tool-output";
 
 export const REQUEST_CREDENTIAL_TOOL = "request_credential";
 
-/** How long the owner can look back at a credential's uses. */
-export const CREDENTIAL_USE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
-
 const hostsText = (hosts: readonly string[]) => hosts.join(", ");
+
+/** What a credential's use records beyond its host: the request it was swapped into. */
+const useDetail = z.object({
+  method: z.string(),
+  path: z.string(),
+  status: z.number().nullable(),
+});
 
 /** The hosts a save covers: the input's, else the saved credential's, else the pending request's. */
 const savedHosts = (
@@ -122,15 +128,14 @@ export class Credentials extends Context.Service<
       name: string,
       use: Omit<CredentialUse, "id">,
     ) => Effect.Effect<void>;
-    /** Drops uses older than the retention, counted back from now. */
-    readonly prune: Effect.Effect<void>;
   }
 >()("crumble/credentials/Credentials") {
   static readonly layer = Layer.effect(
     Credentials,
     Effect.gen(function* () {
       const repository = yield* AgentCredentialRepository;
-      const notices = yield* BotNotices;
+      const requests = yield* BotSecretRequests;
+      const useLog = yield* BotSecretUses;
       const secrets = yield* Secrets;
       const githubApps = yield* GitHubApps;
 
@@ -164,15 +169,20 @@ export class Credentials extends Context.Service<
         return secret;
       });
 
-      const notify = requestAnswers(notices, "credential");
-
       const list = Effect.fn("Credentials.list")(function* (agentId: string) {
         return {
           credentials: yield* Effect.forEach(
             yield* repository.list(agentId),
             (record) => withSecret(agentId, record),
           ),
-          requests: yield* repository.listRequests(agentId),
+          requests: (yield* requests.list(agentId, "credential")).map(
+            ({ name, hosts, reason, requestedAt }) => ({
+              name,
+              hosts,
+              reason,
+              requestedAt,
+            }),
+          ),
         };
       });
 
@@ -192,7 +202,7 @@ export class Credentials extends Context.Service<
             }),
           );
 
-        return yield* repository.setRequest(agentId, input);
+        return yield* requests.ask(agentId, "credential", input);
       });
 
       const save = Effect.fn("Credentials.save")(function* (
@@ -205,18 +215,22 @@ export class Credentials extends Context.Service<
           catch: (cause) => cause,
         }).pipe(Effect.orDie);
 
-        const saved = Effect.gen(function* () {
-          const pending = yield* repository.getRequest(agentId, checkedName);
-          const existing = yield* repository.get(agentId, checkedName);
+        const savedHostsNow = Effect.gen(function* () {
+          const pending = yield* requests.get(
+            agentId,
+            "credential",
+            checkedName,
+          );
 
-          return {
+          return yield* savedHosts(
+            input,
+            yield* repository.get(agentId, checkedName),
             pending,
-            hosts: yield* savedHosts(input, existing, pending),
-          };
+          );
         });
 
         // Checked first, then read again after the secret's slow save, so a save made meanwhile isn't overwritten.
-        yield* saved;
+        yield* savedHostsNow;
 
         if (input.secret)
           yield* secrets.save(
@@ -224,7 +238,7 @@ export class Credentials extends Context.Service<
             input.secret,
           );
 
-        const { pending, hosts } = yield* saved;
+        const hosts = yield* savedHostsNow;
 
         const credential = yield* repository
           .save(agentId, checkedName, {
@@ -234,14 +248,12 @@ export class Credentials extends Context.Service<
           })
           .pipe(Effect.flatMap((record) => withSecret(agentId, record)));
 
-        if (pending) {
-          yield* repository.deleteRequest(agentId, checkedName);
-          yield* notify(
-            agentId,
-            checkedName,
-            `The owner saved credential ${checkedName} for ${hostsText(credential.hosts)}. Coding jobs see it as $${checkedName}.`,
-          );
-        }
+        yield* requests.answer(
+          agentId,
+          "credential",
+          checkedName,
+          `The owner saved credential ${checkedName} for ${hostsText(credential.hosts)}. Coding jobs see it as $${checkedName}.`,
+        );
 
         return credential;
       });
@@ -250,48 +262,25 @@ export class Credentials extends Context.Service<
         agentId: string,
         name: string,
       ) {
-        if (yield* repository.delete(agentId, name))
-          return yield* Effect.asVoid(
-            secrets.delete(credentialSecretKey(agentId, name)),
-          );
+        if (yield* repository.delete(agentId, name)) {
+          yield* secrets.delete(credentialSecretKey(agentId, name));
 
-        if (!(yield* repository.deleteRequest(agentId, name)))
-          return yield* Effect.fail(
-            new NotFound({ message: "Credential not found" }),
-          );
+          return yield* useLog.forget(agentId, "credential", name);
+        }
 
-        yield* notify(
-          agentId,
-          name,
-          `The owner declined your request for credential ${name}.`,
-        );
+        if (!(yield* requests.decline(agentId, "credential", name)))
+          return yield* new NotFound({ message: "Credential not found" });
       });
 
       const decline = Effect.fn("Credentials.decline")(function* (
         agentId: string,
         name: string,
       ) {
-        if (!(yield* repository.deleteRequest(agentId, name)))
-          return yield* Effect.fail(
-            new Conflict({
-              message: "Credential request has already been answered",
-            }),
-          );
-
-        yield* notify(
-          agentId,
-          name,
-          `The owner declined your request for credential ${name}.`,
-        );
+        if (!(yield* requests.decline(agentId, "credential", name)))
+          return yield* new Conflict({
+            message: "Credential request has already been answered",
+          });
       });
-
-      const prune = Effect.gen(function* () {
-        const now = yield* Clock.currentTimeMillis;
-
-        yield* repository.pruneUses(
-          new Date(now - CREDENTIAL_USE_RETENTION_MS).toISOString(),
-        );
-      }).pipe(Effect.withSpan("Credentials.prune"));
 
       const uses = Effect.fn("Credentials.uses")(function* (
         agentId: string,
@@ -303,9 +292,12 @@ export class Credentials extends Context.Service<
             new NotFound({ message: "Credential not found" }),
           );
 
-        yield* prune;
+        const listed = yield* useLog.list(agentId, "credential", name, options);
 
-        return yield* repository.listUses(agentId, name, options);
+        return listed.map(({ detail, ...use }): CredentialUse => ({
+          ...use,
+          ...useDetail.parse(detail),
+        }));
       });
 
       const env = Effect.fn("Credentials.env")(function* (agentId: string) {
@@ -339,8 +331,13 @@ export class Credentials extends Context.Service<
         githubIdentities: githubApps.identities,
         grants: repository.grants,
         value,
-        recordUse: repository.addUse,
-        prune,
+        recordUse: (agentId, name, { method, path, status, ...use }) =>
+          useLog
+            .record(agentId, "credential", name, {
+              ...use,
+              detail: { method, path, status },
+            })
+            .pipe(Effect.andThen(repository.touch(agentId, name, use.at))),
       });
     }),
   );

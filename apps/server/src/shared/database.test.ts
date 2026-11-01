@@ -271,7 +271,7 @@ describe("product database migrations", () => {
     upgraded.close();
   });
 
-  test("password managers, then secrets by key, keep credentials and their use log", () => {
+  test("later migrations keep credentials, their values, and their use log", () => {
     // Rebuilding agent_credentials inside the migration's transaction would cascade into credential_uses.
     const before = mkdtempSync("/tmp/crumble-migrations-");
     dirs.push(before);
@@ -300,8 +300,17 @@ describe("product database migrations", () => {
       { name: "TOKEN" },
     ]);
     expect(
-      migrated.query("SELECT name, host, status FROM credential_uses").all(),
-    ).toEqual([{ name: "TOKEN", host: "api.example.com", status: 200 }]);
+      migrated
+        .query("SELECT kind, name, host, detail FROM bot_secret_uses")
+        .all(),
+    ).toEqual([
+      {
+        kind: "credential",
+        name: "TOKEN",
+        host: "api.example.com",
+        detail: '{"method":"GET","path":"/","status":200}',
+      },
+    ]);
     expect(
       migrated.query("SELECT key, value FROM credentials ORDER BY key").all(),
     ).toEqual([

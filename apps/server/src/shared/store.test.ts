@@ -481,7 +481,7 @@ describe("Store memory sources", () => {
 
     const db = new Database(join(dir, "store.sqlite"));
     // A server before Drizzle had no migrations table.
-    // Secrets moved out of agent_credentials after the baseline, which had their values in it.
+    // Secrets, requests, and uses moved out of the credential tables after the baseline, which had them.
     db.run(`DROP TABLE __drizzle_migrations;
       ALTER TABLE agent_credentials ADD COLUMN value text;
       DROP TABLE skill_updates;
@@ -502,11 +502,14 @@ describe("Store memory sources", () => {
       DROP TABLE script_runs;
       DROP TABLE desktop_fills;
       DROP TABLE held_actions;
-      DROP TABLE login_requests;
-      DROP TABLE login_uses;
       DROP TABLE logins;
       DROP TABLE password_managers;
-      ALTER TABLE credential_uses DROP COLUMN error;
+      DROP TABLE bot_secret_uses;
+      DROP TABLE bot_secret_requests;
+      CREATE TABLE credential_requests (agent_id text NOT NULL, name text NOT NULL, hosts text NOT NULL, reason text NOT NULL, requested_at text NOT NULL, PRIMARY KEY (agent_id, name), FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE);
+      CREATE TABLE credential_uses (id integer PRIMARY KEY AUTOINCREMENT, agent_id text NOT NULL, name text NOT NULL, at text NOT NULL, method text NOT NULL, host text NOT NULL, path text NOT NULL, status integer, FOREIGN KEY (agent_id, name) REFERENCES agent_credentials(agent_id, name) ON DELETE CASCADE);
+      CREATE INDEX credential_uses_by_credential ON credential_uses (agent_id, name, id);
+      CREATE INDEX credential_uses_by_time ON credential_uses (at);
       ALTER TABLE schedules DROP COLUMN kind;
       ALTER TABLE schedules DROP COLUMN command;
       ALTER TABLE schedules DROP COLUMN timeout_seconds;
@@ -628,7 +631,7 @@ describe("Store group chats", () => {
 
     const db = new Database(join(dir, "store.sqlite"));
     // A server before Drizzle had no migrations table.
-    // Secrets moved out of agent_credentials after the baseline, which had their values in it.
+    // Secrets, requests, and uses moved out of the credential tables after the baseline, which had them.
     db.run(`DROP TABLE __drizzle_migrations;
       ALTER TABLE agent_credentials ADD COLUMN value text;
       DROP TABLE skill_updates;
@@ -649,11 +652,14 @@ describe("Store group chats", () => {
       DROP TABLE script_runs;
       DROP TABLE desktop_fills;
       DROP TABLE held_actions;
-      DROP TABLE login_requests;
-      DROP TABLE login_uses;
       DROP TABLE logins;
       DROP TABLE password_managers;
-      ALTER TABLE credential_uses DROP COLUMN error;
+      DROP TABLE bot_secret_uses;
+      DROP TABLE bot_secret_requests;
+      CREATE TABLE credential_requests (agent_id text NOT NULL, name text NOT NULL, hosts text NOT NULL, reason text NOT NULL, requested_at text NOT NULL, PRIMARY KEY (agent_id, name), FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE);
+      CREATE TABLE credential_uses (id integer PRIMARY KEY AUTOINCREMENT, agent_id text NOT NULL, name text NOT NULL, at text NOT NULL, method text NOT NULL, host text NOT NULL, path text NOT NULL, status integer, FOREIGN KEY (agent_id, name) REFERENCES agent_credentials(agent_id, name) ON DELETE CASCADE);
+      CREATE INDEX credential_uses_by_credential ON credential_uses (agent_id, name, id);
+      CREATE INDEX credential_uses_by_time ON credential_uses (at);
       ALTER TABLE schedules DROP COLUMN kind;
       ALTER TABLE schedules DROP COLUMN command;
       ALTER TABLE schedules DROP COLUMN timeout_seconds;
