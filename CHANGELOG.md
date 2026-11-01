@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- A job's card shows in the chat once, when the bot starts it. Sending to a job, checking its status, or stopping it no longer adds another card, and their tool results no longer carry job details. Only a start ends the bot's turn; after a send, the bot answers in text.
+
 ## 0.4.0
 
 - Commit messages and pull request titles must be [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/). A `commit-msg` hook checks each commit, and the PR title workflow checks titles, both through `.githooks/check-conventional-commit.sh`. Pull requests use the template in `.github/pull_request_template.md`. Node.js is no longer needed for `apps/docs`, except for Wrangler: its scripts run Blume on Bun.

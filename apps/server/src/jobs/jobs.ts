@@ -162,7 +162,7 @@ type JobDetails = {
   conversationId: string;
 };
 
-/** How the tool answers one call: text for the model, and the card's job when the call names one. */
+/** How the tool answers one call: text for the model, and the card's job when the call starts one. */
 type Reply = (text: string, found?: JobInfo) => ToolExecutionResult<JobDetails>;
 
 /** One call of the job tool: the bot it answers, the jobs it read, and how to answer. */
@@ -737,11 +737,7 @@ const stopJob = async (
     context,
   );
 
-  return reply(`Stopped ${name}.`, {
-    name,
-    conversationId: existing.conversationId,
-    status: "idle",
-  });
+  return reply(`Stopped ${name}.`);
 };
 
 /** Starts a job or messages an existing one, admitting its delivery before it answers. */
@@ -848,8 +844,7 @@ const statusReply = async (
     ? found.map((each) => `${each.name}: ${each.status}`).join("\n")
     : `No ${kindState.label}s.`;
 
-  // Details describe one job; a listing has none.
-  return reply(text, name === undefined ? undefined : found[0]);
+  return reply(text);
 };
 
 const jobCardName = (toolName: string, message: ToolResultMessage) => {
@@ -1007,8 +1002,8 @@ const runJobTool = async (
     model: input.model,
   });
 
-  // The card shows the started or messaged job, so the turn ends with it, as after `show`.
-  return result.found
+  // Only a start shows the job's card, once per job; the turn ends with it, as after `show`.
+  return action === "start" && result.found
     ? {
         ...call.reply(result.text, result.found),
         control: { terminate: true },
@@ -1043,7 +1038,7 @@ const jobKindApi = (state: JobKindState) => {
       return () => void state.answerListeners.delete(listener);
     },
 
-    /** The job a successful tool result shows as a card; a listing or a failed call shows none. */
+    /** The job a start shows as a card; other actions and failed calls show none. */
     jobOf: (message: ToolResultMessage): string | undefined =>
       jobCardName(toolName, message),
 
