@@ -28,6 +28,15 @@ export type GitHubIdentity = {
   trailer?: string | undefined;
 };
 
+/** The bots an assignment adds and takes off, from the identity's current bots and the requested ones. */
+export const assignmentChange = (
+  previous: readonly string[],
+  botIds: readonly string[],
+) => ({
+  added: botIds.filter((botId) => !previous.includes(botId)),
+  removed: previous.filter((botId) => !botIds.includes(botId)),
+});
+
 export const noreplyEmail = (userId: number, login: string) =>
   `${userId}+${login}@users.noreply.github.com`;
 

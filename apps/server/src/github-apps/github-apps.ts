@@ -12,6 +12,7 @@ import {
   GITHUB_HOSTS,
   GITHUB_TOKEN_CREDENTIAL,
   GitHubUnavailable,
+  assignmentChange,
   type GitHubIdentity,
   github,
   noreplyEmail,
@@ -453,9 +454,11 @@ export class GitHubApps extends Context.Service<
         if (!found)
           return yield* new NotFound({ message: "GitHub App not found" });
 
-        const previous = yield* botIdsOf(id);
-        const added = botIds.filter((botId) => !previous.includes(botId));
-        const removed = previous.filter((botId) => !botIds.includes(botId));
+        const { added, removed } = assignmentChange(
+          yield* botIdsOf(id),
+          botIds,
+        );
+
         const clashing = yield* clashes(found, added);
 
         if (clashing.length)

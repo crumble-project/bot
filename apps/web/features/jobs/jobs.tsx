@@ -38,6 +38,9 @@ import { Reply } from "@/components/markdown";
 
 export type JobRef = { kind: "coding" | "desktop"; name: string };
 
+const kindLabel = (job: JobRef) =>
+  job.kind === "coding" ? "Coding job" : "Desktop job";
+
 type Block = {
   type?: string;
   text?: string;
@@ -165,12 +168,38 @@ function verbOf(tool: string) {
   return STEPS.get(tool)?.verb ?? tool.charAt(0).toUpperCase() + tool.slice(1);
 }
 
+function StepIcon({ item }: { item: StepItem }) {
+  const Icon = STEPS.get(item.tool)?.icon ?? IconTool;
+
+  return item.result ? (
+    <Icon className="size-4 shrink-0 text-muted-foreground" />
+  ) : (
+    <Spinner className="size-4 shrink-0" />
+  );
+}
+
+function StepSummary({ item, open }: { item: StepItem; open: boolean }) {
+  const Chevron = open ? IconChevronDown : IconChevronRight;
+
+  return (
+    <>
+      <StepIcon item={item} />
+      <span className="shrink-0 font-medium">{verbOf(item.tool)}</span>
+      {item.subject && (
+        <code className="truncate font-mono text-xs text-muted-foreground">
+          {item.subject}
+        </code>
+      )}
+      {item.result?.isError && <Badge variant="destructive">Failed</Badge>}
+      {item.result && (
+        <Chevron className="size-3.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 group-aria-expanded:opacity-100" />
+      )}
+    </>
+  );
+}
+
 function Step({ item }: { item: StepItem }) {
   const [open, setOpen] = useState(false);
-  const verb = verbOf(item.tool);
-  const Icon = STEPS.get(item.tool)?.icon ?? IconTool;
-  const failed = item.result?.isError === true;
-  const Chevron = open ? IconChevronDown : IconChevronRight;
 
   return (
     <div className="flex flex-col gap-1.5 text-sm">
@@ -181,21 +210,7 @@ function Step({ item }: { item: StepItem }) {
         disabled={!item.result}
         onClick={() => setOpen(!open)}
       >
-        {item.result ? (
-          <Icon className="size-4 shrink-0 text-muted-foreground" />
-        ) : (
-          <Spinner className="size-4 shrink-0" />
-        )}
-        <span className="shrink-0 font-medium">{verb}</span>
-        {item.subject && (
-          <code className="truncate font-mono text-xs text-muted-foreground">
-            {item.subject}
-          </code>
-        )}
-        {failed && <Badge variant="destructive">Failed</Badge>}
-        {item.result && (
-          <Chevron className="size-3.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 group-aria-expanded:opacity-100" />
-        )}
+        <StepSummary item={item} open={open} />
       </button>
       {open && item.result && (
         <pre className="ml-6 overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs whitespace-pre-wrap">
@@ -382,7 +397,7 @@ async function fullHistory(botId: string, job: JobRef) {
 
 async function downloadTranscript(botId: string, job: JobRef) {
   const messages = await fullHistory(botId, job);
-  const kind = job.kind === "coding" ? "Coding job" : "Desktop job";
+  const kind = kindLabel(job);
 
   const markdown = [`# ${job.name}`, kind, ...messages.flatMap(messageMarkdown)]
     .join("\n\n")
@@ -430,6 +445,60 @@ function useLiveJob(botId: string, job: JobRef) {
   return jobs.data?.find((each) => each.name === job.name);
 }
 
+function JobTitle({
+  job,
+  current,
+}: {
+  job: JobRef;
+  current: CodingJob | undefined;
+}) {
+  const Icon = job.kind === "coding" ? IconHammer : IconDeviceDesktop;
+
+  const subtitle = [
+    kindLabel(job),
+    current?.model?.model,
+    usageLine(current?.usage),
+  ];
+
+  return (
+    <>
+      <Icon className="size-4 shrink-0 text-muted-foreground" />
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate font-heading font-semibold leading-tight">
+          {job.name}
+        </span>
+        <span className="truncate text-xs text-muted-foreground">
+          {subtitle.filter(Boolean).join(" · ")}
+        </span>
+      </span>
+    </>
+  );
+}
+
+function DownloadButton({ botId, job }: { botId: string; job: JobRef }) {
+  // Reads every page on demand; nothing cached changes.
+  // react-doctor-disable-next-line query-mutation-missing-invalidation
+  const download = useMutation({
+    mutationFn: () => downloadTranscript(botId, job),
+  });
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      title={
+        download.isError
+          ? "Couldn't download the transcript. Try again."
+          : "Download transcript"
+      }
+      disabled={download.isPending}
+      onClick={() => download.mutate()}
+    >
+      {download.isPending ? <Spinner /> : <IconDownload />}
+    </Button>
+  );
+}
+
 /** A job's task, replies and tool steps, read-only, in a pane beside the chat. */
 export function JobPanel({
   botId,
@@ -443,14 +512,6 @@ export function JobPanel({
   const current = useLiveJob(botId, job);
   const working = current?.status === "working";
   const { history, items } = useJobHistory(botId, job, current?.status);
-  const cost = usageLine(current?.usage);
-  const Icon = job.kind === "coding" ? IconHammer : IconDeviceDesktop;
-
-  // Reads every page on demand; nothing cached changes.
-  // react-doctor-disable-next-line query-mutation-missing-invalidation
-  const download = useMutation({
-    mutationFn: () => downloadTranscript(botId, job),
-  });
 
   return (
     <aside
@@ -458,21 +519,7 @@ export function JobPanel({
       className="flex min-h-0 flex-col border-l bg-background max-lg:fixed max-lg:inset-0 max-lg:z-40 lg:w-[min(42rem,50%)] lg:shrink-0"
     >
       <header className="flex h-14 shrink-0 items-center gap-2.5 border-b px-4">
-        <Icon className="size-4 shrink-0 text-muted-foreground" />
-        <span className="flex min-w-0 flex-col">
-          <span className="truncate font-heading font-semibold leading-tight">
-            {job.name}
-          </span>
-          <span className="truncate text-xs text-muted-foreground">
-            {[
-              job.kind === "coding" ? "Coding job" : "Desktop job",
-              current?.model?.model,
-              cost,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </span>
-        </span>
+        <JobTitle job={job} current={current} />
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <span className="mr-1">
             <JobStatus working={working} />
@@ -488,19 +535,7 @@ export function JobPanel({
               <IconDeviceDesktop />
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            title={
-              download.isError
-                ? "Couldn't download the transcript. Try again."
-                : "Download transcript"
-            }
-            disabled={download.isPending}
-            onClick={() => download.mutate()}
-          >
-            {download.isPending ? <Spinner /> : <IconDownload />}
-          </Button>
+          <DownloadButton botId={botId} job={job} />
           <Button
             variant="ghost"
             size="icon-sm"
@@ -514,7 +549,7 @@ export function JobPanel({
       <JobHistoryBody
         history={history}
         items={items}
-        label={job.kind === "coding" ? "coding job" : "desktop job"}
+        label={kindLabel(job).toLowerCase()}
         working={working}
       />
     </aside>

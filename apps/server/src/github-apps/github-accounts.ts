@@ -6,7 +6,7 @@ import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
 import { nowIso } from "../shared/time";
 import { Conflict, InvalidInput, NotFound } from "../shared/errors";
-import { GitHubUnavailable, github } from "./github-api";
+import { GitHubUnavailable, assignmentChange, github } from "./github-api";
 import { githubAccountBots, githubAccounts } from "./schema";
 
 /** A machine account as the owner sees it; its token never leaves the server. */
@@ -202,9 +202,10 @@ export class GitHubAccounts extends Context.Service<
         if (!(yield* row(id)))
           return yield* new NotFound({ message: "Machine account not found" });
 
-        const previous = yield* botIdsOf(id);
-        const added = botIds.filter((botId) => !previous.includes(botId));
-        const removed = previous.filter((botId) => !botIds.includes(botId));
+        const { added, removed } = assignmentChange(
+          yield* botIdsOf(id),
+          botIds,
+        );
 
         const clashing = added.length
           ? yield* db
