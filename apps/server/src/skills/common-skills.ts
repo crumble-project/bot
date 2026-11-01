@@ -64,14 +64,31 @@ function unquote(value: string) {
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
+const BLOCK_SCALAR = /^[|>][+-]?$/;
+
+/** The indented lines after `start` of a `key: >` or `key: |` value, folded into one line. */
+function blockValue(lines: string[], start: number) {
+  const rest = lines.slice(start);
+  const end = rest.findIndex((line) => line.trim() && !/^\s/.test(line));
+
+  return (end === -1 ? rest : rest.slice(0, end))
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
 function frontmatterFields(lines: string[]) {
   const fields = new Map<string, string>();
 
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
     const field = line.match(/^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$/);
 
     if (!field) continue;
-    const value = unquote(field[2] ?? "");
+    const raw = (field[2] ?? "").trim();
+
+    const value = BLOCK_SCALAR.test(raw)
+      ? blockValue(lines, index + 1)
+      : unquote(raw);
 
     if (value) fields.set(field[1]!, value);
   }
@@ -79,8 +96,8 @@ function frontmatterFields(lines: string[]) {
   return fields;
 }
 
-/** The frontmatter fields and the instructions that follow them. */
-function splitFrontmatter(source: string, file: string) {
+/** A SKILL.md's frontmatter fields and the instructions after them; null when the frontmatter never closes. */
+export function parseSkillMarkdown(source: string) {
   const trimmed = source.trim();
 
   if (!trimmed.startsWith("---\n") && !trimmed.startsWith("---\r\n"))
@@ -88,7 +105,7 @@ function splitFrontmatter(source: string, file: string) {
 
   const match = trimmed.match(FRONTMATTER);
 
-  if (!match) throw new Error(`Invalid common skill frontmatter: ${file}`);
+  if (!match) return null;
 
   return {
     fields: frontmatterFields(match[1]!.split(/\r?\n/)),
@@ -106,7 +123,10 @@ function parseSkill(
   if (Buffer.byteLength(source, "utf8") > MAX_FILE_BYTES)
     throw new Error(`Common skill is too large: ${file}`);
 
-  const { fields, body } = splitFrontmatter(source, file);
+  const parsed = parseSkillMarkdown(source);
+
+  if (!parsed) throw new Error(`Invalid common skill frontmatter: ${file}`);
+  const { fields, body } = parsed;
 
   if (!body) throw new Error(`Common skill has no instructions: ${file}`);
   const path = relative(root, file);

@@ -54,6 +54,14 @@ _Avoid_: Global, public
 A package of instructions for a class of task: a main document with a name and description, plus optional reference documents loaded only when needed. A skill is a default, shared, or a bot's own.
 _Avoid_: Prompt snippet, plugin
 
+**Installed skill**:
+A shared skill installed from a folder in a public GitHub repository. Nobody can edit it; the owner updates it from upstream or makes an editable copy.
+_Avoid_: Imported skill, remote skill
+
+**Pinned skill**:
+A bot's own skill the owner pinned: bots and reviews can't change it, and cleanup leaves it alone. The owner can still edit it.
+_Avoid_: Locked skill, immutable skill
+
 **Learned change**:
 A change a bot or its review made to its own skills or memory, recorded with its source and reversible by the owner.
 _Avoid_: Auto-save, self-update

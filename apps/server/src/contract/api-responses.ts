@@ -621,6 +621,35 @@ export const skillDocumentResponse = z
   .object({ path: z.string(), content: z.string() })
   .openapi("SkillDocument");
 
+export const skillOriginResponse = z
+  .object({
+    repository: z.string().openapi({ description: "`owner/repo`." }),
+    branch: z.string(),
+    path: z
+      .string()
+      .openapi({ description: "The skill's folder; empty for the root." }),
+    commit: z.string(),
+    digest: z.string().openapi({
+      description:
+        "Fingerprint of the imported files; an update is available when upstream's differs.",
+    }),
+  })
+  .openapi("SkillOrigin", {
+    description:
+      "Where an installed skill came from. Installed skills are read-only.",
+  });
+
+export const skillUpdateResponse = z
+  .object({
+    commit: z.string(),
+    removed: z.boolean().openapi({
+      description: "The skill's folder is gone from the branch.",
+    }),
+  })
+  .openapi("SkillUpdate", {
+    description: "The newer upstream commit of an installed skill.",
+  });
+
 // The published shape of a skill, kept as is: ListedSkill refers to it, and a changed member of that union would be
 // a breaking change. Responses permit additional properties, so handlers return the full package anyway.
 export const skillResponse = z
@@ -651,12 +680,18 @@ export const skillPackageResponse = z
     lastUsedAt: z.string().nullable(),
     state: z.enum(["active", "stale", "archived"]),
     pinned: z.boolean(),
+    origin: skillOriginResponse.nullable().optional(),
   })
   .openapi("SkillPackage");
 
 export const listedSkillResponse = z
   .discriminatedUnion("source", [
-    skillResponse.extend({ source: z.literal("shared") }),
+    skillResponse.extend({
+      source: z.literal("shared"),
+      description: z.string().optional(),
+      origin: skillOriginResponse.nullable().optional(),
+      update: skillUpdateResponse.nullable().optional(),
+    }),
     z.object({
       id: z.string(),
       name: z.string(),

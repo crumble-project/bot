@@ -40,6 +40,13 @@ import {
   githubAppResponse,
   githubAppsResponse,
 } from "./github-apps";
+import {
+  pendingSkillUpdateResponse,
+  skillCheckResponse,
+  skillInstallInput,
+  skillListingResponse,
+  skillLocationInput,
+} from "./skill-install";
 
 export type BotInput = z.input<typeof agentInput>;
 
@@ -1109,6 +1116,52 @@ export const routes = {
     operationId: "deleteSkill",
     request: { params: id },
     responses: { 204: empty },
+  }),
+  browseSkillRepository: define({
+    method: "post",
+    path: "/v1/skills/github/browse",
+    operationId: "browseSkillRepository",
+    description:
+      "Lists the skills in a public GitHub repository: every folder with a SKILL.md, and whether each can be installed.",
+    request: { body: body(skillLocationInput) },
+    responses: { 200: json(skillListingResponse) },
+  }),
+  installSkills: define({
+    method: "post",
+    path: "/v1/skills/github/install",
+    operationId: "installSkills",
+    description:
+      "Installs skills from one commit of a public GitHub repository as read-only shared skills, all or none, and turns them on for `botIds`.",
+    request: { body: body(skillInstallInput) },
+    responses: {
+      201: json(z.array(response.skillPackageResponse)),
+      409: json(error, "A skill is already installed or its name is taken"),
+    },
+  }),
+  checkSkillUpdates: define({
+    method: "post",
+    path: "/v1/skills/updates/check",
+    operationId: "checkSkillUpdates",
+    description:
+      "Checks every installed skill's branch for changes now. The server also checks daily; GET /v1/skills shows the results as `update`.",
+    responses: { 200: json(skillCheckResponse) },
+  }),
+  pendingSkillUpdate: define({
+    method: "get",
+    path: "/v1/skills/{id}/update",
+    operationId: "getPendingSkillUpdate",
+    description: "The upstream version an installed skill would update to.",
+    request: { params: id },
+    responses: { 200: json(pendingSkillUpdateResponse) },
+  }),
+  applySkillUpdate: define({
+    method: "post",
+    path: "/v1/skills/{id}/update",
+    operationId: "applySkillUpdate",
+    description:
+      "Replaces an installed skill with its upstream version, recorded as a change the owner can revert.",
+    request: { params: id },
+    responses: { 200: json(response.skillPackageResponse) },
   }),
   schedules: define({
     method: "get",

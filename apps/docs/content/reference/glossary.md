@@ -79,6 +79,18 @@ A package of instructions for a class of task: a main document with a name and d
 
 Avoid: Prompt snippet, plugin.
 
+### Installed skill
+
+A shared skill installed from a folder in a public GitHub repository. Nobody can edit it; the owner updates it from upstream or makes an editable copy.
+
+Avoid: Imported skill, remote skill.
+
+### Pinned skill
+
+A bot's own skill the owner pinned: bots and reviews can't change it, and cleanup leaves it alone. The owner can still edit it.
+
+Avoid: Locked skill, immutable skill.
+
 ### Learned change
 
 A change a bot or its review made to its own skills or memory, recorded with its source and reversible by the owner.
