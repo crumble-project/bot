@@ -15,6 +15,7 @@ import {
   type GitHubIdentity,
   github,
   noreplyEmail,
+  pendingState,
 } from "./github-api";
 import { GitHubAppUsers, authorizedPath } from "./github-app-users";
 import { githubAppBots, githubApps } from "./schema";
@@ -82,7 +83,7 @@ const installations = z.array(
 
 const accessToken = z.object({ token: z.string(), expires_at: z.string() });
 
-const pendingState = z.object({ createdAt: z.number() });
+const manifestState = z.object({ createdAt: z.number() });
 
 const stateKey = (state: string) => `github-app-state:${state}`;
 
@@ -326,15 +327,14 @@ export class GitHubApps extends Context.Service<
         code: string;
         state: string;
       }) {
-        const raw = yield* secrets.get(stateKey(input.state));
+        const pending = yield* pendingState(
+          secrets,
+          stateKey(input.state),
+          manifestState,
+          STATE_TTL_MS,
+        );
 
-        const pending = raw
-          ? pendingState.safeParse(JSON.parse(raw))
-          : undefined;
-
-        const now = yield* Clock.currentTimeMillis;
-
-        if (!pending?.success || now - pending.data.createdAt > STATE_TTL_MS)
+        if (!pending)
           return yield* new InvalidInput({
             message:
               "This GitHub link is stale or was already used; start again",

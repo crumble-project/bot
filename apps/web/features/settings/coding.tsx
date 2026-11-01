@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { UseNavigateResult } from "@tanstack/react-router";
 import { IconBrandGithub, IconPencil, IconTrash } from "@tabler/icons-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Field,
   FieldDescription,
@@ -71,16 +71,14 @@ function GitHubTile() {
 
 function InstallButton({ app }: { app: GitHubApp }) {
   return (
-    <Button
-      size="sm"
-      variant="outline"
-      nativeButton={false}
+    <a
+      href={app.installUrl}
+      className={buttonVariants({ size: "sm", variant: "outline" })}
       // Same tab: GitHub returns to /ui/github-app/installed, which reads the App from this tab's sessionStorage.
       onClick={() => sessionStorage.setItem(INSTALLING_KEY, app.id)}
-      render={<a href={app.installUrl} />}
     >
       Install
-    </Button>
+    </a>
   );
 }
 
@@ -218,6 +216,7 @@ function BotsField({
   description: string;
 }) {
   const bots = useQuery(botsQuery);
+  const selected = new Set(botIds);
 
   return (
     <Field>
@@ -229,7 +228,7 @@ function BotsField({
             key={bot.id}
             id={`github-bot-${bot.id}`}
             bot={bot}
-            checked={botIds.includes(bot.id)}
+            checked={selected.has(bot.id)}
             onChange={(on) =>
               onChange(
                 on
@@ -332,8 +331,7 @@ function ClientSecretForm({ app }: { app: GitHubApp }) {
   );
 }
 
-/** Whether the App's bots act as the App's `slug[bot]` user or as the owner, signed in through the App. */
-function ActAsField({ app }: { app: GitHubApp }) {
+function SignInButton({ app }: { app: GitHubApp }) {
   const signIn = useMutation({
     mutationFn: async () => {
       const { url } = await call<{ url: string }, { origin: string }>(
@@ -346,54 +344,73 @@ function ActAsField({ app }: { app: GitHubApp }) {
     },
   });
 
+  return (
+    <>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={signIn.isPending}
+        onClick={() => signIn.mutate()}
+      >
+        {signIn.isPending && <Spinner data-icon="inline-start" />}
+        Sign in as me
+      </Button>
+      {signIn.error && <FieldError>{signIn.error.message}</FieldError>}
+    </>
+  );
+}
+
+function SignOutButton({ app }: { app: GitHubApp }) {
   const signOut = useMutation({
     mutationFn: () => send(`${githubAppPath(app.id)}/user`, "DELETE"),
     onSuccess: refresh,
   });
 
-  const error = signIn.error ?? signOut.error;
-
   return (
-    <Field>
-      <FieldLabel>Bots act as</FieldLabel>
-      <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 text-sm">
-          {app.user ? `${app.user}, marked as ${app.login}` : app.login}
-        </span>
-        {app.user ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={signOut.isPending}
-            onClick={() => signOut.mutate()}
-          >
-            Sign out
-          </Button>
-        ) : (
-          app.hasClientSecret && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={signIn.isPending}
-              onClick={() => signIn.mutate()}
-            >
-              {signIn.isPending && <Spinner data-icon="inline-start" />}
-              Sign in as me
-            </Button>
-          )
-        )}
-      </div>
-      {app.user && (
+    <>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={signOut.isPending}
+        onClick={() => signOut.mutate()}
+      >
+        Sign out
+      </Button>
+      {signOut.error && <FieldError>{signOut.error.message}</FieldError>}
+    </>
+  );
+}
+
+/** Whether the App's bots act as the App's `slug[bot]` user or as the owner, signed in through the App. */
+function ActAsField({ app }: { app: GitHubApp }) {
+  if (app.user)
+    return (
+      <Field>
+        <FieldLabel>Bots act as</FieldLabel>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="min-w-0 flex-1 text-sm">
+            {app.user}, marked as {app.login}
+          </span>
+          <SignOutButton app={app} />
+        </div>
         <FieldDescription>
           GitHub shows their pull requests and comments with the App's badge,
           and their commits list {app.login} as co-author.
         </FieldDescription>
-      )}
-      {!app.user && <CallbackUrl />}
-      {!app.user && !app.hasClientSecret && <ClientSecretForm app={app} />}
-      {error && <FieldError>{error.message}</FieldError>}
+      </Field>
+    );
+
+  return (
+    <Field>
+      <FieldLabel>Bots act as</FieldLabel>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="min-w-0 flex-1 text-sm">{app.login}</span>
+        {app.hasClientSecret && <SignInButton app={app} />}
+      </div>
+      <CallbackUrl />
+      {!app.hasClientSecret && <ClientSecretForm app={app} />}
     </Field>
   );
 }

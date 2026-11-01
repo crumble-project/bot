@@ -1,5 +1,6 @@
-import { Effect, Schema } from "effect";
+import { Clock, Effect, Schema } from "effect";
 import type { z } from "zod";
+import type { SecretRepository } from "../credentials/secret-repository";
 
 const API = "https://api.github.com";
 
@@ -69,3 +70,20 @@ export const github = <T>(
           ),
     ),
   );
+
+/** The state saved before sending the owner to GitHub; undefined when unknown or older than `ttlMs`. */
+export const pendingState = <T extends { createdAt: number }>(
+  secrets: SecretRepository["Service"],
+  key: string,
+  schema: z.ZodType<T>,
+  ttlMs: number,
+) =>
+  Effect.gen(function* () {
+    const raw = yield* secrets.get(key);
+    const parsed = raw ? schema.safeParse(JSON.parse(raw)) : undefined;
+    const now = yield* Clock.currentTimeMillis;
+
+    return parsed?.success && now - parsed.data.createdAt <= ttlMs
+      ? parsed.data
+      : undefined;
+  });

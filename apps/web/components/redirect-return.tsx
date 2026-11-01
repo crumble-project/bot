@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Link,
   useNavigate,
@@ -27,18 +27,20 @@ export function RedirectReturn({
   backLabel: string;
 }) {
   const navigate = useNavigate();
-  const started = useRef(false);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // StrictMode runs effects twice; a code can be exchanged only once.
-    if (started.current) return;
-    started.current = true;
+  // A query, not an effect: its cache runs the exchange once per redirect, also under StrictMode, since a code works once.
+  const done = useQuery({
+    queryKey: ["redirect-return", location.pathname, location.search],
+    queryFn: () =>
+      finish(new URLSearchParams(location.search), navigate).then(() => null),
+    retry: false,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
 
-    finish(new URLSearchParams(location.search), navigate).catch(
-      (failure: Error) => setError(failure.message),
-    );
-  }, [finish, navigate]);
+  const error = done.error?.message;
 
   return (
     <div className="m-auto flex max-w-sm flex-col items-center gap-4 p-6 text-center">

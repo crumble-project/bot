@@ -6,7 +6,7 @@ import { SecretRepository } from "../credentials/secret-repository";
 import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
 import { Conflict, InvalidInput, NotFound } from "../shared/errors";
-import { GitHubUnavailable, github } from "./github-api";
+import { GitHubUnavailable, github, pendingState } from "./github-api";
 import { githubAppUsers, githubApps } from "./schema";
 
 /** Where GitHub sends the owner back after signing in through an App; each App lists it as a callback URL. */
@@ -20,7 +20,7 @@ const STATE_TTL_MS = 10 * 60 * 1000;
 
 const stateKey = (state: string) => `github-app-user-state:${state}`;
 
-const pendingState = z.object({
+const signInState = z.object({
   appId: z.string(),
   verifier: z.string(),
   redirectUri: z.string(),
@@ -207,23 +207,22 @@ export class GitHubAppUsers extends Context.Service<
         code: string;
         state: string;
       }) {
-        const raw = yield* secrets.get(stateKey(input.state));
-
-        const pending = raw
-          ? pendingState.safeParse(JSON.parse(raw))
-          : undefined;
-
-        const now = yield* Clock.currentTimeMillis;
+        const pending = yield* pendingState(
+          secrets,
+          stateKey(input.state),
+          signInState,
+          STATE_TTL_MS,
+        );
 
         yield* secrets.delete(stateKey(input.state));
 
-        if (!pending?.success || now - pending.data.createdAt > STATE_TTL_MS)
+        if (!pending)
           return yield* new InvalidInput({
             message:
               "This GitHub sign-in is stale or was already used; start again",
           });
 
-        const found = yield* app(pending.data.appId);
+        const found = yield* app(pending.appId);
 
         if (!found?.clientSecret)
           return yield* new InvalidInput({
@@ -234,8 +233,8 @@ export class GitHubAppUsers extends Context.Service<
           client_id: found.clientId,
           client_secret: box.decrypt(found.clientSecret),
           code: input.code,
-          redirect_uri: pending.data.redirectUri,
-          code_verifier: pending.data.verifier,
+          redirect_uri: pending.redirectUri,
+          code_verifier: pending.verifier,
         });
 
         if ("error" in answer)
