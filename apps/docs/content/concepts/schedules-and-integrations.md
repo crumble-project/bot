@@ -10,8 +10,10 @@ schedule, to your other bots, and to outside tools.
 
 ## Automations
 
-An automation is work a bot does at a set time, once or on a cron schedule.
-Every bot can have automations, with no capability to turn on.
+An automation is work a bot does at a set time, once or on a cron schedule,
+or each time a webhook arrives. Every bot can have automations, with no
+capability to turn on. For webhooks, see
+[Event automations](/concepts/event-automations).
 
 The easiest way to make one is to ask, such as "Every Monday at 9, summarize
 my open pull requests." You can also select **New automation** on the

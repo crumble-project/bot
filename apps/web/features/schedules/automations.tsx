@@ -7,7 +7,7 @@ import {
   useQueries,
   useQuery,
 } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   IconCircleCheck,
   IconCircleCheckFilled,
@@ -77,12 +77,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   type Bot,
+  type EventSource,
   type Execution,
   type Schedule,
   type ScriptRun,
   botsQuery,
   call,
   capabilitiesQuery,
+  eventSourcesQuery,
   executionsQuery,
   queryClient,
   schedulesQuery,
@@ -124,7 +126,15 @@ export function describeCron(cron: string, timezone: string) {
   }
 }
 
-export function describeTiming(schedule: Schedule) {
+export function describeTiming(schedule: Schedule, sources?: EventSource[]) {
+  if (schedule.eventSourceId) {
+    const source = sources?.find((each) => each.id === schedule.eventSourceId);
+
+    return source
+      ? `When an event arrives at ${source.name}`
+      : "When an event arrives";
+  }
+
   if (schedule.cron) return describeCron(schedule.cron, schedule.timezone);
 
   if (!schedule.runAt) return "Once";
@@ -143,8 +153,8 @@ export function describeTiming(schedule: Schedule) {
 }
 
 /** An automation's timing as the Mac app shows it, prefixed "Paused · " when disabled. */
-export function automationTiming(schedule: Schedule) {
-  return `${schedule.enabled ? "" : "Paused · "}${describeTiming(schedule)}`;
+export function automationTiming(schedule: Schedule, sources?: EventSource[]) {
+  return `${schedule.enabled ? "" : "Paused · "}${describeTiming(schedule, sources)}`;
 }
 
 function validZone(zone: string) {
@@ -204,7 +214,7 @@ type Editing = { schedule: Schedule | null; agentId: string };
 
 /** A one-off automation that already ran; its result is in the bot's chat. */
 export const finished = (schedule: Schedule) =>
-  !schedule.cron && !schedule.nextRunAt;
+  !schedule.cron && !schedule.eventSourceId && !schedule.nextRunAt;
 
 type Status = "active" | "paused" | "completed";
 
@@ -550,6 +560,8 @@ function AutomationName({
   creator?: Bot | undefined;
   failure?: Error | null;
 }) {
+  const sources = useQuery(eventSourcesQuery).data;
+
   return (
     <div className="flex min-w-0 items-center gap-3">
       <BotAvatar
@@ -569,7 +581,10 @@ function AutomationName({
         <span className="truncate text-muted-foreground">
           {bot.name}
           {creator && ` · by ${creator.name}`}
-          <span className="md:hidden"> · {describeTiming(schedule)}</span>
+          <span className="md:hidden">
+            {" "}
+            · {describeTiming(schedule, sources)}
+          </span>
         </span>
         {failure && (
           <span className="truncate text-xs text-destructive">
@@ -660,6 +675,7 @@ function AutomationRow({
 }) {
   const actions = useAutomationActions(schedule);
   const { toggle, run, remove } = actions;
+  const sources = useQuery(eventSourcesQuery).data;
   const [deleting, setDeleting] = useState(false);
 
   return (
@@ -673,7 +689,7 @@ function AutomationRow({
         />
       </TableCell>
       <TableCell className="hidden max-w-64 truncate text-muted-foreground md:table-cell">
-        {describeTiming(schedule)}
+        {describeTiming(schedule, sources)}
       </TableCell>
       <TableCell className="hidden text-muted-foreground tabular-nums sm:table-cell">
         {nextRunLabel(schedule, now)}
@@ -971,6 +987,8 @@ type AutomationDraft = {
   cron: string;
   timezone: string;
   runAt: string;
+  onEvent: boolean;
+  eventSourceId: string;
 };
 
 type AutomationBody = {
@@ -985,6 +1003,7 @@ type AutomationBody = {
   enabled: boolean;
   cron: string | null;
   runAt: string | null;
+  eventSourceId: string | null;
 };
 
 const DEFAULT_CRON = "0 9 * * *";
@@ -1003,6 +1022,8 @@ function blankDraft(agentId: string): AutomationDraft {
     cron: DEFAULT_CRON,
     timezone: LOCAL_ZONE,
     runAt: inOneHour(LOCAL_ZONE),
+    onEvent: false,
+    eventSourceId: "",
   };
 }
 
@@ -1022,6 +1043,8 @@ function draftOf(agentId: string, schedule: Schedule): AutomationDraft {
     runAt: schedule.runAt
       ? wallClock(new Date(schedule.runAt), schedule.timezone)
       : inOneHour(schedule.timezone),
+    onEvent: schedule.eventSourceId !== null,
+    eventSourceId: schedule.eventSourceId ?? "",
   };
 }
 
@@ -1032,6 +1055,9 @@ function initialDraft(editing: Editing) {
 }
 
 function runTimeError(draft: AutomationDraft) {
+  if (draft.onEvent)
+    return draft.eventSourceId ? null : "Choose an event source.";
+
   if (draft.repeat ? !draft.cron.trim() : !draft.runAt)
     return "Choose either a recurring cron or a one-time run time.";
 
@@ -1073,6 +1099,35 @@ function kindFields(
   return { fields: { prompt: "", command: draft.command, timeoutSeconds } };
 }
 
+type Trigger = Pick<AutomationBody, "cron" | "runAt" | "eventSourceId">;
+
+function triggerFields(
+  draft: AutomationDraft,
+  timezone: string,
+): { error: string } | { trigger: Trigger } {
+  if (draft.onEvent)
+    return {
+      trigger: { cron: null, runAt: null, eventSourceId: draft.eventSourceId },
+    };
+
+  if (draft.repeat)
+    return {
+      trigger: { cron: draft.cron.trim(), runAt: null, eventSourceId: null },
+    };
+
+  const instant = fromWallClock(draft.runAt, timezone);
+
+  return instant
+    ? {
+        trigger: {
+          cron: null,
+          runAt: instant.toISOString(),
+          eventSourceId: null,
+        },
+      }
+    : { error: "Choose a valid date and time." };
+}
+
 function automationBody(
   draft: AutomationDraft,
 ): { error: string } | { body: AutomationBody } {
@@ -1085,10 +1140,9 @@ function automationBody(
   if (error) return { error };
 
   const timezone = draft.timezone.trim();
-  const instant = draft.repeat ? null : fromWallClock(draft.runAt, timezone);
+  const when = triggerFields(draft, timezone);
 
-  if (!draft.repeat && !instant)
-    return { error: "Choose a valid date and time." };
+  if ("error" in when) return when;
 
   return {
     body: {
@@ -1099,8 +1153,7 @@ function automationBody(
       notify: draft.notify,
       timezone,
       enabled: draft.enabled,
-      cron: draft.repeat ? draft.cron.trim() : null,
-      runAt: instant?.toISOString() ?? null,
+      ...when.trigger,
     },
   };
 }
@@ -1118,6 +1171,7 @@ function useSaveAutomation(schedule: Schedule | null, onClose: () => void) {
             ...body,
             cron: body.cron ?? undefined,
             runAt: body.runAt ?? undefined,
+            eventSourceId: body.eventSourceId ?? undefined,
           }),
     onSuccess: async () => {
       await refresh();
@@ -1363,13 +1417,14 @@ function switchedTo(
 
 const pad = (value: number) => String(value).padStart(2, "0");
 
-type When = "once" | RepeatKind;
+type When = "once" | RepeatKind | "event";
 
 const WHEN = [
   { value: "once", label: "Once" },
   ...REPEATS.map((item) =>
     item.value === "custom" ? { ...item, label: "Custom (cron)" } : item,
   ),
+  { value: "event", label: "When an event arrives" },
 ];
 
 const MINUTES = Array.from({ length: 12 }, (_, index) => ({
@@ -1673,11 +1728,13 @@ function BotChoice({ bot }: { bot: Bot }) {
 }
 
 const whenOf = (
-  repeat: boolean,
+  draft: AutomationDraft,
   custom: boolean,
   recurrence: Recurrence | null,
 ): When => {
-  if (!repeat) return "once";
+  if (draft.onEvent) return "event";
+
+  if (!draft.repeat) return "once";
 
   return custom || !recurrence ? "custom" : recurrence.kind;
 };
@@ -1687,13 +1744,19 @@ function whenPatch(
   value: string,
   recurrence: Recurrence | null,
 ): Partial<AutomationDraft> {
-  if (value === "once") return { repeat: false };
+  if (value === "event") return { onEvent: true };
+
+  if (value === "once") return { onEvent: false, repeat: false };
 
   const picked = KINDS.find((each) => each === value);
 
   return picked
-    ? { repeat: true, cron: cronOf(switchedTo(picked, recurrence)) }
-    : { repeat: true };
+    ? {
+        onEvent: false,
+        repeat: true,
+        cron: cronOf(switchedTo(picked, recurrence)),
+      }
+    : { onEvent: false, repeat: true };
 }
 
 function WhenDetails({
@@ -1707,6 +1770,14 @@ function WhenDetails({
   recurrence: Recurrence | null;
   patch: (change: Partial<AutomationDraft>) => void;
 }) {
+  if (when === "event")
+    return (
+      <EventSourcePicker
+        value={draft.eventSourceId}
+        onChange={(eventSourceId) => patch({ eventSourceId })}
+      />
+    );
+
   if (when === "once")
     return (
       <Input
@@ -1724,6 +1795,42 @@ function WhenDetails({
     <RecurrenceParts
       recurrence={recurrence}
       onChange={(next) => patch({ repeat: true, cron: cronOf(next) })}
+    />
+  );
+}
+
+function EventSourcePicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (eventSourceId: string) => void;
+}) {
+  const sources = useQuery(eventSourcesQuery);
+
+  if (sources.data?.length === 0)
+    return (
+      <span className="text-sm text-muted-foreground">
+        Add a source in{" "}
+        <Link to="/settings/event-relay" className="underline">
+          Settings › Event relay
+        </Link>{" "}
+        first.
+      </span>
+    );
+
+  return (
+    <InlineSelect
+      label="Event source"
+      value={value}
+      items={[
+        ...(value ? [] : [{ value: "", label: "Choose a source" }]),
+        ...(sources.data ?? []).map((source) => ({
+          value: source.id,
+          label: source.name,
+        })),
+      ]}
+      onChange={onChange}
     />
   );
 }
@@ -1762,7 +1869,7 @@ function ScheduleFields({
   const recurrence = recurrenceOf(draft.cron);
   // Custom stays chosen even when the typed cron happens to fit a simple shape.
   const [custom, setCustom] = useState(draft.repeat && recurrence === null);
-  const when = whenOf(draft.repeat, custom, recurrence);
+  const when = whenOf(draft, custom, recurrence);
 
   return (
     <>
@@ -1784,7 +1891,14 @@ function ScheduleFields({
         />
       </div>
       {when === "custom" && <CronField draft={draft} patch={patch} />}
-      <NextRun draft={draft} />
+      {when === "event" ? (
+        <p className="text-sm text-muted-foreground">
+          Runs each time an event arrives. The bot gets the event's headers and
+          body after the prompt, marked as untrusted data.
+        </p>
+      ) : (
+        <NextRun draft={draft} />
+      )}
     </>
   );
 }

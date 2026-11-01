@@ -497,11 +497,21 @@ function botRequestNotice(message: Message) {
   return message.requestId?.startsWith("bot-request:") === true;
 }
 
-function originContent(origin: NonNullable<Message["origin"]>) {
-  if (origin.kind === "task") return `Automation · ${origin.name ?? ""}`;
+function automationOrigin(origin: NonNullable<Message["origin"]>) {
+  const name = origin.name ?? "";
 
-  if (origin.kind === "script")
-    return `Script automation · ${origin.name ?? ""}`;
+  if (origin.kind === "task") return `Automation · ${name}`;
+
+  if (origin.kind === "event")
+    return `Automation · ${name}, event from ${origin.source ?? "a deleted source"}`;
+
+  return origin.kind === "script" ? `Script automation · ${name}` : null;
+}
+
+function originContent(origin: NonNullable<Message["origin"]>) {
+  const automation = automationOrigin(origin);
+
+  if (automation) return automation;
 
   if (origin.kind === "credential")
     return (

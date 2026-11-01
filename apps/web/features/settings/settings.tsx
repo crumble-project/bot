@@ -28,6 +28,7 @@ import {
   IconWorld,
   IconScale,
   IconMessages,
+  IconWebhook,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -102,6 +103,7 @@ const SECTIONS = [
     label: "Message gateways",
     icon: IconMessages,
   },
+  { to: "/settings/event-relay", label: "Event relay", icon: IconWebhook },
   { to: "/settings/skills", label: "Skills", icon: IconSparkles },
 ] as const;
 
