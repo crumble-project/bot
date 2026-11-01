@@ -26,10 +26,8 @@ import {
   type ProviderCredentialStore,
 } from "./provider-credentials";
 import { ProviderModels } from "./providers";
-import { PasswordManagers } from "../password-managers/password-manager";
-import { checkSecretReference } from "../password-managers/secret-references";
-import type { SecretReference } from "../shared/domain";
-import { SecretValues } from "../password-managers/secret-values";
+import type { Secrets } from "../password-managers/secrets";
+import type { SecretInput } from "../shared/domain";
 import {
   InvalidInput,
   NotFound,
@@ -140,19 +138,11 @@ export class ProviderSignIns extends Context.Service<
     readonly cancel: (
       sessionId: string,
     ) => Effect.Effect<LoginSession, AppError>;
-    /** Replaces the saved credential; a pending sign-in for the provider can no longer save its result. */
+    /** Replaces the saved credential with an API key; a pending sign-in for the provider can no longer save its result. */
     readonly setApiKey: (
       providerId: string,
-      key: string,
-    ) => Effect.Effect<void>;
-    /**
-     * Reads the API key from a password manager from now on, once the reference reads; a pending sign-in for the
-     * provider can no longer save its result.
-     */
-    readonly setReference: (
-      providerId: string,
-      source: SecretReference,
-    ) => Effect.Effect<void, InvalidInput>;
+      key: SecretInput,
+    ) => Effect.Effect<void, AppError>;
     /** Removes the saved credential. The provider's grant and any ambient credential stay as they are. */
     readonly signOut: (providerId: string) => Effect.Effect<void>;
     readonly activeLoginId: (providerId: string) => string | null;
@@ -164,8 +154,6 @@ export class ProviderSignIns extends Context.Service<
       const settings = yield* SettingsRepository;
       const credentials = yield* ProviderCredentials;
       const models = yield* ProviderModels;
-      const managers = yield* PasswordManagers;
-      const values = yield* SecretValues;
 
       const deviceId = () => {
         const saved = Effect.runSync(settings.get(DEVICE_ID));
@@ -195,14 +183,11 @@ export class ProviderSignIns extends Context.Service<
         cancel: (sessionId) =>
           appErrors(Effect.try(() => sessions.cancel(sessionId))),
         setApiKey: (providerId, key) =>
-          Effect.promise(() => sessions.setApiKey(providerId, key)),
-        setReference: (providerId, source) =>
-          checkSecretReference(source).pipe(
-            Effect.provideService(PasswordManagers, managers),
-            Effect.provideService(SecretValues, values),
-            Effect.andThen(
-              Effect.promise(() => sessions.setReference(providerId, source)),
-            ),
+          appErrors(
+            Effect.tryPromise({
+              try: () => sessions.setApiKey(providerId, key),
+              catch: (error) => error,
+            }),
           ),
         signOut: (providerId) =>
           Effect.promise(() => sessions.signOut(providerId)),
@@ -219,8 +204,7 @@ export type ProviderSignInsAccess = {
   get(sessionId: string): LoginSession;
   answer(sessionId: string, promptId: string, value: string): LoginSession;
   cancel(sessionId: string): LoginSession;
-  setApiKey(providerId: string, key: string): Promise<void>;
-  setReference(providerId: string, source: SecretReference): Promise<void>;
+  setApiKey(providerId: string, key: SecretInput): Promise<void>;
   signOut(providerId: string): Promise<void>;
   activeLoginId(providerId: string): string | null;
 };
@@ -240,8 +224,6 @@ export function providerSignInsAccess(
     cancel: (sessionId) => runtime.runSync(signIns.cancel(sessionId)),
     setApiKey: (providerId, key) =>
       runtime.runPromise(signIns.setApiKey(providerId, key)),
-    setReference: (providerId, source) =>
-      runtime.runPromise(signIns.setReference(providerId, source)),
     signOut: (providerId) => runtime.runPromise(signIns.signOut(providerId)),
     activeLoginId: signIns.activeLoginId,
   };
@@ -299,19 +281,10 @@ class SignInSessions {
     return this.project(session);
   }
 
-  /** Replaces the saved credential; a pending sign-in for the provider can no longer save its result. */
-  async setApiKey(providerId: string, key: string) {
+  /** Replaces the saved credential with an API key; a pending sign-in for the provider can no longer save its result. */
+  async setApiKey(providerId: string, key: SecretInput) {
     this.invalidate(providerId);
-    await this.credentials.modify(providerId, async () => ({
-      type: "api_key",
-      key,
-    }));
-  }
-
-  /** Replaces the saved credential with a checked reference; a pending sign-in can no longer save its result. */
-  async setReference(providerId: string, source: SecretReference) {
-    this.invalidate(providerId);
-    await this.credentials.setReference(providerId, source);
+    await this.credentials.setApiKey(providerId, key);
   }
 
   /** Removes the saved credential. The provider's grant and any ambient credential stay as they are. */
@@ -747,8 +720,7 @@ type StandaloneSignInServices =
   | ProviderCredentialRepository
   | ProviderCredentials
   | SettingsRepository
-  | PasswordManagers
-  | SecretValues;
+  | Secrets;
 
 export function standaloneSignIns(
   core: Runner<StandaloneSignInServices>,

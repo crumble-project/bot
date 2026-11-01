@@ -15,13 +15,13 @@ import {
   type CredentialTarget,
   type CredentialUse,
 } from "../shared/domain";
-import { PasswordManagers } from "../password-managers/password-manager";
-import { checkSecretReference } from "../password-managers/secret-references";
+import type { SecretUnavailable } from "../password-managers/secret-values";
+import { Secrets } from "../password-managers/secrets";
 import {
-  SecretValues,
-  type SecretUnavailable,
-} from "../password-managers/secret-values";
-import { AgentCredentialRepository } from "./agent-credential-repository";
+  AgentCredentialRepository,
+  credentialSecretKey,
+  type CredentialRecord,
+} from "./agent-credential-repository";
 import { GitHubApps } from "../github-apps/github-apps";
 import type {
   GitHubIdentity,
@@ -46,7 +46,7 @@ const hostsText = (hosts: readonly string[]) => hosts.join(", ");
 /** The hosts a save covers: the input's, else the saved credential's, else the pending request's. */
 const savedHosts = (
   input: CredentialSaveInput,
-  existing: AgentCredential | undefined,
+  existing: CredentialRecord | undefined,
   pending: CredentialRequest | undefined,
 ) => {
   const hosts = input.hosts ?? existing?.hosts ?? pending?.hosts;
@@ -54,7 +54,7 @@ const savedHosts = (
   if (!hosts)
     return Effect.fail(new InvalidInput({ message: "Name at least one host" }));
 
-  if (!existing && input.value === undefined && !input.reference)
+  if (!existing && !input.secret)
     return Effect.fail(
       new InvalidInput({
         message: "A new credential needs a value or a reference",
@@ -131,42 +131,47 @@ export class Credentials extends Context.Service<
     Effect.gen(function* () {
       const repository = yield* AgentCredentialRepository;
       const notices = yield* BotNotices;
-      const values = yield* SecretValues;
-      const managers = yield* PasswordManagers;
+      const secrets = yield* Secrets;
       const githubApps = yield* GitHubApps;
 
-      /** Drops the cached value of a reference the credential no longer reads. */
-      const forgetReplaced = (
-        previous: AgentCredential | undefined,
-        next: AgentCredential | undefined,
-      ) =>
-        previous?.passwordManager &&
-        previous.reference &&
-        (previous.passwordManager !== next?.passwordManager ||
-          previous.reference !== next.reference)
-          ? values.forget(previous.passwordManager, previous.reference)
-          : Effect.void;
+      const withSecret = Effect.fnUntraced(function* (
+        agentId: string,
+        record: CredentialRecord,
+      ) {
+        return {
+          ...record,
+          secret: record.github
+            ? null
+            : yield* secrets.status(credentialSecretKey(agentId, record.name)),
+        } satisfies AgentCredential;
+      });
 
       const value = Effect.fn("Credentials.value")(function* (
         agentId: string,
         name: string,
         target: CredentialTarget,
       ) {
-        const source = yield* repository.source(agentId, name);
+        const found = yield* repository.get(agentId, name);
 
-        if (!source)
+        if (found?.github) return yield* githubApps.token(agentId, target);
+
+        const secret =
+          found && (yield* secrets.read(credentialSecretKey(agentId, name)));
+
+        if (!secret)
           return yield* new NotFound({ message: `${name} was deleted` });
 
-        if ("github" in source) return yield* githubApps.token(agentId, target);
-
-        return yield* values.read(source);
+        return secret;
       });
 
       const notify = requestAnswers(notices, "credential");
 
       const list = Effect.fn("Credentials.list")(function* (agentId: string) {
         return {
-          credentials: yield* repository.list(agentId),
+          credentials: yield* Effect.forEach(
+            yield* repository.list(agentId),
+            (record) => withSecret(agentId, record),
+          ),
           requests: yield* repository.listRequests(agentId),
         };
       });
@@ -200,27 +205,34 @@ export class Credentials extends Context.Service<
           catch: (cause) => cause,
         }).pipe(Effect.orDie);
 
-        const { value, reference } = input;
+        const saved = Effect.gen(function* () {
+          const pending = yield* repository.getRequest(agentId, checkedName);
+          const existing = yield* repository.get(agentId, checkedName);
 
-        // Checked before reading the saved credential, so a save made during the read isn't overwritten.
-        if (reference)
-          yield* checkSecretReference(reference).pipe(
-            Effect.provideService(PasswordManagers, managers),
-            Effect.provideService(SecretValues, values),
-          );
-
-        const pending = yield* repository.getRequest(agentId, checkedName);
-        const existing = yield* repository.get(agentId, checkedName);
-        const resolvedHosts = yield* savedHosts(input, existing, pending);
-
-        const credential = yield* repository.save(agentId, checkedName, {
-          hosts: resolvedHosts,
-          value,
-          reference,
-          placeholder: `crumble-credential-${randomBytes(24).toString("hex")}`,
+          return {
+            pending,
+            hosts: yield* savedHosts(input, existing, pending),
+          };
         });
 
-        yield* forgetReplaced(existing, credential);
+        // Checked first, then read again after the secret's slow save, so a save made meanwhile isn't overwritten.
+        yield* saved;
+
+        if (input.secret)
+          yield* secrets.save(
+            credentialSecretKey(agentId, checkedName),
+            input.secret,
+          );
+
+        const { pending, hosts } = yield* saved;
+
+        const credential = yield* repository
+          .save(agentId, checkedName, {
+            hosts,
+            github: false,
+            placeholder: `crumble-credential-${randomBytes(24).toString("hex")}`,
+          })
+          .pipe(Effect.flatMap((record) => withSecret(agentId, record)));
 
         if (pending) {
           yield* repository.deleteRequest(agentId, checkedName);
@@ -238,10 +250,10 @@ export class Credentials extends Context.Service<
         agentId: string,
         name: string,
       ) {
-        const existing = yield* repository.get(agentId, name);
-
         if (yield* repository.delete(agentId, name))
-          return yield* forgetReplaced(existing, undefined);
+          return yield* Effect.asVoid(
+            secrets.delete(credentialSecretKey(agentId, name)),
+          );
 
         if (!(yield* repository.deleteRequest(agentId, name)))
           return yield* Effect.fail(

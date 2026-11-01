@@ -107,7 +107,7 @@ A username and password, with an optional one-time code, that a bot's desktop jo
 _Avoid_: Account, saved password (in product language)
 
 **Password manager**:
-1Password or Bitwarden Secrets Manager, connected to an account so credentials, provider API keys, and MCP server tokens can be read from it instead of stored in Crumble.
+1Password or Bitwarden Secrets Manager, connected to an account so any secret the owner enters can be read from it instead of stored in Crumble.
 _Avoid_: Vault provider, secret store
 
 **Web search provider**:

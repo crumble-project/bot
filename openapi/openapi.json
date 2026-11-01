@@ -372,9 +372,8 @@
           "installed": {
             "type": "boolean"
           },
-          "hasClientSecret": {
-            "type": "boolean",
-            "description": "Whether the owner can sign in through the App. An App created before Crumble kept its client secret needs one pasted."
+          "clientSecret": {
+            "$ref": "#/components/schemas/SecretStatus"
           },
           "user": {
             "type": [
@@ -402,11 +401,44 @@
           "installUrl",
           "account",
           "installed",
-          "hasClientSecret",
+          "clientSecret",
           "user",
           "botIds",
           "createdAt"
         ]
+      },
+      "SecretStatus": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "passwordManager": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "1password",
+              "bitwarden",
+              null
+            ],
+            "description": "The password manager the value is read from; null for a value stored in Crumble or no value."
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where in `passwordManager` the value is read from."
+          }
+        },
+        "required": [
+          "configured",
+          "passwordManager",
+          "reference"
+        ],
+        "description": "A secret the owner entered; its value is never returned."
       },
       "GitHubAccount": {
         "type": "object",
@@ -427,6 +459,9 @@
               "type": "string"
             }
           },
+          "token": {
+            "$ref": "#/components/schemas/SecretStatus"
+          },
           "createdAt": {
             "type": "string"
           }
@@ -436,6 +471,7 @@
           "login",
           "htmlUrl",
           "botIds",
+          "token",
           "createdAt"
         ]
       },
@@ -1431,24 +1467,19 @@
               "type": "string"
             }
           },
-          "passwordManager": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "1password",
-              "bitwarden",
-              null
-            ],
-            "description": "The password manager the value is read from; null for a value stored in Crumble."
-          },
-          "reference": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Where in `passwordManager` the value is read from."
+          "secret": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SecretStatus"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "Null when `github` is true."
+              }
+            ]
           },
           "createdAt": {
             "type": "string"
@@ -1471,14 +1502,13 @@
           },
           "github": {
             "type": "boolean",
-            "description": "The value is a GitHub token: from the bot's GitHub App, minted for the App or for the owner signed in through it, or its machine account's personal access token. It has no stored value or reference here."
+            "description": "The value is a GitHub token: from the bot's GitHub App, minted for the App or for the owner signed in through it, or its machine account's personal access token. It has no secret here."
           }
         },
         "required": [
           "name",
           "hosts",
-          "passwordManager",
-          "reference",
+          "secret",
           "createdAt",
           "updatedAt",
           "lastUsedAt",
@@ -1858,13 +1888,13 @@
             "type": "object",
             "properties": {
               "username": {
-                "$ref": "#/components/schemas/LoginFieldSource"
+                "$ref": "#/components/schemas/SecretStatus"
               },
               "password": {
-                "$ref": "#/components/schemas/LoginFieldSource"
+                "$ref": "#/components/schemas/SecretStatus"
               },
               "one_time_code": {
-                "$ref": "#/components/schemas/LoginFieldSource"
+                "$ref": "#/components/schemas/SecretStatus"
               }
             },
             "description": "Where each field's value is read from. A login always has a username and a password; `one_time_code` only when it has one."
@@ -1897,34 +1927,6 @@
           "updatedAt",
           "lastUsedAt",
           "lastError"
-        ]
-      },
-      "LoginFieldSource": {
-        "type": "object",
-        "properties": {
-          "passwordManager": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "1password",
-              "bitwarden",
-              null
-            ],
-            "description": "The password manager the value is read from; null for a value stored in Crumble."
-          },
-          "reference": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Where in `passwordManager` the value is read from."
-          }
-        },
-        "required": [
-          "passwordManager",
-          "reference"
         ]
       },
       "LoginRequest": {
@@ -3095,24 +3097,8 @@
               null
             ]
           },
-          "passwordManager": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "1password",
-              "bitwarden",
-              null
-            ],
-            "description": "The password manager the saved API key is read from; null for a credential stored in Crumble."
-          },
-          "reference": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Where in `passwordManager` the API key is read from."
+          "apiKey": {
+            "$ref": "#/components/schemas/SecretStatus"
           },
           "activeLoginId": {
             "type": [
@@ -3130,8 +3116,7 @@
           "configured",
           "authMethods",
           "credentialType",
-          "passwordManager",
-          "reference",
+          "apiKey",
           "activeLoginId",
           "externalAuth"
         ]
@@ -3545,9 +3530,9 @@
           "usedBy": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/SecretUsingPasswordManager"
+              "type": "string"
             },
-            "description": "Secrets that read their value from this password manager; it can't be disconnected while any remain."
+            "description": "The keys of the secrets that read their value from this password manager, such as `mcp:<server ID>`; it can't be disconnected while any remain."
           }
         },
         "required": [
@@ -3556,39 +3541,6 @@
           "connected",
           "connectedAt",
           "usedBy"
-        ]
-      },
-      "SecretUsingPasswordManager": {
-        "type": "object",
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": [
-              "botCredential",
-              "botLogin",
-              "providerCredential",
-              "secret"
-            ]
-          },
-          "agentId": {
-            "type": "string",
-            "description": "For `botCredential` and `botLogin`."
-          },
-          "name": {
-            "type": "string",
-            "description": "The credential's or login's name, for `botCredential` and `botLogin`."
-          },
-          "provider": {
-            "type": "string",
-            "description": "For `providerCredential`."
-          },
-          "key": {
-            "type": "string",
-            "description": "For `secret`, such as `mcp:<server ID>` for an MCP server token."
-          }
-        },
-        "required": [
-          "kind"
         ]
       },
       "PluginSettings": {
@@ -3654,27 +3606,8 @@
             "type": "string",
             "description": "The status to show while the setting has no value."
           },
-          "configured": {
-            "type": "boolean"
-          },
-          "passwordManager": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "1password",
-              "bitwarden",
-              null
-            ],
-            "description": "The password manager the value is read from; null for a value stored in Crumble or no value."
-          },
-          "reference": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Where in `passwordManager` the value is read from."
+          "secret": {
+            "$ref": "#/components/schemas/SecretStatus"
           }
         },
         "required": [
@@ -3682,9 +3615,7 @@
           "kind",
           "label",
           "whenMissing",
-          "configured",
-          "passwordManager",
-          "reference"
+          "secret"
         ]
       },
       "McpServerStatus": {
@@ -3710,10 +3641,6 @@
                 ],
                 "description": "Why the server's tools were left out of a bot's last turn, such as a missing sign-in; null once it connects again."
               },
-              "hasOAuthClientSecret": {
-                "type": "boolean",
-                "description": "Whether the OAuth app's client secret is stored; it is never returned."
-              },
               "authenticated": {
                 "type": "boolean"
               }
@@ -3721,7 +3648,6 @@
             "required": [
               "auth",
               "error",
-              "hasOAuthClientSecret",
               "authenticated"
             ]
           }
@@ -3755,24 +3681,11 @@
             ],
             "description": "The client ID of an OAuth app the owner registered with the server's authorization server, used instead of registering Crumble."
           },
-          "tokenPasswordManager": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "1password",
-              "bitwarden",
-              null
-            ],
-            "description": "The password manager the token is read from; null for a token stored in Crumble or no token."
+          "token": {
+            "$ref": "#/components/schemas/SecretStatus"
           },
-          "tokenReference": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Where in `tokenPasswordManager` the token is read from."
+          "oauthClientSecret": {
+            "$ref": "#/components/schemas/SecretStatus"
           }
         },
         "required": [
@@ -3781,7 +3694,9 @@
           "url",
           "enabled",
           "agentId",
-          "oauthClientId"
+          "oauthClientId",
+          "token",
+          "oauthClientSecret"
         ]
       },
       "McpOAuthStart": {
@@ -6482,15 +6397,33 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "clientSecret": {
+                  "value": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 200
+                    "maxLength": 16000
+                  },
+                  "reference": {
+                    "type": "object",
+                    "properties": {
+                      "passwordManager": {
+                        "type": "string",
+                        "enum": [
+                          "1password",
+                          "bitwarden"
+                        ]
+                      },
+                      "reference": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      }
+                    },
+                    "required": [
+                      "passwordManager",
+                      "reference"
+                    ]
                   }
                 },
-                "required": [
-                  "clientSecret"
-                ],
                 "additionalProperties": false
               }
             }
@@ -6724,15 +6657,33 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "token": {
+                  "value": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 500
+                    "maxLength": 16000
+                  },
+                  "reference": {
+                    "type": "object",
+                    "properties": {
+                      "passwordManager": {
+                        "type": "string",
+                        "enum": [
+                          "1password",
+                          "bitwarden"
+                        ]
+                      },
+                      "reference": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      }
+                    },
+                    "required": [
+                      "passwordManager",
+                      "reference"
+                    ]
                   }
                 },
-                "required": [
-                  "token"
-                ],
                 "additionalProperties": false
               }
             }
@@ -6861,15 +6812,33 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "token": {
+                  "value": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 500
+                    "maxLength": 16000
+                  },
+                  "reference": {
+                    "type": "object",
+                    "properties": {
+                      "passwordManager": {
+                        "type": "string",
+                        "enum": [
+                          "1password",
+                          "bitwarden"
+                        ]
+                      },
+                      "reference": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      }
+                    },
+                    "required": [
+                      "passwordManager",
+                      "reference"
+                    ]
                   }
                 },
-                "required": [
-                  "token"
-                ],
                 "additionalProperties": false
               }
             }
@@ -8039,254 +8008,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/JudgeModel"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request or operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, expired, or invalid account session",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "405": {
-            "description": "Resource is read-only",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflicting request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request body exceeds the size limit",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Service unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/web-search/exa-key": {
-      "put": {
-        "operationId": "setExaKey",
-        "deprecated": true,
-        "description": "Use `PUT /v1/plugin-settings/web-search-exa/api-key`; this sets the same value.",
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionCookie": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "apiKey": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16000
-                  }
-                },
-                "required": [
-                  "apiKey"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "exaKeyConfigured": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "exaKeyConfigured"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request or operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, expired, or invalid account session",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "405": {
-            "description": "Resource is read-only",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflicting request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request body exceeds the size limit",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Service unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "deleteExaKey",
-        "deprecated": true,
-        "description": "Use `DELETE /v1/plugin-settings/web-search-exa/api-key`; this removes the same value.",
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionCookie": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "exaKeyConfigured": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "exaKeyConfigured"
-                  ]
                 }
               }
             }
@@ -13871,31 +13592,37 @@
                     "minItems": 1,
                     "maxItems": 20
                   },
-                  "value": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 16000
-                  },
-                  "reference": {
+                  "secret": {
                     "type": "object",
                     "properties": {
-                      "passwordManager": {
-                        "type": "string",
-                        "enum": [
-                          "1password",
-                          "bitwarden"
-                        ]
-                      },
-                      "reference": {
+                      "value": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 1000
+                        "maxLength": 16000
+                      },
+                      "reference": {
+                        "type": "object",
+                        "properties": {
+                          "passwordManager": {
+                            "type": "string",
+                            "enum": [
+                              "1password",
+                              "bitwarden"
+                            ]
+                          },
+                          "reference": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000
+                          }
+                        },
+                        "required": [
+                          "passwordManager",
+                          "reference"
+                        ]
                       }
                     },
-                    "required": [
-                      "passwordManager",
-                      "reference"
-                    ]
+                    "additionalProperties": false
                   }
                 }
               }
@@ -14589,7 +14316,8 @@
                               "reference"
                             ]
                           }
-                        }
+                        },
+                        "additionalProperties": false
                       },
                       "password": {
                         "type": "object",
@@ -14620,7 +14348,8 @@
                               "reference"
                             ]
                           }
-                        }
+                        },
+                        "additionalProperties": false
                       },
                       "one_time_code": {
                         "type": [
@@ -14654,7 +14383,8 @@
                               "reference"
                             ]
                           }
-                        }
+                        },
+                        "additionalProperties": false
                       }
                     }
                   }
@@ -20191,7 +19921,7 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "apiKey": {
+                  "value": {
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 16000
@@ -20217,7 +19947,8 @@
                       "reference"
                     ]
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -21851,32 +21582,39 @@
                     "default": true
                   },
                   "token": {
-                    "type": "string",
-                    "maxLength": 16000
-                  },
-                  "tokenReference": {
                     "type": [
                       "object",
                       "null"
                     ],
                     "properties": {
-                      "passwordManager": {
-                        "type": "string",
-                        "enum": [
-                          "1password",
-                          "bitwarden"
-                        ]
-                      },
-                      "reference": {
+                      "value": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 1000
+                        "maxLength": 16000
+                      },
+                      "reference": {
+                        "type": "object",
+                        "properties": {
+                          "passwordManager": {
+                            "type": "string",
+                            "enum": [
+                              "1password",
+                              "bitwarden"
+                            ]
+                          },
+                          "reference": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000
+                          }
+                        },
+                        "required": [
+                          "passwordManager",
+                          "reference"
+                        ]
                       }
                     },
-                    "required": [
-                      "passwordManager",
-                      "reference"
-                    ]
+                    "additionalProperties": false
                   },
                   "oauthClientId": {
                     "type": [
@@ -21887,8 +21625,39 @@
                     "maxLength": 500
                   },
                   "oauthClientSecret": {
-                    "type": "string",
-                    "maxLength": 1000
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "value": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16000
+                      },
+                      "reference": {
+                        "type": "object",
+                        "properties": {
+                          "passwordManager": {
+                            "type": "string",
+                            "enum": [
+                              "1password",
+                              "bitwarden"
+                            ]
+                          },
+                          "reference": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000
+                          }
+                        },
+                        "required": [
+                          "passwordManager",
+                          "reference"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
                   },
                   "agentId": {
                     "type": [
@@ -22436,32 +22205,39 @@
                     "type": "boolean"
                   },
                   "token": {
-                    "type": "string",
-                    "maxLength": 16000
-                  },
-                  "tokenReference": {
                     "type": [
                       "object",
                       "null"
                     ],
                     "properties": {
-                      "passwordManager": {
-                        "type": "string",
-                        "enum": [
-                          "1password",
-                          "bitwarden"
-                        ]
-                      },
-                      "reference": {
+                      "value": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 1000
+                        "maxLength": 16000
+                      },
+                      "reference": {
+                        "type": "object",
+                        "properties": {
+                          "passwordManager": {
+                            "type": "string",
+                            "enum": [
+                              "1password",
+                              "bitwarden"
+                            ]
+                          },
+                          "reference": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000
+                          }
+                        },
+                        "required": [
+                          "passwordManager",
+                          "reference"
+                        ]
                       }
                     },
-                    "required": [
-                      "passwordManager",
-                      "reference"
-                    ]
+                    "additionalProperties": false
                   },
                   "oauthClientId": {
                     "type": [
@@ -22472,8 +22248,39 @@
                     "maxLength": 500
                   },
                   "oauthClientSecret": {
-                    "type": "string",
-                    "maxLength": 1000
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "value": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16000
+                      },
+                      "reference": {
+                        "type": "object",
+                        "properties": {
+                          "passwordManager": {
+                            "type": "string",
+                            "enum": [
+                              "1password",
+                              "bitwarden"
+                            ]
+                          },
+                          "reference": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000
+                          }
+                        },
+                        "required": [
+                          "passwordManager",
+                          "reference"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
                   }
                 }
               }

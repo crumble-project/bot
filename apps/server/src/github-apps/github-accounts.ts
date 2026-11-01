@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { Context, Effect, Layer, Redacted } from "effect";
 import { z } from "zod";
+import type { SecretUnavailable } from "../password-managers/secret-values";
+import { Secrets, secretKey } from "../password-managers/secrets";
+import type { SecretInput, SecretStatus } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
-import { SecretBox } from "../shared/secret-box";
 import { nowIso } from "../shared/time";
 import { Conflict, InvalidInput, NotFound } from "../shared/errors";
 import { GitHubUnavailable, assignmentChange, github } from "./github-api";
@@ -15,21 +17,24 @@ export type GitHubAccount = {
   login: string;
   htmlUrl: string;
   botIds: string[];
+  token: SecretStatus;
   createdAt: string;
 };
 
-/** The machine account a bot acts as, with its token, for the credential proxy and the bot's commits. */
+/** The machine account a bot acts as, for the credential proxy and the bot's commits; `token` reads it on use. */
 export type GitHubAccountOfBot = {
   login: string;
   userId: number;
-  token: Redacted.Redacted;
+  token: Effect.Effect<Redacted.Redacted, SecretUnavailable>;
 };
+
+const tokenKey = (id: string) => secretKey("github-account", id);
 
 const user = z.object({ login: z.string().min(1), id: z.number().int() });
 
 /** The GitHub user a token signs in as; a token GitHub refuses is the owner's input to fix. */
-const userOf = (token: string) =>
-  github("/user", user, { token }).pipe(
+const userOf = (token: Redacted.Redacted) =>
+  github("/user", user, { token: Redacted.value(token) }).pipe(
     Effect.catchIf(
       (error) => error.status === 401,
       () =>
@@ -53,7 +58,7 @@ export class GitHubAccounts extends Context.Service<
     readonly list: Effect.Effect<GitHubAccount[]>;
     readonly get: (id: string) => Effect.Effect<GitHubAccount, NotFound>;
     readonly add: (
-      token: string,
+      token: SecretInput,
     ) => Effect.Effect<
       GitHubAccount,
       InvalidInput | Conflict | GitHubUnavailable
@@ -61,7 +66,7 @@ export class GitHubAccounts extends Context.Service<
     /** Replaces the token, such as one about to expire, with another of the same GitHub user. */
     readonly setToken: (
       id: string,
-      token: string,
+      token: SecretInput,
     ) => Effect.Effect<
       GitHubAccount,
       NotFound | InvalidInput | GitHubUnavailable
@@ -85,7 +90,7 @@ export class GitHubAccounts extends Context.Service<
     GitHubAccounts,
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
-      const box = yield* SecretBox;
+      const secrets = yield* Secrets;
 
       const row = Effect.fn("GitHubAccounts.row")(function* (id: string) {
         const [found] = yield* db
@@ -116,6 +121,7 @@ export class GitHubAccounts extends Context.Service<
           login: found.login,
           htmlUrl: `https://github.com/${found.login}`,
           botIds: yield* botIdsOf(found.id),
+          token: yield* secrets.status(tokenKey(found.id)),
           createdAt: found.createdAt,
         } satisfies GitHubAccount;
       });
@@ -139,9 +145,10 @@ export class GitHubAccounts extends Context.Service<
         return yield* Effect.forEach(rows, accountOf);
       }).pipe(Effect.withSpan("GitHubAccounts.list"));
 
-      const add = Effect.fn("GitHubAccounts.add")(function* (token: string) {
-        const found = yield* userOf(token);
-
+      const notAdded = Effect.fnUntraced(function* (found: {
+        login: string;
+        id: number;
+      }) {
         const [existing] = yield* db
           .select({ id: githubAccounts.id })
           .from(githubAccounts)
@@ -152,8 +159,16 @@ export class GitHubAccounts extends Context.Service<
           return yield* new Conflict({
             message: `${found.login} is already added; replace its token instead`,
           });
+      });
 
+      const add = Effect.fn("GitHubAccounts.add")(function* (
+        token: SecretInput,
+      ) {
         const id = randomUUID();
+
+        const found = yield* secrets.save(tokenKey(id), token, (value) =>
+          userOf(value).pipe(Effect.tap(notAdded)),
+        );
 
         yield* db
           .insert(githubAccounts)
@@ -161,7 +176,6 @@ export class GitHubAccounts extends Context.Service<
             id,
             login: found.login,
             userId: found.id,
-            token: box.encrypt(token),
             createdAt: yield* nowIso,
           })
           .pipe(Effect.orDie);
@@ -171,24 +185,29 @@ export class GitHubAccounts extends Context.Service<
 
       const setToken = Effect.fn("GitHubAccounts.setToken")(function* (
         id: string,
-        token: string,
+        token: SecretInput,
       ) {
         const found = yield* row(id);
 
         if (!found)
           return yield* new NotFound({ message: "Machine account not found" });
 
-        const owner = yield* userOf(token);
-
-        if (owner.id !== found.userId)
-          return yield* new InvalidInput({
-            message: `This token signs in as ${owner.login}, not ${found.login}`,
-          });
+        const owner = yield* secrets.save(tokenKey(id), token, (value) =>
+          userOf(value).pipe(
+            Effect.filterOrFail(
+              (each) => each.id === found.userId,
+              (each) =>
+                new InvalidInput({
+                  message: `This token signs in as ${each.login}, not ${found.login}`,
+                }),
+            ),
+          ),
+        );
 
         // A renamed user keeps its ID; the login follows the token.
         yield* db
           .update(githubAccounts)
-          .set({ login: owner.login, token: box.encrypt(token) })
+          .set({ login: owner.login })
           .where(eq(githubAccounts.id, id))
           .pipe(Effect.orDie);
 
@@ -263,6 +282,8 @@ export class GitHubAccounts extends Context.Service<
         if (!deleted.length)
           return yield* new NotFound({ message: "Machine account not found" });
 
+        yield* secrets.delete(tokenKey(id));
+
         return botIds;
       });
 
@@ -284,7 +305,9 @@ export class GitHubAccounts extends Context.Service<
         return {
           login: found.account.login,
           userId: found.account.userId,
-          token: Redacted.make(box.decrypt(found.account.token)),
+          token: secrets
+            .read(tokenKey(found.account.id))
+            .pipe(Effect.map((token) => token ?? Redacted.make(""))),
         };
       });
 

@@ -21,13 +21,8 @@ import { ReviewRepository } from "../skills/review-repository";
 import { SkillRepository } from "../skills/skill-repository";
 import { GitHubSkillReader } from "../skills/github-skills";
 import { SkillInstaller } from "../skills/skill-installer";
-import {
-  agentCredentials,
-  credentialAuthorities,
-  secrets,
-} from "../credentials/schema";
+import { credentialAuthorities, secrets } from "../credentials/schema";
 import { LoginRepository } from "../logins/login-repository";
-import { loginFields } from "../logins/schema";
 import { passwordManagers } from "../password-managers/schema";
 import { providerCredentials } from "../providers/schema";
 import { ProductDatabase } from "../shared/product-database";
@@ -35,11 +30,7 @@ import { SecretBox } from "../shared/secret-box";
 import { SettingsRepository } from "../shared/settings-repository";
 import { GatewayRepository } from "../message-gateway/gateway-repository";
 import { EventRepository } from "../event-sources/event-repository";
-import {
-  githubAccounts,
-  githubAppUsers,
-  githubApps,
-} from "../github-apps/schema";
+import { githubAppUsers, githubApps } from "../github-apps/schema";
 
 /** Every repository of an account's product database, on one migrated connection. */
 export const productLayer = (dataDir: string) => {
@@ -49,14 +40,11 @@ export const productLayer = (dataDir: string) => {
     SecretBox.layer(dataDir, [
       secrets,
       providerCredentials,
-      agentCredentials,
       credentialAuthorities,
       passwordManagers,
-      loginFields,
       desktopFills,
       githubApps,
       githubAppUsers,
-      githubAccounts,
     ]),
     LearnedChangeRepository.layer,
     ReviewRepository.layer,

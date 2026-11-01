@@ -19,6 +19,7 @@ import { runnerOf } from "../shared/runner";
 import { PasswordManagers } from "./password-manager";
 import { registerPasswordManagerRoutes } from "./password-managers-api";
 import { SecretValues } from "./secret-values";
+import { Secrets } from "../password-managers/secrets";
 
 const REFERENCE = "op://Vault/Linear/token";
 const cleanups: Array<() => void> = [];
@@ -42,7 +43,8 @@ const setup = (state: FakePasswordManager) => {
 
   const vault = Effect.runSync(
     Layer.buildWithScope(
-      SecretValues.layer.pipe(
+      Secrets.layer.pipe(
+        Layer.provideMerge(SecretValues.layer),
         Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
         Layer.provide(Layer.succeedContext(core)),
       ),
@@ -157,7 +159,7 @@ test("disconnecting while a secret reads from the password manager answers 409 a
 
   expect((await api.disconnect()).status).toBe(409);
   expect((await api.list()).passwordManagers[0]?.usedBy).toEqual([
-    { kind: "secret", key: "mcp:server" },
+    "mcp:server",
   ]);
 });
 

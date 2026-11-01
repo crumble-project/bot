@@ -331,19 +331,35 @@ export const secretReferenceInput = z.object({
 
 export type SecretReference = z.infer<typeof secretReferenceInput>;
 
-export const credentialSaveInput = z
+// One object with optional fields rather than a union, so client generators keep it.
+/** A secret the owner enters: a value to store in Crumble, kept exactly as sent, or a password manager reference. */
+export const secretInput = z
   .object({
-    /** Kept when omitted; required for a credential nobody asked for. */
-    hosts: credentialHosts.optional(),
-    /** Write-only. A new credential needs it or `reference`; omit both to keep the saved source. */
     value: z.string().min(1).max(16000).optional(),
-    /** Read the value from a password manager instead of storing it. */
     reference: secretReferenceInput.optional(),
   })
-  .refine((input) => !(input.value !== undefined && input.reference), {
-    message: "Send a value or a reference, not both",
-    path: ["reference"],
-  });
+  .strict()
+  .refine(
+    (input) => (input.value === undefined) !== (input.reference === undefined),
+    { message: "Send exactly one of value or reference" },
+  );
+
+export type SecretInput = z.infer<typeof secretInput>;
+
+/** What a response tells about a secret, never its value. */
+export type SecretStatus = {
+  configured: boolean;
+  /** The password manager the value is read from; null for a value stored in Crumble or no value. */
+  passwordManager: PasswordManagerId | null;
+  reference: string | null;
+};
+
+export const credentialSaveInput = z.object({
+  /** Kept when omitted; required for a credential nobody asked for. */
+  hosts: credentialHosts.optional(),
+  /** A new credential needs it; omit it to keep the saved one. */
+  secret: secretInput.optional(),
+});
 
 export type CredentialSaveInput = z.infer<typeof credentialSaveInput>;
 
@@ -351,9 +367,8 @@ export type CredentialSaveInput = z.infer<typeof credentialSaveInput>;
 export type AgentCredential = {
   name: string;
   hosts: string[];
-  /** Where the value is read from; both null for a value stored in Crumble. */
-  passwordManager: PasswordManagerId | null;
-  reference: string | null;
+  /** Null for a token from the bot's GitHub App, which is neither stored nor referenced. */
+  secret: SecretStatus | null;
   createdAt: string;
   updatedAt: string;
   lastUsedAt: string | null;
@@ -417,19 +432,6 @@ export const loginFieldInput = z.enum([
 
 export type LoginField = z.infer<typeof loginFieldInput>;
 
-/** One field's source: a value stored in Crumble, or a password manager reference. */
-const loginFieldSourceInput = z
-  .object({
-    /** Write-only. A one-time code field takes the TOTP secret, or an `otpauth://totp/` URI. */
-    value: z.string().min(1).max(16000).optional(),
-    reference: secretReferenceInput.optional(),
-  })
-  .refine((field) => (field.value === undefined) !== !field.reference, {
-    message: "Send a value or a reference",
-  });
-
-export type LoginFieldSourceInput = z.infer<typeof loginFieldSourceInput>;
-
 /** A 1Password item, `op://<vault>/<item>`, that fills every field of a login. */
 const loginItemInput = z.object({
   passwordManager: z.literal("1password"),
@@ -447,12 +449,12 @@ export const loginSaveInput = z
     /** Kept when omitted; required for a new login. */
     hosts: credentialHosts.optional(),
     item: loginItemInput.optional(),
-    /** Fields to change; null removes the one-time code. Omitted fields keep their source. */
+    /** Fields to change; null removes the one-time code, whose value is the TOTP secret or an `otpauth://totp/` URI. */
     fields: z
       .object({
-        username: loginFieldSourceInput.optional(),
-        password: loginFieldSourceInput.optional(),
-        one_time_code: loginFieldSourceInput.nullable().optional(),
+        username: secretInput.optional(),
+        password: secretInput.optional(),
+        one_time_code: secretInput.nullable().optional(),
       })
       .optional(),
   })
@@ -463,17 +465,11 @@ export const loginSaveInput = z
 
 export type LoginSaveInput = z.infer<typeof loginSaveInput>;
 
-/** Where a login field's value is read from; both null for a value stored in Crumble. */
-export type LoginFieldSource = {
-  passwordManager: PasswordManagerId | null;
-  reference: string | null;
-};
-
 /** A login the owner gave one bot for its desktop jobs. Values are write-only and never part of this record. */
 export type Login = {
   name: string;
   hosts: string[];
-  fields: Partial<Record<LoginField, LoginFieldSource>>;
+  fields: Partial<Record<LoginField, SecretStatus>>;
   createdAt: string;
   updatedAt: string;
   lastUsedAt: string | null;

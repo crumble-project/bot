@@ -481,7 +481,9 @@ describe("Store memory sources", () => {
 
     const db = new Database(join(dir, "store.sqlite"));
     // A server before Drizzle had no migrations table.
+    // Secrets moved out of agent_credentials after the baseline, which had their values in it.
     db.run(`DROP TABLE __drizzle_migrations;
+      ALTER TABLE agent_credentials ADD COLUMN value text;
       DROP TABLE skill_updates;
       ALTER TABLE skills DROP COLUMN origin;
       DROP TABLE github_account_bots;
@@ -502,7 +504,6 @@ describe("Store memory sources", () => {
       DROP TABLE held_actions;
       DROP TABLE login_requests;
       DROP TABLE login_uses;
-      DROP TABLE login_fields;
       DROP TABLE logins;
       DROP TABLE password_managers;
       ALTER TABLE credential_uses DROP COLUMN error;
@@ -627,7 +628,9 @@ describe("Store group chats", () => {
 
     const db = new Database(join(dir, "store.sqlite"));
     // A server before Drizzle had no migrations table.
+    // Secrets moved out of agent_credentials after the baseline, which had their values in it.
     db.run(`DROP TABLE __drizzle_migrations;
+      ALTER TABLE agent_credentials ADD COLUMN value text;
       DROP TABLE skill_updates;
       ALTER TABLE skills DROP COLUMN origin;
       DROP TABLE github_account_bots;
@@ -648,7 +651,6 @@ describe("Store group chats", () => {
       DROP TABLE held_actions;
       DROP TABLE login_requests;
       DROP TABLE login_uses;
-      DROP TABLE login_fields;
       DROP TABLE logins;
       DROP TABLE password_managers;
       ALTER TABLE credential_uses DROP COLUMN error;

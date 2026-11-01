@@ -1,14 +1,13 @@
 import { Effect } from "effect";
 import { routes } from "../contract/api-contract";
 import {
-  githubAppClientSecretInput,
   githubAppCompleteInput,
   githubAppSignInInput,
   githubAppManifestInput,
-  githubAccountTokenInput,
   githubBotsInput,
 } from "../contract/github-apps";
 import type { Register } from "../contract/route";
+import { secretInput } from "../shared/domain";
 import type { BotsAccess } from "../bots/bots";
 import type { Runner } from "../shared/runner";
 import { Unavailable } from "../shared/errors";
@@ -128,9 +127,7 @@ export function registerGitHubAppRoutes(options: {
   register(routes.setGithubAppClientSecret, async (c) => {
     const id = c.req.param("id");
 
-    const { clientSecret } = githubAppClientSecretInput.parse(
-      await c.req.json(),
-    );
+    const clientSecret = secretInput.parse(await c.req.json());
 
     return c.json(
       await github(
@@ -146,12 +143,12 @@ export function registerGitHubAppRoutes(options: {
     c.json({ accounts: await github(githubAccounts.list) }, 200),
   );
   register(routes.addGithubAccount, async (c) => {
-    const { token } = githubAccountTokenInput.parse(await c.req.json());
+    const token = secretInput.parse(await c.req.json());
 
     return c.json(await github(githubAccounts.add(token)), 200);
   });
   register(routes.setGithubAccountToken, async (c) => {
-    const { token } = githubAccountTokenInput.parse(await c.req.json());
+    const token = secretInput.parse(await c.req.json());
 
     return c.json(
       await github(githubAccounts.setToken(c.req.param("id"), token)),

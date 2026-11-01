@@ -7,16 +7,14 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   SecretSourceField,
-  referenceOf,
-  sourceDraftOf,
+  type SecretInput,
   useConnectedPasswordManagers,
-  type SecretSourceDraft,
+  useSecretDraft,
 } from "@/components/secret-source-field";
 import {
   type Bot,
   type Login,
   type LoginRequest,
-  type PasswordManagerId,
   call,
   loginPath,
   loginsQuery,
@@ -27,17 +25,13 @@ const NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
 const ITEM = /^op:\/\/[^/]+\/[^/]+$/;
 
-type Reference = { passwordManager: PasswordManagerId; reference: string };
-
-type FieldBody = { value: string } | { reference: Reference };
-
 type LoginBody = {
   hosts: string[];
   item?: { passwordManager: "1password"; reference: string };
   fields?: {
-    username?: FieldBody;
-    password?: FieldBody;
-    one_time_code?: FieldBody | null;
+    username?: SecretInput;
+    password?: SecretInput;
+    one_time_code?: SecretInput | null;
   };
 };
 
@@ -46,47 +40,30 @@ type Draft = {
   hosts: string;
   mode: "fields" | "item";
   item: string;
-  username: SecretSourceDraft;
-  password: SecretSourceDraft;
-  code: SecretSourceDraft;
   hasCode: boolean;
 };
 
+type Secret = ReturnType<typeof useSecretDraft>;
+
+type Secrets = { username: Secret; password: Secret; code: Secret };
+
 type FieldSource = Login["fields"]["password"];
 
-const savedSource = (field: FieldSource) =>
-  sourceDraftOf(field?.passwordManager, field?.reference);
+/** A field's new secret, or undefined to keep the saved one. */
+const fieldBody = (secret: Secret) =>
+  secret.changed && secret.input ? secret.input : undefined;
 
-const hasSource = (draft: SecretSourceDraft) =>
-  draft.kind === "value" ? draft.value !== "" : referenceOf(draft) !== null;
-
-/** A field's new source, or undefined to keep the saved one. */
-function fieldBody(
-  draft: SecretSourceDraft,
-  saved: FieldSource,
-): FieldBody | undefined {
-  if (draft.kind === "value")
-    return draft.value ? { value: draft.value } : undefined;
-
-  const reference = referenceOf(draft);
-
-  if (
-    !reference ||
-    (reference.passwordManager === saved?.passwordManager &&
-      reference.reference === saved.reference)
-  )
-    return undefined;
-
-  return { reference };
-}
-
-function codeBody(draft: Draft, existing: Login | null) {
+function codeBody(draft: Draft, existing: Login | null, code: Secret) {
   if (!draft.hasCode) return existing?.fields.one_time_code ? null : undefined;
 
-  return fieldBody(draft.code, existing?.fields.one_time_code);
+  return fieldBody(code);
 }
 
-function loginBody(draft: Draft, existing: Login | null): LoginBody {
+function loginBody(
+  draft: Draft,
+  existing: Login | null,
+  secrets: Secrets,
+): LoginBody {
   const hosts = hostList(draft.hosts);
 
   if (draft.mode === "item")
@@ -96,9 +73,9 @@ function loginBody(draft: Draft, existing: Login | null): LoginBody {
     };
 
   const fields = {
-    username: fieldBody(draft.username, existing?.fields.username),
-    password: fieldBody(draft.password, existing?.fields.password),
-    one_time_code: codeBody(draft, existing),
+    username: fieldBody(secrets.username),
+    password: fieldBody(secrets.password),
+    one_time_code: codeBody(draft, existing, secrets.code),
   };
 
   return {
@@ -117,39 +94,33 @@ function draftOf(existing: Login | null, request?: LoginRequest): Draft {
     hosts: (source?.hosts ?? []).join(", "),
     mode: "fields",
     item: "",
-    username: savedSource(existing?.fields.username),
-    password: savedSource(existing?.fields.password),
-    code: savedSource(existing?.fields.one_time_code),
     hasCode: Boolean(existing?.fields.one_time_code ?? request?.oneTimeCode),
   };
 }
 
-function fieldsReady(draft: Draft, existing: Login | null) {
-  if (
-    draft.hasCode &&
-    !existing?.fields.one_time_code &&
-    !hasSource(draft.code)
-  )
+function fieldsReady(draft: Draft, existing: Login | null, secrets: Secrets) {
+  if (draft.hasCode && !existing?.fields.one_time_code && !secrets.code.input)
     return false;
 
   return (
     existing !== null ||
-    (hasSource(draft.username) && hasSource(draft.password))
+    (secrets.username.input !== null && secrets.password.input !== null)
   );
 }
 
-function loginReady(draft: Draft, existing: Login | null) {
+function loginReady(draft: Draft, existing: Login | null, secrets: Secrets) {
   if (!NAME.test(draft.name) || !hostList(draft.hosts).length) return false;
 
   return draft.mode === "item"
     ? ITEM.test(draft.item.trim())
-    : fieldsReady(draft, existing);
+    : fieldsReady(draft, existing, secrets);
 }
 
 function useSaveLogin(
   botId: string,
   draft: Draft,
   existing: Login | null,
+  secrets: Secrets,
   onClose: () => void,
 ) {
   return useMutation({
@@ -157,7 +128,7 @@ function useSaveLogin(
       call<Login, LoginBody>(
         loginPath(botId, draft.name),
         "PUT",
-        loginBody(draft, existing),
+        loginBody(draft, existing, secrets),
       ),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
@@ -186,8 +157,15 @@ export function LoginSheet({
 }) {
   const [owner, setOwner] = useState(() => defaultOwner(botId, bots));
   const [draft, setDraft] = useState(() => draftOf(existing, request));
-  const save = useSaveLogin(owner, draft, existing, onClose);
-  const ready = loginReady(draft, existing) && !save.isPending;
+
+  const secrets: Secrets = {
+    username: useSecretDraft(existing?.fields.username),
+    password: useSecretDraft(existing?.fields.password),
+    code: useSecretDraft(existing?.fields.one_time_code),
+  };
+
+  const save = useSaveLogin(owner, draft, existing, secrets, onClose);
+  const ready = loginReady(draft, existing, secrets) && !save.isPending;
 
   const change = (next: Partial<Draft>) =>
     setDraft((current) => ({ ...current, ...next }));
@@ -212,7 +190,12 @@ export function LoginSheet({
         proposed={request !== undefined}
         onChange={change}
       />
-      <LoginSource draft={draft} existing={existing} onChange={change} />
+      <LoginSource
+        draft={draft}
+        existing={existing}
+        secrets={secrets}
+        onChange={change}
+      />
     </SecretSheet>
   );
 }
@@ -221,10 +204,12 @@ export function LoginSheet({
 function LoginSource({
   draft,
   existing,
+  secrets,
   onChange,
 }: {
   draft: Draft;
   existing: Login | null;
+  secrets: Secrets;
   onChange: (next: Partial<Draft>) => void;
 }) {
   const connected = useConnectedPasswordManagers();
@@ -251,7 +236,7 @@ function LoginSource({
         <LoginFields
           draft={draft}
           existing={existing}
-          connected={connected}
+          secrets={secrets}
           onChange={onChange}
         />
       )}
@@ -338,12 +323,12 @@ function ItemField({
 function LoginFields({
   draft,
   existing,
-  connected,
+  secrets,
   onChange,
 }: {
   draft: Draft;
   existing: Login | null;
-  connected: ReturnType<typeof useConnectedPasswordManagers>;
+  secrets: Secrets;
   onChange: (next: Partial<Draft>) => void;
 }) {
   const keep = (field: FieldSource) =>
@@ -357,18 +342,14 @@ function LoginFields({
         id="login-username"
         label="Username"
         concealed={false}
-        value={draft.username}
-        onChange={(username) => onChange({ username })}
-        connected={connected}
+        {...secrets.username.field}
         valuePlaceholder={keep(existing?.fields.username)}
         valueDescription="Stored encrypted and never shown again."
       />
       <SecretSourceField
         id="login-password"
         label="Password"
-        value={draft.password}
-        onChange={(password) => onChange({ password })}
-        connected={connected}
+        {...secrets.password.field}
         valuePlaceholder={keep(existing?.fields.password)}
         valueDescription="Stored encrypted and never shown again. Desktop jobs fill it without seeing it."
       />
@@ -384,9 +365,7 @@ function LoginFields({
         <SecretSourceField
           id="login-code"
           label="One-time code secret"
-          value={draft.code}
-          onChange={(code) => onChange({ code })}
-          connected={connected}
+          {...secrets.code.field}
           valuePlaceholder={keep(existing?.fields.one_time_code)}
           valueDescription="The setup key or otpauth:// URI from the site's two-factor setup. Crumble computes each code from it."
         />

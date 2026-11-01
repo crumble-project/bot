@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
@@ -7,11 +7,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   type PasswordManager,
   type PasswordManagerId,
+  type SecretStatus,
   passwordManagersQuery,
 } from "@/lib/api";
 
 /** What the owner is entering: a value to store in Crumble, or where a password manager holds it. */
-export type SecretSourceDraft =
+type SecretSourceDraft =
   | { kind: "value"; value: string }
   | {
       kind: "reference";
@@ -19,24 +20,15 @@ export type SecretSourceDraft =
       reference: string;
     };
 
-export const EMPTY_SOURCE: SecretSourceDraft = { kind: "value", value: "" };
+const EMPTY_SOURCE: SecretSourceDraft = { kind: "value", value: "" };
 
 const REFERENCE_PLACEHOLDERS = {
   "1password": "op://vault/item/field",
   bitwarden: "Secret ID",
 } as const satisfies Record<PasswordManagerId, string>;
 
-/** A saved reference as a draft, or an empty value when the secret is stored in Crumble. */
-export const sourceDraftOf = (
-  passwordManager: PasswordManagerId | null | undefined,
-  reference: string | null | undefined,
-): SecretSourceDraft =>
-  passwordManager && reference
-    ? { kind: "reference", passwordManager, reference }
-    : EMPTY_SOURCE;
-
 /** The reference the request sends, or null when the draft holds a value. */
-export const referenceOf = (draft: SecretSourceDraft) =>
+const referenceOf = (draft: SecretSourceDraft) =>
   draft.kind === "reference" && draft.reference.trim()
     ? {
         passwordManager: draft.passwordManager,
@@ -51,6 +43,51 @@ export function useConnectedPasswordManagers(): PasswordManager[] {
   );
 }
 
+/** The body every secret endpoint takes. */
+export type SecretInput =
+  | { value: string }
+  | { reference: NonNullable<ReturnType<typeof referenceOf>> };
+
+/**
+ * A secret's draft for `SecretSourceField`, starting from its saved status. `input` is the body to send, null while the
+ * draft is empty; `changed` is false for the saved reference, so saving other fields doesn't read it again.
+ */
+export function useSecretDraft(saved?: SecretStatus) {
+  // A saved reference starts the draft; a value stored in Crumble is never shown, so it starts empty.
+  const [draft, setDraft] = useState<SecretSourceDraft>(() =>
+    saved?.passwordManager && saved.reference
+      ? {
+          kind: "reference",
+          passwordManager: saved.passwordManager,
+          reference: saved.reference,
+        }
+      : EMPTY_SOURCE,
+  );
+
+  const connected = useConnectedPasswordManagers();
+  const reference = referenceOf(draft);
+
+  const input: SecretInput | null = reference
+    ? { reference }
+    : draft.kind === "value" && draft.value
+      ? { value: draft.value }
+      : null;
+
+  const changed =
+    input !== null &&
+    !(
+      reference &&
+      reference.passwordManager === saved?.passwordManager &&
+      reference.reference === saved.reference
+    );
+
+  return {
+    field: { value: draft, onChange: setDraft, connected },
+    input,
+    changed,
+  };
+}
+
 /** A secret's value, or a password manager reference once one is connected. */
 export function SecretSourceField({
   id,
@@ -61,6 +98,7 @@ export function SecretSourceField({
   valuePlaceholder,
   valueDescription,
   concealed = true,
+  disabled,
 }: {
   id: string;
   label: string;
@@ -71,6 +109,7 @@ export function SecretSourceField({
   valueDescription: ReactNode;
   /** False for a value that isn't secret, like a username. */
   concealed?: boolean;
+  disabled?: boolean;
 }) {
   const source = value.kind === "value" ? "crumble" : value.passwordManager;
 
@@ -113,6 +152,7 @@ export function SecretSourceField({
           id={id}
           type={concealed ? "password" : "text"}
           autoComplete="off"
+          disabled={disabled}
           placeholder={valuePlaceholder}
           value={value.value}
           onChange={(event) =>
@@ -123,6 +163,7 @@ export function SecretSourceField({
         <Input
           id={id}
           autoComplete="off"
+          disabled={disabled}
           spellCheck={false}
           className="font-mono"
           placeholder={REFERENCE_PLACEHOLDERS[value.passwordManager]}

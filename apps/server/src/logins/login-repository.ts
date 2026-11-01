@@ -1,38 +1,34 @@
 import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { z } from "zod";
-import {
-  secretSourceOf,
-  type SecretSource,
-} from "../password-managers/secret-values";
-import {
-  loginFieldInput,
-  type Login,
-  type LoginField,
-  type LoginRequest,
-  type LoginRequestInput,
-  type LoginUse,
-  type PasswordManagerId,
-  type SecretReference,
+import { secretKey, secretKeyPrefix } from "../password-managers/secrets";
+import type {
+  Login,
+  LoginField,
+  LoginRequest,
+  LoginRequestInput,
+  LoginUse,
 } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
-import { SecretBox } from "../shared/secret-box";
 import { nowIso } from "../shared/time";
 import { usesBefore, withStringIds } from "../shared/use-log";
-import { loginFields, loginRequests, loginUses, logins } from "./schema";
+import { loginRequests, loginUses, logins } from "./schema";
 
 const hostList = z.array(z.string());
 
-/** A field's new source: a value to store, or a reference to read. */
-export type FieldSource =
-  | { value: string; reference?: undefined }
-  | { value?: undefined; reference: SecretReference };
+/** The secret holding one field of a login; under the bot's prefix, so deleting the bot deletes it. */
+export const loginFieldKey = (
+  agentId: string,
+  name: string,
+  field: LoginField,
+) => secretKey("bot", agentId, "login", name, field);
 
-/** What a save writes: the hosts, and per field a new source, or null to remove it. Omitted fields stay. */
-export type LoginWrite = {
-  hosts: string[];
-  fields: Partial<Record<LoginField, FieldSource | null>>;
-};
+/** The prefix of every field of a login. */
+export const loginFieldsPrefix = (agentId: string, name: string) =>
+  secretKeyPrefix("bot", agentId, "login", name);
+
+/** A login without its fields, which are secrets of their own. */
+export type LoginRecord = Omit<Login, "fields">;
 
 const metadata = {
   name: logins.name,
@@ -45,13 +41,6 @@ const metadata = {
   >`(SELECT ${loginUses.error} FROM ${loginUses} WHERE ${loginUses.agentId} = ${logins.agentId} AND ${loginUses.name} = ${logins.name} ORDER BY ${loginUses.id} DESC LIMIT 1)`,
 };
 
-type FieldRow = {
-  name: string;
-  field: LoginField;
-  passwordManager: PasswordManagerId | null;
-  reference: string | null;
-};
-
 const requestOf = (row: typeof loginRequests.$inferSelect): LoginRequest => ({
   name: row.name,
   hosts: hostList.parse(JSON.parse(row.hosts)),
@@ -61,50 +50,25 @@ const requestOf = (row: typeof loginRequests.$inferSelect): LoginRequest => ({
 });
 
 const loginOf = (
-  row: Omit<Login, "hosts" | "fields"> & { hosts: string },
-  fields: readonly FieldRow[],
-): Login => ({
-  ...row,
-  hosts: hostList.parse(JSON.parse(row.hosts)),
-  fields: Object.fromEntries(
-    fields.flatMap((field) =>
-      field.name === row.name
-        ? [
-            [
-              field.field,
-              {
-                passwordManager: field.passwordManager,
-                reference: field.reference,
-              },
-            ],
-          ]
-        : [],
-    ),
-  ),
-});
+  row: Omit<LoginRecord, "hosts"> & { hosts: string },
+): LoginRecord => ({ ...row, hosts: hostList.parse(JSON.parse(row.hosts)) });
 
 /** The logins the owner gave each bot, and their fills. */
 export class LoginRepository extends Context.Service<
   LoginRepository,
   {
     /** Metadata only: listing never decrypts a value. */
-    readonly list: (agentId: string) => Effect.Effect<Login[]>;
+    readonly list: (agentId: string) => Effect.Effect<LoginRecord[]>;
     readonly get: (
       agentId: string,
       name: string,
-    ) => Effect.Effect<Login | undefined>;
+    ) => Effect.Effect<LoginRecord | undefined>;
     readonly save: (
       agentId: string,
       name: string,
-      write: LoginWrite,
-    ) => Effect.Effect<Login>;
+      hosts: readonly string[],
+    ) => Effect.Effect<LoginRecord>;
     readonly delete: (agentId: string, name: string) => Effect.Effect<boolean>;
-    /** Where the field's value comes from, decrypting a stored one; for filling only. */
-    readonly source: (
-      agentId: string,
-      name: string,
-      field: LoginField,
-    ) => Effect.Effect<SecretSource | undefined>;
     readonly addUse: (
       agentId: string,
       name: string,
@@ -137,28 +101,9 @@ export class LoginRepository extends Context.Service<
     LoginRepository,
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
-      const box = yield* SecretBox;
 
       const login = (agentId: string, name: string) =>
         and(eq(logins.agentId, agentId), eq(logins.name, name));
-
-      const fieldsOf = (agentId: string, name?: string) =>
-        db
-          .select({
-            name: loginFields.name,
-            field: loginFields.field,
-            passwordManager: loginFields.passwordManager,
-            reference: loginFields.reference,
-          })
-          .from(loginFields)
-          .where(
-            name === undefined
-              ? eq(loginFields.agentId, agentId)
-              : and(
-                  eq(loginFields.agentId, agentId),
-                  eq(loginFields.name, name),
-                ),
-          );
 
       const list = Effect.fn("LoginRepository.list")(function* (
         agentId: string,
@@ -169,9 +114,7 @@ export class LoginRepository extends Context.Service<
           .where(eq(logins.agentId, agentId))
           .orderBy(asc(logins.name));
 
-        const fields = yield* fieldsOf(agentId);
-
-        return rows.map((row) => loginOf(row, fields));
+        return rows.map(loginOf);
       }, Effect.orDie);
 
       const get = Effect.fn("LoginRepository.get")(function* (
@@ -183,73 +126,24 @@ export class LoginRepository extends Context.Service<
           .from(logins)
           .where(login(agentId, name));
 
-        return row ? loginOf(row, yield* fieldsOf(agentId, name)) : undefined;
+        return row && loginOf(row);
       }, Effect.orDie);
-
-      const sourceColumns = (source: FieldSource) =>
-        source.reference
-          ? {
-              value: null,
-              passwordManager: source.reference.passwordManager,
-              reference: source.reference.reference,
-            }
-          : {
-              value: box.encrypt(source.value),
-              passwordManager: null,
-              reference: null,
-            };
-
-      const writeField = (
-        agentId: string,
-        name: string,
-        field: LoginField,
-        source: FieldSource | null,
-      ) => {
-        const where = and(
-          eq(loginFields.agentId, agentId),
-          eq(loginFields.name, name),
-          eq(loginFields.field, field),
-        );
-
-        if (!source) return db.delete(loginFields).where(where);
-
-        const columns = sourceColumns(source);
-
-        return db
-          .insert(loginFields)
-          .values({ agentId, name, field, ...columns })
-          .onConflictDoUpdate({
-            target: [loginFields.agentId, loginFields.name, loginFields.field],
-            set: columns,
-          });
-      };
 
       const save = Effect.fn("LoginRepository.save")(function* (
         agentId: string,
         name: string,
-        write: LoginWrite,
+        list: readonly string[],
       ) {
         const at = yield* nowIso;
-        const hosts = JSON.stringify(write.hosts);
+        const hosts = JSON.stringify(list);
 
-        yield* db.transaction(() =>
-          Effect.gen(function* () {
-            yield* db
-              .insert(logins)
-              .values({ agentId, name, hosts, createdAt: at, updatedAt: at })
-              .onConflictDoUpdate({
-                target: [logins.agentId, logins.name],
-                set: { hosts, updatedAt: at },
-              });
-
-            for (const field of loginFieldInput.options) {
-              const source = write.fields[field];
-
-              if (source !== undefined)
-                yield* writeField(agentId, name, field, source);
-            }
-          }),
-        );
+        yield* db
+          .insert(logins)
+          .values({ agentId, name, hosts, createdAt: at, updatedAt: at })
+          .onConflictDoUpdate({
+            target: [logins.agentId, logins.name],
+            set: { hosts, updatedAt: at },
+          });
 
         return (yield* get(agentId, name))!;
       }, Effect.orDie);
@@ -264,29 +158,6 @@ export class LoginRepository extends Context.Service<
           .returning({ name: logins.name });
 
         return deleted.length > 0;
-      }, Effect.orDie);
-
-      const source = Effect.fn("LoginRepository.source")(function* (
-        agentId: string,
-        name: string,
-        field: LoginField,
-      ) {
-        const [row] = yield* db
-          .select({
-            value: loginFields.value,
-            passwordManager: loginFields.passwordManager,
-            reference: loginFields.reference,
-          })
-          .from(loginFields)
-          .where(
-            and(
-              eq(loginFields.agentId, agentId),
-              eq(loginFields.name, name),
-              eq(loginFields.field, field),
-            ),
-          );
-
-        return row && secretSourceOf(box, row);
       }, Effect.orDie);
 
       const addUse = Effect.fn("LoginRepository.addUse")(function* (
@@ -398,7 +269,6 @@ export class LoginRepository extends Context.Service<
         get,
         save,
         delete: remove,
-        source,
         addUse,
         listUses,
         pruneUses,

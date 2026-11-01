@@ -370,8 +370,8 @@ test("a desktop job's prompt lists the bot's logins; the bot's chat gets request
     name: "github",
     hosts: ["github.com", "*.github.com"],
     fields: {
-      username: { passwordManager: null, reference: null },
-      password: { passwordManager: null, reference: null },
+      username: { configured: true, passwordManager: null, reference: null },
+      password: { configured: true, passwordManager: null, reference: null },
     },
     createdAt: "t",
     updatedAt: "t",

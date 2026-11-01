@@ -13,6 +13,7 @@ import { McpOAuth } from "../integrations/mcp-oauth";
 import { BotMemory } from "../memory/bot-memory";
 import { PasswordManagers } from "../password-managers/password-manager";
 import { SecretValues } from "../password-managers/secret-values";
+import { Secrets } from "../password-managers/secrets";
 import { assertVendorIds, pluginPasswordManagers } from "../plugins/plugins";
 import { PASSWORD_MANAGER_IDS } from "../shared/vendors";
 import { builtinVendors } from "./builtin-plugins";
@@ -43,7 +44,8 @@ export const coreLayer = (dataDir: string) =>
     Layer.provideMerge(GitHubAppUsers.layer),
     Layer.provideMerge(GitHubAccounts.layer),
     Layer.provideMerge(
-      SecretValues.layer.pipe(
+      Secrets.layer.pipe(
+        Layer.provideMerge(SecretValues.layer),
         Layer.provideMerge(PasswordManagers.layer(passwordManagers)),
       ),
     ),

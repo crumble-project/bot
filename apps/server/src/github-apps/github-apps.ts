@@ -3,7 +3,8 @@ import { and, asc, eq, inArray, isNotNull, ne } from "drizzle-orm";
 import { Clock, Context, Effect, Layer, Redacted } from "effect";
 import { z } from "zod";
 import { SecretRepository } from "../credentials/secret-repository";
-import type { CredentialTarget } from "../shared/domain";
+import type { SecretUnavailable } from "../password-managers/secret-values";
+import type { CredentialTarget, SecretStatus } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
 import { nowIso } from "../shared/time";
@@ -19,9 +20,17 @@ import {
   pendingState,
 } from "./github-api";
 import { GitHubAccounts } from "./github-accounts";
-import { GitHubAppUsers, authorizedPath } from "./github-app-users";
+import {
+  GitHubAppUsers,
+  authorizedPath,
+  githubAppClientSecretKey,
+} from "./github-app-users";
+import { Secrets } from "../password-managers/secrets";
 import { githubAppBots, githubApps } from "./schema";
-import { AgentCredentialRepository } from "../credentials/agent-credential-repository";
+import {
+  AgentCredentialRepository,
+  credentialSecretKey,
+} from "../credentials/agent-credential-repository";
 import { agentCredentials } from "../credentials/schema";
 
 // Read-only on CI and checks so jobs can follow their PRs; no `workflows`, so jobs can't change CI.
@@ -55,8 +64,8 @@ export type GitHubApp = {
   /** The GitHub user or organization whose repositories the App works on. */
   account: string | null;
   installed: boolean;
-  /** Whether the owner can sign in through the App; Apps created before Crumble kept the secret need it pasted. */
-  hasClientSecret: boolean;
+  /** Signing the owner in through the App needs it; Apps created before Crumble kept it need it entered. */
+  clientSecret: SecretStatus;
   /** The owner's GitHub login when signed in through the App: its bots then act as the owner. */
   user: string | null;
   botIds: string[];
@@ -175,7 +184,10 @@ export class GitHubApps extends Context.Service<
     readonly token: (
       agentId: string,
       target: CredentialTarget,
-    ) => Effect.Effect<Redacted.Redacted, GitHubUnavailable>;
+    ) => Effect.Effect<
+      Redacted.Redacted,
+      GitHubUnavailable | SecretUnavailable
+    >;
     /** The commit identity in each GitHub account the bot works in, default first. */
     readonly identities: (agentId: string) => Effect.Effect<GitHubIdentity[]>;
     /** Commit identity and git's HTTPS sign-in for the bot's coding jobs; empty without an App or machine account. */
@@ -190,6 +202,7 @@ export class GitHubApps extends Context.Service<
       const secrets = yield* SecretRepository;
       const users = yield* GitHubAppUsers;
       const accounts = yield* GitHubAccounts;
+      const ownerSecrets = yield* Secrets;
       const credentials = yield* AgentCredentialRepository;
       const tokens = new Map<string, { token: string; expiresAt: number }>();
 
@@ -222,7 +235,9 @@ export class GitHubApps extends Context.Service<
           installUrl: `https://github.com/apps/${found.slug}/installations/new`,
           account: found.account,
           installed: found.installationId !== null,
-          hasClientSecret: found.clientSecret !== null,
+          clientSecret: yield* ownerSecrets.status(
+            githubAppClientSecretKey(found.id),
+          ),
           user: (yield* users.of(found.id))?.login ?? null,
           botIds: yield* botIdsOf(found.id),
           createdAt: found.createdAt,
@@ -267,6 +282,9 @@ export class GitHubApps extends Context.Service<
             github: true,
             placeholder: `crumble-credential-${randomBytes(24).toString("hex")}`,
           });
+          yield* ownerSecrets.delete(
+            credentialSecretKey(agentId, GITHUB_TOKEN_CREDENTIAL),
+          );
 
           return;
         }
@@ -368,15 +386,17 @@ export class GitHubApps extends Context.Service<
             name: app.name,
             clientId: app.client_id,
             privateKey: box.encrypt(app.pem),
-            clientSecret: app.client_secret
-              ? box.encrypt(app.client_secret)
-              : null,
             botUserId: user.id,
             htmlUrl: app.html_url,
             account: app.owner.login,
             createdAt: yield* nowIso,
           })
           .pipe(Effect.orDie);
+
+        if (app.client_secret)
+          yield* ownerSecrets
+            .save(githubAppClientSecretKey(id), { value: app.client_secret })
+            .pipe(Effect.orDie);
 
         return yield* get(id).pipe(Effect.orDie);
       });
@@ -514,6 +534,7 @@ export class GitHubApps extends Context.Service<
           return yield* new NotFound({ message: "GitHub App not found" });
 
         tokens.delete(id);
+        yield* ownerSecrets.delete(githubAppClientSecretKey(id));
         yield* Effect.forEach(botIds, syncCredential);
       });
 
@@ -554,7 +575,7 @@ export class GitHubApps extends Context.Service<
           ? installed.find((each) => each.account?.toLowerCase() === owner)
           : undefined;
 
-        if (!app && machine) return machine.token;
+        if (!app && machine) return yield* machine.token;
 
         const fallback = app ?? installed[0];
 

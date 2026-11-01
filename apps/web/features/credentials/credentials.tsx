@@ -6,10 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   SecretSourceField,
-  referenceOf,
-  sourceDraftOf,
-  useConnectedPasswordManagers,
-  type SecretSourceDraft,
+  type SecretInput,
+  useSecretDraft,
 } from "@/components/secret-source-field";
 import {
   type Bot,
@@ -17,7 +15,6 @@ import {
   type CredentialRequest,
   type Credentials,
   type CredentialUse,
-  type PasswordManagerId,
   call,
   credentialPath,
   credentialsQuery,
@@ -245,46 +242,13 @@ export function CredentialsSettings({
   );
 }
 
-type CredentialBody = {
-  hosts: string[];
-  value?: string;
-  reference?: { passwordManager: PasswordManagerId; reference: string };
-};
+type Secret = ReturnType<typeof useSecretDraft>;
 
-/** The draft's reference, unless it is the one already saved. */
-function changedReference(
-  source: SecretSourceDraft,
-  existing: Credential | null,
-) {
-  const reference = referenceOf(source);
-
-  if (!reference || !existing) return reference;
-
-  return reference.passwordManager === existing.passwordManager &&
-    reference.reference === existing.reference
-    ? null
-    : reference;
-}
-
-/** Sends the source only when it changes: a typed value, or a reference other than the saved one. */
-function credentialBody(
-  draft: { hosts: string; source: SecretSourceDraft },
-  existing: Credential | null,
-): CredentialBody {
-  const reference = changedReference(draft.source, existing);
-
-  return {
-    hosts: hostList(draft.hosts),
-    ...(draft.source.kind === "value" &&
-      draft.source.value && { value: draft.source.value }),
-    ...(reference && { reference }),
-  };
-}
+type CredentialBody = { hosts: string[]; secret?: SecretInput };
 
 function useSaveCredential(
   botId: string,
-  draft: { name: string; hosts: string; source: SecretSourceDraft },
-  existing: Credential | null,
+  draft: { name: string; hosts: string; secret: Secret },
   onClose: () => void,
 ) {
   return useMutation({
@@ -292,7 +256,11 @@ function useSaveCredential(
       call<Credential, CredentialBody>(
         credentialPath(botId, draft.name),
         "PUT",
-        credentialBody(draft, existing),
+        {
+          hosts: hostList(draft.hosts),
+          ...(draft.secret.changed &&
+            draft.secret.input && { secret: draft.secret.input }),
+        },
       ),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
@@ -302,9 +270,6 @@ function useSaveCredential(
     },
   });
 }
-
-const savedSource = (existing: Credential | null) =>
-  sourceDraftOf(existing?.passwordManager, existing?.reference);
 
 function credentialDraft(editing: Editing, botId: string | null, bots: Bot[]) {
   const existing = editing.kind === "credential" ? editing.credential : null;
@@ -317,29 +282,29 @@ function credentialDraft(editing: Editing, botId: string | null, bots: Bot[]) {
     owner: defaultOwner(botId, bots),
     name: source?.name ?? "",
     hosts: (source?.hosts ?? []).join(", "),
-    source: savedSource(existing),
   };
 }
 
 function credentialReady(
   name: string,
   hosts: string,
-  source: SecretSourceDraft,
+  secret: Secret,
   existing: Credential | null,
   pending: boolean,
 ) {
-  const hasSource =
-    source.kind === "value"
-      ? source.value !== ""
-      : referenceOf(source) !== null;
-
   return (
     NAME.test(name) &&
     hostList(hosts).length > 0 &&
-    (existing !== null || hasSource) &&
+    (existing !== null || secret.input !== null) &&
     !pending
   );
 }
+
+/** A value stored in Crumble is kept unless a new one is typed. */
+const keepPlaceholder = (existing: Credential | null) =>
+  existing?.secret?.configured && !existing.secret.passwordManager
+    ? "Keep the saved value"
+    : undefined;
 
 function CredentialDialog({
   bots,
@@ -362,18 +327,10 @@ function CredentialDialog({
   const [owner, setOwner] = useState(initial.owner);
   const [name, setName] = useState(initial.name);
   const [hosts, setHosts] = useState(initial.hosts);
-  const [source, setSource] = useState(initial.source);
+  const secret = useSecretDraft(existing?.secret ?? undefined);
 
-  const connected = useConnectedPasswordManagers();
-
-  const save = useSaveCredential(
-    owner,
-    { name, hosts, source },
-    existing,
-    onClose,
-  );
-
-  const ready = credentialReady(name, hosts, source, existing, save.isPending);
+  const save = useSaveCredential(owner, { name, hosts, secret }, onClose);
+  const ready = credentialReady(name, hosts, secret, existing, save.isPending);
 
   return (
     <SecretSheet
@@ -399,14 +356,8 @@ function CredentialDialog({
       <SecretSourceField
         id="credential-value"
         label="Value"
-        value={source}
-        onChange={setSource}
-        connected={connected}
-        valuePlaceholder={
-          existing?.passwordManager === null
-            ? "Keep the saved value"
-            : undefined
-        }
+        {...secret.field}
+        valuePlaceholder={keepPlaceholder(existing)}
         valueDescription="Stored encrypted and never shown again."
       />
     </SecretSheet>

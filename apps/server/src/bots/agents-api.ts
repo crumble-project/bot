@@ -1,10 +1,15 @@
 import { Effect } from "effect";
 import { patchInput, routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import { SecretRepository } from "../credentials/secret-repository";
 import type { McpIntegrations } from "../integrations/integrations";
-import { signOut, type SecretStorage } from "../integrations/mcp-oauth";
+import {
+  clientSecretKey,
+  mcpTokenKey,
+  signOut,
+  type SecretStorage,
+} from "../integrations/mcp-oauth";
 import { McpServerRepository } from "../integrations/mcp-server-repository";
+import { Secrets, secretKeyPrefix } from "../password-managers/secrets";
 import { agentInput, type AgentInput } from "../shared/domain";
 import { InvalidInput } from "../shared/errors";
 import type { Runner } from "../shared/runner";
@@ -16,7 +21,7 @@ type Services =
   | AgentRepository
   | ConversationRepository
   | McpServerRepository
-  | SecretRepository;
+  | Secrets;
 
 type Exec = Runner<Services>["runSync"];
 
@@ -141,15 +146,20 @@ const registerAgentLifecycleRoutes = (options: AgentRoutesOptions) => {
     );
   });
   register(routes.deleteAgent, async (c) => {
+    const id = c.req.param("id");
+
     const personal = exec(McpServerRepository.use((r) => r.list)).filter(
-      (server) => server.agentId === c.req.param("id"),
+      (server) => server.agentId === id,
     );
 
-    await service.deleteAgent(c.req.param("id"));
+    await service.deleteAgent(id);
 
-    // The bot's personal servers went with it; their credentials and connections go too.
+    exec(Secrets.use((s) => s.deleteAll(secretKeyPrefix("bot", id))));
+
+    // The bot's personal servers went with it; their secrets and connections go too.
     for (const server of personal) {
-      exec(SecretRepository.use((r) => r.delete(`mcp:${server.id}`)));
+      exec(Secrets.use((s) => s.delete(mcpTokenKey(server.id))));
+      exec(Secrets.use((s) => s.delete(clientSecretKey(server.id))));
       signOut(secrets, server.id);
 
       if (integrations)

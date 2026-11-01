@@ -32,8 +32,8 @@ const github = {
   name: "github",
   hosts: ["github.com"],
   fields: {
-    username: { passwordManager: null, reference: null },
-    password: { passwordManager: null, reference: null },
+    username: { configured: true, passwordManager: null, reference: null },
+    password: { configured: true, passwordManager: null, reference: null },
   },
   createdAt: "2026-10-30T10:00:00.000Z",
   updatedAt: "2026-10-30T10:00:00.000Z",
@@ -52,8 +52,7 @@ const moreHosts = {
 const acme = {
   name: "ACME_TOKEN",
   hosts: ["api.acme.com"],
-  passwordManager: null,
-  reference: null,
+  secret: { configured: true, passwordManager: null, reference: null },
   createdAt: "2026-10-30T10:00:00.000Z",
   updatedAt: "2026-10-30T10:00:00.000Z",
   lastUsedAt: null,

@@ -271,7 +271,7 @@ describe("product database migrations", () => {
     upgraded.close();
   });
 
-  test("adding password managers keeps credentials and their use log", () => {
+  test("password managers, then secrets by key, keep credentials and their use log", () => {
     // Rebuilding agent_credentials inside the migration's transaction would cascade into credential_uses.
     const before = mkdtempSync("/tmp/crumble-migrations-");
     dirs.push(before);
@@ -296,15 +296,16 @@ describe("product database migrations", () => {
     migrateStore(file);
 
     const migrated = new Database(file, { readonly: true });
-    expect(
-      migrated
-        .query("SELECT name, value, reference FROM agent_credentials")
-        .all(),
-    ).toEqual([{ name: "TOKEN", value: "sealed", reference: null }]);
+    expect(migrated.query("SELECT name FROM agent_credentials").all()).toEqual([
+      { name: "TOKEN" },
+    ]);
     expect(
       migrated.query("SELECT name, host, status FROM credential_uses").all(),
     ).toEqual([{ name: "TOKEN", host: "api.example.com", status: 200 }]);
-    expect(migrated.query("SELECT key, value FROM credentials").all()).toEqual([
+    expect(
+      migrated.query("SELECT key, value FROM credentials ORDER BY key").all(),
+    ).toEqual([
+      { key: "bot:a:credential:TOKEN", value: "sealed" },
       { key: "mcp:s", value: "sealed" },
     ]);
     expect(

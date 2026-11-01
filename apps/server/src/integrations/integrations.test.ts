@@ -23,6 +23,7 @@ import { runnerOf } from "../shared/runner";
 import { PasswordManagers } from "../password-managers/password-manager";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
 import { SecretValues } from "../password-managers/secret-values";
+import { Secrets } from "../password-managers/secrets";
 import { SecretRepository } from "../credentials/secret-repository";
 import type { McpTransport } from "@earendil-works/pi-mcp";
 
@@ -66,7 +67,8 @@ function withVaultToken(
 
   const vault = Effect.runSync(
     Layer.buildWithScope(
-      SecretValues.layer.pipe(
+      Secrets.layer.pipe(
+        Layer.provideMerge(SecretValues.layer),
         Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
         Layer.provide(Layer.succeedContext(core)),
       ),

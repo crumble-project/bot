@@ -233,7 +233,7 @@ test("exit zero succeeds with combined output and uses workspace options and cre
     Credentials.use((credentials) =>
       credentials.save(agent.id, "SCRIPT_TOKEN", {
         hosts: ["example.invalid"],
-        value: "test-only",
+        secret: { value: "test-only" },
       }),
     ),
   );

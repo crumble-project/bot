@@ -9,7 +9,7 @@ import {
   loginSaveInput,
   passwordManagerIdInput,
   scheduleInput,
-  secretReferenceInput,
+  secretInput,
   skillInput,
   skillLifecycleInput,
 } from "../shared/domain";
@@ -31,7 +31,6 @@ import {
 } from "./event-sources";
 import {
   githubBotsInput,
-  githubAppClientSecretInput,
   githubAppSignInInput,
   githubAppSignInResponse,
   githubAppCompleteInput,
@@ -39,7 +38,6 @@ import {
   githubAppManifestResponse,
   githubAppResponse,
   githubAppsResponse,
-  githubAccountTokenInput,
   githubAccountResponse,
   githubAccountsResponse,
 } from "./github-apps";
@@ -126,23 +124,6 @@ export const activityInput = z.object({
   cursor: z.string().min(1).max(8000).optional(),
 });
 
-export const apiKeyInput = z.object({
-  apiKey: z.string().trim().min(1).max(16000),
-});
-
-/** A provider's API key, or where to read it from a password manager. */
-export const providerKeyInput = z
-  .object({
-    /** Write-only. */
-    apiKey: apiKeyInput.shape.apiKey.optional(),
-    /** Read the key from a password manager instead of storing it. */
-    reference: secretReferenceInput.optional(),
-  })
-  .refine((input) => (input.apiKey === undefined) !== !input.reference, {
-    message: "Send an API key or a reference, not both",
-    path: ["reference"],
-  });
-
 /** Write-only: the token never appears in a response. */
 export const passwordManagerTokenInput = z.object({
   token: z.string().trim().min(1).max(16000),
@@ -154,20 +135,6 @@ const pluginSettingParams = z.object({
   pluginId: z.string().min(1).max(200),
   key: z.string().min(1).max(200),
 });
-
-// One object with optional fields rather than a union: `value` stays a compatible request property.
-export const pluginSecretInput = z
-  .object({
-    value: z.string().trim().min(1).max(16000).optional(),
-    reference: secretReferenceInput.optional(),
-  })
-  .strict()
-  .refine(
-    (input) => (input.value === undefined) !== (input.reference === undefined),
-    {
-      message: "Send exactly one of value or reference",
-    },
-  );
 
 /** Login answers may be pasted callback URLs, never larger than this. */
 const MAX_LOGIN_VALUE = 16384;
@@ -207,14 +174,12 @@ export const mcpInput = z.object({
       "Use an HTTP or HTTPS URL",
     ),
   enabled: z.boolean().default(true),
-  /** Write-only; an empty string removes it. Exclusive with `tokenReference`. */
-  token: z.string().max(16000).optional(),
-  /** Read the token from a password manager instead of storing it; null removes it. */
-  tokenReference: secretReferenceInput.nullable().optional(),
+  /** The bearer token; null removes it. */
+  token: secretInput.nullable().optional(),
   /** The client ID of an OAuth app the owner registered with the server's authorization server; null removes it. */
   oauthClientId: z.string().trim().min(1).max(500).nullable().optional(),
-  /** Write-only; an empty string removes it. */
-  oauthClientSecret: z.string().max(1000).optional(),
+  /** The OAuth app's client secret; null removes it. */
+  oauthClientSecret: secretInput.nullable().optional(),
 });
 
 export const mcpCreateInput = mcpInput.extend({
@@ -381,7 +346,7 @@ export const routes = {
     operationId: "setGithubAppClientSecret",
     description:
       "Stores a client secret generated in the App's GitHub settings, for an App created before Crumble kept it.",
-    request: { params: id, body: body(githubAppClientSecretInput) },
+    request: { params: id, body: body(secretInput) },
     responses: { 200: json(githubAppResponse) },
   }),
   githubAccounts: define({
@@ -398,7 +363,7 @@ export const routes = {
     operationId: "addGithubAccount",
     description:
       "Adds the GitHub user a personal access token signs in as. 400 when GitHub refuses the token; 409 when the user is already added.",
-    request: { body: body(githubAccountTokenInput) },
+    request: { body: body(secretInput) },
     responses: { 200: json(githubAccountResponse) },
   }),
   setGithubAccountToken: define({
@@ -407,7 +372,7 @@ export const routes = {
     operationId: "setGithubAccountToken",
     description:
       "Replaces the machine account's token. 400 when GitHub refuses it or it signs in as another user.",
-    request: { params: id, body: body(githubAccountTokenInput) },
+    request: { params: id, body: body(secretInput) },
     responses: { 200: json(githubAccountResponse) },
   }),
   setGithubAccountBots: define({
@@ -499,25 +464,6 @@ export const routes = {
     operationId: "updateJudgeModel",
     request: { body: body(judgeModelInput) },
     responses: { 200: json(response.judgeModelResponse) },
-  }),
-  setExaKey: define({
-    method: "put",
-    path: "/v1/web-search/exa-key",
-    operationId: "setExaKey",
-    deprecated: true,
-    description:
-      "Use `PUT /v1/plugin-settings/web-search-exa/api-key`; this sets the same value.",
-    request: { body: body(apiKeyInput) },
-    responses: { 200: json(z.object({ exaKeyConfigured: z.boolean() })) },
-  }),
-  deleteExaKey: define({
-    method: "delete",
-    path: "/v1/web-search/exa-key",
-    operationId: "deleteExaKey",
-    deprecated: true,
-    description:
-      "Use `DELETE /v1/plugin-settings/web-search-exa/api-key`; this removes the same value.",
-    responses: { 200: json(z.object({ exaKeyConfigured: z.boolean() })) },
   }),
   listAgents: define({
     method: "get",
@@ -1306,7 +1252,7 @@ export const routes = {
       "Saves the provider's API key, or a password manager reference to read it from. A reference is read once to check it; 400 when it can't be read, keeping the previous credential.",
     request: {
       params: z.object({ provider: z.string() }),
-      body: body(providerKeyInput),
+      body: body(secretInput),
     },
     responses: { 200: json(response.providerConfiguredResponse) },
   }),
@@ -1393,7 +1339,7 @@ export const routes = {
     operationId: "setPluginSetting",
     description:
       "Sets a plugin setting to a `value` stored in Crumble, or to a `reference` read from a connected password manager, replacing the one before; send exactly one. A reference is checked by reading it once; 400 when it can't be read. 404 for a plugin or key the server doesn't have.",
-    request: { params: pluginSettingParams, body: body(pluginSecretInput) },
+    request: { params: pluginSettingParams, body: body(secretInput) },
     responses: { 200: json(response.pluginSettingResponse) },
   }),
   deletePluginSetting: define({

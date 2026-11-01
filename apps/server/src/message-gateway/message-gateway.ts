@@ -21,8 +21,7 @@ import {
   type GatewayDescription,
 } from "../contract/message-gateway";
 import { SecretRepository } from "../credentials/secret-repository";
-import { keyedSecretReader } from "../password-managers/secret-references";
-import { SecretValues } from "../password-managers/secret-values";
+import { Secrets, secretText } from "../password-managers/secrets";
 import { Plugins, pluginChatAdapters } from "../plugins/plugins";
 import type { Agent } from "../shared/domain";
 import { InvalidInput, NotFound, type AppError } from "../shared/errors";
@@ -293,7 +292,7 @@ export class MessageGateway extends Context.Service<
         }
       });
 
-      const readSecret = keyedSecretReader(secrets, yield* SecretValues);
+      const readSecret = secretText(yield* Secrets);
       const readToken = (adapter: ChatAdapter) => readSecret(adapter.secretKey);
 
       // A password manager that can't read the token explains itself instead of the generic missing-token error.

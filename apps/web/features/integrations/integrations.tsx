@@ -27,12 +27,8 @@ import { Input } from "@/components/ui/input";
 import { EditorSheet, OwnerSelectField } from "@/components/form-fields";
 import { RedirectReturn } from "@/components/redirect-return";
 import {
-  EMPTY_SOURCE,
   SecretSourceField,
-  referenceOf,
-  sourceDraftOf,
-  useConnectedPasswordManagers,
-  type SecretSourceDraft,
+  useSecretDraft,
 } from "@/components/secret-source-field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -326,20 +322,16 @@ type ServerDraft = {
   owner: string;
   name: string;
   url: string;
-  token: SecretSourceDraft;
   enabled: boolean;
   clientId: string;
-  clientSecret: string;
 };
 
 const BLANK_DRAFT: ServerDraft = {
   owner: SHARED,
   name: "",
   url: "",
-  token: EMPTY_SOURCE,
   enabled: true,
   clientId: "",
-  clientSecret: "",
 };
 
 function initialDraft(server: McpServer | null): ServerDraft {
@@ -352,58 +344,56 @@ function initialDraft(server: McpServer | null): ServerDraft {
     url: server.url,
     enabled: server.enabled,
     clientId: server.oauthClientId ?? "",
-    token: sourceDraftOf(server.tokenPasswordManager, server.tokenReference),
   };
 }
 
-function oauthClientPatch(draft: ServerDraft, server: McpServer | null) {
+type ServerSecrets = {
+  token: ReturnType<typeof useSecretDraft>;
+  clientSecret: ReturnType<typeof useSecretDraft>;
+};
+
+function oauthClientPatch(
+  draft: ServerDraft,
+  server: McpServer | null,
+  { clientSecret }: ServerSecrets,
+) {
   const clientId = draft.clientId.trim();
-  const clientSecret = draft.clientSecret.trim();
 
   return {
     ...((clientId || server?.oauthClientId) && {
       oauthClientId: clientId || null,
     }),
     // Without an app, its secret has no use; clearing the client ID removes it too.
-    ...(clientSecret
-      ? { oauthClientSecret: clientSecret }
-      : !clientId && server?.hasOAuthClientSecret && { oauthClientSecret: "" }),
+    ...(clientId && clientSecret.changed
+      ? { oauthClientSecret: clientSecret.input }
+      : !clientId &&
+        server?.oauthClientSecret.configured && { oauthClientSecret: null }),
   };
 }
 
-/** Sends the token only when it changes: a typed value, or a reference other than the saved one. */
-function tokenPatch(draft: ServerDraft, server: McpServer | null) {
-  const reference = referenceOf(draft.token);
-
-  if (draft.token.kind === "value")
-    return draft.token.value.trim() ? { token: draft.token.value.trim() } : {};
-
-  return reference &&
-    (reference.passwordManager !== server?.tokenPasswordManager ||
-      reference.reference !== server.tokenReference)
-    ? { tokenReference: reference }
-    : {};
-}
-
-function serverBody(draft: ServerDraft, server: McpServer | null) {
+function serverBody(
+  draft: ServerDraft,
+  server: McpServer | null,
+  secrets: ServerSecrets,
+) {
   return {
     name: draft.name.trim(),
     url: draft.url.trim(),
     enabled: draft.enabled,
-    ...tokenPatch(draft, server),
-    ...oauthClientPatch(draft, server),
+    ...(secrets.token.changed && { token: secrets.token.input }),
+    ...oauthClientPatch(draft, server, secrets),
   };
 }
 
 function useSaveServer(
   draft: ServerDraft,
   server: McpServer | null,
-  reset: () => void,
+  secrets: ServerSecrets,
   onClose: () => void,
 ) {
   return useMutation({
     mutationFn: () => {
-      const body = serverBody(draft, server);
+      const body = serverBody(draft, server, secrets);
 
       return server
         ? send(serverPath(server.id), "PATCH", body)
@@ -413,7 +403,6 @@ function useSaveServer(
           });
     },
     onSuccess: async () => {
-      reset();
       await refresh();
       onClose();
     },
@@ -434,12 +423,12 @@ function ServerDialog({
   const patch = (change: Partial<ServerDraft>) =>
     setDraft((current) => ({ ...current, ...change }));
 
-  const save = useSaveServer(
-    draft,
-    server,
-    () => patch({ token: EMPTY_SOURCE, clientSecret: "" }),
-    onClose,
-  );
+  const secrets: ServerSecrets = {
+    token: useSecretDraft(server?.token),
+    clientSecret: useSecretDraft(server?.oauthClientSecret),
+  };
+
+  const save = useSaveServer(draft, server, secrets, onClose);
 
   const valid = Boolean(draft.name.trim() && validUrl(draft.url.trim()));
 
@@ -452,8 +441,19 @@ function ServerDialog({
       onSubmit={() => valid && save.mutate()}
       onClose={onClose}
     >
-      <ServerFields bots={bots} server={server} draft={draft} patch={patch} />
-      <OAuthAppFields server={server} draft={draft} patch={patch} />
+      <ServerFields
+        bots={bots}
+        server={server}
+        draft={draft}
+        patch={patch}
+        secrets={secrets}
+      />
+      <OAuthAppFields
+        server={server}
+        draft={draft}
+        patch={patch}
+        secrets={secrets}
+      />
       <Field orientation="horizontal">
         <FieldContent>
           <FieldLabel htmlFor="mcp-enabled">Enabled</FieldLabel>
@@ -472,6 +472,7 @@ type DraftFieldsProps = {
   server: McpServer | null;
   draft: ServerDraft;
   patch: (change: Partial<ServerDraft>) => void;
+  secrets: ServerSecrets;
 };
 
 function ServerFields({
@@ -479,6 +480,7 @@ function ServerFields({
   server,
   draft,
   patch,
+  secrets,
 }: DraftFieldsProps & { bots: Bot[] }) {
   const owners = [
     { label: "Every bot (shared)", value: SHARED },
@@ -486,7 +488,6 @@ function ServerFields({
   ];
 
   const urlInvalid = draft.url.trim() !== "" && !validUrl(draft.url.trim());
-  const connected = useConnectedPasswordManagers();
 
   return (
     <>
@@ -523,11 +524,9 @@ function ServerFields({
       <SecretSourceField
         id="mcp-token"
         label="Token"
-        value={draft.token}
-        onChange={(token) => patch({ token })}
-        connected={connected}
+        {...secrets.token.field}
         valuePlaceholder={
-          server?.auth === "token" && !server.tokenReference
+          server?.auth === "token" && !server.token.reference
             ? "Replace the saved token"
             : "Optional"
         }
@@ -537,7 +536,7 @@ function ServerFields({
   );
 }
 
-function OAuthAppFields({ server, draft, patch }: DraftFieldsProps) {
+function OAuthAppFields({ server, draft, patch, secrets }: DraftFieldsProps) {
   const callback = `${location.origin}/ui/oauth/callback`;
 
   return (
@@ -561,26 +560,18 @@ function OAuthAppFields({ server, draft, patch }: DraftFieldsProps) {
           onChange={(event) => patch({ clientId: event.target.value })}
         />
       </Field>
-      <Field>
-        <FieldLabel htmlFor="mcp-client-secret">Client secret</FieldLabel>
-        <Input
-          id="mcp-client-secret"
-          type="password"
-          autoComplete="off"
-          disabled={!draft.clientId.trim()}
-          placeholder={
-            server?.hasOAuthClientSecret
-              ? "Replace the saved secret"
-              : "Optional"
-          }
-          value={draft.clientSecret}
-          onChange={(event) => patch({ clientSecret: event.target.value })}
-        />
-        <FieldDescription>
-          Stored encrypted and never shown again. Changing the app signs the
-          server out.
-        </FieldDescription>
-      </Field>
+      <SecretSourceField
+        id="mcp-client-secret"
+        label="Client secret"
+        {...secrets.clientSecret.field}
+        disabled={!draft.clientId.trim()}
+        valuePlaceholder={
+          server?.oauthClientSecret.configured
+            ? "Replace the saved secret"
+            : "Optional"
+        }
+        valueDescription="Stored encrypted and never shown again. Changing the app signs the server out."
+      />
     </FieldSet>
   );
 }

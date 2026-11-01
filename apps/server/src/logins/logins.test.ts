@@ -7,6 +7,7 @@ import type { CoreServices } from "../app/core-layer";
 import { PasswordManagers } from "../password-managers/password-manager";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
 import { SecretValues } from "../password-managers/secret-values";
+import { Secrets } from "../password-managers/secrets";
 import { agentInput, loginSaveInput } from "../shared/domain";
 import { runnerOf } from "../shared/runner";
 import {
@@ -17,6 +18,7 @@ import {
 } from "../../test/support/fake-password-manager";
 import { takeNotices } from "../../test/support/notices";
 import { Store } from "../../test/support/store";
+import { loginFieldKey } from "./login-repository";
 import { Logins } from "./logins";
 import { oneTimeCode, parseOneTimeSecret } from "./one-time-codes";
 
@@ -42,7 +44,8 @@ function open(values: Record<string, string> = {}) {
     Layer.buildWithScope(
       Logins.layer.pipe(
         Layer.provideMerge(
-          SecretValues.layer.pipe(
+          Secrets.layer.pipe(
+            Layer.provideMerge(SecretValues.layer),
             Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
           ),
         ),
@@ -156,8 +159,16 @@ test("a 1Password item fills every field, its one-time code only when it has one
   );
 
   expect(saved.fields).toEqual({
-    username: { passwordManager: "1password", reference: `${ITEM}/username` },
-    password: { passwordManager: "1password", reference: `${ITEM}/password` },
+    username: {
+      configured: true,
+      passwordManager: "1password",
+      reference: `${ITEM}/username`,
+    },
+    password: {
+      configured: true,
+      passwordManager: "1password",
+      reference: `${ITEM}/password`,
+    },
   });
   expect(await bot.value("github", "username")).toBe("ada");
   expect(await bot.value("github", "password")).toBe("vault-pw");
@@ -197,7 +208,7 @@ test("an item's one-time code that can't be checked fails the save instead of dr
   expect(
     (await bot.run(bot.logins.get(bot.agentId, "github")))?.fields
       .one_time_code,
-  ).toEqual({ passwordManager: "1password", reference: otp });
+  ).toEqual({ configured: true, passwordManager: "1password", reference: otp });
 });
 
 test("a computed one-time code is read anew for every fill", async () => {
@@ -295,7 +306,7 @@ test("replacing a reference with a value drops it from the password manager's us
   );
 
   expect(await bot.usedBy()).toEqual([
-    { kind: "botLogin", agentId: bot.agentId, name: "github" },
+    loginFieldKey(bot.agentId, "github", "password"),
   ]);
 
   const reads = bot.state.reads;

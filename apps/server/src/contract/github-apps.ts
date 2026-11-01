@@ -1,4 +1,5 @@
 import { z } from "@hono/zod-openapi";
+import { secretStatusResponse } from "./api-responses";
 
 export const githubAppManifestInput = z
   .object({
@@ -29,10 +30,6 @@ export const githubAppSignInInput = z
   })
   .strict();
 
-export const githubAppClientSecretInput = z
-  .object({ clientSecret: z.string().trim().min(1).max(200) })
-  .strict();
-
 export const githubAppSignInResponse = z.object({ url: z.string() });
 
 export const githubBotsInput = z
@@ -60,10 +57,7 @@ export const githubAppResponse = z
         "The GitHub user or organization whose repositories the App works on.",
     }),
     installed: z.boolean(),
-    hasClientSecret: z.boolean().openapi({
-      description:
-        "Whether the owner can sign in through the App. An App created before Crumble kept its client secret needs one pasted.",
-    }),
+    clientSecret: secretStatusResponse,
     user: z.string().nullable().openapi({
       description:
         "The owner's GitHub login when signed in through the App; its bots then act as the owner, with the App's badge.",
@@ -79,13 +73,6 @@ export const githubAppsResponse = z.object({
 
 export type GitHubAppResponse = z.infer<typeof githubAppResponse>;
 
-export const githubAccountTokenInput = z
-  .object({
-    /** A personal access token of the machine account's GitHub user. */
-    token: z.string().trim().min(1).max(500),
-  })
-  .strict();
-
 export const githubAccountResponse = z
   .object({
     id: z.string(),
@@ -94,6 +81,7 @@ export const githubAccountResponse = z
     }),
     htmlUrl: z.string(),
     botIds: z.array(z.string()),
+    token: secretStatusResponse,
     createdAt: z.string(),
   })
   .openapi("GitHubAccount");

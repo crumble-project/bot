@@ -31,7 +31,7 @@ Bitwarden Secrets Manager. [Connect the password manager](/concepts/password-man
 first. Then click **Add key**, or **Replace key** in the provider's **More**
 menu, select the password manager, and paste the reference.
 
-Over the API, send `reference` instead of `apiKey` to
+Over the API, send `reference` instead of `value` to
 `PUT /v1/providers/{provider}`:
 
 ```json

@@ -10,6 +10,7 @@ import { AgentRepository } from "../bots/agent-repository";
 import { SecretRepository } from "../credentials/secret-repository";
 import { PasswordManagers } from "../password-managers/password-manager";
 import { SecretValues } from "../password-managers/secret-values";
+import { Secrets } from "../password-managers/secrets";
 import { ScheduleRepository } from "../schedules/schedule-repository";
 import { agentInput, scheduleInput } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
@@ -134,7 +135,10 @@ async function fixture() {
     EventSources.layer.pipe(
       Layer.provideMerge(EventRelay.layer),
       Layer.provideMerge(
-        SecretValues.layer.pipe(Layer.provideMerge(PasswordManagers.layer([]))),
+        Secrets.layer.pipe(
+          Layer.provideMerge(SecretValues.layer),
+          Layer.provideMerge(PasswordManagers.layer([])),
+        ),
       ),
       Layer.provideMerge(productLayer(folder)),
       Layer.provideMerge(TestClock.layer()),

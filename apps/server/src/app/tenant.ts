@@ -71,9 +71,7 @@ import { BotWorkspaces } from "../workspaces/workspace";
 import { desktopKeepAwake } from "../bot-desktop/keep-awake";
 import { AgentRepository } from "../bots/agent-repository";
 import { BotRequests, botRequestTools } from "../bot-requests/bot-requests";
-import { SecretRepository } from "../credentials/secret-repository";
-import { keyedSecretReader } from "../password-managers/secret-references";
-import { SecretValues } from "../password-managers/secret-values";
+import { Secrets, secretText } from "../password-managers/secrets";
 import { MessageGateway } from "../message-gateway/message-gateway";
 import { EventRelay } from "../event-sources/event-relay";
 import { EventSources } from "../event-sources/event-sources";
@@ -178,7 +176,7 @@ function accountLayer(
 
       const installed = builtinPlugins({
         dataDir,
-        secret: keyedSecretReader(yield* SecretRepository, yield* SecretValues),
+        secret: secretText(yield* Secrets),
         env: process.env,
         workspaces: yield* BotWorkspaces,
         desktopControl: desktopControlAccess(run),

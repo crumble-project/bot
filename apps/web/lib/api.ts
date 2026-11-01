@@ -29,6 +29,7 @@ import type {
   memoryResponse,
   modelResponse,
   passwordManagersResponse,
+  secretStatusResponse,
   pluginSettingsResponse,
   providerResponse,
   scheduleResponse,
@@ -94,6 +95,8 @@ export type PasswordManager = z.infer<
 >["passwordManagers"][number];
 
 export type PasswordManagerId = PasswordManager["id"];
+
+export type SecretStatus = z.infer<typeof secretStatusResponse>;
 
 export type GitHubApp = z.infer<typeof githubAppResponse>;
 

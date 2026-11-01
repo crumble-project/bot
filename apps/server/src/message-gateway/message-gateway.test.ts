@@ -16,6 +16,7 @@ import { SecretRepository } from "../credentials/secret-repository";
 import { PasswordManagers } from "../password-managers/password-manager";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
 import { SecretValues } from "../password-managers/secret-values";
+import { Secrets } from "../password-managers/secrets";
 import {
   FAKE_TOKEN,
   fakePasswordManager,
@@ -210,7 +211,8 @@ async function fixture(
     ),
   ).pipe(
     Layer.provideMerge(
-      SecretValues.layer.pipe(
+      Secrets.layer.pipe(
+        Layer.provideMerge(SecretValues.layer),
         Layer.provideMerge(PasswordManagers.layer([fakeVendor(vault)])),
       ),
     ),

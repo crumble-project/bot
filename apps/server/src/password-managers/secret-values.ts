@@ -25,7 +25,7 @@ export type SecretSource =
       readonly reference: string;
     };
 
-/** A row with `secretSource` columns. */
+/** A row of the `secrets` table. */
 type SecretSourceRow = {
   value: string | null;
   passwordManager: PasswordManagerId | null;

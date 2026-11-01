@@ -8,6 +8,21 @@ import { agentInput } from "../shared/domain";
 import type * as charts from "../display/charts";
 import type * as webSearch from "../web-search/provider";
 
+export const secretStatusResponse = z
+  .object({
+    configured: z.boolean(),
+    passwordManager: z.enum(PASSWORD_MANAGER_IDS).nullable().openapi({
+      description:
+        "The password manager the value is read from; null for a value stored in Crumble or no value.",
+    }),
+    reference: z.string().nullable().openapi({
+      description: "Where in `passwordManager` the value is read from.",
+    }),
+  })
+  .openapi("SecretStatus", {
+    description: "A secret the owner entered; its value is never returned.",
+  });
+
 export type ChartLayout = charts.ChartLayout;
 
 export type WebPage = webSearch.WebPage;
@@ -420,12 +435,8 @@ export const credentialResponse = z
   .object({
     name: z.string(),
     hosts: z.array(z.string()),
-    passwordManager: z.enum(PASSWORD_MANAGER_IDS).nullable().openapi({
-      description:
-        "The password manager the value is read from; null for a value stored in Crumble.",
-    }),
-    reference: z.string().nullable().openapi({
-      description: "Where in `passwordManager` the value is read from.",
+    secret: secretStatusResponse.nullable().openapi({
+      description: "Null when `github` is true.",
     }),
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -436,7 +447,7 @@ export const credentialResponse = z
     }),
     github: z.boolean().openapi({
       description:
-        "The value is a GitHub token: from the bot's GitHub App, minted for the App or for the owner signed in through it, or its machine account's personal access token. It has no stored value or reference here.",
+        "The value is a GitHub token: from the bot's GitHub App, minted for the App or for the owner signed in through it, or its machine account's personal access token. It has no secret here.",
     }),
   })
   .openapi("Credential");
@@ -474,27 +485,15 @@ export const credentialUseResponse = z
   })
   .openapi("CredentialUse");
 
-const loginFieldSourceResponse = z
-  .object({
-    passwordManager: z.enum(PASSWORD_MANAGER_IDS).nullable().openapi({
-      description:
-        "The password manager the value is read from; null for a value stored in Crumble.",
-    }),
-    reference: z.string().nullable().openapi({
-      description: "Where in `passwordManager` the value is read from.",
-    }),
-  })
-  .openapi("LoginFieldSource");
-
 export const loginResponse = z
   .object({
     name: z.string(),
     hosts: z.array(z.string()),
     fields: z
       .object({
-        username: loginFieldSourceResponse.optional(),
-        password: loginFieldSourceResponse.optional(),
-        one_time_code: loginFieldSourceResponse.optional(),
+        username: secretStatusResponse.optional(),
+        password: secretStatusResponse.optional(),
+        one_time_code: secretStatusResponse.optional(),
       })
       .openapi({
         description:
@@ -840,13 +839,7 @@ export const providerResponse = z
     authMethods: z.array(loginMethod),
     /** The provider's saved credential; ambient credentials have none. */
     credentialType: authType.nullable(),
-    passwordManager: z.enum(PASSWORD_MANAGER_IDS).nullable().openapi({
-      description:
-        "The password manager the saved API key is read from; null for a credential stored in Crumble.",
-    }),
-    reference: z.string().nullable().openapi({
-      description: "Where in `passwordManager` the API key is read from.",
-    }),
+    apiKey: secretStatusResponse,
     activeLoginId: z.string().nullable(),
     /** Set for providers whose sign-in happens outside Crumble; they have no `authMethods`. */
     externalAuth: externalAuthResponse.nullable(),
@@ -937,38 +930,15 @@ export const providerConfiguredResponse = z
   .object({ provider: z.string(), configured: z.boolean() })
   .openapi("ProviderConfigured");
 
-// One object with optional fields rather than a union, so client generators keep it.
-const secretUsingPasswordManagerResponse = z
-  .object({
-    kind: z.enum(["botCredential", "botLogin", "providerCredential", "secret"]),
-    agentId: z
-      .string()
-      .optional()
-      .openapi({ description: "For `botCredential` and `botLogin`." }),
-    name: z.string().optional().openapi({
-      description:
-        "The credential's or login's name, for `botCredential` and `botLogin`.",
-    }),
-    provider: z
-      .string()
-      .optional()
-      .openapi({ description: "For `providerCredential`." }),
-    key: z.string().optional().openapi({
-      description:
-        "For `secret`, such as `mcp:<server ID>` for an MCP server token.",
-    }),
-  })
-  .openapi("SecretUsingPasswordManager");
-
 export const passwordManagerResponse = z
   .object({
     id: z.enum(PASSWORD_MANAGER_IDS),
     name: z.string(),
     connected: z.boolean(),
     connectedAt: z.string().nullable(),
-    usedBy: z.array(secretUsingPasswordManagerResponse).openapi({
+    usedBy: z.array(z.string()).openapi({
       description:
-        "Secrets that read their value from this password manager; it can't be disconnected while any remain.",
+        "The keys of the secrets that read their value from this password manager, such as `mcp:<server ID>`; it can't be disconnected while any remain.",
     }),
   })
   .openapi("PasswordManager");
@@ -987,14 +957,7 @@ export const pluginSettingResponse = z
     whenMissing: z.string().openapi({
       description: "The status to show while the setting has no value.",
     }),
-    configured: z.boolean(),
-    passwordManager: z.enum(PASSWORD_MANAGER_IDS).nullable().openapi({
-      description:
-        "The password manager the value is read from; null for a value stored in Crumble or no value.",
-    }),
-    reference: z.string().nullable().openapi({
-      description: "Where in `passwordManager` the value is read from.",
-    }),
+    secret: secretStatusResponse,
   })
   .openapi("PluginSetting");
 
@@ -1033,17 +996,8 @@ export const mcpServerResponse = z
       description:
         "The client ID of an OAuth app the owner registered with the server's authorization server, used instead of registering Crumble.",
     }),
-    tokenPasswordManager: z
-      .enum(PASSWORD_MANAGER_IDS)
-      .nullable()
-      .optional()
-      .openapi({
-        description:
-          "The password manager the token is read from; null for a token stored in Crumble or no token.",
-      }),
-    tokenReference: z.string().nullable().optional().openapi({
-      description: "Where in `tokenPasswordManager` the token is read from.",
-    }),
+    token: secretStatusResponse,
+    oauthClientSecret: secretStatusResponse,
   })
   .openapi("McpServer");
 
@@ -1053,10 +1007,6 @@ export const describedMcpServerResponse = mcpServerResponse
     error: z.string().nullable().openapi({
       description:
         "Why the server's tools were left out of a bot's last turn, such as a missing sign-in; null once it connects again.",
-    }),
-    hasOAuthClientSecret: z.boolean().openapi({
-      description:
-        "Whether the OAuth app's client secret is stored; it is never returned.",
     }),
     authenticated: z.boolean(),
   })

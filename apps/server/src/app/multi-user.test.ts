@@ -180,7 +180,7 @@ test.serial(
         body: JSON.stringify({
           name: "private-mcp",
           url: "https://mcp.example.test",
-          token: "private-mcp-token",
+          token: { value: "private-mcp-token" },
         }),
       });
 
@@ -223,7 +223,7 @@ test.serial(
         {
           method: "PUT",
           headers: json(first),
-          body: JSON.stringify({ apiKey: "first-provider-secret" }),
+          body: JSON.stringify({ value: "first-provider-secret" }),
         },
       );
 

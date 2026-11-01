@@ -6,7 +6,6 @@ import {
   type Models,
 } from "@earendil-works/pi-ai";
 import { Context, Effect, Layer } from "effect";
-import { ProviderCredentialRepository } from "./provider-credential-repository";
 import { ProviderCredentials } from "./provider-credentials";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
@@ -119,7 +118,7 @@ export function providerModels(
 export class ProviderModels extends Context.Service<ProviderModels, Models>()(
   "crumble/providers/ProviderModels",
 ) {
-  /** Over `contributions`' providers; API keys saved before typed credentials move to the provider table first. */
+  /** Over `contributions`' providers. */
   static layer(
     contributions?: readonly ProviderContribution[],
     options: { allowAmbientEnv?: boolean } = {},
@@ -127,14 +126,6 @@ export class ProviderModels extends Context.Service<ProviderModels, Models>()(
     return Layer.effect(
       ProviderModels,
       Effect.gen(function* () {
-        const repository = yield* ProviderCredentialRepository;
-
-        yield* repository.migrateApiKeys(
-          providerModels(undefined, contributions, options)
-            .getProviders()
-            .map((provider) => provider.id),
-        );
-
         return providerModels(
           yield* ProviderCredentials,
           contributions,

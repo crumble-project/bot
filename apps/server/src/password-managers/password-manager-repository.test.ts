@@ -99,12 +99,12 @@ describe("PasswordManagerRepository", () => {
 
     expect(result).toEqual({
       refused: "Conflict",
-      usedBy: [{ kind: "secret", key: "mcp:server" }],
+      usedBy: ["mcp:server"],
       deleted: true,
     });
   });
 
-  test("the database allows exactly one source per secret, and no OAuth reference", async () => {
+  test("the database allows exactly one source per secret", async () => {
     const rejects = await withRepository((dir) =>
       Effect.gen(function* () {
         yield* (yield* PasswordManagerRepository).save(
@@ -131,12 +131,6 @@ describe("PasswordManagerRepository", () => {
           unknownManager: rejected(
             "INSERT INTO credentials (key, password_manager, reference) VALUES ('c', 'bitwarden', 'id')",
           ),
-          oauthReference: rejected(
-            "INSERT INTO provider_credentials (provider, type, password_manager, reference) VALUES ('openai', 'oauth', '1password', 'op://v/i/f')",
-          ),
-          apiKeyReference: rejected(
-            "INSERT INTO provider_credentials (provider, type, password_manager, reference) VALUES ('anthropic', 'api_key', '1password', 'op://v/i/f')",
-          ),
         };
       }),
     );
@@ -145,8 +139,6 @@ describe("PasswordManagerRepository", () => {
       both: true,
       neither: true,
       unknownManager: true,
-      oauthReference: true,
-      apiKeyReference: false,
     });
   });
 });
