@@ -211,30 +211,34 @@ export class EventRelay extends Context.Service<
         }),
       );
 
+      const unconfigured = (
+        url: string | null,
+        failure: string | undefined,
+      ) => {
+        disconnect();
+        configured = undefined;
+        status = url ? "error" : "disconnected";
+        error = url
+          ? (failure ?? "Configure the Doorstep account token.")
+          : null;
+      };
+
+      // New settings get a fresh connection and clear a protocol mismatch.
+      const reconfigure = (key: string) => {
+        if (key === configured) return;
+        disconnect();
+        configured = key;
+        blocked = false;
+        failures = 0;
+        retryAt = 0;
+      };
+
       const reconcile = Effect.gen(function* () {
         const url = yield* relayUrl;
         const { token, failure } = yield* tokenOrError;
 
-        if (!url || !token) {
-          disconnect();
-          configured = undefined;
-          status = url ? "error" : "disconnected";
-          error = url
-            ? (failure ?? "Configure the Doorstep account token.")
-            : null;
-
-          return;
-        }
-
-        const key = `${url}\n${token}`;
-
-        if (key !== configured) {
-          disconnect();
-          configured = key;
-          blocked = false;
-          failures = 0;
-          retryAt = 0;
-        }
+        if (!url || !token) return unconfigured(url, failure);
+        reconfigure(`${url}\n${token}`);
 
         if (blocked || connection) return;
 

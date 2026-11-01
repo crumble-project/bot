@@ -1,11 +1,21 @@
-import { asc, count, eq, lt } from "drizzle-orm";
+import { and, asc, count, eq, lt } from "drizzle-orm";
+import { agents } from "../bots/schema";
 import { Context, Effect, Layer } from "effect";
 import { schedules } from "../schedules/schema";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
-import { eventSources, relayEvents } from "./schema";
+import {
+  eventRuns,
+  eventSources,
+  relayEvents,
+  type EventRunStatus,
+} from "./schema";
 
 export type EventSource = typeof eventSources.$inferSelect;
+
+export type EventRun = typeof eventRuns.$inferSelect;
+
+export type { EventRunStatus };
 
 /** An event as the relay delivered it; `body` is the raw bytes in base64. */
 export type RelayEvent = Omit<typeof relayEvents.$inferSelect, "storedAt">;
@@ -20,10 +30,22 @@ export class EventRepository extends Context.Service<
     readonly removeSource: (id: string) => Effect.Effect<boolean>;
     /** How many automations start from the source. */
     readonly sourceUsage: (id: string) => Effect.Effect<number>;
-    /** Stores the event once; `stored` is false for a redelivery. */
+    /** Stores the event once, with a run for each enabled automation of an enabled bot on its source; a redelivery stores nothing. */
     readonly storeEvent: (
       event: RelayEvent,
-    ) => Effect.Effect<{ stored: boolean }>;
+    ) => Effect.Effect<{ stored: boolean; runs: number }>;
+    /** The oldest pending run of each automation. */
+    readonly nextPendingRuns: Effect.Effect<EventRun[]>;
+    readonly markRun: (
+      id: string,
+      patch: Pick<EventRun, "status"> &
+        Partial<Pick<EventRun, "attempts" | "error">>,
+    ) => Effect.Effect<void>;
+    /** Whether one of the bot's automations ran for the event. */
+    readonly hasRunForAgent: (
+      eventId: string,
+      agentId: string,
+    ) => Effect.Effect<boolean>;
     readonly getEvent: (id: string) => Effect.Effect<RelayEvent | null>;
     /** Deletes events stored before `before`, an ISO time. */
     readonly prune: (before: string) => Effect.Effect<number>;
@@ -82,14 +104,89 @@ export class EventRepository extends Context.Service<
       const storeEvent = Effect.fn("EventRepository.storeEvent")(function* (
         event: RelayEvent,
       ) {
-        const rows = yield* db
-          .insert(relayEvents)
-          .values({ ...event, storedAt: yield* nowIso })
-          .onConflictDoNothing()
-          .returning({ id: relayEvents.id });
+        const now = yield* nowIso;
 
-        return { stored: rows.length > 0 };
+        return yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            const rows = yield* tx
+              .insert(relayEvents)
+              .values({ ...event, storedAt: now })
+              .onConflictDoNothing()
+              .returning({ id: relayEvents.id });
+
+            if (rows.length === 0) return { stored: false, runs: 0 };
+
+            const automations = yield* tx
+              .select({ id: schedules.id })
+              .from(schedules)
+              .innerJoin(agents, eq(agents.id, schedules.agentId))
+              .where(
+                and(
+                  eq(schedules.eventSourceId, event.sourceId),
+                  eq(schedules.enabled, true),
+                  eq(agents.enabled, true),
+                ),
+              );
+
+            if (automations.length)
+              yield* tx.insert(eventRuns).values(
+                automations.map((automation) => ({
+                  id: crypto.randomUUID(),
+                  eventId: event.id,
+                  scheduleId: automation.id,
+                  status: "pending" as const,
+                  createdAt: now,
+                })),
+              );
+
+            return { stored: true, runs: automations.length };
+          }),
+        );
       }, Effect.orDie);
+
+      const nextPendingRuns = Effect.gen(function* () {
+        const pending = yield* db
+          .select()
+          .from(eventRuns)
+          .where(eq(eventRuns.status, "pending"))
+          .orderBy(asc(eventRuns.eventId));
+
+        const seen = new Set<string>();
+
+        return pending.filter((run) => {
+          if (seen.has(run.scheduleId)) return false;
+          seen.add(run.scheduleId);
+
+          return true;
+        });
+      }).pipe(Effect.orDie);
+
+      const markRun = Effect.fn("EventRepository.markRun")(function* (
+        id: string,
+        patch: Pick<EventRun, "status"> &
+          Partial<Pick<EventRun, "attempts" | "error">>,
+      ) {
+        yield* db.update(eventRuns).set(patch).where(eq(eventRuns.id, id));
+      }, Effect.orDie);
+
+      const hasRunForAgent = Effect.fn("EventRepository.hasRunForAgent")(
+        function* (eventId: string, agentId: string) {
+          const [row] = yield* db
+            .select({ id: eventRuns.id })
+            .from(eventRuns)
+            .innerJoin(schedules, eq(schedules.id, eventRuns.scheduleId))
+            .where(
+              and(
+                eq(eventRuns.eventId, eventId),
+                eq(schedules.agentId, agentId),
+              ),
+            )
+            .limit(1);
+
+          return row !== undefined;
+        },
+        Effect.orDie,
+      );
 
       const getEvent = Effect.fn("EventRepository.getEvent")(function* (
         id: string,
@@ -123,6 +220,9 @@ export class EventRepository extends Context.Service<
         removeSource,
         sourceUsage,
         storeEvent,
+        nextPendingRuns,
+        markRun,
+        hasRunForAgent,
         getEvent,
         prune,
       });

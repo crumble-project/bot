@@ -130,11 +130,11 @@ Docs: `GLOSSARY.md`, `apps/docs/content/concepts/event-automations.md` (new), `a
   prune(before: string): Effect<number>; // events and runs stored before `before`
   ```
 
-- [ ] Table `event_runs` (`id` pk, `event_id` references `relay_events` on delete cascade, `schedule_id` references `schedules` on delete cascade, `status`, `attempts` default 0, `error`, `created_at`; unique `(event_id, schedule_id)`; index `(schedule_id, status, event_id)`).
-- [ ] Test `storeEvent creates one run per enabled automation on the source`: two enabled automations and one disabled one on the source, plus one automation of a disabled bot, give `{ stored: true, runs: 2 }`. Storing the same event again gives `{ stored: false, runs: 0 }`.
-- [ ] Test `nextPendingRuns returns the oldest pending run per automation`: events `01A`, `01B` for automation X give only `01A`'s run until it is marked `dispatched`.
-- [ ] Implement `storeEvent` as one transaction: insert the event with `onConflictDoNothing`, and when it was inserted, insert the runs. The relay acks only after it returns.
-- [ ] `EventRelay` prunes once an hour with `prune(now - 30 days)`.
+- [x] Table `event_runs` (`id` pk, `event_id` references `relay_events` on delete cascade, `schedule_id` references `schedules` on delete cascade, `status`, `attempts` default 0, `error`, `created_at`; unique `(event_id, schedule_id)`; index `(schedule_id, status, event_id)`).
+- [x] Test `storeEvent creates one run per enabled automation on the source`: two enabled automations and one disabled one on the source, plus one automation of a disabled bot, give `{ stored: true, runs: 2 }`. Storing the same event again gives `{ stored: false, runs: 0 }`.
+- [x] Test `nextPendingRuns returns the oldest pending run per automation`: events `01A`, `01B` for automation X give only `01A`'s run until it is marked `dispatched`.
+- [x] Implement `storeEvent` as one transaction: insert the event with `onConflictDoNothing`, and when it was inserted, insert the runs. The relay acks only after it returns.
+- [x] `EventRelay` prunes once an hour with `prune(now - 30 days)` (done in Task 1; the runs go with their events by cascade).
 - [ ] Run `bun run check`. Checkpoint: `feat(events): store event runs for automations on a source`.
 
 ### Task 3: Event trigger on automations
