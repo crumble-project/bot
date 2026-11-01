@@ -21,6 +21,8 @@ export const githubApps = sqliteTable("github_apps", {
   /** The GitHub user or organization whose repositories the App works on; null until known from an installation. */
   account: text("account"),
   installationId: integer("installation_id"),
+  /** Encrypted; needed to sign the owner in through the App. Apps created before Crumble kept it have none until pasted. */
+  clientSecret: text("client_secret"),
   createdAt: text("created_at").notNull(),
 });
 
@@ -38,3 +40,17 @@ export const githubAppBots = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.appId, table.agentId] })],
 );
+
+/** The owner signed in through an App: its bots then act on GitHub as the owner, shown with the App's badge. */
+export const githubAppUsers = sqliteTable("github_app_users", {
+  appId: text("app_id")
+    .primaryKey()
+    .references(() => githubApps.id, { onDelete: "cascade" }),
+  login: text("login").notNull(),
+  userId: integer("user_id").notNull(),
+  /** Encrypted, like `refreshToken`; GitHub rotates both on every refresh. */
+  token: text("token").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+  refreshToken: text("refresh_token").notNull(),
+  refreshExpiresAt: integer("refresh_expires_at").notNull(),
+});

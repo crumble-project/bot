@@ -30,7 +30,10 @@ import {
   relayUrlInput,
 } from "./event-sources";
 import {
-  githubAppBotsInput,
+  githubBotsInput,
+  githubAppClientSecretInput,
+  githubAppSignInInput,
+  githubAppSignInResponse,
   githubAppCompleteInput,
   githubAppManifestInput,
   githubAppManifestResponse,
@@ -323,7 +326,7 @@ export const routes = {
     operationId: "setGithubAppBots",
     description:
       "Replaces the bots that act through the App. A bot uses at most one App per GitHub account; 409 when a bot already uses another App for this App's account.",
-    request: { params: id, body: body(githubAppBotsInput) },
+    request: { params: id, body: body(githubBotsInput) },
     responses: { 200: json(githubAppResponse) },
   }),
   deleteGithubApp: define({
@@ -331,9 +334,45 @@ export const routes = {
     path: "/v1/github-apps/{id}",
     operationId: "deleteGithubApp",
     description:
-      "Forgets the App and takes GH_TOKEN from bots left without an installed App. The App stays on GitHub until the owner deletes it there.",
+      "Forgets the App, signs the owner out of it, and takes GH_TOKEN from bots left without an installed App. The App stays on GitHub until the owner deletes it there.",
     request: { params: id },
     responses: { 204: empty },
+  }),
+  signInGithubApp: define({
+    method: "post",
+    path: "/v1/github-apps/{id}/sign-in",
+    operationId: "signInGithubApp",
+    description:
+      "Starts signing the owner in to GitHub through the App, so its bots act as the owner. The client opens `url`; GitHub sends the owner to `{origin}/ui/github-app/authorized` with a code and state. 409 without a client secret.",
+    request: { params: id, body: body(githubAppSignInInput) },
+    responses: { 200: json(githubAppSignInResponse) },
+  }),
+  completeGithubAppSignIn: define({
+    method: "post",
+    path: "/v1/github-apps/sign-in/complete",
+    operationId: "completeGithubAppSignIn",
+    description:
+      "Exchanges the code GitHub sent the owner back with for the owner's tokens, within ten minutes of starting. 400 for a stale or reused state or a refused sign-in.",
+    request: { body: body(githubAppCompleteInput) },
+    responses: { 200: json(githubAppResponse) },
+  }),
+  signOutGithubApp: define({
+    method: "delete",
+    path: "/v1/github-apps/{id}/user",
+    operationId: "signOutGithubApp",
+    description:
+      "Revokes and forgets the owner's sign-in through the App; its bots act as the App again.",
+    request: { params: id },
+    responses: { 200: json(githubAppResponse) },
+  }),
+  setGithubAppClientSecret: define({
+    method: "put",
+    path: "/v1/github-apps/{id}/client-secret",
+    operationId: "setGithubAppClientSecret",
+    description:
+      "Stores a client secret generated in the App's GitHub settings, for an App created before Crumble kept it.",
+    request: { params: id, body: body(githubAppClientSecretInput) },
+    responses: { 200: json(githubAppResponse) },
   }),
   eventSources: define({
     method: "get",

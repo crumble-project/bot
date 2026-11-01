@@ -359,8 +359,8 @@ export type AgentCredential = {
   lastUsedAt: string | null;
   /** Why the newest use couldn't read the value; null when it could. */
   lastError: string | null;
-  /** The value is a token minted from the bot's GitHub App; neither stored nor referenced. */
-  githubApp: boolean;
+  /** The value is a token from the bot's GitHub App, as the App or the owner signed in through it; neither stored nor referenced. */
+  github: boolean;
 };
 
 /** A bot's request for a credential, waiting for the owner. */

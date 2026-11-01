@@ -22,11 +22,11 @@ import {
   type SecretUnavailable,
 } from "../password-managers/secret-values";
 import { AgentCredentialRepository } from "./agent-credential-repository";
-import {
-  GitHubApps,
-  type GitHubAppUnavailable,
-  type GitHubIdentity,
-} from "../github-apps/github-apps";
+import { GitHubApps } from "../github-apps/github-apps";
+import type {
+  GitHubIdentity,
+  GitHubUnavailable,
+} from "../github-apps/github-api";
 import { GUEST_CA_BUNDLE, GUEST_CA_PATH } from "../workspaces/workspace";
 import {
   InvalidInput,
@@ -115,7 +115,7 @@ export class Credentials extends Context.Service<
       target: CredentialTarget,
     ) => Effect.Effect<
       Redacted.Redacted,
-      SecretUnavailable | GitHubAppUnavailable | NotFound
+      SecretUnavailable | GitHubUnavailable | NotFound
     >;
     readonly recordUse: (
       agentId: string,
@@ -157,8 +157,7 @@ export class Credentials extends Context.Service<
         if (!source)
           return yield* new NotFound({ message: `${name} was deleted` });
 
-        if ("githubApp" in source)
-          return yield* githubApps.token(agentId, target);
+        if ("github" in source) return yield* githubApps.token(agentId, target);
 
         return yield* values.read(source);
       });
@@ -431,6 +430,13 @@ const githubLines = (identities: readonly GitHubIdentity[]) => {
           `gh pr and other GraphQL commands use ${fallback.account}'s token; for other accounts' repositories use REST, such as gh api repos/OWNER/REPO/pulls -f title=... -f head=... -f base=...`,
         ]
       : []),
+    ...identities.flatMap((each) =>
+      each.trailer
+        ? [
+            `${each.name} is the owner's own account, which you act as in ${each.account}'s repositories: keep ${each.name} as the commit author, even if a task names an App's [bot] user, and mark your work instead: every commit there ends with the trailer "${each.trailer}". Repositories you clone add it on their own unless they set core.hooksPath; there, and in older clones, pass git commit --trailer '${each.trailer}'.`,
+          ]
+        : [],
+    ),
   ];
 };
 

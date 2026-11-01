@@ -260,6 +260,12 @@ const githubAppInstalledRoute = createRoute({
   component: GitHubAppCallback,
 });
 
+const githubAppAuthorizedRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/github-app/authorized",
+  component: GitHubAppCallback,
+});
+
 const codingRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/coding",
@@ -390,6 +396,7 @@ export const router = createRouter({
       oauthRoute,
       githubAppCallbackRoute,
       githubAppInstalledRoute,
+      githubAppAuthorizedRoute,
       settingsRoute.addChildren([
         settingsIndexRoute,
         generalRoute,

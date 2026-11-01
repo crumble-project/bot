@@ -33,7 +33,7 @@ import { SecretBox } from "../shared/secret-box";
 import { SettingsRepository } from "../shared/settings-repository";
 import { GatewayRepository } from "../message-gateway/gateway-repository";
 import { EventRepository } from "../event-sources/event-repository";
-import { githubApps } from "../github-apps/schema";
+import { githubAppUsers, githubApps } from "../github-apps/schema";
 
 /** Every repository of an account's product database, on one migrated connection. */
 export const productLayer = (dataDir: string) => {
@@ -49,6 +49,7 @@ export const productLayer = (dataDir: string) => {
       loginFields,
       desktopFills,
       githubApps,
+      githubAppUsers,
     ]),
     LearnedChangeRepository.layer,
     ReviewRepository.layer,

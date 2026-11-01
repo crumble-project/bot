@@ -23,6 +23,8 @@ RUN set -eu; \
   install -m 755 "/tmp/$dir/bin/gh" /usr/local/bin/gh; \
   rm -rf "/tmp/$dir" "/tmp/$dir.tar.gz"
 ENV GH_NO_UPDATE_NOTIFIER=1 GH_PROMPT_DISABLED=1
+# Clones get a hook that marks commits a bot makes as its owner (init.templateDir, set per job).
+COPY git-template /opt/crumble/git-template
 WORKDIR /workspace
 
 FROM base AS desktop

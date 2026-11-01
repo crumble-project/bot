@@ -87,7 +87,7 @@ A secret value the owner gives one bot for a list of hosts. The bot's jobs use i
 _Avoid_: Secret, API key, environment variable (in product language)
 
 **GitHub App**:
-A GitHub identity the owner creates in Crumble on one GitHub account and assigns to bots. In that account's repositories, the bots' coding jobs commit, push, and open pull requests as its `slug[bot]` user, through the `GH_TOKEN` credential. A bot uses at most one per account.
+A GitHub identity the owner creates in Crumble on one GitHub account and assigns to bots. In that account's repositories, the bots' coding jobs commit, push, and open pull requests as its `slug[bot]` user, through the `GH_TOKEN` credential, or as the owner when the owner signed in through it. A bot uses at most one per account.
 _Avoid_: GitHub integration, machine user, bot account
 
 **Login**:

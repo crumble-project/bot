@@ -52,16 +52,14 @@ export const agentCredentials = sqliteTable(
     passwordManager: secretSource.passwordManager(),
     reference: secretSource.reference(),
     placeholder: text("placeholder").notNull().unique(),
-    /** The value is an installation token minted from the bot's GitHub App, so no source column is set. */
-    githubApp: integer("github_app", { mode: "boolean" })
-      .notNull()
-      .default(false),
+    /** The value is a token from the bot's GitHub App, so no source column is set. */
+    github: integer("github", { mode: "boolean" }).notNull().default(false),
   },
   (table) => [
     primaryKey({ columns: [table.agentId, table.name] }),
     check(
       "agent_credentials_source",
-      sql`(${table.githubApp} = 0 AND (${hasOneSecretSource(table)})) OR (${table.githubApp} = 1 AND ${table.value} IS NULL AND ${table.passwordManager} IS NULL AND ${table.reference} IS NULL)`,
+      sql`(${table.github} = 0 AND (${hasOneSecretSource(table)})) OR (${table.github} = 1 AND ${table.value} IS NULL AND ${table.passwordManager} IS NULL AND ${table.reference} IS NULL)`,
     ),
   ],
 );

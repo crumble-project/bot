@@ -35,7 +35,7 @@ const credentialOf = (row: {
   updatedAt: string;
   lastUsedAt: string | null;
   lastError: string | null;
-  githubApp: boolean;
+  github: boolean;
 }): AgentCredential => ({
   ...row,
   hosts: hostList.parse(JSON.parse(row.hosts)),
@@ -60,21 +60,21 @@ const metadata = {
   createdAt: agentCredentials.createdAt,
   updatedAt: agentCredentials.updatedAt,
   lastUsedAt: agentCredentials.lastUsedAt,
-  githubApp: agentCredentials.githubApp,
+  github: agentCredentials.github,
   lastError: sql<
     string | null
   >`(SELECT ${credentialUses.error} FROM ${credentialUses} WHERE ${credentialUses.agentId} = ${agentCredentials.agentId} AND ${credentialUses.name} = ${agentCredentials.name} ORDER BY ${credentialUses.id} DESC LIMIT 1)`,
 };
 
-/** The columns a save writes for its source; the database allows one of a value, a reference, or the GitHub App. */
+/** The columns a save writes for its source; the database allows one of a value, a reference, or the GitHub identity. */
 type SaveSource = {
   value?: string | undefined;
   reference?: SecretReference | undefined;
-  githubApp?: true | undefined;
+  github?: true | undefined;
 };
 
-/** Where a credential's value comes from: a secret source, or a token minted from the bot's GitHub App. */
-export type CredentialSource = SecretSource | { readonly githubApp: true };
+/** Where a credential's value comes from: a secret source, or a token from the bot's GitHub App. */
+export type CredentialSource = SecretSource | { readonly github: true };
 
 /** The credentials the owner gave each bot, their requests, uses, and each bot's certificate authority. */
 export class AgentCredentialRepository extends Context.Service<
@@ -230,7 +230,7 @@ export class AgentCredentialRepository extends Context.Service<
             value: box.encrypt(input.value),
             passwordManager: null,
             reference: null,
-            githubApp: false,
+            github: false,
           };
 
         if (input.reference)
@@ -238,15 +238,15 @@ export class AgentCredentialRepository extends Context.Service<
             value: null,
             passwordManager: input.reference.passwordManager,
             reference: input.reference.reference,
-            githubApp: false,
+            github: false,
           };
 
-        if (input.githubApp)
+        if (input.github)
           return {
             value: null,
             passwordManager: null,
             reference: null,
-            githubApp: true,
+            github: true,
           };
 
         return undefined;
@@ -311,15 +311,15 @@ export class AgentCredentialRepository extends Context.Service<
             value: agentCredentials.value,
             passwordManager: agentCredentials.passwordManager,
             reference: agentCredentials.reference,
-            githubApp: agentCredentials.githubApp,
+            github: agentCredentials.github,
           })
           .from(agentCredentials)
           .where(credential(agentId, name));
 
         if (!row) return undefined;
 
-        return row.githubApp
-          ? { githubApp: true as const }
+        return row.github
+          ? { github: true as const }
           : secretSourceOf(box, row);
       }, Effect.orDie);
 
