@@ -20,7 +20,6 @@ import {
   type GatewayConfig,
   type GatewayDescription,
 } from "../contract/message-gateway";
-import { SecretRepository } from "../credentials/secret-repository";
 import { Secrets, secretText } from "../password-managers/secrets";
 import { Plugins, pluginChatAdapters } from "../plugins/plugins";
 import type { Agent } from "../shared/domain";
@@ -128,7 +127,7 @@ export class MessageGateway extends Context.Service<
             message: `Invalid message limit for ${adapter.id}`,
           });
       const settings = yield* SettingsRepository;
-      const secrets = yield* SecretRepository;
+      const secrets = yield* Secrets;
       const agents = yield* AgentRepository;
       const bots = yield* Bots;
       const runtime = yield* BotRuntime;
@@ -292,7 +291,7 @@ export class MessageGateway extends Context.Service<
         }
       });
 
-      const readSecret = secretText(yield* Secrets);
+      const readSecret = secretText(secrets);
       const readToken = (adapter: ChatAdapter) => readSecret(adapter.secretKey);
 
       // A password manager that can't read the token explains itself instead of the generic missing-token error.
@@ -912,7 +911,6 @@ export class MessageGateway extends Context.Service<
 
       const list = Effect.gen(function* () {
         const pending = yield* receipts.pending;
-        const keys = yield* secrets.listKeys;
 
         return yield* Effect.forEach(
           adapters,
@@ -923,7 +921,8 @@ export class MessageGateway extends Context.Service<
               id: adapter.id,
               label: adapter.label,
               secretKey: adapter.secretKey,
-              tokenConfigured: keys.includes(adapter.secretKey),
+              tokenConfigured: (yield* secrets.status(adapter.secretKey))
+                .configured,
               config: yield* config(adapter.id),
               status: state.status,
               error: state.error,

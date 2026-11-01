@@ -1,4 +1,4 @@
-import { asc, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import type { SecretReference } from "../shared/domain";
 import {
@@ -26,7 +26,6 @@ export class SecretRepository extends Context.Service<
     readonly delete: (key: string) => Effect.Effect<boolean>;
     /** Deletes every key that starts with `prefix` and returns where their values came from. */
     readonly deleteAll: (prefix: string) => Effect.Effect<SecretSource[]>;
-    readonly listKeys: Effect.Effect<string[]>;
   }
 >()("crumble/credentials/SecretRepository") {
   static readonly layer = Layer.effect(
@@ -119,16 +118,6 @@ export class SecretRepository extends Context.Service<
         return deleted.map((row) => secretSourceOf(box, row));
       }, Effect.orDie);
 
-      const listKeys = db
-        .select({ key: secrets.key })
-        .from(secrets)
-        .orderBy(asc(secrets.key))
-        .pipe(
-          Effect.map((rows) => rows.map((row) => row.key)),
-          Effect.orDie,
-          Effect.withSpan("SecretRepository.listKeys"),
-        );
-
       return SecretRepository.of({
         set,
         setReference,
@@ -136,7 +125,6 @@ export class SecretRepository extends Context.Service<
         source,
         delete: remove,
         deleteAll,
-        listKeys,
       });
     }),
   );

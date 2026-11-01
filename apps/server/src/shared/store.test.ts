@@ -61,7 +61,6 @@ describe("Store", () => {
     const store = new Store(dir);
     store.setCredential("openai", "super-secret");
     expect(store.getCredential("openai")).toBe("super-secret");
-    expect(store.listCredentials()).toEqual(["openai"]);
     store.setSetting("flags", { enabled: true });
     expect(store.getSetting("flags")).toEqual({ enabled: true });
     store.close();

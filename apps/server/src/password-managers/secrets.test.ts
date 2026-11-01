@@ -43,7 +43,6 @@ const memoryRepository = (rows = new Map<string, SecretSource>()) =>
               return [row];
             }),
         ),
-      listKeys: Effect.sync(() => [...rows.keys()]),
     }),
   );
 

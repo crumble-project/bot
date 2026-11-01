@@ -32,9 +32,6 @@ export const configurationStore = (run: StoreRun) => ({
   getCredential: (key: string) => {
     return run(SecretRepository.use((r) => r.get(key)));
   },
-  listCredentials: () => {
-    return run(SecretRepository.use((r) => r.listKeys));
-  },
 
   /** Metadata only: listing never decrypts a value. */
   /** Creating needs a value; updating keeps the stored one when `value` is omitted. The placeholder never changes. */
