@@ -226,6 +226,58 @@ function useListing(location: string | null) {
   });
 }
 
+/** The repository the owner typed, the skills found there, and which of them are checked. */
+function useSkillSearch() {
+  const [location, setLocation] = useState("");
+  const [submitted, setSubmitted] = useState<string | null>(null);
+  // Null until the owner changes a checkbox: every installable skill starts checked.
+  const [checked, setChecked] = useState<Set<string> | null>(null);
+  const browse = useListing(submitted);
+  const listing = browse.data;
+  const picked = checked ?? (listing ? newPaths(listing) : new Set<string>());
+
+  return {
+    location,
+    browse,
+    listing,
+    picked,
+    find: () => {
+      setChecked(null);
+
+      if (submitted === location) void browse.refetch();
+      else setSubmitted(location);
+    },
+    change: (next: string) => {
+      setLocation(next);
+      setSubmitted(null);
+      setChecked(null);
+    },
+    toggle: (path: string, on: boolean) =>
+      setChecked(toggled(picked, path, on)),
+  };
+}
+
+/** The sheet's button: it finds skills until there's a listing, then installs the checked ones. */
+function sheetAction(
+  search: ReturnType<typeof useSkillSearch>,
+  install: ReturnType<typeof useInstall>,
+) {
+  const { listing, picked } = search;
+  const idle = !search.browse.isFetching && !install.isPending;
+
+  return listing
+    ? {
+        label: installLabel(picked.size),
+        ready: idle && picked.size > 0,
+        run: () => install.mutate(listing),
+      }
+    : {
+        label: "Find skills",
+        ready: idle && Boolean(search.location.trim()),
+        run: search.find,
+      };
+}
+
 /** Finds the skills in a GitHub repository and installs the checked ones as shared skills. */
 export function InstallSkillsSheet({
   bots,
@@ -234,36 +286,12 @@ export function InstallSkillsSheet({
   bots: Bot[];
   onClose: () => void;
 }) {
-  const [location, setLocation] = useState("");
-  const [submitted, setSubmitted] = useState<string | null>(null);
-  // Null until the owner changes a checkbox: every installable skill starts checked.
-  const [checked, setChecked] = useState<Set<string> | null>(null);
+  const search = useSkillSearch();
+  const { listing, picked, browse } = search;
   const [botIds, setBotIds] = useState<Set<string>>(new Set());
-  const browse = useListing(submitted);
-  const listing = browse.data;
-  const picked = checked ?? (listing ? newPaths(listing) : new Set<string>());
   const install = useInstall(picked, botIds, onClose);
-  const pending = browse.isFetching || install.isPending;
 
-  const find = () => {
-    setChecked(null);
-
-    if (submitted === location) void browse.refetch();
-    else setSubmitted(location);
-  };
-
-  // Before a listing, the sheet's button finds skills; after, it installs the checked ones.
-  const action = listing
-    ? {
-        label: installLabel(picked.size),
-        ready: picked.size > 0,
-        run: () => install.mutate(listing),
-      }
-    : {
-        label: "Find skills",
-        ready: Boolean(location.trim()),
-        run: find,
-      };
+  const action = sheetAction(search, install);
 
   return (
     <EditorSheet
@@ -271,18 +299,14 @@ export function InstallSkillsSheet({
       description="Installed skills are shared and read-only. You can update them when the repository changes."
       error={(install.error ?? browse.error)?.message}
       submitLabel={action.label}
-      submitDisabled={pending || !action.ready}
+      submitDisabled={!action.ready}
       onSubmit={action.run}
       onClose={onClose}
     >
       <RepositoryField
-        location={location}
-        onChange={(next) => {
-          setLocation(next);
-          setSubmitted(null);
-          setChecked(null);
-        }}
-        onFind={listing ? find : null}
+        location={search.location}
+        onChange={search.change}
+        onFind={listing ? search.find : null}
       />
       {browse.isFetching && !listing && <Skeleton className="h-24" />}
       {listing && (
@@ -290,7 +314,7 @@ export function InstallSkillsSheet({
           <CandidateList
             listing={listing}
             picked={picked}
-            onToggle={(path, on) => setChecked(toggled(picked, path, on))}
+            onToggle={search.toggle}
           />
           <UsedByField bots={bots} selected={botIds} onChange={setBotIds} />
         </>
