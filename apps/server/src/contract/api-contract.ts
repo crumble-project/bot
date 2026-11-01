@@ -30,11 +30,12 @@ import {
   relayUrlInput,
 } from "./event-sources";
 import {
+  githubAppBotsInput,
   githubAppCompleteInput,
   githubAppManifestInput,
   githubAppManifestResponse,
   githubAppResponse,
-  githubAppStatusResponse,
+  githubAppsResponse,
 } from "./github-apps";
 
 export type BotInput = z.input<typeof agentInput>;
@@ -280,6 +281,59 @@ export const routes = {
       "Sets the event relay URL, or removes it with `null`, which disconnects the relay.",
     request: { body: body(relayUrlInput) },
     responses: { 200: json(relayStatusResponse) },
+  }),
+  githubApps: define({
+    method: "get",
+    path: "/v1/github-apps",
+    operationId: "listGithubApps",
+    description:
+      "The account's GitHub Apps, each the GitHub identity its bots act through in one GitHub account's repositories.",
+    responses: { 200: json(githubAppsResponse) },
+  }),
+  createGithubAppManifest: define({
+    method: "post",
+    path: "/v1/github-apps/manifest",
+    operationId: "createGithubAppManifest",
+    description:
+      "Starts creating a private GitHub App. The client posts `manifest` as a form field to `url`; GitHub then sends the owner to `{origin}/ui/github-app/callback` with a code and state.",
+    request: { body: body(githubAppManifestInput) },
+    responses: { 200: json(githubAppManifestResponse) },
+  }),
+  completeGithubApp: define({
+    method: "post",
+    path: "/v1/github-apps/complete",
+    operationId: "completeGithubApp",
+    description:
+      "Exchanges the code GitHub redirected back with for the App's keys, within an hour of starting. 400 for a stale or reused state.",
+    request: { body: body(githubAppCompleteInput) },
+    responses: { 200: json(githubAppResponse) },
+  }),
+  connectGithubApp: define({
+    method: "post",
+    path: "/v1/github-apps/{id}/connect",
+    operationId: "connectGithubApp",
+    description:
+      "Finds the App's installation on its account and gives its bots the GH_TOKEN credential. 409 until the owner installs the App.",
+    request: { params: id },
+    responses: { 200: json(githubAppResponse) },
+  }),
+  setGithubAppBots: define({
+    method: "put",
+    path: "/v1/github-apps/{id}/bots",
+    operationId: "setGithubAppBots",
+    description:
+      "Replaces the bots that act through the App. A bot uses at most one App per GitHub account; 409 when a bot already uses another App for this App's account.",
+    request: { params: id, body: body(githubAppBotsInput) },
+    responses: { 200: json(githubAppResponse) },
+  }),
+  deleteGithubApp: define({
+    method: "delete",
+    path: "/v1/github-apps/{id}",
+    operationId: "deleteGithubApp",
+    description:
+      "Forgets the App and takes GH_TOKEN from bots left without an installed App. The App stays on GitHub until the owner deletes it there.",
+    request: { params: id },
+    responses: { 204: empty },
   }),
   eventSources: define({
     method: "get",
@@ -708,51 +762,6 @@ export const routes = {
       "The bot's credentials and its requests for credentials the owner has not answered. Values are never returned.",
     request: { params: id },
     responses: { 200: json(response.credentialsResponse) },
-  }),
-  agentGithubApp: define({
-    method: "get",
-    path: "/v1/agents/{id}/github-app",
-    operationId: "getAgentGithubApp",
-    description:
-      "The GitHub App the bot acts through on GitHub, or null when it has none.",
-    request: { params: id },
-    responses: { 200: json(githubAppStatusResponse) },
-  }),
-  createAgentGithubAppManifest: define({
-    method: "post",
-    path: "/v1/agents/{id}/github-app/manifest",
-    operationId: "createAgentGithubAppManifest",
-    description:
-      "Starts creating the bot's GitHub App. The client posts `manifest` as a form field to `url`; GitHub then sends the owner to `{origin}/ui/github-app/callback` with a code and state. 409 when the bot already has an App.",
-    request: { params: id, body: body(githubAppManifestInput) },
-    responses: { 200: json(githubAppManifestResponse) },
-  }),
-  completeAgentGithubApp: define({
-    method: "post",
-    path: "/v1/agents/{id}/github-app/complete",
-    operationId: "completeAgentGithubApp",
-    description:
-      "Exchanges the code GitHub redirected back with for the App's keys, within an hour of starting. 400 for a stale or reused state.",
-    request: { params: id, body: body(githubAppCompleteInput) },
-    responses: { 200: json(githubAppResponse) },
-  }),
-  connectAgentGithubApp: define({
-    method: "post",
-    path: "/v1/agents/{id}/github-app/connect",
-    operationId: "connectAgentGithubApp",
-    description:
-      "Finds the App's installation and gives the bot the GH_TOKEN credential, whose value is an installation token minted on use. 409 until the owner installs the App.",
-    request: { params: id },
-    responses: { 200: json(githubAppResponse) },
-  }),
-  deleteAgentGithubApp: define({
-    method: "delete",
-    path: "/v1/agents/{id}/github-app",
-    operationId: "deleteAgentGithubApp",
-    description:
-      "Forgets the bot's GitHub App and deletes its GH_TOKEN credential. The App stays on GitHub until the owner deletes it there.",
-    request: { params: id },
-    responses: { 204: empty },
   }),
   listBotRequests: define({
     method: "get",

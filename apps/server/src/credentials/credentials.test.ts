@@ -213,7 +213,12 @@ test("a credential saved as a reference reads the password manager's value", asy
   });
   expect(
     Redacted.value(
-      await vault.run.runPromise(vault.service.value(agentId, "ACME_TOKEN")),
+      await vault.run.runPromise(
+        vault.service.value(agentId, "ACME_TOKEN", {
+          host: "api.acme.com",
+          path: "/",
+        }),
+      ),
     ),
   ).toBe("vault-secret");
   vault.close();
@@ -287,7 +292,12 @@ test("replacing a reference with a value reads nothing from the password manager
   expect(saved).toMatchObject({ passwordManager: null, reference: null });
   expect(
     Redacted.value(
-      await vault.run.runPromise(vault.service.value(agentId, "ACME_TOKEN")),
+      await vault.run.runPromise(
+        vault.service.value(agentId, "ACME_TOKEN", {
+          host: "api.acme.com",
+          path: "/",
+        }),
+      ),
     ),
   ).toBe("stored");
   expect(state.reads).toBe(1);

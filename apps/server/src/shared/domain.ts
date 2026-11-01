@@ -379,6 +379,9 @@ export type CredentialGrant = {
   placeholder: string;
 };
 
+/** The request a credential's value is read for: some values, such as a GitHub App's token, depend on it. */
+export type CredentialTarget = { host: string; path: string };
+
 /** Whether `host` is one of `hosts`; `*.example.com` covers every subdomain, not the name itself. */
 export const hostMatches = (hosts: readonly string[], host: string) =>
   hosts.some((pattern) =>

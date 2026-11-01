@@ -340,6 +340,61 @@
           "remoteDelivery"
         ]
       },
+      "GitHubApp": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "login": {
+            "type": "string",
+            "description": "The name commits and pull requests show, such as `scout[bot]`."
+          },
+          "htmlUrl": {
+            "type": "string"
+          },
+          "installUrl": {
+            "type": "string"
+          },
+          "account": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The GitHub user or organization whose repositories the App works on."
+          },
+          "installed": {
+            "type": "boolean"
+          },
+          "botIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "login",
+          "htmlUrl",
+          "installUrl",
+          "account",
+          "installed",
+          "botIds",
+          "createdAt"
+        ]
+      },
       "JudgeModel": {
         "type": "object",
         "properties": {
@@ -1379,47 +1434,6 @@
           "hosts",
           "reason",
           "requestedAt"
-        ]
-      },
-      "GitHubApp": {
-        "type": [
-          "object",
-          "null"
-        ],
-        "properties": {
-          "slug": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "login": {
-            "type": "string"
-          },
-          "htmlUrl": {
-            "type": "string"
-          },
-          "installUrl": {
-            "type": "string"
-          },
-          "installedOn": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "createdAt": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "slug",
-          "name",
-          "login",
-          "htmlUrl",
-          "installUrl",
-          "installedOn",
-          "createdAt"
         ]
       },
       "BotRequest": {
@@ -4898,6 +4912,770 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/github-apps": {
+      "get": {
+        "operationId": "listGithubApps",
+        "description": "The account's GitHub Apps, each the GitHub identity its bots act through in one GitHub account's repositories.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "apps": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GitHubApp"
+                      }
+                    }
+                  },
+                  "required": [
+                    "apps"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/github-apps/manifest": {
+      "post": {
+        "operationId": "createGithubAppManifest",
+        "description": "Starts creating a private GitHub App. The client posts `manifest` as a form field to `url`; GitHub then sends the owner to `{origin}/ui/github-app/callback` with a code and state.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 34
+                  },
+                  "origin": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "format": "uri"
+                  },
+                  "organization": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9-]{1,39}$"
+                  }
+                },
+                "required": [
+                  "name",
+                  "origin"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    },
+                    "manifest": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "url",
+                    "manifest"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/github-apps/complete": {
+      "post": {
+        "operationId": "completeGithubApp",
+        "description": "Exchanges the code GitHub redirected back with for the App's keys, within an hour of starting. 400 for a stale or reused state.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "state": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "code",
+                  "state"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubApp"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/github-apps/{id}/connect": {
+      "post": {
+        "operationId": "connectGithubApp",
+        "description": "Finds the App's installation on its account and gives its bots the GH_TOKEN credential. 409 until the owner installs the App.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubApp"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/github-apps/{id}/bots": {
+      "put": {
+        "operationId": "setGithubAppBots",
+        "description": "Replaces the bots that act through the App. A bot uses at most one App per GitHub account; 409 when a bot already uses another App for this App's account.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "botIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "maxItems": 200
+                  }
+                },
+                "required": [
+                  "botIds"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubApp"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired, or invalid account session",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Resource is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicting request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/github-apps/{id}": {
+      "delete": {
+        "operationId": "deleteGithubApp",
+        "description": "Forgets the App and takes GH_TOKEN from bots left without an installed App. The App stays on GitHub until the owner deletes it there.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success, no response body"
           },
           "400": {
             "description": "Invalid request or operation",
@@ -10891,649 +11669,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Credentials"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request or operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, expired, or invalid account session",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "405": {
-            "description": "Resource is read-only",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflicting request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request body exceeds the size limit",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Service unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/agents/{id}/github-app": {
-      "get": {
-        "operationId": "getAgentGithubApp",
-        "description": "The GitHub App the bot acts through on GitHub, or null when it has none.",
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionCookie": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "app": {
-                      "$ref": "#/components/schemas/GitHubApp"
-                    }
-                  },
-                  "required": [
-                    "app"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request or operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, expired, or invalid account session",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "405": {
-            "description": "Resource is read-only",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflicting request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request body exceeds the size limit",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Service unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "deleteAgentGithubApp",
-        "description": "Forgets the bot's GitHub App and deletes its GH_TOKEN credential. The App stays on GitHub until the owner deletes it there.",
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionCookie": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Success, no response body"
-          },
-          "400": {
-            "description": "Invalid request or operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, expired, or invalid account session",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "405": {
-            "description": "Resource is read-only",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflicting request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request body exceeds the size limit",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Service unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/agents/{id}/github-app/manifest": {
-      "post": {
-        "operationId": "createAgentGithubAppManifest",
-        "description": "Starts creating the bot's GitHub App. The client posts `manifest` as a form field to `url`; GitHub then sends the owner to `{origin}/ui/github-app/callback` with a code and state. 409 when the bot already has an App.",
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionCookie": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "origin": {
-                    "type": "string",
-                    "maxLength": 2000,
-                    "format": "uri"
-                  },
-                  "organization": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9-]{1,39}$"
-                  }
-                },
-                "required": [
-                  "origin"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "url": {
-                      "type": "string"
-                    },
-                    "manifest": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "url",
-                    "manifest"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request or operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, expired, or invalid account session",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "405": {
-            "description": "Resource is read-only",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflicting request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request body exceeds the size limit",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Service unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/agents/{id}/github-app/complete": {
-      "post": {
-        "operationId": "completeAgentGithubApp",
-        "description": "Exchanges the code GitHub redirected back with for the App's keys, within an hour of starting. 400 for a stale or reused state.",
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionCookie": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  },
-                  "state": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  }
-                },
-                "required": [
-                  "code",
-                  "state"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GitHubApp"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request or operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, expired, or invalid account session",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "405": {
-            "description": "Resource is read-only",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflicting request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Request body exceeds the size limit",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Service unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/agents/{id}/github-app/connect": {
-      "post": {
-        "operationId": "connectAgentGithubApp",
-        "description": "Finds the App's installation and gives the bot the GH_TOKEN credential, whose value is an installation token minted on use. 409 until the owner installs the App.",
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionCookie": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GitHubApp"
                 }
               }
             }

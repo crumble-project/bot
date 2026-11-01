@@ -23,7 +23,7 @@ export function RedirectReturn({
 }: {
   finish: Finish;
   pending: string;
-  backTo: "/" | "/settings/integrations";
+  backTo: "/settings/integrations" | "/settings/coding";
   backLabel: string;
 }) {
   const navigate = useNavigate();

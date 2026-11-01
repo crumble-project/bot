@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { routes } from "../contract/api-contract";
 import {
+  githubAppBotsInput,
   githubAppCompleteInput,
   githubAppManifestInput,
 } from "../contract/github-apps";
@@ -10,14 +11,13 @@ import type { Runner } from "../shared/runner";
 import { Unavailable } from "../shared/errors";
 import { GitHubAppUnavailable, GitHubApps } from "./github-apps";
 
-/** Creating, installing, and removing each bot's GitHub App. */
+/** The account's GitHub Apps: creating, installing, assigning to bots, and removing them. */
 export function registerGitHubAppRoutes(options: {
   register: Register;
   service: BotsAccess;
   run: Runner<GitHubApps>;
 }) {
   const { register, service, run } = options;
-
   const githubApps = run.runSync(GitHubApps.use(Effect.succeed));
 
   // GitHub being unreachable is the server's problem to report, not a defect.
@@ -34,42 +34,38 @@ export function registerGitHubAppRoutes(options: {
       ),
     );
 
-  register(routes.agentGithubApp, async (c) => {
-    service.agent(c.req.param("id"));
-
-    return c.json(
-      { app: (await apps((a) => a.get(c.req.param("id")))) ?? null },
-      200,
-    );
-  });
-  register(routes.createAgentGithubAppManifest, async (c) => {
-    const agent = service.agent(c.req.param("id"));
+  register(routes.githubApps, async (c) =>
+    c.json({ apps: await apps((a) => a.list) }, 200),
+  );
+  register(routes.createGithubAppManifest, async (c) => {
     const input = githubAppManifestInput.parse(await c.req.json());
 
     return c.json(
       await apps((a) =>
-        a.manifest(agent.id, {
-          botName: agent.name,
-          origin: new URL(input.origin).origin,
-          organization: input.organization,
-        }),
+        a.manifest({ ...input, origin: new URL(input.origin).origin }),
       ),
       200,
     );
   });
-  register(routes.completeAgentGithubApp, async (c) => {
-    service.agent(c.req.param("id"));
+  register(routes.completeGithubApp, async (c) => {
     const input = githubAppCompleteInput.parse(await c.req.json());
 
-    return c.json(await apps((a) => a.complete(c.req.param("id"), input)), 200);
+    return c.json(await apps((a) => a.complete(input)), 200);
   });
-  register(routes.connectAgentGithubApp, async (c) => {
-    service.agent(c.req.param("id"));
+  register(routes.connectGithubApp, async (c) =>
+    c.json(await apps((a) => a.connect(c.req.param("id"))), 200),
+  );
+  register(routes.setGithubAppBots, async (c) => {
+    const { botIds } = githubAppBotsInput.parse(await c.req.json());
 
-    return c.json(await apps((a) => a.connect(c.req.param("id"))), 200);
+    for (const botId of botIds) service.agent(botId);
+
+    return c.json(
+      await apps((a) => a.assign(c.req.param("id"), [...new Set(botIds)])),
+      200,
+    );
   });
-  register(routes.deleteAgentGithubApp, async (c) => {
-    service.agent(c.req.param("id"));
+  register(routes.deleteGithubApp, async (c) => {
     await apps((a) => a.remove(c.req.param("id")));
 
     return c.body(null, 204);

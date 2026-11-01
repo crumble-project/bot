@@ -2,6 +2,8 @@ import { z } from "@hono/zod-openapi";
 
 export const githubAppManifestInput = z
   .object({
+    /** The App's name on GitHub, unique across GitHub. */
+    name: z.string().trim().min(1).max(34),
     /** The web UI's origin; GitHub sends the owner back to its callback page. */
     origin: z.url({ protocol: /^https?$/ }).max(2000),
     /** Create the App on this organization instead of the owner's account. */
@@ -20,6 +22,10 @@ export const githubAppCompleteInput = z
   })
   .strict();
 
+export const githubAppBotsInput = z
+  .object({ botIds: z.array(z.string().min(1)).max(200) })
+  .strict();
+
 export const githubAppManifestResponse = z.object({
   url: z.string(),
   manifest: z.string(),
@@ -27,18 +33,27 @@ export const githubAppManifestResponse = z.object({
 
 export const githubAppResponse = z
   .object({
+    id: z.string(),
     slug: z.string(),
     name: z.string(),
-    login: z.string(),
+    login: z.string().openapi({
+      description:
+        "The name commits and pull requests show, such as `scout[bot]`.",
+    }),
     htmlUrl: z.string(),
     installUrl: z.string(),
-    installedOn: z.string().nullable(),
+    account: z.string().nullable().openapi({
+      description:
+        "The GitHub user or organization whose repositories the App works on.",
+    }),
+    installed: z.boolean(),
+    botIds: z.array(z.string()),
     createdAt: z.string(),
   })
   .openapi("GitHubApp");
 
-export const githubAppStatusResponse = z.object({
-  app: githubAppResponse.nullable(),
+export const githubAppsResponse = z.object({
+  apps: z.array(githubAppResponse),
 });
 
 export type GitHubAppResponse = z.infer<typeof githubAppResponse>;

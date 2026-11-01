@@ -55,7 +55,6 @@ import {
   send,
 } from "@/lib/api";
 import { BotAvatar } from "./avatar";
-import { GitHubAppRow } from "./github-app";
 import {
   isWebSearchProviderId,
   webSearchProviders,
@@ -614,9 +613,6 @@ function CapabilitiesSection({
           />
           {capability.tool === "desktop" && has("desktop") && (
             <DesktopModelFields providers={providers} access={access} />
-          )}
-          {capability.tool === "coding" && has("coding") && bot && (
-            <GitHubAppRow botId={bot.id} />
           )}
         </Fragment>
       ))}
