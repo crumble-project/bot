@@ -131,3 +131,4 @@ bun run contract:compatibility BASELINE_DIRECTORY # Compare against a baseline O
 ## License
 
 Crumble is licensed under the [GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`). Third-party code is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+<!-- test line added by Frien via gh workflow test -->
