@@ -25,10 +25,10 @@ function Home() {
   return (
     <main className={main}>
       <p>
-        <strong>Crumble.</strong> Self-hosted bots with their own identity,
-        memory, and{" "}
+        <strong>Crumble.</strong> Self-hosted bots that work in their own Linux
+        desktop and{" "}
         <Highlight options={highlight[scheme]}>
-          one continuous chat with you
+          ask before anything they can’t undo
         </Highlight>
         .
       </p>
@@ -57,10 +57,9 @@ function Home() {
 
       <p>
         Each <a href={`${docs}/concepts`}>bot</a> has a name, instructions,
-        memories, skills, and scheduled tasks. You talk to it in a single{" "}
-        <a href={`${docs}/concepts/chats`}>chat</a> that never resets. Older
-        context gets summarized for the bot, and the full transcript stays with
-        you.
+        memories, and skills. You talk to it in the{" "}
+        <a href={`${docs}/clients/web`}>web app</a> or on{" "}
+        <a href={`${docs}/concepts/discord`}>Discord</a>.
       </p>
 
       <Transcript />
@@ -68,19 +67,22 @@ function Home() {
       <p>
         When a task needs real tools, a bot starts a{" "}
         <a href={`${docs}/concepts/workspaces`}>coding job</a> or a desktop job
-        in its own Linux workspace, and the answer comes back to the chat. You
-        can watch its desktop or take control.
+        in its own Linux workspace. Before it clicks Pay or Send, it checks that
+        you asked. You can watch its desktop or take control.
       </p>
 
       <p>
-        Bots refine their own skills and memory as they work. Every change
-        records where it came from, and you can undo it.
+        Bots run{" "}
+        <a href={`${docs}/concepts/schedules-and-integrations`}>automations</a>{" "}
+        on a schedule or when a webhook arrives, hand work to each other, and
+        use your <a href={`${docs}/concepts/logins`}>logins</a> without seeing
+        them. Every change they make to their own skills and memory can be
+        undone.
       </p>
 
       <p>
-        You run one server and chat from the{" "}
-        <a href={`${docs}/clients/web`}>web app</a>. Bring an API key or sign in
-        with a provider account.
+        You run one server. Bring an API key, or use the ChatGPT, Claude, or
+        Copilot plan you already pay for. Everything stays on your server.
       </p>
 
       <p>

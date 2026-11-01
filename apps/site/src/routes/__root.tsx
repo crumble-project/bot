@@ -10,7 +10,7 @@ import { css } from "styled-system/css";
 import appCss from "~/styles.css?url";
 
 const description =
-  "Self-hosted bots with their own identity, memory, and one continuous chat with you.";
+  "Self-hosted bots that work in their own Linux desktop and ask before anything they can’t undo.";
 
 export const Route = createRootRoute({
   head: () => ({
