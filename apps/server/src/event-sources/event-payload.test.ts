@@ -6,6 +6,7 @@ import {
   eventRelayText,
   eventRequest,
   eventRequestId,
+  payloadPage,
 } from "./event-payload";
 
 const event = (body: Uint8Array): RelayEvent => ({
@@ -89,4 +90,17 @@ test("an event run's request ID round-trips", () => {
     scheduleId: "s-1",
   });
   expect(eventRequest("schedule:s-1:2026")).toBeUndefined();
+});
+
+test("a page keeps a byte order mark at its start", () => {
+  const page = payloadPage(
+    event(new Uint8Array([0x41, 0xef, 0xbb, 0xbf, 0x42])),
+    1,
+    EVENT_BODY_LIMIT,
+  );
+
+  expect(page).toMatchObject({ bytes: 4, encoding: "utf-8", data: "\uFEFFB" });
+  expect(new TextEncoder().encode(page.data)).toEqual(
+    new Uint8Array([0xef, 0xbb, 0xbf, 0x42]),
+  );
 });

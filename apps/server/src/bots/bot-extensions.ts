@@ -63,6 +63,7 @@ export const ExtensionPosition = {
   groupLookup: 30,
   historyTools: 40,
   schedules: 50,
+  eventPayload: 55,
   display: 60,
   webSearch: 65,
   reaction: 70,

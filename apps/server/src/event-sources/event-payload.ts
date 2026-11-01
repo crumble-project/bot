@@ -2,7 +2,8 @@ import type { RelayEvent } from "./event-repository";
 
 export const EVENT_BODY_LIMIT = 32_768;
 
-const utf8 = new TextDecoder("utf-8", { fatal: true });
+// ignoreBOM keeps a byte order mark as text, so a page or an inline body never drops bytes it reports.
+const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 /** The body as the model sees it: UTF-8 text up to the limit, or null when it isn't UTF-8. */
 export type InlineBody = {
@@ -103,3 +104,32 @@ export function scriptEvent(event: RelayEvent, sourceName: string) {
 }
 
 export type ScriptEvent = { record: RelayEvent; sourceName: string };
+
+export type PayloadPage = {
+  eventId: string;
+  offset: number;
+  bytes: number;
+  totalBytes: number;
+  encoding: "utf-8" | "base64";
+  data: string;
+};
+
+/** A slice of an event's body: UTF-8 text when the slice decodes as text, else base64. */
+export function payloadPage(
+  event: RelayEvent,
+  offset: number,
+  limit: number,
+): PayloadPage {
+  const body = Buffer.from(event.body, "base64");
+  const slice = body.subarray(offset, offset + limit);
+  const text = decoded(slice);
+
+  return {
+    eventId: event.id,
+    offset,
+    bytes: slice.length,
+    totalBytes: body.length,
+    encoding: text === null ? "base64" : "utf-8",
+    data: text ?? Buffer.from(slice).toString("base64"),
+  };
+}

@@ -192,7 +192,7 @@ Docs: `GLOSSARY.md`, `apps/docs/content/concepts/event-automations.md` (new), `a
 - Consumes: the tool registration shape of `scheduleTools` (`schedules/bot-schedules.ts`); Task 2's `hasRunForAgent`, `getEvent`.
 - Produces: tool `event_payload` with parameters `{ eventId: string; offset?: number; limit?: number }` (limit at most 32,768, default 32,768), returning `{ eventId, offset, bytes, totalBytes, encoding: "utf-8" | "base64", data }`.
 
-- [ ] Test: a bot reads its own event's bytes `32768..` as UTF-8. Another bot gets "Event not found". A non-UTF-8 slice comes back as base64.
+- [x] Test: a bot reads its own event's bytes `32768..` as UTF-8. Another bot gets "Event not found". A non-UTF-8 slice comes back as base64.
 - [ ] Run `bun run check`. Checkpoint: `feat(events): let bots page through event payloads`.
 
 ### Task 7: Web UI, docs, changelog

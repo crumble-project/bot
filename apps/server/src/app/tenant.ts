@@ -77,6 +77,7 @@ import { MessageGateway } from "../message-gateway/message-gateway";
 import { EventRelay } from "../event-sources/event-relay";
 import { EventSources } from "../event-sources/event-sources";
 import { EventDispatcher } from "../event-sources/event-dispatcher";
+import { eventPayloadTools } from "../event-sources/event-tools";
 
 export type TenantOptions = {
   dataDir: string;
@@ -271,6 +272,7 @@ function accountLayer(
     jobTools,
     coordinationTools,
     scheduleTools,
+    eventPayloadTools,
     botRequestTools,
     groupLookupTools,
     historyTools,
