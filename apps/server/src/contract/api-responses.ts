@@ -427,6 +427,10 @@ export const credentialResponse = z
       description:
         "Why the newest use couldn't read the value from its password manager; null when it could.",
     }),
+    github: z.boolean().openapi({
+      description:
+        "The value is a token from the bot's GitHub App, minted for the App or for the owner signed in through it, so it has no stored value or reference.",
+    }),
   })
   .openapi("Credential");
 

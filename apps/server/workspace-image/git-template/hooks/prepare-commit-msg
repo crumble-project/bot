@@ -1,0 +1,4 @@
+#!/bin/sh
+# Marks commits a bot makes as its owner; Crumble sets CRUMBLE_COMMIT_TRAILER only then.
+[ -n "${CRUMBLE_COMMIT_TRAILER:-}" ] || exit 0
+exec git interpret-trailers --in-place --if-exists addIfDifferent --trailer "$CRUMBLE_COMMIT_TRAILER" "$1"

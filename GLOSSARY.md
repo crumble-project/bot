@@ -86,6 +86,10 @@ _Avoid_: Sandbox, container, VM (in product language)
 A secret value the owner gives one bot for a list of hosts. The bot's jobs use it through a placeholder, so the value never enters the workspace.
 _Avoid_: Secret, API key, environment variable (in product language)
 
+**GitHub App**:
+A GitHub identity the owner creates in Crumble on one GitHub account and assigns to bots. In that account's repositories, the bots' coding jobs commit, push, and open pull requests as its `slug[bot]` user, through the `GH_TOKEN` credential, or as the owner when the owner signed in through it. A bot uses at most one per account.
+_Avoid_: GitHub integration, machine user, bot account
+
 **Login**:
 A username and password, with an optional one-time code, that a bot's desktop jobs can fill into web pages on given hosts. Unlike a credential's, the value enters the workspace, in the page it is filled into; the password never reaches the bot's model or transcript.
 _Avoid_: Account, saved password (in product language)

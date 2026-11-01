@@ -29,6 +29,7 @@ import {
   IconScale,
   IconMessages,
   IconWebhook,
+  IconCode,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -98,6 +99,7 @@ const SECTIONS = [
   { to: "/settings/logins", label: "Logins", icon: IconLogin2 },
   { to: "/settings/judge-model", label: "Judge model", icon: IconScale },
   { to: "/settings/integrations", label: "Integrations", icon: IconPlug },
+  { to: "/settings/coding", label: "Coding", icon: IconCode },
   {
     to: "/settings/message-gateways",
     label: "Message gateways",

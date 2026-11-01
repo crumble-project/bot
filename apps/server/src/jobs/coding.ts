@@ -88,7 +88,10 @@ export function codingExtensions(
             // Installed job extensions render in the bot's chat too; only a job needs this.
             render: async (input, context) =>
               (await coding.isJob(input.read, input.conversationId, context))
-                ? jobCredentialSection(credentials.list(agent.id).credentials)
+                ? jobCredentialSection(
+                    credentials.list(agent.id).credentials,
+                    credentials.githubIdentities(agent.id),
+                  )
                 : undefined,
           },
         ]

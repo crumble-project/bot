@@ -35,6 +35,7 @@ const credentialOf = (row: {
   updatedAt: string;
   lastUsedAt: string | null;
   lastError: string | null;
+  github: boolean;
 }): AgentCredential => ({
   ...row,
   hosts: hostList.parse(JSON.parse(row.hosts)),
@@ -59,16 +60,21 @@ const metadata = {
   createdAt: agentCredentials.createdAt,
   updatedAt: agentCredentials.updatedAt,
   lastUsedAt: agentCredentials.lastUsedAt,
+  github: agentCredentials.github,
   lastError: sql<
     string | null
   >`(SELECT ${credentialUses.error} FROM ${credentialUses} WHERE ${credentialUses.agentId} = ${agentCredentials.agentId} AND ${credentialUses.name} = ${agentCredentials.name} ORDER BY ${credentialUses.id} DESC LIMIT 1)`,
 };
 
-/** The columns a save writes for its source; the database allows a value or a reference, never both. */
+/** The columns a save writes for its source; the database allows one of a value, a reference, or the GitHub identity. */
 type SaveSource = {
   value?: string | undefined;
   reference?: SecretReference | undefined;
+  github?: true | undefined;
 };
+
+/** Where a credential's value comes from: a secret source, or a token from the bot's GitHub App. */
+export type CredentialSource = SecretSource | { readonly github: true };
 
 /** The credentials the owner gave each bot, their requests, uses, and each bot's certificate authority. */
 export class AgentCredentialRepository extends Context.Service<
@@ -100,7 +106,7 @@ export class AgentCredentialRepository extends Context.Service<
     readonly source: (
       agentId: string,
       name: string,
-    ) => Effect.Effect<SecretSource | undefined>;
+    ) => Effect.Effect<CredentialSource | undefined>;
     /** The bot's certificate authority for the credential proxy, with its private key in PKCS #8 PEM. */
     readonly getAuthority: (
       agentId: string,
@@ -199,7 +205,9 @@ export class AgentCredentialRepository extends Context.Service<
         } else {
           if (!source)
             return yield* Effect.die(
-              new Error("A new credential needs a value or a reference"),
+              new Error(
+                "A new credential needs a value, a reference, or the GitHub App",
+              ),
             );
 
           yield* db.insert(agentCredentials).values({
@@ -222,6 +230,7 @@ export class AgentCredentialRepository extends Context.Service<
             value: box.encrypt(input.value),
             passwordManager: null,
             reference: null,
+            github: false,
           };
 
         if (input.reference)
@@ -229,6 +238,15 @@ export class AgentCredentialRepository extends Context.Service<
             value: null,
             passwordManager: input.reference.passwordManager,
             reference: input.reference.reference,
+            github: false,
+          };
+
+        if (input.github)
+          return {
+            value: null,
+            passwordManager: null,
+            reference: null,
+            github: true,
           };
 
         return undefined;
@@ -293,11 +311,16 @@ export class AgentCredentialRepository extends Context.Service<
             value: agentCredentials.value,
             passwordManager: agentCredentials.passwordManager,
             reference: agentCredentials.reference,
+            github: agentCredentials.github,
           })
           .from(agentCredentials)
           .where(credential(agentId, name));
 
-        return row && secretSourceOf(box, row);
+        if (!row) return undefined;
+
+        return row.github
+          ? { github: true as const }
+          : secretSourceOf(box, row);
       }, Effect.orDie);
 
       const getAuthority = Effect.fn("AgentCredentialRepository.getAuthority")(

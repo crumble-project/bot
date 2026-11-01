@@ -269,6 +269,7 @@ const RESERVED_CREDENTIAL_NAMES = new Set([
   "SSL_CERT_DIR",
   "REQUESTS_CA_BUNDLE",
   "CURL_CA_BUNDLE",
+  "GIT_SSL_CAINFO",
   "LD_PRELOAD",
   "LD_LIBRARY_PATH",
 ]);
@@ -358,6 +359,8 @@ export type AgentCredential = {
   lastUsedAt: string | null;
   /** Why the newest use couldn't read the value; null when it could. */
   lastError: string | null;
+  /** The value is a token from the bot's GitHub App, as the App or the owner signed in through it; neither stored nor referenced. */
+  github: boolean;
 };
 
 /** A bot's request for a credential, waiting for the owner. */
@@ -375,6 +378,9 @@ export type CredentialGrant = {
   hosts: string[];
   placeholder: string;
 };
+
+/** The request a credential's value is read for: some values, such as a GitHub App's token, depend on it. */
+export type CredentialTarget = { host: string; path: string };
 
 /** Whether `host` is one of `hosts`; `*.example.com` covers every subdomain, not the name itself. */
 export const hostMatches = (hosts: readonly string[], host: string) =>

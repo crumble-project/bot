@@ -482,6 +482,9 @@ describe("Store memory sources", () => {
     const db = new Database(join(dir, "store.sqlite"));
     // A server before Drizzle had no migrations table.
     db.run(`DROP TABLE __drizzle_migrations;
+      DROP TABLE github_app_users;
+      DROP TABLE github_app_bots;
+      DROP TABLE github_apps;
       DROP TABLE event_runs;
       DROP TABLE relay_events;
       DROP TABLE event_sources;
@@ -621,6 +624,9 @@ describe("Store group chats", () => {
     const db = new Database(join(dir, "store.sqlite"));
     // A server before Drizzle had no migrations table.
     db.run(`DROP TABLE __drizzle_migrations;
+      DROP TABLE github_app_users;
+      DROP TABLE github_app_bots;
+      DROP TABLE github_apps;
       DROP TABLE event_runs;
       DROP TABLE relay_events;
       DROP TABLE event_sources;

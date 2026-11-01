@@ -198,10 +198,10 @@ describe("credentialProxy", () => {
       agentId: bot.id,
       authorities,
       grants: () => credentials.grants(bot.id),
-      value: (name) => {
+      value: (name, target) => {
         reads++;
 
-        return credentials.value(bot.id, name);
+        return credentials.value(bot.id, name, target);
       },
       recordUse: (name, use) => credentials.recordUse(bot.id, name, use),
       lookup: async () => ["127.0.0.1"],

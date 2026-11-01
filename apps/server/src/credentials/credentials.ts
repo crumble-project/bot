@@ -12,6 +12,7 @@ import {
   type CredentialRequest,
   type CredentialRequestInput,
   type CredentialSaveInput,
+  type CredentialTarget,
   type CredentialUse,
 } from "../shared/domain";
 import { PasswordManagers } from "../password-managers/password-manager";
@@ -21,6 +22,11 @@ import {
   type SecretUnavailable,
 } from "../password-managers/secret-values";
 import { AgentCredentialRepository } from "./agent-credential-repository";
+import { GitHubApps } from "../github-apps/github-apps";
+import type {
+  GitHubIdentity,
+  GitHubUnavailable,
+} from "../github-apps/github-api";
 import { GUEST_CA_BUNDLE, GUEST_CA_PATH } from "../workspaces/workspace";
 import {
   InvalidInput,
@@ -96,13 +102,21 @@ export class Credentials extends Context.Service<
     ) => Effect.Effect<CredentialUse[], AppError>;
     /** The variables every command of the bot's coding jobs sees: placeholders, and where to find the bot's authority. */
     readonly env: (agentId: string) => Effect.Effect<Record<string, string>>;
+    /** How the bot commits in each GitHub account its Apps work in, default first. */
+    readonly githubIdentities: (
+      agentId: string,
+    ) => Effect.Effect<GitHubIdentity[]>;
     /** The placeholders the credential proxy may swap, without their values. */
     readonly grants: (agentId: string) => Effect.Effect<CredentialGrant[]>;
     /** The value the credential proxy swaps in, read only for a request that uses its placeholder. */
     readonly value: (
       agentId: string,
       name: string,
-    ) => Effect.Effect<Redacted.Redacted, SecretUnavailable | NotFound>;
+      target: CredentialTarget,
+    ) => Effect.Effect<
+      Redacted.Redacted,
+      SecretUnavailable | GitHubUnavailable | NotFound
+    >;
     readonly recordUse: (
       agentId: string,
       name: string,
@@ -119,6 +133,7 @@ export class Credentials extends Context.Service<
       const notices = yield* BotNotices;
       const values = yield* SecretValues;
       const managers = yield* PasswordManagers;
+      const githubApps = yield* GitHubApps;
 
       /** Drops the cached value of a reference the credential no longer reads. */
       const forgetReplaced = (
@@ -135,11 +150,14 @@ export class Credentials extends Context.Service<
       const value = Effect.fn("Credentials.value")(function* (
         agentId: string,
         name: string,
+        target: CredentialTarget,
       ) {
         const source = yield* repository.source(agentId, name);
 
         if (!source)
           return yield* new NotFound({ message: `${name} was deleted` });
+
+        if ("github" in source) return yield* githubApps.token(agentId, target);
 
         return yield* values.read(source);
       });
@@ -280,12 +298,16 @@ export class Credentials extends Context.Service<
 
       const env = Effect.fn("Credentials.env")(function* (agentId: string) {
         const placeholders = yield* repository.placeholders(agentId);
+        const git = yield* githubApps.gitEnv(agentId);
 
-        if (!Object.keys(placeholders).length) return {};
+        if (!Object.keys(placeholders).length) return git;
 
         return {
+          ...git,
           ...placeholders,
           SSL_CERT_FILE: GUEST_CA_BUNDLE,
+          // Debian's git uses GnuTLS, which ignores SSL_CERT_FILE.
+          GIT_SSL_CAINFO: GUEST_CA_BUNDLE,
           REQUESTS_CA_BUNDLE: GUEST_CA_BUNDLE,
           CURL_CA_BUNDLE: GUEST_CA_BUNDLE,
           NODE_EXTRA_CA_CERTS: GUEST_CA_PATH,
@@ -302,6 +324,7 @@ export class Credentials extends Context.Service<
         decline,
         uses,
         env,
+        githubIdentities: githubApps.identities,
         grants: repository.grants,
         value,
         recordUse: repository.addUse,
@@ -331,9 +354,14 @@ export type CredentialsAccess = {
     options: { limit: number; before?: string | undefined },
   ): CredentialUse[];
   env(agentId: string): Record<string, string>;
+  githubIdentities(agentId: string): GitHubIdentity[];
   grants(agentId: string): CredentialGrant[];
   /** Rejects with the message the credential proxy answers with. */
-  value(agentId: string, name: string): Promise<string>;
+  value(
+    agentId: string,
+    name: string,
+    target: CredentialTarget,
+  ): Promise<string>;
   recordUse(
     agentId: string,
     name: string,
@@ -359,10 +387,12 @@ export function credentialsAccess(
     uses: (agentId, name, options) =>
       runtime.runSync(credentials.uses(agentId, name, options)),
     env: (agentId) => runtime.runSync(credentials.env(agentId)),
+    githubIdentities: (agentId) =>
+      runtime.runSync(credentials.githubIdentities(agentId)),
     grants: (agentId) => runtime.runSync(credentials.grants(agentId)),
-    value: (agentId, name) =>
+    value: (agentId, name, target) =>
       runtime.runPromise(
-        credentials.value(agentId, name).pipe(
+        credentials.value(agentId, name, target).pipe(
           Effect.map(Redacted.value),
           Effect.mapError(
             (error) =>
@@ -384,14 +414,48 @@ const credentialLines = (credentials: readonly AgentCredential[]) =>
     (credential) => `- ${credential.name}: ${hostsText(credential.hosts)}`,
   );
 
-/** What a coding job reads about the bot's credentials; undefined without any. */
-export function jobCredentialSection(credentials: readonly AgentCredential[]) {
-  if (!credentials.length) return undefined;
+const githubLines = (identities: readonly GitHubIdentity[]) => {
+  const [fallback, ...others] = identities;
+
+  if (!fallback) return [];
 
   return [
-    "Credentials the owner gave this bot, as environment variables in every command, with the hosts each works for:",
-    ...credentialLines(credentials),
-    "Each variable holds a placeholder. The workspace's HTTPS proxy replaces it with the real value in request headers, only on requests to its hosts; a placeholder in the URL or body is sent as it is. Use the variable as if it held the value, and never print it or write it into files. A client that ignores HTTPS_PROXY sends the placeholder and gets an authentication error: route it through the proxy instead.",
+    `On GitHub you are ${fallback.name}: commits default to that author, and GH_TOKEN signs git and gh in for ${identities.map((each) => each.account).join(", ")}.`,
+    ...others.map(
+      (each) =>
+        `In a repository owned by ${each.account}, first run: git config user.name '${each.name}' && git config user.email '${each.email}'`,
+    ),
+    ...(others.length
+      ? [
+          `gh pr and other GraphQL commands use ${fallback.account}'s token; for other accounts' repositories use REST, such as gh api repos/OWNER/REPO/pulls -f title=... -f head=... -f base=...`,
+        ]
+      : []),
+    ...identities.flatMap((each) =>
+      each.trailer
+        ? [
+            `${each.name} is the owner's own account, which you act as in ${each.account}'s repositories: keep ${each.name} as the commit author, even if a task names an App's [bot] user, and mark your work instead: every commit there ends with the trailer "${each.trailer}". Repositories you clone add it on their own unless they set core.hooksPath; there, and in older clones, pass git commit --trailer '${each.trailer}'.`,
+          ]
+        : [],
+    ),
+  ];
+};
+
+/** What a coding job reads about the bot's credentials and GitHub identity; undefined without either. */
+export function jobCredentialSection(
+  credentials: readonly AgentCredential[],
+  identities: readonly GitHubIdentity[] = [],
+) {
+  if (!credentials.length && !identities.length) return undefined;
+
+  return [
+    ...(credentials.length
+      ? [
+          "Credentials the owner gave this bot, as environment variables in every command, with the hosts each works for:",
+          ...credentialLines(credentials),
+          "Each variable holds a placeholder. The workspace's HTTPS proxy replaces it with the real value in request headers, only on requests to its hosts; a placeholder in the URL or body is sent as it is. Use the variable as if it held the value, and never print it or write it into files. A client that ignores HTTPS_PROXY sends the placeholder and gets an authentication error: route it through the proxy instead.",
+        ]
+      : []),
+    ...githubLines(identities),
   ].join("\n");
 }
 

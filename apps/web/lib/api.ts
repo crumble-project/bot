@@ -47,6 +47,10 @@ import type {
   eventSourcesResponse,
   relayStatusResponse,
 } from "@crumble/server/contract/event-sources";
+import type {
+  githubAppManifestResponse,
+  githubAppResponse,
+} from "@crumble/server/contract/github-apps";
 
 export type GatewayConfig = z.infer<typeof gatewayConfigInput>;
 
@@ -83,6 +87,10 @@ export type PasswordManager = z.infer<
 >["passwordManagers"][number];
 
 export type PasswordManagerId = PasswordManager["id"];
+
+export type GitHubApp = z.infer<typeof githubAppResponse>;
+
+export type GitHubAppManifest = z.infer<typeof githubAppManifestResponse>;
 
 export type Credentials = z.infer<typeof credentialsResponse>;
 
@@ -424,6 +432,17 @@ export const botRequestsQuery = (id: string) =>
 
 export const botRequestPath = (id: string, requestId: string) =>
   `${agentPath(id)}/bot-requests/${encodeURIComponent(requestId)}`;
+
+export const githubAppPath = (id: string) =>
+  `/v1/github-apps/${encodeURIComponent(id)}`;
+
+export const githubAppsQuery = queryOptions({
+  queryKey: ["github-apps"],
+  queryFn: ({ signal }) =>
+    api<{ apps: GitHubApp[] }>("/v1/github-apps", { signal }).then(
+      (data) => data.apps,
+    ),
+});
 
 export const credentialPath = (id: string, name: string) =>
   `${agentPath(id)}/credentials/${encodeURIComponent(name)}`;

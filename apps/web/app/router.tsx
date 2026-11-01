@@ -31,6 +31,7 @@ import { ActivityPage } from "@/features/activity/activity";
 import { BotForm } from "@/features/bots/bot-form";
 import { Chat } from "@/features/chat/chat";
 import { CredentialsSettings } from "@/features/credentials/credentials";
+import { CodingPage, GitHubAppCallback } from "@/features/settings/coding";
 import { LoginsSettings } from "@/features/logins/logins";
 import { BotDesktop } from "@/features/bot-desktop/desktop";
 import { GroupChatView, GroupForm } from "@/features/group-chats/groups";
@@ -247,6 +248,30 @@ const oauthRoute = createRoute({
   component: OAuthCallback,
 });
 
+const githubAppCallbackRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/github-app/callback",
+  component: GitHubAppCallback,
+});
+
+const githubAppInstalledRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/github-app/installed",
+  component: GitHubAppCallback,
+});
+
+const githubAppAuthorizedRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/github-app/authorized",
+  component: GitHubAppCallback,
+});
+
+const codingRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/coding",
+  component: CodingPage,
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/settings",
@@ -369,6 +394,9 @@ export const router = createRouter({
       avatarsRoute,
       integrationsRoute,
       oauthRoute,
+      githubAppCallbackRoute,
+      githubAppInstalledRoute,
+      githubAppAuthorizedRoute,
       settingsRoute.addChildren([
         settingsIndexRoute,
         generalRoute,
@@ -379,6 +407,7 @@ export const router = createRouter({
         settingsCredentialsRoute,
         settingsLoginsRoute,
         settingsIntegrationsRoute,
+        codingRoute,
         messageGatewaysRoute,
         messageGatewayRoute,
         eventRelayRoute,

@@ -1,4 +1,6 @@
+import { sql } from "drizzle-orm";
 import {
+  check,
   foreignKey,
   index,
   integer,
@@ -7,7 +9,11 @@ import {
   text,
 } from "drizzle-orm/sqlite-core";
 import { agents } from "../bots/schema";
-import { oneSecretSource, secretSource } from "../password-managers/schema";
+import {
+  hasOneSecretSource,
+  oneSecretSource,
+  secretSource,
+} from "../password-managers/schema";
 
 /** Encrypted secrets by key, such as an MCP server's token. */
 export const secrets = sqliteTable(
@@ -46,10 +52,15 @@ export const agentCredentials = sqliteTable(
     passwordManager: secretSource.passwordManager(),
     reference: secretSource.reference(),
     placeholder: text("placeholder").notNull().unique(),
+    /** The value is a token from the bot's GitHub App, so no source column is set. */
+    github: integer("github", { mode: "boolean" }).notNull().default(false),
   },
   (table) => [
     primaryKey({ columns: [table.agentId, table.name] }),
-    oneSecretSource("agent_credentials_source", table),
+    check(
+      "agent_credentials_source",
+      sql`(${table.github} = 0 AND (${hasOneSecretSource(table)})) OR (${table.github} = 1 AND ${table.value} IS NULL AND ${table.passwordManager} IS NULL AND ${table.reference} IS NULL)`,
+    ),
   ],
 );
 

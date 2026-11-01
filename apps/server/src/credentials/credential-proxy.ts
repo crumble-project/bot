@@ -8,6 +8,7 @@ import tls from "node:tls";
 import {
   hostMatches,
   type CredentialGrant,
+  type CredentialTarget,
   type CredentialUse,
 } from "../shared/domain";
 import { isPublicAddress } from "../workspaces/public-address";
@@ -21,7 +22,7 @@ export type CredentialProxyOptions = {
   /** Read for every request, so a changed or deleted credential applies at once. */
   grants: () => CredentialGrant[];
   /** Reads a used credential's value; rejects with the reason the request can't be sent. */
-  value: (name: string) => Promise<string>;
+  value: (name: string, target: CredentialTarget) => Promise<string>;
   recordUse: (name: string, use: Omit<CredentialUse, "id">) => void;
   lookup?: (host: string) => Promise<string[]>;
   isPublicAddress?: (address: string) => boolean;
@@ -328,7 +329,11 @@ export function credentialProxy(
         error,
       });
 
-    const { values, failures } = await readValues(used, options.value);
+    const target = { host, path: request.url ?? "/" };
+
+    const { values, failures } = await readValues(used, (name) =>
+      options.value(name, target),
+    );
 
     if (failures.length) {
       for (const failure of failures)
