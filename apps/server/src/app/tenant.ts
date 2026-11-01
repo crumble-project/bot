@@ -76,6 +76,7 @@ import { SecretValues } from "../password-managers/secret-values";
 import { MessageGateway } from "../message-gateway/message-gateway";
 import { EventRelay } from "../event-sources/event-relay";
 import { EventSources } from "../event-sources/event-sources";
+import { EventDispatcher } from "../event-sources/event-dispatcher";
 
 export type TenantOptions = {
   dataDir: string;
@@ -277,6 +278,7 @@ function accountLayer(
     push,
     MessageGateway.layer,
     EventSources.layer.pipe(Layer.provideMerge(EventRelay.layer)),
+    EventDispatcher.layer.pipe(Layer.provide(dispatch)),
   );
 
   const conversations = Layer.mergeAll(scheduler, groups, activity);
@@ -368,6 +370,7 @@ export async function createTenant(
         yield* chats.recover;
         yield* (yield* MessageGateway).start;
         yield* (yield* EventRelay).start;
+        yield* (yield* EventDispatcher).start;
         scheduler.start();
 
         return {

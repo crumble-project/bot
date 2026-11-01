@@ -23,9 +23,11 @@ export type JobRequest = {
 
 // Origins whose words are the owner's request: the owner's own, or the instructions of an automation the owner set up.
 // A script automation's notice is left out: it carries the command's output, which anyone the script reads can write.
+// An event automation's stored text is its prompt alone; the event's payload reaches only the model.
 const REQUEST_ORIGINS = new Map<string, OwnerMessage["from"]>([
   ["owner", "owner"],
   ["task", "automation"],
+  ["event", "automation"],
 ]);
 
 /** Prefixes an owner or automation message in the bot's model context, so the bot can cite it in `owner_messages`. */

@@ -74,6 +74,8 @@ import {
   type TranscriptPage,
 } from "./transcript";
 import { InvalidInput, NotFound } from "../shared/errors";
+import type { RelayEvent } from "../event-sources/event-repository";
+import { eventRelayText } from "../event-sources/event-payload";
 
 /** The IANA timezone the owner's client last reported with a chat message. */
 export const OWNER_TIMEZONE = "owner-timezone";
@@ -1210,6 +1212,8 @@ export class AgentRuntime {
       replyTo?: string | undefined;
       origin?: MessageOrigin;
       attachments?: AttachmentInput[] | undefined;
+      /** An event automation's event: it follows the prompt in the model's input, never in the stored text. */
+      event?: { record: RelayEvent; sourceName: string } | undefined;
     } = {},
   ): Promise<string> {
     const record = await this.open(agent);
@@ -1221,10 +1225,15 @@ export class AgentRuntime {
 
     assertImageSupport(agent, model, attached.info);
 
-    const content = inputContent(
+    const tagged =
       options.origin?.kind === "bot"
         ? botRelayText(options.origin, prepared.modelContent)
-        : messageTag(options.origin?.kind, requestId, prepared.modelContent),
+        : messageTag(options.origin?.kind, requestId, prepared.modelContent);
+
+    const content = inputContent(
+      options.event
+        ? eventRelayText(tagged, options.event.record, options.event.sourceName)
+        : tagged,
       attached.blocks,
     );
 

@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import type { Execution } from "../shared/domain";
 import { isGroupTurn, pi, type BotsContext } from "./bots-context";
 import type { botsLookup } from "./bots-lookup";
+import { eventRequest } from "../event-sources/event-payload";
 import { latestMessagePreview, type MessageOrigin } from "./transcript";
 
 type PageOptions = {
@@ -11,11 +12,59 @@ type PageOptions = {
 
 /** Where a turn came from, as its transcript shows it: the owner, a group, a task, a credential, or another bot. */
 export const botsOrigin = (context: BotsContext) => {
-  const { agents, schedules } = context;
+  const { agents, schedules, events } = context;
+
+  const eventOrigin = Effect.fnUntraced(function* (run: {
+    eventId: string;
+    scheduleId: string;
+  }) {
+    const schedule = yield* schedules.get(run.scheduleId);
+    const event = yield* events.getEvent(run.eventId);
+    const source = event && (yield* events.getSource(event.sourceId));
+
+    return {
+      kind: "event",
+      name: schedule?.name ?? "Automation",
+      source: source?.name ?? "Deleted source",
+    } satisfies MessageOrigin;
+  });
+
+  const scriptOrigin = (subject: string) =>
+    Effect.map(schedules.get(subject), (schedule) => ({
+      kind: "script",
+      name: schedule?.name ?? "Script task",
+    }));
+
+  const botOrigin = (subject: string) =>
+    Effect.map(agents.get(subject), (source) => ({
+      kind: "bot",
+      agentId: subject,
+      name: source?.name ?? "Another bot",
+    }));
+
+  // Request IDs of the form `<prefix>:<subject>` name where a turn came from.
+  const prefixed = new Map<
+    string,
+    (subject: string) => Effect.Effect<MessageOrigin>
+  >([
+    ["script", scriptOrigin],
+    ["delegate", botOrigin],
+    [
+      "credential",
+      (subject) => Effect.succeed({ kind: "credential", name: subject }),
+    ],
+    ["bot-request", () => Effect.succeed({ kind: "bot_request" })],
+    ["gateway", (subject) => Effect.succeed({ kind: "owner", via: subject })],
+  ]);
+
+  const owner: MessageOrigin = { kind: "owner" };
 
   const origin = (execution: Execution): Effect.Effect<MessageOrigin> =>
     Effect.gen(function* () {
       if (isGroupTurn(execution)) return { kind: "group" };
+      const run = eventRequest(execution.requestId);
+
+      if (run) return yield* eventOrigin(run);
 
       if (execution.scheduleId) {
         const schedule = yield* schedules.get(execution.scheduleId);
@@ -23,33 +72,10 @@ export const botsOrigin = (context: BotsContext) => {
         return { kind: "task", name: schedule?.name ?? "Scheduled task" };
       }
 
-      const [prefix, subject] = execution.requestId.split(":");
+      const [prefix = "", subject] = execution.requestId.split(":");
+      const read = subject ? prefixed.get(prefix) : undefined;
 
-      if (prefix === "script" && subject) {
-        const schedule = yield* schedules.get(subject);
-
-        return { kind: "script", name: schedule?.name ?? "Script task" };
-      }
-
-      if (prefix === "credential" && subject)
-        return { kind: "credential", name: subject };
-
-      if (prefix === "bot-request" && subject) return { kind: "bot_request" };
-
-      if (prefix === "gateway" && subject)
-        return { kind: "owner", via: subject };
-
-      if (prefix === "delegate" && subject) {
-        const source = yield* agents.get(subject);
-
-        return {
-          kind: "bot",
-          agentId: subject,
-          name: source?.name ?? "Another bot",
-        };
-      }
-
-      return { kind: "owner" };
+      return read && subject ? yield* read(subject) : owner;
     });
 
   return { origin };

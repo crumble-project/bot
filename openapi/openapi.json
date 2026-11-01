@@ -777,7 +777,7 @@
         "properties": {
           "kind": {
             "type": "string",
-            "description": "Where the message came from: owner, task, script (a script task's result), credential, bot, or group. Clients may receive other values later."
+            "description": "Where the message came from: owner, task, event (an event automation's prompt), script (a script task's result), credential, bot, or group. Clients may receive other values later."
           },
           "name": {
             "type": "string"
@@ -788,6 +788,10 @@
           "via": {
             "type": "string",
             "description": "On an owner message sent through a message gateway: the gateway's ID, such as `discord`."
+          },
+          "source": {
+            "type": "string",
+            "description": "On an event automation's message: the name of the event source whose event started it."
           }
         },
         "required": [

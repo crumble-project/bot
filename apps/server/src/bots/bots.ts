@@ -13,6 +13,7 @@ import { BotNotices } from "./bot-notices";
 import { ConversationRepository } from "./conversation-repository";
 import { ExecutionRepository } from "./execution-repository";
 import { BotRuntime, type AgentRuntime, type RuntimeSnapshot } from "./runtime";
+import { EventRepository } from "../event-sources/event-repository";
 import type { BotMessageEvent } from "./transcript";
 
 export { GROUP_TURN_PREFIX } from "./bots-context";
@@ -342,6 +343,7 @@ type StandaloneServices =
   | ExecutionRepository
   | SettingsRepository
   | ScheduleRepository
+  | EventRepository
   | BotNotices;
 
 type StoreServices = Exclude<StandaloneServices, Bots | BotRuntime>;
