@@ -1,0 +1,11 @@
+#!/bin/sh
+# Require a Conventional Commit subject. Skip once with `git commit --no-verify`.
+set -eu
+hooks=$(dirname "$0")
+
+subject=$(grep -v '^#' "$1" | sed -n '/[^[:space:]]/{p;q;}')
+case $subject in
+  # Git writes these, and autosquash or a revert replaces them before merge.
+  "Merge "* | "Revert "* | "fixup! "* | "squash! "* | "amend! "*) exit 0 ;;
+esac
+"$hooks/check-conventional-commit.sh" "$subject"

@@ -30,7 +30,7 @@ The server and web app are licensed under the
 | `apps/site/`                   | The landing page at crumbli.ng.                          |
 | `openapi/`                     | The generated OpenAPI contract and event stream schemas. |
 
-Server code uses [Effect](https://effect.website). Read `apps/server/AGENTS.md`
+Server code uses [Effect](https://effect.website). Read `AGENTS.md`
 before changing it. [Architecture](/contributing/architecture) shows how the
 pieces fit.
 
@@ -43,26 +43,29 @@ bun run check   # lint, format check, typecheck, contract drift, and unit tests
 bun run fix     # format and apply lint fixes
 ```
 
-`bun install` sets up Git hooks, so most of this runs without you asking:
+`bun install` sets up the Git hooks in `.githooks/`. The commit and push
+hooks require the Bun version in `.bun-version`, which CI also uses. Skip them once with
+`--no-verify`:
 
-| Hook   | Runs                                                                                                                |
-| ------ | ------------------------------------------------------------------------------------------------------------------- |
-| Commit | Generates and stages OpenAPI artifacts from staged sources, then the steering-file path check, lint, and typecheck. |
-| Push   | `bun run check`                                                                                                     |
+| Hook           | Runs                                                                                                                                                                                                                                                                                    |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Commit         | Generates and stages OpenAPI artifacts from staged sources, then runs the steering-file path check, lint, format check, and typecheck on the whole tree, and `fallow audit` on the changes since the last commit.                                                                       |
+| Commit message | Rejects a commit subject that isn't a Conventional Commit, such as `feat(web): add bot avatars`. Pull request titles get the same check in CI.                                                                                                                                          |
+| Push           | Runs the PR checks against the pushed commit and a freshly fetched `origin/main` (`bun install --frozen-lockfile`, `bun run check`, contract validation and compatibility, `fallow audit`, and `apps/docs` / `apps/site` when changed). Refuses dirty trees or un-checked-out branches. |
 
 Unit test jobs in CI must finish in two minutes or less.
 
 ## Changing the Database Schema
 
-Edit the feature's `schema.ts`, then generate the migration from the `bot`
-root:
+Store tables live in each feature's `schema.ts` or `schema.<part>.ts`, which
+`apps/server/drizzle.store.config.ts` finds automatically. Push tables live in
+`apps/server/src/push/schema.ts`. Edit the schema, then generate the migration
+from the `bot` root:
 
 ```bash
 bun run --cwd apps/server db:generate --name short_description       # store.sqlite
 bun run --cwd apps/server db:generate:push --name short_description  # push.sqlite
 ```
-
-A new `schema.ts` must also be listed in `apps/server/drizzle.store.config.ts`.
 
 ## Changing the API Contract
 
@@ -88,7 +91,7 @@ same version, so a server and its workspace images always match.
    - Set `version` in `apps/server/package.json`.
    - Rename `## Unreleased` in `CHANGELOG.md` to `## X.Y.Z`, and add a new
      empty `## Unreleased` above it.
-   - Update the image tags in `README.md` and `apps/docs`.
+   - Update the image tags in `apps/docs`.
 2. Squash-merge it.
 3. Tag the merge commit and push the tag:
 

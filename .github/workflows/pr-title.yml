@@ -1,0 +1,22 @@
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  conventional-commit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .githooks
+      # Squash merges use the title as the commit on main. Passed through env so the title can't inject shell.
+      - run: sh .githooks/check-conventional-commit.sh "$TITLE"
+        env:
+          TITLE: ${{ github.event.pull_request.title }}

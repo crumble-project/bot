@@ -1,0 +1,75 @@
+name: Bug report
+description: Report a reproducible bug in the Crumble server, web UI, or workspaces.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Before submitting, check the [documentation](https://docs.crumbli.ng) and make sure not to include API keys, session tokens, `.secret.key`, or `CRUMBLE_MASTER_KEY` values.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of Crumble is affected?
+      options:
+        - Server / HTTP API
+        - Web UI
+        - Workspaces (Microsandbox)
+        - Workspaces (Railway)
+        - Bot desktop
+        - Model providers / Claude Code
+        - Skills / Memories / Automations
+        - Message gateways (Discord) / Event relay
+        - Docker / Packaging
+        - Documentation / Site
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Release version (e.g. `0.3.0`) or `git rev-parse --short HEAD`.
+      placeholder: "0.3.0"
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, architecture, and how you run Crumble (Docker or Bun).
+      placeholder: "macOS 15 arm64, Bun 1.4.4"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps starting from a clean state or an existing bot.
+      placeholder: |
+        1. Start the server with `...`
+        2. Open `/ui` and ...
+        3. See error `...`
+    validations:
+      required: true
+
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected vs. actual behavior
+      description: What should have happened, and what happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error output
+      description: Relevant server, browser console, or container output (redact any secrets).
+      render: shell
+    validations:
+      required: false

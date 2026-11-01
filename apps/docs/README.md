@@ -6,7 +6,7 @@ The site has its own `bun.lock` and is not part of the root Bun workspace, so it
 
 ## Local development
 
-Requires **Node.js 22.19+** and **Bun 1.4.4**.
+Requires **Bun 1.4.4**. The scripts run Blume on Bun. Only `deploy` and `deploy:check` need Node.js, because Wrangler doesn't support Bun.
 
 ```sh
 bun install --frozen-lockfile
