@@ -310,6 +310,7 @@ test("turns below the threshold and scheduled runs are not reviewed, and a resta
     cron: null,
     timezone: "UTC",
     runAt: null,
+    eventSourceId: null,
     enabled: true,
   });
 

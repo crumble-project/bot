@@ -17,6 +17,7 @@ import {
   type ScheduleInput,
 } from "../shared/domain";
 import { AgentRepository } from "../bots/agent-repository";
+import { EventRepository } from "../event-sources/event-repository";
 import type { Runner } from "../shared/runner";
 import { ScheduleRepository } from "./schedule-repository";
 import { ScriptRuns } from "./script-runs";
@@ -114,6 +115,7 @@ export class Scheduler extends Context.Service<
       Effect.gen(function* () {
         const schedules = yield* ScheduleRepository;
         const agents = yield* AgentRepository;
+        const events = yield* EventRepository;
         const dispatch = yield* TaskDispatch;
         const scriptRuns = yield* ScriptRuns;
         const scope = yield* Effect.scope;
@@ -144,16 +146,24 @@ export class Scheduler extends Context.Service<
           );
         });
 
+        const known = Effect.fnUntraced(function* (value: ScheduleInput) {
+          if (!(yield* agents.get(value.agentId)))
+            return yield* new NotFound({ message: "Agent not found" });
+
+          if (
+            value.eventSourceId &&
+            !(yield* events.getSource(value.eventSourceId))
+          )
+            return yield* new NotFound({ message: "Event source not found" });
+        });
+
         const create = Effect.fn("Scheduler.create")(function* (
           input: ScheduleInput,
           createdByAgentId: string | null = null,
         ) {
           const value = yield* validate(input);
 
-          if (!(yield* agents.get(value.agentId)))
-            return yield* Effect.fail(
-              new NotFound({ message: "Agent not found" }),
-            );
+          yield* known(value);
 
           return yield* setInitialNext(
             yield* schedules.create(value, undefined, createdByAgentId),
@@ -172,10 +182,7 @@ export class Scheduler extends Context.Service<
             );
           const value = yield* validate(mergeScheduleInput(old, input));
 
-          if (!(yield* agents.get(value.agentId)))
-            return yield* Effect.fail(
-              new NotFound({ message: "Agent not found" }),
-            );
+          yield* known(value);
           const updated = yield* schedules.update(id, value);
 
           if (!updated) return null;
@@ -403,7 +410,7 @@ export function schedulerAccess(runtime: Runner<Scheduler>): SchedulerAccess {
 
 /** A scheduler over the tasks `core` reaches, dispatching with `dispatch`, for an API or a test without an account. */
 export function standaloneScheduler(
-  core: Runner<ScheduleRepository | AgentRepository>,
+  core: Runner<ScheduleRepository | AgentRepository | EventRepository>,
   dispatch: StandaloneDispatch,
   intervalMs?: number,
   scriptRuns?: ScriptRuns["Service"],
@@ -419,7 +426,7 @@ export function standaloneScheduler(
 
 /** What a scheduler needs outside an account: the repositories `core` reaches, and `dispatch` as its TaskDispatch. */
 export const standaloneDependencies = (
-  core: Runner<ScheduleRepository | AgentRepository>,
+  core: Runner<ScheduleRepository | AgentRepository | EventRepository>,
   dispatch: StandaloneDispatch,
   scriptRuns: ScriptRuns["Service"] = ScriptRuns.of({
     start: () => Effect.succeed({ admitted: false }),
@@ -436,7 +443,11 @@ export const standaloneDependencies = (
       }),
     ),
     Layer.succeedContext(
-      core.runSync(Effect.context<ScheduleRepository | AgentRepository>()),
+      core.runSync(
+        Effect.context<
+          ScheduleRepository | AgentRepository | EventRepository
+        >(),
+      ),
     ),
   );
 

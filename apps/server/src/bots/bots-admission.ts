@@ -1,5 +1,6 @@
 import { Cause, Effect, FiberMap } from "effect";
 import type { Agent, Execution } from "../shared/domain";
+import { eventRequest } from "../event-sources/event-payload";
 import type { botsActivity } from "./bots-activity";
 import { pi, type BotsContext } from "./bots-context";
 import type { botsLookup } from "./bots-lookup";
@@ -15,8 +16,20 @@ type AdmissionDeps = {
 
 /** Submits one admitted execution to the runtime, or cancels it when its bot is disabled. */
 const botsSubmissionSteps = (context: BotsContext, deps: AdmissionDeps) => {
-  const { executions, runtime } = context;
+  const { executions, runtime, events } = context;
   const { origin } = deps.reads;
+
+  // A pruned event leaves the automation's prompt alone.
+  const eventInput = Effect.fnUntraced(function* (execution: Execution) {
+    const run = eventRequest(execution.requestId);
+    const record = run && (yield* events.getEvent(run.eventId));
+
+    if (!record) return undefined;
+    const source = yield* events.getSource(record.sourceId);
+
+    return { record, sourceName: source?.name ?? "Deleted source" };
+  });
+
   const { changed, settled } = deps.notifications;
 
   const submit = Effect.fnUntraced(function* (
@@ -28,6 +41,9 @@ const botsSubmissionSteps = (context: BotsContext, deps: AdmissionDeps) => {
     const from = yield* origin(execution);
     const attachments = yield* executions.attachments(execution.id);
 
+    const event =
+      from.kind === "event" ? yield* eventInput(execution) : undefined;
+
     return yield* pi(() =>
       runtime.submit(
         owner,
@@ -38,6 +54,7 @@ const botsSubmissionSteps = (context: BotsContext, deps: AdmissionDeps) => {
           replyTo: execution.replyTo ?? undefined,
           origin: from,
           attachments,
+          event,
         },
       ),
     );

@@ -50,6 +50,7 @@ import {
   MessageGatewayPage,
   MessageGatewaysPage,
 } from "@/features/settings/message-gateways";
+import { EventRelayPage } from "@/features/settings/event-relay";
 import { PasswordManagersPage } from "@/features/settings/password-managers";
 import { SkillsPage } from "@/features/skills/skills";
 import { AutomationsPage } from "@/features/schedules/automations";
@@ -326,6 +327,12 @@ const messageGatewayRoute = createRoute({
   },
 });
 
+const eventRelayRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/event-relay",
+  component: EventRelayPage,
+});
+
 const settingsSkillsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/skills",
@@ -365,6 +372,7 @@ export const router = createRouter({
         settingsIntegrationsRoute,
         messageGatewaysRoute,
         messageGatewayRoute,
+        eventRelayRoute,
         settingsSkillsRoute,
       ]),
     ]),

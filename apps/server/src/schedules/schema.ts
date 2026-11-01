@@ -16,6 +16,7 @@ export const schedules = sqliteTable("schedules", {
   cron: text("cron"),
   timezone: text("timezone").notNull(),
   runAt: text("run_at"),
+  eventSourceId: text("event_source_id"),
   enabled: integer("enabled", { mode: "boolean" }).notNull(),
   nextRunAt: text("next_run_at"),
   createdAt: text("created_at").notNull(),

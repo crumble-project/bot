@@ -172,10 +172,13 @@ function SecretSetting({
 /** The settings of every plugin that contributes `contributes`, as the server declares them. */
 export function PluginSettingRows({
   contributes,
+  pluginId,
   secretKey,
   onChange,
 }: {
-  contributes: Contribution;
+  contributes?: Contribution;
+  /** Limits the rows to one plugin's settings, for a plugin that contributes only settings. */
+  pluginId?: string;
   /** Limits the rows to the setting stored under this key, `pluginId:key`. */
   secretKey?: string;
   /** Runs after a value is saved or removed, for pages whose own status depends on it. */
@@ -191,7 +194,12 @@ export function PluginSettingRows({
     );
 
   return settings.data?.plugins
-    .filter((plugin) => plugin.contributes.includes(contributes))
+    .filter(
+      (plugin) =>
+        (contributes === undefined ||
+          plugin.contributes.includes(contributes)) &&
+        (pluginId === undefined || plugin.id === pluginId),
+    )
     .flatMap((plugin) =>
       plugin.settings
         .filter(

@@ -3,4 +3,4 @@ plugins = ["./apps/web/tailwind-plugin.ts"]
 
 [install]
 minimumReleaseAge = 259200
-
+minimumReleaseAgeExcludes = ["@doorstep/protocol"]

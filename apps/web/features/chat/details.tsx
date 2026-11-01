@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   type Bot,
   type Schedule,
+  eventSourcesQuery,
   queryClient,
   schedulesQuery,
   send,
@@ -19,6 +20,8 @@ import { useWorking } from "@/lib/live";
 import { automationTiming, finished } from "@/features/schedules/automations";
 
 function Automation({ schedule }: { schedule: Schedule }) {
+  const sources = useQuery(eventSourcesQuery).data;
+
   const toggle = useMutation({
     mutationFn: (enabled: boolean) =>
       send(`/v1/schedules/${encodeURIComponent(schedule.id)}`, "PATCH", {
@@ -47,7 +50,7 @@ function Automation({ schedule }: { schedule: Schedule }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm font-medium">{schedule.name}</span>
         <span className="text-xs text-muted-foreground">
-          {automationTiming(schedule)}
+          {automationTiming(schedule, sources)}
         </span>
       </div>
       <Switch

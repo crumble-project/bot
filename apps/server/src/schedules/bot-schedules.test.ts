@@ -7,6 +7,7 @@ import { Effect } from "effect";
 import type { Workspaces } from "../workspaces/workspace";
 import { scheduleExtension, standaloneBotSchedules } from "./bot-schedules";
 import { Store } from "../../test/support/store";
+import { EventRepository } from "../event-sources/event-repository";
 
 const dirs: string[] = [];
 
@@ -256,6 +257,7 @@ describe("bot schedules", () => {
       cron: null,
       timezone: "UTC",
       runAt: later(),
+      eventSourceId: null,
       enabled: true,
     });
 
@@ -378,6 +380,50 @@ describe("bot schedules", () => {
     expect(body.createdByAgentId).toBe(self.id);
     const listed = await tool.execute({ action: "list" }, { taskId: "t2" });
     expect(JSON.parse(listed.output[0].text)).toHaveLength(1);
+    store.close();
+  });
+
+  test("a bot lists the event sources and creates an event automation on one", () => {
+    const { store, schedules, service } = setup();
+    const bot = store.createAgent(input("Ada", ["schedule"]), uuid(1));
+
+    store.runtime.runSync(
+      EventRepository.use((events) =>
+        events.addSource({
+          id: "source-1",
+          name: "GitHub",
+          createdAt: "2026-11-01T00:00:00.000Z",
+        }),
+      ),
+    );
+
+    expect(Effect.runSync(service.sources(bot.id))).toEqual([
+      { id: "source-1", name: "GitHub" },
+    ]);
+
+    const task = schedules.create(bot.id, {
+      name: "Triage",
+      prompt: "Triage the issue",
+      eventSourceId: "source-1",
+    });
+
+    expect(task).toMatchObject({
+      eventSourceId: "source-1",
+      cron: null,
+      runAt: null,
+      nextRunAt: null,
+    });
+    expect(
+      schedules.update(bot.id, task.id, { cron: "0 9 * * *" }),
+    ).toMatchObject({ cron: "0 9 * * *", eventSourceId: null });
+    expect(() =>
+      schedules.create(bot.id, {
+        name: "Both",
+        prompt: "x",
+        cron: "0 9 * * *",
+        eventSourceId: "source-1",
+      }),
+    ).toThrow("Choose a recurring cron, a one-time date, or an event source");
     store.close();
   });
 });

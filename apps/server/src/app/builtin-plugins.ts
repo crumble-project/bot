@@ -14,6 +14,7 @@ import type { Workspaces } from "../workspaces/workspace";
 import { webSearchPlugin } from "../web-search/mixed";
 import { exaPlugin } from "../web-search/exa";
 import { discordPlugin } from "../message-gateway/discord/plugin";
+import { doorstepPlugin } from "../event-sources/plugin";
 import type { Effect } from "effect";
 import type { SecretUnavailable } from "../password-managers/secret-values";
 
@@ -52,4 +53,5 @@ export const builtinPlugins = (host: PluginHost): CrumblePlugin[] => [
   webSearchPlugin(),
   exaPlugin(host.secret),
   discordPlugin(),
+  doorstepPlugin(),
 ];

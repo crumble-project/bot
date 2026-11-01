@@ -41,10 +41,22 @@ import type {
   gatewayResponse,
   gatewaysResponse,
 } from "@crumble/server/contract/message-gateway";
+import type {
+  createdEventSourceResponse,
+  eventSourceResponse,
+  eventSourcesResponse,
+  relayStatusResponse,
+} from "@crumble/server/contract/event-sources";
 
 export type GatewayConfig = z.infer<typeof gatewayConfigInput>;
 
 export type MessageGateway = z.infer<typeof gatewayResponse>;
+
+export type RelayStatus = z.infer<typeof relayStatusResponse>;
+
+export type EventSource = z.infer<typeof eventSourceResponse>;
+
+export type CreatedEventSource = z.infer<typeof createdEventSourceResponse>;
 
 export type Bot = z.infer<typeof agentPreviewResponse>;
 
@@ -378,6 +390,27 @@ export const messageGatewaysQuery = queryOptions({
     ).gateways,
   refetchInterval: 5000,
 });
+
+export const eventRelayQuery = queryOptions({
+  queryKey: ["event-relay"],
+  queryFn: ({ signal }) => api<RelayStatus>("/v1/event-relay", { signal }),
+  // The connection advances on the server, so poll while it connects.
+  refetchInterval: (query) =>
+    query.state.data?.status === "connecting" ? 1000 : false,
+});
+
+export const eventSourcesQuery = queryOptions({
+  queryKey: ["event-sources"],
+  queryFn: async ({ signal }) =>
+    (
+      await api<z.infer<typeof eventSourcesResponse>>("/v1/event-sources", {
+        signal,
+      })
+    ).sources,
+});
+
+export const eventSourcePath = (id: string) =>
+  `/v1/event-sources/${encodeURIComponent(id)}`;
 
 export const messageGatewayPath = (id: string) =>
   `/v1/message-gateways/${encodeURIComponent(id)}`;

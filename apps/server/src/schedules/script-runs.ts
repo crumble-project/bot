@@ -26,6 +26,7 @@ import type { AppError } from "../shared/errors";
 import { nowIso } from "../shared/time";
 import { BotWorkspaces, WORKSPACE_PATH } from "../workspaces/workspace";
 import { ScriptRunRepository } from "./script-run-repository";
+import { scriptEvent, type ScriptEvent } from "../event-sources/event-payload";
 
 type Outcome = {
   status: Exclude<ScriptRun["status"], "running">;
@@ -51,8 +52,10 @@ const noticeText = (schedule: Schedule, result: Outcome, output: string) => {
 export class ScriptRuns extends Context.Service<
   ScriptRuns,
   {
+    /** With `event`, the command reads the event from the file `CRUMBLE_EVENT_FILE` names. */
     readonly start: (
       schedule: Schedule,
+      event?: ScriptEvent,
     ) => Effect.Effect<{ admitted: boolean; run?: ScriptRun }, AppError>;
     readonly recover: Effect.Effect<void>;
     readonly list: (
@@ -111,7 +114,11 @@ export class ScriptRuns extends Context.Service<
             );
       });
 
-      const execute = (schedule: Schedule, run: ScriptRun) => {
+      const execute = (
+        schedule: Schedule,
+        run: ScriptRun,
+        event: ScriptEvent | undefined,
+      ) => {
         const output = new OutputBuffer(OUTPUT_LIMITS);
 
         const command = Effect.gen(function* (): Effect.fn.Return<Outcome> {
@@ -134,11 +141,31 @@ export class ScriptRuns extends Context.Service<
           const release = workspaces.keepAwake(schedule.agentId);
 
           return yield* Effect.gen(function* (): Effect.fn.Return<Outcome> {
-            const env = yield* credentials.env(schedule.agentId);
+            const payload =
+              event && scriptEvent(event.record, event.sourceName);
+
+            const env = {
+              ...(yield* credentials.env(schedule.agentId)),
+              ...payload?.env,
+            };
 
             const result = yield* Effect.tryPromise({
-              try: (signal) =>
-                workspaces.env(schedule.agentId, env).exec(
+              try: async (signal) => {
+                const shell = workspaces.env(schedule.agentId, env);
+                const context = withAbortSignal(signal, BACKGROUND_CONTEXT);
+
+                if (payload) {
+                  const written = await shell.writeFile(
+                    payload.file,
+                    payload.content,
+                    context,
+                  );
+
+                  if (!written.ok)
+                    throw new ExecutionError("unknown", written.error.message);
+                }
+
+                return shell.exec(
                   run.command,
                   {
                     cwd: WORKSPACE_PATH,
@@ -153,8 +180,9 @@ export class ScriptRuns extends Context.Service<
                       bytesPerSecond: PROGRESS_BYTES_PER_SECOND,
                     },
                   },
-                  withAbortSignal(signal, BACKGROUND_CONTEXT),
-                ),
+                  context,
+                );
+              },
               catch: (error) =>
                 error instanceof ExecutionError
                   ? error
@@ -215,7 +243,7 @@ export class ScriptRuns extends Context.Service<
       };
 
       const start = Effect.fn("ScriptRuns.start")(
-        function* (schedule: Schedule) {
+        function* (schedule: Schedule, event?: ScriptEvent) {
           if (closing || inFlight.has(schedule.id)) return { admitted: false };
           inFlight.add(schedule.id);
 
@@ -255,7 +283,7 @@ export class ScriptRuns extends Context.Service<
             return { admitted: false };
           }
 
-          yield* execute(schedule, run).pipe(
+          yield* execute(schedule, run, event).pipe(
             Effect.forkIn(scope, { startImmediately: true }),
           );
 

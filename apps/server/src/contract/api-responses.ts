@@ -129,13 +129,17 @@ const origin = z
   .object({
     kind: z.string().openapi({
       description:
-        "Where the message came from: owner, task, script (a script task's result), credential, bot, or group. Clients may receive other values later.",
+        "Where the message came from: owner, task, event (an event automation's prompt), script (a script task's result), credential, bot, or group. Clients may receive other values later.",
     }),
     name: z.string().optional(),
     agentId: z.string().optional(),
     via: z.string().optional().openapi({
       description:
         "On an owner message sent through a message gateway: the gateway's ID, such as `discord`.",
+    }),
+    source: z.string().optional().openapi({
+      description:
+        "On an event automation's message: the name of the event source whose event started it.",
     }),
   })
   .openapi("MessageOrigin");
@@ -707,6 +711,10 @@ export const scheduleResponse = z
     cron: z.string().nullable(),
     timezone: z.string(),
     runAt: z.string().nullable(),
+    eventSourceId: z.string().nullable().openapi({
+      description:
+        "The event source whose events start this automation; set instead of `cron` and `runAt`.",
+    }),
     enabled: z.boolean(),
     nextRunAt: z.string().nullable(),
     createdAt: z.string(),

@@ -16,6 +16,7 @@
     "@better-auth/passkey": "1.7.14",
     "@bitwarden/sdk-napi": "1.0.0",
     "@crumble/web": "workspace:*",
+    "@doorstep/protocol": "0.1.0",
     "@earendil-works/chord": "1.4.0",
     "@earendil-works/pi-ai": "1.4.0",
     "@earendil-works/pi-codemode": "1.4.0",

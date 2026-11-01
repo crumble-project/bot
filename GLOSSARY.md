@@ -63,12 +63,20 @@ Background work a bot hands to a separate agent that edits files and runs comman
 _Avoid_: Subagent, session, sub-chat
 
 **Automation**:
-A prompt a bot receives once at a set time or repeatedly on a schedule, answered in its bot chat. The owner or a bot can create one.
+A prompt a bot receives once at a set time, repeatedly on a schedule, or whenever an event arrives at an event source, answered in its bot chat. The owner or a bot can create one.
 _Avoid_: Task, scheduled task, routine, cron job
 
 **Script automation**:
 An automation that runs a shell command in its bot's workspace instead of sending a prompt to the bot chat. Only a bot with coding jobs has script automations, and only for itself.
 _Avoid_: Script task, cron job, routine, script job
+
+**Event relay**:
+The Doorstep server that receives webhooks for the account and forwards them to Crumble over Crumble's own outbound connection, so Crumble needs no public address.
+_Avoid_: Webhook proxy, tunnel
+
+**Event source**:
+One webhook address on the event relay, named by the owner and usable by every bot of the account. Each event that arrives there starts the automations that use the source.
+_Avoid_: Webhook, hook, trigger
 
 **Workspace**:
 A bot's persistent files for coding jobs and desktop jobs, on a disk only that bot's jobs can reach. The machine running them starts and stops as needed.

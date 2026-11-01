@@ -27,6 +27,7 @@ import { Plugins, pluginChatAdapters } from "../plugins/plugins";
 import type { Agent } from "../shared/domain";
 import { InvalidInput, NotFound, type AppError } from "../shared/errors";
 import { SettingsRepository } from "../shared/settings-repository";
+import { startTicking } from "../shared/ticker";
 import {
   GatewayTransportError,
   type ChatAdapter,
@@ -73,7 +74,7 @@ const decodeConfig = (input: JsonValue | GatewayConfig) =>
         );
   });
 
-const reconnectDelay = (attempt: number) =>
+export const reconnectDelay = (attempt: number) =>
   Math.min(60000 * 2 ** Math.min(attempt - 1, 20), 900000);
 
 const retryDelay = (attempt: number) =>
@@ -151,7 +152,6 @@ export class MessageGateway extends Context.Service<
       );
 
       let closed = false;
-      let started = false;
       const scope = yield* Effect.scope;
       const processing = Semaphore.makeUnsafe(1);
       const run = Effect.runPromiseWith(yield* Effect.context());
@@ -984,16 +984,7 @@ export class MessageGateway extends Context.Service<
         }),
       );
 
-      const start = Effect.gen(function* () {
-        if (started) return;
-        started = true;
-        yield* Effect.gen(function* () {
-          while (true) {
-            yield* tick;
-            yield* Effect.sleep("1 second");
-          }
-        }).pipe(Effect.forkIn(scope));
-      });
+      const start = startTicking(tick, scope);
 
       return MessageGateway.of({ list, update, receive, tick, start });
     }),

@@ -38,8 +38,9 @@ const messageOrigin = z
     name: z.string().optional().catch(undefined),
     agentId: z.string().optional().catch(undefined),
     via: z.string().optional().catch(undefined),
+    source: z.string().optional().catch(undefined),
   })
-  .transform(({ kind, name, agentId, via }) => {
+  .transform(({ kind, name, agentId, via, source }) => {
     const origin: MessageOrigin = { kind };
 
     if (name !== undefined) origin.name = name;
@@ -47,6 +48,8 @@ const messageOrigin = z
     if (agentId !== undefined) origin.agentId = agentId;
 
     if (via !== undefined) origin.via = via;
+
+    if (source !== undefined) origin.source = source;
 
     return origin;
   });
@@ -122,6 +125,8 @@ export type MessageOrigin = {
   agentId?: string;
   /** The message gateway an owner message arrived through, such as `discord`. */
   via?: string;
+  /** The event source whose event started an event automation's message. */
+  source?: string;
 };
 
 export type BotCommunication = {

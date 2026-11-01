@@ -85,6 +85,8 @@ import { BotWorkspaces } from "../workspaces/workspace";
 import { registerWebSearchRoutes } from "../web-search/settings";
 import { registerGatewayRoutes } from "../message-gateway/gateway-api";
 import { MessageGateway } from "../message-gateway/message-gateway";
+import { EventSources } from "../event-sources/event-sources";
+import { registerEventSourceRoutes } from "../event-sources/event-sources-api";
 
 /** The bots the API serves, with the account's repositories and bot runtime its handlers read directly. */
 export type ApiBots = BotsAccess & {
@@ -144,6 +146,7 @@ export type ApiOptions = {
   credentials?: CredentialsAccess | undefined;
   botRequests?: BotRequests["Service"] | undefined;
   messageGateway?: MessageGateway["Service"] | undefined;
+  eventSources?: EventSources["Service"] | undefined;
 };
 
 /** A service of the account, or undefined when the runner's context lacks it, as in API-only fixtures. */
@@ -200,6 +203,7 @@ function accountOptions(core: Runner<CoreServices>): ApiOptions {
     ),
     botRequests: service(BotRequests),
     messageGateway: service(MessageGateway),
+    eventSources: service(EventSources),
   };
 }
 
@@ -330,6 +334,7 @@ const featureRoutes: ReadonlyArray<(api: ApiContext) => void> = [
   registerPushRoutes,
   registerWebSearchRoutes,
   registerGatewayRoutes,
+  registerEventSourceRoutes,
   registerJudgeModelRoutes,
   registerAgentRoutes,
   registerChatRoutes,

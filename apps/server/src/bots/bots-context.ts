@@ -3,6 +3,7 @@ import { appErrors } from "../shared/app-errors";
 import type { Execution } from "../shared/domain";
 import { SettingsRepository } from "../shared/settings-repository";
 import { ScheduleRepository } from "../schedules/schedule-repository";
+import { EventRepository } from "../event-sources/event-repository";
 import { AgentRepository } from "./agent-repository";
 import type { Activity } from "./bots";
 import { BotNotices } from "./bot-notices";
@@ -35,6 +36,7 @@ export type BotsContext = {
   readonly executions: ExecutionRepository["Service"];
   readonly settings: SettingsRepository["Service"];
   readonly schedules: ScheduleRepository["Service"];
+  readonly events: EventRepository["Service"];
   readonly runtime: BotRuntime["Service"];
   readonly notices: BotNotices["Service"];
   readonly scope: Scope.Scope;
@@ -54,6 +56,7 @@ export const botsContext = Effect.gen(function* () {
   const executions = yield* ExecutionRepository;
   const settings = yield* SettingsRepository;
   const schedules = yield* ScheduleRepository;
+  const events = yield* EventRepository;
   const runtime = yield* BotRuntime;
   const notices = yield* BotNotices;
   const scope = yield* Effect.scope;
@@ -78,6 +81,7 @@ export const botsContext = Effect.gen(function* () {
     executions,
     settings,
     schedules,
+    events,
     runtime,
     notices,
     scope,

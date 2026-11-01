@@ -108,3 +108,21 @@ test("an automation's instructions count as the owner's request", async () => {
     ],
   });
 });
+
+test("an event automation's prompt counts as the owner's request", async () => {
+  expect(
+    await ownerMessages(
+      chat([message(1, "event:01A:s", "event", "Triage the issue")], 200),
+      chatId,
+      [],
+    ),
+  ).toEqual({
+    messages: [
+      {
+        requestId: "event:01A:s",
+        text: "Triage the issue",
+        from: "automation",
+      },
+    ],
+  });
+});

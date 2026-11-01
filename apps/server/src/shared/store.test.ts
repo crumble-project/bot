@@ -92,6 +92,7 @@ describe("Store", () => {
         cron: "0 * * * *",
         timezone: "UTC",
         runAt: null,
+        eventSourceId: null,
         enabled: true,
       },
       undefined,
@@ -481,6 +482,10 @@ describe("Store memory sources", () => {
     const db = new Database(join(dir, "store.sqlite"));
     // A server before Drizzle had no migrations table.
     db.run(`DROP TABLE __drizzle_migrations;
+      DROP TABLE event_runs;
+      DROP TABLE relay_events;
+      DROP TABLE event_sources;
+      ALTER TABLE schedules DROP COLUMN event_source_id;
       DROP TABLE gateway_cooldowns;
       DROP TABLE gateway_sent_messages;
       DROP TABLE gateway_receipts;
@@ -616,6 +621,10 @@ describe("Store group chats", () => {
     const db = new Database(join(dir, "store.sqlite"));
     // A server before Drizzle had no migrations table.
     db.run(`DROP TABLE __drizzle_migrations;
+      DROP TABLE event_runs;
+      DROP TABLE relay_events;
+      DROP TABLE event_sources;
+      ALTER TABLE schedules DROP COLUMN event_source_id;
       DROP TABLE gateway_cooldowns;
       DROP TABLE gateway_sent_messages;
       DROP TABLE gateway_receipts;

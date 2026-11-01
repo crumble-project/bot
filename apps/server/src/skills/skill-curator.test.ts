@@ -98,6 +98,7 @@ test("stale and archive bot-created skills by idle time, sparing pinned, schedul
     cron: null,
     timezone: "UTC",
     runAt: null,
+    eventSourceId: null,
     enabled: true,
   });
 

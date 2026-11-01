@@ -22,6 +22,13 @@ import {
   gatewayResponse,
   gatewaysResponse,
 } from "./message-gateway";
+import {
+  createdEventSourceResponse,
+  eventSourceInput,
+  eventSourcesResponse,
+  relayStatusResponse,
+  relayUrlInput,
+} from "./event-sources";
 
 export type BotInput = z.input<typeof agentInput>;
 
@@ -249,6 +256,49 @@ export const routes = {
       body: body(gatewayConfigInput),
     },
     responses: { 200: json(gatewayResponse) },
+  }),
+  eventRelay: define({
+    method: "get",
+    path: "/v1/event-relay",
+    operationId: "getEventRelay",
+    description:
+      "The account's event relay: its URL, whether the Doorstep account token is set (plugin setting `doorstep:token`), and the connection status.",
+    responses: { 200: json(relayStatusResponse) },
+  }),
+  updateEventRelay: define({
+    method: "put",
+    path: "/v1/event-relay",
+    operationId: "updateEventRelay",
+    description:
+      "Sets the event relay URL, or removes it with `null`, which disconnects the relay.",
+    request: { body: body(relayUrlInput) },
+    responses: { 200: json(relayStatusResponse) },
+  }),
+  eventSources: define({
+    method: "get",
+    path: "/v1/event-sources",
+    operationId: "listEventSources",
+    description:
+      "The account's event sources, each with the number of automations that use it.",
+    responses: { 200: json(eventSourcesResponse) },
+  }),
+  createEventSource: define({
+    method: "post",
+    path: "/v1/event-sources",
+    operationId: "createEventSource",
+    description:
+      "Creates a source on the event relay. The response's `address` contains the source's secret and is returned only once. 400 when the relay URL or token is missing, or the relay can't be reached or rejects the token.",
+    request: { body: body(eventSourceInput) },
+    responses: { 201: json(createdEventSourceResponse) },
+  }),
+  deleteEventSource: define({
+    method: "delete",
+    path: "/v1/event-sources/{id}",
+    operationId: "deleteEventSource",
+    description:
+      "Deletes the source on the event relay and in Crumble; its address stops working. 409 while an automation uses it.",
+    request: { params: z.object({ id: z.string().min(1).max(200) }) },
+    responses: { 204: empty },
   }),
   getWebSearch: define({
     method: "get",
