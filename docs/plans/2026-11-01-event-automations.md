@@ -204,5 +204,5 @@ Docs: `GLOSSARY.md`, `apps/docs/content/concepts/event-automations.md` (new), `a
 - [x] Transcript: a message with origin `event` shows `Automation <name>, event from <source>` under it.
 - [x] Docs: an event automations page (set up a relay, add a source, create the automation, what the bot sees, the untrusted-payload rule, the `CRUMBLE_EVENT_*` variables, limits). Link to it from the schedules page and add the glossary terms. Run `bun run check` from `apps/docs`.
 - [x] `CHANGELOG.md` Unreleased: one entry covering the routes, the `eventSourceId` field, the `event` origin, and the tool.
-- [ ] File a follow-up issue: "Verify provider signatures on event sources" (GitHub HMAC, Stripe, Standard Webhooks). Ask before filing; it is outward-facing.
+- [x] File a follow-up issue: "Verify provider signatures on event sources" (#85) (GitHub HMAC, Stripe, Standard Webhooks). Ask before filing; it is outward-facing.
 - [ ] Run `bun run check` from the root. Checkpoint: `feat(web): event relay settings and event automations`.
