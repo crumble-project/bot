@@ -181,11 +181,12 @@ export const scheduleInput = z
       .transform((value) => new Date(value).toISOString())
       .nullable()
       .default(null),
+    eventSourceId: z.string().trim().min(1).max(200).nullable().default(null),
     enabled: z.boolean().default(true),
   })
   .refine(
-    (v) => Boolean(v.cron) !== Boolean(v.runAt),
-    "Choose a recurring cron or one-time date",
+    (v) => [v.cron, v.runAt, v.eventSourceId].filter(Boolean).length === 1,
+    "Choose a recurring cron, a one-time date, or an event source",
   )
   .refine(
     (v) =>

@@ -2402,6 +2402,13 @@
               "null"
             ]
           },
+          "eventSourceId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The event source whose events start this automation; set instead of `cron` and `runAt`."
+          },
           "enabled": {
             "type": "boolean"
           },
@@ -2433,6 +2440,7 @@
           "cron",
           "timezone",
           "runAt",
+          "eventSourceId",
           "enabled",
           "nextRunAt",
           "createdAt",
@@ -16053,6 +16061,15 @@
                     "format": "date-time",
                     "default": null
                   },
+                  "eventSourceId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "default": null
+                  },
                   "enabled": {
                     "type": "boolean",
                     "default": true
@@ -16250,6 +16267,14 @@
                       "null"
                     ],
                     "format": "date-time"
+                  },
+                  "eventSourceId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 200
                   },
                   "enabled": {
                     "type": "boolean"

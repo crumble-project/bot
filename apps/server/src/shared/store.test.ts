@@ -92,6 +92,7 @@ describe("Store", () => {
         cron: "0 * * * *",
         timezone: "UTC",
         runAt: null,
+        eventSourceId: null,
         enabled: true,
       },
       undefined,

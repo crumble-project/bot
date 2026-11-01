@@ -49,6 +49,7 @@ describe("scheduled admission recovery", () => {
       cron: null,
       timezone: "UTC",
       runAt: new Date(Date.now() + 60_000).toISOString(),
+      eventSourceId: null,
       enabled: true,
     });
 

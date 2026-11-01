@@ -707,6 +707,10 @@ export const scheduleResponse = z
     cron: z.string().nullable(),
     timezone: z.string(),
     runAt: z.string().nullable(),
+    eventSourceId: z.string().nullable().openapi({
+      description:
+        "The event source whose events start this automation; set instead of `cron` and `runAt`.",
+    }),
     enabled: z.boolean(),
     nextRunAt: z.string().nullable(),
     createdAt: z.string(),

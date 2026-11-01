@@ -22,6 +22,7 @@ const scheduleOf = (row: typeof schedules.$inferSelect): Schedule => ({
   cron: row.cron,
   timezone: row.timezone,
   runAt: row.runAt,
+  eventSourceId: row.eventSourceId,
   enabled: row.enabled,
   nextRunAt: row.nextRunAt,
   createdAt: row.createdAt,
@@ -95,6 +96,7 @@ export class ScheduleRepository extends Context.Service<
           cron: input.cron,
           timezone: input.timezone,
           runAt: input.runAt,
+          eventSourceId: input.eventSourceId,
           enabled: input.enabled,
           nextRunAt: input.runAt,
           createdAt: yield* nowIso,
@@ -126,6 +128,7 @@ export class ScheduleRepository extends Context.Service<
             cron: next.cron,
             timezone: next.timezone,
             runAt: next.runAt,
+            eventSourceId: next.eventSourceId,
             enabled: next.enabled,
             nextRunAt: next.runAt,
           })

@@ -8,6 +8,7 @@ import { ScriptRuns } from "./script-runs";
 import type { Schedule, ScriptRun } from "../shared/domain";
 import { Conflict, InvalidInput } from "../shared/errors";
 import { Store } from "../../test/support/store";
+import { EventRepository } from "../event-sources/event-repository";
 
 const dirs: string[] = [];
 
@@ -97,6 +98,7 @@ const scriptInput = (agentId: string) => ({
   cron: null,
   timezone: "UTC",
   runAt: "2026-10-17T00:00:00.000Z",
+  eventSourceId: null,
   enabled: true,
 });
 
@@ -271,6 +273,7 @@ describe("Scheduler", () => {
       cron: null,
       timezone: "UTC",
       runAt: due,
+      eventSourceId: null,
       enabled: true,
     });
 
@@ -304,6 +307,7 @@ describe("Scheduler", () => {
       cron: "* * * * *",
       timezone: "UTC",
       runAt: null,
+      eventSourceId: null,
       enabled: true,
     });
 
@@ -338,6 +342,7 @@ describe("Scheduler", () => {
         cron: "* * * * *",
         timezone: "No/Such_Zone",
         runAt: null,
+        eventSourceId: null,
         enabled: true,
       }),
     ).toThrow();
@@ -353,6 +358,7 @@ describe("Scheduler", () => {
         cron: "nope",
         timezone: "UTC",
         runAt: null,
+        eventSourceId: null,
         enabled: true,
       }),
     ).toThrow();
@@ -376,6 +382,7 @@ describe("Scheduler", () => {
         cron,
         timezone: "UTC",
         runAt: null,
+        eventSourceId: null,
         enabled: true,
       });
 
@@ -415,6 +422,7 @@ describe("Scheduler", () => {
       cron: null,
       timezone: "UTC",
       runAt: due.toISOString(),
+      eventSourceId: null,
       enabled: true,
     });
 
@@ -455,6 +463,7 @@ describe("Scheduler", () => {
       cron: null,
       timezone: "UTC",
       runAt: new Date(Date.now() - 1_000).toISOString(),
+      eventSourceId: null,
       enabled: true,
     });
 
@@ -503,11 +512,81 @@ describe("Scheduler", () => {
       cron: null,
       timezone: "UTC",
       runAt: new Date(Date.now() - 1_000).toISOString(),
+      eventSourceId: null,
       enabled: true,
     });
 
     await Bun.sleep(50);
     expect(calls).toEqual([]);
+    store.close();
+  });
+});
+
+describe("event automations", () => {
+  const eventAutomation = (agentId: string, eventSourceId: string) => ({
+    agentId,
+    name: "Triage",
+    kind: "prompt" as const,
+    command: null,
+    timeoutSeconds: 600,
+    notify: true,
+    prompt: "Triage the issue",
+    cron: null,
+    timezone: "UTC",
+    runAt: null,
+    eventSourceId,
+    enabled: true,
+  });
+
+  test("an event automation never comes due", async () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const calls: string[] = [];
+
+    store.runtime.runSync(
+      EventRepository.use((events) =>
+        events.addSource({
+          id: "source-1",
+          name: "GitHub",
+          createdAt: "2026-11-01T00:00:00.000Z",
+        }),
+      ),
+    );
+
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async (_a, _p, requestId) => {
+        calls.push(requestId);
+      },
+    );
+
+    const schedule = scheduler.create(eventAutomation(agent.id, "source-1"));
+
+    expect(schedule).toMatchObject({
+      eventSourceId: "source-1",
+      cron: null,
+      runAt: null,
+      nextRunAt: null,
+    });
+    await scheduler.tick(new Date("2999-01-01T00:00:00.000Z"));
+    expect(calls).toEqual([]);
+    store.close();
+  });
+
+  test("creating an event automation on an unknown source fails", () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const scheduler = standaloneScheduler(store.runtime, async () => undefined);
+
+    expect(() =>
+      scheduler.create(eventAutomation(agent.id, "missing")),
+    ).toThrow("Event source not found");
+    expect(() =>
+      scheduler.create({
+        ...eventAutomation(agent.id, "missing"),
+        cron: "0 9 * * *",
+      }),
+    ).toThrow("Choose a recurring cron, a one-time date, or an event source");
     store.close();
   });
 });

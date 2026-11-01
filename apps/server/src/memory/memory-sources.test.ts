@@ -102,6 +102,7 @@ describe("memorySourceOf", () => {
       cron: "0 7 * * *",
       timezone: "UTC",
       runAt: null,
+      eventSourceId: null,
       enabled: true,
     });
 

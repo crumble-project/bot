@@ -144,11 +144,11 @@ Docs: `GLOSSARY.md`, `apps/docs/content/concepts/event-automations.md` (new), `a
 - Consumes: Task 1's `EventRepository.getSource`, `listSources`.
 - Produces: `ScheduleInput.eventSourceId: string | null` (default `null`) on `Schedule` and in the API; the automation tool's new action `sources`, which returns `{ id, name }[]`.
 
-- [ ] Replace the first `refine` in `scheduleInput` with "exactly one of `cron`, `runAt`, `eventSourceId`", message "Choose a recurring cron, a one-time date, or an event source".
-- [ ] Test `an event automation never comes due`: created with `eventSourceId` and no time, `nextRunAt` is `null`, and `tick` doesn't dispatch it.
-- [ ] Test `creating an event automation on an unknown source fails`: `NotFound` "Event source not found".
-- [ ] Automation tool: `create` and `update` accept `eventSourceId`, and the `sources` action lists the sources. Update the tool description to say that event automations run when an event arrives, with the payload attached as untrusted data.
-- [ ] Contract: add `eventSourceId` to the schedule input and response schemas, then run `bun run openapi:generate` and `bun run check`.
+- [x] Replace the first `refine` in `scheduleInput` with "exactly one of `cron`, `runAt`, `eventSourceId`", message "Choose a recurring cron, a one-time date, or an event source".
+- [x] Test `an event automation never comes due`: created with `eventSourceId` and no time, `nextRunAt` is `null`, and `tick` doesn't dispatch it.
+- [x] Test `creating an event automation on an unknown source fails`: `NotFound` "Event source not found".
+- [x] Automation tool: `create` and `update` accept `eventSourceId`, and the `sources` action lists the sources. Update the tool description to say that event automations run when an event arrives, with the payload attached as untrusted data.
+- [x] Contract: add `eventSourceId` to the schedule input and response schemas, then run `bun run openapi:generate` and `bun run check`.
 - [ ] Checkpoint: `feat(automations): add the event trigger`.
 
 ### Task 4: Prompt automations on events
