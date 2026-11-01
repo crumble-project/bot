@@ -49,6 +49,7 @@ import type {
   relayStatusResponse,
 } from "@crumble/server/contract/event-sources";
 import type {
+  githubAccountResponse,
   githubAppManifestResponse,
   githubAppResponse,
 } from "@crumble/server/contract/github-apps";
@@ -95,6 +96,8 @@ export type PasswordManager = z.infer<
 export type PasswordManagerId = PasswordManager["id"];
 
 export type GitHubApp = z.infer<typeof githubAppResponse>;
+
+export type GitHubAccount = z.infer<typeof githubAccountResponse>;
 
 export type GitHubAppManifest = z.infer<typeof githubAppManifestResponse>;
 
@@ -455,6 +458,17 @@ export const githubAppsQuery = queryOptions({
   queryFn: ({ signal }) =>
     api<{ apps: GitHubApp[] }>("/v1/github-apps", { signal }).then(
       (data) => data.apps,
+    ),
+});
+
+export const githubAccountPath = (id: string) =>
+  `/v1/github-accounts/${encodeURIComponent(id)}`;
+
+export const githubAccountsQuery = queryOptions({
+  queryKey: ["github-accounts"],
+  queryFn: ({ signal }) =>
+    api<{ accounts: GitHubAccount[] }>("/v1/github-accounts", { signal }).then(
+      (data) => data.accounts,
     ),
 });
 

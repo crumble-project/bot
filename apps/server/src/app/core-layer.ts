@@ -4,6 +4,7 @@ import { HeldActions } from "../bot-desktop/held-actions";
 import { BotNotices } from "../bots/bot-notices";
 import { CredentialAuthorities } from "../credentials/credential-authority";
 import { Credentials } from "../credentials/credentials";
+import { GitHubAccounts } from "../github-apps/github-accounts";
 import { GitHubAppUsers } from "../github-apps/github-app-users";
 import { GitHubApps } from "../github-apps/github-apps";
 import { Logins } from "../logins/logins";
@@ -40,6 +41,7 @@ export const coreLayer = (dataDir: string) =>
     Layer.provideMerge(BotNotices.layer),
     Layer.provideMerge(GitHubApps.layer),
     Layer.provideMerge(GitHubAppUsers.layer),
+    Layer.provideMerge(GitHubAccounts.layer),
     Layer.provideMerge(
       SecretValues.layer.pipe(
         Layer.provideMerge(PasswordManagers.layer(passwordManagers)),

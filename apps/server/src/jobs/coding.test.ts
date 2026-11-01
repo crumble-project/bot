@@ -14,7 +14,7 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
-import { codingEnv, codingExtensions } from "./coding";
+import { codingEnv, codingExtensions, codingJobOf } from "./coding";
 import type { Agent } from "../shared/domain";
 import { createAPI } from "../app/api";
 import { codingJobsResponse, historyResponse } from "../contract/api-responses";
@@ -101,6 +101,12 @@ function jobReply(last: Message) {
 function botReply(last: Message, text: string) {
   if (text.startsWith("[coding job"))
     return fauxAssistantMessage([fauxText("The job is finished.")]);
+
+  if (text === "Check it" || text === "Stop it")
+    return call("coding", {
+      action: text === "Check it" ? "status" : "stop",
+      name: "builder",
+    });
 
   if (last.role === "toolResult")
     return fauxAssistantMessage([fauxText("Started.")]);
@@ -270,6 +276,46 @@ test("a coding job works in the workspace and reports to the bot's chat once", a
   ]);
 });
 
+test("only starting a job shows its card in the chat", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bot-coding-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const workspace = join(dir, "workspace");
+  const { agent } = setup(dir);
+  await Bun.write(join(workspace, ".keep"), "");
+
+  const { runtime } = open(
+    dir,
+    new DirectoryWorkspaces(workspace),
+    script(),
+    agent,
+  );
+
+  cleanups.push(() => runtime.close());
+  const chat = await runtime.openChat(agent);
+
+  const answered = async (count: number) =>
+    (await runtime.snapshot(agent, chat)).messages.filter(
+      (message) => message.content === "Started.",
+    ).length === count;
+
+  await runtime.submit(agent, chat, "Build it", "req-1");
+  await until(async () => (await reports(runtime, agent, chat)).length === 1);
+  await runtime.submit(agent, chat, "Check it", "req-2");
+  await until(() => answered(1));
+  await runtime.submit(agent, chat, "Stop it", "req-3");
+  await until(() => answered(2));
+
+  const { messages } = await runtime.snapshot(agent, chat);
+  const results = messages.filter((message) => message.toolName === "coding");
+
+  expect(results).toHaveLength(3);
+  expect(results.map((message) => codingJobOf(message))).toEqual([
+    "builder",
+    undefined,
+    undefined,
+  ]);
+});
+
 test("a bot without the coding tool is offered none", async () => {
   const dir = mkdtempSync(join(tmpdir(), "bot-coding-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
@@ -405,6 +451,7 @@ test("clients list a bot's coding jobs and page through a job's work", async () 
       name: "builder",
       conversationId: expect.any(String),
       status: "idle",
+      model: { provider: "faux", model: "chat" },
       // The job's own spend, apart from the bot's chat.
       usage: { models: { "faux/chat": expect.any(Object) }, tools: {} },
     },

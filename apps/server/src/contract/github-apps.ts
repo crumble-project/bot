@@ -78,3 +78,26 @@ export const githubAppsResponse = z.object({
 });
 
 export type GitHubAppResponse = z.infer<typeof githubAppResponse>;
+
+export const githubAccountTokenInput = z
+  .object({
+    /** A personal access token of the machine account's GitHub user. */
+    token: z.string().trim().min(1).max(500),
+  })
+  .strict();
+
+export const githubAccountResponse = z
+  .object({
+    id: z.string(),
+    login: z.string().openapi({
+      description: "The GitHub user its bots act and commit as.",
+    }),
+    htmlUrl: z.string(),
+    botIds: z.array(z.string()),
+    createdAt: z.string(),
+  })
+  .openapi("GitHubAccount");
+
+export const githubAccountsResponse = z.object({
+  accounts: z.array(githubAccountResponse),
+});

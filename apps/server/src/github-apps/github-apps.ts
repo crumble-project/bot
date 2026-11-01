@@ -12,11 +12,13 @@ import {
   GITHUB_HOSTS,
   GITHUB_TOKEN_CREDENTIAL,
   GitHubUnavailable,
+  assignmentChange,
   type GitHubIdentity,
   github,
   noreplyEmail,
   pendingState,
 } from "./github-api";
+import { GitHubAccounts } from "./github-accounts";
 import { GitHubAppUsers, authorizedPath } from "./github-app-users";
 import { githubAppBots, githubApps } from "./schema";
 import { AgentCredentialRepository } from "../credentials/agent-credential-repository";
@@ -139,7 +141,7 @@ const GIT_TEMPLATE_DIR = "/opt/crumble/git-template";
  * The account's GitHub Apps: each created from a manifest on one GitHub account, installed there, and assigned to
  * bots. A bot with an installed App gets the `GH_TOKEN` credential; its value is an installation token minted on
  * use, from the App whose account owns the request's repository. When the owner signed in through that App, the
- * token is the owner's instead (GitHubAppUsers).
+ * token is the owner's instead (GitHubAppUsers). Everywhere else, the bot's machine account acts (GitHubAccounts).
  */
 export class GitHubApps extends Context.Service<
   GitHubApps,
@@ -168,13 +170,15 @@ export class GitHubApps extends Context.Service<
     ) => Effect.Effect<GitHubApp, NotFound | Conflict>;
     /** Forgets the App; it stays on GitHub until the owner deletes it there. */
     readonly remove: (id: string) => Effect.Effect<void, NotFound>;
+    /** Gives or takes `GH_TOKEN` after the bots' machine accounts changed. */
+    readonly sync: (agentIds: readonly string[]) => Effect.Effect<void>;
     readonly token: (
       agentId: string,
       target: CredentialTarget,
     ) => Effect.Effect<Redacted.Redacted, GitHubUnavailable>;
     /** The commit identity in each GitHub account the bot works in, default first. */
     readonly identities: (agentId: string) => Effect.Effect<GitHubIdentity[]>;
-    /** Commit identity and git's HTTPS sign-in for the bot's coding jobs; empty without an App. */
+    /** Commit identity and git's HTTPS sign-in for the bot's coding jobs; empty without an App or machine account. */
     readonly gitEnv: (agentId: string) => Effect.Effect<Record<string, string>>;
   }
 >()("crumble/github-apps/GitHubApps") {
@@ -185,6 +189,7 @@ export class GitHubApps extends Context.Service<
       const box = yield* SecretBox;
       const secrets = yield* SecretRepository;
       const users = yield* GitHubAppUsers;
+      const accounts = yield* GitHubAccounts;
       const credentials = yield* AgentCredentialRepository;
       const tokens = new Map<string, { token: string; expiresAt: number }>();
 
@@ -247,7 +252,7 @@ export class GitHubApps extends Context.Service<
         return rows.map((each) => each.app);
       }, Effect.orDie);
 
-      /** Gives a bot `GH_TOKEN` while one of its Apps is installed, and takes it away when none is. */
+      /** Gives a bot `GH_TOKEN` while it has an installed App or a machine account, and takes it away otherwise. */
       const syncCredential = Effect.fn("GitHubApps.syncCredential")(function* (
         agentId: string,
       ) {
@@ -255,7 +260,7 @@ export class GitHubApps extends Context.Service<
           (app) => app.installationId !== null,
         );
 
-        if (installed) {
+        if (installed || (yield* accounts.ofBot(agentId))) {
           // An existing GH_TOKEN keeps its placeholder; only its source changes to the Apps.
           yield* credentials.save(agentId, GITHUB_TOKEN_CREDENTIAL, {
             hosts: GITHUB_HOSTS,
@@ -449,9 +454,11 @@ export class GitHubApps extends Context.Service<
         if (!found)
           return yield* new NotFound({ message: "GitHub App not found" });
 
-        const previous = yield* botIdsOf(id);
-        const added = botIds.filter((botId) => !previous.includes(botId));
-        const removed = previous.filter((botId) => !botIds.includes(botId));
+        const { added, removed } = assignmentChange(
+          yield* botIdsOf(id),
+          botIds,
+        );
+
         const clashing = yield* clashes(found, added);
 
         if (clashing.length)
@@ -540,26 +547,34 @@ export class GitHubApps extends Context.Service<
         );
 
         const owner = ownerOf(target);
+        const machine = yield* accounts.ofBot(agentId);
 
-        // Requests without an owner in their path, such as GraphQL, go to the bot's default App.
-        const app =
-          installed.find((each) => each.account?.toLowerCase() === owner) ??
-          installed[0];
+        // Requests without an owner in their path, such as GraphQL, go to the machine account, else the default App.
+        const app = owner
+          ? installed.find((each) => each.account?.toLowerCase() === owner)
+          : undefined;
 
-        if (!app)
+        if (!app && machine) return machine.token;
+
+        const fallback = app ?? installed[0];
+
+        if (!fallback)
           return yield* new GitHubUnavailable({
-            message: "the bot has no installed GitHub App",
+            message: "the bot has no installed GitHub App or machine account",
           });
 
-        return (yield* users.of(app.id))
-          ? yield* users.token(app)
-          : yield* mint(app);
+        return (yield* users.of(fallback.id))
+          ? yield* users.token(fallback)
+          : yield* mint(fallback);
       });
 
+      /** The machine account, as the default for every account without an App, then each App's account. */
       const identities = Effect.fn("GitHubApps.identities")(function* (
         agentId: string,
       ) {
-        return yield* Effect.forEach(
+        const machine = yield* accounts.ofBot(agentId);
+
+        const own: GitHubIdentity[] = yield* Effect.forEach(
           (yield* appsOfBot(agentId)).filter((app) => app.account !== null),
           (app) =>
             Effect.map(users.of(app.id), (owner) => ({
@@ -573,6 +588,17 @@ export class GitHubApps extends Context.Service<
                 : identityOf(app)),
             })),
         );
+
+        return machine
+          ? [
+              {
+                account: null,
+                name: machine.login,
+                email: noreplyEmail(machine.userId, machine.login),
+              },
+              ...own,
+            ]
+          : own;
       });
 
       const gitEnv = Effect.fn("GitHubApps.gitEnv")(function* (
@@ -581,7 +607,7 @@ export class GitHubApps extends Context.Service<
         const apps = yield* appsOfBot(agentId);
         const [fallback] = yield* identities(agentId);
 
-        if (!apps.length) return {};
+        if (!apps.length && !fallback) return {};
 
         const { name, email, trailer }: Omit<GitHubIdentity, "account"> =
           fallback ?? identityOf(apps[0]!);
@@ -594,7 +620,10 @@ export class GitHubApps extends Context.Service<
 
         if (trailer) entries.push(["init.templateDir", GIT_TEMPLATE_DIR]);
 
-        if (apps.some((app) => app.installationId !== null))
+        if (
+          fallback?.account === null ||
+          apps.some((app) => app.installationId !== null)
+        )
           // git sends the placeholder as the Basic password; the credential proxy swaps it for the token.
           entries.push([
             "credential.https://github.com.helper",
@@ -619,6 +648,8 @@ export class GitHubApps extends Context.Service<
         connect,
         assign,
         remove,
+        sync: (agentIds) =>
+          Effect.asVoid(Effect.forEach(agentIds, syncCredential)),
         token,
         identities,
         gitEnv,

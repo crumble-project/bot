@@ -1423,6 +1423,7 @@ export class AgentRuntime {
         Number(job.conversationId),
       ),
       status: job.status,
+      ...(job.model && { model: job.model }),
       ...(job.usage && { usage: job.usage }),
     }));
   }

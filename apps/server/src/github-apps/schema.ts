@@ -54,3 +54,24 @@ export const githubAppUsers = sqliteTable("github_app_users", {
   refreshToken: text("refresh_token").notNull(),
   refreshExpiresAt: integer("refresh_expires_at").notNull(),
 });
+
+/** GitHub users the owner made for bots, each added with a personal access token; GitHub calls them machine users. */
+export const githubAccounts = sqliteTable("github_accounts", {
+  id: text("id").primaryKey(),
+  login: text("login").notNull(),
+  userId: integer("user_id").notNull().unique(),
+  /** The personal access token, encrypted with the account's key. */
+  token: text("token").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
+/** Which bots act as which machine account: at most one per bot, wherever none of its Apps does. */
+export const githubAccountBots = sqliteTable("github_account_bots", {
+  agentId: text("agent_id")
+    .primaryKey()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  accountId: text("account_id")
+    .notNull()
+    .references(() => githubAccounts.id, { onDelete: "cascade" }),
+  assignedAt: text("assigned_at").notNull(),
+});

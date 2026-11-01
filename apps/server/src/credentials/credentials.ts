@@ -102,7 +102,7 @@ export class Credentials extends Context.Service<
     ) => Effect.Effect<CredentialUse[], AppError>;
     /** The variables every command of the bot's coding jobs sees: placeholders, and where to find the bot's authority. */
     readonly env: (agentId: string) => Effect.Effect<Record<string, string>>;
-    /** How the bot commits in each GitHub account its Apps work in, default first. */
+    /** How the bot commits in each GitHub account its Apps work in, and elsewhere as its machine account, default first. */
     readonly githubIdentities: (
       agentId: string,
     ) => Effect.Effect<GitHubIdentity[]>;
@@ -419,15 +419,21 @@ const githubLines = (identities: readonly GitHubIdentity[]) => {
 
   if (!fallback) return [];
 
+  const reach = identities.map((each) =>
+    each.account === null
+      ? `every other repository ${each.name} can reach`
+      : each.account,
+  );
+
   return [
-    `On GitHub you are ${fallback.name}: commits default to that author, and GH_TOKEN signs git and gh in for ${identities.map((each) => each.account).join(", ")}.`,
+    `On GitHub you are ${fallback.name}: commits default to that author, and GH_TOKEN signs git and gh in for ${reach.join(", ")}.`,
     ...others.map(
       (each) =>
         `In a repository owned by ${each.account}, first run: git config user.name '${each.name}' && git config user.email '${each.email}'`,
     ),
     ...(others.length
       ? [
-          `gh pr and other GraphQL commands use ${fallback.account}'s token; for other accounts' repositories use REST, such as gh api repos/OWNER/REPO/pulls -f title=... -f head=... -f base=...`,
+          `gh pr and other GraphQL commands use ${fallback.name}'s token; in ${others.map((each) => `${each.account}'s`).join(", ")} repositories use REST, such as gh api repos/OWNER/REPO/pulls -f title=... -f head=... -f base=...`,
         ]
       : []),
     ...identities.flatMap((each) =>

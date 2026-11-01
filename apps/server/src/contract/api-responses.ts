@@ -218,6 +218,13 @@ const jobsResponse = (kind: "Coding" | "Desktop") =>
               name: z.string(),
               conversationId: z.string(),
               status: z.enum(["working", "idle"]),
+              model: z
+                .object({ provider: z.string(), model: z.string() })
+                .optional()
+                .openapi({
+                  description:
+                    "The model the job runs with. Absent when the job has none of its own and uses the server's default.",
+                }),
               usage: z.unknown().optional().openapi({
                 description:
                   "Pi Durable usage document of the job's own conversation: tokens and cost per model and tool. Absent before its first request.",
@@ -429,7 +436,7 @@ export const credentialResponse = z
     }),
     github: z.boolean().openapi({
       description:
-        "The value is a token from the bot's GitHub App, minted for the App or for the owner signed in through it, so it has no stored value or reference.",
+        "The value is a GitHub token: from the bot's GitHub App, minted for the App or for the owner signed in through it, or its machine account's personal access token. It has no stored value or reference here.",
     }),
   })
   .openapi("Credential");

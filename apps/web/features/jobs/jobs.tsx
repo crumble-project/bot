@@ -1,6 +1,19 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { IconDeviceDesktop, IconRefresh } from "@tabler/icons-react";
+import {
+  IconChevronDown,
+  IconChevronRight,
+  IconDeviceDesktop,
+  IconDownload,
+  IconFileText,
+  IconHammer,
+  IconPencil,
+  IconPointer,
+  IconTerminal2,
+  IconTool,
+  IconX,
+} from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,13 +25,6 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import {
   type CodingJob,
@@ -26,10 +32,14 @@ import {
   type Message,
   agentPath,
   api,
+  jobsQuery,
 } from "@/lib/api";
 import { Reply } from "@/components/markdown";
 
 export type JobRef = { kind: "coding" | "desktop"; name: string };
+
+const kindLabel = (job: JobRef) =>
+  job.kind === "coding" ? "Coding job" : "Desktop job";
 
 type Block = {
   type?: string;
@@ -76,12 +86,12 @@ export function usageLine(usage: CodingJob["usage"]) {
   return `${numberFormat.format(totals.input)} in · ${numberFormat.format(totals.output)} out · $${totals.cost.toFixed(4)}`;
 }
 
-const VERBS = new Map([
-  ["bash", "Ran"],
-  ["read", "Read"],
-  ["write", "Wrote"],
-  ["edit", "Edited"],
-  ["computer_use", "Used the bot desktop"],
+const STEPS = new Map([
+  ["bash", { verb: "Ran", icon: IconTerminal2 }],
+  ["read", { verb: "Read", icon: IconFileText }],
+  ["write", { verb: "Wrote", icon: IconPencil }],
+  ["edit", { verb: "Edited", icon: IconPencil }],
+  ["computer_use", { verb: "Used the bot desktop", icon: IconPointer }],
 ]);
 
 type Item =
@@ -154,44 +164,58 @@ function itemsOf(messages: Message[]) {
   return items;
 }
 
-function StepOutput({ content }: { content: string }) {
-  const lines = content.split("\n");
-  const hidden = Math.max(0, lines.length - 12);
+function verbOf(tool: string) {
+  return STEPS.get(tool)?.verb ?? tool.charAt(0).toUpperCase() + tool.slice(1);
+}
 
-  return (
-    <pre className="max-h-60 overflow-auto rounded-md bg-muted p-2 font-mono text-xs whitespace-pre-wrap">
-      {hidden > 0 && (
-        <span className="text-muted-foreground">
-          {hidden} earlier lines not shown{"\n"}
-        </span>
-      )}
-      {lines.slice(-12).join("\n")}
-    </pre>
+function StepIcon({ item }: { item: StepItem }) {
+  const Icon = STEPS.get(item.tool)?.icon ?? IconTool;
+
+  return item.result ? (
+    <Icon className="size-4 shrink-0 text-muted-foreground" />
+  ) : (
+    <Spinner className="size-4 shrink-0" />
   );
 }
 
-function verbOf(tool: string) {
-  return VERBS.get(tool) ?? tool.charAt(0).toUpperCase() + tool.slice(1);
+function StepSummary({ item, open }: { item: StepItem; open: boolean }) {
+  const Chevron = open ? IconChevronDown : IconChevronRight;
+
+  return (
+    <>
+      <StepIcon item={item} />
+      <span className="shrink-0 font-medium">{verbOf(item.tool)}</span>
+      {item.subject && (
+        <code className="truncate font-mono text-xs text-muted-foreground">
+          {item.subject}
+        </code>
+      )}
+      {item.result?.isError && <Badge variant="destructive">Failed</Badge>}
+      {item.result && (
+        <Chevron className="size-3.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 group-aria-expanded:opacity-100" />
+      )}
+    </>
+  );
 }
 
 function Step({ item }: { item: StepItem }) {
-  const verb = verbOf(item.tool);
-  const failed = item.result?.isError === true;
+  const [open, setOpen] = useState(false);
 
   return (
-    <div className="flex flex-col gap-1 text-sm">
-      <div className="flex items-center gap-2">
-        {!item.result && <Spinner className="size-3" />}
-        <span className="font-medium">{verb}</span>
-        {item.subject && (
-          <code className="truncate font-mono text-xs text-muted-foreground">
-            {item.subject}
-          </code>
-        )}
-        {failed && <Badge variant="destructive">Failed</Badge>}
-      </div>
-      {item.result && (item.tool === "bash" || failed) && (
-        <StepOutput content={item.result.content} />
+    <div className="flex flex-col gap-1.5 text-sm">
+      <button
+        type="button"
+        className="group flex min-w-0 items-center gap-2 text-left disabled:cursor-default"
+        aria-expanded={open}
+        disabled={!item.result}
+        onClick={() => setOpen(!open)}
+      >
+        <StepSummary item={item} open={open} />
+      </button>
+      {open && item.result && (
+        <pre className="ml-6 overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs whitespace-pre-wrap">
+          {item.result.content.replace(/\n+$/, "") || "No output."}
+        </pre>
       )}
     </div>
   );
@@ -216,36 +240,6 @@ function JobItem({ item }: { item: Item }) {
     );
 
   return <Step item={item} />;
-}
-
-function JobActions({
-  botId,
-  kind,
-  onRefresh,
-}: {
-  botId: string;
-  kind: JobRef["kind"];
-  onRefresh: () => void;
-}) {
-  return (
-    <div className="flex gap-2">
-      <Button variant="outline" size="sm" onClick={onRefresh}>
-        <IconRefresh data-icon="inline-start" />
-        Refresh
-      </Button>
-      {kind === "desktop" && (
-        <Button
-          variant="outline"
-          size="sm"
-          render={<Link to="/bots/$botId/desktop" params={{ botId }} />}
-          nativeButton={false}
-        >
-          <IconDeviceDesktop data-icon="inline-start" />
-          Open bot desktop
-        </Button>
-      )}
-    </div>
-  );
 }
 
 function JobHistoryError({
@@ -306,9 +300,9 @@ function JobHistoryBody({
 }) {
   return (
     <MessageScrollerProvider autoScroll defaultScrollPosition="end">
-      <MessageScroller className="-mx-4 min-h-0 flex-1">
+      <MessageScroller className="min-h-0 flex-1">
         <MessageScrollerViewport preserveScrollOnPrepend>
-          <MessageScrollerContent className="gap-4 px-4">
+          <MessageScrollerContent className="gap-5 p-4">
             {history.hasNextPage && (
               <MessageScrollerItem messageId="earlier">
                 <Button
@@ -349,46 +343,215 @@ function JobHistoryBody({
   );
 }
 
-/** A job's task, replies and tool steps, read-only. */
-export function JobDialog({
+/** A fence longer than any backtick run in the text, so the text can't close it. */
+function fenced(text: string, info = "") {
+  const longest = Math.max(
+    2,
+    ...(text.match(/`+/g) ?? []).map((run) => run.length),
+  );
+
+  const fence = "`".repeat(longest + 1);
+
+  return `${fence}${info}\n${text}\n${fence}`;
+}
+
+function messageMarkdown(message: Message) {
+  if (message.role === "user") return [`## Task\n\n${message.content}`];
+
+  if (message.role === "toolResult")
+    return [
+      `${message.isError ? "Failed:\n\n" : ""}${fenced(message.content)}`,
+    ];
+
+  if (message.role !== "assistant") return [];
+
+  return blocksOf(message).flatMap((block) => {
+    if (block.type === "text" && block.text?.trim()) return [block.text];
+
+    if (block.type === "toolCall" && block.name)
+      return [
+        `### ${block.name}\n\n${fenced(JSON.stringify(block.arguments ?? {}, null, 2), "json")}`,
+      ];
+
+    return [];
+  });
+}
+
+/** Every page of a job's transcript, oldest message first. */
+async function fullHistory(botId: string, job: JobRef) {
+  const base = `${agentPath(botId)}/${job.kind}-jobs/${encodeURIComponent(job.name)}/history?limit=200`;
+  const pages: HistoryPage[] = [];
+  let before: string | null = null;
+
+  do {
+    const page: HistoryPage = await api<HistoryPage>(
+      before ? `${base}&before=${encodeURIComponent(before)}` : base,
+    );
+
+    pages.push(page);
+    before = page.hasMore ? page.oldestEntryId : null;
+  } while (before);
+
+  return pages.toReversed().flatMap((page) => page.messages);
+}
+
+async function downloadTranscript(botId: string, job: JobRef) {
+  const messages = await fullHistory(botId, job);
+  const kind = kindLabel(job);
+
+  const markdown = [`# ${job.name}`, kind, ...messages.flatMap(messageMarkdown)]
+    .join("\n\n")
+    .concat("\n");
+
+  const url = URL.createObjectURL(
+    new Blob([markdown], { type: "text/markdown" }),
+  );
+
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = `${job.name}.md`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+/** Whether a job works, as its card and panel show it. */
+export function JobStatus({ working }: { working: boolean }) {
+  return working ? (
+    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+      <Spinner className="size-3" />
+      Working
+    </span>
+  ) : (
+    <span className="text-xs text-muted-foreground">Idle</span>
+  );
+}
+
+const JOB_REFRESH_MS = 3_000;
+const IDLE_JOB_REFRESH_MS = 15_000;
+
+function useLiveJob(botId: string, job: JobRef) {
+  const jobs = useQuery({
+    ...jobsQuery(botId, job.kind),
+    // The chat refreshes its job list only when job messages arrive, which misses a job's own progress.
+    refetchInterval: (query) =>
+      query.state.data?.some(
+        (each) => each.name === job.name && each.status === "working",
+      )
+        ? JOB_REFRESH_MS
+        : IDLE_JOB_REFRESH_MS,
+  });
+
+  return jobs.data?.find((each) => each.name === job.name);
+}
+
+function JobTitle({
+  job,
+  current,
+}: {
+  job: JobRef;
+  current: CodingJob | undefined;
+}) {
+  const Icon = job.kind === "coding" ? IconHammer : IconDeviceDesktop;
+
+  const subtitle = [
+    kindLabel(job),
+    current?.model?.model,
+    usageLine(current?.usage),
+  ];
+
+  return (
+    <>
+      <Icon className="size-4 shrink-0 text-muted-foreground" />
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate font-heading font-semibold leading-tight">
+          {job.name}
+        </span>
+        <span className="truncate text-xs text-muted-foreground">
+          {subtitle.filter(Boolean).join(" · ")}
+        </span>
+      </span>
+    </>
+  );
+}
+
+function DownloadButton({ botId, job }: { botId: string; job: JobRef }) {
+  // Reads every page on demand; nothing cached changes.
+  // react-doctor-disable-next-line query-mutation-missing-invalidation
+  const download = useMutation({
+    mutationFn: () => downloadTranscript(botId, job),
+  });
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      title={
+        download.isError
+          ? "Couldn't download the transcript. Try again."
+          : "Download transcript"
+      }
+      disabled={download.isPending}
+      onClick={() => download.mutate()}
+    >
+      {download.isPending ? <Spinner /> : <IconDownload />}
+    </Button>
+  );
+}
+
+/** A job's task, replies and tool steps, read-only, in a pane beside the chat. */
+export function JobPanel({
   botId,
   job,
-  status,
-  usage,
   onClose,
 }: {
   botId: string;
   job: JobRef;
-  status?: string | undefined;
-  usage?: CodingJob["usage"];
   onClose: () => void;
 }) {
-  const label = job.kind === "coding" ? "coding job" : "desktop job";
-  const { history, items } = useJobHistory(botId, job, status);
-  const cost = usageLine(usage);
+  const current = useLiveJob(botId, job);
+  const working = current?.status === "working";
+  const { history, items } = useJobHistory(botId, job, current?.status);
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{job.name}</DialogTitle>
-          <DialogDescription>
-            {job.kind === "coding" ? "Coding job" : "Desktop job"}
-            {cost && ` · ${cost}`}
-          </DialogDescription>
-        </DialogHeader>
-        <JobActions
-          botId={botId}
-          kind={job.kind}
-          onRefresh={() => void history.refetch()}
-        />
-        <JobHistoryBody
-          history={history}
-          items={items}
-          label={label}
-          working={status === "working"}
-        />
-      </DialogContent>
-    </Dialog>
+    <aside
+      aria-label={job.name}
+      className="flex min-h-0 flex-col border-l bg-background max-lg:fixed max-lg:inset-0 max-lg:z-40 lg:w-[min(42rem,50%)] lg:shrink-0"
+    >
+      <header className="flex h-14 shrink-0 items-center gap-2.5 border-b px-4">
+        <JobTitle job={job} current={current} />
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <span className="mr-1">
+            <JobStatus working={working} />
+          </span>
+          {job.kind === "desktop" && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              title="Bot desktop"
+              render={<Link to="/bots/$botId/desktop" params={{ botId }} />}
+              nativeButton={false}
+            >
+              <IconDeviceDesktop />
+            </Button>
+          )}
+          <DownloadButton botId={botId} job={job} />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            title="Close"
+            onClick={onClose}
+          >
+            <IconX />
+          </Button>
+        </div>
+      </header>
+      <JobHistoryBody
+        history={history}
+        items={items}
+        label={kindLabel(job).toLowerCase()}
+        working={working}
+      />
+    </aside>
   );
 }
