@@ -98,6 +98,10 @@ _Avoid_: Secret, API key, environment variable (in product language)
 A GitHub identity the owner creates in Crumble on one GitHub account and assigns to bots. In that account's repositories, the bots' coding jobs commit, push, and open pull requests as its `slug[bot]` user, through the `GH_TOKEN` credential, or as the owner when the owner signed in through it. A bot uses at most one per account.
 _Avoid_: GitHub integration, machine user, bot account
 
+**Machine account**:
+A GitHub user the owner creates for bots and adds to Crumble with a personal access token. Bots assigned to it act as it on GitHub wherever none of their GitHub Apps does, and commit as it by default. A bot uses at most one.
+_Avoid_: Machine user, service account, bot user
+
 **Login**:
 A username and password, with an optional one-time code, that a bot's desktop jobs can fill into web pages on given hosts. Unlike a credential's, the value enters the workspace, in the page it is filled into; the password never reaches the bot's model or transcript.
 _Avoid_: Account, saved password (in product language)

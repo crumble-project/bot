@@ -13,15 +13,16 @@ export const GITHUB_HOSTS = [
   "uploads.github.com",
 ];
 
-/** GitHub couldn't be reached or refused a request, or the bot has no GitHub App for it */
+/** GitHub couldn't be reached or refused a request, or the bot has no GitHub App or machine account for it */
 export class GitHubUnavailable extends Schema.TaggedError<GitHubUnavailable>()(
   "GitHubUnavailable",
   { message: Schema.String, status: Schema.optional(Schema.Number) },
 ) {}
 
-/** How a bot commits in one GitHub account's repositories; `trailer` marks commits made as the owner. */
+/** How a bot commits in one GitHub account's repositories, or in every other one for a machine account (`account`
+ * null); `trailer` marks commits made as the owner. */
 export type GitHubIdentity = {
-  account: string;
+  account: string | null;
   name: string;
   email: string;
   trailer?: string | undefined;

@@ -25,10 +25,13 @@ import {
 } from "@/components/workspace";
 import {
   type Bot,
+  type GitHubAccount,
   type GitHubApp,
   type GitHubAppManifest,
   botsQuery,
   call,
+  githubAccountPath,
+  githubAccountsQuery,
   githubAppPath,
   githubAppsQuery,
   queryClient,
@@ -39,10 +42,11 @@ import { BotAvatar } from "@/features/bots/avatar";
 /** The App GitHub sends the owner back for after installing; GitHub's redirect doesn't say which. */
 const INSTALLING_KEY = "crumble.github-app.installing";
 
-// A bot's GH_TOKEN appears or goes with its Apps, so credentials refresh too.
+// A bot's GH_TOKEN appears or goes with its Apps and machine account, so credentials refresh too.
 const refresh = () =>
   Promise.all([
     queryClient.invalidateQueries({ queryKey: githubAppsQuery.queryKey }),
+    queryClient.invalidateQueries({ queryKey: githubAccountsQuery.queryKey }),
     queryClient.invalidateQueries({ queryKey: ["credentials"] }),
   ]).then(() => undefined);
 
@@ -496,17 +500,222 @@ function AppsSection() {
   );
 }
 
+function AccountRow({
+  account,
+  onEdit,
+}: {
+  account: GitHubAccount;
+  onEdit: () => void;
+}) {
+  const remove = useMutation({
+    mutationFn: () => send(githubAccountPath(account.id), "DELETE"),
+    onSuccess: refresh,
+  });
+
+  return (
+    <SettingRow
+      tile={<GitHubTile />}
+      title={
+        <>
+          <span className="truncate">{account.login}</span>
+          <span className="font-normal text-muted-foreground">
+            (used by {account.botIds.length})
+          </span>
+        </>
+      }
+      description={remove.error?.message}
+    >
+      <Button variant="ghost" size="icon-sm" title="Edit" onClick={onEdit}>
+        <IconPencil />
+      </Button>
+      <ConfirmDelete
+        title={`Remove ${account.login}?`}
+        description="Crumble forgets its token and its bots stop acting as it. The user stays on GitHub; revoke the token there too."
+        onConfirm={() => remove.mutate()}
+        trigger={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            title="Remove"
+            disabled={remove.isPending}
+          >
+            <IconTrash />
+          </Button>
+        }
+      />
+    </SettingRow>
+  );
+}
+
+function TokenField({
+  value,
+  onChange,
+  label,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+}) {
+  return (
+    <Field>
+      <FieldLabel htmlFor="github-account-token">{label}</FieldLabel>
+      <Input
+        id="github-account-token"
+        type="password"
+        autoComplete="off"
+        placeholder="github_pat_…"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <FieldDescription>
+        Signed in as the machine account on GitHub, create a personal access
+        token with access to the repositories its bots work in.{" "}
+        <a
+          href="https://github.com/settings/personal-access-tokens/new"
+          target="_blank"
+          rel="noreferrer"
+          className="underline underline-offset-2"
+        >
+          New token
+        </a>
+      </FieldDescription>
+    </Field>
+  );
+}
+
+function AddAccountSheet({ onClose }: { onClose: () => void }) {
+  const [token, setToken] = useState("");
+
+  const add = useMutation({
+    mutationFn: () =>
+      call<GitHubAccount, { token: string }>("/v1/github-accounts", "POST", {
+        token: token.trim(),
+      }),
+    onSuccess: async () => {
+      await refresh();
+      onClose();
+    },
+  });
+
+  return (
+    <EditorSheet
+      title="New machine account"
+      description="A GitHub user you made for your bots. They act as it wherever none of their Apps does, such as other people's repositories."
+      error={add.error?.message}
+      submitLabel="Add"
+      submitDisabled={!token.trim() || add.isPending}
+      onSubmit={() => add.mutate()}
+      onClose={onClose}
+    >
+      <TokenField value={token} onChange={setToken} label="Token" />
+    </EditorSheet>
+  );
+}
+
+function AccountSheet({
+  account,
+  onClose,
+}: {
+  account: GitHubAccount;
+  onClose: () => void;
+}) {
+  const [botIds, setBotIds] = useState(account.botIds);
+  const [token, setToken] = useState("");
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (token.trim())
+        await call<GitHubAccount, { token: string }>(
+          `${githubAccountPath(account.id)}/token`,
+          "PUT",
+          { token: token.trim() },
+        );
+
+      await call<GitHubAccount, { botIds: string[] }>(
+        `${githubAccountPath(account.id)}/bots`,
+        "PUT",
+        { botIds },
+      );
+    },
+    onSuccess: async () => {
+      await refresh();
+      onClose();
+    },
+  });
+
+  return (
+    <EditorSheet
+      title={account.login}
+      description={<GitHubLink href={account.htmlUrl} />}
+      error={save.error?.message}
+      submitLabel="Save"
+      submitDisabled={save.isPending}
+      onSubmit={() => save.mutate()}
+      onClose={onClose}
+    >
+      <BotsField
+        botIds={botIds}
+        onChange={setBotIds}
+        description="They get GH_TOKEN and act as this user wherever none of their Apps does; their commits default to it. A bot acts as one machine account."
+      />
+      <TokenField value={token} onChange={setToken} label="Replace token" />
+    </EditorSheet>
+  );
+}
+
+function AccountsSection() {
+  const accounts = useQuery(githubAccountsQuery);
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const edited = accounts.data?.find((account) => account.id === editing);
+
+  return (
+    <Section
+      title="Machine accounts"
+      description="GitHub users for your bots to act as wherever none of their Apps does."
+      action={
+        <NewButton
+          label="New machine account"
+          onClick={() => setAdding(true)}
+        />
+      }
+    >
+      {accounts.isError && (
+        <div className="p-3">
+          <FieldError>{accounts.error.message}</FieldError>
+        </div>
+      )}
+      {accounts.data?.length === 0 && (
+        <SectionEmpty>No machine accounts yet.</SectionEmpty>
+      )}
+      {accounts.data?.map((account) => (
+        <AccountRow
+          key={account.id}
+          account={account}
+          onEdit={() => setEditing(account.id)}
+        />
+      ))}
+      {adding && <AddAccountSheet onClose={() => setAdding(false)} />}
+      {edited && (
+        <AccountSheet account={edited} onClose={() => setEditing(null)} />
+      )}
+    </Section>
+  );
+}
+
 /** What the account's coding jobs work with: for now, the GitHub identities bots act as. */
 export function CodingPage() {
   const apps = useQuery(githubAppsQuery);
+  const accounts = useQuery(githubAccountsQuery);
 
   return (
     <WorkspacePage
       title="Coding"
       onRefresh={() => void refresh()}
-      refreshing={apps.isFetching}
+      refreshing={apps.isFetching || accounts.isFetching}
     >
       <AppsSection />
+      <AccountsSection />
     </WorkspacePage>
   );
 }

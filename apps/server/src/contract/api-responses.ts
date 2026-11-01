@@ -436,7 +436,7 @@ export const credentialResponse = z
     }),
     github: z.boolean().openapi({
       description:
-        "The value is a token from the bot's GitHub App, minted for the App or for the owner signed in through it, so it has no stored value or reference.",
+        "The value is a GitHub token: from the bot's GitHub App, minted for the App or for the owner signed in through it, or its machine account's personal access token. It has no stored value or reference here.",
     }),
   })
   .openapi("Credential");

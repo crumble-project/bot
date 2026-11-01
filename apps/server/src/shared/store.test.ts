@@ -484,6 +484,8 @@ describe("Store memory sources", () => {
     db.run(`DROP TABLE __drizzle_migrations;
       DROP TABLE skill_updates;
       ALTER TABLE skills DROP COLUMN origin;
+      DROP TABLE github_account_bots;
+      DROP TABLE github_accounts;
       DROP TABLE github_app_users;
       DROP TABLE github_app_bots;
       DROP TABLE github_apps;
@@ -628,6 +630,8 @@ describe("Store group chats", () => {
     db.run(`DROP TABLE __drizzle_migrations;
       DROP TABLE skill_updates;
       ALTER TABLE skills DROP COLUMN origin;
+      DROP TABLE github_account_bots;
+      DROP TABLE github_accounts;
       DROP TABLE github_app_users;
       DROP TABLE github_app_bots;
       DROP TABLE github_apps;

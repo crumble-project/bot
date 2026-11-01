@@ -39,6 +39,9 @@ import {
   githubAppManifestResponse,
   githubAppResponse,
   githubAppsResponse,
+  githubAccountTokenInput,
+  githubAccountResponse,
+  githubAccountsResponse,
 } from "./github-apps";
 import {
   pendingSkillUpdateResponse,
@@ -380,6 +383,50 @@ export const routes = {
       "Stores a client secret generated in the App's GitHub settings, for an App created before Crumble kept it.",
     request: { params: id, body: body(githubAppClientSecretInput) },
     responses: { 200: json(githubAppResponse) },
+  }),
+  githubAccounts: define({
+    method: "get",
+    path: "/v1/github-accounts",
+    operationId: "listGithubAccounts",
+    description:
+      "The account's machine accounts: GitHub users made for bots. A bot acts as its machine account wherever none of its GitHub Apps does.",
+    responses: { 200: json(githubAccountsResponse) },
+  }),
+  addGithubAccount: define({
+    method: "post",
+    path: "/v1/github-accounts",
+    operationId: "addGithubAccount",
+    description:
+      "Adds the GitHub user a personal access token signs in as. 400 when GitHub refuses the token; 409 when the user is already added.",
+    request: { body: body(githubAccountTokenInput) },
+    responses: { 200: json(githubAccountResponse) },
+  }),
+  setGithubAccountToken: define({
+    method: "put",
+    path: "/v1/github-accounts/{id}/token",
+    operationId: "setGithubAccountToken",
+    description:
+      "Replaces the machine account's token. 400 when GitHub refuses it or it signs in as another user.",
+    request: { params: id, body: body(githubAccountTokenInput) },
+    responses: { 200: json(githubAccountResponse) },
+  }),
+  setGithubAccountBots: define({
+    method: "put",
+    path: "/v1/github-accounts/{id}/bots",
+    operationId: "setGithubAccountBots",
+    description:
+      "Replaces the bots that act as the machine account, giving them GH_TOKEN. A bot acts as at most one; 409 when a bot already acts as another.",
+    request: { params: id, body: body(githubBotsInput) },
+    responses: { 200: json(githubAccountResponse) },
+  }),
+  deleteGithubAccount: define({
+    method: "delete",
+    path: "/v1/github-accounts/{id}",
+    operationId: "deleteGithubAccount",
+    description:
+      "Forgets the machine account and its token, and takes GH_TOKEN from bots left without an installed App. The user stays on GitHub.",
+    request: { params: id },
+    responses: { 204: empty },
   }),
   eventSources: define({
     method: "get",
