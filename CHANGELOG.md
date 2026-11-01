@@ -3,6 +3,7 @@
 ## Unreleased
 
 - A job's card shows in the chat once, when the bot starts it. Sending to a job, checking its status, or stopping it no longer adds another card, and their tool results no longer carry job details. Only a start ends the bot's turn; after a send, the bot answers in text.
+- Clicking a job's card in the web chat opens the job in a pane beside the chat instead of a dialog, in place of the details panel; on narrow screens it covers the chat. The pane follows the job on its own: it shows whether the job is working and refreshes its steps without a **Refresh** button. Its subtitle names the model the job runs with. Steps show an icon for their tool. Every tool result starts collapsed; clicking a step shows its full result, which no longer hides earlier lines, for every tool rather than only commands and failures. The download button saves the job's whole transcript as Markdown: its tasks, replies, every tool call with its arguments, and every full tool result. The details toggle closes the job and shows the details again. `CodingJob` and `DesktopJob` gain `model` (`provider`, `model`), the model the job runs with.
 
 ## 0.4.0
 

@@ -218,6 +218,13 @@ const jobsResponse = (kind: "Coding" | "Desktop") =>
               name: z.string(),
               conversationId: z.string(),
               status: z.enum(["working", "idle"]),
+              model: z
+                .object({ provider: z.string(), model: z.string() })
+                .optional()
+                .openapi({
+                  description:
+                    "The model the job runs with. Absent when the job has none of its own and uses the server's default.",
+                }),
               usage: z.unknown().optional().openapi({
                 description:
                   "Pi Durable usage document of the job's own conversation: tokens and cost per model and tool. Absent before its first request.",

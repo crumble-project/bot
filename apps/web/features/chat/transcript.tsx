@@ -71,6 +71,7 @@ import {
 import { Input } from "@/components/ui/input";
 import type { Upload } from "./composer";
 import { DisplayCard, displayOf } from "./display";
+import { JobStatus } from "@/features/jobs/jobs";
 import { Reply } from "@/components/markdown";
 import type { Sources } from "./sources";
 
@@ -1447,14 +1448,7 @@ function JobCard({
           {job.kind === "coding" ? "Coding job" : "Desktop job"}
         </span>
       </span>
-      {working ? (
-        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Spinner className="size-3" />
-          Working
-        </span>
-      ) : (
-        <span className="text-xs text-muted-foreground">Idle</span>
-      )}
+      <JobStatus working={working} />
     </button>
   );
 }

@@ -451,6 +451,7 @@ test("clients list a bot's coding jobs and page through a job's work", async () 
       name: "builder",
       conversationId: expect.any(String),
       status: "idle",
+      model: { provider: "faux", model: "chat" },
       // The job's own spend, apart from the bot's chat.
       usage: { models: { "faux/chat": expect.any(Object) }, tools: {} },
     },

@@ -5,6 +5,7 @@ import {
 } from "@earendil-works/chord/context";
 import { Type, type AssistantMessage } from "@earendil-works/pi-ai";
 import {
+  AgentDoc,
   AssistantEntry,
   configure,
   defineDoc,
@@ -66,8 +67,12 @@ export type JobInfo = {
   status: "working" | "idle";
 };
 
-/** A job in a listing, with what its own model requests and tools spent; none before its first request. */
-export type ListedJob = JobInfo & { usage?: UsageState };
+/** A job in a listing: the model it runs with, and what its own model requests and tools spent, none before its first
+ * request. */
+export type ListedJob = JobInfo & {
+  model?: { provider: string; model: string };
+  usage?: UsageState;
+};
 
 export type JobExtensions = {
   /** Offered in the bot's chat: the job tool. */
@@ -876,13 +881,21 @@ const listedJobs = async (
         status: await statusOf(harness, job, BACKGROUND_CONTEXT),
       };
 
-      const usage = await harness.snapshot(
-        UsageDoc,
-        job.conversationId,
-        BACKGROUND_CONTEXT,
-      );
+      const [agent, usage] = await Promise.all([
+        harness.snapshot(AgentDoc, job.conversationId, BACKGROUND_CONTEXT),
+        harness.snapshot(UsageDoc, job.conversationId, BACKGROUND_CONTEXT),
+      ]);
 
-      return usage ? { ...listed, usage } : listed;
+      return {
+        ...listed,
+        ...(agent?.model && {
+          model: {
+            provider: agent.model.provider,
+            model: agent.model.modelId,
+          },
+        }),
+        ...(usage && { usage }),
+      };
     }),
   );
 

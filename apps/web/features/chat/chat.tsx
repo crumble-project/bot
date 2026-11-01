@@ -32,7 +32,7 @@ import {
   useMessageSending,
 } from "./conversation";
 import { DetailsPanel } from "./details";
-import { type JobRef, JobDialog } from "@/features/jobs/jobs";
+import { type JobRef, JobPanel } from "@/features/jobs/jobs";
 import { useChatStream } from "@/lib/live";
 import { BotReasoning } from "@/features/bots/reasoning";
 import {
@@ -447,30 +447,6 @@ function useChatDelivery(botId: string) {
   return { outgoing, sending, stop };
 }
 
-function ChatJobDialog({
-  botId,
-  job,
-  jobFor,
-  onClose,
-}: {
-  botId: string;
-  job: JobRef;
-  jobFor: ReturnType<typeof useChatJobs>;
-  onClose: () => void;
-}) {
-  const current = jobFor(job.name);
-
-  return (
-    <JobDialog
-      botId={botId}
-      job={job}
-      status={current?.status}
-      usage={current?.usage}
-      onClose={onClose}
-    />
-  );
-}
-
 export function Chat({ botId }: { botId: string }) {
   const chat = useQuery(chatQuery(botId));
   const bots = useQuery(botsQuery);
@@ -488,6 +464,16 @@ export function Chat({ botId }: { botId: string }) {
     return <ConversationLoading notFound={bots.isSuccess && !bot} />;
 
   const { status, error } = chat.data;
+
+  // An open job takes the details panel's place; the toggle brings the details back.
+  const showDetails = () => {
+    if (!job) return toggleDetails();
+
+    setJob(null);
+
+    if (!details) toggleDetails();
+  };
+
   const running = status === "running";
 
   return (
@@ -496,8 +482,8 @@ export function Chat({ botId }: { botId: string }) {
         <ChatHeader
           bot={bot}
           running={running}
-          details={details}
-          onToggleDetails={toggleDetails}
+          details={details && !job}
+          onToggleDetails={showDetails}
         />
         <ChatTranscript
           bot={bot}
@@ -518,14 +504,15 @@ export function Chat({ botId }: { botId: string }) {
           onStop={() => stop.mutate()}
         />
       </div>
-      {details && <DetailsPanel bot={bot} />}
-      {job && (
-        <ChatJobDialog
+      {job ? (
+        <JobPanel
+          key={`${job.kind}:${job.name}`}
           botId={botId}
           job={job}
-          jobFor={jobFor}
           onClose={() => setJob(null)}
         />
+      ) : (
+        details && <DetailsPanel bot={bot} />
       )}
     </div>
   );
