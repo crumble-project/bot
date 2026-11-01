@@ -51,7 +51,12 @@ import {
   useUnreadCount,
   useWorking,
 } from "@/lib/live";
-import { BotAvatar, botColor, botStyle } from "@/features/bots/avatar";
+import {
+  BotAvatar,
+  LiveBotAvatar,
+  botColor,
+  botStyle,
+} from "@/features/bots/avatar";
 
 const WORKSPACE = [
   { to: "/memory", label: "Memory", icon: IconBrain },
@@ -497,14 +502,7 @@ function BotRow({ bot, active }: { bot: Bot; active: boolean }) {
         className="h-auto py-1.5 data-active:bg-bot-soft!"
         render={<Link to="/bots/$botId" params={{ botId: bot.id }} />}
       >
-        <BotAvatar
-          bot={bot}
-          size={36}
-          live
-          state={
-            working ? "working" : bot.enabled && active ? "idle" : "sleeping"
-          }
-        />
+        <LiveBotAvatar bot={bot} size={36} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span
             className={cn(

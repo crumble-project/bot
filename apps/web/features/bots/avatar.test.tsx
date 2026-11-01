@@ -29,9 +29,10 @@ for (const reduced of [false, true]) {
       IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true },
     });
 
-    const context = { setTransform() {} };
+    const clears: number[] = [];
+    const context = { setTransform() {}, clearRect: () => clears.push(1) };
 
-    // SAFETY: The paint spy prevents access to canvas methods other than setTransform.
+    // SAFETY: The paint spy prevents access to canvas methods other than setTransform and clearRect.
     const getContext = spyOn(
       window.HTMLCanvasElement.prototype,
       "getContext",
@@ -53,6 +54,8 @@ for (const reduced of [false, true]) {
         root.render(<BotAvatar bot={bot} live={reduced} state="working" />),
       );
       expect(paint.mock.calls.at(-1)?.[2]).toEqual([["focused", 1]]);
+
+      if (!reduced) expect(clears.length).toBe(paint.mock.calls.length);
     } finally {
       await act(async () => root.unmount());
       paint.mockRestore();

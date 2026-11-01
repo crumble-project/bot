@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/empty";
 import { type Bot, botsQuery } from "@/lib/api";
 import { useWorking } from "@/lib/live";
-import { BotAvatar, botColor, botStyle } from "@/features/bots/avatar";
+import { LiveBotAvatar, botColor, botStyle } from "@/features/bots/avatar";
 
 function greeting(hour: number) {
   if (hour < 5) return "Up late";
@@ -89,12 +89,7 @@ function HouseholdBot({ bot }: { bot: Bot }) {
         params={{ botId: bot.id }}
         className="flex w-36 flex-col items-center gap-3 rounded-3xl p-4 text-center transition-colors duration-150 hover:bg-bot-soft focus-visible:bg-bot-soft focus-visible:outline-none"
       >
-        <BotAvatar
-          bot={bot}
-          size={88}
-          live
-          state={working ? "working" : bot.enabled ? "idle" : "sleeping"}
-        />
+        <LiveBotAvatar bot={bot} size={88} />
         <span className="flex w-full flex-col gap-0.5">
           <span className="truncate font-heading font-semibold">
             {bot.name}
