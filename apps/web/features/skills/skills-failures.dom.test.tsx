@@ -41,11 +41,11 @@ for (const scenario of ["failure", "refresh"] as const) {
       () => {},
     );
 
-    // SAFETY: The paint spy prevents use of canvas methods other than setTransform.
+    // SAFETY: The paint spy prevents use of canvas methods other than setTransform and clearRect.
     const context = spyOn(
       window.HTMLCanvasElement.prototype,
       "getContext",
-    ).mockReturnValue({ setTransform() {} } as never);
+    ).mockReturnValue({ setTransform() {}, clearRect() {} } as never);
 
     let release: ((value: Response) => void) | undefined;
     let requests = 0;

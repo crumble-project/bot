@@ -19,7 +19,7 @@ import {
   jobsQuery,
   send,
 } from "@/lib/api";
-import { BotAvatar, botColor, botStyle } from "@/features/bots/avatar";
+import { LiveBotAvatar, botColor, botStyle } from "@/features/bots/avatar";
 import { type Outgoing, confirm, useOutgoing } from "./delivery";
 import {
   ConversationEmpty,
@@ -164,11 +164,7 @@ function ChatHeader({
   return (
     <header className="flex h-14 shrink-0 items-center gap-2.5 border-b px-4">
       <MobileSidebarTrigger />
-      <BotAvatar
-        bot={bot}
-        size={32}
-        state={running ? "working" : bot.enabled ? "idle" : "sleeping"}
-      />
+      <LiveBotAvatar bot={bot} size={32} />
       <span className="flex min-w-0 flex-col">
         <span className="truncate font-heading font-semibold leading-tight">
           {bot.name}

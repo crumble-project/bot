@@ -14,9 +14,8 @@ import {
   schedulesQuery,
   send,
 } from "@/lib/api";
-import { BotAvatar } from "@/features/bots/avatar";
+import { LiveBotAvatar } from "@/features/bots/avatar";
 import { DesktopPreview } from "@/features/bot-desktop/desktop";
-import { useWorking } from "@/lib/live";
 import { automationTiming, finished } from "@/features/schedules/automations";
 
 function Automation({ schedule }: { schedule: Schedule }) {
@@ -63,15 +62,10 @@ function Automation({ schedule }: { schedule: Schedule }) {
   );
 }
 
-function ProfileSummary({ bot, working }: { bot: Bot; working: boolean }) {
+function ProfileSummary({ bot }: { bot: Bot }) {
   return (
     <div className="flex flex-col items-center gap-2 text-center">
-      <BotAvatar
-        bot={bot}
-        size={84}
-        live
-        state={working ? "working" : bot.enabled ? "idle" : "sleeping"}
-      />
+      <LiveBotAvatar bot={bot} size={84} />
       <span className="font-medium">{bot.name}</span>
       <span className="text-xs text-muted-foreground">
         {bot.description || (bot.enabled ? "Ready" : "Paused")}
@@ -102,7 +96,6 @@ function AutomationList({
 
 /** The bot inspector beside its chat: profile, desktop, and automations. */
 export function DetailsPanel({ bot }: { bot: Bot }) {
-  const working = useWorking(bot.id);
   const schedules = useQuery(schedulesQuery);
 
   const automations =
@@ -116,7 +109,7 @@ export function DetailsPanel({ bot }: { bot: Bot }) {
       className="hidden w-72 shrink-0 border-l lg:block"
     >
       <div className="flex flex-col gap-4 p-4">
-        <ProfileSummary bot={bot} working={working} />
+        <ProfileSummary bot={bot} />
         {bot.tools.includes("desktop") && (
           <section className="flex flex-col gap-3">
             <h2 className="text-sm font-medium text-muted-foreground">

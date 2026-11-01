@@ -55,6 +55,7 @@ import { PasswordManagersPage } from "@/features/settings/password-managers";
 import { SkillsPage } from "@/features/skills/skills";
 import { AutomationsPage } from "@/features/schedules/automations";
 import { SoundsPage } from "@/features/sounds/sounds";
+import { AvatarsPage } from "@/features/avatars/avatars";
 
 const rootRoute = createRootRoute();
 
@@ -225,6 +226,13 @@ const soundsRoute = createRoute({
   component: SoundsPage,
 });
 
+// Not linked from the navigation: a place to try bot avatars and their gestures.
+const avatarsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/avatars",
+  component: AvatarsPage,
+});
+
 const integrationsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/integrations",
@@ -358,6 +366,7 @@ export const router = createRouter({
       tasksRoute,
       activityRoute,
       soundsRoute,
+      avatarsRoute,
       integrationsRoute,
       oauthRoute,
       settingsRoute.addChildren([

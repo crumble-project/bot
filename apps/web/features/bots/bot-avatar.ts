@@ -16,7 +16,46 @@ type Mouth = "smile" | "grin" | "cat" | "tiny";
 
 type Topper = "none" | "antenna" | "sprout" | "tuft";
 
-type Expression = "calm" | "delighted" | "focused" | "asleep";
+export type Expression =
+  | "calm"
+  | "delighted"
+  | "focused"
+  | "asleep"
+  | "happy"
+  | "dizzy"
+  | "surprised"
+  | "yawning"
+  | "shy"
+  | "curious"
+  | "skeptical"
+  | "worried"
+  | "wink";
+
+export const EXPRESSIONS: Expression[] = [
+  "calm",
+  "delighted",
+  "focused",
+  "asleep",
+  "happy",
+  "dizzy",
+  "surprised",
+  "yawning",
+  "shy",
+  "curious",
+  "skeptical",
+  "worried",
+  "wink",
+];
+
+/** How a bot takes attention, seeded like its look; it picks its idle fidgets and reactions. */
+export type Temperament = "curious" | "shy" | "playful" | "sleepy";
+
+export const TEMPERAMENTS: Temperament[] = [
+  "curious",
+  "shy",
+  "playful",
+  "sleepy",
+];
 
 export const SILHOUETTES: Silhouette[] = [
   "circle",
@@ -104,6 +143,9 @@ export class BotLook {
   readonly mouth: Mouth;
   readonly topper: Topper;
   readonly rgb: RGB;
+  readonly temperament: Temperament;
+  /** From 0 for a mellow bot to 1 for a bouncy one. */
+  readonly energy: number;
 
   constructor(seed: string, choice: AvatarChoice = {}) {
     let hash = 1469598103934665603n;
@@ -116,6 +158,9 @@ export class BotLook {
     this.hex = choice.color ?? PALETTE[Number(hash % 8n)]!;
     this.mouth = MOUTHS[Number((hash >> 16n) % 4n)]!;
     this.topper = TOPPERS[Number((hash >> 24n) % 4n)]!;
+
+    this.temperament = TEMPERAMENTS[Number((hash >> 40n) % 4n)]!;
+    this.energy = Number((hash >> 48n) % 1000n) / 999;
 
     const value = Number.parseInt(this.hex.slice(1), 16);
 
@@ -166,6 +211,9 @@ export type Pose = {
   mouthOpen: number;
   sway: number;
   glow: number;
+  blush: number;
+  /** Turns of a dizzy bot's spiral eyes, in radians. */
+  spin: number;
 };
 
 export const REST: Pose = {
@@ -179,6 +227,8 @@ export const REST: Pose = {
   mouthOpen: 0,
   sway: 0,
   glow: 0,
+  blush: 0,
+  spin: 0,
 };
 
 const SHUT_LID = 0.06;
@@ -307,6 +357,7 @@ function workingPose(time: number): Pose {
   const air = contact < ground ? 0 : (hop - ground) / (1 - 2 * ground);
 
   return {
+    ...REST,
     gazeX: turn * 0.0025,
     gazeY: -tilt * 0.0025,
     roll: Math.sin(time * rate(3, loop)) * 4.2,
@@ -405,6 +456,8 @@ export function blendPose(
     mouthOpen: mixed("mouthOpen"),
     sway: mixed("sway"),
     glow: mixed("glow"),
+    blush: mixed("blush"),
+    spin: mixed("spin"),
   };
 }
 
@@ -590,6 +643,13 @@ const BAYER = [
   [15, 7, 13, 5],
 ];
 
+/** How far an expression opens an open eye, as a fraction of the pose's lid. */
+function lidOf(expression: Expression, side: number) {
+  if (expression === "skeptical") return side === 1 ? 0.45 : 1;
+
+  return expression === "focused" ? 0.85 : expression === "shy" ? 0.75 : 1;
+}
+
 /** Paints a bot, lengths in fractions of `size`, from the top left like the native canvas. */
 export class BotPainter {
   readonly frame: Rect;
@@ -674,6 +734,13 @@ export class BotPainter {
     if (body) context.drawImage(body, 0, 0, this.size, this.size);
     else this.paintBody(context, expressions[0]?.[0] ?? "calm");
 
+    if (this.detailed && pose.blush > 0) {
+      context.save();
+      context.clip(this.body.path);
+      this.paintCheeks(context, 0.45 * pose.blush);
+      context.restore();
+    }
+
     for (const [expression, opacity] of expressions) {
       if (opacity <= 0) continue;
 
@@ -734,12 +801,58 @@ export class BotPainter {
     context.fill(path);
     context.save();
     context.clip(path);
+    this.paintVolume(context, bounds);
+    context.save();
+    context.globalAlpha *= 0.22;
     this.paintDither(context, bounds);
+    context.restore();
 
-    if (this.detailed) this.paintCheeks(context, expression);
+    if (this.detailed)
+      this.paintCheeks(context, expression === "delighted" ? 0.22 : 0.12);
 
     context.restore();
     this.paintRim(context);
+  }
+
+  private paintVolume(context: Context, bounds: Rect) {
+    const { x, y, width, height } = bounds;
+
+    const light = context.createRadialGradient(
+      x + width * 0.3,
+      y + height * 0.22,
+      width * 0.02,
+      x + width * 0.44,
+      y + height * 0.4,
+      width * 0.72,
+    );
+
+    light.addColorStop(0, this.look.tint(0.58));
+    light.addColorStop(0.3, this.look.tint(0.27));
+    light.addColorStop(0.62, this.look.tint(-0.02));
+    light.addColorStop(1, this.look.tint(-0.48));
+    context.fillStyle = light;
+    context.fill(this.body.path);
+
+    this.softOval(
+      context,
+      {
+        x: x + width * 0.12,
+        y: y + height * 0.04,
+        width: width * 0.5,
+        height: height * 0.22,
+      },
+      (alpha) => this.look.tint(0.85, alpha * 0.24),
+    );
+    this.softOval(
+      context,
+      {
+        x: x + width * 0.45,
+        y: y + height * 0.72,
+        width: width * 0.55,
+        height: height * 0.3,
+      },
+      (alpha) => this.look.tint(0.5, alpha * 0.2),
+    );
   }
 
   /** The outline of the body; a cloud strokes only the outer edge of its merged puffs. */
@@ -816,8 +929,7 @@ export class BotPainter {
     context.fill(shade);
   }
 
-  private paintCheeks(context: Context, expression: Expression) {
-    const glow = expression === "delighted" ? 0.22 : 0.12;
+  private paintCheeks(context: Context, glow: number) {
     const [x, y] = this.faceCenter;
 
     for (const side of [-1, 1]) {
@@ -841,11 +953,74 @@ export class BotPainter {
     for (const side of [-1, 1]) {
       const center = this.eyeCenter(side, pose);
 
-      if (expression === "asleep") this.paintClosedEye(context, center);
-      else this.paintEye(context, center, pose);
+      this.paintEyeOf(context, center, side, pose, expression);
+
+      if (this.detailed) this.paintBrow(context, center, side, expression);
     }
 
     this.paintMouth(context, pose, expression);
+  }
+
+  private paintEyeOf(
+    context: Context,
+    center: Point,
+    side: number,
+    pose: Pose,
+    expression: Expression,
+  ) {
+    if (expression === "asleep" || expression === "yawning")
+      return this.paintClosedEye(context, center);
+
+    if (expression === "happy" || (expression === "wink" && side === 1))
+      return this.paintHappyEye(context, center);
+
+    if (expression === "dizzy")
+      return this.paintSpiralEye(context, center, pose.spin * side);
+
+    if (expression === "surprised") return this.paintWideEye(context, center);
+
+    this.paintEye(context, center, {
+      ...pose,
+      lid: pose.lid * lidOf(expression, side),
+    });
+  }
+
+  private paintBrow(
+    context: Context,
+    [x, y]: Point,
+    side: number,
+    expression: Expression,
+  ) {
+    if (
+      !["curious", "skeptical", "worried", "surprised", "shy"].includes(
+        expression,
+      )
+    )
+      return;
+
+    const raised =
+      expression === "surprised" ||
+      (expression === "curious" && side === -1) ||
+      (expression === "skeptical" && side === -1);
+
+    const slope =
+      expression === "worried" || expression === "shy" ? side * 0.025 : 0;
+
+    const top = y - this.unit * (raised ? 0.15 : 0.115);
+    const half = this.unit * 0.044;
+
+    context.beginPath();
+    context.moveTo(x - half, top - this.unit * slope);
+    context.quadraticCurveTo(
+      x,
+      top - this.unit * 0.018,
+      x + half,
+      top + this.unit * slope,
+    );
+    context.strokeStyle = this.look.tint(-0.65, 0.8);
+    context.lineWidth = Math.max(0.7, this.unit * 0.018);
+    context.lineCap = "round";
+    context.stroke();
   }
 
   private paintEye(context: Context, [x, y]: Point, pose: Pose) {
@@ -903,6 +1078,71 @@ export class BotPainter {
     context.stroke();
   }
 
+  /** An upturned arc, the squint of a bot that is pleased. */
+  private paintHappyEye(context: Context, [x, y]: Point) {
+    const half = this.unit * 0.05;
+
+    context.beginPath();
+    context.moveTo(x - half, y + this.unit * 0.025);
+    context.quadraticCurveTo(
+      x,
+      y - this.unit * 0.05,
+      x + half,
+      y + this.unit * 0.025,
+    );
+    context.strokeStyle = this.look.ink;
+    context.lineWidth = this.unit * 0.034;
+    context.lineCap = "round";
+    context.stroke();
+  }
+
+  private paintSpiralEye(context: Context, [x, y]: Point, spin: number) {
+    const radius = this.unit * 0.055;
+    const turns = 2.25 * Math.PI * 2;
+
+    context.beginPath();
+
+    for (let step = 0; step <= 40; step++) {
+      const angle = (step / 40) * turns;
+      const reach = (radius * step) / 40;
+
+      const point: Point = [
+        x + reach * Math.cos(angle + spin),
+        y + reach * Math.sin(angle + spin),
+      ];
+
+      if (step === 0) context.moveTo(...point);
+      else context.lineTo(...point);
+    }
+
+    context.strokeStyle = this.look.ink;
+    context.lineWidth = Math.max(0.7, this.unit * 0.022);
+    context.lineCap = "round";
+    context.stroke();
+  }
+
+  private paintWideEye(context: Context, center: Point) {
+    const width = this.unit * 0.088;
+    const height = this.unit * 0.112;
+
+    context.fillStyle = this.look.ink;
+    this.oval(context, center, width, height);
+    context.fill();
+
+    if (!this.detailed) return;
+
+    const spark = width * 0.32;
+
+    context.fillStyle = "rgb(255 255 255 / 0.7)";
+    this.oval(
+      context,
+      [center[0] - width * 0.18, center[1] - height * 0.2],
+      spark,
+      spark,
+    );
+    context.fill();
+  }
+
   private oval(context: Context, [x, y]: Point, width: number, height: number) {
     context.beginPath();
     context.ellipse(x, y, width / 2, height / 2, 0, 0, Math.PI * 2);
@@ -914,75 +1154,123 @@ export class BotPainter {
   }
 
   private paintMouth(context: Context, pose: Pose, expression: Expression) {
-    const center = this.mouthCenter(pose);
-    const unit = this.unit;
-
     context.fillStyle = this.look.ink;
     context.strokeStyle = this.look.ink;
-    context.lineWidth = Math.max(0.8, unit * 0.026);
+    context.lineWidth = Math.max(0.8, this.unit * 0.026);
     context.lineCap = "round";
     context.lineJoin = "round";
+    this.mouths(context, this.mouthCenter(pose), pose)[expression]();
+  }
 
-    switch (expression) {
-      case "asleep":
-        this.oval(
-          context,
-          center,
-          unit * 0.034,
-          unit * (0.022 + 0.016 * pose.mouthOpen),
-        );
-        context.fill();
+  /** Each expression's mouth, sized in fractions of the face unit. */
+  private mouths(
+    context: Context,
+    center: Point,
+    pose: Pose,
+  ): Record<Expression, () => void> {
+    const unit = this.unit;
 
-        return;
-      case "focused":
-        this.oval(
-          context,
-          center,
-          unit * 0.046,
-          unit * (0.03 + 0.022 * pose.mouthOpen),
-        );
-        context.fill();
+    const dot = (width: number, height: number) => () => {
+      this.oval(context, center, unit * width, unit * height);
+      context.fill();
+    };
 
-        return;
-      case "delighted":
-        this.paintGrin(context, center, unit * 0.105, unit * 0.035);
+    const curve = (width: number, depth: number) => () => {
+      context.beginPath();
+      this.smile(context, center, unit * width, unit * depth);
+      context.stroke();
+    };
 
-        return;
-      case "calm":
-        break;
+    const grin = (width: number) => () =>
+      this.paintGrin(context, center, unit * width, unit * 0.035);
+
+    return {
+      asleep: dot(0.034, 0.022 + 0.016 * pose.mouthOpen),
+      focused: dot(0.046, 0.03 + 0.022 * pose.mouthOpen),
+      delighted: grin(0.105),
+      happy: grin(0.105),
+      wink: grin(0.095),
+      surprised: dot(0.05, 0.06),
+      curious: dot(0.035, 0.045),
+      yawning: () => this.paintYawn(context, center, pose.mouthOpen),
+      dizzy: () => this.paintWavyMouth(context, center),
+      worried: curve(0.075, -0.025),
+      shy: curve(0.05, 0.012),
+      skeptical: () => {
+        context.beginPath();
+        context.moveTo(center[0] - unit * 0.035, center[1] + unit * 0.008);
+        context.lineTo(center[0] + unit * 0.035, center[1] - unit * 0.008);
+        context.stroke();
+      },
+      calm: () => this.paintRestingMouth(context, center),
+    };
+  }
+
+  private paintWavyMouth(context: Context, [x, y]: Point) {
+    const unit = this.unit;
+
+    context.beginPath();
+    context.moveTo(x - unit * 0.06, y);
+
+    for (let step = 1; step <= 4; step++)
+      context.lineTo(
+        x - unit * 0.06 + step * unit * 0.03,
+        y + (step % 2 ? -1 : 1) * unit * 0.014,
+      );
+
+    context.stroke();
+  }
+
+  /** The seeded mouth a calm bot wears. */
+  private paintRestingMouth(context: Context, center: Point) {
+    const unit = this.unit;
+
+    if (this.look.mouth === "grin") {
+      this.paintGrin(context, center, unit * 0.09, unit * 0.025);
+
+      return;
     }
 
-    switch (this.look.mouth) {
-      case "smile":
-        context.beginPath();
-        this.smile(context, center, unit * 0.1, unit * 0.025);
-        context.stroke();
-        break;
-      case "tiny":
-        context.beginPath();
-        this.smile(context, center, unit * 0.06, unit * 0.015);
-        context.stroke();
-        break;
-      case "grin":
-        this.paintGrin(context, center, unit * 0.09, unit * 0.025);
-        break;
-      case "cat":
-        context.beginPath();
+    context.beginPath();
+
+    if (this.look.mouth === "cat")
+      for (const side of [-1, 1])
         this.smile(
           context,
-          [center[0] - unit * 0.026, center[1]],
+          [center[0] + side * unit * 0.026, center[1]],
           unit * 0.052,
           unit * 0.03,
         );
-        this.smile(
-          context,
-          [center[0] + unit * 0.026, center[1]],
-          unit * 0.052,
-          unit * 0.03,
-        );
-        context.stroke();
-        break;
-    }
+    else if (this.look.mouth === "tiny")
+      this.smile(context, center, unit * 0.06, unit * 0.015);
+    else this.smile(context, center, unit * 0.1, unit * 0.025);
+
+    context.stroke();
+  }
+
+  private paintYawn(context: Context, [x, y]: Point, open: number) {
+    const width = this.unit * (0.05 + 0.03 * open);
+    const height = this.unit * (0.03 + 0.085 * open);
+    const center: Point = [x, y + height * 0.25];
+
+    context.fillStyle = this.look.ink;
+    this.oval(context, center, width, height);
+    context.fill();
+
+    if (!this.detailed || open < 0.3) return;
+
+    context.save();
+    this.oval(context, center, width, height);
+    context.clip();
+    context.fillStyle = "rgb(255 115 140)";
+    this.oval(
+      context,
+      [x, center[1] + height * 0.35],
+      width * 0.6,
+      height * 0.4,
+    );
+    context.fill();
+    context.restore();
   }
 
   private paintGrin(
