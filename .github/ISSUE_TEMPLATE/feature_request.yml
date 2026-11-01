@@ -1,0 +1,45 @@
+name: Feature request
+description: Propose a capability or improvement for Crumble.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of Crumble does this touch?
+      options:
+        - Bots / Chats / Group chats
+        - Workspaces / Coding jobs / Bot desktop
+        - Model providers / Credentials / Logins
+        - Skills / Memories / Automations
+        - Message gateways / Event relay / MCP
+        - Web UI
+        - Server / Self-hosting / API
+        - Documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What are you trying to do with your bots or server that is currently hard or impossible?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should this work from the owner's or bot's perspective? Use terms from GLOSSARY.md where applicable.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or prior art
+      description: Workarounds you've tried, constraints to keep in mind, or how other tools handle this.
+    validations:
+      required: false
