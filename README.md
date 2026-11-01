@@ -115,7 +115,10 @@ bun run contract:validate      # Validate OpenAPI and JSON Schemas offline
 bun run contract:compatibility BASELINE_DIRECTORY # Compare against a baseline OpenAPI directory
 ```
 
-`bun install` points Git at the hooks in `.githooks/`: each commit generates and stages the OpenAPI artifacts from staged sources, then runs `bun run lint` and `bun run typecheck`, and each push runs `bun run check`, tests included. Skip them once with `--no-verify`.
+`bun install` points Git at the hooks in `.githooks/`. Both require the Bun version in `.bun-version`, which CI also uses. Skip them once with `--no-verify`.
+
+- Each commit generates and stages the OpenAPI artifacts from staged sources, then runs the agents check, lint, format check, typecheck, and `fallow audit` on the changes since the last commit.
+- Each push runs what CI runs on a pull request, against the pushed commit and a freshly fetched `origin/main`: `bun install --frozen-lockfile`, `bun run check`, contract validation, contract compatibility (needs oasdiff 1.35.0 on `PATH`), and `fallow audit`. It also checks and builds `apps/docs` and `apps/site` when the push changes them. The push is refused when the working tree has uncommitted or untracked files, or when the pushed branch isn't checked out, since the checks would test something other than what is pushed.
 
 ## Documentation
 

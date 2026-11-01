@@ -1,8 +1,11 @@
 #!/bin/sh
-# Lint and type-check the working tree before each commit. Skip once with `git commit --no-verify`.
-set -e
-"$(dirname "$0")/generate-contract.sh"
+# Lint, format-check, and type-check the working tree before each commit. Skip once with `git commit --no-verify`.
+set -eu
+hooks=$(dirname "$0")
+"$hooks/check-bun-version.sh"
+"$hooks/generate-contract.sh"
 bun run agents:check
 bun run lint
+bun run format:check
 bun run typecheck
 bunx fallow audit --base HEAD

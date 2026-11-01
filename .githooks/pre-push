@@ -1,4 +1,51 @@
 #!/bin/sh
-# Run the same checks as CI, tests included, before each push. Skip once with `git push --no-verify`.
-set -e
+# Run the checks CI runs on a pull request, against the commit being pushed and the current origin/main.
+# Skip once with `git push --no-verify`.
+set -eu
+hooks=$(cd "$(dirname "$0")" && pwd)
+cd "$(git rev-parse --show-toplevel)"
+
+zero=0000000000000000000000000000000000000000
+head=$(git rev-parse HEAD)
+pushes=0
+while read -r local_ref local_sha _remote_ref _remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  if [ "$local_sha" != "$head" ]; then
+    echo "pre-push: $local_ref is not checked out. Check it out and push again, so the checks run on what you push." >&2
+    exit 1
+  fi
+  pushes=1
+done
+[ "$pushes" = 1 ] || exit 0
+
+if [ -n "$(git status --porcelain)" ]; then
+  echo "pre-push: these files would be checked but not pushed. Commit, remove, or ignore them:" >&2
+  git status --short >&2
+  exit 1
+fi
+
+"$hooks/check-bun-version.sh"
+bun install --frozen-lockfile
+
+# CI compares against the pull request base, which is main's tip when the run starts.
+git fetch --quiet origin main || echo "pre-push: could not fetch origin/main; comparing against the local copy." >&2
+base=$(git rev-parse origin/main)
+
 bun run check
+
+baseline=$(mktemp -d "${TMPDIR:-/tmp}/crumble-baseline.XXXXXXXX")
+trap 'rm -rf "$baseline"' EXIT HUP INT TERM
+git archive "$base" openapi | tar -x -C "$baseline"
+bun run contract:validate
+oasdiff validate openapi/openapi.json --allow-external-refs=false
+bun run contract:compatibility "$baseline/openapi"
+
+bunx fallow audit --base "$base"
+
+changed=$(git diff --name-only "$base" HEAD)
+if printf '%s\n' "$changed" | grep -q '^apps/docs/'; then
+  (cd apps/docs && bun install --frozen-lockfile && bun --bun run check && bun --bun run build)
+fi
+if printf '%s\n' "$changed" | grep -q '^apps/site/'; then
+  (cd apps/site && bun install --frozen-lockfile && bun --bun run build)
+fi
