@@ -142,12 +142,13 @@ function download(bot: Sample, face: Expression | undefined, name: string) {
   canvas.toBlob((blob) => {
     if (!blob) return;
 
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
 
-    link.href = URL.createObjectURL(blob);
+    link.href = url;
     link.download = `${name}.png`;
     link.click();
-    URL.revokeObjectURL(link.href);
+    URL.revokeObjectURL(url);
   });
 }
 
