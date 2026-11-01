@@ -9,6 +9,20 @@ export default defineConfig({
   outdir: "styled-system",
   theme: {
     extend: {
+      keyframes: {
+        typing: {
+          "0%, 60%, 100%": { opacity: 0.25, transform: "none" },
+          "30%": { opacity: 1, transform: "translateY(-2px)" },
+        },
+        ring: {
+          "0%": { boxShadow: "0 0 0 0 currentColor" },
+          "100%": { boxShadow: "0 0 0 6px transparent" },
+        },
+        pop: {
+          from: { opacity: 0, transform: "scale(.96) translateY(4px)" },
+          to: { opacity: 1, transform: "none" },
+        },
+      },
       tokens: {
         fonts: {
           body: {
