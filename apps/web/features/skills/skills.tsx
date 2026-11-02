@@ -251,8 +251,8 @@ function SkillRow({
   children?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col transition-colors hover:bg-muted/50">
-      <div className="flex items-center gap-2 px-3 py-2">
+    <div className="group/row flex flex-col transition-colors hover:bg-muted/50 has-[input:checked]:bg-accent/70">
+      <div className="flex items-center gap-2.5 px-3 py-2">
         {selection}
         <button
           type="button"
@@ -371,6 +371,7 @@ function PersonalSections({
             .filter((skill) => matches(skill, needle))
             .map((skill) => skill.id)}
           label={`Select all ${bot.name} skills`}
+          place="section"
         />
       }
     >
@@ -447,6 +448,7 @@ function SkillSections({
             <SelectSkills
               ids={shared.map((skill) => skill.id)}
               label="Select all shared skills"
+              place="section"
             />
           }
           description="Turn a shared skill on for the bots that should have it."

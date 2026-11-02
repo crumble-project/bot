@@ -373,7 +373,7 @@ function ActivityBody({
           <h2 className="text-sm font-medium text-muted-foreground">
             {day.label}
           </h2>
-          <div className="flex flex-col divide-y overflow-hidden rounded-xl border bg-muted/30">
+          <div className="flex flex-col divide-y overflow-hidden rounded-xl surface">
             {day.items.map((activity) => (
               <ActivityRow
                 key={activity.id}

@@ -127,7 +127,7 @@ export function adminAPI(options: {
 
   app.openapi(routes.createInvite, async (c) => {
     const { id, token } = await invites.create(c.get("adminId"));
-    const url = new URL("/ui/connect", options.origin());
+    const url = new URL("/connect", options.origin());
 
     url.searchParams.set("invite", token);
 

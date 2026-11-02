@@ -10,12 +10,12 @@
     <meta
       name="theme-color"
       media="(prefers-color-scheme: light)"
-      content="#ffffff"
+      content="#f9fafb"
     />
     <meta
       name="theme-color"
       media="(prefers-color-scheme: dark)"
-      content="#0a0a0a"
+      content="#07080a"
     />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -24,6 +24,20 @@
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="stylesheet" href="./styles.css" />
+    <script>
+      // Applies the saved theme before first paint; lib/theme.ts owns it after.
+      try {
+        const theme = localStorage.getItem("crumble-theme");
+
+        const dark =
+          theme === "dark" ||
+          (theme !== "light" &&
+            matchMedia("(prefers-color-scheme: dark)").matches);
+
+        document.documentElement.classList.toggle("dark", dark);
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      } catch {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

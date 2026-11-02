@@ -37,11 +37,13 @@ const MODE_COPY = {
 } as const;
 
 /** The invite token of an invite link, which opens the page on sign-up. */
+// The server validates the token at sign-up, and it grants no role of its own.
+// react-doctor-disable-next-line url-prefilled-privileged-action
 const invite = new URLSearchParams(location.search).get("invite") ?? undefined;
 
 function enter() {
   clearUserData();
-  window.location.assign("/ui/");
+  window.location.assign("/");
 }
 
 /** Signs in with a passkey: from the button, or from the browser's autofill on the email field. */

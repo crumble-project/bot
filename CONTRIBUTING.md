@@ -94,7 +94,7 @@ Only [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) are 
 - **Types:** `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`, or `chore`.
 - **Scope:** optional; name the affected area when it helps, such as `web`, `skills`, or `gateway`.
 - **Description:** lowercase and imperative, preferably under 72 characters.
-- **Breaking changes:** add `!` after the type or scope and explain the break in the commit body.
+- **Breaking changes:** add `!` after the type or scope and explain the break in the commit body. A breaking API change also raises the major version of `info.version` in the contract, which is what lets the compatibility check pass.
 
 The `commit-msg` hook checks each commit, and the PR title workflow checks pull request titles. Both use [`.githooks/check-conventional-commit.sh`](.githooks/check-conventional-commit.sh).
 

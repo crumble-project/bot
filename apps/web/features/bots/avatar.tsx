@@ -340,16 +340,18 @@ function useSleepColor(
   useEffect(() => {
     if (!moving) return;
 
-    const scheme = matchMedia("(prefers-color-scheme: dark)");
-
-    const recolor = () => {
+    // lib/theme.ts toggles the root's dark class for both chosen and system schemes.
+    const observer = new MutationObserver(() => {
       if (avatar.current && canvas.current)
         avatar.current.zColor = getComputedStyle(canvas.current).color;
-    };
+    });
 
-    scheme.addEventListener("change", recolor);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
 
-    return () => scheme.removeEventListener("change", recolor);
+    return () => observer.disconnect();
   }, [moving, avatar, canvas]);
 }
 

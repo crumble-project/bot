@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Crumble API",
-    "version": "4.0.0",
+    "version": "5.0.0",
     "description": "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime."
   },
   "components": {
@@ -3416,7 +3416,6 @@
               "signed_in",
               "signed_out",
               "cli_missing",
-              "unsupported_version",
               "error"
             ]
           },
@@ -3425,12 +3424,6 @@
               "string",
               "null"
             ]
-          },
-          "qualifiedVersions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           },
           "signInCommand": {
             "type": [
@@ -3454,7 +3447,6 @@
         "required": [
           "status",
           "cliVersion",
-          "qualifiedVersions",
           "signInCommand",
           "signOutCommand",
           "message"
@@ -6666,7 +6658,7 @@
     "/v1/github-apps/manifest": {
       "post": {
         "operationId": "createGithubAppManifest",
-        "description": "Starts creating a private GitHub App. The client posts `manifest` as a form field to `url`; GitHub then sends the owner to `{origin}/ui/github-app/callback` with a code and state.",
+        "description": "Starts creating a private GitHub App. The client posts `manifest` as a form field to `url`; GitHub then sends the owner to `{origin}/github-app/callback` with a code and state.",
         "security": [
           {
             "BearerAuth": []
@@ -7313,7 +7305,7 @@
     "/v1/github-apps/{id}/sign-in": {
       "post": {
         "operationId": "signInGithubApp",
-        "description": "Starts signing the owner in to GitHub through the App, so its bots act as the owner. The client opens `url`; GitHub sends the owner to `{origin}/ui/github-app/authorized` with a code and state. 409 without a client secret.",
+        "description": "Starts signing the owner in to GitHub through the App, so its bots act as the owner. The client opens `url`; GitHub sends the owner to the App's callback URL, `{origin}/github-app/authorized`, or `{origin}/ui/github-app/authorized` for Apps created before the web UI moved to `/`, with a code and state. `origin` is no longer used. 409 without a client secret.",
         "security": [
           {
             "BearerAuth": []

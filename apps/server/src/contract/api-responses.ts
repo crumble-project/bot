@@ -865,17 +865,9 @@ export const loginMethod = z
 /** How a provider that signs in outside Crumble stands, such as Claude Code. */
 export const externalAuthResponse = z
   .object({
-    status: z.enum([
-      "signed_in",
-      "signed_out",
-      "cli_missing",
-      "unsupported_version",
-      "error",
-    ]),
+    status: z.enum(["signed_in", "signed_out", "cli_missing", "error"]),
     /** The installed command-line tool's version, when it reported one. */
     cliVersion: z.string().nullable(),
-    /** Versions Crumble is qualified with; any other is refused. */
-    qualifiedVersions: z.array(z.string()),
     /** The command the owner runs on the server to sign in. */
     signInCommand: z.string().nullable(),
     signOutCommand: z.string().nullable(),

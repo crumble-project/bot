@@ -1,15 +1,19 @@
 import {
+  type ChangeEvent,
   type ClipboardEvent,
   type DragEvent,
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
   useEffect,
+  useEffectEvent,
   useRef,
   useState,
 } from "react";
 import {
   IconArrowUp,
   IconPaperclip,
+  IconPlus,
   IconX,
   IconFileText,
   IconArrowBackUp,
@@ -17,7 +21,14 @@ import {
 } from "@tabler/icons-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
+import { readDraft, saveDraft } from "@/lib/drafts";
 import { cn } from "@/lib/utils";
 import type { Bot } from "@/lib/api";
 
@@ -306,13 +317,14 @@ export function UploadChips({
         <Badge
           key={uploadKeys.get(upload)}
           variant="outline"
-          className="h-8 gap-1.5 pr-0.5"
+          // 24px thumbnail and remove button, 4px in from a 32px pill: 16 - 4 = 12px corners.
+          className="h-8 gap-1.5 rounded-full bg-background p-1 pl-2.5 has-[img]:pl-1"
         >
           {upload.preview ? (
             <img
               src={upload.preview}
               alt=""
-              className="size-6 rounded object-cover"
+              className="size-6 rounded-full object-cover"
             />
           ) : (
             <IconFileText data-icon="inline-start" />
@@ -322,6 +334,7 @@ export function UploadChips({
             type="button"
             variant="ghost"
             size="icon-xs"
+            className="rounded-full"
             title={`Remove ${upload.name}`}
             onClick={() => onRemove(index)}
           >
@@ -386,17 +399,38 @@ function AttachControl({
           event.target.value = "";
         }}
       />
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="rounded-full"
-        title="Attach files"
-        disabled={disabled || full}
-        onClick={() => picker.current?.click()}
-      >
-        <IconPaperclip />
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="rounded-full text-muted-foreground hover:text-foreground data-popup-open:bg-muted data-popup-open:text-foreground"
+              title="Add"
+              disabled={disabled}
+            />
+          }
+        >
+          <IconPlus />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          side="top"
+          align="start"
+          sideOffset={8}
+          // 14px items, 6px in from the edge, under a 14 + 6 = 20px menu.
+          className="w-auto min-w-48 rounded-[20px] p-1.5"
+        >
+          <DropdownMenuItem
+            disabled={full}
+            className="gap-2.5 rounded-[14px] px-3 py-2 text-[0.9375rem]"
+            onClick={() => picker.current?.click()}
+          >
+            <IconPaperclip className="text-muted-foreground" />
+            {full ? `At most ${MAX_FILES} files` : "Attach files"}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </>
   );
 }
@@ -428,7 +462,7 @@ function SendControls({
         <Button
           type="submit"
           size="icon"
-          className="rounded-full bg-bot-strong hover:bg-bot-strong hover:brightness-110"
+          className="rounded-full bg-bot-strong shadow-sm transition-[background-color,box-shadow,scale] duration-150 hover:bg-bot-strong hover:brightness-110 active:scale-90 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100 disabled:shadow-none"
           title="Send"
           disabled={!canSend}
         >
@@ -462,7 +496,148 @@ function canSendDraft(
   );
 }
 
+function ComposerErrors({
+  uploads,
+  errors,
+}: {
+  uploads: number;
+  errors: string[];
+}) {
+  return (
+    <>
+      {uploads > MAX_FILES && (
+        <p className="text-xs text-destructive">
+          Attach at most {MAX_FILES} files. Remove {uploads - MAX_FILES} to
+          send.
+        </p>
+      )}
+      {errors.map((error) => (
+        <p key={error} className="text-xs text-destructive">
+          {error}
+        </p>
+      ))}
+    </>
+  );
+}
+
+/** Enter sends, unless the mention picker took the key; Shift+Enter adds a line. */
+const submitOnEnter =
+  (navigate: (event: KeyboardEvent) => boolean, submit: () => Promise<void>) =>
+  (event: KeyboardEvent) => {
+    if (navigate(event) || !isSubmitKey(event)) return;
+
+    event.preventDefault();
+    void submit();
+  };
+
+/** Whether the send went through; a rejected send recovers the same way as an unsuccessful one. */
+async function sendDraft(
+  onSend: (content: string, uploads: Upload[]) => Promise<boolean>,
+  content: string,
+  uploads: Upload[],
+) {
+  try {
+    return await onSend(content, uploads);
+  } catch {
+    return false;
+  }
+}
+
+function MessageField({
+  field,
+  expanded,
+  placeholder,
+  disabled,
+  value,
+  onChange,
+  onPaste,
+  onKeyDown,
+}: {
+  field: RefObject<HTMLTextAreaElement | null>;
+  expanded: boolean;
+  placeholder: string;
+  disabled: boolean | undefined;
+  value: string;
+  onChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
+  onPaste: (event: ClipboardEvent) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+}) {
+  return (
+    <Textarea
+      ref={field}
+      aria-label="Message"
+      placeholder={placeholder}
+      disabled={disabled}
+      className={cn(
+        "max-h-[40vh] resize-none border-0 bg-transparent text-base leading-6 shadow-none [grid-area:text] focus-visible:ring-0 disabled:bg-transparent md:text-[0.9375rem] dark:bg-transparent dark:disabled:bg-transparent",
+        expanded ? "min-h-11 px-3 pt-2 pb-1" : "min-h-8 px-1.5 py-1",
+      )}
+      value={value}
+      onChange={onChange}
+      onPaste={onPaste}
+      onKeyDown={onKeyDown}
+    />
+  );
+}
+
+/** A one-row field is 32px; taller content has wrapped onto a second line. */
+const ONE_ROW_PX = 36;
+
+/**
+ * One row, like ChatGPT's, until the text needs a second line: after Shift+Enter, or once it wraps.
+ * A wrapped draft stays two rows until it's cleared, since in two rows it has more room than one.
+ */
+function useExpanded(draft: string) {
+  const [wrapped, setWrapped] = useState(false);
+
+  if (wrapped && !draft) setWrapped(false);
+
+  const expanded = draft.includes("\n") || (wrapped && draft !== "");
+
+  // Measured while the field is still one row, before this change re-renders it.
+  const measure = (element: HTMLTextAreaElement | null) => {
+    if (element?.value && !expanded && element.scrollHeight > ONE_ROW_PX)
+      setWrapped(true);
+  };
+
+  return { expanded, measure };
+}
+
+/** Focuses the field with the caret after any restored draft, not before it. */
+function focusAtEnd(field: HTMLTextAreaElement | null) {
+  if (!field) return;
+
+  field.focus();
+  field.setSelectionRange(field.value.length, field.value.length);
+}
+
+/** The composer's text, saved per chat as it changes so leaving the page doesn't lose it. */
+function useDraft(chat: string) {
+  const [draft, setDraft] = useState(() => readDraft(chat));
+
+  useEffect(() => saveDraft(chat, draft), [chat, draft]);
+
+  return [draft, setDraft] as const;
+}
+
+/** The text field's draft, element, and layout; it starts focused with the caret after the draft. */
+function useMessageField(draftKey: string) {
+  const [draft, setDraft] = useDraft(draftKey);
+  const field = useRef<HTMLTextAreaElement>(null);
+  const { expanded, measure } = useExpanded(draft);
+
+  const restore = useEffectEvent(() => {
+    focusAtEnd(field.current);
+    measure(field.current);
+  });
+
+  useEffect(() => restore(), []);
+
+  return { draft, setDraft, field, expanded, measure };
+}
+
 export function Composer({
+  draftKey,
   placeholder,
   disabled,
   running,
@@ -473,6 +648,8 @@ export function Composer({
   onSend,
   onStop,
 }: {
+  /** Which chat's draft this is, such as `bot:<id>`; the draft outlives the composer. */
+  draftKey: string;
   placeholder: string;
   disabled?: boolean;
   running: boolean;
@@ -484,17 +661,15 @@ export function Composer({
   onSend: (content: string, uploads: Upload[]) => Promise<boolean>;
   onStop: () => void;
 }) {
-  const [draft, setDraft] = useState("");
+  const { draft, setDraft, field, expanded, measure } =
+    useMessageField(draftKey);
 
   const { uploads, setUploads, errors, setErrors, add, restore } =
     useAttachments();
 
   const [sending, setSending] = useState(false);
-  const field = useRef<HTMLTextAreaElement>(null);
   const mentions = useMentions(draft, setDraft, mentionable);
   const drop = useDropTarget(disabled, (files) => void add(files));
-
-  useEffect(() => field.current?.focus(), []);
 
   const canSend = canSendDraft(disabled, sending, draft, uploads);
 
@@ -509,13 +684,11 @@ export function Composer({
     setUploads(() => []);
     setErrors([]);
 
-    try {
-      if (await onSend(content, pending)) return;
-    } catch {
-      // Rejected sends need the same recovery as unsuccessful sends.
-    } finally {
-      setSending(false);
-    }
+    const sent = await sendDraft(onSend, content, pending);
+
+    setSending(false);
+
+    if (sent) return;
 
     setDraft((current) => [draft, current].filter(Boolean).join("\n"));
     restore(pending);
@@ -524,8 +697,8 @@ export function Composer({
   return (
     <form
       className={cn(
-        "mx-auto flex w-full max-w-3xl flex-col gap-2 p-4 pb-[max(--spacing(4),env(safe-area-inset-bottom))]",
-        drop.dragging && "rounded-xl outline-2 outline-dashed outline-ring",
+        "mx-auto flex w-full max-w-4xl flex-col gap-2 p-4 pb-[max(--spacing(4),env(safe-area-inset-bottom))]",
+        drop.dragging && "rounded-[41px] outline-2 outline-dashed outline-ring",
       )}
       onSubmit={(event) => {
         event.preventDefault();
@@ -536,60 +709,54 @@ export function Composer({
       onDrop={drop.onDrop}
     >
       <ReplyBanner replyingTo={replyingTo} onCancel={onCancelReply} />
-      <UploadChips
-        uploads={uploads}
-        onRemove={(index) =>
-          setUploads((current) => current.filter((_, other) => other !== index))
-        }
-      />
-      {uploads.length > MAX_FILES && (
-        <p className="text-xs text-destructive">
-          Attach at most {MAX_FILES} files. Remove {uploads.length - MAX_FILES}{" "}
-          to send.
-        </p>
-      )}
-      {errors.map((error) => (
-        <p key={error} className="text-xs text-destructive">
-          {error}
-        </p>
-      ))}
+      <ComposerErrors uploads={uploads.length} errors={errors} />
       <MentionSuggestions
         suggestions={mentions.suggestions}
         suggestion={mentions.suggestion}
         onPick={mentions.pick}
       />
       <div
-        className={cn(
-          "flex items-end gap-1 rounded-3xl border border-input bg-background p-1.5 shadow-xs transition-[border-color,box-shadow] duration-150 focus-within:border-bot focus-within:shadow-sm dark:bg-input/30",
-          disabled && "opacity-50",
-        )}
+        // Concentric corners: 16px controls and chips sit 8px padding + 1px border in, so 16 + 8 + 1 = 25px.
+        className="composer-card flex flex-col gap-1 rounded-[25px] p-2 has-disabled:opacity-50"
       >
-        <AttachControl
-          disabled={disabled}
-          full={uploads.length >= MAX_FILES}
-          onFiles={(files) => void add(files)}
+        <UploadChips
+          uploads={uploads}
+          onRemove={(index) =>
+            setUploads((current) =>
+              current.filter((_, other) => other !== index),
+            )
+          }
         />
-        <Textarea
-          ref={field}
-          aria-label="Message"
-          placeholder={placeholder}
-          disabled={disabled}
-          className="max-h-[40vh] min-h-8 resize-none self-center border-0 bg-transparent px-1.5 py-1.5 focus-visible:ring-0 disabled:bg-transparent dark:bg-transparent dark:disabled:bg-transparent"
-          value={draft}
-          onChange={(event) => {
-            setDraft(event.target.value);
-            mentions.reset();
-          }}
-          onPaste={(event) => pasteFiles(event, (files) => void add(files))}
-          onKeyDown={(event) => {
-            if (mentions.navigate(event) || !isSubmitKey(event)) return;
-
-            event.preventDefault();
-            void submit();
-          }}
-        />
-        {actions}
-        <SendControls running={running} canSend={canSend} onStop={onStop} />
+        <div
+          data-expanded={expanded || undefined}
+          className="grid grid-cols-[auto_1fr_auto] items-center gap-x-1 gap-y-1 [grid-template-areas:'attach_text_send'] data-expanded:[grid-template-areas:'text_text_text'_'attach_._send']"
+        >
+          <MessageField
+            field={field}
+            expanded={expanded}
+            placeholder={placeholder}
+            disabled={disabled}
+            value={draft}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              measure(event.target);
+              mentions.reset();
+            }}
+            onPaste={(event) => pasteFiles(event, (files) => void add(files))}
+            onKeyDown={submitOnEnter(mentions.navigate, submit)}
+          />
+          <div className="[grid-area:attach]">
+            <AttachControl
+              disabled={disabled}
+              full={uploads.length >= MAX_FILES}
+              onFiles={(files) => void add(files)}
+            />
+          </div>
+          <div className="flex items-center gap-1.5 [grid-area:send]">
+            {actions}
+            <SendControls running={running} canSend={canSend} onStop={onStop} />
+          </div>
+        </div>
       </div>
     </form>
   );

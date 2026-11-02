@@ -88,14 +88,10 @@ export function registerGitHubAppRoutes(options: {
   });
 
   register(routes.signInGithubApp, async (c) => {
-    const { origin } = githubAppSignInInput.parse(await c.req.json());
+    githubAppSignInInput.parse(await c.req.json());
 
     return c.json(
-      {
-        url: await github(
-          githubAppUsers.authorize(c.req.param("id"), new URL(origin).origin),
-        ),
-      },
+      { url: await github(githubAppUsers.authorize(c.req.param("id"))) },
       200,
     );
   });

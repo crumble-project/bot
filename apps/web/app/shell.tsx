@@ -7,13 +7,7 @@ import {
   useRouterState,
   Outlet,
 } from "@tanstack/react-router";
-import {
-  IconActivity,
-  IconBrain,
-  IconCalendarRepeat,
-  IconPlus,
-  IconSettings,
-} from "@tabler/icons-react";
+import { IconPlus, IconSearch, IconSettings } from "@tabler/icons-react";
 import {
   Sidebar,
   SidebarContent,
@@ -23,7 +17,6 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
-  SidebarInput,
   SidebarInset,
   SidebarMenu,
   SidebarMenuButton,
@@ -33,7 +26,15 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { CrumbleMark } from "@/components/crumble-mark";
 import { cn } from "@/lib/utils";
 import {
   type Bot,
@@ -43,6 +44,13 @@ import {
   clearUserData,
 } from "@/lib/api";
 import { authClient } from "@/lib/auth-client";
+import {
+  THEME_COLOR,
+  isDark,
+  setTheme,
+  useAccountTheme,
+  useTheme,
+} from "@/lib/theme";
 import {
   clearLiveStreams,
   followActivity,
@@ -57,12 +65,8 @@ import {
   botColor,
   botStyle,
 } from "@/features/bots/avatar";
-
-const WORKSPACE = [
-  { to: "/memory", label: "Memory", icon: IconBrain },
-  { to: "/automations", label: "Automations", icon: IconCalendarRepeat },
-  { to: "/activity", label: "Activity", icon: IconActivity },
-] as const;
+import { CommandPalette, PALETTE_SHORTCUT } from "./command-palette";
+import { THEME_OPTIONS, WORKSPACE } from "./navigation";
 
 function useResetOnUserChange(userId: string | undefined) {
   const previousUserId = useRef(userId);
@@ -75,7 +79,7 @@ function useResetOnUserChange(userId: string | undefined) {
       clearLiveStreams();
       clearUserData();
 
-      if (!userId) window.location.assign("/ui/connect");
+      if (!userId) window.location.assign("/connect");
     }
 
     previousUserId.current = userId;
@@ -125,7 +129,7 @@ function useDocumentTitle(
 }
 
 /** The sidebar's background, as `--sidebar` in styles.css, per color scheme. */
-const SIDEBAR_THEME_COLOR = { light: "#f3f4f5", dark: "#040405" };
+const SIDEBAR_THEME_COLOR = { light: "#e4e6ea", dark: "#030304" };
 
 /**
  * Tints the browser chrome, which in an installed iPhone app is the status
@@ -133,6 +137,7 @@ const SIDEBAR_THEME_COLOR = { light: "#f3f4f5", dark: "#040405" };
  */
 function SidebarThemeColor() {
   const { isMobile, openMobile } = useSidebar();
+  const theme = useTheme();
   const tinted = isMobile && openMobile;
 
   useEffect(() => {
@@ -142,89 +147,51 @@ function SidebarThemeColor() {
       ...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]'),
     ];
 
-    const previous = metas.map((meta) => meta.content);
-
     for (const meta of metas)
-      meta.content = meta.media.includes("dark")
+      meta.content = isDark()
         ? SIDEBAR_THEME_COLOR.dark
         : SIDEBAR_THEME_COLOR.light;
 
     return () => {
-      metas.forEach((meta, index) => {
-        meta.content = previous[index] ?? meta.content;
-      });
+      for (const meta of metas)
+        meta.content = isDark() ? THEME_COLOR.dark : THEME_COLOR.light;
     };
-  }, [tinted]);
+  }, [tinted, theme]);
 
   return null;
-}
-
-function matchesBot(bot: Bot, needle: string) {
-  return (
-    !needle ||
-    bot.name.toLowerCase().includes(needle) ||
-    bot.lastMessage?.toLowerCase().includes(needle)
-  );
 }
 
 export function Shell() {
   const session = authClient.useSession();
   const bots = useQuery(botsQuery);
   const groups = useQuery(groupsQuery);
-  const navigate = useNavigate();
-  const [search, setSearch] = useState("");
+  const [paletteOpen, setPaletteOpen] = useState(false);
   useResetOnUserChange(session.data?.user.id);
   useFollowActivity();
   useDocumentTitle(bots.data, groups.data);
-  const needle = search.trim().toLowerCase();
-
-  const shownBots = (bots.data ?? []).filter((bot) => matchesBot(bot, needle));
-
-  const shownGroups = (groups.data ?? []).filter(
-    (group) => !needle || group.name.toLowerCase().includes(needle),
-  );
+  useAccountTheme();
 
   return (
     <TooltipProvider>
       <SidebarProvider>
         <Sidebar variant="inset">
           <SidebarHeader>
-            <span className="px-2 pt-1 pb-2 font-heading text-lg font-semibold tracking-tight">
+            <span className="flex items-center gap-2 px-2 pt-1 pb-2 font-heading text-lg font-semibold tracking-tight">
+              <CrumbleMark className="size-5" />
               Crumble
             </span>
-            <SidebarSearch
-              value={search}
-              onChange={setSearch}
-              onOpenFirst={() => {
-                const [bot] = shownBots;
-                const [group] = shownGroups;
-
-                if (bot)
-                  void navigate({
-                    to: "/bots/$botId",
-                    params: { botId: bot.id },
-                  });
-                else if (group)
-                  void navigate({
-                    to: "/groups/$groupId",
-                    params: { groupId: group.id },
-                  });
-              }}
-            />
+            <SearchButton onOpen={() => setPaletteOpen(true)} />
           </SidebarHeader>
           <SidebarContent>
-            <BotsSection bots={bots} shownBots={shownBots} needle={needle} />
-            <GroupsSection
-              bots={bots.data}
-              groups={groups.data}
-              shownGroups={shownGroups}
-            />
+            <BotsSection bots={bots} />
+            <GroupsSection bots={bots.data} groups={groups.data} />
             <WorkspaceSection />
           </SidebarContent>
           <SettingsFooter />
         </Sidebar>
         <SidebarThemeColor />
-        <SidebarInset className="group/inset h-dvh min-w-0 overflow-hidden pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:peer-data-[state=expanded]:pl-0 md:h-[calc(100dvh-1rem)] md:ring-1 md:ring-sidebar-border">
+        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+        <SidebarInset className="group/inset h-dvh min-w-0 overflow-hidden pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:peer-data-[state=expanded]:pl-0 md:h-[calc(100dvh-1rem)] md:shadow-sm md:ring-1 md:ring-sidebar-border dark:md:shadow-none">
           <header className="flex h-12 shrink-0 items-center px-2 group-has-[[data-page-trigger]]/inset:hidden md:hidden">
             <SidebarTrigger className="size-9" />
           </header>
@@ -235,15 +202,7 @@ export function Shell() {
   );
 }
 
-function BotsSection({
-  bots,
-  shownBots,
-  needle,
-}: {
-  bots: UseQueryResult<Bot[]>;
-  shownBots: Bot[];
-  needle: string;
-}) {
+function BotsSection({ bots }: { bots: UseQueryResult<Bot[]> }) {
   const matchRoute = useMatchRoute();
 
   return (
@@ -261,7 +220,7 @@ function BotsSection({
                 <SidebarMenuSkeleton showIcon />
               </SidebarMenuItem>
             ))}
-          {shownBots.map((bot) => (
+          {bots.data?.map((bot) => (
             <BotRow
               key={bot.id}
               bot={bot}
@@ -274,10 +233,8 @@ function BotsSection({
               )}
             />
           ))}
-          {bots.data && shownBots.length === 0 && (
-            <p className="px-2 text-xs text-muted-foreground">
-              {needle ? "No results" : "No bots yet"}
-            </p>
+          {bots.data?.length === 0 && (
+            <p className="px-2 text-xs text-muted-foreground">No bots yet</p>
           )}
         </SidebarMenu>
         {bots.isError && (
@@ -291,11 +248,9 @@ function BotsSection({
 function GroupsSection({
   bots,
   groups,
-  shownGroups,
 }: {
   bots: Bot[] | undefined;
   groups: GroupChat[] | undefined;
-  shownGroups: GroupChat[];
 }) {
   const byId = new Map(bots?.map((bot) => [bot.id, bot]));
   const canGroup = (bots?.length ?? 0) >= 2;
@@ -314,7 +269,7 @@ function GroupsSection({
       )}
       <SidebarGroupContent>
         <SidebarMenu>
-          {shownGroups.map((group) => (
+          {groups?.map((group) => (
             <GroupRow
               key={group.id}
               group={group}
@@ -401,6 +356,7 @@ function SettingsFooter() {
   return (
     <SidebarFooter>
       <SidebarMenu>
+        <ThemeMenu />
         <SidebarMenuItem>
           <SidebarMenuButton
             isActive={Boolean(matchRoute({ to: "/settings", fuzzy: true }))}
@@ -416,66 +372,61 @@ function SettingsFooter() {
   );
 }
 
-const SEARCH_SHORTCUT = /Mac|iPhone|iPad/.test(navigator.userAgent)
-  ? "⌘K"
-  : "Ctrl K";
+function ThemeMenu() {
+  const theme = useTheme();
 
-function SidebarSearch({
-  value,
-  onChange,
-  onOpenFirst,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  onOpenFirst: () => void;
-}) {
-  const input = useRef<HTMLInputElement>(null);
-  const { isMobile, setOpen, setOpenMobile } = useSidebar();
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "k" || !(event.metaKey || event.ctrlKey)) return;
-
-      event.preventDefault();
-
-      if (isMobile) setOpenMobile(true);
-      else setOpen(true);
-      // The sidebar may still be sliding in; focus once it is laid out.
-      requestAnimationFrame(() => input.current?.select());
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isMobile, setOpen, setOpenMobile]);
+  const current =
+    THEME_OPTIONS.find(({ value }) => value === theme) ?? THEME_OPTIONS[0];
 
   return (
-    <div className="relative">
-      <SidebarInput
-        ref={input}
-        placeholder="Search"
-        aria-label="Search bots and group chats"
-        aria-keyshortcuts="Meta+K"
-        className="pr-10"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            onChange("");
-            event.currentTarget.blur();
-          } else if (event.key === "Enter" && value.trim()) {
-            onOpenFirst();
-            onChange("");
-            event.currentTarget.blur();
-          }
-        }}
-      />
-      {!value && (
-        <kbd className="pointer-events-none absolute top-1/2 right-2 hidden -translate-y-1/2 rounded border bg-muted px-1 font-sans text-[10px] text-muted-foreground md:inline">
-          {SEARCH_SHORTCUT}
-        </kbd>
-      )}
-    </div>
+    <SidebarMenuItem>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<SidebarMenuButton />}>
+          <current.icon />
+          Theme
+          <span className="ml-auto text-xs text-muted-foreground">
+            {current.label}
+          </span>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="top" align="start" className="min-w-40">
+          <DropdownMenuRadioGroup
+            value={theme}
+            onValueChange={(value) => {
+              const option = THEME_OPTIONS.find((item) => item.value === value);
+
+              if (option) void setTheme(option.value);
+            }}
+          >
+            {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
+              <DropdownMenuRadioItem key={value} value={value} closeOnClick>
+                <Icon />
+                {label}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </SidebarMenuItem>
+  );
+}
+
+function SearchButton({ onOpen }: { onOpen: () => void }) {
+  return (
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          aria-keyshortcuts="Meta+K"
+          className="text-muted-foreground"
+          onClick={onOpen}
+        >
+          <IconSearch />
+          Search
+          <kbd className="pointer-events-none ml-auto hidden rounded border bg-muted px-1 font-sans text-[10px] md:inline">
+            {PALETTE_SHORTCUT}
+          </kbd>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </SidebarMenu>
   );
 }
 

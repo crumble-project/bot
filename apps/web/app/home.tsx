@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { IconRobot, IconPlus } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { CrumbleMark } from "@/components/crumble-mark";
+import { cn } from "@/lib/utils";
 import {
   Empty,
   EmptyContent,
@@ -24,26 +26,46 @@ function greeting(hour: number) {
   return "Good evening";
 }
 
+const TODAY = new Intl.DateTimeFormat(undefined, {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+});
+
+const STAGGER_MS = 40;
+
+const ENTER =
+  "animate-in fill-mode-both fade-in slide-in-from-bottom-2 duration-300 ease-out";
+
 export function Home() {
   const bots = useQuery(botsQuery);
 
   if (bots.data?.length)
     return (
       <div className="m-auto flex w-full max-w-4xl flex-col items-center gap-10 px-6 py-12">
-        <h1 className="font-heading text-3xl font-semibold tracking-tight">
-          {greeting(new Date().getHours())}
-        </h1>
-        <ul className="flex flex-wrap justify-center gap-2">
-          {bots.data.map((bot) => (
-            <HouseholdBot key={bot.id} bot={bot} />
+        <div className="flex animate-in flex-col items-center gap-2 text-center duration-300 ease-out fade-in slide-in-from-bottom-1">
+          <CrumbleMark className="mb-2 size-9" />
+          <h1 className="font-heading text-4xl font-semibold tracking-tight">
+            {greeting(new Date().getHours())}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {TODAY.format(new Date())}
+          </p>
+        </div>
+        <ul className="flex flex-wrap justify-center gap-3">
+          {bots.data.map((bot, index) => (
+            <HouseholdBot key={bot.id} bot={bot} index={index} />
           ))}
-          <li>
+          <li
+            className={cn(ENTER, "w-40")}
+            style={{ animationDelay: `${bots.data.length * STAGGER_MS}ms` }}
+          >
             <Link
               to="/bots/new"
-              className="flex h-full w-36 flex-col items-center justify-center gap-3 rounded-3xl p-4 text-sm text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
+              className="flex h-full flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed p-5 text-sm text-muted-foreground transition-colors duration-150 hover:border-foreground/30 hover:bg-muted hover:text-foreground"
             >
-              <span className="flex size-[88px] items-center justify-center rounded-full border-2 border-dashed">
-                <IconPlus className="size-6" />
+              <span className="flex size-12 items-center justify-center rounded-full bg-muted">
+                <IconPlus className="size-5" />
               </span>
               New bot
             </Link>
@@ -79,27 +101,44 @@ export function Home() {
   );
 }
 
-function HouseholdBot({ bot }: { bot: Bot }) {
+function HouseholdBot({ bot, index }: { bot: Bot; index: number }) {
   const working = useWorking(bot.id);
 
   return (
-    <li style={botStyle(botColor(bot))}>
+    <li
+      className={cn(ENTER, "w-40")}
+      style={{
+        ...botStyle(botColor(bot)),
+        animationDelay: `${index * STAGGER_MS}ms`,
+      }}
+    >
       <Link
         to="/bots/$botId"
         params={{ botId: bot.id }}
-        className="flex w-36 flex-col items-center gap-3 rounded-3xl p-4 text-center transition-colors duration-150 hover:bg-bot-soft focus-visible:bg-bot-soft focus-visible:outline-none"
+        className="group/bot relative flex h-full flex-col items-center gap-3 overflow-hidden rounded-3xl bg-card p-5 pt-6 text-center shadow-xs ring-1 ring-border transition-[translate,box-shadow] duration-200 ease-out hover:-translate-y-1 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none dark:shadow-none dark:hover:ring-foreground/20"
       >
-        <LiveBotAvatar bot={bot} size={88} />
-        <span className="flex w-full flex-col gap-0.5">
+        <span
+          aria-hidden="true"
+          className="absolute inset-x-0 top-0 h-16 bg-bot-soft transition-[height] duration-200 ease-out group-hover/bot:h-20"
+        />
+        <span className="relative">
+          <LiveBotAvatar bot={bot} size={80} />
+        </span>
+        <span className="relative flex w-full flex-col gap-0.5">
           <span className="truncate font-heading font-semibold">
             {bot.name}
           </span>
-          <span className="truncate text-xs text-muted-foreground">
-            {working
-              ? "Working…"
-              : !bot.enabled
-                ? "Paused"
-                : bot.description || "Ready"}
+          <span className="flex items-center justify-center gap-1.5 truncate text-xs text-muted-foreground">
+            {working && (
+              <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-bot-strong" />
+            )}
+            <span className="truncate">
+              {working
+                ? "Working…"
+                : !bot.enabled
+                  ? "Paused"
+                  : bot.description || "Ready"}
+            </span>
           </span>
         </span>
       </Link>

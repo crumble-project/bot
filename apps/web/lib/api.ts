@@ -60,6 +60,7 @@ import type {
   skillCheckResponse,
   skillListingResponse,
 } from "@crumble/server/contract/skill-install";
+import { clearDrafts } from "@/lib/drafts";
 
 export type GatewayConfig = z.infer<typeof gatewayConfigInput>;
 
@@ -184,6 +185,7 @@ export const queryClient = new QueryClient({
 export function clearUserData() {
   void queryClient.cancelQueries();
   queryClient.clear();
+  clearDrafts();
 }
 
 export class HttpError extends Error {
@@ -222,7 +224,7 @@ async function request(path: string, init: RequestInit = {}) {
     clearUserData();
 
     if (!location.pathname.endsWith("/connect"))
-      window.location.assign("/ui/connect");
+      window.location.assign("/connect");
   }
 
   if (!response.ok)

@@ -61,16 +61,16 @@ total.
 
 Claude Code lets your bots use a Claude Pro or Max subscription. It runs the
 official `claude` command-line tool on the server, so you sign in from the
-server's terminal, not from the browser. Crumble is tested against `claude`
-version `2.1.309`.
+server's terminal, not from the browser. Any version of `claude` works.
 
 1. Find **Claude Code** in the provider list.
-2. Copy the sign-in command it shows and run it on the server.
+2. Open its menu (**⋯**), select **Copy sign-in command**, and run the command
+   on the server.
 3. Refresh the provider list.
 
 If the status still says you're signed out, wait a moment: it can take up to
-30 seconds to update. To sign out, run the sign-out command shown in the same
-place.
+30 seconds to update. To sign out, select **Copy sign-out command** in the same
+menu and run that command on the server.
 
 Each account gets its own Claude Code sign-in, so two accounts on one server
 never share a subscription.
@@ -81,7 +81,7 @@ The container doesn't ship with `claude`. Install it onto the persistent volume
 once:
 
 ```bash
-docker compose exec crumble sh -c 'mkdir -p /var/lib/crumble/claude-code && cd /var/lib/crumble/claude-code && echo "{\"trustedDependencies\":[\"@anthropic-ai/claude-code\"]}" > package.json && bun add @anthropic-ai/claude-code@2.1.309'
+docker compose exec crumble sh -c 'mkdir -p /var/lib/crumble/claude-code && cd /var/lib/crumble/claude-code && echo "{\"trustedDependencies\":[\"@anthropic-ai/claude-code\"]}" > package.json && bun add @anthropic-ai/claude-code'
 ```
 
 Then run the sign-in command inside the container:

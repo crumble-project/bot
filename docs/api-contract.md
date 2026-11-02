@@ -1,6 +1,6 @@
 # API contract maintenance
 
-`bot` generates the HTTP and server-sent event (SSE) specifications from its Zod route and response schemas. Each Git commit identifies its generated artifacts. The OpenAPI `info.version` remains a required document field; it is not a release identifier and does not need a bump for each change.
+`bot` generates the HTTP and server-sent event (SSE) specifications from its Zod route and response schemas. Each Git commit identifies its generated artifacts. The OpenAPI `info.version` remains a required document field; it is not a release identifier and does not need a bump for each change, only a higher major version for a breaking change.
 
 ## Exported artifacts
 
@@ -26,7 +26,7 @@ bun run contract:validate
 2. Stage the source changes and commit them. The pre-commit hook generates and stages the artifacts from the staged source.
 3. Push. The pre-push hook runs `bun run check` and `bun run contract:validate`, then compares against `origin/main`'s `openapi` directory.
 
-To compare by hand, run `bun run contract:compatibility BASELINE_DIRECTORY`, replacing `BASELINE_DIRECTORY` with the path to the base commit's `openapi` directory. It needs oasdiff 1.35.0. Pull request CI checks out the exact base commit and runs this comparison automatically. It rejects breaking HTTP and event schema changes and saves the reports as a workflow artifact. Coordinate intentional breaking changes before merging them. A comparison with the base commit does not establish compatibility with every older deployed server or client.
+To compare by hand, run `bun run contract:compatibility BASELINE_DIRECTORY`, replacing `BASELINE_DIRECTORY` with the path to the base commit's `openapi` directory. It needs oasdiff 1.35.0. Pull request CI checks out the exact base commit and runs this comparison automatically. It rejects breaking HTTP and event schema changes unless `info.version` has a higher major version than the base, and saves the reports as a workflow artifact. Bump the major version for an intentional break, and coordinate it before merging. A comparison with the base commit does not establish compatibility with every older deployed server or client.
 
 The hook preserves unstaged edits to generated files. If you skip the hook, run `bun run openapi:generate` and stage the artifacts yourself.
 

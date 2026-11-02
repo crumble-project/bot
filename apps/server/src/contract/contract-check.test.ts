@@ -126,3 +126,14 @@ if [ "$1" = "--version" ]; then echo "oasdiff version 1.35.0"; elif [ "$1" = "br
     process.env["OASDIFF"] = join(tools, "oasdiff");
   }
 });
+
+test("accepts breaking changes under a major version increase", async () => {
+  const base = await contract("1.4.0", [
+    "chat-snapshot.schema.json",
+    "heartbeat.schema.json",
+  ]);
+
+  const current = await contract("2.0.0", ["chat-snapshot.schema.json"]);
+
+  await compareContracts(base, current, reports());
+});

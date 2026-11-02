@@ -84,7 +84,7 @@ export function clientDocument(publicUrl: URL): ClientDocument {
 
   return {
     url: `${base}${CLIENT_DOCUMENT_PATH}`,
-    redirectUris: [`${base}/ui/oauth/callback`, ...NATIVE_REDIRECTS],
+    redirectUris: [`${base}/oauth/callback`, ...NATIVE_REDIRECTS],
   };
 }
 
@@ -280,15 +280,36 @@ function restartIfChanged(
 }
 
 /**
+ * The callback to send: the one asked for, or the `/ui/oauth/callback` an owner's app was signed in with
+ * before the web app left `/ui`. Owners registered that URL with their provider, and `/ui` still redirects.
+ */
+function registeredRedirect(
+  storage: SecretStorage,
+  server: MCPServer,
+  requested: string,
+) {
+  const saved = read(storage, server.id);
+  const legacy = requested.replace(/\/oauth\/callback$/, "/ui/oauth/callback");
+
+  return server.oauthClientId &&
+    saved?.clientId === server.oauthClientId &&
+    saved.redirectUrl === legacy
+    ? legacy
+    : requested;
+}
+
+/**
  * Discovers the server's authorization server, registers Crumble for `redirectUrl`, and returns the
  * URL the owner signs in at, or `authorized` when the saved tokens still work.
  */
 export async function startAuthorization(
   storage: SecretStorage,
   server: MCPServer,
-  redirectUrl: string,
+  requested: string,
   document?: ClientDocument,
 ): Promise<{ authorizationUrl: string } | { authorized: true }> {
+  const redirectUrl = registeredRedirect(storage, server, requested);
+
   restartIfChanged(storage, server, redirectUrl);
   let authorizationUrl: URL | undefined;
 

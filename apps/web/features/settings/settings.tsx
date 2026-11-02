@@ -8,6 +8,8 @@ import { Link, Outlet, useMatchRoute } from "@tanstack/react-router";
 import {
   IconAdjustmentsHorizontal,
   IconBell,
+  IconCheck,
+  IconCopy,
   IconVolume,
   IconFingerprint,
   IconKey,
@@ -81,7 +83,7 @@ import {
   WorkspacePage,
 } from "@/components/workspace";
 
-const SECTIONS = [
+export const SETTINGS_SECTIONS = [
   {
     to: "/settings/general",
     label: "General",
@@ -125,7 +127,7 @@ export function SettingsLayout() {
         <h2 className="hidden px-2 pt-1 pb-2 font-heading font-semibold md:block">
           Settings
         </h2>
-        {SECTIONS.flatMap((section) =>
+        {SETTINGS_SECTIONS.flatMap((section) =>
           admin || !("admin" in section)
             ? [
                 <Button
@@ -453,7 +455,7 @@ function Account() {
     onSettled: () => {
       clearLiveStreams();
       clearUserData();
-      window.location.assign("/ui/connect");
+      window.location.assign("/connect");
     },
   });
 
@@ -517,7 +519,6 @@ const EXTERNAL_STATUS = {
   signed_in: "Signed in",
   signed_out: "Not signed in",
   cli_missing: "Not installed",
-  unsupported_version: "Unsupported version",
   error: "Unavailable",
 } as const;
 
@@ -682,11 +683,15 @@ function ProviderRow({
         }
         description={oauth?.label}
       >
-        <ProviderActions
-          provider={provider}
-          credential={credential}
-          onSignIn={onSignIn}
-        />
+        {provider.externalAuth ? (
+          <ExternalActions external={provider.externalAuth} />
+        ) : (
+          <ProviderActions
+            provider={provider}
+            credential={credential}
+            onSignIn={onSignIn}
+          />
+        )}
       </SettingRow>
       {credential.editing && (
         <ProviderKeySheet provider={provider} credential={credential} />
@@ -696,7 +701,16 @@ function ProviderRow({
   );
 }
 
-/** A failed save outside the key sheet, and how to sign in outside Crumble. */
+/** Why a provider that signs in outside Crumble can't run; signed in or out already shows in its status. */
+function externalProblem(provider: Provider) {
+  const status = provider.externalAuth?.status;
+
+  return status === "cli_missing" || status === "error"
+    ? provider.externalAuth?.message
+    : undefined;
+}
+
+/** A failed save outside the key sheet, and why a provider that signs in outside Crumble can't run. */
 function ProviderNotes({
   provider,
   credential,
@@ -706,14 +720,14 @@ function ProviderNotes({
 }) {
   const failed = credential.save.isError && !credential.editing;
 
-  if (!failed && !provider.externalAuth) return null;
+  const problem = externalProblem(provider);
+
+  if (!failed && !problem) return null;
 
   return (
     <div className="flex flex-col gap-2 px-3 pb-3 pl-14">
       {failed && <FieldError>{credential.save.error?.message}</FieldError>}
-      {provider.externalAuth && (
-        <ExternalSignIn external={provider.externalAuth} />
-      )}
+      {problem && <p className="text-sm text-muted-foreground">{problem}</p>}
     </div>
   );
 }
@@ -751,8 +765,8 @@ function ProviderKeySheet({
   );
 }
 
-/** A provider that signs in outside Crumble: why it is not ready, and the command to run on the server. */
-function ExternalSignIn({
+/** A provider that signs in outside Crumble: its menu copies the command to run on the server. */
+function ExternalActions({
   external,
 }: {
   external: NonNullable<Provider["externalAuth"]>;
@@ -760,31 +774,39 @@ function ExternalSignIn({
   const signedIn = external.status === "signed_in";
   const command = signedIn ? external.signOutCommand : external.signInCommand;
 
+  if (!command || external.status === "cli_missing") return null;
+
   return (
-    <div className="flex flex-col gap-2 text-sm text-muted-foreground">
-      {external.message && <p>{external.message}</p>}
-      {external.status === "unsupported_version" && (
-        <p>
-          Installed {external.cliVersion ?? "unknown"}; supported{" "}
-          {external.qualifiedVersions.join(", ")}.
-        </p>
-      )}
-      {command && external.status !== "cli_missing" && (
-        <div className="flex flex-col gap-1">
-          <span>
-            {signedIn
-              ? "To sign out, run on the server:"
-              : "To sign in, run on the server:"}
-          </span>
-          <div className="flex items-center gap-1 rounded-lg border bg-background py-1 pr-1 pl-3">
-            <code className="flex-1 font-mono text-xs break-all text-foreground">
-              {command}
-            </code>
-            <CopyButton text={command} />
-          </div>
-        </div>
-      )}
-    </div>
+    <RowMenu>
+      <CopyCommandItem
+        command={command}
+        label={signedIn ? "Copy sign-out command" : "Copy sign-in command"}
+      />
+    </RowMenu>
+  );
+}
+
+/** Stays open after a click so it can say the command was copied. */
+function CopyCommandItem({
+  command,
+  label,
+}: {
+  command: string;
+  label: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <DropdownMenuItem
+      closeOnClick={false}
+      title={command}
+      onClick={() =>
+        void navigator.clipboard.writeText(command).then(() => setCopied(true))
+      }
+    >
+      {copied ? <IconCheck /> : <IconCopy />}
+      {copied ? "Copied" : label}
+    </DropdownMenuItem>
   );
 }
 

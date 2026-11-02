@@ -5,7 +5,11 @@ import { Composer } from "./composer";
 
 async function withComposer(
   onSend: () => Promise<boolean>,
-  run: (container: HTMLElement, window: Window) => Promise<void>,
+  run: (
+    container: HTMLElement,
+    window: Window,
+    remount: () => Promise<void>,
+  ) => Promise<void>,
 ) {
   const window = new Window();
   const globals = Object.getOwnPropertyDescriptors(globalThis);
@@ -13,17 +17,21 @@ async function withComposer(
     window: { configurable: true, value: window },
     document: { configurable: true, value: window.document },
     HTMLElement: { configurable: true, value: window.HTMLElement },
+    // The + menu's positioning checks for elements with the global constructor.
+    Element: { configurable: true, value: window.Element },
     Event: { configurable: true, value: window.Event },
+    localStorage: { configurable: true, value: window.localStorage },
     IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true },
   });
   const { createRoot } = await import("react-dom/client");
   const container = document.createElement("div");
-  const root = createRoot(container);
+  let root = createRoot(container);
 
-  try {
-    await act(async () =>
+  const mount = () =>
+    act(async () =>
       root.render(
         <Composer
+          draftKey="bot:test"
           placeholder="Message"
           running={false}
           onSend={onSend}
@@ -31,7 +39,17 @@ async function withComposer(
         />,
       ),
     );
-    await run(container, window);
+
+  // Leaving the chat unmounts its composer; coming back mounts a new one.
+  const remount = async () => {
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await mount();
+  };
+
+  try {
+    await mount();
+    await run(container, window, remount);
   } finally {
     await act(async () => root.unmount());
 
@@ -39,7 +57,9 @@ async function withComposer(
       "window",
       "document",
       "HTMLElement",
+      "Element",
       "Event",
+      "localStorage",
       "IS_REACT_ACT_ENVIRONMENT",
     ]) {
       if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
@@ -216,6 +236,53 @@ test("concurrent attachment additions retain both files", async () => {
       await act(async () => finish(new TextEncoder().encode("one").buffer));
       expect(container.textContent).toContain("one.txt");
       expect(container.textContent).toContain("two.txt");
+    },
+  );
+});
+
+test("a draft survives leaving the chat and is cleared once sent", async () => {
+  await withComposer(
+    async () => true,
+    async (container, window, remount) => {
+      await act(async () => typeMessage(container, window, "half a thought"));
+      await remount();
+
+      expect(container.querySelector("textarea")!.value).toBe("half a thought");
+
+      await act(async () =>
+        container.querySelector("form")!.dispatchEvent(event("submit")),
+      );
+      await remount();
+
+      expect(container.querySelector("textarea")!.value).toBe("");
+    },
+  );
+});
+
+test("typing keeps working when the draft can't be saved", async () => {
+  await withComposer(
+    async () => true,
+    async (container, window) => {
+      const storage = window.Storage.prototype;
+      const setItem = Object.getOwnPropertyDescriptor(storage, "setItem")!;
+
+      Object.defineProperty(storage, "setItem", {
+        configurable: true,
+        value: () => {
+          throw new window.DOMException(
+            "Storage is full",
+            "QuotaExceededError",
+          );
+        },
+      });
+
+      try {
+        await act(async () => typeMessage(container, window, "still here"));
+      } finally {
+        Object.defineProperty(storage, "setItem", setItem);
+      }
+
+      expect(container.querySelector("textarea")!.value).toBe("still here");
     },
   );
 });

@@ -12,7 +12,6 @@ import {
 import {
   claudeCodeStatus,
   discoverModels,
-  QUALIFIED_VERSIONS,
   resolveClaude,
   signInCommand,
   signOutCommand,
@@ -93,7 +92,6 @@ function externalAuth(
   return {
     status: status.status,
     cliVersion: "cliVersion" in status ? (status.cliVersion ?? null) : null,
-    qualifiedVersions: QUALIFIED_VERSIONS,
     signInCommand: signInCommand(command, options.configDir),
     signOutCommand: signOutCommand(command, options.configDir),
     message: "message" in status ? status.message : null,
@@ -131,7 +129,7 @@ export function claudeCodePlugin(
     auth: {
       apiKey: {
         name: "Claude Code sign-in",
-        // Usable only when the CLI is installed, qualified, and signed in; a turn otherwise fails with the reason.
+        // Usable only when the CLI is installed and signed in; a turn otherwise fails with the reason.
         check: async () =>
           (await status()).status === "signed_in"
             ? { type: "api_key", source: "Claude Code" }

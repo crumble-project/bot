@@ -431,7 +431,6 @@ export const router = createRouter({
       ]),
     ]),
   ]),
-  basepath: "/ui",
   defaultPreload: "intent",
   defaultViewTransition: true,
   // Query owns caching; the router only triggers loads.

@@ -7,9 +7,6 @@ import { z } from "zod";
 import { catalogLabel, nativeModel, pinnedRoutes } from "./catalog";
 import { Admission } from "./relay";
 
-/** Claude Code versions whose replay, tool denial, recovery, and relay behavior passed the wire tests. */
-export const QUALIFIED_VERSIONS = ["2.1.309"];
-
 export type ClaudeCodeOptions = {
   /** An explicit executable; otherwise `claude` on PATH or in the usual install directories. */
   command?: string | undefined;
@@ -23,7 +20,6 @@ export type ClaudeCodeOptions = {
 
 export type ClaudeCodeStatus =
   | { status: "cli_missing"; message: string }
-  | { status: "unsupported_version"; cliVersion: string; message: string }
   | { status: "signed_out"; cliVersion: string; message: string }
   | { status: "error"; cliVersion?: string; message: string }
   | { status: "signed_in"; cliVersion: string; plan: string };
@@ -218,7 +214,7 @@ export const signInCommand = (command: string, configDir: string) =>
 export const signOutCommand = (command: string, configDir: string) =>
   `CLAUDE_CONFIG_DIR=${JSON.stringify(configDir)} ${command} auth logout`;
 
-/** Asks the CLI itself, never Anthropic, whether it is installed, qualified, and signed in. */
+/** Asks the CLI itself, never Anthropic, whether it is installed and signed in. Any version is accepted. */
 export async function claudeCodeStatus(
   options: ClaudeCodeOptions,
 ): Promise<ClaudeCodeStatus> {
@@ -240,13 +236,6 @@ export async function claudeCodeStatus(
     return {
       status: "error",
       message: `${command} --version did not report a version.`,
-    };
-
-  if (!QUALIFIED_VERSIONS.includes(version))
-    return {
-      status: "unsupported_version",
-      cliVersion: version,
-      message: `Claude Code ${version} is not qualified for Crumble. Install one of: ${QUALIFIED_VERSIONS.join(", ")}.`,
     };
 
   try {

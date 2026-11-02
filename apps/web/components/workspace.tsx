@@ -278,7 +278,7 @@ export function Section({
   children: ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-2">
+    <section className="group/section flex flex-col gap-2">
       <div className="flex min-h-8 items-end justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-0.5">
           <h2 className="flex items-center gap-2 text-sm font-medium">
@@ -291,7 +291,7 @@ export function Section({
         </div>
         {action}
       </div>
-      <div className="flex flex-col divide-y overflow-hidden rounded-xl border bg-muted/30">
+      <div className="flex flex-col divide-y overflow-hidden rounded-xl surface">
         {children}
       </div>
       {footer && <p className="text-xs text-muted-foreground">{footer}</p>}
@@ -381,7 +381,9 @@ export function RowMenu({ children }: { children: ReactNode }) {
           </Button>
         }
       />
-      <DropdownMenuContent align="end">{children}</DropdownMenuContent>
+      <DropdownMenuContent align="end" className="w-auto whitespace-nowrap">
+        {children}
+      </DropdownMenuContent>
     </DropdownMenu>
   );
 }

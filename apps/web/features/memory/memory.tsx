@@ -299,7 +299,7 @@ function OwnerGroup({
         </h2>
         {!owner.bot && <SharedUsers bots={bots} />}
       </div>
-      <div className="flex flex-col divide-y overflow-hidden rounded-xl border bg-muted/30">
+      <div className="flex flex-col divide-y overflow-hidden rounded-xl surface">
         {owner.memories.error && (
           <SectionEmpty>{owner.memories.error.message}</SectionEmpty>
         )}
