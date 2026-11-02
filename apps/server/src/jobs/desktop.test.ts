@@ -327,9 +327,9 @@ test("the desktop job list reports each job's token usage", async () => {
   const { runtime, agent } = await open({ provider: "faux", model: "desk" });
   const [job] = await runtime.desktopJobs(agent);
 
-  expect(job?.usage?.models["faux/desk"]?.totalTokens).toBeGreaterThan(0);
   // Only the job's own requests: the bot's model does not appear.
-  expect(job?.usage?.models["faux/chat"]).toBeUndefined();
+  expect(Object.keys(job?.usage?.models ?? {})).toEqual(["faux/desk"]);
+  expect(job?.usage?.models["faux/desk"]?.totalTokens).toBeGreaterThan(0);
 });
 
 test("rebuilding a bot's extensions keeps the same computer_use tool", () => {
@@ -345,19 +345,23 @@ test("the bot's answer to a desktop job's report is announced once, for notifica
   const stop = desktopAnswers((answer) => heard.push(answer));
 
   try {
-    const { agent } = await open();
+    const { runtime, agent, chat } = await open();
 
     await until(async () => heard.length > 0);
     await Bun.sleep(200);
+
+    const answer = (await runtime.snapshot(agent, chat)).messages.find(
+      (message) => message.content === "The form is filled.",
+    );
 
     expect(heard).toEqual([
       {
         agentId: agent.id,
         kind: "desktop",
         name: "form",
-        entryId: expect.any(String),
+        entryId: answer?.entryId?.split(":").at(-1) ?? "",
         preview: "The form is filled.",
-        eventId: expect.stringMatching(/^desktop-report:/),
+        eventId: expect.stringMatching(/^desktop-report:\d+$/),
       },
     ]);
   } finally {
@@ -370,8 +374,8 @@ test("a desktop job's prompt lists the bot's logins; the bot's chat gets request
     name: "github",
     hosts: ["github.com", "*.github.com"],
     fields: {
-      username: { passwordManager: null, reference: null },
-      password: { passwordManager: null, reference: null },
+      username: { configured: true, passwordManager: null, reference: null },
+      password: { configured: true, passwordManager: null, reference: null },
     },
     createdAt: "t",
     updatedAt: "t",
@@ -407,8 +411,14 @@ test("a desktop job's prompt lists the bot's logins; the bot's chat gets request
     fills: () => ({ list: async () => [], add: async () => undefined }),
   });
 
-  expect(sections.get("job")?.["desktop_logins"]).toContain(
-    "- github: github.com, *.github.com",
+  expect(sections.get("job")?.["desktop_logins"]).toBe(
+    [
+      "<desktop_logins>",
+      "Logins the owner gave this bot, with the hosts each works for:",
+      "- github: github.com, *.github.com",
+      "To sign in, read the sign-in page, then call computer_use with action='fill_login', login, field (username, password, or one_time_code), and the field's ref. You never see the values. If no login covers a sign-in page, stop and say so in your answer, naming the host.",
+      "</desktop_logins>",
+    ].join("\n"),
   );
   expect(sections.get("bot")?.["desktop_logins"] ?? null).toBeNull();
   expect(offered.get("bot")).toContain("request_login");
@@ -490,7 +500,9 @@ test("a start citing a message that isn't the owner's is rejected and starts no 
     (message) => message.toolName === "desktop",
   );
 
-  expect(result?.content).toContain("Not owner messages of this chat: made-up");
+  expect(result?.content).toBe(
+    "Not owner messages of this chat: made-up. Cite the request IDs shown as [message ID].",
+  );
   expect(await runtime.desktopJobs(agent)).toEqual([]);
   expect(seen).toEqual([]);
 });

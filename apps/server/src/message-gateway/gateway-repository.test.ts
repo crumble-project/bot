@@ -221,8 +221,15 @@ test("retention prunes terminal receipts and mappings at the boundary while pres
       finishedAt + GATEWAY_HISTORY_RETENTION_MS - 1,
     ),
   );
-  expect(await f.rows()).toHaveLength(3);
-  expect(await f.mappings()).toHaveLength(2);
+  expect((await f.rows()).map((row) => row.messageId)).toEqual([
+    "done",
+    "failed",
+    "pending",
+  ]);
+  expect((await f.mappings()).map((m) => m.externalMessageId)).toEqual([
+    "external-message",
+    "failed-output",
+  ]);
   await Effect.runPromise(
     f.repository.pruneGatewayHistory(finishedAt + GATEWAY_HISTORY_RETENTION_MS),
   );

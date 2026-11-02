@@ -131,9 +131,10 @@ describe("group chat API", () => {
         body: JSON.stringify({ name: "Holiday" }),
       });
 
-      expect(groupChatResponse.parse(await renamed.json())).toMatchObject({
+      expect(groupChatResponse.parse(await renamed.json())).toEqual({
+        ...group,
         name: "Holiday",
-        memberIds: [ids[0], ids[1]],
+        updatedAt: expect.any(String),
       });
 
       const deleted = await req(app, `/v1/group-chats/${group.id}`, {
@@ -352,18 +353,20 @@ describe("group chat API", () => {
       const events = await req(app, "/v1/events");
       const reader = events.body!.getReader();
 
-      service.announce({
-        type: "reply",
+      const reply = {
+        type: "reply" as const,
         executionId: "execution-1",
         agentId: "agent-1",
         agentName: "Planner",
         entryId: "group-1:3",
-        origin: "group",
+        origin: "group" as const,
         preview: "Booked.",
-        createdAt: new Date().toISOString(),
+        createdAt: "2026-11-02T10:00:00.000Z",
         groupId: "group-1",
         groupName: "Trip",
-      });
+      };
+
+      service.announce(reply);
 
       let text = "";
 
@@ -376,10 +379,10 @@ describe("group chat API", () => {
         .find((line) => line.startsWith("data: ") && line.includes("Booked."))
         ?.slice("data: ".length);
 
-      expect(activityEvent.parse(JSON.parse(data!))).toMatchObject({
-        type: "reply",
-        groupId: "group-1",
-        groupName: "Trip",
+      expect(activityEvent.parse(JSON.parse(data!))).toEqual({
+        ...reply,
+        eventId: "execution-1",
+        serverId: "",
       });
     } finally {
       await close();

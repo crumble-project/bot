@@ -6,7 +6,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { createAPI } from "../../app/api";
@@ -125,8 +125,10 @@ describe("Claude Code status", () => {
       env({ CRUMBLE_CLAUDE_COMMAND: "/nonexistent/claude" }),
     );
 
-    expect(await claudeCodeStatus(options)).toMatchObject({
+    expect(await claudeCodeStatus(options)).toEqual({
       status: "cli_missing",
+      message:
+        "Claude Code was not found at CRUMBLE_CLAUDE_COMMAND (/nonexistent/claude). Point it at the executable, or unset it to look for `claude` on PATH. Install it from https://code.claude.com/docs/en/setup.",
     });
   });
 
@@ -189,7 +191,7 @@ describe("Claude Code status", () => {
     expect(child["CRUMBLE_TOKEN"]).toBeUndefined();
     expect(child["HTTPS_PROXY"]).toBe("http://proxy:3128");
     expect(child["CLAUDE_CONFIG_DIR"]).toBe("/data/claude");
-    expect(child["USER"]).toBeTruthy();
+    expect(child["USER"]).toBe(userInfo().username);
     expect(child["DISABLE_AUTOUPDATER"]).toBe("1");
     expect(child["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"]).toBe("1");
   });
@@ -240,12 +242,14 @@ function api(fake: Record<string, string>) {
       headers: { authorization: `Bearer ${token}` },
     });
 
-  return { store, request };
+  const config = JSON.stringify(join(dir, "claude"));
+
+  return { store, request, command: `CLAUDE_CONFIG_DIR=${config} ${FAKE}` };
 }
 
 describe("Claude Code in the provider API", () => {
   test("lists its sign-in state instead of sign-in methods", async () => {
-    const { store, request } = api({ FAKE_LOGGED_IN: "0" });
+    const { store, request, command } = api({ FAKE_LOGGED_IN: "0" });
 
     const listed = z
       .array(provider)
@@ -253,9 +257,16 @@ describe("Claude Code in the provider API", () => {
 
     const claude = listed.find((item) => item.provider === "claude-code");
 
-    expect(claude).toMatchObject({ configured: false, authMethods: [] });
-    expect(claude?.externalAuth?.status).toBe("signed_out");
-    expect(claude?.externalAuth?.signInCommand).toContain("auth login");
+    expect(claude).toEqual({
+      provider: "claude-code",
+      configured: false,
+      authMethods: [],
+      externalAuth: {
+        status: "signed_out",
+        signInCommand: `${command} auth login`,
+        signOutCommand: `${command} auth logout`,
+      },
+    });
     expect(
       listed.find((item) => item.provider === "openai")?.externalAuth,
     ).toBeNull();
@@ -279,14 +290,16 @@ describe("Claude Code in the provider API", () => {
   });
 
   test("refuses to remove a credential Crumble does not hold", async () => {
-    const { store, request } = api({});
+    const { store, request, command } = api({});
 
     const response = await request("/v1/providers/claude-code", {
       method: "DELETE",
     });
 
     expect(response.status).toBe(409);
-    expect(JSON.stringify(await response.json())).toContain("auth logout");
+    expect(await response.json()).toEqual({
+      error: `This provider signs in outside Crumble. Sign out on the server: ${command} auth logout`,
+    });
     store.close();
   });
 });

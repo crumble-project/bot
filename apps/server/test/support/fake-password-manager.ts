@@ -1,4 +1,5 @@
 import { Effect, Redacted, Result, Schema } from "effect";
+import { PasswordManagerRepository } from "../../src/password-managers/password-manager-repository";
 import {
   PasswordManagerTokenRejected,
   PasswordManagerUnreachable,
@@ -8,6 +9,11 @@ import {
 import { FIELD_NOT_FOUND } from "../../src/password-managers/one-password";
 
 export const FAKE_TOKEN = "fake-token";
+
+/** Connects the fake as 1Password, so references to it read. */
+export const connectFakePasswordManager = PasswordManagerRepository.use(
+  (repository) => repository.save("1password", Redacted.make(FAKE_TOKEN), "t"),
+);
 
 /** What the fake password manager holds and how it answers; tests change it between reads. */
 export type FakePasswordManager = {

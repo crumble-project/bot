@@ -35,17 +35,30 @@ test("capture returns the focused window's tree, then a diff", async () => {
   const cu = createComputerUse(shell);
 
   const first = await cu.run({ action: "capture" }, BACKGROUND_CONTEXT);
-  expect(text(first)).toContain('window 101 Chromium "Form - Chromium"');
-  expect(text(first)).toContain('[2] entry "Name"');
-  expect(text(first)).not.toContain("￼");
-  expect(text(first)).not.toContain("showContextMenu");
-  expect(text(first)).not.toContain("Tint2");
+  expect(text(first)).toBe(
+    [
+      'window 101 Chromium "Form - Chromium" (snapshot s1)',
+      '- [0] frame "Form"',
+      '  - [1] panel "" [actions=[doDefault]]',
+      '  - [2] entry "Name" [actions=[activate]]',
+    ].join("\n"),
+  );
 
   const second = await cu.run({ action: "capture" }, BACKGROUND_CONTEXT);
-  expect(text(second)).toContain('~ [2] entry "Name" value "Ada"');
-  expect(
-    calls.filter((c) => c.tool === "get_window_state")[1]!.args,
-  ).toMatchObject({ since: "s1" });
+  expect(text(second)).toBe(
+    [
+      'window 101 Chromium "Form - Chromium" (snapshot s2, changes since s1)',
+      "since s1: 0 added, 1 changed",
+      '~ [2] entry "Name" value "Ada"',
+    ].join("\n"),
+  );
+  expect(calls.filter((c) => c.tool === "get_window_state")[1]!.args).toEqual({
+    session: "crumble-desktop",
+    pid: 7,
+    window_id: 101,
+    include_screenshot: false,
+    since: "s1",
+  });
 });
 
 test("a long tree is cut, and a refused capture reports cua-driver's reason", async () => {
@@ -102,14 +115,21 @@ test("input tries background first, then foreground when cua-driver asks for it"
   );
 
   expect(result.isError).toBe(false);
-  expect(text(result)).toContain("delivery: foreground");
-  const typed = calls.filter((c) => c.tool === "type_text");
-  expect(typed[0]!.args["delivery_mode"]).toBeUndefined();
-  expect(typed[1]!.args).toMatchObject({
-    delivery_mode: "foreground",
+  expect(text(result)).toBe(
+    "effect: unverifiable | delivery: foreground | Typed 3 characters",
+  );
+
+  const typed = {
+    session: "crumble-desktop",
+    pid: 7,
+    window_id: 101,
     element_token: "s1:2",
-    session: expect.any(String),
-  });
+    text: "Ada",
+  };
+
+  expect(
+    calls.filter((c) => c.tool === "type_text").map((c) => c.args),
+  ).toEqual([typed, { ...typed, delivery_mode: "foreground" }]);
 });
 
 test("placeholder arguments count as unset", async () => {
@@ -136,8 +156,11 @@ test("placeholder arguments count as unset", async () => {
   );
 
   expect(result.isError).toBe(false);
-  expect(calls.find((c) => c.tool === "get_window_state")!.args).toMatchObject({
+  expect(calls.find((c) => c.tool === "get_window_state")!.args).toEqual({
+    session: "crumble-desktop",
+    pid: 7,
     window_id: 101,
+    include_screenshot: false,
   });
 });
 
@@ -174,15 +197,18 @@ test("a refused action is an error with cua-driver's reason, and hints name only
   );
 
   expect(refused.isError).toBe(true);
-  expect(text(refused)).toContain("advertises no activation action");
+  expect(text(refused)).toBe(
+    'REFUSED (no_activation) | delivery: background | option "Berlin" advertises no activation action',
+  );
 
   const clicked = await cu.run(
     { action: "click", element: 3 },
     BACKGROUND_CONTEXT,
   );
 
-  expect(text(clicked)).toContain("Read what changed with capture.");
-  expect(text(clicked)).not.toContain("run_steps");
+  expect(text(clicked)).toBe(
+    "effect: unverifiable | delivery: background | Clicked element [3] | hint: Read what changed with capture.",
+  );
 });
 
 test("vision captures attach a JPEG screenshot", async () => {
@@ -206,11 +232,20 @@ test("vision captures attach a JPEG screenshot", async () => {
   );
 
   expect(
-    result.content.some(
-      (c) => c.type === "image" && c.mimeType === "image/jpeg",
+    result.content.map((c) =>
+      c.type === "image" ? { type: c.type, mimeType: c.mimeType } : c,
     ),
-  ).toBe(true);
-  expect(text(result)).toContain("screenshot 1280x770");
+  ).toEqual([
+    {
+      type: "text",
+      text: 'window 101 Chromium "Form - Chromium" (snapshot s1)\n- [0] frame',
+    },
+    {
+      type: "text",
+      text: "screenshot 1280x770, coordinates are pixels of this image",
+    },
+    { type: "image", mimeType: "image/jpeg" },
+  ]);
 });
 
 test("acting before any capture asks for one", async () => {
@@ -223,7 +258,9 @@ test("acting before any capture asks for one", async () => {
   );
 
   expect(result.isError).toBe(true);
-  expect(text(result)).toContain("capture first");
+  expect(text(result)).toBe(
+    "error: no capture of this window yet; capture first",
+  );
 });
 
 test("a screenshot that fails to convert attaches no image, and no files are left behind", async () => {
@@ -246,7 +283,7 @@ test("a screenshot that fails to convert attaches no image, and no files are lef
     BACKGROUND_CONTEXT,
   );
 
-  expect(first.content.some((c) => c.type === "image")).toBe(true);
+  expect(first.content.map((c) => c.type)).toEqual(["text", "text", "image"]);
 
   guest.state.failConvert = true;
 
@@ -278,7 +315,11 @@ test("set_value with an empty value clears the field", async () => {
   );
 
   expect(result.isError).toBe(false);
-  expect(calls.find((c) => c.tool === "set_value")?.args).toMatchObject({
+  expect(calls.find((c) => c.tool === "set_value")?.args).toEqual({
+    session: "crumble-desktop",
+    pid: 7,
+    window_id: 101,
+    element_token: "s1:2",
     value: "",
   });
 });
@@ -298,7 +339,9 @@ test("an ended cua-driver session is started again and the call retried", async 
   const result = await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
 
   expect(result.isError).toBe(false);
-  expect(text(result)).toContain("window 101");
+  expect(text(result)).toBe(
+    'window 101 Chromium "Form - Chromium" (snapshot s1)\n- [0] frame',
+  );
 
   expect(calls.slice(0, 3).map((c) => [c.tool, c.args["session"]])).toEqual([
     ["list_windows", "crumble-desktop"],
@@ -318,7 +361,7 @@ test("a failed window listing reports cua-driver's error, not an empty desktop",
   );
 
   expect(result.isError).toBe(true);
-  expect(text(result)).toContain("cua-driver daemon is not running");
+  expect(text(result)).toBe("error: cua-driver daemon is not running");
 });
 
 test("each input action reaches cua-driver with its own arguments", async () => {
@@ -347,30 +390,26 @@ test("each input action reaches cua-driver with its own arguments", async () => 
 
   const argsOf = (name: string) => calls.find((c) => c.tool === name)!.args;
 
-  expect(argsOf("click")).toMatchObject({
-    pid: 7,
-    window_id: 101,
-    x: 10,
-    y: 20,
-  });
-  expect(argsOf("drag")).toMatchObject({
+  const desk = { session: "crumble-desktop", pid: 7, window_id: 101 };
+
+  expect(argsOf("click")).toEqual({ ...desk, x: 10, y: 20 });
+  expect(argsOf("drag")).toEqual({
+    ...desk,
     from_x: 1,
     from_y: 2,
     to_x: 3,
     to_y: 4,
   });
-  expect(argsOf("scroll")).toMatchObject({
+  expect(argsOf("scroll")).toEqual({
+    ...desk,
     x: 5,
     y: 6,
     direction: "up",
     amount: 2,
   });
-  expect(argsOf("hotkey")["keys"]).toEqual(["ctrl", "l"]);
-  expect(argsOf("press_key")).toMatchObject({ key: "return" });
-  expect(argsOf("bring_to_front")).toMatchObject({
-    pid: 7,
-    window_id: 101,
-  });
+  expect(argsOf("hotkey")).toEqual({ ...desk, keys: ["ctrl", "l"] });
+  expect(argsOf("press_key")).toEqual({ ...desk, key: "return" });
+  expect(argsOf("bring_to_front")).toEqual(desk);
 });
 
 test("capture_after appends a capture of the target window", async () => {
@@ -472,7 +511,9 @@ test("actions wait while the owner holds control, and a plan from before is refu
   const result = await pending;
 
   expect(result.isError).toBe(true);
-  expect(text(result)).toContain("Capture before acting");
+  expect(text(result)).toBe(
+    "Control changed hands: the owner used the bot desktop and handed it back. The screen may have changed and element numbers are stale. Capture before acting.",
+  );
   expect(calls.some((c) => c.tool === "set_value")).toBe(false);
 
   // The old snapshot is gone: the next capture is a full read, not a diff.
@@ -505,7 +546,13 @@ test("without a change of control, actions run as before", async () => {
   );
 
   expect(result.isError).toBe(false);
-  expect(calls.some((c) => c.tool === "set_value")).toBe(true);
+  expect(calls.find((c) => c.tool === "set_value")?.args).toEqual({
+    session: "crumble-desktop",
+    pid: 7,
+    window_id: 101,
+    element_token: "s1:2",
+    value: "Ada",
+  });
 });
 
 test("cua-driver arguments reach it on stdin, never in a file or a command line", async () => {
@@ -518,7 +565,10 @@ test("cua-driver arguments reach it on stdin, never in a file or a command line"
 
   await tool.run({ action: "type", text: "hunter2" }, BACKGROUND_CONTEXT);
 
-  expect(guest.calls.find((c) => c.tool === "type_text")?.args).toMatchObject({
+  expect(guest.calls.find((c) => c.tool === "type_text")?.args).toEqual({
+    session: "crumble-desktop",
+    pid: 7,
+    window_id: 101,
     text: "hunter2",
   });
   expect(guest.writes).toEqual([]);
@@ -552,12 +602,25 @@ test("a capture with a query reads only matching elements, and the next plain ca
 
   const reads = calls.filter((c) => c.tool === "get_window_state");
 
-  expect(text(queried)).toContain('matching "Born"');
-  expect(reads[1]!.args).toMatchObject({ query: "Born" });
-  expect(reads[1]!.args).not.toHaveProperty("since");
-  expect(calls.find((c) => c.tool === "click")!.args).toMatchObject({
+  const read = {
+    session: "crumble-desktop",
+    pid: 7,
+    window_id: 101,
+    include_screenshot: false,
+  };
+
+  expect(text(queried)).toBe(
+    'window 101 Chromium "Form - Chromium" (snapshot s2, elements matching "Born")\n- [7] row header "Born"',
+  );
+  expect(reads.map((each) => each.args)).toEqual([
+    read,
+    { ...read, query: "Born" },
+    read,
+  ]);
+  expect(calls.find((c) => c.tool === "click")!.args).toEqual({
+    session: "crumble-desktop",
+    pid: 7,
+    window_id: 101,
     element_token: "s2:7",
   });
-  expect(reads[2]!.args).not.toHaveProperty("since");
-  expect(reads[2]!.args).not.toHaveProperty("query");
 });

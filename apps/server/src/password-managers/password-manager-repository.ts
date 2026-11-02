@@ -1,8 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer, Redacted } from "effect";
-import { agentCredentials, secrets } from "../credentials/schema";
-import { loginFields } from "../logins/schema";
-import { providerCredentials } from "../providers/schema";
+import { secrets } from "../credentials/schema";
 import { Conflict } from "../shared/errors";
 import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
@@ -13,13 +11,6 @@ export type PasswordManagerConnection = {
   id: PasswordManagerId;
   connectedAt: string;
 };
-
-/** A secret that reads its value from a password manager. */
-export type SecretUsingPasswordManager =
-  | { kind: "botCredential"; agentId: string; name: string }
-  | { kind: "botLogin"; agentId: string; name: string }
-  | { kind: "providerCredential"; provider: string }
-  | { kind: "secret"; key: string };
 
 /** The account's password manager connections, with their tokens encrypted at rest. */
 export class PasswordManagerRepository extends Context.Service<
@@ -36,9 +27,8 @@ export class PasswordManagerRepository extends Context.Service<
       token: Redacted.Redacted,
       connectedAt: string,
     ) => Effect.Effect<void>;
-    readonly usedBy: (
-      id: PasswordManagerId,
-    ) => Effect.Effect<SecretUsingPasswordManager[]>;
+    /** The keys of the secrets that read their value from it. */
+    readonly usedBy: (id: PasswordManagerId) => Effect.Effect<string[]>;
     /** Fails with `Conflict` while any secret still reads from the password manager. */
     readonly delete: (
       id: PasswordManagerId,
@@ -90,54 +80,13 @@ export class PasswordManagerRepository extends Context.Service<
       const usedBy = Effect.fn("PasswordManagerRepository.usedBy")(function* (
         id: PasswordManagerId,
       ) {
-        const bots = yield* db
-          .select({
-            agentId: agentCredentials.agentId,
-            name: agentCredentials.name,
-          })
-          .from(agentCredentials)
-          .where(eq(agentCredentials.passwordManager, id))
-          .orderBy(asc(agentCredentials.agentId), asc(agentCredentials.name));
-
-        const botLogins = yield* db
-          .selectDistinct({
-            agentId: loginFields.agentId,
-            name: loginFields.name,
-          })
-          .from(loginFields)
-          .where(eq(loginFields.passwordManager, id))
-          .orderBy(asc(loginFields.agentId), asc(loginFields.name));
-
-        const providers = yield* db
-          .select({ provider: providerCredentials.provider })
-          .from(providerCredentials)
-          .where(eq(providerCredentials.passwordManager, id))
-          .orderBy(asc(providerCredentials.provider));
-
-        const keyed = yield* db
+        const rows = yield* db
           .select({ key: secrets.key })
           .from(secrets)
           .where(eq(secrets.passwordManager, id))
           .orderBy(asc(secrets.key));
 
-        return [
-          ...bots.map((row): SecretUsingPasswordManager => ({
-            kind: "botCredential",
-            ...row,
-          })),
-          ...botLogins.map((row): SecretUsingPasswordManager => ({
-            kind: "botLogin",
-            ...row,
-          })),
-          ...providers.map((row): SecretUsingPasswordManager => ({
-            kind: "providerCredential",
-            ...row,
-          })),
-          ...keyed.map((row): SecretUsingPasswordManager => ({
-            kind: "secret",
-            ...row,
-          })),
-        ];
+        return rows.map((row) => row.key);
       }, Effect.orDie);
 
       const remove = Effect.fn("PasswordManagerRepository.delete")(function* (

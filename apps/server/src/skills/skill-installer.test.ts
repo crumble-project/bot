@@ -260,9 +260,10 @@ test("finds upstream changes to imported files, applies them as a revertible cha
   });
   expect(await run(installer.check())).toEqual({ failed: [] });
 
+  const { commit } = await run(installer.browse("acme/skills"));
   const update = (await run(installer.updates)).get(review!.id);
 
-  expect(update).toEqual({ commit: expect.any(String), removed: false });
+  expect(update).toEqual({ commit, removed: false });
   expect((await run(installer.pending(review!.id))).instructions).toBe(
     "Read twice.",
   );
@@ -270,7 +271,7 @@ test("finds upstream changes to imported files, applies them as a revertible cha
   const applied = await run(installer.apply(review!.id));
 
   expect(applied.instructions).toBe("Read twice.");
-  expect(applied.origin?.commit).toBe(update!.commit);
+  expect(applied.origin?.commit).toBe(commit);
   expect((await run(installer.updates)).size).toBe(0);
 
   const [change] = store.listChanges(null);
@@ -301,11 +302,13 @@ test("a daily check skips skills checked in the last day", async () => {
     }),
   );
 
-  await run(installer.check(true));
-  const calls = github.calls.length;
+  const before = github.calls.length;
 
   await run(installer.check(true));
-  expect(github.calls.length).toBe(calls);
+  expect(github.calls.slice(before)).toEqual(["head acme/skills"]);
+
+  await run(installer.check(true));
+  expect(github.calls.length).toBe(before + 1);
   store.close();
 });
 

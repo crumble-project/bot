@@ -1,24 +1,23 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Context, Effect, Exit, Layer, Option, Redacted, Scope } from "effect";
 import type { CoreServices } from "../app/core-layer";
-import { PasswordManagers } from "../password-managers/password-manager";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
-import { SecretValues } from "../password-managers/secret-values";
+import { secretsLayer } from "../password-managers/secrets";
 import { agentInput, loginSaveInput } from "../shared/domain";
 import { runnerOf } from "../shared/runner";
 import {
-  FAKE_TOKEN,
+  connectFakePasswordManager,
   fakePasswordManager,
   fakeVendor,
   type FakePasswordManager,
 } from "../../test/support/fake-password-manager";
 import { takeNotices } from "../../test/support/notices";
 import { Store } from "../../test/support/store";
+import { loginFieldKey } from "./login-repository";
 import { Logins } from "./logins";
-import { oneTimeCode, parseOneTimeSecret } from "./one-time-codes";
 
 const dirs: string[] = [];
 
@@ -41,22 +40,14 @@ function open(values: Record<string, string> = {}) {
   const context = Effect.runSync(
     Layer.buildWithScope(
       Logins.layer.pipe(
-        Layer.provideMerge(
-          SecretValues.layer.pipe(
-            Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
-          ),
-        ),
+        Layer.provideMerge(secretsLayer([fakeVendor(state)])),
         Layer.provide(Layer.succeedContext(core)),
       ),
       scope,
     ),
   );
 
-  store.run(
-    PasswordManagerRepository.use((repository) =>
-      repository.save("1password", Redacted.make(FAKE_TOKEN), "t"),
-    ),
-  );
+  store.run(connectFakePasswordManager);
 
   const run = runnerOf(Context.merge(core, context));
   const logins = Context.get(context, Logins);
@@ -156,8 +147,16 @@ test("a 1Password item fills every field, its one-time code only when it has one
   );
 
   expect(saved.fields).toEqual({
-    username: { passwordManager: "1password", reference: `${ITEM}/username` },
-    password: { passwordManager: "1password", reference: `${ITEM}/password` },
+    username: {
+      configured: true,
+      passwordManager: "1password",
+      reference: `${ITEM}/username`,
+    },
+    password: {
+      configured: true,
+      passwordManager: "1password",
+      reference: `${ITEM}/password`,
+    },
   });
   expect(await bot.value("github", "username")).toBe("ada");
   expect(await bot.value("github", "password")).toBe("vault-pw");
@@ -197,7 +196,7 @@ test("an item's one-time code that can't be checked fails the save instead of dr
   expect(
     (await bot.run(bot.logins.get(bot.agentId, "github")))?.fields
       .one_time_code,
-  ).toEqual({ passwordManager: "1password", reference: otp });
+  ).toEqual({ configured: true, passwordManager: "1password", reference: otp });
 });
 
 test("a computed one-time code is read anew for every fill", async () => {
@@ -222,7 +221,9 @@ test("a computed one-time code is read anew for every fill", async () => {
 
   bot.state.mode = "unreachable";
 
-  expect(bot.value("github", "one_time_code")).rejects.toThrow();
+  await expect(bot.value("github", "one_time_code")).rejects.toThrow(
+    "Fake could not be reached",
+  );
 });
 
 test("a stored one-time code secret fills the current code", async () => {
@@ -240,13 +241,13 @@ test("a stored one-time code secret fills the current code", async () => {
     }),
   );
 
-  const before = Date.now();
-  const code = await bot.value("github", "one_time_code");
+  setSystemTime(new Date("2026-11-02T00:00:00.000Z"));
 
-  expect([
-    oneTimeCode(parseOneTimeSecret(secret)!, before),
-    oneTimeCode(parseOneTimeSecret(secret)!, Date.now()),
-  ]).toContain(code);
+  try {
+    expect(await bot.value("github", "one_time_code")).toBe("033545");
+  } finally {
+    setSystemTime();
+  }
 });
 
 test("a one-time code secret that isn't base32 or a TOTP URI is rejected", async () => {
@@ -295,7 +296,7 @@ test("replacing a reference with a value drops it from the password manager's us
   );
 
   expect(await bot.usedBy()).toEqual([
-    { kind: "botLogin", agentId: bot.agentId, name: "github" },
+    loginFieldKey(bot.agentId, "github", "password"),
   ]);
 
   const reads = bot.state.reads;
@@ -324,7 +325,7 @@ test("a reference that can't be read is rejected and nothing is saved", async ()
         },
       }),
     ),
-  ).toBeDefined();
+  ).toBe("Fake has no item that matches");
   expect(await bot.run(bot.logins.list(bot.agentId))).toEqual([]);
 });
 

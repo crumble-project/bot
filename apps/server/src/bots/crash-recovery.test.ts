@@ -74,10 +74,12 @@ describe("crash recovery", () => {
         metadata.conversationId,
       );
 
-      expect(snapshot.messages.filter((m) => m.role === "user")).toHaveLength(
-        1,
-      );
-      expect(JSON.stringify(snapshot)).toContain("recovered response");
+      expect(
+        snapshot.messages.map(({ role, content }) => ({ role, content })),
+      ).toEqual([
+        { role: "user", content: "recover this" },
+        { role: "assistant", content: "recovered response" },
+      ]);
 
       const second = store.createAgent(
         {

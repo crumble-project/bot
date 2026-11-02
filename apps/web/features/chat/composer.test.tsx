@@ -6,7 +6,7 @@ test("image previews reuse attachment data without an object URL", async () => {
     new File(["image"], "image.png", { type: "image/png" }),
   ]);
 
-  expect(uploads[0]?.preview).toBe(`data:image/png;base64,${uploads[0]?.data}`);
+  expect(uploads[0]?.preview).toBe("data:image/png;base64,aW1hZ2U=");
 });
 
 test("attachment keys follow each upload after an earlier removal", async () => {
@@ -18,9 +18,6 @@ test("attachment keys follow each upload after an earlier removal", async () => 
     uploads: uploads.slice(1),
     onRemove: () => {},
   });
-
-  expect(chips).not.toBeNull();
-  expect(remaining).not.toBeNull();
 
   if (!chips || !remaining) throw new Error("Expected attachment chips");
 

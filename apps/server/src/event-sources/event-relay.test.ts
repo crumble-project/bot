@@ -8,8 +8,7 @@ import { TestClock } from "effect/testing";
 import { productLayer } from "../app/product-layer";
 import { AgentRepository } from "../bots/agent-repository";
 import { SecretRepository } from "../credentials/secret-repository";
-import { PasswordManagers } from "../password-managers/password-manager";
-import { SecretValues } from "../password-managers/secret-values";
+import { secretsLayer } from "../password-managers/secrets";
 import { ScheduleRepository } from "../schedules/schedule-repository";
 import { agentInput, scheduleInput } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
@@ -133,9 +132,7 @@ async function fixture() {
   const runtime = ManagedRuntime.make(
     EventSources.layer.pipe(
       Layer.provideMerge(EventRelay.layer),
-      Layer.provideMerge(
-        SecretValues.layer.pipe(Layer.provideMerge(PasswordManagers.layer([]))),
-      ),
+      Layer.provideMerge(secretsLayer([])),
       Layer.provideMerge(productLayer(folder)),
       Layer.provideMerge(TestClock.layer()),
     ),
@@ -189,7 +186,7 @@ test("the relay connects with the account token, stores each event once, and ack
 
   await configure(relay.url);
   await until(async () => (await status()).status === "connected");
-  expect(relay.authorizations).toContain(`Bearer ${TOKEN}`);
+  expect(relay.authorizations).toEqual([`Bearer ${TOKEN}`]);
 
   relay.send(event("01A"));
   await until(() => relay.acks.includes("01A"));
@@ -207,7 +204,7 @@ test("the relay connects with the account token, stores each event once, and ack
     method: "POST",
     query: "a=1",
     headers: [["content-type", "application/json"]],
-    body: Buffer.from('{"action":"opened"}').toString("base64"),
+    body: "eyJhY3Rpb24iOiJvcGVuZWQifQ==",
   });
   expect(await status()).toEqual({
     url: relay.url,

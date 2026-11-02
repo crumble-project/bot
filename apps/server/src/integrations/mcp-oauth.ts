@@ -10,6 +10,7 @@ import {
 import { type MCPServer } from "../shared/domain";
 import { Context, Effect, Layer } from "effect";
 import { SecretRepository } from "../credentials/secret-repository";
+import { Secrets, secretKey, secretText } from "../password-managers/secrets";
 import { appErrors } from "../shared/app-errors";
 import { runnerOf, type Runner } from "../shared/runner";
 import { InvalidInput, isAppError, type AppError } from "../shared/errors";
@@ -27,9 +28,12 @@ type SavedOAuth = {
 
 const credentialKey = (serverId: string) => `mcp-oauth:${serverId}`;
 
-/** Where the client secret of the owner's OAuth app for an MCP server is stored, encrypted. */
+/** The secret holding an MCP server's bearer token. */
+export const mcpTokenKey = (serverId: string) => secretKey("mcp", serverId);
+
+/** The secret holding the client secret of the owner's OAuth app for an MCP server. */
 export const clientSecretKey = (serverId: string) =>
-  `mcp-oauth-client:${serverId}`;
+  secretKey("mcp-oauth-client", serverId);
 
 /**
  * Uses the owner's OAuth app as the client. It sends its secret in the token request body, which GitHub
@@ -91,16 +95,29 @@ export const clientDocumentBody = (document: ClientDocument) => ({
   redirect_uris: document.redirectUris,
 });
 
-/** Encrypted values by key, as the OAuth flows read and write them synchronously. */
+/** Encrypted values by key, as the OAuth flows read and write them synchronously, and the owner's client secret. */
 export type SecretStorage = {
   get(key: string): string | undefined;
   set(key: string, value: string): void;
   delete(key: string): void;
+  /** Read on use, possibly from a password manager. */
+  clientSecret(serverId: string): Promise<string | undefined>;
 };
 
 export const secretStorage = (
-  run: Runner<SecretRepository>,
+  run: Runner<SecretRepository | Secrets>,
 ): SecretStorage => ({
+  clientSecret: (serverId) =>
+    run.runPromise(
+      Secrets.use((secrets) =>
+        secretText(secrets)(clientSecretKey(serverId)),
+      ).pipe(
+        Effect.mapError(
+          (error) =>
+            new Error(`Client secret could not be read: ${error.message}`),
+        ),
+      ),
+    ),
   get: (key) =>
     run.runSync(SecretRepository.use((secrets) => secrets.get(key))),
   set: (key, value) =>
@@ -144,6 +161,7 @@ function provider(
   redirectUrl: string,
   onRedirect: (url: URL) => void,
   document: ClientDocument | undefined,
+  secret: string | undefined,
 ) {
   const stateStore: McpOAuthStateStore = {
     load: () => read(storage, server.id)?.state,
@@ -172,8 +190,6 @@ function provider(
 
   if (!server.oauthClientId) return new McpOAuthProvider(options);
 
-  const secret = storage.get(clientSecretKey(server.id));
-
   return new OwnerClientProvider(options, {
     client_id: server.oauthClientId,
     ...(secret && { client_secret: secret }),
@@ -185,17 +201,24 @@ function provider(
  * The auth a live connection uses: pi-mcp sends the access token and refreshes it. When the
  * refresh fails it cannot open a browser, so the call fails and the owner signs in again.
  */
-export function connectionAuth(
+export async function connectionAuth(
   storage: SecretStorage,
   server: MCPServer,
   document?: ClientDocument,
-): AuthProvider | undefined {
+): Promise<AuthProvider | undefined> {
   const saved = read(storage, server.id);
 
   if (!saved?.state.tokens?.access_token) return undefined;
 
   return adaptOAuthProvider(
-    provider(storage, server, saved.redirectUrl, () => undefined, document),
+    provider(
+      storage,
+      server,
+      saved.redirectUrl,
+      () => undefined,
+      document,
+      await ownerSecret(storage, server),
+    ),
   );
 }
 
@@ -228,6 +251,34 @@ function registrationHint(
   return `Sign in from ${web}, or from the Mac or iOS app, if it supports client metadata documents; otherwise add the server with a token`;
 }
 
+/** The client secret of the owner's OAuth app, when the server uses one. */
+const ownerSecret = (storage: SecretStorage, server: MCPServer) =>
+  server.oauthClientId
+    ? storage.clientSecret(server.id)
+    : Promise.resolve(undefined);
+
+/** A registration names its redirect URL and server, so a change of either starts over. */
+function restartIfChanged(
+  storage: SecretStorage,
+  server: MCPServer,
+  redirectUrl: string,
+) {
+  const saved = read(storage, server.id);
+
+  if (
+    saved?.redirectUrl === redirectUrl &&
+    saved.state.serverUrl === server.url &&
+    (saved.clientId ?? null) === server.oauthClientId
+  )
+    return;
+
+  write(storage, server.id, {
+    redirectUrl,
+    state: { serverUrl: server.url },
+    clientId: server.oauthClientId,
+  });
+}
+
 /**
  * Discovers the server's authorization server, registers Crumble for `redirectUrl`, and returns the
  * URL the owner signs in at, or `authorized` when the saved tokens still work.
@@ -238,20 +289,7 @@ export async function startAuthorization(
   redirectUrl: string,
   document?: ClientDocument,
 ): Promise<{ authorizationUrl: string } | { authorized: true }> {
-  const saved = read(storage, server.id);
-
-  // A registration names its redirect URL and server, so a change of either starts over.
-  if (
-    !saved ||
-    saved.redirectUrl !== redirectUrl ||
-    saved.state.serverUrl !== server.url ||
-    (saved.clientId ?? null) !== server.oauthClientId
-  )
-    write(storage, server.id, {
-      redirectUrl,
-      state: { serverUrl: server.url },
-      clientId: server.oauthClientId,
-    });
+  restartIfChanged(storage, server, redirectUrl);
   let authorizationUrl: URL | undefined;
 
   const oauth = provider(
@@ -262,6 +300,7 @@ export async function startAuthorization(
       authorizationUrl = url;
     },
     document,
+    await ownerSecret(storage, server),
   );
 
   let result;
@@ -313,6 +352,7 @@ export async function finishAuthorization(
     saved.redirectUrl,
     () => undefined,
     document,
+    await ownerSecret(storage, server),
   );
 
   let result;
@@ -370,7 +410,7 @@ export class McpOAuth extends Context.Service<
     McpOAuth,
     Effect.gen(function* () {
       const storage = secretStorage(
-        runnerOf(yield* Effect.context<SecretRepository>()),
+        runnerOf(yield* Effect.context<SecretRepository | Secrets>()),
       );
 
       return McpOAuth.of({
@@ -378,7 +418,7 @@ export class McpOAuth extends Context.Service<
           Effect.sync(() => hasOAuthTokens(storage, serverId)),
         signOut: (serverId) => Effect.sync(() => signOut(storage, serverId)),
         connectionAuth: (server, document) =>
-          Effect.sync(() => connectionAuth(storage, server, document)),
+          Effect.promise(() => connectionAuth(storage, server, document)),
         start: (server, redirectUrl, document) =>
           appErrors(
             Effect.tryPromise(() =>

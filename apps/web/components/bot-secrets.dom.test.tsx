@@ -32,8 +32,8 @@ const github = {
   name: "github",
   hosts: ["github.com"],
   fields: {
-    username: { passwordManager: null, reference: null },
-    password: { passwordManager: null, reference: null },
+    username: { configured: true, passwordManager: null, reference: null },
+    password: { configured: true, passwordManager: null, reference: null },
   },
   createdAt: "2026-10-30T10:00:00.000Z",
   updatedAt: "2026-10-30T10:00:00.000Z",
@@ -52,8 +52,7 @@ const moreHosts = {
 const acme = {
   name: "ACME_TOKEN",
   hosts: ["api.acme.com"],
-  passwordManager: null,
-  reference: null,
+  secret: { configured: true, passwordManager: null, reference: null },
   createdAt: "2026-10-30T10:00:00.000Z",
   updatedAt: "2026-10-30T10:00:00.000Z",
   lastUsedAt: null,
@@ -197,9 +196,9 @@ async function declineFirstRequest(container: HTMLElement) {
     span.textContent?.includes("asks for"),
   )?.parentElement?.parentElement?.parentElement;
 
-  expect(row).toBeTruthy();
+  if (!row) throw new Error("Expected a waiting request row");
   await act(async () => {
-    row!
+    row
       .querySelector<HTMLButtonElement>('[title="More"]')!
       .dispatchEvent(
         new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
@@ -210,9 +209,9 @@ async function declineFirstRequest(container: HTMLElement) {
     ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
   ].find((item) => item.textContent?.includes("Decline"));
 
-  expect(decline).toBeTruthy();
+  if (!decline) throw new Error("Expected a Decline menu item");
   await act(async () => {
-    decline!.click();
+    decline.click();
   });
   await settle();
 }
@@ -316,8 +315,9 @@ test("a request newer than the cached credentials offers its answers", async () 
     () => requestCard("request_credential", moreAcmeHosts),
     async (container) => {
       expect(
-        container.querySelector('input[placeholder="Credential value"]'),
-      ).toBeTruthy();
+        container.querySelectorAll('input[placeholder="Credential value"]')
+          .length,
+      ).toBe(1);
       expect(container.textContent).not.toContain("Saved");
     },
   );

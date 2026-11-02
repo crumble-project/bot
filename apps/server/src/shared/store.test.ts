@@ -1,5 +1,5 @@
 import { describe, expect, test, afterEach } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
@@ -50,7 +50,9 @@ describe("Store", () => {
     first.close();
     const reopened = new Store(dir);
     expect(reopened.getAgent(agent.id)?.name).toBe("Test");
-    expect(reopened.listConversations(agent.id)).toHaveLength(1);
+    expect(reopened.listConversations(agent.id).map(({ id }) => id)).toEqual([
+      convo.id,
+    ]);
     expect(reopened.deleteAgent(agent.id)).toBe(true);
     expect(reopened.getConversation(convo.id)).toBeNull();
     reopened.close();
@@ -61,7 +63,6 @@ describe("Store", () => {
     const store = new Store(dir);
     store.setCredential("openai", "super-secret");
     expect(store.getCredential("openai")).toBe("super-secret");
-    expect(store.listCredentials()).toEqual(["openai"]);
     store.setSetting("flags", { enabled: true });
     expect(store.getSetting("flags")).toEqual({ enabled: true });
     store.close();
@@ -69,6 +70,15 @@ describe("Store", () => {
     expect(reopened.getCredential("openai")).toBe("super-secret");
     expect(reopened.getSetting("flags")).toEqual({ enabled: true });
     reopened.close();
+    expect(
+      readdirSync(dir, { recursive: true, withFileTypes: true }).filter(
+        (entry) =>
+          entry.isFile() &&
+          readFileSync(join(entry.parentPath, entry.name)).includes(
+            "super-secret",
+          ),
+      ),
+    ).toEqual([]);
   });
 
   test("supports schedules, idempotent executions, and MCP lifecycle", () => {
@@ -137,7 +147,7 @@ describe("Store", () => {
         status: "pending",
         error: null,
       }),
-    ).toThrow();
+    ).toThrow('Failed query: insert into "executions"');
 
     const server = store.createMCPServer({
       name: "Tools",
@@ -481,7 +491,9 @@ describe("Store memory sources", () => {
 
     const db = new Database(join(dir, "store.sqlite"));
     // A server before Drizzle had no migrations table.
+    // Secrets, requests, and uses moved out of the credential tables after the baseline, which had them.
     db.run(`DROP TABLE __drizzle_migrations;
+      ALTER TABLE agent_credentials ADD COLUMN value text;
       DROP TABLE skill_updates;
       ALTER TABLE skills DROP COLUMN origin;
       DROP TABLE github_account_bots;
@@ -500,12 +512,14 @@ describe("Store memory sources", () => {
       DROP TABLE script_runs;
       DROP TABLE desktop_fills;
       DROP TABLE held_actions;
-      DROP TABLE login_requests;
-      DROP TABLE login_uses;
-      DROP TABLE login_fields;
       DROP TABLE logins;
       DROP TABLE password_managers;
-      ALTER TABLE credential_uses DROP COLUMN error;
+      DROP TABLE bot_secret_uses;
+      DROP TABLE bot_secret_requests;
+      CREATE TABLE credential_requests (agent_id text NOT NULL, name text NOT NULL, hosts text NOT NULL, reason text NOT NULL, requested_at text NOT NULL, PRIMARY KEY (agent_id, name), FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE);
+      CREATE TABLE credential_uses (id integer PRIMARY KEY AUTOINCREMENT, agent_id text NOT NULL, name text NOT NULL, at text NOT NULL, method text NOT NULL, host text NOT NULL, path text NOT NULL, status integer, FOREIGN KEY (agent_id, name) REFERENCES agent_credentials(agent_id, name) ON DELETE CASCADE);
+      CREATE INDEX credential_uses_by_credential ON credential_uses (agent_id, name, id);
+      CREATE INDEX credential_uses_by_time ON credential_uses (at);
       ALTER TABLE schedules DROP COLUMN kind;
       ALTER TABLE schedules DROP COLUMN command;
       ALTER TABLE schedules DROP COLUMN timeout_seconds;
@@ -627,7 +641,9 @@ describe("Store group chats", () => {
 
     const db = new Database(join(dir, "store.sqlite"));
     // A server before Drizzle had no migrations table.
+    // Secrets, requests, and uses moved out of the credential tables after the baseline, which had them.
     db.run(`DROP TABLE __drizzle_migrations;
+      ALTER TABLE agent_credentials ADD COLUMN value text;
       DROP TABLE skill_updates;
       ALTER TABLE skills DROP COLUMN origin;
       DROP TABLE github_account_bots;
@@ -646,12 +662,14 @@ describe("Store group chats", () => {
       DROP TABLE script_runs;
       DROP TABLE desktop_fills;
       DROP TABLE held_actions;
-      DROP TABLE login_requests;
-      DROP TABLE login_uses;
-      DROP TABLE login_fields;
       DROP TABLE logins;
       DROP TABLE password_managers;
-      ALTER TABLE credential_uses DROP COLUMN error;
+      DROP TABLE bot_secret_uses;
+      DROP TABLE bot_secret_requests;
+      CREATE TABLE credential_requests (agent_id text NOT NULL, name text NOT NULL, hosts text NOT NULL, reason text NOT NULL, requested_at text NOT NULL, PRIMARY KEY (agent_id, name), FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE);
+      CREATE TABLE credential_uses (id integer PRIMARY KEY AUTOINCREMENT, agent_id text NOT NULL, name text NOT NULL, at text NOT NULL, method text NOT NULL, host text NOT NULL, path text NOT NULL, status integer, FOREIGN KEY (agent_id, name) REFERENCES agent_credentials(agent_id, name) ON DELETE CASCADE);
+      CREATE INDEX credential_uses_by_credential ON credential_uses (agent_id, name, id);
+      CREATE INDEX credential_uses_by_time ON credential_uses (at);
       ALTER TABLE schedules DROP COLUMN kind;
       ALTER TABLE schedules DROP COLUMN command;
       ALTER TABLE schedules DROP COLUMN timeout_seconds;

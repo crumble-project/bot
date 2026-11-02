@@ -23,16 +23,17 @@ import {
 } from "@earendil-works/pi-durable";
 import type { Context as PiContext } from "@earendil-works/chord/context";
 import type { Agent, MCPServer } from "../shared/domain";
-import { Context, Effect, Layer, ManagedRuntime, Redacted } from "effect";
+import { Context, Effect, Layer, ManagedRuntime } from "effect";
 import { AgentRepository } from "../bots/agent-repository";
 import { SecretRepository } from "../credentials/secret-repository";
-import { SecretValues } from "../password-managers/secret-values";
+import { Secrets, secretText } from "../password-managers/secrets";
 import { runnerOf, type Runner } from "../shared/runner";
 import { McpServerRepository } from "./mcp-server-repository";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import {
   type ClientDocument,
   connectionAuth,
+  mcpTokenKey,
   hasOAuthTokens,
   secretStorage,
   type SecretStorage,
@@ -182,20 +183,10 @@ type IntegrationServices =
   | McpServerRepository
   | AgentRepository
   | SecretRepository
-  | SecretValues;
+  | Secrets;
 
 const tokenOf = (serverId: string) =>
-  Effect.gen(function* () {
-    const source = yield* SecretRepository.use((r) =>
-      r.source(`mcp:${serverId}`),
-    );
-
-    if (!source) return undefined;
-
-    return Redacted.value(
-      yield* SecretValues.use((values) => values.read(source)),
-    );
-  }).pipe(
+  Secrets.use((secrets) => secretText(secrets)(mcpTokenKey(serverId))).pipe(
     // Shown as the server's failure under Integrations, after its name.
     Effect.mapError(
       (error) => new Error(`Token could not be read: ${error.message}`),
@@ -345,7 +336,7 @@ class McpConnections {
       server,
       headers,
       oauth
-        ? connectionAuth(this.data.secrets, server, this.oauthClient)
+        ? await connectionAuth(this.data.secrets, server, this.oauthClient)
         : undefined,
     );
 

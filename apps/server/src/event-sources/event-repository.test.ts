@@ -165,7 +165,7 @@ test("hasRunForAgent is true only for the bot whose automation ran", async () =>
   ).toBeFalse();
 });
 
-test("prune deletes old events with their runs", async () => {
+test("prune deletes events older than the cutoff with their runs", async () => {
   const { automation, events, run } = await fixture();
 
   await automation(ada, "Triage");
@@ -173,6 +173,10 @@ test("prune deletes old events with their runs", async () => {
 
   await Effect.runPromise(repository.storeEvent(event("01A")));
 
+  expect(
+    await Effect.runPromise(repository.prune("2026-11-01T08:00:00.000Z")),
+  ).toBe(0);
+  expect((await Effect.runPromise(repository.getEvent("01A")))?.id).toBe("01A");
   expect(
     await Effect.runPromise(repository.prune("2999-01-01T00:00:00.000Z")),
   ).toBe(1);

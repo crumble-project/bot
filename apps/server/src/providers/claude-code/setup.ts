@@ -85,10 +85,12 @@ const INHERITED = [
   "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
 ];
 
+const INSTALL_URL = "https://code.claude.com/docs/en/setup";
+
 export const installHint = (options: ClaudeCodeOptions) =>
   options.command
-    ? `Claude Code was not found at CRUMBLE_CLAUDE_COMMAND (${options.command}).`
-    : "Claude Code is not installed: no `claude` on PATH or in the usual install directories. Install it (https://code.claude.com/docs/en/setup) or set CRUMBLE_CLAUDE_COMMAND to the executable.";
+    ? `Claude Code was not found at CRUMBLE_CLAUDE_COMMAND (${options.command}). Point it at the executable, or unset it to look for \`claude\` on PATH. Install it from ${INSTALL_URL}.`
+    : `Claude Code is not installed: no \`claude\` on PATH or in the usual install directories. Install it (${INSTALL_URL}) or set CRUMBLE_CLAUDE_COMMAND to the executable.`;
 
 const executable = (path: string) => {
   try {

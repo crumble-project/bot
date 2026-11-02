@@ -149,8 +149,12 @@ describe("coordination extension", () => {
       invoke(tool(service, other.id, 1), { executionId }),
     ).rejects.toThrow("receipt");
     const status = await invoke(tool(service, source.id, 1), { executionId });
-    expect(JSON.parse(status.output[0].text)).toMatchObject({
+    expect(JSON.parse(status.output[0].text)).toEqual({
+      executionId,
+      agentId: target.id,
+      agent: "Target",
       status: "running",
+      error: null,
       response: [],
     });
     const granted = tool(service, source.id, 1);

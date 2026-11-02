@@ -132,7 +132,7 @@ describe("workspace proxy", () => {
     socket.write("GET / HTTP/1.1\r\nHost: example.test\r\n\r\n");
 
     expect(await reply).toBe("");
-    expect(asked).toHaveLength(1);
+    expect(asked).toEqual([{ host: "example.test", port: target.port }]);
     expect(target.requests).toEqual([]);
   });
 

@@ -49,6 +49,14 @@ const fast = { pollMs: 1, timeoutMs: 200 };
 const text = (r: { content: { type: string; text?: string }[] }) =>
   r.content.flatMap((c) => (c.type === "text" ? [c.text!] : [])).join("\n");
 
+const formPage = [
+  'page "Den task" http://127.0.0.1:8123/task.html',
+  '- form\n  - textbox "Name": Ada',
+  "elements (act with ref):",
+  '[p1:0] textbox "Name" = "Ada" (focused)',
+  '[p1:1] button "Submit"',
+].join("\n");
+
 test("read binds the active tab and lists the page with its refs", async () => {
   const { shell, calls } = scriptedGuest({
     list_windows: [windows],
@@ -69,22 +77,17 @@ test("read binds the active tab and lists the page with its refs", async () => {
   const reads = calls.filter((c) => c.tool === "get_browser_state");
 
   expect(result.isError).toBe(false);
-  expect(reads[0]!.args).toMatchObject({ pid: 7, window_id: 101 });
-  expect(reads[1]!.args).toMatchObject({
-    target_id: "bt-1",
-    tab_id: "tab-2",
-    snapshot_format: "semantic_v2",
-    query: "Name",
-  });
-  expect(text(result)).toBe(
-    [
-      'page "Den task" http://127.0.0.1:8123/task.html',
-      '- form\n  - textbox "Name": Ada',
-      "elements (act with ref):",
-      '[p1:0] textbox "Name" = "Ada" (focused)',
-      '[p1:1] button "Submit"',
-    ].join("\n"),
-  );
+  expect(reads.map((each) => each.args)).toEqual([
+    { session: "crumble-desktop", pid: 7, window_id: 101 },
+    {
+      session: "crumble-desktop",
+      target_id: "bt-1",
+      tab_id: "tab-2",
+      snapshot_format: "semantic_v2",
+      query: "Name",
+    },
+  ]);
+  expect(text(result)).toBe(formPage);
 });
 
 test("the first page action of a session attaches Chromium once and says so", async () => {
@@ -119,18 +122,21 @@ test("the first page action of a session attaches Chromium once and says so", as
   expect(calls.filter((c) => c.tool === "browser_prepare")).toEqual([
     {
       tool: "browser_prepare",
-      args: expect.objectContaining({
+      args: {
+        session: "crumble-desktop",
         pid: 7,
         window_id: 101,
         strategy: { kind: "existing_profile" },
-      }),
+      },
     },
   ]);
-  expect(text(first)).toStartWith(
-    "Chromium was attached for page actions; accessibility element numbers are stale.",
+  expect(text(first)).toBe(
+    `Chromium was attached for page actions; accessibility element numbers are stale.\n${formPage}`,
   );
-  expect(text(second)).not.toContain("attached");
-  expect(text(staleElement)).toContain("capture first");
+  expect(text(second)).toBe(formPage);
+  expect(text(staleElement)).toBe(
+    "error: no capture of this window yet; capture first",
+  );
 });
 
 test("a page action after Chromium restarted attaches again", async () => {
@@ -156,7 +162,12 @@ test("a page action after Chromium restarted attaches again", async () => {
   expect(calls.filter((c) => c.tool === "browser_prepare")).toHaveLength(1);
   expect(
     calls.filter((c) => c.tool === "get_browser_state").at(-1)!.args,
-  ).toMatchObject({ tab_id: "tab-9" });
+  ).toEqual({
+    session: "crumble-desktop",
+    target_id: "bt-1",
+    tab_id: "tab-9",
+    snapshot_format: "semantic_v2",
+  });
 });
 
 test("open navigates and waits for the new page before reading it", async () => {
@@ -176,15 +187,14 @@ test("open navigates and waits for the new page before reading it", async () => 
     BACKGROUND_CONTEXT,
   );
 
-  expect(calls.find((c) => c.tool === "browser_navigate")!.args).toMatchObject({
+  expect(calls.find((c) => c.tool === "browser_navigate")!.args).toEqual({
+    session: "crumble-desktop",
     target_id: "bt-1",
     tab_id: "tab-1",
     url: "http://127.0.0.1:8123/task.html",
   });
   expect(calls.filter((c) => c.tool === "get_browser_state")).toHaveLength(4);
-  expect(text(result)).toStartWith(
-    'page "Den task" http://127.0.0.1:8123/task.html',
-  );
+  expect(text(result)).toBe(formPage);
 });
 
 test("open gives up waiting at the limit and says the page may still be loading", async () => {
@@ -212,6 +222,9 @@ test("open takes only web URLs", async () => {
   );
 
   expect(result.isError).toBe(true);
+  expect(text(result)).toBe(
+    "open needs a url starting with http, https, or about:",
+  );
   expect(calls.some((c) => c.tool === "browser_navigate")).toBe(false);
 });
 
@@ -243,7 +256,7 @@ test("page actions refuse a window that isn't Chromium", async () => {
   );
 
   expect(result.isError).toBe(true);
-  expect(text(result)).toContain("Chromium only");
+  expect(text(result)).toBe("REFUSED: page actions work in Chromium only");
   expect(calls.some((c) => c.tool === "get_browser_state")).toBe(false);
 });
 
@@ -357,8 +370,9 @@ test("a stale ref returns cua-driver's refusal", async () => {
   );
 
   expect(result.isError).toBe(true);
-  expect(text(result)).toContain("REFUSED (stale_ref)");
-  expect(text(result)).toContain("call read again");
+  expect(text(result)).toBe(
+    "REFUSED (stale_ref) | delivery: page | ref p1:1 is stale; call read again",
+  );
 });
 
 test("capture_after on a ref action returns a read of the page", async () => {
@@ -381,8 +395,9 @@ test("capture_after on a ref action returns a read of the page", async () => {
     BACKGROUND_CONTEXT,
   );
 
-  expect(text(result)).toContain('page "Den task"');
-  expect(text(result)).toContain("delivery: page");
+  expect(text(result)).toBe(
+    `effect: unverifiable | delivery: page | clicked\n${formPage}`,
+  );
 });
 
 test("an action takes an element or a ref, not both", async () => {
@@ -394,6 +409,7 @@ test("an action takes an element or a ref, not both", async () => {
   );
 
   expect(result.isError).toBe(true);
+  expect(text(result)).toBe("use element or ref, not both");
   expect(calls.some((c) => c.tool === "browser_click")).toBe(false);
 });
 
@@ -413,7 +429,7 @@ test("a ref action before any read asks for one, and acts without binding again"
   await tool.run({ action: "click", ref: "p1:1" }, BACKGROUND_CONTEXT);
 
   expect(early.isError).toBe(true);
-  expect(text(early)).toContain("read the page first");
+  expect(text(early)).toBe("read the page first, then act on a ref from it");
   // Binding again would supersede the read's refs.
   expect(calls.filter((c) => c.tool === "get_browser_state")).toHaveLength(2);
 });

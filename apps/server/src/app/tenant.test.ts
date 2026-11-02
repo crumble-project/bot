@@ -83,12 +83,15 @@ function restoreEnv(name: string, value: string | undefined) {
 
 function expectCommandsUse(
   configDir: string,
+  command: string,
   provider: ClaudeProvider | undefined,
 ) {
-  const expected = `CLAUDE_CONFIG_DIR=${JSON.stringify(configDir)}`;
+  const prefix = `CLAUDE_CONFIG_DIR=${JSON.stringify(configDir)} ${command}`;
 
-  expect(provider?.externalAuth?.signInCommand).toContain(expected);
-  expect(provider?.externalAuth?.signOutCommand).toContain(expected);
+  expect(provider?.externalAuth).toMatchObject({
+    signInCommand: `${prefix} auth login`,
+    signOutCommand: `${prefix} auth logout`,
+  });
 }
 
 test.serial(
@@ -135,14 +138,8 @@ test.serial(
         configured: false,
         externalAuth: { status: "signed_out" },
       });
-      expectCommandsUse(join(firstDir, "claude"), firstClaude);
-      expectCommandsUse(join(secondDir, "claude"), secondClaude);
-      expect(firstClaude?.externalAuth?.signInCommand).not.toContain(
-        sharedConfig,
-      );
-      expect(secondClaude?.externalAuth?.signInCommand).not.toContain(
-        sharedConfig,
-      );
+      expectCommandsUse(join(firstDir, "claude"), fake, firstClaude);
+      expectCommandsUse(join(secondDir, "claude"), fake, secondClaude);
     } finally {
       await Promise.allSettled([first?.close(), second?.close()]);
       restoreEnv("CRUMBLE_CLAUDE_COMMAND", command);

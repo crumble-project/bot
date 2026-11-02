@@ -7,9 +7,8 @@ import { FieldError } from "@/components/ui/field";
 import { EditorSheet } from "@/components/form-fields";
 import {
   SecretSourceField,
-  referenceOf,
-  sourceDraftOf,
-  useConnectedPasswordManagers,
+  type SecretInput,
+  useSecretDraft,
 } from "@/components/secret-source-field";
 import { RowMenu, RowTile, SettingRow } from "@/components/workspace";
 import {
@@ -27,11 +26,6 @@ type Setting = Plugin["settings"][number];
 
 type Contribution = Plugin["contributes"][number];
 
-type SettingInput =
-  | { value: string }
-  | { reference: NonNullable<ReturnType<typeof referenceOf>> }
-  | null;
-
 function SecretSettingSheet({
   setting,
   error,
@@ -42,32 +36,24 @@ function SecretSettingSheet({
   setting: Setting;
   error: string | undefined;
   pending: boolean;
-  onSave: (input: NonNullable<SettingInput>) => void;
+  onSave: (input: SecretInput) => void;
   onClose: () => void;
 }) {
-  const [source, setSource] = useState(() =>
-    sourceDraftOf(setting.passwordManager, setting.reference),
-  );
-
-  const connected = useConnectedPasswordManagers();
-  const reference = referenceOf(source);
-  const value = source.kind === "value" ? source.value.trim() : "";
+  const secret = useSecretDraft(setting.secret);
 
   return (
     <EditorSheet
       title={setting.label}
       error={error}
       submitLabel="Save"
-      submitDisabled={pending || (!reference && !value)}
-      onSubmit={() => onSave(reference ? { reference } : { value })}
+      submitDisabled={pending || !secret.changed}
+      onSubmit={() => secret.input && onSave(secret.input)}
       onClose={onClose}
     >
       <SecretSourceField
         id={`plugin-setting-${setting.key}`}
         label="Value"
-        value={source}
-        onChange={setSource}
-        connected={connected}
+        {...secret.field}
         valueDescription="Stored encrypted and never shown again."
       />
     </EditorSheet>
@@ -88,10 +74,12 @@ function SecretSetting({
   const path = pluginSettingPath(pluginId, setting.key);
   const managers = useQuery(passwordManagersQuery).data ?? [];
 
-  const manager = managers.find((item) => item.id === setting.passwordManager);
+  const manager = managers.find(
+    (item) => item.id === setting.secret.passwordManager,
+  );
 
   const save = useMutation({
-    mutationFn: (input: SettingInput) =>
+    mutationFn: (input: SecretInput | null) =>
       input === null ? send(path, "DELETE") : send(path, "PUT", input),
     onSuccess: async () => {
       setEditing(false);
@@ -132,7 +120,7 @@ function SecretSetting({
           save.isError && <FieldError>{save.error.message}</FieldError>
         }
       >
-        {setting.configured ? (
+        {setting.secret.configured ? (
           <RowMenu>
             <DropdownMenuItem onClick={() => setEditing(true)}>
               <IconPencil />

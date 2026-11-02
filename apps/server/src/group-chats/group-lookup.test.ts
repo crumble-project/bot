@@ -141,7 +141,7 @@ test("lists only the bot's groups", async () => {
   const { call } = await setup();
 
   expect((await call({ action: "list" })).groups).toEqual([
-    expect.objectContaining({ name: "Trip", members: ["Ada", "Grace"] }),
+    { name: "Trip", members: ["Ada", "Grace"] },
   ]);
 });
 

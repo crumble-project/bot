@@ -90,7 +90,7 @@ describe("PasswordManagerRepository", () => {
         sql(dir, "DELETE FROM credentials WHERE key = 'mcp:server'");
 
         return {
-          refused: refused._tag,
+          refused: refused.message,
           usedBy,
           deleted: yield* repository.delete("1password"),
         };
@@ -98,13 +98,13 @@ describe("PasswordManagerRepository", () => {
     );
 
     expect(result).toEqual({
-      refused: "Conflict",
-      usedBy: [{ kind: "secret", key: "mcp:server" }],
+      refused: "1 secret still read from this password manager",
+      usedBy: ["mcp:server"],
       deleted: true,
     });
   });
 
-  test("the database allows exactly one source per secret, and no OAuth reference", async () => {
+  test("the database allows exactly one source per secret", async () => {
     const rejects = await withRepository((dir) =>
       Effect.gen(function* () {
         yield* (yield* PasswordManagerRepository).save(
@@ -124,6 +124,12 @@ describe("PasswordManagerRepository", () => {
         };
 
         return {
+          stored: rejected(
+            "INSERT INTO credentials (key, value) VALUES ('d', 'sealed')",
+          ),
+          referenced: rejected(
+            "INSERT INTO credentials (key, password_manager, reference) VALUES ('e', '1password', 'op://v/i/f')",
+          ),
           both: rejected(
             "INSERT INTO credentials (key, value, password_manager, reference) VALUES ('a', 'sealed', '1password', 'op://v/i/f')",
           ),
@@ -131,22 +137,16 @@ describe("PasswordManagerRepository", () => {
           unknownManager: rejected(
             "INSERT INTO credentials (key, password_manager, reference) VALUES ('c', 'bitwarden', 'id')",
           ),
-          oauthReference: rejected(
-            "INSERT INTO provider_credentials (provider, type, password_manager, reference) VALUES ('openai', 'oauth', '1password', 'op://v/i/f')",
-          ),
-          apiKeyReference: rejected(
-            "INSERT INTO provider_credentials (provider, type, password_manager, reference) VALUES ('anthropic', 'api_key', '1password', 'op://v/i/f')",
-          ),
         };
       }),
     );
 
     expect(rejects).toEqual({
+      stored: false,
+      referenced: false,
       both: true,
       neither: true,
       unknownManager: true,
-      oauthReference: true,
-      apiKeyReference: false,
     });
   });
 });

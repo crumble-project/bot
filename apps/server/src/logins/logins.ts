@@ -1,16 +1,17 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Clock, Context, Effect, Layer, Predicate, Redacted } from "effect";
-import { BotNotices, requestAnswers } from "../bots/bot-notices";
+import { z } from "zod";
+import { BotSecretRequests } from "../bot-secrets/bot-secret-requests";
+import { BotSecretUses } from "../bot-secrets/bot-secret-uses";
 import type { LoginFill, LoginRead } from "../bot-desktop/computer-use-login";
 import type { Runner } from "../shared/runner";
-import { PasswordManagers } from "../password-managers/password-manager";
 import { FIELD_NOT_FOUND } from "../password-managers/one-password";
-import { checkSecretReference } from "../password-managers/secret-references";
 import {
   SecretValues,
   type SecretUnavailable,
 } from "../password-managers/secret-values";
+import { Secrets } from "../password-managers/secrets";
 import {
   loginFieldInput,
   loginName,
@@ -21,6 +22,7 @@ import {
   type LoginRequestInput,
   type LoginSaveInput,
   type LoginUse,
+  type SecretInput,
   type SecretReference,
 } from "../shared/domain";
 import {
@@ -31,8 +33,9 @@ import {
 } from "../shared/errors";
 import {
   LoginRepository,
-  type FieldSource,
-  type LoginWrite,
+  loginFieldKey,
+  loginFieldsPrefix,
+  type LoginRecord,
 } from "./login-repository";
 import { oneTimeCode, parseOneTimeSecret } from "./one-time-codes";
 import { toolOutput } from "../shared/tool-output";
@@ -40,8 +43,8 @@ import { requestParameters } from "../credentials/credentials";
 
 export const REQUEST_LOGIN_TOOL = "request_login";
 
-/** How long the owner can look back at a login's fills. */
-export const LOGIN_USE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+/** What a login's use records beyond its host: the field filled. */
+const useDetail = z.object({ field: loginFieldInput });
 
 // 1Password computes the current code for this attribute; any other one-time code source holds the TOTP secret.
 const COMPUTED_CODE = "?attribute=totp";
@@ -62,12 +65,8 @@ const itemFields = (item: SecretReference) => ({
 const isComputedCode = (reference: string | null) =>
   reference?.endsWith(COMPUTED_CODE) === true;
 
-const fieldReferences = (login: Login | undefined) =>
-  Object.values(login?.fields ?? {}).flatMap((field) =>
-    field.passwordManager && field.reference
-      ? [{ passwordManager: field.passwordManager, reference: field.reference }]
-      : [],
-  );
+/** A save's change to one field: a new secret, or null to remove it. */
+type FieldWrite = { field: LoginField; input: SecretInput | null };
 
 /**
  * Logins the owner gives a bot for its desktop jobs: a username and password, with an optional one-time code, for
@@ -121,8 +120,6 @@ export class Logins extends Context.Service<
       name: string,
       use: Omit<LoginUse, "id">,
     ) => Effect.Effect<void>;
-    /** Drops fills older than the retention, counted back from now. */
-    readonly prune: Effect.Effect<void>;
   }
 >()("crumble/logins/Logins") {
   static readonly layer = Layer.effect(
@@ -130,65 +127,48 @@ export class Logins extends Context.Service<
     Effect.gen(function* () {
       const repository = yield* LoginRepository;
       const values = yield* SecretValues;
-      const managers = yield* PasswordManagers;
-      const notices = yield* BotNotices;
+      const secrets = yield* Secrets;
+      const requests = yield* BotSecretRequests;
+      const useLog = yield* BotSecretUses;
 
-      const notify = requestAnswers(notices, "login");
+      const withFields = Effect.fnUntraced(function* (
+        agentId: string,
+        record: LoginRecord,
+      ) {
+        const fields: Login["fields"] = {};
 
-      const declined = (agentId: string, name: string) =>
-        notify(
-          agentId,
-          name,
-          `The owner declined your request for login ${name}.`,
-        );
+        for (const field of loginFieldInput.options) {
+          const status = yield* secrets.status(
+            loginFieldKey(agentId, record.name, field),
+          );
 
-      const checkReference = (reference: SecretReference) =>
-        checkSecretReference(reference).pipe(
-          Effect.provideService(PasswordManagers, managers),
-          Effect.provideService(SecretValues, values),
-        );
+          if (status.configured) fields[field] = status;
+        }
+
+        return { ...record, fields } satisfies Login;
+      });
+
+      const get = Effect.fn("Logins.get")(function* (
+        agentId: string,
+        name: string,
+      ) {
+        const record = yield* repository.get(agentId, name);
+
+        return record && (yield* withFields(agentId, record));
+      });
 
       /** A one-time code's secret must parse, wherever it is read from; a computed code needs no check. */
-      const checkOneTimeSecret = Effect.fnUntraced(function* (text: string) {
-        if (!parseOneTimeSecret(text))
-          return yield* new InvalidInput({ message: ONE_TIME_SECRET });
-      });
-
-      const checkField = Effect.fnUntraced(function* (
-        field: LoginField,
-        source: FieldSource,
-      ) {
-        if (!source.reference) {
-          if (field === "one_time_code")
-            yield* checkOneTimeSecret(source.value);
-
-          return;
-        }
-
-        yield* checkReference(source.reference);
-
-        if (
+      const verifyField =
+        (field: LoginField, input: SecretInput) => (value: Redacted.Redacted) =>
           field === "one_time_code" &&
-          !isComputedCode(source.reference.reference)
-        ) {
-          const secret = yield* values
-            .read(source.reference)
-            .pipe(
-              Effect.mapError(
-                (error) => new InvalidInput({ message: error.message }),
-              ),
-            );
-
-          yield* checkOneTimeSecret(Redacted.value(secret));
-        }
-      });
+          !isComputedCode(input.reference?.reference ?? null) &&
+          !parseOneTimeSecret(Redacted.value(value))
+            ? Effect.fail(new InvalidInput({ message: ONE_TIME_SECRET }))
+            : Effect.void;
 
       /** The fields an item fills; its one-time code only when the item has one. */
-      const itemWrite = Effect.fnUntraced(function* (item: SecretReference) {
+      const itemWrites = Effect.fnUntraced(function* (item: SecretReference) {
         const fields = itemFields(item);
-
-        yield* checkReference(fields.username);
-        yield* checkReference(fields.password);
 
         // Only a confirmed missing field means no code; any other failure must not drop a saved one.
         const hasCode = yield* values.readNow(fields.one_time_code).pipe(
@@ -200,45 +180,34 @@ export class Logins extends Context.Service<
           ),
         );
 
-        return {
-          username: { reference: fields.username },
-          password: { reference: fields.password },
-          one_time_code: hasCode ? { reference: fields.one_time_code } : null,
-        } satisfies LoginWrite["fields"];
+        return [
+          { field: "username", input: { reference: fields.username } },
+          { field: "password", input: { reference: fields.password } },
+          {
+            field: "one_time_code",
+            input: hasCode ? { reference: fields.one_time_code } : null,
+          },
+        ] satisfies FieldWrite[];
       });
 
-      const fieldsWrite = Effect.fnUntraced(function* (input: LoginSaveInput) {
-        if (input.item) return yield* itemWrite(input.item);
+      const fieldWrites = (input: LoginSaveInput) =>
+        input.item
+          ? itemWrites(input.item)
+          : Effect.succeed(
+              loginFieldInput.options.flatMap((field): FieldWrite[] => {
+                const source = input.fields?.[field];
 
-        const fields: LoginWrite["fields"] = {};
-
-        for (const field of loginFieldInput.options) {
-          const source = input.fields?.[field];
-
-          if (source === undefined) continue;
-
-          if (source === null) {
-            fields[field] = null;
-            continue;
-          }
-
-          const write: FieldSource = source.reference
-            ? { reference: source.reference }
-            : { value: source.value ?? "" };
-
-          yield* checkField(field, write);
-          fields[field] = write;
-        }
-
-        return fields;
-      });
+                return source === undefined ? [] : [{ field, input: source }];
+              }),
+            );
 
       const checkComplete = (
         existing: Login | undefined,
-        fields: LoginWrite["fields"],
+        writes: readonly FieldWrite[],
       ) => {
         const has = (field: "username" | "password") =>
-          Boolean(fields[field] ?? existing?.fields[field]);
+          writes.some((write) => write.field === field) ||
+          Boolean(existing?.fields[field]);
 
         return has("username") && has("password")
           ? Effect.void
@@ -247,25 +216,6 @@ export class Logins extends Context.Service<
                 message: "A login needs a username and a password",
               }),
             );
-      };
-
-      const forgetReplaced = (
-        previous: Login | undefined,
-        next: Login | undefined,
-      ) => {
-        const kept = new Set(
-          fieldReferences(next).map(
-            (each) => `${each.passwordManager} ${each.reference}`,
-          ),
-        );
-
-        return Effect.forEach(
-          fieldReferences(previous).filter(
-            (each) => !kept.has(`${each.passwordManager} ${each.reference}`),
-          ),
-          (each) => values.forget(each.passwordManager, each.reference),
-          { discard: true },
-        );
       };
 
       const checkedName = (name: string) => {
@@ -281,44 +231,60 @@ export class Logins extends Context.Service<
             );
       };
 
-      /** Clears the bot's request for a login just saved, and tells the bot. */
-      const answerRequest = Effect.fnUntraced(function* (
-        agentId: string,
-        login: Login,
-      ) {
-        if (!(yield* repository.deleteRequest(agentId, login.name))) return;
-
-        yield* notify(
-          agentId,
-          login.name,
-          `The owner saved login ${login.name} for ${login.hosts.join(", ")}. Desktop jobs can fill it with fill_login.`,
-        );
-      });
-
       const save = Effect.fn("Logins.save")(function* (
         agentId: string,
         name: string,
         input: LoginSaveInput,
       ) {
         const checked = yield* checkedName(name);
-        // Checked before reading the saved login, so a save made during the reads isn't overwritten.
-        const fields = yield* fieldsWrite(input);
-        const pending = yield* repository.getRequest(agentId, checked);
-        const existing = yield* repository.get(agentId, checked);
-        const hosts = input.hosts ?? existing?.hosts ?? pending?.hosts;
+        const writes = yield* fieldWrites(input);
 
-        if (!hosts)
-          return yield* new InvalidInput({ message: "Name at least one host" });
+        const hosts = Effect.gen(function* () {
+          const pending = yield* requests.get(agentId, "login", checked);
+          const existing = yield* get(agentId, checked);
+          const found = input.hosts ?? existing?.hosts ?? pending?.hosts;
 
-        yield* checkComplete(existing, fields);
+          if (!found)
+            return yield* new InvalidInput({
+              message: "Name at least one host",
+            });
 
-        const login = yield* repository.save(agentId, checked, {
-          hosts,
-          fields,
+          yield* checkComplete(existing, writes);
+
+          return found;
         });
 
-        yield* forgetReplaced(existing, login);
-        yield* answerRequest(agentId, login);
+        // Checked first, then read again after the fields' slow save, so a save made meanwhile isn't overwritten.
+        yield* hosts;
+
+        yield* secrets.saveAll(
+          writes.flatMap(({ field, input: source }) =>
+            source
+              ? [
+                  {
+                    key: loginFieldKey(agentId, checked, field),
+                    input: source,
+                    verify: verifyField(field, source),
+                  },
+                ]
+              : [],
+          ),
+        );
+
+        for (const { field } of writes.filter((write) => !write.input))
+          yield* secrets.delete(loginFieldKey(agentId, checked, field));
+
+        const login = yield* withFields(
+          agentId,
+          yield* repository.save(agentId, checked, yield* hosts),
+        );
+
+        yield* requests.answer(
+          agentId,
+          "login",
+          login.name,
+          `The owner saved login ${login.name} for ${login.hosts.join(", ")}. Desktop jobs can fill it with fill_login.`,
+        );
 
         return login;
       });
@@ -327,7 +293,7 @@ export class Logins extends Context.Service<
         agentId: string,
         input: LoginRequestInput,
       ) {
-        const existing = yield* repository.get(agentId, input.name);
+        const existing = yield* get(agentId, input.name);
 
         // A login that covers the hosts still answers a request for a one-time code it lacks.
         if (
@@ -339,35 +305,35 @@ export class Logins extends Context.Service<
             message: `Login ${input.name} is already yours for ${existing.hosts.join(", ")}`,
           });
 
-        return yield* repository.setRequest(agentId, input);
+        return yield* requests.ask(agentId, "login", {
+          ...input,
+          oneTimeCode: input.one_time_code,
+        });
       });
 
       const decline = Effect.fn("Logins.decline")(function* (
         agentId: string,
         name: string,
       ) {
-        if (!(yield* repository.deleteRequest(agentId, name)))
+        if (!(yield* requests.decline(agentId, "login", name)))
           return yield* new Conflict({
             message: "Login request has already been answered",
           });
-
-        yield* declined(agentId, name);
       });
 
       const remove = Effect.fn("Logins.delete")(function* (
         agentId: string,
         name: string,
       ) {
-        const existing = yield* repository.get(agentId, name);
+        if (yield* repository.delete(agentId, name)) {
+          yield* secrets.deleteAll(loginFieldsPrefix(agentId, name));
 
-        if (existing && (yield* repository.delete(agentId, name)))
-          return yield* forgetReplaced(existing, undefined);
+          return yield* useLog.forget(agentId, "login", name);
+        }
 
         // Without a login, deleting declines the bot's request for one.
-        if (yield* repository.deleteRequest(agentId, name))
-          return yield* declined(agentId, name);
-
-        return yield* new NotFound({ message: "Login not found" });
+        if (!(yield* requests.decline(agentId, "login", name)))
+          return yield* new NotFound({ message: "Login not found" });
       });
 
       const value = Effect.fn("Logins.value")(function* (
@@ -375,20 +341,17 @@ export class Logins extends Context.Service<
         name: string,
         field: LoginField,
       ) {
-        const source = yield* repository.source(agentId, name, field);
+        const key = loginFieldKey(agentId, name, field);
+        // A computed code expires within seconds, so it is never served from the cache.
+        const computed = isComputedCode((yield* secrets.status(key)).reference);
+        const read = yield* secrets.read(key, { fresh: computed });
 
-        if (!source)
+        if (!read)
           return yield* new NotFound({
             message: `Login ${name} has no ${field.replaceAll("_", " ")}`,
           });
 
-        // A computed code expires within seconds, so it is never served from the cache.
-        if ("reference" in source && isComputedCode(source.reference))
-          return yield* values.readNow(source);
-
-        const read = yield* values.read(source);
-
-        if (field !== "one_time_code") return read;
+        if (field !== "one_time_code" || computed) return read;
 
         const secret = parseOneTimeSecret(Redacted.value(read));
 
@@ -400,14 +363,6 @@ export class Logins extends Context.Service<
         );
       });
 
-      const prune = Effect.gen(function* () {
-        const now = yield* Clock.currentTimeMillis;
-
-        yield* repository.pruneUses(
-          new Date(now - LOGIN_USE_RETENTION_MS).toISOString(),
-        );
-      }).pipe(Effect.withSpan("Logins.prune"));
-
       const uses = Effect.fn("Logins.uses")(function* (
         agentId: string,
         name: string,
@@ -416,23 +371,31 @@ export class Logins extends Context.Service<
         if (!(yield* repository.get(agentId, name)))
           return yield* new NotFound({ message: "Login not found" });
 
-        yield* prune;
+        const listed = yield* useLog.list(agentId, "login", name, options);
 
-        return yield* repository.listUses(agentId, name, options);
+        return listed.map(({ detail, ...use }): LoginUse => ({
+          ...use,
+          field: useDetail.parse(detail).field,
+        }));
       });
 
       return Logins.of({
-        list: repository.list,
-        get: repository.get,
-        requests: repository.listRequests,
+        list: (agentId) =>
+          Effect.flatMap(repository.list(agentId), (records) =>
+            Effect.forEach(records, (record) => withFields(agentId, record)),
+          ),
+        get,
+        requests: (agentId) => requests.list(agentId, "login"),
         request,
         decline,
         save,
         delete: remove,
         uses,
         value,
-        recordUse: repository.addUse,
-        prune,
+        recordUse: (agentId, name, { field, ...use }) =>
+          useLog
+            .record(agentId, "login", name, { ...use, detail: { field } })
+            .pipe(Effect.andThen(repository.touch(agentId, name, use.at))),
       });
     }),
   );

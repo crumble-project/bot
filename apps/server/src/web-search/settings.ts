@@ -1,13 +1,13 @@
-import { routes, apiKeyInput } from "../contract/api-contract";
+import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import { SecretRepository } from "../credentials/secret-repository";
+import { Secrets } from "../password-managers/secrets";
 import type { Runner } from "../shared/runner";
 import { SettingsRepository } from "../shared/settings-repository";
 import { z } from "zod";
 import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
 import { EXA_KEY } from "./exa";
 
-type Services = SecretRepository | SettingsRepository;
+type Services = Secrets | SettingsRepository;
 
 export const DEFAULT_PROVIDER = "web-search:default-provider";
 
@@ -24,9 +24,8 @@ export function registerWebSearchRoutes(options: {
       .parse(
         run.runSync(SettingsRepository.use((r) => r.get(DEFAULT_PROVIDER))),
       ),
-    exaKeyConfigured: run
-      .runSync(SecretRepository.use((r) => r.listKeys))
-      .includes(EXA_KEY),
+    exaKeyConfigured: run.runSync(Secrets.use((s) => s.status(EXA_KEY)))
+      .configured,
   });
 
   register(routes.getWebSearch, (c) => c.json(status(), 200));
@@ -42,16 +41,5 @@ export function registerWebSearchRoutes(options: {
     );
 
     return c.json(status(), 200);
-  });
-  register(routes.setExaKey, async (c) => {
-    const input = apiKeyInput.parse(await c.req.json());
-    run.runSync(SecretRepository.use((r) => r.set(EXA_KEY, input.apiKey)));
-
-    return c.json({ exaKeyConfigured: true }, 200);
-  });
-  register(routes.deleteExaKey, (c) => {
-    run.runSync(SecretRepository.use((r) => r.delete(EXA_KEY)));
-
-    return c.json({ exaKeyConfigured: false }, 200);
   });
 }

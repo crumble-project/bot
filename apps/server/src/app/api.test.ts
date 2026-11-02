@@ -9,23 +9,23 @@ import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { createAPI, handleApiError, type ApiOptions } from "./api";
 import { heldActionNotices } from "./plugin-layers";
-import { contractApp, pluginSecretInput } from "../contract/api-contract";
+import { contractApp } from "../contract/api-contract";
+import type { secretInput } from "../shared/domain";
 import type { z } from "zod";
 import { registerMcpServerRoutes } from "../integrations/mcp-servers-api";
 import type { McpIntegrations } from "../integrations/integrations";
 import { secretStorage } from "../integrations/mcp-oauth";
 import { registerPluginSettingRoutes } from "../plugins/plugin-settings-api";
 import { memoryResponse } from "../contract/api-responses";
-import { Context, Effect, Exit, Layer, Redacted, Scope } from "effect";
+import { Context, Effect, Exit, Layer, Scope } from "effect";
 import {
-  FAKE_TOKEN,
+  connectFakePasswordManager,
   fakePasswordManager,
   fakeVendor,
   type FakePasswordManager,
 } from "../../test/support/fake-password-manager";
-import { PasswordManagers } from "../password-managers/password-manager";
-import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
 import { SecretValues } from "../password-managers/secret-values";
+import { secretsLayer } from "../password-managers/secrets";
 import { standaloneSignIns } from "../providers/provider-auth";
 import { ProviderCredentials } from "../providers/provider-credentials";
 import type { CoreServices } from "./core-layer";
@@ -270,7 +270,7 @@ describe("HTTP API for bots, chats, and activity", () => {
   });
 
   test("lists a bot's desktop jobs", async () => {
-    const { app, store } = setup();
+    const { app, store, runtime } = setup();
 
     const agent = store.createAgent({
       name: "Desk",
@@ -286,10 +286,29 @@ describe("HTTP API for bots, chats, and activity", () => {
       delegates: [],
     });
 
+    runtime.desktopJobs = async (owner: RuntimeAgent) => [
+      {
+        name: "github-login",
+        conversationId: `${owner.id}:desktop`,
+        status: "idle",
+      },
+    ];
+
     const res = await req(app, `/v1/agents/${agent.id}/desktop-jobs`);
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ jobs: [] });
+    expect(await res.json()).toEqual({
+      jobs: [
+        {
+          name: "github-login",
+          conversationId: `${agent.id}:desktop`,
+          status: "idle",
+        },
+      ],
+    });
+    expect(
+      (await req(app, `/v1/agents/${crypto.randomUUID()}/desktop-jobs`)).status,
+    ).toBe(404);
   });
 
   test("lists bundled and editable shared skills in one catalog", async () => {
@@ -563,7 +582,9 @@ describe("HTTP API for bots, chats, and activity", () => {
     });
 
     expect(pdf.status).toBe(400);
-    expect((await pdf.json()).error).toContain("only images");
+    expect((await pdf.json()).error).toBe(
+      "doc.pdf: only images (PNG, JPEG, GIF, WebP) and text files can be attached",
+    );
 
     const memory = await req(app, `/v1/agents/${agent.id}/memories`, {
       method: "POST",
@@ -652,7 +673,7 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
         name: "Docs",
         url: "https://docs.example.com/mcp",
         enabled: true,
-        token: "secret",
+        token: { value: "secret" },
       }),
     }).then((r: Response) => r.json());
 
@@ -781,14 +802,14 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
       body: JSON.stringify({
         name: "Docs",
         url: "https://docs.example.com/mcp",
-        token: "token-secret",
+        token: { value: "token-secret" },
       }),
     }).then((r: Response) => r.json());
 
     const patch = (body: {
       name?: string;
       oauthClientId?: string;
-      oauthClientSecret?: string;
+      oauthClientSecret?: { value: string } | null;
     }) =>
       req(app, `/v1/mcp-servers/${created.id}`, {
         method: "PATCH",
@@ -806,7 +827,7 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
     // The client secret is write-only; writing one replaces whatever was stored.
     const secretWritten = await patch({
       oauthClientId: "client-id",
-      oauthClientSecret: "client-secret",
+      oauthClientSecret: { value: "client-secret" },
     });
 
     expect(secretWritten.status).toBe(200);
@@ -821,7 +842,7 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
       auth: "token",
       authenticated: true,
       oauthClientId: "client-id",
-      hasOAuthClientSecret: true,
+      oauthClientSecret: { configured: true },
     });
 
     // A new client ID invalidates the tokens the old client obtained.
@@ -830,10 +851,10 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
     expect(otherClient.status).toBe(200);
     expect((await otherClient.json()).oauthClientId).toBe("other-client-id");
 
-    const secretRemoved = await patch({ oauthClientSecret: "" });
+    const secretRemoved = await patch({ oauthClientSecret: null });
 
     expect(secretRemoved.status).toBe(200);
-    expect((await described()).hasOAuthClientSecret).toBe(false);
+    expect((await described()).oauthClientSecret.configured).toBe(false);
     expect(
       (
         await req(app, "/v1/mcp-servers/missing", {
@@ -873,7 +894,7 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
     ).toBe(404);
     await req(app, "/v1/providers/openai", {
       method: "PUT",
-      body: JSON.stringify({ apiKey: "secret" }),
+      body: JSON.stringify({ value: "secret" }),
     });
     expect(
       JSON.stringify(
@@ -1413,11 +1434,23 @@ describe("HTTP API for script tasks and schedules", () => {
 
     expect(schedule.status).toBe(201);
     const value = await schedule.json();
-    expect(
-      (await req(app, `/v1/schedules/${value.id}/run`, { method: "POST" }))
-        .status,
-    ).toBe(202);
-    expect((await req(app, "/v1/executions")).status).toBe(200);
+
+    const ran = await req(app, `/v1/schedules/${value.id}/run`, {
+      method: "POST",
+    });
+
+    expect(ran.status).toBe(202);
+    const { result } = await ran.json();
+
+    expect(result).toMatchObject({
+      agentId: agent.id,
+      scheduleId: value.id,
+      prompt: "run",
+      status: "running",
+    });
+    expect(await (await req(app, "/v1/executions")).json()).toMatchObject([
+      { id: result.id, scheduleId: value.id, prompt: "run" },
+    ]);
     store.close();
   });
 });
@@ -1776,22 +1809,14 @@ describe("provider API keys from a password manager", () => {
     const vault = Effect.runSync(
       Layer.buildWithScope(
         ProviderCredentials.layer.pipe(
-          Layer.provideMerge(
-            SecretValues.layer.pipe(
-              Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
-            ),
-          ),
+          Layer.provideMerge(secretsLayer([fakeVendor(state)])),
           Layer.provide(Layer.succeedContext(core)),
         ),
         scope,
       ),
     );
 
-    store.run(
-      PasswordManagerRepository.use((repository) =>
-        repository.save("1password", Redacted.make(FAKE_TOKEN), "t"),
-      ),
-    );
+    store.run(connectFakePasswordManager);
 
     const providerAuth = standaloneSignIns(
       runnerOf(Context.merge(core, vault)),
@@ -1807,9 +1832,9 @@ describe("provider API keys from a password manager", () => {
       credentials: Context.get(vault, ProviderCredentials),
       put: (
         body:
-          | { apiKey: string }
+          | { value: string }
           | typeof reference
-          | ({ apiKey: string } & typeof reference),
+          | ({ value: string } & typeof reference),
       ) =>
         req(app, "/v1/providers/openai", {
           method: "PUT",
@@ -1832,8 +1857,7 @@ describe("provider API keys from a password manager", () => {
     expect((await api.put(reference)).status).toBe(200);
     expect(await api.openai()).toMatchObject({
       credentialType: "api_key",
-      passwordManager: "1password",
-      reference: REFERENCE,
+      apiKey: { passwordManager: "1password", reference: REFERENCE },
     });
     expect(await api.credentials.read("openai")).toEqual({
       type: "api_key",
@@ -1846,7 +1870,7 @@ describe("provider API keys from a password manager", () => {
     const state = fakePasswordManager();
     const api = vaultSetup(state);
 
-    await api.put({ apiKey: "sk-stored" });
+    await api.put({ value: "sk-stored" });
     state.mode = "unreachable";
 
     const response = await api.put(reference);
@@ -1856,8 +1880,7 @@ describe("provider API keys from a password manager", () => {
       error: "Fake could not be reached",
     });
     expect(await api.openai()).toMatchObject({
-      passwordManager: null,
-      reference: null,
+      apiKey: { passwordManager: null, reference: null },
     });
     expect(await api.credentials.read("openai")).toEqual({
       type: "api_key",
@@ -1869,24 +1892,10 @@ describe("provider API keys from a password manager", () => {
   test("a body with both a key and a reference is rejected, even an empty key", async () => {
     const api = vaultSetup(fakePasswordManager({ [REFERENCE]: "sk-vault" }));
 
-    for (const apiKey of ["sk-typed", ""])
-      expect((await api.put({ apiKey, ...reference })).status).toBe(400);
+    for (const value of ["sk-typed", ""])
+      expect((await api.put({ value, ...reference })).status).toBe(400);
 
     expect(await api.openai()).toMatchObject({ credentialType: null });
-    api.close();
-  });
-
-  test("the Exa key route rejects a reference", async () => {
-    const api = vaultSetup(fakePasswordManager({ [REFERENCE]: "sk-vault" }));
-
-    expect(
-      (
-        await req(api.app, "/v1/web-search/exa-key", {
-          method: "PUT",
-          body: JSON.stringify(reference),
-        })
-      ).status,
-    ).toBe(400);
     api.close();
   });
 });
@@ -1903,8 +1912,7 @@ describe("MCP server tokens from a password manager", () => {
   type ServerBody = {
     name?: string;
     url?: string;
-    token?: string;
-    tokenReference?: ReturnType<typeof reference> | null;
+    token?: { value?: string; reference?: ReturnType<typeof reference> } | null;
   };
 
   /** The MCP server routes over a fake 1Password, recording which servers were disconnected. */
@@ -1915,19 +1923,14 @@ describe("MCP server tokens from a password manager", () => {
 
     const vault = Effect.runSync(
       Layer.buildWithScope(
-        SecretValues.layer.pipe(
-          Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
+        secretsLayer([fakeVendor(state)]).pipe(
           Layer.provide(Layer.succeedContext(core)),
         ),
         scope,
       ),
     );
 
-    store.run(
-      PasswordManagerRepository.use((repository) =>
-        repository.save("1password", Redacted.make(FAKE_TOKEN), "t"),
-      ),
-    );
+    store.run(connectFakePasswordManager);
 
     const run = runnerOf(Context.merge(core, vault));
     const disconnected: string[] = [];
@@ -1986,7 +1989,7 @@ describe("MCP server tokens from a password manager", () => {
       patch: (id: string, body: ServerBody) =>
         send("PATCH", `/v1/mcp-servers/${id}`, body),
       list: async () => (await send("GET", "/v1/mcp-servers")).json(),
-      setPluginToken: (body: z.input<typeof pluginSecretInput>) =>
+      setPluginToken: (body: z.input<typeof secretInput>) =>
         app.request("/v1/plugin-settings/chat/token", {
           method: "PUT",
           headers: { "content-type": "application/json" },
@@ -2005,18 +2008,16 @@ describe("MCP server tokens from a password manager", () => {
 
   test("a server created with a token reference lists where its token is read from", async () => {
     const api = mcpSetup(fakePasswordManager({ [REFERENCE]: "lin_vault" }));
-    const response = await api.create({ tokenReference: reference() });
+    const response = await api.create({ token: { reference: reference() } });
 
     expect(response.status).toBe(201);
     expect(await response.json()).toMatchObject({
-      tokenPasswordManager: "1password",
-      tokenReference: REFERENCE,
+      token: { passwordManager: "1password", reference: REFERENCE },
     });
     expect(await api.list()).toMatchObject([
       {
         auth: "token",
-        tokenPasswordManager: "1password",
-        tokenReference: REFERENCE,
+        token: { passwordManager: "1password", reference: REFERENCE },
       },
     ]);
     api.close();
@@ -2043,17 +2044,17 @@ describe("MCP server tokens from a password manager", () => {
     const saved = await api.setPluginToken({ reference: reference() });
 
     expect(await saved.json()).toMatchObject({
-      configured: true,
-      passwordManager: "1password",
-      reference: REFERENCE,
+      secret: {
+        configured: true,
+        passwordManager: "1password",
+        reference: REFERENCE,
+      },
     });
 
     const stored = await api.setPluginToken({ value: "chat_stored" });
 
     expect(await stored.json()).toMatchObject({
-      configured: true,
-      passwordManager: null,
-      reference: null,
+      secret: { configured: true, passwordManager: null, reference: null },
     });
     api.close();
   });
@@ -2062,17 +2063,16 @@ describe("MCP server tokens from a password manager", () => {
     const api = mcpSetup(fakePasswordManager({ [REFERENCE]: "lin_vault" }));
 
     const { id } = await (
-      await api.create({ tokenReference: reference() })
+      await api.create({ token: { reference: reference() } })
     ).json();
 
     api.state.mode = "unreachable";
 
-    const response = await api.patch(id, { token: "lin_stored" });
+    const response = await api.patch(id, { token: { value: "lin_stored" } });
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
-      tokenPasswordManager: null,
-      tokenReference: null,
+      token: { passwordManager: null, reference: null },
     });
     expect(api.state.reads).toBe(1);
     expect(api.disconnected).toEqual([id]);
@@ -2088,15 +2088,18 @@ describe("MCP server tokens from a password manager", () => {
     );
 
     const { id } = await (
-      await api.create({ tokenReference: reference() })
+      await api.create({ token: { reference: reference() } })
     ).json();
 
     await api.read(REFERENCE);
     expect(api.state.reads).toBe(1);
 
     expect(
-      (await api.patch(id, { tokenReference: reference(OTHER_REFERENCE) }))
-        .status,
+      (
+        await api.patch(id, {
+          token: { reference: reference(OTHER_REFERENCE) },
+        })
+      ).status,
     ).toBe(200);
     expect(api.disconnected).toEqual([id]);
 
@@ -2109,25 +2112,25 @@ describe("MCP server tokens from a password manager", () => {
     const api = mcpSetup(fakePasswordManager({ [REFERENCE]: "lin_vault" }));
 
     const { id } = await (
-      await api.create({ tokenReference: reference() })
+      await api.create({ token: { reference: reference() } })
     ).json();
 
     api.state.mode = "unreachable";
 
     const response = await api.patch(id, {
       name: "Renamed",
-      tokenReference: reference(OTHER_REFERENCE),
+      token: { reference: reference(OTHER_REFERENCE) },
     });
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
       error: "Fake could not be reached",
     });
-    expect((await api.create({ tokenReference: reference() })).status).toBe(
-      400,
-    );
+    expect(
+      (await api.create({ token: { reference: reference() } })).status,
+    ).toBe(400);
     expect(await api.list()).toMatchObject([
-      { id, name: "Linear", tokenReference: REFERENCE },
+      { id, name: "Linear", token: { reference: REFERENCE } },
     ]);
     expect(api.disconnected).toEqual([]);
     api.close();
@@ -2137,8 +2140,11 @@ describe("MCP server tokens from a password manager", () => {
     const api = mcpSetup(fakePasswordManager({ [REFERENCE]: "lin_vault" }));
 
     expect(
-      (await api.create({ token: "lin_stored", tokenReference: reference() }))
-        .status,
+      (
+        await api.create({
+          token: { value: "lin_stored", reference: reference() },
+        })
+      ).status,
     ).toBe(400);
     expect(await api.list()).toEqual([]);
     api.close();

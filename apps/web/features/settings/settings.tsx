@@ -64,11 +64,10 @@ import { unlock } from "cuelume";
 import { clearLiveStreams, notifications } from "@/lib/live";
 import { CopyButton, EditorSheet } from "@/components/form-fields";
 import {
-  EMPTY_SOURCE,
   SecretSourceField,
-  referenceOf,
+  type SecretInput,
   useConnectedPasswordManagers,
-  type SecretSourceDraft,
+  useSecretDraft,
 } from "@/components/secret-source-field";
 import { LoginDialog, refreshProviders } from "./provider-login";
 import {
@@ -563,9 +562,11 @@ const EXTERNAL_STATUS = {
 } as const;
 
 function keyStatus(provider: Provider, managers: PasswordManager[]) {
-  if (!provider.passwordManager) return "Key saved";
+  if (!provider.apiKey.passwordManager) return "Key saved";
 
-  const manager = managers.find((item) => item.id === provider.passwordManager);
+  const manager = managers.find(
+    (item) => item.id === provider.apiKey.passwordManager,
+  );
 
   return `Key in ${manager?.name ?? "a password manager"}`;
 }
@@ -584,29 +585,16 @@ function status(provider: Provider, managers: PasswordManager[]) {
   return provider.activeLoginId ? "Signing in…" : null;
 }
 
-/** The key to save, or null to remove the saved credential. */
-const providerKeyBody = (source: SecretSourceDraft) => {
-  const reference = referenceOf(source);
-
-  if (reference) return { reference };
-
-  return source.kind === "value" && source.value.trim()
-    ? { apiKey: source.value.trim() }
-    : null;
-};
-
 function useProviderCredential(provider: Provider) {
   const [editing, setEditing] = useState(false);
-  const [source, setSource] = useState<SecretSourceDraft>(EMPTY_SOURCE);
   const path = `/v1/providers/${encodeURIComponent(provider.provider)}`;
 
   // `refreshProviders` invalidates the provider and model queries.
   // react-doctor-disable-next-line query-mutation-missing-invalidation
   const save = useMutation({
-    mutationFn: (body: ReturnType<typeof providerKeyBody>) =>
+    mutationFn: (body: SecretInput | null) =>
       body === null ? send(path, "DELETE") : send(path, "PUT", body),
     onSuccess: async () => {
-      setSource(EMPTY_SOURCE);
       setEditing(false);
       await refreshProviders();
       // Drop the submitted key from the mutation state.
@@ -614,7 +602,7 @@ function useProviderCredential(provider: Provider) {
     },
   });
 
-  return { editing, setEditing, source, setSource, save };
+  return { editing, setEditing, save };
 }
 
 type ProviderCredential = ReturnType<typeof useProviderCredential>;
@@ -741,11 +729,7 @@ function ProviderRow({
         />
       </SettingRow>
       {credential.editing && (
-        <ProviderKeySheet
-          provider={provider}
-          credential={credential}
-          managers={managers}
-        />
+        <ProviderKeySheet provider={provider} credential={credential} />
       )}
       <ProviderNotes provider={provider} credential={credential} />
     </div>
@@ -778,33 +762,28 @@ function ProviderNotes({
 function ProviderKeySheet({
   provider,
   credential,
-  managers,
 }: {
   provider: Provider;
   credential: ProviderCredential;
-  managers: PasswordManager[];
 }) {
-  const body = providerKeyBody(credential.source);
+  const key = useSecretDraft(provider.apiKey);
 
   return (
     <EditorSheet
       title={`${provider.credentialType === "api_key" ? "Replace" : "Add"} ${provider.name} API key`}
       error={credential.save.error?.message}
       submitLabel="Save"
-      submitDisabled={!body || credential.save.isPending}
-      onSubmit={() => body && credential.save.mutate(body)}
+      submitDisabled={!key.changed || credential.save.isPending}
+      onSubmit={() => key.input && credential.save.mutate(key.input)}
       onClose={() => {
         credential.setEditing(false);
-        credential.setSource(EMPTY_SOURCE);
         credential.save.reset();
       }}
     >
       <SecretSourceField
         id={`provider-key-${provider.provider}`}
         label="API key"
-        value={credential.source}
-        onChange={credential.setSource}
-        connected={managers}
+        {...key.field}
         valuePlaceholder="API key"
         valueDescription="Stored encrypted and never shown again."
       />

@@ -106,7 +106,7 @@ test("a slice that isn't UTF-8 comes back as base64", async () => {
 
   expect(Exit.isSuccess(page) && page.value).toMatchObject({
     encoding: "base64",
-    data: Buffer.from([0xff, 0x00, 0x41]).toString("base64"),
+    data: "/wBB",
     totalBytes: 3,
   });
 });

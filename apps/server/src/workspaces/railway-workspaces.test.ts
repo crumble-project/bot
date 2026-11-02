@@ -363,7 +363,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
 
     await credentials.save(bot.id, "ECHO_TOKEN", {
       hosts: ["example.com"],
-      value,
+      secret: { value },
     });
 
     // Stands in for example.com: the proxy checks the real name's public address, then dials this server instead.

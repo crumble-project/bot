@@ -1,9 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { Clock, Context, Effect, Layer, Predicate, Redacted } from "effect";
+import { Context, Effect, Layer, Predicate, Redacted } from "effect";
+import { z } from "zod";
 import type { Runner } from "../shared/runner";
-import { BotNotices, requestAnswers } from "../bots/bot-notices";
+import { BotSecretRequests } from "../bot-secrets/bot-secret-requests";
+import { BotSecretUses } from "../bot-secrets/bot-secret-uses";
 import {
   credentialName,
   credentialRequestInput,
@@ -15,13 +17,13 @@ import {
   type CredentialTarget,
   type CredentialUse,
 } from "../shared/domain";
-import { PasswordManagers } from "../password-managers/password-manager";
-import { checkSecretReference } from "../password-managers/secret-references";
+import type { SecretUnavailable } from "../password-managers/secret-values";
+import { Secrets } from "../password-managers/secrets";
 import {
-  SecretValues,
-  type SecretUnavailable,
-} from "../password-managers/secret-values";
-import { AgentCredentialRepository } from "./agent-credential-repository";
+  AgentCredentialRepository,
+  credentialSecretKey,
+  type CredentialRecord,
+} from "./agent-credential-repository";
 import { GitHubApps } from "../github-apps/github-apps";
 import type {
   GitHubIdentity,
@@ -38,15 +40,19 @@ import { toolOutput } from "../shared/tool-output";
 
 export const REQUEST_CREDENTIAL_TOOL = "request_credential";
 
-/** How long the owner can look back at a credential's uses. */
-export const CREDENTIAL_USE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
-
 const hostsText = (hosts: readonly string[]) => hosts.join(", ");
+
+/** What a credential's use records beyond its host: the request it was swapped into. */
+const useDetail = z.object({
+  method: z.string(),
+  path: z.string(),
+  status: z.number().nullable(),
+});
 
 /** The hosts a save covers: the input's, else the saved credential's, else the pending request's. */
 const savedHosts = (
   input: CredentialSaveInput,
-  existing: AgentCredential | undefined,
+  existing: CredentialRecord | undefined,
   pending: CredentialRequest | undefined,
 ) => {
   const hosts = input.hosts ?? existing?.hosts ?? pending?.hosts;
@@ -54,7 +60,7 @@ const savedHosts = (
   if (!hosts)
     return Effect.fail(new InvalidInput({ message: "Name at least one host" }));
 
-  if (!existing && input.value === undefined && !input.reference)
+  if (!existing && !input.secret)
     return Effect.fail(
       new InvalidInput({
         message: "A new credential needs a value or a reference",
@@ -122,52 +128,61 @@ export class Credentials extends Context.Service<
       name: string,
       use: Omit<CredentialUse, "id">,
     ) => Effect.Effect<void>;
-    /** Drops uses older than the retention, counted back from now. */
-    readonly prune: Effect.Effect<void>;
   }
 >()("crumble/credentials/Credentials") {
   static readonly layer = Layer.effect(
     Credentials,
     Effect.gen(function* () {
       const repository = yield* AgentCredentialRepository;
-      const notices = yield* BotNotices;
-      const values = yield* SecretValues;
-      const managers = yield* PasswordManagers;
+      const requests = yield* BotSecretRequests;
+      const useLog = yield* BotSecretUses;
+      const secrets = yield* Secrets;
       const githubApps = yield* GitHubApps;
 
-      /** Drops the cached value of a reference the credential no longer reads. */
-      const forgetReplaced = (
-        previous: AgentCredential | undefined,
-        next: AgentCredential | undefined,
-      ) =>
-        previous?.passwordManager &&
-        previous.reference &&
-        (previous.passwordManager !== next?.passwordManager ||
-          previous.reference !== next.reference)
-          ? values.forget(previous.passwordManager, previous.reference)
-          : Effect.void;
+      const withSecret = Effect.fnUntraced(function* (
+        agentId: string,
+        record: CredentialRecord,
+      ) {
+        return {
+          ...record,
+          secret: record.github
+            ? null
+            : yield* secrets.status(credentialSecretKey(agentId, record.name)),
+        } satisfies AgentCredential;
+      });
 
       const value = Effect.fn("Credentials.value")(function* (
         agentId: string,
         name: string,
         target: CredentialTarget,
       ) {
-        const source = yield* repository.source(agentId, name);
+        const found = yield* repository.get(agentId, name);
 
-        if (!source)
+        if (found?.github) return yield* githubApps.token(agentId, target);
+
+        const secret =
+          found && (yield* secrets.read(credentialSecretKey(agentId, name)));
+
+        if (!secret)
           return yield* new NotFound({ message: `${name} was deleted` });
 
-        if ("github" in source) return yield* githubApps.token(agentId, target);
-
-        return yield* values.read(source);
+        return secret;
       });
-
-      const notify = requestAnswers(notices, "credential");
 
       const list = Effect.fn("Credentials.list")(function* (agentId: string) {
         return {
-          credentials: yield* repository.list(agentId),
-          requests: yield* repository.listRequests(agentId),
+          credentials: yield* Effect.forEach(
+            yield* repository.list(agentId),
+            (record) => withSecret(agentId, record),
+          ),
+          requests: (yield* requests.list(agentId, "credential")).map(
+            ({ name, hosts, reason, requestedAt }) => ({
+              name,
+              hosts,
+              reason,
+              requestedAt,
+            }),
+          ),
         };
       });
 
@@ -187,7 +202,7 @@ export class Credentials extends Context.Service<
             }),
           );
 
-        return yield* repository.setRequest(agentId, input);
+        return yield* requests.ask(agentId, "credential", input);
       });
 
       const save = Effect.fn("Credentials.save")(function* (
@@ -200,36 +215,45 @@ export class Credentials extends Context.Service<
           catch: (cause) => cause,
         }).pipe(Effect.orDie);
 
-        const { value, reference } = input;
-
-        // Checked before reading the saved credential, so a save made during the read isn't overwritten.
-        if (reference)
-          yield* checkSecretReference(reference).pipe(
-            Effect.provideService(PasswordManagers, managers),
-            Effect.provideService(SecretValues, values),
+        const savedHostsNow = Effect.gen(function* () {
+          const pending = yield* requests.get(
+            agentId,
+            "credential",
+            checkedName,
           );
 
-        const pending = yield* repository.getRequest(agentId, checkedName);
-        const existing = yield* repository.get(agentId, checkedName);
-        const resolvedHosts = yield* savedHosts(input, existing, pending);
-
-        const credential = yield* repository.save(agentId, checkedName, {
-          hosts: resolvedHosts,
-          value,
-          reference,
-          placeholder: `crumble-credential-${randomBytes(24).toString("hex")}`,
+          return yield* savedHosts(
+            input,
+            yield* repository.get(agentId, checkedName),
+            pending,
+          );
         });
 
-        yield* forgetReplaced(existing, credential);
+        // Checked first, then read again after the secret's slow save, so a save made meanwhile isn't overwritten.
+        yield* savedHostsNow;
 
-        if (pending) {
-          yield* repository.deleteRequest(agentId, checkedName);
-          yield* notify(
-            agentId,
-            checkedName,
-            `The owner saved credential ${checkedName} for ${hostsText(credential.hosts)}. Coding jobs see it as $${checkedName}.`,
+        if (input.secret)
+          yield* secrets.save(
+            credentialSecretKey(agentId, checkedName),
+            input.secret,
           );
-        }
+
+        const hosts = yield* savedHostsNow;
+
+        const credential = yield* repository
+          .save(agentId, checkedName, {
+            hosts,
+            github: false,
+            placeholder: `crumble-credential-${randomBytes(24).toString("hex")}`,
+          })
+          .pipe(Effect.flatMap((record) => withSecret(agentId, record)));
+
+        yield* requests.answer(
+          agentId,
+          "credential",
+          checkedName,
+          `The owner saved credential ${checkedName} for ${hostsText(credential.hosts)}. Coding jobs see it as $${checkedName}.`,
+        );
 
         return credential;
       });
@@ -238,48 +262,25 @@ export class Credentials extends Context.Service<
         agentId: string,
         name: string,
       ) {
-        const existing = yield* repository.get(agentId, name);
+        if (yield* repository.delete(agentId, name)) {
+          yield* secrets.delete(credentialSecretKey(agentId, name));
 
-        if (yield* repository.delete(agentId, name))
-          return yield* forgetReplaced(existing, undefined);
+          return yield* useLog.forget(agentId, "credential", name);
+        }
 
-        if (!(yield* repository.deleteRequest(agentId, name)))
-          return yield* Effect.fail(
-            new NotFound({ message: "Credential not found" }),
-          );
-
-        yield* notify(
-          agentId,
-          name,
-          `The owner declined your request for credential ${name}.`,
-        );
+        if (!(yield* requests.decline(agentId, "credential", name)))
+          return yield* new NotFound({ message: "Credential not found" });
       });
 
       const decline = Effect.fn("Credentials.decline")(function* (
         agentId: string,
         name: string,
       ) {
-        if (!(yield* repository.deleteRequest(agentId, name)))
-          return yield* Effect.fail(
-            new Conflict({
-              message: "Credential request has already been answered",
-            }),
-          );
-
-        yield* notify(
-          agentId,
-          name,
-          `The owner declined your request for credential ${name}.`,
-        );
+        if (!(yield* requests.decline(agentId, "credential", name)))
+          return yield* new Conflict({
+            message: "Credential request has already been answered",
+          });
       });
-
-      const prune = Effect.gen(function* () {
-        const now = yield* Clock.currentTimeMillis;
-
-        yield* repository.pruneUses(
-          new Date(now - CREDENTIAL_USE_RETENTION_MS).toISOString(),
-        );
-      }).pipe(Effect.withSpan("Credentials.prune"));
 
       const uses = Effect.fn("Credentials.uses")(function* (
         agentId: string,
@@ -291,9 +292,12 @@ export class Credentials extends Context.Service<
             new NotFound({ message: "Credential not found" }),
           );
 
-        yield* prune;
+        const listed = yield* useLog.list(agentId, "credential", name, options);
 
-        return yield* repository.listUses(agentId, name, options);
+        return listed.map(({ detail, ...use }): CredentialUse => ({
+          ...use,
+          ...useDetail.parse(detail),
+        }));
       });
 
       const env = Effect.fn("Credentials.env")(function* (agentId: string) {
@@ -327,8 +331,13 @@ export class Credentials extends Context.Service<
         githubIdentities: githubApps.identities,
         grants: repository.grants,
         value,
-        recordUse: repository.addUse,
-        prune,
+        recordUse: (agentId, name, { method, path, status, ...use }) =>
+          useLog
+            .record(agentId, "credential", name, {
+              ...use,
+              detail: { method, path, status },
+            })
+            .pipe(Effect.andThen(repository.touch(agentId, name, use.at))),
       });
     }),
   );

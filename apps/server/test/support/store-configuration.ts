@@ -1,5 +1,8 @@
 import type { JsonValue } from "@earendil-works/chord";
+import { Effect } from "effect";
+import { BotSecretRequests } from "../../src/bot-secrets/bot-secret-requests";
 import { AgentCredentialRepository } from "../../src/credentials/agent-credential-repository";
+import { Credentials } from "../../src/credentials/credentials";
 import { SecretRepository } from "../../src/credentials/secret-repository";
 import {
   McpServerRepository,
@@ -29,9 +32,6 @@ export const configurationStore = (run: StoreRun) => ({
   getCredential: (key: string) => {
     return run(SecretRepository.use((r) => r.get(key)));
   },
-  listCredentials: () => {
-    return run(SecretRepository.use((r) => r.listKeys));
-  },
 
   /** Metadata only: listing never decrypts a value. */
   /** Creating needs a value; updating keeps the stored one when `value` is omitted. The placeholder never changes. */
@@ -41,7 +41,7 @@ export const configurationStore = (run: StoreRun) => ({
   },
   /** Every credential with its placeholder and decrypted value, for the credential proxy only. */
   listCredentialRequests: (agentId: string): CredentialRequest[] => {
-    return run(AgentCredentialRepository.use((r) => r.listRequests(agentId)));
+    return run(BotSecretRequests.use((r) => r.list(agentId, "credential")));
   },
   /** Newest first; page with `before` set to the last use's ID. */
   listCredentialUses: (
@@ -50,7 +50,7 @@ export const configurationStore = (run: StoreRun) => ({
     options: { limit: number; before?: string | undefined },
   ): CredentialUse[] => {
     return run(
-      AgentCredentialRepository.use((r) => r.listUses(agentId, name, options)),
+      Credentials.use((c) => c.uses(agentId, name, options)).pipe(Effect.orDie),
     );
   },
   /** Metadata only: listing never decrypts a credential. */

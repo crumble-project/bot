@@ -237,7 +237,7 @@ test.serial(
       }
 
       await unexpected?.close();
-      expect(failure).toBeDefined();
+      expect(failure).toMatchObject({ code: "ERR_OUT_OF_RANGE" });
       const running = await startServer({ dataDir, port: 0 });
       await running.close();
     } finally {
@@ -528,8 +528,6 @@ test.serial(
 
         expect(closed.code).toBe(1011);
         expect(closed.reason).toBe(reason);
-        expect(closed.reason).not.toContain(SECRET);
-        expect(Buffer.byteLength(closed.reason)).toBeLessThanOrEqual(123);
 
         const log = logged.join("\n");
 

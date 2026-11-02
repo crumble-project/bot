@@ -5,22 +5,28 @@ import type {
   CredentialStore,
 } from "@earendil-works/pi-ai";
 import { Context, Effect, Layer, Redacted } from "effect";
-import type { SecretReference } from "../shared/domain";
-import { SecretValues } from "../password-managers/secret-values";
+import { Secrets, secretKey } from "../password-managers/secrets";
+import type { SecretInput } from "../shared/domain";
 import { runnerOf, type Runner } from "../shared/runner";
 import { ProviderCredentialRepository } from "./provider-credential-repository";
+
+/** The secret holding a provider's API key. */
+export const providerApiKeyKey = (providerId: string) =>
+  secretKey("provider", providerId);
 
 /** Pi AI's credential store, with what sign-in flows need beyond it. */
 export type ProviderCredentialStore = CredentialStore & {
   commitLogin: QueuedCredentialStore["commitLogin"];
-  setReference: QueuedCredentialStore["setReference"];
+  setApiKey: QueuedCredentialStore["setApiKey"];
   idle: QueuedCredentialStore["idle"];
 };
 
+type Services = ProviderCredentialRepository | Secrets;
+
 /**
- * Pi AI's credential store over the account's encrypted provider credentials. One instance serves the API and every
- * bot runtime; the data-directory lock makes this process the only writer, so per-provider promise queues serialize
- * refresh, login, key replacement and sign-out.
+ * Pi AI's credential store over the account's encrypted provider credentials, with each API key kept as a secret.
+ * One instance serves the API and every bot runtime; the data-directory lock makes this process the only writer, so
+ * per-provider promise queues serialize refresh, login, key replacement and sign-out.
  */
 export class ProviderCredentials extends Context.Service<
   ProviderCredentials,
@@ -29,11 +35,27 @@ export class ProviderCredentials extends Context.Service<
   static readonly layer = Layer.effect(
     ProviderCredentials,
     Effect.gen(function* () {
-      const run = runnerOf(
-        yield* Effect.context<ProviderCredentialRepository | SecretValues>(),
-      );
+      const repository = yield* ProviderCredentialRepository;
+      const secrets = yield* Secrets;
 
-      return new QueuedCredentialStore(run);
+      // API keys saved inside the credential before they were secrets move out once.
+      for (const { providerId, type } of yield* repository.list) {
+        const credential =
+          type === "api_key" && (yield* repository.get(providerId));
+
+        if (credential && credential.type === "api_key" && credential.key) {
+          const { key, ...rest } = credential;
+
+          yield* secrets
+            .save(providerApiKeyKey(providerId), { value: key })
+            .pipe(Effect.orDie);
+          yield* repository.set(providerId, rest);
+        }
+      }
+
+      return new QueuedCredentialStore(
+        runnerOf(yield* Effect.context<Services>()),
+      );
     }),
   );
 }
@@ -41,9 +63,7 @@ export class ProviderCredentials extends Context.Service<
 class QueuedCredentialStore implements CredentialStore {
   private readonly queues = new Map<string, Promise<unknown>>();
 
-  constructor(
-    private readonly run: Runner<ProviderCredentialRepository | SecretValues>,
-  ) {}
+  constructor(private readonly run: Runner<Services>) {}
 
   private repository<A>(
     use: (
@@ -53,51 +73,37 @@ class QueuedCredentialStore implements CredentialStore {
     return this.run.runSync(ProviderCredentialRepository.use(use));
   }
 
-  /** The credential stored in Crumble; a password manager reference has none. */
+  /** Saves a credential synchronously, an API key's `key` as its secret. */
+  private write(providerId: string, credential: Credential) {
+    const apiKey = providerApiKeyKey(providerId);
+
+    if (credential.type === "api_key") {
+      const { key, ...rest } = credential;
+
+      if (key !== undefined)
+        this.run.runSync(
+          Secrets.use((s) => s.save(apiKey, { value: key })).pipe(Effect.orDie),
+        );
+      this.repository((r) => r.set(providerId, rest));
+    } else {
+      this.repository((r) => r.set(providerId, credential));
+      this.run.runSync(Secrets.use((s) => s.delete(apiKey)));
+    }
+  }
+
+  /** The saved credential, without an API key's `key`. */
   private stored(providerId: string) {
-    const source = this.source(providerId);
-
-    return source && "credential" in source ? source.credential : undefined;
-  }
-
-  /** Writes through `write`, then drops the cached value of a password manager reference it replaced. */
-  private replace(providerId: string, write: () => void) {
-    const reference = (source: ReturnType<typeof this.source>) =>
-      source && "reference" in source ? source : undefined;
-
-    const before = reference(this.source(providerId));
-
-    write();
-
-    const after = reference(this.source(providerId));
-
-    if (
-      before &&
-      (before.passwordManager !== after?.passwordManager ||
-        before.reference !== after.reference)
-    )
-      this.run.runSync(
-        SecretValues.use((values) =>
-          values.forget(before.passwordManager, before.reference),
-        ),
-      );
-  }
-
-  private source(providerId: string) {
     return this.repository((r) => r.get(providerId));
   }
 
-  /** The provider's credential, reading an API key from its password manager when it is a reference. */
+  /** The provider's credential, its API key read from the secret, possibly a password manager. */
   private async resolve(providerId: string): Promise<Credential | undefined> {
-    const source = this.source(providerId);
+    const credential = this.stored(providerId);
 
-    if (!source) return undefined;
-
-    if ("credential" in source) return source.credential;
+    if (credential?.type !== "api_key") return credential;
 
     const key = await this.run.runPromise(
-      SecretValues.use((values) => values.read(source)).pipe(
-        Effect.map(Redacted.value),
+      Secrets.use((s) => s.read(providerApiKeyKey(providerId))).pipe(
         Effect.mapError(
           (error) =>
             // Pi AI puts this after "Credential store read failed for <provider>: ", which names the provider.
@@ -106,7 +112,7 @@ class QueuedCredentialStore implements CredentialStore {
       ),
     );
 
-    return { type: "api_key", key };
+    return key ? { ...credential, key: Redacted.value(key) } : credential;
   }
 
   async read(providerId: string, options?: AuthOperationOptions) {
@@ -133,14 +139,11 @@ class QueuedCredentialStore implements CredentialStore {
     return this.enqueue(
       providerId,
       async () => {
-        // Only OAuth refresh reads the current credential, and a reference is never OAuth, so modify reads no password manager.
+        // Only OAuth refresh reads the current credential, so modify reads no API key.
         const next = await update(this.stored(providerId));
 
         // A started refresh persists even if its caller went away, so a rotated token is never lost.
-        if (next !== undefined)
-          this.replace(providerId, () =>
-            this.repository((r) => r.set(providerId, next)),
-          );
+        if (next !== undefined) this.write(providerId, next);
 
         return this.stored(providerId);
       },
@@ -152,8 +155,9 @@ class QueuedCredentialStore implements CredentialStore {
     await this.enqueue(
       providerId,
       async () => {
-        this.replace(providerId, () =>
-          this.repository((r) => r.delete(providerId)),
+        this.repository((r) => r.delete(providerId));
+        this.run.runSync(
+          Secrets.use((s) => s.delete(providerApiKeyKey(providerId))),
         );
       },
       options?.signal,
@@ -172,21 +176,20 @@ class QueuedCredentialStore implements CredentialStore {
   ) {
     return this.enqueue(providerId, async () => {
       if (!isCurrent()) return false;
-      this.replace(providerId, () =>
-        this.repository((r) => r.set(providerId, credential)),
-      );
+      this.write(providerId, credential);
       onCommitted();
 
       return true;
     });
   }
 
-  /** Reads the API key from a password manager from now on; the caller checks the reference first. */
-  setReference(providerId: string, source: SecretReference) {
+  /** Replaces the credential with an API key, stored or read from a password manager; fails on an unreadable reference. */
+  setApiKey(providerId: string, key: SecretInput) {
     return this.enqueue(providerId, async () => {
-      this.replace(providerId, () =>
-        this.repository((r) => r.setReference(providerId, source)),
+      await this.run.runPromise(
+        Secrets.use((s) => s.save(providerApiKeyKey(providerId), key)),
       );
+      this.repository((r) => r.set(providerId, { type: "api_key" }));
     });
   }
 

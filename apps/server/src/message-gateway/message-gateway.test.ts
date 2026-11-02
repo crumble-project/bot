@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect, Fiber, Layer, ManagedRuntime, Redacted } from "effect";
+import { Effect, Fiber, Layer, ManagedRuntime } from "effect";
 import { TestClock } from "effect/testing";
 import { productLayer } from "../app/product-layer";
 import { handleApiError } from "../app/api";
@@ -13,11 +13,9 @@ import { ExecutionRepository } from "../bots/execution-repository";
 import { BotRuntime, type AgentRuntime } from "../bots/runtime";
 import { SettingsRepository } from "../shared/settings-repository";
 import { SecretRepository } from "../credentials/secret-repository";
-import { PasswordManagers } from "../password-managers/password-manager";
-import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
-import { SecretValues } from "../password-managers/secret-values";
+import { secretsLayer } from "../password-managers/secrets";
 import {
-  FAKE_TOKEN,
+  connectFakePasswordManager,
   fakePasswordManager,
   fakeVendor,
 } from "../../test/support/fake-password-manager";
@@ -209,11 +207,7 @@ async function fixture(
       }),
     ),
   ).pipe(
-    Layer.provideMerge(
-      SecretValues.layer.pipe(
-        Layer.provideMerge(PasswordManagers.layer([fakeVendor(vault)])),
-      ),
-    ),
+    Layer.provideMerge(secretsLayer([fakeVendor(vault)])),
     Layer.provideMerge(productLayer(folder)),
   );
 
@@ -288,9 +282,7 @@ async function fixture(
   const tokenReference = (reference: string) =>
     runtime.runPromise(
       Effect.gen(function* () {
-        yield* PasswordManagerRepository.use((repository) =>
-          repository.save("1password", Redacted.make(FAKE_TOKEN), "t"),
-        );
+        yield* connectFakePasswordManager;
         yield* SecretRepository.use((secrets) =>
           secrets.setReference(adapter.secretKey, {
             passwordManager: "1password",
@@ -376,7 +368,7 @@ test("a connection resolving after its timeout is closed and cannot submit messa
     await f.runtime.runPromise(
       GatewayRepository.use((repository) => repository.pending),
     ),
-  ).toHaveLength(0);
+  ).toEqual([]);
 });
 
 test("gateway HTTP configuration validates input, hides credentials, and can disable deleted recipients", async () => {
@@ -452,7 +444,9 @@ test("a crash before saving execution ID recovers the original execution across 
   await reopened.tick();
   expect(reopened.submitted).toHaveLength(0);
   expect(reopened.responseCalls).toEqual([execution.submissionId!]);
-  expect(reopened.sent).toHaveLength(1);
+  expect(reopened.sent.map((entry) => entry.text)).toEqual([
+    "associated answer",
+  ]);
 });
 
 test("authorization, routing, duplicate events, and concurrent passes submit once and preserve text", async () => {
@@ -468,8 +462,7 @@ test("authorization, routing, duplicate events, and concurrent passes submit onc
   expect(f.submitted).toEqual([
     expect.objectContaining({ botId: grace, text: input.text }),
   ]);
-  expect(f.sent).toHaveLength(1);
-  expect(f.sent[0]?.text).toBe("associated answer");
+  expect(f.sent.map((entry) => entry.text)).toEqual(["associated answer"]);
   expect(f.responseCalls).toHaveLength(1);
   await f.receive(f.message("reply", { replyTo: "out-1" }));
   await f.tick();
@@ -498,12 +491,12 @@ test("authorization, routing, duplicate events, and concurrent passes submit onc
 
   for (let pass = 0; pass < 5; pass++) await f.tick();
   expect(f.submitted).toHaveLength(4);
-  expect(f.sent.map((entry) => entry.text).join("")).toContain(
-    "Attachments are not supported",
-  );
-  expect(f.sent.map((entry) => entry.text).join("")).toContain(
-    "Unknown or ambiguous bot @missing",
-  );
+  expect(f.sent.slice(4).map((entry) => entry.text)).toEqual([
+    "Attachments are not supported by this gateway. Send a text-o",
+    "nly message.",
+    "Unknown or ambiguous bot @missing. Configure an alias in Mes",
+    "sage gateways.",
+  ]);
 });
 
 test("receipt selection and reply associations survive reopening the real product database", async () => {
@@ -543,8 +536,8 @@ test("long answers retain durable per-chunk progress and stable failed-send nonc
   first.failSend = true;
   await first.tick();
   expect(first.sent).toHaveLength(1);
-  expect((await Effect.runPromise(first.gateway.list))[0]?.error).toContain(
-    "delivery failed",
+  expect((await Effect.runPromise(first.gateway.list))[0]?.error).toBe(
+    "Message submission or delivery failed. Retrying automatically after a delay.",
   );
   const failedNonce = first.attempts[1]!.nonce;
   await first.close();
@@ -621,7 +614,7 @@ test("a token read from a password manager connects, and an unreadable one shows
   expect(f.closes).toBe(1);
   const [gateway] = await Effect.runPromise(f.gateway.list);
   expect(gateway?.status).toBe("error");
-  expect(gateway?.error).toContain("has no item that matches");
+  expect(gateway?.error).toBe("Fake has no item that matches");
   await f.close();
 });
 
@@ -632,8 +625,8 @@ test("connection errors are sanitized, credential changes bypass retry delay, an
   await f.tick();
   await f.tick();
   expect(f.tokens).toHaveLength(1);
-  expect((await Effect.runPromise(f.gateway.list))[0]?.error).not.toContain(
-    "secret must never",
+  expect((await Effect.runPromise(f.gateway.list))[0]?.error).toBe(
+    "Gateway login failed. Check its token, intents, and connection; reconnecting automatically.",
   );
   f.failConnect = false;
   await f.token("new-token");
@@ -645,14 +638,15 @@ test("connection errors are sanitized, credential changes bypass retry delay, an
   await f.tick();
   expect(f.submitted).toHaveLength(1);
   expect(f.responseCalls).toHaveLength(0);
-  expect(f.sent.map((entry) => entry.text).join("")).toContain(
-    "could not complete",
-  );
+  expect(f.sent.map((entry) => entry.text)).toEqual([
+    "The bot could not complete this message. Send a new message ",
+    "to try again.",
+  ]);
   expect(
     await f.runtime.runPromise(
       GatewayRepository.use((repository) => repository.pending),
     ),
-  ).toHaveLength(0);
+  ).toEqual([]);
 });
 
 test("routing never falls back for unknown, ambiguous, or disabled recipients and aliases normalize consistently", () => {
@@ -748,10 +742,9 @@ for (const status of [403, 404])
     expect((await f.runtime.runPromise(f.gateway.list))[0]).toMatchObject({
       pendingCount: 0,
       failedCount: 1,
+      error:
+        "Message delivery failed permanently. Check destination permissions and send a new message.",
     });
-    expect(
-      (await f.runtime.runPromise(f.gateway.list))[0]?.error,
-    ).not.toContain("private platform details");
   });
 
 test("429 adapter cooldown includes new receipts and survives restarting the core", async () => {
@@ -911,7 +904,9 @@ test("corrupt and legacy saved configuration stays disabled and can be repaired"
     await f.tick();
     const [description] = await f.runtime.runPromise(f.gateway.list);
     expect(description?.config).toEqual(defaultGatewayConfig());
-    expect(description?.error).toContain("single owner");
+    expect(description?.error).toBe(
+      "Invalid message gateway configuration. Configure a single owner user ID and save again.",
+    );
     expect(f.tokens).toHaveLength(0);
   }
 
@@ -941,7 +936,7 @@ test("native mention routing preserves the submitted text and empty mention cont
   );
   await f.tick();
   expect(f.submitted).toHaveLength(1);
-  expect(f.sent.at(-1)?.text).toContain("Send a text message");
+  expect(f.sent.at(-1)?.text).toBe("Send a text message for a bot to answer.");
 });
 
 test("owner revocation invalidates a receipt paused during scheduling before bot submission", async () => {

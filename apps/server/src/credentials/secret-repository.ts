@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import type { SecretReference } from "../shared/domain";
 import {
@@ -24,7 +24,8 @@ export class SecretRepository extends Context.Service<
     /** Where the value comes from: stored in Crumble, or a password manager reference. */
     readonly source: (key: string) => Effect.Effect<SecretSource | undefined>;
     readonly delete: (key: string) => Effect.Effect<boolean>;
-    readonly listKeys: Effect.Effect<string[]>;
+    /** Deletes every key that starts with `prefix` and returns where their values came from. */
+    readonly deleteAll: (prefix: string) => Effect.Effect<SecretSource[]>;
   }
 >()("crumble/credentials/SecretRepository") {
   static readonly layer = Layer.effect(
@@ -101,15 +102,21 @@ export class SecretRepository extends Context.Service<
         return deleted.length > 0;
       }, Effect.orDie);
 
-      const listKeys = db
-        .select({ key: secrets.key })
-        .from(secrets)
-        .orderBy(asc(secrets.key))
-        .pipe(
-          Effect.map((rows) => rows.map((row) => row.key)),
-          Effect.orDie,
-          Effect.withSpan("SecretRepository.listKeys"),
-        );
+      const deleteAll = Effect.fn("SecretRepository.deleteAll")(function* (
+        prefix: string,
+      ) {
+        // substr, not LIKE: keys may hold % and _.
+        const deleted = yield* db
+          .delete(secrets)
+          .where(sql`substr(${secrets.key}, 1, ${prefix.length}) = ${prefix}`)
+          .returning({
+            value: secrets.value,
+            passwordManager: secrets.passwordManager,
+            reference: secrets.reference,
+          });
+
+        return deleted.map((row) => secretSourceOf(box, row));
+      }, Effect.orDie);
 
       return SecretRepository.of({
         set,
@@ -117,7 +124,7 @@ export class SecretRepository extends Context.Service<
         get,
         source,
         delete: remove,
-        listKeys,
+        deleteAll,
       });
     }),
   );

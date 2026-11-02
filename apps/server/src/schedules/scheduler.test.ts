@@ -145,8 +145,6 @@ describe("Scheduler", () => {
     expect(scripts.calls.map(({ id }) => id)).toEqual([schedule.id]);
     expect(prompts).toEqual([]);
     expect(store.getSchedule(schedule.id)?.nextRunAt).toBeNull();
-    expect(scripts.runs[0]?.status).toBe("running");
-    expect(scripts.runs[0]?.finishedAt).toBeNull();
     store.close();
   }, 1000);
 
@@ -311,18 +309,15 @@ describe("Scheduler", () => {
       enabled: true,
     });
 
-    store.updateNextRunAt(
-      schedule.id,
-      new Date(Date.now() - 3 * 60_000).toISOString(),
+    store.updateNextRunAt(schedule.id, "2026-10-17T00:00:00.000Z");
+    await scheduler.tick(new Date("2026-10-17T00:03:30.000Z"));
+    expect(calls).toEqual([`schedule:${schedule.id}:2026-10-17T00:00:00.000Z`]);
+    expect(store.getSchedule(schedule.id)?.nextRunAt).toBe(
+      "2026-10-17T00:04:00.000Z",
     );
-    await scheduler.tick(new Date());
-    expect(calls).toHaveLength(1);
-    expect(
-      new Date(store.getSchedule(schedule.id)!.nextRunAt!).valueOf(),
-    ).toBeGreaterThan(Date.now());
     store.updateAgent(agent.id, { enabled: false });
-    await scheduler.tick(new Date(Date.now() + 120_000));
-    expect(calls).toHaveLength(1);
+    await scheduler.tick(new Date("2026-10-17T00:06:00.000Z"));
+    expect(calls).toEqual([`schedule:${schedule.id}:2026-10-17T00:00:00.000Z`]);
     store.close();
   });
 
@@ -345,7 +340,7 @@ describe("Scheduler", () => {
         eventSourceId: null,
         enabled: true,
       }),
-    ).toThrow();
+    ).toThrow("Invalid timezone: No/Such_Zone");
     expect(() =>
       scheduler.create({
         agentId: agent.id,
@@ -361,7 +356,7 @@ describe("Scheduler", () => {
         eventSourceId: null,
         enabled: true,
       }),
-    ).toThrow();
+    ).toThrow('Validation error, cannot resolve alias "nop"');
     store.close();
   });
 
@@ -386,11 +381,17 @@ describe("Scheduler", () => {
         enabled: true,
       });
 
-    expect(() => create("0 9 * * 7/2")).toThrow();
-    expect(() => create("0 9 * * 1,3/2")).toThrow();
-    expect(() => create("0 0 9 * * 1/2")).toThrow();
-    expect(() => create("0 9 * * */2")).not.toThrow();
-    expect(() => create("0 9 * * 1-5/2")).not.toThrow();
+    expect(() => create("0 9 * * 7/2")).toThrow(
+      "Weekday steps need * or a range, like 1-5/2: 0 9 * * 7/2",
+    );
+    expect(() => create("0 9 * * 1,3/2")).toThrow(
+      "Weekday steps need * or a range, like 1-5/2: 0 9 * * 1,3/2",
+    );
+    expect(() => create("0 0 9 * * 1/2")).toThrow(
+      "Weekday steps need * or a range, like 1-5/2: 0 0 9 * * 1/2",
+    );
+    expect(create("0 9 * * */2").cron).toBe("0 9 * * */2");
+    expect(create("0 9 * * 1-5/2").cron).toBe("0 9 * * 1-5/2");
     store.close();
   });
 

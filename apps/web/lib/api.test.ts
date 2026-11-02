@@ -15,7 +15,7 @@ test("attachment fetch returns a blob without creating a cached object URL", asy
 
   try {
     const result = await apiBlob("/attachment");
-    expect(result).toBeInstanceOf(Blob);
+    expect(await result.text()).toBe("image");
     expect(createObjectURL).not.toHaveBeenCalled();
   } finally {
     globalThis.fetch = originalFetch;

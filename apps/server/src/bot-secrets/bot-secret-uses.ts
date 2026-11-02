@@ -1,0 +1,135 @@
+import { and, desc, eq, lt, sql } from "drizzle-orm";
+import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
+import { Clock, Context, Effect, Layer } from "effect";
+import { ProductDatabase } from "../shared/product-database";
+import { botSecretUses, type BotSecretKind } from "./schema";
+
+/** How long the owner can look back at a credential's or login's uses. */
+export const BOT_SECRET_USE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** One use of a credential or login; `detail` is what its kind records, such as a request's method and path. */
+export type BotSecretUse = {
+  id: string;
+  at: string;
+  host: string;
+  /** Why the value couldn't be read, so nothing was sent or typed. */
+  error: string | null;
+  detail: unknown;
+};
+
+/** The newest use's error, as a column of a query over a kind's table of credentials or logins. */
+export const lastUseError = (
+  kind: BotSecretKind,
+  owner: { agentId: AnySQLiteColumn; name: AnySQLiteColumn },
+) =>
+  sql<
+    string | null
+  >`(SELECT ${botSecretUses.error} FROM ${botSecretUses} WHERE ${botSecretUses.agentId} = ${owner.agentId} AND ${botSecretUses.kind} = ${kind} AND ${botSecretUses.name} = ${owner.name} ORDER BY ${botSecretUses.id} DESC LIMIT 1)`;
+
+/** Each use of a credential or login, kept for `BOT_SECRET_USE_RETENTION_MS`. */
+export class BotSecretUses extends Context.Service<
+  BotSecretUses,
+  {
+    readonly record: (
+      agentId: string,
+      kind: BotSecretKind,
+      name: string,
+      use: Omit<BotSecretUse, "id">,
+    ) => Effect.Effect<void>;
+    /** Newest first; page with `before` set to the last use's ID. Drops expired uses first. */
+    readonly list: (
+      agentId: string,
+      kind: BotSecretKind,
+      name: string,
+      options: { limit: number; before?: string | undefined },
+    ) => Effect.Effect<BotSecretUse[]>;
+    /** Forgets a deleted credential's or login's uses. */
+    readonly forget: (
+      agentId: string,
+      kind: BotSecretKind,
+      name: string,
+    ) => Effect.Effect<void>;
+  }
+>()("crumble/bot-secrets/BotSecretUses") {
+  static readonly layer = Layer.effect(
+    BotSecretUses,
+    Effect.gen(function* () {
+      const db = yield* ProductDatabase;
+
+      const of = (agentId: string, kind: BotSecretKind, name: string) =>
+        and(
+          eq(botSecretUses.agentId, agentId),
+          eq(botSecretUses.kind, kind),
+          eq(botSecretUses.name, name),
+        );
+
+      const prune = Effect.gen(function* () {
+        const now = yield* Clock.currentTimeMillis;
+        const cutoff = new Date(now - BOT_SECRET_USE_RETENTION_MS);
+
+        yield* db
+          .delete(botSecretUses)
+          .where(lt(botSecretUses.at, cutoff.toISOString()));
+      }).pipe(Effect.orDie);
+
+      return BotSecretUses.of({
+        record: Effect.fn("BotSecretUses.record")(function* (
+          agentId,
+          kind,
+          name,
+          use,
+        ) {
+          yield* db.insert(botSecretUses).values({
+            agentId,
+            kind,
+            name,
+            at: use.at,
+            host: use.host,
+            error: use.error,
+            detail: JSON.stringify(use.detail),
+          });
+        }, Effect.orDie),
+        list: Effect.fn("BotSecretUses.list")(
+          function* (agentId, kind, name, options) {
+            yield* prune;
+
+            const cursor = Number(options.before);
+
+            const rows = yield* db
+              .select()
+              .from(botSecretUses)
+              .where(
+                and(
+                  of(agentId, kind, name),
+                  lt(
+                    botSecretUses.id,
+                    Number.isSafeInteger(cursor) && cursor > 0
+                      ? cursor
+                      : Number.MAX_SAFE_INTEGER,
+                  ),
+                ),
+              )
+              .orderBy(desc(botSecretUses.id))
+              .limit(options.limit)
+              .pipe(Effect.orDie);
+
+            return rows.map((row) => ({
+              id: String(row.id),
+              at: row.at,
+              host: row.host,
+              error: row.error,
+              detail: JSON.parse(row.detail),
+            }));
+          },
+        ),
+        forget: Effect.fn("BotSecretUses.forget")(function* (
+          agentId,
+          kind,
+          name,
+        ) {
+          yield* db.delete(botSecretUses).where(of(agentId, kind, name));
+        }, Effect.orDie),
+      });
+    }),
+  );
+}

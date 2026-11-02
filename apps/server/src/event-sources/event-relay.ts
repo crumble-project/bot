@@ -6,11 +6,9 @@ import {
 } from "@doorstep/protocol";
 import { Clock, Context, DateTime, Effect, Layer } from "effect";
 import { z } from "zod";
-import { SecretRepository } from "../credentials/secret-repository";
 import type { GatewayStatus } from "../message-gateway/adapter";
 import { reconnectDelay } from "../message-gateway/message-gateway";
-import { keyedSecretReader } from "../password-managers/secret-references";
-import { SecretValues } from "../password-managers/secret-values";
+import { Secrets, secretText } from "../password-managers/secrets";
 import { pluginSettingKey } from "../plugins/plugins";
 import { InvalidInput } from "../shared/errors";
 import { SettingsRepository } from "../shared/settings-repository";
@@ -83,9 +81,9 @@ export class EventRelay extends Context.Service<
     EventRelay,
     Effect.gen(function* () {
       const settings = yield* SettingsRepository;
-      const secrets = yield* SecretRepository;
+      const secrets = yield* Secrets;
       const events = yield* EventRepository;
-      const readSecret = keyedSecretReader(secrets, yield* SecretValues);
+      const readSecret = secretText(secrets);
       const scope = yield* Effect.scope;
       const run = Effect.runPromiseWith(yield* Effect.context<never>());
 
@@ -270,11 +268,11 @@ export class EventRelay extends Context.Service<
       );
 
       const describe = Effect.gen(function* () {
-        const keys = yield* secrets.listKeys;
+        const token = yield* secrets.status(RELAY_TOKEN_KEY);
 
         return {
           url: yield* relayUrl,
-          tokenConfigured: keys.includes(RELAY_TOKEN_KEY),
+          tokenConfigured: token.configured,
           status,
           error,
         };

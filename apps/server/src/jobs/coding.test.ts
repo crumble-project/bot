@@ -308,7 +308,6 @@ test("only starting a job shows its card in the chat", async () => {
   const { messages } = await runtime.snapshot(agent, chat);
   const results = messages.filter((message) => message.toolName === "coding");
 
-  expect(results).toHaveLength(3);
   expect(results.map((message) => codingJobOf(message))).toEqual([
     "builder",
     undefined,

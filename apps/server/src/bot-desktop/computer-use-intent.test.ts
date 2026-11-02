@@ -74,7 +74,9 @@ test("the check names the element in the window the action runs in", async () =>
   await computer.run({ action: "click", element: 3 }, BACKGROUND_CONTEXT, gate);
 
   expect(seen[0]!.steps[0]!.target?.name).toBe("Pay now");
-  expect(calls.find((each) => each.tool === "click")?.args).toMatchObject({
+  expect(calls.find((each) => each.tool === "click")?.args).toEqual({
+    session: "crumble-desktop",
+    pid: 7,
     window_id: 101,
     element_token: "s1:3",
   });
@@ -137,9 +139,14 @@ test("an approved action doesn't run when the owner took control while it was he
     gate,
   );
 
-  expect(result.isError).toBe(true);
-  expect(result.content[0]).toMatchObject({
-    text: expect.stringContaining("Control changed hands"),
+  expect(result).toEqual({
+    content: [
+      {
+        type: "text",
+        text: "Control changed hands: the owner used the bot desktop and handed it back. The screen may have changed and element numbers are stale. Capture before acting.",
+      },
+    ],
+    isError: true,
   });
   expect(calls.some((each) => each.tool === "click")).toBe(false);
 });
@@ -188,8 +195,21 @@ test("the judge's spend is on the call's result, whether the action ran or was r
     async () => ({ usage, refusal: "REFUSED: declined" }),
   );
 
-  expect(ran).toMatchObject({ isError: false, usage });
-  expect(refused).toMatchObject({ isError: true, usage });
+  expect(ran).toEqual({
+    content: [
+      {
+        type: "text",
+        text: "effect: confirmed | delivery: background | Clicked [3]",
+      },
+    ],
+    isError: false,
+    usage,
+  });
+  expect(refused).toEqual({
+    content: [{ type: "text", text: "REFUSED: declined" }],
+    isError: true,
+    usage,
+  });
 
   // An observing call isn't checked and spends nothing.
   const read = await computer.run(

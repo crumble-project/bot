@@ -862,11 +862,10 @@ describe("first turn (test_admission_first_turn.py)", () => {
 
     const prefix = cachedPrefix(first);
 
-    expect(prefix).toBeDefined();
-    // the whole cached span of call #1 recurs, block for block, at the head of call #2
-    expect(replayed(second).slice(0, prefix?.length)).toEqual(prefix ?? []);
-    // and it covers the host's first turn, the part that was being re-written
-    expect(prefix?.at(-1)).toEqual(["user", sortedJson(FRAME)]);
+    // the cached span of call #1 is the host's first turn, the part that was being re-written
+    expect(prefix).toEqual([["user", sortedJson(FRAME)]]);
+    // and it recurs, block for block, at the head of call #2
+    expect(replayed(second).slice(0, 1)).toEqual([["user", sortedJson(FRAME)]]);
   });
 
   test("first turn keeps every block and moves only the marker", () => {
@@ -883,7 +882,9 @@ describe("first turn (test_admission_first_turn.py)", () => {
         .flatMap(blocksOf)
         .filter((entry) => "cache_control" in entry),
     ).toHaveLength(1);
-    expect(blocksOf(out.messages[1])[0]?.text?.startsWith(ENV)).toBe(true);
+    expect(blocksOf(out.messages[1]).map(unmarkedBlock)).toEqual([
+      { type: "text", text: `${ENV}\n\nToday's date is 2026-09-30.` },
+    ]);
   });
 
   test.each([
@@ -938,11 +939,9 @@ describe("first turn (test_admission_first_turn.py)", () => {
           ? item.content.map(unmarkedBlock)
           : item?.content;
 
-      for (const [index, sent] of parse(raw).messages.entries()) {
-        const got = out.messages[index];
-
-        if (got) expect(unmarkedContent(got)).toEqual(unmarkedContent(sent));
-      }
+      expect(out.messages.map(unmarkedContent)).toEqual(
+        parse(raw).messages.map(unmarkedContent),
+      );
     },
   );
 });
@@ -1730,12 +1729,11 @@ describe("turn start (test_admission_turn_start.py)", () => {
     // The relay returns native's trailing date message to its env message, so the steer frame is last.
     expect(sent.messages.at(-1)?.role).toBe("user");
 
-    expect(
-      z
-        .string()
-        .parse(sent.messages[1]?.content)
-        .endsWith("Today's date is 2026-10-10."),
-    ).toBe(true);
+    expect(sent.messages[1]).toEqual({
+      role: "system",
+      content:
+        "Primary working directory: /tmp/claude-directsdk-cwd\n\nToday's date is 2026-10-10.",
+    });
     expect(strip(sent.messages.at(-1)?.content)).toEqual(queried);
 
     expect(messageMarks(sent)).toEqual([

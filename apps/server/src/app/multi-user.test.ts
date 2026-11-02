@@ -180,7 +180,7 @@ test.serial(
         body: JSON.stringify({
           name: "private-mcp",
           url: "https://mcp.example.test",
-          token: "private-mcp-token",
+          token: { value: "private-mcp-token" },
         }),
       });
 
@@ -223,7 +223,7 @@ test.serial(
         {
           method: "PUT",
           headers: json(first),
-          body: JSON.stringify({ apiKey: "first-provider-secret" }),
+          body: JSON.stringify({ value: "first-provider-secret" }),
         },
       );
 
@@ -248,13 +248,12 @@ test.serial(
 
       expect(events.status).toBe(200);
       expect(events.headers.get("content-type")).toContain("text/event-stream");
-      const reader = events.body?.getReader();
-      expect(reader).toBeDefined();
-      const initial = await reader!.read();
+      const reader = events.body!.getReader();
+      const initial = await reader.read();
       expect(new TextDecoder().decode(initial.value)).toContain(
         "event: snapshot",
       );
-      await reader!.cancel();
+      await reader.cancel();
     } finally {
       await running?.close();
       rmSync(dataDir, { recursive: true, force: true });
@@ -412,22 +411,13 @@ test.serial(
 
       reopened = await startServer({ dataDir, port: 0 });
       const fresh = await signIn(reopened, email);
-      expect(
-        (
-          await fetch(new URL("/v1/agents", reopened.server.url), {
-            headers: fresh,
-          })
-        ).status,
-      ).toBe(200);
-      expect(
-        (
-          await fetch(new URL("/v1/agents", reopened.server.url), {
-            headers: fresh,
-          })
-        ).json(),
-      ).resolves.toEqual(
-        expect.arrayContaining([expect.objectContaining({ name: "Durable" })]),
-      );
+
+      const agents = await fetch(new URL("/v1/agents", reopened.server.url), {
+        headers: fresh,
+      });
+
+      expect(agents.status).toBe(200);
+      expect(await agents.json()).toMatchObject([{ name: "Durable" }]);
     } finally {
       await running?.close();
       await reopened?.close();
@@ -468,7 +458,7 @@ test.serial(
         },
       );
 
-      expect([400, 403]).toContain(unsafe.status);
+      expect(unsafe.status).toBe(403);
     } finally {
       await running?.close();
       rmSync(dataDir, { recursive: true, force: true });
@@ -500,9 +490,7 @@ test.serial(
       );
 
       expect(signup.status).toBe(200);
-      const setCookie = signup.headers.get("set-cookie");
-      expect(setCookie).toEqual(expect.any(String));
-      const cookie = setCookie?.split(";")[0];
+      const cookie = signup.headers.get("set-cookie")?.split(";")[0];
 
       if (!cookie) throw new Error("Signup must return a session cookie");
       expect(

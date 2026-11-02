@@ -16,14 +16,12 @@ import {
 import { agentInput } from "../shared/domain";
 import type { CoreServices } from "../app/core-layer";
 import { runnerOf } from "../shared/runner";
-import {
-  PasswordManagers,
-  type PasswordManagerVendor,
-} from "../password-managers/password-manager";
+import { type PasswordManagerVendor } from "../password-managers/password-manager";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
 import { SecretValues } from "../password-managers/secret-values";
+import { secretsLayer } from "../password-managers/secrets";
 import {
-  FAKE_TOKEN,
+  connectFakePasswordManager,
   fakePasswordManager,
   fakeVendor,
   type FakePasswordManager,
@@ -63,7 +61,7 @@ test("saving a requested credential answers the request with a notice to the bot
     }),
   );
   await store.runtime.runPromise(
-    service.save(agentId, "ACME_TOKEN", { value: "secret" }),
+    service.save(agentId, "ACME_TOKEN", { secret: { value: "secret" } }),
   );
 
   expect(notices).toEqual([
@@ -92,7 +90,10 @@ test("declining a request notifies the bot, and deleting a credential does not",
   );
   await store.runtime.runPromise(service.delete(agentId, "PENDING"));
   await store.runtime.runPromise(
-    service.save(agentId, "KEPT", { hosts: ["example.com"], value: "v" }),
+    service.save(agentId, "KEPT", {
+      hosts: ["example.com"],
+      secret: { value: "v" },
+    }),
   );
   await store.runtime.runPromise(service.delete(agentId, "KEPT"));
 
@@ -118,7 +119,7 @@ test("a save still succeeds when nothing takes notices", async () => {
   expect(
     (
       await store.runtime.runPromise(
-        service.save(agentId, "ACME_TOKEN", { value: "secret" }),
+        service.save(agentId, "ACME_TOKEN", { secret: { value: "secret" } }),
       )
     ).name,
   ).toBe("ACME_TOKEN");
@@ -145,22 +146,14 @@ function withPasswordManager(
   const context = Effect.runSync(
     Layer.buildWithScope(
       Credentials.layer.pipe(
-        Layer.provideMerge(
-          SecretValues.layer.pipe(
-            Layer.provideMerge(PasswordManagers.layer([vendor])),
-          ),
-        ),
+        Layer.provideMerge(secretsLayer([vendor])),
         Layer.provide(Layer.succeedContext(core)),
       ),
       scope,
     ),
   );
 
-  store.run(
-    PasswordManagerRepository.use((repository) =>
-      repository.save("1password", Redacted.make(FAKE_TOKEN), "t"),
-    ),
-  );
+  store.run(connectFakePasswordManager);
 
   const run = runnerOf(Context.merge(core, context));
 
@@ -203,13 +196,12 @@ test("a credential saved as a reference reads the password manager's value", asy
   const saved = await vault.run.runPromise(
     vault.service.save(agentId, "ACME_TOKEN", {
       hosts: ["api.acme.com"],
-      reference: reference(),
+      secret: { reference: reference() },
     }),
   );
 
   expect(saved).toMatchObject({
-    passwordManager: "1password",
-    reference: REFERENCE,
+    secret: { passwordManager: "1password", reference: REFERENCE },
   });
   expect(
     Redacted.value(
@@ -232,7 +224,7 @@ test("a reference that can't be read rejects the save and writes nothing", async
   const save = () =>
     vault.service.save(agentId, "ACME_TOKEN", {
       hosts: ["api.acme.com"],
-      reference: reference(),
+      secret: { reference: reference() },
     });
 
   expect(await failureOf(save())).toBe("Fake has no item that matches");
@@ -261,7 +253,9 @@ test("answering a credential request with a reference starts the bot turn", asyn
     }),
   );
   await vault.run.runPromise(
-    vault.service.save(agentId, "ACME_TOKEN", { reference: reference() }),
+    vault.service.save(agentId, "ACME_TOKEN", {
+      secret: { reference: reference() },
+    }),
   );
 
   expect(notices.map((notice) => notice.text)).toEqual([
@@ -280,16 +274,18 @@ test("replacing a reference with a value reads nothing from the password manager
   await vault.run.runPromise(
     vault.service.save(agentId, "ACME_TOKEN", {
       hosts: ["api.acme.com"],
-      reference: reference(),
+      secret: { reference: reference() },
     }),
   );
-  expect(vault.usedBy()).toHaveLength(1);
+  expect(vault.usedBy()).toEqual([`bot:${agentId}:credential:ACME_TOKEN`]);
 
   const saved = await vault.run.runPromise(
-    vault.service.save(agentId, "ACME_TOKEN", { value: "stored" }),
+    vault.service.save(agentId, "ACME_TOKEN", { secret: { value: "stored" } }),
   );
 
-  expect(saved).toMatchObject({ passwordManager: null, reference: null });
+  expect(saved).toMatchObject({
+    secret: { passwordManager: null, reference: null },
+  });
   expect(
     Redacted.value(
       await vault.run.runPromise(
@@ -318,7 +314,7 @@ test("changing or deleting a reference forgets its cached value", async () => {
   await vault.run.runPromise(
     vault.service.save(agentId, "ACME_TOKEN", {
       hosts: ["api.acme.com"],
-      reference: reference(),
+      secret: { reference: reference() },
     }),
   );
   await vault.read(REFERENCE);
@@ -326,7 +322,7 @@ test("changing or deleting a reference forgets its cached value", async () => {
 
   await vault.run.runPromise(
     vault.service.save(agentId, "ACME_TOKEN", {
-      reference: reference(OTHER_REFERENCE),
+      secret: { reference: reference(OTHER_REFERENCE) },
     }),
   );
   await vault.read(REFERENCE);
@@ -361,12 +357,14 @@ test("a host change made while a reference is checked is kept", async () => {
   await vault.run.runPromise(
     vault.service.save(agentId, "ACME_TOKEN", {
       hosts: ["api.acme.com", "old.acme.com"],
-      value: "stored",
+      secret: { value: "stored" },
     }),
   );
 
   const saving = vault.run.runFork(
-    vault.service.save(agentId, "ACME_TOKEN", { reference: reference() }),
+    vault.service.save(agentId, "ACME_TOKEN", {
+      secret: { reference: reference() },
+    }),
   );
 
   await Effect.runPromise(Effect.yieldNow);
@@ -377,7 +375,7 @@ test("a host change made while a reference is checked is kept", async () => {
   await Effect.runPromise(Fiber.join(saving));
 
   expect(store.run(vault.service.list(agentId)).credentials).toMatchObject([
-    { hosts: ["api.acme.com"], reference: REFERENCE },
+    { hosts: ["api.acme.com"], secret: { reference: REFERENCE } },
   ]);
   vault.close();
 });
@@ -389,7 +387,7 @@ test("a credential shows the read error of its newest use", async () => {
   await store.runtime.runPromise(
     service.save(agentId, "ACME_TOKEN", {
       hosts: ["api.acme.com"],
-      value: "secret",
+      secret: { value: "secret" },
     }),
   );
 

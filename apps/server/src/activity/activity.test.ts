@@ -177,12 +177,21 @@ describe("operational activity", () => {
       "tool-result",
       "bot-message",
     ]);
-    expect(result[1]?.details).toMatchObject({
+    expect(result[1]?.details).toEqual({
+      id: "call-2",
       name: "mcp__github__issues",
       arguments: { repo: "x" },
     });
-    expect(result[3]?.details).toMatchObject({
-      communication: { executionId: "exec-1", toAgentId: "agent-2" },
+    expect(result[3]?.details).toEqual({
+      content: "Please check this",
+      communication: {
+        executionId: "exec-1",
+        fromAgentId: "agent-1",
+        fromName: "Helper",
+        toAgentId: "agent-2",
+        toName: "Other",
+        status: "sent",
+      },
     });
   });
 
@@ -245,7 +254,10 @@ describe("operational activity", () => {
         .filter((event) => event.id.includes("nested-"))
         .map((event) => event.kind),
     ).toEqual(["tool-call", "mcp-call"]);
-    expect(events[2]?.details).toMatchObject({
+    expect(events[2]?.details).toEqual({
+      parentToolCallId: "codemode-1",
+      name: "mcp_1234abcd_lookup",
+      args: "{}",
       status: "error",
       error: "down",
     });

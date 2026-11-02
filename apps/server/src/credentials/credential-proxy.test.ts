@@ -160,7 +160,7 @@ describe("credentialProxy", () => {
 
     await credentials.save(bot.id, "ECHO_TOKEN", {
       hosts: ["example.com"],
-      value,
+      secret: { value },
     });
 
     const upstream = tls.createServer(
@@ -318,7 +318,7 @@ describe("credentialProxy", () => {
 
       const db = new Database(join(proxy.dir, "store.sqlite"));
       db.run(
-        "UPDATE agent_credentials SET value = NULL, password_manager = '1password', reference = 'op://Vault/Item/token' WHERE name = 'ECHO_TOKEN'",
+        "UPDATE credentials SET value = NULL, password_manager = '1password', reference = 'op://Vault/Item/token' WHERE key LIKE '%:credential:ECHO_TOKEN'",
       );
       db.close();
 

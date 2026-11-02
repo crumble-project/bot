@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -194,7 +195,11 @@ describe("MCP OAuth", () => {
     const exchange = fake.tokenRequests[0]!;
     expect(exchange.get("grant_type")).toBe("authorization_code");
     expect(exchange.get("code")).toBe("code-1");
-    expect(exchange.get("code_verifier")?.length).toBeGreaterThan(40);
+    expect(
+      createHash("sha256")
+        .update(exchange.get("code_verifier") ?? "")
+        .digest("base64url"),
+    ).toBe(url.searchParams.get("code_challenge")!);
     // The state answers one attempt only.
     await expect(
       finishAuthorization(secrets(store), server, "code-1", state),

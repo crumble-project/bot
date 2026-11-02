@@ -3,17 +3,16 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Context, Effect, Exit, Layer, Redacted, Scope } from "effect";
+import { Context, Effect, Exit, Layer, Scope } from "effect";
 import {
-  FAKE_TOKEN,
+  connectFakePasswordManager,
   fakePasswordManager,
   fakeVendor,
   type FakePasswordManager,
 } from "../../test/support/fake-password-manager";
-import { PasswordManagers } from "../password-managers/password-manager";
-import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
-import { SecretValues } from "../password-managers/secret-values";
+import { secretsLayer } from "../password-managers/secrets";
 import { productLayer } from "../app/product-layer";
+import { ProviderCredentialRepository } from "./provider-credential-repository";
 import { ProviderCredentials } from "./provider-credentials";
 import { providerModels } from "./providers";
 
@@ -37,27 +36,22 @@ const setup = (state: FakePasswordManager) => {
   const context = Effect.runSync(
     Layer.buildWithScope(
       ProviderCredentials.layer.pipe(
-        Layer.provideMerge(
-          SecretValues.layer.pipe(
-            Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
-          ),
-        ),
+        Layer.provideMerge(secretsLayer([fakeVendor(state)])),
         Layer.provideMerge(productLayer(dir)),
       ),
       scope,
     ),
   );
 
-  Effect.runSync(
-    PasswordManagerRepository.use((repository) =>
-      repository.save("1password", Redacted.make(FAKE_TOKEN), "t"),
-    ).pipe(Effect.provide(context)),
-  );
+  Effect.runSync(connectFakePasswordManager.pipe(Effect.provide(context)));
 
   const db = new Database(join(dir, "store.sqlite"));
   db.run("PRAGMA foreign_keys = ON");
   db.run(
-    `INSERT INTO provider_credentials (provider, type, password_manager, reference) VALUES ('openai', 'api_key', '1password', '${REFERENCE}')`,
+    "INSERT INTO provider_credentials (provider, type) VALUES ('openai', 'api_key')",
+  );
+  db.run(
+    `INSERT INTO credentials (key, password_manager, reference) VALUES ('provider:openai', '1password', '${REFERENCE}')`,
   );
   db.close();
 
@@ -96,7 +90,7 @@ test("saving a key replaces the reference without asking the password manager", 
   });
 });
 
-test("replacing or deleting a reference forgets its cached key", async () => {
+test("a key's reference is read when saved, and replacing or deleting it changes what the model gets", async () => {
   const state = fakePasswordManager({
     [REFERENCE]: "sk-vault",
     "op://Vault/OpenAI/other": "sk-other",
@@ -109,20 +103,76 @@ test("replacing or deleting a reference forgets its cached key", async () => {
     reference: REFERENCE,
   } as const;
 
-  await credentials.read("openai");
-  await credentials.read("openai");
+  const key = async () => {
+    const credential = await credentials.read("openai");
+
+    return credential?.type === "api_key" ? credential.key : undefined;
+  };
+
+  expect(await key()).toBe("sk-vault");
+  expect(await key()).toBe("sk-vault");
   expect(state.reads).toBe(1);
 
-  await credentials.setReference("openai", {
-    ...source,
-    reference: "op://Vault/OpenAI/other",
+  await credentials.setApiKey("openai", {
+    reference: { ...source, reference: "op://Vault/OpenAI/other" },
   });
-  await credentials.setReference("openai", source);
-  await credentials.read("openai");
   expect(state.reads).toBe(2);
+  expect(await key()).toBe("sk-other");
+
+  await credentials.setApiKey("openai", { reference: source });
+  expect(await key()).toBe("sk-vault");
 
   await credentials.delete("openai");
-  await credentials.setReference("openai", source);
-  await credentials.read("openai");
-  expect(state.reads).toBe(3);
+  expect(await credentials.read("openai")).toBeUndefined();
+});
+
+test("an API key saved inside its credential moves to its secret on startup", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "crumble-provider-credentials-"));
+  const scope = Scope.makeUnsafe();
+
+  cleanups.push(() => {
+    Effect.runSync(Scope.close(scope, Exit.void));
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const product = Effect.runSync(
+    Layer.buildWithScope(
+      secretsLayer([]).pipe(Layer.provideMerge(productLayer(dir))),
+      scope,
+    ),
+  );
+
+  Effect.runSync(
+    ProviderCredentialRepository.use((repository) =>
+      repository.set("openai", {
+        type: "api_key",
+        key: "sk-old",
+        env: { A: "1" },
+      }),
+    ).pipe(Effect.provide(product)),
+  );
+
+  const context = Effect.runSync(
+    Layer.buildWithScope(
+      ProviderCredentials.layer.pipe(
+        Layer.provide(Layer.succeedContext(product)),
+      ),
+      scope,
+    ),
+  );
+
+  expect(
+    await Context.get(context, ProviderCredentials).read("openai"),
+  ).toEqual({
+    type: "api_key",
+    key: "sk-old",
+    env: { A: "1" },
+  });
+  expect(
+    Effect.runSync(
+      ProviderCredentialRepository.use((repository) =>
+        repository.get("openai"),
+      ).pipe(Effect.provide(product)),
+    ),
+  ).toEqual({ type: "api_key", env: { A: "1" } });
 });

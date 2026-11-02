@@ -128,6 +128,9 @@ async function readThenFill(
   return { result, guest, tool, ...fake };
 }
 
+const noScreenshot =
+  "no screenshot: a password was typed into this Chromium, and a screenshot could show it; screenshots return once Chromium restarts";
+
 const typed = (guest: ReturnType<typeof scriptedGuest>) =>
   guest.calls.filter((c) => c.tool === "browser_type");
 
@@ -139,7 +142,8 @@ test("fills the ref on a matching host without showing the value", async () => {
 
   expect(result.isError).toBe(false);
   expect(text(result)).toBe("filled password of login github on github.com");
-  expect(typed(guest)[0]!.args).toMatchObject({
+  expect(typed(guest)[0]!.args).toEqual({
+    session: "crumble-desktop",
     target_id: "bt-1",
     tab_id: "tab-1",
     ref: "p1:2",
@@ -259,8 +263,14 @@ test("an unreadable value is recorded with its error and nothing is typed", asyn
 
   expect(text(result)).toBe("REFUSED: 1Password could not be reached");
   expect(typed(guest)).toEqual([]);
-  expect(uses).toMatchObject([
-    { field: "password", error: "1Password could not be reached" },
+  expect(uses).toEqual([
+    {
+      name: "github",
+      at: expect.any(String),
+      host: "github.com",
+      field: "password",
+      error: "1Password could not be reached",
+    },
   ]);
 });
 
@@ -291,8 +301,9 @@ test("a typed password is replaced in every later result", async () => {
 
   const capture = await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
 
-  expect(text(capture)).toContain('value="[login github password]"');
-  expect(text(capture)).not.toContain("hunter2");
+  expect(text(capture)).toBe(
+    'window 101 Chromium "Sign in - Chromium" (snapshot s1)\n- [3] textbox "Password" value="[login github password]"',
+  );
 });
 
 test("a username or one-time code is typed without being recorded or replaced", async () => {
@@ -320,7 +331,11 @@ test("a username or one-time code is typed without being recorded or replaced", 
 
   expect(desk.record).toEqual([]);
   expect(text(capture)).toContain("Signed in as ada@example.com");
-  expect(capture.content.some((part) => part.type === "image")).toBe(true);
+  expect(capture.content.map((part) => part.type)).toEqual([
+    "text",
+    "text",
+    "image",
+  ]);
 });
 
 test("a filled value is replaced even where the reply escapes it", async () => {
@@ -353,8 +368,14 @@ test("a filled value is replaced even where the reply escapes it", async () => {
 
   const read = text(await tool.run({ action: "read" }, BACKGROUND_CONTEXT));
 
-  expect(read).toContain("[login github password]");
-  expect(read).not.toContain("ss\\");
+  expect(read).toBe(
+    [
+      'page "Sign in" https://github.com/login',
+      '- textbox "Password" value="[login github password]"',
+      "elements (act with ref):",
+      '[p2:1] textbox "Password" = "[login github password]"',
+    ].join("\n"),
+  );
 });
 
 test("captures after a password fill carry no screenshot", async () => {
@@ -378,8 +399,8 @@ test("captures after a password fill carry no screenshot", async () => {
   );
 
   expect(capture.content.some((part) => part.type === "image")).toBe(false);
-  expect(text(capture)).toContain(
-    "no screenshot: a password was typed into this Chromium, and a screenshot could show it; screenshots return once Chromium restarts",
+  expect(text(capture)).toBe(
+    `window 101 Chromium "Sign in - Chromium" (snapshot s1)\n- [0] frame\n${noScreenshot}`,
   );
 });
 
@@ -469,7 +490,7 @@ test("a later job has an earlier job's password replaced, and no screenshot whil
     },
   ]);
   expect(await laterCapture(desk, "hunter2")).toEqual({
-    text: expect.stringContaining('value="[login github password]"'),
+    text: `window 101 Chromium "Sign in - Chromium" (snapshot s1)\n- [3] textbox "Field" value="[login github password]"\n${noScreenshot}`,
     image: false,
   });
 });

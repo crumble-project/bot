@@ -16,9 +16,9 @@ import { contractApp } from "../contract/api-contract";
 import { passwordManagersResponse } from "../contract/api-responses";
 import type { CoreServices } from "../app/core-layer";
 import { runnerOf } from "../shared/runner";
-import { PasswordManagers } from "./password-manager";
 import { registerPasswordManagerRoutes } from "./password-managers-api";
 import { SecretValues } from "./secret-values";
+import { secretsLayer } from "../password-managers/secrets";
 
 const REFERENCE = "op://Vault/Linear/token";
 const cleanups: Array<() => void> = [];
@@ -42,8 +42,7 @@ const setup = (state: FakePasswordManager) => {
 
   const vault = Effect.runSync(
     Layer.buildWithScope(
-      SecretValues.layer.pipe(
-        Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
+      secretsLayer([fakeVendor(state)]).pipe(
         Layer.provide(Layer.succeedContext(core)),
       ),
       scope,
@@ -140,8 +139,10 @@ test("a new token interrupts a read in flight and doesn't cache its value", asyn
   await Effect.runPromise(Effect.yieldNow);
   expect((await api.connect()).status).toBe(200);
 
-  expect(Exit.isFailure(await Effect.runPromise(Fiber.await(reading)))).toBe(
-    true,
+  const interrupted = await Effect.runPromise(Fiber.await(reading));
+
+  expect(Exit.isFailure(interrupted) && String(interrupted.cause)).toContain(
+    "SecretUnavailable: Fake was disconnected",
   );
   expect(state.interrupted).toBe(1);
 
@@ -157,7 +158,7 @@ test("disconnecting while a secret reads from the password manager answers 409 a
 
   expect((await api.disconnect()).status).toBe(409);
   expect((await api.list()).passwordManagers[0]?.usedBy).toEqual([
-    { kind: "secret", key: "mcp:server" },
+    "mcp:server",
   ]);
 });
 

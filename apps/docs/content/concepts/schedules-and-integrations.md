@@ -93,19 +93,22 @@ being stored in Crumble.
 the server's editor, select the password manager above **Token** and paste the
 reference.
 
-Over the API, send `tokenReference` instead of `token` when you create or
-update the server with `/v1/mcp-servers`:
+Over the API, send the [secret](/concepts/password-managers#over-the-api) as
+`token` when you create or update the server with `/v1/mcp-servers`, and the
+OAuth app's client secret as `oauthClientSecret`:
 
 ```json
 {
-  "tokenReference": {
-    "passwordManager": "1password",
-    "reference": "op://Vault/Linear/token"
+  "token": {
+    "reference": {
+      "passwordManager": "1password",
+      "reference": "op://Vault/Linear/token"
+    }
   }
 }
 ```
 
 Crumble reads the reference once to check it and changes nothing if it can't
-be read. Send `"tokenReference": null` to remove it. If a token can't be read
+be read. Send `"token": null` to remove it. If a token can't be read
 later, the bot answers without that server's tools, and the server's `error`
 says why.

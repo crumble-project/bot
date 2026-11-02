@@ -103,7 +103,6 @@ export class Store {
 
   setCredential = this.configuration.setCredential;
   getCredential = this.configuration.getCredential;
-  listCredentials = this.configuration.listCredentials;
 
   agentCredentialPlaceholders = this.configuration.agentCredentialPlaceholders;
   listCredentialRequests = this.configuration.listCredentialRequests;

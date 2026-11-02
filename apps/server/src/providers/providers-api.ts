@@ -2,7 +2,6 @@ import { z } from "zod";
 import { getSupportedThinkingLevels, type Models } from "@earendil-works/pi-ai";
 import {
   routes,
-  providerKeyInput,
   providerLoginAnswerInput,
   providerLoginInput,
 } from "../contract/api-contract";
@@ -17,8 +16,11 @@ import {
 import type { Runner } from "../shared/runner";
 import { loginMethods, type ProviderSignInsAccess } from "./provider-auth";
 import { ProviderCredentialRepository } from "./provider-credential-repository";
+import { providerApiKeyKey } from "./provider-credentials";
+import { Secrets } from "../password-managers/secrets";
+import { secretInput } from "../shared/domain";
 
-type Services = ProviderCredentialRepository;
+type Services = ProviderCredentialRepository | Secrets;
 
 type Exec = Runner<Services>["runSync"];
 
@@ -76,8 +78,9 @@ const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
           ),
           authMethods: loginMethods(item),
           credentialType: saved.get(item.id)?.type ?? null,
-          passwordManager: saved.get(item.id)?.passwordManager ?? null,
-          reference: saved.get(item.id)?.reference ?? null,
+          apiKey: exec(
+            Secrets.use((s) => s.status(providerApiKeyKey(item.id))),
+          ),
           activeLoginId: providerAuth.activeLoginId(item.id),
           externalAuth: (await options.externalAuth?.get(item.id)?.()) ?? null,
         })),
@@ -112,10 +115,7 @@ const registerProviderCredentialRoutes = (options: ProviderRoutesOptions) => {
   register(routes.putProvider, async (c) => {
     const name = provider.parse(c.req.param("provider"));
 
-    const input = providerKeyInput.parse(await c.req.json());
-
-    if (input.reference) await providerAuth.setReference(name, input.reference);
-    else if (input.apiKey) await providerAuth.setApiKey(name, input.apiKey);
+    await providerAuth.setApiKey(name, secretInput.parse(await c.req.json()));
 
     return c.json({ provider: name, configured: true }, 200);
   });

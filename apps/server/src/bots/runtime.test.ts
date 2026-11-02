@@ -49,14 +49,15 @@ describe("AgentRuntime", () => {
     expect(duplicate).toBe(submission);
     const snapshot = await reopened.snapshot(a, conversation);
     expect(
-      snapshot.messages.some((m) =>
-        JSON.stringify(m.content).includes("hello"),
-      ),
-    ).toBe(true);
+      snapshot.messages.map(({ role, content }) => ({ role, content })),
+    ).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "hello" },
+    ]);
     await reopened.close();
   });
 
-  test("isolates memory callbacks by agent", async () => {
+  test("gives each bot only its own memory", async () => {
     const dir = await Bun.$`mktemp -d`.text();
     const models = createModels();
 
@@ -65,25 +66,35 @@ describe("AgentRuntime", () => {
       models: [{ id: "test-model" }],
     });
 
+    const ids = [
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003",
+    ] as const;
+
+    const remembered: string[][] = [];
+
+    faux.setResponses(
+      ids.map(() => (context) => {
+        const sent = JSON.stringify(context.messages);
+        remembered.push(ids.filter((id) => sent.includes(`memory of ${id}`)));
+
+        return fauxAssistantMessage("ok");
+      }),
+    );
     models.setProvider(faux.provider);
-    const seen: string[] = [];
 
     const rt = new AgentRuntime(dir.trim(), {
       models,
-      listMemory: async (id) => {
-        seen.push(id);
-
-        return [{ id: "m", content: id }];
-      },
+      listMemory: async (id) => [{ id: "m", content: `memory of ${id}` }],
     });
 
-    for (const id of [
-      "00000000-0000-4000-8000-000000000002",
-      "00000000-0000-4000-8000-000000000003",
-    ])
-      await rt.createConversation(agent(id));
-    expect(seen).toContain("00000000-0000-4000-8000-000000000002");
-    expect(seen).toContain("00000000-0000-4000-8000-000000000003");
+    for (const id of ids) {
+      const bot = agent(id);
+      const conversation = await rt.createConversation(bot);
+      await rt.wait(await rt.submit(bot, conversation, "hi", `r-${id}`), bot);
+    }
+
+    expect(remembered).toEqual([[ids[0]], [ids[1]]]);
     await rt.close();
   });
 });

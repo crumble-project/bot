@@ -6,7 +6,10 @@ import {
 } from "drizzle-orm/sqlite-core";
 import { agents } from "../bots/schema";
 
-/** The account's GitHub Apps, each created from a manifest and private to one GitHub account. */
+/**
+ * The account's GitHub Apps, each created from a manifest and private to one GitHub account. The client secret, which
+ * signing the owner in needs, is a secret under `githubAppClientSecretKey`.
+ */
 export const githubApps = sqliteTable("github_apps", {
   id: text("id").primaryKey(),
   appId: integer("app_id").notNull(),
@@ -21,8 +24,6 @@ export const githubApps = sqliteTable("github_apps", {
   /** The GitHub user or organization whose repositories the App works on; null until known from an installation. */
   account: text("account"),
   installationId: integer("installation_id"),
-  /** Encrypted; needed to sign the owner in through the App. Apps created before Crumble kept it have none until pasted. */
-  clientSecret: text("client_secret"),
   createdAt: text("created_at").notNull(),
 });
 
@@ -55,13 +56,14 @@ export const githubAppUsers = sqliteTable("github_app_users", {
   refreshExpiresAt: integer("refresh_expires_at").notNull(),
 });
 
-/** GitHub users the owner made for bots, each added with a personal access token; GitHub calls them machine users. */
+/**
+ * GitHub users the owner made for bots, each added with a personal access token; GitHub calls them machine users. The
+ * token is a keyed secret, `githubAccountTokenKey`, so it can be read from a password manager.
+ */
 export const githubAccounts = sqliteTable("github_accounts", {
   id: text("id").primaryKey(),
   login: text("login").notNull(),
   userId: integer("user_id").notNull().unique(),
-  /** The personal access token, encrypted with the account's key. */
-  token: text("token").notNull(),
   createdAt: text("created_at").notNull(),
 });
 

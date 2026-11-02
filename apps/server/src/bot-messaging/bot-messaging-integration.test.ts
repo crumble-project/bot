@@ -131,13 +131,24 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
     await runtime.wait(execution.submissionId!, source);
     expect(targetCalls).toBe(1);
     expect(store.listExecutions(targetId)).toHaveLength(1);
+    const targetExecution = store.listExecutions(targetId)[0]!;
+
+    const sent = {
+      executionId: targetExecution.id,
+      fromAgentId: sourceId,
+      fromName: "Source",
+      toAgentId: targetId,
+      toName: "Bot2",
+      status: "sent" as const,
+    };
+
     const targetHistory = await runtime.history(store.getAgent(targetId)!);
 
     const targetInput = targetHistory.messages.find(
       (message) => message.role === "user",
     );
 
-    expect(targetInput?.origin).toMatchObject({
+    expect(targetInput?.origin).toEqual({
       kind: "bot",
       agentId: sourceId,
       name: "Source",
@@ -149,18 +160,13 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
     ).toEqual([
       expect.objectContaining({
         content: "How do you feel?",
-        communication: expect.objectContaining({
-          fromAgentId: sourceId,
-          toAgentId: targetId,
-          status: "sent",
-        }),
+        communication: sent,
       }),
     ]);
     const snapshot = await runtime.snapshot(source, execution.conversationId);
     expect(JSON.stringify(snapshot.messages)).toContain(
       "Bot2 says it feels fine.",
     );
-    const targetExecution = store.listExecutions(targetId)[0]!;
     const messaging = botMessagingAccess(standaloneMessaging(service));
     const targetChat = await service.chat(targetId);
     let targetChanges = 0;
@@ -227,27 +233,25 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
       expect(persisted.map((message) => message.id)).toEqual(
         cards.map((message) => message.id),
       );
-      expect(persisted[0]?.communication).toMatchObject({
-        fromName: "Source",
-        toName: "Bot2",
-        status: "sent",
-      });
-      expect(persisted[1]?.communication).toMatchObject({
-        fromName: "Bot2",
-        toName: "Source",
-        status: "done",
-      });
+      expect(persisted.map((message) => message.communication)).toEqual([
+        sent,
+        {
+          executionId: targetExecution.id,
+          fromAgentId: targetId,
+          fromName: "Bot2",
+          toAgentId: sourceId,
+          toName: "Source",
+          status: "done",
+        },
+      ]);
 
       const persistedTarget = (
         await reopened.history(store.getAgent(targetId)!)
       ).messages.filter((message) => message.kind === "bot-message");
 
-      expect(persistedTarget).toHaveLength(1);
-      expect(persistedTarget[0]?.communication).toMatchObject({
-        fromName: "Source",
-        toName: "Bot2",
-        status: "sent",
-      });
+      expect(persistedTarget.map((message) => message.communication)).toEqual([
+        sent,
+      ]);
     } finally {
       await reopened.close();
     }

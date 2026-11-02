@@ -89,7 +89,7 @@ describe("legacy owner migration", () => {
     try {
       await expect(
         migrateLegacyData({ dataDir, email: "owner@example.com" }),
-      ).rejects.toThrow();
+      ).rejects.toThrow("Lock file is already being held");
     } finally {
       await release();
     }

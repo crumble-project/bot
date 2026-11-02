@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
-import { Context, Effect, Exit, Layer, Redacted, Scope } from "effect";
+import { Context, Effect, Exit, Layer, Scope } from "effect";
 import {
   BACKGROUND_CONTEXT,
   withAbortSignal,
@@ -14,15 +14,14 @@ import {
 } from "./integrations";
 import { Store } from "../../test/support/store";
 import {
-  FAKE_TOKEN,
+  connectFakePasswordManager,
   fakePasswordManager,
   fakeVendor,
 } from "../../test/support/fake-password-manager";
 import type { CoreServices } from "../app/core-layer";
 import { runnerOf } from "../shared/runner";
-import { PasswordManagers } from "../password-managers/password-manager";
-import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
 import { SecretValues } from "../password-managers/secret-values";
+import { secretsLayer } from "../password-managers/secrets";
 import { SecretRepository } from "../credentials/secret-repository";
 import type { McpTransport } from "@earendil-works/pi-mcp";
 
@@ -66,19 +65,14 @@ function withVaultToken(
 
   const vault = Effect.runSync(
     Layer.buildWithScope(
-      SecretValues.layer.pipe(
-        Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
+      secretsLayer([fakeVendor(state)]).pipe(
         Layer.provide(Layer.succeedContext(core)),
       ),
       scope,
     ),
   );
 
-  store.run(
-    PasswordManagerRepository.use((r) =>
-      r.save("1password", Redacted.make(FAKE_TOKEN), "t"),
-    ),
-  );
+  store.run(connectFakePasswordManager);
 
   const db = new Database(join(dir, "store.sqlite"));
   db.run(
@@ -125,7 +119,20 @@ describe("MCP integrations", () => {
       enabled: true,
     });
 
+    const off = store.createMCPServer({
+      name: "off",
+      url: "https://off.example.test",
+      enabled: false,
+    });
+
+    store.createMCPServer({
+      name: "unlisted",
+      url: "https://unlisted.example.test",
+      enabled: true,
+    });
+
     let called = 0;
+    const connected: string[] = [];
 
     const client: MCPClient = {
       async connect() {},
@@ -151,15 +158,20 @@ describe("MCP integrations", () => {
     };
 
     const { integrations, close } = standaloneIntegrations(store.runtime, {
-      clientFactory: () => ({ client, transport: unusedTransport }),
+      clientFactory: (connecting) => {
+        connected.push(connecting.name);
+
+        return { client, transport: unusedTransport };
+      },
     });
 
     const agentId = "00000000-0000-4000-8000-000000000001";
 
     const extensions = await integrations.extensionsForAgent(
-      store.createAgent(agent(agentId, [server.id]), agentId),
+      store.createAgent(agent(agentId, [server.id, off.id]), agentId),
     );
 
+    expect(connected).toEqual(["demo"]);
     expect(extensions).toHaveLength(1);
     const first = extensions[0];
 
@@ -170,6 +182,11 @@ describe("MCP integrations", () => {
     const tool: any = tools[0];
 
     if (!tool) throw new Error("missing tool");
+    expect(tool.parameters).toEqual({
+      type: "object",
+      properties: { text: { type: "string" } },
+      required: ["text"],
+    });
 
     const result = await tool.execute(
       { text: "hi" },

@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { Effect, Exit } from "effect";
 import { Store } from "../../test/support/store";
 import { agentInput, scheduleInput, type ScriptRun } from "../shared/domain";
 import { ScheduleRepository } from "./schedule-repository";
@@ -188,15 +187,15 @@ describe("ScriptRunRepository", () => {
   test("schedule updates reject invalid merged content without persisting it", () => {
     const { store, schedule } = setup();
 
-    const result = store.run(
-      Effect.exit(
+    expect(() =>
+      store.run(
         ScheduleRepository.use((repository) =>
           repository.update(schedule.id, { kind: "prompt" }),
         ),
       ),
+    ).toThrow(
+      "Prompt tasks need a prompt and no command; script tasks need a command",
     );
-
-    expect(Exit.isFailure(result)).toBe(true);
     expect(store.getSchedule(schedule.id)).toEqual(schedule);
   });
 

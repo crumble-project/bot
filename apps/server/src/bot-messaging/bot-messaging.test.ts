@@ -141,7 +141,12 @@ test("send resolves IDs, exact names, and @mentions and deduplicates task reques
   });
 
   expect(duplicate.executionId).toBe(first.executionId);
-  expect(first).toMatchObject({ agentId: ids.target, agent: "Bot2" });
+  expect(first).toEqual({
+    executionId: duplicate.executionId,
+    agentId: ids.target,
+    agent: "Bot2",
+    status: "running",
+  });
   await expect(
     messaging.send(ids.source, {
       recipient: "Bot2",
@@ -221,22 +226,28 @@ test("result waits for completion and rejects revoked or foreign receipts", asyn
     requestId: "ask-2",
   });
 
-  const immediate = await messaging.result(ids.source, sent.executionId);
-  expect(immediate.status).toMatch(/pending|running/);
+  expect(await messaging.result(ids.source, sent.executionId)).toEqual({
+    executionId: sent.executionId,
+    agentId: ids.target,
+    agent: "Bot2",
+    status: "running",
+    error: null,
+    response: [],
+  });
   resolveWait({ status: "done" });
 
   const result = await messaging.result(ids.source, sent.executionId, {
     waitMs: 1000,
   });
 
-  expect(result).toMatchObject({
+  expect(result).toEqual({
     executionId: sent.executionId,
     agentId: ids.target,
+    agent: "Bot2",
     status: "done",
+    error: null,
+    response: [`answer:submission:delegate:${ids.source}:ask-2`],
   });
-  expect(result.response).toEqual([
-    `answer:submission:delegate:${ids.source}:ask-2`,
-  ]);
   store.updateAgent(ids.source, { tools: [] });
   await expect(messaging.result(ids.source, sent.executionId)).rejects.toThrow(
     /receipt|permission|revoked|turned off/i,
@@ -268,7 +279,14 @@ test("result returns durable failure and cancellation states", async () => {
     waitMs: 1000,
   });
 
-  expect(failure).toMatchObject({ status: "failed", error: "target failed" });
+  expect(failure).toEqual({
+    executionId: failed.executionId,
+    agentId: ids.target,
+    agent: "Bot2",
+    status: "failed",
+    error: "target failed",
+    response: [],
+  });
 
   let resolveCancelled!: (value: { status: "done" }) => void;
 
@@ -317,7 +335,7 @@ test("timeout and caller cancellation stop only the waiter", async () => {
     waitMs: 10,
   });
 
-  expect(timed.status).toMatch(/pending|running/);
+  expect(timed.status).toBe("running");
   const controller = new AbortController();
 
   const waiter = messaging.result(ids.source, sent.executionId, {
@@ -327,7 +345,7 @@ test("timeout and caller cancellation stop only the waiter", async () => {
   });
 
   controller.abort();
-  await expect(waiter).rejects.toThrow();
+  await expect(waiter).rejects.toThrow("The operation was aborted.");
   resolveWait({ status: "done" });
 
   const finished = await messaging.result(ids.source, sent.executionId, {

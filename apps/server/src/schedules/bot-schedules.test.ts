@@ -230,7 +230,7 @@ describe("bot schedules", () => {
       expect(task.runAt).toBe("2026-10-18T10:10:00.000Z");
       expect(task.nextRunAt).toBe(task.runAt);
       await scheduler.tick(new Date("2026-10-18T10:09:59Z"));
-      expect(calls).toHaveLength(0);
+      expect(calls).toEqual([]);
       await scheduler.tick(new Date("2026-10-18T10:10:00Z"));
       expect(calls).toEqual([
         [self.id, "Say hi", `schedule:${task.id}:${task.runAt}`, task.id],
@@ -283,7 +283,11 @@ describe("bot schedules", () => {
         .sort(),
     ).toEqual([created.id, owner.id].sort());
     const ran = await schedules.run(self.id, created.id);
-    expect(ran.admitted).toBe(true);
+    expect(ran).toEqual({
+      admitted: true,
+      executionId: "exec-1",
+      status: null,
+    });
     store.close();
   });
 
@@ -318,7 +322,12 @@ describe("bot schedules", () => {
         prompt: "x",
         runAt: later(),
       }),
-    ).toThrow(Forbidden);
+    ).toThrow(
+      new Forbidden({
+        message:
+          "You can schedule a task for yourself, or for a bot you are allowed to message",
+      }),
+    );
     expect(() =>
       schedules.update(other.id, task.id, { name: "Stolen" }),
     ).toThrow(/Task not found/);
@@ -341,8 +350,10 @@ describe("bot schedules", () => {
     const plain = store.createAgent(input("Plain", ["memory"]), uuid(1));
     expect(
       // SAFETY: Schedule extensions expose their registered tool list.
-      (scheduleExtension(store.getAgent(plain.id)!, service) as any).tools,
-    ).toHaveLength(1);
+      (scheduleExtension(store.getAgent(plain.id)!, service) as any).tools.map(
+        (tool: { name: string }) => tool.name,
+      ),
+    ).toEqual(["schedule"]);
 
     const paused = store.createAgent(
       input("Paused", ["memory"], [], false),
@@ -379,7 +390,7 @@ describe("bot schedules", () => {
     expect(body.agentId).toBe(self.id);
     expect(body.createdByAgentId).toBe(self.id);
     const listed = await tool.execute({ action: "list" }, { taskId: "t2" });
-    expect(JSON.parse(listed.output[0].text)).toHaveLength(1);
+    expect(JSON.parse(listed.output[0].text)).toEqual([body]);
     store.close();
   });
 

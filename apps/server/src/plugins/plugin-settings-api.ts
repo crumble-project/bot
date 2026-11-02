@@ -1,9 +1,8 @@
-import { pluginSecretInput, routes } from "../contract/api-contract";
+import { Effect } from "effect";
+import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import { SecretRepository } from "../credentials/secret-repository";
-import type { PasswordManagers } from "../password-managers/password-manager";
-import { checkSecretReference } from "../password-managers/secret-references";
-import { SecretValues } from "../password-managers/secret-values";
+import { Secrets } from "../password-managers/secrets";
+import { secretInput } from "../shared/domain";
 import { NotFound } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import {
@@ -16,50 +15,22 @@ import {
 /** Every plugin's settings: listing whether each has a value, setting one, and removing one. */
 export function registerPluginSettingRoutes(options: {
   register: Register;
-  run: Runner<SecretRepository | SecretValues | PasswordManagers>;
+  run: Runner<Secrets>;
   plugins?: readonly CrumblePlugin[] | undefined;
 }) {
   const { register, run } = options;
+  const secrets = run.runSync(Secrets.use(Effect.succeed));
 
   const plugins = (options.plugins ?? []).filter(
     (plugin) => (plugin.settings?.length ?? 0) > 0,
   );
 
-  const sourceOf = (key: string) =>
-    run.runSync(SecretRepository.use((r) => r.source(key)));
-
-  const describe = (plugin: CrumblePlugin, setting: PluginSetting) => {
-    const source = sourceOf(pluginSettingKey(plugin.id, setting.key));
-    const reference = source && "reference" in source ? source : null;
-
-    return {
-      ...setting,
-      configured: source !== undefined,
-      passwordManager: reference?.passwordManager ?? null,
-      reference: reference?.reference ?? null,
-    };
-  };
-
-  /** Drops the cached value of a reference the setting no longer reads from. */
-  const forgetReplaced = (key: string, before: ReturnType<typeof sourceOf>) => {
-    const after = sourceOf(key);
-
-    if (
-      before &&
-      "reference" in before &&
-      !(
-        after &&
-        "reference" in after &&
-        after.passwordManager === before.passwordManager &&
-        after.reference === before.reference
-      )
-    )
-      run.runSync(
-        SecretValues.use((values) =>
-          values.forget(before.passwordManager, before.reference),
-        ),
-      );
-  };
+  const describe = (plugin: CrumblePlugin, setting: PluginSetting) => ({
+    ...setting,
+    secret: run.runSync(
+      secrets.status(pluginSettingKey(plugin.id, setting.key)),
+    ),
+  });
 
   const find = (pluginId: string, key: string) => {
     const plugin = plugins.find((candidate) => candidate.id === pluginId);
@@ -96,20 +67,9 @@ export function registerPluginSettingRoutes(options: {
       c.req.param("key"),
     );
 
-    const input = pluginSecretInput.parse(await c.req.json());
-    const before = sourceOf(stored);
-
-    const { value, reference } = input;
-
-    if (reference) {
-      await run.runPromise(checkSecretReference(reference));
-      run.runSync(
-        SecretRepository.use((r) => r.setReference(stored, reference)),
-      );
-    } else if (value)
-      run.runSync(SecretRepository.use((r) => r.set(stored, value)));
-
-    forgetReplaced(stored, before);
+    await run.runPromise(
+      secrets.save(stored, secretInput.parse(await c.req.json())),
+    );
 
     return c.json(describe(plugin, setting), 200);
   });
@@ -119,9 +79,7 @@ export function registerPluginSettingRoutes(options: {
       c.req.param("key"),
     );
 
-    const before = sourceOf(stored);
-    run.runSync(SecretRepository.use((r) => r.delete(stored)));
-    forgetReplaced(stored, before);
+    run.runSync(secrets.delete(stored));
 
     return c.json(describe(plugin, setting), 200);
   });

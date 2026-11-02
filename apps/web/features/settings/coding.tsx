@@ -13,6 +13,11 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { CopyButton, EditorSheet } from "@/components/form-fields";
+import {
+  SecretSourceField,
+  type SecretInput,
+  useSecretDraft,
+} from "@/components/secret-source-field";
 import { RedirectReturn } from "@/components/redirect-return";
 import {
   ConfirmDelete,
@@ -34,6 +39,7 @@ import {
   githubAccountsQuery,
   githubAppPath,
   githubAppsQuery,
+  passwordManagersQuery,
   queryClient,
   send,
 } from "@/lib/api";
@@ -42,12 +48,14 @@ import { BotAvatar } from "@/features/bots/avatar";
 /** The App GitHub sends the owner back for after installing; GitHub's redirect doesn't say which. */
 const INSTALLING_KEY = "crumble.github-app.installing";
 
-// A bot's GH_TOKEN appears or goes with its Apps and machine account, so credentials refresh too.
+// A bot's GH_TOKEN appears or goes with its Apps and machine account, so credentials refresh too, and a token's
+// reference changes what each password manager is used by.
 const refresh = () =>
   Promise.all([
     queryClient.invalidateQueries({ queryKey: githubAppsQuery.queryKey }),
     queryClient.invalidateQueries({ queryKey: githubAccountsQuery.queryKey }),
     queryClient.invalidateQueries({ queryKey: ["credentials"] }),
+    queryClient.invalidateQueries({ queryKey: passwordManagersQuery.queryKey }),
   ]).then(() => undefined);
 
 /** GitHub creates an App only from a form post with the manifest, so the browser leaves for github.com here. */
@@ -294,42 +302,35 @@ function CallbackUrl() {
 }
 
 function ClientSecretForm({ app }: { app: GitHubApp }) {
-  const [clientSecret, setClientSecret] = useState("");
+  const secret = useSecretDraft(app.clientSecret);
 
   const save = useMutation({
-    mutationFn: () =>
-      call<GitHubApp, { clientSecret: string }>(
+    mutationFn: (body: SecretInput) =>
+      call<GitHubApp, SecretInput>(
         `${githubAppPath(app.id)}/client-secret`,
         "PUT",
-        { clientSecret: clientSecret.trim() },
+        body,
       ),
     onSuccess: refresh,
   });
 
   return (
     <>
-      <FieldDescription>
-        To let bots act as you, open the App's settings on GitHub, add the
-        callback URL above, and generate a client secret.
-      </FieldDescription>
-      <div className="flex gap-2">
-        <Input
-          type="password"
-          aria-label="Client secret"
-          autoComplete="off"
-          placeholder="Client secret"
-          value={clientSecret}
-          onChange={(event) => setClientSecret(event.target.value)}
-        />
-        <Button
-          type="button"
-          variant="outline"
-          disabled={!clientSecret.trim() || save.isPending}
-          onClick={() => save.mutate()}
-        >
-          Save
-        </Button>
-      </div>
+      <SecretSourceField
+        id={`github-app-client-secret-${app.id}`}
+        label="Client secret"
+        {...secret.field}
+        valueDescription="To let bots act as you, open the App's settings on GitHub, add the callback URL above, and generate a client secret."
+      />
+      <Button
+        type="button"
+        variant="outline"
+        className="self-start"
+        disabled={!secret.changed || save.isPending}
+        onClick={() => secret.input && save.mutate(secret.input)}
+      >
+        Save
+      </Button>
       {save.error && <FieldError>{save.error.message}</FieldError>}
     </>
   );
@@ -411,10 +412,10 @@ function ActAsField({ app }: { app: GitHubApp }) {
       <FieldLabel>Bots act as</FieldLabel>
       <div className="flex flex-wrap items-center gap-2">
         <span className="min-w-0 flex-1 text-sm">{app.login}</span>
-        {app.hasClientSecret && <SignInButton app={app} />}
+        {app.clientSecret.configured && <SignInButton app={app} />}
       </div>
       <CallbackUrl />
-      {!app.hasClientSecret && <ClientSecretForm app={app} />}
+      {!app.clientSecret.configured && <ClientSecretForm app={app} />}
     </Field>
   );
 }
@@ -548,49 +549,42 @@ function AccountRow({
 }
 
 function TokenField({
-  value,
-  onChange,
+  token,
   label,
 }: {
-  value: string;
-  onChange: (value: string) => void;
+  token: ReturnType<typeof useSecretDraft>;
   label: string;
 }) {
   return (
-    <Field>
-      <FieldLabel htmlFor="github-account-token">{label}</FieldLabel>
-      <Input
-        id="github-account-token"
-        type="password"
-        autoComplete="off"
-        placeholder="github_pat_…"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-      <FieldDescription>
-        Signed in as the machine account on GitHub, create a personal access
-        token with access to the repositories its bots work in.{" "}
-        <a
-          href="https://github.com/settings/personal-access-tokens/new"
-          target="_blank"
-          rel="noreferrer"
-          className="underline underline-offset-2"
-        >
-          New token
-        </a>
-      </FieldDescription>
-    </Field>
+    <SecretSourceField
+      id="github-account-token"
+      label={label}
+      {...token.field}
+      valuePlaceholder="github_pat_…"
+      valueDescription={
+        <>
+          Signed in as the machine account on GitHub, create a personal access
+          token with access to the repositories its bots work in.{" "}
+          <a
+            href="https://github.com/settings/personal-access-tokens/new"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2"
+          >
+            New token
+          </a>
+        </>
+      }
+    />
   );
 }
 
 function AddAccountSheet({ onClose }: { onClose: () => void }) {
-  const [token, setToken] = useState("");
+  const token = useSecretDraft();
 
   const add = useMutation({
-    mutationFn: () =>
-      call<GitHubAccount, { token: string }>("/v1/github-accounts", "POST", {
-        token: token.trim(),
-      }),
+    mutationFn: (body: SecretInput) =>
+      call<GitHubAccount, SecretInput>("/v1/github-accounts", "POST", body),
     onSuccess: async () => {
       await refresh();
       onClose();
@@ -603,11 +597,11 @@ function AddAccountSheet({ onClose }: { onClose: () => void }) {
       description="A GitHub user you made for your bots. They act as it wherever none of their Apps does, such as other people's repositories."
       error={add.error?.message}
       submitLabel="Add"
-      submitDisabled={!token.trim() || add.isPending}
-      onSubmit={() => add.mutate()}
+      submitDisabled={!token.input || add.isPending}
+      onSubmit={() => token.input && add.mutate(token.input)}
       onClose={onClose}
     >
-      <TokenField value={token} onChange={setToken} label="Token" />
+      <TokenField token={token} label="Token" />
     </EditorSheet>
   );
 }
@@ -620,15 +614,15 @@ function AccountSheet({
   onClose: () => void;
 }) {
   const [botIds, setBotIds] = useState(account.botIds);
-  const [token, setToken] = useState("");
+  const token = useSecretDraft(account.token);
 
   const save = useMutation({
     mutationFn: async () => {
-      if (token.trim())
-        await call<GitHubAccount, { token: string }>(
+      if (token.input && token.changed)
+        await call<GitHubAccount, SecretInput>(
           `${githubAccountPath(account.id)}/token`,
           "PUT",
-          { token: token.trim() },
+          token.input,
         );
 
       await call<GitHubAccount, { botIds: string[] }>(
@@ -658,7 +652,10 @@ function AccountSheet({
         onChange={setBotIds}
         description="They get GH_TOKEN and act as this user wherever none of their Apps does; their commits default to it. A bot acts as one machine account."
       />
-      <TokenField value={token} onChange={setToken} label="Replace token" />
+      <TokenField
+        token={token}
+        label={account.token.passwordManager ? "Token" : "Replace token"}
+      />
     </EditorSheet>
   );
 }

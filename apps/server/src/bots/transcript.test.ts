@@ -210,11 +210,23 @@ describe("durable transcript helpers", () => {
       1: [user(1, long, "crumble.message"), user(2, "near", "crumble.message")],
     });
 
-    const result = await prepareReply(harness, "a", "a:1", "follow up");
-    expect(result.data.text).toBe("follow up");
-    expect(result.modelContent).toContain("<reply_context>");
-    expect(result.modelContent.length).toBeLessThan(12000 + 100);
-    await expect(prepareReply(harness, "b", "a:1", "x")).rejects.toThrow();
+    const quoted = [
+      { id: "a:1", role: "user", content: "x".repeat(6000) },
+      { id: "a:2", role: "user", content: "near" },
+    ];
+
+    expect(await prepareReply(harness, "a", "a:1", "follow up")).toEqual({
+      modelContent: `<reply_context>\n${JSON.stringify(quoted)}\n</reply_context>\n\nfollow up`,
+      data: {
+        text: "follow up",
+        replyTo: "a:1",
+        replyPreview: "x".repeat(240),
+        contextEntryIds: ["a:1", "a:2"],
+      },
+    });
+    await expect(prepareReply(harness, "b", "a:1", "x")).rejects.toThrow(
+      "reply target belongs to a different agent",
+    );
   });
 
   test("normalizes bot communication cards and ignores malformed or model-less entries", async () => {
@@ -230,7 +242,7 @@ describe("durable transcript helpers", () => {
           fromName: "Source",
           toAgentId: "target",
           toName: "Bot2",
-          status: "sent",
+          status: "sent" as const,
         },
       },
     };
@@ -249,12 +261,15 @@ describe("durable transcript helpers", () => {
       "source",
     );
 
-    expect(result.messages).toHaveLength(1);
-    expect(result.messages[0]).toMatchObject({
-      role: "event",
-      kind: "bot-message",
-      content: "How do you feel?",
-      communication: event.data.communication,
-    });
+    expect(result.messages).toEqual([
+      {
+        id: "source:3:0",
+        entryId: "source:3",
+        role: "event",
+        kind: "bot-message",
+        content: "How do you feel?",
+        communication: event.data.communication,
+      },
+    ]);
   });
 });

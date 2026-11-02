@@ -58,14 +58,25 @@ describe("exported response and parameter schemas", () => {
 
   test("all path parameters are required", () => {
     const document = openAPIDocument();
+    const parameters: [string, string, string, boolean | undefined][] = [];
 
-    for (const path of Object.values(document.paths ?? {})) {
+    for (const [route, path] of Object.entries(document.paths ?? {})) {
       for (const method of ["get", "put", "post", "patch", "delete"] as const) {
         for (const parameter of path?.[method]?.parameters ?? []) {
           if ("in" in parameter && parameter.in === "path")
-            expect(parameter.required).toBe(true);
+            parameters.push([
+              route,
+              method,
+              parameter.name,
+              parameter.required,
+            ]);
         }
       }
     }
+
+    expect(parameters).toContainEqual(["/v1/agents/{id}", "get", "id", true]);
+    expect(parameters.filter(([, , , required]) => required !== true)).toEqual(
+      [],
+    );
   });
 });

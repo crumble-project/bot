@@ -233,7 +233,7 @@ test("exit zero succeeds with combined output and uses workspace options and cre
     Credentials.use((credentials) =>
       credentials.save(agent.id, "SCRIPT_TOKEN", {
         hosts: ["example.invalid"],
-        value: "test-only",
+        secret: { value: "test-only" },
       }),
     ),
   );
@@ -252,10 +252,8 @@ test("exit zero succeeds with combined output and uses workspace options and cre
     error: null,
     droppedBytes: 0,
   });
-  expect(run.output).toContain("out:");
-  expect(run.output).toContain(":err");
-  expect(run.output).toContain("crumble-credential-");
-  expect(run.output).not.toContain("test-only");
+  // The script sees the credential's placeholder, never its value.
+  expect(run.output).toMatch(/^out:crumble-credential-[0-9a-f]{48}:err$/);
   expect(run.finishedAt).not.toBeNull();
   expect(workspaces.environments[0]?.agentId).toBe(agent.id);
   expect(workspaces.calls[0]?.[1]).toMatchObject({
@@ -356,7 +354,7 @@ test("output also retains only the last 2000 lines", async () => {
   expect(run.output.split("\n").filter(Boolean)).toHaveLength(2000);
   expect(run.output.startsWith("1001\n")).toBe(true);
   expect(run.output.endsWith("3000\n")).toBe(true);
-  expect(run.droppedBytes).toBeGreaterThan(0);
+  expect(run.droppedBytes).toBe(3893);
 });
 
 test("a notice closes its output fence without a blank line", async () => {
@@ -508,9 +506,10 @@ test("list prunes runs older than 90 days and forwards paging", async () => {
       service.list(schedule.id, { limit: 20, before: last.id }),
     ),
   ).toEqual([first]);
-  expect(store.run(repository.list(schedule.id, { limit: 20 }))).toHaveLength(
-    2,
-  );
+  expect(store.run(repository.list(schedule.id, { limit: 20 }))).toEqual([
+    last,
+    first,
+  ]);
 });
 
 test("no workspaces records a failed run and posts its result", async () => {
@@ -522,8 +521,9 @@ test("no workspaces records a failed run and posts its result", async () => {
     error: "workspace unavailable",
     exitCode: null,
   });
-  expect(notices).toHaveLength(1);
-  expect(notices[0]?.text).toContain("Status: failed");
+  expect(notices.map((notice) => notice.text)).toEqual([
+    "Script task\n\nStatus: failed\n\nExit code: none\n\nError: workspace unavailable",
+  ]);
 });
 
 test("turning coding off before execution records a failure", async () => {

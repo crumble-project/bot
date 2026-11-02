@@ -27,15 +27,23 @@ export const botsOutcomes = (context: BotsContext, deps: OutcomeDeps) => {
   const { changed, settled } = deps.notifications;
   const { announceReply } = deps.announcements;
 
+  // A cancel already recorded and settled the execution; a deleted one has nothing to record.
+  const isOver = Effect.fnUntraced(function* (execution: Execution) {
+    const current = yield* executions.get(execution.id);
+
+    return !current || current.status === "cancelled";
+  });
+
   const recordFailure = Effect.fnUntraced(function* (
     execution: Execution,
     cause: unknown,
   ) {
-    if (yield* executions.get(execution.id))
-      yield* executions.update(execution.id, {
-        status: "failed",
-        error: String(cause instanceof Error ? cause.message : cause),
-      });
+    if (yield* isOver(execution)) return;
+
+    yield* executions.update(execution.id, {
+      status: "failed",
+      error: String(cause instanceof Error ? cause.message : cause),
+    });
     yield* changed(execution.conversationId);
     yield* settled(execution.id);
   });
@@ -44,10 +52,7 @@ export const botsOutcomes = (context: BotsContext, deps: OutcomeDeps) => {
     execution: Execution,
     result: SubmissionOutcome,
   ) {
-    const current = yield* executions.get(execution.id);
-
-    if (!current || current.status === "cancelled")
-      return yield* settled(execution.id);
+    if (yield* isOver(execution)) return;
 
     yield* executions.update(execution.id, {
       status: result.status === "done" ? "done" : "failed",
