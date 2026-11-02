@@ -38,6 +38,7 @@ import {
   type ScriptRun,
 } from "../shared/domain";
 import type { MessageOrigin } from "../bots/transcript";
+import { legacyAvatarDefinition } from "../contract/avatar";
 
 // Plain header records, so they spread into the defaults.
 type TestRequestInit = Omit<RequestInit, "headers"> & {
@@ -187,6 +188,75 @@ describe("HTTP API for bots, chats, and activity", () => {
       desktop: true,
       jobKinds: ["coding", "desktop"],
     });
+  });
+
+  test("avatars are additive, validated, and preserved for native clients", async () => {
+    const { app } = setup();
+    const avatar = "critters:native;silhouette=cloud;color=#38bdf8";
+
+    const created = await req(app, "/v1/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Portable", avatar }),
+    });
+
+    expect(created.status).toBe(201);
+    const bot = await created.json();
+    expect(bot.avatar).toBe(avatar);
+    expect(bot.avatarDefinition.definition.id).toBe("cloud");
+
+    const custom = {
+      ...legacyAvatarDefinition({
+        id: "new",
+        avatar: "bot:new;silhouette=hexagon",
+      }),
+      color: "#123",
+      eyeColor: "#abc",
+    };
+
+    const updated = await req(app, `/v1/agents/${bot.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ avatarDefinition: custom }),
+    });
+
+    expect(updated.status).toBe(200);
+    expect((await updated.json()).avatar).toBe(avatar);
+
+    const native = await req(app, `/v1/agents/${bot.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name: "Native edit", avatar }),
+    });
+
+    expect((await native.json()).avatarDefinition).toEqual(custom);
+    const listing = await req(app, "/v1/agents");
+    expect((await listing.json())[0].avatarDefinition).toEqual(custom);
+
+    const invalid = await req(app, `/v1/agents/${bot.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        avatarDefinition: {
+          ...custom,
+          definition: {
+            ...custom.definition,
+            eyes: { x: 0, y: 0, spacing: 16, scale: 1 },
+          },
+        },
+      }),
+    });
+
+    expect(invalid.status).toBe(400);
+    expect(await invalid.text()).toContain("eyes must sit inside the body");
+
+    const invalidColor = await req(app, "/v1/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Bad",
+        avatarDefinition: { ...custom, color: "url(bad)" },
+      }),
+    });
+
+    expect(invalidColor.status).toBe(400);
+    const kept = await req(app, `/v1/agents/${bot.id}`);
+    expect((await kept.json()).avatarDefinition).toEqual(custom);
   });
 
   test("agents keep a desktop job model", async () => {

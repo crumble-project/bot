@@ -3,7 +3,6 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
 import { queryClient } from "@/lib/api";
-import { BotPainter } from "@/features/bots/bot-avatar";
 
 for (const scenario of ["failure", "refresh"] as const) {
   test(`personal skills ${scenario} preserves the rest of the page`, async () => {
@@ -36,16 +35,6 @@ for (const scenario of ["failure", "refresh"] as const) {
 
     for (const [key, value] of Object.entries(values))
       Object.defineProperty(globalThis, key, { configurable: true, value });
-
-    const paint = spyOn(BotPainter.prototype, "paint").mockImplementation(
-      () => {},
-    );
-
-    // SAFETY: The paint spy prevents use of canvas methods other than setTransform and clearRect.
-    const context = spyOn(
-      window.HTMLCanvasElement.prototype,
-      "getContext",
-    ).mockReturnValue({ setTransform() {}, clearRect() {} } as never);
 
     let release: ((value: Response) => void) | undefined;
     let requests = 0;
@@ -184,8 +173,6 @@ for (const scenario of ["failure", "refresh"] as const) {
       queryClient.clear();
       queryClient.setDefaultOptions(defaultOptions);
       fetch.mockRestore();
-      paint.mockRestore();
-      context.mockRestore();
 
       for (const key of Object.keys(values)) {
         if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);

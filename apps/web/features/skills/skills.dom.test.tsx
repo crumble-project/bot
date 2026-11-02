@@ -3,7 +3,6 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
 import { queryClient } from "@/lib/api";
-import { BotPainter } from "@/features/bots/bot-avatar";
 
 // Under a loaded test run the page can take longer than any fixed wait.
 async function waitFor(check: () => boolean) {
@@ -51,16 +50,6 @@ test("deleting the first same-name skill keeps the second", async () => {
       },
     },
   });
-
-  const paint = spyOn(BotPainter.prototype, "paint").mockImplementation(
-    () => {},
-  );
-
-  // SAFETY: The paint spy prevents use of canvas methods other than setTransform and clearRect.
-  const context = spyOn(
-    window.HTMLCanvasElement.prototype,
-    "getContext",
-  ).mockReturnValue({ setTransform() {}, clearRect() {} } as never);
 
   let skills = [
     { id: "first", name: "Duplicate", instructions: "First instructions" },
@@ -185,8 +174,6 @@ test("deleting the first same-name skill keeps the second", async () => {
     await act(async () => root.unmount());
     queryClient.clear();
     fetch.mockRestore();
-    paint.mockRestore();
-    context.mockRestore();
 
     for (const key of [
       "window",

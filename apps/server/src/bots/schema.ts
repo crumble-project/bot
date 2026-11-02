@@ -5,6 +5,7 @@ export const agents = sqliteTable("agents", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   avatar: text("avatar").notNull(),
+  avatarDefinition: text("avatar_definition"),
   description: text("description").notNull(),
   instructions: text("instructions").notNull(),
   provider: text("provider").notNull(),

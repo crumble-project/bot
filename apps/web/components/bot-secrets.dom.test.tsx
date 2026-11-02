@@ -4,7 +4,6 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
 import { type Credentials, type Logins, queryClient } from "@/lib/api";
-import { BotPainter } from "@/features/bots/bot-avatar";
 
 const GLOBALS = [
   "window",
@@ -117,16 +116,6 @@ async function render(
     },
   });
 
-  const paint = spyOn(BotPainter.prototype, "paint").mockImplementation(
-    () => {},
-  );
-
-  // SAFETY: The paint spy prevents use of canvas methods other than setTransform and clearRect.
-  const context = spyOn(
-    window.HTMLCanvasElement.prototype,
-    "getContext",
-  ).mockReturnValue({ setTransform() {}, clearRect() {} } as never);
-
   const sent: string[] = [];
 
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
@@ -176,8 +165,6 @@ async function render(
     await act(async () => root.unmount());
     queryClient.clear();
     fetch.mockRestore();
-    paint.mockRestore();
-    context.mockRestore();
 
     for (const key of GLOBALS) {
       if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);

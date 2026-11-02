@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { avatarDefinitionSchema } from "./avatar-definition";
 import { PASSWORD_MANAGER_IDS, WEB_SEARCH_PROVIDER_IDS } from "./vendors";
 
 /** Tools every bot has, whatever its saved `tools` say. */
@@ -30,6 +31,7 @@ export const heldActionDeclineInput = z.object({
 export const agentInput = z.object({
   name: z.string().trim().min(1).max(80),
   avatar: z.string().max(100).default("bot"),
+  avatarDefinition: avatarDefinitionSchema.optional(),
   description: z.string().max(1000).default(""),
   instructions: z
     .string()

@@ -1331,7 +1331,13 @@ function BotRequestHeader({
   return (
     <div className="flex items-center gap-3">
       <BotAvatar
-        bot={{ id: proposal.avatar, avatar: proposal.avatar }}
+        bot={{
+          id: proposal.avatar,
+          avatar: proposal.avatar,
+          ...(proposal.avatarDefinition && {
+            avatarDefinition: proposal.avatarDefinition,
+          }),
+        }}
         size={32}
       />
       <div className="min-w-0 flex-1">

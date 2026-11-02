@@ -32,6 +32,46 @@ The hook preserves unstaged edits to generated files. If you skip the hook, run 
 
 The repository does not publish contract releases or bundles. To retrieve the specification for a server revision, use that revision's committed `openapi/` directory.
 
+## Bot avatars
+
+`avatar` remains the legacy string seed. The server never rewrites it when migrating or changing a web avatar.
+Native clients can keep reading and hashing that string without understanding the new field.
+
+`avatarDefinition` is additive and optional in input. Stored bot responses include it:
+
+```json
+{
+  "avatarDefinition": {
+    "definition": {
+      "version": 1,
+      "id": "box",
+      "name": "Box",
+      "body": { "path": "M20 20H80V80H20Z" },
+      "eyes": { "x": 50, "y": 46, "spacing": 15, "scale": 1 }
+    },
+    "color": "#38bdf8",
+    "eyeColor": "#151515"
+  }
+}
+```
+
+The definition uses Open Bot Avatar v1 geometry in a `0 0 100 100` viewBox.
+The server checks geometry with `validateAvatar` and accepts colors only as `#rgb` or `#rrggbb`.
+Invalid input returns `400`, including the geometry validator's error messages.
+Omitting `avatarDefinition` from a patch preserves it. JSON imports contain the definition alone; the editor sets colors separately.
+
+Migration adds the nullable `agents.avatar_definition` text column. Before serving bots, repository initialization fills missing definitions.
+The backfill preserves the legacy seed, palette, silhouette selection, and timestamps, using approximate versions of the seven old bodies.
+Unknown legacy strings use the bot ID as their seed. The backfill is restartable and never replaces existing definitions.
+Older binaries can leave missing definitions; the next upgraded startup fills them again.
+
+A code rollback can leave the extra column and migration journal entry in place. The old renderer reads the untouched legacy strings.
+New web choices remain stored but aren't displayed by old binaries. Removing the column requires a separate schema rollback and loses those choices.
+Back up the database before any schema rollback, and keep the migration journal consistent with the removed migration.
+
+Swift and Android rendering are tracked in [apple#3](https://github.com/crumble-project/apple/issues/3) and
+[android#7](https://github.com/crumble-project/android/issues/7).
+
 ## Server-sent events
 
 All `/v1` streams require a Better Auth account session (a session bearer token or browser session cookie) and send `event: heartbeat` (`data: {}`) every 15 seconds. Clients must ignore heartbeats and unknown event names and recover state via the corresponding snapshot endpoint on reconnect.

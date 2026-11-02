@@ -5,6 +5,7 @@ import {
 } from "../shared/vendors";
 import { botCommunication } from "../bots/transcript";
 import { agentInput } from "../shared/domain";
+import { avatarDefinitionSchema } from "./avatar";
 import type * as charts from "../display/charts";
 import type * as webSearch from "../web-search/provider";
 
@@ -71,7 +72,14 @@ export const agentResponse = z
   .object({
     id: z.string(),
     name: z.string(),
-    avatar: z.string(),
+    avatar: z.string().openapi({
+      description:
+        "Legacy native avatar seed, preserved independently of avatarDefinition.",
+    }),
+    avatarDefinition: avatarDefinitionSchema.optional().openapi({
+      description:
+        "Open Bot Avatar v1 geometry in a 0 0 100 100 viewBox, body color and eye color. Present for stored bots; optional for older servers and proposals.",
+    }),
     description: z.string(),
     instructions: z.string(),
     provider: z.string(),

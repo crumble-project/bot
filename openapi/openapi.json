@@ -722,6 +722,92 @@
           }
         ]
       },
+      "BotAvatarDefinition": {
+        "type": "object",
+        "properties": {
+          "definition": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "number",
+                "enum": [
+                  1
+                ]
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "body": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 6000
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "additionalProperties": false
+              },
+              "eyes": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  },
+                  "spacing": {
+                    "type": "number"
+                  },
+                  "scale": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "spacing",
+                  "scale"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "version",
+              "id",
+              "name",
+              "body",
+              "eyes"
+            ],
+            "additionalProperties": false
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+          },
+          "eyeColor": {
+            "type": "string",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+          }
+        },
+        "required": [
+          "definition",
+          "color",
+          "eyeColor"
+        ],
+        "description": "Open Bot Avatar v1 geometry in a 0 0 100 100 viewBox, body color and eye color. Present for stored bots; optional for older servers and proposals."
+      },
       "Agent": {
         "type": "object",
         "properties": {
@@ -732,7 +818,11 @@
             "type": "string"
           },
           "avatar": {
-            "type": "string"
+            "type": "string",
+            "description": "Legacy native avatar seed, preserved independently of avatarDefinition."
+          },
+          "avatarDefinition": {
+            "$ref": "#/components/schemas/BotAvatarDefinition"
           },
           "description": {
             "type": "string"
@@ -1816,6 +1906,91 @@
                 "type": "string",
                 "maxLength": 100,
                 "default": "bot"
+              },
+              "avatarDefinition": {
+                "type": "object",
+                "properties": {
+                  "definition": {
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "type": "number",
+                        "enum": [
+                          1
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40
+                      },
+                      "body": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 6000
+                          }
+                        },
+                        "required": [
+                          "path"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "eyes": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "number"
+                          },
+                          "y": {
+                            "type": "number"
+                          },
+                          "spacing": {
+                            "type": "number"
+                          },
+                          "scale": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "spacing",
+                          "scale"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "id",
+                      "name",
+                      "body",
+                      "eyes"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "color": {
+                    "type": "string",
+                    "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                  },
+                  "eyeColor": {
+                    "type": "string",
+                    "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                  }
+                },
+                "required": [
+                  "definition",
+                  "color",
+                  "eyeColor"
+                ]
               },
               "description": {
                 "type": "string",
@@ -9805,6 +9980,91 @@
                     "maxLength": 100,
                     "default": "bot"
                   },
+                  "avatarDefinition": {
+                    "type": "object",
+                    "properties": {
+                      "definition": {
+                        "type": "object",
+                        "properties": {
+                          "version": {
+                            "type": "number",
+                            "enum": [
+                              1
+                            ]
+                          },
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 40
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 40
+                          },
+                          "body": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 6000
+                              }
+                            },
+                            "required": [
+                              "path"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "eyes": {
+                            "type": "object",
+                            "properties": {
+                              "x": {
+                                "type": "number"
+                              },
+                              "y": {
+                                "type": "number"
+                              },
+                              "spacing": {
+                                "type": "number"
+                              },
+                              "scale": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y",
+                              "spacing",
+                              "scale"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "version",
+                          "id",
+                          "name",
+                          "body",
+                          "eyes"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "color": {
+                        "type": "string",
+                        "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                      },
+                      "eyeColor": {
+                        "type": "string",
+                        "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                      }
+                    },
+                    "required": [
+                      "definition",
+                      "color",
+                      "eyeColor"
+                    ]
+                  },
                   "description": {
                     "type": "string",
                     "maxLength": 1000,
@@ -10258,6 +10518,91 @@
                   "avatar": {
                     "type": "string",
                     "maxLength": 100
+                  },
+                  "avatarDefinition": {
+                    "type": "object",
+                    "properties": {
+                      "definition": {
+                        "type": "object",
+                        "properties": {
+                          "version": {
+                            "type": "number",
+                            "enum": [
+                              1
+                            ]
+                          },
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 40
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 40
+                          },
+                          "body": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 6000
+                              }
+                            },
+                            "required": [
+                              "path"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "eyes": {
+                            "type": "object",
+                            "properties": {
+                              "x": {
+                                "type": "number"
+                              },
+                              "y": {
+                                "type": "number"
+                              },
+                              "spacing": {
+                                "type": "number"
+                              },
+                              "scale": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y",
+                              "spacing",
+                              "scale"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "version",
+                          "id",
+                          "name",
+                          "body",
+                          "eyes"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "color": {
+                        "type": "string",
+                        "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                      },
+                      "eyeColor": {
+                        "type": "string",
+                        "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                      }
+                    },
+                    "required": [
+                      "definition",
+                      "color",
+                      "eyeColor"
+                    ]
                   },
                   "description": {
                     "type": "string",
@@ -14825,6 +15170,91 @@
                         "type": "string",
                         "maxLength": 100,
                         "default": "bot"
+                      },
+                      "avatarDefinition": {
+                        "type": "object",
+                        "properties": {
+                          "definition": {
+                            "type": "object",
+                            "properties": {
+                              "version": {
+                                "type": "number",
+                                "enum": [
+                                  1
+                                ]
+                              },
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 40
+                              },
+                              "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 40
+                              },
+                              "body": {
+                                "type": "object",
+                                "properties": {
+                                  "path": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 6000
+                                  }
+                                },
+                                "required": [
+                                  "path"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "eyes": {
+                                "type": "object",
+                                "properties": {
+                                  "x": {
+                                    "type": "number"
+                                  },
+                                  "y": {
+                                    "type": "number"
+                                  },
+                                  "spacing": {
+                                    "type": "number"
+                                  },
+                                  "scale": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "x",
+                                  "y",
+                                  "spacing",
+                                  "scale"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "version",
+                              "id",
+                              "name",
+                              "body",
+                              "eyes"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "color": {
+                            "type": "string",
+                            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                          },
+                          "eyeColor": {
+                            "type": "string",
+                            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                          }
+                        },
+                        "required": [
+                          "definition",
+                          "color",
+                          "eyeColor"
+                        ]
                       },
                       "description": {
                         "type": "string",
