@@ -1,9 +1,6 @@
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { join, resolve } from "node:path";
-import lockfile from "proper-lockfile";
-
-const STALE_MS = 30_000;
-const UPDATE_MS = 10_000;
 
 /** Data directories this process holds, so a second server in the same process is refused. */
 const held = new Set<string>();
@@ -18,89 +15,56 @@ export class DataDirLocked extends Error {
   }
 }
 
-const codeOf = (error: Error) => ("code" in error ? error.code : undefined);
+const HOST = hostname();
 
 const ownerFile = (dataDir: string) => join(dataDir, "server.pid");
 
+export const ownerRecord = (pid: number) => `${pid}\n${HOST}\n`;
+
 function readOwner(dataDir: string) {
   try {
-    const pid = Number(readFileSync(ownerFile(dataDir), "utf8").trim());
+    const [line, host] = readFileSync(ownerFile(dataDir), "utf8").split("\n");
+    const pid = Number(line?.trim());
 
-    return Number.isInteger(pid) && pid > 0 ? pid : undefined;
+    return Number.isInteger(pid) && pid > 0
+      ? { pid, host: host?.trim() }
+      : undefined;
   } catch {
     return undefined;
   }
 }
 
-/** Whether another live process has this pid; our own pid is a previous run replaced by a watch restart. */
-function othersAlive(pid: number) {
-  if (pid === process.pid) return false;
+/** Whether another live process on this host has the pid; our own pid is a run replaced by a watch restart. */
+function othersAlive(owner: { pid: number; host: string | undefined }) {
+  if (owner.host !== HOST || owner.pid === process.pid) return false;
 
   try {
-    process.kill(pid, 0);
+    process.kill(owner.pid, 0);
 
     return true;
   } catch (error) {
-    return error instanceof Error && codeOf(error) === "EPERM";
+    return error instanceof Error && "code" in error && error.code === "EPERM";
   }
 }
 
 /**
- * Takes the data directory for this server and returns how to release it.
- * A lock whose recorded owner has exited, or is this process before a watch restart, is
- * taken over at once; one held by a live server fails at once; one without a recorded
- * owner is waited out until it goes stale.
+ * Takes the data directory for this server by recording its pid in `server.pid`, and returns
+ * how to release it. A file naming a live process on this host fails at once; any other, such
+ * as one left by a crash or a watch restart, is taken over.
  */
-export async function lockDataDir(dataDir: string, waitMs = 35_000) {
+export async function lockDataDir(dataDir: string) {
   const path = resolve(dataDir);
 
   if (held.has(path)) throw new DataDirLocked(path, process.pid);
 
   const owner = readOwner(path);
-  const ownerAlive = owner !== undefined && othersAlive(owner);
 
-  if (owner !== undefined && !ownerAlive)
-    rmSync(`${path}.lock`, { recursive: true, force: true });
+  if (owner && othersAlive(owner)) throw new DataDirLocked(path, owner.pid);
+
+  writeFileSync(ownerFile(path), ownerRecord(process.pid));
+  held.add(path);
 
   let released = false;
-  let release: () => Promise<void>;
-
-  const acquire = (retries: number) =>
-    lockfile.lock(path, {
-      stale: STALE_MS,
-      update: UPDATE_MS,
-      retries: { retries, factor: 1, minTimeout: 1000 },
-      // The lock directory vanished or another process took it; take it back instead of throwing.
-      onCompromised: (error) => {
-        if (released) return;
-
-        console.warn(
-          `Lost the lock on ${path} (${error.message}); taking it back.`,
-        );
-        acquire(0).then(
-          (next) => {
-            release = next;
-            writeFileSync(ownerFile(path), `${process.pid}\n`);
-          },
-          () => {
-            console.error(new DataDirLocked(path, readOwner(path)).message);
-            process.exit(1);
-          },
-        );
-      },
-    });
-
-  try {
-    release = await acquire(ownerAlive ? 0 : Math.ceil(waitMs / 1000));
-  } catch (error) {
-    if (error instanceof Error && codeOf(error) === "ELOCKED")
-      throw new DataDirLocked(path, readOwner(path));
-
-    throw error;
-  }
-
-  held.add(path);
-  writeFileSync(ownerFile(path), `${process.pid}\n`);
 
   return async () => {
     if (released) return;
@@ -108,9 +72,7 @@ export async function lockDataDir(dataDir: string, waitMs = 35_000) {
     released = true;
     held.delete(path);
 
-    if (readOwner(path) === process.pid)
+    if (readOwner(path)?.pid === process.pid)
       rmSync(ownerFile(path), { force: true });
-
-    await release();
   };
 }

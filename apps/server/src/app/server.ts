@@ -110,8 +110,6 @@ type ServerOptions = {
   port?: number;
   publicUrl?: string;
   skillsDir?: string;
-  /** How long to wait for another server's lock on the data directory before failing. */
-  lockWaitMs?: number;
   /** Each account's workspaces instead of those from the environment, owned by the account's scope. */
   workspaces?: (
     userId: string,
@@ -136,7 +134,7 @@ export async function startServer(options: ServerOptions = {}) {
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   chmodSync(dataDir, 0o700);
 
-  const release = await lockDataDir(dataDir, options.lockWaitMs);
+  const release = await lockDataDir(dataDir);
 
   const tenants = new Map<string, Promise<Tenant>>();
 
