@@ -21,11 +21,14 @@ import {
   type MachineStream,
   type MachineWorkspacesOptions,
   type WorkspaceMachine,
+  type WorkspaceSize,
   type WorkspaceMachines,
 } from "./machine-workspaces";
 import {
   GUEST_CA_PATH,
+  GUEST_SIGN_PATH,
   WORKSPACE_PATH,
+  signingHelper,
   allowAllRequests,
   type WorkspaceNetworkPolicy,
 } from "./workspace";
@@ -117,8 +120,10 @@ class MicrosandboxMachines implements WorkspaceMachines {
     | ((agentId: string) => WorkspaceInterceptor)
     | undefined;
   private readonly daemon = daemonPath();
+  private readonly size: () => WorkspaceSize;
 
   constructor(options: MicrosandboxWorkspacesOptions) {
+    this.size = options.size ?? (() => ({ cpus: CPUS, memoryMib: MEMORY_MIB }));
     this.network = options.network ?? allowAllRequests;
     this.intercept = options.intercept;
     this.namePrefix = options.namePrefix ?? "crumble";
@@ -161,6 +166,8 @@ class MicrosandboxMachines implements WorkspaceMachines {
     yield* bootStep("Installing the pi-env daemon", async () => {
       await sandbox.fs().write(GUEST_DAEMON, await readFile(this.daemon));
       await run(sandbox, `chmod 755 ${GUEST_DAEMON}`);
+      await sandbox.fs().write(GUEST_SIGN_PATH, signingHelper());
+      await run(sandbox, `chmod 755 ${GUEST_SIGN_PATH}`);
     });
 
     const caCertificate = guest.caCertificate;
@@ -214,7 +221,15 @@ class MicrosandboxMachines implements WorkspaceMachines {
   ) {
     const record = yield* Effect.promise(() => readMachineRecord(sandbox));
 
-    if (record?.image !== image || record.network !== TCP_THROUGH_PROXY_VERSION)
+    const size = this.size();
+
+    // A machine created at another size than the admin set now is replaced, keeping the volume.
+    if (
+      record?.image !== image ||
+      record.network !== TCP_THROUGH_PROXY_VERSION ||
+      (record.cpus ?? CPUS) !== size.cpus ||
+      (record.memoryMib ?? MEMORY_MIB) !== size.memoryMib
+    )
       return undefined;
 
     // A machine's network settings are fixed at creation, so a restarted one needs its proxy at the same port.
@@ -240,6 +255,7 @@ class MicrosandboxMachines implements WorkspaceMachines {
     intercept: WorkspaceInterceptor | undefined,
   ) {
     if (resumed) yield* Effect.promise(() => stopSandbox(resumed));
+    const size = this.size();
 
     const proxy = yield* untilBooted(
       bootStep("Starting the workspace proxy", () =>
@@ -253,8 +269,8 @@ class MicrosandboxMachines implements WorkspaceMachines {
       bootStep("Creating the sandbox", () =>
         Sandbox.builder(name)
           .image(image)
-          .cpus(CPUS)
-          .memory(MEMORY_MIB)
+          .cpus(size.cpus)
+          .memory(size.memoryMib)
           .volume(WORKSPACE_PATH, (mount) => mount.named(name))
           .proxy((outbound) => outbound.httpConnect(proxy.address))
           .network((network) => network.policy(TCP_THROUGH_PROXY))
@@ -268,6 +284,7 @@ class MicrosandboxMachines implements WorkspaceMachines {
       image,
       proxyPort: Number(proxy.address.split(":")[1]),
       network: TCP_THROUGH_PROXY_VERSION,
+      ...size,
     };
 
     yield* bootStep("Recording the machine's image", async () => {
@@ -410,6 +427,9 @@ const machineRecord = z.object({
   proxyPort: z.number().int(),
   // Absent on machines created before the UDP rule.
   network: z.number().int().optional(),
+  // Absent on machines created before sizes were settings, which have the defaults.
+  cpus: z.number().int().optional(),
+  memoryMib: z.number().int().optional(),
 });
 
 type MachineRecord = z.infer<typeof machineRecord>;

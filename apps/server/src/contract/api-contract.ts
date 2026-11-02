@@ -17,6 +17,7 @@ import { attachmentInput, MAX_ATTACHMENTS } from "../shared/attachments";
 import * as response from "./api-responses";
 import { body, define, empty, error, json } from "./route";
 import { pushRoutes } from "../push/push-contract";
+import { adminRoutes } from "./admin";
 import {
   gatewayConfigInput,
   gatewayResponse,
@@ -50,6 +51,11 @@ import {
 } from "./skill-install";
 
 export type BotInput = z.input<typeof agentInput>;
+
+export const jobAnswerInput = z.object({
+  questionId: z.string().min(1),
+  text: z.string().trim().min(1).max(32000),
+});
 
 export const memoryInput = z.object({
   content: z.string().trim().min(1).max(32000),
@@ -227,6 +233,7 @@ export const routes = {
     responses: { 200: json(response.capabilitiesResponse) },
   }),
   ...pushRoutes,
+  ...adminRoutes,
   messageGateways: define({
     method: "get",
     path: "/v1/message-gateways",
@@ -526,6 +533,18 @@ export const routes = {
     operationId: "listCodingJobs",
     request: { params: id },
     responses: { 200: json(response.codingJobsResponse) },
+  }),
+  answerCodingJob: define({
+    method: "post",
+    path: "/v1/agents/{id}/coding-jobs/{name}/answer",
+    operationId: "answerCodingJob",
+    description:
+      "Answers the coding job's open question, which resumes the job. 409 when the job no longer waits on that question.",
+    request: {
+      params: id.extend({ name: z.string() }),
+      body: body(jobAnswerInput),
+    },
+    responses: { 204: empty },
   }),
   codingJobHistory: define({
     method: "get",

@@ -46,6 +46,7 @@ const workspaces: Workspaces = {
   openDesktop: () => Effect.die("No desktop in policy tests"),
   startDesktop: () => Effect.void,
   keepAwake: () => () => {},
+  outdated: () => [],
   desktopRunning: () => false,
   sync: () => Effect.void,
 };

@@ -70,6 +70,10 @@ _Avoid_: Auto-save, self-update
 Background work a bot hands to a separate agent that edits files and runs commands in the bot's workspace. The job's answer returns to the bot's chat.
 _Avoid_: Subagent, session, sub-chat
 
+**Job question**:
+A question a coding job asks the owner when the answer changes what it builds. The job waits until the owner answers in the bot chat or on the job's panel, then continues.
+_Avoid_: Prompt, approval, held action
+
 **Automation**:
 A prompt a bot receives once at a set time, repeatedly on a schedule, or whenever an event arrives at an event source, answered in its bot chat. The owner or a bot can create one.
 _Avoid_: Task, scheduled task, routine, cron job
@@ -99,7 +103,7 @@ A GitHub identity the owner creates in Crumble on one GitHub account and assigns
 _Avoid_: GitHub integration, machine user, bot account
 
 **Machine account**:
-A GitHub user the owner creates for bots and adds to Crumble with a personal access token. Bots assigned to it act as it on GitHub wherever none of their GitHub Apps does, and commit as it by default. A bot uses at most one.
+A GitHub user the owner creates for bots and adds to Crumble with a personal access token. Bots assigned to it act as it on GitHub wherever none of their GitHub Apps does, and commit as it by default, with commits signed by its signing key. A bot uses at most one.
 _Avoid_: Machine user, service account, bot user
 
 **Login**:
@@ -137,3 +141,11 @@ _Avoid_: Guardrail, safety check, approval gate
 **Judge model**:
 The model the owner chooses for the account that runs every intent check.
 _Avoid_: Classifier, checker model, supervisor
+
+**Admin**:
+A user who manages the server: its users, invite links, sign-up, and the settings every workspace shares, such as size and coding image. The first account is an admin; admins can make others admins.
+_Avoid_: Owner (each user owns their own bots), superuser, root
+
+**Invite link**:
+A one-time link an admin creates so one person can create an account while sign-up is closed, with a password or a passkey.
+_Avoid_: Invitation code, referral

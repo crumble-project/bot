@@ -95,8 +95,15 @@ export interface WorkspaceMachines {
   ): Effect.Effect<WorkspaceMachine, WorkspaceBootFailed | DesktopStartFailed>;
 }
 
+/** The machine size an admin sets for the whole server, read at each boot. */
+export type WorkspaceSize = { cpus: number; memoryMib: number };
+
 export type MachineWorkspacesOptions = {
   idleTimeoutMs?: number;
+  /** The machine size, read at each boot; backends fall back to their default without it. */
+  size?: () => WorkspaceSize;
+  /** An image that replaces the base image, read at each boot; only backends that boot OCI images pass it on. */
+  baseImage?: () => string | null;
   /** The image for bots with a bot desktop: the base image plus the desktop. */
   desktopImage?: string;
   /** Whether the bot needs its bot desktop; read at each boot. */
@@ -304,9 +311,13 @@ class Workspace {
     // A bot that gained or lost its bot desktop needs the other image.
     const image = this.owner.imageFor(this.agentId);
 
+    const desktop = this.owner.desktopImageName();
+
+    // A new base image waits for the idle stop: a reconnect must not swap the machine under a running job.
     if (
       this.running &&
-      this.running.machine.image === image &&
+      (this.running.machine.image === image ||
+        (image !== desktop && this.running.machine.image !== desktop)) &&
       (yield* this.running.machine.isAlive)
     )
       return this.running;
@@ -525,6 +536,7 @@ export class MachineWorkspaces implements Workspaces {
   private readonly caCertificate:
     | ((agentId: string) => Promise<string>)
     | undefined;
+  private readonly baseImage: (() => string | null) | undefined;
   private closed = false;
 
   constructor(
@@ -536,6 +548,7 @@ export class MachineWorkspaces implements Workspaces {
     this.desktopImage = options.desktopImage;
     this.wantsDesktop = options.wantsDesktop ?? (() => false);
     this.caCertificate = options.caCertificate;
+    this.baseImage = options.baseImage;
   }
 
   get kind() {
@@ -555,7 +568,7 @@ export class MachineWorkspaces implements Workspaces {
   imageFor(agentId: string) {
     return this.desktopImage && this.wantsDesktop(agentId)
       ? this.desktopImage
-      : this.image;
+      : (this.baseImage?.() ?? this.image);
   }
 
   openDesktop(agentId: string, options: { passive?: boolean } = {}) {
@@ -566,6 +579,15 @@ export class MachineWorkspaces implements Workspaces {
 
   desktopRunning(agentId: string) {
     return this.workspaces.get(agentId)?.desktopRunning() ?? false;
+  }
+
+  outdated() {
+    return [...this.workspaces.values()].flatMap((workspace) =>
+      workspace.running &&
+      workspace.running.machine.image !== this.imageFor(workspace.agentId)
+        ? [workspace.agentId]
+        : [],
+    );
   }
 
   startDesktop(agentId: string) {

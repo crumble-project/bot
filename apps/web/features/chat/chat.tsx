@@ -49,6 +49,7 @@ import {
   shownInChat,
 } from "./transcript";
 import { HeldActionCard } from "./held-action";
+import { JobQuestionCard } from "./job-question";
 import { Composer } from "./composer";
 import { type Sources, sourcesOf } from "./sources";
 import { MobileSidebarTrigger } from "@/components/workspace";
@@ -211,6 +212,29 @@ function ChatHeader({
   );
 }
 
+/** An event in the chat: a card the owner acts on, such as a job's question, or a plain event row. */
+function EventMessage({ message, botId }: { message: Message; botId: string }) {
+  if (message.kind === "job-question" && message.jobQuestion)
+    return (
+      <JobQuestionCard
+        botId={botId}
+        question={message.jobQuestion}
+        text={message.content}
+      />
+    );
+
+  if (message.kind === "held-action" && message.heldAction)
+    return (
+      <HeldActionCard
+        held={message.heldAction}
+        title={message.content}
+        botId={botId}
+      />
+    );
+
+  return <EventRow message={message} />;
+}
+
 function ChatMessage({
   message,
   botId,
@@ -230,15 +254,7 @@ function ChatMessage({
     return <BotMessage message={message} sources={sources} onReply={onReply} />;
 
   if (message.role === "event")
-    return message.kind === "held-action" && message.heldAction ? (
-      <HeldActionCard
-        held={message.heldAction}
-        title={message.content}
-        botId={botId}
-      />
-    ) : (
-      <EventRow message={message} />
-    );
+    return <EventMessage message={message} botId={botId} />;
 
   return (
     <ToolResultRow

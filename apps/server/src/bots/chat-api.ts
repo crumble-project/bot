@@ -3,6 +3,7 @@ import {
   routes,
   attachmentIndex,
   historyInput,
+  jobAnswerInput,
   messageInput,
   snapshotInput,
 } from "../contract/api-contract";
@@ -46,6 +47,14 @@ const registerChatReadRoutes = (options: ChatRoutesOptions) => {
     };
 
     return c.json(jobs, 200);
+  });
+  register(routes.answerCodingJob, async (c) => {
+    await service.answerCodingJob(c.req.param("id"), {
+      name: c.req.param("name"),
+      ...jobAnswerInput.parse(await c.req.json()),
+    });
+
+    return c.body(null, 204);
   });
   register(routes.codingJobHistory, async (c) =>
     c.json(

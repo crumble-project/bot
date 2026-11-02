@@ -141,6 +141,10 @@ export class Bots extends Context.Service<
       name: string,
       options: PageOptions,
     ) => Effect.Effect<Page<"codingJobHistory">, AppError>;
+    readonly answerCodingJob: (
+      agentId: string,
+      answer: { name: string; questionId: string; text: string },
+    ) => Effect.Effect<void, AppError>;
     readonly desktopJobs: (
       agentId: string,
     ) => Effect.Effect<Page<"desktopJobs">, AppError>;
@@ -236,6 +240,10 @@ export type BotsAccess = {
     name: string,
     options: PageOptions,
   ): Promise<Page<"codingJobHistory">>;
+  answerCodingJob(
+    agentId: string,
+    answer: { name: string; questionId: string; text: string },
+  ): Promise<void>;
   desktopJobs(agentId: string): Promise<Page<"desktopJobs">>;
   desktopJobHistory(
     agentId: string,
@@ -303,6 +311,8 @@ export function botsAccess(runner: Runner<Bots>): BotsAccess {
     codingJobs: (agentId) => runner.runPromise(bots.codingJobs(agentId)),
     codingJobHistory: (agentId, name, options) =>
       runner.runPromise(bots.codingJobHistory(agentId, name, options)),
+    answerCodingJob: (agentId, answer) =>
+      runner.runPromise(bots.answerCodingJob(agentId, answer)),
     desktopJobs: (agentId) => runner.runPromise(bots.desktopJobs(agentId)),
     desktopJobHistory: (agentId, name, options) =>
       runner.runPromise(bots.desktopJobHistory(agentId, name, options)),

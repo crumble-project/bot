@@ -1,7 +1,13 @@
 import { passkeyClient } from "@better-auth/passkey/client";
+import { adminClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 
-export const authClient = createAuthClient({ plugins: [passkeyClient()] });
+export const authClient = createAuthClient({
+  plugins: [passkeyClient(), adminClient()],
+});
+
+/** The header an email sign-up sends its invite token in; the server reads the same name. */
+export const INVITE_HEADER = "x-crumble-invite";
 
 export const { useSession } = authClient;
 

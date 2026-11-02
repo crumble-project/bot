@@ -17,6 +17,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { JobQuestionAnswer } from "./job-question-answer";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -546,6 +547,15 @@ export function JobPanel({
           </Button>
         </div>
       </header>
+      {current?.question && (
+        <div className="shrink-0 border-b p-4">
+          <JobQuestionAnswer
+            botId={botId}
+            job={job.name}
+            question={current.question}
+          />
+        </div>
+      )}
       <JobHistoryBody
         history={history}
         items={items}

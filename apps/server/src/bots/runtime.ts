@@ -22,7 +22,7 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CODEMODE_TOOL_NAME } from "@earendil-works/pi-durable/codemode";
 import { Context, Effect, Layer, Predicate } from "effect";
-import { codingJobs } from "../jobs/coding";
+import { answerCodingJob, codingJobs } from "../jobs/coding";
 import { desktopJobs } from "../jobs/desktop";
 import { messageTag } from "../jobs/owner-request";
 import {
@@ -1389,6 +1389,17 @@ export class AgentRuntime {
     return this.jobs(agent, codingJobs);
   }
 
+  /** Sends the owner's answer to a coding job's open question; false when the job no longer waits on it. */
+  async answerCodingJob(
+    agent: Agent,
+    answer: { name: string; questionId: string; text: string },
+  ) {
+    const { harness } = await this.open(agent);
+    const root = await harness.root(BACKGROUND_CONTEXT);
+
+    return answerCodingJob(harness, root.id, { agentId: agent.id, ...answer });
+  }
+
   /** One coding job's transcript, paged like the chat's. */
   async codingJobHistory(
     agent: Agent,
@@ -1425,6 +1436,7 @@ export class AgentRuntime {
       status: job.status,
       ...(job.model && { model: job.model }),
       ...(job.usage && { usage: job.usage }),
+      ...(job.question && { question: job.question }),
     }));
   }
 

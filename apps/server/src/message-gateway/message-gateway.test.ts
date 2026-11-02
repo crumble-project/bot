@@ -193,6 +193,7 @@ async function fixture(
           history: unexpected,
           codingJobs: unexpected,
           codingJobHistory: unexpected,
+          answerCodingJob: unexpected,
           desktopJobs: unexpected,
           desktopJobHistory: unexpected,
           notice: unexpected,

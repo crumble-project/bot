@@ -103,6 +103,12 @@ Background work a bot hands to a separate agent that edits files and runs comman
 
 Avoid: Subagent, session, sub-chat.
 
+### Job question
+
+A question a coding job asks the owner when the answer changes what it builds. The job waits until the owner answers in the bot chat or on the job's panel, then continues.
+
+Avoid: Prompt, approval, held action.
+
 ### Automation
 
 A prompt a bot receives once at a set time, repeatedly on a schedule, or whenever an event arrives at an event source, answered in its bot chat. The owner or a bot can create one.
@@ -147,7 +153,7 @@ Avoid: GitHub integration, machine user, bot account.
 
 ### Machine account
 
-A GitHub user the owner creates for bots and adds to Crumble with a personal access token. Bots assigned to it act as it on GitHub wherever none of their GitHub Apps does, and commit as it by default. A bot uses at most one.
+A GitHub user the owner creates for bots and adds to Crumble with a personal access token. Bots assigned to it act as it on GitHub wherever none of their GitHub Apps does, and commit as it by default, with commits signed by its signing key. A bot uses at most one.
 
 Avoid: Machine user, service account, bot user.
 
@@ -192,3 +198,15 @@ Avoid: Guardrail, safety check, approval gate.
 The model the owner chooses for the account that runs every intent check.
 
 Avoid: Classifier, checker model, supervisor.
+
+### Admin
+
+A user who manages the server: its users, invite links, sign-up, and the settings every workspace shares, such as size and coding image. The first account is an admin; admins can make others admins.
+
+Avoid: Owner (each user owns their own bots), superuser, root.
+
+### Invite link
+
+A one-time link an admin creates so one person can create an account while sign-up is closed, with a password or a passkey.
+
+Avoid: Invitation code, referral.

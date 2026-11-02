@@ -15,6 +15,7 @@ import { attachmentInput, type AttachmentInfo } from "../shared/attachments";
 import { codingJobOf } from "../jobs/coding";
 import { desktopJobOf } from "../jobs/desktop";
 import { HELD_ACTION_ENTRY } from "../jobs/desktop-intent";
+import { JOB_QUESTION_ENTRY } from "../jobs/jobs";
 import { REACTION_TOOL_NAME, reactionOf } from "./reaction";
 import { PASS_TOOL_NAME } from "../group-chats/group-turns";
 import {
@@ -68,6 +69,16 @@ export const botCommunication = z.object({
   toAgentId: z.string(),
   toName: z.string(),
   status: z.enum(["sent", "done", "failed", "cancelled"]),
+});
+
+const jobQuestionData = z.object({
+  id: z.string(),
+  kind: z.string(),
+  job: z.string(),
+  text: z.string(),
+  timestamp: z.number(),
+  options: z.array(z.string()).optional(),
+  multiple: z.boolean().optional(),
 });
 
 const heldActionData = z.object({
@@ -159,6 +170,14 @@ export type TranscriptMessage = {
   replyPreview?: string;
   origin?: MessageOrigin;
   communication?: BotCommunication;
+  /** On a `job-question` event: the job that asked the owner. */
+  jobQuestion?: {
+    id: string;
+    kind: string;
+    job: string;
+    options?: string[];
+    multiple?: boolean;
+  };
   /** On a `held-action` event: the desktop job action waiting for the owner. */
   heldAction?: { id: string; job: string };
   attachments?: AttachmentInfo[];
@@ -362,6 +381,34 @@ function normalizeBotMessage(
   ];
 }
 
+function normalizeJobQuestion(
+  entryId: string,
+  entry: EntryRecord,
+): TranscriptMessage[] {
+  const parsed = jobQuestionData.safeParse(entry.data);
+
+  if (!parsed.success) return [];
+  const { id, kind, job, text, timestamp, options, multiple } = parsed.data;
+
+  return [
+    {
+      id: `${entryId}:0`,
+      entryId,
+      role: "event",
+      kind: "job-question",
+      content: text,
+      timestamp,
+      jobQuestion: {
+        id,
+        kind,
+        job,
+        ...(options && { options }),
+        ...(multiple && { multiple }),
+      },
+    },
+  ];
+}
+
 function normalizeHeldAction(
   entryId: string,
   entry: EntryRecord,
@@ -535,6 +582,9 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
 
   if (entry.kind === HELD_ACTION_ENTRY)
     return normalizeHeldAction(entryId, entry);
+
+  if (entry.kind === JOB_QUESTION_ENTRY)
+    return normalizeJobQuestion(entryId, entry);
 
   return normalizeModelEntry(entryId, entry);
 }

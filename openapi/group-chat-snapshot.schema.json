@@ -100,6 +100,35 @@
             ],
             "additionalProperties": true
           },
+          "jobQuestion": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "job": {
+                "type": "string"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "multiple": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "job"
+            ],
+            "additionalProperties": true
+          },
           "heldAction": {
             "type": "object",
             "properties": {

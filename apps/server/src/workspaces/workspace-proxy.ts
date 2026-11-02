@@ -12,6 +12,8 @@ export type ProxyRequest = { host: string; port: number };
 /** Takes over TLS connections to some hosts instead of tunneling them, such as the credential proxy. */
 export type WorkspaceInterceptor = {
   wants(host: string): boolean;
+  /** A host the interceptor answers itself, such as the signing host: it has no address to resolve or dial. */
+  answers?(host: string): boolean;
   /** The client socket is positioned at the start of its TLS ClientHello. */
   handle(client: net.Socket, host: string, port: number): Promise<void>;
 };
@@ -84,6 +86,13 @@ export async function startWorkspaceProxy(
     const host = first && (readSni(first) ?? readHttpHost(first));
 
     if (!first || !host) return void client.destroy();
+
+    if (first[0] === 22 && options.intercept?.answers?.(host)) {
+      client.unshift(first);
+
+      return options.intercept.handle(client, host, port);
+    }
+
     const address = (await lookup(host)).find(isPublic);
 
     if (!address || !(await options.decide({ host, port })) || client.destroyed)

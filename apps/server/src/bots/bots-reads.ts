@@ -1,3 +1,4 @@
+import { Conflict } from "../shared/errors";
 import { Effect } from "effect";
 import type { Execution } from "../shared/domain";
 import { isGroupTurn, pi, type BotsContext } from "./bots-context";
@@ -172,6 +173,25 @@ export const botsRuntimeReads = (
       ),
     );
 
+  const answerCodingJob = (
+    agentId: string,
+    answer: { name: string; questionId: string; text: string },
+  ) =>
+    agent(agentId).pipe(
+      Effect.flatMap((owner) =>
+        pi(() => runtime.answerCodingJob(owner, answer)),
+      ),
+      Effect.flatMap((answered) =>
+        answered
+          ? Effect.void
+          : Effect.fail(
+              new Conflict({
+                message: "The job no longer waits on this question",
+              }),
+            ),
+      ),
+    );
+
   const desktopJobs = (agentId: string) =>
     agent(agentId).pipe(
       Effect.flatMap((owner) => pi(() => runtime.desktopJobs(owner))),
@@ -192,6 +212,7 @@ export const botsRuntimeReads = (
     history,
     codingJobs,
     codingJobHistory,
+    answerCodingJob,
     desktopJobs,
     desktopJobHistory,
   };

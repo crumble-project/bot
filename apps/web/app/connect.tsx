@@ -10,7 +10,12 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { clearUserData } from "@/lib/api";
-import { authClient, passkeyDone, passkeysAvailable } from "@/lib/auth-client";
+import {
+  authClient,
+  INVITE_HEADER,
+  passkeyDone,
+  passkeysAvailable,
+} from "@/lib/auth-client";
 
 type Mode = "sign-in" | "sign-up";
 
@@ -30,6 +35,9 @@ const MODE_COPY = {
     emailAutoComplete: "email",
   },
 } as const;
+
+/** The invite token of an invite link, which opens the page on sign-up. */
+const invite = new URLSearchParams(location.search).get("invite") ?? undefined;
 
 function enter() {
   clearUserData();
@@ -85,11 +93,38 @@ function useConnect(
       const result =
         mode === "sign-in"
           ? await authClient.signIn.email({ email, password })
-          : await authClient.signUp.email({ email, password, name });
+          : await authClient.signUp.email({
+              email,
+              password,
+              name,
+              ...(invite && {
+                fetchOptions: { headers: { [INVITE_HEADER]: invite } },
+              }),
+            });
 
       if (result.error) throw new Error(result.error.message);
     },
     onSuccess: enter,
+  });
+}
+
+/** Creates the account with a passkey alone; the server creates the user once the passkey verifies. */
+function usePasskeySignUp(credentials: { email: string; name: string }) {
+  const { email, name } = credentials;
+
+  return useMutation({
+    mutationFn: async () =>
+      passkeyDone(
+        await authClient.passkey.addPasskey({
+          context: JSON.stringify({
+            email: email.trim(),
+            name: name.trim(),
+            ...(invite && { invite }),
+          }),
+          createSession: true,
+        }),
+      ),
+    onSuccess: (done) => done && enter(),
   });
 }
 
@@ -102,8 +137,48 @@ function canConnect(
   );
 }
 
+/** The passkey button for the mode: sign in with one, or create the account with one alone. */
+function PasskeyAction({
+  mode,
+  credentials,
+  onStart,
+}: {
+  mode: Mode;
+  credentials: { email: string; name: string };
+  onStart: () => void;
+}) {
+  const signIn = usePasskeySignIn(mode);
+  const signUp = usePasskeySignUp(credentials);
+  const action = mode === "sign-in" ? signIn : signUp;
+
+  const ready =
+    mode === "sign-in" ||
+    Boolean(credentials.email.trim() && credentials.name.trim());
+
+  if (!passkeysAvailable) return null;
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={!ready || action.isPending}
+        onClick={() => {
+          onStart();
+          action.mutate();
+        }}
+      >
+        {mode === "sign-in"
+          ? "Sign in with a passkey"
+          : "Create account with a passkey"}
+      </Button>
+      {action.error && <FieldError>{action.error.message}</FieldError>}
+    </>
+  );
+}
+
 export function Connect() {
-  const [mode, setMode] = useState<Mode>("sign-in");
+  const [mode, setMode] = useState<Mode>(invite ? "sign-up" : "sign-in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -111,8 +186,7 @@ export function Connect() {
   const copy = MODE_COPY[mode];
 
   const connect = useConnect(mode, credentials);
-  const passkey = usePasskeySignIn(mode);
-  const error = connect.error ?? passkey.error;
+  const error = connect.error;
   const invalid = connect.isError || undefined;
 
   return (
@@ -166,26 +240,18 @@ export function Connect() {
         >
           {copy.submit}
         </Button>
-        {mode === "sign-in" && passkeysAvailable && (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={passkey.isPending}
-            onClick={() => {
-              connect.reset();
-              passkey.mutate();
-            }}
-          >
-            Sign in with a passkey
-          </Button>
-        )}
+        <PasskeyAction
+          key={mode}
+          mode={mode}
+          credentials={credentials}
+          onStart={connect.reset}
+        />
         <Button
           type="button"
           variant="ghost"
           onClick={() => {
             setMode(copy.other);
             connect.reset();
-            passkey.reset();
           }}
         >
           {copy.switch}

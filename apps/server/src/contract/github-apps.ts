@@ -82,6 +82,10 @@ export const githubAccountResponse = z
     htmlUrl: z.string(),
     botIds: z.array(z.string()),
     token: secretStatusResponse,
+    signingKey: z.string().openapi({
+      description:
+        "The OpenSSH public key the account's commits are signed with. Add it on GitHub as the user's signing key so its commits show as verified.",
+    }),
     createdAt: z.string(),
   })
   .openapi("GitHubAccount");

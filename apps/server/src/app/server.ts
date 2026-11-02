@@ -1,8 +1,9 @@
-import { chmodSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import lockfile from "proper-lockfile";
 import { websocket } from "@hono/bun";
 import { createAuth, trustedOriginsFor } from "./auth";
+import { adminAPI } from "./admin-api";
 import { novncResponse, ticketOwner } from "../bot-desktop/desktop-viewer";
 import { createTenant } from "./tenant";
 import { webUIRoutes } from "./web-ui";
@@ -143,6 +144,7 @@ export async function startServer(options: ServerOptions = {}) {
   const tenants = new Map<string, Promise<Tenant>>();
 
   let identity: Awaited<ReturnType<typeof createAuth>> | undefined;
+  let admin: ReturnType<typeof adminAPI> | undefined;
   let server: ReturnType<typeof Bun.serve> | undefined;
   let closed = false;
   let origin = "";
@@ -161,12 +163,30 @@ export async function startServer(options: ServerOptions = {}) {
         skillsDir: options.skillsDir ?? process.env["CRUMBLE_SKILLS_DIR"],
         publicUrl,
         workspaces: options.workspaces?.(userId),
+        workspaceSettings: () => {
+          const settings = identity!.settings.get();
+
+          return {
+            cpus: settings.workspaceCpus,
+            memoryMib: settings.workspaceMemoryMib,
+            baseImage: settings.codingImage,
+            questionGraceMs: settings.questionGraceMinutes * 60_000,
+          };
+        },
       });
       tenants.set(userId, pending);
       void pending.catch(() => tenants.delete(userId));
     }
 
     return pending;
+  };
+
+  const removeAccount = async (userId: string) => {
+    const pending = tenants.get(userId);
+
+    tenants.delete(userId);
+    await pending?.then((context) => context.close()).catch(() => undefined);
+    rmSync(join(dataDir, "users", userId), { recursive: true, force: true });
   };
 
   const close = async () => {
@@ -220,6 +240,15 @@ export async function startServer(options: ServerOptions = {}) {
     return response;
   };
 
+  const adminResponse = async (request: Request) => {
+    if (closed) return new Response("Server is closing", { status: 503 });
+    const response = await admin!.fetch(request);
+
+    response.headers.set("Cache-Control", "no-store");
+
+    return response;
+  };
+
   const restoreTenants = async (accounts: NonNullable<typeof identity>) => {
     const usersDir = join(dataDir, "users");
 
@@ -257,6 +286,10 @@ export async function startServer(options: ServerOptions = {}) {
         if (untrustedOrigin(request, requestOrigin, trustedOrigins))
           return Response.json({ error: "Untrusted origin" }, { status: 403 });
 
+        // Admins act through /v1/admin/; the plugin's own routes would also let them impersonate users.
+        if (path.startsWith("/api/auth/admin/"))
+          return new Response("Not found", { status: 404 });
+
         if (path.startsWith("/api/auth/"))
           return identity!.auth.handler(request);
 
@@ -270,6 +303,8 @@ export async function startServer(options: ServerOptions = {}) {
             { status: 403 },
           );
 
+        if (path.startsWith("/v1/admin/")) return adminResponse(request);
+
         return accountResponse(request, bunServer, path);
       },
     });
@@ -279,6 +314,23 @@ export async function startServer(options: ServerOptions = {}) {
     trustedOrigins = trustedOriginsFor(origin);
     ready = (async () => {
       identity = await createAuth(dataDir, origin);
+      admin = adminAPI({
+        accounts: identity,
+        origin: () => origin,
+        removeAccount,
+        outdatedWorkspaces: async () =>
+          (
+            await Promise.all(
+              [...tenants].map(async ([userId, pending]) =>
+                (
+                  (
+                    await pending.catch(() => undefined)
+                  )?.workspaces?.outdated() ?? []
+                ).map((agentId) => ({ userId, agentId })),
+              ),
+            )
+          ).flat(),
+      });
       await restoreTenants(identity);
     })();
     await ready;

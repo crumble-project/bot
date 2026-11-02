@@ -10,6 +10,9 @@ import type { Runner } from "../shared/runner";
 import { AgentRepository } from "../bots/agent-repository";
 import { BotRuntime } from "../bots/runtime";
 import { Bots, GROUP_TURN_PREFIX } from "../bots/bots";
+import { codingJobsFinished } from "../jobs/coding";
+import type { JobFinished } from "../jobs/jobs";
+import { conversationReference } from "../shared/domain";
 import { LearnedChangeRepository } from "./learned-change-repository";
 import { ReviewRepository } from "./review-repository";
 import type { ReviewScope } from "./review-instructions";
@@ -36,6 +39,8 @@ export class LearningReview extends Context.Service<
     readonly recover: Effect.Effect<void>;
     /** Counts the turn's tool activity and runs a review when a counter reaches its threshold. */
     readonly afterExecution: (execution: Execution) => Effect.Effect<void>;
+    /** The same for a coding job's turn: what it learned about a repository becomes the bot's skills. */
+    readonly afterJob: (finished: JobFinished) => Effect.Effect<void>;
   }
 >()("crumble/skills/LearningReview") {
   static readonly make = Effect.gen(function* () {
@@ -49,8 +54,9 @@ export class LearningReview extends Context.Service<
     const pi = <A>(run: () => Promise<A>) =>
       Effect.tryPromise({ try: run, catch: (error) => error });
 
+    // A reviewed turn: a bot-chat execution, or a coding job's turn under an ID of its own.
     const review = Effect.fnUntraced(function* (
-      execution: Execution,
+      execution: { id: string; conversationId: string },
       submissionId: string,
       agent: Agent,
       settings: typeof DEFAULTS,
@@ -194,6 +200,36 @@ export class LearningReview extends Context.Service<
           Effect.ensuring(Effect.sync(() => running.delete(execution.id))),
         );
       }),
+      afterJob: Effect.fn("LearningReview.afterJob")(function* (
+        finished: JobFinished,
+      ) {
+        const id = `${finished.kind}-job:${finished.agentId}:${finished.conversationId}:${finished.submissionId}`;
+
+        if (running.has(id)) return;
+        const agent = yield* agents.get(finished.agentId);
+        const settings = { ...DEFAULTS, ...agent?.review };
+
+        if (!agent?.enabled || !settings.enabled) return;
+        running.add(id);
+
+        yield* review(
+          {
+            id,
+            conversationId: conversationReference(
+              finished.agentId,
+              Number(finished.conversationId),
+            ),
+          },
+          finished.submissionId,
+          agent,
+          settings,
+        ).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logError("Learning review failed", id, Cause.squash(cause)),
+          ),
+          Effect.ensuring(Effect.sync(() => running.delete(id))),
+        );
+      }),
     });
   });
 
@@ -213,6 +249,15 @@ export const learningReviews = Layer.effectDiscard(
       Effect.sync(() =>
         bots.onSettled((execution) => {
           fork(learning.afterExecution(execution));
+        }),
+      ),
+      (stop) => Effect.sync(stop),
+    );
+    // Job listeners are shared by every account in the process; the review's own bot lookup keeps it in this one.
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        codingJobsFinished((finished) => {
+          fork(learning.afterJob(finished));
         }),
       ),
       (stop) => Effect.sync(stop),

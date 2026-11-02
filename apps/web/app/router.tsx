@@ -32,6 +32,7 @@ import { BotForm } from "@/features/bots/bot-form";
 import { Chat } from "@/features/chat/chat";
 import { CredentialsSettings } from "@/features/credentials/credentials";
 import { CodingPage, GitHubAppCallback } from "@/features/settings/coding";
+import { UsersPage } from "@/features/settings/admin-settings";
 import { LoginsSettings } from "@/features/logins/logins";
 import { BotDesktop } from "@/features/bot-desktop/desktop";
 import { GroupChatView, GroupForm } from "@/features/group-chats/groups";
@@ -310,6 +311,12 @@ const webSearchRoute = createRoute({
   component: WebSearchPage,
 });
 
+const usersRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/users",
+  component: UsersPage,
+});
+
 const judgeModelRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/judge-model",
@@ -408,6 +415,7 @@ export const router = createRouter({
         settingsLoginsRoute,
         settingsIntegrationsRoute,
         codingRoute,
+        usersRoute,
         messageGatewaysRoute,
         messageGatewayRoute,
         eventRelayRoute,
