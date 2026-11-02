@@ -171,6 +171,24 @@ async function fixture(
     );
   };
 
+  const listingResponse = async (path: string) => {
+    if (path === "/v1/agents" && holdBots) {
+      botRefetchStarted.resolve();
+      await botGate.promise;
+    }
+
+    const listings = new Map<string, unknown>([
+      ["/v1/agents", bots],
+      ["/v1/skills", shared],
+      ["/v1/agents/a/skills", own],
+      ["/v1/agents/b/skills", []],
+    ]);
+
+    if (listings.has(path)) return Response.json(listings.get(path));
+
+    return Response.json({ error: `Unexpected ${path}` }, { status: 500 });
+  };
+
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -184,21 +202,7 @@ async function fixture(
 
         if (method !== "GET") return mutationResponse(path, init);
 
-        if (path === "/v1/agents" && holdBots) {
-          botRefetchStarted.resolve();
-          await botGate.promise;
-        }
-
-        const listings = new Map<string, unknown>([
-          ["/v1/agents", bots],
-          ["/v1/skills", shared],
-          ["/v1/agents/a/skills", own],
-          ["/v1/agents/b/skills", []],
-        ]);
-
-        if (listings.has(path)) return Response.json(listings.get(path));
-
-        return Response.json({ error: `Unexpected ${path}` }, { status: 500 });
+        return listingResponse(path);
       },
       { preconnect: globalThis.fetch.preconnect },
     ),
