@@ -90,3 +90,25 @@ Microsandbox in a few ways:
 | Network       | Outbound connections from workspaces aren't filtered.                   |
 | Saving files  | A checkpoint 30 seconds after the last change, and before every stop.   |
 | First desktop | Takes a few minutes to start while Railway builds the desktop template. |
+
+## Workspace Settings
+
+Admins set these for every workspace on the server in **Settings** >
+**Coding**, under **Workspaces**. That section also says when the server lacks
+the image for coding jobs or bot desktops.
+
+| Setting               | Default                   | Applies                                                                      |
+| --------------------- | ------------------------- | ---------------------------------------------------------------------------- |
+| Workspace size        | 2 CPUs, 2 GB              | When a workspace's machine is next created. A running one keeps its size.    |
+| Coding image          | `CRUMBLE_WORKSPACE_IMAGE` | Microsandbox only. Railway builds its own images and ignores this setting.   |
+| Question grace period | 15 minutes                | How long a coding job that asked you a question keeps its workspace running. |
+
+A new coding image never replaces a machine while it works. Each running
+workspace switches at its next idle stop, keeping `/workspace`, and a stopped
+one switches when it next starts. `GET /v1/admin/workspaces/outdated` lists the
+ones still on an older image. Bots with a bot desktop keep using
+`CRUMBLE_WORKSPACE_DESKTOP_IMAGE`.
+
+The image needs what the published one has: Debian with git, curl, and
+`ca-certificates`. The server writes its own helpers into every workspace when
+it starts.

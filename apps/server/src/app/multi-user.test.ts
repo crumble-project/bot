@@ -277,6 +277,7 @@ test.serial(
         restart: () => Effect.void,
         sync: () => Effect.void,
         keepAwake: () => () => {},
+        outdated: () => [],
         desktopRunning: () => false,
         startDesktop: () => Effect.void,
         openDesktop: () =>
@@ -543,6 +544,73 @@ test.serial(
           })
         ).status,
       ).toBe(401);
+    } finally {
+      await running?.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.serial(
+  "only admins reach the admin API, and the plugin's own admin routes are closed",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-admin-"));
+    let running: Awaited<ReturnType<typeof startServer>> | undefined;
+
+    try {
+      running = await startServer({ dataDir, port: 0 });
+      const admin = await signUp(running, `admin-${crypto.randomUUID()}`);
+      const user = await signUp(running, `user-${crypto.randomUUID()}`);
+      const url = (path: string) => new URL(path, running!.server.url);
+
+      for (const [method, path] of [
+        ["GET", "/v1/admin/users"],
+        ["POST", "/v1/admin/invites"],
+        ["PATCH", "/v1/admin/settings"],
+      ] as const)
+        expect(
+          (
+            await fetch(url(path), {
+              method,
+              headers: json(user),
+              body: method === "GET" ? null : "{}",
+            })
+          ).status,
+        ).toBe(403);
+
+      expect(
+        (await fetch(url("/api/auth/admin/list-users"), { headers: admin }))
+          .status,
+      ).toBe(404);
+
+      const listed = await fetch(url("/v1/admin/users"), { headers: admin });
+
+      expect(listed.status).toBe(200);
+
+      // SAFETY: The route returns the documented user list.
+      const { users } = (await listed.json()) as {
+        users: { id: string; role: string }[];
+      };
+
+      expect(users.map((entry) => entry.role)).toEqual(["admin", "user"]);
+
+      const lastAdmin = await fetch(url(`/v1/admin/users/${users[0]!.id}`), {
+        method: "PATCH",
+        headers: json(admin),
+        body: JSON.stringify({ role: "user" }),
+      });
+
+      expect(lastAdmin.status).toBe(409);
+
+      const removed = await fetch(url(`/v1/admin/users/${users[1]!.id}`), {
+        method: "DELETE",
+        headers: admin,
+      });
+
+      expect(removed.status).toBe(204);
+      expect((await fetch(url("/v1/agents"), { headers: user })).status).toBe(
+        401,
+      );
     } finally {
       await running?.close();
       rmSync(dataDir, { recursive: true, force: true });

@@ -26,7 +26,12 @@ import {
   type WorkspaceMachine,
   type WorkspaceMachines,
 } from "./machine-workspaces";
-import { GUEST_CA_PATH, WORKSPACE_PATH } from "./workspace";
+import {
+  GUEST_CA_PATH,
+  GUEST_SIGN_PATH,
+  WORKSPACE_PATH,
+  signingHelper,
+} from "./workspace";
 import {
   DesktopStartFailed,
   WorkspaceStopFailed,
@@ -160,7 +165,7 @@ const imageName = (kind: string, recipe: Recipe) =>
 
 export type RailwayWorkspacesOptions = Omit<
   MachineWorkspacesOptions,
-  "desktopImage"
+  "desktopImage" | "baseImage"
 > & {
   /** Where each bot's sandbox id and image are recorded, so a restarted server finds its machines. */
   dataDir: string;
@@ -199,9 +204,12 @@ export function railwayWorkspacesFromEnv(
 export class RailwayWorkspaces extends MachineWorkspaces {
   constructor(options: RailwayWorkspacesOptions) {
     const machines = new RailwayMachines(options);
+    // Railway builds its images from recipes; it can't boot an image reference.
+    const { baseImage, ...machineOptions }: MachineWorkspacesOptions = options;
 
+    void baseImage;
     super(machines, machines.baseImage, {
-      ...options,
+      ...machineOptions,
       ...(machines.desktopImage && { desktopImage: machines.desktopImage }),
     });
   }
@@ -232,7 +240,7 @@ export class RailwayMachines implements WorkspaceMachines {
   private readonly records: string;
   private readonly namePrefix: string;
   private readonly region: string | undefined;
-  private readonly resources: SandboxResources;
+  private readonly resources: () => SandboxResources;
   private readonly checkpointDelayMs: number;
   private readonly intercept:
     | ((agentId: string) => WorkspaceInterceptor)
@@ -244,7 +252,15 @@ export class RailwayMachines implements WorkspaceMachines {
     this.records = path.join(options.dataDir, "workspaces", "railway");
     this.namePrefix = options.namePrefix ?? "crumble";
     this.region = options.region;
-    this.resources = options.resources ?? DEFAULT_RESOURCES;
+    const { size, resources = DEFAULT_RESOURCES } = options;
+
+    this.resources = size
+      ? () => {
+          const { cpus, memoryMib } = size();
+
+          return { cpu: cpus, memoryGB: memoryMib / 1024 };
+        }
+      : () => resources;
     this.checkpointDelayMs =
       options.checkpointDelayMs ?? DEFAULT_CHECKPOINT_DELAY_MS;
     this.intercept = options.intercept;
@@ -361,6 +377,9 @@ export class RailwayMachines implements WorkspaceMachines {
           }),
           machine.files.write(GUEST_STREAM, await readFile(STREAM_SCRIPT)),
           machine.files.write(GUEST_TUNNEL, await readFile(TUNNEL_SCRIPT)),
+          machine.files.write(GUEST_SIGN_PATH, signingHelper(), {
+            mode: 0o755,
+          }),
           guest.caCertificate &&
             machine.files.write(GUEST_CA_PATH, guest.caCertificate),
           desktop && writeDesktopScripts(machine),
@@ -383,7 +402,7 @@ export class RailwayMachines implements WorkspaceMachines {
     record: MachineRecord | undefined,
   ) {
     const options = {
-      resources: this.resources,
+      resources: this.resources(),
       idleTimeoutMinutes: RAILWAY_IDLE_TIMEOUT_MINUTES,
       env: GUEST_ENV,
     };

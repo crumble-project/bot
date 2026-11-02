@@ -39,6 +39,24 @@ Both kinds share the same machine. A coding job can start a web server, run
 browser tests against it, and then hand the address to a desktop job that
 checks the page by hand.
 
+A coding job reuses a repository that an earlier job cloned: it fetches,
+branches from the default branch, and reinstalls dependencies only when the
+lockfile changed. What a job learns about a repository, such as its check
+commands, goes into the bot's [learned skills](/concepts/memory-and-skills).
+
+## Questions From Coding Jobs
+
+A coding job works without asking, but when an answer changes what it builds
+it asks you. The question appears in the chat and on the job's panel, often
+with a few answers to pick from, sometimes several at once; you can always
+write your own instead. Answer
+in either place and the job continues. Questions survive a server restart.
+
+While the job waits, its workspace keeps running for the server's question
+grace period, 15 minutes unless an admin changed it, so servers the job
+started stay up. After that the workspace stops as usual, and your answer
+starts it again with its files.
+
 ## Watching the Bot Desktop
 
 Open a bot's desktop from the web app to watch its screen live. You can't type

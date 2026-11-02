@@ -8,8 +8,10 @@ import type { SecretInput, SecretStatus } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { Conflict, InvalidInput, NotFound } from "../shared/errors";
+import { SecretRepository } from "../credentials/secret-repository";
 import { GitHubUnavailable, assignmentChange, github } from "./github-api";
 import { githubAccountBots, githubAccounts } from "./schema";
+import { newSigningKey, sshPublicKey, sshSign } from "./ssh-signing";
 
 /** A machine account as the owner sees it; its token never leaves the server. */
 export type GitHubAccount = {
@@ -18,6 +20,8 @@ export type GitHubAccount = {
   htmlUrl: string;
   botIds: string[];
   token: SecretStatus;
+  /** The OpenSSH public key its commits are signed with; the owner adds it on GitHub as a signing key. */
+  signingKey: string;
   createdAt: string;
 };
 
@@ -26,9 +30,15 @@ export type GitHubAccountOfBot = {
   login: string;
   userId: number;
   token: Effect.Effect<Redacted.Redacted, SecretUnavailable>;
+  signingKey: string;
+  /** Signs a commit or tag with the account's key, as `ssh-keygen -Y sign -n git` would. */
+  sign: (data: Uint8Array) => string;
 };
 
 const tokenKey = (id: string) => secretKey("github-account", id);
+
+// Made by the server, never entered by the owner, so it stays in Crumble's own encrypted store.
+const signingKeyKey = (id: string) => secretKey("github-account-signing", id);
 
 const user = z.object({ login: z.string().min(1), id: z.number().int() });
 
@@ -91,6 +101,21 @@ export class GitHubAccounts extends Context.Service<
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
       const secrets = yield* Secrets;
+      const stored = yield* SecretRepository;
+
+      // Accounts added before commit signing get their key on first use.
+      const privateKey = Effect.fn("GitHubAccounts.privateKey")(function* (
+        id: string,
+      ) {
+        const existing = yield* stored.get(signingKeyKey(id));
+
+        if (existing) return existing;
+        const created = newSigningKey();
+
+        yield* stored.set(signingKeyKey(id), created);
+
+        return created;
+      });
 
       const row = Effect.fn("GitHubAccounts.row")(function* (id: string) {
         const [found] = yield* db
@@ -122,6 +147,10 @@ export class GitHubAccounts extends Context.Service<
           htmlUrl: `https://github.com/${found.login}`,
           botIds: yield* botIdsOf(found.id),
           token: yield* secrets.status(tokenKey(found.id)),
+          signingKey: sshPublicKey(
+            yield* privateKey(found.id),
+            `${found.login}@crumble`,
+          ),
           createdAt: found.createdAt,
         } satisfies GitHubAccount;
       });
@@ -283,6 +312,7 @@ export class GitHubAccounts extends Context.Service<
           return yield* new NotFound({ message: "Machine account not found" });
 
         yield* secrets.delete(tokenKey(id));
+        yield* stored.delete(signingKeyKey(id));
 
         return botIds;
       });
@@ -301,10 +331,13 @@ export class GitHubAccounts extends Context.Service<
           .pipe(Effect.orDie);
 
         if (!found) return undefined;
+        const key = yield* privateKey(found.account.id);
 
         return {
           login: found.account.login,
           userId: found.account.userId,
+          signingKey: sshPublicKey(key, `${found.account.login}@crumble`),
+          sign: (data: Uint8Array) => sshSign(key, data, "git"),
           token: secrets
             .read(tokenKey(found.account.id))
             .pipe(Effect.map((token) => token ?? Redacted.make(""))),

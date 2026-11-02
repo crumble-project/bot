@@ -22,6 +22,8 @@ import { WORKSPACE_PATH, type Workspaces } from "../workspaces/workspace";
 
 export const CODING_TOOL_NAME = "coding";
 
+const DEFAULT_QUESTION_GRACE_MS = 15 * 60 * 1000;
+
 // Tools whose success may have changed the workspace's files. A failed bash can still have written files.
 const FILE_CHANGING_TOOLS = new Set(["write", "edit", "bash"]);
 
@@ -39,6 +41,8 @@ const coding = defineJobKind({
     `You are a coding job for another bot. Do the task you are given with your read, write, edit, and bash tools, working in ${WORKSPACE_PATH}, a persistent workspace that earlier jobs of this bot also used.`,
     `To leave a server or other long-running program for later jobs, start it in its own session with its output in a log file: setsid <command> > ${WORKSPACE_PATH}/<name>.log 2>&1 < /dev/null &. Started any other way, it dies when your command ends or is stopped. Check that it answers before you report.`,
     "For browser tests, use the workspace's Chromium if `command -v chromium` finds one: install Playwright with PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 and launch chromium with executablePath set to that path.",
+    "Before cloning a repository, check whether earlier jobs left a clone in the workspace: reuse it, fetch, and branch from the remote's default branch. Reinstall dependencies only when the lockfile changed since the last install.",
+    "Work without asking: follow the task, the repository's own instructions, and your skills. Use ask_owner only when the answer changes what you build or a decision is the owner's to make, and keep working on anything that doesn't depend on it before you ask.",
     "Verify your work by running it. Finish with a short report: what you did, what you verified, and what is left. For a server you left running, include its URL and the command that starts it again.",
   ].join(" "),
 });
@@ -49,12 +53,18 @@ export const codingJobOf = coding.jobOf;
 /** Hears the bot's answer to each coding job report, for notifications. */
 export const codingAnswers = coding.onAnswer;
 
+/** Hears each coding job turn that reported back, for learning reviews. */
+export const codingJobsFinished = coding.onFinished;
+
 export type CodingJobInfo = JobInfo;
 
 export type CodingExtensions = JobExtensions;
 
 export const codingJobs = (harness: Harness, chatId: ConversationId) =>
   coding.list(harness, chatId);
+
+/** Sends the owner's answer to a coding job's open question; false when it has none with that ID. */
+export const answerCodingJob = coding.answer;
 
 export async function codingEnv(
   workspaces: Workspaces,
@@ -77,10 +87,32 @@ export function codingExtensions(
   agent: Pick<Agent, "id">,
   workspaces: Workspaces,
   credentials?: CredentialsAccess,
+  questionGraceMs: () => number = () => DEFAULT_QUESTION_GRACE_MS,
 ): CodingExtensions {
+  // While the owner considers a question, the workspace stays up for the grace period, so servers the job started live.
+  let awake:
+    | { release: () => void; timer: ReturnType<typeof setTimeout> }
+    | undefined;
+
+  const wake = () => {
+    if (!awake) return;
+    clearTimeout(awake.timer);
+    awake.release();
+    awake = undefined;
+  };
+
+  const ask = coding.questionTool(() => {
+    wake();
+    const release = workspaces.keepAwake(agent.id);
+    const timer = setTimeout(wake, questionGraceMs());
+
+    timer.unref();
+    awake = { release, timer };
+  });
+
   const job = defineExtension({
     name: "coding-job",
-    tools: createCodingTools().tools ?? [],
+    tools: [...(createCodingTools().tools ?? []), ask],
     sections: credentials
       ? [
           {
@@ -100,6 +132,9 @@ export function codingExtensions(
       hook(ToolTask, {
         // A crash then loses at most the call in flight.
         afterTool: async (call, _result, api, context) => {
+          // A tool after the question means the answer arrived and the job works again.
+          wake();
+
           if (!FILE_CHANGING_TOOLS.has(call.name)) return undefined;
 
           if (await coding.isJob(api, api.conversationId, context))
@@ -125,6 +160,7 @@ export function codingExtensions(
 export const codingPlugin = (
   workspaces: Workspaces | undefined,
   credentials?: CredentialsAccess,
+  questionGraceMs?: () => number,
 ): CrumblePlugin => ({
   id: "coding",
   jobKinds: workspaces
@@ -133,7 +169,7 @@ export const codingPlugin = (
           kind: "coding",
           enabled: (agent) => agent.tools.includes(CODING_TOOL_NAME),
           extensions: (agent) =>
-            codingExtensions(agent, workspaces, credentials),
+            codingExtensions(agent, workspaces, credentials, questionGraceMs),
           env: (agentId, target, context) =>
             codingEnv(workspaces, agentId, target, context, credentials),
           onAnswer: codingAnswers,

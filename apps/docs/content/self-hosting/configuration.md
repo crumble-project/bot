@@ -14,15 +14,37 @@ unset.
 
 ## Exposing the Server
 
-**The server has open registration, so anyone who can reach it can create an
+**Sign-up starts open, so anyone who can reach the server can create an
 account.** That's harmless on `127.0.0.1`, where it listens by default. To use
-it from other devices, put HTTPS in front of it.
+it from other devices:
 
-1. Put the server behind a reverse proxy that serves HTTPS.
-2. Set `CRUMBLE_PUBLIC_URL` to the public `https://` address.
+1. Close sign-up, as described in [Users and Sign-Up](#users-and-sign-up).
+2. Put the server behind a reverse proxy that serves HTTPS.
+3. Set `CRUMBLE_PUBLIC_URL` to the public `https://` address.
 
 If sign-in fails through the proxy or from another hostname, the server
 doesn't know its public address: `CRUMBLE_PUBLIC_URL` is missing or wrong.
+
+## Users and Sign-Up
+
+The first account on a server is its **admin**. A server that had accounts
+before admins existed makes its oldest account the admin.
+
+Admins manage accounts in **Settings** > **Users**, a tab only admins see:
+
+- **Users**: every account, with an action to make it an admin or a regular
+  user, or to remove it with all its bots and data. The server keeps at least
+  one admin.
+- **Invite**: creates a one-time link for one new account. The link is shown
+  once; revoke an unused one from the list.
+- **Open sign-up**: turn it off to allow new accounts only through invite
+  links.
+
+The settings every workspace shares are in **Settings** > **Coding**; see
+[Set Up Workspaces](/self-hosting/workspaces#workspace-settings).
+
+Regular users manage only their own bots. Over the API, the admin routes are
+under `/v1/admin/`.
 
 ## Passkeys
 
@@ -33,7 +55,8 @@ listens on loopback.
 Browsers don't offer passkeys at an IP address, or at a plain `http://`
 address other than `localhost`. **Changing the hostname later invalidates
 every passkey.** Accounts then sign in with their passwords until they add new
-ones.
+ones. An account created with a passkey alone has no password, so it can't sign
+in at the new hostname.
 
 ## Encryption Key
 

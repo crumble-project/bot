@@ -32,6 +32,7 @@ import {
   credentialSecretKey,
 } from "../credentials/agent-credential-repository";
 import { agentCredentials } from "../credentials/schema";
+import { GUEST_SIGN_PATH } from "../workspaces/workspace";
 
 // Read-only on CI and checks so jobs can follow their PRs; no `workflows`, so jobs can't change CI.
 const PERMISSIONS = {
@@ -145,6 +146,14 @@ const trailerOf = (row: AppRow) => {
 
 /** The hook in the workspace image's git template adds CRUMBLE_COMMIT_TRAILER to every commit in new clones. */
 const GIT_TEMPLATE_DIR = "/opt/crumble/git-template";
+
+/** The key stays on the server: git hands the commit to a guest helper that asks it for the signature. */
+const signingEntries = (signingKey: string): [string, string][] => [
+  ["gpg.format", "ssh"],
+  ["user.signingkey", `key::${signingKey}`],
+  ["gpg.ssh.program", GUEST_SIGN_PATH],
+  ["commit.gpgsign", "true"],
+];
 
 /**
  * The account's GitHub Apps: each created from a manifest on one GitHub account, installed there, and assigned to
@@ -622,6 +631,17 @@ export class GitHubApps extends Context.Service<
           : own;
       });
 
+      /** Signs a machine account's commits; an App's commits through the API are verified without it. */
+      const signingConfig = Effect.fn("GitHubApps.signingConfig")(function* (
+        agentId: string,
+        identity: GitHubIdentity | undefined,
+      ) {
+        if (identity?.account !== null) return [];
+        const machine = yield* accounts.ofBot(agentId);
+
+        return machine ? signingEntries(machine.signingKey) : [];
+      });
+
       const gitEnv = Effect.fn("GitHubApps.gitEnv")(function* (
         agentId: string,
       ) {
@@ -640,6 +660,8 @@ export class GitHubApps extends Context.Service<
         ];
 
         if (trailer) entries.push(["init.templateDir", GIT_TEMPLATE_DIR]);
+
+        entries.push(...(yield* signingConfig(agentId, fallback)));
 
         if (
           fallback?.account === null ||

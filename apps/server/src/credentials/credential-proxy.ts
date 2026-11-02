@@ -13,6 +13,7 @@ import {
 } from "../shared/domain";
 import { isPublicAddress } from "../workspaces/public-address";
 import type { WorkspaceInterceptor } from "../workspaces/workspace-proxy";
+import { SIGNING_HOST } from "../workspaces/workspace";
 
 export type CredentialProxyOptions = {
   agentId: string;
@@ -28,6 +29,8 @@ export type CredentialProxyOptions = {
   isPublicAddress?: (address: string) => boolean;
   /** Extra certificate authorities upstream servers may use, in PEM; the system's are always trusted. */
   upstreamCa?: string;
+  /** Signs a commit for the bot's machine account; undefined when it has none. Answered at `SIGNING_HOST`. */
+  sign?: (data: Buffer) => Promise<string | undefined>;
 };
 
 // Shorter values would match ordinary bytes in responses; a reflected one that short is not worth corrupting bodies.
@@ -175,6 +178,47 @@ const readValues = async (
 
   return { values, failures };
 };
+
+// A commit object is far smaller; a larger body is not a commit.
+const MAX_SIGNED_BYTES = 1024 * 1024;
+
+/** Signs the posted commit with the bot's machine account key; 403 for a bot without one. */
+async function answerSigning(
+  sign: (data: Buffer) => Promise<string | undefined>,
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+) {
+  const chunks: Buffer[] = [];
+  let size = 0;
+
+  for await (const chunk of request) {
+    size += chunk.length;
+
+    if (size > MAX_SIGNED_BYTES) {
+      response.writeHead(413, { "content-type": "text/plain" });
+
+      return void response.end("Crumble signing: too large to be a commit\n");
+    }
+
+    chunks.push(chunk);
+  }
+
+  const signature =
+    request.method === "POST" && request.url === "/sign"
+      ? await sign(Buffer.concat(chunks))
+      : undefined;
+
+  if (signature === undefined) {
+    response.writeHead(403, { "content-type": "text/plain" });
+
+    return void response.end(
+      "Crumble signing: this bot has no machine account to sign as\n",
+    );
+  }
+
+  response.writeHead(200, { "content-type": "text/plain" });
+  response.end(signature);
+}
 
 /** Answers 502 without sending the request, naming each credential that couldn't be read. */
 const refuse = (
@@ -350,11 +394,17 @@ export function credentialProxy(
   const forward =
     (host: string, port: number) =>
     (request: http.IncomingMessage, response: http.ServerResponse) => {
-      send(host, port, request, response).catch(() => response.destroy());
+      (host === SIGNING_HOST && options.sign
+        ? answerSigning(options.sign, request, response)
+        : send(host, port, request, response)
+      ).catch(() => response.destroy());
     };
 
   return {
-    wants: (host) => relevant(host).length > 0,
+    wants: (host) =>
+      (host === SIGNING_HOST && options.sign !== undefined) ||
+      relevant(host).length > 0,
+    answers: (host) => host === SIGNING_HOST && options.sign !== undefined,
     async handle(client: net.Socket, host: string, port: number) {
       const secureContext = await options.authorities.context(
         options.agentId,

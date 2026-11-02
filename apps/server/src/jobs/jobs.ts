@@ -67,11 +67,27 @@ export type JobInfo = {
   status: "working" | "idle";
 };
 
+/** A question a job asked the owner; the job's turn ended with it and its answer resumes the job. */
+export type JobQuestion = {
+  id: string;
+  text: string;
+  askedAt: number;
+  /** Answers the owner can pick; they can still write their own. */
+  options?: string[];
+  /** Whether the owner may pick several options. */
+  multiple?: boolean;
+};
+
+/** The bot chat entry that shows a job's question to the owner, without a turn of the bot. */
+export const JOB_QUESTION_ENTRY = "crumble.job-question";
+
 /** A job in a listing: the model it runs with, and what its own model requests and tools spent, none before its first
  * request. */
 export type ListedJob = JobInfo & {
   model?: { provider: string; model: string };
   usage?: UsageState;
+  /** The question waiting for the owner's answer. */
+  question?: JobQuestion;
 };
 
 export type JobExtensions = {
@@ -110,6 +126,15 @@ export type JobAnswer = {
   preview: string;
   /** Stable per report, so a repeated announcement can be recognized. */
   eventId: string;
+};
+
+/** A job's finished turn: what a learning review reads. */
+export type JobFinished = {
+  agentId: string;
+  kind: string;
+  name: string;
+  conversationId: ConversationId;
+  submissionId: string;
 };
 
 type ReporterInput = {
@@ -270,6 +295,10 @@ type ToolResultMessage = {
 };
 
 /** Everything a job kind creates once: its documents, its anchor task, and its answer listeners. */
+type QuestionDoc = ConversationDocToken<{
+  pending: (JobQuestion & { posted?: boolean }) | null;
+}>;
+
 type JobKindBase = {
   options: JobKindOptions;
   /** Names the kind's documents, tasks, request IDs, and message origin. Stored data depends on it: never rename. */
@@ -278,9 +307,11 @@ type JobKindBase = {
   label: string;
   /** Shared by every job of every bot in this process. */
   answerListeners: Set<(answer: JobAnswer) => void>;
+  finishedListeners: Set<(finished: JobFinished) => void>;
   Marker: JobMarkerDoc;
   Jobs: JobsDoc;
   Request: JobRequestDoc;
+  Question: QuestionDoc;
   Anchor: JobAnchor;
 };
 
@@ -322,6 +353,19 @@ const jobDocuments = (kind: string) => ({
     checkpointWhen: (_value, _ops, { deltasSinceBase }) =>
       deltasSinceBase >= 16,
   }),
+
+  /** The job's open question to the owner, on the job's conversation; `posted` once its card is in the chat. */
+  Question: defineDoc<{ pending: (JobQuestion & { posted?: boolean }) | null }>(
+    {
+      kind: `crumble.${kind}-job-question`,
+      version: 1,
+      scope: "conversation",
+      history: "latest",
+      fork: "initial",
+      initial: () => ({ pending: null }),
+      checkpointWhen: () => true,
+    },
+  ),
 });
 
 // A delivery is stopped when its job is gone or was stopped after the delivery was queued.
@@ -488,6 +532,7 @@ const submitAndReport = async (
   }, taskContext);
 
   const settled = await submission.wait(taskContext);
+  let reported = false;
 
   await runtime.commit(async (tx) => {
     const state = await tx.doc(kindState.Jobs, runtime.conversationId);
@@ -495,14 +540,62 @@ const submitAndReport = async (
     // The answer frees the screen for the next job, whether it reports or not.
     releaseHolder(state, name);
 
-    return {
-      status: "running",
-      checkpoint: {
-        phase: "report",
-        report: await deliveryReport(kindState, tx, state, name, settled),
-      },
-    };
+    const posted = await postQuestion(
+      kindState,
+      tx,
+      runtime.conversationId,
+      reporter.input,
+    );
+
+    const report = posted
+      ? undefined
+      : await deliveryReport(kindState, tx, state, name, settled);
+
+    reported = report !== undefined && settled.status !== "unanswered";
+
+    return { status: "running", checkpoint: { phase: "report", report } };
   }, taskContext);
+
+  const { agentId } = reporter.input;
+
+  // After the commit, so a review never reads a turn that a crash would deliver again.
+  if (reported && agentId)
+    for (const listener of kindState.finishedListeners)
+      listener({
+        agentId,
+        kind: kindState.kind,
+        name,
+        conversationId,
+        submissionId: String(settled.id),
+      });
+};
+
+/** Posts the job's new question to the bot chat as a card, in place of a report; false when it asked none. */
+const postQuestion = async (
+  kindState: JobKindBase,
+  tx: Tx,
+  chatId: ConversationId,
+  { name, conversationId }: ReporterInput,
+) => {
+  const question = await tx.doc(kindState.Question, conversationId);
+  const pending = question.pending;
+
+  if (!pending || pending.posted) return false;
+  question.pending = { ...pending, posted: true };
+  await tx.appendEntry(chatId, {
+    kind: JOB_QUESTION_ENTRY,
+    data: {
+      id: pending.id,
+      kind: kindState.kind,
+      job: name,
+      text: pending.text,
+      timestamp: pending.askedAt,
+      ...(pending.options && { options: pending.options }),
+      ...(pending.multiple && { multiple: true }),
+    },
+  });
+
+  return true;
 };
 
 const jobReporterDeliver =
@@ -745,6 +838,29 @@ const stopJob = async (
   return reply(`Stopped ${name}.`);
 };
 
+/** Queues a message for the job; the job counts as working until it is delivered. */
+const queueDelivery = async (
+  kindState: JobKindState,
+  tx: Tx,
+  record: Job,
+  input: ReporterInput,
+  chatId?: ConversationId,
+) => {
+  // A commit outside the chat's own tools, such as the owner's answer, names the chat it belongs to.
+  const reporter = await tx.createTask(
+    kindState.Reporter,
+    input,
+    chatId === undefined
+      ? BACKGROUND
+      : { ...BACKGROUND, conversationId: chatId },
+  );
+
+  record.deliveries = {
+    ...record.deliveries,
+    [String(reporter)]: "waiting",
+  };
+};
+
 /** Starts a job or messages an existing one, admitting its delivery before it answers. */
 const startOrSend = async (
   kindState: JobKindState,
@@ -792,23 +908,16 @@ const startOrSend = async (
         request.message,
       );
 
-    const reporter = await tx.createTask(
-      kindState.Reporter,
-      {
-        agentId,
-        name: request.name,
-        conversationId,
-        message: request.message,
-        followUp: request.action === "send" && request.followUp,
-        stops: record.stops ?? 0,
-      },
-      BACKGROUND,
-    );
-
-    record.deliveries = {
-      ...record.deliveries,
-      [String(reporter)]: "waiting",
-    };
+    // A message from the bot answers the job's open question as well as the owner's answer would.
+    (await tx.doc(kindState.Question, conversationId)).pending = null;
+    await queueDelivery(kindState, tx, record, {
+      agentId,
+      name: request.name,
+      conversationId,
+      message: request.message,
+      followUp: request.action === "send" && request.followUp,
+      stops: record.stops ?? 0,
+    });
 
     return {
       text:
@@ -845,8 +954,19 @@ const statusReply = async (
       });
   }
 
+  const asked = await Promise.all(
+    found.map(async (each) =>
+      openQuestion(kindState, api, each.conversationId, context),
+    ),
+  );
+
   const text = found.length
-    ? found.map((each) => `${each.name}: ${each.status}`).join("\n")
+    ? found
+        .map(
+          (each, index) =>
+            `${each.name}: ${each.status}${asked[index] ? ` (waiting for the owner's answer to: ${asked[index].text})` : ""}`,
+        )
+        .join("\n")
     : `No ${kindState.label}s.`;
 
   return reply(text);
@@ -881,13 +1001,20 @@ const listedJobs = async (
         status: await statusOf(harness, job, BACKGROUND_CONTEXT),
       };
 
-      const [agent, usage] = await Promise.all([
+      const [agent, usage, question] = await Promise.all([
         harness.snapshot(AgentDoc, job.conversationId, BACKGROUND_CONTEXT),
         harness.snapshot(UsageDoc, job.conversationId, BACKGROUND_CONTEXT),
+        openQuestion(
+          kindState,
+          harness,
+          job.conversationId,
+          BACKGROUND_CONTEXT,
+        ),
       ]);
 
       return {
         ...listed,
+        ...(question && { question }),
         ...(agent?.model && {
           model: {
             provider: agent.model.provider,
@@ -902,6 +1029,28 @@ const listedJobs = async (
   return found.sort(
     (a, b) => Number(a.conversationId) - Number(b.conversationId),
   );
+};
+
+/** The job's question still waiting for an answer, once its card is in the chat. */
+const openQuestion = async (
+  kindState: JobKindBase,
+  reader: DocumentReader,
+  conversationId: ConversationId,
+  context: Context,
+): Promise<JobQuestion | undefined> => {
+  const pending = (
+    await reader.snapshot(kindState.Question, conversationId, context)
+  )?.pending;
+
+  return pending?.posted
+    ? {
+        id: pending.id,
+        text: pending.text,
+        askedAt: pending.askedAt,
+        ...(pending.options && { options: pending.options }),
+        ...(pending.multiple && { multiple: true }),
+      }
+    : undefined;
 };
 
 const isJobConversation = async (
@@ -1051,6 +1200,13 @@ const jobKindApi = (state: JobKindState) => {
       return () => void state.answerListeners.delete(listener);
     },
 
+    /** Hears each finished turn of a job of this kind that reported back, from every bot in this process. */
+    onFinished: (listener: (finished: JobFinished) => void) => {
+      state.finishedListeners.add(listener);
+
+      return () => void state.finishedListeners.delete(listener);
+    },
+
     /** The job a start shows as a card; other actions and failed calls show none. */
     jobOf: (message: ToolResultMessage): string | undefined =>
       jobCardName(toolName, message),
@@ -1092,8 +1248,112 @@ const jobKindApi = (state: JobKindState) => {
 
     extensions: (input: JobToolInput): JobExtensions =>
       jobExtensions(state, input),
+
+    /** The tool a job asks the owner with; `onAsked` hears each question, such as to keep the workspace awake. */
+    questionTool: (onAsked?: (conversationId: ConversationId) => void) =>
+      questionTool(state, onAsked),
+
+    /**
+     * Sends the owner's answer to the job's open question, which resumes the job. False when the job asked nothing
+     * or `questionId` names an older question.
+     */
+    answer: (
+      harness: Harness,
+      chatId: ConversationId,
+      answer: {
+        agentId: string;
+        name: string;
+        questionId: string;
+        text: string;
+      },
+    ) => answerQuestion(state, harness, chatId, answer),
   };
 };
+
+const QUESTION_TOOL = "ask_owner";
+
+const questionTool = (
+  kindState: JobKindBase,
+  onAsked: ((conversationId: ConversationId) => void) | undefined,
+) =>
+  defineTool({
+    name: QUESTION_TOOL,
+    description:
+      "Ask the owner a question and end your turn. Ask only when the answer changes what you build or a decision is theirs to make; otherwise decide yourself and proceed. When the answer is one of a few choices, list them as options: the owner picks one with a click or writes their own. Their answer arrives as your next message.",
+    parameters: Type.Object({
+      question: Type.String({ minLength: 1, maxLength: 4000 }),
+      options: Type.Optional(
+        Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
+          minItems: 2,
+          maxItems: 6,
+          description:
+            "Short, distinct answers, most likely first. Leave out a catch-all such as Other; the owner can always write their own.",
+        }),
+      ),
+      multiple: Type.Optional(
+        Type.Boolean({
+          description:
+            "true when several options can apply together; the answer then lists every one the owner picked.",
+        }),
+      ),
+    }),
+    callers: ["model"],
+    replay: "unsafe",
+    execute: async (args, api, context) => {
+      await api.commit(async (tx) => {
+        (await tx.doc(kindState.Question, api.conversationId)).pending = {
+          id: crypto.randomUUID(),
+          text: args.question,
+          askedAt: api.now(),
+          ...(args.options && { options: args.options }),
+          ...(args.options && args.multiple && { multiple: true }),
+        };
+      }, context);
+      onAsked?.(api.conversationId);
+
+      return {
+        output: [
+          {
+            type: "text" as const,
+            text: "Asked the owner. End your turn now; their answer arrives as your next message.",
+          },
+        ],
+        control: { terminate: true },
+      };
+    },
+  });
+
+const answerQuestion = (
+  kindState: JobKindState,
+  harness: Harness,
+  chatId: ConversationId,
+  answer: { agentId: string; name: string; questionId: string; text: string },
+) =>
+  harness.commit(async (tx) => {
+    const record = (await tx.doc(kindState.Jobs, chatId)).jobs[answer.name];
+
+    if (!record) return false;
+    const question = await tx.doc(kindState.Question, record.conversationId);
+
+    if (question.pending?.id !== answer.questionId) return false;
+    question.pending = null;
+    await queueDelivery(
+      kindState,
+      tx,
+      record,
+      {
+        agentId: answer.agentId,
+        name: answer.name,
+        conversationId: record.conversationId,
+        message: `The owner answered your question: ${answer.text}`,
+        followUp: false,
+        stops: record.stops ?? 0,
+      },
+      chatId,
+    );
+
+    return true;
+  }, BACKGROUND_CONTEXT);
 
 /** Creates the kind's documents, anchor task, and answer listeners once. */
 const jobKindBase = (options: JobKindOptions): JobKindBase => {
@@ -1105,6 +1365,7 @@ const jobKindBase = (options: JobKindOptions): JobKindBase => {
     toolName,
     label,
     answerListeners: new Set<(answer: JobAnswer) => void>(),
+    finishedListeners: new Set<(finished: JobFinished) => void>(),
     ...jobDocuments(kind),
     // The job's conversation is owned by this task so it outlives the bot's turns and Esc.
     Anchor: defineAnchorTask(`crumble.${kind}-anchor`),

@@ -68,6 +68,10 @@ class DirectoryWorkspaces implements Workspaces {
     return false;
   }
 
+  outdated() {
+    return [];
+  }
+
   keepAwake(_agentId: string) {
     return () => {};
   }
@@ -269,6 +273,7 @@ test("a coding job works in the workspace and reports to the bot's chat once", a
   // The chat only has the job tool. The job has the coding tools and no job tool, delegation, or memory.
   expect(offered.get("bot")).toEqual(["coding"]);
   expect(offered.get("job")?.toSorted()).toEqual([
+    "ask_owner",
     "bash",
     "edit",
     "read",
@@ -403,8 +408,13 @@ function serve(store: Store, runtime: AgentRuntime) {
 
   const app = createAPI(service, token, { scheduler });
 
-  return (path: string) =>
-    app.request(path, { headers: { authorization: `Bearer ${token}` } });
+  return (path: string, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers);
+
+    headers.set("authorization", `Bearer ${token}`);
+
+    return app.request(path, { ...init, headers });
+  };
 }
 
 test("clients list a bot's coding jobs and page through a job's work", async () => {
@@ -557,4 +567,94 @@ test("a working coding job's history shows the steps it finished", async () => {
 
   release();
   await until(async () => (await reports(runtime, agent, chat)).length === 1);
+});
+
+/** A job that asks the owner first, then works with the answer. */
+function askingScript(): FauxResponseFactory {
+  return async (context) => {
+    const tools = context.messages.flatMap((message) =>
+      message.role === "system"
+        ? (message.toolsAdded ?? []).map((tool) => tool.name)
+        : [],
+    );
+
+    const last = context.messages.findLast(
+      (message) => message.role !== "system",
+    )!;
+
+    if (!tools.includes("bash")) return botReply(last, messageText(last));
+
+    if (last.role === "user" && messageText(last).includes("answered"))
+      return fauxAssistantMessage([fauxText(`Used ${messageText(last)}`)]);
+
+    return fauxAssistantMessage(
+      fauxToolCall("ask_owner", {
+        question: "Which color?",
+        options: ["blue", "red"],
+        multiple: true,
+      }),
+      { stopReason: "toolUse" },
+    );
+  };
+}
+
+test("a job's question waits through a restart, and the owner's answer resumes the job", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bot-coding-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const workspace = join(dir, "workspace");
+  await Bun.write(join(workspace, ".keep"), "");
+  const { store, agent } = setup(dir);
+  const workspaces = new DirectoryWorkspaces(workspace);
+
+  const first = open(dir, workspaces, askingScript(), agent);
+  const chat = await first.runtime.openChat(agent);
+  await first.runtime.submit(agent, chat, "Build it", "req-1");
+
+  await until(
+    async () =>
+      (await first.runtime.codingJobs(agent))[0]?.question !== undefined,
+  );
+
+  const cards = (await first.runtime.snapshot(agent, chat)).messages.filter(
+    (message) => message.kind === "job-question",
+  );
+
+  expect(cards.map((card) => card.content)).toEqual(["Which color?"]);
+  expect(await reports(first.runtime, agent, chat)).toHaveLength(0);
+  await first.runtime.close();
+
+  const second = open(dir, workspaces, askingScript(), agent);
+  cleanups.push(() => second.runtime.close());
+  await second.runtime.openChat(agent);
+  const [job] = await second.runtime.codingJobs(agent);
+
+  expect(job?.question).toMatchObject({
+    text: "Which color?",
+    options: ["blue", "red"],
+    multiple: true,
+  });
+  expect(cards[0]?.jobQuestion?.options).toEqual(["blue", "red"]);
+  const request = serve(store, second.runtime);
+
+  const answer = (questionId: string, text: string) =>
+    request(`/v1/agents/${agent.id}/coding-jobs/builder/answer`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ questionId, text }),
+    });
+
+  expect((await answer("older", "red")).status).toBe(409);
+  expect((await answer(job!.question!.id, "blue")).status).toBe(204);
+
+  await until(async () =>
+    (await second.runtime.snapshot(agent, chat)).messages.some(
+      (message) => message.content === "The job is finished.",
+    ),
+  );
+  expect((await second.runtime.codingJobs(agent))[0]?.question).toBeUndefined();
+  expect(
+    (await reports(second.runtime, agent, chat)).map(
+      (message) => message.content,
+    ),
+  ).toEqual(["Used The owner answered your question: blue"]);
 });

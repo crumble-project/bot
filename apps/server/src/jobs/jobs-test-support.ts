@@ -56,6 +56,10 @@ class DirectoryWorkspaces implements Workspaces {
     return false;
   }
 
+  outdated() {
+    return [];
+  }
+
   keepAwake(_agentId: string) {
     return () => {};
   }

@@ -15,6 +15,7 @@ import {
   responseHeaders,
 } from "./credential-proxy";
 import { credentialsAccess } from "./credentials";
+import { SIGNING_HOST } from "../workspaces/workspace";
 
 const placeholder = "$ACME_TOKEN";
 const value = "s3cret-value";
@@ -342,4 +343,99 @@ describe("credentialProxy", () => {
       proxy.close();
     }
   });
+});
+
+test("the signing host is answered by the proxy, for a bot with a machine account only", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "crumble-signing-"));
+  const store = new Store(dir);
+  const authorities = credentialAuthoritiesAccess(store.runtime);
+
+  const bot = store.createAgent({
+    name: "bot",
+    avatar: "bot",
+    description: "",
+    instructions: "",
+    provider: "faux",
+    model: "chat",
+    enabled: true,
+    tools: ["coding"],
+    skills: [],
+    mcpServers: [],
+    delegates: [],
+  });
+
+  const ca = await authorities.certificate(bot.id);
+  const signed: string[] = [];
+
+  const serve = async (
+    sign?: (data: Buffer) => Promise<string | undefined>,
+  ) => {
+    const proxy = credentialProxy({
+      agentId: bot.id,
+      authorities,
+      grants: () => [],
+      value: async () => "",
+      recordUse: () => {},
+      ...(sign && { sign }),
+    });
+
+    const entry = net.createServer(
+      (socket) => void proxy.handle(socket, SIGNING_HOST, 443),
+    );
+
+    await new Promise<void>((done) => entry.listen(0, "127.0.0.1", done));
+
+    return { proxy, entry };
+  };
+
+  const post = (entry: net.Server, body: string) =>
+    new Promise<string>((done, fail) => {
+      const socket = tls.connect({
+        host: "127.0.0.1",
+        // SAFETY: listen completed on a TCP port, not a Unix socket.
+        port: (entry.address() as AddressInfo).port,
+        servername: SIGNING_HOST,
+        ca,
+      });
+
+      let response = "";
+
+      socket.on("secureConnect", () =>
+        socket.write(
+          `POST /sign HTTP/1.1\r\nhost: ${SIGNING_HOST}\r\ncontent-length: ${body.length}\r\nconnection: close\r\n\r\n${body}`,
+        ),
+      );
+      socket.on("data", (data: Buffer) => (response += data.toString("utf8")));
+      socket.on("end", () => done(response));
+      socket.on("error", fail);
+    });
+
+  const withAccount = await serve(async (data) => {
+    signed.push(data.toString());
+
+    return "SIGNATURE";
+  });
+
+  const without = await serve(async () => undefined);
+  const none = await serve();
+
+  try {
+    expect(withAccount.proxy.answers?.(SIGNING_HOST)).toBe(true);
+    expect(none.proxy.wants(SIGNING_HOST)).toBe(false);
+
+    const answer = await post(withAccount.entry, "tree abc\n");
+
+    expect(answer.startsWith("HTTP/1.1 200")).toBe(true);
+    expect(bodyOf(answer)).toBe("SIGNATURE");
+    expect(signed).toEqual(["tree abc\n"]);
+    expect(
+      (await post(without.entry, "tree abc\n")).startsWith("HTTP/1.1 403"),
+    ).toBe(true);
+  } finally {
+    withAccount.entry.close();
+    without.entry.close();
+    none.entry.close();
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -43,7 +43,10 @@ import { chosenJudge } from "../bot-desktop/judge-settings";
 import { accountJudge } from "../jobs/desktop-intent";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import type { Workspaces } from "../workspaces/workspace";
-import { acquireWorkspaces } from "../workspaces/machine-workspaces";
+import {
+  acquireWorkspaces,
+  type WorkspaceSize,
+} from "../workspaces/machine-workspaces";
 import { Push, PushDelivery } from "../push/push";
 import { ProviderModels } from "../providers/providers";
 import { ProviderSignIns } from "../providers/provider-auth";
@@ -68,6 +71,7 @@ import {
 } from "../plugins/plugins";
 import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
 import { BotWorkspaces } from "../workspaces/workspace";
+import { GitHubAccounts } from "../github-apps/github-accounts";
 import { desktopKeepAwake } from "../bot-desktop/keep-awake";
 import { desktopScreenshotTools } from "../bot-desktop/desktop-screenshot";
 import { AgentRepository } from "../bots/agent-repository";
@@ -87,7 +91,14 @@ export type TenantOptions = {
   workspaces?:
     | Effect.Effect<Workspaces | undefined, never, Scope.Scope>
     | undefined;
+  /** The server's workspace settings, read at each boot; set by the host from its admin settings. */
+  workspaceSettings?: (() => WorkspaceSettings) | undefined;
   tenantId: string;
+};
+
+export type WorkspaceSettings = WorkspaceSize & {
+  baseImage: string | null;
+  questionGraceMs: number;
 };
 
 export type TenantRuntime = {
@@ -96,6 +107,7 @@ export type TenantRuntime = {
   token: string;
   service: BotsAccess;
   scheduler: SchedulerAccess;
+  workspaces: Workspaces | undefined;
   close: () => Promise<void>;
 };
 
@@ -143,6 +155,8 @@ function accountLayer(
       const credentials = credentialsAccess(run);
       const authorities = credentialAuthoritiesAccess(run);
 
+      const settings = options.workspaceSettings;
+
       const machineOptions = {
         dataDir,
         namePrefix: `crumble-${options.tenantId.replace(/[^A-Za-z0-9_-]/g, "-")}`,
@@ -151,6 +165,10 @@ function accountLayer(
             DESKTOP_TOOL_NAME,
           ) === true,
         caCertificate: (agentId: string) => authorities.certificate(agentId),
+        ...(settings && {
+          size: settings,
+          baseImage: () => settings().baseImage,
+        }),
         intercept: (agentId: string) =>
           credentialProxy({
             agentId,
@@ -158,6 +176,12 @@ function accountLayer(
             grants: () => credentials.grants(agentId),
             value: (name, target) => credentials.value(agentId, name, target),
             recordUse: (name, use) => credentials.recordUse(agentId, name, use),
+            sign: async (data) =>
+              (
+                await run.runPromise(
+                  GitHubAccounts.use((accounts) => accounts.ofBot(agentId)),
+                )
+              )?.sign(data),
           }),
       };
 
@@ -175,11 +199,16 @@ function accountLayer(
     Effect.gen(function* () {
       const run = runnerOf(yield* Effect.context<CoreServices>());
 
+      const workspaceSettings = options.workspaceSettings;
+
       const installed = builtinPlugins({
         dataDir,
         secret: secretText(yield* Secrets),
         env: process.env,
         workspaces: yield* BotWorkspaces,
+        ...(workspaceSettings && {
+          questionGraceMs: () => workspaceSettings().questionGraceMs,
+        }),
         desktopControl: desktopControlAccess(run),
         credentials: credentialsAccess(run),
         logins: {
@@ -382,6 +411,7 @@ export async function createTenant(
           token,
           service,
           scheduler,
+          workspaces: yield* BotWorkspaces,
           close: () => account.dispose(),
         };
       }),

@@ -9,9 +9,7 @@ import {
   IconAdjustmentsHorizontal,
   IconBell,
   IconVolume,
-  IconDeviceDesktop,
   IconFingerprint,
-  IconHammer,
   IconKey,
   IconLock,
   IconLogin2,
@@ -30,6 +28,7 @@ import {
   IconMessages,
   IconWebhook,
   IconCode,
+  IconUsers,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -48,7 +47,6 @@ import { Switch } from "@/components/ui/switch";
 import {
   type PasswordManager,
   type Provider,
-  capabilitiesQuery,
   clearUserData,
   providersQuery,
   queryClient,
@@ -70,6 +68,7 @@ import {
   useSecretDraft,
 } from "@/components/secret-source-field";
 import { LoginDialog, refreshProviders } from "./provider-login";
+import { useIsAdmin } from "./admin-settings";
 import {
   MobileSidebarTrigger,
   RowMenu,
@@ -99,6 +98,7 @@ const SECTIONS = [
   { to: "/settings/judge-model", label: "Judge model", icon: IconScale },
   { to: "/settings/integrations", label: "Integrations", icon: IconPlug },
   { to: "/settings/coding", label: "Coding", icon: IconCode },
+  { to: "/settings/users", label: "Users", icon: IconUsers, admin: true },
   {
     to: "/settings/message-gateways",
     label: "Message gateways",
@@ -111,6 +111,7 @@ const SECTIONS = [
 /** Settings: a section list beside the open section. */
 export function SettingsLayout() {
   const matchRoute = useMatchRoute();
+  const admin = useIsAdmin();
 
   return (
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
@@ -122,22 +123,26 @@ export function SettingsLayout() {
         <h2 className="hidden px-2 pt-1 pb-2 font-heading font-semibold md:block">
           Settings
         </h2>
-        {SECTIONS.map((section) => (
-          <Button
-            key={section.to}
-            variant={
-              matchRoute({ to: section.to, fuzzy: true })
-                ? "secondary"
-                : "ghost"
-            }
-            className="justify-start"
-            render={<Link to={section.to} />}
-            nativeButton={false}
-          >
-            <section.icon data-icon="inline-start" />
-            {section.label}
-          </Button>
-        ))}
+        {SECTIONS.flatMap((section) =>
+          admin || !("admin" in section)
+            ? [
+                <Button
+                  key={section.to}
+                  variant={
+                    matchRoute({ to: section.to, fuzzy: true })
+                      ? "secondary"
+                      : "ghost"
+                  }
+                  className="justify-start"
+                  render={<Link to={section.to} />}
+                  nativeButton={false}
+                >
+                  <section.icon data-icon="inline-start" />
+                  {section.label}
+                </Button>,
+              ]
+            : [],
+        )}
       </nav>
       <div
         data-slot="settings-page"
@@ -478,23 +483,6 @@ function Account() {
 }
 
 function Server() {
-  const capabilities = useQuery(capabilitiesQuery);
-
-  const features = [
-    {
-      name: "Coding jobs",
-      icon: IconHammer,
-      on: capabilities.data?.coding === true,
-      help: "Needs CRUMBLE_WORKSPACE_IMAGE on the server.",
-    },
-    {
-      name: "Desktop jobs",
-      icon: IconDeviceDesktop,
-      on: capabilities.data?.desktop === true,
-      help: "Needs CRUMBLE_WORKSPACE_DESKTOP_IMAGE on the server.",
-    },
-  ];
-
   return (
     <Section title="Server">
       <SettingRow
@@ -508,36 +496,6 @@ function Server() {
       >
         <CopyButton text={location.origin} />
       </SettingRow>
-      {features.map((feature) => (
-        <SettingRow
-          key={feature.name}
-          tile={
-            <RowTile>
-              <feature.icon />
-            </RowTile>
-          }
-          title={feature.name}
-          description={
-            capabilities.isSuccess && !feature.on ? (
-              <span className="font-mono text-xs">{feature.help}</span>
-            ) : undefined
-          }
-        >
-          {capabilities.isPending ? (
-            <Skeleton className="h-5 w-16" />
-          ) : (
-            <StatusDot
-              on={feature.on}
-              label={feature.on ? "Available" : "Off"}
-            />
-          )}
-        </SettingRow>
-      ))}
-      {capabilities.isError && (
-        <div className="p-3">
-          <FieldError>{capabilities.error.message}</FieldError>
-        </div>
-      )}
     </Section>
   );
 }

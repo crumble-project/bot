@@ -190,6 +190,19 @@ const message = z
     replyPreview: z.string().optional(),
     origin: origin.optional(),
     communication: communication.optional(),
+    jobQuestion: z
+      .object({
+        id: z.string(),
+        kind: z.string(),
+        job: z.string(),
+        options: z.array(z.string()).optional(),
+        multiple: z.boolean().optional(),
+      })
+      .optional()
+      .openapi({
+        description:
+          "On a `job-question` event: the job that asked the owner the question in `content`. Whether it still waits is the job's `question` in its listing.",
+      }),
     heldAction: z
       .object({ id: z.string(), job: z.string() })
       .optional()
@@ -244,6 +257,25 @@ const jobsResponse = (kind: "Coding" | "Desktop") =>
                 description:
                   "Pi Durable usage document of the job's own conversation: tokens and cost per model and tool. Absent before its first request.",
               }),
+              question: z
+                .object({
+                  id: z.string(),
+                  text: z.string(),
+                  askedAt: z.number(),
+                  options: z.array(z.string()).optional().openapi({
+                    description:
+                      "Answers the owner can pick; any other text is an answer too.",
+                  }),
+                  multiple: z.boolean().optional().openapi({
+                    description:
+                      "Whether several options can be picked; the answer lists each.",
+                  }),
+                })
+                .optional()
+                .openapi({
+                  description:
+                    "The question the job asked the owner and waits on. Answer it with the job's `answer` route.",
+                }),
             })
             .openapi(`${kind}Job`),
         )
