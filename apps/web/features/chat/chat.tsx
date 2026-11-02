@@ -422,6 +422,7 @@ function ChatComposer({
       )}
       <Composer
         key={bot.id}
+        draftKey={`bot:${bot.id}`}
         placeholder={
           bot.enabled
             ? `Message ${bot.name}`

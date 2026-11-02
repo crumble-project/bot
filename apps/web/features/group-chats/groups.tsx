@@ -449,6 +449,7 @@ export function GroupChatView({ groupId }: { groupId: string }) {
       <SendError message={sendError} />
       <Composer
         key={groupId}
+        draftKey={`group:${groupId}`}
         placeholder={`Message ${groupChat.name}`}
         running={running}
         replyingTo={replyLabel(replyTo)}
