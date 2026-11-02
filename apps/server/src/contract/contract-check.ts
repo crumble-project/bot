@@ -29,6 +29,8 @@ function run(command: string[]) {
   return result.stdout.toString();
 }
 
+const major = (version: string) => Number(version.split(".")[0]);
+
 async function documentVersion(directory: string) {
   return documentSchema.parse(
     await Bun.file(join(directory, "openapi.json")).json(),
@@ -119,6 +121,11 @@ export async function compareContracts(
   await mkdir(reports, { recursive: true });
   await validateContract(baseline);
   await validateContract(current);
+
+  const majorBump =
+    major(await documentVersion(current)) >
+    major(await documentVersion(baseline));
+
   const tool = process.env["OASDIFF"] ?? "oasdiff";
 
   if (run([tool, "--version"]).trim() !== "oasdiff version 1.35.0") {
@@ -165,7 +172,9 @@ export async function compareContracts(
 
   if (removed.length > 0) breaking = true;
 
-  if (breaking) {
+  if (breaking && majorBump) {
+    console.log("Breaking changes allowed by the major version increase");
+  } else if (breaking) {
     throw new Error(
       `Breaking HTTP or event changes detected${removed.length ? `; removed event schemas: ${removed.join(", ")}` : ""}. See compatibility reports.`,
     );
