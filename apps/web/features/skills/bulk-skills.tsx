@@ -1,4 +1,11 @@
-import { createContext, type ReactNode, useContext, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog } from "@/components/ui/alert-dialog";
@@ -12,6 +19,7 @@ import {
   applyBulkAction,
   skillLabel,
   type BulkAction,
+  type BulkMessage,
   type SelectableSkill,
 } from "./bulk-skill-actions";
 
@@ -128,7 +136,7 @@ export function BulkSkills({
   const [selected, setSelected] = useState(new Set<string>());
   const [dialog, setDialog] = useState<BulkAction | null>(null);
   const [targets, setTargets] = useState(new Set<string>());
-  const [report, setReport] = useState<string[]>([]);
+  const [report, setReport] = useState<BulkMessage[]>([]);
   const picked = skills.filter((skill) => selected.has(skill.id));
 
   const bulk = useMutation({
@@ -145,6 +153,24 @@ export function BulkSkills({
     },
   });
 
+  const change = useCallback((ids: string[], on: boolean) => {
+    setSelected((old) => {
+      const next = new Set(old);
+
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
+
+      return next;
+    });
+  }, []);
+
+  const selection = useMemo<Selection>(
+    () => ({ selected, busy: bulk.isPending, change }),
+    [selected, bulk.isPending, change],
+  );
+
   const run = (action: BulkAction) => {
     setDialog(null);
     setReport([]);
@@ -152,23 +178,7 @@ export function BulkSkills({
   };
 
   return (
-    <SelectionContext
-      value={{
-        selected,
-        busy: bulk.isPending,
-        change: (ids, on) =>
-          setSelected((old) => {
-            const next = new Set(old);
-
-            for (const id of ids) {
-              if (on) next.add(id);
-              else next.delete(id);
-            }
-
-            return next;
-          }),
-      }}
-    >
+    <SelectionContext value={selection}>
       <div className="flex flex-col gap-3">
         <SelectSkills ids={visibleIds} label="Select all results" />
         {picked.length > 0 && (
@@ -190,8 +200,8 @@ export function BulkSkills({
           <Alert>
             <AlertDescription>
               <ul aria-label="Bulk action results">
-                {report.map((line, index) => (
-                  <li key={index}>{line}</li>
+                {report.map((line) => (
+                  <li key={line.id}>{line.text}</li>
                 ))}
               </ul>
             </AlertDescription>

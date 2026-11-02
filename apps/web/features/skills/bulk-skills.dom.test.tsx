@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { queryClient } from "@/lib/api";
 import { BotPainter } from "@/features/bots/bot-avatar";
 
@@ -23,6 +23,7 @@ async function fixture(
     search: (value: string) => Promise<void>;
     requests: string[];
     fail: Set<string>;
+    render: (children: ReactNode) => Promise<void>;
   }) => Promise<void>,
 ) {
   const window = new Window({ url: "http://localhost" });
@@ -124,6 +125,37 @@ async function fixture(
     return new Response(null, { status: 204 });
   };
 
+  const mutationResponse = async (
+    path: string,
+    init: RequestInit | undefined,
+  ) => {
+    if (init?.method === "DELETE") return deletionResponse(path);
+
+    if (path === "/v1/skills/updates/check")
+      return Response.json({ failed: [] });
+
+    if (path === "/v1/skills/github/update") {
+      shared = shared.map((skill) =>
+        skill.id === "github" ? { ...skill, update: null } : skill,
+      );
+
+      return Response.json({});
+    }
+
+    if (path.endsWith("/assignment")) {
+      const body: { botId: string; assigned: boolean } = JSON.parse(
+        await new Response(init?.body).text(),
+      );
+
+      return assignmentResponse(path, body);
+    }
+
+    return Response.json(
+      { error: `Unexpected mutation ${path}` },
+      { status: 500 },
+    );
+  };
+
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -135,26 +167,7 @@ async function fixture(
         if (fail.has(path) && method !== "GET")
           return Response.json({ error: "Denied by test" }, { status: 500 });
 
-        if (method === "DELETE") return deletionResponse(path);
-
-        if (path === "/v1/skills/updates/check")
-          return Response.json({ failed: [] });
-
-        if (path === "/v1/skills/github/update") {
-          shared = shared.map((skill) =>
-            skill.id === "github" ? { ...skill, update: null } : skill,
-          );
-
-          return Response.json({});
-        }
-
-        if (path.endsWith("/assignment")) {
-          const body: { botId: string; assigned: boolean } = JSON.parse(
-            await new Response(init?.body).text(),
-          );
-
-          return assignmentResponse(path, body);
-        }
+        if (method !== "GET") return mutationResponse(path, init);
 
         const listings = new Map<string, unknown>([
           ["/v1/agents", bots],
@@ -228,19 +241,30 @@ async function fixture(
     });
   };
 
-  try {
+  const render = async (children: ReactNode) => {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <SidebarProvider>
-            <SkillsPage />
-          </SidebarProvider>
+          <SidebarProvider>{children}</SidebarProvider>
         </QueryClientProvider>,
       );
       await flush();
     });
     await act(flush);
-    await run({ window, container, click, select, search, requests, fail });
+  };
+
+  try {
+    await render(<SkillsPage />);
+    await run({
+      window,
+      container,
+      click,
+      select,
+      search,
+      requests,
+      fail,
+      render,
+    });
   } finally {
     await act(async () => root.unmount());
     queryClient.clear();
@@ -415,5 +439,59 @@ test("section select-all is mixed when partly selected; failed updates can be re
     ].find((button) => button.textContent === "Update");
 
     expect(update?.disabled).toBe(true);
+  });
+});
+
+test("selection consumers do not render for unrelated provider changes, but still follow selection", async () => {
+  await fixture(async ({ render, select, container }) => {
+    const { BulkSkills, SelectSkills } = await import("./bulk-skills");
+
+    const skills = [
+      {
+        id: "isolated",
+        name: "Isolated",
+        instructions: "Read it",
+        botId: null,
+        ownerName: "Shared",
+        installed: false,
+      },
+    ];
+
+    const child = <SelectSkills ids={["isolated"]} label="Select isolated" />;
+
+    const view = (visibleIds: string[]) => (
+      <BulkSkills bots={[]} skills={skills} visibleIds={visibleIds}>
+        {child}
+      </BulkSkills>
+    );
+
+    await render(view(["isolated"]));
+
+    const checkbox = container.querySelector<HTMLInputElement>(
+      '[aria-label="Select isolated"]',
+    )!;
+
+    let writes = 0;
+    let indeterminate = checkbox.indeterminate;
+    // SelectSkills' ref writes this native property on every consumer commit.
+    // Instrument the actual checkbox, not a mock of React or of the provider.
+    Object.defineProperty(checkbox, "indeterminate", {
+      configurable: true,
+      get: () => indeterminate,
+      set: (next: boolean) => {
+        indeterminate = next;
+        writes++;
+      },
+    });
+    await render(view([]));
+    expect(writes).toBe(0);
+    await select("Select isolated");
+    expect(writes).toBeGreaterThan(0);
+    expect(
+      container.querySelector<HTMLInputElement>(
+        '[aria-label="Select isolated"]',
+      )?.checked,
+    ).toBe(true);
+    expect(container.textContent).toContain("1 selected");
   });
 });

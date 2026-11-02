@@ -18,6 +18,8 @@ export type SelectableSkill = {
   installed: boolean;
 };
 
+export type BulkMessage = { id: string; text: string };
+
 export type BulkAction = "delete" | "update" | "assign" | "remove";
 
 export const skillLabel = (skill: SelectableSkill) =>
@@ -67,34 +69,59 @@ async function updateSkill(skill: SelectableSkill, updates: UpdateCheck) {
   return null;
 }
 
+async function assignBot(skill: SelectableSkill, bot: Bot, assigned: boolean) {
+  const label = `${skillLabel(skill)} → ${bot.name}`;
+  const messages: BulkMessage[] = [];
+
+  try {
+    const result = await call<
+      { skipped: boolean },
+      { botId: string; assigned: boolean }
+    >(`${skillPath(skill)}/assignment`, "POST", { botId: bot.id, assigned });
+
+    if (result.skipped)
+      messages.push({
+        id: `skipped:${skill.id}:${bot.id}`,
+        text: `Skipped ${label}: already in the requested state.`,
+      });
+
+    return { failed: false, messages };
+  } catch (error) {
+    messages.push({
+      id: `failed:${skill.id}:${bot.id}`,
+      text: `Failed ${label}: ${error instanceof Error ? error.message : String(error)}`,
+    });
+
+    return { failed: true, messages };
+  }
+}
+
+/** Different bots are independent; cap requests at four and retain input-order results.
+ * Skills still run in order so two operations never race on the same bot's assignments.
+ */
 async function assignBots(
   skill: SelectableSkill,
   bots: Bot[],
   assigned: boolean,
-  messages: string[],
+  messages: BulkMessage[],
 ) {
-  let failed = false;
+  let next = 0;
+  const results: Awaited<ReturnType<typeof assignBot>>[] = [];
 
-  for (const bot of bots) {
-    const label = `${skillLabel(skill)} → ${bot.name}`;
+  const work = async (): Promise<void> => {
+    const index = next++;
+    const bot = bots[index];
 
-    try {
-      const result = await call<
-        { skipped: boolean },
-        { botId: string; assigned: boolean }
-      >(`${skillPath(skill)}/assignment`, "POST", { botId: bot.id, assigned });
+    if (!bot) return;
+    results[index] = await assignBot(skill, bot, assigned);
 
-      if (result.skipped)
-        messages.push(`Skipped ${label}: already in the requested state.`);
-    } catch (error) {
-      failed = true;
-      messages.push(
-        `Failed ${label}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
+    return work();
+  };
 
-  return failed;
+  await Promise.all(Array.from({ length: Math.min(4, bots.length) }, work));
+  messages.push(...results.flatMap((result) => result.messages));
+
+  return results.some((result) => result.failed);
 }
 
 async function applySkillAction(
@@ -102,7 +129,7 @@ async function applySkillAction(
   action: BulkAction,
   updates: UpdateCheck | undefined,
   bots: Bot[],
-  messages: string[],
+  messages: BulkMessage[],
 ) {
   if (action === "delete") {
     const path = skill.botId
@@ -117,7 +144,11 @@ async function applySkillAction(
   if (updates) {
     const skipped = await updateSkill(skill, updates);
 
-    if (skipped) messages.push(`Skipped ${skillLabel(skill)}: ${skipped}.`);
+    if (skipped)
+      messages.push({
+        id: `skipped:${skill.id}`,
+        text: `Skipped ${skillLabel(skill)}: ${skipped}.`,
+      });
 
     return false;
   }
@@ -132,7 +163,7 @@ export async function applyBulkAction(
   bots: Bot[],
 ) {
   const failed = new Set<string>();
-  const messages: string[] = [];
+  const messages: BulkMessage[] = [];
   const updates = action === "update" ? await checkUpdates() : undefined;
 
   for (const skill of picked) {
@@ -141,15 +172,17 @@ export async function applyBulkAction(
         failed.add(skill.id);
     } catch (error) {
       failed.add(skill.id);
-      messages.push(
-        `Failed ${skillLabel(skill)}: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      messages.push({
+        id: `failed:${skill.id}`,
+        text: `Failed ${skillLabel(skill)}: ${error instanceof Error ? error.message : String(error)}`,
+      });
     }
   }
 
-  messages.unshift(
-    `${picked.length - failed.size} of ${picked.length} skills processed${failed.size ? `; ${failed.size} failed and remain selected` : ""}.`,
-  );
+  messages.unshift({
+    id: "summary",
+    text: `${picked.length - failed.size} of ${picked.length} skills processed${failed.size ? `; ${failed.size} failed and remain selected` : ""}.`,
+  });
 
   return { failed, messages };
 }
