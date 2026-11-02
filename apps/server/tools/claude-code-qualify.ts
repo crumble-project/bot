@@ -2,7 +2,7 @@
 // API key and no inference or account credentials. Ported from Hermes' evals/directsdk_admission.py and
 // evals/directsdk_cache_wire.py (MIT, see THIRD_PARTY_NOTICES.md). Run locally, not in CI:
 //   bun tools/claude-code-qualify.ts /absolute/path/to/claude
-// A version that passes may be added to QUALIFIED_VERSIONS in src/claude-code/setup.ts.
+// Crumble accepts every version; run this to check a new one before relying on it.
 import {
   normalizeContext,
   Type,

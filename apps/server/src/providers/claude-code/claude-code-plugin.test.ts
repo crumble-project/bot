@@ -132,14 +132,14 @@ describe("Claude Code status", () => {
     });
   });
 
-  test("refuses an unqualified version", async () => {
+  test("accepts any installed version", async () => {
     const options = claudeCodeOptions(
       dataDir({ FAKE_VERSION: "2.1.200" }),
       env(),
     );
 
     expect(await claudeCodeStatus(options)).toMatchObject({
-      status: "unsupported_version",
+      status: "signed_in",
       cliVersion: "2.1.200",
     });
   });

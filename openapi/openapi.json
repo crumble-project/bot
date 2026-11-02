@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Crumble API",
-    "version": "4.0.0",
+    "version": "5.0.0",
     "description": "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime."
   },
   "components": {
@@ -3416,7 +3416,6 @@
               "signed_in",
               "signed_out",
               "cli_missing",
-              "unsupported_version",
               "error"
             ]
           },
@@ -3425,12 +3424,6 @@
               "string",
               "null"
             ]
-          },
-          "qualifiedVersions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           },
           "signInCommand": {
             "type": [
@@ -3454,7 +3447,6 @@
         "required": [
           "status",
           "cliVersion",
-          "qualifiedVersions",
           "signInCommand",
           "signOutCommand",
           "message"

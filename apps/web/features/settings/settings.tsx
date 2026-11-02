@@ -517,7 +517,6 @@ const EXTERNAL_STATUS = {
   signed_in: "Signed in",
   signed_out: "Not signed in",
   cli_missing: "Not installed",
-  unsupported_version: "Unsupported version",
   error: "Unavailable",
 } as const;
 
@@ -763,12 +762,6 @@ function ExternalSignIn({
   return (
     <div className="flex flex-col gap-2 text-sm text-muted-foreground">
       {external.message && <p>{external.message}</p>}
-      {external.status === "unsupported_version" && (
-        <p>
-          Installed {external.cliVersion ?? "unknown"}; supported{" "}
-          {external.qualifiedVersions.join(", ")}.
-        </p>
-      )}
       {command && external.status !== "cli_missing" && (
         <div className="flex flex-col gap-1">
           <span>

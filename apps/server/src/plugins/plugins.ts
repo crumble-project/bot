@@ -15,14 +15,8 @@ import type {
 
 /** How a provider that signs in outside Crumble stands, shown to the owner instead of sign-in methods. */
 export type ExternalAuth = {
-  status:
-    | "signed_in"
-    | "signed_out"
-    | "cli_missing"
-    | "unsupported_version"
-    | "error";
+  status: "signed_in" | "signed_out" | "cli_missing" | "error";
   cliVersion: string | null;
-  qualifiedVersions: string[];
   signInCommand: string | null;
   signOutCommand: string | null;
   message: string | null;

@@ -61,8 +61,7 @@ total.
 
 Claude Code lets your bots use a Claude Pro or Max subscription. It runs the
 official `claude` command-line tool on the server, so you sign in from the
-server's terminal, not from the browser. Crumble is tested against `claude`
-version `2.1.309`.
+server's terminal, not from the browser. Any version of `claude` works.
 
 1. Find **Claude Code** in the provider list.
 2. Copy the sign-in command it shows and run it on the server.
@@ -81,7 +80,7 @@ The container doesn't ship with `claude`. Install it onto the persistent volume
 once:
 
 ```bash
-docker compose exec crumble sh -c 'mkdir -p /var/lib/crumble/claude-code && cd /var/lib/crumble/claude-code && echo "{\"trustedDependencies\":[\"@anthropic-ai/claude-code\"]}" > package.json && bun add @anthropic-ai/claude-code@2.1.309'
+docker compose exec crumble sh -c 'mkdir -p /var/lib/crumble/claude-code && cd /var/lib/crumble/claude-code && echo "{\"trustedDependencies\":[\"@anthropic-ai/claude-code\"]}" > package.json && bun add @anthropic-ai/claude-code'
 ```
 
 Then run the sign-in command inside the container:
