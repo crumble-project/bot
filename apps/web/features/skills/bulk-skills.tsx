@@ -9,10 +9,12 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog } from "@/components/ui/alert-dialog";
+import { IconX } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { EditorSheet } from "@/components/form-fields";
 import { ConfirmDeleteContent } from "@/components/workspace";
 import { type Bot } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { BotPills, toggled } from "./bot-pills";
 import { invalidateSkills } from "./skill-cache";
 import {
@@ -31,39 +33,66 @@ type Selection = {
 
 const SelectionContext = createContext<Selection | null>(null);
 
+/** Where a checkbox shows: a row's appears on hover, keyboard focus, touch screens, or while anything is selected. */
+const SHOWN = {
+  row: "opacity-0 group-hover/row:opacity-100 group-data-selecting/skills:opacity-100 focus-visible:opacity-100 checked:opacity-100 [@media(hover:none)]:opacity-100",
+  section:
+    "opacity-0 group-hover/section:opacity-100 group-data-selecting/skills:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100",
+  all: "",
+};
+
 /** Native checkboxes keep keyboard interaction and mixed section selection accessible. */
-export function SelectSkills({ ids, label }: { ids: string[]; label: string }) {
+export function SelectSkills({
+  ids,
+  label,
+  place = "row",
+}: {
+  ids: string[];
+  label: string;
+  place?: keyof typeof SHOWN;
+}) {
   const selection = useContext(SelectionContext);
 
   if (!selection || !ids.length) return null;
   const count = ids.filter((id) => selection.selected.has(id)).length;
 
+  const box = (
+    <input
+      type="checkbox"
+      className={cn("checkbox", place === "row" && SHOWN.row)}
+      aria-label={label}
+      aria-checked={
+        count && count < ids.length ? "mixed" : count === ids.length
+      }
+      ref={(node) => {
+        if (node) node.indeterminate = count > 0 && count < ids.length;
+      }}
+      checked={count === ids.length}
+      disabled={selection.busy}
+      onChange={(event) => selection.change(ids, event.target.checked)}
+    />
+  );
+
+  if (place === "row") return box;
+
   return (
-    <label className="flex shrink-0 items-center gap-2 text-xs">
-      <input
-        type="checkbox"
-        className="size-4 accent-primary"
-        aria-label={label}
-        aria-checked={
-          count && count < ids.length ? "mixed" : count === ids.length
-        }
-        ref={(node) => {
-          if (node) node.indeterminate = count > 0 && count < ids.length;
-        }}
-        checked={count === ids.length}
-        disabled={selection.busy}
-        onChange={(event) => selection.change(ids, event.target.checked)}
-      />
-      {ids.length > 1 || label.startsWith("Select all") ? label : null}
+    <label
+      className={cn(
+        "flex shrink-0 cursor-pointer items-center gap-2 text-xs text-muted-foreground transition-opacity hover:text-foreground",
+        SHOWN[place],
+      )}
+    >
+      {box}
+      Select all
     </label>
   );
 }
 
 const ACTIONS: { action: BulkAction; label: string }[] = [
-  { action: "delete", label: "Delete" },
   { action: "update", label: "Update" },
   { action: "assign", label: "Assign to bots" },
   { action: "remove", label: "Remove from bots" },
+  { action: "delete", label: "Delete" },
 ];
 
 function BulkActionBar({
@@ -91,33 +120,98 @@ function BulkActionBar({
 
   return (
     <div
-      className="flex flex-col gap-2 rounded-xl border p-3"
+      className="sticky bottom-4 z-10 mx-auto flex max-w-full animate-in flex-col gap-1.5 rounded-[22px] border bg-popover/95 p-1.5 text-popover-foreground shadow-lg backdrop-blur duration-200 fade-in slide-in-from-bottom-2"
       aria-label="Selected skills"
     >
-      <p className="text-sm">{picked.length} selected</p>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="rounded-full"
+          title="Clear selection"
+          disabled={busy}
+          onClick={onClear}
+        >
+          <IconX />
+        </Button>
+        <p className="pr-2 text-sm font-medium tabular-nums">
+          {picked.length} selected
+        </p>
         {ACTIONS.map(({ action, label }) => (
           <Button
             key={action}
-            variant={action === "delete" ? "destructive" : "outline"}
+            size="sm"
+            variant="ghost"
+            className={cn(
+              "rounded-full",
+              action === "delete" &&
+                "text-destructive hover:bg-destructive/10 hover:text-destructive",
+            )}
             disabled={busy || disabled.has(action)}
             onClick={() => onAction(action)}
           >
             {label}
           </Button>
         ))}
-        <Button variant="ghost" disabled={busy} onClick={onClear}>
-          Clear selection
-        </Button>
       </div>
       {notInstalled.length > 0 && (
-        <p className="text-xs text-muted-foreground">
+        <p className="px-3 pb-1 text-xs text-muted-foreground">
           Update skips skills not installed from GitHub:{" "}
           {notInstalled.map(skillLabel).join(", ")}.
         </p>
       )}
-      {busy && <p role="status">Applying action…</p>}
+      {busy && (
+        <p role="status" className="px-3 pb-1 text-xs text-muted-foreground">
+          Applying action…
+        </p>
+      )}
     </div>
+  );
+}
+
+/** Picks the bots that the selected skills are assigned to or removed from. */
+function BotTargetsSheet({
+  action,
+  bots,
+  picked,
+  targets,
+  busy,
+  onTargets,
+  onSubmit,
+  onClose,
+}: {
+  action: "assign" | "remove";
+  bots: Bot[];
+  picked: SelectableSkill[];
+  targets: Set<string>;
+  busy: boolean;
+  onTargets: (targets: Set<string>) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  const assign = action === "assign";
+
+  return (
+    <EditorSheet
+      title={assign ? "Assign to bots" : "Remove from bots"}
+      submitLabel={assign ? "Assign" : "Remove"}
+      submitDisabled={!targets.size || busy}
+      onSubmit={onSubmit}
+      onClose={onClose}
+    >
+      <p className="text-sm">
+        {assign
+          ? "Shared skills are enabled. Bot-specific skills are copied; existing linked copies and their edits are kept."
+          : "Shared skills are disabled. Only linked bot-specific copies are deleted, including edited copies; same-name skills and the original are kept."}
+      </p>
+      <p className="text-sm">{picked.map(skillLabel).join(", ")}</p>
+      <BotPills
+        label="Choose bots"
+        bots={bots}
+        isOn={(bot) => targets.has(bot.id)}
+        onToggle={(bot, on) => onTargets(toggled(targets, bot.id, on))}
+      />
+    </EditorSheet>
   );
 }
 
@@ -179,8 +273,30 @@ export function BulkSkills({
 
   return (
     <SelectionContext value={selection}>
-      <div className="flex flex-col gap-3">
-        <SelectSkills ids={visibleIds} label="Select all results" />
+      {report.length > 0 && (
+        <Alert>
+          <AlertDescription>
+            <ul aria-label="Bulk action results">
+              {report.map((line) => (
+                <li key={line.id}>{line.text}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+      <div
+        data-selecting={picked.length > 0 || undefined}
+        className="group/skills flex flex-col gap-6"
+      >
+        {/* Lines up with the rows' checkboxes, like a column header. */}
+        <div className="-mb-3 px-3.25">
+          <SelectSkills
+            ids={visibleIds}
+            label="Select all results"
+            place="all"
+          />
+        </div>
+        {children}
         {picked.length > 0 && (
           <BulkActionBar
             picked={picked}
@@ -196,19 +312,7 @@ export function BulkSkills({
             }}
           />
         )}
-        {report.length > 0 && (
-          <Alert>
-            <AlertDescription>
-              <ul aria-label="Bulk action results">
-                {report.map((line) => (
-                  <li key={line.id}>{line.text}</li>
-                ))}
-              </ul>
-            </AlertDescription>
-          </Alert>
-        )}
       </div>
-      {children}
       <AlertDialog
         open={dialog === "delete"}
         onOpenChange={(open) => {
@@ -222,26 +326,16 @@ export function BulkSkills({
         />
       </AlertDialog>
       {(dialog === "assign" || dialog === "remove") && (
-        <EditorSheet
-          title={dialog === "assign" ? "Assign to bots" : "Remove from bots"}
-          submitLabel={dialog === "assign" ? "Assign" : "Remove"}
-          submitDisabled={!targets.size || bulk.isPending}
+        <BotTargetsSheet
+          action={dialog}
+          bots={bots}
+          picked={picked}
+          targets={targets}
+          busy={bulk.isPending}
+          onTargets={setTargets}
           onSubmit={() => run(dialog)}
           onClose={() => setDialog(null)}
-        >
-          <p className="text-sm">
-            {dialog === "assign"
-              ? "Shared skills are enabled. Bot-specific skills are copied; existing linked copies and their edits are kept."
-              : "Shared skills are disabled. Only linked bot-specific copies are deleted, including edited copies; same-name skills and the original are kept."}
-          </p>
-          <p className="text-sm">{picked.map(skillLabel).join(", ")}</p>
-          <BotPills
-            label="Choose bots"
-            bots={bots}
-            isOn={(bot) => targets.has(bot.id)}
-            onToggle={(bot, on) => setTargets(toggled(targets, bot.id, on))}
-          />
-        </EditorSheet>
+        />
       )}
     </SelectionContext>
   );

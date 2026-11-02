@@ -278,7 +278,7 @@ export function Section({
   children: ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-2">
+    <section className="group/section flex flex-col gap-2">
       <div className="flex min-h-8 items-end justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-0.5">
           <h2 className="flex items-center gap-2 text-sm font-medium">

@@ -52,12 +52,15 @@ bot, open the skill and select the bot under **Used by**.
 
 ### Acting on Several Skills
 
-Use the checkboxes on the **Skills** page to select shared skills and bots' own
-skills across sections. **Select all results** selects only the current filter
-and search results; each section also has its own select-all checkbox. Changing
-the filter keeps your selection. Default skills cannot be selected.
+On the **Skills** page, hover over a skill and select its checkbox. Once one
+skill is selected, every checkbox shows, so you can select shared skills and
+bots' own skills across sections. **Select all** at the top selects only the
+current filter and search results; each section's **Select all** selects that
+section. Changing the filter keeps your selection. Default skills cannot be
+selected.
 
-The action bar shows how many skills are selected:
+A bar at the bottom of the page shows how many skills are selected and what you
+can do with them:
 
 - **Delete** asks once and lists every selected skill. Deleting a source skill
   keeps any bot-specific copies already made from it.
