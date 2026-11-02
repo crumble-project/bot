@@ -3,17 +3,14 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Context, Effect, Exit, Layer, Redacted, Scope } from "effect";
+import { Context, Effect, Exit, Layer, Scope } from "effect";
 import {
-  FAKE_TOKEN,
+  connectFakePasswordManager,
   fakePasswordManager,
   fakeVendor,
   type FakePasswordManager,
 } from "../../test/support/fake-password-manager";
-import { PasswordManagers } from "../password-managers/password-manager";
-import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
-import { SecretValues } from "../password-managers/secret-values";
-import { Secrets } from "../password-managers/secrets";
+import { secretsLayer } from "../password-managers/secrets";
 import { productLayer } from "../app/product-layer";
 import { ProviderCredentialRepository } from "./provider-credential-repository";
 import { ProviderCredentials } from "./provider-credentials";
@@ -39,23 +36,14 @@ const setup = (state: FakePasswordManager) => {
   const context = Effect.runSync(
     Layer.buildWithScope(
       ProviderCredentials.layer.pipe(
-        Layer.provideMerge(
-          Secrets.layer.pipe(
-            Layer.provideMerge(SecretValues.layer),
-            Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
-          ),
-        ),
+        Layer.provideMerge(secretsLayer([fakeVendor(state)])),
         Layer.provideMerge(productLayer(dir)),
       ),
       scope,
     ),
   );
 
-  Effect.runSync(
-    PasswordManagerRepository.use((repository) =>
-      repository.save("1password", Redacted.make(FAKE_TOKEN), "t"),
-    ).pipe(Effect.provide(context)),
-  );
+  Effect.runSync(connectFakePasswordManager.pipe(Effect.provide(context)));
 
   const db = new Database(join(dir, "store.sqlite"));
   db.run("PRAGMA foreign_keys = ON");
@@ -149,11 +137,7 @@ test("an API key saved inside its credential moves to its secret on startup", as
 
   const product = Effect.runSync(
     Layer.buildWithScope(
-      Secrets.layer.pipe(
-        Layer.provideMerge(SecretValues.layer),
-        Layer.provideMerge(PasswordManagers.layer([])),
-        Layer.provideMerge(productLayer(dir)),
-      ),
+      secretsLayer([]).pipe(Layer.provideMerge(productLayer(dir))),
       scope,
     ),
   );

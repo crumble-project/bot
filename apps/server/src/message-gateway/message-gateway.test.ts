@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect, Fiber, Layer, ManagedRuntime, Redacted } from "effect";
+import { Effect, Fiber, Layer, ManagedRuntime } from "effect";
 import { TestClock } from "effect/testing";
 import { productLayer } from "../app/product-layer";
 import { handleApiError } from "../app/api";
@@ -13,12 +13,9 @@ import { ExecutionRepository } from "../bots/execution-repository";
 import { BotRuntime, type AgentRuntime } from "../bots/runtime";
 import { SettingsRepository } from "../shared/settings-repository";
 import { SecretRepository } from "../credentials/secret-repository";
-import { PasswordManagers } from "../password-managers/password-manager";
-import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
-import { SecretValues } from "../password-managers/secret-values";
-import { Secrets } from "../password-managers/secrets";
+import { secretsLayer } from "../password-managers/secrets";
 import {
-  FAKE_TOKEN,
+  connectFakePasswordManager,
   fakePasswordManager,
   fakeVendor,
 } from "../../test/support/fake-password-manager";
@@ -210,12 +207,7 @@ async function fixture(
       }),
     ),
   ).pipe(
-    Layer.provideMerge(
-      Secrets.layer.pipe(
-        Layer.provideMerge(SecretValues.layer),
-        Layer.provideMerge(PasswordManagers.layer([fakeVendor(vault)])),
-      ),
-    ),
+    Layer.provideMerge(secretsLayer([fakeVendor(vault)])),
     Layer.provideMerge(productLayer(folder)),
   );
 
@@ -290,9 +282,7 @@ async function fixture(
   const tokenReference = (reference: string) =>
     runtime.runPromise(
       Effect.gen(function* () {
-        yield* PasswordManagerRepository.use((repository) =>
-          repository.save("1password", Redacted.make(FAKE_TOKEN), "t"),
-        );
+        yield* connectFakePasswordManager;
         yield* SecretRepository.use((secrets) =>
           secrets.setReference(adapter.secretKey, {
             passwordManager: "1password",

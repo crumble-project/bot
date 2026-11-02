@@ -2,7 +2,10 @@ import { Context, Effect, Layer, Redacted } from "effect";
 import { SecretRepository } from "../credentials/secret-repository";
 import type { SecretInput, SecretStatus } from "../shared/domain";
 import { InvalidInput } from "../shared/errors";
-import { PasswordManagers } from "./password-manager";
+import {
+  PasswordManagers,
+  type PasswordManagerVendor,
+} from "./password-manager";
 import {
   SecretValues,
   type SecretSource,
@@ -197,3 +200,10 @@ export class Secrets extends Context.Service<
 /** Reads a secret as text, for plugins and adapters that take a plain string; undefined when there is none. */
 export const secretText = (secrets: Secrets["Service"]) => (key: string) =>
   secrets.read(key).pipe(Effect.map((value) => value && Redacted.value(value)));
+
+/** `Secrets` with what it reads through: `SecretValues` and the password managers `vendors` offer. */
+export const secretsLayer = (vendors: ReadonlyArray<PasswordManagerVendor>) =>
+  Secrets.layer.pipe(
+    Layer.provideMerge(SecretValues.layer),
+    Layer.provideMerge(PasswordManagers.layer(vendors)),
+  );

@@ -17,17 +17,15 @@ import type { McpIntegrations } from "../integrations/integrations";
 import { secretStorage } from "../integrations/mcp-oauth";
 import { registerPluginSettingRoutes } from "../plugins/plugin-settings-api";
 import { memoryResponse } from "../contract/api-responses";
-import { Context, Effect, Exit, Layer, Redacted, Scope } from "effect";
+import { Context, Effect, Exit, Layer, Scope } from "effect";
 import {
-  FAKE_TOKEN,
+  connectFakePasswordManager,
   fakePasswordManager,
   fakeVendor,
   type FakePasswordManager,
 } from "../../test/support/fake-password-manager";
-import { PasswordManagers } from "../password-managers/password-manager";
-import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
 import { SecretValues } from "../password-managers/secret-values";
-import { Secrets } from "../password-managers/secrets";
+import { secretsLayer } from "../password-managers/secrets";
 import { standaloneSignIns } from "../providers/provider-auth";
 import { ProviderCredentials } from "../providers/provider-credentials";
 import type { CoreServices } from "./core-layer";
@@ -1778,23 +1776,14 @@ describe("provider API keys from a password manager", () => {
     const vault = Effect.runSync(
       Layer.buildWithScope(
         ProviderCredentials.layer.pipe(
-          Layer.provideMerge(
-            Secrets.layer.pipe(
-              Layer.provideMerge(SecretValues.layer),
-              Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
-            ),
-          ),
+          Layer.provideMerge(secretsLayer([fakeVendor(state)])),
           Layer.provide(Layer.succeedContext(core)),
         ),
         scope,
       ),
     );
 
-    store.run(
-      PasswordManagerRepository.use((repository) =>
-        repository.save("1password", Redacted.make(FAKE_TOKEN), "t"),
-      ),
-    );
+    store.run(connectFakePasswordManager);
 
     const providerAuth = standaloneSignIns(
       runnerOf(Context.merge(core, vault)),
@@ -1901,20 +1890,14 @@ describe("MCP server tokens from a password manager", () => {
 
     const vault = Effect.runSync(
       Layer.buildWithScope(
-        Secrets.layer.pipe(
-          Layer.provideMerge(SecretValues.layer),
-          Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
+        secretsLayer([fakeVendor(state)]).pipe(
           Layer.provide(Layer.succeedContext(core)),
         ),
         scope,
       ),
     );
 
-    store.run(
-      PasswordManagerRepository.use((repository) =>
-        repository.save("1password", Redacted.make(FAKE_TOKEN), "t"),
-      ),
-    );
+    store.run(connectFakePasswordManager);
 
     const run = runnerOf(Context.merge(core, vault));
     const disconnected: string[] = [];

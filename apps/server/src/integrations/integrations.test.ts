@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
-import { Context, Effect, Exit, Layer, Redacted, Scope } from "effect";
+import { Context, Effect, Exit, Layer, Scope } from "effect";
 import {
   BACKGROUND_CONTEXT,
   withAbortSignal,
@@ -14,16 +14,14 @@ import {
 } from "./integrations";
 import { Store } from "../../test/support/store";
 import {
-  FAKE_TOKEN,
+  connectFakePasswordManager,
   fakePasswordManager,
   fakeVendor,
 } from "../../test/support/fake-password-manager";
 import type { CoreServices } from "../app/core-layer";
 import { runnerOf } from "../shared/runner";
-import { PasswordManagers } from "../password-managers/password-manager";
-import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
 import { SecretValues } from "../password-managers/secret-values";
-import { Secrets } from "../password-managers/secrets";
+import { secretsLayer } from "../password-managers/secrets";
 import { SecretRepository } from "../credentials/secret-repository";
 import type { McpTransport } from "@earendil-works/pi-mcp";
 
@@ -67,20 +65,14 @@ function withVaultToken(
 
   const vault = Effect.runSync(
     Layer.buildWithScope(
-      Secrets.layer.pipe(
-        Layer.provideMerge(SecretValues.layer),
-        Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
+      secretsLayer([fakeVendor(state)]).pipe(
         Layer.provide(Layer.succeedContext(core)),
       ),
       scope,
     ),
   );
 
-  store.run(
-    PasswordManagerRepository.use((r) =>
-      r.save("1password", Redacted.make(FAKE_TOKEN), "t"),
-    ),
-  );
+  store.run(connectFakePasswordManager);
 
   const db = new Database(join(dir, "store.sqlite"));
   db.run(

@@ -4,14 +4,12 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Context, Effect, Exit, Layer, Option, Redacted, Scope } from "effect";
 import type { CoreServices } from "../app/core-layer";
-import { PasswordManagers } from "../password-managers/password-manager";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
-import { SecretValues } from "../password-managers/secret-values";
-import { Secrets } from "../password-managers/secrets";
+import { secretsLayer } from "../password-managers/secrets";
 import { agentInput, loginSaveInput } from "../shared/domain";
 import { runnerOf } from "../shared/runner";
 import {
-  FAKE_TOKEN,
+  connectFakePasswordManager,
   fakePasswordManager,
   fakeVendor,
   type FakePasswordManager,
@@ -43,23 +41,14 @@ function open(values: Record<string, string> = {}) {
   const context = Effect.runSync(
     Layer.buildWithScope(
       Logins.layer.pipe(
-        Layer.provideMerge(
-          Secrets.layer.pipe(
-            Layer.provideMerge(SecretValues.layer),
-            Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
-          ),
-        ),
+        Layer.provideMerge(secretsLayer([fakeVendor(state)])),
         Layer.provide(Layer.succeedContext(core)),
       ),
       scope,
     ),
   );
 
-  store.run(
-    PasswordManagerRepository.use((repository) =>
-      repository.save("1password", Redacted.make(FAKE_TOKEN), "t"),
-    ),
-  );
+  store.run(connectFakePasswordManager);
 
   const run = runnerOf(Context.merge(core, context));
   const logins = Context.get(context, Logins);

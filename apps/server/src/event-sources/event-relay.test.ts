@@ -8,9 +8,7 @@ import { TestClock } from "effect/testing";
 import { productLayer } from "../app/product-layer";
 import { AgentRepository } from "../bots/agent-repository";
 import { SecretRepository } from "../credentials/secret-repository";
-import { PasswordManagers } from "../password-managers/password-manager";
-import { SecretValues } from "../password-managers/secret-values";
-import { Secrets } from "../password-managers/secrets";
+import { secretsLayer } from "../password-managers/secrets";
 import { ScheduleRepository } from "../schedules/schedule-repository";
 import { agentInput, scheduleInput } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
@@ -134,12 +132,7 @@ async function fixture() {
   const runtime = ManagedRuntime.make(
     EventSources.layer.pipe(
       Layer.provideMerge(EventRelay.layer),
-      Layer.provideMerge(
-        Secrets.layer.pipe(
-          Layer.provideMerge(SecretValues.layer),
-          Layer.provideMerge(PasswordManagers.layer([])),
-        ),
-      ),
+      Layer.provideMerge(secretsLayer([])),
       Layer.provideMerge(productLayer(folder)),
       Layer.provideMerge(TestClock.layer()),
     ),

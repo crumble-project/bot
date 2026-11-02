@@ -16,15 +16,12 @@ import {
 import { agentInput } from "../shared/domain";
 import type { CoreServices } from "../app/core-layer";
 import { runnerOf } from "../shared/runner";
-import {
-  PasswordManagers,
-  type PasswordManagerVendor,
-} from "../password-managers/password-manager";
+import { type PasswordManagerVendor } from "../password-managers/password-manager";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
 import { SecretValues } from "../password-managers/secret-values";
-import { Secrets } from "../password-managers/secrets";
+import { secretsLayer } from "../password-managers/secrets";
 import {
-  FAKE_TOKEN,
+  connectFakePasswordManager,
   fakePasswordManager,
   fakeVendor,
   type FakePasswordManager,
@@ -149,23 +146,14 @@ function withPasswordManager(
   const context = Effect.runSync(
     Layer.buildWithScope(
       Credentials.layer.pipe(
-        Layer.provideMerge(
-          Secrets.layer.pipe(
-            Layer.provideMerge(SecretValues.layer),
-            Layer.provideMerge(PasswordManagers.layer([vendor])),
-          ),
-        ),
+        Layer.provideMerge(secretsLayer([vendor])),
         Layer.provide(Layer.succeedContext(core)),
       ),
       scope,
     ),
   );
 
-  store.run(
-    PasswordManagerRepository.use((repository) =>
-      repository.save("1password", Redacted.make(FAKE_TOKEN), "t"),
-    ),
-  );
+  store.run(connectFakePasswordManager);
 
   const run = runnerOf(Context.merge(core, context));
 

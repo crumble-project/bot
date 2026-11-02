@@ -16,10 +16,9 @@ import { contractApp } from "../contract/api-contract";
 import { passwordManagersResponse } from "../contract/api-responses";
 import type { CoreServices } from "../app/core-layer";
 import { runnerOf } from "../shared/runner";
-import { PasswordManagers } from "./password-manager";
 import { registerPasswordManagerRoutes } from "./password-managers-api";
 import { SecretValues } from "./secret-values";
-import { Secrets } from "../password-managers/secrets";
+import { secretsLayer } from "../password-managers/secrets";
 
 const REFERENCE = "op://Vault/Linear/token";
 const cleanups: Array<() => void> = [];
@@ -43,9 +42,7 @@ const setup = (state: FakePasswordManager) => {
 
   const vault = Effect.runSync(
     Layer.buildWithScope(
-      Secrets.layer.pipe(
-        Layer.provideMerge(SecretValues.layer),
-        Layer.provideMerge(PasswordManagers.layer([fakeVendor(state)])),
+      secretsLayer([fakeVendor(state)]).pipe(
         Layer.provide(Layer.succeedContext(core)),
       ),
       scope,
