@@ -11,8 +11,8 @@ import { Conflict, InvalidInput, NotFound } from "../shared/errors";
 import { GitHubUnavailable, github, pendingState } from "./github-api";
 import { githubAppUsers, githubApps } from "./schema";
 
-/** Where GitHub sends the owner back after signing in through an App; each App lists it as a callback URL. */
-export const authorizedPath = "/ui/github-app/authorized";
+/** Where GitHub sends the owner back after signing in through an App; each App lists it as its callback URL. */
+export const authorizedPath = "/github-app/authorized";
 
 /** A token is refreshed once less than this is left of its eight hours. */
 const TOKEN_MARGIN_MS = 5 * 60 * 1000;
@@ -29,7 +29,6 @@ export const githubAppClientSecretKey = (appId: string) =>
 const signInState = z.object({
   appId: z.string(),
   verifier: z.string(),
-  redirectUri: z.string(),
   createdAt: z.number(),
 });
 
@@ -86,10 +85,9 @@ export class GitHubAppUsers extends Context.Service<
   GitHubAppUsers,
   {
     readonly of: (appId: string) => Effect.Effect<GitHubAppUser | undefined>;
-    /** GitHub's sign-in page for the App; it sends the owner back to `{origin}/ui/github-app/authorized`. */
+    /** GitHub's sign-in page for the App; it sends the owner back to the App's callback URL. */
     readonly authorize: (
       appId: string,
-      origin: string,
     ) => Effect.Effect<string, NotFound | Conflict>;
     /** Exchanges the code GitHub sent the owner back with, and returns the App's ID. */
     readonly complete: (input: {
@@ -181,7 +179,6 @@ export class GitHubAppUsers extends Context.Service<
 
       const authorize = Effect.fn("GitHubAppUsers.authorize")(function* (
         appId: string,
-        origin: string,
       ) {
         const found = yield* app(appId);
 
@@ -198,21 +195,18 @@ export class GitHubAppUsers extends Context.Service<
 
         const state = randomBytes(24).toString("hex");
         const verifier = randomBytes(32).toString("base64url");
-        const redirectUri = `${origin}${authorizedPath}`;
-
         yield* secrets.set(
           stateKey(state),
           JSON.stringify({
             appId,
             verifier,
-            redirectUri,
             createdAt: yield* Clock.currentTimeMillis,
           }),
         );
 
         return `https://github.com/login/oauth/authorize?${new URLSearchParams({
+          // No redirect_uri: GitHub uses the App's callback URL, which older Apps registered under /ui/.
           client_id: found.clientId,
-          redirect_uri: redirectUri,
           state,
           code_challenge: createHash("sha256")
             .update(verifier)
@@ -254,7 +248,6 @@ export class GitHubAppUsers extends Context.Service<
           client_id: found.clientId,
           client_secret: Redacted.value(secret),
           code: input.code,
-          redirect_uri: pending.redirectUri,
           code_verifier: pending.verifier,
         });
 

@@ -282,7 +282,7 @@ export const routes = {
     path: "/v1/github-apps/manifest",
     operationId: "createGithubAppManifest",
     description:
-      "Starts creating a private GitHub App. The client posts `manifest` as a form field to `url`; GitHub then sends the owner to `{origin}/ui/github-app/callback` with a code and state.",
+      "Starts creating a private GitHub App. The client posts `manifest` as a form field to `url`; GitHub then sends the owner to `{origin}/github-app/callback` with a code and state.",
     request: { body: body(githubAppManifestInput) },
     responses: { 200: json(githubAppManifestResponse) },
   }),
@@ -327,7 +327,7 @@ export const routes = {
     path: "/v1/github-apps/{id}/sign-in",
     operationId: "signInGithubApp",
     description:
-      "Starts signing the owner in to GitHub through the App, so its bots act as the owner. The client opens `url`; GitHub sends the owner to `{origin}/ui/github-app/authorized` with a code and state. 409 without a client secret.",
+      "Starts signing the owner in to GitHub through the App, so its bots act as the owner. The client opens `url`; GitHub sends the owner to the App's callback URL, `{origin}/github-app/authorized`, or `{origin}/ui/github-app/authorized` for Apps created before the web UI moved to `/`, with a code and state. `origin` is no longer used. 409 without a client secret.",
     request: { params: id, body: body(githubAppSignInInput) },
     responses: { 200: json(githubAppSignInResponse) },
   }),

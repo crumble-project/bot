@@ -453,7 +453,7 @@ function Account() {
     onSettled: () => {
       clearLiveStreams();
       clearUserData();
-      window.location.assign("/ui/connect");
+      window.location.assign("/connect");
     },
   });
 

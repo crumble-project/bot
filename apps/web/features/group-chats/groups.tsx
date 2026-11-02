@@ -264,7 +264,7 @@ function SendError({ message }: { message: string | null | undefined }) {
   if (!message) return null;
 
   return (
-    <p className="mx-auto w-full max-w-3xl px-4 text-xs text-destructive">
+    <p className="mx-auto w-full max-w-4xl px-4 text-xs text-destructive">
       {message}
     </p>
   );

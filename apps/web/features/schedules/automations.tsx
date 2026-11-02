@@ -329,7 +329,7 @@ function AutomationsEmpty({
 /** The rounded, tinted frame both tables sit in. */
 function TableFrame({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-xl border bg-muted/30 px-2 py-1">
+    <div className="overflow-hidden rounded-xl surface px-2 py-1">
       <Table>{children}</Table>
     </div>
   );

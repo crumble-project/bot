@@ -41,7 +41,7 @@ const invite = new URLSearchParams(location.search).get("invite") ?? undefined;
 
 function enter() {
   clearUserData();
-  window.location.assign("/ui/");
+  window.location.assign("/");
 }
 
 /** Signs in with a passkey: from the button, or from the browser's autofill on the email field. */

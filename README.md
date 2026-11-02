@@ -13,7 +13,7 @@ bun install
 bun run dev
 ```
 
-Open `http://127.0.0.1:7337/ui` to create an account. For Docker, workspaces, environment variables, and backups, see [Install the Server](https://docs.crumbli.ng/getting-started/server) and [Configuration](https://docs.crumbli.ng/self-hosting/configuration).
+Open `http://127.0.0.1:7337` to create an account. For Docker, workspaces, environment variables, and backups, see [Install the Server](https://docs.crumbli.ng/getting-started/server) and [Configuration](https://docs.crumbli.ng/self-hosting/configuration).
 
 ## Develop
 

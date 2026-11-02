@@ -218,7 +218,7 @@ function notify(event: ReplyEvent, open: Open) {
 
   const notification = new Notification(noticeTitle(event), {
     body: plain(event.preview) || "Replied",
-    icon: "/ui/icon-192.png",
+    icon: "/icon-192.png",
     requireInteraction: kind !== "reply",
     silent: notifications.sound(),
     tag: event.groupId

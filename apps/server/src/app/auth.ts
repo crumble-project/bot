@@ -19,6 +19,7 @@ import { getMigrations } from "better-auth/db/migration";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { authUsers } from "./auth-schema";
+import { userPreferenceFields } from "../contract/user-preferences";
 import { INVITE_HEADER, invites, type Invites } from "./invites";
 import {
   serverSettingsStore,
@@ -122,6 +123,7 @@ export async function createAuth(dataDir: string, baseURL: string) {
     emailAndPassword: { enabled: true },
     session: { cookieCache: { enabled: false } },
     rateLimit: { enabled: true, storage: "database" },
+    user: { additionalFields: userPreferenceFields },
     databaseHooks: {
       user: {
         create: {

@@ -17,7 +17,7 @@ function testNotice(kind: NoticeKind, label: string) {
   if (notifications.permission() === "granted")
     new Notification(`Crumble · ${label}`, {
       body: "A test notification.",
-      icon: "/ui/icon-192.png",
+      icon: "/icon-192.png",
       requireInteraction: kind !== "reply",
       silent: notifications.sound(),
     });

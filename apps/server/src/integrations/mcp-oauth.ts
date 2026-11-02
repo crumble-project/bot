@@ -84,7 +84,7 @@ export function clientDocument(publicUrl: URL): ClientDocument {
 
   return {
     url: `${base}${CLIENT_DOCUMENT_PATH}`,
-    redirectUris: [`${base}/ui/oauth/callback`, ...NATIVE_REDIRECTS],
+    redirectUris: [`${base}/oauth/callback`, ...NATIVE_REDIRECTS],
   };
 }
 

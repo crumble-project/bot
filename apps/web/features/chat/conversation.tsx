@@ -70,7 +70,7 @@ export function ConversationLoading({
   notFound?: boolean;
 }) {
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-6">
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-6">
       {notFound ? (
         <p className="text-muted-foreground">Bot not found.</p>
       ) : (
@@ -88,7 +88,7 @@ export function ConversationScroller({ children }: { children: ReactNode }) {
     <MessageScrollerProvider autoScroll>
       <MessageScroller className="flex-1">
         <MessageScrollerViewport>
-          <MessageScrollerContent className="mx-auto w-full max-w-3xl justify-end gap-3 p-6">
+          <MessageScrollerContent className="mx-auto w-full max-w-4xl justify-end gap-3 p-6">
             {children}
           </MessageScrollerContent>
         </MessageScrollerViewport>

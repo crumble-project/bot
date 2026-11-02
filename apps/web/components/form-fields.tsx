@@ -93,7 +93,7 @@ export function EditorSection({
       {title && (
         <h3 className="text-sm font-medium text-muted-foreground">{title}</h3>
       )}
-      <FieldGroup className="gap-5 rounded-xl border bg-muted/30 p-4">
+      <FieldGroup className="gap-5 rounded-xl surface p-4">
         {children}
       </FieldGroup>
     </section>

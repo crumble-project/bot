@@ -11,8 +11,11 @@ import {
   IconActivity,
   IconBrain,
   IconCalendarRepeat,
+  IconDeviceDesktop,
+  IconMoon,
   IconPlus,
   IconSettings,
+  IconSun,
 } from "@tabler/icons-react";
 import {
   Sidebar,
@@ -33,7 +36,15 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { CrumbleMark } from "@/components/crumble-mark";
 import { cn } from "@/lib/utils";
 import {
   type Bot,
@@ -43,6 +54,13 @@ import {
   clearUserData,
 } from "@/lib/api";
 import { authClient } from "@/lib/auth-client";
+import {
+  THEME_COLOR,
+  isDark,
+  setTheme,
+  useAccountTheme,
+  useTheme,
+} from "@/lib/theme";
 import {
   clearLiveStreams,
   followActivity,
@@ -75,7 +93,7 @@ function useResetOnUserChange(userId: string | undefined) {
       clearLiveStreams();
       clearUserData();
 
-      if (!userId) window.location.assign("/ui/connect");
+      if (!userId) window.location.assign("/connect");
     }
 
     previousUserId.current = userId;
@@ -125,7 +143,7 @@ function useDocumentTitle(
 }
 
 /** The sidebar's background, as `--sidebar` in styles.css, per color scheme. */
-const SIDEBAR_THEME_COLOR = { light: "#f3f4f5", dark: "#040405" };
+const SIDEBAR_THEME_COLOR = { light: "#e4e6ea", dark: "#030304" };
 
 /**
  * Tints the browser chrome, which in an installed iPhone app is the status
@@ -133,6 +151,7 @@ const SIDEBAR_THEME_COLOR = { light: "#f3f4f5", dark: "#040405" };
  */
 function SidebarThemeColor() {
   const { isMobile, openMobile } = useSidebar();
+  const theme = useTheme();
   const tinted = isMobile && openMobile;
 
   useEffect(() => {
@@ -142,19 +161,16 @@ function SidebarThemeColor() {
       ...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]'),
     ];
 
-    const previous = metas.map((meta) => meta.content);
-
     for (const meta of metas)
-      meta.content = meta.media.includes("dark")
+      meta.content = isDark()
         ? SIDEBAR_THEME_COLOR.dark
         : SIDEBAR_THEME_COLOR.light;
 
     return () => {
-      metas.forEach((meta, index) => {
-        meta.content = previous[index] ?? meta.content;
-      });
+      for (const meta of metas)
+        meta.content = isDark() ? THEME_COLOR.dark : THEME_COLOR.light;
     };
-  }, [tinted]);
+  }, [tinted, theme]);
 
   return null;
 }
@@ -176,6 +192,7 @@ export function Shell() {
   useResetOnUserChange(session.data?.user.id);
   useFollowActivity();
   useDocumentTitle(bots.data, groups.data);
+  useAccountTheme();
   const needle = search.trim().toLowerCase();
 
   const shownBots = (bots.data ?? []).filter((bot) => matchesBot(bot, needle));
@@ -189,7 +206,8 @@ export function Shell() {
       <SidebarProvider>
         <Sidebar variant="inset">
           <SidebarHeader>
-            <span className="px-2 pt-1 pb-2 font-heading text-lg font-semibold tracking-tight">
+            <span className="flex items-center gap-2 px-2 pt-1 pb-2 font-heading text-lg font-semibold tracking-tight">
+              <CrumbleMark className="size-5" />
               Crumble
             </span>
             <SidebarSearch
@@ -224,7 +242,7 @@ export function Shell() {
           <SettingsFooter />
         </Sidebar>
         <SidebarThemeColor />
-        <SidebarInset className="group/inset h-dvh min-w-0 overflow-hidden pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:peer-data-[state=expanded]:pl-0 md:h-[calc(100dvh-1rem)] md:ring-1 md:ring-sidebar-border">
+        <SidebarInset className="group/inset h-dvh min-w-0 overflow-hidden pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:peer-data-[state=expanded]:pl-0 md:h-[calc(100dvh-1rem)] md:shadow-sm md:ring-1 md:ring-sidebar-border dark:md:shadow-none">
           <header className="flex h-12 shrink-0 items-center px-2 group-has-[[data-page-trigger]]/inset:hidden md:hidden">
             <SidebarTrigger className="size-9" />
           </header>
@@ -401,6 +419,7 @@ function SettingsFooter() {
   return (
     <SidebarFooter>
       <SidebarMenu>
+        <ThemeMenu />
         <SidebarMenuItem>
           <SidebarMenuButton
             isActive={Boolean(matchRoute({ to: "/settings", fuzzy: true }))}
@@ -413,6 +432,50 @@ function SettingsFooter() {
         </SidebarMenuItem>
       </SidebarMenu>
     </SidebarFooter>
+  );
+}
+
+const THEME_OPTIONS = [
+  { value: "system", label: "System", icon: IconDeviceDesktop },
+  { value: "light", label: "Light", icon: IconSun },
+  { value: "dark", label: "Dark", icon: IconMoon },
+] as const;
+
+function ThemeMenu() {
+  const theme = useTheme();
+
+  const current =
+    THEME_OPTIONS.find(({ value }) => value === theme) ?? THEME_OPTIONS[0];
+
+  return (
+    <SidebarMenuItem>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<SidebarMenuButton />}>
+          <current.icon />
+          Theme
+          <span className="ml-auto text-xs text-muted-foreground">
+            {current.label}
+          </span>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="top" align="start" className="min-w-40">
+          <DropdownMenuRadioGroup
+            value={theme}
+            onValueChange={(value) => {
+              const option = THEME_OPTIONS.find((item) => item.value === value);
+
+              if (option) void setTheme(option.value);
+            }}
+          >
+            {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
+              <DropdownMenuRadioItem key={value} value={value} closeOnClick>
+                <Icon />
+                {label}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </SidebarMenuItem>
   );
 }
 

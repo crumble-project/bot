@@ -1,8 +1,8 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
-import lockfile from "proper-lockfile";
-import { websocket } from "@hono/bun";
+import { type BunWebSocketData, websocket } from "@hono/bun";
 import { createAuth, trustedOriginsFor } from "./auth";
+import { DataDirLocked, lockDataDir } from "./data-lock";
 import { adminAPI } from "./admin-api";
 import { novncResponse, ticketOwner } from "../bot-desktop/desktop-viewer";
 import { createTenant } from "./tenant";
@@ -19,6 +19,12 @@ import { configureDevWorkspaces } from "./dev-workspaces";
 import { MASTER_KEY_VARIABLE } from "../shared/secret-box";
 
 const TENANT_PREFIXES = ["/v1/", "/desktop-viewer/", "/api/auth/"];
+
+const SERVER_PATHS = [
+  ...TENANT_PREFIXES.map((prefix) => `${prefix}*`),
+  "/health",
+  CLIENT_DOCUMENT_PATH,
+];
 
 /** The paths the host answers itself, before any account sees the request. */
 function hostedResponse(
@@ -61,10 +67,6 @@ function ticketOwnerOf(path: string) {
   return ticketOwner(
     /^\/desktop-viewer\/([^/]+)(?:\/websockify)?$/.exec(path)?.[1] ?? "",
   );
-}
-
-function lockRetries(waitMs = 35_000) {
-  return { retries: Math.ceil(waitMs / 1000), factor: 1, minTimeout: 1000 };
 }
 
 type Tenant = Awaited<ReturnType<typeof createTenant>>;
@@ -134,12 +136,7 @@ export async function startServer(options: ServerOptions = {}) {
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   chmodSync(dataDir, 0o700);
 
-  // A process killed without cleanup, as on a watch restart, leaves a fresh lock; outwait its staleness.
-  const release = await lockfile.lock(dataDir, {
-    stale: 30000,
-    update: 10000,
-    retries: lockRetries(options.lockWaitMs),
-  });
+  const release = await lockDataDir(dataDir, options.lockWaitMs);
 
   const tenants = new Map<string, Promise<Tenant>>();
 
@@ -265,48 +262,56 @@ export async function startServer(options: ServerOptions = {}) {
       ? clientDocument(publicOrigin(publicUrl))
       : undefined;
 
+    const handle = async (
+      request: Request,
+      bunServer: Bun.Server<BunWebSocketData>,
+    ) => {
+      await ready;
+      const path = new URL(request.url).pathname;
+      const hosted = hostedResponse(path, oauthClient);
+
+      if (hosted) return hosted;
+
+      if (!TENANT_PREFIXES.some((prefix) => path.startsWith(prefix)))
+        return new Response("Not found", { status: 404 });
+      const requestOrigin = request.headers.get("origin");
+
+      if (untrustedOrigin(request, requestOrigin, trustedOrigins))
+        return Response.json({ error: "Untrusted origin" }, { status: 403 });
+
+      // Admins act through /v1/admin/; the plugin's own routes would also let them impersonate users.
+      if (path.startsWith("/api/auth/admin/"))
+        return new Response("Not found", { status: 404 });
+
+      if (path.startsWith("/api/auth/")) return identity!.auth.handler(request);
+
+      const novnc = await novncResponse(path);
+
+      if (novnc) return novnc;
+
+      if (needsOriginForWrite(request, requestOrigin))
+        return Response.json(
+          { error: "Origin is required for cookie-authenticated writes" },
+          { status: 403 },
+        );
+
+      if (path.startsWith("/v1/admin/")) return adminResponse(request);
+
+      return accountResponse(request, bunServer, path);
+    };
+
     server = Bun.serve({
-      routes: webUIRoutes,
+      // The UI answers every other path, so the server's own paths are routes too, ahead of its wildcard.
+      routes: {
+        ...webUIRoutes,
+        ...Object.fromEntries(SERVER_PATHS.map((path) => [path, handle])),
+      },
       development: process.env.NODE_ENV !== "production" && { hmr: false },
       websocket,
       hostname,
       port,
       idleTimeout: 60,
-      async fetch(request, bunServer) {
-        await ready;
-        const path = new URL(request.url).pathname;
-        const hosted = hostedResponse(path, oauthClient);
-
-        if (hosted) return hosted;
-
-        if (!TENANT_PREFIXES.some((prefix) => path.startsWith(prefix)))
-          return new Response("Not found", { status: 404 });
-        const requestOrigin = request.headers.get("origin");
-
-        if (untrustedOrigin(request, requestOrigin, trustedOrigins))
-          return Response.json({ error: "Untrusted origin" }, { status: 403 });
-
-        // Admins act through /v1/admin/; the plugin's own routes would also let them impersonate users.
-        if (path.startsWith("/api/auth/admin/"))
-          return new Response("Not found", { status: 404 });
-
-        if (path.startsWith("/api/auth/"))
-          return identity!.auth.handler(request);
-
-        const novnc = await novncResponse(path);
-
-        if (novnc) return novnc;
-
-        if (needsOriginForWrite(request, requestOrigin))
-          return Response.json(
-            { error: "Origin is required for cookie-authenticated writes" },
-            { status: 403 },
-          );
-
-        if (path.startsWith("/v1/admin/")) return adminResponse(request);
-
-        return accountResponse(request, bunServer, path);
-      },
+      fetch: handle,
     });
     origin = new URL(
       publicUrl ?? process.env["BETTER_AUTH_URL"] ?? server.url.origin,
@@ -342,12 +347,24 @@ export async function startServer(options: ServerOptions = {}) {
   }
 }
 
+/** Ends the process with a one-line message when another server holds the data directory. */
+function exitIfLocked(error: Error): never {
+  if (error instanceof DataDirLocked) {
+    console.error(error.message);
+    process.exit(1);
+  }
+
+  throw error;
+}
+
 if (import.meta.main) {
   if (process.argv.includes("--dev-workspaces"))
     configureDevWorkspaces(process.env);
-  const running = await startServer();
+
+  const running = await startServer().catch(exitIfLocked);
+
   console.log(`Crumble server listening on ${running.server.url}`);
-  console.log("Open /ui to create an account or sign in.");
+  console.log("Open it to create an account or sign in.");
 
   if (!process.env[MASTER_KEY_VARIABLE])
     console.log(

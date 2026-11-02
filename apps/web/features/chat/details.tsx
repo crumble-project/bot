@@ -3,7 +3,11 @@ import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { IconPencil, IconX } from "@tabler/icons-react";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -62,11 +66,25 @@ function Automation({ schedule }: { schedule: Schedule }) {
   );
 }
 
-function ProfileSummary({ bot }: { bot: Bot }) {
+function ProfileSummary({ bot, onClose }: { bot: Bot; onClose: () => void }) {
   return (
-    <div className="flex flex-col items-center gap-2 text-center">
+    <div className="relative flex flex-col items-center gap-2 pt-6 text-center">
+      <div className="absolute -top-1 -right-1 flex gap-0.5">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          title="Edit bot"
+          render={<Link to="/bots/$botId/edit" params={{ botId: bot.id }} />}
+          nativeButton={false}
+        >
+          <IconPencil />
+        </Button>
+        <Button variant="ghost" size="icon-sm" title="Close" onClick={onClose}>
+          <IconX />
+        </Button>
+      </div>
       <LiveBotAvatar bot={bot} size={84} />
-      <span className="font-medium">{bot.name}</span>
+      <span className="font-heading text-lg font-semibold">{bot.name}</span>
       <span className="text-xs text-muted-foreground">
         {bot.description || (bot.enabled ? "Ready" : "Paused")}
       </span>
@@ -94,8 +112,7 @@ function AutomationList({
   );
 }
 
-/** The bot inspector beside its chat: profile, desktop, and automations. */
-export function DetailsPanel({ bot }: { bot: Bot }) {
+function DetailsBody({ bot, onClose }: { bot: Bot; onClose: () => void }) {
   const schedules = useQuery(schedulesQuery);
 
   const automations =
@@ -104,27 +121,58 @@ export function DetailsPanel({ bot }: { bot: Bot }) {
     ) ?? [];
 
   return (
+    <div className="flex flex-col gap-4 p-4">
+      <ProfileSummary bot={bot} onClose={onClose} />
+      {bot.tools.includes("desktop") && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-medium text-muted-foreground">Desktop</h2>
+          <DesktopPreview key={bot.id} botId={bot.id} />
+        </section>
+      )}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-muted-foreground">
+          Automations
+        </h2>
+        <AutomationList schedules={schedules} automations={automations} />
+      </section>
+    </div>
+  );
+}
+
+/** The bot inspector beside its chat on wide screens: profile, desktop, and automations. */
+export function DetailsPanel({
+  bot,
+  onClose,
+}: {
+  bot: Bot;
+  onClose: () => void;
+}) {
+  return (
     <ScrollArea
       render={<aside />}
       className="hidden w-72 shrink-0 border-l lg:block"
     >
-      <div className="flex flex-col gap-4 p-4">
-        <ProfileSummary bot={bot} />
-        {bot.tools.includes("desktop") && (
-          <section className="flex flex-col gap-3">
-            <h2 className="text-sm font-medium text-muted-foreground">
-              Desktop
-            </h2>
-            <DesktopPreview key={bot.id} botId={bot.id} />
-          </section>
-        )}
-        <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-medium text-muted-foreground">
-            Automations
-          </h2>
-          <AutomationList schedules={schedules} automations={automations} />
-        </section>
-      </div>
+      <DetailsBody bot={bot} onClose={onClose} />
     </ScrollArea>
+  );
+}
+
+/** The same inspector as a sheet, for screens too narrow for the side panel. */
+export function DetailsSheet({
+  bot,
+  open,
+  onOpenChange,
+}: {
+  bot: Bot;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent showCloseButton={false} className="overflow-y-auto">
+        <SheetTitle className="sr-only">{bot.name}</SheetTitle>
+        <DetailsBody bot={bot} onClose={() => onOpenChange(false)} />
+      </SheetContent>
+    </Sheet>
   );
 }

@@ -200,7 +200,7 @@ function useServerActions(server: McpServer) {
       const result = await call<OAuthStart, { redirectUri: string }>(
         `${serverPath(server.id)}/oauth`,
         "POST",
-        { redirectUri: `${location.origin}/ui/oauth/callback` },
+        { redirectUri: `${location.origin}/oauth/callback` },
       );
 
       if ("authorizationUrl" in result) {
@@ -537,7 +537,7 @@ function ServerFields({
 }
 
 function OAuthAppFields({ server, draft, patch, secrets }: DraftFieldsProps) {
-  const callback = `${location.origin}/ui/oauth/callback`;
+  const callback = `${location.origin}/oauth/callback`;
 
   return (
     <FieldSet>

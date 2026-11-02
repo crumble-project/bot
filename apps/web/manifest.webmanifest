@@ -1,25 +1,25 @@
 {
-  "id": "/ui/",
+  "id": "/",
   "name": "Crumble",
   "short_name": "Crumble",
-  "start_url": "/ui/",
-  "scope": "/ui/",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#ffffff",
   "icons": [
     {
-      "src": "/ui/icon-192.png",
+      "src": "/icon-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/ui/icon-512.png",
+      "src": "/icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
     },
     {
-      "src": "/ui/icon-maskable-512.png",
+      "src": "/icon-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

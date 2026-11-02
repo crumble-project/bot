@@ -291,7 +291,7 @@ export function Section({
         </div>
         {action}
       </div>
-      <div className="flex flex-col divide-y overflow-hidden rounded-xl border bg-muted/30">
+      <div className="flex flex-col divide-y overflow-hidden rounded-xl surface">
         {children}
       </div>
       {footer && <p className="text-xs text-muted-foreground">{footer}</p>}

@@ -345,9 +345,9 @@ export class GitHubApps extends Context.Service<
             url: HOMEPAGE,
             description:
               "A Crumble bot's GitHub identity. Commits and pull requests from this App are a bot's work.",
-            redirect_url: `${input.origin}/ui/github-app/callback`,
+            redirect_url: `${input.origin}/github-app/callback`,
             callback_urls: [`${input.origin}${authorizedPath}`],
-            setup_url: `${input.origin}/ui/github-app/installed`,
+            setup_url: `${input.origin}/github-app/installed`,
             public: false,
             default_permissions: PERMISSIONS,
             default_events: [],

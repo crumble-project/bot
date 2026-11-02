@@ -801,58 +801,13 @@ export class BotPainter {
     context.fill(path);
     context.save();
     context.clip(path);
-    this.paintVolume(context, bounds);
-    context.save();
-    context.globalAlpha *= 0.22;
     this.paintDither(context, bounds);
-    context.restore();
 
     if (this.detailed)
       this.paintCheeks(context, expression === "delighted" ? 0.22 : 0.12);
 
     context.restore();
     this.paintRim(context);
-  }
-
-  private paintVolume(context: Context, bounds: Rect) {
-    const { x, y, width, height } = bounds;
-
-    const light = context.createRadialGradient(
-      x + width * 0.3,
-      y + height * 0.22,
-      width * 0.02,
-      x + width * 0.44,
-      y + height * 0.4,
-      width * 0.72,
-    );
-
-    light.addColorStop(0, this.look.tint(0.58));
-    light.addColorStop(0.3, this.look.tint(0.27));
-    light.addColorStop(0.62, this.look.tint(-0.02));
-    light.addColorStop(1, this.look.tint(-0.48));
-    context.fillStyle = light;
-    context.fill(this.body.path);
-
-    this.softOval(
-      context,
-      {
-        x: x + width * 0.12,
-        y: y + height * 0.04,
-        width: width * 0.5,
-        height: height * 0.22,
-      },
-      (alpha) => this.look.tint(0.85, alpha * 0.24),
-    );
-    this.softOval(
-      context,
-      {
-        x: x + width * 0.45,
-        y: y + height * 0.72,
-        width: width * 0.55,
-        height: height * 0.3,
-      },
-      (alpha) => this.look.tint(0.5, alpha * 0.2),
-    );
   }
 
   /** The outline of the body; a cloud strokes only the outer edge of its merged puffs. */

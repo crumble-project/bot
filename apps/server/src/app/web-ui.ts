@@ -36,16 +36,25 @@ function appIcon(name: string) {
     });
 }
 
+function withoutUI(request: Request) {
+  const url = new URL(request.url);
+
+  url.pathname = url.pathname.replace(/^\/ui(?=\/|$)/, "") || "/";
+
+  return Response.redirect(url, 308);
+}
+
 /**
  * The web UI and the modules it loads on demand. Bun bundles the UI without code splitting, so
  * Pele's Mermaid renderer is served unbundled and each diagram type loads only when a chat shows one.
  */
 export const webUIRoutes = {
-  "/ui": webUI,
-  "/ui/*": webUI,
-  ...Object.fromEntries(
-    APP_ICONS.map((name) => [`/ui/${name}`, appIcon(name)]),
-  ),
+  "/": webUI,
+  "/*": webUI,
+  // The UI lived under /ui/ before; installed apps, bookmarks, and GitHub Apps' callback URLs still point there.
+  "/ui": withoutUI,
+  "/ui/*": withoutUI,
+  ...Object.fromEntries(APP_ICONS.map((name) => [`/${name}`, appIcon(name)])),
   [`${PELE_PREFIX}/*`]: async (request: Request) => {
     const file = peleFile(
       new URL(request.url).pathname.slice(PELE_PREFIX.length + 1),

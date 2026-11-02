@@ -5,7 +5,13 @@ import { Store } from "../../test/support/store";
 import { agentInput, scheduleInput } from "../shared/domain";
 import { ScriptRunRepository } from "../schedules/script-run-repository";
 import { createTenant } from "./tenant";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -105,7 +111,7 @@ test.serial(
       );
       await expect(
         startServer({ dataDir, port, lockWaitMs: 0 }),
-      ).rejects.toThrow("already being held");
+      ).rejects.toThrow("Another Crumble server");
       await running.close();
       const reopened = await startServer({ dataDir, port });
       await reopened.close();
@@ -128,6 +134,29 @@ test.serial(
 
     try {
       const running = await startServer({ dataDir, port });
+
+      await running.close();
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+      rmSync(lock, { recursive: true, force: true });
+    }
+  },
+);
+
+test.serial(
+  "server takes over at once a fresh lock whose owner process has exited",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-"));
+    const port = 18000 + Math.floor(Math.random() * 1000);
+    const lock = `${dataDir}.lock`;
+    const exited = Bun.spawn(["true"]);
+
+    await exited.exited;
+    mkdirSync(lock);
+    writeFileSync(join(dataDir, "server.pid"), `${exited.pid}\n`);
+
+    try {
+      const running = await startServer({ dataDir, port, lockWaitMs: 0 });
 
       await running.close();
     } finally {

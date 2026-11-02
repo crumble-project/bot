@@ -222,7 +222,7 @@ async function request(path: string, init: RequestInit = {}) {
     clearUserData();
 
     if (!location.pathname.endsWith("/connect"))
-      window.location.assign("/ui/connect");
+      window.location.assign("/connect");
   }
 
   if (!response.ok)

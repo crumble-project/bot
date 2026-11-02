@@ -1,11 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import {
-  IconDeviceDesktop,
-  IconPencil,
-  IconLayoutSidebarRight,
-} from "@tabler/icons-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { MessageScrollerItem } from "@/components/ui/message-scroller";
@@ -31,7 +26,7 @@ import {
   useHistory,
   useMessageSending,
 } from "./conversation";
-import { DetailsPanel } from "./details";
+import { DetailsPanel, DetailsSheet } from "./details";
 import { type JobRef, JobPanel } from "@/features/jobs/jobs";
 import { useChatStream } from "@/lib/live";
 import { BotReasoning } from "@/features/bots/reasoning";
@@ -56,6 +51,9 @@ import { MobileSidebarTrigger } from "@/components/workspace";
 
 const DETAILS_KEY = "crumble.details";
 
+/** Tailwind's lg breakpoint, where the details panel fits beside the chat. */
+const WIDE = "(min-width: 64rem)";
+
 type SendMessage = ReturnType<typeof useMessageSending>["sendMessage"];
 
 /** An outgoing message drawn like a transcript message until the server confirms it. */
@@ -68,17 +66,32 @@ export function outgoingMessage(message: Outgoing): Message {
   };
 }
 
+/** The details panel's state, the job pane that can take its place, and the sheet narrow screens use instead. */
 function useDetails() {
   const [details, setDetails] = useState(
     () => localStorage.getItem(DETAILS_KEY) !== "off",
   );
+
+  const [job, setJob] = useState<JobRef | null>(null);
+  const [sheet, setSheet] = useState(false);
 
   const toggleDetails = () => {
     localStorage.setItem(DETAILS_KEY, details ? "off" : "on");
     setDetails(!details);
   };
 
-  return { details, toggleDetails };
+  // An open job takes the details panel's place; the toggle brings the details back.
+  const showDetails = () => {
+    if (!matchMedia(WIDE).matches) return setSheet(true);
+
+    if (!job) return toggleDetails();
+
+    setJob(null);
+
+    if (!details) toggleDetails();
+  };
+
+  return { details, toggleDetails, showDetails, job, setJob, sheet, setSheet };
 }
 
 function useChatMessages(botId: string, snapshot: ChatSnapshot | undefined) {
@@ -163,51 +176,28 @@ function ChatHeader({
   onToggleDetails: () => void;
 }) {
   return (
-    <header className="flex h-14 shrink-0 items-center gap-2.5 border-b px-4">
+    <header className="relative flex h-14 shrink-0 items-center px-4">
       <MobileSidebarTrigger />
-      <LiveBotAvatar bot={bot} size={32} />
-      <span className="flex min-w-0 flex-col">
-        <span className="truncate font-heading font-semibold leading-tight">
-          {bot.name}
-        </span>
-        <span className="truncate text-xs text-muted-foreground">
-          {running ? "Working…" : bot.enabled ? bot.description : "Paused"}
-        </span>
-      </span>
-      <div className="ml-auto flex gap-1">
-        {bot.tools.includes("desktop") && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            title="Bot desktop"
-            render={
-              <Link to="/bots/$botId/desktop" params={{ botId: bot.id }} />
-            }
-            nativeButton={false}
-          >
-            <IconDeviceDesktop />
-          </Button>
+      <button
+        type="button"
+        title={details ? "Hide details" : "Show details"}
+        aria-expanded={details}
+        onClick={onToggleDetails}
+        className="absolute left-1/2 flex max-w-[calc(100%-6rem)] -translate-x-1/2 cursor-pointer items-center gap-2 rounded-full border bg-card py-1 pr-3.5 pl-1 shadow-xs transition-[background-color,box-shadow] duration-150 hover:bg-muted hover:shadow-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none aria-expanded:bg-muted"
+      >
+        <LiveBotAvatar bot={bot} size={24} />
+        <span className="truncate text-sm font-medium">{bot.name}</span>
+        {running ? (
+          <span
+            title="Working…"
+            className="size-1.5 shrink-0 animate-pulse rounded-full bg-bot-strong"
+          />
+        ) : (
+          !bot.enabled && (
+            <span className="text-xs text-muted-foreground">Paused</span>
+          )
         )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          title="Edit bot"
-          render={<Link to="/bots/$botId/edit" params={{ botId: bot.id }} />}
-          nativeButton={false}
-        >
-          <IconPencil />
-        </Button>
-        <Button
-          variant={details ? "secondary" : "ghost"}
-          size="icon-sm"
-          title="Details"
-          aria-pressed={details}
-          className="hidden lg:inline-flex"
-          onClick={onToggleDetails}
-        >
-          <IconLayoutSidebarRight />
-        </Button>
-      </div>
+      </button>
     </header>
   );
 }
@@ -426,7 +416,7 @@ function ChatComposer({
   return (
     <>
       {sendError && (
-        <p className="mx-auto w-full max-w-3xl px-4 text-xs text-destructive">
+        <p className="mx-auto w-full max-w-4xl px-4 text-xs text-destructive">
           {sendError}
         </p>
       )}
@@ -472,8 +462,10 @@ export function Chat({ botId }: { botId: string }) {
   const bots = useQuery(botsQuery);
   const bot = bots.data?.find((each) => each.id === botId);
   const { outgoing, sending, stop } = useChatDelivery(botId);
-  const [job, setJob] = useState<JobRef | null>(null);
-  const { details, toggleDetails } = useDetails();
+
+  const { details, toggleDetails, showDetails, job, setJob, sheet, setSheet } =
+    useDetails();
+
   const { setReplyTo, sendMessage } = sending;
   const transcript = useChatMessages(botId, chat.data);
   const jobFor = useChatJobs(botId, transcript.messages);
@@ -484,15 +476,6 @@ export function Chat({ botId }: { botId: string }) {
     return <ConversationLoading notFound={bots.isSuccess && !bot} />;
 
   const { status, error } = chat.data;
-
-  // An open job takes the details panel's place; the toggle brings the details back.
-  const showDetails = () => {
-    if (!job) return toggleDetails();
-
-    setJob(null);
-
-    if (!details) toggleDetails();
-  };
 
   const running = status === "running";
 
@@ -532,8 +515,9 @@ export function Chat({ botId }: { botId: string }) {
           onClose={() => setJob(null)}
         />
       ) : (
-        details && <DetailsPanel bot={bot} />
+        details && <DetailsPanel bot={bot} onClose={toggleDetails} />
       )}
+      <DetailsSheet bot={bot} open={sheet} onOpenChange={setSheet} />
     </div>
   );
 }

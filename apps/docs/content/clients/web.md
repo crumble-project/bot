@@ -6,7 +6,7 @@ sidebar:
   order: 1
 ---
 
-The server serves the web app at `/ui`, such as `http://127.0.0.1:7337/ui`.
+The server serves the web app at its root, such as `http://127.0.0.1:7337`.
 Sign in with the account you created when you
 [installed the server](/getting-started/server).
 
@@ -19,6 +19,7 @@ Sign in with the account you created when you
 | **Memory**      | Every bot's memories and your shared memories. Edit or delete them here.                                                                  |
 | **Automations** | Every automation with its schedule, next run, and status, plus a **Runs** tab with recent runs.                                           |
 | **Activity**    | Everything bots did, by day. Filter by kind or bot, and revert a change to a skill or memory.                                             |
+| **Theme**       | System, Light, or Dark. The choice is saved to your account, so your other devices use it too.                                            |
 | **Settings**    | Providers, web search, credentials, logins, the judge and vision models, MCP integrations, skills, notifications, passkeys, and sign-out. |
 
 Press `⌘K`, or `Ctrl+K`, to jump to a bot or group chat. To search inside
@@ -54,7 +55,7 @@ pick the passkey your browser offers in the email field. Open a passkey's
 
 If your browser doesn't offer to create a passkey, check the address. Passkeys
 need a hostname, so on the server's own machine open
-`http://localhost:7337/ui` rather than `127.0.0.1`. A passkey belongs to the
+`http://localhost:7337` rather than `127.0.0.1`. A passkey belongs to the
 address you added it on and stops working if the server's address changes,
 though you can rename or remove it from any address. See
 [Configuration](/self-hosting/configuration#passkeys).

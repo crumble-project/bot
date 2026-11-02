@@ -87,7 +87,7 @@ function InstallButton({ app }: { app: GitHubApp }) {
     <a
       href={app.installUrl}
       className={buttonVariants({ size: "sm", variant: "outline" })}
-      // Same tab: GitHub returns to /ui/github-app/installed, which reads the App from this tab's sessionStorage.
+      // Same tab: GitHub returns to /github-app/installed, which reads the App from this tab's sessionStorage.
       onClick={() => sessionStorage.setItem(INSTALLING_KEY, app.id)}
     >
       Install
@@ -289,7 +289,7 @@ function InstallationField({ app }: { app: GitHubApp }) {
 }
 
 /** Where GitHub sends the owner back after signing in; every App lists it as a callback URL. */
-const authorizedUrl = () => `${location.origin}/ui/github-app/authorized`;
+const authorizedUrl = () => `${location.origin}/github-app/authorized`;
 
 /** GitHub refuses the sign-in until the App lists this URL; Apps Crumble creates already do. */
 function CallbackUrl() {
