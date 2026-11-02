@@ -78,10 +78,15 @@ export function JobQuestionAnswer({
   question: Question;
 }) {
   const [text, setText] = useState("");
-  const [picked, setPicked] = useState<string[]>([]);
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const multiple = question.multiple === true;
+
   // A multiple-choice answer lists the picked options, then anything written.
-  const reply = [picked.join(", "), text.trim()].filter(Boolean).join("\n");
+  const chosen = (question.options ?? []).filter((option) =>
+    picked.has(option),
+  );
+
+  const reply = [chosen.join(", "), text.trim()].filter(Boolean).join("\n");
 
   const answer = useMutation({
     mutationFn: (sent: string) =>
@@ -120,7 +125,7 @@ export function JobQuestionAnswer({
       {question.options && (
         <div className="-mx-1.5 flex flex-col">
           {question.options.map((option) => {
-            const on = picked.includes(option);
+            const on = picked.has(option);
 
             return (
               <OptionRow
@@ -134,11 +139,14 @@ export function JobQuestionAnswer({
                 disabled={answer.isPending}
                 onPick={() =>
                   multiple
-                    ? setPicked((current) =>
-                        on
-                          ? current.filter((each) => each !== option)
-                          : [...current, option],
-                      )
+                    ? setPicked((current) => {
+                        const next = new Set(current);
+
+                        if (on) next.delete(option);
+                        else next.add(option);
+
+                        return next;
+                      })
                     : answer.mutate(option)
                 }
               />
