@@ -381,7 +381,9 @@ export function RowMenu({ children }: { children: ReactNode }) {
           </Button>
         }
       />
-      <DropdownMenuContent align="end">{children}</DropdownMenuContent>
+      <DropdownMenuContent align="end" className="w-auto whitespace-nowrap">
+        {children}
+      </DropdownMenuContent>
     </DropdownMenu>
   );
 }

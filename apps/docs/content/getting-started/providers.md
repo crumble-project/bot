@@ -64,12 +64,13 @@ official `claude` command-line tool on the server, so you sign in from the
 server's terminal, not from the browser. Any version of `claude` works.
 
 1. Find **Claude Code** in the provider list.
-2. Copy the sign-in command it shows and run it on the server.
+2. Open its menu (**⋯**), select **Copy sign-in command**, and run the command
+   on the server.
 3. Refresh the provider list.
 
 If the status still says you're signed out, wait a moment: it can take up to
-30 seconds to update. To sign out, run the sign-out command shown in the same
-place.
+30 seconds to update. To sign out, select **Copy sign-out command** in the same
+menu and run that command on the server.
 
 Each account gets its own Claude Code sign-in, so two accounts on one server
 never share a subscription.
