@@ -3,6 +3,7 @@ import {
   type ReactNode,
   useCallback,
   useContext,
+  useId,
   useMemo,
   useState,
 } from "react";
@@ -52,12 +53,14 @@ export function SelectSkills({
   place?: keyof typeof SHOWN;
 }) {
   const selection = useContext(SelectionContext);
+  const id = useId();
 
   if (!selection || !ids.length) return null;
   const count = ids.filter((id) => selection.selected.has(id)).length;
 
   const box = (
     <input
+      id={id}
       type="checkbox"
       className={cn("checkbox", place === "row" && SHOWN.row)}
       aria-label={label}
@@ -77,6 +80,7 @@ export function SelectSkills({
 
   return (
     <label
+      htmlFor={id}
       className={cn(
         "flex shrink-0 cursor-pointer items-center gap-2 text-xs text-muted-foreground transition-opacity hover:text-foreground",
         SHOWN[place],

@@ -1,11 +1,12 @@
 import {
+  type ChangeEvent,
   type ClipboardEvent,
   type DragEvent,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
   useEffect,
-  useLayoutEffect,
+  useEffectEvent,
   useRef,
   useState,
 } from "react";
@@ -557,7 +558,7 @@ function MessageField({
   placeholder: string;
   disabled: boolean | undefined;
   value: string;
-  onChange: (value: string) => void;
+  onChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
   onPaste: (event: ClipboardEvent) => void;
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
 }) {
@@ -572,7 +573,7 @@ function MessageField({
         expanded ? "min-h-11 px-3 pt-2 pb-1" : "min-h-8 px-1.5 py-1",
       )}
       value={value}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={onChange}
       onPaste={onPaste}
       onKeyDown={onKeyDown}
     />
@@ -586,20 +587,20 @@ const ONE_ROW_PX = 36;
  * One row, like ChatGPT's, until the text needs a second line: after Shift+Enter, or once it wraps.
  * A wrapped draft stays two rows until it's cleared, since in two rows it has more room than one.
  */
-function useExpanded(
-  field: RefObject<HTMLTextAreaElement | null>,
-  draft: string,
-) {
+function useExpanded(draft: string) {
   const [wrapped, setWrapped] = useState(false);
+
+  if (wrapped && !draft) setWrapped(false);
+
   const expanded = draft.includes("\n") || (wrapped && draft !== "");
 
-  useLayoutEffect(() => {
-    if (!draft) setWrapped(false);
-    else if (!expanded && (field.current?.scrollHeight ?? 0) > ONE_ROW_PX)
+  // Measured while the field is still one row, before this change re-renders it.
+  const measure = (element: HTMLTextAreaElement | null) => {
+    if (element?.value && !expanded && element.scrollHeight > ONE_ROW_PX)
       setWrapped(true);
-  }, [draft, expanded, field]);
+  };
 
-  return expanded;
+  return { expanded, measure };
 }
 
 /** Focuses the field with the caret after any restored draft, not before it. */
@@ -623,11 +624,16 @@ function useDraft(chat: string) {
 function useMessageField(draftKey: string) {
   const [draft, setDraft] = useDraft(draftKey);
   const field = useRef<HTMLTextAreaElement>(null);
-  const expanded = useExpanded(field, draft);
+  const { expanded, measure } = useExpanded(draft);
 
-  useEffect(() => focusAtEnd(field.current), []);
+  const restore = useEffectEvent(() => {
+    focusAtEnd(field.current);
+    measure(field.current);
+  });
 
-  return { draft, setDraft, field, expanded };
+  useEffect(() => restore(), []);
+
+  return { draft, setDraft, field, expanded, measure };
 }
 
 export function Composer({
@@ -655,7 +661,8 @@ export function Composer({
   onSend: (content: string, uploads: Upload[]) => Promise<boolean>;
   onStop: () => void;
 }) {
-  const { draft, setDraft, field, expanded } = useMessageField(draftKey);
+  const { draft, setDraft, field, expanded, measure } =
+    useMessageField(draftKey);
 
   const { uploads, setUploads, errors, setErrors, add, restore } =
     useAttachments();
@@ -730,8 +737,9 @@ export function Composer({
             placeholder={placeholder}
             disabled={disabled}
             value={draft}
-            onChange={(value) => {
-              setDraft(value);
+            onChange={(event) => {
+              setDraft(event.target.value);
+              measure(event.target);
               mentions.reset();
             }}
             onPaste={(event) => pasteFiles(event, (files) => void add(files))}

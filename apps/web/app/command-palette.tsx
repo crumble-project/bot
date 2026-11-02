@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useEffectEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { IconPlus, IconUsersGroup } from "@tabler/icons-react";
@@ -46,18 +46,20 @@ export function CommandPalette({
   const theme = useTheme();
   const { setOpenMobile } = useSidebar();
 
+  const toggle = useEffectEvent(() => onOpenChange(!open));
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "k" || !(event.metaKey || event.ctrlKey)) return;
 
       event.preventDefault();
-      onOpenChange(!open);
+      toggle();
     };
 
     window.addEventListener("keydown", onKeyDown);
 
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onOpenChange]);
+  }, []);
 
   const run = (action: () => void) => {
     onOpenChange(false);

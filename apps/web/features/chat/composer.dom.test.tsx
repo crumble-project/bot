@@ -258,3 +258,31 @@ test("a draft survives leaving the chat and is cleared once sent", async () => {
     },
   );
 });
+
+test("typing keeps working when the draft can't be saved", async () => {
+  await withComposer(
+    async () => true,
+    async (container, window) => {
+      const storage = window.Storage.prototype;
+      const setItem = Object.getOwnPropertyDescriptor(storage, "setItem")!;
+
+      Object.defineProperty(storage, "setItem", {
+        configurable: true,
+        value: () => {
+          throw new window.DOMException(
+            "Storage is full",
+            "QuotaExceededError",
+          );
+        },
+      });
+
+      try {
+        await act(async () => typeMessage(container, window, "still here"));
+      } finally {
+        Object.defineProperty(storage, "setItem", setItem);
+      }
+
+      expect(container.querySelector("textarea")!.value).toBe("still here");
+    },
+  );
+});

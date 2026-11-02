@@ -141,6 +141,8 @@ function CreateAppSheet({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
   const [organization, setOrganization] = useState("");
 
+  // Success leaves the page for GitHub, so there is no cached data to refresh.
+  // react-doctor-disable-next-line query-mutation-missing-invalidation
   const create = useMutation({
     mutationFn: async () =>
       postManifest(

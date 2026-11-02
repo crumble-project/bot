@@ -4,9 +4,14 @@ const PREFIX = "crumble.draft:";
 export const readDraft = (chat: string) =>
   localStorage.getItem(`${PREFIX}${chat}`) ?? "";
 
+/** Best effort: full or blocked storage loses only the saved copy, never the text being typed. */
 export function saveDraft(chat: string, text: string) {
-  if (text) localStorage.setItem(`${PREFIX}${chat}`, text);
-  else localStorage.removeItem(`${PREFIX}${chat}`);
+  try {
+    if (text) localStorage.setItem(`${PREFIX}${chat}`, text);
+    else localStorage.removeItem(`${PREFIX}${chat}`);
+  } catch {
+    return;
+  }
 }
 
 /** Forgets every chat's draft, as when another person signs in on this browser. */
