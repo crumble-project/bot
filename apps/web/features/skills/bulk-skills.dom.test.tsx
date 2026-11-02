@@ -24,6 +24,8 @@ async function fixture(
     requests: string[];
     fail: Set<string>;
     render: (children: ReactNode) => Promise<void>;
+    holdBotRefetch: () => { started: Promise<void>; release: () => void };
+    waitFor: (condition: () => boolean) => Promise<void>;
   }) => Promise<void>,
 ) {
   const window = new Window({ url: "http://localhost" });
@@ -125,6 +127,19 @@ async function fixture(
     return new Response(null, { status: 204 });
   };
 
+  const botGate = Promise.withResolvers<void>();
+  const botRefetchStarted = Promise.withResolvers<void>();
+  let holdBots = false;
+
+  const holdBotRefetch = () => {
+    holdBots = true;
+
+    return {
+      started: botRefetchStarted.promise,
+      release: () => botGate.resolve(),
+    };
+  };
+
   const mutationResponse = async (
     path: string,
     init: RequestInit | undefined,
@@ -169,6 +184,11 @@ async function fixture(
 
         if (method !== "GET") return mutationResponse(path, init);
 
+        if (path === "/v1/agents" && holdBots) {
+          botRefetchStarted.resolve();
+          await botGate.promise;
+        }
+
         const listings = new Map<string, unknown>([
           ["/v1/agents", bots],
           ["/v1/skills", shared],
@@ -199,6 +219,16 @@ async function fixture(
 
   const flush = async () => {
     await new Promise((resolve) => setTimeout(resolve, 40));
+  };
+
+  const waitFor = async (condition: () => boolean) => {
+    const deadline = Date.now() + 3000;
+
+    while (!condition()) {
+      if (Date.now() >= deadline)
+        throw new Error("Expected DOM state did not settle");
+      await act(flush);
+    }
   };
 
   const click = async (label: string) => {
@@ -264,8 +294,11 @@ async function fixture(
       requests,
       fail,
       render,
+      holdBotRefetch,
+      waitFor,
     });
   } finally {
+    botGate.resolve();
     await act(async () => root.unmount());
     queryClient.clear();
     queryClient.setDefaultOptions(defaults);
@@ -370,34 +403,42 @@ test("bulk update applies selected GitHub skills, reports skipped skills, and cl
 });
 
 test("bulk assign and remove pick several bots, refresh usage, and name per-bot failures", async () => {
-  await fixture(async ({ container, select, click, requests, fail }) => {
-    await select("Select Shared (Shared)");
-    await select("Select Own (Alpha)");
-    await click("Assign to bots");
-    await click("Alpha");
-    await click("Beta");
-    fail.add("/v1/skills/own/assignment");
-    await click("Assign");
-    expect(container.textContent).toContain("used by 2");
-    expect(container.textContent).toContain(
-      "Failed Own (Alpha) → Alpha: Denied by test",
-    );
-    expect(container.textContent).toContain(
-      "Failed Own (Alpha) → Beta: Denied by test",
-    );
-    expect(container.textContent).toContain("1 selected");
-    fail.clear();
-    await select("Select Shared (Shared)");
-    await click("Remove from bots");
-    await click("Alpha");
-    await click("Beta");
-    await click("Remove");
-    expect(container.textContent).not.toContain("used by 2");
-    expect(container.textContent).not.toContain("2 selected");
-    expect(
-      requests.filter((request) => request.endsWith("/assignment")),
-    ).toHaveLength(8);
-  });
+  await fixture(
+    async ({ container, select, click, requests, fail, waitFor }) => {
+      await select("Select Shared (Shared)");
+      await select("Select Own (Alpha)");
+      await click("Assign to bots");
+      await click("Alpha");
+      await click("Beta");
+      fail.add("/v1/skills/own/assignment");
+      await click("Assign");
+      await waitFor(
+        () => container.textContent?.includes("used by 2") === true,
+      );
+      expect(container.textContent).toContain("used by 2");
+      expect(container.textContent).toContain(
+        "Failed Own (Alpha) → Alpha: Denied by test",
+      );
+      expect(container.textContent).toContain(
+        "Failed Own (Alpha) → Beta: Denied by test",
+      );
+      expect(container.textContent).toContain("1 selected");
+      fail.clear();
+      await select("Select Shared (Shared)");
+      await click("Remove from bots");
+      await click("Alpha");
+      await click("Beta");
+      await click("Remove");
+      await waitFor(
+        () => container.textContent?.includes("used by 2") === false,
+      );
+      expect(container.textContent).not.toContain("used by 2");
+      expect(container.textContent).not.toContain("2 selected");
+      expect(
+        requests.filter((request) => request.endsWith("/assignment")),
+      ).toHaveLength(8);
+    },
+  );
 });
 
 test("section select-all is mixed when partly selected; failed updates can be retried without touching unselected skills", async () => {
@@ -494,4 +535,29 @@ test("selection consumers do not render for unrelated provider changes, but stil
     ).toBe(true);
     expect(container.textContent).toContain("1 selected");
   });
+});
+
+test("usage counts eventually refresh after a delayed bot refetch", async () => {
+  await fixture(
+    async ({ container, select, click, holdBotRefetch, waitFor }) => {
+      await select("Select Shared (Shared)");
+      await click("Assign to bots");
+      await click("Alpha");
+      await click("Beta");
+      const refetch = holdBotRefetch();
+      await click("Assign");
+      await refetch.started;
+
+      try {
+        expect(container.textContent).not.toContain("used by 2");
+        refetch.release();
+        await waitFor(
+          () => container.textContent?.includes("used by 2") === true,
+        );
+        expect(container.textContent).toContain("used by 2");
+      } finally {
+        refetch.release();
+      }
+    },
+  );
 });
