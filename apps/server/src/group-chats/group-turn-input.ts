@@ -28,7 +28,8 @@ export type GroupTurnInput = {
   ) => Effect.Effect<string, AppError>;
   /**
    * The uploads of a turn's unseen messages, newest messages first up to the attachment limit, in message order.
-   * Images are left out, by name, for a model that cannot read them.
+   * Images are left out, by name, for a model that cannot read them while the account has no vision model; with one,
+   * they pass through and the vision model describes them for the bot.
    */
   readonly turnAttachments: (
     agent: Agent,

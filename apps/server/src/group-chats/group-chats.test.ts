@@ -98,7 +98,10 @@ const bot = (name: string, enabled = true, model = "chat") => ({
   delegates: [],
 });
 
-function open(dir: string, bots: Record<string, Bot>) {
+/** Answers of the account's vision model, on a provider of its own; none leaves the vision model off. */
+type VisionAnswers = string[];
+
+function open(dir: string, bots: Record<string, Bot>, vision?: VisionAnswers) {
   const inputs = new Map<string, string[]>();
   const contents = new Map<string, Message["content"][]>();
 
@@ -115,6 +118,17 @@ function open(dir: string, bots: Record<string, Bot>) {
   );
   const models = createModels();
   models.setProvider(faux.provider);
+
+  if (vision) {
+    const eye = fauxProvider({
+      provider: "eye",
+      models: [{ id: "vision", input: ["text", "image"] }],
+    });
+
+    eye.setResponses(vision.map((text) => say(text)));
+    models.setProvider(eye.provider);
+  }
+
   const store = new Store(dir);
 
   const service = standaloneBots(
@@ -122,6 +136,9 @@ function open(dir: string, bots: Record<string, Bot>) {
     new AgentRuntime(join(dir, "agents"), {
       models,
       extensions: () => [reactionExtension()],
+      ...(vision && {
+        visionModel: () => ({ provider: "eye", model: "vision" }),
+      }),
     }),
   );
 
@@ -144,10 +161,14 @@ function open(dir: string, bots: Record<string, Bot>) {
   return { store, service, groups, inputs, contents, close };
 }
 
-function setup(bots: Record<string, Bot> = {}, names = ["Ada", "Grace"]) {
+function setup(
+  bots: Record<string, Bot> = {},
+  names = ["Ada", "Grace"],
+  vision?: VisionAnswers,
+) {
   const dir = mkdtempSync(join(tmpdir(), "bot-group-chats-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
-  const opened = open(dir, bots);
+  const opened = open(dir, bots, vision);
   const agents = names.map((name) => opened.store.createAgent(bot(name)));
 
   const group = opened.groups.create({
@@ -844,6 +865,36 @@ describe("attachments", () => {
         (block) => block.type === "image",
       ),
     ).toBe(false);
+  });
+
+  test("with a vision model, a text-only model gets the image described", async () => {
+    const { groups, group, store, inputs, contents, agents } = setup(
+      {},
+      ["Ada", "Grace"],
+      ["A route map from Lyon to Turin."],
+    );
+
+    store.updateAgent(agents[1]!.id, { model: "text" });
+    await groups.post(group.id, "@Grace look", "r-1", { attachments: [image] });
+    await quiet(groups, group.id);
+    expect(inputs.get("Grace")![0]).not.toContain("left out");
+    expect(
+      blocks(contents.get("Grace")?.[0]).some(
+        (block) => block.type === "image",
+      ),
+    ).toBe(false);
+    expect(blocks(contents.get("Grace")?.[0])).toContainEqual({
+      type: "text",
+      text: expect.stringContaining(
+        'described-by="vision model">\nA route map from Lyon to Turin.\n</image>',
+      ),
+    });
+
+    const [message] = (await groups.snapshot(group.id, {})).messages;
+
+    expect(
+      (await groups.attachment(group.id, message!.entryId, 0)).mimeType,
+    ).toBe("image/png");
   });
 
   test("coalesced messages send their newest eight attachments", async () => {

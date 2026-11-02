@@ -46,6 +46,21 @@ flowchart LR
 **Compaction never deletes anything you can see.** It only changes what the
 bot reads on its next turn.
 
+## Images
+
+Attach images to a message, and a bot whose model reads images sees them as
+they are. A bot whose model can't read images refuses a message with an image,
+unless the account has a [vision model](/getting-started/providers#vision-model).
+
+With a vision model set, the vision model reads each image and describes it,
+including any visible text. The bot works from the description, and the
+transcript keeps the original image. The bot can also ask the vision model a
+question about an image it already received, such as "What's the total on this
+receipt?", so the first description needn't hold every detail.
+
+If the vision model can't read an image, the bot gets a note saying so in its
+place and answers anyway. The next turn tries the image again.
+
 ## Bringing Back an Earlier Message
 
 Reply to a message to bring it back into focus. The bot reads that message and

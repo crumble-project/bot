@@ -74,6 +74,12 @@ import {
   type TranscriptPage,
 } from "./transcript";
 import { InvalidInput, NotFound } from "../shared/errors";
+import {
+  chosenVisionModel,
+  readsImages,
+  visionExtension,
+  type VisionModelRef,
+} from "../vision/vision";
 import type { RelayEvent } from "../event-sources/event-repository";
 import { eventRelayText } from "../event-sources/event-payload";
 
@@ -121,6 +127,8 @@ export type RuntimeCallbacks = {
   ) => void | Promise<void>;
   /** The skills a bot can load and the ones it may write. Listed in its instructions by name only. */
   skillLibrary?: BotSkills["Service"];
+  /** The account's vision model, read at each use; undefined while it is off. */
+  visionModel?: () => VisionModelRef | undefined;
   extensions?: (agent: Agent) => Extension[] | Promise<Extension[]>;
   /** Installed but never offered in the bot's chat: tasks select them for the conversations they own. */
   taskExtensions?: (agent: Agent) => Extension[] | Promise<Extension[]>;
@@ -159,6 +167,8 @@ type HarnessRecord = {
   skillExtension: Extension;
   reviewExtension: Extension;
   groupExtension: Extension;
+  visionExtension: Extension;
+  askAboutImage: ReturnType<typeof defineTool>;
   registry: ReturnType<typeof createRegistry>;
   /** Everything installed in the registry: the offered extensions, then the task extensions. */
   extensions: Extension[];
@@ -402,15 +412,15 @@ function chatTools(
   record: HarnessRecord,
   agent: Agent,
   offered: Extension[],
-  hasSkills: boolean,
-  group: boolean,
+  options: { hasSkills: boolean; group: boolean; vision: boolean },
 ) {
   return [
     ...(agent.tools.includes("memory") ? [record.memory] : []),
-    ...(hasSkills ? [record.skill] : []),
+    ...(options.hasSkills ? [record.skill] : []),
     ...(record.skillManage ? [record.skillManage] : []),
     ...offered.flatMap((extension) => extension.tools ?? []),
-    ...(group ? (record.groupExtension.tools ?? []) : []),
+    ...(options.group ? (record.groupExtension.tools ?? []) : []),
+    ...(options.vision ? [record.askAboutImage] : []),
   ];
 }
 
@@ -568,19 +578,21 @@ async function preparedInput(
 
 type PreparedAttachments = ReturnType<typeof prepareAttachments>;
 
-// Catalogs that list no modalities are trusted; the provider reports anything it refuses.
+// Catalogs that list no modalities are trusted; the provider reports anything it refuses. With a vision model set,
+// the vision extension describes images for a model that can't read them.
 function assertImageSupport(
   agent: Agent,
   model: { input?: readonly string[] } | undefined,
   info: PreparedAttachments["info"],
+  vision: VisionModelRef | undefined,
 ) {
   if (
     info.some((item) => item.kind === "image") &&
-    model?.input &&
-    !model.input.includes("image")
+    !readsImages(model) &&
+    !vision
   )
     throw new InvalidInput({
-      message: `${agent.model} can't read images. Choose a model that accepts images in the agent's profile.`,
+      message: `${agent.model} can't read images. Choose a model that accepts images in the bot's profile, or set a vision model in Settings to describe images for it.`,
     });
 }
 
@@ -642,6 +654,7 @@ function scopedExtensions(
       extensions: [
         record.memoryExtension,
         record.skillExtension,
+        record.visionExtension,
         record.reviewExtension,
       ],
     };
@@ -653,6 +666,7 @@ function scopedExtensions(
         record.skillExtension,
         ...offered,
         record.groupExtension,
+        record.visionExtension,
       ],
     };
 
@@ -838,6 +852,16 @@ export class AgentRuntime {
       registry.install(memoryExtension);
       registry.install(skillExtension);
       registry.install(groupExtension);
+
+      // Hooks and tools run only once the harness is open; until then nothing calls them.
+      let opened: Harness | undefined;
+
+      const vision = visionExtension({
+        harness: () => opened,
+        visionModel: () => this.visionModel(),
+      });
+
+      registry.install(vision.extension);
       const reviewExt = reviewExtension();
       registry.install(reviewExt);
 
@@ -861,6 +885,8 @@ export class AgentRuntime {
         BACKGROUND_CONTEXT,
       );
 
+      opened = harness;
+
       if (agent.enabled) harness.resume();
 
       return {
@@ -874,6 +900,8 @@ export class AgentRuntime {
         skillExtension,
         reviewExtension: reviewExt,
         groupExtension,
+        visionExtension: vision.extension,
+        askAboutImage: vision.ask,
         registry,
         extensions,
       };
@@ -946,7 +974,11 @@ export class AgentRuntime {
 
     const tools = review
       ? reviewTools(record, agent, skills.length > 0, review)
-      : chatTools(record, agent, offered, skills.length > 0, group);
+      : chatTools(record, agent, offered, {
+          hasSkills: skills.length > 0,
+          group,
+          vision: this.describesImagesFor(record, agent),
+        });
 
     const conversation = await record.harness.conversation(
       localId,
@@ -1126,15 +1158,33 @@ export class AgentRuntime {
     return { conversation, entry: Number(status.entry) };
   }
 
-  /** Whether the bot's model reads images; catalogs that list no modalities are trusted, as for chat uploads. */
+  /** The account's vision model; undefined while it is off. */
+  private visionModel() {
+    return this.callbacks.visionModel?.();
+  }
+
+  /** Whether the vision model describes images for the bot: one is set and the bot's model can't read them. */
+  private describesImagesFor(record: HarnessRecord, agent: Agent) {
+    return (
+      this.visionModel() !== undefined &&
+      !readsImages(record.models.getModel(agent.provider, agent.model))
+    );
+  }
+
+  /**
+   * Whether the bot takes images: its model reads them, or the account's vision model describes them for it. Catalogs
+   * that list no modalities are trusted, as for chat uploads.
+   */
   async acceptsImages(agent: Agent) {
     const { models } = await this.open(agent);
 
     if (!models.getModel(agent.provider, agent.model))
       await models.refresh({ providers: [agent.provider] });
-    const input = models.getModel(agent.provider, agent.model)?.input;
 
-    return !input || input.includes("image");
+    return (
+      readsImages(models.getModel(agent.provider, agent.model)) ||
+      this.visionModel() !== undefined
+    );
   }
 
   /** A short summary of a group conversation, written by the bot's own model for its first turn after joining. */
@@ -1223,7 +1273,7 @@ export class AgentRuntime {
     const conversation = await this.configure(record, agent, conversationId);
     const model = record.models.getModel(agent.provider, agent.model);
 
-    assertImageSupport(agent, model, attached.info);
+    assertImageSupport(agent, model, attached.info, this.visionModel());
 
     const tagged =
       options.origin?.kind === "bot"
@@ -1618,6 +1668,12 @@ export class BotRuntime extends Context.Service<BotRuntime, AgentRuntime>()(
 
                   return Predicate.isString(timezone) ? timezone : undefined;
                 },
+                visionModel: () =>
+                  Effect.runSync(
+                    chosenVisionModel.pipe(
+                      Effect.provideService(SettingsRepository, settings),
+                    ),
+                  ),
                 extensions: (agent) => extensions.forAgent(agent),
                 listMemory: (agentId) =>
                   Effect.runPromise(memory.list(agentId)),

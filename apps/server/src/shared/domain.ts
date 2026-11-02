@@ -20,6 +20,9 @@ const modelChoice = modelRef.nullable().optional();
 /** The account's judge model for intent checks; null goes back to the default. */
 export const judgeModelInput = z.object({ judgeModel: modelRef.nullable() });
 
+/** The account's vision model, which reads images for bots whose model can't; null turns it off. */
+export const visionModelInput = z.object({ visionModel: modelRef.nullable() });
+
 export const heldActionDeclineInput = z.object({
   reason: z.string().trim().max(2000).optional(),
 });

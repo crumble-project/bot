@@ -2305,3 +2305,31 @@ describe("MCP server tokens from a password manager", () => {
     api.close();
   });
 });
+
+describe("vision model", () => {
+  test("is off by default, refuses a model no key reaches, and turns off with null", async () => {
+    const { app, store } = setup();
+
+    const get = await req(app, "/v1/vision-model");
+    expect(get.status).toBe(200);
+    expect((await get.json()).visionModel).toBeNull();
+
+    const unknown = await req(app, "/v1/vision-model", {
+      method: "PUT",
+      body: JSON.stringify({
+        visionModel: { provider: "nowhere", model: "eyes" },
+      }),
+    });
+
+    expect(unknown.status).toBe(400);
+
+    const off = await req(app, "/v1/vision-model", {
+      method: "PUT",
+      body: JSON.stringify({ visionModel: null }),
+    });
+
+    expect(off.status).toBe(200);
+    expect((await off.json()).visionModel).toBeNull();
+    store.close();
+  });
+});

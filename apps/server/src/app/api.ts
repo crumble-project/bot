@@ -23,6 +23,7 @@ import { registerLoginRoutes } from "../logins/logins-api";
 import { registerHeldActionRoutes } from "../bot-desktop/held-actions-api";
 import { heldActionsAccess } from "../bot-desktop/held-actions";
 import { registerJudgeModelRoutes } from "../bot-desktop/judge-settings";
+import { registerVisionModelRoutes } from "../vision/vision-settings";
 import { loginsAccess } from "../logins/logins";
 import { registerBotRequestRoutes } from "../bot-requests/bot-requests-api";
 import { BotRequests } from "../bot-requests/bot-requests";
@@ -337,6 +338,7 @@ const featureRoutes: ReadonlyArray<(api: ApiContext) => void> = [
   registerGatewayRoutes,
   registerEventSourceRoutes,
   registerJudgeModelRoutes,
+  registerVisionModelRoutes,
   registerAgentRoutes,
   registerChatRoutes,
   registerBotActivityRoutes,

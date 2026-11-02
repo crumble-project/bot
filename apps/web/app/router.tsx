@@ -48,6 +48,7 @@ import {
 } from "@/features/settings/settings";
 import { WebSearchPage } from "@/features/settings/web-search-settings";
 import { JudgeModelPage } from "@/features/settings/judge-model-settings";
+import { VisionModelPage } from "@/features/settings/vision-model-settings";
 import {
   MessageGatewayPage,
   MessageGatewaysPage,
@@ -323,6 +324,12 @@ const judgeModelRoute = createRoute({
   component: JudgeModelPage,
 });
 
+const visionModelRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/vision-model",
+  component: VisionModelPage,
+});
+
 const settingsCredentialsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/credentials",
@@ -411,6 +418,7 @@ export const router = createRouter({
         passwordManagersRoute,
         webSearchRoute,
         judgeModelRoute,
+        visionModelRoute,
         settingsCredentialsRoute,
         settingsLoginsRoute,
         settingsIntegrationsRoute,
