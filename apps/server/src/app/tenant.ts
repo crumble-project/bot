@@ -73,6 +73,7 @@ import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
 import { BotWorkspaces } from "../workspaces/workspace";
 import { GitHubAccounts } from "../github-apps/github-accounts";
 import { desktopKeepAwake } from "../bot-desktop/keep-awake";
+import { desktopScreenshotTools } from "../bot-desktop/desktop-screenshot";
 import { AgentRepository } from "../bots/agent-repository";
 import { BotRequests, botRequestTools } from "../bot-requests/bot-requests";
 import { Secrets, secretText } from "../password-managers/secrets";
@@ -306,6 +307,7 @@ function accountLayer(
     groupLookupTools,
     historyTools,
     desktopKeepAwake,
+    desktopScreenshotTools,
     push,
     MessageGateway.layer,
     EventSources.layer.pipe(Layer.provideMerge(EventRelay.layer)),

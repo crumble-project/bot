@@ -16,7 +16,8 @@ const CALL = new RegExp(
 
 /**
  * A bot desktop that runs only cua-driver and xdotool, answering each cua-driver tool from a queue of scripted replies.
- * The last reply of a queue repeats. The focused window is 101. Screenshots convert to JPEG unless `failConvert` is set.
+ * The last reply of a queue repeats. The focused window is 101. Screenshots convert to JPEG unless `failConvert` is set,
+ * and a whole-screen capture writes a JPEG unless `failCapture` is set.
  * `commands` and `writes` record every command line and file written, so tests can check what a value reached.
  */
 type CommandIo = {
@@ -32,6 +33,7 @@ export function scriptedGuest(replies: Record<string, GuestReply[]>) {
 
   const state = {
     failConvert: false,
+    failCapture: false,
     processStart: "Thu Oct 30 10:00:00 2026",
   };
 
@@ -81,6 +83,19 @@ export function scriptedGuest(replies: Record<string, GuestReply[]>) {
     return 0;
   };
 
+  const captureScreen = ([, jpg = ""]: RegExpExecArray, io: CommandIo) => {
+    if (state.failCapture) {
+      io.out("import: unable to open X server `:1'\n");
+
+      return 1;
+    }
+
+    files.set(jpg, new Uint8Array([0xff, 0xd8, 0xff, 0xd9]));
+    io.out("ok\n");
+
+    return 0;
+  };
+
   const remove = ([, paths = ""]: RegExpExecArray) => {
     for (const path of paths.split(" ")) files.delete(path);
 
@@ -123,6 +138,7 @@ export function scriptedGuest(replies: Record<string, GuestReply[]>) {
     (match: RegExpExecArray, io: CommandIo) => number,
   ][] = [
     [/^convert (\S+) -quality 75 (\S+)$/, convert],
+    [/import -window root -quality 75 (\S+) 2>&1 && echo ok$/, captureScreen],
     [/^rm -f (.*)$/, remove],
     [/xdotool getactivewindow/, activeWindow],
     [/ps -o lstart= -p \d+$/, processStart],
