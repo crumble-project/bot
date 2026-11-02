@@ -63,6 +63,18 @@ describe("the rule floor", () => {
     );
   });
 
+  test("leaves Enter in a terminal to the judge, but not a commit button there", () => {
+    const enter = { action: "key", keys: "Return" };
+
+    expect(isCommitPoint({ steps: [enter], terminal: true })).toBe(false);
+    expect(
+      isCommitPoint({
+        steps: [enter, click("button", "Delete")],
+        terminal: true,
+      }),
+    ).toBe(true);
+  });
+
   test("a steps call is a commit point when any step is", () => {
     expect(
       isCommitPoint({

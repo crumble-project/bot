@@ -221,6 +221,8 @@ async function callDriver(
   }
 }
 
+const DESKTOP_CHROME = new Set(["xfce4-panel", "xfdesktop"]);
+
 export async function listWindows(state: ComputerUseState, context: Context) {
   const { reply } = await driverCall(state, "list_windows", {}, context);
 
@@ -228,7 +230,10 @@ export async function listWindows(state: ComputerUseState, context: Context) {
   if (!reply.windows && refusalOf(reply))
     throw new Error(messageOf(reply) ?? codeOf(reply) ?? "list_windows failed");
 
-  return (reply.windows ?? []).filter((each) => each.app_name !== "Tint2");
+  // The panel and the wallpaper are desktop chrome, not windows a job works in.
+  return (reply.windows ?? []).filter(
+    (each) => !DESKTOP_CHROME.has(each.app_name.toLowerCase()),
+  );
 }
 
 export async function targetWindow(

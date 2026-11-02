@@ -28,6 +28,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## Bot desktop wallpaper
+
+The bot desktop's wallpaper (`apps/server/workspace-image/desktop/wallpaper.jpg`) is a photo by Lenin Estrada on Unsplash (photo `OI1ToozsKBw`), used under the Unsplash License: https://unsplash.com/license.
+
 ## Claude Code provider
 
 The Claude Code provider (`src/claude-code/`) and its qualification script (`tools/claude-code-qualify.ts`) are a TypeScript port of Hermes Agent's Claude Subscription DirectSDK plugin (NousResearch/hermes-official-plugins, `claude-subscription-directsdk`, commit 54afaf5): its model catalog, admission relay, stream-json transport, setup probes, inert MCP inventory, and wire evals. That plugin is available under the MIT License.

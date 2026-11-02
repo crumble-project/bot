@@ -14,7 +14,7 @@ export type ServerSettingsPatch = z.infer<typeof serverSettingsInput>;
 export const DEFAULT_SERVER_SETTINGS: ServerSettings = {
   signUpOpen: true,
   workspaceCpus: 2,
-  workspaceMemoryMib: 2048,
+  workspaceMemoryMib: 4096,
   codingImage: null,
   questionGraceMinutes: 15,
 };

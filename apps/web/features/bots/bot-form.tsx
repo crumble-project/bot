@@ -91,12 +91,12 @@ export const CAPABILITIES = [
   {
     tool: "coding",
     label: "Coding",
-    help: "Runs coding jobs in its own workspace.",
+    help: "Works in its own workspace and runs coding jobs.",
   },
   {
     tool: "desktop",
     label: "Bot desktop",
-    help: "Runs desktop jobs on its own computer.",
+    help: "Runs desktop jobs on its own desktop.",
   },
   {
     tool: "create_bots",

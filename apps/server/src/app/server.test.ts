@@ -81,6 +81,7 @@ function desktopWorkspaces(openDesktop: Workspaces["openDesktop"]): Workspaces {
     openDesktop,
     keepAwake: () => () => {},
     outdated: () => [],
+    running: () => false,
     desktopRunning: () => false,
     startDesktop: () => Effect.void,
     sync: () => Effect.void,

@@ -1,0 +1,11 @@
+/* Hides Thunar's info bars, whose only one here is the root-account warning: jobs run as root in their own machine. */
+.thunar infobar,
+.thunar infobar * {
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  font-size: 0;
+  background: none;
+  box-shadow: none;
+}

@@ -6,43 +6,73 @@ sidebar:
 ---
 
 Each bot has a **workspace**: a Linux machine with a persistent `/workspace`
-disk that only that bot's jobs can reach. The machine starts when a job needs
-it and stops when it's idle, and the files on the disk stay.
+disk that only that bot and its jobs can reach. The machine starts when the bot
+or a job needs it and stops when it's idle, and the files on the disk stay.
 
-| Comes with                                | Doesn't come with |
-| ----------------------------------------- | ----------------- |
-| Bun, Python with uv, git, and build tools | Node              |
+| Comes with                                                     | Doesn't come with                            |
+| -------------------------------------------------------------- | -------------------------------------------- |
+| Bun, Node with npm, Python with uv, git, `gh`, and build tools | Your project's own tools, such as Playwright |
 
 The server has to support workspaces before bots can use them. See
 [Set Up Workspaces](/self-hosting/workspaces).
 
+## Working in the Workspace
+
+A bot with **Coding** works in its workspace itself, the way a coding agent
+does: it reads and edits files and runs shell commands right in the chat, and
+in group chats too. You see each step as tool activity in the transcript.
+Chatting alone never starts the machine; the first command does.
+
 ## Jobs
 
-A bot doesn't do long work in the chat itself. It hands the work to a job that
-runs in the background, and the job's answer comes back to the chat.
+For work that runs beside the chat, such as several tasks at once or one that
+would block the chat for a long time, the bot hands the work to a job instead.
+The job runs in the background, and its answer comes back to the chat.
 
 There are two kinds of job:
 
 | Job             | What it does                                                     | Needs           |
 | --------------- | ---------------------------------------------------------------- | --------------- |
-| **Coding job**  | Edits files and runs shell commands.                             | **Coding**      |
+| **Coding job**  | Edits files and runs shell commands in the background.           | **Coding**      |
 | **Desktop job** | Uses a graphical desktop with Chromium, a mouse, and a keyboard. | **Bot desktop** |
 
 You don't pick the kind. Ask in plain language, such as "Clone my site's
 repository and fix the broken link on the about page," and the bot decides.
 
+A job starts knowing what the bot knows: your instructions for the bot, its
+memories, its skills, and the latest messages of the chat it was started from. So the bot tells it only the
+task and what's specific to it. A job can load the bot's skills, but it can't
+change skills or memories, start other jobs, ask other bots, or schedule
+automations.
+
 On web pages, a desktop job reads the page and acts on its elements directly,
 which is faster than going through the screen. Other apps, and the browser's
 own menus, it operates through their accessibility tree.
 
-Both kinds share the same machine. A coding job can start a web server, run
-browser tests against it, and then hand the address to a desktop job that
-checks the page by hand.
+The bot and both kinds of job share the same machine. The bot or a coding job
+can start a web server, run browser tests against it, and then hand the address
+to a desktop job that checks the page by hand.
 
 A coding job reuses a repository that an earlier job cloned: it fetches,
 branches from the default branch, and reinstalls dependencies only when the
 lockfile changed. What a job learns about a repository, such as its check
 commands, goes into the bot's [learned skills](/concepts/memory-and-skills).
+
+## Workspace Notes
+
+Every job starts with the bot's **workspace notes** in its prompt: facts the
+bot and its jobs learned about this machine, so nobody rediscovers them. The
+bot and its coding jobs keep the notes current, such as a tool installed outside
+`/workspace` and how to install it again, a command that needs a flag or
+environment variable, where a clone lives and how to run its checks, or a
+server left running and the command that starts it. Desktop jobs only read
+them.
+
+The notes are a plain file, `/workspace/.crumble/notes.md`, that you can ask
+the bot to read or edit. A job sees the first 4 KB. The bot and its jobs are
+told never to write secrets in it. The bot's chat shows the notes only while
+the workspace is running, so chatting never starts the machine; otherwise the
+bot is told where they are.
 
 ## Questions From Coding Jobs
 
@@ -56,6 +86,20 @@ While the job waits, its workspace keeps running for the server's question
 grace period, 15 minutes unless an admin changed it, so servers the job
 started stay up. After that the workspace stops as usual, and your answer
 starts it again with its files.
+
+## What's on the Bot Desktop
+
+The bot desktop is an XFCE desktop. A dock at the bottom opens **Files** (the
+Thunar file manager), **Terminal**, and **Chromium**. New windows open
+maximized; switch between them with Alt+Tab.
+
+It also has a text editor (Mousepad) and an image viewer (Ristretto), so files
+open from Files with an app. Files and the terminal start in `/workspace`, the
+same files the bot and its coding jobs work on, so a desktop job can open, move,
+rename, or drag files. A desktop job can start any installed app, including one
+the bot installed in the workspace, not only the browser. Chromium saves
+downloads to `/workspace/Downloads`. Thunar deletes files permanently; there's
+no trash.
 
 ## Watching the Bot Desktop
 
@@ -103,7 +147,9 @@ The [judge model](#choosing-the-judge-model) answers from your own messages,
 the job's task, and the action with its target, such as the button's role and
 name and the page's host. **It never reads the page's text, so a page can't
 talk it into an action.** The named buttons count as irreversible in several
-languages, whatever the judge says.
+languages, whatever the judge says. Enter in a terminal isn't one of them: it
+runs a command in the bot's own workspace, which the bot can do from its chat
+anyway, so only the judge decides whether such a command is held.
 
 A held action shows up as a card in the bot's chat with the action in plain
 words, the page, and the messages it was checked against.
@@ -152,6 +198,6 @@ A small chat model is only used when no key reaches a classifier model.
 
 ## Giving the Bot a Secret
 
-To let a coding job use an API key or token without it ever entering the
-workspace, give the bot a [credential](/concepts/credentials). To let a desktop
+To let the bot and its coding jobs use an API key or token without it ever
+entering the workspace, give the bot a [credential](/concepts/credentials). To let a desktop
 job sign in to a website, give it a [login](/concepts/logins).

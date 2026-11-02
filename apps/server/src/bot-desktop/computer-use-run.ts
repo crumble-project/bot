@@ -13,11 +13,19 @@ import {
 import { textResult, type ComputerUseState } from "./computer-use-state";
 import { runSteps } from "./computer-use-steps";
 import { fillLogin, restoreFilled, scrubFilled } from "./computer-use-login";
+import { launchApp, listApps } from "./computer-use-launch";
+import { isTerminal, readTerminal } from "./computer-use-terminal";
 import { proposedAction, type IntentGate } from "./computer-use-intent";
 import { ACTING_ACTIONS } from "./intent-check";
 
 // Actions that only look; they stay allowed right after control changed hands.
-const OBSERVE = new Set(["capture", "list_windows", "wait", "read"]);
+const OBSERVE = new Set([
+  "capture",
+  "list_windows",
+  "list_apps",
+  "wait",
+  "read",
+]);
 
 const STALE =
   "Control changed hands: the owner used the bot desktop and handed it back. The screen may have changed and element numbers are stale. Capture before acting.";
@@ -39,6 +47,8 @@ const EMPTY_UNSET = [
   "ref",
   "login",
   "field",
+  "app",
+  "path",
 ] as const;
 
 /** Empty text means unset, except for the action that takes it: an empty set_value clears a field. */
@@ -186,21 +196,59 @@ async function refAction(
   );
 }
 
+/** Actions that act on no window of their own. */
+const DESKTOP_ACTIONS = new Map<
+  string,
+  (
+    state: ComputerUseState,
+    args: ComputerUseArgs,
+    context: Context,
+  ) => Promise<ComputerUseResult>
+>([
+  [
+    "list_windows",
+    async (state, _args, context) => textResult(await listing(state, context)),
+  ],
+  [
+    "wait",
+    async (_state, args) => textResult(`waited ${await pause(args.seconds)}s`),
+  ],
+  ["fill_login", fillLogin],
+  ["launch", launchApp],
+  ["list_apps", (state, _args, context) => listApps(state, context)],
+]);
+
+/** A read of a terminal returns its text; a read of anything else reads Chromium's page. */
+async function readAction(
+  state: ComputerUseState,
+  args: ComputerUseArgs,
+  context: Context,
+) {
+  const window = await targetWindow(state, args.window_id, context);
+
+  return isTerminal(window)
+    ? readTerminal(state, window, context)
+    : readPage(
+        state,
+        args,
+        await chromiumWindow(state, args.window_id, context),
+        context,
+      );
+}
+
 async function dispatch(
   state: ComputerUseState,
   args: ComputerUseArgs,
   context: Context,
 ): Promise<ComputerUseResult> {
-  if (args.action === "list_windows")
-    return textResult(await listing(state, context));
+  const desktop = DESKTOP_ACTIONS.get(args.action);
 
-  if (args.action === "wait")
-    return textResult(`waited ${await pause(args.seconds)}s`);
-
-  if (args.action === "fill_login") return fillLogin(state, args, context);
+  if (desktop) return desktop(state, args, context);
 
   if (args.ref !== undefined && REF_ACTIONS.has(args.action))
     return refAction(state, args, context);
+
+  if (args.action === "read") return readAction(state, args, context);
 
   const page = PAGE_ACTIONS.get(args.action);
 

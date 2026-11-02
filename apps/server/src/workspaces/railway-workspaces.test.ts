@@ -29,6 +29,7 @@ import {
   type SandboxCheckpointInfo,
   type SandboxTemplate,
 } from "railway";
+import { ALLOW_OVERCOMMIT } from "./machine-workspaces";
 import {
   RailwayMachines,
   RailwayWorkspaces,
@@ -126,8 +127,9 @@ describe("Railway workspace configuration", () => {
 });
 
 describe("Railway machines when Railway fails", () => {
-  const fakeSandbox = (id: string) => {
-    const fake = { destroyed: 0 };
+  const fakeSandbox = (id: string, refuse: readonly string[] = []) => {
+    const commands: string[] = [];
+    const fake = { destroyed: 0, commands };
 
     // Own properties shadow the SDK's getters and methods, so nothing reaches Railway.
     const sandbox: Sandbox = Object.create(Sandbox.prototype, {
@@ -136,7 +138,15 @@ describe("Railway machines when Railway fails", () => {
       files: { value: { write: async () => undefined } },
       refresh: { value: async () => sandbox, writable: true },
       heartbeat: { value: async () => sandbox },
-      exec: { value: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
+      exec: {
+        value: async (command: string) => {
+          fake.commands.push(command);
+
+          return refuse.includes(command)
+            ? { exitCode: 1, stdout: "", stderr: "Permission denied" }
+            : { exitCode: 0, stdout: "", stderr: "" };
+        },
+      },
       checkpoint: { value: async () => undefined },
       destroy: { value: async () => void (fake.destroyed += 1) },
     });
@@ -210,6 +220,19 @@ describe("Railway machines when Railway fails", () => {
       "Railway is unreachable",
     );
     expect(fake.destroyed).toBe(0);
+  });
+
+  test("a sandbox that refuses memory overcommit still boots", async () => {
+    const fake = fakeSandbox("strict", [ALLOW_OVERCOMMIT]);
+    stubSandboxes(fake.sandbox);
+    const { machines } = newMachines();
+
+    const machine = await Effect.runPromise(
+      machines.boot("bot", machines.baseImage),
+    );
+
+    expect(fake.commands).toContain(ALLOW_OVERCOMMIT);
+    await Effect.runPromise(machine.stop);
   });
 
   test("a failed reconnect keeps the running sandbox instead of restoring an older checkpoint", async () => {

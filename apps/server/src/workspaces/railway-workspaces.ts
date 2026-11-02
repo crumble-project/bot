@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import net from "node:net";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   Sandbox,
@@ -15,6 +15,7 @@ import {
   DESKTOP_START,
   GUEST_DAEMON,
   MachineWorkspaces,
+  allowOvercommit,
   assertAgentId,
   bootStep,
   daemonPath,
@@ -71,7 +72,7 @@ const DESKTOP_SCRIPTS = path.join(
 // cua-driver's telemetry is on by default; the Microsandbox image sets the same in its environment.
 const GUEST_ENV = { CUA_DRIVER_RS_TELEMETRY_ENABLED: "0", DO_NOT_TRACK: "1" };
 
-const DEFAULT_RESOURCES: SandboxResources = { cpu: 2, memoryGB: 2 };
+const DEFAULT_RESOURCES: SandboxResources = { cpu: 2, memoryGB: 4 };
 
 /** How long a workspace stays unchanged before a sync becomes a checkpoint. */
 export const DEFAULT_CHECKPOINT_DELAY_MS = 30_000;
@@ -90,13 +91,17 @@ const BASE_RECIPE = {
     "build-essential",
     "ca-certificates",
     "curl",
+    "file",
     "git",
+    "jq",
     "make",
     "openssh-client",
+    "procps",
     "python3",
     "python3-venv",
     "ripgrep",
     "unzip",
+    "xz-utils",
   ],
   steps: [
     "curl -LsSf https://astral.sh/uv/0.13.1/install.sh | env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh",
@@ -128,14 +133,21 @@ const DESKTOP_RECIPE: Recipe = {
   packages: [
     ...BASE_RECIPE.packages,
     "tigervnc-standalone-server",
-    "openbox",
-    "tint2",
+    "xfwm4",
+    "xfce4-panel",
+    "xfdesktop4",
+    "thunar",
+    "mousepad",
+    "ristretto",
+    "xfce4-terminal",
+    "librsvg2-common",
+    "wmctrl",
+    "xclip",
     "xdotool",
     "imagemagick",
     "fonts-dejavu-core",
     "fonts-noto-color-emoji",
     "socat",
-    "procps",
     "dbus-x11",
     "at-spi2-core",
     "x11-utils",
@@ -148,14 +160,15 @@ const DESKTOP_RECIPE: Recipe = {
     `bash -lc 'npx -y playwright@${PLAYWRIGHT_VERSION} install-deps chromium'`,
     `curl -fsSLo /tmp/chromium.zip https://commondatastorage.googleapis.com/chromium-browser-snapshots/Linux_x64/${CHROMIUM_REVISION}/chrome-linux.zip`,
     `echo "${CHROMIUM_SHA256}  /tmp/chromium.zip" | sha256sum -c -`,
-    "unzip -q /tmp/chromium.zip -d /opt/crumble && rm /tmp/chromium.zip",
-    "ln -sf /opt/crumble/chrome-linux/chrome /usr/local/bin/chromium",
+    "unzip -q /tmp/chromium.zip -d /tmp && rm /tmp/chromium.zip",
+    // cua-driver attaches its page tools only to a Chromium it recognizes by path, as Debian installs it.
+    "rm -rf /usr/lib/chromium && mv /tmp/chrome-linux /usr/lib/chromium && mv /usr/lib/chromium/chrome /usr/lib/chromium/chromium",
+    "ln -sf /usr/lib/chromium/chromium /usr/local/bin/chromium",
     `curl -fsSLo /tmp/cua-driver.tgz https://github.com/trycua/cua/releases/download/cua-driver-rs-v${CUA_DRIVER_VERSION}/cua-driver-rs-${CUA_DRIVER_VERSION}-linux-x86_64-binary.tar.gz`,
     `echo "${CUA_DRIVER_SHA256}  /tmp/cua-driver.tgz" | sha256sum -c -`,
     "tar -xzf /tmp/cua-driver.tgz -C /usr/local/bin cua-driver && rm /tmp/cua-driver.tgz",
     "CUA_DRIVER_RS_TELEMETRY_ENABLED=0 cua-driver telemetry disable",
-    // Every window maximized and undecorated: the job sees content, not window chrome.
-    `mkdir -p /opt/crumble && sed 's|<applications>|<applications><application class="*"><decor>no</decor><maximized>yes</maximized></application>|' /etc/xdg/openbox/rc.xml > /opt/crumble/openbox-rc.xml`,
+    "mkdir -p /opt/crumble",
   ],
 };
 
@@ -299,7 +312,7 @@ export class RailwayMachines implements WorkspaceMachines {
     const machine = yield* this.sandbox(agentId, name, image, record);
     const desktop = image === this.desktopImage;
 
-    yield* this.prepareGuest(machine, desktop, guest);
+    yield* this.prepareGuest(agentId, machine, desktop, guest);
 
     const intercept = this.intercept;
 
@@ -365,12 +378,12 @@ export class RailwayMachines implements WorkspaceMachines {
   private readonly prepareGuest = Effect.fn("RailwayMachines.prepareGuest")(
     function* (
       this: RailwayMachines,
+      agentId: string,
       machine: Sandbox,
       desktop: boolean,
       guest: GuestSetup,
     ) {
-      // Each write is a request to Railway; in parallel they cost one round trip.
-      yield* bootStep("Writing the guest files", async () => {
+      const writeFiles = bootStep("Writing the guest files", async () => {
         await Promise.all([
           machine.files.write(GUEST_DAEMON, await readFile(this.daemon), {
             mode: 0o755,
@@ -385,6 +398,15 @@ export class RailwayMachines implements WorkspaceMachines {
           desktop && writeDesktopScripts(machine),
         ]);
       });
+
+      // Each write and command is a request to Railway; in parallel they cost one round trip.
+      yield* Effect.all(
+        [
+          writeFiles,
+          allowOvercommit(agentId, (command) => run(machine, command)),
+        ],
+        { concurrency: "unbounded" },
+      );
 
       if (guest.caCertificate)
         yield* bootStep("Installing the credential authority", () =>
@@ -680,14 +702,16 @@ class RailwayMachine implements WorkspaceMachine {
   }
 }
 
-/** Uploads the desktop scripts, which change with the server rather than the image, and starts the bot desktop. */
-function writeDesktopScripts(sandbox: Sandbox) {
+/** Uploads the desktop scripts and their configuration, which change with the server rather than the image. */
+async function writeDesktopScripts(sandbox: Sandbox) {
+  const files = await readdir(DESKTOP_SCRIPTS);
+
   return Promise.all(
-    ["desktop-start.sh", "browser.sh"].map(async (script) =>
+    files.map(async (file) =>
       sandbox.files.write(
-        `/opt/crumble/${script}`,
-        await readFile(path.join(DESKTOP_SCRIPTS, script)),
-        { mode: 0o755 },
+        `/opt/crumble/${file}`,
+        await readFile(path.join(DESKTOP_SCRIPTS, file)),
+        { mode: file.endsWith(".sh") ? 0o755 : 0o644 },
       ),
     ),
   );

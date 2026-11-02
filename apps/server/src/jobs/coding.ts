@@ -6,21 +6,26 @@ import {
   type ConversationId,
   type EnvTarget,
   type Harness,
+  type PromptSection,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { createCodingTools } from "@earendil-works/pi-durable/tools";
 import { Effect } from "effect";
 import {
   credentialExtension,
-  jobCredentialSection,
+  workspaceCredentialSection,
   type CredentialsAccess,
 } from "../credentials/credentials";
 import type { Agent } from "../shared/domain";
 import { defineJobKind, type JobExtensions, type JobInfo } from "./jobs";
 import type { CrumblePlugin } from "../plugins/plugins";
 import { WORKSPACE_PATH, type Workspaces } from "../workspaces/workspace";
+import { chatWorkspaceSection, workspaceNotesSection } from "./workspace-notes";
 
 export const CODING_TOOL_NAME = "coding";
+
+/** The bot's own read, write, edit, and bash in its workspace; group turns keep it, unlike the job tool. */
+const WORKSPACE_EXTENSION = "workspace";
 
 const DEFAULT_QUESTION_GRACE_MS = 15 * 60 * 1000;
 
@@ -32,16 +37,18 @@ const coding = defineJobKind({
   toolName: CODING_TOOL_NAME,
   label: "coding job",
   description:
-    `Run coding jobs: background agents that read, write, edit files and run shell commands in your persistent workspace (${WORKSPACE_PATH}), which survives restarts and is shared by all your jobs. ` +
-    "Actions: start (name, message: the full task, since the job knows nothing else), send (name, message; followUp: true queues it after the current answer instead of steering), stop (name: aborts its current work), status (name, or all jobs without one). " +
+    `Run coding jobs: background agents with their own read, write, edit, and bash in your workspace (${WORKSPACE_PATH}). ` +
+    "Do coding work yourself with those tools. Start a job only for work that runs beside you: several tasks at once, or a task that would block this chat for long. " +
+    "Actions: start (name, message: the task and what only you know about it; the job already sees your standing instructions, memory, skills, and the latest messages of this chat), send (name, message; followUp: true queues it after the current answer instead of steering), stop (name: aborts its current work), status (name, or all jobs without one). " +
     "Starting a job or sending it a message ends your turn, and the owner sees the job as a card, so write anything else the owner needs before the call and do not describe the job. " +
     "Jobs keep working after your turn ends. Their final answer arrives later as a message from the job; then tell the owner the outcome. Do not wait or poll for it. " +
-    "A server a job starts keeps running on localhost for later jobs, desktop jobs included, until the workspace stops while idle; a job starts it again with the command it reported.",
+    "A server you or a job start keeps running on localhost, for you and later jobs, desktop jobs included, until the workspace stops while idle; start it again with the command reported for it.",
   instructions: [
     `You are a coding job for another bot. Do the task you are given with your read, write, edit, and bash tools, working in ${WORKSPACE_PATH}, a persistent workspace that earlier jobs of this bot also used.`,
     `To leave a server or other long-running program for later jobs, start it in its own session with its output in a log file: setsid <command> > ${WORKSPACE_PATH}/<name>.log 2>&1 < /dev/null &. Started any other way, it dies when your command ends or is stopped. Check that it answers before you report.`,
     "For browser tests, use the workspace's Chromium if `command -v chromium` finds one: install Playwright with PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 and launch chromium with executablePath set to that path.",
     "Before cloning a repository, check whether earlier jobs left a clone in the workspace: reuse it, fetch, and branch from the remote's default branch. Reinstall dependencies only when the lockfile changed since the last install.",
+    "Change files with the edit tool, not with sed or a script that replaces strings. Don't print a file you already read in this job again unless it changed since.",
     "Work without asking: follow the task, the repository's own instructions, and your skills. Use ask_owner only when the answer changes what you build or a decision is the owner's to make, and keep working on anything that doesn't depend on it before you ask.",
     "Verify your work by running it. Finish with a short report: what you did, what you verified, and what is left. For a server you left running, include its URL and the command that starts it again.",
   ].join(" "),
@@ -66,7 +73,8 @@ export const codingJobs = (harness: Harness, chatId: ConversationId) =>
 /** Sends the owner's answer to a coding job's open question; false when it has none with that ID. */
 export const answerCodingJob = coding.answer;
 
-export async function codingEnv(
+/** A coding job's environment: the bot's workspace with its credentials. None for any other conversation. */
+async function codingEnv(
   workspaces: Workspaces,
   agentId: string,
   target: EnvTarget,
@@ -82,8 +90,43 @@ export async function codingEnv(
   );
 }
 
-/** Lets a bot run coding jobs: child conversations with Pi's coding tools in the bot's workspace. */
-export function codingExtensions(
+/** The environment of the bot's own conversations: its workspace with its credentials, as its coding jobs get. Lazy. */
+const codingBotEnv = (
+  workspaces: Workspaces,
+  agentId: string,
+  credentials?: CredentialsAccess,
+): ExecutionEnv => workspaces.env(agentId, credentials?.env(agentId));
+
+const credentialSection = (
+  key: string,
+  agentId: string,
+  credentials: CredentialsAccess,
+  applies: (
+    input: Parameters<PromptSection["render"]>[0],
+    context: Context,
+  ) => Promise<boolean> = async () => true,
+): PromptSection => ({
+  key,
+  render: async (input, context) =>
+    (await applies(input, context))
+      ? workspaceCredentialSection(
+          credentials.list(agentId).credentials,
+          credentials.githubIdentities(agentId),
+        )
+      : undefined,
+});
+
+// A crash then loses at most the call in flight.
+const syncAfter = (workspaces: Workspaces, agentId: string, name: string) =>
+  FILE_CHANGING_TOOLS.has(name)
+    ? Effect.runPromise(workspaces.sync(agentId))
+    : Promise.resolve();
+
+/**
+ * Lets a bot work in its workspace with Pi's coding tools, in its chat and group chats, and run coding jobs: child
+ * conversations with the same tools in the same workspace.
+ */
+function codingExtensions(
   agent: Pick<Agent, "id">,
   workspaces: Workspaces,
   credentials?: CredentialsAccess,
@@ -110,35 +153,56 @@ export function codingExtensions(
     awake = { release, timer };
   });
 
+  const tools = createCodingTools().tools ?? [];
+
+  // The chat selects every installed extension, this one included, so its sections and hook check for a job.
   const job = defineExtension({
     name: "coding-job",
-    tools: [...(createCodingTools().tools ?? []), ask],
-    sections: credentials
-      ? [
-          {
-            key: "workspace_credentials",
-            // Installed job extensions render in the bot's chat too; only a job needs this.
-            render: async (input, context) =>
-              (await coding.isJob(input.read, input.conversationId, context))
-                ? jobCredentialSection(
-                    credentials.list(agent.id).credentials,
-                    credentials.githubIdentities(agent.id),
-                  )
-                : undefined,
-          },
-        ]
-      : [],
+    tools: [...tools, ask],
+    sections: [
+      workspaceNotesSection(coding.isJob, true),
+      ...(credentials
+        ? [
+            credentialSection(
+              "workspace_credentials",
+              agent.id,
+              credentials,
+              (input, context) =>
+                coding.isJob(input.read, input.conversationId, context),
+            ),
+          ]
+        : []),
+    ],
     hooks: [
       hook(ToolTask, {
-        // A crash then loses at most the call in flight.
         afterTool: async (call, _result, api, context) => {
+          if (!(await coding.isJob(api, api.conversationId, context)))
+            return undefined;
+
           // A tool after the question means the answer arrived and the job works again.
           wake();
+          await syncAfter(workspaces, agent.id, call.name);
 
-          if (!FILE_CHANGING_TOOLS.has(call.name)) return undefined;
+          return undefined;
+        },
+      }),
+    ],
+  });
 
-          if (await coding.isJob(api, api.conversationId, context))
-            await Effect.runPromise(workspaces.sync(agent.id));
+  // Jobs select exactly their own extension, so this one reaches only the bot's chat and group chats.
+  const own = defineExtension({
+    name: WORKSPACE_EXTENSION,
+    tools,
+    sections: [
+      chatWorkspaceSection(() => workspaces.running(agent.id)),
+      ...(credentials
+        ? [credentialSection("shell_credentials", agent.id, credentials)]
+        : []),
+    ],
+    hooks: [
+      hook(ToolTask, {
+        afterTool: async (call) => {
+          await syncAfter(workspaces, agent.id, call.name);
 
           return undefined;
         },
@@ -148,15 +212,17 @@ export function codingExtensions(
 
   const extensions = coding.extensions({ agentId: agent.id, job });
 
-  return credentials
-    ? {
-        ...extensions,
-        chat: [...extensions.chat, credentialExtension(agent.id, credentials)],
-      }
-    : extensions;
+  return {
+    ...extensions,
+    chat: [
+      own,
+      ...extensions.chat,
+      ...(credentials ? [credentialExtension(agent.id, credentials)] : []),
+    ],
+  };
 }
 
-/** Coding jobs as a plugin: offered to bots with the `coding` tool while workspaces are available. */
+/** Coding as a plugin: workspace tools and coding jobs for bots with the `coding` tool, while workspaces exist. */
 export const codingPlugin = (
   workspaces: Workspaces | undefined,
   credentials?: CredentialsAccess,
@@ -172,6 +238,7 @@ export const codingPlugin = (
             codingExtensions(agent, workspaces, credentials, questionGraceMs),
           env: (agentId, target, context) =>
             codingEnv(workspaces, agentId, target, context, credentials),
+          botEnv: (agentId) => codingBotEnv(workspaces, agentId, credentials),
           onAnswer: codingAnswers,
         },
       ]

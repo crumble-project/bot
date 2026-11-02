@@ -7,7 +7,7 @@ import { scriptedGuest } from "../../test/fixtures/scripted-guest";
 const windows = {
   windows: [
     { pid: 7, window_id: 101, app_name: "Chromium", title: "Form - Chromium" },
-    { pid: 8, window_id: 202, app_name: "Tint2", title: "tint2" },
+    { pid: 8, window_id: 202, app_name: "Xfce4-panel", title: "xfce4-panel" },
   ],
 };
 
@@ -350,6 +350,18 @@ test("an ended cua-driver session is started again and the call retried", async 
   ]);
 });
 
+test("the window listing leaves out the XFCE panel", async () => {
+  const { shell } = scriptedGuest({ list_windows: [windows] });
+
+  const result = await createComputerUse(shell).run(
+    { action: "list_windows" },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(text(result)).toContain("Chromium");
+  expect(text(result)).not.toContain("xfce4-panel");
+});
+
 test("a failed window listing reports cua-driver's error, not an empty desktop", async () => {
   const { shell } = scriptedGuest({
     list_windows: [{ error: "cua-driver daemon is not running" }],
@@ -623,4 +635,161 @@ test("a capture with a query reads only matching elements, and the next plain ca
     window_id: 101,
     element_token: "s2:7",
   });
+});
+
+const installed = {
+  apps: [
+    { name: "Xvnc", kind: null, launch_path: null, running: true },
+    {
+      name: "Mousepad",
+      kind: "desktop",
+      launch_path: "mousepad",
+      running: false,
+    },
+    {
+      name: "Chromium",
+      kind: "desktop",
+      launch_path: "/opt/crumble/browser.sh",
+      running: true,
+    },
+  ],
+};
+
+const opened = (window: {
+  window_id: number;
+  app_name: string;
+  title: string;
+}) => ({
+  windows: [...windows.windows, { pid: 9, ...window }],
+});
+
+test("launch opens Files and Terminal at a folder, and any installed app by its name", async () => {
+  const { shell, commands } = scriptedGuest({
+    list_windows: [
+      windows,
+      opened({ window_id: 303, app_name: "Thunar", title: "demo - Thunar" }),
+      windows,
+      opened({ window_id: 404, app_name: "Mousepad", title: "notes.txt" }),
+    ],
+    list_apps: [installed],
+  });
+
+  const cu = createComputerUse(shell);
+
+  const files = await cu.run(
+    { action: "launch", app: "Files", path: "/workspace/it's demo" },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(files.isError).toBeFalsy();
+  expect(text(files)).toBe(
+    `opened Files at /workspace/it's demo: window 303 Thunar "demo - Thunar". Capture it to act in it.`,
+  );
+
+  const editor = await cu.run(
+    { action: "launch", app: "mousepad", path: "/workspace/notes.txt" },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(text(editor)).toContain("window 404 Mousepad");
+
+  // The path is quoted as one argument, so no part of it runs as a command.
+  expect(commands.filter((command) => command.includes("setsid"))).toEqual([
+    `. /run/crumble-desktop.env; setsid thunar '/workspace/it'\\''s demo' >/dev/null 2>&1 </dev/null &`,
+    `. /run/crumble-desktop.env; setsid mousepad '/workspace/notes.txt' >/dev/null 2>&1 </dev/null &`,
+  ]);
+});
+
+test("list_apps names the installed apps, and launch refuses an unknown app or a relative path", async () => {
+  const { shell, commands } = scriptedGuest({
+    list_windows: [windows],
+    list_apps: [installed],
+  });
+
+  const cu = createComputerUse(shell);
+
+  expect(text(await cu.run({ action: "list_apps" }, BACKGROUND_CONTEXT))).toBe(
+    "Mousepad\nChromium (running)",
+  );
+
+  const unknown = await cu.run(
+    { action: "launch", app: "GIMP" },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(unknown.isError).toBe(true);
+  expect(text(unknown)).toContain('no installed app named "GIMP"');
+
+  const relative = await cu.run(
+    { action: "launch", app: "Files", path: "demo" },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(relative.isError).toBe(true);
+  expect(commands.some((command) => command.includes("setsid"))).toBe(false);
+});
+
+test("read on a terminal window returns its text, which its tree doesn't hold", async () => {
+  const terminal = {
+    pid: 9,
+    window_id: 103,
+    app_name: "Xfce4-terminal",
+    title: "Terminal",
+  };
+
+  const { shell, commands, state } = scriptedGuest({
+    list_windows: [{ windows: [...windows.windows, terminal] }],
+  });
+
+  state.terminalText = "$ ls demo\nhello.js  sum.js\n$ \n";
+
+  const read = await createComputerUse(shell).run(
+    { action: "read", window_id: 103 },
+    BACKGROUND_CONTEXT,
+  );
+
+  expect(text(read)).toBe(
+    'terminal 103 "Terminal" text, latest last:\n$ ls demo\nhello.js  sum.js\n$',
+  );
+  expect(
+    commands.some((command) => command.includes("windowactivate --sync 103")),
+  ).toBe(true);
+});
+
+test("list_apps names each app once, running if any of its processes is", async () => {
+  const { shell } = scriptedGuest({
+    list_apps: [
+      {
+        apps: [
+          {
+            name: "Chromium",
+            kind: "desktop",
+            launch_path: "chromium",
+            running: true,
+          },
+          {
+            name: "Chromium",
+            kind: "desktop",
+            launch_path: "chromium",
+            running: false,
+          },
+          {
+            name: "Mousepad",
+            kind: "desktop",
+            launch_path: "mousepad",
+            running: false,
+          },
+        ],
+      },
+    ],
+  });
+
+  expect(
+    text(
+      await createComputerUse(shell).run(
+        { action: "list_apps" },
+        BACKGROUND_CONTEXT,
+      ),
+    ),
+  ).toBe("Chromium (running)\nMousepad");
 });

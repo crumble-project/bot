@@ -14,7 +14,12 @@ export type IntentStep = {
 };
 
 /** An acting call: one step, or every step of a `steps` call, checked together. */
-export type ProposedAction = { steps: IntentStep[]; host?: string };
+export type ProposedAction = {
+  steps: IntentStep[];
+  host?: string;
+  /** The window is a terminal emulator, where Enter runs a shell command in the bot's own workspace. */
+  terminal?: boolean;
+};
 
 /** What the judge reads. Page text is never part of it, so a page can't argue for its own action. */
 export type IntentRequest = {
@@ -155,12 +160,14 @@ const isCommitControl = ({ role, name }: IntentTarget) =>
 const isCommitPress = ({ action, target }: IntentStep) =>
   PRESSES.has(action) && target !== undefined && isCommitControl(target);
 
-const stepIsCommitPoint = (step: IntentStep) =>
-  isEnter(step) || isCommitPress(step);
-
-/** The rule floor: a known commit point counts as irreversible whatever the judge says. */
+/**
+ * The rule floor: a known commit point counts as irreversible whatever the judge says. Enter in a terminal is left to
+ * the judge: the bot runs the same commands with bash in its chat without asking.
+ */
 export const isCommitPoint = (action: ProposedAction) =>
-  action.steps.some(stepIsCommitPoint);
+  action.steps.some(
+    (step) => (!action.terminal && isEnter(step)) || isCommitPress(step),
+  );
 
 /** Rules only make the check stricter: a commit point is irreversible even when the judge disagrees. */
 export function decide(

@@ -68,7 +68,9 @@ bun -e 'import { Image } from "microsandbox"; await Image.load("/tmp/crumble-wor
 ```
 
 For the desktop image, use `--target desktop` and the tag
-`crumble-workspace-desktop:dev`.
+`crumble-workspace-desktop:dev`. It adds the bot desktop: Xvnc, the XFCE
+window manager and panel, Thunar, the XFCE terminal, Chromium, and
+`cua-driver`, started by `/opt/crumble/desktop-start.sh`.
 
 ## Railway
 
@@ -88,6 +90,7 @@ Microsandbox in a few ways:
 | ------------- | ----------------------------------------------------------------------- |
 | Plan          | Use Hobby or Pro. Other plans delete idle sandboxes after 5 minutes.    |
 | Network       | Outbound connections from workspaces aren't filtered.                   |
+| Node          | The version Railway's Ubuntu comes with, not the image's pinned LTS.    |
 | Saving files  | A checkpoint 30 seconds after the last change, and before every stop.   |
 | First desktop | Takes a few minutes to start while Railway builds the desktop template. |
 
@@ -99,7 +102,7 @@ the image for coding jobs or bot desktops.
 
 | Setting               | Default                   | Applies                                                                      |
 | --------------------- | ------------------------- | ---------------------------------------------------------------------------- |
-| Workspace size        | 2 CPUs, 2 GB              | When a workspace's machine is next created. A running one keeps its size.    |
+| Workspace size        | 2 CPUs, 4 GB              | When a workspace's machine is next created. A running one keeps its size.    |
 | Coding image          | `CRUMBLE_WORKSPACE_IMAGE` | Microsandbox only. Railway builds its own images and ignores this setting.   |
 | Question grace period | 15 minutes                | How long a coding job that asked you a question keeps its workspace running. |
 
@@ -111,4 +114,6 @@ ones still on an older image. Bots with a bot desktop keep using
 
 The image needs what the published one has: Debian with git, curl, and
 `ca-certificates`. The server writes its own helpers into every workspace when
-it starts.
+it starts, and sets `vm.overcommit_memory` to `1`, so tools that reserve more
+memory than the machine has, such as oxlint, don't crash. A machine that
+refuses the setting still starts, and the server logs a warning.

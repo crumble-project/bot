@@ -44,6 +44,13 @@ import {
   type JobRequest,
   type OwnerMessage,
 } from "./owner-request";
+import { chatExcerpt } from "./chat-excerpt";
+
+/**
+ * Installed by the bot's runtime: its memory, read-only, and its skills with the `skill` tool. Every job selects it
+ * next to its own extension, so a job knows what its bot knows; the bot's own conversations never select it.
+ */
+export const JOB_KNOWLEDGE_EXTENSION = "job-knowledge";
 
 export type JobKindOptions = {
   /** Names the kind's documents, tasks, request IDs, and message origin. Stored data depends on it: never rename. */
@@ -217,6 +224,8 @@ type StartOrSend = {
   job: Extension;
   /** The job's model; unset, a job starts with the bot's model. */
   model: ModelRef | undefined;
+  /** The bot's memory and skills, as the runtime installed them; unset without a runtime that does. */
+  knowledge: Extension | undefined;
 };
 
 /** What a start or send did, and the job its card shows. */
@@ -757,31 +766,37 @@ const defineJobReporter = (kindState: JobKindBase): JobReporter =>
     abort: jobReporterAbort(kindState),
   });
 
+const jobInstructions = (instructions: string, chat: string) =>
+  chat
+    ? `${instructions}\n\nThe bot's chat with its owner when it started you, latest message last. The bot's message to you is your task; this is its background:\n<recent_chat>\n${chat}\n</recent_chat>`
+    : instructions;
+
 /** Starts the job's own conversation as a copy of the bot's agent; false when the name is taken. */
 const startJob = async (
   kindState: JobKindBase,
   tx: Tx,
   request: StartOrSend,
   state: JobsState,
+  chat: string,
 ) => {
-  const { name, job, model } = request;
+  const { name, job, model, knowledge } = request;
 
   if (Object.hasOwn(state.jobs, name)) return false;
 
   const anchor = await tx.createTask(kindState.Anchor, null, BACKGROUND);
 
-  // Starts as a copy of the bot's agent, then keeps only the job's own tools. Selecting exactly the job extension
-  // also drops the bot's other tools, hooks, and prompt sections, so a job can neither start jobs nor delegate,
-  // schedule, or reach integrations.
+  // Starts as a copy of the bot's agent, then keeps only the job's own tools and the bot's knowledge. Selecting exactly
+  // these drops the bot's other tools, hooks, and prompt sections, so a job can neither start jobs nor delegate,
+  // schedule, write memory, or reach integrations.
   const child = await tx.createConversation({
     ownership: { kind: "task", taskId: anchor },
   });
 
   await configure(tx, child.id, {
-    extensions: [job],
+    extensions: knowledge ? [job, knowledge] : [job],
     tools: null,
     modelTools: null,
-    instructions: kindState.options.instructions,
+    instructions: jobInstructions(kindState.options.instructions, chat),
     cwd: WORKSPACE_PATH,
     ...(model && { model }),
   });
@@ -862,6 +877,17 @@ const queueDelivery = async (
 };
 
 /** Starts a job or messages an existing one, admitting its delivery before it answers. */
+/** The chat excerpt a new job starts with. Read before the start writes anything: a commit's table reads come first. */
+const startExcerpt = (
+  tx: Tx,
+  chatId: ConversationId,
+  request: StartOrSend,
+  state: JobsState,
+) =>
+  request.action === "start" && !Object.hasOwn(state.jobs, request.name)
+    ? chatExcerpt(tx, chatId)
+    : Promise.resolve("");
+
 const startOrSend = async (
   kindState: JobKindState,
   call: JobToolCall,
@@ -888,9 +914,11 @@ const startOrSend = async (
       attached = cited.messages;
     }
 
+    const chat = await startExcerpt(tx, api.conversationId, request, state);
+
     if (
       request.action === "start" &&
-      !(await startJob(kindState, tx, request, state))
+      !(await startJob(kindState, tx, request, state, chat))
     )
       return {
         text: `${request.name} already exists; use send.`,
@@ -1063,8 +1091,8 @@ const isJobConversation = async (
   true;
 
 /**
- * A job's environment is its bot's workspace. Any other conversation, such as the bot's chat, gets none, so a
- * tool that wrongly reached for a shell would fail instead of touching the workspace.
+ * A job's environment is its bot's workspace. Any other conversation gets none from here, so a job kind never hands
+ * out another conversation's environment; the bot's own get theirs from its plugin's `botEnv`.
  */
 const jobEnv = async (
   kindState: JobKindBase,
@@ -1162,6 +1190,7 @@ const runJobTool = async (
     ownerMessages: args.owner_messages ?? [],
     job: input.job,
     model: input.model,
+    knowledge: api.registry.extension(JOB_KNOWLEDGE_EXTENSION),
   });
 
   // Only a start shows the job's card, once per job; the turn ends with it, as after `show`.
@@ -1233,10 +1262,7 @@ const jobKindApi = (state: JobKindState) => {
       context: Context,
     ) => isJobConversation(state, reader, conversationId, context),
 
-    /**
-     * A job's environment is its bot's workspace. Any other conversation, such as the bot's chat, gets none, so a
-     * tool that wrongly reached for a shell would fail instead of touching the workspace.
-     */
+    /** A job's environment is its bot's workspace. Any other conversation gets none from here. */
     env: (
       workspaces: Workspaces,
       agentId: string,

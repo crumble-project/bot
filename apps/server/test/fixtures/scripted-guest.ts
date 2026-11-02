@@ -35,6 +35,7 @@ export function scriptedGuest(replies: Record<string, GuestReply[]>) {
     failConvert: false,
     failCapture: false,
     processStart: "Thu Oct 30 10:00:00 2026",
+    terminalText: "",
   };
 
   const shell: DesktopShell = {
@@ -142,6 +143,16 @@ export function scriptedGuest(replies: Record<string, GuestReply[]>) {
     [/^rm -f (.*)$/, remove],
     [/xdotool getactivewindow/, activeWindow],
     [/ps -o lstart= -p \d+$/, processStart],
+    [
+      /xclip -o -selection clipboard/,
+      (_, io) => {
+        io.out(state.terminalText);
+
+        return 0;
+      },
+    ],
+    // A launched app starts detached; `commands` records which command line.
+    [/setsid .* >\/dev\/null 2>&1 <\/dev\/null &$/, () => 0],
     [CALL, driverCall],
   ];
 

@@ -220,3 +220,29 @@ test("the judge's spend is on the call's result, whether the action ran or was r
 
   expect(read.usage).toBeUndefined();
 });
+
+test("Enter in a terminal window is left to the judge, and Enter in another app still is a commit point", async () => {
+  const terminal = {
+    pid: 9,
+    window_id: 103,
+    app_name: "Xfce4-terminal",
+    title: "Terminal",
+  };
+
+  const { shell } = scriptedGuest({
+    list_windows: [{ windows: [terminal, help] }],
+  });
+
+  const { seen, gate } = recording("REFUSED: held");
+  const tool = createComputerUse(shell);
+
+  for (const window_id of [103, 102])
+    await tool.run(
+      { action: "key", keys: "Return", window_id },
+      BACKGROUND_CONTEXT,
+      gate,
+    );
+
+  expect(seen.map((action) => action.terminal)).toEqual([true, undefined]);
+  expect(seen.map(isCommitPoint)).toEqual([false, true]);
+});

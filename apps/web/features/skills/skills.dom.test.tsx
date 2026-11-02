@@ -5,6 +5,14 @@ import { act } from "react";
 import { queryClient } from "@/lib/api";
 import { BotPainter } from "@/features/bots/bot-avatar";
 
+// Under a loaded test run the page can take longer than any fixed wait.
+async function waitFor(check: () => boolean) {
+  for (let waited = 0; !check() && waited < 2000; waited += 10)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+}
+
 test("deleting the first same-name skill keeps the second", async () => {
   const window = new Window({ url: "http://localhost" });
   const globals = Object.getOwnPropertyDescriptors(globalThis);
@@ -128,15 +136,16 @@ test("deleting the first same-name skill keeps the second", async () => {
           </SidebarProvider>
         </QueryClientProvider>,
       );
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 30));
     });
 
-    const row = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("First instructions"),
-    )?.parentElement;
+    const firstRow = () =>
+      [...container.querySelectorAll("button")].find((button) =>
+        button.textContent?.includes("First instructions"),
+      )?.parentElement;
+
+    await waitFor(() => firstRow() !== undefined);
+
+    const row = firstRow();
 
     if (!row) throw new Error("Expected the first skill's row");
     await act(async () => {
@@ -165,8 +174,10 @@ test("deleting the first same-name skill keeps the second", async () => {
     if (!confirm) throw new Error("Expected a Delete confirmation");
     await act(async () => {
       confirm.click();
-      await new Promise((resolve) => setTimeout(resolve, 30));
     });
+
+    await waitFor(() => !container.textContent?.includes("First instructions"));
+
     expect(skills.map((skill) => skill.id)).toEqual(["second"]);
     expect(container.textContent).toContain("Second instructions");
     expect(container.textContent).not.toContain("First instructions");

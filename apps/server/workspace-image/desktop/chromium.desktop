@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Chromium
+GenericName=Web Browser
+Icon=chromium
+Exec=chromium --no-sandbox --test-type --password-store=basic --user-data-dir=/workspace/.desktop/chromium %U
+Terminal=false
+Categories=Network;WebBrowser;
+MimeType=text/html;application/xhtml+xml;application/pdf;image/svg+xml;x-scheme-handler/http;x-scheme-handler/https;

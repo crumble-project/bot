@@ -281,7 +281,7 @@ test("only the rounds after a turn's last skill write count towards the next rev
   expect(store.reviewCounters(agent.id)).toEqual({ skill: 1, memory: 4 });
 });
 
-test("turns below the threshold and scheduled runs are not reviewed, and a restart drops a pending review", async () => {
+test("turns below the threshold are not reviewed, scheduled runs count like chat turns, and a restart drops a pending review", async () => {
   const { store, service, runtime, reviews, learned } = open([
     fauxAssistantMessage("plain answer"),
     fauxAssistantMessage(
@@ -306,7 +306,8 @@ test("turns below the threshold and scheduled runs are not reviewed, and a resta
   expect(learned).toEqual([]);
   expect(store.reviewCounters(agent.id)).toEqual({ skill: 0, memory: 0 });
 
-  // A scheduled task's execution never counts, however many tool rounds it takes.
+  // A scheduled run counts like a chat turn: its two tool rounds reach the skill threshold, so a review runs and resets
+  // that counter. Memory keeps counting because this bot has no memory tool to review with.
   const schedule = store.createSchedule({
     agentId: agent.id,
     name: "Daily",
@@ -326,7 +327,7 @@ test("turns below the threshold and scheduled runs are not reviewed, and a resta
   expect(await settle(service, task.id)).toBe("done");
   await Bun.sleep(50);
   expect(learned).toEqual([]);
-  expect(store.reviewCounters(agent.id)).toEqual({ skill: 0, memory: 0 });
+  expect(store.reviewCounters(agent.id)).toEqual({ skill: 0, memory: 2 });
 
   // A review left pending by a crash is aborted and forgotten on recovery.
   const conversation = await runtime.openReviewConversation(

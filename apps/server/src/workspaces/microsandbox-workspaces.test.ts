@@ -120,6 +120,14 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
       conformance.timeoutMs ?? 60_000,
     );
 
+  test("every boot allows memory overcommit, and Node is on the path", async () => {
+    expect(await sh(env(), "cat /proc/sys/vm/overcommit_memory")).toEqual({
+      exitCode: 0,
+      output: "1",
+    });
+    expect((await sh(env(), "node --version")).exitCode).toBe(0);
+  }, 120_000);
+
   test("files survive a restart on the same volume", async () => {
     const first = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
 

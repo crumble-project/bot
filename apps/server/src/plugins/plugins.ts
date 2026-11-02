@@ -48,6 +48,8 @@ export type JobKindContribution = {
     target: EnvTarget,
     context: PiContext,
   ) => Promise<ExecutionEnv | undefined>;
+  /** The environment of the bot's own conversations, such as its chat, while the kind is enabled for the bot. */
+  botEnv?: (agentId: string) => ExecutionEnv;
   /** Hears the bot's answer to each job report, for notifications. */
   onAnswer: (listener: (answer: JobAnswer) => void) => () => void;
 };
@@ -173,20 +175,25 @@ export const jobExtensions = (
   };
 };
 
-/** The first job kind that owns the conversation decides its environment. */
-export async function jobEnv(
+/**
+ * The first job kind that owns the conversation as its job decides its environment. Any other conversation of the bot
+ * gets the bot environment of the first kind enabled for it that has one.
+ */
+export async function conversationEnv(
   kinds: readonly JobKindContribution[],
-  agentId: string,
+  agent: Agent,
   target: EnvTarget,
   context: PiContext,
 ) {
   for (const kind of kinds) {
-    const env = await kind.env(agentId, target, context);
+    const env = await kind.env(agent.id, target, context);
 
     if (env) return env;
   }
 
-  return undefined;
+  return kinds
+    .find((kind) => kind.botEnv && kind.enabled(agent))
+    ?.botEnv?.(agent.id);
 }
 
 /** The plugins compiled into the server, as this account configures them. */
