@@ -522,7 +522,7 @@ test("no workspaces records a failed run and posts its result", async () => {
     exitCode: null,
   });
   expect(notices.map((notice) => notice.text)).toEqual([
-    "Script task\n\nStatus: failed\n\nExit code: none\n\n```\n\n```",
+    "Script task\n\nStatus: failed\n\nExit code: none\n\nError: workspace unavailable",
   ]);
 });
 

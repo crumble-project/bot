@@ -329,8 +329,8 @@ describe("group turns", () => {
 
     await service.abort(reference);
     expect(store.getExecution(execution.id)?.status).toBe("cancelled");
-    expect(settled).toContain("cancelled");
     await service.close();
+    expect(settled).toEqual(["cancelled"]);
   });
 });
 

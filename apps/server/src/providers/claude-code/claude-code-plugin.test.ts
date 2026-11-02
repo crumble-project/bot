@@ -128,7 +128,7 @@ describe("Claude Code status", () => {
     expect(await claudeCodeStatus(options)).toEqual({
       status: "cli_missing",
       message:
-        "Claude Code was not found at CRUMBLE_CLAUDE_COMMAND (/nonexistent/claude).",
+        "Claude Code was not found at CRUMBLE_CLAUDE_COMMAND (/nonexistent/claude). Point it at the executable, or unset it to look for `claude` on PATH. Install it from https://code.claude.com/docs/en/setup.",
     });
   });
 

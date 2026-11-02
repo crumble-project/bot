@@ -26,12 +26,12 @@ const botsCancellation = (context: BotsContext, deps: LifecycleDeps) => {
         execution.conversationId === conversationId && active(execution),
     );
 
-    yield* pi(() => runtime.abort(owner, conversationId));
-
+    // Cancelled before the runtime stops, so the aborted wait doesn't record the runs as failed first.
     for (const execution of running)
       if ((yield* executions.get(execution.id))?.status !== "done")
         yield* executions.update(execution.id, { status: "cancelled" });
 
+    yield* pi(() => runtime.abort(owner, conversationId));
     yield* changed(conversationId);
 
     for (const execution of running) yield* settled(execution.id);
