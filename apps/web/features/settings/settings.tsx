@@ -83,7 +83,7 @@ import {
   WorkspacePage,
 } from "@/components/workspace";
 
-const SECTIONS = [
+export const SETTINGS_SECTIONS = [
   {
     to: "/settings/general",
     label: "General",
@@ -127,7 +127,7 @@ export function SettingsLayout() {
         <h2 className="hidden px-2 pt-1 pb-2 font-heading font-semibold md:block">
           Settings
         </h2>
-        {SECTIONS.flatMap((section) =>
+        {SETTINGS_SECTIONS.flatMap((section) =>
           admin || !("admin" in section)
             ? [
                 <Button

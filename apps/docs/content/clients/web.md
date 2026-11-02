@@ -22,7 +22,9 @@ Sign in with the account you created when you
 | **Theme**       | System, Light, or Dark. The choice is saved to your account, so your other devices use it too.                                            |
 | **Settings**    | Providers, web search, credentials, logins, the judge and vision models, MCP integrations, skills, notifications, passkeys, and sign-out. |
 
-Press `⌘K`, or `Ctrl+K`, to jump to a bot or group chat. To search inside
+Press `⌘K`, or `Ctrl+K`, or select **Search** in the sidebar to open the
+command palette. It jumps to a bot, group chat, workspace page, or settings
+section, creates a bot or group chat, and switches the theme. To search inside
 conversations, ask a bot. It
 [searches its transcripts](/concepts/chats#searching-the-transcript) for you.
 
