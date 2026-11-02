@@ -24,6 +24,8 @@ export const skills = sqliteTable("skills", {
   lastUsedAt: text("last_used_at"),
   state: text("state").notNull().default("active"),
   pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
+  // Deliberately not a foreign key: deleting a source must not unlink or delete copies.
+  copiedFromSkillId: text("copied_from_skill_id"),
   // JSON SkillOrigin; set for skills installed from GitHub.
   origin: text("origin"),
 });

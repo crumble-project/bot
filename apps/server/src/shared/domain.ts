@@ -563,6 +563,8 @@ export type SkillOrigin = {
 
 /** A skill package in the library: a bot's own when `agentId` is set, shared when null. */
 export type Skill = SkillInput & {
+  /** Direct source of an owner-assigned copy; retained if the source is deleted. */
+  copiedFromSkillId?: string | null;
   /** Set for a skill installed from GitHub, which nobody can edit. */
   origin: SkillOrigin | null;
   id: string;

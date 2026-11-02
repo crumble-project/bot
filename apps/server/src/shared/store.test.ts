@@ -36,6 +36,36 @@ const input = {
 };
 
 describe("Store", () => {
+  test("upgrades skill provenance without changing existing skills", () => {
+    const dir = make();
+    const first = new Store(dir);
+    const agent = first.createAgent(input);
+
+    const skill = first.createSkill({
+      agentId: agent.id,
+      name: "Existing",
+      description: "Before copies",
+      instructions: "Keep this",
+      documents: [{ path: "references/a.md", content: "Keep this too" }],
+    });
+
+    first.close();
+    const db = new Database(join(dir, "store.sqlite"));
+
+    // Recreate the immediately preceding schema, retaining all earlier migrations.
+    db.run(
+      "ALTER TABLE skills DROP COLUMN copied_from_skill_id; DELETE FROM __drizzle_migrations WHERE id = (SELECT MAX(id) FROM __drizzle_migrations)",
+    );
+    db.close();
+    const reopened = new Store(dir);
+
+    expect(reopened.getSkill(skill.id)).toEqual({
+      ...skill,
+      copiedFromSkillId: null,
+    });
+    reopened.close();
+  });
+
   test("persists agents and cascades dependent records after reopen", () => {
     const dir = make();
     const first = new Store(dir);
@@ -496,6 +526,7 @@ describe("Store memory sources", () => {
       ALTER TABLE agent_credentials ADD COLUMN value text;
       DROP TABLE skill_updates;
       ALTER TABLE skills DROP COLUMN origin;
+      ALTER TABLE skills DROP COLUMN copied_from_skill_id;
       DROP TABLE github_account_bots;
       DROP TABLE github_accounts;
       DROP TABLE github_app_users;
@@ -646,6 +677,7 @@ describe("Store group chats", () => {
       ALTER TABLE agent_credentials ADD COLUMN value text;
       DROP TABLE skill_updates;
       ALTER TABLE skills DROP COLUMN origin;
+      ALTER TABLE skills DROP COLUMN copied_from_skill_id;
       DROP TABLE github_account_bots;
       DROP TABLE github_accounts;
       DROP TABLE github_app_users;

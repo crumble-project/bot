@@ -76,3 +76,8 @@ export const skillCheckResponse = z
     ),
   })
   .openapi("SkillCheck");
+
+/** One independent bot assignment, suitable for retrying partial bulk actions. */
+export const skillAssignmentInput = z
+  .object({ botId: z.uuid(), assigned: z.boolean() })
+  .strict();

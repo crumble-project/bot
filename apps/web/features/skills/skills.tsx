@@ -64,6 +64,9 @@ import {
   copySkill,
 } from "./skill-install";
 
+import { BulkSkills, SelectSkills } from "./bulk-skills";
+import type { SelectableSkill } from "./bulk-skill-actions";
+
 const SHARED = "shared";
 const ALL = "all";
 const DEFAULT = "default";
@@ -235,6 +238,7 @@ function SkillRow({
   onOpen,
   expanded,
   actions,
+  selection,
   children,
 }: {
   name: string;
@@ -243,11 +247,13 @@ function SkillRow({
   onOpen: () => void;
   expanded?: boolean | undefined;
   actions?: ReactNode;
+  selection?: ReactNode;
   children?: ReactNode;
 }) {
   return (
     <div className="flex flex-col transition-colors hover:bg-muted/50">
       <div className="flex items-center gap-2 px-3 py-2">
+        {selection}
         <button
           type="button"
           aria-expanded={expanded}
@@ -275,6 +281,7 @@ function EditableSkillRow({
   usage,
   menuItems,
   deleteDescription,
+  selection,
   onEdit,
   onDelete,
   children,
@@ -285,6 +292,7 @@ function EditableSkillRow({
   usage?: ReactNode;
   menuItems?: ReactNode;
   deleteDescription: string;
+  selection?: ReactNode;
   onEdit: () => void;
   onDelete: () => void;
   children?: ReactNode;
@@ -294,6 +302,7 @@ function EditableSkillRow({
   return (
     <SkillRow
       name={name}
+      selection={selection}
       line={glimpse(instructions)}
       badge={badge}
       onOpen={onEdit}
@@ -356,6 +365,14 @@ function PersonalSections({
       title={bot.name}
       icon={<BotAvatar bot={bot} size={22} />}
       description={`Only ${bot.name} has these.`}
+      action={
+        <SelectSkills
+          ids={bot.skills
+            .filter((skill) => matches(skill, needle))
+            .map((skill) => skill.id)}
+          label={`Select all ${bot.name} skills`}
+        />
+      }
     >
       {personalEmpty(bot, needle) && (
         <SectionEmpty>{personalEmpty(bot, needle)}</SectionEmpty>
@@ -364,6 +381,12 @@ function PersonalSections({
         matches(skill, needle) ? (
           <EditableSkillRow
             key={skill.id}
+            selection={
+              <SelectSkills
+                ids={[skill.id]}
+                label={`Select ${skill.name} (${bot.name})`}
+              />
+            }
             name={skill.name}
             instructions={skill.instructions}
             badge={skill.pinned && <Badge variant="outline">Pinned</Badge>}
@@ -420,6 +443,12 @@ function SkillSections({
       {shows(SHARED) && (
         <Section
           title="Shared"
+          action={
+            <SelectSkills
+              ids={shared.map((skill) => skill.id)}
+              label="Select all shared skills"
+            />
+          }
           description="Turn a shared skill on for the bots that should have it."
         >
           {shared.length === 0 && (
@@ -648,6 +677,39 @@ const firstError = (remove: ReturnType<typeof useRemoveSkills>) =>
   remove.pin.error ??
   remove.copy.error;
 
+/** Selectable packages only; default server files never enter the selection catalog. */
+function selectionCatalog(
+  skills: ListedSkill[],
+  bots: SkillBot[],
+): SelectableSkill[] {
+  return [
+    ...skills.flatMap((skill) =>
+      skill.source === "shared"
+        ? [
+            {
+              id: skill.id,
+              name: skill.name,
+              instructions: skill.instructions,
+              botId: null,
+              ownerName: "Shared",
+              installed: Boolean(skill.origin),
+            },
+          ]
+        : [],
+    ),
+    ...bots.flatMap((bot) =>
+      bot.skills.map((skill) => ({
+        id: skill.id,
+        name: skill.name,
+        instructions: skill.instructions,
+        botId: bot.id,
+        ownerName: bot.name,
+        installed: false,
+      })),
+    ),
+  ];
+}
+
 export function SkillsPage() {
   const { bots, personal, skillBots, personalErrors } = usePersonalSkills();
   const skills = useQuery(skillsQuery);
@@ -660,6 +722,17 @@ export function SkillsPage() {
   const remove = useRemoveSkills();
   const check = useUpdateCheck();
   const failure = firstError(remove);
+
+  const selectable = selectionCatalog(skills.data ?? [], skillBots);
+  const needle = search.trim().toLowerCase();
+
+  const visibleIds = selectable
+    .filter(
+      (skill) =>
+        (scope === ALL || scope === (skill.botId ?? SHARED)) &&
+        matches(skill, needle),
+    )
+    .map((skill) => skill.id);
 
   return (
     <WorkspacePage
@@ -704,17 +777,19 @@ export function SkillsPage() {
         </Alert>
       )}
       <UpdateCheckFailures check={check} />
-      <SkillsBody
-        bots={bots}
-        skillBots={skillBots}
-        personalPending={personal.some((query) => query.isPending)}
-        personalErrors={personalErrors}
-        skills={skills}
-        filter={{ scope, needle: search.trim().toLowerCase() }}
-        remove={remove}
-        onEdit={setEditing}
-        onInstalled={setInstalled}
-      />
+      <BulkSkills bots={skillBots} skills={selectable} visibleIds={visibleIds}>
+        <SkillsBody
+          bots={bots}
+          skillBots={skillBots}
+          personalPending={personal.some((query) => query.isPending)}
+          personalErrors={personalErrors}
+          skills={skills}
+          filter={{ scope, needle: search.trim().toLowerCase() }}
+          remove={remove}
+          onEdit={setEditing}
+          onInstalled={setInstalled}
+        />
+      </BulkSkills>
       {editing && (
         <SkillDialog
           bots={skillBots}
@@ -798,6 +873,12 @@ function InstalledRow({
   return (
     <SkillRow
       name={skill.name}
+      selection={
+        <SelectSkills
+          ids={[skill.id]}
+          label={`Select ${skill.name} (Shared)`}
+        />
+      }
       line={skill.description || glimpse(skill.instructions)}
       badge={
         update && (
@@ -860,6 +941,12 @@ function SharedRow({
 }) {
   return (
     <EditableSkillRow
+      selection={
+        <SelectSkills
+          ids={[skill.id]}
+          label={`Select ${skill.name} (Shared)`}
+        />
+      }
       name={skill.name}
       instructions={skill.instructions}
       usage={<UsedBy bots={bots} skillId={skill.id} />}
