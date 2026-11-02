@@ -1,0 +1,1 @@
+ALTER TABLE `skills` ADD `copied_from_skill_id` text;

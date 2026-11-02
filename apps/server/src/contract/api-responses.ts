@@ -718,6 +718,7 @@ export const skillPackageResponse = z
     lastUsedAt: z.string().nullable(),
     state: z.enum(["active", "stale", "archived"]),
     pinned: z.boolean(),
+    copiedFromSkillId: z.uuid().nullable().optional(),
     origin: skillOriginResponse.nullable().optional(),
   })
   .openapi("SkillPackage");

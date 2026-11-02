@@ -21,10 +21,14 @@ export type NewSkill = SkillInput & {
   state?: Skill["state"];
   pinned?: boolean;
   origin?: SkillOrigin | null;
+  copiedFromSkillId?: string | null;
 };
 
 export type SkillPatch = Partial<
-  Omit<Skill, "id" | "agentId" | "createdAt" | "updatedAt">
+  Omit<
+    Skill,
+    "id" | "agentId" | "createdAt" | "updatedAt" | "copiedFromSkillId"
+  >
 >;
 
 // SAFETY: the column only holds origins this repository wrote.
@@ -89,6 +93,7 @@ export class SkillRepository extends Context.Service<
 
         const skill: Skill = {
           id: row.id,
+          copiedFromSkillId: row.copiedFromSkillId,
           agentId: row.agentId ?? null,
           name: row.name,
           description: row.description,
@@ -159,6 +164,7 @@ export class SkillRepository extends Context.Service<
             yield* db.insert(skills).values({
               id: skillId,
               agentId: input.agentId ?? null,
+              copiedFromSkillId: input.copiedFromSkillId ?? null,
               name: input.name,
               description: input.description,
               instructions: input.instructions,
@@ -255,6 +261,7 @@ export class SkillRepository extends Context.Service<
             yield* db.insert(skills).values({
               id: skill.id,
               agentId: skill.agentId,
+              copiedFromSkillId: skill.copiedFromSkillId ?? null,
               name: skill.name,
               description: skill.description,
               instructions: skill.instructions,

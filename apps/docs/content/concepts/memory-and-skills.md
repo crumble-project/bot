@@ -39,6 +39,35 @@ other bots keep the original.
 Manage skills in **Settings** > **Skills**. To turn a shared skill on for a
 bot, open the skill and select the bot under **Used by**.
 
+### Acting on Several Skills
+
+Use the checkboxes on the **Skills** page to select shared skills and bots' own
+skills across sections. **Select all results** selects only the current filter
+and search results; each section also has its own select-all checkbox. Changing
+the filter keeps your selection. Default skills cannot be selected.
+
+The action bar shows how many skills are selected:
+
+- **Delete** asks once and lists every selected skill. Deleting a source skill
+  keeps any bot-specific copies already made from it.
+- **Update** checks GitHub and applies available updates to selected installed
+  skills. It reports skills skipped because they aren't installed from GitHub or
+  are already up to date. You can still review updates individually first.
+- **Assign to bots** enables shared skills for the bots you choose. For a bot's
+  own skill it copies the instructions, description, and reference documents.
+  Copies are editable and remember their source by ID. Assigning again skips an
+  existing linked copy, preserving its edits—even if it was renamed. Picking the
+  source bot leaves its original unchanged.
+- **Remove from bots** disables shared skills and deletes only copies linked to
+  the selected bot-specific source, including edited copies. It never deletes
+  unrelated skills with the same name, or the source itself.
+
+If an action partly fails, successful changes remain. The results name failed
+skills and bots with the reason, and keep failed skills selected so you can
+retry. Successful and skipped skills are deselected. A copy whose source was
+deleted remains an independent editable skill; manage it directly in its bot's
+section.
+
 ### Installing Skills from GitHub
 
 To add skills someone published on GitHub, select **Install from GitHub** on

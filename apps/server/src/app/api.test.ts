@@ -904,6 +904,161 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
     store.close();
   });
 
+  test("skill assignment copies by provenance, preserves edits, and never removes name matches", async () => {
+    const { app, store } = setup();
+    const a = store.createAgent(agentInput("A"));
+    const b = store.createAgent(agentInput("B"));
+
+    const input = {
+      name: "Research",
+      description: "Check sources",
+      instructions: "Read everything",
+      documents: [{ path: "references/check.md", content: "Cite sources" }],
+    };
+
+    const source = store.createSkill({ ...input, agentId: a.id, pinned: true });
+    const unrelated = store.createSkill({ ...input, agentId: b.id });
+
+    const assign = (skillId: string, botId: string, assigned: boolean) =>
+      req(app, `/v1/skills/${skillId}/assignment`, {
+        method: "POST",
+        body: JSON.stringify({ botId, assigned }),
+      });
+
+    expect(await (await assign(source.id, b.id, true)).json()).toEqual({
+      skipped: false,
+    });
+
+    const copy = store
+      .listSkills(b.id)
+      .find((skill) => skill.id !== unrelated.id)!;
+
+    expect(copy).toMatchObject({
+      ...input,
+      agentId: b.id,
+      copiedFromSkillId: source.id,
+      pinned: false,
+      createdBy: "owner",
+      state: "active",
+    });
+    expect(copy.id).not.toBe(source.id);
+    await req(app, `/v1/agents/${b.id}/skills/${copy.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: "Edited copy",
+        instructions: "Keep my edits",
+        copiedFromSkillId: unrelated.id,
+      }),
+    });
+    expect(await (await assign(source.id, b.id, true)).json()).toEqual({
+      skipped: true,
+    });
+    expect(store.listSkills(b.id)).toHaveLength(2);
+    expect(store.getSkill(copy.id)).toMatchObject({
+      name: "Edited copy",
+      instructions: "Keep my edits",
+      copiedFromSkillId: source.id,
+    });
+    expect(await (await assign(source.id, a.id, false)).json()).toEqual({
+      skipped: true,
+    });
+    expect(store.getSkill(source.id)).not.toBeNull();
+    expect(await (await assign(source.id, b.id, false)).json()).toEqual({
+      skipped: false,
+    });
+    expect(store.getSkill(copy.id)).toBeNull();
+    expect(store.getSkill(unrelated.id)).not.toBeNull();
+    expect(await (await assign(source.id, b.id, false)).json()).toEqual({
+      skipped: true,
+    });
+
+    // Deletion never nulls the source ID or cascades to copies. A new same-name
+    // source has a new identity, and cannot remove copies of the deleted one.
+    await assign(source.id, b.id, true);
+
+    const surviving = store
+      .listSkills(b.id)
+      .find((skill) => skill.copiedFromSkillId === source.id)!;
+
+    await req(app, `/v1/agents/${a.id}/skills/${source.id}`, {
+      method: "DELETE",
+    });
+    expect(store.getSkill(surviving.id)?.copiedFromSkillId).toBe(source.id);
+    expect((await assign(source.id, b.id, false)).status).toBe(404);
+    const replacement = store.createSkill({ ...input, agentId: a.id });
+    expect(await (await assign(replacement.id, b.id, false)).json()).toEqual({
+      skipped: true,
+    });
+    expect(store.getSkill(surviving.id)).not.toBeNull();
+    expect(
+      (await assign(replacement.id, crypto.randomUUID(), true)).status,
+    ).toBe(404);
+    store.close();
+    const reopened = new Store(dirs.at(-1)!);
+    expect(reopened.getSkill(surviving.id)?.copiedFromSkillId).toBe(source.id);
+    reopened.close();
+  });
+
+  test("shared assignment changes only the chosen skill and refuses defaults and overflow", async () => {
+    const { app, store } = setup({
+      commonSkills: [
+        {
+          id: "default",
+          name: "Default",
+          description: "Default",
+          instructions: "x",
+          documents: [],
+          path: "/skills/default",
+        },
+      ],
+    });
+
+    const bot = store.createAgent(agentInput("Bot"));
+
+    const shared = store.createSkill({
+      name: "Shared",
+      description: "",
+      instructions: "x",
+      documents: [],
+    });
+
+    const other = store.createSkill({
+      name: "Other",
+      description: "",
+      instructions: "x",
+      documents: [],
+    });
+
+    store.updateAgent(bot.id, { sharedSkills: [other.id] });
+
+    const assign = (id: string, assigned: boolean) =>
+      req(app, `/v1/skills/${id}/assignment`, {
+        method: "POST",
+        body: JSON.stringify({ botId: bot.id, assigned }),
+      });
+
+    expect(await (await assign(shared.id, true)).json()).toEqual({
+      skipped: false,
+    });
+    expect(store.getAgent(bot.id)?.sharedSkills).toEqual(
+      [other.id, shared.id].toSorted(),
+    );
+    expect(await (await assign(shared.id, true)).json()).toEqual({
+      skipped: true,
+    });
+    expect(await (await assign(shared.id, false)).json()).toEqual({
+      skipped: false,
+    });
+    expect(store.getAgent(bot.id)?.sharedSkills).toEqual([other.id]);
+    expect((await assign("default", true)).status).toBe(405);
+    store.updateAgent(bot.id, {
+      sharedSkills: Array.from({ length: 100 }, () => crypto.randomUUID()),
+    });
+    expect((await assign(shared.id, true)).status).toBe(400);
+    expect(store.getAgent(bot.id)?.sharedSkills).toHaveLength(100);
+    store.close();
+  });
+
   test("manages a bot's own skill packages apart from the shared library", async () => {
     const { app, store } = setup();
 

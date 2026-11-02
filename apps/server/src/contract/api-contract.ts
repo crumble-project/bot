@@ -45,6 +45,7 @@ import {
 import {
   pendingSkillUpdateResponse,
   skillCheckResponse,
+  skillAssignmentInput,
   skillInstallInput,
   skillListingResponse,
   skillLocationInput,
@@ -1068,6 +1069,18 @@ export const routes = {
     operationId: "deleteAgentSkill",
     request: { params: skillParams },
     responses: { 204: empty },
+  }),
+  assignSkillBot: define({
+    method: "post",
+    path: "/v1/skills/{id}/assignment",
+    operationId: "assignSkillBot",
+    description:
+      "Turns a shared skill on or off for one bot. For a bot-owned skill, assignment copies the full package and records its source ID; an existing linked copy is left unchanged. Removal deletes only direct linked copies, never name matches or the source. Source deletion leaves copies and their provenance intact. Default skills cannot be assigned. Each request is independent, so clients can report partial failures and retry safely.",
+    request: {
+      params: id,
+      body: body(skillAssignmentInput),
+    },
+    responses: { 200: json(z.object({ skipped: z.boolean() })) },
   }),
   agentReviews: define({
     method: "get",
