@@ -209,6 +209,36 @@ describe("MCP OAuth", () => {
     expect(hasOAuthTokens(secrets(store), server.id)).toBe(false);
   });
 
+  test("an owner's app signed in under /ui keeps its registered callback", async () => {
+    const { store, server: created } = setup();
+    const server = { ...created, oauthClientId: "owner-app" };
+    const legacy = "http://127.0.0.1:7337/ui/oauth/callback";
+    const current = "http://127.0.0.1:7337/oauth/callback";
+
+    const redirectOf = (
+      started: { authorizationUrl: string } | { authorized: true },
+    ) =>
+      "authorizationUrl" in started
+        ? new URL(started.authorizationUrl).searchParams.get("redirect_uri")
+        : null;
+
+    await startAuthorization(secrets(store), server, legacy);
+
+    expect(
+      redirectOf(await startAuthorization(secrets(store), server, current)),
+    ).toBe(legacy);
+    // Crumble's own registrations follow the new callback.
+    expect(
+      redirectOf(
+        await startAuthorization(
+          secrets(store),
+          { ...server, oauthClientId: null },
+          current,
+        ),
+      ),
+    ).toBe(current);
+  });
+
   test("checks the issuer a server returns with the code (RFC 9207)", async () => {
     const { store, server, fake } = setup({ issParameter: true });
     const started = await startAuthorization(secrets(store), server, redirect);
