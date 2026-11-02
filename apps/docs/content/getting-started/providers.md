@@ -90,4 +90,21 @@ Then run the sign-in command inside the container:
 docker compose exec -it crumble sh -c 'PASTE_THE_SIGN_IN_COMMAND_HERE'
 ```
 
+## Vision Model
+
+Some models can't read images. The vision model reads images for bots that use
+one, so you can pick a cheaper or text-only model for a bot and still send it
+images. It's off until you choose one in **Settings** > **Vision model**, or
+with `PUT /v1/vision-model`. The choices are the models your providers reach
+that read images.
+
+| Vision model | A bot whose model can't read images                                                                                                                               |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Off**      | Refuses images in its bot chat, and gets only each image's name in group chats.                                                                                   |
+| **Set**      | Gets the vision model's description of each image, including any visible text, and can ask it follow-up questions about an image. The transcript keeps the image. |
+
+The vision model describes each image once per conversation, and its tokens and
+cost count toward the conversation's usage. Bots whose model reads images never
+use it.
+
 With a provider connected, [create your first bot](/getting-started/first-bot).

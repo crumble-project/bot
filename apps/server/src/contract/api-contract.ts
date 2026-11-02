@@ -12,6 +12,7 @@ import {
   secretInput,
   skillInput,
   skillLifecycleInput,
+  visionModelInput,
 } from "../shared/domain";
 import { attachmentInput, MAX_ATTACHMENTS } from "../shared/attachments";
 import * as response from "./api-responses";
@@ -472,6 +473,23 @@ export const routes = {
     operationId: "updateJudgeModel",
     request: { body: body(judgeModelInput) },
     responses: { 200: json(response.judgeModelResponse) },
+  }),
+  getVisionModel: define({
+    method: "get",
+    path: "/v1/vision-model",
+    operationId: "getVisionModel",
+    description:
+      "The account's vision model, which describes images for bots whose model can't read them, and the models that read images the account's provider keys reach.",
+    responses: { 200: json(response.visionModelResponse) },
+  }),
+  updateVisionModel: define({
+    method: "put",
+    path: "/v1/vision-model",
+    operationId: "updateVisionModel",
+    description:
+      "Choose the account's vision model, or turn it off with null. It must be one of the choices `getVisionModel` lists.",
+    request: { body: body(visionModelInput) },
+    responses: { 200: json(response.visionModelResponse) },
   }),
   listAgents: define({
     method: "get",

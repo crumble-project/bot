@@ -20,6 +20,7 @@ import type {
   groupChatSnapshotResponse,
   heldActionResponse,
   judgeModelResponse,
+  visionModelResponse,
   loginUseResponse,
   loginsResponse,
   historyResponse,
@@ -125,6 +126,8 @@ export type BotRequest = z.infer<typeof botRequestResponse>;
 export type HeldAction = z.infer<typeof heldActionResponse>;
 
 export type JudgeModel = z.infer<typeof judgeModelResponse>;
+
+export type VisionModel = z.infer<typeof visionModelResponse>;
 
 export type PluginSettings = z.infer<typeof pluginSettingsResponse>;
 
@@ -397,6 +400,11 @@ export const heldActionPath = (id: string, actionId: string) =>
 export const judgeModelQuery = queryOptions({
   queryKey: ["judge-model"],
   queryFn: ({ signal }) => api<JudgeModel>("/v1/judge-model", { signal }),
+});
+
+export const visionModelQuery = queryOptions({
+  queryKey: ["vision-model"],
+  queryFn: ({ signal }) => api<VisionModel>("/v1/vision-model", { signal }),
 });
 
 export const pluginSettingsQuery = queryOptions({

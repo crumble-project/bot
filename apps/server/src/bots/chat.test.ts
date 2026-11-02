@@ -6,9 +6,13 @@ import { createModels } from "@earendil-works/pi-ai";
 import {
   fauxAssistantMessage,
   fauxProvider,
+  fauxToolCall,
+  type FauxResponseFactory,
   type FauxResponseStep,
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "./runtime";
+import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
+import { ASK_ABOUT_IMAGE_TOOL_NAME, imageHash } from "../vision/vision";
 import { standaloneBots, type Activity } from "./bots";
 import { Store } from "../../test/support/store";
 import { Effect } from "effect";
@@ -26,10 +30,14 @@ afterEach(() => {
 const uuid = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
+/** The account's vision model: its own provider, so its answers queue apart from the bot's. */
+type Vision = { responses: FauxResponseStep[] };
+
 function open(
   dir: string,
   responses: FauxResponseStep[],
   input: ("text" | "image")[] = ["text", "image"],
+  vision?: Vision,
 ) {
   const faux = fauxProvider({
     provider: "faux",
@@ -39,16 +47,46 @@ function open(
   faux.setResponses(responses);
   const models = createModels();
   models.setProvider(faux.provider);
+
+  if (vision) {
+    const eye = fauxProvider({
+      provider: "eye",
+      models: [
+        {
+          id: "vision",
+          input: ["text", "image"],
+          cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+        },
+      ],
+    });
+
+    eye.setResponses(vision.responses);
+    models.setProvider(eye.provider);
+  }
+
   const store = new Store(dir);
-  const service = standaloneBots(store, new AgentRuntime(dir, { models }));
+
+  const service = standaloneBots(
+    store,
+    new AgentRuntime(dir, {
+      models,
+      ...(vision && {
+        visionModel: () => ({ provider: "eye", model: "vision" }),
+      }),
+    }),
+  );
 
   return { store, service };
 }
 
-function setup(responses: FauxResponseStep[], input?: ("text" | "image")[]) {
+function setup(
+  responses: FauxResponseStep[],
+  input?: ("text" | "image")[],
+  vision?: Vision,
+) {
   const dir = mkdtempSync(join(tmpdir(), "bot-chat-"));
   dirs.push(dir);
-  const opened = open(dir, responses, input);
+  const opened = open(dir, responses, input, vision);
 
   const agent = opened.store.createAgent({
     name: "Chat",
@@ -526,13 +564,13 @@ describe("attachments", () => {
     await service.close();
   });
 
-  test("models without image input refuse images before answering", async () => {
+  test("without a vision model, models without image input refuse images before answering", async () => {
     const { service, agent } = setup([fauxAssistantMessage("never")], ["text"]);
     await expect(
       service.sendChat(agent.id, "look", uuid(1), undefined, [
         { name: "dot.png", mimeType: "image/png", data: png },
       ]),
-    ).rejects.toThrow("can't read images");
+    ).rejects.toThrow(/can't read images.*set a vision model in Settings/);
     await service.close();
   });
 
@@ -601,5 +639,250 @@ describe("attachments", () => {
       ],
     ]);
     await reopened.service.close();
+  });
+});
+
+describe("vision model", () => {
+  const id = imageHash(png).slice(0, 8);
+
+  const described = (text: string) =>
+    `<image id="${id}" described-by="vision model">\n${text}\n</image>`;
+
+  type Usage = {
+    input: number;
+    output: number;
+    cost: { total: number };
+  };
+
+  type UsageDoc = {
+    models: Record<string, Usage>;
+    tools: Record<string, Usage>;
+  };
+
+  /** What the bot's model was sent: the last user message's content, per request. */
+  const botSees =
+    (seen: unknown[]): FauxResponseFactory =>
+    (context) => {
+      seen.push(
+        context.messages.findLast((message) => message.role === "user")
+          ?.content,
+      );
+
+      return fauxAssistantMessage("ok");
+    };
+
+  /** The vision model's answer, after recording the images and prompts it was sent. */
+  const visionSees = (
+    asked: { images: string[]; prompt: string }[],
+    answer: { text: string } | { error: string },
+  ): FauxResponseStep => {
+    return (context) => {
+      const content = context.messages.at(-1)?.content;
+      const blocks = Array.isArray(content) ? content : [];
+
+      asked.push({
+        images: blocks.flatMap((block) =>
+          block.type === "image" ? [block.data] : [],
+        ),
+        prompt: blocks
+          .flatMap((block) => (block.type === "text" ? [block.text] : []))
+          .join(""),
+      });
+
+      return "text" in answer
+        ? fauxAssistantMessage(answer.text)
+        : fauxAssistantMessage([], {
+            stopReason: "error",
+            errorMessage: answer.error,
+          });
+    };
+  };
+
+  const sendImage = async (
+    service: ReturnType<typeof setup>["service"],
+    agentId: string,
+    n: number,
+  ) =>
+    settle(
+      service,
+      (
+        await service.sendChat(agentId, "what is this?", uuid(n), undefined, [
+          { name: "dot.png", mimeType: "image/png", data: png },
+        ])
+      ).id,
+    );
+
+  test("describes an image for a model that can't read it, and the transcript keeps the image", async () => {
+    const seen: unknown[] = [];
+    const asked: { images: string[]; prompt: string }[] = [];
+
+    const { service, agent } = setup([botSees(seen)], ["text"], {
+      responses: [visionSees(asked, { text: "A red dot. Text: HELLO" })],
+    });
+
+    expect(await sendImage(service, agent.id, 1)).toBe("done");
+    expect(asked).toEqual([{ images: [png], prompt: "Describe this image." }]);
+    expect(seen[0]).toEqual([
+      { type: "text", text: `[message ${uuid(1)}]\nwhat is this?` },
+      { type: "text", text: described("A red dot. Text: HELLO") },
+    ]);
+
+    const snapshot = await service.chatSnapshot(agent.id);
+    const shown = snapshot.messages.find((message) => message.role === "user")!;
+
+    expect(shown.attachments).toEqual([
+      { name: "dot.png", mimeType: "image/png", size: 70, kind: "image" },
+    ]);
+    const image = await service.runtime.attachment(agent, shown.entryId, 0);
+    expect(image.data.toString("base64")).toBe(png);
+
+    // SAFETY: the snapshot's usage is Pi Durable's usage document.
+    const usage = (snapshot.usage as UsageDoc).models["eye/vision"]!;
+    expect(usage.input).toBeGreaterThan(0);
+    expect(usage.cost.total).toBeGreaterThan(0);
+    await service.close();
+  });
+
+  // The hook commits the description from inside the running generation; the turn settling, and a reopened harness
+  // reading it back, show that commit lands without deadlocking the generation that waits on it.
+  test("a description is committed from the hook, asked for once, and reused by later turns, also after a restart", async () => {
+    const seen: unknown[] = [];
+    const asked: { images: string[]; prompt: string }[] = [];
+
+    const { service, agent, dir } = setup(
+      [botSees(seen), botSees(seen)],
+      ["text"],
+      { responses: [visionSees(asked, { text: "A red dot." })] },
+    );
+
+    await sendImage(service, agent.id, 1);
+    await settle(
+      service,
+      (await service.sendChat(agent.id, "and now?", uuid(2))).id,
+    );
+    await service.close();
+
+    const history: unknown[] = [];
+
+    const reopened = open(
+      dir,
+      [
+        (context) => {
+          history.push(JSON.stringify(context.messages));
+
+          return fauxAssistantMessage("still a dot");
+        },
+      ],
+      ["text"],
+      { responses: [visionSees(asked, { text: "never" })] },
+    );
+
+    await settle(
+      reopened.service,
+      (await reopened.service.sendChat(agent.id, "again?", uuid(3))).id,
+    );
+    expect(asked).toHaveLength(1);
+    expect(seen[1]).toBe(`[message ${uuid(2)}]\nand now?`);
+    expect(history[0]).toContain(JSON.stringify(described("A red dot.")));
+    expect(history[0]).not.toContain(png);
+    await reopened.service.close();
+  });
+
+  test("a failed description leaves a note, the turn goes on, and the next turn tries again", async () => {
+    const seen: unknown[] = [];
+    const asked: { images: string[]; prompt: string }[] = [];
+
+    const { service, agent } = setup([botSees(seen), botSees(seen)], ["text"], {
+      responses: [
+        visionSees(asked, { error: "vision is down" }),
+        visionSees(asked, { text: "A red dot." }),
+      ],
+    });
+
+    expect(await sendImage(service, agent.id, 1)).toBe("done");
+    expect(seen[0]).toEqual([
+      { type: "text", text: `[message ${uuid(1)}]\nwhat is this?` },
+      { type: "text", text: "[An image could not be read: vision is down]" },
+    ]);
+
+    await settle(
+      service,
+      (await service.sendChat(agent.id, "try again", uuid(2))).id,
+    );
+    expect(asked).toHaveLength(2);
+    await service.close();
+  });
+
+  test("the bot asks the vision model a follow-up question about an image", async () => {
+    const seen: unknown[] = [];
+    const asked: { images: string[]; prompt: string }[] = [];
+    let tools: string[] = [];
+
+    const ask: FauxResponseStep = (context) => {
+      tools = getCurrentTools(context.messages).map((tool) => tool.name);
+
+      return fauxAssistantMessage(
+        fauxToolCall(ASK_ABOUT_IMAGE_TOOL_NAME, {
+          image: id,
+          question: "What is the total?",
+        }),
+        { stopReason: "toolUse" },
+      );
+    };
+
+    const answer: FauxResponseStep = (context) => {
+      const result = context.messages.at(-1);
+      seen.push(result?.role === "toolResult" ? result.content : undefined);
+
+      return fauxAssistantMessage("The total is $12.");
+    };
+
+    const { service, agent } = setup([ask, answer], ["text"], {
+      responses: [
+        visionSees(asked, { text: "A receipt." }),
+        visionSees(asked, { text: "$12.00" }),
+      ],
+    });
+
+    expect(await sendImage(service, agent.id, 1)).toBe("done");
+    expect(tools).toContain(ASK_ABOUT_IMAGE_TOOL_NAME);
+    expect(asked).toEqual([
+      { images: [png], prompt: "Describe this image." },
+      { images: [png], prompt: "What is the total?" },
+    ]);
+    expect(seen[0]).toEqual([{ type: "text", text: "$12.00" }]);
+
+    // SAFETY: the snapshot's usage is Pi Durable's usage document.
+    const usage = (await service.chatSnapshot(agent.id)).usage as UsageDoc;
+    expect(usage.tools[ASK_ABOUT_IMAGE_TOOL_NAME]?.cost.total).toBeGreaterThan(
+      0,
+    );
+    await service.close();
+  });
+
+  test("a model that reads images gets the image, and no follow-up tool", async () => {
+    const seen: unknown[] = [];
+    const asked: { images: string[]; prompt: string }[] = [];
+    let tools: string[] = [];
+
+    const record: FauxResponseStep = (context, options, state, model) => {
+      tools = getCurrentTools(context.messages).map((tool) => tool.name);
+
+      return botSees(seen)(context, options, state, model);
+    };
+
+    const { service, agent } = setup([record], ["text", "image"], {
+      responses: [visionSees(asked, { text: "never" })],
+    });
+
+    await sendImage(service, agent.id, 1);
+    expect(asked).toEqual([]);
+    expect(seen[0]).toContainEqual({
+      type: "image",
+      data: png,
+      mimeType: "image/png",
+    });
+    expect(tools).not.toContain(ASK_ABOUT_IMAGE_TOOL_NAME);
+    await service.close();
   });
 });

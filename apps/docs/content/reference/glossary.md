@@ -199,6 +199,12 @@ The model the owner chooses for the account that runs every intent check.
 
 Avoid: Classifier, checker model, supervisor.
 
+### Vision model
+
+The model the owner chooses for the account that reads images for bots whose model can't. It describes each image, including any visible text, and the description takes the image's place in the bot's working context; the transcript keeps the image. Off unless the owner chooses one.
+
+Avoid: Image model, OCR model, captioner.
+
 ### Admin
 
 A user who manages the server: its users, invite links, sign-up, and the settings every workspace shares, such as size and coding image. The first account is an admin; admins can make others admins.

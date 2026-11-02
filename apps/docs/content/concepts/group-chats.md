@@ -34,3 +34,11 @@ here:
 | **Private memory only** | Bots can save to their own memory, not to shared memory.                                       |
 
 The turn limit is what stops two polite bots from thanking each other forever.
+
+## Images
+
+Every bot in the group gets the images posted to it. A bot whose model can't
+read images gets only each image's name, unless the account has a
+[vision model](/getting-started/providers#vision-model): then it gets the vision
+model's description of each image instead, as in its
+[bot chat](/concepts/chats#images).

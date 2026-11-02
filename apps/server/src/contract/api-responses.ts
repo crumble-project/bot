@@ -610,6 +610,26 @@ export const judgeModelResponse = z
   })
   .openapi("JudgeModel");
 
+const visionChoice = z
+  .object({ provider: z.string(), model: z.string(), name: z.string() })
+  .openapi("VisionChoice");
+
+export const visionModelResponse = z
+  .object({
+    visionModel: z
+      .object({ provider: z.string(), model: z.string() })
+      .nullable()
+      .openapi({
+        description:
+          "The model that describes images for bots whose model can't read them. Null when off: such bots refuse images in their chat and get only an image's name in group chats.",
+      }),
+    choices: z.array(visionChoice).openapi({
+      description:
+        "The chat models that read images and that the account's provider keys reach.",
+    }),
+  })
+  .openapi("VisionModel");
+
 export const loginsResponse = z
   .object({
     logins: z.array(loginResponse),
