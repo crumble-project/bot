@@ -63,15 +63,19 @@ describe("the rule floor", () => {
     );
   });
 
-  test("leaves Enter in a terminal to the judge, but not a commit button there", () => {
+  test("leaves Enter in a terminal to a judge that sees its command, and nothing else", () => {
     const enter = { action: "key", keys: "Return" };
+    const terminal = { steps: [enter], terminal: true, command: "$ ls" };
 
-    expect(isCommitPoint({ steps: [enter], terminal: true })).toBe(false);
+    expect(isCommitPoint(terminal, true)).toBe(false);
+    // Without a judge, or without the command it runs, the Enter still counts.
+    expect(isCommitPoint(terminal)).toBe(true);
+    expect(isCommitPoint({ steps: [enter], terminal: true }, true)).toBe(true);
     expect(
-      isCommitPoint({
-        steps: [enter, click("button", "Delete")],
-        terminal: true,
-      }),
+      isCommitPoint(
+        { ...terminal, steps: [enter, click("button", "Delete")] },
+        true,
+      ),
     ).toBe(true);
   });
 
@@ -98,6 +102,33 @@ describe("checkIntent", () => {
       commitPoint: true,
       answer: { irreversible: 0.01, inIntent: 0.6, inIntentBar: 0.9 },
     });
+  });
+
+  test("a terminal Enter is held when the judge is missing or fails, and runs when the judge sees a harmless command", async () => {
+    const enter: IntentRequest = {
+      ...request({ action: "key", keys: "Return" }),
+      action: {
+        steps: [{ action: "key", keys: "Return" }],
+        terminal: true,
+        command: "$ ls -la",
+      },
+    };
+
+    const failing = async () => {
+      throw new Error("judge down");
+    };
+
+    expect((await checkIntent(undefined, enter, undefined)).held).toBe(true);
+    expect((await checkIntent(failing, enter, undefined)).held).toBe(true);
+    expect(
+      (
+        await checkIntent(
+          judging({ irreversible: 0.1, inIntent: 0.05, inIntentBar: 0.9 }),
+          enter,
+          undefined,
+        )
+      ).held,
+    ).toBe(false);
   });
 
   test("a classifier must be confident the owner asked", async () => {

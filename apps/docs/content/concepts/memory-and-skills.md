@@ -108,9 +108,10 @@ revert it.
 After a turn with a lot of tool use, a background review looks at what the
 bot did and may update its skills or memories. These are learned changes.
 Every turn counts: chat turns, scheduled runs, event automations, and group chat
-turns, plus each coding job's work once the job reports back. The review never
-saves instructions it finds in outside data, such as an event's payload or a
-web page.
+turns, plus each coding job's work once the job reports back. A review of a
+group chat turn, like the turn itself, changes only the bot's own memory, never
+shared memory. The review never saves instructions it finds in outside data,
+such as an event's payload or a web page.
 
 **Every change to a skill or memory is recorded with its before and after
 state**, whether you made it, a bot did, or a review did. Open the **Activity**

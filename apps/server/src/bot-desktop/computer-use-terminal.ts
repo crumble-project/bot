@@ -16,18 +16,27 @@ const TAIL_CHARS = 6000;
  * A terminal's text, which its accessibility tree doesn't expose: select all and copy in the terminal, then read the
  * clipboard. It replaces the clipboard's content.
  */
-export async function readTerminal(
+export async function terminalText(
   state: ComputerUseState,
   window: Window,
   context: Context,
-): Promise<ComputerUseResult> {
+) {
   const text = await sh(
     state,
     `xdotool windowactivate --sync ${window.window_id} key --clearmodifiers ctrl+shift+a ctrl+shift+c && sleep 0.3 && xclip -o -selection clipboard | tail -c ${TAIL_CHARS}`,
     context,
   );
 
+  // Only line breaks go: a space at the end of the prompt line belongs to the command being typed.
+  return text.replace(/\n+$/, "");
+}
+
+export async function readTerminal(
+  state: ComputerUseState,
+  window: Window,
+  context: Context,
+): Promise<ComputerUseResult> {
   return textResult(
-    `terminal ${window.window_id} "${window.title}" text, latest last:\n${text.trimEnd()}`,
+    `terminal ${window.window_id} "${window.title}" text, latest last:\n${(await terminalText(state, window, context)).trimEnd()}`,
   );
 }

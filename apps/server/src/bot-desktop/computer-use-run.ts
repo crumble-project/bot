@@ -14,9 +14,13 @@ import { textResult, type ComputerUseState } from "./computer-use-state";
 import { runSteps } from "./computer-use-steps";
 import { fillLogin, restoreFilled, scrubFilled } from "./computer-use-login";
 import { launchApp, listApps } from "./computer-use-launch";
-import { isTerminal, readTerminal } from "./computer-use-terminal";
+import {
+  isTerminal,
+  readTerminal,
+  terminalText,
+} from "./computer-use-terminal";
 import { proposedAction, type IntentGate } from "./computer-use-intent";
-import { ACTING_ACTIONS } from "./intent-check";
+import { ACTING_ACTIONS, isEnter, type ProposedAction } from "./intent-check";
 
 // Actions that only look; they stay allowed right after control changed hands.
 const OBSERVE = new Set([
@@ -291,6 +295,36 @@ async function pinned(
  * Asks the intent check about an acting call; a refusal is the call's result. The owner may take control while an
  * action is held, so an approved one runs only if the bot still holds the desktop it was checked on.
  */
+/**
+ * A terminal Enter with the command it runs: the terminal's current line plus the text this call types before it. A
+ * failed read leaves the command out, so the commit-point rule still holds the Enter.
+ */
+async function withCommand<T extends { action: ProposedAction }>(
+  state: ComputerUseState,
+  proposal: T,
+  window: Window | undefined,
+  context: Context,
+): Promise<T> {
+  const { steps, terminal } = proposal.action;
+  const enter = steps.findIndex(isEnter);
+
+  if (!terminal || !window || enter < 0) return proposal;
+
+  const line = await terminalText(state, window, context).then(
+    (text) => text.split("\n").at(-1) ?? "",
+    () => undefined,
+  );
+
+  if (line === undefined) return proposal;
+
+  const typed = steps
+    .slice(0, enter)
+    .flatMap((step) => (step.action === "type" && step.text ? [step.text] : []))
+    .join("");
+
+  return { ...proposal, action: { ...proposal.action, command: line + typed } };
+}
+
 async function intentVerdict(
   state: ComputerUseState,
   args: ComputerUseArgs,
@@ -302,7 +336,10 @@ async function intentVerdict(
 
   if (!proposal) return {};
 
-  const { refusal, usage } = await intent(proposal, context);
+  const { refusal, usage } = await intent(
+    await withCommand(state, proposal, window, context),
+    context,
+  );
 
   return {
     refusal: refusal ?? (await controlTurn(state, args.action, context)),

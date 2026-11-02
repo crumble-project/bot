@@ -2,7 +2,11 @@ import { expect, test } from "bun:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createComputerUse, type ControlGate } from "./computer-use";
 import type { IntentGate } from "./computer-use-intent";
-import { isCommitPoint, type ProposedAction } from "./intent-check";
+import {
+  describeAction,
+  isCommitPoint,
+  type ProposedAction,
+} from "./intent-check";
 import { scriptedGuest } from "../../test/fixtures/scripted-guest";
 
 const shop = { pid: 7, window_id: 101, app_name: "Chromium", title: "Shop" };
@@ -221,7 +225,7 @@ test("the judge's spend is on the call's result, whether the action ran or was r
   expect(read.usage).toBeUndefined();
 });
 
-test("Enter in a terminal window is left to the judge, and Enter in another app still is a commit point", async () => {
+test("a terminal Enter reaches the judge with the command it runs; Enter in another app still is a commit point", async () => {
   const terminal = {
     pid: 9,
     window_id: 103,
@@ -229,20 +233,42 @@ test("Enter in a terminal window is left to the judge, and Enter in another app 
     title: "Terminal",
   };
 
-  const { shell } = scriptedGuest({
+  const { shell, state } = scriptedGuest({
     list_windows: [{ windows: [terminal, help] }],
+    run_steps: [{ steps: [], failed_step: null, total: 2 }],
   });
+
+  state.terminalText = "total 0\nroot@box:/workspace# rm -rf ";
 
   const { seen, gate } = recording("REFUSED: held");
   const tool = createComputerUse(shell);
 
-  for (const window_id of [103, 102])
-    await tool.run(
-      { action: "key", keys: "Return", window_id },
-      BACKGROUND_CONTEXT,
-      gate,
-    );
+  await tool.run(
+    {
+      action: "steps",
+      window_id: 103,
+      steps: [
+        { action: "type", text: "demo" },
+        { action: "key", keys: "Return" },
+      ],
+    },
+    BACKGROUND_CONTEXT,
+    gate,
+  );
+  await tool.run(
+    { action: "key", keys: "Return", window_id: 102 },
+    BACKGROUND_CONTEXT,
+    gate,
+  );
 
-  expect(seen.map((action) => action.terminal)).toEqual([true, undefined]);
-  expect(seen.map(isCommitPoint)).toEqual([false, true]);
+  expect(seen[0]).toMatchObject({
+    terminal: true,
+    command: "root@box:/workspace# rm -rf demo",
+  });
+  expect(describeAction(seen[0]!)).toContain(
+    'in a terminal, running "root@box:/workspace# rm -rf demo"',
+  );
+  expect(isCommitPoint(seen[0]!, true)).toBe(false);
+  expect(seen[1]!.terminal).toBeUndefined();
+  expect(isCommitPoint(seen[1]!, true)).toBe(true);
 });

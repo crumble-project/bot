@@ -778,24 +778,16 @@ export class AgentRuntime {
           callContext,
         );
 
+        const [group, review] = await Promise.all([
+          api.snapshot(GroupConversation, api.conversationId, callContext),
+          api.snapshot(ReviewConversation, api.conversationId, callContext),
+        ]);
+
+        // A review of a group turn keeps that turn's group, so it is held to the same memory rules.
         const context: MemoryContext = {
-          groupId:
-            (
-              await api.snapshot(
-                GroupConversation,
-                api.conversationId,
-                callContext,
-              )
-            )?.groupId ?? null,
+          groupId: group?.groupId ?? review?.groupId ?? null,
           submissionIds: (live?.run?.inputs ?? []).map(String),
-          reviewOf:
-            (
-              await api.snapshot(
-                ReviewConversation,
-                api.conversationId,
-                callContext,
-              )
-            )?.executionId ?? null,
+          reviewOf: review?.executionId ?? null,
         };
 
         const current = this.callbacks.currentAgent
@@ -1151,13 +1143,22 @@ export class AgentRuntime {
   /** A new conversation that reviews one execution, owned by a background task so it stays out of the bot chat. */
   async openReviewConversation(
     agent: Agent,
-    executionId: string,
+    execution: { id: string; conversationId: string },
     scope: ReviewScope,
     budgetChars: number,
   ): Promise<string> {
+    const { harness } = await this.open(agent);
+
+    const reviewed = await harness.snapshot(
+      GroupConversation,
+      localConversationId(agent.id, execution.conversationId),
+      BACKGROUND_CONTEXT,
+    );
+
     return this.openAnchored(agent, ReviewAnchor, async (tx, id) => {
       const doc = await tx.doc(ReviewConversation, id);
-      doc.executionId = executionId;
+      doc.executionId = execution.id;
+      doc.groupId = reviewed?.groupId ?? null;
       doc.skills = scope.skills;
       doc.memory = scope.memory;
       doc.budgetChars = budgetChars;

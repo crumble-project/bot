@@ -105,7 +105,7 @@ export class LearningReview extends Context.Service<
       if (scope.memory) yield* reviews.setCounter(agent.id, "memory", 0);
 
       const conversation = yield* pi(() =>
-        runtime.openReviewConversation(agent, execution.id, scope, budgetChars),
+        runtime.openReviewConversation(agent, execution, scope, budgetChars),
       );
 
       yield* reviews.addPending(execution.id, agent.id, conversation);

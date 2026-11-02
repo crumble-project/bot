@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import type { Effect } from "effect";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +15,7 @@ import { standaloneLearningReview } from "./learning-review";
 import { AgentRuntime } from "../bots/runtime";
 import { standaloneBots, type LearnedActivity } from "../bots/bots";
 import { standaloneSkills } from "./skills";
+import { BotMemory } from "../memory/bot-memory";
 import { Store } from "../../test/support/store";
 
 const dirs: string[] = [];
@@ -43,10 +45,21 @@ function open(responses: FauxResponseStep[]) {
   models.setProvider(faux.provider);
   const store = new Store(dir);
 
+  const memory = <A>(
+    use: (memory: BotMemory["Service"]) => Effect.Effect<A, unknown>,
+  ) => store.runtime.runPromise(BotMemory.use(use));
+
   const runtime = new AgentRuntime(dir, {
     models,
     currentAgent: (id) => store.getAgent(id),
     skillLibrary: standaloneSkills(store),
+    listMemory: (agentId) => memory((m) => m.list(agentId)),
+    createMemory: (agentId, content, shared, context) =>
+      memory((m) => m.create(agentId, content, shared, context)),
+    updateMemory: (agentId, id, content, context) =>
+      memory((m) => m.update(agentId, id, content, context)),
+    deleteMemory: (agentId, id, context) =>
+      memory((m) => m.delete(agentId, id, context)),
   });
 
   const service = standaloneBots(store, runtime);
@@ -332,7 +345,7 @@ test("turns below the threshold are not reviewed, scheduled runs count like chat
   // A review left pending by a crash is aborted and forgotten on recovery.
   const conversation = await runtime.openReviewConversation(
     agent,
-    first.id,
+    first,
     { skills: true, memory: false },
     100000,
   );
@@ -340,4 +353,55 @@ test("turns below the threshold are not reviewed, scheduled runs count like chat
   store.addPendingReview(first.id, agent.id, conversation);
   await reviews.recover();
   expect(store.listPendingReviews()).toEqual([]);
+});
+
+test("a review of a group turn cannot change shared memory, while a review of a chat turn can", async () => {
+  const turn = (answer: string, shared: string): FauxResponseStep[] => [
+    fauxAssistantMessage([fauxToolCall("memory", { action: "list" })], {
+      stopReason: "toolUse",
+    }),
+    fauxAssistantMessage(answer),
+    fauxAssistantMessage(
+      [
+        fauxToolCall("memory", {
+          action: "create",
+          content: shared,
+          shared: true,
+        }),
+      ],
+      { stopReason: "toolUse" },
+    ),
+    fauxAssistantMessage("Done."),
+  ];
+
+  const { store, runtime, service, faux } = open([
+    ...turn("For the owner.", "from the chat"),
+    ...turn("For the group.", "from the group"),
+  ]);
+
+  const agent = store.createAgent({
+    ...agentInput,
+    tools: ["memory"],
+    sharedMemory: true,
+    review: { enabled: true, skillThreshold: 10, memoryThreshold: 1 },
+  });
+
+  const shared = async () =>
+    (
+      await store.runtime.runPromise(BotMemory.use((m) => m.list(agent.id)))
+    ).flatMap((memory) => (memory.shared ? [memory.content] : []));
+
+  const chatTurn = await service.sendChat(agent.id, "hello", uuid(1));
+  expect(await settle(service, chatTurn.id)).toBe("done");
+  await until(() => faux.getPendingResponseCount() === 4);
+  await until(() => store.listPendingReviews().length === 0);
+  expect(await shared()).toEqual(["from the chat"]);
+
+  const group = await runtime.openGroupConversation(agent, "group-1");
+  store.createConversation({ agentId: agent.id, title: "Group" }, group);
+  const groupTurn = await service.send(group, "hello", "group-turn:1");
+  expect(await settle(service, groupTurn.id)).toBe("done");
+  await until(() => faux.getPendingResponseCount() === 0);
+  await until(() => store.listPendingReviews().length === 0);
+  expect(await shared()).toEqual(["from the chat"]);
 });
