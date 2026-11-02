@@ -105,6 +105,8 @@ export const computerUseParameters = Type.Object({
       "wait",
       "list_windows",
       "focus_window",
+      "launch",
+      "list_apps",
       "open",
       "read",
       "steps",
@@ -113,7 +115,8 @@ export const computerUseParameters = Type.Object({
     {
       description:
         "Which action to perform. `capture` and `read` have no side effects. Use `set_value` for text fields and select or combo boxes when the element supports it. " +
-        "`open` loads a URL in Chromium's current tab and returns a read of the page; `read` returns the page's content and the elements to act on by ref. " +
+        "`launch` starts an app, such as Files or Terminal at a folder, or any app `list_apps` names; use it instead of clicking the panel. " +
+        "`open` loads a URL in Chromium's current tab and returns a read of the page; `read` returns the page's content and the elements to act on by ref; on a terminal window it returns the terminal's text, which capture can't show. " +
         "`steps` runs several accessibility actions in one call, each naming its element by role and name. " +
         "`fill_login` types a field of one of the bot's logins into a page field by ref; you never see the value.",
     },
@@ -137,6 +140,18 @@ export const computerUseParameters = Type.Object({
   ),
   url: Type.Optional(
     Type.String({ description: "open: the http, https, or about: URL." }),
+  ),
+  app: Type.Optional(
+    Type.String({
+      description:
+        "launch: Files, Terminal, or another installed app's name from list_apps.",
+    }),
+  ),
+  path: Type.Optional(
+    Type.String({
+      description:
+        "launch: an absolute folder or file to open the app on. Files and Terminal default to /workspace.",
+    }),
   ),
   ref: Type.Optional(
     Type.String({
@@ -223,6 +238,8 @@ export type ComputerUseArgs = {
   full?: boolean;
   query?: string;
   url?: string;
+  app?: string;
+  path?: string;
   ref?: string;
   window_id?: number;
   element?: number;
@@ -281,7 +298,7 @@ export function computerUseTool({
   return defineTool({
     name: COMPUTER_USE_TOOL_NAME,
     description:
-      "Operate the bot desktop (Openbox, Chromium, other X11 apps) through its accessibility tree, mouse, and keyboard. " +
+      "Operate the bot desktop (XFCE with Chromium, the Thunar file manager, a terminal, other X11 apps) through its accessibility tree, mouse, and keyboard. " +
       "Workflow: action='capture' returns the focused window's accessibility tree; every actionable element is tagged [N]. " +
       "Act on elements by index (element=N), which is more reliable than coordinates. Later captures of the same window list only what changed " +
       "(+ added, ~ changed, - removed) and keep earlier [N] unless a 'reindexed' line says otherwise. Use mode='vision' for a screenshot when the " +

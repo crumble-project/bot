@@ -455,8 +455,8 @@ const githubLines = (identities: readonly GitHubIdentity[]) => {
   ];
 };
 
-/** What a coding job reads about the bot's credentials and GitHub identity; undefined without either. */
-export function jobCredentialSection(
+/** What the bot and its coding jobs read about the bot's credentials and GitHub identity; undefined without either. */
+export function workspaceCredentialSection(
   credentials: readonly AgentCredential[],
   identities: readonly GitHubIdentity[] = [],
 ) {
@@ -473,11 +473,6 @@ export function jobCredentialSection(
     ...githubLines(identities),
   ].join("\n");
 }
-
-const grantedLines = (granted: readonly AgentCredential[]) =>
-  granted.length
-    ? ["Credentials your coding jobs have:", ...credentialLines(granted)]
-    : [];
 
 const pendingLines = (requests: readonly CredentialRequest[]) =>
   requests.length
@@ -499,7 +494,7 @@ export const requestParameters = {
   reason: Type.String({ minLength: 1, maxLength: 1000 }),
 };
 
-/** The bot's `request_credential` tool and what it knows about its credentials, for bots with coding jobs. */
+/** The bot's `request_credential` tool and the requests the owner has not answered, for bots with coding. */
 export function credentialExtension(
   agentId: string,
   credentials: CredentialsAccess,
@@ -507,7 +502,7 @@ export function credentialExtension(
   const request = defineTool({
     name: REQUEST_CREDENTIAL_TOOL,
     description:
-      "Ask the owner for a credential your coding jobs need, such as an API token for a service without an MCP server. Name it like an environment variable (ACME_TOKEN), list the hosts it is for (api.acme.com, *.acme.com), and say why. The owner enters the value outside the chat; you never see it. Coding jobs then get the variable with a placeholder that works only on requests to those hosts. After calling, tell the owner what you asked for and why, then end your turn: a message arrives when the owner answers.",
+      "Ask the owner for a credential your shell commands or coding jobs need, such as an API token for a service without an MCP server. Name it like an environment variable (ACME_TOKEN), list the hosts it is for (api.acme.com, *.acme.com), and say why. The owner enters the value outside the chat; you never see it. Your commands and coding jobs then get the variable with a placeholder that works only on requests to those hosts. After calling, tell the owner what you asked for and why, then end your turn: a message arrives when the owner answers.",
     parameters: Type.Object(requestParameters),
     // The chat offers the owner the form from this call's own result, so code mode keeps it a direct model tool.
     callers: ["model"],
@@ -529,14 +524,13 @@ export function credentialExtension(
     sections: [
       {
         key: "credentials",
+        // The granted ones show in the workspace's credentials section, with how to use them.
         render: () => {
-          const { credentials: granted, requests } = credentials.list(agentId);
+          const { requests } = credentials.list(agentId);
 
-          if (!granted.length && !requests.length) return undefined;
-
-          return [...grantedLines(granted), ...pendingLines(requests)].join(
-            "\n",
-          );
+          return requests.length
+            ? pendingLines(requests).join("\n")
+            : undefined;
         },
       },
     ],

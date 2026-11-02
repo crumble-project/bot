@@ -67,7 +67,7 @@ A change a bot or its review made to its own skills or memory, recorded with its
 _Avoid_: Auto-save, self-update
 
 **Coding job**:
-Background work a bot hands to a separate agent that edits files and runs commands in the bot's workspace. The job's answer returns to the bot's chat.
+Work a bot hands to a separate agent in its workspace, for work that runs beside the chat: several tasks at once, or one that would block the chat for long. The job starts with the bot's standing instructions, memory, skills, and latest chat messages, so the bot gives it only the task. The job's answer returns to the bot's chat.
 _Avoid_: Subagent, session, sub-chat
 
 **Job question**:
@@ -91,11 +91,15 @@ One webhook address on the event relay, named by the owner and usable by every b
 _Avoid_: Webhook, hook, trigger
 
 **Workspace**:
-A bot's persistent files for coding jobs and desktop jobs, on a disk only that bot's jobs can reach. The machine running them starts and stops as needed.
+A bot's persistent files, on a disk only that bot and its jobs can reach. A bot with coding reads, edits, and runs commands there itself, in its chat and group chats, and its jobs work there too. The machine running them starts and stops as needed.
 _Avoid_: Sandbox, container, VM (in product language)
 
+**Workspace notes**:
+A short file in a bot's workspace with facts the bot and its jobs learned about the machine, such as installed tools, where clones live, and servers left running. Every job of the bot sees them in its prompt, and the bot sees them while the machine runs; the bot and its coding jobs keep them current.
+_Avoid_: Workspace memory, scratchpad, job memory
+
 **Credential**:
-A secret value the owner gives one bot for a list of hosts. The bot's jobs use it through a placeholder, so the value never enters the workspace.
+A secret value the owner gives one bot for a list of hosts. The bot's commands and its jobs use it through a placeholder, so the value never enters the workspace.
 _Avoid_: Secret, API key, environment variable (in product language)
 
 **GitHub App**:

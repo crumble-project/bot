@@ -9,7 +9,7 @@ import type {
 import type { Runner } from "../shared/runner";
 import { AgentRepository } from "../bots/agent-repository";
 import { BotRuntime } from "../bots/runtime";
-import { Bots, GROUP_TURN_PREFIX } from "../bots/bots";
+import { Bots } from "../bots/bots";
 import { codingJobsFinished } from "../jobs/coding";
 import type { JobFinished } from "../jobs/jobs";
 import { conversationReference } from "../shared/domain";
@@ -18,9 +18,6 @@ import { ReviewRepository } from "./review-repository";
 import type { ReviewScope } from "./review-instructions";
 
 const DEFAULTS = { enabled: true, skillThreshold: 10, memoryThreshold: 10 };
-
-const isGroupTurn = (execution: Execution) =>
-  execution.requestId.startsWith(GROUP_TURN_PREFIX);
 
 const nameOf = (change: LearnedChange) => {
   // SAFETY: a change's states have the shape of its target, written by the store that recorded them.
@@ -108,7 +105,7 @@ export class LearningReview extends Context.Service<
       if (scope.memory) yield* reviews.setCounter(agent.id, "memory", 0);
 
       const conversation = yield* pi(() =>
-        runtime.openReviewConversation(agent, execution.id, scope, budgetChars),
+        runtime.openReviewConversation(agent, execution, scope, budgetChars),
       );
 
       yield* reviews.addPending(execution.id, agent.id, conversation);
@@ -175,10 +172,9 @@ export class LearningReview extends Context.Service<
       ) {
         const { submissionId } = execution;
 
+        // Scheduled runs, event automations and group turns count too: the bot works in its workspace in all of them.
         if (
           execution.status !== "done" ||
-          execution.scheduleId ||
-          isGroupTurn(execution) ||
           !submissionId ||
           running.has(execution.id)
         )

@@ -9,11 +9,12 @@ import { defineAnchorTask } from "../shared/anchor-task";
 export const REVIEW_EXTENSION = "learning-review";
 
 /**
- * Marks a bot's conversation as the review of one execution: what it may write, which stores it reviews, and how
- * many characters of model input the whole review may spend.
+ * Marks a bot's conversation as the review of one execution: the group chat that execution ran in, what it may
+ * write, which stores it reviews, and how many characters of model input the whole review may spend.
  */
 export const ReviewConversation = defineDoc<{
   executionId: string | null;
+  groupId: string | null;
   skills: boolean;
   memory: boolean;
   budgetChars: number;
@@ -25,6 +26,7 @@ export const ReviewConversation = defineDoc<{
   fork: "initial",
   initial: () => ({
     executionId: null,
+    groupId: null,
     skills: false,
     memory: false,
     budgetChars: 0,

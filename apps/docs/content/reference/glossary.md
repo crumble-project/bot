@@ -99,7 +99,7 @@ Avoid: Auto-save, self-update.
 
 ### Coding job
 
-Background work a bot hands to a separate agent that edits files and runs commands in the bot's workspace. The job's answer returns to the bot's chat.
+Work a bot hands to a separate agent in its workspace, for work that runs beside the chat: several tasks at once, or one that would block the chat for long. The job's answer returns to the bot's chat.
 
 Avoid: Subagent, session, sub-chat.
 
@@ -135,13 +135,13 @@ Avoid: Webhook, hook, trigger.
 
 ### Workspace
 
-A bot's persistent files for coding jobs and desktop jobs, on a disk only that bot's jobs can reach. The machine running them starts and stops as needed.
+A bot's persistent files, on a disk only that bot and its jobs can reach. A bot with coding reads, edits, and runs commands there itself, in its chat and group chats, and its jobs work there too. The machine running them starts and stops as needed.
 
 Avoid: Sandbox, container, VM (in product language).
 
 ### Credential
 
-A secret value the owner gives one bot for a list of hosts. The bot's jobs use it through a placeholder, so the value never enters the workspace.
+A secret value the owner gives one bot for a list of hosts. The bot's commands and its jobs use it through a placeholder, so the value never enters the workspace.
 
 Avoid: Secret, API key, environment variable (in product language).
 

@@ -14,7 +14,14 @@ export type IntentStep = {
 };
 
 /** An acting call: one step, or every step of a `steps` call, checked together. */
-export type ProposedAction = { steps: IntentStep[]; host?: string };
+export type ProposedAction = {
+  steps: IntentStep[];
+  host?: string;
+  /** The window is a terminal emulator, where Enter runs a shell command in the bot's own workspace. */
+  terminal?: boolean;
+  /** In a terminal: the command Enter would run, as read from the terminal before the check. */
+  command?: string;
+};
 
 /** What the judge reads. Page text is never part of it, so a page can't argue for its own action. */
 export type IntentRequest = {
@@ -146,7 +153,7 @@ const ENTER_KEY = /(^|\+)(return|enter|kp_enter)$/i;
 const PRESSES = new Set(["click", "double_click"]);
 
 // A key goes to the focus, which may be a form field, so Enter always counts.
-const isEnter = ({ action, keys }: IntentStep) =>
+export const isEnter = ({ action, keys }: IntentStep) =>
   action === "key" && ENTER_KEY.test(keys?.trim() ?? "");
 
 const isCommitControl = ({ role, name }: IntentTarget) =>
@@ -155,12 +162,17 @@ const isCommitControl = ({ role, name }: IntentTarget) =>
 const isCommitPress = ({ action, target }: IntentStep) =>
   PRESSES.has(action) && target !== undefined && isCommitControl(target);
 
-const stepIsCommitPoint = (step: IntentStep) =>
-  isEnter(step) || isCommitPress(step);
-
-/** The rule floor: a known commit point counts as irreversible whatever the judge says. */
-export const isCommitPoint = (action: ProposedAction) =>
-  action.steps.some(stepIsCommitPoint);
+/**
+ * The rule floor: a known commit point counts as irreversible whatever the judge says. Enter in a terminal is left to
+ * a judge that sees the command it runs, as the bot's own bash runs commands; without a judge or the command, it counts.
+ */
+export const isCommitPoint = (action: ProposedAction, judged = false) =>
+  action.steps.some(
+    (step) =>
+      (isEnter(step) &&
+        !(judged && action.terminal && action.command !== undefined)) ||
+      isCommitPress(step),
+  );
 
 /** Rules only make the check stricter: a commit point is irreversible even when the judge disagrees. */
 export function decide(
@@ -181,25 +193,26 @@ export async function checkIntent(
   request: IntentRequest,
   signal: AbortSignal | undefined,
 ): Promise<IntentVerdict> {
-  const commitPoint = isCommitPoint(request.action);
+  const rulesOnly = isCommitPoint(request.action);
 
   if (!judge)
     return {
-      ...decide(commitPoint, undefined),
-      commitPoint,
+      ...decide(rulesOnly, undefined),
+      commitPoint: rulesOnly,
       answer: undefined,
     };
 
   try {
     const answer = await judge(request, signal);
+    const commitPoint = isCommitPoint(request.action, true);
 
     return { ...decide(commitPoint, answer), commitPoint, answer };
   } catch (error) {
     signal?.throwIfAborted();
 
     return {
-      ...decide(commitPoint, undefined),
-      commitPoint,
+      ...decide(rulesOnly, undefined),
+      commitPoint: rulesOnly,
       answer: undefined,
       judgeError: error instanceof Error ? error.message : String(error),
     };
@@ -231,6 +244,11 @@ export function describeAction(action: ProposedAction) {
   const words = action.steps.map(stepWords).join(", then ");
   const sentence = words.charAt(0).toUpperCase() + words.slice(1);
 
+  if (action.terminal)
+    return action.command === undefined
+      ? `${sentence} in a terminal`
+      : `${sentence} in a terminal, running ${JSON.stringify(action.command)}`;
+
   return action.host ? `${sentence} on ${action.host}` : sentence;
 }
 
@@ -247,6 +265,8 @@ export function judgeState(request: IntentRequest): JsonObject {
     proposed_action: {
       summary: describeAction(action),
       ...(action.host !== undefined && { host: action.host }),
+      ...(action.terminal && { terminal: true }),
+      ...(action.command !== undefined && { command: action.command }),
       steps: action.steps.map((step) => ({
         action: step.action,
         ...(step.target && {
@@ -266,7 +286,7 @@ export function judgeState(request: IntentRequest): JsonObject {
 export const JUDGE_QUESTIONS = {
   irreversible: {
     instructions:
-      "A desktop agent is about to perform proposed_action in a browser or app. Would it have an effect that can't be undone or that others see: submitting a form, paying, ordering, sending a message, deleting, publishing, booking, or confirming?",
+      "A desktop agent is about to perform proposed_action in a browser or app. Would it have an effect that can't be undone or that others see: submitting a form, paying, ordering, sending a message, deleting, publishing, booking, or confirming? In a terminal, judge the command it runs: deleting or overwriting files, killing programs, pushing, deploying, sending, or publishing counts.",
     criteria: {
       true: "The action commits, sends, pays, deletes, publishes, or confirms something.",
       false:

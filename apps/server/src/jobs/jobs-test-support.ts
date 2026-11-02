@@ -52,6 +52,10 @@ class DirectoryWorkspaces implements Workspaces {
     return Effect.void;
   }
 
+  running(_agentId: string) {
+    return false;
+  }
+
   desktopRunning(_agentId: string) {
     return false;
   }
@@ -178,8 +182,8 @@ async function open(kind: typeof exclusiveKind) {
     models,
     extensions: () => extensions.chat,
     taskExtensions: () => extensions.job,
-    env: (agentId, target, context) =>
-      kind.env(workspaces, agentId, target, context),
+    env: (current, target, context) =>
+      kind.env(workspaces, current.id, target, context),
   });
 
   cleanups.push(() => runtime.close());

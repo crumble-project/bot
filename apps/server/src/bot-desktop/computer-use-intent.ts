@@ -1,4 +1,5 @@
 import type { Context } from "@earendil-works/chord";
+import { isTerminal } from "./computer-use-terminal";
 import type { Usage } from "@earendil-works/pi-ai";
 import { z } from "zod";
 import type { ComputerUseArgs, StepArgs } from "./computer-use";
@@ -201,5 +202,14 @@ export function proposedAction(
   const steps = proposedSteps(state, args, window);
   const { page, host } = placeOf(state, args, window);
 
-  return { action: host ? { steps, host } : { steps }, page };
+  const terminal = args.ref === undefined && isTerminal(window);
+
+  return {
+    action: {
+      steps,
+      ...(host && { host }),
+      ...(terminal && { terminal }),
+    },
+    page,
+  };
 }

@@ -6,7 +6,7 @@ import type {
   WorkspaceSyncFailed,
 } from "./workspace-errors";
 
-/** The guest path where a bot's workspace lives; coding jobs start here. */
+/** The guest path where a bot's workspace lives; the bot's shell and its coding jobs start here. */
 export const WORKSPACE_PATH = "/workspace";
 
 /** Where the guest keeps the bot's credential proxy authority, which `update-ca-certificates` adds to the bundle. */
@@ -44,7 +44,7 @@ export type WorkspaceNetworkPolicy = (
 export const allowAllRequests: WorkspaceNetworkPolicy = () => true;
 
 /**
- * Each bot's persistent coding workspace: a disk only that bot's coding jobs can reach. The machine behind it starts
+ * Each bot's persistent coding workspace: a disk only that bot and its jobs can reach. The machine behind it starts
  * on first use and may stop when idle; the workspace's files survive both. Closing the layer that made it stops them.
  */
 export interface Workspaces {
@@ -64,6 +64,8 @@ export interface Workspaces {
     agentId: string,
     options?: { passive?: boolean },
   ): Effect.Effect<DesktopStream, DesktopOpenError>;
+  /** Whether the bot's machine runs now. Cheap and never boots it, unlike every operation of `env`. */
+  running(agentId: string): boolean;
   /** Whether the bot's machine runs its bot desktop now. */
   desktopRunning(agentId: string): boolean;
   /** Boots the bot's machine ahead of `openDesktop`, so a viewer about to connect waits less. */

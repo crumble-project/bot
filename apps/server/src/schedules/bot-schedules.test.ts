@@ -47,6 +47,7 @@ const workspaces: Workspaces = {
   startDesktop: () => Effect.void,
   keepAwake: () => () => {},
   outdated: () => [],
+  running: () => false,
   desktopRunning: () => false,
   sync: () => Effect.void,
 };

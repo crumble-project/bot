@@ -19,6 +19,13 @@ chat, you, a scheduled task, another bot, or a group chat.
 
 Review and edit memories on the **Memory** page.
 
+The bot's [jobs](/concepts/workspaces#jobs) see its memories too, but only
+read them.
+
+Facts about a bot's workspace machine, such as where it cloned a
+repository, aren't memories: the bot and its jobs keep them in
+[workspace notes](/concepts/workspaces#workspace-notes).
+
 ## Skills
 
 A skill is a set of instructions for one kind of task, like writing a weekly
@@ -35,6 +42,10 @@ why a bot with fifty skills doesn't pay for fifty skills on every turn.
 A bot can write its own skills. When it changes a shared or default skill, it
 makes its own copy, which takes the original's place for that bot only. Your
 other bots keep the original.
+
+A bot's [jobs](/concepts/workspaces#jobs) see the same skill list and load
+skills the same way, so what the bot learned from earlier jobs applies to the
+next one. Jobs don't write skills.
 
 Manage skills in **Settings** > **Skills**. To turn a shared skill on for a
 bot, open the skill and select the bot under **Used by**.
@@ -96,6 +107,11 @@ revert it.
 
 After a turn with a lot of tool use, a background review looks at what the
 bot did and may update its skills or memories. These are learned changes.
+Every turn counts: chat turns, scheduled runs, event automations, and group chat
+turns, plus each coding job's work once the job reports back. A review of a
+group chat turn, like the turn itself, changes only the bot's own memory, never
+shared memory. The review never saves instructions it finds in outside data,
+such as an event's payload or a web page.
 
 **Every change to a skill or memory is recorded with its before and after
 state**, whether you made it, a bot did, or a review did. Open the **Activity**

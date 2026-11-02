@@ -60,7 +60,7 @@ import { runnerOf } from "../shared/runner";
 import { builtinPlugins, builtinVendors } from "./builtin-plugins";
 import { heldActionNotices, jobAnswers, jobTools } from "./plugin-layers";
 import {
-  jobEnv,
+  conversationEnv,
   jobExtensions,
   pluginJobKinds,
   pluginProviders,
@@ -249,8 +249,8 @@ function accountLayer(
 
       return BotRuntime.layer(join(dataDir, "agents"), {
         taskExtensions: (agent) => jobExtensions(jobKinds, agent).job,
-        env: (agentId, target, context) =>
-          jobEnv(jobKinds, agentId, target, context),
+        env: (agent, target, context) =>
+          conversationEnv(jobKinds, agent, target, context),
       });
     }),
   );

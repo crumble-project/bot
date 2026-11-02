@@ -20,6 +20,10 @@ import {
 } from "./desktop";
 import type { JsonObject } from "@earendil-works/pi-durable";
 import type { JobAnswer } from "./jobs";
+import {
+  WORKSPACE_NOTES_FILE,
+  WORKSPACE_NOTES_SECTION,
+} from "./workspace-notes";
 import type { DesktopIntent } from "./desktop-intent";
 import type { IntentRequest } from "../bot-desktop/intent-check";
 import type { MessageOrigin } from "../bots/transcript";
@@ -93,6 +97,10 @@ class GuestWorkspaces implements Workspaces {
 
   startDesktop(_agentId: string) {
     return Effect.void;
+  }
+
+  running(_agentId: string) {
+    return false;
   }
 
   desktopRunning(_agentId: string) {
@@ -191,6 +199,8 @@ type OpenOptions = {
   start?: JsonObject;
   /** The opening message's origin; unset, it has none. */
   origin?: MessageOrigin;
+  /** The workspace notes earlier jobs left; unset, there are none. */
+  notes?: string;
   /** The bot's answer that ends the test's wait. */
   done?: string;
 };
@@ -239,6 +249,9 @@ async function open(
 
   const workspaces = new GuestWorkspaces(dir);
 
+  if (options.notes !== undefined)
+    await Bun.write(join(dir, WORKSPACE_NOTES_FILE), options.notes);
+
   const extensions = desktopExtensions(
     agent,
     undefined,
@@ -250,8 +263,8 @@ async function open(
     models,
     extensions: () => extensions.chat,
     taskExtensions: () => extensions.job,
-    env: (agentId, target, context) =>
-      desktopEnv(workspaces, agentId, target, context),
+    env: (current, target, context) =>
+      desktopEnv(workspaces, current.id, target, context),
   });
 
   cleanups.push(() => runtime.close());
@@ -294,8 +307,9 @@ test("a desktop job operates the bot desktop and reports to the bot's chat", asy
   const { runtime, agent, chat, offered, calls } = await open();
   const messages = (await runtime.snapshot(agent, chat)).messages;
 
-  // The job has exactly computer_use: no shell, memory, delegation, or jobs. The chat never gets computer_use.
-  expect(offered.get("job")).toEqual(["computer_use"]);
+  // The job has computer_use and loads the bot's skills: no shell, memory writes, delegation, or jobs. The chat never
+  // gets computer_use.
+  expect(offered.get("job")).toEqual(["computer_use", "skill"]);
   expect(offered.get("bot")).toEqual(["desktop"]);
 
   const report = messages.find((message) => message.origin?.kind === "desktop");
@@ -441,6 +455,29 @@ test("without logins, a desktop job's prompt has no logins section", async () =>
   const { sections } = await open();
 
   expect(sections.get("job")?.["desktop_logins"]).toBeUndefined();
+});
+
+test("a desktop job's prompt has the workspace notes to read; the bot's chat has none", async () => {
+  const { sections } = await open(undefined, undefined, {
+    notes: "The shop's dev server runs on http://localhost:3000.\n",
+  });
+
+  // A desktop job has no file tools, so it is not asked to keep them.
+  expect(sections.get("job")?.[WORKSPACE_NOTES_SECTION]).toBe(
+    [
+      "<workspace_notes>",
+      "Facts earlier jobs of this bot learned about this workspace:",
+      "The shop's dev server runs on http://localhost:3000.",
+      "</workspace_notes>",
+    ].join("\n"),
+  );
+  expect(sections.get("bot")?.[WORKSPACE_NOTES_SECTION] ?? null).toBeNull();
+});
+
+test("without workspace notes, a desktop job's prompt has no notes section", async () => {
+  const { sections } = await open();
+
+  expect(sections.get("job")?.[WORKSPACE_NOTES_SECTION]).toBeUndefined();
 });
 
 /** A judge that answers every check as asked for, recording what it read; nothing is ever held. */

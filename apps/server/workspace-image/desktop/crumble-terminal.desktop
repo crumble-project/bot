@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Terminal
+Icon=org.xfce.terminal
+Exec=xfce4-terminal --working-directory=/workspace
+Terminal=false

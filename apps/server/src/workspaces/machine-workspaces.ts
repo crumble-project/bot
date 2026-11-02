@@ -142,6 +142,21 @@ export const bootStep = <A>(step: string, run: () => Promise<A>) =>
       }),
   });
 
+export const ALLOW_OVERCOMMIT = "echo 1 > /proc/sys/vm/overcommit_memory";
+
+/**
+ * Lets the guest kernel grant every memory reservation, at each boot since the setting lives in the running kernel.
+ * Tools such as oxlint reserve far more address space than the machine has, which the default heuristic refuses. A
+ * guest that refuses the setting still boots: most jobs never need it.
+ */
+export const allowOvercommit = (
+  agentId: string,
+  run: (command: string) => Promise<void>,
+) =>
+  bootStep("Allowing memory overcommit", () => run(ALLOW_OVERCOMMIT)).pipe(
+    Effect.catch((error) => Effect.logWarning(error.message, agentId)),
+  );
+
 /** Acquires a resource for a boot that releases it only if the boot fails: on success the booted machine owns it. */
 export const untilBooted = <A, E>(
   acquire: Effect.Effect<A, E>,
@@ -575,6 +590,10 @@ export class MachineWorkspaces implements Workspaces {
     return Effect.suspend(() =>
       this.workspace(agentId).openDesktop(options.passive === true),
     );
+  }
+
+  running(agentId: string) {
+    return this.workspaces.get(agentId)?.running !== undefined;
   }
 
   desktopRunning(agentId: string) {

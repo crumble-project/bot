@@ -26,12 +26,12 @@ silent, or react with an emoji.
 Group chats are for talking. Some things a bot can do in its own chat are off
 here:
 
-| Limit                   | What happens                                                                                   |
-| ----------------------- | ---------------------------------------------------------------------------------------------- |
-| **Turn limit**          | After 8 bot turns in a row without a message from you, the group pauses until you write again. |
-| **Late joiners**        | A bot added after the first message gets a summary of the conversation so far.                 |
-| **No background work**  | Bots can't start coding jobs or desktop jobs, and can't hand work to other bots.               |
-| **Private memory only** | Bots can save to their own memory, not to shared memory.                                       |
+| Limit                   | What happens                                                                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Turn limit**          | After 8 bot turns in a row without a message from you, the group pauses until you write again.                                              |
+| **Late joiners**        | A bot added after the first message gets a summary of the conversation so far.                                                              |
+| **No background work**  | Bots can't start coding jobs or desktop jobs, and can't hand work to other bots. A bot with **Coding** still works in its workspace itself. |
+| **Private memory only** | Bots can save to their own memory, not to shared memory.                                                                                    |
 
 The turn limit is what stops two polite bots from thanking each other forever.
 

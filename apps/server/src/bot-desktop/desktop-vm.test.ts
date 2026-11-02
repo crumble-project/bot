@@ -273,6 +273,48 @@ for (const backend of WORKSPACE_BACKENDS) {
       ).not.toContain("ada");
     }, 120_000);
 
+    test("launches Files and Terminal, runs a command, and reads the terminal's output", async () => {
+      await env().exec(
+        "mkdir -p /workspace/vm-demo && echo hi > /workspace/vm-demo/marker.txt",
+        undefined,
+        BACKGROUND_CONTEXT,
+      );
+      const tool = cu();
+
+      expect(
+        text(
+          await tool.run(
+            { action: "launch", app: "Files", path: "/workspace/vm-demo" },
+            BACKGROUND_CONTEXT,
+          ),
+        ),
+      ).toMatch(/opened Files at \/workspace\/vm-demo: window \d+ Thunar/);
+
+      const opened = text(
+        await tool.run(
+          { action: "launch", app: "Terminal", path: "/workspace/vm-demo" },
+          BACKGROUND_CONTEXT,
+        ),
+      );
+
+      const id = Number(opened.match(/window (\d+)/)![1]);
+
+      await tool.run(
+        { action: "type", window_id: id, text: "ls -la" },
+        BACKGROUND_CONTEXT,
+      );
+      await tool.run(
+        { action: "key", window_id: id, keys: "Return" },
+        BACKGROUND_CONTEXT,
+      );
+
+      await eventually(async () =>
+        text(
+          await tool.run({ action: "read", window_id: id }, BACKGROUND_CONTEXT),
+        ).includes("marker.txt"),
+      );
+    });
+
     test("operates a native GTK dialog", async () => {
       await env().exec(
         ". /run/crumble-desktop.env; rm -f /tmp/z.out; (setsid zenity --entry --title Ask --text Name > /tmp/z.out &); for i in $(seq 60); do xdotool search --name '^Ask$' >/dev/null && break; sleep 0.25; done",

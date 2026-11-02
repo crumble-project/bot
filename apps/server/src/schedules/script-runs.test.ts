@@ -90,6 +90,10 @@ class DirectoryWorkspaces implements Workspaces {
     return Effect.void;
   }
 
+  running(_agentId: string) {
+    return false;
+  }
+
   desktopRunning(_agentId: string) {
     return false;
   }

@@ -13,6 +13,7 @@ import {
   DESKTOP_START,
   GUEST_DAEMON,
   MachineWorkspaces,
+  allowOvercommit,
   assertAgentId,
   bootStep,
   daemonPath,
@@ -47,7 +48,7 @@ import {
 } from "./workspace-proxy";
 
 const DISK_MIB = 8192;
-const MEMORY_MIB = 2048;
+const MEMORY_MIB = 4096;
 const CPUS = 2;
 
 // The proxy carries only TCP; UDP would leave the machine past it and the network policy. DNS goes to the sandbox's resolver.
@@ -169,6 +170,8 @@ class MicrosandboxMachines implements WorkspaceMachines {
       await sandbox.fs().write(GUEST_SIGN_PATH, signingHelper());
       await run(sandbox, `chmod 755 ${GUEST_SIGN_PATH}`);
     });
+
+    yield* allowOvercommit(agentId, (command) => run(sandbox, command));
 
     const caCertificate = guest.caCertificate;
 
