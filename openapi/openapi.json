@@ -878,7 +878,7 @@
             "type": "boolean"
           },
           "toolDetails": {
-            "description": "Provider-specific tool details, including nested code-mode calls."
+            "description": "Provider-specific tool details, including nested code-mode calls. A successful `desktop_screenshot` result has `{ mimeType, size }`; read its image from `GET /v1/agents/{id}/attachments/{entryId}/0`."
           },
           "sources": {
             "type": "array",
@@ -10799,9 +10799,11 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "description": "An owner message's entry, or a successful `desktop_screenshot` tool result's entry."
             },
             "required": true,
+            "description": "An owner message's entry, or a successful `desktop_screenshot` tool result's entry.",
             "name": "entryId",
             "in": "path"
           },
@@ -10812,16 +10814,18 @@
                 "null"
               ],
               "minimum": 0,
-              "maximum": 7
+              "maximum": 7,
+              "description": "The attachment's index in the message's `attachments`, or the image's index in the tool result (0 for a desktop screenshot)."
             },
             "required": true,
+            "description": "The attachment's index in the message's `attachments`, or the image's index in the tool result (0 for a desktop screenshot).",
             "name": "index",
             "in": "path"
           }
         ],
         "responses": {
           "200": {
-            "description": "Attachment bytes; Content-Type identifies the image format",
+            "description": "Attachment or screenshot bytes; Content-Type identifies the image format",
             "headers": {
               "Cache-Control": {
                 "schema": {

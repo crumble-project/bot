@@ -10,13 +10,14 @@ export const PASS_TOOL_NAME = "pass";
 
 export const GROUP_TURN_EXTENSION = "group-turn";
 
-/** Extensions a group turn leaves out: no delegation, no coding jobs, and no lookup of other groups from a group. */
+/** Extensions a group turn leaves out: no delegation, no jobs or desktop screenshots, and no lookup of other groups from a group. */
 export const GROUP_EXCLUDED_EXTENSIONS = new Set([
   "coordination",
   "coding",
   "coding-job",
   "desktop",
   "desktop-job",
+  "desktop-screenshot",
   "group-lookup",
 ]);
 

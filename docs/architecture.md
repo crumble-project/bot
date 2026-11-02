@@ -38,6 +38,7 @@ Source files named below live in feature folders under `apps/server/src/`, such 
 ## Inline visuals and reactions
 
 - **`show` (`display.ts`, `charts.ts`):** Model-only tool that validates `stats`, `table`, or `chart` payloads, attaches them as `toolDetails`, and terminates the turn. Charts use TanStack Charts code compiled inside a zero-I/O QuickJS sandbox into themed drawing primitives (`chartLayout`).
+- **`desktop_screenshot` (`desktop-screenshot.ts`):** Offered in the bot chat to bots with the `desktop` tool (not in group turns). Holds the machine awake, refuses unless the bot desktop already runs (it never boots one), refuses while `passwordMayShow` holds for the running Chromium, then captures the whole X display with ImageMagick `import` through the bot's workspace. The JPEG goes in the tool result, which terminates the turn; clients read it from `GET /v1/agents/{id}/attachments/{entryId}/0`, which also serves successful screenshot results. It neither waits for nor pauses a running desktop job or the owner's control.
 - **`react` (`reaction.ts`):** Attaches a single emoji to the latest input message and terminates the turn without emitting a reply notification.
 
 ## Workspaces, coding jobs, and desktop jobs

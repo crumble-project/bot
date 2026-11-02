@@ -15,6 +15,7 @@ import { attachmentInput, type AttachmentInfo } from "../shared/attachments";
 import { codingJobOf } from "../jobs/coding";
 import { desktopJobOf } from "../jobs/desktop";
 import { HELD_ACTION_ENTRY } from "../jobs/desktop-intent";
+import { DESKTOP_SCREENSHOT_TOOL_NAME } from "../bot-desktop/desktop-screenshot";
 import { REACTION_TOOL_NAME, reactionOf } from "./reaction";
 import { PASS_TOOL_NAME } from "../group-chats/group-turns";
 import {
@@ -194,7 +195,13 @@ function eventLabel(message: TranscriptMessage): string {
   if (job) return `Coding job ${job}`;
   const desktopJob = desktopJobOf(message);
 
-  return desktopJob ? `Desktop job ${desktopJob}` : "";
+  if (desktopJob) return `Desktop job ${desktopJob}`;
+
+  return message.role === "toolResult" &&
+    message.toolName === DESKTOP_SCREENSHOT_TOOL_NAME &&
+    !message.isError
+    ? "Desktop screenshot"
+    : "";
 }
 
 function conversationPreview(message: TranscriptMessage): string {
@@ -757,7 +764,10 @@ export async function prepareReply(
   };
 }
 
-/** The image at `index` of an input's attachments, read from the model message that carries it. */
+/**
+ * The image at `index` of an input's attachments or of a desktop screenshot the bot showed, read from the model message
+ * that carries it.
+ */
 export async function readAttachment(
   harness: Harness,
   agentId: string,
@@ -782,27 +792,42 @@ export async function readAttachment(
   const entry = page?.items[0];
 
   if (!entry) throw new Error("Attachment not found");
+  const image = inputImage(entry, index) ?? screenshotImage(entry, index);
+
+  if (!image) throw new Error("Attachment not found");
+
+  return { mimeType: image.mimeType, data: Buffer.from(image.data, "base64") };
+}
+
+const imagesOf = (content: ModelContent | undefined) =>
+  Array.isArray(content)
+    ? content.flatMap((block) => (block.type === "image" ? [block] : []))
+    : [];
+
+/** The image at `index` of an input's attachments. */
+function inputImage(entry: EntryRecord, index: number) {
   const attachments = attachmentsOf(record(entry.data)?.["attachments"]);
 
-  if (attachments[index]?.kind !== "image")
-    throw new Error("Attachment not found");
+  if (attachments[index]?.kind !== "image") return undefined;
 
   // Image blocks follow the attachment order, so the nth image is the nth image attachment.
   const imageIndex = attachments
     .slice(0, index)
     .filter((item) => item.kind === "image").length;
 
-  const content = entry.model?.[0]?.content;
+  return imagesOf(entry.model?.[0]?.content)[imageIndex];
+}
 
-  const images = Array.isArray(content)
-    ? content.flatMap((block) => (block.type === "image" ? [block] : []))
-    : [];
+/** The image at `index` of a successful `desktop_screenshot` result: the screen the bot showed the owner. */
+function screenshotImage(entry: EntryRecord, index: number) {
+  const message = entry.model?.[0];
 
-  const image = images[imageIndex];
+  if (message?.role !== "toolResult") return undefined;
+  const { toolName, isError } = toolMetadata.parse(message);
 
-  if (!image) throw new Error("Attachment not found");
+  if (toolName !== DESKTOP_SCREENSHOT_TOOL_NAME || isError) return undefined;
 
-  return { mimeType: image.mimeType, data: Buffer.from(image.data, "base64") };
+  return imagesOf(message.content)[index];
 }
 
 function outputLines(message: ModelMessage): string[] {

@@ -114,7 +114,8 @@ who can read that channel.
 
 The first version accepts text only. Messages with attachments receive an
 unsupported-attachment response instead of submitting their text alone.
-Voice, images, and file processing aren't supported. Incoming text is limited
+Voice, images, and file processing aren't supported, and desktop screenshots a
+bot shows stay in the web app. Incoming text is limited
 to 32,000 characters. Long answers are split into multiple Discord messages.
 Outgoing text doesn't trigger Discord mentions.
 

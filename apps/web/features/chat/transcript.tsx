@@ -206,6 +206,7 @@ function userShown(message: Message) {
 function toolResultShown(message: Message) {
   return (
     displayOf(message) !== null ||
+    isDesktopScreenshot(message) ||
     jobOf(message) !== null ||
     credentialRequestOf(message) !== null ||
     loginRequestOf(message) !== null ||
@@ -424,7 +425,15 @@ function CenteredDisclosure({
   );
 }
 
-function AttachmentImage({ path, name }: { path: string; name: string }) {
+function AttachmentImage({
+  path,
+  name,
+  className,
+}: {
+  path: string;
+  name: string;
+  className?: string;
+}) {
   const image = useQuery({
     queryKey: ["attachment", path],
     queryFn: ({ signal }) => apiBlob(path, signal),
@@ -447,7 +456,10 @@ function AttachmentImage({ path, name }: { path: string; name: string }) {
     <img
       src={objectUrl.url}
       alt={name}
-      className="max-h-64 max-w-full rounded-lg object-contain outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
+      className={cn(
+        "max-h-64 max-w-full rounded-lg object-contain outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10",
+        className,
+      )}
     />
   ) : (
     <div className="size-32 animate-pulse rounded-lg bg-muted" />
@@ -1453,21 +1465,42 @@ function JobCard({
   );
 }
 
+/** Whether the message is a successful `desktop_screenshot` result, whose image is its entry's attachment 0. */
+export function isDesktopScreenshot(message: Message) {
+  return (
+    message.role === "toolResult" &&
+    message.toolName === "desktop_screenshot" &&
+    !message.isError
+  );
+}
+
 export function ToolResultRow({
   message,
   botId,
   jobStatus,
   onOpenJob,
+  attachmentPath,
 }: {
   message: Message;
   /** The bot whose chat this is; a credential request links to its credentials. */
   botId?: string;
   jobStatus?: string | undefined;
   onOpenJob?: (job: { kind: "coding" | "desktop"; name: string }) => void;
+  /** Where the chat's images are read; a desktop screenshot shows only with it. */
+  attachmentPath?: (entryId: string, index: number) => string;
 }) {
   const display = displayOf(message);
 
   if (display) return <DisplayCard display={display} />;
+
+  if (isDesktopScreenshot(message))
+    return attachmentPath ? (
+      <AttachmentImage
+        name="Desktop screenshot"
+        path={attachmentPath(message.entryId, 0)}
+        className="max-h-[32rem]"
+      />
+    ) : null;
 
   const credential = credentialRequestOf(message);
 
