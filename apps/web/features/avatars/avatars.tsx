@@ -1,24 +1,21 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { legacyAvatarDefinition } from "@crumble/server/contract/avatar";
+import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 import { WorkspacePage } from "@/components/workspace";
 import { Button } from "@/components/ui/button";
 import { agentPath, botsQuery, queryClient, send } from "@/lib/api";
 import { BotAvatar, type BotState } from "@/features/bots/avatar";
 import { AvatarEditor } from "./avatar-editor";
 
-/** Try portable definitions and save one to a bot without changing its native seed. */
+/** Try portable definitions and save one to a bot. */
 export function AvatarsPage() {
   const { data: bots = [] } = useQuery(botsQuery);
   const [selected, setSelected] = useState("");
 
-  const [value, setValue] = useState(() =>
-    legacyAvatarDefinition({ id: "crumble", avatar: "bot:crumble" }),
-  );
+  const [value, setValue] = useState(() => defaultAvatarDefinition("crumble"));
 
   const save = useMutation({
-    mutationFn: () =>
-      send(agentPath(selected), "PATCH", { avatarDefinition: value }),
+    mutationFn: () => send(agentPath(selected), "PATCH", { avatar: value }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["bots"] }),
   });
 
@@ -37,7 +34,7 @@ export function AvatarsPage() {
                 className="flex flex-col items-center gap-2 text-sm capitalize"
               >
                 <BotAvatar
-                  bot={{ id: "preview", avatar: "", avatarDefinition: value }}
+                  bot={{ id: "preview", avatar: value }}
                   size={96}
                   live
                   state={state}
@@ -57,8 +54,7 @@ export function AvatarsPage() {
               const bot = bots.find((each) => each.id === e.target.value);
               setSelected(e.target.value);
 
-              if (bot)
-                setValue(bot.avatarDefinition ?? legacyAvatarDefinition(bot));
+              if (bot) setValue(bot.avatar);
               save.reset();
             }}
           >

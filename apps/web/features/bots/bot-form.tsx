@@ -60,7 +60,7 @@ import {
 } from "@/features/settings/web-search-settings";
 import { SelectOptions } from "@/components/form-fields";
 import { ConfirmDeleteContent, WorkspacePage } from "@/components/workspace";
-import { legacyAvatarDefinition } from "@crumble/server/contract/avatar";
+import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 import { AvatarEditor } from "@/features/avatars/avatar-editor";
 import {
   type ThinkingLevel,
@@ -102,8 +102,6 @@ const DEFAULT_TOOLS = ["memory", "web", "delegate"];
 
 const DEFAULT_INSTRUCTIONS =
   "You are a thoughtful, capable personal assistant.";
-
-const seedAvatar = () => `bot:${randomId()}`;
 
 /** Set-up providers, plus the current one when it is not, so a bot's choice never silently changes. */
 function providerItems(providers: Provider[], current: string) {
@@ -282,12 +280,8 @@ function DisclosureRow({
 }
 
 function useBotIdentity(bot?: Bot) {
-  const [avatar] = useState(bot?.avatar ?? seedAvatar());
-
-  const [avatarDefinition, setAvatarDefinition] = useState(
-    () =>
-      bot?.avatarDefinition ??
-      legacyAvatarDefinition({ id: bot?.id ?? avatar, avatar }),
+  const [avatar, setAvatar] = useState(
+    () => bot?.avatar ?? defaultAvatarDefinition(bot?.id || randomId()),
   );
 
   const [name, setName] = useState(bot?.name ?? "");
@@ -295,8 +289,7 @@ function useBotIdentity(bot?: Bot) {
 
   return {
     avatar,
-    avatarDefinition,
-    setAvatarDefinition,
+    setAvatar,
     name,
     setName,
     description,
@@ -442,14 +435,12 @@ function useBotMutations(bot: Bot | undefined, input: () => BotInput) {
 
 function AvatarPicker({
   id,
-  avatar,
   value,
   onChange,
 }: {
   id: string;
-  avatar: string;
-  value: NonNullable<Bot["avatarDefinition"]>;
-  onChange: (value: NonNullable<Bot["avatarDefinition"]>) => void;
+  value: Bot["avatar"];
+  onChange: (value: Bot["avatar"]) => void;
 }) {
   return (
     <Popover>
@@ -462,11 +453,7 @@ function AvatarPicker({
           />
         }
       >
-        <BotAvatar
-          bot={{ id, avatar, avatarDefinition: value }}
-          size={96}
-          live
-        />
+        <BotAvatar bot={{ id, avatar: value }} size={96} live />
         <span className="absolute -right-1 -bottom-1 rounded-full bg-background p-2">
           <IconPencil className="size-4" />
         </span>
@@ -735,24 +722,12 @@ function BotIdentityFields({
   details: ReturnType<typeof useBotDetails>;
   failed: boolean;
 }) {
-  const {
-    avatar,
-    avatarDefinition,
-    setAvatarDefinition,
-    name,
-    setName,
-    description,
-    setDescription,
-  } = details;
+  const { avatar, setAvatar, name, setName, description, setDescription } =
+    details;
 
   return (
     <div className="flex items-start gap-6">
-      <AvatarPicker
-        id={bot?.id ?? ""}
-        avatar={avatar}
-        value={avatarDefinition}
-        onChange={setAvatarDefinition}
-      />
+      <AvatarPicker id={bot?.id ?? ""} value={avatar} onChange={setAvatar} />
 
       <FieldGroup className="flex-1 gap-4">
         <Field data-invalid={(failed && !name.trim()) || undefined}>
@@ -838,8 +813,7 @@ function botInput(
   selection: ReturnType<typeof useBotModel>,
   access: ReturnType<typeof useBotAccess>,
 ): BotInput {
-  const { avatar, avatarDefinition, name, description, instructions, enabled } =
-    details;
+  const { avatar, name, description, instructions, enabled } = details;
 
   const { provider, model, level } = selection;
   const { tools, mcpServers, desktopProvider, desktopModel } = access;
@@ -849,7 +823,6 @@ function botInput(
     description,
     instructions,
     avatar,
-    avatarDefinition,
     enabled,
     provider,
     model: model.trim(),
@@ -1092,9 +1065,6 @@ function inputOf(bot: Bot): BotInput {
     webSearchProvider: bot.webSearchProvider ?? null,
     mcpServers: bot.mcpServers,
     ...(bot.avatar !== undefined && { avatar: bot.avatar }),
-    ...(bot.avatarDefinition !== undefined && {
-      avatarDefinition: bot.avatarDefinition,
-    }),
     ...(bot.inference !== undefined && {
       inference: bot.inference,
     }),

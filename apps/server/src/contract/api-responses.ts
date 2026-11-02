@@ -72,13 +72,9 @@ export const agentResponse = z
   .object({
     id: z.string(),
     name: z.string(),
-    avatar: z.string().openapi({
+    avatar: avatarDefinitionSchema.openapi({
       description:
-        "Legacy native avatar seed, preserved independently of avatarDefinition.",
-    }),
-    avatarDefinition: avatarDefinitionSchema.optional().openapi({
-      description:
-        "Open Bot Avatar v1 geometry in a 0 0 100 100 viewBox, body color and eye color. Present for stored bots; optional for older servers and proposals.",
+        "Open Bot Avatar v1 geometry in a 0 0 100 100 viewBox, body color and eye color.",
     }),
     description: z.string(),
     instructions: z.string(),

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { Window } from "happy-dom";
 import { act, useState } from "react";
 import {
-  legacyAvatarDefinition,
+  defaultAvatarDefinition,
   type BotAvatarDefinition,
 } from "@crumble/server/contract/avatar";
 
@@ -41,10 +41,7 @@ test("gallery, import validation, colors and description-inclusive generation pr
   const { createRoot } = await import("react-dom/client");
   const { AvatarEditor, importDefinition } = await import("./avatar-editor");
 
-  const original = legacyAvatarDefinition({
-    id: "studio",
-    avatar: "bot:studio",
-  });
+  const original = defaultAvatarDefinition("studio");
 
   let current: BotAvatarDefinition = original;
 

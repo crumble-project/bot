@@ -38,7 +38,7 @@ import {
   type ScriptRun,
 } from "../shared/domain";
 import type { MessageOrigin } from "../bots/transcript";
-import { legacyAvatarDefinition } from "../contract/avatar";
+import { defaultAvatarDefinition } from "../contract/avatar";
 
 // Plain header records, so they spread into the defaults.
 type TestRequestInit = Omit<RequestInit, "headers"> & {
@@ -62,7 +62,6 @@ type RequestBody = {
 const agentInput = (name: string, enabled = true) => ({
   name,
   enabled,
-  avatar: "sparkles",
   description: "",
   instructions: "help",
   provider: "openai" as const,
@@ -190,50 +189,62 @@ describe("HTTP API for bots, chats, and activity", () => {
     });
   });
 
-  test("avatars are additive, validated, and preserved for native clients", async () => {
+  test("avatars use only validated canonical geometry and colors", async () => {
     const { app } = setup();
-    const avatar = "critters:native;silhouette=cloud;color=#38bdf8";
 
     const created = await req(app, "/v1/agents", {
       method: "POST",
-      body: JSON.stringify({ name: "Portable", avatar }),
+      body: JSON.stringify({ name: "Portable" }),
     });
 
     expect(created.status).toBe(201);
     const bot = await created.json();
-    expect(bot.avatar).toBe(avatar);
-    expect(bot.avatarDefinition.definition.id).toBe("cloud");
+    expect(bot.avatar).toEqual(defaultAvatarDefinition(bot.id));
+    expect(bot).not.toHaveProperty("avatarDefinition");
 
     const custom = {
-      ...legacyAvatarDefinition({
-        id: "new",
-        avatar: "bot:new;silhouette=hexagon",
-      }),
+      ...defaultAvatarDefinition("new"),
       color: "#123",
       eyeColor: "#abc",
     };
 
     const updated = await req(app, `/v1/agents/${bot.id}`, {
       method: "PATCH",
-      body: JSON.stringify({ avatarDefinition: custom }),
+      body: JSON.stringify({ avatar: custom }),
     });
 
     expect(updated.status).toBe(200);
-    expect((await updated.json()).avatar).toBe(avatar);
+    expect((await updated.json()).avatar).toEqual(custom);
 
-    const native = await req(app, `/v1/agents/${bot.id}`, {
+    const partial = await req(app, `/v1/agents/${bot.id}`, {
       method: "PATCH",
-      body: JSON.stringify({ name: "Native edit", avatar }),
+      body: JSON.stringify({ name: "Partial edit" }),
     });
 
-    expect((await native.json()).avatarDefinition).toEqual(custom);
+    expect((await partial.json()).avatar).toEqual(custom);
     const listing = await req(app, "/v1/agents");
-    expect((await listing.json())[0].avatarDefinition).toEqual(custom);
+    expect((await listing.json())[0].avatar).toEqual(custom);
+
+    for (const method of ["POST", "PATCH"]) {
+      const legacy = await req(
+        app,
+        method === "POST" ? "/v1/agents" : `/v1/agents/${bot.id}`,
+        {
+          method,
+          body: JSON.stringify({
+            name: "Legacy",
+            avatar: "critters:old;silhouette=cloud;color=#38bdf8",
+          }),
+        },
+      );
+
+      expect(legacy.status).toBe(400);
+    }
 
     const invalid = await req(app, `/v1/agents/${bot.id}`, {
       method: "PATCH",
       body: JSON.stringify({
-        avatarDefinition: {
+        avatar: {
           ...custom,
           definition: {
             ...custom.definition,
@@ -250,13 +261,13 @@ describe("HTTP API for bots, chats, and activity", () => {
       method: "POST",
       body: JSON.stringify({
         name: "Bad",
-        avatarDefinition: { ...custom, color: "url(bad)" },
+        avatar: { ...custom, color: "url(bad)" },
       }),
     });
 
     expect(invalidColor.status).toBe(400);
     const kept = await req(app, `/v1/agents/${bot.id}`);
-    expect((await kept.json()).avatarDefinition).toEqual(custom);
+    expect((await kept.json()).avatar).toEqual(custom);
   });
 
   test("agents keep a desktop job model", async () => {
@@ -314,7 +325,6 @@ describe("HTTP API for bots, chats, and activity", () => {
 
     const agent = store.createAgent({
       name: "Desk",
-      avatar: "bot",
       description: "",
       instructions: "",
       provider: "openai",
@@ -344,7 +354,6 @@ describe("HTTP API for bots, chats, and activity", () => {
 
     const agent = store.createAgent({
       name: "Desk",
-      avatar: "bot",
       description: "",
       instructions: "",
       provider: "openai",
@@ -1705,7 +1714,6 @@ describe("bot desktop control and viewer", () => {
 
     const agent = store.createAgent({
       name: "Desk",
-      avatar: "bot",
       description: "",
       instructions: "",
       provider: "openai",
@@ -1906,7 +1914,6 @@ describe("job answer notifications", () => {
 
     const agent = store.createAgent({
       name: "Desk",
-      avatar: "bot",
       description: "",
       instructions: "",
       provider: "openai",
@@ -1964,7 +1971,6 @@ describe("held action notifications", () => {
 
     const agent = store.createAgent({
       name: "Desk",
-      avatar: "bot",
       description: "",
       instructions: "",
       provider: "openai",

@@ -16,6 +16,7 @@ import { Plugins } from "../plugins/plugins";
 import { BotExtensions } from "../bots/bot-extensions";
 import { webSearchTools } from "../web-search/web-search-tools";
 import type { Agent } from "../shared/domain";
+import { defaultAvatarDefinition } from "../contract/avatar";
 import { reactionExtension } from "../bots/reaction";
 import { AgentRuntime } from "../bots/runtime";
 
@@ -28,7 +29,7 @@ afterEach(async () => {
 const agent: Agent = {
   id: "00000000-0000-4000-8000-000000000501",
   name: "Ada",
-  avatar: "bot",
+  avatar: defaultAvatarDefinition("ada"),
   description: "",
   instructions: "",
   provider: "faux",

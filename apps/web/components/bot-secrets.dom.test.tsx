@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
 import { type Credentials, type Logins, queryClient } from "@/lib/api";
+import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 
 const GLOBALS = [
   "window",
@@ -131,7 +132,16 @@ async function render(
         }
 
         const answers = new Map<string, unknown>([
-          ["/v1/agents", [{ id: "bot", name: "Bot", avatar: "" }]],
+          [
+            "/v1/agents",
+            [
+              {
+                id: "bot",
+                name: "Bot",
+                avatar: defaultAvatarDefinition("bot"),
+              },
+            ],
+          ],
           ["/v1/password-managers", { passwordManagers: [] }],
           ...Object.entries(listings),
         ]);

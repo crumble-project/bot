@@ -3,6 +3,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
 import { queryClient } from "@/lib/api";
+import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 
 // Under a loaded test run the page can take longer than any fixed wait.
 async function waitFor(check: () => boolean) {
@@ -97,7 +98,17 @@ test("deleting the first same-name skill keeps the second", async () => {
 
         const listings = new Map<string, unknown>([
           ["/v1/agents/bot/skills", skills],
-          ["/v1/agents", [{ id: "bot", name: "Bot", avatar: "", skills }]],
+          [
+            "/v1/agents",
+            [
+              {
+                id: "bot",
+                name: "Bot",
+                avatar: defaultAvatarDefinition("bot"),
+                skills,
+              },
+            ],
+          ],
           ["/v1/skills", []],
         ]);
 

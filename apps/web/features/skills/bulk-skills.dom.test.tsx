@@ -2,7 +2,8 @@ import { expect, spyOn, test } from "bun:test";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act, type ReactNode } from "react";
-import { queryClient } from "@/lib/api";
+import { queryClient, type Bot } from "@/lib/api";
+import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 
 type Package = {
   id: string;
@@ -63,11 +64,21 @@ async function fixture(
   const bots: {
     id: string;
     name: string;
-    avatar: string;
+    avatar: Bot["avatar"];
     sharedSkills: string[];
   }[] = [
-    { id: "a", name: "Alpha", avatar: "", sharedSkills: [] },
-    { id: "b", name: "Beta", avatar: "", sharedSkills: [] },
+    {
+      id: "a",
+      name: "Alpha",
+      avatar: defaultAvatarDefinition("a"),
+      sharedSkills: [],
+    },
+    {
+      id: "b",
+      name: "Beta",
+      avatar: defaultAvatarDefinition("b"),
+      sharedSkills: [],
+    },
   ];
 
   let shared: Package[] = [

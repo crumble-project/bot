@@ -3,12 +3,18 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { examples, validateAvatar, renderAvatarSvg } from "open-bot-avatar";
+import {
+  DEFAULT_COLOR,
+  DEFAULT_EYE_COLOR,
+  examples,
+  validateAvatar,
+  renderAvatarSvg,
+} from "open-bot-avatar";
 import { Store } from "../../test/support/store";
 import { agentInput } from "../shared/domain";
 import {
   avatarDefinitionSchema,
-  legacyAvatarDefinition,
+  defaultAvatarDefinition,
 } from "../contract/avatar";
 
 const dirs: string[] = [];
@@ -29,50 +35,55 @@ const input = agentInput.parse({ name: "Avatar" });
 const custom = { definition: examples[0]!, color: "#123abc", eyeColor: "#fed" };
 
 describe("portable bot avatars", () => {
-  test("converts every legacy silhouette, prefix and palette without blank bodies", () => {
-    for (const prefix of ["bot:", "critters:"])
-      for (const silhouette of [
-        "circle",
-        "squircle",
-        "pill",
-        "triangle",
-        "hexagon",
-        "cloud",
-        "drop",
-      ])
-        for (const color of [
-          "#8b5cf6",
-          "#38bdf8",
-          "#14b8a6",
-          "#22c55e",
-          "#f59e0b",
-          "#f97316",
-          "#ef4444",
-          "#ec4899",
-        ]) {
-          const avatar = `${prefix}familiar;silhouette=${silhouette};color=${color}`;
-          const migrated = legacyAvatarDefinition({ id: "ignored", avatar });
-          expect(migrated.definition.id).toBe(silhouette);
-          expect(migrated.color).toBe(color);
-          expect(validateAvatar(migrated.definition).ok).toBe(true);
-          expect(renderAvatarSvg(migrated.definition)).toContain("<path");
-        }
+  test("selects valid library gallery defaults deterministically from bot IDs", () => {
+    const selected = new Set<string>();
+
+    for (const id of [
+      "",
+      "crumble",
+      "🤖",
+      ...Array.from({ length: 100 }, (_, i) => `bot-${i}`),
+    ]) {
+      const look = defaultAvatarDefinition(id);
+      expect(defaultAvatarDefinition(id)).toEqual(look);
+      expect(examples).toContainEqual(look.definition);
+      expect(look.color).toBe(DEFAULT_COLOR);
+      expect(look.eyeColor).toBe(DEFAULT_EYE_COLOR);
+      expect(avatarDefinitionSchema.safeParse(look).success).toBe(true);
+      expect(validateAvatar(look.definition).ok).toBe(true);
+      expect(renderAvatarSvg(look.definition)).toContain("<path");
+      selected.add(look.definition.id);
+    }
+
+    expect(selected.size).toBeGreaterThan(1);
   });
 
-  test("uses the old FNV palette and id fallback deterministically", () => {
-    const byId = legacyAvatarDefinition({ id: "crumble", avatar: "sparkles" });
+  test("replaces legacy rows with fresh ID-derived defaults regardless of seed, silhouette or color", () => {
+    const dir = make();
+    const first = new Store(dir);
+    const bot = first.createAgent(input, "fresh-look");
+    expect(bot.avatar).toEqual(defaultAvatarDefinition(bot.id));
+    first.close();
+    const db = new Database(join(dir, "store.sqlite"));
 
-    const bySeed = legacyAvatarDefinition({
-      id: "other",
-      avatar: "bot:crumble",
-    });
+    for (const avatar of [
+      "bot:one;silhouette=cloud;color=#38bdf8",
+      "critters:two;silhouette=drop;color=#ef4444",
+      "bot:other;silhouette=hexagon;color=#22c55e",
+      "critters:;color=bad",
+      "sparkles",
+      "",
+    ]) {
+      db.run("UPDATE agents SET avatar = ? WHERE id = ?", [avatar, bot.id]);
+      const upgraded = new Store(dir);
+      expect(upgraded.getAgent(bot.id)?.avatar).toEqual(
+        defaultAvatarDefinition(bot.id),
+      );
+      expect(upgraded.getAgent(bot.id)?.updatedAt).toBe(bot.updatedAt);
+      upgraded.close();
+    }
 
-    expect(byId).toEqual(bySeed);
-    expect(bySeed.color).toBe("#f97316");
-    expect(avatarDefinitionSchema.safeParse(bySeed).success).toBe(true);
-    expect(
-      legacyAvatarDefinition({ id: "", avatar: "critters:;color=bad" }),
-    ).toEqual(byId);
+    db.close();
   });
 
   test("rejects invalid geometry, markup, empty paths, extra fields and colors", () => {
@@ -108,83 +119,153 @@ describe("portable bot avatars", () => {
       expect(outside.error.message).toContain("eyes must sit inside the body");
   });
 
-  test("persists fresh creates, copies, partial native updates and custom definitions on reopen", () => {
+  test("persists canonical avatars across creates, copies, partial updates and reopen", () => {
     const dir = make();
     const first = new Store(dir);
-    const oldSeed = "critters:familiar;silhouette=cloud;color=#38bdf8";
-    const bot = first.createAgent({ ...input, avatar: oldSeed });
-    expect(bot.avatarDefinition?.definition.id).toBe("cloud");
-    first.updateAgent(bot.id, { avatarDefinition: custom });
+    const bot = first.createAgent(input);
+    expect(bot.avatar).toEqual(defaultAvatarDefinition(bot.id));
+    const imported = first.createAgent({ ...input, avatar: custom });
+    expect(imported.avatar).toEqual(custom);
+    first.updateAgent(bot.id, { avatar: custom });
     expect(
-      first.updateAgent(bot.id, { name: "Native update" })?.avatarDefinition,
+      first.updateAgent(bot.id, { name: "Partial update" })?.avatar,
     ).toEqual(custom);
-    expect(first.getAgent(bot.id)?.avatar).toBe(oldSeed);
     const copy = first.duplicateAgent(bot.id)!;
-    expect(copy.avatarDefinition).toEqual(custom);
-    expect(copy.avatar).toBe(oldSeed);
+    expect(copy.avatar).toEqual(custom);
     first.close();
     const reopened = new Store(dir);
-    expect(reopened.getAgent(bot.id)?.avatarDefinition).toEqual(custom);
-    expect(reopened.getAgent(copy.id)?.avatarDefinition).toEqual(custom);
-    expect(reopened.getAgent(bot.id)?.avatar).toBe(oldSeed);
+    expect(reopened.getAgent(bot.id)?.avatar).toEqual(custom);
+    expect(reopened.getAgent(copy.id)?.avatar).toEqual(custom);
+    expect(reopened.getAgent(imported.id)?.avatar).toEqual(custom);
     expect(() =>
-      reopened.updateAgent(bot.id, {
-        avatarDefinition: { ...custom, eyeColor: "bad" },
-      }),
+      reopened.updateAgent(bot.id, { avatar: { ...custom, eyeColor: "bad" } }),
     ).toThrow();
-    expect(reopened.getAgent(bot.id)?.avatarDefinition).toEqual(custom);
+    expect(reopened.getAgent(bot.id)?.avatar).toEqual(custom);
     reopened.close();
   });
 
-  test("upgrades the preceding schema and backfills once without rewriting legacy values", () => {
+  for (const schema of ["base", "additive"] as const)
+    test(`upgrades ${schema} schema to one avatar column and preserves explicit definitions verbatim`, () => {
+      const dir = make();
+      const first = new Store(dir);
+      const imported = first.createAgent({ ...input, avatar: custom });
+      const legacy = first.createAgent(input);
+      first.close();
+      const db = new Database(join(dir, "store.sqlite"));
+      const saved = JSON.stringify(custom, null, 2);
+
+      if (schema === "additive") {
+        db.run(
+          "ALTER TABLE agents ADD COLUMN avatar_definition text; DELETE FROM __drizzle_migrations WHERE id = (SELECT MAX(id) FROM __drizzle_migrations)",
+        );
+        db.run(
+          "UPDATE agents SET avatar = ?, avatar_definition = ? WHERE id = ?",
+          ["bot:old;silhouette=cloud;color=#38bdf8", saved, imported.id],
+        );
+      } else {
+        db.run(
+          "DELETE FROM __drizzle_migrations WHERE id IN (SELECT id FROM __drizzle_migrations ORDER BY id DESC LIMIT 2)",
+        );
+        db.run("UPDATE agents SET avatar = ? WHERE id = ?", [
+          saved,
+          imported.id,
+        ]);
+      }
+
+      db.run("UPDATE agents SET avatar = ? WHERE id = ?", [
+        "critters:old;silhouette=drop;color=#ef4444",
+        legacy.id,
+      ]);
+      const upgraded = new Store(dir);
+      expect(upgraded.getAgent(imported.id)?.avatar).toEqual(custom);
+      expect(upgraded.getAgent(imported.id)?.updatedAt).toBe(
+        imported.updatedAt,
+      );
+      expect(upgraded.getAgent(legacy.id)?.avatar).toEqual(
+        defaultAvatarDefinition(legacy.id),
+      );
+      expect(upgraded.getAgent(legacy.id)?.updatedAt).toBe(legacy.updatedAt);
+      expect(
+        db
+          .query<{ avatar: string }, [string]>(
+            "SELECT avatar FROM agents WHERE id = ?",
+          )
+          .get(imported.id)!.avatar,
+      ).toBe(saved);
+      expect(
+        db
+          .query<{ name: string }, []>("PRAGMA table_info(agents)")
+          .all()
+          .map((column) => column.name),
+      ).not.toContain("avatar_definition");
+      upgraded.close();
+      const reopened = new Store(dir);
+      expect(reopened.getAgent(imported.id)?.avatar).toEqual(custom);
+      expect(reopened.getAgent(legacy.id)?.avatar).toEqual(
+        defaultAvatarDefinition(legacy.id),
+      );
+      reopened.close();
+      db.close();
+    });
+
+  test("normalizes historical bot proposals without resetting explicit choices or decisions", () => {
     const dir = make();
     const first = new Store(dir);
-
-    const seeds = [
-      "bot:one;silhouette=cloud;color=#38bdf8",
-      "critters:two;silhouette=drop;color=#ef4444",
-      "sparkles",
-    ];
-
-    const bots = seeds.map((avatar) => first.createAgent({ ...input, avatar }));
+    const bot = first.createAgent(input);
     first.close();
     const db = new Database(join(dir, "store.sqlite"));
-    db.run(
-      "ALTER TABLE agents DROP COLUMN avatar_definition; DELETE FROM __drizzle_migrations WHERE id = (SELECT MAX(id) FROM __drizzle_migrations)",
-    );
-    db.close();
-    const upgraded = new Store(dir);
 
-    for (const bot of bots) {
-      const next = upgraded.getAgent(bot.id)!;
-      expect(next.avatar).toBe(bot.avatar);
-      expect(next.updatedAt).toBe(bot.updatedAt);
-      expect(next.avatarDefinition).toEqual(legacyAvatarDefinition(bot));
-      expect(
-        avatarDefinitionSchema.safeParse(next.avatarDefinition).success,
-      ).toBe(true);
+    const proposals = [
+      { name: "Legacy", avatar: "bot:old;silhouette=cloud;color=#38bdf8" },
+      { name: "Custom", avatar: custom },
+      { name: "Additive", avatar: "critters:old", avatarDefinition: custom },
+    ];
+
+    for (const [index, proposal] of proposals.entries()) {
+      db.run(
+        "INSERT INTO bot_requests (id, agent_id, proposal, reason, status, requested_at, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+          `request-${index}`,
+          bot.id,
+          JSON.stringify(proposal),
+          "Keep reason",
+          index === 0 ? "pending" : "declined",
+          bot.createdAt,
+          index === 0 ? null : bot.createdAt,
+        ],
+      );
     }
 
-    upgraded.updateAgent(bots[0]!.id, { avatarDefinition: custom });
+    const upgraded = new Store(dir);
+
+    const rows = db
+      .query<
+        {
+          id: string;
+          proposal: string;
+          reason: string;
+          status: string;
+          requested_at: string;
+          decided_at: string | null;
+        },
+        []
+      >("SELECT * FROM bot_requests ORDER BY id")
+      .all();
+
+    for (const [index, row] of rows.entries()) {
+      const proposal = JSON.parse(row.proposal);
+      expect(agentInput.safeParse(proposal).success).toBe(true);
+      expect(proposal.avatar).toEqual(
+        index === 0 ? defaultAvatarDefinition(row.id) : custom,
+      );
+      expect(proposal).not.toHaveProperty("avatarDefinition");
+      expect(row.reason).toBe("Keep reason");
+      expect(row.requested_at).toBe(bot.createdAt);
+      expect(row.status).toBe(index === 0 ? "pending" : "declined");
+      expect(row.decided_at).toBe(index === 0 ? null : bot.createdAt);
+    }
+
     upgraded.close();
-    const check = new Database(join(dir, "store.sqlite"));
-    expect(
-      check
-        .query(
-          "SELECT COUNT(*) AS n FROM agents WHERE avatar_definition IS NULL",
-        )
-        .get(),
-    ).toEqual({ n: 0 });
-    // An older binary can write a bot without the additive field after rollback.
-    check.run("UPDATE agents SET avatar_definition = NULL WHERE id = ?", [
-      bots[1]!.id,
-    ]);
-    check.close();
-    const reopened = new Store(dir);
-    expect(reopened.getAgent(bots[0]!.id)?.avatarDefinition).toEqual(custom);
-    expect(reopened.getAgent(bots[1]!.id)?.avatarDefinition).toEqual(
-      legacyAvatarDefinition(bots[1]!),
-    );
-    reopened.close();
+    db.close();
   });
 });

@@ -156,7 +156,6 @@ async function open(kind: typeof exclusiveKind) {
 
   const agent = store.createAgent({
     name: "Runner",
-    avatar: "bot",
     description: "",
     instructions: "",
     provider: "faux",

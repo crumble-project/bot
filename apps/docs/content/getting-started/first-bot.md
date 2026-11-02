@@ -35,8 +35,14 @@ The `/avatars` page previews idle, working, and sleeping states. Select a bot
 and click **Save avatar to bot** to apply your choice. Sleeping avatars use a
 dimmed still image. Live avatars respect your system's reduced-motion setting.
 
-Native apps keep their existing seeded avatars until native rendering is
-available. Changing the web avatar doesn't change that seed.
+Bots without a saved definition get a fresh gallery avatar with default colors.
+The bot ID selects the shape; previous avatar shapes and colors don't affect it.
+Existing saved definitions stay unchanged.
+
+The avatar API now returns a definition and colors instead of a seed string.
+Native apps need updates before they can use this contract. Native support is
+tracked in [apple#3](https://github.com/crumble-project/apple/issues/3) and
+[android#7](https://github.com/crumble-project/android/issues/7).
 
 ## Things to Try
 

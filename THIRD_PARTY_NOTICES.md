@@ -28,34 +28,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Legacy bot avatar migration
-
-The legacy palette and approximate shapes used by `apps/server/src/contract/avatar.ts` retain the look of the retired canvas renderer, a port of apfelkern's `BotAvatar` library adapted from Hermex's drawn bot faces. Hermex is available under the MIT License, Copyright (c) 2026 Uzair Ansar.
-
-```text
-MIT License
-
-Copyright (c) 2026 Uzair Ansar
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
 ## Claude Code provider
 
 The Claude Code provider (`src/claude-code/`) and its qualification script (`tools/claude-code-qualify.ts`) are a TypeScript port of Hermes Agent's Claude Subscription DirectSDK plugin (NousResearch/hermes-official-plugins, `claude-subscription-directsdk`, commit 54afaf5): its model catalog, admission relay, stream-json transport, setup probes, inert MCP inventory, and wire evals. That plugin is available under the MIT License.

@@ -9,7 +9,7 @@ import { SkillRepository } from "../skills/skill-repository";
 import { agents } from "./schema";
 import {
   avatarDefinitionSchema,
-  legacyAvatarDefinition,
+  defaultAvatarDefinition,
 } from "../contract/avatar";
 import { migrateAvatars } from "./avatar-migration";
 
@@ -66,10 +66,7 @@ export class AgentRepository extends Context.Service<
         const agent: Agent = {
           id: row.id,
           name: row.name,
-          avatar: row.avatar,
-          avatarDefinition: row.avatarDefinition
-            ? avatarDefinitionSchema.parse(JSON.parse(row.avatarDefinition))
-            : legacyAvatarDefinition(row),
+          avatar: avatarDefinitionSchema.parse(JSON.parse(row.avatar)),
           description: row.description,
           instructions: row.instructions,
           provider: row.provider,
@@ -118,7 +115,6 @@ export class AgentRepository extends Context.Service<
 
       const columns = (input: AgentPatch & AgentInput) => ({
         name: input.name,
-        avatar: input.avatar,
         description: input.description,
         instructions: input.instructions,
         provider: input.provider,
@@ -150,10 +146,9 @@ export class AgentRepository extends Context.Service<
         yield* db.insert(agents).values({
           id: agentId,
           ...columns(input),
-          avatarDefinition: JSON.stringify(
+          avatar: JSON.stringify(
             avatarDefinitionSchema.parse(
-              input.avatarDefinition ??
-                legacyAvatarDefinition({ id: agentId, avatar: input.avatar }),
+              input.avatar ?? defaultAvatarDefinition(agentId),
             ),
           ),
           createdAt: at,
@@ -176,10 +171,8 @@ export class AgentRepository extends Context.Service<
           .update(agents)
           .set({
             ...columns({ ...old, ...patch }),
-            avatarDefinition: JSON.stringify(
-              avatarDefinitionSchema.parse(
-                patch.avatarDefinition ?? old.avatarDefinition,
-              ),
+            avatar: JSON.stringify(
+              avatarDefinitionSchema.parse(patch.avatar ?? old.avatar),
             ),
             updatedAt: yield* nowIso,
           })

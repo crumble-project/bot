@@ -25,7 +25,6 @@ afterEach(() => {
 
 const agentInput = {
   name: "A",
-  avatar: "sparkles",
   description: "",
   instructions: "",
   provider: "openai" as const,

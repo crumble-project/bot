@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Crumble API",
-    "version": "5.0.0",
+    "version": "6.0.0",
     "description": "Shared HTTP contract for Crumble clients. Provider availability and cross-field business rules are validated at runtime."
   },
   "components": {
@@ -806,7 +806,7 @@
           "color",
           "eyeColor"
         ],
-        "description": "Open Bot Avatar v1 geometry in a 0 0 100 100 viewBox, body color and eye color. Present for stored bots; optional for older servers and proposals."
+        "description": "Open Bot Avatar v1 geometry in a 0 0 100 100 viewBox, body color and eye color."
       },
       "Agent": {
         "type": "object",
@@ -818,10 +818,6 @@
             "type": "string"
           },
           "avatar": {
-            "type": "string",
-            "description": "Legacy native avatar seed, preserved independently of avatarDefinition."
-          },
-          "avatarDefinition": {
             "$ref": "#/components/schemas/BotAvatarDefinition"
           },
           "description": {
@@ -1903,11 +1899,6 @@
                 "maxLength": 80
               },
               "avatar": {
-                "type": "string",
-                "maxLength": 100,
-                "default": "bot"
-              },
-              "avatarDefinition": {
                 "type": "object",
                 "properties": {
                   "definition": {
@@ -9976,11 +9967,6 @@
                     "maxLength": 80
                   },
                   "avatar": {
-                    "type": "string",
-                    "maxLength": 100,
-                    "default": "bot"
-                  },
-                  "avatarDefinition": {
                     "type": "object",
                     "properties": {
                       "definition": {
@@ -10516,10 +10502,6 @@
                     "maxLength": 80
                   },
                   "avatar": {
-                    "type": "string",
-                    "maxLength": 100
-                  },
-                  "avatarDefinition": {
                     "type": "object",
                     "properties": {
                       "definition": {
@@ -15167,11 +15149,6 @@
                         "maxLength": 80
                       },
                       "avatar": {
-                        "type": "string",
-                        "maxLength": 100,
-                        "default": "bot"
-                      },
-                      "avatarDefinition": {
                         "type": "object",
                         "properties": {
                           "definition": {

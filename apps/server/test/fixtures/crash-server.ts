@@ -25,7 +25,6 @@ const store = new Store(dir);
 const agent = store.createAgent(
   {
     name: "Crash",
-    avatar: "sparkles",
     description: "",
     instructions: "",
     // SAFETY: The faux provider is registered in the test model registry above.

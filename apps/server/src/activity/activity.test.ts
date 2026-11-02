@@ -75,7 +75,6 @@ describe("operational activity", () => {
 
     const agent = store.createAgent({
       name: "Helper",
-      avatar: "bot",
       description: "",
       instructions: "Use lookup",
       provider: "faux",

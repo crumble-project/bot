@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { validateAvatar } from "open-bot-avatar";
 
-/** Portable geometry and colors; the legacy `avatar` seed stays independent. */
+/** The canonical bot avatar: portable geometry, body color and eye color. */
 export const avatarDefinitionSchema = z.object({
   definition: z
     .strictObject({

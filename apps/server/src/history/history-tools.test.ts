@@ -71,7 +71,6 @@ test("history search keeps committed assistant messages visible across turn comp
   try {
     const agent = store.createAgent({
       name: "Ada",
-      avatar: "bot",
       description: "",
       instructions: "Answer",
       provider: "faux",

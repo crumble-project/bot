@@ -84,7 +84,7 @@ export function AvatarEditor({
     <div className="flex min-w-0 flex-col gap-4">
       <div className="flex flex-wrap items-center gap-4">
         <BotAvatar
-          bot={{ id: value.definition.id, avatar: "", avatarDefinition: value }}
+          bot={{ id: value.definition.id, avatar: value }}
           size={80}
           live
         />
@@ -141,8 +141,7 @@ export function AvatarEditor({
                 <BotAvatar
                   bot={{
                     id: definition.id,
-                    avatar: "",
-                    avatarDefinition: { ...value, definition },
+                    avatar: { ...value, definition },
                   }}
                   size={48}
                 />

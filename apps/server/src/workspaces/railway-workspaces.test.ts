@@ -360,7 +360,6 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
     );
 
     const agentInput = {
-      avatar: "bot",
       description: "",
       instructions: "",
       provider: "faux",

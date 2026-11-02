@@ -23,7 +23,6 @@ afterEach(() => {
 
 const input = {
   name: "Test",
-  avatar: "sparkles",
   description: "",
   instructions: "hello",
   provider: "openai" as const,
@@ -52,9 +51,9 @@ describe("Store", () => {
     first.close();
     const db = new Database(join(dir, "store.sqlite"));
 
-    // Recreate the immediately preceding schema, retaining all earlier migrations.
+    // Recreate the schema before copy provenance and the two avatar migrations.
     db.run(
-      "ALTER TABLE agents DROP COLUMN avatar_definition; ALTER TABLE skills DROP COLUMN copied_from_skill_id; DELETE FROM __drizzle_migrations WHERE id IN (SELECT id FROM __drizzle_migrations ORDER BY id DESC LIMIT 2)",
+      "ALTER TABLE skills DROP COLUMN copied_from_skill_id; DELETE FROM __drizzle_migrations WHERE id IN (SELECT id FROM __drizzle_migrations ORDER BY id DESC LIMIT 3)",
     );
     db.close();
     const reopened = new Store(dir);
@@ -555,8 +554,7 @@ describe("Store memory sources", () => {
       ALTER TABLE schedules DROP COLUMN command;
       ALTER TABLE schedules DROP COLUMN timeout_seconds;
       ALTER TABLE schedules DROP COLUMN notify;
-      ALTER TABLE agents DROP COLUMN web_search_provider;
-      ALTER TABLE agents DROP COLUMN avatar_definition;`);
+      ALTER TABLE agents DROP COLUMN web_search_provider;`);
     db.run("ALTER TABLE memories DROP COLUMN source");
     db.close();
 
@@ -716,8 +714,7 @@ describe("Store group chats", () => {
       ALTER TABLE group_members DROP COLUMN pending;
       ALTER TABLE group_members DROP COLUMN pending_bot_started;
       ALTER TABLE group_members DROP COLUMN summary;
-      ALTER TABLE agents DROP COLUMN web_search_provider;
-      ALTER TABLE agents DROP COLUMN avatar_definition;`);
+      ALTER TABLE agents DROP COLUMN web_search_provider;`);
     db.close();
 
     await Effect.runPromise(

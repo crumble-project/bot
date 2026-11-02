@@ -34,14 +34,12 @@ The repository does not publish contract releases or bundles. To retrieve the sp
 
 ## Bot avatars
 
-`avatar` remains the legacy string seed. The server never rewrites it when migrating or changing a web avatar.
-Native clients can keep reading and hashing that string without understanding the new field.
-
-`avatarDefinition` is additive and optional in input. Stored bot responses include it:
+Contract version `6.0.0` intentionally replaces the `avatar` string with one validated geometry and colors object.
+`avatar` is optional on create and patch; stored bot responses always include it. There is no separate `avatarDefinition` field:
 
 ```json
 {
-  "avatarDefinition": {
+  "avatar": {
     "definition": {
       "version": 1,
       "id": "box",
@@ -58,19 +56,20 @@ Native clients can keep reading and hashing that string without understanding th
 The definition uses Open Bot Avatar v1 geometry in a `0 0 100 100` viewBox.
 The server checks geometry with `validateAvatar` and accepts colors only as `#rgb` or `#rrggbb`.
 Invalid input returns `400`, including the geometry validator's error messages.
-Omitting `avatarDefinition` from a patch preserves it. JSON imports contain the definition alone; the editor sets colors separately.
+Omitting `avatar` from a patch preserves it. Omitting it on create selects fresh gallery geometry from the bot ID, with library default colors.
+Legacy string input returns `400`. JSON imports contain the definition alone; the editor sets colors separately.
 
-Migration adds the nullable `agents.avatar_definition` text column. Before serving bots, repository initialization fills missing definitions.
-The backfill preserves the legacy seed, palette, silhouette selection, and timestamps, using approximate versions of the seven old bodies.
-Unknown legacy strings use the bot ID as their seed. The backfill is restartable and never replaces existing definitions.
-Older binaries can leave missing definitions; the next upgraded startup fills them again.
+The canonical object is stored as JSON in `agents.avatar`. The migration copies any previously saved `avatar_definition` values, then drops that interim column.
+Before serving bots, repository initialization replaces legacy strings with fresh ID-derived gallery defaults. Legacy seeds, silhouettes, and colors don't affect the new appearance.
+Valid saved definitions stay unchanged. Bot timestamps stay unchanged. Historical bot proposals are normalized too, preserving custom choices and decisions.
+This data migration is restartable; runtime reads and web rendering accept only the canonical object.
 
-A code rollback can leave the extra column and migration journal entry in place. The old renderer reads the untouched legacy strings.
-New web choices remain stored but aren't displayed by old binaries. Removing the column requires a separate schema rollback and loses those choices.
-Back up the database before any schema rollback, and keep the migration journal consistent with the removed migration.
+Back up the database before upgrading. The migration overwrites legacy strings; the original appearance cannot be recovered without a backup.
+A code revert alone doesn't restore the old API, avatar data, or interim column. Restore the matching pre-upgrade database and binary together for a complete rollback.
+Restoring a backup discards changes made after that backup. There is no automatic down migration.
 
-Swift and Android rendering are tracked in [apple#3](https://github.com/crumble-project/apple/issues/3) and
-[android#7](https://github.com/crumble-project/android/issues/7).
+This is an intentional breaking change for native clients. Native support requires [apple#3](https://github.com/crumble-project/apple/issues/3) and
+[android#7](https://github.com/crumble-project/android/issues/7) before those clients can use the new contract.
 
 ## Server-sent events
 

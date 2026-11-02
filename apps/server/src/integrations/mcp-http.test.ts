@@ -5,13 +5,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import type { Agent } from "../shared/domain";
+import { defaultAvatarDefinition } from "../contract/avatar";
 import { standaloneIntegrations } from "./integrations";
 import { Store } from "../../test/support/store";
 
 const agent = (id: string, mcpServers: string[]): Agent => ({
   id,
   name: "http-worker",
-  avatar: "sparkles",
+  avatar: defaultAvatarDefinition(id),
   description: "",
   instructions: "",
   provider: "openai",

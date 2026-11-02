@@ -30,8 +30,7 @@ export const heldActionDeclineInput = z.object({
 
 export const agentInput = z.object({
   name: z.string().trim().min(1).max(80),
-  avatar: z.string().max(100).default("bot"),
-  avatarDefinition: avatarDefinitionSchema.optional(),
+  avatar: avatarDefinitionSchema.optional(),
   description: z.string().max(1000).default(""),
   instructions: z
     .string()
@@ -93,7 +92,11 @@ export const agentInput = z.object({
 export type AgentInput = z.infer<typeof agentInput>;
 
 /** A stored bot: a cleared desktop or review model is absent, never null. */
-export type Agent = Omit<AgentInput, "desktopModel" | "reviewModel"> & {
+export type Agent = Omit<
+  AgentInput,
+  "avatar" | "desktopModel" | "reviewModel"
+> & {
+  avatar: z.infer<typeof avatarDefinitionSchema>;
   desktopModel?: NonNullable<AgentInput["desktopModel"]>;
   reviewModel?: NonNullable<AgentInput["reviewModel"]>;
   id: string;

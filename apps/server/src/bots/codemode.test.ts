@@ -100,7 +100,6 @@ test("code mode offers one tool whose scripts call the agent's other tools", asy
 
   const agent = store.createAgent({
     name: "Scripter",
-    avatar: "bot",
     description: "",
     instructions: "Use code mode",
     provider: "faux",
@@ -179,7 +178,6 @@ test("code mode keeps request_credential a direct tool, so the chat can offer it
 
   const agent = store.createAgent({
     name: "Scripter",
-    avatar: "bot",
     description: "",
     instructions: "Use code mode",
     provider: "faux",
@@ -263,7 +261,6 @@ test("code mode receives structured schedule and coordination results", async ()
 
   const agent = store.createAgent({
     name: "Scripter",
-    avatar: "bot",
     description: "",
     instructions: "Use code mode",
     provider: "faux",
@@ -277,7 +274,6 @@ test("code mode receives structured schedule and coordination results", async ()
 
   store.createAgent({
     name: "Target",
-    avatar: "bot",
     description: "A recipient",
     instructions: "",
     provider: "faux",

@@ -28,7 +28,6 @@ function fixture() {
   const store = new Store(dataDir);
   const agent = store.createAgent({
     name: "Legacy bot",
-    avatar: "sparkles",
     description: "",
     instructions: "hello",
     provider: "openai",

@@ -1,12 +1,13 @@
 import { expect, spyOn, test } from "bun:test";
 import { z } from "zod";
 import type { Bot } from "@/lib/api";
+import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 import { applyBulkAction, type SelectableSkill } from "./bulk-skill-actions";
 
 const bot = (id: string, name = id): Bot => ({
   id,
   name,
-  avatar: "",
+  avatar: defaultAvatarDefinition(id),
   description: "",
   instructions: "",
   provider: "openai",

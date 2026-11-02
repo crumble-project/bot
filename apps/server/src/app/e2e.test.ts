@@ -44,7 +44,6 @@ describe("HTTP/runtime persistence", () => {
 
       const agent = store.createAgent({
         name: "Faux",
-        avatar: "sparkles",
         description: "",
         instructions: "Answer",
         // SAFETY: The faux provider is registered in the test model registry.

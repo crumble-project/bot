@@ -497,7 +497,6 @@ describe("push registration and durable delivery", () => {
 
     const agent = store.createAgent({
       name: "Bot",
-      avatar: "bot",
       description: "",
       instructions: "help",
       provider: "openai",

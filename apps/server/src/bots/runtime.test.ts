@@ -6,11 +6,12 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "./runtime";
 import type { Agent } from "../shared/domain";
+import { defaultAvatarDefinition } from "../contract/avatar";
 
 const agent = (id: string, model = "test-model"): Agent => ({
   id,
   name: id,
-  avatar: "sparkles",
+  avatar: defaultAvatarDefinition(id),
   description: "",
   instructions: `You are ${id}`,
   // SAFETY: The faux provider is registered in the test model registry below.

@@ -3,6 +3,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
 import { queryClient } from "@/lib/api";
+import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 
 for (const scenario of ["failure", "refresh"] as const) {
   test(`personal skills ${scenario} preserves the rest of the page`, async () => {
@@ -46,8 +47,16 @@ for (const scenario of ["failure", "refresh"] as const) {
 
           if (path === "/v1/agents")
             return Response.json([
-              { id: "bad", name: "Bad Bot", avatar: "" },
-              { id: "good", name: "Good Bot", avatar: "" },
+              {
+                id: "bad",
+                name: "Bad Bot",
+                avatar: defaultAvatarDefinition("bad"),
+              },
+              {
+                id: "good",
+                name: "Good Bot",
+                avatar: defaultAvatarDefinition("good"),
+              },
             ]);
 
           if (path === "/v1/skills")

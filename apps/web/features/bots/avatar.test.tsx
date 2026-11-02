@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { Window } from "happy-dom";
 import { act } from "react";
-import { legacyAvatarDefinition } from "@crumble/server/contract/avatar";
+import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 
 test("static and live avatars update geometry, moods and colors, stop sleeping, and honor reduced motion", async () => {
   const window = new Window();
@@ -33,16 +33,13 @@ test("static and live avatars update geometry, moods and colors, stop sleeping, 
   for (const [key, value] of Object.entries(values))
     Object.defineProperty(globalThis, key, { configurable: true, value });
   const { createRoot } = await import("react-dom/client");
-  const { BotAvatar } = await import("./avatar");
+  const { BotAvatar, botColor } = await import("./avatar");
   const container = document.createElement("div");
   const root = createRoot(container);
 
-  const look = legacyAvatarDefinition({
-    id: "test",
-    avatar: "bot:test;silhouette=cloud;color=#38bdf8",
-  });
+  const look = { ...defaultAvatarDefinition("test"), color: "#38bdf8" };
 
-  const bot = { id: "test", avatar: "bot:unchanged", avatarDefinition: look };
+  const bot = { id: "test", avatar: look };
 
   const tick = async () =>
     act(async () => {
@@ -97,11 +94,8 @@ test("static and live avatars update geometry, moods and colors, stop sleeping, 
 
     const next = {
       ...bot,
-      avatarDefinition: {
-        ...legacyAvatarDefinition({
-          id: "other",
-          avatar: "bot:other;silhouette=hexagon",
-        }),
+      avatar: {
+        ...defaultAvatarDefinition("other"),
         color: "#abc",
         eyeColor: "#def",
       },
@@ -115,14 +109,8 @@ test("static and live avatars update geometry, moods and colors, stop sleeping, 
     expect(decodeURIComponent(container.querySelector("img")!.src)).toContain(
       "#ddeeff",
     );
-    await act(async () =>
-      root.render(
-        <BotAvatar bot={{ id: "older-server", avatar: "critters:old" }} />,
-      ),
-    );
-    expect(decodeURIComponent(container.querySelector("img")!.src)).toContain(
-      "<path",
-    );
+    expect(botColor(next)).toBe("#abc");
+    expect(botColor(bot)).toBe(look.color);
   } finally {
     await act(async () => root.unmount());
     expect(frames.size).toBe(0);

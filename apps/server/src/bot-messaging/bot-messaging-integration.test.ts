@@ -77,7 +77,6 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
     const source = store.createAgent(
       {
         name: "Source",
-        avatar: "bot",
         description: "",
         instructions: "Ask when needed",
         // SAFETY: The faux provider is registered in the test model registry.
@@ -95,7 +94,6 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
     store.createAgent(
       {
         name: "Bot2",
-        avatar: "bot",
         description: "",
         instructions: "Answer honestly",
         // SAFETY: The faux provider is registered in the test model registry.

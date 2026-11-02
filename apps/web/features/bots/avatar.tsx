@@ -1,31 +1,17 @@
 import { type CSSProperties, useLayoutEffect, useMemo, useRef } from "react";
 import { renderAvatarSvg } from "open-bot-avatar";
 import { mountAvatar } from "open-bot-avatar/dom";
-import {
-  avatarDefinitionSchema,
-  legacyAvatarDefinition,
-} from "@crumble/server/contract/avatar";
 import { cn } from "@/lib/utils";
 import type { Bot } from "@/lib/api";
 import { isBusy, useActivity } from "./activity";
 
 export type BotState = "idle" | "working" | "sleeping";
 
-type AvatarBot = Pick<Bot, "id" | "avatar" | "avatarDefinition">;
-
-function appearance(bot: AvatarBot) {
-  if (bot.avatarDefinition) {
-    const result = avatarDefinitionSchema.safeParse(bot.avatarDefinition);
-
-    if (result.success) return result.data;
-  }
-
-  return legacyAvatarDefinition(bot);
-}
+type AvatarBot = Pick<Bot, "id" | "avatar">;
 
 /** The body color also supplies the bot's accent throughout the web app. */
 export function botColor(bot: AvatarBot) {
-  return bot.avatarDefinition?.color ?? legacyAvatarDefinition(bot).color;
+  return bot.avatar.color;
 }
 
 export function botStyle(color: string) {
@@ -47,10 +33,7 @@ export function BotAvatar({
   live?: boolean;
   className?: string;
 }) {
-  const look = useMemo(
-    () => appearance(bot),
-    [bot.id, bot.avatar, bot.avatarDefinition],
-  );
+  const look = bot.avatar;
 
   const host = useRef<HTMLSpanElement>(null);
   const still = !live || state === "sleeping";

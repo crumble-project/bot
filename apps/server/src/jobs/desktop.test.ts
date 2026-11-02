@@ -217,7 +217,6 @@ async function open(
 
   const agent = store.createAgent({
     name: "Desk",
-    avatar: "bot",
     description: "",
     instructions: "",
     provider: "faux",

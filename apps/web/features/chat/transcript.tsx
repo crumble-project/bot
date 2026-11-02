@@ -1,4 +1,5 @@
 import { GatewayIcon, gatewayLabel } from "@/components/gateway-brand";
+import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 import {
   type ComponentProps,
   type ReactNode,
@@ -1284,7 +1285,11 @@ function BotPendingCard({
 
   return (
     <div className="flex w-full max-w-sm flex-col gap-3 rounded-xl border p-4">
-      <BotRequestHeader proposal={live.proposal} onEdit={() => setOpen(true)} />
+      <BotRequestHeader
+        requestId={requestId}
+        proposal={live.proposal}
+        onEdit={() => setOpen(true)}
+      />
       <p className="text-sm text-muted-foreground">
         {live.proposal.description}
       </p>
@@ -1322,9 +1327,11 @@ function BotPendingCard({
 }
 
 function BotRequestHeader({
+  requestId,
   proposal,
   onEdit,
 }: {
+  requestId: string;
   proposal: BotRequest["proposal"];
   onEdit: () => void;
 }) {
@@ -1332,11 +1339,8 @@ function BotRequestHeader({
     <div className="flex items-center gap-3">
       <BotAvatar
         bot={{
-          id: proposal.avatar,
-          avatar: proposal.avatar,
-          ...(proposal.avatarDefinition && {
-            avatarDefinition: proposal.avatarDefinition,
-          }),
+          id: requestId,
+          avatar: proposal.avatar ?? defaultAvatarDefinition(requestId),
         }}
         size={32}
       />
