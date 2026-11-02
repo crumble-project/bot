@@ -65,6 +65,7 @@ export const ExtensionPosition = {
   schedules: 50,
   eventPayload: 55,
   display: 60,
+  desktopScreenshot: 62,
   webSearch: 65,
   reaction: 70,
   jobs: 80,

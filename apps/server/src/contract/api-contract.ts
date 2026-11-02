@@ -611,16 +611,21 @@ export const routes = {
     operationId: "getAttachment",
     request: {
       params: id.extend({
-        entryId: z.string(),
+        entryId: z.string().openapi({
+          description:
+            "An owner message's entry, or a successful `desktop_screenshot` tool result's entry.",
+        }),
         index: attachmentIndex.openapi({
           param: { name: "index", in: "path", required: true },
+          description:
+            "The attachment's index in the message's `attachments`, or the image's index in the tool result (0 for a desktop screenshot).",
         }),
       }),
     },
     responses: {
       200: {
         description:
-          "Attachment bytes; Content-Type identifies the image format",
+          "Attachment or screenshot bytes; Content-Type identifies the image format",
         content: {
           "image/*": { schema: z.string().openapi({ format: "binary" }) },
         },

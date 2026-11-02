@@ -1,0 +1,218 @@
+import { randomUUID } from "node:crypto";
+import type { Context } from "@earendil-works/chord";
+import {
+  Type,
+  type ImageContent,
+  type TextContent,
+} from "@earendil-works/pi-ai";
+import { defineExtension, defineTool } from "@earendil-works/pi-durable";
+import { Effect, Layer } from "effect";
+import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import type { Agent } from "../shared/domain";
+import { BotWorkspaces, type Workspaces } from "../workspaces/workspace";
+import type { DesktopShell } from "./computer-use";
+import {
+  passwordMayShow,
+  restoreFilled,
+  type DesktopFills,
+} from "./computer-use-login";
+import { computerUseState } from "./computer-use-state";
+import { sh } from "./computer-use-driver";
+import {
+  DesktopFillRepository,
+  desktopFillsAccess,
+} from "./desktop-fill-repository";
+import { runnerOf } from "../shared/runner";
+
+export const DESKTOP_SCREENSHOT_TOOL_NAME = "desktop_screenshot";
+
+/** The extension's name; group turns leave it out, since a group's transcript can't show the image. */
+export const DESKTOP_SCREENSHOT_EXTENSION = "desktop-screenshot";
+
+const MIME_TYPE = "image/jpeg";
+const MAX_BYTES = 5 * 1024 * 1024;
+
+/** What a successful screenshot's tool result carries for clients; the image is its result's first image block. */
+export type DesktopScreenshotDetails = { mimeType: string; size: number };
+
+/** The part of the bot's workspaces a screenshot needs. */
+export type ScreenshotWorkspaces = Pick<
+  Workspaces,
+  "desktop" | "desktopRunning" | "keepAwake"
+> & { shell(agentId: string): DesktopShell };
+
+export type ScreenshotResult =
+  | { image: string; size: number }
+  | { error: string };
+
+export const NO_DESKTOP_IMAGE =
+  "This server has no bot desktop image, so there is no screen to capture.";
+
+export const DESKTOP_NOT_RUNNING =
+  "The bot desktop is not running, so there is no screen to capture. This tool never starts it; a desktop job does.";
+
+export const PASSWORD_MAY_SHOW =
+  "REFUSED: a password was typed into the Chromium running on the bot desktop, and a screenshot could show it. Screenshots return once Chromium restarts.";
+
+const failed = (reason: string) => ({
+  error: `The screenshot failed: ${reason.trim().slice(0, 300) || "unknown error"}`,
+});
+
+/** Whether a password may show, failing closed when the desktop can't tell. */
+async function passwordCheck(
+  shell: DesktopShell,
+  fills: DesktopFills,
+  context: Context,
+) {
+  const state = computerUseState(shell, { fills });
+
+  await restoreFilled(state);
+
+  try {
+    return await passwordMayShow(state, context);
+  } catch {
+    return true;
+  }
+}
+
+async function grab(shell: DesktopShell, context: Context) {
+  // Unique per call: a file left by another capture can never stand in for this one.
+  const jpg = `/tmp/desktop-screenshot-${randomUUID()}.jpg`;
+  const state = computerUseState(shell);
+
+  try {
+    const output = await sh(
+      state,
+      `import -window root -quality 75 ${jpg} 2>&1 && echo ok`,
+      context,
+    );
+
+    if (!output.trim().endsWith("ok")) return failed(output);
+
+    const read = await shell.readBinaryFile(jpg, context);
+
+    if (!read.ok) return failed(read.error.message);
+
+    if (read.value.byteLength > MAX_BYTES)
+      return failed("the image is larger than 5 MB");
+
+    return {
+      image: Buffer.from(read.value).toString("base64"),
+      size: read.value.byteLength,
+    };
+  } finally {
+    await shell.exec(`rm -f ${jpg}`, undefined, context);
+  }
+}
+
+/**
+ * One capture of the whole bot desktop as the owner would see it. Never starts the desktop: the machine is held awake
+ * for the capture only once it runs. A running desktop job or the owner's control doesn't matter; the capture only reads.
+ */
+export async function captureDesktop(
+  workspaces: ScreenshotWorkspaces | undefined,
+  agentId: string,
+  fills: DesktopFills,
+  context: Context,
+): Promise<ScreenshotResult> {
+  if (!workspaces?.desktop) return { error: NO_DESKTOP_IMAGE };
+
+  // Held before the check, so the idle stop can't come between it and the capture.
+  const release = workspaces.keepAwake(agentId);
+
+  try {
+    if (!workspaces.desktopRunning(agentId))
+      return { error: DESKTOP_NOT_RUNNING };
+
+    const shell = workspaces.shell(agentId);
+
+    if (await passwordCheck(shell, fills, context))
+      return { error: PASSWORD_MAY_SHOW };
+
+    return await grab(shell, context);
+  } catch (error) {
+    return failed(error instanceof Error ? error.message : String(error));
+  } finally {
+    release();
+  }
+}
+
+/** Lets a bot show the owner its bot desktop's screen in the chat. */
+export function desktopScreenshotExtension(
+  agentId: string,
+  workspaces: ScreenshotWorkspaces | undefined,
+  fills: DesktopFills,
+) {
+  const screenshot = defineTool({
+    name: DESKTOP_SCREENSHOT_TOOL_NAME,
+    description:
+      "Show the owner a screenshot of your bot desktop's whole screen inline in the chat, and see it yourself. Use it when the owner asks to see the desktop or when a picture of it answers better than words. " +
+      "It only captures a desktop that is already running and never starts one. Your turn ends once it is shown, so call it last and write any text before the call.",
+    parameters: Type.Object({}),
+    // Scripts cannot render to the owner, so code mode keeps this as a direct model tool.
+    callers: ["model"],
+    replay: "safe",
+    execute: async (_args, _api, context) => {
+      const result = await captureDesktop(workspaces, agentId, fills, context);
+
+      if ("error" in result)
+        return {
+          output: [{ type: "text" as const, text: result.error }],
+          isError: true,
+        };
+
+      const output: (TextContent | ImageContent)[] = [
+        { type: "text", text: "Shown to the owner." },
+        { type: "image", data: result.image, mimeType: MIME_TYPE },
+      ];
+
+      const details: DesktopScreenshotDetails = {
+        mimeType: MIME_TYPE,
+        size: result.size,
+      };
+
+      return { output, details, control: { terminate: true as const } };
+    },
+  });
+
+  return defineExtension({
+    name: DESKTOP_SCREENSHOT_EXTENSION,
+    tools: [screenshot],
+  });
+}
+
+const screenshotWorkspaces = (
+  workspaces: Workspaces | undefined,
+): ScreenshotWorkspaces | undefined =>
+  workspaces && {
+    get desktop() {
+      return workspaces.desktop;
+    },
+    desktopRunning: (agentId) => workspaces.desktopRunning(agentId),
+    keepAwake: (agentId) => workspaces.keepAwake(agentId),
+    shell: (agentId) => workspaces.env(agentId),
+  };
+
+const hasDesktop = (agent: Agent) => agent.tools.includes("desktop");
+
+/** Offers `desktop_screenshot` to bots with the `desktop` tool. */
+export const desktopScreenshotTools = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const workspaces = screenshotWorkspaces(yield* BotWorkspaces);
+    const run = runnerOf(yield* Effect.context<DesktopFillRepository>());
+
+    yield* (yield* BotExtensions).register(
+      ExtensionPosition.desktopScreenshot,
+      (agent) =>
+        hasDesktop(agent)
+          ? [
+              desktopScreenshotExtension(
+                agent.id,
+                workspaces,
+                desktopFillsAccess(run, agent.id),
+              ),
+            ]
+          : [],
+    );
+  }),
+);

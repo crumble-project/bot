@@ -4,7 +4,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Suspense, act, startTransition } from "react";
 import { createRoot } from "react-dom/client";
 import type { Message } from "@/lib/api";
-import { ARRIVAL, Attachments, useArrivals } from "./transcript";
+import {
+  ARRIVAL,
+  Attachments,
+  shownInChat,
+  ToolResultRow,
+  useArrivals,
+} from "./transcript";
 
 const message = (id: string): Message => ({
   id,
@@ -163,6 +169,84 @@ test("discarded initial history does not mark committed history as new", async (
     expect(latest?.arrival(message("new"))).toBe(ARRIVAL);
   } finally {
     await act(async () => root.unmount());
+
+    for (const key of ["window", "document", "IS_REACT_ACT_ENVIRONMENT"]) {
+      if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);
+      else Reflect.deleteProperty(globalThis, key);
+    }
+
+    window.close();
+  }
+});
+
+test("a desktop screenshot shows its entry's first image; a refused one shows nothing", async () => {
+  const window = new Window();
+  const globals = Object.getOwnPropertyDescriptors(globalThis);
+  const urlMethods = Object.getOwnPropertyDescriptors(URL);
+  const client = new QueryClient();
+  const paths: string[] = [];
+
+  const screenshot: Message = {
+    ...message("bot:7"),
+    role: "toolResult",
+    content: "Shown to the owner.",
+    toolName: "desktop_screenshot",
+    toolDetails: { mimeType: "image/jpeg", size: 4 },
+  };
+
+  const refused: Message = { ...screenshot, isError: true };
+
+  expect(shownInChat(screenshot)).toBe(true);
+  expect(shownInChat(refused)).toBe(false);
+
+  Object.defineProperties(globalThis, {
+    window: { configurable: true, value: window },
+    document: { configurable: true, value: window.document },
+    IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true },
+  });
+  URL.createObjectURL = () => "blob:screen";
+  URL.revokeObjectURL = () => {};
+
+  client.setQueryData(["attachment", "/screen"], new Blob(["jpeg"]));
+
+  const container = document.createElement("div");
+  const root = createRoot(container);
+
+  try {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ToolResultRow
+            message={screenshot}
+            attachmentPath={(entryId, index) => {
+              paths.push(`${entryId}/${index}`);
+
+              return "/screen";
+            }}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+
+    expect(paths).toContain("bot:7/0");
+    expect(container.querySelector("img")?.getAttribute("alt")).toBe(
+      "Desktop screenshot",
+    );
+
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ToolResultRow message={refused} attachmentPath={() => "/screen"} />
+        </QueryClientProvider>,
+      ),
+    );
+
+    expect(container.querySelector("img")).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    client.clear();
+    Object.defineProperty(URL, "createObjectURL", urlMethods.createObjectURL!);
+    Object.defineProperty(URL, "revokeObjectURL", urlMethods.revokeObjectURL!);
 
     for (const key of ["window", "document", "IS_REACT_ACT_ENVIRONMENT"]) {
       if (globals[key]) Object.defineProperty(globalThis, key, globals[key]);

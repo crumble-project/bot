@@ -218,6 +218,7 @@ function ChatMessage({
   sources,
   onReply,
   onOpenJob,
+  attachmentPath,
 }: {
   message: Message;
   botId: string;
@@ -225,6 +226,7 @@ function ChatMessage({
   sources: Sources | undefined;
   onReply: (message: Message) => void;
   onOpenJob: (job: JobRef) => void;
+  attachmentPath: (entryId: string, index: number) => string;
 }) {
   if (message.role === "assistant")
     return <BotMessage message={message} sources={sources} onReply={onReply} />;
@@ -246,6 +248,7 @@ function ChatMessage({
       botId={botId}
       jobStatus={jobFor(jobOf(message)?.name)?.status}
       onOpenJob={onOpenJob}
+      attachmentPath={attachmentPath}
     />
   );
 }
@@ -366,6 +369,7 @@ function ChatTranscript({
             sources={sources.get(message.id)}
             onReply={onReply}
             onOpenJob={onOpenJob}
+            attachmentPath={attachmentPath}
           />
         )}
       />

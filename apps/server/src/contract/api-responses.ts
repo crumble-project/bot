@@ -203,7 +203,7 @@ const message = z
     isError: z.boolean().optional(),
     toolDetails: z.unknown().optional().openapi({
       description:
-        "Provider-specific tool details, including nested code-mode calls.",
+        "Provider-specific tool details, including nested code-mode calls. A successful `desktop_screenshot` result has `{ mimeType, size }`; read its image from `GET /v1/agents/{id}/attachments/{entryId}/0`.",
     }),
     sources: z
       .array(z.object({ url: z.string(), title: z.string() }))
