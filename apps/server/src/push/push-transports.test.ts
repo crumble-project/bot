@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import {
-  createHash,
-  createPublicKey,
-  generateKeyPairSync,
-  verify,
-} from "node:crypto";
+import { createPublicKey, generateKeyPairSync, verify } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
@@ -278,9 +273,8 @@ describe("APNs requests", () => {
       "apns-push-type": "alert",
       "apns-priority": "10",
       "apns-expiration": "87400",
-      "apns-collapse-id": createHash("sha256")
-        .update("server:agent")
-        .digest("hex"),
+      "apns-collapse-id":
+        "1eaf379d048f66ec8483dcd3d121dad64231bc227e0c96f69f20686b82881aa5",
       "content-type": "application/json",
     });
   });
@@ -328,38 +322,38 @@ describe("APNs requests", () => {
 
 describe("APNs response classification", () => {
   test("a token the provider no longer accepts is permanent", () => {
-    expect(classifyApnsResponse(410, undefined)).toBeInstanceOf(
-      PermanentRejection,
+    expect(classifyApnsResponse(410, undefined)).toEqual(
+      new PermanentRejection({ message: "APNs rejected token" }),
     );
-    expect(classifyApnsResponse(400, "BadDeviceToken")).toBeInstanceOf(
-      PermanentRejection,
+    expect(classifyApnsResponse(400, "BadDeviceToken")).toEqual(
+      new PermanentRejection({ message: "APNs rejected token" }),
     );
-    expect(classifyApnsResponse(400, "Unregistered")).toBeInstanceOf(
-      PermanentRejection,
+    expect(classifyApnsResponse(400, "Unregistered")).toEqual(
+      new PermanentRejection({ message: "APNs rejected token" }),
     );
-    expect(classifyApnsResponse(400, "DeviceTokenNotForTopic")).toBeInstanceOf(
-      PermanentRejection,
+    expect(classifyApnsResponse(400, "DeviceTokenNotForTopic")).toEqual(
+      new PermanentRejection({ message: "APNs rejected token" }),
     );
   });
 
   test("throttling and provider failures are temporary", () => {
-    expect(classifyApnsResponse(429, undefined)).toBeInstanceOf(
-      TemporaryFailure,
+    expect(classifyApnsResponse(429, undefined)).toEqual(
+      new TemporaryFailure({ message: "APNs temporary failure 429" }),
     );
-    expect(classifyApnsResponse(500, undefined)).toBeInstanceOf(
-      TemporaryFailure,
+    expect(classifyApnsResponse(500, undefined)).toEqual(
+      new TemporaryFailure({ message: "APNs temporary failure 500" }),
     );
-    expect(classifyApnsResponse(503, "ServiceUnavailable")).toBeInstanceOf(
-      TemporaryFailure,
+    expect(classifyApnsResponse(503, "ServiceUnavailable")).toEqual(
+      new TemporaryFailure({ message: "APNs temporary failure 503" }),
     );
   });
 
   test("a refused notification is terminal but rejected credentials are not retried blindly", () => {
-    expect(classifyApnsResponse(400, "PayloadTooLarge")).toBeInstanceOf(
-      TerminalResponse,
+    expect(classifyApnsResponse(400, "PayloadTooLarge")).toEqual(
+      new TerminalResponse({ message: "APNs terminal response 400" }),
     );
-    expect(classifyApnsResponse(404, undefined)).toBeInstanceOf(
-      TerminalResponse,
+    expect(classifyApnsResponse(404, undefined)).toEqual(
+      new TerminalResponse({ message: "APNs terminal response 404" }),
     );
     expect(classifyApnsResponse(401, "BadCertificate")).toBeUndefined();
     expect(classifyApnsResponse(403, "BadCertificate")).toBeUndefined();
@@ -447,29 +441,29 @@ describe("FCM requests", () => {
 
 describe("FCM response classification", () => {
   test("a token the provider no longer accepts is permanent", () => {
-    expect(classifyFcmResponse(404, "UNREGISTERED")).toBeInstanceOf(
-      PermanentRejection,
+    expect(classifyFcmResponse(404, "UNREGISTERED")).toEqual(
+      new PermanentRejection({ message: "FCM rejected token" }),
     );
-    expect(classifyFcmResponse(403, "SENDER_ID_MISMATCH")).toBeInstanceOf(
-      PermanentRejection,
+    expect(classifyFcmResponse(403, "SENDER_ID_MISMATCH")).toEqual(
+      new PermanentRejection({ message: "FCM rejected token" }),
     );
   });
 
   test("throttling and provider failures are temporary", () => {
-    expect(classifyFcmResponse(429, undefined)).toBeInstanceOf(
-      TemporaryFailure,
+    expect(classifyFcmResponse(429, undefined)).toEqual(
+      new TemporaryFailure({ message: "FCM temporary failure 429" }),
     );
-    expect(classifyFcmResponse(500, undefined)).toBeInstanceOf(
-      TemporaryFailure,
+    expect(classifyFcmResponse(500, undefined)).toEqual(
+      new TemporaryFailure({ message: "FCM temporary failure 500" }),
     );
-    expect(classifyFcmResponse(503, "UNAVAILABLE")).toBeInstanceOf(
-      TemporaryFailure,
+    expect(classifyFcmResponse(503, "UNAVAILABLE")).toEqual(
+      new TemporaryFailure({ message: "FCM temporary failure 503" }),
     );
   });
 
   test("a refused notification is terminal but rejected credentials are not retried blindly", () => {
-    expect(classifyFcmResponse(400, "INVALID_ARGUMENT")).toBeInstanceOf(
-      TerminalResponse,
+    expect(classifyFcmResponse(400, "INVALID_ARGUMENT")).toEqual(
+      new TerminalResponse({ message: "FCM terminal response 400" }),
     );
     expect(classifyFcmResponse(401, undefined)).toBeUndefined();
     expect(classifyFcmResponse(403, "PERMISSION_DENIED")).toBeUndefined();

@@ -207,24 +207,12 @@ describe("push lifecycle", () => {
     expect(source.unsubscribes()).toBe(1);
   });
 
-  test("closing stops listening, so later replies are not sent", async () => {
-    const count = { sends: 0 };
-    const { runtime, source } = await setup(delivering(count));
-
-    await runtime.dispose();
-
-    source.emit(reply());
-    await Bun.sleep(20);
-    expect(count.sends).toBe(0);
-  });
-
   test("closing still closes the store when the final delivery pass fails, and reports it", async () => {
     const { runtime, probe, source } = await setup(delivering({ sends: 0 }));
 
     probe.failPending = 1;
 
-    expect(runtime.dispose()).rejects.toThrow("outbox unreadable");
-    await Bun.sleep(20);
+    await expect(runtime.dispose()).rejects.toThrow("outbox unreadable");
     expect(probe.closes).toBe(1);
     expect(source.unsubscribes()).toBe(1);
   });

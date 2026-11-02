@@ -139,8 +139,10 @@ test("a new token interrupts a read in flight and doesn't cache its value", asyn
   await Effect.runPromise(Effect.yieldNow);
   expect((await api.connect()).status).toBe(200);
 
-  expect(Exit.isFailure(await Effect.runPromise(Fiber.await(reading)))).toBe(
-    true,
+  const interrupted = await Effect.runPromise(Fiber.await(reading));
+
+  expect(Exit.isFailure(interrupted) && String(interrupted.cause)).toContain(
+    "SecretUnavailable: Fake was disconnected",
   );
   expect(state.interrupted).toBe(1);
 

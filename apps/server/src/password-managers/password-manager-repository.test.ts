@@ -90,7 +90,7 @@ describe("PasswordManagerRepository", () => {
         sql(dir, "DELETE FROM credentials WHERE key = 'mcp:server'");
 
         return {
-          refused: refused._tag,
+          refused: refused.message,
           usedBy,
           deleted: yield* repository.delete("1password"),
         };
@@ -98,7 +98,7 @@ describe("PasswordManagerRepository", () => {
     );
 
     expect(result).toEqual({
-      refused: "Conflict",
+      refused: "1 secret still read from this password manager",
       usedBy: ["mcp:server"],
       deleted: true,
     });
@@ -124,6 +124,12 @@ describe("PasswordManagerRepository", () => {
         };
 
         return {
+          stored: rejected(
+            "INSERT INTO credentials (key, value) VALUES ('d', 'sealed')",
+          ),
+          referenced: rejected(
+            "INSERT INTO credentials (key, password_manager, reference) VALUES ('e', '1password', 'op://v/i/f')",
+          ),
           both: rejected(
             "INSERT INTO credentials (key, value, password_manager, reference) VALUES ('a', 'sealed', '1password', 'op://v/i/f')",
           ),
@@ -136,6 +142,8 @@ describe("PasswordManagerRepository", () => {
     );
 
     expect(rejects).toEqual({
+      stored: false,
+      referenced: false,
       both: true,
       neither: true,
       unknownManager: true,

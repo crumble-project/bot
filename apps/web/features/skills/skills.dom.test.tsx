@@ -138,9 +138,9 @@ test("deleting the first same-name skill keeps the second", async () => {
       button.textContent?.includes("First instructions"),
     )?.parentElement;
 
-    expect(row).toBeTruthy();
+    if (!row) throw new Error("Expected the first skill's row");
     await act(async () => {
-      const button = row!.querySelector<HTMLButtonElement>('[title="More"]')!;
+      const button = row.querySelector<HTMLButtonElement>('[title="More"]')!;
       button.dispatchEvent(
         new KeyboardEvent("keydown", {
           key: "ArrowDown",
@@ -153,18 +153,18 @@ test("deleting the first same-name skill keeps the second", async () => {
       ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
     ].find((item) => item.textContent?.includes("Delete"));
 
-    expect(menuItem).toBeTruthy();
+    if (!menuItem) throw new Error("Expected a Delete menu item");
     await act(async () => {
-      menuItem!.click();
+      menuItem.click();
     });
 
     const confirm = [...document.querySelectorAll("button")].find(
       (button) => button.textContent === "Delete",
     );
 
-    expect(confirm).toBeTruthy();
+    if (!confirm) throw new Error("Expected a Delete confirmation");
     await act(async () => {
-      confirm!.click();
+      confirm.click();
       await new Promise((resolve) => setTimeout(resolve, 30));
     });
     expect(skills.map((skill) => skill.id)).toEqual(["second"]);

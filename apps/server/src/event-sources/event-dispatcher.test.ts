@@ -16,7 +16,6 @@ import {
   EventDispatcher,
 } from "./event-dispatcher";
 import { EventRepository, type RelayEvent } from "./event-repository";
-import { eventRequestId } from "./event-payload";
 
 const ada = "00000000-0000-4000-8000-000000000001";
 
@@ -167,14 +166,14 @@ test("pending prompt runs are dispatched in event order with their request IDs",
   expect(dispatched).toEqual([
     {
       prompt: "Triage the issue",
-      requestId: eventRequestId("01A", schedule.id),
+      requestId: `event:01A:${schedule.id}`,
     },
   ]);
 
   await tick();
   expect(dispatched.map((entry) => entry.requestId)).toEqual([
-    eventRequestId("01A", schedule.id),
-    eventRequestId("01B", schedule.id),
+    `event:01A:${schedule.id}`,
+    `event:01B:${schedule.id}`,
   ]);
   expect(await pending()).toEqual([]);
 });
@@ -207,7 +206,7 @@ test("a failing dispatch waits before it retries and gives up after the last att
   fail(false);
   await tick();
   expect(dispatched.map((entry) => entry.requestId)).toEqual([
-    eventRequestId("01B", schedule.id),
+    `event:01B:${schedule.id}`,
   ]);
 });
 

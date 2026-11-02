@@ -9,7 +9,7 @@ import {
   fauxText,
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
-import { Effect } from "effect";
+import { Effect, Exit } from "effect";
 import type { Agent } from "../shared/domain";
 import { assertOwnMemoryInGroup, memorySourceOf } from "./memory-sources";
 import { AgentRuntime, type MemoryContext } from "../bots/runtime";
@@ -146,12 +146,12 @@ describe("memorySourceOf", () => {
       reviewOf: null,
     };
 
-    const check = (context: MemoryContext, shared: boolean) => () =>
-      Effect.runSync(assertOwnMemoryInGroup(context, shared));
+    const check = (context: MemoryContext, shared: boolean) =>
+      Effect.runSyncExit(assertOwnMemoryInGroup(context, shared));
 
-    expect(check(group, true)).toThrow("save to your own memory");
-    expect(check(group, false)).not.toThrow();
-    expect(check(chat, true)).not.toThrow();
+    expect(String(check(group, true))).toContain("save to your own memory");
+    expect(check(group, false)).toEqual(Exit.void);
+    expect(check(chat, true)).toEqual(Exit.void);
   });
 });
 
@@ -193,17 +193,17 @@ test("the memory tool reports where it runs", async () => {
   const chat = await runtime.openChat(agent);
   const group = await runtime.openGroupConversation(agent, "group-1");
 
+  const submissions: string[] = [];
+
   for (const conversation of [chat, group]) {
     const submission = await runtime.submit(agent, conversation, "remember");
+
+    submissions.push(submission);
     await runtime.wait(submission, agent);
   }
 
   expect(contexts).toEqual([
-    { groupId: null, submissionIds: [expect.any(String)], reviewOf: null },
-    {
-      groupId: "group-1",
-      submissionIds: [expect.any(String)],
-      reviewOf: null,
-    },
+    { groupId: null, submissionIds: [submissions[0]!], reviewOf: null },
+    { groupId: "group-1", submissionIds: [submissions[1]!], reviewOf: null },
   ]);
 });

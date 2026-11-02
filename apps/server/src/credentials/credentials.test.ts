@@ -277,7 +277,7 @@ test("replacing a reference with a value reads nothing from the password manager
       secret: { reference: reference() },
     }),
   );
-  expect(vault.usedBy()).toHaveLength(1);
+  expect(vault.usedBy()).toEqual([`bot:${agentId}:credential:ACME_TOKEN`]);
 
   const saved = await vault.run.runPromise(
     vault.service.save(agentId, "ACME_TOKEN", { secret: { value: "stored" } }),

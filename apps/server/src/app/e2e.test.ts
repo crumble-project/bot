@@ -73,8 +73,12 @@ describe("HTTP/runtime persistence", () => {
 
       expect(response.status).toBe(202);
       await new Promise((resolve) => setTimeout(resolve, 30));
-      const execution: any = await response.json();
-      expect(execution.status).toMatch(/running|done/);
+      expect(await response.json()).toMatchObject({
+        agentId: agent.id,
+        requestId,
+        prompt: "hello",
+        status: "running",
+      });
       await runtime.close();
       store.close();
 
@@ -88,8 +92,18 @@ describe("HTTP/runtime persistence", () => {
       );
 
       expect(snapshotResponse.status).toBe(200);
-      const snapshot = await snapshotResponse.json();
-      expect(JSON.stringify(snapshot)).toContain("persisted hello");
+
+      // SAFETY: the chat snapshot is narrowed to the message fields asserted below.
+      const snapshot = (await snapshotResponse.json()) as {
+        messages: { role: string; content: string }[];
+      };
+
+      expect(
+        snapshot.messages.map(({ role, content }) => [role, content]),
+      ).toEqual([
+        ["user", "hello"],
+        ["assistant", "persisted hello"],
+      ]);
       await reopenedRuntime.close();
       reopenedStore.close();
     } finally {

@@ -150,9 +150,9 @@ for (const scenario of ["failure", "refresh"] as const) {
           (button) => button.textContent?.includes("Bad Bot"),
         );
 
-        expect(badPill).toBeDefined();
+        if (!badPill) throw new Error("Expected a Bad Bot pill");
         await act(async () => {
-          badPill?.click();
+          badPill.click();
         });
         expect(container.textContent).not.toContain(
           "No skills of its own yet.",
@@ -164,7 +164,7 @@ for (const scenario of ["failure", "refresh"] as const) {
           });
         });
         await settle();
-        expect(release).toBeDefined();
+        expect(requests).toBe(2);
         expect(
           container.querySelector<HTMLButtonElement>('[title="Refresh"]')
             ?.disabled,

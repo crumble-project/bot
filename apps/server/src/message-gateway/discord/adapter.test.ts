@@ -135,8 +135,18 @@ describe("Discord connection", () => {
     client.emit("shardReconnecting");
     client.emit("shardResume");
 
-    expect(onMessage).toHaveBeenCalledTimes(1);
-    expect(onMessage).toHaveBeenCalledWith(normalizeDiscordMessage(message()));
+    expect(onMessage.mock.calls).toEqual([
+      [
+        {
+          id: "inbound",
+          channelId: "channel",
+          senderId: "sender",
+          text: "  @researcher original\ntext <@application>  ",
+          isDirectMessage: false,
+          hasAttachments: false,
+        },
+      ],
+    ]);
     expect(states.map((state) => state.status)).toEqual([
       "connecting",
       "connected",
@@ -570,8 +580,7 @@ describe("Discord connection", () => {
       .catch((error: Error) => error);
 
     expect(error).toMatchObject({ details: { permanent: true, status: 403 } });
-    expect(String(error)).toContain("[redacted]");
-    expect(String(error)).not.toContain(host.token);
+    expect(String(error)).toBe("GatewayTransportError: Missing [redacted]");
     await connection.close();
   });
 

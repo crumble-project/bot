@@ -128,7 +128,9 @@ test("a held action shows a card and runs once the owner approves", async () => 
     page: "https://rail.example/checkout",
     ownerMessages: jobRequest.ownerMessages,
   });
-  expect(pending!.reason).toContain("Fake judge");
+  expect(pending!.reason).toBe(
+    "It looks like a commit point. Fake judge rated it irreversible at 90% and asked for at 20%.",
+  );
 
   await held.decide(agentId, cards[0]!.id, { status: "approved" });
   expect(await waiting).toEqual({ usage });
@@ -155,10 +157,13 @@ test("a declined action is refused with the owner's reason", async () => {
 
   expect(spent).toEqual(usage);
 
-  expect(refused).toStartWith("REFUSED: the owner declined");
-  expect(refused).toContain("Only look, don't buy");
+  expect(refused).toBe(
+    "REFUSED: the owner declined: Click button \"Buy ticket\" on rail.example. Their reason: Only look, don't buy Don't retry it; report what you did and what is left.",
+  );
   await expect(
     held.decide(agentId, cards[0]!.id, { status: "approved" }),
-  ).rejects.toBeInstanceOf(Conflict);
+  ).rejects.toEqual(
+    new Conflict({ message: "The action was already decided" }),
+  );
   store.close();
 });

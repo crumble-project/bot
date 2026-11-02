@@ -79,7 +79,16 @@ test("accepts an added event schema without a version increase", async () => {
     "group-chat-snapshot.schema.json",
   ]);
 
-  await compareContracts(base, current, reports());
+  const out = reports();
+
+  await compareContracts(base, current, out);
+
+  const projection = await Bun.file(join(out, "events-current.json")).json();
+
+  expect(Object.keys(projection.paths)).toEqual([
+    "/events/chat-snapshot",
+    "/events/group-chat-snapshot",
+  ]);
 });
 
 test("rejects a removed event schema", async () => {

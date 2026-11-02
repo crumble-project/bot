@@ -140,7 +140,8 @@ test("each chat turn receives a fresh server clock and timezone", async () => {
       ...prompt.matchAll(/Current server time \(UTC\): ([\dT:.Z-]+)/g),
     ];
 
-    expect(times.length).toBeGreaterThan(0);
+    // Each turn appends its own clock; earlier turns keep theirs.
+    expect(times).toHaveLength(index + 1);
     const timestamp = Date.parse(times.at(-1)![1]!);
     expect(timestamp).toBeGreaterThanOrEqual(boundaries[index]![0]);
     expect(timestamp).toBeLessThanOrEqual(boundaries[index]![1]);
@@ -199,7 +200,9 @@ test("profile edits, skills and memory reach the next request without leaking be
   expect(requests[1]).toContain(`private:${a.id}`);
   expect(requests[2]).toContain(`private:${b.id}`);
   expect(requests[2]).not.toContain(`private:${a.id}`);
-  await expect(runtime.snapshot(b, ca)).rejects.toThrow();
+  await expect(runtime.snapshot(b, ca)).rejects.toThrow(
+    "Conversation belongs to a different agent",
+  );
 });
 
 test("lists skills by name in the prompt and loads their content and documents on demand", async () => {
@@ -213,14 +216,16 @@ test("lists skills by name in the prompt and loads their content and documents o
   );
   await Bun.write(join(taskDir, "references", "cron.md"), "Cron depth");
   const common = loadCommonSkills(skillsRoot);
-  expect(common).toHaveLength(1);
-  expect(common[0]).toMatchObject({
-    id: "common:tasks/SKILL.md",
-    name: "Tasks",
-    description: "Handle tasks",
-    instructions: "Common task rules",
-    documents: [{ path: "references/cron.md", content: "Cron depth" }],
-  });
+  expect(common).toEqual([
+    {
+      id: "common:tasks/SKILL.md",
+      name: "Tasks",
+      description: "Handle tasks",
+      instructions: "Common task rules",
+      documents: [{ path: "references/cron.md", content: "Cron depth" }],
+      path: "tasks/SKILL.md",
+    },
+  ]);
   const requests: string[] = [];
   const used: string[] = [];
 
@@ -488,6 +493,7 @@ test("registered extension tools are offered, executed, recorded and revoked", a
 
   const a = makeAgent();
   const conversation = await runtime.createConversation(a);
+  let removed: unknown[] = [];
   faux.setResponses([
     (context) => {
       expect(JSON.stringify(context.messages)).toContain('"name":"example"');
@@ -498,7 +504,9 @@ test("registered extension tools are offered, executed, recorded and revoked", a
     },
     fauxAssistantMessage("finished"),
     (context) => {
-      expect(JSON.stringify(context.messages.at(-2))).toContain("toolsRemoved");
+      removed = context.messages.flatMap((message) =>
+        message.role === "system" ? (message.toolsRemoved ?? []) : [],
+      );
 
       return fauxAssistantMessage("revoked");
     },
@@ -512,13 +520,25 @@ test("registered extension tools are offered, executed, recorded and revoked", a
   expect(settled.status).toBe("done");
   expect(calls).toBe(1);
   expect(
-    JSON.stringify((await runtime.snapshot(a, conversation)).messages),
-  ).toContain("tool result");
+    (await runtime.snapshot(a, conversation)).messages.map(
+      ({ role, content }) => ({ role, content }),
+    ),
+  ).toEqual([
+    { role: "user", content: "use tool" },
+    { role: "assistant", content: "Tool call: example" },
+    { role: "toolResult", content: "tool result" },
+    { role: "assistant", content: "finished" },
+  ]);
   enabled = false;
-  await runtime.wait(
-    await runtime.submit(a, conversation, "next", "second"),
-    a,
-  );
+  expect(
+    (
+      await runtime.wait(
+        await runtime.submit(a, conversation, "next", "second"),
+        a,
+      )
+    ).status,
+  ).toBe("done");
+  expect(removed).toEqual([{ name: "example" }]);
 });
 
 test("hides in-flight assistant text and cancellation settles the submission", async () => {
@@ -546,14 +566,10 @@ test("hides in-flight assistant text and cancellation settles the submission", a
   );
   await runtime.abort(a, conversation);
   const settled = await runtime.wait(submission, a);
-  expect(settled.status).not.toBe("done");
+  expect(settled.status).toBe("unanswered");
   const cancelled = await runtime.snapshot(a, conversation);
   expect(cancelled.status).toBe("idle");
-  expect(
-    cancelled.messages.some((message) =>
-      message.content.includes("A deliberately long response"),
-    ),
-  ).toBe(false);
+  expect(cancelled.messages.map((message) => message.content)).toEqual(["go"]);
   expect(
     (await runtime.history(a)).messages.some((message) =>
       message.content.includes("A deliberately long response"),
@@ -581,9 +597,10 @@ test("publishes the complete assistant entry only after the run ends", async () 
   const final = await runtime.snapshot(a, conversation);
   expect(final.status).toBe("idle");
   expect(final.partial).toBe("");
-  expect(final.messages.some((message) => message.content === answer)).toBe(
-    true,
-  );
+  expect(final.messages.map((message) => message.content)).toEqual([
+    "go",
+    answer,
+  ]);
   expect(
     snapshots
       .filter((snapshot) => snapshot.status === "running")
@@ -649,10 +666,13 @@ test("hides text from an assistant tool round until the whole turn completes", a
   expect((await runtime.wait(submission, a)).status).toBe("done");
   const final = await runtime.snapshot(a, conversation);
   expect(
-    final.messages.some((message) =>
-      message.content.includes("complete answer"),
-    ),
-  ).toBe(true);
+    final.messages.map(({ role, content }) => ({ role, content })),
+  ).toEqual([
+    { role: "user", content: "go" },
+    { role: "assistant", content: intermediate },
+    { role: "toolResult", content: "tool finished" },
+    { role: "assistant", content: "The complete answer after the tool." },
+  ]);
 });
 
 test("inference overrides reach provider options and deleting an agent removes its durable files", async () => {

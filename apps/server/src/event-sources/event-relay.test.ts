@@ -186,7 +186,7 @@ test("the relay connects with the account token, stores each event once, and ack
 
   await configure(relay.url);
   await until(async () => (await status()).status === "connected");
-  expect(relay.authorizations).toContain(`Bearer ${TOKEN}`);
+  expect(relay.authorizations).toEqual([`Bearer ${TOKEN}`]);
 
   relay.send(event("01A"));
   await until(() => relay.acks.includes("01A"));
@@ -204,7 +204,7 @@ test("the relay connects with the account token, stores each event once, and ack
     method: "POST",
     query: "a=1",
     headers: [["content-type", "application/json"]],
-    body: Buffer.from('{"action":"opened"}').toString("base64"),
+    body: "eyJhY3Rpb24iOiJvcGVuZWQifQ==",
   });
   expect(await status()).toEqual({
     url: relay.url,

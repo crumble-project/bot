@@ -171,11 +171,13 @@ test("owner validation, refresh, and failed disable preserve edits after its def
     await settle();
 
     expect(bodies).toHaveLength(1);
-    expect(JSON.parse(bodies[0]!)).not.toHaveProperty("allowedSenderIds");
-    expect(JSON.parse(bodies[0]!)).toEqual({
-      ...gateway.config,
+    expect(JSON.parse(bodies[0]!)).toStrictEqual({
       enabled: false,
+      defaultBotId: "00000000-0000-4000-8000-000000000001",
       ownerId: "owner-a",
+      allowedChannelIds: [],
+      allowDirectMessages: false,
+      aliases: [],
     });
     expect(container.textContent).toContain("Could not save gateway");
     expect(owner.value).toBe("owner-a");

@@ -19,9 +19,9 @@ test("a bare base32 secret gives six digits every thirty seconds", () => {
   const secret = parseOneTimeSecret("jbsw y3dp ehpk 3pxp")!;
 
   expect(secret).toMatchObject({ digits: 6, periodSeconds: 30 });
-  expect(oneTimeCode(secret, 0)).toMatch(/^\d{6}$/);
-  expect(oneTimeCode(secret, 29_999)).toBe(oneTimeCode(secret, 0));
-  expect(oneTimeCode(secret, 30_000)).not.toBe(oneTimeCode(secret, 0));
+  expect(oneTimeCode(secret, 0)).toBe("282760");
+  expect(oneTimeCode(secret, 29_999)).toBe("282760");
+  expect(oneTimeCode(secret, 30_000)).toBe("996554");
 });
 
 test("a URI's algorithm and period are honored", () => {
@@ -30,8 +30,9 @@ test("a URI's algorithm and period are honored", () => {
   )!;
 
   expect(sha256).toMatchObject({ algorithm: "sha256", periodSeconds: 60 });
-  // RFC 6238's SHA-256 vector at 59 s uses a 30 s step, so check the step boundary instead.
-  expect(oneTimeCode(sha256, 0)).toBe(oneTimeCode(sha256, 59_999));
+  expect(oneTimeCode(sha256, 59_999)).toBe("18920136");
+  // RFC 6238's SHA-256 vector for step 1 (59 s at 30 s), reached at 60 s here.
+  expect(oneTimeCode(sha256, 60_000)).toBe("46119246");
 });
 
 test("secrets that aren't base32 or a TOTP URI are rejected", () => {

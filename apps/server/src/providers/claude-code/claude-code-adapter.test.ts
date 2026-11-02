@@ -377,10 +377,10 @@ describe("Claude Code adapter", () => {
     const { message } = await collect(options, [user("go")]);
 
     expect(message.stopReason).toBe("error");
-    expect(message.errorMessage).toContain("Incomplete upstream response");
-    expect(message.content.some((item) => item.type === "toolCall")).toBe(
-      false,
+    expect(message.errorMessage).toBe(
+      "Incomplete upstream response (first upstream attempt: status 200, capture incomplete, native retries denied: 0)",
     );
+    expect(message.content).toEqual([]);
   });
 
   test("runs no tool from a response whose tool call was cut off mid-argument", async () => {
@@ -430,10 +430,10 @@ describe("Claude Code adapter", () => {
     const { message } = await collect(options, [user("go")]);
 
     expect(message.stopReason).toBe("error");
-    expect(message.errorMessage).toContain("Incomplete tool call");
-    expect(message.content.some((item) => item.type === "toolCall")).toBe(
-      false,
+    expect(message.errorMessage).toBe(
+      "Incomplete tool call: 1 tool call(s) ended before their arguments were complete (stop reason max_tokens)",
     );
+    expect(message.content).toEqual([]);
   });
 
   test("reports an upstream rejection with its status", async () => {
@@ -441,7 +441,9 @@ describe("Claude Code adapter", () => {
     const { message } = await collect(options, [user("go")]);
 
     expect(message.stopReason).toBe("error");
-    expect(message.errorMessage).toContain("status 529");
+    expect(message.errorMessage).toBe(
+      "Incomplete upstream response (first upstream attempt: status 529, capture incomplete, native retries denied: 0): API Error: 529 ",
+    );
   });
 
   test("finishes a refusal as an error with its explanation and no tool calls", async () => {
@@ -464,9 +466,7 @@ describe("Claude Code adapter", () => {
 
     expect(message.stopReason).toBe("error");
     expect(message.errorMessage).toBe("Declined.");
-    expect(message.content.some((item) => item.type === "toolCall")).toBe(
-      false,
-    );
+    expect(message.content).toEqual([]);
   });
 
   test("fails with the status reason and starts no process when Claude Code is not usable", async () => {
@@ -484,10 +484,10 @@ describe("Claude Code adapter", () => {
 
     const { message } = await collect(options, [user("go")]);
 
-    expect(message.errorMessage).toStartWith(
-      "Claude Code is not signed in for Crumble. Run on the server: CLAUDE_CONFIG_DIR=",
+    expect(message.errorMessage).toBe(
+      `Claude Code is not signed in for Crumble. Run on the server: CLAUDE_CONFIG_DIR=${JSON.stringify(options.configDir)} ${FAKE} auth login`,
     );
-    expect(() => readFileSync(join(dir, "pids"))).toThrow();
+    expect(() => readFileSync(join(dir, "pids"))).toThrow("ENOENT");
   });
 
   test("hands the CLI only allowlisted environment and its own config directory", async () => {
@@ -556,6 +556,7 @@ describe("Claude Code adapter", () => {
       await Bun.sleep(20);
     }
 
+    expect(readFileSync(pids, "utf8").trim().split("\n")).toHaveLength(2);
     controller.abort();
     const { message } = await done;
 

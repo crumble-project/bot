@@ -80,10 +80,11 @@ describe("checkIntent", () => {
       undefined,
     );
 
-    expect(verdict).toMatchObject({
+    expect(verdict).toEqual({
       irreversible: true,
       held: true,
       commitPoint: true,
+      answer: { irreversible: 0.01, inIntent: 0.6, inIntentBar: 0.9 },
     });
   });
 
@@ -104,10 +105,11 @@ describe("checkIntent", () => {
       undefined,
     );
 
-    expect(verdict).toMatchObject({
+    expect(verdict).toEqual({
       irreversible: true,
       held: true,
       commitPoint: false,
+      answer: { irreversible: 0.8, inIntent: 0.2, inIntentBar: 0.9 },
     });
   });
 
@@ -155,7 +157,13 @@ describe("checkIntent", () => {
         request(click("button", "Buy ticket")),
         undefined,
       ),
-    ).toMatchObject({ held: true, judgeError: "rate limited" });
+    ).toEqual({
+      irreversible: true,
+      held: true,
+      commitPoint: true,
+      answer: undefined,
+      judgeError: "rate limited",
+    });
     expect(
       (await checkIntent(failing, request(click("link", "Fares")), undefined))
         .held,

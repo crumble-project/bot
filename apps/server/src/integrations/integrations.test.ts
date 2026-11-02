@@ -119,7 +119,20 @@ describe("MCP integrations", () => {
       enabled: true,
     });
 
+    const off = store.createMCPServer({
+      name: "off",
+      url: "https://off.example.test",
+      enabled: false,
+    });
+
+    store.createMCPServer({
+      name: "unlisted",
+      url: "https://unlisted.example.test",
+      enabled: true,
+    });
+
     let called = 0;
+    const connected: string[] = [];
 
     const client: MCPClient = {
       async connect() {},
@@ -145,15 +158,20 @@ describe("MCP integrations", () => {
     };
 
     const { integrations, close } = standaloneIntegrations(store.runtime, {
-      clientFactory: () => ({ client, transport: unusedTransport }),
+      clientFactory: (connecting) => {
+        connected.push(connecting.name);
+
+        return { client, transport: unusedTransport };
+      },
     });
 
     const agentId = "00000000-0000-4000-8000-000000000001";
 
     const extensions = await integrations.extensionsForAgent(
-      store.createAgent(agent(agentId, [server.id]), agentId),
+      store.createAgent(agent(agentId, [server.id, off.id]), agentId),
     );
 
+    expect(connected).toEqual(["demo"]);
     expect(extensions).toHaveLength(1);
     const first = extensions[0];
 
@@ -164,6 +182,11 @@ describe("MCP integrations", () => {
     const tool: any = tools[0];
 
     if (!tool) throw new Error("missing tool");
+    expect(tool.parameters).toEqual({
+      type: "object",
+      properties: { text: { type: "string" } },
+      required: ["text"],
+    });
 
     const result = await tool.execute(
       { text: "hi" },

@@ -223,7 +223,12 @@ describe("group chat membership and transcript", () => {
 
     expect(
       await groups.update(group.id, { name: "Holiday", memberIds: [b!, a!] }),
-    ).toMatchObject({ name: "Holiday", memberIds: [a, b] });
+    ).toEqual({
+      ...group,
+      name: "Holiday",
+      memberIds: [a!, b!],
+      updatedAt: expect.any(String),
+    });
     await groups.post(group.id, "Hello", "r-1");
     await groups.delete(group.id);
     expect(() => groups.get(group.id)).toThrow("Group chat not found");
@@ -332,8 +337,10 @@ describe("group turns", () => {
     await quiet(groups, group.id);
 
     expect(
-      (await botMessages(groups, group.id)).map((message) => message.content),
-    ).toEqual(expect.arrayContaining(["Ada here.", "Grace here."]));
+      (await botMessages(groups, group.id))
+        .map((message) => message.content)
+        .toSorted(),
+    ).toEqual(["Ada here.", "Grace here."]);
     expect(inputs.get("Ada")?.[0]).toContain("Owner: Who is around?");
   });
 
@@ -646,7 +653,7 @@ describe("owner notifications", () => {
     await groups.post(group.id, "@Ada start", "r-1");
     await until(() => groups.activity(group.id).paused);
     await quiet(groups, group.id);
-    expect(events).toHaveLength(1);
+    expect(events.map((event) => event.preview)).toEqual(["@Grace your turn"]);
   });
 });
 
@@ -764,6 +771,7 @@ describe("joining members", () => {
     await quiet(groups, group.id);
     await groups.post(group.id, "@Ada again", "r-2");
     await quiet(groups, group.id);
+    expect(inputs.get("Ada")).toHaveLength(2);
     expect(inputs.has("summary")).toBe(false);
   });
 
@@ -898,7 +906,8 @@ describe("admission failures", () => {
 
     await groups.post(group.id, "@Ada first", "r-1");
     await quiet(groups, group.id);
-    expect(groups.activity(group.id).members[0]).toMatchObject({
+    expect(groups.activity(group.id).members[0]).toEqual({
+      agentId: group.memberIds[0]!,
       status: "idle",
       error: "disk full",
     });

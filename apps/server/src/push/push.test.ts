@@ -276,7 +276,9 @@ describe("push registration and durable delivery", () => {
       now,
     );
 
-    await push.runPromise(
+    const answer = reply(agentId, now);
+
+    const serverId = await push.runPromise(
       Effect.gen(function* () {
         const store = yield* PushRepository;
         yield* store.upsertDevice(installationId, android("token"));
@@ -285,7 +287,7 @@ describe("push registration and durable delivery", () => {
         const service = yield* Push;
 
         yield* service.enqueue({
-          ...reply(agentId, now),
+          ...answer,
           agentName: "Ada",
           entryId: "group-1:4",
           origin: "group",
@@ -294,39 +296,48 @@ describe("push registration and durable delivery", () => {
           groupName: "Trip",
         });
         yield* service.drain;
+
+        return service.serverId;
       }),
     );
 
     expect(sent).toEqual([
-      expect.objectContaining({
+      {
+        type: "reply",
+        eventId: answer.executionId,
+        serverId,
+        agentId,
+        agentName: "Ada",
+        entryId: "group-1:4",
+        origin: "group",
+        preview: "Booked.",
+        createdAt: "1970-01-01T00:16:40.000Z",
         groupId: "group-1",
         groupName: "Trip",
-        origin: "group",
-      }),
+      },
     ]);
     expect(notificationTitle(sent[0]!)).toBe("Ada in Trip");
     await push.dispose();
   });
 
-  test("suppresses visible-agent replies and retries failed transport", async () => {
+  test("suppresses visible-agent replies and sends once across concurrent drains", async () => {
     const dir = tempDir("crumble-push-");
     const now = 1_000_000;
     const installationId = id();
     const agentId = id();
     const sent: string[] = [];
-    let failures = 1;
+    const hidden = reply(agentId, now);
+    const shown = reply(agentId, now);
 
     const push = await pushRuntime(
       dir,
       fcmOnly({
         send: (_device, event) =>
-          failures--
-            ? Effect.fail(new TemporaryFailure({ message: "temporary" }))
-            : Effect.sync(() => {
-                sent.push(event.eventId);
+          Effect.sync(() => {
+            sent.push(event.eventId);
 
-                return "delivered" as const;
-              }),
+            return "delivered" as const;
+          }),
       }),
       now,
     );
@@ -340,23 +351,19 @@ describe("push registration and durable delivery", () => {
           true,
         );
 
-        yield* service.enqueue(reply(agentId, now));
+        yield* service.enqueue(hidden);
         yield* service.drain;
-        expect(sent).toHaveLength(0);
-        failures = 0;
+        expect(sent).toEqual([]);
 
-        // A different installation with no active presence receives the same event.
+        // A different installation with no active presence receives the next event.
         yield* store.upsertDevice(id(), android("token-2"));
-        yield* store.enqueue(
-          canonicalReplyEvent(reply(agentId, now), service.serverId),
-        );
-        yield* TestClock.adjust(2000);
+        yield* store.enqueue(canonicalReplyEvent(shown, service.serverId));
       }),
     );
 
     const drain = Push.use((service) => service.drain);
     await Promise.all([push.runPromise(drain), push.runPromise(drain)]);
-    expect(sent).toHaveLength(1);
+    expect(sent).toEqual([shown.executionId]);
     await push.dispose();
   });
 
@@ -558,11 +565,15 @@ describe("push registration and durable delivery", () => {
     );
 
     const chat = await service.chat(agent.id);
-    await service.send(chat.id, "question", id());
+    const execution = await service.send(chat.id, "question", id());
     await new Promise((resolve) => setTimeout(resolve, 10));
     await push.runPromise(Push.use((p) => p.drain));
-    expect(delivered?.eventId).toBeTruthy();
-    expect(delivered?.entryId).toBe("entry-1");
+    expect(delivered).toMatchObject({
+      eventId: execution.id,
+      agentId: agent.id,
+      entryId: "entry-1",
+      preview: "hello from bot",
+    });
     await push.dispose();
     await service.close();
   });

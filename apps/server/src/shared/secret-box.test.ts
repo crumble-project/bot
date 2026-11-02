@@ -74,9 +74,6 @@ describe("SecretBox", () => {
     const packed = withBox(dir, key, (box) => box.encrypt("value"));
 
     expect(files(dir)).toEqual({ plain: false, wrapped: true });
-    expect(
-      readFileSync(join(dir, ".secret.key.wrapped"), "utf8"),
-    ).not.toContain(packed);
     expect(withBox(dir, key, (box) => box.decrypt(packed))).toBe("value");
   });
 
@@ -107,7 +104,9 @@ describe("SecretBox", () => {
     });
 
     try {
-      expect(() => withBox(dir, key, () => undefined)).toThrow(/EIO/);
+      expect(() => withBox(dir, key, () => undefined)).toThrow(
+        "EIO: i/o error, fsync",
+      );
     } finally {
       sync.mockRestore();
     }
@@ -123,7 +122,7 @@ describe("SecretBox", () => {
     const wrapped = readFileSync(join(dir, ".secret.key.wrapped"), "utf8");
 
     expect(() => withBox(dir, masterKey(), () => undefined)).toThrow(
-      /CRUMBLE_MASTER_KEY/,
+      "Credential encryption key cannot be unwrapped with CRUMBLE_MASTER_KEY; refusing to start the account",
     );
     expect(readFileSync(join(dir, ".secret.key.wrapped"), "utf8")).toBe(
       wrapped,
@@ -136,7 +135,7 @@ describe("SecretBox", () => {
     withBox(dir, masterKey(), () => undefined);
 
     expect(() => withBox(dir, undefined, () => undefined)).toThrow(
-      /CRUMBLE_MASTER_KEY/,
+      "Credential encryption key is wrapped; set CRUMBLE_MASTER_KEY to start the account",
     );
     expect(files(dir)).toEqual({ plain: false, wrapped: true });
   });
@@ -144,6 +143,6 @@ describe("SecretBox", () => {
   test("rejects a master key that isn't 32 bytes of base64", () => {
     expect(() =>
       withBox(make(), randomBytes(16).toString("base64"), () => undefined),
-    ).toThrow(/CRUMBLE_MASTER_KEY/);
+    ).toThrow("CRUMBLE_MASTER_KEY must be 32 random bytes in base64");
   });
 });

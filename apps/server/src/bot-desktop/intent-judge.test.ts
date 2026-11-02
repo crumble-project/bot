@@ -36,12 +36,15 @@ test("Jev's spend is priced at TypeSafe's rate, which pi-ai's catalog lacks", ()
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
   };
 
-  expect(
-    judgeUsage(classifier("typesafe", "jev-latest"), tokens).cost,
-  ).toMatchObject({
-    input: 0.042,
-    total: 0.042,
-  });
+  expect(judgeUsage(classifier("typesafe", "jev-latest"), tokens).cost).toEqual(
+    {
+      input: 0.042,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      total: 0.042,
+    },
+  );
 
   // A catalog price is kept as pi-ai computed it.
   expect(judgeUsage(classifier("openai", "gpt-6-luna"), tokens)).toBe(tokens);

@@ -270,7 +270,7 @@ describe("HTTP API for bots, chats, and activity", () => {
   });
 
   test("lists a bot's desktop jobs", async () => {
-    const { app, store } = setup();
+    const { app, store, runtime } = setup();
 
     const agent = store.createAgent({
       name: "Desk",
@@ -286,10 +286,29 @@ describe("HTTP API for bots, chats, and activity", () => {
       delegates: [],
     });
 
+    runtime.desktopJobs = async (owner: RuntimeAgent) => [
+      {
+        name: "github-login",
+        conversationId: `${owner.id}:desktop`,
+        status: "idle",
+      },
+    ];
+
     const res = await req(app, `/v1/agents/${agent.id}/desktop-jobs`);
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ jobs: [] });
+    expect(await res.json()).toEqual({
+      jobs: [
+        {
+          name: "github-login",
+          conversationId: `${agent.id}:desktop`,
+          status: "idle",
+        },
+      ],
+    });
+    expect(
+      (await req(app, `/v1/agents/${crypto.randomUUID()}/desktop-jobs`)).status,
+    ).toBe(404);
   });
 
   test("lists bundled and editable shared skills in one catalog", async () => {
@@ -563,7 +582,9 @@ describe("HTTP API for bots, chats, and activity", () => {
     });
 
     expect(pdf.status).toBe(400);
-    expect((await pdf.json()).error).toContain("only images");
+    expect((await pdf.json()).error).toBe(
+      "doc.pdf: only images (PNG, JPEG, GIF, WebP) and text files can be attached",
+    );
 
     const memory = await req(app, `/v1/agents/${agent.id}/memories`, {
       method: "POST",
@@ -1413,11 +1434,23 @@ describe("HTTP API for script tasks and schedules", () => {
 
     expect(schedule.status).toBe(201);
     const value = await schedule.json();
-    expect(
-      (await req(app, `/v1/schedules/${value.id}/run`, { method: "POST" }))
-        .status,
-    ).toBe(202);
-    expect((await req(app, "/v1/executions")).status).toBe(200);
+
+    const ran = await req(app, `/v1/schedules/${value.id}/run`, {
+      method: "POST",
+    });
+
+    expect(ran.status).toBe(202);
+    const { result } = await ran.json();
+
+    expect(result).toMatchObject({
+      agentId: agent.id,
+      scheduleId: value.id,
+      prompt: "run",
+      status: "running",
+    });
+    expect(await (await req(app, "/v1/executions")).json()).toMatchObject([
+      { id: result.id, scheduleId: value.id, prompt: "run" },
+    ]);
     store.close();
   });
 });

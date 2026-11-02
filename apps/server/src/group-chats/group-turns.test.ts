@@ -130,14 +130,10 @@ test("a group conversation offers pass and react but no delegation", async () =>
   const group = await runtime.openGroupConversation(agent, "group-1");
 
   await turn(runtime, group, "hello");
-  expect(offered.at(-1)).toEqual(
-    expect.arrayContaining(["memory", "react", "pass"]),
-  );
-  expect(offered.at(-1)).not.toContain("delegate");
+  expect(offered.at(-1)).toEqual(["memory", "react", "pass"]);
 
   await turn(runtime, chat, "hi");
-  expect(offered.at(-1)).toContain("delegate");
-  expect(offered.at(-1)).not.toContain("pass");
+  expect(offered.at(-1)).toEqual(["memory", "delegate", "react"]);
 });
 
 test("web tools are offered in bot chat and group turns", async () => {
@@ -176,9 +172,7 @@ test("web tools are offered in bot chat and group turns", async () => {
 
           await runtime.wait(submission, enabled);
         });
-        expect(offered.at(-1)).toEqual(
-          expect.arrayContaining(["web_search", "web_extract"]),
-        );
+        expect(offered.at(-1)).toEqual(["memory", "web_search", "web_extract"]);
 
         yield* Effect.promise(async () => {
           const submission = await runtime.submit(
@@ -190,9 +184,12 @@ test("web tools are offered in bot chat and group turns", async () => {
 
           await runtime.wait(submission, enabled);
         });
-        expect(offered.at(-1)).toEqual(
-          expect.arrayContaining(["web_search", "web_extract"]),
-        );
+        expect(offered.at(-1)).toEqual([
+          "memory",
+          "web_search",
+          "web_extract",
+          "pass",
+        ]);
       }).pipe(Effect.provide(layers)),
     ),
   );
@@ -203,14 +200,13 @@ test("a group conversation stays out of the bot chat", async () => {
   const chat = await runtime.openChat(agent);
   const group = await runtime.openGroupConversation(agent, "group-1");
 
-  await turn(runtime, group, "secret plan");
-
-  const contents = [
-    ...(await runtime.history(agent)).messages,
-    ...(await runtime.snapshot(agent, chat)).messages,
-  ].map((message) => message.content);
-
-  expect(contents.join("\n")).not.toContain("secret plan");
+  expect(await turn(runtime, group, "secret plan")).toEqual({
+    kind: "message",
+    text: "Answer to secret plan",
+    sources: [],
+  });
+  expect((await runtime.history(agent)).messages).toEqual([]);
+  expect((await runtime.snapshot(agent, chat)).messages).toEqual([]);
 });
 
 test("a turn's outcome is its answer, a reaction, or a pass", async () => {

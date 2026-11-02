@@ -102,6 +102,11 @@ test("history search keeps committed assistant messages visible across turn comp
       match: active.matches[0]!.match,
     });
 
+    expect(before.messages.map((message) => message.text)).toEqual([
+      "Run the probe.",
+      "retained sentinel",
+    ]);
+
     finish.resolve();
     await runtime.wait(submission, agent);
 

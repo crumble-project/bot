@@ -1,5 +1,5 @@
 import { describe, expect, test, afterEach } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
@@ -50,7 +50,9 @@ describe("Store", () => {
     first.close();
     const reopened = new Store(dir);
     expect(reopened.getAgent(agent.id)?.name).toBe("Test");
-    expect(reopened.listConversations(agent.id)).toHaveLength(1);
+    expect(reopened.listConversations(agent.id).map(({ id }) => id)).toEqual([
+      convo.id,
+    ]);
     expect(reopened.deleteAgent(agent.id)).toBe(true);
     expect(reopened.getConversation(convo.id)).toBeNull();
     reopened.close();
@@ -68,6 +70,15 @@ describe("Store", () => {
     expect(reopened.getCredential("openai")).toBe("super-secret");
     expect(reopened.getSetting("flags")).toEqual({ enabled: true });
     reopened.close();
+    expect(
+      readdirSync(dir, { recursive: true, withFileTypes: true }).filter(
+        (entry) =>
+          entry.isFile() &&
+          readFileSync(join(entry.parentPath, entry.name)).includes(
+            "super-secret",
+          ),
+      ),
+    ).toEqual([]);
   });
 
   test("supports schedules, idempotent executions, and MCP lifecycle", () => {
@@ -136,7 +147,7 @@ describe("Store", () => {
         status: "pending",
         error: null,
       }),
-    ).toThrow();
+    ).toThrow('Failed query: insert into "executions"');
 
     const server = store.createMCPServer({
       name: "Tools",

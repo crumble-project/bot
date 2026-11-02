@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createModels, Type } from "@earendil-works/pi-ai";
+import { createModels, Type, type Message } from "@earendil-works/pi-ai";
 import {
   fauxAssistantMessage,
   fauxProvider,
@@ -55,7 +55,7 @@ test("code mode offers one tool whose scripts call the agent's other tools", asy
   });
 
   const offered: string[][] = [];
-  let toolResult = "";
+  let toolResult: Message | undefined;
   const faux = fauxProvider({ provider: "faux", models: [{ id: "chat" }] });
   faux.setResponses([
     (context) => {
@@ -76,7 +76,7 @@ test("code mode offers one tool whose scripts call the agent's other tools", asy
       );
     },
     (context) => {
-      toolResult = JSON.stringify(context.messages.at(-1));
+      toolResult = context.messages.at(-1);
 
       return fauxAssistantMessage("The tool said hi.");
     },
@@ -135,7 +135,10 @@ test("code mode offers one tool whose scripts call the agent's other tools", asy
   expect(reply).toBe("The tool said hi.");
   expect(offered[0]).toEqual(["codemode"]);
   expect(echoed).toEqual(["hi"]);
-  expect(toolResult).toContain("echo:hi");
+  expect(toolResult?.content.at(-1)).toEqual({
+    type: "text",
+    text: "echo:hi",
+  });
 });
 
 test("code mode keeps request_credential a direct tool, so the chat can offer its form", async () => {
@@ -196,8 +199,7 @@ test("code mode keeps request_credential a direct tool, so the chat can offer it
 
   for (let i = 0; i < 500 && !offered.length; i++)
     await new Promise((resolve) => setTimeout(resolve, 20));
-  expect(offered).toContain("codemode");
-  expect(offered).toContain("request_credential");
+  expect(offered).toEqual(["request_credential", "codemode"]);
 });
 
 test("code mode receives structured schedule and coordination results", async () => {
@@ -212,7 +214,7 @@ test("code mode receives structured schedule and coordination results", async ()
   }));
 
   const faux = fauxProvider({ provider: "faux", models: [{ id: "chat" }] });
-  let toolResult = "";
+  let toolResult: Message | undefined;
   let finished = false;
   faux.setResponses([
     fauxAssistantMessage(
@@ -236,7 +238,7 @@ test("code mode receives structured schedule and coordination results", async ()
       { stopReason: "toolUse" },
     ),
     (context) => {
-      toolResult = JSON.stringify(context.messages.at(-1));
+      toolResult = context.messages.at(-1);
       finished = true;
 
       return fauxAssistantMessage("Done.");
@@ -295,8 +297,8 @@ test("code mode receives structured schedule and coordination results", async ()
   for (let i = 0; i < 500 && !finished; i++)
     await new Promise((resolve) => setTimeout(resolve, 20));
   expect(finished).toBe(true);
-  expect(toolResult).toContain("fulfilled|fulfilled|fulfilled");
-  expect(toolResult).toContain('\\"created\\":true');
-  expect(toolResult).toContain('\\"listed\\":true');
-  expect(toolResult).toContain('\\"bots\\":true');
+  expect(toolResult?.content.at(-1)).toEqual({
+    type: "text",
+    text: '==> text 1/2 <==\nfulfilled|fulfilled|fulfilled\n==> text 2/2 <==\n{"created":true,"listed":true,"bots":true,"errors":[]}',
+  });
 });

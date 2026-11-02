@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -18,7 +18,6 @@ import { takeNotices } from "../../test/support/notices";
 import { Store } from "../../test/support/store";
 import { loginFieldKey } from "./login-repository";
 import { Logins } from "./logins";
-import { oneTimeCode, parseOneTimeSecret } from "./one-time-codes";
 
 const dirs: string[] = [];
 
@@ -222,7 +221,9 @@ test("a computed one-time code is read anew for every fill", async () => {
 
   bot.state.mode = "unreachable";
 
-  expect(bot.value("github", "one_time_code")).rejects.toThrow();
+  await expect(bot.value("github", "one_time_code")).rejects.toThrow(
+    "Fake could not be reached",
+  );
 });
 
 test("a stored one-time code secret fills the current code", async () => {
@@ -240,13 +241,13 @@ test("a stored one-time code secret fills the current code", async () => {
     }),
   );
 
-  const before = Date.now();
-  const code = await bot.value("github", "one_time_code");
+  setSystemTime(new Date("2026-11-02T00:00:00.000Z"));
 
-  expect([
-    oneTimeCode(parseOneTimeSecret(secret)!, before),
-    oneTimeCode(parseOneTimeSecret(secret)!, Date.now()),
-  ]).toContain(code);
+  try {
+    expect(await bot.value("github", "one_time_code")).toBe("033545");
+  } finally {
+    setSystemTime();
+  }
 });
 
 test("a one-time code secret that isn't base32 or a TOTP URI is rejected", async () => {
@@ -324,7 +325,7 @@ test("a reference that can't be read is rejected and nothing is saved", async ()
         },
       }),
     ),
-  ).toBeDefined();
+  ).toBe("Fake has no item that matches");
   expect(await bot.run(bot.logins.list(bot.agentId))).toEqual([]);
 });
 

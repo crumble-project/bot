@@ -146,7 +146,9 @@ test("a readable reference passes and leaves its value cached", async () => {
   const state = fakePasswordManager({ [REFERENCE]: "lin_value" });
   const exit = await check(state, source(REFERENCE));
 
-  expect(Exit.isSuccess(exit)).toBe(true);
+  expect(Exit.isSuccess(exit) && exit.value && Redacted.value(exit.value)).toBe(
+    "lin_value",
+  );
   expect(state.reads).toBe(1);
 });
 
@@ -235,26 +237,30 @@ test("replacing a reference drops its cached value", async () => {
     ),
   );
 
-  expect(Exit.isSuccess(exit)).toBe(true);
+  expect(Exit.isSuccess(exit) && Redacted.value(exit.value)).toBe("lin_value");
   // Without the drop, the read would come from the cache the save filled.
   expect(state.reads).toBe(2);
 });
 
-test("deleteAll removes every secret under a prefix and nothing else", async () => {
-  const rows = new Map<string, SecretSource>();
+test("a key prefix ends at a separator, so bot b1's doesn't cover bot b10", () => {
+  expect(secretKeyPrefix("bot", "b1")).toBe("bot:b1:");
+});
+
+test("deleteAll drops the cached values of the references it deletes", async () => {
+  const state = fakePasswordManager({ [REFERENCE]: "lin_value" });
   const bot = secretKeyPrefix("bot", "b1");
 
   await run(
-    fakePasswordManager(),
+    state,
     Secrets.use((secrets) =>
-      Effect.all([
-        secrets.save(`${bot}credential:A`, { value: "1" }),
-        secrets.save(`${bot}login:x:password`, { value: "2" }),
-        secrets.save("bot:b10:credential:A", { value: "3" }),
-      ]).pipe(Effect.andThen(secrets.deleteAll(bot))),
+      secrets
+        .save(`${bot}credential:A`, { reference: source(REFERENCE) })
+        .pipe(
+          Effect.andThen(secrets.deleteAll(bot)),
+          Effect.andThen(read(source(REFERENCE))),
+        ),
     ),
-    { rows },
   );
 
-  expect([...rows.keys()]).toEqual(["bot:b10:credential:A"]);
+  expect(state.reads).toBe(2);
 });
