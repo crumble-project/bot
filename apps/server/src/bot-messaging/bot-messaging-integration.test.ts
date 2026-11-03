@@ -2,13 +2,17 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createModels } from "@earendil-works/pi-ai";
+import { createModels, type Message } from "@earendil-works/pi-ai";
 import {
   fauxAssistantMessage,
   fauxProvider,
   fauxToolCall,
+  type FauxResponseFactory,
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "../bots/runtime";
+import { codingPlugin, codingQuestions } from "../jobs/coding";
+import { DirectoryWorkspaces } from "../jobs/jobs-test-support";
+import { conversationEnv, jobExtensions } from "../plugins/plugins";
 import { Store } from "../../test/support/store";
 import { standaloneBots } from "../bots/bots";
 import { coordinationExtension } from "./coordination";
@@ -155,12 +159,7 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
       targetHistory.messages.filter(
         (message) => message.kind === "bot-message",
       ),
-    ).toEqual([
-      expect.objectContaining({
-        content: "How do you feel?",
-        communication: sent,
-      }),
-    ]);
+    ).toEqual([]);
     const snapshot = await runtime.snapshot(source, execution.conversationId);
     expect(JSON.stringify(snapshot.messages)).toContain(
       "Bot2 says it feels fine.",
@@ -190,7 +189,7 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
       (await runtime.history(store.getAgent(targetId)!)).messages.filter(
         (message) => message.kind === "bot-message",
       ),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     unsubscribeTarget();
 
     const answer = await messaging.result(source.id, targetExecution.id, {
@@ -247,9 +246,7 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
         await reopened.history(store.getAgent(targetId)!)
       ).messages.filter((message) => message.kind === "bot-message");
 
-      expect(persistedTarget.map((message) => message.communication)).toEqual([
-        sent,
-      ]);
+      expect(persistedTarget).toEqual([]);
     } finally {
       await reopened.close();
     }
@@ -259,3 +256,308 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+const MAGNUM = "00000000-0000-4000-8000-000000000121";
+const CODER = "00000000-0000-4000-8000-000000000122";
+
+const textOf = (message: Message) =>
+  (Array.isArray(message.content)
+    ? message.content
+    : [{ type: "text" as const, text: message.content }]
+  )
+    .flatMap((block) => (block.type === "text" ? [block.text] : []))
+    .join("");
+
+const toolCall = (name: string, args: Parameters<typeof fauxToolCall>[1]) =>
+  fauxAssistantMessage(fauxToolCall(name, args), { stopReason: "toolUse" });
+
+const lastOf = (context: { messages: Message[] }) =>
+  context.messages.findLast((message) => message.role !== "system")!;
+
+const toolsOf = (context: { messages: Message[] }) =>
+  context.messages.flatMap((message) =>
+    message.role === "system"
+      ? (message.toolsAdded ?? []).map((tool) => tool.name)
+      : [],
+  );
+
+/** Magnum delegates a build, and answers a job's question relayed to it. */
+const magnumScript: FauxResponseFactory = (context) => {
+  const last = lastOf(context);
+  const text = textOf(last);
+  const questionId = /questionId "([^"]+)"/.exec(text)?.[1];
+
+  if (last.role === "user" && questionId)
+    return toolCall("answer_job_question", { questionId, answer: "blue" });
+
+  if (last.role === "toolResult") return fauxAssistantMessage("Done.");
+
+  return toolCall("delegate", { agentId: CODER, task: "Build the site" });
+};
+
+/** Coder starts a coding job for the delegated task; its job asks once, after `asking` resolves, then finishes. */
+const coderScript =
+  (asking: Promise<void>): FauxResponseFactory =>
+  async (context) => {
+    const last = lastOf(context);
+    const text = textOf(last);
+
+    if (toolsOf(context).includes("ask_owner")) {
+      if (last.role === "user" && text.includes("answered your question"))
+        return fauxAssistantMessage(`Used ${text}`);
+
+      await asking;
+
+      return toolCall("ask_owner", {
+        question: "Which color?",
+        options: ["blue", "red"],
+      });
+    }
+
+    if (text.startsWith("[coding job"))
+      return fauxAssistantMessage("The job is finished.");
+
+    if (last.role === "toolResult")
+      return fauxAssistantMessage("Started the job.");
+
+    return toolCall("coding", {
+      action: "start",
+      name: "builder",
+      message: "Build the site",
+    });
+  };
+
+/** Magnum, allowed to delegate to Coder, and Coder, who runs coding jobs; Magnum's message has delegated the build. */
+async function delegatedBuild(asking: Promise<void>) {
+  const dir = mkdtempSync(join(tmpdir(), "bot-messaging-jobs-"));
+  const workspace = join(dir, "workspace");
+  await Bun.write(join(workspace, ".keep"), "");
+
+  const faux = (steps: FauxResponseFactory) => {
+    const provider = fauxProvider({
+      provider: "faux",
+      models: [{ id: "test" }],
+    });
+
+    provider.setResponses(Array.from({ length: 30 }, () => steps));
+
+    return provider.provider;
+  };
+
+  const providers = new Map([
+    [MAGNUM, faux(magnumScript)],
+    [CODER, faux(coderScript(asking))],
+  ]);
+
+  const models = (agent: { id: string }) => {
+    const selected = createModels();
+    selected.setProvider(providers.get(agent.id)!);
+
+    return selected;
+  };
+
+  const store = new Store(dir);
+
+  const bot = (name: string, tools: string[], delegates: string[]) => ({
+    name,
+    avatar: "bot",
+    description: "",
+    instructions: "",
+    provider: "faux",
+    model: "test",
+    enabled: true,
+    tools,
+    skills: [],
+    mcpServers: [],
+    delegates,
+  });
+
+  const magnum = store.createAgent(
+    bot("Magnum", ["delegate"], [CODER]),
+    MAGNUM,
+  );
+
+  const coder = store.createAgent(bot("Coder", ["coding"], []), CODER);
+  const kinds = codingPlugin(new DirectoryWorkspaces(workspace)).jobKinds ?? [];
+  let service!: ReturnType<typeof standaloneBots<Store>>;
+
+  const runtime = new AgentRuntime(dir, {
+    models,
+    extensions: (agent) => [
+      coordinationExtension(agent, standaloneMessaging(service)),
+      ...jobExtensions(kinds, agent).chat,
+    ],
+    taskExtensions: (agent) => jobExtensions(kinds, agent).job,
+    env: (agent, target, context) =>
+      conversationEnv(kinds, agent, target, context),
+  });
+
+  service = standaloneBots(store, runtime);
+  const messaging = botMessagingAccess(standaloneMessaging(service));
+
+  const stopRelay = codingQuestions(async (asked) => {
+    await messaging.relayQuestion(asked);
+  });
+
+  const sent = await service.sendChat(
+    magnum.id,
+    "Have Coder build the site",
+    "00000000-0000-4000-8000-000000000123",
+  );
+
+  await runtime.wait(sent.submissionId!, magnum);
+  const delegation = store.listExecutions(CODER)[0]!;
+  await runtime.wait(delegation.submissionId!, coder);
+
+  const coderMessages = async () =>
+    (await runtime.history(store.getAgent(CODER)!)).messages;
+
+  const close = async () => {
+    stopRelay();
+    await service.close();
+    rmSync(dir, { recursive: true, force: true });
+  };
+
+  return {
+    store,
+    service,
+    runtime,
+    messaging,
+    magnum,
+    coder,
+    delegation,
+    coderMessages,
+    close,
+  };
+}
+
+async function until(check: () => Promise<boolean>) {
+  for (let i = 0; i < 500 && !(await check()); i++)
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+  expect(await check()).toBe(true);
+}
+
+test("a delegation whose bot started a job stays pending until the job's report is answered", async () => {
+  let ask!: () => void;
+  const world = await delegatedBuild(new Promise((resolve) => (ask = resolve)));
+
+  try {
+    const { messaging, delegation } = world;
+
+    // The assignee's turn is over, but the job it started still works.
+    expect(world.store.getExecution(delegation.id)?.status).toBe("done");
+
+    expect(
+      await messaging.result(MAGNUM, delegation.id, { waitMs: 200 }),
+    ).toMatchObject({ status: "running", response: [] });
+
+    ask();
+
+    await until(
+      async () =>
+        (await messaging.result(MAGNUM, delegation.id)).status === "done",
+    );
+
+    const answer = await messaging.result(MAGNUM, delegation.id);
+
+    expect(answer.response.at(-1)).toBe("The job is finished.");
+    expect(answer.error).toBeNull();
+
+    const cards = (await world.runtime.history(world.magnum)).messages
+      .filter((message) => message.kind === "bot-message")
+      .map((message) => message.communication?.status);
+
+    expect(cards).toEqual(["sent", "done"]);
+  } finally {
+    await world.close();
+  }
+}, 20_000);
+
+test("a job's question goes to the bot that delegated its task, whose answer resumes the job", async () => {
+  const world = await delegatedBuild(Promise.resolve());
+
+  try {
+    const { store, runtime, service } = world;
+
+    const relayed = async () =>
+      (await runtime.history(store.getAgent(MAGNUM)!)).messages.find(
+        (message) =>
+          message.role === "user" && message.content.includes("Which color?"),
+      );
+
+    await until(async () => (await relayed()) !== undefined);
+    expect((await relayed())?.origin).toEqual({
+      kind: "bot",
+      agentId: CODER,
+      name: "Coder",
+    });
+
+    // The owner still sees the question in the assignee's chat.
+    const card = (await world.coderMessages()).find(
+      (message) => message.kind === "job-question",
+    );
+
+    expect(card?.content).toBe("Which color?");
+
+    await until(async () =>
+      (await world.coderMessages()).some(
+        (message) =>
+          message.origin?.kind === "coding" &&
+          message.content ===
+            "Used Magnum, the bot that delegated your task, answered your question: blue",
+      ),
+    );
+
+    // The reporter's answer closed the question; the owner's comes too late.
+    await expect(
+      service.answerCodingJob(CODER, {
+        name: "builder",
+        questionId: card!.jobQuestion!.id,
+        text: "red",
+      }),
+    ).rejects.toThrow("The job no longer waits on this question");
+    expect(
+      store
+        .listExecutions(MAGNUM)
+        .filter((execution) => execution.requestId.startsWith("job-question:")),
+    ).toHaveLength(1);
+  } finally {
+    await world.close();
+  }
+}, 20_000);
+
+test("a job's question stays with the owner once the delegating bot may no longer message other bots", async () => {
+  let ask!: () => void;
+  const world = await delegatedBuild(new Promise((resolve) => (ask = resolve)));
+
+  try {
+    const { store, service } = world;
+    store.updateAgent(MAGNUM, { tools: [] });
+    ask();
+
+    const card = async () =>
+      (await world.coderMessages()).find(
+        (message) => message.kind === "job-question",
+      );
+
+    await until(async () => (await card()) !== undefined);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(store.listExecutions(MAGNUM)).toHaveLength(1);
+
+    await service.answerCodingJob(CODER, {
+      name: "builder",
+      questionId: (await card())!.jobQuestion!.id,
+      text: "red",
+    });
+
+    await until(async () =>
+      (await world.coderMessages()).some(
+        (message) =>
+          message.content === "Used The owner answered your question: red",
+      ),
+    );
+  } finally {
+    await world.close();
+  }
+}, 20_000);

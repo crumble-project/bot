@@ -225,6 +225,7 @@ const SETTLE_MS = 1500;
 const SETTLING_TEST_MS = 15_000;
 
 export {
+  DirectoryWorkspaces,
   exclusiveKind,
   parallelKind,
   open,

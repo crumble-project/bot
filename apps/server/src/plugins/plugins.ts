@@ -5,7 +5,7 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { Agent } from "../shared/domain";
 import { Context } from "effect";
 import type { ChatAdapter } from "../message-gateway/adapter";
-import type { JobAnswer, JobExtensions } from "../jobs/jobs";
+import type { JobAnswer, JobAsked, JobExtensions } from "../jobs/jobs";
 import type { WebSearchProvider } from "../web-search/provider";
 import type { PasswordManagerVendor } from "../password-managers/password-manager";
 import type {
@@ -46,6 +46,8 @@ export type JobKindContribution = {
   botEnv?: (agentId: string) => ExecutionEnv;
   /** Hears the bot's answer to each job report, for notifications. */
   onAnswer: (listener: (answer: JobAnswer) => void) => () => void;
+  /** Hears each job question about work a bot turn sent the job, so a delegating bot can answer it first. */
+  onQuestion: (listener: (asked: JobAsked) => Promise<void>) => () => void;
 };
 
 /** A machine backend: its workspaces when the server's environment configures it, otherwise undefined. */

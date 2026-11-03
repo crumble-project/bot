@@ -14,7 +14,8 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
-import { codingJobOf, codingPlugin } from "./coding";
+import { codingJobOf, codingPlugin, codingQuestions } from "./coding";
+import type { JobAsked } from "./jobs";
 import {
   WORKSPACE_NOTES_FILE,
   WORKSPACE_NOTES_SECTION,
@@ -937,6 +938,60 @@ test("a job's question waits through a restart, and the owner's answer resumes t
       (message) => message.content,
     ),
   ).toEqual(["Used The owner answered your question: blue"]);
+});
+
+test("a job keeps the bot turn that sent its work through a restart, until its report is answered", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bot-coding-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const workspace = join(dir, "workspace");
+  await Bun.write(join(workspace, ".keep"), "");
+  const { agent } = setup(dir);
+  const workspaces = new DirectoryWorkspaces(workspace);
+  const asked: JobAsked[] = [];
+
+  cleanups.push(codingQuestions(async (question) => void asked.push(question)));
+
+  const first = open(dir, workspaces, askingScript(), agent);
+  const chat = await first.runtime.openChat(agent);
+  const turn = await first.runtime.submit(agent, chat, "Build it", "req-1");
+
+  await until(
+    async () =>
+      (await first.runtime.codingJobs(agent))[0]?.question !== undefined,
+  );
+  await until(async () => asked.length === 1);
+  expect(asked[0]).toMatchObject({ agentId: agent.id, name: "builder" });
+  expect(asked[0]?.turn).toEqual([turn]);
+  await first.runtime.close();
+
+  const second = open(dir, workspaces, askingScript(), agent);
+  cleanups.push(() => second.runtime.close());
+  await second.runtime.openChat(agent);
+
+  // The question keeps the turn's work open; nothing has reported yet.
+  expect(await second.runtime.turnWork(agent, turn)).toEqual({
+    open: true,
+    reports: [],
+  });
+  const [job] = await second.runtime.codingJobs(agent);
+
+  expect(
+    await second.runtime.answerCodingJob(agent, {
+      name: "builder",
+      questionId: job!.question!.id,
+      text: "blue",
+    }),
+  ).toBe(true);
+
+  await until(
+    async () => (await second.runtime.turnWork(agent, turn))?.open === false,
+  );
+  const work = await second.runtime.turnWork(agent, turn);
+
+  expect(work?.reports).toHaveLength(1);
+  expect(await second.runtime.response(agent, chat, work!.reports[0]!)).toEqual(
+    ["The job is finished."],
+  );
 });
 
 /** Runs one job in a workspace with `notes` as its workspace notes, if any; returns each role's prompt sections. */

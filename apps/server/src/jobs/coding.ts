@@ -70,8 +70,14 @@ export type CodingExtensions = JobExtensions;
 export const codingJobs = (harness: Harness, chatId: ConversationId) =>
   coding.list(harness, chatId);
 
-/** Sends the owner's answer to a coding job's open question; false when it has none with that ID. */
+/** Sends an answer to a coding job's open question; false when it has none with that ID. */
 export const answerCodingJob = coding.answer;
+
+/** Hears each coding job question about work a bot turn sent it, so a delegating bot can answer first. */
+export const codingQuestions = coding.onQuestion;
+
+/** What the coding jobs a bot turn started or messaged have done. */
+export const codingTurnWork = coding.turnWork;
 
 /** A coding job's environment: the bot's workspace with its credentials. None for any other conversation. */
 async function codingEnv(
@@ -240,6 +246,7 @@ export const codingPlugin = (
             codingEnv(workspaces, agentId, target, context, credentials),
           botEnv: (agentId) => codingBotEnv(workspaces, agentId, credentials),
           onAnswer: codingAnswers,
+          onQuestion: codingQuestions,
         },
       ]
     : [],

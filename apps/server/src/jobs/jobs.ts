@@ -88,6 +88,29 @@ export type JobQuestion = {
 /** The bot chat entry that shows a job's question to the owner, without a turn of the bot. */
 export const JOB_QUESTION_ENTRY = "crumble.job-question";
 
+/** A job's question, once its card is in the bot's chat, and the bot turn whose work the job was doing. */
+export type JobAsked = {
+  agentId: string;
+  /** The job kind, such as `coding`. */
+  kind: string;
+  /** Lowercase noun, such as "coding job". */
+  label: string;
+  name: string;
+  question: JobQuestion;
+  /** Submission IDs of the bot turn that sent the job the work it asks about. */
+  turn: string[];
+};
+
+/** What the jobs a bot turn started or messaged have done: a delegation that turn answered waits for them. */
+export type TurnWork = {
+  /** Whether a job's report is still to come and to be answered in the bot's chat. */
+  open: boolean;
+  /** The bot chat's submissions that delivered the jobs' reports, oldest first. */
+  reports: string[];
+  /** Why a job of the turn failed or was stopped. */
+  error?: string;
+};
+
 /** A job in a listing: the model it runs with, and what its own model requests and tools spent, none before its first
  * request. */
 export type ListedJob = JobInfo & {
@@ -120,7 +143,19 @@ type Job = {
 /** The job an exclusive kind's screen belongs to, and how many of its deliveries are in flight. */
 type Holder = { name: string; deliveries: number };
 
-type JobsState = { jobs: Record<string, Job>; holder?: Holder };
+/** A bot turn's deliveries to jobs, under the turn's submission IDs joined by commas. */
+type TurnDeliveries = {
+  /** Reporter task IDs not yet reported; one whose job asked a question stays until the answer's delivery replaces it. */
+  open: string[];
+  reports: string[];
+  error?: string;
+};
+
+type JobsState = {
+  jobs: Record<string, Job>;
+  holder?: Holder;
+  turns?: Record<string, TurnDeliveries>;
+};
 
 /** The bot's answer to a job's report: what a notification about the job shows. */
 export type JobAnswer = {
@@ -153,12 +188,21 @@ type ReporterInput = {
   followUp: boolean;
   /** The job's stop count when this delivery was created. Unset means zero. */
   stops?: number;
+  /** The bot turn whose work this is, as `JobsState.turns` keys it. Unset before turns were tracked. */
+  turn?: string;
 };
 
 type ReporterState =
   | { phase: "wait" }
   | { phase: "deliver" }
-  | { phase: "report"; report?: string | undefined }
+  | {
+      phase: "report";
+      report?: string | undefined;
+      /** Why the delivery failed or was stopped, for the turn's delegation. */
+      error?: string;
+      /** The question the job asked instead of answering. */
+      asked?: JobAsked;
+    }
   | { phase: "announce"; entryId: string; preview: string };
 
 const jobCard = z.object({ name: z.string().min(1) });
@@ -184,6 +228,56 @@ const releaseHolder = (state: JobsState, name: string) => {
 const settleDelivery = (job: Job | undefined, reporterId: TaskId<null>) => {
   if (job?.deliveries) delete job.deliveries[String(reporterId)];
 };
+
+// Settled turns are pruned oldest first; a delegation asked about after that reads as having no jobs.
+const KEPT_TURNS = 200;
+
+const pruneTurns = (turns: Record<string, TurnDeliveries>) => {
+  const settled = Object.keys(turns)
+    .filter((key) => turns[key]!.open.length === 0)
+    .sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+
+  for (const key of settled.slice(0, Math.max(0, settled.length - KEPT_TURNS)))
+    delete turns[key];
+};
+
+/** Counts a delivery as its turn's work until it reports; it takes the place of the delivery whose question it answers. */
+const openTurnWork = (
+  state: JobsState,
+  turn: string | undefined,
+  reporterId: string,
+  replaces?: string,
+) => {
+  if (turn === undefined) return;
+  state.turns ??= {};
+  const work = state.turns[turn];
+
+  if (!work) {
+    pruneTurns(state.turns);
+    state.turns[turn] = { open: [reporterId], reports: [] };
+
+    return;
+  }
+
+  work.open = [...work.open.filter((id) => id !== replaces), reporterId];
+};
+
+const closeTurnWork = (
+  state: JobsState,
+  turn: string | undefined,
+  reporterId: string,
+  error?: string,
+) => {
+  const work = turn === undefined ? undefined : state.turns?.[turn];
+
+  if (!work?.open.includes(reporterId)) return;
+  work.open = work.open.filter((id) => id !== reporterId);
+
+  if (error && !work.error) work.error = error;
+};
+
+const stoppedError = (kindState: JobKindBase, name: string) =>
+  `${kindState.label} ${name} was stopped`;
 
 // A job is busy while it has a run, from an input until its final answer, or a delivery that will start one.
 const statusOf = async (reader: DocumentReader, job: Job, context: Context) =>
@@ -226,6 +320,8 @@ type StartOrSend = {
   model: ModelRef | undefined;
   /** The bot's memory and skills, as the runtime installed them; unset without a runtime that does. */
   knowledge: Extension | undefined;
+  /** The bot turn making the call, as `JobsState.turns` keys it. */
+  turn: string | undefined;
 };
 
 /** What a start or send did, and the job its card shows. */
@@ -304,9 +400,14 @@ type ToolResultMessage = {
 };
 
 /** Everything a job kind creates once: its documents, its anchor task, and its answer listeners. */
-type QuestionDoc = ConversationDocToken<{
-  pending: (JobQuestion & { posted?: boolean }) | null;
-}>;
+/** A job's open question; once posted, the delivery that asked it and that delivery's turn, so its answer continues both. */
+type PendingQuestion = JobQuestion & {
+  posted?: boolean;
+  turn?: string;
+  reporter?: string;
+};
+
+type QuestionDoc = ConversationDocToken<{ pending: PendingQuestion | null }>;
 
 type JobKindBase = {
   options: JobKindOptions;
@@ -317,6 +418,7 @@ type JobKindBase = {
   /** Shared by every job of every bot in this process. */
   answerListeners: Set<(answer: JobAnswer) => void>;
   finishedListeners: Set<(finished: JobFinished) => void>;
+  questionListeners: Set<(asked: JobAsked) => Promise<void>>;
   Marker: JobMarkerDoc;
   Jobs: JobsDoc;
   Request: JobRequestDoc;
@@ -364,17 +466,15 @@ const jobDocuments = (kind: string) => ({
   }),
 
   /** The job's open question to the owner, on the job's conversation; `posted` once its card is in the chat. */
-  Question: defineDoc<{ pending: (JobQuestion & { posted?: boolean }) | null }>(
-    {
-      kind: `crumble.${kind}-job-question`,
-      version: 1,
-      scope: "conversation",
-      history: "latest",
-      fork: "initial",
-      initial: () => ({ pending: null }),
-      checkpointWhen: () => true,
-    },
-  ),
+  Question: defineDoc<{ pending: PendingQuestion | null }>({
+    kind: `crumble.${kind}-job-question`,
+    version: 1,
+    scope: "conversation",
+    history: "latest",
+    fork: "initial",
+    initial: () => ({ pending: null }),
+    checkpointWhen: () => true,
+  }),
 });
 
 // A delivery is stopped when its job is gone or was stopped after the delivery was queued.
@@ -419,11 +519,19 @@ const jobReporterWait =
           reporter,
         );
 
-        if (stopped)
+        if (stopped) {
+          closeTurnWork(
+            state,
+            reporter.input.turn,
+            String(reporter.id),
+            stoppedError(kindState, name),
+          );
+
           return {
             status: "terminal",
             outcome: { status: "completed", result: null },
           };
+        }
 
         if (kindState.options.exclusive) {
           if (state.holder && state.holder.name !== name) {
@@ -472,7 +580,10 @@ const admitDelivery = async (
     if (stopped) {
       releaseHolder(state, name);
 
-      return { status: "running", checkpoint: { phase: "report" } };
+      return {
+        status: "running",
+        checkpoint: { phase: "report", error: stoppedError(kindState, name) },
+      };
     }
 
     job.deliveries = {
@@ -549,20 +660,29 @@ const submitAndReport = async (
     // The answer frees the screen for the next job, whether it reports or not.
     releaseHolder(state, name);
 
-    const posted = await postQuestion(
+    const asked = await postQuestion(
       kindState,
       tx,
       runtime.conversationId,
-      reporter.input,
+      reporter,
     );
 
-    const report = posted
+    const report = asked
       ? undefined
       : await deliveryReport(kindState, tx, state, name, settled);
 
     reported = report !== undefined && settled.status !== "unanswered";
+    const error = asked ? undefined : deliveryError(kindState, name, settled);
 
-    return { status: "running", checkpoint: { phase: "report", report } };
+    return {
+      status: "running",
+      checkpoint: {
+        phase: "report",
+        report,
+        ...(error && { error }),
+        ...(asked && { asked }),
+      },
+    };
   }, taskContext);
 
   const { agentId } = reporter.input;
@@ -579,18 +699,36 @@ const submitAndReport = async (
       });
 };
 
-/** Posts the job's new question to the bot chat as a card, in place of a report; false when it asked none. */
+/** Why a settled delivery failed its turn's delegation; unset when it answered. */
+const deliveryError = (
+  kindState: JobKindBase,
+  name: string,
+  settled: SettledSubmissionRecord,
+) => {
+  if (settled.status !== "unanswered") return undefined;
+
+  return settled.reason === "aborted"
+    ? stoppedError(kindState, name)
+    : `${kindState.label} ${name} failed: ${settled.reason}`;
+};
+
+/** Posts the job's new question to the bot chat as a card, in place of a report; undefined when it asked none. */
 const postQuestion = async (
   kindState: JobKindBase,
   tx: Tx,
   chatId: ConversationId,
-  { name, conversationId }: ReporterInput,
-) => {
+  reporter: ReporterTask<"deliver">,
+): Promise<JobAsked | undefined> => {
+  const { agentId, name, conversationId, turn } = reporter.input;
   const question = await tx.doc(kindState.Question, conversationId);
   const pending = question.pending;
 
-  if (!pending || pending.posted) return false;
-  question.pending = { ...pending, posted: true };
+  if (!pending || pending.posted) return undefined;
+  question.pending = {
+    ...pending,
+    posted: true,
+    ...(turn !== undefined && { turn, reporter: String(reporter.id) }),
+  };
   await tx.appendEntry(chatId, {
     kind: JOB_QUESTION_ENTRY,
     data: {
@@ -604,7 +742,20 @@ const postQuestion = async (
     },
   });
 
-  return true;
+  return {
+    agentId: agentId ?? "",
+    kind: kindState.kind,
+    label: kindState.label,
+    name,
+    question: {
+      id: pending.id,
+      text: pending.text,
+      askedAt: pending.askedAt,
+      ...(pending.options && { options: pending.options }),
+      ...(pending.multiple && { multiple: true }),
+    },
+    turn: turn?.split(",") ?? [],
+  };
 };
 
 const jobReporterDeliver =
@@ -656,16 +807,32 @@ const jobReporterReport =
     runtime: ReporterRuntime,
     taskContext: Context,
   ): Promise<void> => {
-    const { report } = reporter.state.checkpoint;
+    const { report, error, asked } = reporter.state.checkpoint;
+    const { turn } = reporter.input;
+    const id = String(reporter.id);
+
+    // A rerun after a restart asks again; listeners recognize the question by its ID.
+    if (asked && asked.agentId && asked.turn.length)
+      await Promise.allSettled(
+        [...kindState.questionListeners].map((listener) => listener(asked)),
+      );
 
     if (report === undefined)
-      return runtime.commit(
-        () => ({
+      return runtime.commit(async (tx) => {
+        // A question keeps the delivery open for its turn until an answer's delivery takes its place.
+        if (!asked)
+          closeTurnWork(
+            await tx.doc(kindState.Jobs, runtime.conversationId),
+            turn,
+            id,
+            error,
+          );
+
+        return {
           status: "terminal",
           outcome: { status: "completed", result: null },
-        }),
-        taskContext,
-      );
+        };
+      }, taskContext);
 
     const chat = (await runtime.conversation(
       runtime.conversationId,
@@ -692,13 +859,28 @@ const jobReporterReport =
       taskContext,
     );
 
+    if (turn !== undefined)
+      await runtime.commit(async (tx) => {
+        const work = (await tx.doc(kindState.Jobs, runtime.conversationId))
+          .turns?.[turn];
+
+        if (work && !work.reports.includes(String(submission.id)))
+          work.reports.push(String(submission.id));
+      }, taskContext);
+
     // The bot's answer to the report is what the owner is notified about, such as a job asking for them.
     const settled = await submission.wait(taskContext);
 
-    await runtime.commit(
-      async (tx) => announceCheckpoint(tx, settled),
-      taskContext,
-    );
+    await runtime.commit(async (tx) => {
+      closeTurnWork(
+        await tx.doc(kindState.Jobs, runtime.conversationId),
+        turn,
+        id,
+        error,
+      );
+
+      return announceCheckpoint(tx, settled);
+    }, taskContext);
   };
 
 const jobReporterAnnounce =
@@ -742,6 +924,12 @@ const jobReporterAbort =
       const state = await tx.doc(kindState.Jobs, runtime.conversationId);
 
       settleDelivery(state.jobs[reporter.input.name], reporter.id);
+      closeTurnWork(
+        state,
+        reporter.input.turn,
+        String(reporter.id),
+        stoppedError(kindState, reporter.input.name),
+      );
 
       // An aborted delivery that held the screen frees it.
       if (reporter.state.checkpoint.phase === "deliver")
@@ -853,27 +1041,38 @@ const stopJob = async (
   return reply(`Stopped ${name}.`);
 };
 
-/** Queues a message for the job; the job counts as working until it is delivered. */
+/** Queues a message for the job; the job counts as working until it is delivered, and its turn until it reports. */
 const queueDelivery = async (
   kindState: JobKindState,
   tx: Tx,
+  state: JobsState,
   record: Job,
   input: ReporterInput,
-  chatId?: ConversationId,
+  answering?: { chatId: ConversationId; replaces: string | undefined },
 ) => {
   // A commit outside the chat's own tools, such as the owner's answer, names the chat it belongs to.
   const reporter = await tx.createTask(
     kindState.Reporter,
     input,
-    chatId === undefined
+    answering === undefined
       ? BACKGROUND
-      : { ...BACKGROUND, conversationId: chatId },
+      : { ...BACKGROUND, conversationId: answering.chatId },
   );
 
   record.deliveries = {
     ...record.deliveries,
     [String(reporter)]: "waiting",
   };
+  openTurnWork(state, input.turn, String(reporter), answering?.replaces);
+};
+
+/** The bot turn a tool call runs in, named by the inputs its run answers; they stay the same for the whole turn. */
+const turnOf = async (api: ToolExecutionApi, context: Context) => {
+  const inputs =
+    (await api.snapshot(LiveDoc, api.conversationId, context))?.run?.inputs ??
+    [];
+
+  return inputs.length ? inputs.map(String).join(",") : undefined;
 };
 
 /** Starts a job or messages an existing one, admitting its delivery before it answers. */
@@ -937,14 +1136,19 @@ const startOrSend = async (
       );
 
     // A message from the bot answers the job's open question as well as the owner's answer would.
-    (await tx.doc(kindState.Question, conversationId)).pending = null;
-    await queueDelivery(kindState, tx, record, {
+    const question = await tx.doc(kindState.Question, conversationId);
+
+    if (question.pending?.reporter)
+      closeTurnWork(state, question.pending.turn, question.pending.reporter);
+    question.pending = null;
+    await queueDelivery(kindState, tx, state, record, {
       agentId,
       name: request.name,
       conversationId,
       message: request.message,
       followUp: request.action === "send" && request.followUp,
       stops: record.stops ?? 0,
+      ...(request.turn !== undefined && { turn: request.turn }),
     });
 
     return {
@@ -1191,6 +1395,7 @@ const runJobTool = async (
     job: input.job,
     model: input.model,
     knowledge: api.registry.extension(JOB_KNOWLEDGE_EXTENSION),
+    turn: await turnOf(api, callContext),
   });
 
   // Only a start shows the job's card, once per job; the turn ends with it, as after `show`.
@@ -1280,19 +1485,31 @@ const jobKindApi = (state: JobKindState) => {
       questionTool(state, onAsked),
 
     /**
-     * Sends the owner's answer to the job's open question, which resumes the job. False when the job asked nothing
-     * or `questionId` names an older question.
+     * Sends the answer of the owner or of the delegating bot to the job's open question, which resumes the job. False
+     * when the job asked nothing or `questionId` names an older question.
      */
     answer: (
       harness: Harness,
       chatId: ConversationId,
-      answer: {
-        agentId: string;
-        name: string;
-        questionId: string;
-        text: string;
-      },
+      answer: JobQuestionAnswer,
     ) => answerQuestion(state, harness, chatId, answer),
+
+    /**
+     * Hears each question a job asks about work a bot turn sent it, once its card is in the chat; it may hear one again
+     * after a restart. From every bot in this process.
+     */
+    onQuestion: (listener: (asked: JobAsked) => Promise<void>) => {
+      state.questionListeners.add(listener);
+
+      return () => void state.questionListeners.delete(listener);
+    },
+
+    /** What the jobs the turn answering `submissionId` started or messaged have done; undefined when it touched none. */
+    turnWork: (
+      harness: Harness,
+      chatId: ConversationId,
+      submissionId: string,
+    ) => turnWork(state, harness, chatId, submissionId),
   };
 };
 
@@ -1305,7 +1522,7 @@ const questionTool = (
   defineTool({
     name: QUESTION_TOOL,
     description:
-      "Ask the owner a question and end your turn. Ask only when the answer changes what you build or a decision is theirs to make; otherwise decide yourself and proceed. When the answer is one of a few choices, list them as options: the owner picks one with a click or writes their own. Their answer arrives as your next message.",
+      "Ask the owner a question and end your turn. Ask only when the answer changes what you build or a decision is theirs to make; otherwise decide yourself and proceed. When the answer is one of a few choices, list them as options: the owner picks one with a click or writes their own. When another bot delegated your task, that bot may answer first from its brief; the owner can still answer. The answer arrives as your next message.",
     parameters: Type.Object({
       question: Type.String({ minLength: 1, maxLength: 4000 }),
       options: Type.Optional(
@@ -1341,7 +1558,7 @@ const questionTool = (
         output: [
           {
             type: "text" as const,
-            text: "Asked the owner. End your turn now; their answer arrives as your next message.",
+            text: "Asked the owner. End your turn now; the answer arrives as your next message.",
           },
         ],
         control: { terminate: true },
@@ -1349,37 +1566,82 @@ const questionTool = (
     },
   });
 
+/** An answer to a job's question; `by` names who answered when it is not the owner. */
+export type JobQuestionAnswer = {
+  agentId: string;
+  name: string;
+  questionId: string;
+  text: string;
+  by?: string;
+};
+
 const answerQuestion = (
   kindState: JobKindState,
   harness: Harness,
   chatId: ConversationId,
-  answer: { agentId: string; name: string; questionId: string; text: string },
+  answer: JobQuestionAnswer,
 ) =>
   harness.commit(async (tx) => {
-    const record = (await tx.doc(kindState.Jobs, chatId)).jobs[answer.name];
+    const state = await tx.doc(kindState.Jobs, chatId);
+    const record = state.jobs[answer.name];
 
     if (!record) return false;
     const question = await tx.doc(kindState.Question, record.conversationId);
+    const pending = question.pending;
 
-    if (question.pending?.id !== answer.questionId) return false;
+    if (pending?.id !== answer.questionId) return false;
     question.pending = null;
     await queueDelivery(
       kindState,
       tx,
+      state,
       record,
       {
         agentId: answer.agentId,
         name: answer.name,
         conversationId: record.conversationId,
-        message: `The owner answered your question: ${answer.text}`,
+        message: `${answer.by ?? "The owner"} answered your question: ${answer.text}`,
         followUp: false,
         stops: record.stops ?? 0,
+        ...(pending.turn !== undefined && { turn: pending.turn }),
       },
-      chatId,
+      { chatId, replaces: pending.reporter },
     );
 
     return true;
   }, BACKGROUND_CONTEXT);
+
+/** One turn's work over several job records: open while any is, with every report and the first error. */
+export function mergeTurnWork(found: TurnWork[]): TurnWork | undefined {
+  if (!found.length) return undefined;
+  const error = found.find((work) => work.error)?.error;
+
+  return {
+    open: found.some((work) => work.open),
+    reports: found.flatMap((work) => work.reports),
+    ...(error && { error }),
+  };
+}
+
+/** What the jobs the turn answering `submissionId` started or messaged have done; undefined when it touched none. */
+const turnWork = async (
+  kindState: JobKindBase,
+  reader: DocumentReader,
+  chatId: ConversationId,
+  submissionId: string,
+): Promise<TurnWork | undefined> => {
+  const turns =
+    (await reader.snapshot(kindState.Jobs, chatId, BACKGROUND_CONTEXT))
+      ?.turns ?? {};
+
+  return mergeTurnWork(
+    Object.entries(turns).flatMap(([key, work]) =>
+      key.split(",").includes(submissionId)
+        ? [{ ...work, open: work.open.length > 0 }]
+        : [],
+    ),
+  );
+};
 
 /** Creates the kind's documents, anchor task, and answer listeners once. */
 const jobKindBase = (options: JobKindOptions): JobKindBase => {
@@ -1392,6 +1654,7 @@ const jobKindBase = (options: JobKindOptions): JobKindBase => {
     label,
     answerListeners: new Set<(answer: JobAnswer) => void>(),
     finishedListeners: new Set<(finished: JobFinished) => void>(),
+    questionListeners: new Set<(asked: JobAsked) => Promise<void>>(),
     ...jobDocuments(kind),
     // The job's conversation is owned by this task so it outlives the bot's turns and Esc.
     Anchor: defineAnchorTask(`crumble.${kind}-anchor`),

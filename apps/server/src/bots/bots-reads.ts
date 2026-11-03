@@ -5,6 +5,7 @@ import { isGroupTurn, pi, type BotsContext } from "./bots-context";
 import type { botsLookup } from "./bots-lookup";
 import { eventRequest } from "../event-sources/event-payload";
 import { latestMessagePreview, type MessageOrigin } from "./transcript";
+import { JOB_QUESTION_REQUEST } from "./runtime";
 
 type PageOptions = {
   before?: string | undefined;
@@ -50,6 +51,7 @@ export const botsOrigin = (context: BotsContext) => {
   >([
     ["script", scriptOrigin],
     ["delegate", botOrigin],
+    [JOB_QUESTION_REQUEST, botOrigin],
     [
       "credential",
       (subject) => Effect.succeed({ kind: "credential", name: subject }),
@@ -175,7 +177,7 @@ export const botsRuntimeReads = (
 
   const answerCodingJob = (
     agentId: string,
-    answer: { name: string; questionId: string; text: string },
+    answer: { name: string; questionId: string; text: string; by?: string },
   ) =>
     agent(agentId).pipe(
       Effect.flatMap((owner) =>

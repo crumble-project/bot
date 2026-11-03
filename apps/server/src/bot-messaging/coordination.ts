@@ -35,7 +35,7 @@ export function coordinationExtension(
   const delegate = defineTool({
     name: "delegate",
     description:
-      "Start a bounded task with a permitted bot by ID. Returns a receipt immediately. For a question whose answer you need in this turn, use ask_bot instead.",
+      "Start a bounded task with a permitted bot by ID. Returns a receipt immediately. For a question whose answer you need in this turn, use ask_bot instead. If the bot starts or messages a coding or desktop job for the task, the task stays pending until the job reports and the bot answers the report. A question the job asks may come to you first: answer it with answer_job_question from your brief, or tell the owner when only they can decide.",
     parameters: Type.Object({
       agentId: Type.String(),
       task: Type.String({ minLength: 1, maxLength: 32000 }),
@@ -59,7 +59,7 @@ export function coordinationExtension(
   const status = defineTool({
     name: "delegation_status",
     description:
-      "Read the status and completed answer of a bot message or task you sent. Other chat turns and private memory stay inaccessible. Optionally wait up to 60 seconds for the answer; if still pending, report that honestly instead of repeatedly checking.",
+      "Read the status and completed answer of a bot message or task you sent. Other chat turns and private memory stay inaccessible. A task stays pending while jobs the bot started for it work, which can take long; its answer then includes the bot's reply to each job report, and a failed or stopped job fails the task. Optionally wait up to 60 seconds for the answer; if still pending, report that honestly instead of repeatedly checking.",
     parameters: Type.Object({
       executionId: Type.String(),
       waitSeconds: Type.Optional(Type.Integer({ minimum: 0, maximum: 60 })),
@@ -123,10 +123,34 @@ export function coordinationExtension(
     },
   });
 
+  const answer = defineTool({
+    name: "answer_job_question",
+    description:
+      "Answer a question that a job asked about a task you delegated; the job resumes with your answer. Answer only what your brief or knowledge settles; when the decision is the owner's, tell the owner instead. Fails when the owner already answered.",
+    parameters: Type.Object({
+      questionId: Type.String({ minLength: 1, maxLength: 200 }),
+      answer: Type.String({ minLength: 1, maxLength: 32000 }),
+    }),
+    structuredOutputSchema: Type.Object({
+      agentId: Type.String(),
+      agent: Type.String(),
+      job: Type.String(),
+    }),
+    // A rerun after the answer resumed the job would fail as already answered.
+    replay: "unsafe",
+    execute: async (args) =>
+      toolOutput(
+        await messaging.answerQuestion(agent.id, {
+          questionId: args.questionId,
+          answer: args.answer,
+        }),
+      ),
+  });
+
   return defineExtension({
     name: "coordination",
     tools: agent.tools.includes("delegate")
-      ? [delegate, status, list, ask]
+      ? [delegate, status, list, ask, answer]
       : [],
   });
 }
