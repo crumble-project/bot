@@ -360,7 +360,6 @@ async function delegatedBuild(asking: Promise<void>) {
 
   const bot = (name: string, tools: string[], delegates: string[]) => ({
     name,
-    avatar: "bot",
     description: "",
     instructions: "",
     provider: "faux",
