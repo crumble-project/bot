@@ -44,42 +44,45 @@ export function AvatarsPage() {
             ),
           )}
         </div>
-        <label className="flex flex-col gap-2 text-sm">
-          Bot to edit
-          <select
-            aria-label="Bot to edit"
-            value={selected}
-            className="rounded-md border bg-background p-2"
-            onChange={(e) => {
-              const bot = bots.find((each) => each.id === e.target.value);
-              setSelected(e.target.value);
+        {/* A pending PATCH can't be cancelled; edits during it could save out of order. */}
+        <fieldset disabled={save.isPending} className="flex flex-col gap-6">
+          <label className="flex flex-col gap-2 text-sm">
+            Bot to edit
+            <select
+              aria-label="Bot to edit"
+              value={selected}
+              className="rounded-md border bg-background p-2"
+              onChange={(e) => {
+                const bot = bots.find((each) => each.id === e.target.value);
+                setSelected(e.target.value);
 
-              if (bot) setValue(bot.avatar);
+                if (bot) setValue(bot.avatar);
+                save.reset();
+              }}
+            >
+              <option value="">Preview only</option>
+              {bots.map((bot) => (
+                <option key={bot.id} value={bot.id}>
+                  {bot.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <AvatarEditor
+            key={selected}
+            value={value}
+            onChange={(next) => {
+              setValue(next);
               save.reset();
             }}
+          />
+          <Button
+            disabled={!selected || save.isPending}
+            onClick={() => save.mutate()}
           >
-            <option value="">Preview only</option>
-            {bots.map((bot) => (
-              <option key={bot.id} value={bot.id}>
-                {bot.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <AvatarEditor
-          key={selected}
-          value={value}
-          onChange={(next) => {
-            setValue(next);
-            save.reset();
-          }}
-        />
-        <Button
-          disabled={!selected || save.isPending}
-          onClick={() => save.mutate()}
-        >
-          Save avatar to bot
-        </Button>
+            Save avatar to bot
+          </Button>
+        </fieldset>
         {save.isError && (
           <p role="alert" className="text-sm text-destructive">
             {save.error.message}
