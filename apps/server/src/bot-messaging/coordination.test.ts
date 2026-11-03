@@ -18,7 +18,6 @@ const uuid = (n: number) =>
 
 const input = (name: string, delegates: string[] = [], enabled = true) => ({
   name,
-  avatar: "sparkles",
   description: "",
   instructions: "",
   provider: "openai" as const,

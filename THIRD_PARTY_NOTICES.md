@@ -1,13 +1,13 @@
 # Third-party notices
 
-## Bot avatars
+## Open Bot Avatar
 
-Bot avatars in the web UI (`apps/web/features/bots/bot-avatar.ts`, a port of apfelkern's `BotAvatar` library) are adapted from Hermex's drawn bot faces: their shapes, palette, eye geometry, blink schedule, and working pose. Hermex is available under the MIT License, Copyright (c) 2026 Uzair Ansar. The eye expressions follow Bloub's measured catalogue (jeremy-prt/bloub), also under the MIT License.
+Web avatars use `open-bot-avatar` 0.1.1, by Dominik Scholz, under the MIT License. The generation prompt in `apps/web/features/avatars/generate-avatar-prompt.txt` is copied from `DominikScholz/open-bot-avatar`, commit `386cd20258ae48f2e75345ce3c05e046e04d6ad7`, `skills/generate-avatar/references/system-prompt.md`.
 
 ```text
 MIT License
 
-Copyright (c) 2026 Uzair Ansar
+Copyright (c) 2026 Dominik Scholz
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

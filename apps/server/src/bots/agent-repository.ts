@@ -7,6 +7,11 @@ import { nowIso } from "../shared/time";
 import { McpServerRepository } from "../integrations/mcp-server-repository";
 import { SkillRepository } from "../skills/skill-repository";
 import { agents } from "./schema";
+import {
+  avatarDefinitionSchema,
+  defaultAvatarDefinition,
+} from "../contract/avatar";
+import { migrateAvatars } from "./avatar-migration";
 
 export type AgentPatch = Partial<
   Omit<AgentInput, "id" | "createdAt" | "updatedAt">
@@ -39,6 +44,7 @@ export class AgentRepository extends Context.Service<
     AgentRepository,
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
+      yield* migrateAvatars(db).pipe(Effect.orDie);
       const skillLibrary = yield* SkillRepository;
       const servers = yield* McpServerRepository;
 
@@ -60,7 +66,7 @@ export class AgentRepository extends Context.Service<
         const agent: Agent = {
           id: row.id,
           name: row.name,
-          avatar: row.avatar,
+          avatar: avatarDefinitionSchema.parse(JSON.parse(row.avatar)),
           description: row.description,
           instructions: row.instructions,
           provider: row.provider,
@@ -109,7 +115,6 @@ export class AgentRepository extends Context.Service<
 
       const columns = (input: AgentPatch & AgentInput) => ({
         name: input.name,
-        avatar: input.avatar,
         description: input.description,
         instructions: input.instructions,
         provider: input.provider,
@@ -141,6 +146,11 @@ export class AgentRepository extends Context.Service<
         yield* db.insert(agents).values({
           id: agentId,
           ...columns(input),
+          avatar: JSON.stringify(
+            avatarDefinitionSchema.parse(
+              input.avatar ?? defaultAvatarDefinition(agentId),
+            ),
+          ),
           createdAt: at,
           updatedAt: at,
         });
@@ -159,7 +169,13 @@ export class AgentRepository extends Context.Service<
 
         yield* db
           .update(agents)
-          .set({ ...columns({ ...old, ...patch }), updatedAt: yield* nowIso })
+          .set({
+            ...columns({ ...old, ...patch }),
+            avatar: JSON.stringify(
+              avatarDefinitionSchema.parse(patch.avatar ?? old.avatar),
+            ),
+            updatedAt: yield* nowIso,
+          })
           .where(eq(agents.id, agentId));
 
         if (patch.skills)

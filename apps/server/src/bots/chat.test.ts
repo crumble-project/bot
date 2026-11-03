@@ -90,7 +90,6 @@ function setup(
 
   const agent = opened.store.createAgent({
     name: "Chat",
-    avatar: "bot",
     description: "",
     instructions: "Answer",
     provider: "faux",

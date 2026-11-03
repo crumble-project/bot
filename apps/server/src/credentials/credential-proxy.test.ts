@@ -134,7 +134,6 @@ describe("credentialProxy", () => {
     const store = new Store(dir);
 
     const agentInput = {
-      avatar: "bot",
       description: "",
       instructions: "",
       provider: "faux",
@@ -352,7 +351,6 @@ test("the signing host is answered by the proxy, for a bot with a machine accoun
 
   const bot = store.createAgent({
     name: "bot",
-    avatar: "bot",
     description: "",
     instructions: "",
     provider: "faux",

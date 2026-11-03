@@ -14,7 +14,13 @@ import {
   jobsQuery,
   send,
 } from "@/lib/api";
-import { LiveBotAvatar, botColor, botStyle } from "@/features/bots/avatar";
+import {
+  BotAvatar,
+  LiveBotAvatar,
+  botColor,
+  botStyle,
+} from "@/features/bots/avatar";
+import { activityLabel, useActivity } from "@/features/bots/activity";
 import { type Outgoing, confirm, useOutgoing } from "./delivery";
 import {
   ConversationEmpty,
@@ -35,7 +41,6 @@ import {
   EventRow,
   OwnerMessage,
   ToolResultRow,
-  TypingDots,
   ARRIVAL,
   useArrivals,
   jobOf,
@@ -390,11 +395,24 @@ function ChatTranscript({
       ))}
       {running && (
         <MessageScrollerItem messageId="typing" className={ARRIVAL}>
-          <TypingDots />
+          <WorkingStatus bot={bot} />
         </MessageScrollerItem>
       )}
       {error && !running && <ChatFailure error={error} />}
     </ConversationScroller>
+  );
+}
+
+function WorkingStatus({ bot }: { bot: Bot }) {
+  const activity = useActivity(bot.id);
+
+  return (
+    <div className="flex items-center gap-2.5">
+      <BotAvatar bot={bot} size={32} live state="working" />
+      <span className="animate-pulse text-sm text-muted-foreground">
+        {activityLabel[activity]}…
+      </span>
+    </div>
   );
 }
 

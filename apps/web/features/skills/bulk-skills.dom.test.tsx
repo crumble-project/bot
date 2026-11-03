@@ -2,8 +2,8 @@ import { expect, spyOn, test } from "bun:test";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act, type ReactNode } from "react";
-import { queryClient } from "@/lib/api";
-import { BotPainter } from "@/features/bots/bot-avatar";
+import { queryClient, type Bot } from "@/lib/api";
+import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 
 type Package = {
   id: string;
@@ -58,27 +58,27 @@ async function fixture(
   for (const [key, value] of Object.entries(values))
     Object.defineProperty(globalThis, key, { configurable: true, value });
 
-  const paint = spyOn(BotPainter.prototype, "paint").mockImplementation(
-    () => {},
-  );
-
-  // SAFETY: Painting is stubbed; only these canvas methods are used by the avatar setup.
-  const context = spyOn(
-    window.HTMLCanvasElement.prototype,
-    "getContext",
-  ).mockReturnValue({ setTransform() {}, clearRect() {} } as never);
-
   const requests: string[] = [];
   const fail = new Set<string>();
 
   const bots: {
     id: string;
     name: string;
-    avatar: string;
+    avatar: Bot["avatar"];
     sharedSkills: string[];
   }[] = [
-    { id: "a", name: "Alpha", avatar: "", sharedSkills: [] },
-    { id: "b", name: "Beta", avatar: "", sharedSkills: [] },
+    {
+      id: "a",
+      name: "Alpha",
+      avatar: defaultAvatarDefinition("a"),
+      sharedSkills: [],
+    },
+    {
+      id: "b",
+      name: "Beta",
+      avatar: defaultAvatarDefinition("b"),
+      sharedSkills: [],
+    },
   ];
 
   let shared: Package[] = [
@@ -307,8 +307,6 @@ async function fixture(
     queryClient.clear();
     queryClient.setDefaultOptions(defaults);
     fetch.mockRestore();
-    context.mockRestore();
-    paint.mockRestore();
     await window.happyDOM.abort();
 
     for (const key of Object.keys(values)) {

@@ -99,7 +99,6 @@ async function until(condition: () => boolean) {
 
 const agentInput = {
   name: "Learner",
-  avatar: "bot",
   description: "",
   instructions: "Answer",
   provider: "faux",

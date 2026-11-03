@@ -84,7 +84,6 @@ describe("crash recovery", () => {
       const second = store.createAgent(
         {
           name: "Second",
-          avatar: "sparkles",
           description: "",
           instructions: "",
           // SAFETY: The faux provider is registered in the test model registry.

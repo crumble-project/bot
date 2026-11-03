@@ -50,7 +50,6 @@ function setup() {
   const bots = ["Planner", "Researcher", "Critic"].map((name) =>
     store.createAgent({
       name,
-      avatar: "bot",
       description: "",
       instructions: "Answer",
       provider: "openai",

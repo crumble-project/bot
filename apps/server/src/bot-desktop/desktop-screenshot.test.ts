@@ -10,6 +10,7 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "../bots/runtime";
+import { defaultAvatarDefinition } from "../contract/avatar";
 import { latestMessagePreview } from "../bots/transcript";
 import { agentInput, type Agent } from "../shared/domain";
 import { scriptedGuest } from "../../test/fixtures/scripted-guest";
@@ -193,6 +194,7 @@ const makeAgent = (): Agent => ({
   ...agentInput
     .omit({ desktopModel: true, reviewModel: true })
     .parse({ name: "Test", tools: ["desktop"] }),
+  avatar: defaultAvatarDefinition("test"),
   id: crypto.randomUUID(),
   // SAFETY: The faux provider is registered in the test model registry.
   provider: "faux" as never,

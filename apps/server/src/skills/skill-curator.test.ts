@@ -24,7 +24,6 @@ test("stale and archive bot-created skills by idle time, sparing pinned, schedul
 
   const agent = store.createAgent({
     name: "A",
-    avatar: "bot",
     description: "",
     instructions: "x",
     provider: "openai",

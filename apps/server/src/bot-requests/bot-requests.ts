@@ -17,6 +17,7 @@ import { BotNotices } from "../bots/bot-notices";
 import { Conflict, NotFound, type AppError } from "../shared/errors";
 import { botRequests } from "./schema";
 import { toolOutput } from "../shared/tool-output";
+import { defaultAvatarDefinition } from "../contract/avatar";
 
 export const REQUEST_BOT_TOOL = "request_bot";
 export const CREATE_BOTS_CAPABILITY = "create_bots";
@@ -179,7 +180,11 @@ export class BotRequests extends Context.Service<
                 .values({
                   id,
                   agentId,
-                  proposal: JSON.stringify(input.proposal),
+                  proposal: JSON.stringify({
+                    ...input.proposal,
+                    avatar:
+                      input.proposal.avatar ?? defaultAvatarDefinition(id),
+                  }),
                   reason: input.reason,
                   status: "pending",
                   createdAgentId: null,
@@ -317,7 +322,6 @@ export function botRequestExtension(
     execute: async (args) => {
       const proposal = agentInput.parse({
         name: args.name,
-        avatar: `bot:${crypto.randomUUID()}`,
         description: args.description,
         instructions: args.instructions,
         provider: args.provider ?? agent.provider,

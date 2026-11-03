@@ -319,7 +319,6 @@ test("bots and reviews can't change a skill the owner pinned", () => {
 
   const agent = store.createAgent({
     name: "A",
-    avatar: "bot",
     description: "",
     instructions: "x",
     provider: "openai",

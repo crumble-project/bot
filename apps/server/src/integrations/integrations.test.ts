@@ -7,6 +7,7 @@ import {
   withAbortSignal,
 } from "@earendil-works/chord/context";
 import type { Agent, MCPServer } from "../shared/domain";
+import { defaultAvatarDefinition } from "../contract/avatar";
 import {
   mcpToolPrefix,
   standaloneIntegrations,
@@ -28,7 +29,7 @@ import type { McpTransport } from "@earendil-works/pi-mcp";
 const agent = (id: string, mcpServers: string[]): Agent => ({
   id,
   name: "worker",
-  avatar: "sparkles",
+  avatar: defaultAvatarDefinition(id),
   description: "",
   instructions: "",
   provider: "openai",

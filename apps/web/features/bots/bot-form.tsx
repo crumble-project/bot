@@ -6,7 +6,6 @@ import {
   IconChevronRight,
   IconCopy,
   IconPencil,
-  IconArrowsShuffle,
 } from "@tabler/icons-react";
 import { AlertDialog, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -61,14 +60,8 @@ import {
 } from "@/features/settings/web-search-settings";
 import { SelectOptions } from "@/components/form-fields";
 import { ConfirmDeleteContent, WorkspacePage } from "@/components/workspace";
-import {
-  type AvatarChoice,
-  PALETTE,
-  SILHOUETTES,
-  formatAvatar,
-  lookOf,
-  parseAvatar,
-} from "./bot-avatar";
+import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
+import { AvatarEditor } from "@/features/avatars/avatar-editor";
 import {
   type ThinkingLevel,
   ReasoningSelect,
@@ -109,8 +102,6 @@ const DEFAULT_TOOLS = ["memory", "web", "delegate"];
 
 const DEFAULT_INSTRUCTIONS =
   "You are a thoughtful, capable personal assistant.";
-
-const seedAvatar = () => `bot:${randomId()}`;
 
 /** Set-up providers, plus the current one when it is not, so a bot's choice never silently changes. */
 function providerItems(providers: Provider[], current: string) {
@@ -289,11 +280,21 @@ function DisclosureRow({
 }
 
 function useBotIdentity(bot?: Bot) {
-  const [avatar, setAvatar] = useState(bot?.avatar ?? seedAvatar());
+  const [avatar, setAvatar] = useState(
+    () => bot?.avatar ?? defaultAvatarDefinition(bot?.id || randomId()),
+  );
+
   const [name, setName] = useState(bot?.name ?? "");
   const [description, setDescription] = useState(bot?.description ?? "");
 
-  return { avatar, setAvatar, name, setName, description, setDescription };
+  return {
+    avatar,
+    setAvatar,
+    name,
+    setName,
+    description,
+    setDescription,
+  };
 }
 
 function useBotBehavior(bot?: Bot) {
@@ -434,19 +435,13 @@ function useBotMutations(bot: Bot | undefined, input: () => BotInput) {
 
 function AvatarPicker({
   id,
-  avatar,
+  value,
   onChange,
 }: {
   id: string;
-  avatar: string;
-  onChange: (avatar: string) => void;
+  value: Bot["avatar"];
+  onChange: (value: Bot["avatar"]) => void;
 }) {
-  const { seed, choice: picked } = parseAvatar({ id, avatar });
-  const look = lookOf({ id, avatar });
-
-  const pick = (change: AvatarChoice) =>
-    onChange(formatAvatar(seed, { ...picked, ...change }));
-
   return (
     <Popover>
       <PopoverTrigger
@@ -454,82 +449,20 @@ function AvatarPicker({
           <button
             type="button"
             aria-label="Change avatar"
-            className="group relative shrink-0 rounded-3xl p-1 transition-[scale] outline-none active:scale-[0.96] focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="relative shrink-0 rounded-3xl p-1 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           />
         }
       >
-        <BotAvatar bot={{ id, avatar }} size={96} live />
-        <span className="absolute -right-1 -bottom-1 grid size-8 place-items-center rounded-full bg-background text-muted-foreground shadow-sm ring-1 ring-foreground/10 transition-colors group-hover:text-foreground">
+        <BotAvatar bot={{ id, avatar: value }} size={96} live />
+        <span className="absolute -right-1 -bottom-1 rounded-full bg-background p-2">
           <IconPencil className="size-4" />
         </span>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-auto">
-        <div className="flex flex-col gap-2">
-          <span className="text-xs font-medium text-muted-foreground">
-            Body
-          </span>
-          <div className="flex gap-1">
-            {SILHOUETTES.map((silhouette) => (
-              <button
-                key={silhouette}
-                type="button"
-                aria-label={`${silhouette} body`}
-                aria-pressed={look.silhouette === silhouette}
-                className={cn(
-                  "rounded-xl p-1 transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50",
-                  look.silhouette === silhouette && "bg-muted ring-2 ring-ring",
-                )}
-                onClick={() => pick({ silhouette })}
-              >
-                <BotAvatar
-                  bot={{
-                    id,
-                    avatar: formatAvatar(seed, { ...picked, silhouette }),
-                  }}
-                  size={32}
-                />
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex flex-col gap-2">
-          <span className="text-xs font-medium text-muted-foreground">
-            Color
-          </span>
-          <div className="flex gap-2 px-1">
-            {PALETTE.map((color) => (
-              <button
-                key={color}
-                type="button"
-                aria-label={`Color ${color}`}
-                aria-pressed={look.hex === color}
-                className={cn(
-                  "size-7 rounded-full ring-offset-2 ring-offset-popover transition-transform outline-none hover:scale-110 focus-visible:ring-2 focus-visible:ring-ring/50",
-                  look.hex === color && "ring-2 ring-ring",
-                )}
-                style={{ backgroundColor: color }}
-                onClick={() => pick({ color })}
-              />
-            ))}
-          </div>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="self-start"
-          onClick={() =>
-            onChange(
-              formatAvatar(randomId(), {
-                silhouette: look.silhouette,
-                color: look.hex,
-              }),
-            )
-          }
-        >
-          <IconArrowsShuffle data-icon="inline-start" />
-          New face
-        </Button>
+      <PopoverContent
+        align="start"
+        className="max-h-[80dvh] w-[min(30rem,calc(100vw-2rem))] overflow-y-auto"
+      >
+        <AvatarEditor value={value} onChange={onChange} />
       </PopoverContent>
     </Popover>
   );
@@ -794,7 +727,7 @@ function BotIdentityFields({
 
   return (
     <div className="flex items-start gap-6">
-      <AvatarPicker id={bot?.id ?? ""} avatar={avatar} onChange={setAvatar} />
+      <AvatarPicker id={bot?.id ?? ""} value={avatar} onChange={setAvatar} />
 
       <FieldGroup className="flex-1 gap-4">
         <Field data-invalid={(failed && !name.trim()) || undefined}>
@@ -881,6 +814,7 @@ function botInput(
   access: ReturnType<typeof useBotAccess>,
 ): BotInput {
   const { avatar, name, description, instructions, enabled } = details;
+
   const { provider, model, level } = selection;
   const { tools, mcpServers, desktopProvider, desktopModel } = access;
 

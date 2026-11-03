@@ -32,6 +32,45 @@ The hook preserves unstaged edits to generated files. If you skip the hook, run 
 
 The repository does not publish contract releases or bundles. To retrieve the specification for a server revision, use that revision's committed `openapi/` directory.
 
+## Bot avatars
+
+Contract version `6.0.0` intentionally replaces the `avatar` string with one validated geometry and colors object.
+`avatar` is optional on create and patch; stored bot responses always include it. There is no separate `avatarDefinition` field:
+
+```json
+{
+  "avatar": {
+    "definition": {
+      "version": 1,
+      "id": "box",
+      "name": "Box",
+      "body": { "path": "M20 20H80V80H20Z" },
+      "eyes": { "x": 50, "y": 46, "spacing": 15, "scale": 1 }
+    },
+    "color": "#38bdf8",
+    "eyeColor": "#151515"
+  }
+}
+```
+
+The definition uses Open Bot Avatar v1 geometry in a `0 0 100 100` viewBox.
+The server checks geometry with `validateAvatar` and accepts colors only as `#rgb` or `#rrggbb`.
+Invalid input returns `400`, including the geometry validator's error messages.
+Omitting `avatar` from a patch preserves it. Omitting it on create selects fresh gallery geometry from the bot ID, with library default colors.
+Legacy string input returns `400`. JSON imports contain the definition alone; the editor sets colors separately.
+
+The canonical object is stored as JSON in `agents.avatar`. The migration copies any previously saved `avatar_definition` values, then drops that interim column.
+Before serving bots, repository initialization replaces legacy strings with fresh ID-derived gallery defaults. Legacy seeds, silhouettes, and colors don't affect the new appearance.
+Valid saved definitions stay unchanged. Bot timestamps stay unchanged. Historical bot proposals are normalized too, preserving custom choices and decisions.
+This data migration is restartable; runtime reads and web rendering accept only the canonical object.
+
+Back up the database before upgrading. The migration overwrites legacy strings; the original appearance cannot be recovered without a backup.
+A code revert alone doesn't restore the old API, avatar data, or interim column. Restore the matching pre-upgrade database and binary together for a complete rollback.
+Restoring a backup discards changes made after that backup. There is no automatic down migration.
+
+This is an intentional breaking change for native clients. Native support requires [apple#3](https://github.com/crumble-project/apple/issues/3) and
+[android#7](https://github.com/crumble-project/android/issues/7) before those clients can use the new contract.
+
 ## Server-sent events
 
 All `/v1` streams require a Better Auth account session (a session bearer token or browser session cookie) and send `event: heartbeat` (`data: {}`) every 15 seconds. Clients must ignore heartbeats and unknown event names and recover state via the corresponding snapshot endpoint on reconnect.

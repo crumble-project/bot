@@ -23,7 +23,6 @@ const dirs: string[] = [];
 
 const input = (name: string, delegates: string[] = [], enabled = true) => ({
   name,
-  avatar: "sparkles",
   description: `${name} description`,
   instructions: "Answer plainly",
   provider: "openai" as const,

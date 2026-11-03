@@ -229,7 +229,7 @@ const soundsRoute = createRoute({
   component: SoundsPage,
 });
 
-// Not linked from the navigation: a place to try bot avatars and their gestures.
+// A studio for previewing and saving portable bot avatar definitions.
 const avatarsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/avatars",

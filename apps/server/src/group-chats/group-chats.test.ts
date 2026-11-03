@@ -86,7 +86,6 @@ function script(
 
 const bot = (name: string, enabled = true, model = "chat") => ({
   name,
-  avatar: "bot",
   description: "",
   instructions: "Answer",
   provider: "faux",

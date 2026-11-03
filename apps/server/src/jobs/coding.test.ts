@@ -205,7 +205,6 @@ function setup(dir: string, tools: string[] = ["coding"], instructions = "") {
   const agent = store.createAgent(
     {
       name: "Builder",
-      avatar: "bot",
       description: "",
       instructions,
       provider: "faux",

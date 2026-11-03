@@ -59,7 +59,6 @@ function script(offered: string[][]): FauxResponseFactory {
 
 const bot = (name: string) => ({
   name,
-  avatar: "bot",
   description: "",
   instructions: "",
   provider: "faux",

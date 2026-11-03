@@ -14,6 +14,7 @@ import type { Agent } from "../shared/domain";
 import { assertOwnMemoryInGroup, memorySourceOf } from "./memory-sources";
 import { AgentRuntime, type MemoryContext } from "../bots/runtime";
 import { Store } from "../../test/support/store";
+import { defaultAvatarDefinition } from "../contract/avatar";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -30,7 +31,6 @@ const temp = () => {
 
 const input = (name: string) => ({
   name,
-  avatar: "bot",
   description: "",
   instructions: "",
   provider: "faux",
@@ -158,6 +158,7 @@ describe("memorySourceOf", () => {
 test("the memory tool reports where it runs", async () => {
   const agent: Agent = {
     ...input("Ada"),
+    avatar: defaultAvatarDefinition("ada"),
     id: "00000000-0000-4000-8000-000000000601",
     createdAt: "2026-10-21T00:00:00.000Z",
     updatedAt: "2026-10-21T00:00:00.000Z",

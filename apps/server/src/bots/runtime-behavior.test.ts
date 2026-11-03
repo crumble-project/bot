@@ -17,6 +17,7 @@ import { ProviderCredentials } from "../providers/provider-credentials";
 import { Store } from "../../test/support/store";
 import { loadCommonSkills } from "../skills/common-skills";
 import { agentInput, type Agent } from "../shared/domain";
+import { defaultAvatarDefinition } from "../contract/avatar";
 import type { AvailableSkill } from "../skills/skill-library";
 import { standaloneSkills, type BotSkills } from "../skills/skills";
 
@@ -34,6 +35,7 @@ const makeAgent = (): Agent => ({
   ...agentInput
     .omit({ desktopModel: true, reviewModel: true })
     .parse({ name: "Test" }),
+  avatar: defaultAvatarDefinition("test"),
   id: crypto.randomUUID(),
   // SAFETY: The faux provider is registered in the test model registry.
   provider: "faux" as never,

@@ -43,6 +43,7 @@
         "effect": "4.0.6",
         "hono": "4.13.13",
         "microsandbox": "0.7.8",
+        "open-bot-avatar": "0.1.1",
         "pele": "1.9.0",
         "pkijs": "4.0.0",
         "proper-lockfile": "4.1.2",
@@ -82,6 +83,7 @@
         "cron-parser": "5.10.2",
         "cronstrue": "3.38.0",
         "cuelume": "0.2.8",
+        "open-bot-avatar": "0.1.1",
         "pele": "1.9.0",
         "react": "19.3.1",
         "react-dom": "19.3.1",
@@ -1145,6 +1147,8 @@
     "onetime": ["onetime@5.1.2", "", { "dependencies": { "mimic-fn": "^2.1.0" } }, "sha512-kbpaSSGJTWdAY5KPVeMOKXSrPtr8C8C7wodJbcsd51jRnmD+GZu8Y0VoU6Dm5Z4vWr0Ig/1NKuWRKf7j5aaYSg=="],
 
     "open": ["open@11.0.4", "", { "dependencies": { "default-browser": "^5.5.1", "define-lazy-prop": "^3.0.0", "is-in-ssh": "^1.0.0", "is-inside-container": "^1.0.0", "powershell-utils": "^0.2.1", "wsl-utils": "^1.0.0" } }, "sha512-++Zlftm0kVLPmzC06t6epuWmcRMDbI4z5P3NNX979WA/k23+NtSOynEGzsVfZwguKw2mi5umVgnBlJQMwRz4Pg=="],
+
+    "open-bot-avatar": ["open-bot-avatar@0.1.1", "", {}, "sha512-Rl01S8qVEbXaiOYL/WnCwTU5PAoBsWtHCjo4mQSb5wK3w7SnkMnOTcXk4unbp+6LwllvB5AHIGz3tlWH8BxGWA=="],
 
     "openai": ["openai@7.19.0", "", { "peerDependencies": { "@aws-sdk/credential-provider-node": ">=3.972.0 <4", "@smithy/hash-node": ">=4.3.0 <5", "@smithy/signature-v4": ">=5.4.0 <6", "undici": ">=5 <9", "ws": "^8.21.0", "zod": "^3.25 || ^4.0" }, "optionalPeers": ["@aws-sdk/credential-provider-node", "@smithy/hash-node", "@smithy/signature-v4", "undici", "ws", "zod"] }, "sha512-MX2s3u2L5racTO0CC/SWpCOasJQBCJrqLKXK+l82cAhdeF8mPMBEe/gxMm0ZFa2xpKpOFLRjxv5afYEZbBXmbQ=="],
 

@@ -25,7 +25,6 @@ const input = (
   enabled = true,
 ) => ({
   name,
-  avatar: "sparkles",
   description: "",
   instructions: "",
   provider: "openai" as const,
