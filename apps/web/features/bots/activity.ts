@@ -69,3 +69,15 @@ export function useActivity(id: string) {
 
 export const isBusy = (activity: Activity) =>
   activity !== "idle" && activity !== "failed";
+
+/** What the chat says a busy bot is doing. */
+export const activityLabel: Record<Activity, string> = {
+  idle: "Working",
+  thinking: "Thinking",
+  writing: "Writing",
+  searching: "Searching",
+  remembering: "Remembering",
+  tinkering: "Using tools",
+  struggling: "Retrying",
+  failed: "Working",
+};
