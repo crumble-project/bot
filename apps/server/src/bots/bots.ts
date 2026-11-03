@@ -12,7 +12,12 @@ import { botsService } from "./bots-service";
 import { BotNotices } from "./bot-notices";
 import { ConversationRepository } from "./conversation-repository";
 import { ExecutionRepository } from "./execution-repository";
-import { BotRuntime, type AgentRuntime, type RuntimeSnapshot } from "./runtime";
+import {
+  BotRuntime,
+  JOB_QUESTION_REQUEST,
+  type AgentRuntime,
+  type RuntimeSnapshot,
+} from "./runtime";
 import { EventRepository } from "../event-sources/event-repository";
 import type { BotMessageEvent } from "./transcript";
 
@@ -20,6 +25,10 @@ export { GROUP_TURN_PREFIX } from "./bots-context";
 
 export const delegationRequest = (sourceAgentId: string, taskId: string) =>
   `delegate:${sourceAgentId}:${taskId}`;
+
+/** A job's question relayed from the bot whose job asks to the bot that delegated the job's task. */
+export const jobQuestionRequest = (assigneeId: string, questionId: string) =>
+  `${JOB_QUESTION_REQUEST}:${assigneeId}:${questionId}`;
 
 /** A finished reply anywhere on the server, for clients that notify their owner. */
 export type ReplyActivity = {
@@ -141,9 +150,10 @@ export class Bots extends Context.Service<
       name: string,
       options: PageOptions,
     ) => Effect.Effect<Page<"codingJobHistory">, AppError>;
+    /** `by` names who answered when it is not the owner, such as the bot that delegated the job's task. */
     readonly answerCodingJob: (
       agentId: string,
-      answer: { name: string; questionId: string; text: string },
+      answer: { name: string; questionId: string; text: string; by?: string },
     ) => Effect.Effect<void, AppError>;
     readonly desktopJobs: (
       agentId: string,

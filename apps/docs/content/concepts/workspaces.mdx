@@ -82,6 +82,11 @@ with a few answers to pick from, sometimes several at once; you can always
 write your own instead. Answer
 in either place and the job continues. Questions survive a server restart.
 
+When another bot delegated the job's task, that bot gets the question first
+and may answer it. The question still shows in the chat and on the panel until
+someone answers; once the job has an answer, a second one is refused. See
+[Messaging Other Bots](/concepts/schedules-and-integrations#messaging-other-bots).
+
 While the job waits, its workspace keeps running for the server's question
 grace period, 15 minutes unless an admin changed it, so servers the job
 started stay up. After that the workspace stops as usual, and your answer

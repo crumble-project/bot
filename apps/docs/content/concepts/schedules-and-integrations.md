@@ -60,6 +60,18 @@ Delegation goes one level deep. A bot that received delegated work can't pass
 it on, which keeps a chain of bots from handing a task around until nobody
 remembers who asked.
 
+When the receiving bot starts a coding or desktop job for the task, the
+delegation stays pending until the job reports and the receiving bot answers
+the report. The delegating bot then gets that answer too. If the job fails or
+is stopped, the delegation fails with the reason.
+
+A coding job's questions go to the bot that delegated the task first, since it
+wrote the brief. It answers from what it knows, or tells you when only you can
+decide. The question also appears in the receiving bot's chat, and you can
+answer it there yourself; the first answer wins. The delegating bot gets each
+question once. If it no longer has the **Messaging** capability or is turned
+off, the question goes only to you.
+
 ## Discord Messages
 
 Connect Discord to your existing bot chats with a default bot, per-message

@@ -58,7 +58,12 @@ import { credentialProxy } from "../credentials/credential-proxy";
 import { coreLayer, type CoreServices } from "./core-layer";
 import { runnerOf } from "../shared/runner";
 import { builtinPlugins, builtinVendors } from "./builtin-plugins";
-import { heldActionNotices, jobAnswers, jobTools } from "./plugin-layers";
+import {
+  heldActionNotices,
+  jobAnswers,
+  jobQuestions,
+  jobTools,
+} from "./plugin-layers";
 import {
   conversationEnv,
   jobExtensions,
@@ -298,6 +303,7 @@ function accountLayer(
     curation,
     skillUpdateChecks,
     jobAnswers,
+    jobQuestions,
     heldActionNotices,
     jobTools,
     coordinationTools,

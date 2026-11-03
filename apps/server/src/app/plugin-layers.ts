@@ -2,6 +2,7 @@ import { Effect, Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import { HeldActions, type HeldAction } from "../bot-desktop/held-actions";
 import { Bots } from "../bots/bots";
+import { BotMessaging } from "../bot-messaging/bot-messaging";
 import { jobExtensions, pluginJobKinds, Plugins } from "../plugins/plugins";
 
 /** Offers bots the job tools of the plugins' job kinds. */
@@ -27,6 +28,36 @@ export const jobAnswers = Layer.effectDiscard(
         jobKinds.map((kind) =>
           kind.onAnswer((answer) =>
             Effect.runSync(bots.announceJobAnswer(answer)),
+          ),
+        ),
+      ),
+      (stops) =>
+        Effect.sync(() => {
+          for (const stop of stops) stop();
+        }),
+    );
+  }),
+);
+
+/** Passes each job question to the bot that delegated the job's task, until the layer's scope closes. */
+export const jobQuestions = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const messaging = yield* BotMessaging;
+    const jobKinds = pluginJobKinds(yield* Plugins);
+
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        jobKinds.map((kind) =>
+          kind.onQuestion((asked) =>
+            Effect.runPromise(
+              messaging.relayQuestion(asked).pipe(
+                // The owner still sees the question's card and can answer it.
+                Effect.catchCause((cause) =>
+                  Effect.logError("Job question relay failed", cause),
+                ),
+                Effect.asVoid,
+              ),
+            ),
           ),
         ),
       ),

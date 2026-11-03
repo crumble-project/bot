@@ -65,6 +65,9 @@ export const desktopAnswers = desktop.onAnswer;
 export const desktopJobs = (harness: Harness, chatId: ConversationId) =>
   desktop.list(harness, chatId);
 
+/** What the desktop jobs a bot turn started or messaged have done. */
+export const desktopTurnWork = desktop.turnWork;
+
 export const desktopEnv = (
   workspaces: Workspaces,
   agentId: string,
@@ -183,6 +186,7 @@ export const desktopPlugin = (
           env: (agentId, target, context) =>
             desktopEnv(workspaces, agentId, target, context),
           onAnswer: desktopAnswers,
+          onQuestion: desktop.onQuestion,
         },
       ]
     : [],

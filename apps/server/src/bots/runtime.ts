@@ -22,8 +22,9 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CODEMODE_TOOL_NAME } from "@earendil-works/pi-durable/codemode";
 import { Context, Effect, Layer, Predicate } from "effect";
-import { answerCodingJob, codingJobs } from "../jobs/coding";
-import { desktopJobs } from "../jobs/desktop";
+import { answerCodingJob, codingJobs, codingTurnWork } from "../jobs/coding";
+import { desktopJobs, desktopTurnWork } from "../jobs/desktop";
+import { mergeTurnWork, type TurnWork } from "../jobs/jobs";
 import { JOB_KNOWLEDGE_EXTENSION } from "../jobs/jobs";
 import { messageTag } from "../jobs/owner-request";
 import {
@@ -641,8 +642,20 @@ function assertImageSupport(
     });
 }
 
-function botRelayText(origin: MessageOrigin, text: string) {
-  return `Message from bot ${JSON.stringify(origin.name ?? "Another bot")} (${origin.agentId ?? "unknown"}):\n\n${text}\n\nReply to this bot's message. Your answer will be returned to the requesting bot.`;
+/** Request IDs of job questions relayed to the bot that delegated the job's task: `job-question:<asking bot>:<question>`. */
+export const JOB_QUESTION_REQUEST = "job-question";
+
+// A relayed job question says itself how to answer; a plain reply never reaches the job.
+function botRelayText(
+  origin: MessageOrigin,
+  text: string,
+  requestId: string | undefined,
+) {
+  const from = `Message from bot ${JSON.stringify(origin.name ?? "Another bot")} (${origin.agentId ?? "unknown"}):\n\n${text}`;
+
+  return requestId?.startsWith(`${JOB_QUESTION_REQUEST}:`)
+    ? from
+    : `${from}\n\nReply to this bot's message. Your answer will be returned to the requesting bot.`;
 }
 
 function inputContent(text: string, blocks: PreparedAttachments["blocks"]) {
@@ -1350,7 +1363,7 @@ export class AgentRuntime {
 
     const tagged =
       options.origin?.kind === "bot"
-        ? botRelayText(options.origin, prepared.modelContent)
+        ? botRelayText(options.origin, prepared.modelContent, requestId)
         : messageTag(options.origin?.kind, requestId, prepared.modelContent);
 
     const content = inputContent(
@@ -1512,15 +1525,34 @@ export class AgentRuntime {
     return this.jobs(agent, codingJobs);
   }
 
-  /** Sends the owner's answer to a coding job's open question; false when the job no longer waits on it. */
+  /** Sends an answer to a coding job's open question; false when the job no longer waits on it. */
   async answerCodingJob(
     agent: Agent,
-    answer: { name: string; questionId: string; text: string },
+    answer: { name: string; questionId: string; text: string; by?: string },
   ) {
     const { harness } = await this.open(agent);
     const root = await harness.root(BACKGROUND_CONTEXT);
 
     return answerCodingJob(harness, root.id, { agentId: agent.id, ...answer });
+  }
+
+  /** What the jobs of every kind did for the chat turn answering `submissionId`; undefined when it touched none. */
+  async turnWork(
+    agent: Agent,
+    submissionId: string,
+  ): Promise<TurnWork | undefined> {
+    const { harness } = await this.open(agent);
+    const root = await harness.root(BACKGROUND_CONTEXT);
+
+    return mergeTurnWork(
+      (
+        await Promise.all(
+          [codingTurnWork, desktopTurnWork].map((read) =>
+            read(harness, root.id, submissionId),
+          ),
+        )
+      ).filter((work) => work !== undefined),
+    );
   }
 
   /** One coding job's transcript, paged like the chat's. */
