@@ -71,8 +71,12 @@ Work a bot hands to a separate agent in its workspace, for work that runs beside
 _Avoid_: Subagent, session, sub-chat
 
 **Job question**:
-A question a coding job asks the owner when the answer changes what it builds. The job waits until the owner answers in the bot chat or on the job's panel, then continues.
+A question a coding job asks when the answer changes what it builds. When another bot delegated the job's task, the question goes to that reporter first; the owner sees it in the bot chat and on the job's panel either way. The job waits until the reporter or the owner answers, whichever comes first, then continues.
 _Avoid_: Prompt, approval, held action
+
+**Reporter**:
+The bot that delegated a task to another bot. A job started for that task asks the reporter its questions before the owner, and the delegation stays open until the job has reported.
+_Avoid_: Requester, parent bot, manager
 
 **Automation**:
 A prompt a bot receives once at a set time, repeatedly on a schedule, or whenever an event arrives at an event source, answered in its bot chat. The owner or a bot can create one.

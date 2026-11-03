@@ -67,6 +67,7 @@ function setup(
       _conversation: string,
       submission: string,
     ) => [`answer:${submission}`],
+    turnWork: async () => undefined,
     abort: async () => {},
     close: async () => {},
     recordBotMessage: async () => {},
