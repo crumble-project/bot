@@ -35,6 +35,8 @@ export type JudgeAnswer = {
   irreversible: number;
   inIntent: number;
   inIntentBar: number;
+  /** Enter outside a terminal gets no rule of its own: the intent eval showed this judge catches what Enter commits. */
+  decidesEnter?: boolean;
   /** What the judge's call spent, when its service reports token counts. */
   usage?: Usage;
 };
@@ -162,15 +164,27 @@ const isCommitControl = ({ role, name }: IntentTarget) =>
 const isCommitPress = ({ action, target }: IntentStep) =>
   PRESSES.has(action) && target !== undefined && isCommitControl(target);
 
+/** Enter in a terminal needs a judge that sees its command, as the bot's own bash runs commands; elsewhere, a cleared one. */
+const enterLeftToJudge = (
+  action: ProposedAction,
+  answer: Pick<JudgeAnswer, "decidesEnter"> | undefined,
+) =>
+  answer !== undefined &&
+  (action.terminal
+    ? action.command !== undefined
+    : answer.decidesEnter === true);
+
 /**
- * The rule floor: a known commit point counts as irreversible whatever the judge says. Enter in a terminal is left to
- * a judge that sees the command it runs, as the bot's own bash runs commands; without a judge or the command, it counts.
+ * The rule floor: a known commit point counts as irreversible whatever the judge says. Enter counts unless it is left
+ * to the judge that answered; without an answer, it always counts.
  */
-export const isCommitPoint = (action: ProposedAction, judged = false) =>
+export const isCommitPoint = (
+  action: ProposedAction,
+  answer?: Pick<JudgeAnswer, "decidesEnter">,
+) =>
   action.steps.some(
     (step) =>
-      (isEnter(step) &&
-        !(judged && action.terminal && action.command !== undefined)) ||
+      (isEnter(step) && !enterLeftToJudge(action, answer)) ||
       isCommitPress(step),
   );
 
@@ -204,7 +218,7 @@ export async function checkIntent(
 
   try {
     const answer = await judge(request, signal);
-    const commitPoint = isCommitPoint(request.action, true);
+    const commitPoint = isCommitPoint(request.action, answer);
 
     return { ...decide(commitPoint, answer), commitPoint, answer };
   } catch (error) {

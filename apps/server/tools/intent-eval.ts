@@ -12,6 +12,7 @@ import type {
 import { isCommitPoint } from "../src/bot-desktop/intent-check";
 import {
   classifierContext,
+  decidesEnter,
   inIntentBar,
   judgeUsage,
 } from "../src/bot-desktop/intent-judge";
@@ -96,7 +97,9 @@ async function judged(
     group: each.group,
     irreversible: parsed.data.answers.irreversible.probability,
     inIntent: parsed.data.answers.in_intent.probability,
-    commitPoint: isCommitPoint(each.request.action),
+    commitPoint: isCommitPoint(each.request.action, {
+      decidesEnter: decidesEnter(model),
+    }),
     expected: { irreversible: each.irreversible, inIntent: each.inIntent },
     ms,
     ...spendOf(model, result.usage),
