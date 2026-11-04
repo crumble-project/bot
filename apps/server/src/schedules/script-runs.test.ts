@@ -261,7 +261,11 @@ test("exit zero succeeds with combined output and uses workspace options and cre
     droppedBytes: 0,
   });
   // The script sees the credential's placeholder, never its value.
-  expect(run.output).toMatch(/^out:crumble-credential-[0-9a-f]{48}:err$/);
+  // stdout and stderr are separate pipes, so their chunks interleave in any order.
+  expect(run.output).toContain(":err");
+  expect(run.output.replace(":err", "")).toMatch(
+    /^out:crumble-credential-[0-9a-f]{48}$/,
+  );
   expect(run.finishedAt).not.toBeNull();
   expect(workspaces.environments[0]?.agentId).toBe(agent.id);
   expect(workspaces.calls[0]?.[1]).toMatchObject({
