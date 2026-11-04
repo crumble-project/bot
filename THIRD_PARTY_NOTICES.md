@@ -2,12 +2,40 @@
 
 ## Open Bot Avatar
 
-Web avatars use `open-bot-avatar` 0.1.1, by Dominik Scholz, under the MIT License. The generation prompt in `apps/web/features/avatars/generate-avatar-prompt.txt` is copied from `DominikScholz/open-bot-avatar`, commit `386cd20258ae48f2e75345ce3c05e046e04d6ad7`, `skills/generate-avatar/references/system-prompt.md`.
+Web avatars use `open-bot-avatar` 0.1.2, by Dominik Scholz, under the MIT License. The generation prompt in `apps/web/features/avatars/generate-avatar-prompt.txt` is copied from `DominikScholz/open-bot-avatar`, commit `386cd20258ae48f2e75345ce3c05e046e04d6ad7`, `skills/generate-avatar/references/system-prompt.md`.
 
 ```text
 MIT License
 
 Copyright (c) 2026 Dominik Scholz
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## shadcn
+
+`apps/web/shadcn-tailwind.css` is copied from `dist/tailwind.css` of the `shadcn` 4.22.1 package and reformatted, by shadcn, under the MIT License.
+
+```text
+MIT License
+
+Copyright (c) 2023 shadcn
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
