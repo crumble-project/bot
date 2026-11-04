@@ -50,41 +50,20 @@ type Block = {
   arguments?: { command?: string; path?: string };
 };
 
-type Totals = { input: number; output: number; cost: number };
-
 type UsageModels = {
-  models?: Record<
-    string,
-    {
-      input?: number;
-      output?: number;
-      cacheRead?: number;
-      cost?: { total?: number };
-    }
-  >;
+  models?: Record<string, { cost?: { total?: number } }>;
 };
 
-const numberFormat = new Intl.NumberFormat();
-
-/** Sums a job's token use and cost over its models, as `{in} in · {out} out · $cost`. */
-export function usageLine(usage: CodingJob["usage"]) {
-  // SAFETY: Pi Durable usage documents keep per-model token counts and cost under `models`.
+/** A job's cost over its models. Subscription providers such as Claude Code report zero, which says nothing. */
+export function costLine(usage: CodingJob["usage"]) {
+  // SAFETY: Pi Durable usage documents keep per-model cost under `models`.
   const models = Object.values(
     (usage as UsageModels | undefined)?.models ?? {},
   );
 
-  if (models.length === 0) return null;
+  const cost = models.reduce((sum, model) => sum + (model.cost?.total ?? 0), 0);
 
-  const totals = models.reduce<Totals>(
-    (sum, model) => ({
-      input: sum.input + (model.input ?? 0) + (model.cacheRead ?? 0),
-      output: sum.output + (model.output ?? 0),
-      cost: sum.cost + (model.cost?.total ?? 0),
-    }),
-    { input: 0, output: 0, cost: 0 },
-  );
-
-  return `${numberFormat.format(totals.input)} in · ${numberFormat.format(totals.output)} out · $${totals.cost.toFixed(4)}`;
+  return cost > 0 ? `$${cost.toFixed(4)}` : null;
 }
 
 const STEPS = new Map([
@@ -455,11 +434,7 @@ function JobTitle({
 }) {
   const Icon = job.kind === "coding" ? IconHammer : IconDeviceDesktop;
 
-  const subtitle = [
-    kindLabel(job),
-    current?.model?.model,
-    usageLine(current?.usage),
-  ];
+  const subtitle = [current?.model?.model, costLine(current?.usage)];
 
   return (
     <>
