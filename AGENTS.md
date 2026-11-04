@@ -20,4 +20,4 @@ Read `CONTRIBUTING.md` before you commit, open a pull request, change a database
 
 # Web UI components
 
-Add shadcn components with `bun run ui:add <component...>`, and update `apps/web/shadcn-tailwind.css` with `bun run ui:add --css <version>`. This replaces the shadcn CLI, which needs 558 packages to run.
+Add shadcn components with `bun run ui:add <component...>`, which runs the shadcn CLI through `bunx` so the package stays out of installs. `apps/web/shadcn-tailwind.css` is a copy of the stylesheet the package publishes: to update it, copy that file from the new version, then raise the version in the `ui:add` script and `THIRD_PARTY_NOTICES.md`.

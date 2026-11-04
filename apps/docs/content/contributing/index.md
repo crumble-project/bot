@@ -41,6 +41,7 @@ From the `bot` root:
 ```bash
 bun run check   # lint, format check, typecheck, contract drift, and unit tests
 bun run fix     # format and apply lint fixes
+bun run ui:add COMPONENT  # add a shadcn/ui component to apps/web
 ```
 
 `bun install` sets up the Git hooks in `.githooks/`. The commit and push
