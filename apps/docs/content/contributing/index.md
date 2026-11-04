@@ -74,7 +74,7 @@ Route and event schemas in `apps/server/src/contract/` generate everything in
 
 ```bash
 bun run openapi:generate        # regenerate openapi/
-bun run contract:validate       # validate the OpenAPI and JSON Schemas offline
+bun run contract:validate       # validate the JSON Schemas offline
 bun run contract:compatibility BASELINE_DIRECTORY  # compare against a baseline OpenAPI directory
 ```
 

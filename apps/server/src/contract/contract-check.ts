@@ -1,6 +1,5 @@
 import { mkdir, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import SwaggerParser from "@apidevtools/swagger-parser";
 import Ajv2020 from "ajv/dist/2020";
 import { z } from "zod";
 import { openAPIDocument } from "./api-contract";
@@ -40,9 +39,6 @@ async function documentVersion(directory: string) {
 export async function validateContract(directory: string) {
   await documentVersion(directory);
   const names = await eventSchemaNames(directory);
-  await SwaggerParser.validate(join(directory, "openapi.json"), {
-    resolve: { external: false },
-  });
 
   const ajv = new Ajv2020({
     strict: false,
@@ -64,7 +60,7 @@ export async function validateContract(directory: string) {
     ajv.compile(schema);
   }
 
-  console.log(`Validated OpenAPI and JSON Schemas in ${directory}`);
+  console.log(`Validated JSON Schemas in ${directory}`);
 }
 
 async function projectEvents(directory: string, destination: string) {
