@@ -289,6 +289,8 @@ async function fixture(
 
   try {
     await render(<SkillsPage />);
+    // A fixed wait loses to the first fetch on a busy machine, and the list isn't there yet.
+    await waitFor(() => queryClient.isFetching() === 0);
     await run({
       window,
       container,
