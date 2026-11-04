@@ -31,6 +31,10 @@ export const DEFAULT_JUDGE: JudgeModelRef = {
 const IN_INTENT_BARS = new Map([["typesafe/jev-latest", 0.5]]);
 const UNEVALUATED_BAR = 0.9;
 
+// GPT-6 Luna rated every risky URL and form submit 77% irreversible or more in the eval (61 cases, 2026-11-04). Jev
+// let a typed repository delete and a URL sending session data through, so it keeps the Enter rule.
+const ENTER_JUDGES = new Set(["openai/gpt-6-luna"]);
+
 // A chat judge answers 0 or 1, so any bar between them reads its answer.
 const CHAT_BAR = 0.5;
 
@@ -57,6 +61,10 @@ export function judgeUsage(model: AnyModel, usage: Usage): Usage {
 /** The in-intent probability a classifier must reach for an irreversible action to run. */
 export const inIntentBar = (model: AnyModel) =>
   IN_INTENT_BARS.get(`${model.provider}/${model.id}`) ?? UNEVALUATED_BAR;
+
+/** Whether the classifier judges Enter outside a terminal itself, instead of Enter counting as a commit point. */
+export const decidesEnter = (model: AnyModel) =>
+  ENTER_JUDGES.has(`${model.provider}/${model.id}`);
 
 // Used in this order when no key reaches a classifier.
 const SMALL_CHAT_MODELS: JudgeModelRef[] = [
@@ -115,6 +123,7 @@ function classifierJudge(
       irreversible: irreversible.probability,
       inIntent: inIntent.probability,
       inIntentBar: inIntentBar(model),
+      decidesEnter: decidesEnter(model),
       ...(result.usage && { usage: judgeUsage(model, result.usage) }),
     };
   };

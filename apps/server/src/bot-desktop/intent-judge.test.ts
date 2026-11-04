@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { providerModels } from "../providers/providers";
 import { decide } from "./intent-check";
-import { inIntentBar, judgeUsage } from "./intent-judge";
+import { decidesEnter, inIntentBar, judgeUsage } from "./intent-judge";
 
 const catalog = providerModels(undefined, [], { allowAmbientEnv: false });
 
@@ -16,6 +16,11 @@ const classifier = (provider: string, id: string) => {
 test("Jev's in-intent bar comes from the intent eval; an unevaluated classifier must be sure", () => {
   expect(inIntentBar(classifier("typesafe", "jev-latest"))).toBe(0.5);
   expect(inIntentBar(classifier("openai", "gpt-6-luna"))).toBe(0.9);
+});
+
+test("only GPT-6 Luna decides Enter: the intent eval showed Jev missing what Enter can commit", () => {
+  expect(decidesEnter(classifier("openai", "gpt-6-luna"))).toBe(true);
+  expect(decidesEnter(classifier("typesafe", "jev-latest"))).toBe(false);
 });
 
 test("an asked-for commit point runs at Jev's bar and is held at the default one", () => {

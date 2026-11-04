@@ -67,15 +67,67 @@ describe("the rule floor", () => {
     const enter = { action: "key", keys: "Return" };
     const terminal = { steps: [enter], terminal: true, command: "$ ls" };
 
-    expect(isCommitPoint(terminal, true)).toBe(false);
+    expect(isCommitPoint(terminal, {})).toBe(false);
     // Without a judge, or without the command it runs, the Enter still counts.
     expect(isCommitPoint(terminal)).toBe(true);
-    expect(isCommitPoint({ steps: [enter], terminal: true }, true)).toBe(true);
+    expect(isCommitPoint({ steps: [enter], terminal: true }, {})).toBe(true);
     expect(
       isCommitPoint(
         { ...terminal, steps: [enter, click("button", "Delete")] },
-        true,
+        {},
       ),
+    ).toBe(true);
+  });
+
+  test("leaves Enter elsewhere only to a judge the eval cleared for it", () => {
+    const enter = { steps: [{ action: "key", keys: "Return" }] };
+    const cleared = { decidesEnter: true };
+
+    expect(isCommitPoint(enter, cleared)).toBe(false);
+    expect(isCommitPoint(enter, {})).toBe(true);
+    expect(isCommitPoint(enter)).toBe(true);
+    // A named button stays a commit point, and an unread terminal stays unread.
+    expect(
+      isCommitPoint(
+        { steps: [...enter.steps, click("button", "Delete")] },
+        cleared,
+      ),
+    ).toBe(true);
+    expect(isCommitPoint({ ...enter, terminal: true }, cleared)).toBe(true);
+  });
+
+  test("a cleared judge decides Enter by what it does", async () => {
+    const enter = request({ action: "key", keys: "Return" });
+    const answer = { inIntentBar: 0.9, decidesEnter: true };
+
+    const held = async (irreversible: number, inIntent: number) =>
+      (
+        await checkIntent(
+          judging({ ...answer, irreversible, inIntent }),
+          enter,
+          undefined,
+        )
+      ).held;
+
+    // Browsing the owner didn't literally ask for runs; an unasked commit doesn't.
+    expect(await held(0, 0.01)).toBe(false);
+    expect(await held(0.98, 0)).toBe(true);
+    expect(await held(0.98, 0.95)).toBe(false);
+
+    const failing = async () => {
+      throw new Error("judge down");
+    };
+
+    expect((await checkIntent(failing, enter, undefined)).held).toBe(true);
+    // Every other judge still has to be confident the owner asked.
+    expect(
+      (
+        await checkIntent(
+          judging({ irreversible: 0, inIntent: 0.01, inIntentBar: 0.5 }),
+          enter,
+          undefined,
+        )
+      ).held,
     ).toBe(true);
   });
 

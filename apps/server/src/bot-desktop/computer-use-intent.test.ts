@@ -268,7 +268,7 @@ test("a terminal Enter reaches the judge with the command it runs; Enter in anot
   expect(describeAction(seen[0]!)).toContain(
     'in a terminal, running "root@box:/workspace# rm -rf demo"',
   );
-  expect(isCommitPoint(seen[0]!, true)).toBe(false);
+  expect(isCommitPoint(seen[0]!, {})).toBe(false);
   expect(seen[1]!.terminal).toBeUndefined();
-  expect(isCommitPoint(seen[1]!, true)).toBe(true);
+  expect(isCommitPoint(seen[1]!, {})).toBe(true);
 });
