@@ -22,7 +22,9 @@ export const startTicking = (tick: Effect.Effect<void>, scope: Scope.Scope) => {
     started = true;
     yield* Effect.gen(function* () {
       while (true) {
-        yield* tick;
+        yield* Effect.catchDefect(tick, (defect) =>
+          Effect.logError("Tick failed", defect),
+        );
         yield* Effect.sleep("1 second");
       }
     }).pipe(Effect.forkIn(scope));

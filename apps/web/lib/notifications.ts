@@ -145,18 +145,23 @@ export function notifyReply(event: ReplyEvent, { open, pathOf }: ChatLinks) {
   unread.set(path, (unread.get(path) ?? 0) + 1);
   showUnread();
 
-  if (!canNotify() || !firstNotice(event.eventId)) return;
+  // Full storage or a browser without `new Notification`, like Android Chrome, must not end the stream.
+  try {
+    if (!canNotify() || !firstNotice(event.eventId)) return;
 
-  const notification = showNotice(noticeKind(event), noticeTitle(event), {
-    body: plainMarkdown(event.preview) || "Replied",
-    tag: chatTag(chat),
-  });
+    const notification = showNotice(noticeKind(event), noticeTitle(event), {
+      body: plainMarkdown(event.preview) || "Replied",
+      tag: chatTag(chat),
+    });
 
-  if (!notification) return;
+    if (!notification) return;
 
-  notification.onclick = () => {
-    window.focus();
-    open(chat);
-    notification.close();
-  };
+    notification.onclick = () => {
+      window.focus();
+      open(chat);
+      notification.close();
+    };
+  } catch (error) {
+    console.warn("Notice not shown", error);
+  }
 }

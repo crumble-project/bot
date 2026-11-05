@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- A long group turn or delegated task no longer loses its final answer. Reading a turn stopped at 200 transcript entries.
+- A bot's chat history no longer hides its answers while one of its jobs, group turns, or reviews is running.
+- Editing a finished one-time automation no longer runs it again. Set a new time to run it again.
+- The server restarts right after a crash. A per-account lock used to fail the boot for about 30 seconds.
+- A stored server setting that no longer validates resets only itself, and an invalid sign-up setting reads as closed, so it can't reopen sign-up.
+- Saving a credential from a bot's request in chat works again. The card now opens the full credential sheet, so the value can also come from a password manager.
+- Closing the invite sheet no longer creates a second invite.
+- Attachments and gateway editing work when the web UI is served over plain HTTP on a LAN address.
+- A reply being sent in a group chat shows its quote, and a deleted bot's open chat returns home.
+- Reverting a change refreshes skill lists right away.
+- The `GH_TOKEN` a GitHub App or machine account provides can no longer be edited or deleted as a credential: the web UI hides those actions, and the API answers 409. Revoking it elsewhere also forgets its use log.
+- Deleting an MCP server closes its connection, and a failed tool listing no longer leaks one.
+- Credential names can't use `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`, or `GIT_CONFIG_VALUE_*`, which would replace the git setup in a workspace.
+- Installing skills past the limit of 100 shared skills answers 400 and shares them with no bot. Installed skills stay in the library.
+- Login notices no longer count as the owner's messages, including for a desktop job's intent check.
+- Push notifications include `waitingFor`.
+- One failed notification, from full browser storage or a browser that refuses `new Notification`, no longer stops the web UI's live activity. Signing in as a different account in an open tab reloads the page, so its live updates restart.
+- A database error during a tick no longer stops message gateway delivery, automations, or log pruning until a restart. The error is logged and the next tick runs.
+- Element labels from the bot desktop are scrubbed of filled passwords before they reach the judge model or a held action.
+- A flapping event relay connection backs off instead of reconnecting at once.
+- Credential and login use logs and script run logs prune hourly, whether or not anyone reads them. A secret idle for 90 days loses its last error.
+- The Railway workspace image now has `gh` and the git template, matching the Docker image. Each Railway bot rebuilds its image once on its next boot and copies `/workspace` over.
+- Requests are validated against the API contract before their handler runs. A request with both an invalid body or query and an unknown ID now answers 400 rather than 404, and over-long IDs answer 400. Admin routes answer invalid bodies with the contract's `Error` shape and take at most 1 MB.
+- Removed code for older data: the single-user data directory migration and `assign-legacy-owner`, upgrades of databases from before Drizzle migrations, the startup moves of provider API keys and inline skills into their current stores, the `/ui/oauth/callback` redirect for MCP sign-in, JSON-formatted MCP tokens, and the `/bots/{id}/credentials`, `/skills`, `/tasks`, and `/integrations` web redirects. An own OAuth app that registered `/ui/oauth/callback` must register `/oauth/callback`.
 - A job's panel shows only its model and cost. The token counts are gone: input counted the cached conversation again on every response, so it grew far past what was sent. A provider that reports no cost, such as Claude Code, shows only the model instead of `$0.0000`. The subtitle no longer repeats "Coding job" or "Desktop job". The API's `usage` field still has the token counts.
 - With GPT-6 Luna as the judge model, a desktop job no longer stops for approval on every Enter. Luna decides Enter from what the action does: going to a page or searching runs, and something irreversible you didn't ask for is still held. In Crumble's eval of 61 labeled actions, it held all 27 that should be held, including card codes, a typed repository delete, and URLs that buy or send data out. Jev and other judges keep the old rule, since Jev missed some of those; if Luna doesn't answer, Enter counts as a commit point. Desktop jobs are also told to load URLs with `open` instead of the address bar.
 - Installs no longer include the `shadcn` CLI and its dependencies. Its stylesheet is copied to `apps/web/shadcn-tailwind.css`, and `bun run ui:add` adds components through `bunx`.

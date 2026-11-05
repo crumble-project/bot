@@ -69,8 +69,12 @@ function useResetOnUserChange(userId: string | undefined) {
       previousUserId.current !== undefined &&
       previousUserId.current !== userId
     ) {
-      if (userId) resetSession();
-      else signedOut();
+      if (!userId) signedOut();
+      else {
+        // Streams only start on page load, so a new account needs a fresh page.
+        resetSession();
+        window.location.assign("/");
+      }
     }
 
     previousUserId.current = userId;
