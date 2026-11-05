@@ -65,7 +65,6 @@ export function registerDesktopRoutes(options: {
   tickets: ViewerTickets;
 }) {
   const { app, register, service, run, workspaces, control, tickets } = options;
-  // The viewer of each connection, from its redeemed ticket to its WebSocket.
   const viewers = new WeakMap<Request, Viewer>();
 
   const hasBotDesktop = (agent: Pick<Agent, "tools">) =>
@@ -125,7 +124,6 @@ export function registerDesktopRoutes(options: {
     const { passive = false } = c.req.valid("query");
     const { ticket, expiresAt } = tickets.issue(agent.id, passive);
 
-    // The machine boots while the client loads the page; the viewer's WebSocket reports any failure to the owner.
     if (!passive && workspaces)
       run.runFork(
         workspaces

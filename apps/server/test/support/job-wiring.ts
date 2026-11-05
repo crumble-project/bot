@@ -15,7 +15,6 @@ const BOT_HOLDS = {
   updatedAt: new Date(0).toISOString(),
 } as const;
 
-/** A bot desktop the bot always holds. */
 export const inertControl: DesktopControlAccess = {
   get: () => BOT_HOLDS,
   set: () => BOT_HOLDS,
@@ -24,7 +23,6 @@ export const inertControl: DesktopControlAccess = {
   untilBot: async () => BOT_HOLDS,
 };
 
-/** An account with no logins. */
 export const inertLogins: DesktopLogins = {
   access: {
     list: () => [],
@@ -41,7 +39,6 @@ export const inertLogins: DesktopLogins = {
   fills: () => ({ list: async () => [], add: async () => undefined }),
 };
 
-/** A judge that finds every action asked for and reversible. */
 export const inertIntent: DesktopIntent = {
   judgeFor: async () => ({
     name: "Inert judge",
@@ -55,7 +52,6 @@ export const inertIntent: DesktopIntent = {
   },
 };
 
-/** An account with no credentials. */
 export const inertCredentials: CredentialsAccess = {
   list: () => ({ credentials: [], requests: [] }),
   request: nothingToSave,

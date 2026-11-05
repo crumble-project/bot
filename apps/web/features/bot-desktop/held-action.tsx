@@ -14,7 +14,6 @@ const OUTCOMES: Record<Exclude<HeldAction["status"], "pending">, string> = {
   expired: "Expired",
 };
 
-/** A desktop job action an intent check held: the owner approves or declines it here. */
 function HeldActionCard({
   held,
   title,

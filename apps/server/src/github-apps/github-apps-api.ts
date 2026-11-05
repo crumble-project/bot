@@ -9,8 +9,6 @@ import { GitHubAccounts } from "./github-accounts";
 import { GitHubAppUsers } from "./github-app-users";
 import { GitHubApps } from "./github-apps";
 
-/** The account's GitHub Apps and machine accounts: adding, installing, signing the owner in, assigning to bots, and
- * removing them. */
 export function registerGitHubAppRoutes(options: {
   register: Register;
   service: BotLookup;
@@ -21,7 +19,6 @@ export function registerGitHubAppRoutes(options: {
   const githubAppUsers = run.runSync(GitHubAppUsers.use(Effect.succeed));
   const githubAccounts = run.runSync(GitHubAccounts.use(Effect.succeed));
 
-  // GitHub being unreachable is the server's problem to report, not a defect.
   const github = <A, E>(effect: Effect.Effect<A, E>) =>
     run.runPromise(
       effect.pipe(

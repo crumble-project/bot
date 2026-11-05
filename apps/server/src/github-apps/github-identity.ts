@@ -1,5 +1,3 @@
-/** How a bot commits in one GitHub account's repositories, or in every other one for a machine account (`account`
- * null); `trailer` marks commits made as the owner. */
 export type GitHubIdentity = {
   account: string | null;
   name: string;
@@ -7,7 +5,6 @@ export type GitHubIdentity = {
   trailer?: string | undefined;
 };
 
-/** The bots an assignment adds and takes off, from the identity's current bots and the requested ones. */
 export const assignmentChange = (
   previous: readonly string[],
   botIds: readonly string[],
@@ -16,7 +13,6 @@ export const assignmentChange = (
   removed: previous.filter((botId) => !botIds.includes(botId)),
 });
 
-/** What the bot and its coding jobs read about how they act on GitHub, default identity first. */
 export const githubIdentityLines = (identities: readonly GitHubIdentity[]) => {
   const [fallback, ...others] = identities;
 

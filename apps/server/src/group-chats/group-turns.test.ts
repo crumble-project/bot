@@ -58,7 +58,6 @@ const textOf = (message: Message) =>
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("");
 
-/** Answers by the last input's text, and records the tools each request offered. */
 function script(offered: string[][]): FauxResponseFactory {
   return async (context) => {
     offered.push(
@@ -90,7 +89,6 @@ function script(offered: string[][]): FauxResponseFactory {
   };
 }
 
-// Stands in for bot messaging: a group turn must not be offered it.
 const coordination = chatOnly(
   defineExtension({
     name: "coordination",

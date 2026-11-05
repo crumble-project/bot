@@ -21,13 +21,11 @@ type AdmissionDeps = {
   ) => Effect.Effect<void>;
 };
 
-/** Admits one execution: starts it once, or recovers it under its durable request ID. */
 export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
   const { events, executions, monitors, runtime } = context;
   const { agent } = deps.lookup;
   const { settle } = deps.notifications;
 
-  // A pruned event leaves the automation's prompt alone.
   const eventInput = Effect.fnUntraced(function* (execution: Execution) {
     const request = parseRequestId(execution.requestId);
 
@@ -80,7 +78,6 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
     yield* settle(execution, { status: "cancelled" });
   });
 
-  /** Records an execution whose admission failed with anything but an interrupt. */
   const failed = (execution: Execution, cause: Cause.Cause<unknown>) =>
     Cause.hasInterruptsOnly(cause)
       ? Effect.void
@@ -89,7 +86,6 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
           error: errorText(Cause.squash(cause)),
         });
 
-  /** Stores the submission, then watches it with the monitor the bots keep per execution. */
   const run = (execution: Execution, owner: Agent) =>
     Effect.gen(function* () {
       const submissionId = yield* submit(execution, owner);

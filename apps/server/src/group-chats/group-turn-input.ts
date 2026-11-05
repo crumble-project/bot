@@ -11,16 +11,13 @@ import { replyText } from "../shared/reply-text";
 import { type GroupChatContext } from "./group-chat-context";
 import { senderLabel, type GroupEntry } from "./group-transcripts";
 
-/** How long a joining member's summary may take before its turn starts without one. */
 const SUMMARY_TIMEOUT_MS = 60_000;
 
-/** Characters of earlier messages a joining member's summary is written from, newest first. */
 const SUMMARY_INPUT_CHARACTERS = 40_000;
 
 const SUMMARY_INSTRUCTIONS =
   "Summarize this group chat for a bot that is joining it, in under 200 words. Keep decisions, open questions, who asked whom for what, and facts the group relies on. Name senders. Write plain prose without a heading.";
 
-/** A short summary of a group conversation, written by the bot's own model for its first turn after joining. */
 async function writeSummary(
   context: GroupChatContext,
   agent: Agent,
@@ -44,9 +41,7 @@ async function writeSummary(
   return summary;
 }
 
-/** What a turn tells its member: the earlier conversation, and the messages it answers. */
 export const groupTurnInput = (context: GroupChatContext) => {
-  /** The messages up to `cursor`, newest first until the summary budget, summarized by the joining bot's model. */
   const summarize = Effect.fnUntraced(function* (
     groupId: string,
     agent: Agent,
@@ -85,11 +80,6 @@ export const groupTurnInput = (context: GroupChatContext) => {
     );
   });
 
-  /**
-   * The uploads of a turn's unseen messages, newest messages first up to the attachment limit, in message order.
-   * Images are left out, by name, for a model that cannot read them while the account has no vision model; with one,
-   * they pass through and the vision model describes them for the bot.
-   */
   const turnAttachments = Effect.fnUntraced(function* (
     agent: Agent,
     unseen: GroupEntry[],

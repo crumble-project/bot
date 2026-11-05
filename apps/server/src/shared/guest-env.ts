@@ -1,4 +1,3 @@
-/** The variables that make a job's tools trust the credential proxy and route through it, given the guest's CA paths. */
 export const guestTrustEnv = (bundle: string, certificate: string) => ({
   SSL_CERT_FILE: bundle,
   // Debian's git uses GnuTLS, which ignores SSL_CERT_FILE.

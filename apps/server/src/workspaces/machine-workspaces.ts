@@ -41,20 +41,15 @@ import type { WorkspaceInterceptor } from "./workspace-proxy";
 
 const BRIDGE_PATH = path.join(import.meta.dir, "workspace-bridge.ts");
 
-/** A running workspace stops after this long without a request. */
 const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
-/** A guest program's stdin and stdout as a byte stream. */
 export type MachineStream = {
   write(data: Uint8Array): Promise<void>;
-  /** Closes the program's stdin. */
   end(): Promise<void>;
   output: AsyncIterable<Uint8Array>;
 };
 
-/** A booted machine behind one bot's workspace. */
 export interface WorkspaceMachine {
-  /** The image it booted. */
   readonly image: string;
   readonly isAlive: Effect.Effect<boolean, WorkspaceUnreachable>;
   /** Succeeds once the bot desktop's browser is up; at once on an image without a bot desktop. */
@@ -69,14 +64,12 @@ export interface WorkspaceMachine {
   readonly stop: Effect.Effect<void, WorkspaceStopFailed>;
 }
 
-/** A file a guest gets at every boot. */
 export type GuestFile = {
   path: string;
   content: string | Uint8Array;
   mode?: number;
 };
 
-/** A guest command; a failure names its step. */
 export type GuestCommand = { step: string; command: string };
 
 /** What a booted guest gets from the server's features. Commands run in order, after every file is written. */
@@ -85,27 +78,18 @@ export type GuestSetup = {
   commands: readonly GuestCommand[];
 };
 
-/** A guest without anything from the server's features. */
 export const NO_GUEST: GuestSetup = { files: [], commands: [] };
 
-/** How one backend reaches a guest it is booting. */
 export type GuestOps = {
-  /** Names the writes when one fails. */
   readonly writeStep: string;
-  /** What the backend itself installs at every boot, read as part of the writes. */
   files(desktop: boolean): Promise<GuestFile[]>;
-  /** Writes `files`; the backend decides how they batch. */
   write(files: readonly GuestFile[]): Promise<void>;
   run(command: string): Promise<void>;
-  /** Runs `DESKTOP_START` with `args`. */
   startDesktop(...args: string[]): Effect.Effect<void, DesktopStartFailed>;
-  /** How many of the writes and the overcommit command run at once. */
   readonly concurrency: "unbounded" | 1;
 };
 
-/** A backend that boots workspace machines. */
 export interface WorkspaceMachines {
-  /** Prefix of pi-env environment ids. */
   readonly kind: string;
   /** Variables that send a job's HTTPS through the workspace proxy, where the guest does not reach it on its own. */
   readonly proxyEnv?: Record<string, string> | undefined;
@@ -121,31 +105,23 @@ export interface WorkspaceMachines {
   ): Effect.Effect<WorkspaceMachine, WorkspaceBootFailed | DesktopStartFailed>;
 }
 
-/** The machine size an admin sets for the whole server, read at each boot. */
 export type WorkspaceSize = { cpus: number; memoryMib: number };
 
 export type MachineWorkspacesOptions = {
   idleTimeoutMs?: number;
   /** An image that replaces the base image, read at each boot; only backends that boot OCI images pass it on. */
   baseImage?: () => string | null;
-  /** The image for bots with a bot desktop: the base image plus the desktop. */
   desktopImage?: string;
-  /** Whether the bot needs its bot desktop; read at each boot. */
   wantsDesktop?: (agentId: string) => boolean;
-  /** What the bot's guest gets from the server's features, installed at every boot. */
   guest?: (agentId: string) => Promise<GuestSetup>;
-  /** Takes over the bot's TLS connections to its credential hosts. */
   intercept?: (agentId: string) => WorkspaceInterceptor;
 };
 
-/** What the server gives every workspace backend; each backend reads its images and secrets from the environment. */
 export type WorkspaceBackendOptions = Omit<
   MachineWorkspacesOptions,
   "desktopImage"
 > & {
-  /** The machine size, read at each boot. */
   size: () => WorkspaceSize;
-  /** Where a backend may record its machines, so a restarted server finds them. */
   dataDir: string;
   /** Prefix of machine names, which may be global to the backend's account. */
   namePrefix: string;
@@ -157,14 +133,12 @@ export function assertAgentId(agentId: string) {
     throw new Error(`Invalid agent id: ${agentId}`);
 }
 
-/** The name of the bot's machine in a backend's account. */
 export function machineName(namePrefix: string, agentId: string) {
   assertAgentId(agentId);
 
   return `${namePrefix}-${agentId}`;
 }
 
-/** One step of a boot through a backend's SDK; its failure names the step. */
 export const bootStep = <A>(step: string, run: () => Promise<A>) =>
   Effect.tryPromise({
     try: run,
@@ -216,7 +190,6 @@ export const prepareGuest = Effect.fn("prepareGuest")(function* (
   if (desktop) yield* ops.startDesktop(DESKTOP_DISPLAY_ONLY);
 });
 
-/** Acquires a resource for a boot that releases it only if the boot fails: on success the booted machine owns it. */
 export const untilBooted = <A, E>(
   acquire: Effect.Effect<A, E>,
   release: (resource: A) => Promise<void>,
@@ -227,7 +200,6 @@ export const untilBooted = <A, E>(
       : Effect.void,
   );
 
-/** Logs the failure of work nobody waits for, such as cleanup after another failure or an idle stop. */
 export const logFailure =
   (label: string, agentId: string) =>
   <A, E>(effect: Effect.Effect<A, E>) =>
@@ -241,7 +213,6 @@ const DAEMON_DIRECTORY: Partial<Record<NodeJS.Architecture, string>> = {
   x64: "x64",
 };
 
-/** The host path of pi-env's Linux daemon for `arch`, the guest's architecture. */
 export function daemonPath(arch: NodeJS.Architecture = process.arch) {
   const directory = DAEMON_DIRECTORY[arch];
 
@@ -259,7 +230,6 @@ export function daemonPath(arch: NodeJS.Architecture = process.arch) {
 
 type Running = {
   machine: WorkspaceMachine;
-  // Started at boot; a job joins it, a viewer does not wait for it.
   desktopReady: Fiber.Fiber<void, DesktopStartFailed>;
   relay: Relay;
   command: readonly string[];
@@ -317,7 +287,6 @@ class Workspace {
   readonly env: ExecutionEnv;
   running: Running | undefined;
   private inflight = 0;
-  // Viewers and an owner holding control: the machine stays up while any hold.
   private holds = 0;
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly lock = Semaphore.makeUnsafe(1);
@@ -353,14 +322,12 @@ class Workspace {
     return Semaphore.withPermit(this.lock, Effect.uninterruptible(task));
   }
 
-  /** The running machine, booted on the image the bot needs now, and unless `displayOnly` with its browser up. */
   private readonly start = Effect.fn("Workspace.start")(function* (
     this: Workspace,
     displayOnly: boolean,
   ) {
     const running = yield* this.exclusive(this.boot());
 
-    // Outside the lock: a viewer needs only the display and does not wait for a job's browser.
     if (displayOnly) return running;
 
     yield* Fiber.join(running.desktopReady).pipe(
@@ -378,11 +345,9 @@ class Workspace {
     return running;
   });
 
-  /** The running machine if it runs the image the bot needs now, otherwise a new one; called under the lock. */
   private readonly boot = Effect.fn("Workspace.boot")(function* (
     this: Workspace,
   ) {
-    // A bot that gained or lost its bot desktop needs the other image.
     const image = this.owner.imageFor(this.agentId);
 
     const desktop = this.owner.desktopImageName();
@@ -406,7 +371,6 @@ class Workspace {
     return booted;
   });
 
-  /** The relay command once the machine runs and, unless `displayOnly`, its bot desktop's browser is up. */
   ensureStarted(
     displayOnly = false,
   ): Effect.Effect<readonly string[], WorkspaceStartError> {
@@ -441,7 +405,6 @@ class Workspace {
     });
   }
 
-  /** Keeps the machine from its idle stop until released. */
   hold() {
     this.holds += 1;
     clearTimeout(this.idleTimer);
@@ -457,7 +420,6 @@ class Workspace {
     };
   }
 
-  /** The desktop image, failing for a server without one or a bot that does not need its bot desktop. */
   private readonly desktopImage = Effect.fn("Workspace.desktopImage")(
     function* (this: Workspace) {
       const desktopImage = this.owner.desktopImageName();
@@ -477,7 +439,6 @@ class Workspace {
     },
   );
 
-  /** Boots the bot desktop's machine as far as its display, for a viewer about to connect. */
   startDesktop(): Effect.Effect<void, DesktopOpenError> {
     return this.desktopImage().pipe(Effect.andThen(this.start(true)));
   }
@@ -508,7 +469,6 @@ class Workspace {
     ).pipe(Effect.onError(() => Effect.sync(release)));
   });
 
-  /** Whether the machine runs the bot desktop now. */
   desktopRunning() {
     const desktopImage = this.owner.desktopImageName();
 
@@ -597,11 +557,6 @@ class Workspace {
   });
 }
 
-/**
- * Per-bot workspaces on machines from a backend: the machine starts on the first operation and stops after
- * `idleTimeoutMs` of inactivity, while viewers hold it awake. Which image it boots follows the bot's need for its
- * bot desktop; the backend keeps the files across stops and image changes.
- */
 export class MachineWorkspaces implements Workspaces {
   private readonly workspaces = new Map<string, Workspace>();
   private readonly idleTimeoutMs: number;
@@ -629,7 +584,6 @@ export class MachineWorkspaces implements Workspaces {
     return this.machines.kind;
   }
 
-  /** The desktop image, if any; a machine booted from it has a bot desktop. */
   desktopImageName() {
     return this.desktopImage;
   }
@@ -638,7 +592,6 @@ export class MachineWorkspaces implements Workspaces {
     return this.desktopImage !== undefined;
   }
 
-  /** The image the bot's machine boots now: the desktop image while the bot needs its bot desktop. */
   imageFor(agentId: string) {
     return this.desktopImage && this.wantsDesktop(agentId)
       ? this.desktopImage
@@ -701,7 +654,6 @@ export class MachineWorkspaces implements Workspaces {
     );
   }
 
-  /** Flushes and stops every running workspace; fails with the first stop that failed, after trying them all. */
   readonly close = Effect.fn("MachineWorkspaces.close")(function* (
     this: MachineWorkspaces,
   ): Effect.fn.Return<void, WorkspaceStopFailed> {
@@ -718,7 +670,6 @@ export class MachineWorkspaces implements Workspaces {
     if (failed) return yield* Effect.failCause(failed.cause);
   });
 
-  /** Boots the bot's machine and a relay for its daemon; called by `Workspace`, serialized per bot. */
   readonly boot = Effect.fn("MachineWorkspaces.boot")(function* (
     this: MachineWorkspaces,
     agentId: string,
@@ -778,7 +729,6 @@ export class MachineWorkspaces implements Workspaces {
   }
 }
 
-/** The workspaces `make` returns, stopped when the scope closes; a failed stop is a defect of closing. */
 export const acquireWorkspaces = (
   make: () => ClosableWorkspaces | undefined,
 ): Effect.Effect<ClosableWorkspaces | undefined, never, Scope.Scope> =>

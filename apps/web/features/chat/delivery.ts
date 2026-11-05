@@ -12,7 +12,6 @@ export type Outgoing = {
   state: "sending" | "failed";
 };
 
-/** An outgoing message drawn like a transcript message until the server confirms it. */
 export const outgoingMessage = (message: Outgoing): Message => ({
   id: `local:${message.requestId}`,
   entryId: "",
@@ -36,7 +35,6 @@ onSessionReset(() => {
   for (const listener of listeners) listener();
 });
 
-/** Messages sent to `chat` that its transcript does not show yet. */
 export function useOutgoing(chat: string) {
   return useSyncExternalStore(
     (listener) => {
@@ -48,7 +46,6 @@ export function useOutgoing(chat: string) {
   );
 }
 
-/** Drops messages the transcript now contains, matched by request ID. */
 export function confirm(chat: string, requestIds: Set<string>) {
   const list = outgoing.get(chat);
 

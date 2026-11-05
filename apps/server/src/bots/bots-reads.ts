@@ -17,7 +17,6 @@ import {
 } from "../transcript/transcript";
 import type { JobKindName } from "../shared/job-kinds";
 
-/** Everything the bots read back for a caller: transcripts, jobs, previews, and where a turn came from. */
 export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
   const { agents, conversations, events, executions, runtime, schedules } =
     context;
@@ -27,7 +26,6 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
   const scheduleName = (scheduleId: string) =>
     Effect.map(schedules.get(scheduleId), (schedule) => schedule?.name);
 
-  /** Where a turn came from, as its transcript shows it: the owner, a group, an automation, a credential, or another bot. */
   const origin = (execution: Execution): Effect.Effect<InputOrigin> =>
     Effect.gen(function* () {
       const source = turnSource(execution);
@@ -69,7 +67,6 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
       }
     });
 
-  /** A chat's transcript, with the error of its latest execution when that one failed. */
   const snapshot = Effect.fn("Bots.snapshot")(function* (
     conversationId: string,
     options: { limit?: number | undefined } = {},
@@ -91,7 +88,6 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
     };
   });
 
-  /** Sidebar summaries from durable history, without opening a chat. */
   const agentPreviews = Effect.gen(function* () {
     return yield* Effect.forEach(
       yield* agents.list,

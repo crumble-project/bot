@@ -104,7 +104,6 @@ function useFollowActivity() {
   }, [navigate, router]);
 }
 
-/** Titles the tab with the unseen replies and the open chat, such as `(3) Atlas | Crumble`. */
 function useDocumentTitle(
   bots: Bot[] | undefined,
   groups: GroupChat[] | undefined,

@@ -28,7 +28,6 @@ const executionOf = (row: typeof executions.$inferSelect): Execution => ({
   attachmentsDigest: row.attachmentsDigest ?? null,
 });
 
-/** Each input a bot is asked to answer, from admission until it settles. */
 export class ExecutionRepository extends Context.Service<
   ExecutionRepository,
   {
@@ -36,7 +35,6 @@ export class ExecutionRepository extends Context.Service<
     readonly list: (agentId?: string) => Effect.Effect<Execution[]>;
     /** The pending and running ones, of one bot or of every bot; newest first. */
     readonly active: (agentId?: string) => Effect.Effect<Execution[]>;
-    /** The conversation's newest execution. */
     readonly latestIn: (
       conversationId: string,
     ) => Effect.Effect<Execution | null>;

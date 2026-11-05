@@ -55,7 +55,6 @@ export type CredentialRequestInput = z.infer<typeof credentialRequestInput>;
 
 export type CredentialSaveInput = z.infer<typeof credentialSaveInput>;
 
-/** A minted credential's value and hosts are its source's, so the owner's save or delete would break its tokens. */
 const refuseMinted = (record: CredentialRecord | undefined) =>
   record?.github
     ? Effect.fail(
@@ -81,13 +80,11 @@ export class Credentials extends Context.Service<
       agentId: string,
       request: CredentialRequestInput,
     ) => Effect.Effect<CredentialRequest, AppError>;
-    /** Creates or updates a credential; saving one the bot asked for answers its request. */
     readonly save: (
       agentId: string,
       name: string,
       input: CredentialSaveInput,
     ) => Effect.Effect<AgentCredential, AppError>;
-    /** Deletes a credential, or declines a request for one. */
     readonly delete: (
       agentId: string,
       name: string,
@@ -101,13 +98,10 @@ export class Credentials extends Context.Service<
       name: string,
       options: { limit: number; before?: string | undefined },
     ) => Effect.Effect<CredentialUse[], AppError>;
-    /** The variables every command of the bot's coding jobs sees: placeholders, and where to find the bot's authority. */
     readonly env: (agentId: string) => Effect.Effect<Record<string, string>>;
-    /** What the bot and its coding jobs read about its credentials; undefined when there is nothing to say. */
     readonly workspaceSection: (
       agentId: string,
     ) => Effect.Effect<string | undefined>;
-    /** The placeholders the credential proxy may swap, without their values. */
     readonly grants: (agentId: string) => Effect.Effect<CredentialGrant[]>;
     /** The value the credential proxy swaps in, read only for a request that uses its placeholder. */
     readonly value: (
@@ -279,7 +273,6 @@ const SYNC_CREDENTIALS = [
   "recordUse",
 ] as const;
 
-/** Credentials for code outside Effect: HTTP handlers, the credential proxy, and Pi Durable tools. */
 export type CredentialsAccess = Omit<
   Access<Credentials["Service"], (typeof SYNC_CREDENTIALS)[number]>,
   "value"
@@ -309,7 +302,6 @@ export function credentialsAccess(
   };
 }
 
-/** The credentials, then `sourceLines`, as the bot and its coding jobs read them; undefined without either. */
 function workspaceCredentialSection(
   credentials: readonly AgentCredential[],
   sourceLines: readonly string[],
@@ -336,7 +328,6 @@ const pendingLines = (requests: readonly CredentialRequest[]) =>
       ]
     : [];
 
-/** The bot's `request_credential` tool and the requests the owner has not answered, for bots with coding. */
 export function credentialExtension(
   agentId: string,
   credentials: CredentialsAccess,
@@ -356,7 +347,6 @@ export function credentialExtension(
     sections: [
       {
         key: "credentials",
-        // The granted ones show in the workspace's credentials section, with how to use them.
         render: () => {
           const { requests } = credentials.list(agentId);
 

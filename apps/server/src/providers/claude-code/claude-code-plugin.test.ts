@@ -36,7 +36,6 @@ afterEach(() => {
   dirs = [];
 });
 
-/** A data directory whose Claude Code is the fake, configured through a settings file in its config directory. */
 function dataDir(fake: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "crumble-claude-plugin-"));
 

@@ -14,7 +14,6 @@ const faux = fauxProvider({
   models: [{ id: "crash-model" }],
 });
 
-// Never answers, so the parent always kills this process mid-turn.
 faux.setResponses([() => new Promise<AssistantMessage>(() => {})]);
 
 const models = createModels();

@@ -19,7 +19,6 @@ import {
   type IntentRequest,
 } from "./intent-check";
 
-/** The account's judge model: a classifier, or a chat model that answers the same questions. */
 export type JudgeModelRef = { provider: string; model: string };
 
 type JudgePrice = Pick<
@@ -27,14 +26,11 @@ type JudgePrice = Pick<
   "input" | "output" | "cacheRead" | "cacheWrite"
 >;
 
-/** What the evaluation of one model set, since the bar, Enter handling, and price change together. */
 type JudgeRecord = JudgeModelRef &
   (
     | {
         as: "classifier";
-        /** The in-intent probability it must reach for an irreversible action to run. */
         bar: number;
-        /** Whether it judges Enter outside a terminal itself, instead of Enter counting as a commit point. */
         decidesEnter: boolean;
         /** $ per million tokens where pi-ai's catalog lists none. */
         price?: JudgePrice;
@@ -87,7 +83,6 @@ const classifierRecord = (model: AnyModel) =>
     record.as === "classifier" && sameRef(model, record) ? [record] : [],
   )[0];
 
-/** The call's usage priced at the catalog's price, or at the judge's known price where the catalog lists none. */
 export function judgeUsage(model: AnyModel, usage: Usage): Usage {
   const price = classifierRecord(model)?.price;
 
@@ -99,11 +94,9 @@ export function judgeUsage(model: AnyModel, usage: Usage): Usage {
   };
 }
 
-/** The in-intent probability a classifier must reach for an irreversible action to run. */
 export const inIntentBar = (model: AnyModel) =>
   classifierRecord(model)?.bar ?? UNEVALUATED_BAR;
 
-/** Whether the classifier judges Enter outside a terminal itself, instead of Enter counting as a commit point. */
 export const decidesEnter = (model: AnyModel) =>
   classifierRecord(model)?.decidesEnter === true;
 
@@ -119,7 +112,6 @@ const chatAnswer = z.object({
   in_intent: z.boolean(),
 });
 
-/** What a classifier judge is asked; the intent eval sends the same. */
 export const classifierContext = (
   request: IntentRequest,
 ): ClassifierContext => ({
@@ -207,14 +199,9 @@ function chatJudge(models: Models, model: Model<Api>): Judge {
   };
 }
 
-/** The classifier models the account's keys reach: the owner's choices of judge. */
 export const judgeChoices = (models: Models) =>
   models.getAvailableOfType("classifier");
 
-/**
- * The model that judges: the owner's classifier, else GPT-6 Luna, else any classifier, else a small chat model. None
- * when no key reaches one; a choice whose key is gone falls back the same way.
- */
 export async function judgeModel(
   models: Models,
   chosen: JudgeModelRef | undefined,

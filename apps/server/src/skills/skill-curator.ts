@@ -24,15 +24,9 @@ export type CuratorAction = {
   to: Skill["state"];
 };
 
-/**
- * Keeps bot-created skills from piling up: unused ones go stale, then into the archive, never into the bin. Pinned
- * skills and skills a scheduled task names are left alone, and a skill that was never used gets the stale period
- * to be, since zero uses is absence of evidence.
- */
 export class SkillCurator extends Context.Service<
   SkillCurator,
   {
-    /** Moves each idle skill one state on, as of `now`, and reports what it moved. */
     readonly pass: (now: Date) => Effect.Effect<CuratorAction[]>;
   }
 >()("crumble/skills/SkillCurator") {
@@ -42,7 +36,6 @@ export class SkillCurator extends Context.Service<
       const skills = yield* SkillRepository;
       const schedules = yield* ScheduleRepository;
 
-      /** Whether a scheduled task's prompt names the skill, so a slow schedule cannot lose it. */
       const namedByTask = (skill: Skill) => {
         const name = skill.name.toLowerCase();
 
@@ -77,7 +70,6 @@ export class SkillCurator extends Context.Service<
 
             if (yield* namedByTask(skill)) continue;
 
-            // Idle time counts from creation for a skill that was never used, so it gets the full periods to be.
             const to: Skill["state"] =
               idleDays >= ARCHIVE_AFTER_DAYS ? "archived" : "stale";
 
@@ -100,7 +92,6 @@ export class SkillCurator extends Context.Service<
   );
 }
 
-/** Curates now and then every six hours, until the layer's scope closes. */
 export const skillCuration = Layer.effectDiscard(
   Effect.gen(function* () {
     const curator = yield* SkillCurator;

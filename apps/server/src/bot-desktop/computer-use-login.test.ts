@@ -41,7 +41,6 @@ const signIn = (url: string): GuestReply[] => [
 
 type Use = Parameters<LoginFill["recordUse"]>[1] & { name: string };
 
-/** What the bot desktop recorded as typed on it; it outlives a job. */
 function fakeDesk(record: DesktopFill[] = []) {
   const fills: DesktopFills = {
     list: async () => [...record],
@@ -53,7 +52,6 @@ function fakeDesk(record: DesktopFill[] = []) {
   return { fills, record };
 }
 
-/** The bot's logins: github with a username and password; `reads` answers each field. */
 function fakeLogins(
   reads: Partial<Record<LoginField, LoginRead>> = {
     username: { value: "ada@example.com" },
@@ -437,7 +435,6 @@ test("a password that is part of the page's URL still lets the next field be fil
   ]);
 });
 
-/** A later job on the same desktop: one capture of a page that still shows `shown`. */
 async function laterCapture(
   desk: ReturnType<typeof fakeDesk>,
   shown: string,

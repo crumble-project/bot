@@ -1,7 +1,6 @@
 import { join } from "node:path";
 import { isAccountId } from "../shared/account-id";
 
-/** Where every account's directory lives under the server's data directory. */
 export const accountsDir = (dataDir: string) => join(dataDir, "users");
 
 /** The account's directory; a tenant's whole data lives there, so an ID must not reach outside it. */

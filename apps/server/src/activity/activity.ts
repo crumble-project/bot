@@ -191,7 +191,6 @@ function blockEvents(
   });
 }
 
-/** Converts durable transcript messages into the operational events shown in Activity. */
 export function operationalActivity(
   agent: ActivityAgent,
   messages: TranscriptMessage[],
@@ -226,17 +225,13 @@ function keyOf(item: FeedItem): Key {
   };
 }
 
-/** Positive when `a` is newer than `b`. */
 function compareKeys(a: Key, b: Key) {
   return a.t - b.t || a.e - b.e || a.id.localeCompare(b.id);
 }
 
 const cursorInput = z.object({
-  /** The last item returned; transcript items resume strictly after it. */
   k: z.object({ t: z.number(), e: z.number(), id: z.string() }).nullable(),
-  /** Per bot, the history `before` to resume from; false once its transcript is exhausted. */
   h: z.record(z.string(), z.union([z.string(), z.null(), z.literal(false)])),
-  /** The last change returned; changes resume after it in the store's order. */
   c: z.string().nullable(),
 });
 
@@ -255,7 +250,6 @@ export function decodeCursor(value: string): Cursor | null {
 const encodeCursor = (cursor: Cursor) =>
   Buffer.from(JSON.stringify(cursor)).toString("base64url");
 
-// Bounded per bot and request, so a text-heavy transcript keeps the feed a cheap read.
 const HISTORY_PAGES = 5;
 const HISTORY_PAGE_SIZE = 200;
 
@@ -266,7 +260,6 @@ type ActivityPageOptions<A extends Pick<Agent, "id" | "name">> = {
     before: string | undefined,
     limit: number,
   ) => Promise<TranscriptPage>;
-  /** Changes newest first in the store's order, after the change `before`. */
   changes: (limit: number, before: string | undefined) => LearnedChange[];
   agentName: (id: string) => string | null;
   limit: number;
@@ -350,7 +343,6 @@ async function agentActivityQueue<A extends Pick<Agent, "id" | "name">>(
   );
 
   const more = Boolean(page?.hasMore && page.oldestEntryId);
-  // Unread history is older than the oldest message read, so nothing older may be returned yet.
   const floor = more && page ? oldestMessageKey(page.messages) : null;
 
   const queue = sortedQueue(items, tags);
@@ -464,10 +456,6 @@ function nextCursor(
   };
 }
 
-/**
- * One page of the activity feed: every bot's operational activity and the skill and memory changes, newest first.
- * Each source is merged as a queue, so a page is a prefix of every source and the cursor resumes each one exactly.
- */
 export async function activityPage<A extends Pick<Agent, "id" | "name">>(
   options: ActivityPageOptions<A>,
 ) {

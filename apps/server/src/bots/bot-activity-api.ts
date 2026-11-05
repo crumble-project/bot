@@ -21,7 +21,6 @@ const activitySender =
         .catch(close);
   };
 
-/** Server-wide activity for notifications: finished replies from every bot. */
 export function registerBotActivityRoutes(options: {
   register: Register;
   service: BotsAccess;

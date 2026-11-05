@@ -26,7 +26,6 @@ type UpdateCheck = {
   error?: unknown;
 };
 
-/** The existing checker refreshes upstream metadata; only selected skills are applied. */
 async function checkUpdates(): Promise<UpdateCheck> {
   try {
     const check = await checkSkillUpdates();
@@ -136,7 +135,6 @@ function updater(updates: UpdateCheck, messages: BulkMessage[]) {
   };
 }
 
-/** Each request is independent: keep failures selected, never roll back successes. */
 export async function applyBulkAction(
   action: BulkAction,
   picked: SelectableSkill[],

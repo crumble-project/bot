@@ -27,7 +27,6 @@ export type {
   GroupMessageReceipt,
 } from "./group-chat-types";
 
-/** Each group chat's shared transcript files, closed with the layer's scope. */
 export class GroupTranscriptStore extends Context.Service<
   GroupTranscriptStore,
   GroupTranscripts
@@ -42,7 +41,6 @@ export class GroupTranscriptStore extends Context.Service<
   }
 }
 
-/** Group chats between the owner and several bots: membership, the shared transcript, turns, and change notifications. */
 export class GroupChats extends Context.Service<
   GroupChats,
   GroupChatsService
@@ -78,7 +76,6 @@ export class GroupChats extends Context.Service<
 
 const SYNC_GROUP_CHATS = ["list", "get", "create", "activity"] as const;
 
-/** Group chats for code outside Effect, such as the HTTP handlers. */
 export type GroupChatsAccess = Access<
   GroupChats["Service"],
   (typeof SYNC_GROUP_CHATS)[number]

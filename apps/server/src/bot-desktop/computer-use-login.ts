@@ -22,14 +22,12 @@ import {
   type ComputerUseState,
 } from "./computer-use-state";
 
-/** A password typed on the desktop, the label that replaces it in results, and the Chromium it was typed into. */
 export type DesktopFill = {
   value: string;
   label: string;
   browser: string;
 };
 
-/** The passwords typed on one bot desktop, kept for the desktop's life. */
 export type DesktopFills = {
   list(): Promise<DesktopFill[]>;
   add(fill: DesktopFill): Promise<void>;
@@ -115,7 +113,6 @@ function loginFor(
   };
 }
 
-/** Everything `fill_login` checks before reading a value; a refusal means nothing was read or typed. */
 async function targetOf(
   state: ComputerUseState,
   logins: LoginFill,
@@ -155,7 +152,6 @@ async function targetOf(
 
 const label = (name: string, field: LoginField) => `[login ${name} ${field}]`;
 
-/** Reads the value and records the fill; a missing field is a refusal, not a use. */
 async function readValue(logins: LoginFill, target: Target) {
   const read = await logins.read(target.login.name, target.field);
 
@@ -187,7 +183,6 @@ async function remember(state: ComputerUseState, fill: DesktopFill) {
 
 const UNKNOWN_CHROMIUM = "unknown";
 
-/** The running Chromium, by pid and start time; undefined when none runs. A new one shows none of the old one's pages. */
 async function chromiumInstance(state: ComputerUseState, context: Context) {
   const browser = (await listWindows(state, context)).find(isChromium);
 
@@ -200,7 +195,6 @@ async function chromiumInstance(state: ComputerUseState, context: Context) {
   return started ? `${browser.pid} ${started}` : UNKNOWN_CHROMIUM;
 }
 
-/** Whether a screenshot may show a password: one was typed into the Chromium running now, or into one we can't tell. */
 export async function passwordMayShow(
   state: ComputerUseState,
   context: Context,
@@ -217,10 +211,6 @@ export async function passwordMayShow(
   );
 }
 
-/**
- * Types a login field into the ref's page after checking the page's host against the login's. The value never appears
- * in the result, and a password is replaced in every later result on this desktop (see `scrubFilled`).
- */
 export async function fillLogin(
   state: ComputerUseState,
   args: ComputerUseArgs,
@@ -265,7 +255,6 @@ export async function fillLogin(
   );
 }
 
-/** A result with typed passwords replaced; captures leave out screenshots that may show one (see `passwordMayShow`). */
 export function scrubFilled(
   state: ComputerUseState,
   result: ComputerUseResult,

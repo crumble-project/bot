@@ -18,7 +18,6 @@ import {
 } from "./computer-use-driver";
 import { textResult, type ComputerUseState } from "./computer-use-state";
 
-/** A `run_steps` result: the fields this tool reads, each dropped when its shape is unexpected. */
 const stepsReply = z.object({
   steps: z
     .array(
@@ -66,7 +65,6 @@ const keyStep = (keys: string): DriverArgs => {
     : { press_key: { key: pressed[0] ?? "" } };
 };
 
-/** The actions a `steps` call takes, each in `run_steps` form; each is an action of `ACTIONS` too. */
 const STEP_FORMS = new Map<string, StepBuilder>([
   ["click", pointer("click")],
   ["double_click", pointer("double_click")],
@@ -106,7 +104,6 @@ const STEP_FORMS = new Map<string, StepBuilder>([
 
 export const STEP_ACTION_NAMES: string[] = [...STEP_FORMS.keys()];
 
-/** One step in `run_steps` form, with its checks, or why it can't run. */
 function stepCall(step: StepArgs): Built {
   const build = STEP_FORMS.get(step.action);
 
@@ -125,7 +122,6 @@ function stepCall(step: StepArgs): Built {
   };
 }
 
-/** Every step in `run_steps` form, or the first one that can't run. */
 function stepCalls(steps: StepArgs[]): { steps: DriverArgs[] } | Invalid {
   const calls: DriverArgs[] = [];
 
@@ -156,7 +152,6 @@ const stepLine = (step: StepsReply["steps"][number]) => {
 const stoppedLine = (failed: number, total: number) =>
   `stopped at step ${failed + 1} of ${total}; ${failed ? `steps 1-${failed} ran` : "no step ran"}`;
 
-/** What changed in the window after the batch; the observed read becomes the window's latest. */
 function observedText(
   state: ComputerUseState,
   result: StepsReply,
@@ -172,7 +167,6 @@ function observedText(
   return [windowText(state, target, observed, since, query, [])];
 }
 
-/** What the batch did, step by step, then what changed in the window. */
 function report(
   state: ComputerUseState,
   result: StepsReply,
@@ -195,7 +189,6 @@ function report(
   return textResult(lines.join("\n"), failed !== undefined);
 }
 
-/** Runs known steps in one `run_steps` call, then reports each step and what changed in the window. */
 export async function runSteps(
   state: ComputerUseState,
   args: ComputerUseArgs,

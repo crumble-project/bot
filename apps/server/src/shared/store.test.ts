@@ -50,7 +50,6 @@ describe("Store", () => {
     first.close();
     const db = new Database(join(dir, "store.sqlite"));
 
-    // Recreate the schema before copy provenance, the two avatar migrations, and the dropped agent columns.
     db.run(
       `DROP TABLE relayed_job_questions;
       DROP TABLE delegation_receipts;
@@ -350,7 +349,6 @@ describe("Store", () => {
     ).toEqual(changes.slice(2));
     expect(store.listChanges(null)).toEqual([]);
 
-    // Undo the delete: the skill is back as it was before deletion, with its ID.
     const undelete = store.revertChange(changes[1]!.id, { actor: "owner" });
     expect(undelete).toMatchObject({
       action: "revert",
@@ -363,11 +361,9 @@ describe("Store", () => {
       sourceExecutionId: "exec-1",
     });
 
-    // Undo the update: back to the first instructions.
     store.revertChange(changes[2]!.id, { actor: "owner" });
     expect(store.getSkill(skill.id)?.instructions).toBe("Check sources");
 
-    // Undo the create: the skill is gone.
     store.revertChange(changes[3]!.id, { actor: "owner" });
     expect(store.getSkill(skill.id)).toBeNull();
 
@@ -380,7 +376,6 @@ describe("Store", () => {
       target: "memory",
     });
 
-    // Duplicating a bot copies its skill packages whole, except archived ones.
     const kept = store.createSkill({
       agentId: agent.id,
       name: "Kept",

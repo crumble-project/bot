@@ -58,7 +58,6 @@ export function automationTiming(schedule: Schedule, sources?: EventSource[]) {
   return `${schedule.enabled ? "" : "Paused · "}${describeTiming(schedule, sources)}`;
 }
 
-/** The wall-clock `YYYY-MM-DDTHH:mm` of `date` in `zone`, for a datetime-local input. */
 export function wallClock(date: Date, zone: string) {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-US", {
@@ -77,7 +76,6 @@ export function wallClock(date: Date, zone: string) {
   return `${parts["year"]}-${parts["month"]}-${parts["day"]}T${parts["hour"]}:${parts["minute"]}`;
 }
 
-/** The instant whose wall clock in `zone` reads `local`; null when `local` is not a date. */
 export function fromWallClock(local: string, zone: string) {
   const guess = new Date(`${local}:00Z`);
 
@@ -101,7 +99,6 @@ export function inOneHour(zone: string) {
   return wallClock(date, zone);
 }
 
-/** A one-off automation that already ran; its result is in the bot's chat. */
 export const finished = (schedule: Schedule) =>
   !schedule.cron && !schedule.eventSourceId && !schedule.nextRunAt;
 
@@ -121,7 +118,6 @@ const RANK = { active: 0, paused: 1, completed: 2 } satisfies Record<
 const nextTime = (schedule: Schedule) =>
   schedule.nextRunAt ? Date.parse(schedule.nextRunAt) : Infinity;
 
-/** Active automations soonest first, then paused ones, then finished script automations. */
 export function listed(schedules: Schedule[]) {
   return schedules
     .filter((schedule) => schedule.kind === "script" || !finished(schedule))
@@ -136,7 +132,6 @@ export function listed(schedules: Schedule[]) {
     });
 }
 
-/** How soon a run starts, for runs within the next day. */
 function soon(date: Date, now: Date) {
   const minutes = Math.round((date.getTime() - now.getTime()) / 60_000);
 
@@ -161,7 +156,6 @@ export function nextRunLabel(schedule: Schedule, now: Date) {
   });
 }
 
-/** "today at 09:00", "Thursday at 09:00", or "Mon, 9 Nov at 09:00", on the clock of `zone`. */
 export function humanRun(date: Date, zone: string, now: Date) {
   const day = (value: Date) => Date.parse(wallClock(value, zone).slice(0, 10));
   const days = Math.round((day(date) - day(now)) / 86_400_000);

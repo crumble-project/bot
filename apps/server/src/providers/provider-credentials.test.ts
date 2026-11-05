@@ -22,7 +22,6 @@ afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
 });
 
-/** The account's provider credential store over a fake 1Password, with openai's API key pointing at `REFERENCE`. */
 const setup = (state: FakePasswordManager) => {
   const dir = mkdtempSync(join(tmpdir(), "crumble-provider-credentials-"));
   const scope = Scope.makeUnsafe();

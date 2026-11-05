@@ -10,7 +10,6 @@ export type PasswordManagerConnection = {
   connectedAt: string;
 };
 
-/** The account's password manager connections, with their tokens encrypted at rest. */
 export class PasswordManagerRepository extends Context.Service<
   PasswordManagerRepository,
   {
@@ -19,7 +18,6 @@ export class PasswordManagerRepository extends Context.Service<
     readonly token: (
       id: PasswordManagerId,
     ) => Effect.Effect<Redacted.Redacted | undefined>;
-    /** Connects the password manager, or replaces its token. */
     readonly save: (
       id: PasswordManagerId,
       token: Redacted.Redacted,

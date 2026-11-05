@@ -164,7 +164,6 @@ const extractTool = (extract: WebExtract) =>
     },
   });
 
-/** The bot's web tools; both follow the bot's provider, read at each call, so changing it never changes the tools. */
 export const configuredWebSearchTools = Layer.effectDiscard(
   Effect.gen(function* () {
     const providers = pluginWebSearchProviders(yield* Plugins);

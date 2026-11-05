@@ -10,7 +10,6 @@ type CredentialRoutesOptions = {
   run: Runner<Credentials>;
 };
 
-/** The credentials one bot may use: listing them, saving one, deleting one, and its use log. */
 export function registerCredentialRoutes(options: CredentialRoutesOptions) {
   const { register, service, run } = options;
 

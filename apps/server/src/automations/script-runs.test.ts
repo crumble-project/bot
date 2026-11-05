@@ -43,7 +43,6 @@ class DirectoryWorkspaces implements Workspaces {
     const env = new NodeExecutionEnv({ cwd: this.dir, shellEnv });
     const exec = env.exec.bind(env);
 
-    // Records files instead of writing to the host's absolute paths.
     env.writeFile = async (path, content) => {
       this.writes.push({ path, content: String(content) });
 
@@ -56,7 +55,6 @@ class DirectoryWorkspaces implements Workspaces {
       this.maxActive = Math.max(this.maxActive, this.active);
 
       try {
-        // Map the guest path to the test directory without touching the host's /workspace.
         return await exec(command, { ...options, cwd: this.dir }, context);
       } finally {
         this.active--;
@@ -254,7 +252,6 @@ test("exit zero succeeds with combined output and uses workspace options and cre
     error: null,
     droppedBytes: 0,
   });
-  // The script sees the credential's placeholder, never its value.
   // stdout and stderr are separate pipes, so their chunks interleave in any order.
   expect(run.output).toContain(":err");
   expect(run.output.replace(":err", "")).toMatch(

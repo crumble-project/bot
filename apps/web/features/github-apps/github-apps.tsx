@@ -46,7 +46,6 @@ import {
 } from "@crumble/server/contract/github-apps";
 import { BotSwitchField } from "@/features/bots/bot-switch-field";
 
-/** Which of the pages in `GITHUB_APP_WEB_PATHS` GitHub sent the owner back to. */
 type GitHubAppStep = keyof typeof GITHUB_APP_WEB_PATHS;
 
 /** The App GitHub sends the owner back for after installing; GitHub's redirect doesn't say which. */
@@ -192,7 +191,6 @@ function CreateAppSheet({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** The bots that act as one GitHub identity, switched on and off in its sheet. */
 function BotsField({
   botIds,
   onChange,
@@ -366,7 +364,6 @@ function SignOutButton({ app }: { app: GitHubApp }) {
   );
 }
 
-/** Whether the App's bots act as the App's `slug[bot]` user or as the owner, signed in through the App. */
 function ActAsField({ app }: { app: GitHubApp }) {
   if (app.user)
     return (

@@ -31,7 +31,6 @@ export const conversations = sqliteTable("conversations", {
     .references(() => agents.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
-  /** The bot's one continuous chat, as opposed to its working conversations. */
   chat: integer("chat", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),

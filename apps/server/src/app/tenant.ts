@@ -88,22 +88,17 @@ import type { ServerSettings } from "./server-settings";
 export type TenantOptions = {
   dataDir: string;
   skillsDir?: string | undefined;
-  /** The server's OAuth client metadata document, when it has a public address. */
   oauthClient?: ClientDocument | undefined;
-  /** Where workspace backends read their images and secrets. */
   workspaceEnv: Record<string, string | undefined>;
-  /** Replaces the workspaces from the environment; the account's scope owns what it acquires. */
   workspaces?:
     | Effect.Effect<Workspaces | undefined, never, Scope.Scope>
     | undefined;
-  /** The server's admin settings; workspaces and jobs read them at each use. */
   serverSettings: () => ServerSettings;
   tenantId: string;
 };
 
 export type TenantRuntime = {
   app: ReturnType<typeof createAPI>;
-  /** Internal API bearer used by the host auth router when dispatching requests. */
   token: string;
   service: BotsAccess;
   scheduler: SchedulerAccess;
@@ -111,7 +106,6 @@ export type TenantRuntime = {
   close: () => Promise<void>;
 };
 
-/** Every part of one account, in dependency order; closing the account releases them in reverse. */
 function accountLayer(options: TenantOptions, dataDir: string) {
   const skillsDir = resolve(
     options.skillsDir ?? resolve(import.meta.dir, "../../skills"),
@@ -261,7 +255,6 @@ function accountLayer(options: TenantOptions, dataDir: string) {
 
   const push = PushDelivery.pipe(Layer.provideMerge(Push.layer(dataDir)));
 
-  /** Background work and the bots' tool registrations: no other layer needs them. */
   const leaves = Layer.mergeAll(
     reviews,
     curation,
@@ -317,7 +310,6 @@ function accountLayer(options: TenantOptions, dataDir: string) {
   );
 }
 
-/** Builds one fully isolated Crumble runtime. No listener is created here. */
 export async function createTenant(
   options: TenantOptions,
 ): Promise<TenantRuntime> {
@@ -366,7 +358,6 @@ export async function createTenant(
       }),
     );
   } catch (error) {
-    // A failed startup releases what it acquired; the error is the startup's, not the cleanup's.
     await account.dispose().catch(() => {});
     throw error;
   }

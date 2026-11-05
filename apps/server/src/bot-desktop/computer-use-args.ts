@@ -176,7 +176,6 @@ const OPTIONAL_ARGS = Object.keys(computerUseParameters.properties).filter(
   (name): name is OptionalArg => name !== "action",
 );
 
-// Empty text means unset, except for the action that takes it: an empty set_value clears a field.
 const KEEPS_EMPTY: Partial<Record<OptionalArg, string>> = {
   value: "set_value",
   text: "type",

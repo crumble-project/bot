@@ -17,14 +17,12 @@ import {
 import { judgeModel, judgeWith, type JudgeModelRef } from "./intent-judge";
 import type { JobRequest } from "../jobs/owner-request";
 
-/** What desktop jobs check their actions with: the account's judge, and where held actions wait for the owner. */
 export type DesktopIntent = {
   /** The judge over the harness's models, and its name; undefined when no model can judge. */
   judgeFor(models: Models): Promise<{ judge: Judge; name: string } | undefined>;
   held: HeldActionsAccess;
 };
 
-/** The judge the owner chose, else the default: the account's judge model over the harness's models. */
 export const accountJudge =
   (chosen: () => Promise<JudgeModelRef | undefined>) =>
   async (models: Models) => {
@@ -41,7 +39,6 @@ type ReadRequest = (
 
 const percent = (value: number) => `${Math.round(value * 100)}%`;
 
-/** Why an action was held, in the owner's words. */
 function holdReason(verdict: IntentVerdict, model: string | undefined) {
   const { answer, commitPoint, judgeError } = verdict;
   const floor = commitPoint ? "It looks like a commit point." : "";
@@ -64,11 +61,9 @@ function refusal(
   return `REFUSED: ${action} was waiting for the owner's approval, and the wait ended without an answer. Report what you did and what is left.`;
 }
 
-/** What one call's intent check reads and writes in the job's conversation. */
 export type GateCall = {
   models: Models;
   request(context: Context): Promise<JobRequest>;
-  /** Shows a held action's card in the bot chat. */
   postCard(
     chatId: ConversationId,
     card: { id: string; job: string; action: string },
@@ -76,7 +71,6 @@ export type GateCall = {
   ): Promise<void>;
 };
 
-/** A call's reads and writes through its tool API. */
 export const gateCallOf = (
   api: ToolExecutionApi,
   readRequest: ReadRequest,
@@ -95,7 +89,6 @@ export const gateCallOf = (
   },
 });
 
-/** The intent check of one desktop job call: held actions post a card to the bot chat and wait for the owner. */
 export const desktopIntentGate =
   (intent: DesktopIntent, agentId: string, call: GateCall): IntentGate =>
   async ({ action, page }, context) => {

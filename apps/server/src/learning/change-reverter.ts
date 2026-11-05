@@ -6,11 +6,9 @@ import { MemoryRepository } from "../memory/memory-repository";
 import { LearnedChangeRepository } from "../learned-changes/learned-change-repository";
 import { SkillRepository } from "../skills/skill-repository";
 
-/** Undoes recorded skill and memory changes. */
 export class ChangeReverter extends Context.Service<
   ChangeReverter,
   {
-    /** Restores the state before `changeId`, recording the revert as a change of its own. */
     readonly revert: (
       changeId: string,
       by: ChangeBy,

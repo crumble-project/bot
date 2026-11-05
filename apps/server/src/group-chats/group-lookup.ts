@@ -10,7 +10,6 @@ import { senderLabel } from "./group-transcripts";
 
 const READ_LIMIT = 30;
 
-/** Lets a bot answer questions about its group chats from its bot chat; group messages never enter that chat on their own. */
 export function groupLookupExtension(
   agent: Pick<Agent, "id">,
   groups: GroupChats["Service"],
@@ -59,11 +58,9 @@ export function groupLookupExtension(
     },
   });
 
-  // A group turn has no lookup of other groups.
   return chatOnly(defineExtension({ name: "group-lookup", tools: [tool] }));
 }
 
-/** Offers every bot the lookup of its group chats. */
 export const groupLookupTools = Layer.effectDiscard(
   Effect.gen(function* () {
     const groups = yield* GroupChats;

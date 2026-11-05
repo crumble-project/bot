@@ -30,7 +30,6 @@ const textResult = (text: string) => ({
   output: [{ type: "text" as const, text }],
 });
 
-/** Model tools for searching and reading history, scoped to the calling conversation. */
 export function historyToolsExtension(
   agent: Pick<Agent, "id">,
   history: HistorySearch,
@@ -90,7 +89,6 @@ export function historyToolsExtension(
   });
 }
 
-/** Adapts the existing retained transcript readers to the history engine. */
 export function historySource(
   runtime: AgentRuntime,
   agents: AgentRepository["Service"],
@@ -155,7 +153,6 @@ export function historySource(
   };
 }
 
-/** Offers every bot history search over its bot chat and group chats. */
 export const historyTools = Layer.effectDiscard(
   Effect.gen(function* () {
     const history = new HistorySearch(

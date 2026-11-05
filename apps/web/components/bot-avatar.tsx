@@ -8,7 +8,6 @@ export type BotState = "idle" | "working" | "sleeping";
 
 export type AvatarBot = { id: string; avatar: BotAvatarDefinition };
 
-/** The body color also supplies the bot's accent throughout the web app. */
 export function botColor(bot: AvatarBot) {
   return bot.avatar.color;
 }

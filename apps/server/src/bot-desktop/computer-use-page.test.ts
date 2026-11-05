@@ -430,6 +430,5 @@ test("a ref action before any read asks for one, and acts without binding again"
 
   expect(early.isError).toBe(true);
   expect(text(early)).toBe("read the page first, then act on a ref from it");
-  // Binding again would supersede the read's refs.
   expect(calls.filter((c) => c.tool === "get_browser_state")).toHaveLength(2);
 });

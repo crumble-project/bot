@@ -5,7 +5,6 @@ import { Select, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SelectOptions } from "@/components/form-fields";
 import { cn } from "@/lib/utils";
 
-/** A cron the schedule picker can show without cron syntax; anything else is custom. */
 export type Recurrence =
   | { kind: "hourly"; minute: number }
   | { kind: "daily" | "weekdays"; hour: number; minute: number }
@@ -41,7 +40,6 @@ const time = (match: RegExpExecArray) => ({
   hour: Number(match[2]),
 });
 
-// The crons the schedule picker shows in words, by their fields.
 const WORDED_CRONS: [RegExp, (match: RegExpExecArray) => Recurrence][] = [
   [
     /^(\d+) \* \* \* \*$/,
@@ -108,7 +106,6 @@ export function cronOf(recurrence: Recurrence) {
   }
 }
 
-/** Every setting a recurrence can carry, so switching kinds keeps what was chosen. */
 type RecurrenceSettings = {
   hour: number;
   minute: number;
@@ -116,7 +113,6 @@ type RecurrenceSettings = {
   day: number;
 };
 
-/** The recurrence `kind` turns into, keeping what the current one already set. */
 export function switchedTo(
   kind: Recurrence["kind"],
   current: Recurrence | null,
@@ -164,7 +160,6 @@ const MONTH_DAYS = Array.from({ length: 31 }, (_, index) => ({
   label: String(index + 1),
 }));
 
-/** The five-minute grid, plus the current minute when it falls between. */
 const minuteItems = (minute: number) =>
   minute % 5
     ? [...MINUTES, { value: String(minute), label: `:${pad(minute)}` }].sort(
@@ -252,7 +247,6 @@ function WeekdayToggles({
             variant={on ? "default" : "outline"}
             aria-pressed={on}
             title={weekdayName(day, "long")}
-            // A week needs at least one day.
             disabled={on && days.length === 1}
             onClick={() =>
               onChange(
@@ -268,7 +262,6 @@ function WeekdayToggles({
   );
 }
 
-/** The rest of the sentence after the When choice, laid out inline. */
 export function RecurrenceParts({
   recurrence,
   onChange,

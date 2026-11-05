@@ -29,7 +29,6 @@ import {
 
 export const ADMIN_ROLE = "admin";
 
-/** What a passkey-only sign-up sends as its registration context. */
 const PasskeySignUp = Schema.fromJsonString(
   Schema.Struct({
     email: Schema.String.check(Schema.isPattern(/^[^\s@]+@[^\s@]+$/)),
@@ -43,7 +42,6 @@ const signUpClosed = () =>
     message: "Sign-up is closed. Ask an admin for an invite link.",
   });
 
-/** How many admins the server has. */
 export const adminCount = (adapter: Pick<DBAdapter, "count">) =>
   adapter.count({
     model: "user",
@@ -81,7 +79,6 @@ export function passkeyOriginFor(baseURL: string) {
   return url.origin;
 }
 
-/** The browser origins allowed to call the server: its own, and the one passkeys are bound to. */
 export function trustedOriginsFor(baseURL: string) {
   return [...new Set([new URL(baseURL).origin, passkeyOriginFor(baseURL)])];
 }
@@ -109,7 +106,6 @@ export async function createAuth(dataDir: string, baseURL: string) {
   const consumeInvite = (invite: string) => inviteStore.consume(invite);
   const inviteOpen = (invite: string) => inviteStore.isOpen(invite);
 
-  /** Whether someone without an account may create one now: first user, open sign-up, or an invite `accepts` takes. */
   const mayJoin = async <O extends BetterAuthOptions>(
     adapter: DBTransactionAdapter<O>,
     invite: string | null | undefined,
@@ -142,7 +138,6 @@ export async function createAuth(dataDir: string, baseURL: string) {
 
             switch (context.path) {
               case "/admin/create-user":
-              // afterVerification below admitted the passkey sign-up and used its invite.
               case "/passkey/verify-registration":
                 return;
               case "/sign-up/email": {

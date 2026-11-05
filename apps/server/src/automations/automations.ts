@@ -7,10 +7,8 @@ import { eventRequest, scheduleRequest } from "../shared/request-ids";
 import { ScriptRuns } from "./script-runs";
 import { AutomationDispatch } from "./automation-dispatch";
 
-// A failed start waits this long before it is tried again.
 export const RETRY_AFTER_MS = 30_000;
 
-/** When each key's start last failed. Keys past their wait fall out on any check, so deleted ones leave too. */
 export const retryLedger = () => {
   const failedAt = new Map<string, number>();
 
@@ -26,7 +24,6 @@ export const retryLedger = () => {
   };
 };
 
-/** What starts an automation. A run by hand is an occurrence too, so an event automation started that way gets no event. */
 export type AutomationTrigger =
   | { kind: "occurrence"; due: string }
   | { kind: "event"; eventId: string };
@@ -36,7 +33,6 @@ export type AutomationStarted = {
   result?: Pick<Execution, "id" | "status">;
 };
 
-/** Whether the automation may start; a run stored while it was on still waits for this. */
 export const automationOn = (
   schedule: Schedule,
   agent: Agent | null | undefined,
@@ -47,7 +43,6 @@ const requestOf = (schedule: Schedule, trigger: AutomationTrigger) =>
     ? eventRequest(trigger.eventId, schedule.id)
     : scheduleRequest(schedule.id, trigger.due);
 
-/** Starts an automation: a prompt goes to its bot's chat, a script to its bot's workspace. */
 export class Automations extends Context.Service<
   Automations,
   {

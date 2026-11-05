@@ -3,7 +3,6 @@ import { AttachmentImage } from "@/features/chat/transcript";
 import { messageCard } from "@/features/chat/message-card";
 import { DESKTOP_SCREENSHOT_TOOL_NAME } from "@crumble/server/contract/tools";
 
-/** A successful `desktop_screenshot` result, whose image is its entry's attachment 0. */
 const screenshotOf = (message: Message) =>
   message.role === "toolResult" &&
   message.toolName === DESKTOP_SCREENSHOT_TOOL_NAME &&

@@ -4,7 +4,6 @@ import type { Runner } from "../shared/runner";
 import { SkillCurator } from "./skill-curator";
 import type { SkillRepository } from "./skill-repository";
 
-/** One curation pass over `store`'s account as of `now`, for a test without an account. */
 export const curateNow = (
   store: { runtime: Runner<SkillRepository | ScheduleRepository> },
   now: Date,

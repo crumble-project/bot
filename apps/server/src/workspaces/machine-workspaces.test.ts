@@ -10,11 +10,9 @@ import { DesktopStartFailed, WorkspaceStreamFailed } from "./workspace-errors";
 const BASE = "base";
 const DESKTOP = "desktop";
 
-/** A backend whose machines do nothing; `fail` picks the step that fails. */
 function fakeMachines(fail?: "desktop" | "stream") {
   const booted: string[] = [];
   const stopped: string[] = [];
-  // Completes at the first stop, so a test waits for an idle stop without guessing how long it takes.
   const stopping = Deferred.makeUnsafe<void>();
 
   const machine = (image: string): WorkspaceMachine => ({
@@ -121,7 +119,6 @@ test("a VNC stream that does not open releases the machine for its idle stop", a
   expect(await failureOf(workspaces.openDesktop("bot"))).toBe(
     "WorkspaceStreamFailed",
   );
-  // A hold the failed open kept would block the idle stop, and this would time out.
   await Effect.runPromise(Deferred.await(stopping));
   expect(stopped).toEqual([DESKTOP]);
   await Effect.runPromise(workspaces.close());
@@ -151,7 +148,6 @@ test("a passive viewer watches a running bot desktop without booting or holding 
   const stream = await Effect.runPromise(passive);
 
   release();
-  // A hold the passive stream kept would block the idle stop, and this would time out.
   await Effect.runPromise(Deferred.await(stopping));
   expect(stopped).toEqual([DESKTOP]);
   expect(booted).toEqual([DESKTOP]);

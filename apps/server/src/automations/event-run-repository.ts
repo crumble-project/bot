@@ -8,25 +8,21 @@ import { eventRuns } from "./schema.event-runs";
 
 export type EventRun = typeof eventRuns.$inferSelect;
 
-/** One run per automation for each stored event. */
 export class EventRunRepository extends Context.Service<
   EventRunRepository,
   {
-    /** How many automations start from the source. */
     readonly sourceUsage: (sourceId: string) => Effect.Effect<number>;
     /** A run for each enabled automation of an enabled bot on the event's source. */
     readonly record: (
       event: { id: string; sourceId: string },
       at: string,
     ) => Effect.Effect<number>;
-    /** The oldest pending run of each automation. */
     readonly nextPending: Effect.Effect<EventRun[]>;
     readonly mark: (
       id: string,
       patch: Pick<EventRun, "status"> &
         Partial<Pick<EventRun, "attempts" | "error">>,
     ) => Effect.Effect<void>;
-    /** Whether one of the bot's automations ran for the event. */
     readonly hasRunForAgent: (
       eventId: string,
       agentId: string,
@@ -135,7 +131,6 @@ export class EventRunRepository extends Context.Service<
   );
 }
 
-/** Automations are what consumes stored events. */
 export const automationEventConsumers = Layer.effect(
   EventConsumers,
   EventRunRepository.use(({ record, sourceUsage }) =>

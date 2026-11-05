@@ -29,7 +29,6 @@ export type ChatAdapter = {
   label: string;
   secretKey: string;
   maxMessageLength: number;
-  /** How often to repeat `typing` while a bot works. */
   typingRenewalMs: number;
   connect(host: {
     token: string;

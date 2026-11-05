@@ -20,7 +20,6 @@ afterEach(() => {
 
 type Files = Record<string, string>;
 
-/** A public repository on a fake GitHub: `push` makes a new commit on `main`. */
 function fakeGitHub(files: Files) {
   const commits = new Map<string, Files>();
   let head = "";
@@ -249,7 +248,6 @@ test("finds upstream changes to imported files, applies them as a revertible cha
     }),
   );
 
-  // A changed script isn't imported, so it isn't an update.
   github.push({ ...github.files(), "skills/review/scripts/lint.sh": "echo 2" });
   await run(installer.check());
   expect((await run(installer.updates)).size).toBe(0);

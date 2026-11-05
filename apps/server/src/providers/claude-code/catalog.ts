@@ -19,13 +19,11 @@ const UNPINNED_WINDOW = 200_000;
 
 const LONG_CONTEXT = "[1m]";
 
-/** The route's model without the long-context suffix. */
 export const routeModel = (route: string) =>
   route.endsWith(LONG_CONTEXT) ? route.slice(0, -LONG_CONTEXT.length) : route;
 
 export const isLongContext = (route: string) => route.endsWith(LONG_CONTEXT);
 
-/** The route of `model` with a 1M context window. */
 export const longContextRoute = (model: string) => `${model}${LONG_CONTEXT}`;
 
 // Families that 400 on `thinking: {type: "disabled"}`; a disable becomes the lowest effort instead.
@@ -47,7 +45,6 @@ const ALIASES = new Map([
 // Haiku 4.5 rejects adaptive thinking; unknown routes keep it so future models are not downgraded.
 const NO_ADAPTIVE_THINKING = new Set(["claude-haiku-4-5-20251001"]);
 
-/** The catalogued id a short name points at, or the name unchanged when it points at none. */
 function routeBase(base: string): string {
   if (ALIASES.has(base) || CONTEXT_WINDOWS.has(base)) return base;
   const dotted = base.replaceAll(".", "-");
@@ -67,7 +64,6 @@ const canonicalOf = (model: string) => {
   return ALIASES.get(base) ?? base;
 };
 
-/** The id Claude Code is started with: pinned 1M routes get `[1m]`, unknown ids pass through as typed. */
 export function nativeModel(model: string) {
   const canonical = canonicalOf(model);
   const window = CONTEXT_WINDOWS.get(canonical);
@@ -120,7 +116,6 @@ export function contextWindow(route: string) {
   return isLongContext(route) ? 1_000_000 : UNPINNED_WINDOW;
 }
 
-/** `claude-opus-4-8` reads `Opus 4.8`; a trailing snapshot date is dropped. */
 export function catalogLabel(model: string) {
   const parts = model.replace(/^claude-/, "").split("-");
 
@@ -133,7 +128,6 @@ export function catalogLabel(model: string) {
     .join(" ");
 }
 
-/** Every pinned route, as Claude Code is started with it. */
 export const pinnedRoutes = () =>
   [...CONTEXT_WINDOWS.keys()].map((model) => ({
     route: nativeModel(model),

@@ -11,11 +11,9 @@ export type PendingReview = {
   createdAt: string;
 };
 
-/** When each bot reviews its work next, and the reviews in flight. */
 export class ReviewRepository extends Context.Service<
   ReviewRepository,
   {
-    /** Adds a turn's tool-activity rounds to the bot's review counters and returns the totals. */
     readonly addRounds: (
       agentId: string,
       skillRounds: number,
@@ -24,7 +22,6 @@ export class ReviewRepository extends Context.Service<
     readonly counters: (
       agentId: string,
     ) => Effect.Effect<{ skill: number; memory: number }>;
-    /** Sets one counter: zero after a review fired, or the rounds after a turn's last write to that store. */
     readonly setCounter: (
       agentId: string,
       counter: "skill" | "memory",

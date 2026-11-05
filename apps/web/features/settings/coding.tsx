@@ -11,7 +11,6 @@ import {
 } from "@/features/github-apps/github-apps";
 import { WorkspaceSettings } from "@/features/workspaces/workspace-settings";
 
-/** What the account's coding jobs work with: for now, the GitHub identities bots act as. */
 export function CodingPage() {
   const apps = useQuery(githubAppsQuery);
   const accounts = useQuery(githubAccountsQuery);

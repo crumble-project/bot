@@ -38,7 +38,6 @@ type Secret = ReturnType<typeof useSecretDraft>;
 
 type Secrets = { username: Secret; password: Secret; code: Secret };
 
-/** A field's new secret, or undefined to keep the saved one. */
 const fieldBody = (secret: Secret) =>
   secret.changed && secret.input ? secret.input : undefined;
 
@@ -126,7 +125,6 @@ function useSaveLogin(
   });
 }
 
-/** Creates or edits a login; values are written once and never shown again. */
 export function LoginSheet({
   bots,
   botId,
@@ -135,10 +133,8 @@ export function LoginSheet({
   onClose,
 }: {
   bots: Bot[];
-  /** Null for a new login from all bots: the sheet asks which bot it is for. */
   botId: string | null;
   existing: Login | null;
-  /** The bot's request this login answers; its name, hosts, and reason fill the sheet. */
   request: LoginRequest | undefined;
   onClose: () => void;
 }) {
@@ -187,7 +183,6 @@ export function LoginSheet({
   );
 }
 
-/** The login's fields one by one, or a 1Password item that fills them all. */
 function LoginSource({
   draft,
   existing,

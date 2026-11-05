@@ -31,7 +31,6 @@ const receiptMessage = (receipt: GatewayReceipt): GatewayMessage => ({
   isDirectMessage: receipt.isDirectMessage,
 });
 
-/** Carries each stored receipt to its bot and the bot's answer back, over whatever connection is current. */
 export const receiptDelivery = Effect.fnUntraced(function* (
   adapters: readonly ChatAdapter[],
   connections: GatewayConnections,

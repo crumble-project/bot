@@ -24,7 +24,6 @@ import {
 } from "./workspace-notes";
 import { BOT_TOOL } from "../contract/tools";
 
-/** The bot's own read, write, edit, and bash in its workspace; group turns keep it, unlike the job tool. */
 const WORKSPACE_EXTENSION = "workspace";
 
 // Tools whose success may have changed the workspace's files. A failed bash can still have written files.
@@ -71,10 +70,6 @@ const syncAfter = (workspaces: Workspaces, agentId: string, name: string) =>
     ? Effect.runPromise(workspaces.sync(agentId))
     : Promise.resolve();
 
-/**
- * Lets a bot work in its workspace with Pi's coding tools, in its chat and group chats, and run coding jobs: child
- * conversations with the same tools in the same workspace.
- */
 function codingExtensions(
   coding: JobKind,
   agent: Pick<Agent, "id">,
@@ -82,7 +77,6 @@ function codingExtensions(
   questionGraceMs: () => number,
   credentials: CredentialsAccess,
 ): JobExtensions {
-  // While the owner considers a question, the workspace stays up for the grace period, so servers the job started live.
   let awake:
     | { release: () => void; timer: ReturnType<typeof setTimeout> }
     | undefined;
@@ -125,7 +119,6 @@ function codingExtensions(
           if (!(await coding.isJob(api, api.conversationId, context)))
             return undefined;
 
-          // A tool after the question means the answer arrived and the job works again.
           wake();
           await syncAfter(workspaces, agent.id, call.name);
 
@@ -135,7 +128,6 @@ function codingExtensions(
     ],
   });
 
-  // Jobs select exactly their own extension, so this one reaches only the bot's chat and group chats.
   const own = defineExtension({
     name: WORKSPACE_EXTENSION,
     tools,
@@ -166,7 +158,6 @@ function codingExtensions(
   };
 }
 
-/** Coding as a plugin: workspace tools and coding jobs for bots with the `coding` tool, while workspaces exist. */
 export const codingPlugin = (
   workspaces: Workspaces | undefined,
   questionGraceMs: () => number,

@@ -15,7 +15,6 @@ import {
 import { queryClient } from "@/lib/api";
 import { type Bot } from "@/features/bots/api";
 
-/** What a bot is doing, read from its chat, so its avatar can act it out. */
 export type Working =
   | "idle"
   | "thinking"
@@ -36,14 +35,12 @@ const SEARCHING = new Set<string>([
 const toolCalls = (message: Message) =>
   blocksOf(message).filter((block) => block.type === "toolCall");
 
-/** What a bot does while waiting on these tool calls. */
 function toolWork(names: string[]): Working {
   if (names.some((name) => SEARCHING.has(name))) return "searching";
 
   return names.includes(MEMORY_TOOL_NAME) ? "remembering" : "tinkering";
 }
 
-/** A running turn's working: streaming its reply, recovering from a tool error, or waiting on tools. */
 function turnWork(chat: ChatSnapshot): Working {
   if (chat.partial.trim()) return "writing";
 
@@ -58,14 +55,12 @@ function turnWork(chat: ChatSnapshot): Working {
     : "thinking";
 }
 
-/** A chat's working: what its running turn does, or how its last turn ended. */
 export function workingOf(chat: ChatSnapshot | undefined): Working {
   if (chat?.status === "failed") return "failed";
 
   return chat?.status === "running" ? turnWork(chat) : "idle";
 }
 
-/** A bot's working from its cached chat; never fetches. */
 export function useWorking(id: string) {
   return useSyncExternalStore(
     (listener) => queryClient.getQueryCache().subscribe(listener),
@@ -76,7 +71,6 @@ export function useWorking(id: string) {
 export const isBusy = (working: Working) =>
   working !== "idle" && working !== "failed";
 
-/** What the chat says a busy bot is doing. */
 export const workingLabel: Record<Working, string> = {
   idle: "Working",
   thinking: "Thinking",
@@ -88,7 +82,6 @@ export const workingLabel: Record<Working, string> = {
   failed: "Working",
 };
 
-/** The line under a bot's name: working or paused say so, otherwise `idle` shows. */
 export function botStatusLine(
   bot: Pick<Bot, "enabled">,
   working: boolean,

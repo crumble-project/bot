@@ -33,7 +33,6 @@ export const botSkillsPath = (botId: string) =>
 export const botSkillPath = (botId: string, skillId: string) =>
   `${botSkillsPath(botId)}/${encodeURIComponent(skillId)}` as const;
 
-/** Every bot's own skills, for refreshing them together. */
 export const botSkillsKey = ["bot-skills"];
 
 export const botSkillsQuery = (botId: string) =>
@@ -48,7 +47,6 @@ export const skillsQuery = queryOptions({
   queryFn: ({ signal }) => api<"skills">("/v1/skills", { signal }),
 });
 
-/** Turns a shared skill on or off for one bot; the answer says whether it already was. */
 export const assignSkill = (
   skillId: string,
   botId: string,

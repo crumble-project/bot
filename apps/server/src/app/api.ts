@@ -56,7 +56,6 @@ import { registerEventSourceRoutes } from "../event-sources/event-sources-api";
 import { handleApiError } from "./api-errors";
 import { limitBodies, pathRegister } from "./api-requests";
 
-/** Every account service the routes read. */
 export type ApiServices =
   | CoreServices
   | BotRequests
@@ -72,7 +71,6 @@ export type ApiServices =
   | Scheduler
   | ScriptRuns;
 
-/** The bots the API serves, with the account's services and bot runtime its handlers read directly. */
 export type ApiBots = BotsAccess & {
   core: Runner<ApiServices>;
   runtime: AgentRuntime;
@@ -80,13 +78,10 @@ export type ApiBots = BotsAccess & {
 
 type ApiApp = ReturnType<typeof contractApp>;
 
-/** What the routes are built from besides the account's services. */
 export type ApiOptions = {
-  /** Single-use viewer links. */
   viewerTickets: ViewerTickets;
 };
 
-/** Every value the feature routes are built from; each feature's register function takes the part it needs. */
 function apiContext(
   app: ApiApp,
   service: ApiBots,
@@ -126,7 +121,6 @@ function apiContext(
 
 type ApiContext = ReturnType<typeof apiContext>;
 
-/** Every feature's routes, registered in this order. A new feature adds its register function here. */
 const featureRoutes: ReadonlyArray<(api: ApiContext) => void> = [
   (api) =>
     registerDesktopRoutes({
@@ -173,7 +167,6 @@ const featureRoutes: ReadonlyArray<(api: ApiContext) => void> = [
   registerMcpServerRoutes,
 ];
 
-/** The account's API, built from the account's services in `service.core`. */
 export function createAPI(
   service: ApiBots,
   token: string,

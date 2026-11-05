@@ -5,7 +5,6 @@ import type { MachineStream } from "../machine-workspaces";
 /** The guest program; frames are described there. */
 export const TUNNEL_SCRIPT = path.join(import.meta.dir, "workspace-tunnel.py");
 
-/** Where guest programs reach the workspace proxy, as an HTTP CONNECT proxy. */
 export const GUEST_PROXY_PORT = 3128;
 
 const OPEN = 1;
@@ -23,10 +22,6 @@ const frame = (kind: number, connection: number, payload?: Uint8Array) => {
   return payload ? Buffer.concat([header, payload]) : header;
 };
 
-/**
- * Serves the guest end of `workspace-tunnel.py`: each connection a guest program opens to the tunnel's port becomes a
- * connection from `connect()`, here on the server. Ends when the stream does.
- */
 export function serveTunnel(stream: MachineStream, connect: () => net.Socket) {
   const sockets = new Map<number, net.Socket>();
   // Writes to the guest are async; chaining keeps frames whole and in order.

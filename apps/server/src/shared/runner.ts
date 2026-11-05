@@ -1,6 +1,5 @@
 import { Context, Effect, Predicate, type Fiber } from "effect";
 
-/** Runs effects that need `R` from code outside Effect; a ManagedRuntime is one, and `runnerOf` makes one from a context. */
 export type Runner<R> = {
   runSync<A, E>(effect: Effect.Effect<A, E, R>): A;
   runPromise<A, E>(
@@ -10,14 +9,12 @@ export type Runner<R> = {
   runFork<A, E>(effect: Effect.Effect<A, E, R>): Fiber.Fiber<A, unknown>;
 };
 
-/** A runner over the services in `context`, such as a layer's own, for the plain code that layer builds. */
 export const runnerOf = <R>(context: Context.Context<R>): Runner<R> => ({
   runSync: Effect.runSyncWith(context),
   runPromise: Effect.runPromiseWith(context),
   runFork: Effect.runForkWith(context),
 });
 
-/** A runner for effects that need no service. */
 export const noServices = runnerOf(Context.empty());
 
 /** A service's effects as plain calls for code outside Effect: members named in `Sync` return their value, others a Promise. */
@@ -31,7 +28,6 @@ export type Access<S, Sync extends keyof S = never> = {
       : S[K];
 };
 
-/** Runs `service`'s effects on `runner`, as `Access` describes; a member that returns no effect passes through. */
 export function accessOf<S extends object, const Sync extends keyof S = never>(
   service: S,
   runner: Runner<never>,

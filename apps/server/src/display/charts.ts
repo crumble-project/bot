@@ -44,10 +44,6 @@ function importBinding(clause: string, specifier: string): string {
   return `const { ${bindings.join(", ")} } = __crumbleImport(${JSON.stringify(names.map(([name]) => name))});`;
 }
 
-/**
- * Accepts the module form the TanStack docs use: imports from the bundled packages and `export default` of the chart,
- * in TypeScript. The result is a plain function body for the sandbox.
- */
 export function chartFunction(code: string): string {
   const body = code
     .replace(

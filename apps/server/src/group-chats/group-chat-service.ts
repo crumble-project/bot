@@ -10,7 +10,6 @@ import type { PageOptions } from "../transcript/transcript";
 import type { GroupMemberActivity } from "./group-chat-types";
 import type { GroupTurnEngine } from "./group-turn-engine";
 
-/** Group chats between the owner and several bots: membership, the shared transcript, turns, and change notifications. */
 export const groupChatsService = (
   context: GroupChatContext,
   members: GroupChatMembers,
@@ -37,7 +36,6 @@ export const groupChatsService = (
         const latest = yield* pi(() => context.transcripts.latest(groupId));
         const group = (yield* context.groups.update(groupId, input))!;
 
-        // A new member starts with the messages that follow its joining; its summary of earlier ones comes later.
         for (const agentId of input.memberIds)
           if (!current.memberIds.includes(agentId))
             yield* context.groups.setMember(groupId, agentId, {
@@ -81,7 +79,6 @@ export const groupChatsService = (
     );
   });
 
-  /** Ends every running turn in the group and drops the queued ones. */
   const stop = Effect.fn("GroupChats.stop")(function* (groupId: string) {
     const group = yield* context.get(groupId);
 
@@ -149,7 +146,6 @@ export const groupChatsService = (
     );
   });
 
-  /** The groups a bot belongs to, with their members' names and newest message time, for its lookup tool. */
   const forMember = Effect.fn("GroupChats.forMember")(function* (
     agentId: string,
   ) {
@@ -181,7 +177,6 @@ export const groupChatsService = (
     );
   });
 
-  /** A page of a group's transcript, for a bot that is one of its members. */
   const readAsMember = Effect.fn("GroupChats.readAsMember")(function* (
     agentId: string,
     groupId: string,
@@ -221,7 +216,6 @@ export const groupChatsService = (
     };
   });
 
-  /** Calls `callback` when the group changes, until the returned function is called. */
   const subscribe = (groupId: string, callback: () => void) =>
     context.state.listeners.add(groupId, callback);
 

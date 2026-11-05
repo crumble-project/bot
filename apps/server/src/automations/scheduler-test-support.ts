@@ -13,7 +13,6 @@ import { AutomationDispatch } from "./automation-dispatch";
 
 type Core = Runner<ScheduleRepository | AgentRepository | EventRepository>;
 
-/** A dispatch for tests: it answers only what the test reads. */
 export type StandaloneDispatch = (
   agentId: string,
   prompt: string,
@@ -62,7 +61,6 @@ const standaloneDependencies = (
     ),
   );
 
-/** A scheduler over the tasks `core` reaches, dispatching with `dispatch`, for an API or a test without an account. */
 export function standaloneScheduler(
   core: Core,
   dispatch: StandaloneDispatch,
@@ -70,7 +68,6 @@ export function standaloneScheduler(
   workspaces?: Workspaces,
 ): SchedulerAccess & {
   service: Scheduler["Service"];
-  /** Ends the scheduler's scope, as closing an account does. */
   stop: () => Promise<void>;
 } {
   const runtime = ManagedRuntime.make(
@@ -88,7 +85,6 @@ export function standaloneScheduler(
   };
 }
 
-/** Bot schedules and their scheduler over the tasks `core` reaches, with errors thrown, for a test without an account. */
 export function standaloneBotSchedules(
   core: Core,
   dispatch: StandaloneDispatch,

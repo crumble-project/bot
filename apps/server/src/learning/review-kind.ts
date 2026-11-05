@@ -64,11 +64,9 @@ function reviewExtension() {
   });
 }
 
-/** The model a bot's reviews run on: the chosen one, else the bot's own. */
 export const reviewModelOf = (agent: Agent) =>
   agent.reviewModel ?? { provider: agent.provider, model: agent.model };
 
-/** A review conversation: only the stores it reviews, never chat actions, jobs, delegation, or integrations. */
 export function reviewConversations(): ConversationKind {
   const extension = reviewExtension();
 
@@ -105,7 +103,6 @@ export function reviewConversations(): ConversationKind {
   };
 }
 
-/** A new conversation that reviews one execution, owned by a background task so it stays out of the bot chat. */
 export async function openReviewConversation(
   runtime: Pick<AgentRuntime, "documents" | "openAnchored">,
   agent: Agent,

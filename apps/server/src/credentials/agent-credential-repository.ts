@@ -18,24 +18,19 @@ import { agentCredentials, credentialAuthorities } from "./schema";
 /** A credential the owner gave one bot. Its value is write-only and never part of this record. */
 export type AgentCredential = z.infer<typeof credentialResponse>;
 
-/** A bot's request for a credential, waiting for the owner. */
 export type CredentialRequest = Omit<BotSecretRequest, "oneTimeCode">;
 
-/** A credential the proxy may swap in; its value is read only when a request uses the placeholder. */
 export type CredentialGrant = {
   name: string;
   hosts: string[];
   placeholder: string;
 };
 
-/** One request the credential proxy sent with the real value. */
 export type CredentialUse = z.infer<typeof credentialUseResponse>;
 
-/** The secret holding a credential's value. */
 export const credentialSecretKey = (agentId: string, name: string) =>
   botSecretKey(agentId, "credential", name);
 
-/** A credential without where its value comes from, which the credential's secret knows. */
 export type CredentialRecord = Omit<AgentCredential, "secret">;
 
 const credentialOf = (row: {
@@ -63,7 +58,6 @@ const metadata = {
   lastError: lastUseError("credential", agentCredentials),
 };
 
-/** The credentials the owner gave each bot, and each bot's certificate authority. */
 export class AgentCredentialRepository extends Context.Service<
   AgentCredentialRepository,
   {
@@ -80,11 +74,9 @@ export class AgentCredentialRepository extends Context.Service<
       input: { hosts: string[]; github: boolean },
     ) => Effect.Effect<CredentialRecord>;
     readonly delete: (agentId: string, name: string) => Effect.Effect<boolean>;
-    /** Each credential's placeholder by name, for the bot's job environments. */
     readonly placeholders: (
       agentId: string,
     ) => Effect.Effect<Record<string, string>>;
-    /** Every credential with its hosts and placeholder, without its value. */
     readonly grants: (agentId: string) => Effect.Effect<CredentialGrant[]>;
     /** The bot's certificate authority for the credential proxy, with its private key in PKCS #8 PEM. */
     readonly getAuthority: (
@@ -95,7 +87,6 @@ export class AgentCredentialRepository extends Context.Service<
       agentId: string,
       authority: CredentialAuthority,
     ) => Effect.Effect<CredentialAuthority>;
-    /** Marks the credential used at `at`. */
     readonly touch: (
       agentId: string,
       name: string,

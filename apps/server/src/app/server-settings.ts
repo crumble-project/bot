@@ -19,7 +19,6 @@ export const DEFAULT_SERVER_SETTINGS: ServerSettings = {
   questionGraceMinutes: 15,
 };
 
-/** What a stored value that no longer validates reads as: its default, except that sign-up stays closed. */
 const UNREADABLE_SETTINGS: ServerSettings = {
   ...DEFAULT_SERVER_SETTINGS,
   signUpOpen: false,
@@ -27,7 +26,6 @@ const UNREADABLE_SETTINGS: ServerSettings = {
 
 const MODEL = "serverSetting";
 
-/** Adds the host's own tables to `auth.sqlite`, so Better Auth migrates them with its own. */
 export const serverTables = () =>
   ({
     id: "crumble-server",
@@ -89,7 +87,6 @@ export type ServerSettingsStore = {
   subscribe(listener: (settings: ServerSettings) => void): () => void;
 };
 
-/** The server's settings, cached in memory: workspaces read them synchronously at every boot. */
 export async function serverSettingsStore<O extends BetterAuthOptions>(
   adapter: DBAdapter<O>,
 ): Promise<ServerSettingsStore> {

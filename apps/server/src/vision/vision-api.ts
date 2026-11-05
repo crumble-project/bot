@@ -11,7 +11,6 @@ import {
   type VisionModelRef,
 } from "./vision";
 
-/** The account's vision model: the owner's choice, and every model that could read images for bots. */
 export function registerVisionModelRoutes(options: {
   register: Register;
   run: Runner<SettingsRepository>;
@@ -33,7 +32,6 @@ export function registerVisionModelRoutes(options: {
     };
   };
 
-  // Only a model the account's keys reach and that reads images may describe them.
   const reachable = async (chosen: VisionModelRef) =>
     (await visionChoices(models)).some(
       (model) =>

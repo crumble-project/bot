@@ -22,7 +22,6 @@ type AnnouncementDeps = {
 
 export type BotsAnnouncements = ReturnType<typeof botsAnnouncements>;
 
-/** What a bot's chat tells clients about as it changes: its newest message and its finished replies. */
 export const botsAnnouncements = (
   context: BotsContext,
   deps: AnnouncementDeps,
@@ -38,7 +37,6 @@ export const botsAnnouncements = (
       lastMessage: latestMessagePreview(messages),
     });
 
-  /** Tells activity listeners which bot answered and how its reply begins. */
   const forkPreview = (
     agentId: string,
     conversationId: string,
@@ -58,7 +56,6 @@ export const botsAnnouncements = (
       Effect.asVoid,
     );
 
-  /** Tells activity listeners about a finished reply, unless the bot only reacted to the input. */
   const announceReply = Effect.fnUntraced(function* (execution: Execution) {
     if (!activityListeners.size) return;
     const owner = yield* agents.get(execution.agentId);
@@ -70,7 +67,6 @@ export const botsAnnouncements = (
 
     const { reply, reaction, waitingFor } = latestReply(messages);
 
-    // A reaction acknowledges the input without an answer worth a notification.
     if (!reply && reaction) return;
 
     yield* emit({

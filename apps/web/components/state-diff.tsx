@@ -1,6 +1,5 @@
 import { cn } from "@/lib/utils";
 
-/** What a diff compares: a memory, or a skill's content. */
 type Diffable =
   | { content: string }
   | {
@@ -11,7 +10,6 @@ type Diffable =
     }
   | null;
 
-/** The state as plain lines, so a skill's name, description, instructions, and documents diff together. */
 function lines(state: Diffable) {
   if (!state) return [];
 
@@ -94,7 +92,6 @@ function walkDiff(a: string[], b: string[]) {
   return middle;
 }
 
-/** A line diff by longest common subsequence, after trimming the shared head and tail. */
 function diff(before: string[], after: string[]): DiffLine[] {
   const head = commonHead(before, after);
   const tail = commonTail(before, after, head);

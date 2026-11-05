@@ -39,7 +39,6 @@ type Outcome = {
   error: string | null;
 };
 
-/** How long the owner can look back at an automation's script runs. */
 export const SCRIPT_RUN_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
 const OUTPUT_LIMITS = {
@@ -314,7 +313,6 @@ export class ScriptRuns extends Context.Service<
   );
 }
 
-/** Drops runs past `SCRIPT_RUN_RETENTION_MS`, whether or not anyone reads them. */
 export const scriptRunRetention = Layer.effectDiscard(
   Effect.gen(function* () {
     const repository = yield* ScriptRunRepository;

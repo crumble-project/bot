@@ -1,4 +1,3 @@
-/** The origin Claude Code talks to on its own. */
 export const ANTHROPIC_ORIGIN = "https://api.anthropic.com";
 
 /** The MCP server that offers Crumble's tools; Claude Code names them after it. */
@@ -8,7 +7,6 @@ export const CRUMBLE_TOOL_PREFIX = `mcp__${CRUMBLE_MCP_SERVER}__`;
 
 const OFF = ["0", "false", "no", "off"];
 
-/** Whether an environment value turns its setting off. */
 export const isOff = (value: string) => OFF.includes(value.toLowerCase());
 
 /**

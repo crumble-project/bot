@@ -16,7 +16,6 @@ import { type Job, jobPath, refreshJobs } from "./api";
 
 export type Question = NonNullable<Job["question"]>;
 
-/** One option row: a radio for a single choice, a checkbox for several. */
 function OptionRow({
   option,
   multiple,
@@ -63,7 +62,6 @@ function OptionRow({
   );
 }
 
-/** The owner's answer box for a coding job's open question; the answer resumes the job. */
 export function JobQuestionAnswer({
   botId,
   job,
@@ -77,7 +75,6 @@ export function JobQuestionAnswer({
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const multiple = question.multiple === true;
 
-  // A multiple-choice answer lists the picked options, then anything written.
   const chosen = (question.options ?? []).filter((option) =>
     picked.has(option),
   );

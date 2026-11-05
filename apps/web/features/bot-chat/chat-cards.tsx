@@ -57,7 +57,6 @@ export function ToolResultRow({
   return cardOf(message)?.(chat) ?? null;
 }
 
-/** An event in the chat: a card the owner acts on, such as a job's question, or a plain event row. */
 export function EventMessage({
   message,
   chat,

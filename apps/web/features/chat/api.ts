@@ -15,7 +15,6 @@ export type Message = HistoryPage["messages"][number];
 
 export const CHAT_KEY = "chat";
 
-/** The URL of one page of a transcript at `path`. */
 export const historyPage = <P extends string>(
   path: P,
   limit: number,

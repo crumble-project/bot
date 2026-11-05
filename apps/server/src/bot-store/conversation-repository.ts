@@ -24,7 +24,6 @@ const conversationOf = (
   updatedAt: row.updatedAt,
 });
 
-/** Each bot's conversations: its chat, job conversations, and group working conversations. */
 export class ConversationRepository extends Context.Service<
   ConversationRepository,
   {
@@ -36,7 +35,6 @@ export class ConversationRepository extends Context.Service<
     readonly get: (
       conversationId: string,
     ) => Effect.Effect<Conversation | null>;
-    /** The bot's one continuous chat, once it has one. */
     readonly chatOf: (agentId: string) => Effect.Effect<Conversation | null>;
     readonly create: (
       input: { agentId: string; title: string; chat?: boolean },

@@ -7,7 +7,6 @@ import {
 
 export const groupChatInput = z.object({
   name: z.string().trim().min(1).max(MAX_GROUP_NAME_CHARS),
-  /** Member bots in the order they joined. */
   memberIds: z
     .array(z.uuid())
     .min(MIN_GROUP_MEMBERS)

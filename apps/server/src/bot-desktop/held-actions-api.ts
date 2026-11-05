@@ -9,7 +9,6 @@ type HeldActionRoutesOptions = {
   held: HeldActionsAccess;
 };
 
-/** One bot's held actions: the list its chat cards read, and the owner's approve and decline. */
 export function registerHeldActionRoutes(options: HeldActionRoutesOptions) {
   const { register, service, held } = options;
 

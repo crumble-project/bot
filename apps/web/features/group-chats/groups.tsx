@@ -384,7 +384,6 @@ function isValidGroup(name: string, memberIds: string[]) {
   );
 }
 
-/** Creates a group chat, or edits `group` when given. */
 export function GroupForm({ group }: { group?: GroupChat }) {
   const navigate = useNavigate();
   const bots = useQuery(botsQuery).data ?? [];

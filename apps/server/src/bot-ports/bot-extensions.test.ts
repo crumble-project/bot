@@ -37,7 +37,6 @@ test("extensions come in position order, whatever order features registered in",
         ),
       ).toEqual(["first", "second", "third"]);
 
-      // A feature's scope ends: its extensions are no longer offered.
       yield* Scope.close(late, Exit.void);
 
       expect(

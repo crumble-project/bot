@@ -24,7 +24,6 @@ export const schedulesQuery = queryOptions({
 export const refreshSchedules = () =>
   queryClient.invalidateQueries({ queryKey: schedulesQuery.queryKey });
 
-/** Pauses or resumes an automation, showing the change at once and undoing it if the server refuses. */
 export const toggleScheduleOptions = (id: string) =>
   mutationOptions({
     mutationFn: (enabled: boolean) =>

@@ -25,28 +25,22 @@ const tooManySkills = () =>
     message: `A bot can use at most ${MAX_BOT_SKILLS} shared skills`,
   });
 
-/** What the owner may do with skills. `BotSkills` keeps the same for what bots may do. */
 export class OwnerSkills extends Context.Service<
   OwnerSkills,
   {
-    /** Every skill a bot may use: the default ones the server ships and the shared ones the owner added. */
     readonly catalog: Effect.Effect<z.infer<typeof listedSkillResponse>[]>;
-    /** A shared skill; a bot's own skill is not one. */
     readonly shared: (skillId: string) => Effect.Effect<Skill, NotFound>;
-    /** A bot's own skill, which must belong to that bot. */
     readonly own: (
       agentId: string,
       skillId: string,
     ) => Effect.Effect<Skill, NotFound>;
     /** A shared skill the owner may edit: a default one can't be, and an installed one follows its upstream. */
     readonly editable: (skillId: string) => Effect.Effect<Skill, AppError>;
-    /** Replaces a bot's own skill; the lifecycle fields change only when sent. */
     readonly updateOwn: (
       skillId: string,
       input: SkillInput,
       lifecycle: z.output<typeof skillLifecycleInput>,
     ) => Effect.Effect<Skill | null>;
-    /** Deletes a shared skill and drops it from the bots that had it shared. */
     readonly removeShared: (skillId: string) => Effect.Effect<void, AppError>;
     /** Gives `target` the skill: a shared one is linked, a bot's own is copied. Returns true when it already had it. */
     readonly assign: (
@@ -195,7 +189,6 @@ export class OwnerSkills extends Context.Service<
         return assigned === already;
       });
 
-      /** Only direct linked copies are matched. The source and same-name skills are never removal targets. */
       const assignOwn = Effect.fnUntraced(function* (
         source: Skill,
         target: Agent,

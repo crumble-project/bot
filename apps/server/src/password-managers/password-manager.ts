@@ -17,7 +17,6 @@ export const PASSWORD_MANAGER_TIMEOUT = "10 seconds";
 
 // Error messages follow the password manager's name, as in "1Password could not be reached: ...".
 
-/** The password manager refused the token: it is malformed, expired, or revoked. */
 export class PasswordManagerTokenRejected extends Schema.TaggedError<PasswordManagerTokenRejected>()(
   "PasswordManagerTokenRejected",
   { message: Schema.String },
@@ -29,24 +28,20 @@ export class PasswordManagerUnreachable extends Schema.TaggedError<PasswordManag
   { message: Schema.String, cause: Schema.Defect() },
 ) {}
 
-/** The password manager's SDK can't run on this server, such as Bitwarden on Linux arm64. */
 export class PasswordManagerUnsupported extends Schema.TaggedError<PasswordManagerUnsupported>()(
   "PasswordManagerUnsupported",
   { message: Schema.String, cause: Schema.Defect() },
 ) {}
 
-/** One reference can't be read: its item or field is gone, or the token may not read it. Its value must not be used. */
 export class SecretUnreadable extends Schema.TaggedError<SecretUnreadable>()(
   "SecretUnreadable",
   {
     reference: Schema.String,
     message: Schema.String,
-    /** The item exists and lacks the field, which is an answer rather than a failure. */
     kind: Schema.optional(Schema.Literal("missing-field")),
   },
 ) {}
 
-/** The client's scope closed, such as when the owner disconnected the password manager. */
 export class PasswordManagerDisconnected extends Schema.TaggedError<PasswordManagerDisconnected>()(
   "PasswordManagerDisconnected",
   { message: Schema.String },
@@ -57,10 +52,8 @@ export type PasswordManagerError =
   | PasswordManagerUnreachable
   | PasswordManagerUnsupported;
 
-/** What reading a reference gave: its value, or why this reference alone can't be read. */
 export type SecretRead = Result.Result<Redacted.Redacted, SecretUnreadable>;
 
-/** A password manager signed in with one token. It reads values and never writes them. */
 export interface PasswordManagerClient<
   E = PasswordManagerTokenRejected | PasswordManagerUnreachable,
 > {
@@ -70,21 +63,16 @@ export interface PasswordManagerClient<
   ): Effect.Effect<ReadonlyMap<string, SecretRead>, E>;
 }
 
-/** A client from `PasswordManagers.connect`: it stops reading when its scope closes. */
 export type ConnectedClient = PasswordManagerClient<
   | PasswordManagerTokenRejected
   | PasswordManagerUnreachable
   | PasswordManagerDisconnected
 >;
 
-/** A password manager Crumble can read secrets from, such as 1Password. */
 export interface PasswordManagerVendor {
   readonly id: PasswordManagerId;
-  /** The name owners see, such as in a credential proxy error. */
   readonly name: string;
-  /** The references owners paste, such as `op://vault/item/field`. */
   readonly reference: Schema.Decoder<string>;
-  /** The references of a login's fields in one of its items, for a vendor that stores logins as items. */
   readonly itemFields?: (item: string) => Record<LoginField, string>;
   /** Whether the value changes by the second, such as a computed one-time code, so it must never be cached. */
   readonly isVolatile?: (reference: string) => boolean;
@@ -143,7 +131,6 @@ const connected = (
         Effect.suspend(() =>
           Option.match(held.client, {
             onNone: () => Deferred.await(closed),
-            // Racing the close signal interrupts a read still running when the scope closes.
             onSome: (client) =>
               timed(client.read(references)).pipe(
                 Effect.raceFirst(Deferred.await(closed)),
@@ -153,11 +140,9 @@ const connected = (
     };
   });
 
-/** The password managers this server supports. Every sign-in and read is bounded by `PASSWORD_MANAGER_TIMEOUT`. */
 export class PasswordManagers extends Context.Service<
   PasswordManagers,
   {
-    /** The password managers this server supports, in a stable order. */
     readonly ids: ReadonlyArray<PasswordManagerId>;
     readonly name: (id: PasswordManagerId) => string;
     /** Fails with `InvalidInput` unless `reference` has the password manager's reference format. */
@@ -165,13 +150,11 @@ export class PasswordManagers extends Context.Service<
       id: PasswordManagerId,
       reference: string,
     ) => Effect.Effect<void, InvalidInput>;
-    /** The references of a login's fields in one of the password manager's items. */
     readonly itemFields: (
       id: PasswordManagerId,
       item: string,
     ) => Record<LoginField, string>;
     readonly isVolatile: (id: PasswordManagerId, reference: string) => boolean;
-    /** A client that reads until the scope closes. */
     readonly connect: (
       id: PasswordManagerId,
       token: Redacted.Redacted,

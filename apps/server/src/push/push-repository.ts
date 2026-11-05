@@ -12,7 +12,6 @@ import {
   pushSettings,
 } from "./schema";
 
-/** A delivery due now: one event for one device. */
 export type PendingDelivery = {
   readonly outboxId: string;
   readonly installationId: string;
@@ -42,7 +41,6 @@ const deviceOf = (row: typeof pushDevices.$inferSelect): PushDevice => {
   return device;
 };
 
-/** Devices, presence, and the delivery outbox of an account's push database. */
 export class PushRepository extends Context.Service<
   PushRepository,
   {
@@ -56,7 +54,6 @@ export class PushRepository extends Context.Service<
       installationId: string,
     ) => Effect.Effect<Option.Option<PushDevice>>;
     readonly deleteDevice: (installationId: string) => Effect.Effect<void>;
-    /** False when the device is not registered. */
     readonly setPresence: (
       installationId: string,
       active: boolean,
@@ -83,7 +80,6 @@ export class PushRepository extends Context.Service<
       outboxId: string,
       installationId: string,
     ) => Effect.Effect<void>;
-    /** Starts the delivery over, with fresh attempts, for a device whose token changed. */
     readonly requeueDelivery: (
       outboxId: string,
       installationId: string,
@@ -92,7 +88,6 @@ export class PushRepository extends Context.Service<
       installationId: string,
       token: string,
     ) => Effect.Effect<void>;
-    /** Drops expired events and, with them, their deliveries. */
     readonly cleanup: Effect.Effect<void>;
   }
 >()("crumble/push/PushRepository") {
@@ -150,7 +145,6 @@ export class PushRepository extends Context.Service<
             set: values,
           });
 
-        // Registration never resets a lease; first registration starts inactive.
         yield* db
           .insert(pushPresence)
           .values({
@@ -231,7 +225,6 @@ export class PushRepository extends Context.Service<
               })
               .onConflictDoNothing();
 
-            // An event enqueued twice keeps its first outbox row.
             const [outbox] = yield* tx
               .select({ id: pushOutbox.id })
               .from(pushOutbox)

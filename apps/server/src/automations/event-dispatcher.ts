@@ -57,7 +57,6 @@ export class EventDispatcher extends Context.Service<
             error: "The automation or its bot was turned off",
           });
 
-        // A start not admitted, such as a script still running, leaves the run for the next tick.
         yield* automations
           .start(schedule, { kind: "event", eventId: run.eventId })
           .pipe(

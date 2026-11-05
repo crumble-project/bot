@@ -52,7 +52,6 @@ import {
 } from "./setup";
 import { Match } from "effect";
 
-/** The Pi AI api id of the Claude Code adapter. */
 export const CLAUDE_CODE_API = "claude-code";
 
 const INERT_MCP = join(import.meta.dir, "inert-mcp.ts");
@@ -73,11 +72,9 @@ const NATIVE_ERRORS = new Map([
 export type AdapterOptions = ClaudeCodeOptions & {
   /** Claude Code's working directory: stable, since the CLI writes it into every request's environment. */
   workDir: string;
-  /** Where the relay forwards. Tests point it at a loopback fixture. */
   upstream?: string;
   /** Wire qualification only: environment for the real CLI against a fixture upstream, such as a fixture API key. */
   fixtureEnv?: Record<string, string>;
-  /** The cached status, refreshed when it is stale or after an authentication failure. */
   status: () => Promise<ClaudeCodeStatus>;
   invalidateStatus: () => void;
 };
@@ -97,7 +94,6 @@ type NativeFrame = {
 
 type AssistantFields = Omit<NativeFrame["message"], "role" | "content">;
 
-/** A native session id that stays the same for every request of one conversation. */
 function conversationSessionId(system: string, frames: NativeFrame[]) {
   const digest = createHash("sha256")
     .update(JSON.stringify([system, frames[0]?.message ?? null]))
@@ -255,7 +251,6 @@ function assistantHistoryBlock(
     return item.thinking.trim() ? [{ type: "text", text: item.thinking }] : [];
   }
 
-  // A call outside the inventory replays as the model named it.
   const name = names.get(item.name);
 
   return [
@@ -307,7 +302,6 @@ function historyContent(
   return [toolResultHistoryBlock(message)];
 }
 
-/** The system prompt and the conversation as stream-json frames, ending in the frame that queries. */
 function prepareHistory(
   context: TranscriptContext,
   model: Model<Api>,
@@ -360,7 +354,6 @@ function prepareHistory(
 
 type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 
-/** Generation fields Claude Code applies from its private settings file, plus the effort for `--effort`. */
 function requestBody(
   model: Model<Api>,
   options: SimpleStreamOptions | undefined,
@@ -431,7 +424,6 @@ const streamJson = z.looseObject({
     .optional(),
 });
 
-/** Reads the CLI's stdout one JSON line at a time, with a read-idle deadline. */
 class Lines {
   private readonly queue: (StreamJson | Error | null)[] = [];
   private waiting: (() => void) | undefined;
@@ -537,7 +529,6 @@ function piUsage(usage: CapturedMessage["usage"] | undefined): Usage {
 
 const toolInput = z.record(z.string(), z.json());
 
-/** Runs one model request through a fresh Claude Code process and streams it as Pi AI events. */
 export function streamClaudeCode(
   adapter: AdapterOptions,
   model: Model<Api>,
@@ -985,7 +976,6 @@ function singleResult(results: StreamJson[]) {
   return results[0];
 }
 
-/** What the CLI's result says about the answer the relay captured. */
 function classify(
   result: StreamJson | undefined,
   captured: CapturedMessage,
@@ -1371,7 +1361,6 @@ function handOff(child: ChildProcessWithoutNullStreams, admission: Admission) {
   });
 }
 
-/** Pi AI's `ProviderStreams` for Claude Code models. */
 export function claudeCodeStreams(adapter: AdapterOptions): ProviderStreams {
   return {
     stream: (model, context, options) =>

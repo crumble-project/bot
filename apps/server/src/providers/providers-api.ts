@@ -14,7 +14,6 @@ import { loginMethods, type ProviderSignInsAccess } from "./provider-auth";
 type ProviderRoutesOptions = {
   register: Register;
   providerAuth: ProviderSignInsAccess;
-  /** Providers whose sign-in happens outside Crumble, by provider ID. */
   externalAuth: ReadonlyMap<string, () => Promise<ExternalAuth>>;
 };
 
@@ -38,7 +37,6 @@ const availableModels = async (models: Models, name: string | undefined) => {
   }
 };
 
-/** Each provider's sign-in state, and the models its credentials can reach. */
 const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
   const { register, providerAuth } = options;
   const models = providerAuth.models;
@@ -81,7 +79,6 @@ const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
   });
 };
 
-/** Storing and removing one provider's API key. */
 const registerProviderCredentialRoutes = (options: ProviderRoutesOptions) => {
   const { register, providerAuth } = options;
   const provider = providerSchema(providerAuth.models);
@@ -108,7 +105,6 @@ const registerProviderCredentialRoutes = (options: ProviderRoutesOptions) => {
   });
 };
 
-/** The interactive sign-in flow: starting one, following it, answering its prompts, and cancelling it. */
 const registerProviderLoginRoutes = (options: ProviderRoutesOptions) => {
   const { register, providerAuth } = options;
   const models = providerAuth.models;
@@ -148,7 +144,6 @@ const registerProviderLoginRoutes = (options: ProviderRoutesOptions) => {
   );
 };
 
-/** The provider routes, in the order the contract document lists them. */
 export function registerProviderRoutes(options: ProviderRoutesOptions) {
   registerProviderStatusRoutes(options);
   registerProviderCredentialRoutes(options);

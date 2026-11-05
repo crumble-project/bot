@@ -44,7 +44,6 @@ afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
 });
 
-/** Counts file reads, the only operation a prompt section makes; on a real backend each boots a stopped machine. */
 class ReadCountingEnv extends NodeExecutionEnv {
   constructor(
     cwd: string,
@@ -62,14 +61,11 @@ class ReadCountingEnv extends NodeExecutionEnv {
   }
 }
 
-/** A directory on this machine standing in for the VM boundary. */
 class DirectoryWorkspaces implements Workspaces {
   readonly synced: string[] = [];
   reads = 0;
-  /** Environments handed out, one per tool call or prompt render that asked. */
   envs = 0;
   readonly desktop = false;
-  /** Whether the machine runs; the directory itself is always there. */
   machine = true;
 
   constructor(readonly dir: string) {}
@@ -128,7 +124,6 @@ const call = (name: string, args: Record<string, string>) =>
     stopReason: "toolUse",
   });
 
-/** What a job's model answers next, told apart by the tool call it saw last. */
 function jobReply(last: Message) {
   if (last.role === "user")
     return call("bash", { command: "echo hello > hello.txt" });
@@ -139,7 +134,6 @@ function jobReply(last: Message) {
   return fauxAssistantMessage([fauxText("Wrote hello.txt and notes.txt.")]);
 }
 
-/** What the bot's model answers next: start the job, or wrap up once it ran. */
 function botReply(last: Message, text: string) {
   if (text.startsWith("[coding job"))
     return fauxAssistantMessage([fauxText("The job is finished.")]);
@@ -160,11 +154,9 @@ function botReply(last: Message, text: string) {
   });
 }
 
-/** One scripted model plays the bot and its jobs; the tools it was offered tell them apart. */
 function script(
   options: {
     offered?: Map<"bot" | "job", string[]>;
-    /** The prompt sections each role's latest request had. */
     sections?: Map<"bot" | "job", Record<string, string | null>>;
     beforeJob?: (signal: AbortSignal | undefined) => Promise<void>;
   } = {},
@@ -295,13 +287,11 @@ test("a coding job works in the workspace and reports to the bot's chat once", a
   expect(report.content).toBe("Wrote hello.txt and notes.txt.");
   expect(report.origin?.name).toBe("builder");
 
-  // The job's own conversation stays out of the chat: its task and answer show only as the report.
   const contents = (await runtime.snapshot(agent, chat)).messages.map(
     (message) => message.content,
   );
 
   expect(contents).not.toContain("Create the files.");
-  // Starting a job ends the bot's turn: the card says it, so no message follows.
   expect(contents).not.toContain("Started.");
   expect(
     contents.filter((content) => content === "Wrote hello.txt and notes.txt."),
@@ -309,10 +299,8 @@ test("a coding job works in the workspace and reports to the bot's chat once", a
   expect(readFileSync(join(workspace, "hello.txt"), "utf8")).toBe("hello\n");
   expect(readFileSync(join(workspace, "notes.txt"), "utf8")).toBe("notes");
 
-  // bash and write each synced the bot's workspace.
   expect(workspaces.synced).toEqual([agent.id, agent.id]);
 
-  // The tool result tells clients which conversation is the job.
   const started = snapshot.messages.find(
     (message) => message.toolName === "coding",
   );
@@ -323,7 +311,6 @@ test("a coding job works in the workspace and reports to the bot's chat once", a
     conversationId: expect.stringContaining(`${agent.id}:`),
   });
 
-  // The chat has the coding tools and the job tool. The job has the coding tools and no job tool, delegation, or memory.
   expect(offered.get("bot")).toEqual([
     "skill_manage",
     "read",
@@ -364,7 +351,6 @@ const releaseSkill: AvailableSkill = {
   scope: "own",
 };
 
-/** Skills the bot learned earlier; loading one counts as a use, as in the chat. */
 function learnedSkills(used: string[]): BotSkills["Service"] {
   const unsupported = () => Effect.die(new Error("read-only library"));
 
@@ -390,7 +376,6 @@ test("a coding job starts with its bot's memory, skills, and latest chat, and no
   const used: string[] = [];
   const recorded = script({ offered, sections });
 
-  // The job loads the bot's learned skill before it works; the bot acknowledges plain chat messages.
   const steps: FauxResponseFactory = async (context, ...rest) => {
     const reply = await recorded(context, ...rest);
 
@@ -451,7 +436,6 @@ test("a coding job starts with its bot's memory, skills, and latest chat, and no
   );
   expect(used).toEqual(["Release"]);
 
-  // The chat's words reach the job; the bot's tool calls, such as the start that names the job, do not.
   expect(job["instructions"]).toContain(
     "Owner: We release from the staging branch.\n\nBot: Noted, staging it is.",
   );
@@ -459,14 +443,12 @@ test("a coding job starts with its bot's memory, skills, and latest chat, and no
   expect(job["instructions"]).not.toContain("Create the files.");
   expect(job["instructions"]).not.toContain("builder");
 
-  // The job can load skills but neither write them nor memory, nor start jobs; the chat keeps its own prompt.
   expect(offered.get("job")).toContain("skill");
   expect(offered.get("job")).not.toContain("skill_manage");
   expect(offered.get("job")).not.toContain("memory");
   expect(offered.get("job")).not.toContain("coding");
   expect(sections.get("bot")?.["bot_knowledge"] ?? null).toBeNull();
 
-  // The job's transcript is its own work, not a copy of the chat.
   const history = await runtime.jobHistory(agent, "coding", "builder");
 
   expect(history.messages.map((message) => message.content)).not.toContain(
@@ -542,12 +524,10 @@ test("a bot without the coding tool is offered none", async () => {
   );
 
   expect(offered.get("bot")).toEqual(["skill_manage"]);
-  // Not even an environment: nothing in the chat could reach the workspace.
   expect(workspaces.envs).toBe(0);
   expect(existsSync(join(dir, "workspace"))).toBe(false);
 });
 
-/** The bot itself writes a file when asked to, and records each request's tools and prompt sections. */
 function directScript(
   offered: string[][],
   sections: Record<string, string | null>[],
@@ -633,7 +613,6 @@ test("the bot works in its workspace itself, in its chat and group chats", async
   const group = await openGroupConversation(runtime, agent, "group-1");
   await say(group, "Write it in the group");
 
-  // A group turn has the workspace too, though no coding jobs.
   expect(readFileSync(join(workspace, "direct.txt"), "utf8")).toBe("direct");
   expect(workspaces.synced).toEqual([agent.id, agent.id]);
   expect(offered.at(-1)).toEqual([
@@ -668,7 +647,6 @@ test("the chat's prompt never boots a stopped workspace, and shows its notes whi
   expect(sections.at(-1)?.[WORKSPACE_SECTION]).toContain(
     "kept in /workspace/.crumble/notes.md. Use them instead of rediscovering, and fix a line that proves wrong.\npnpm is at ~/bin.\nWhen you learn",
   );
-  // The job's own notes section stays out of the chat.
   expect(sections.at(-1)?.[WORKSPACE_NOTES_SECTION] ?? null).toBeNull();
 });
 
@@ -687,7 +665,6 @@ test("a restart while a job works does not report twice", async () => {
     dir,
     workspaces,
     script({
-      // The first process never lets the job's model answer; closing it aborts the request.
       beforeJob: (signal) => {
         working();
 
@@ -782,7 +759,6 @@ test("clients list a bot's coding jobs and page through a job's work", async () 
       conversationId: expect.any(String),
       status: "idle",
       model: { provider: "faux", model: "chat" },
-      // The job's own spend, apart from the bot's chat.
       usage: { models: { "faux/chat": expect.any(Object) }, tools: {} },
     },
   ]);
@@ -827,7 +803,6 @@ test("clients list a bot's coding jobs and page through a job's work", async () 
 
   expect([...older.messages, ...newest.messages]).toEqual(all.messages);
 
-  // The chat transcript still leaves the job's work out.
   const chatHistory = historyResponse.parse(
     await (await get(`/v1/agents/${agent.id}/chat/history`)).json(),
   );
@@ -862,7 +837,6 @@ test("a working coding job's history shows the steps it finished", async () => {
   const { runtime } = open(
     dir,
     new DirectoryWorkspaces(workspace),
-    // The job's second model call waits, so the job stays working after its bash step.
     script({ beforeJob: async () => void (++calls === 2 && (await held)) }),
     agent,
   );
@@ -890,7 +864,6 @@ test("a working coding job's history shows the steps it finished", async () => {
   await until(async () => (await reports(runtime, agent, chat)).length === 1);
 });
 
-/** A job that asks the owner first, then works with the answer. */
 function askingScript(): FauxResponseFactory {
   return async (context) => {
     const tools = context.messages.flatMap((message) =>
@@ -1016,7 +989,6 @@ test("a job keeps the bot turn that sent its work through a restart, until its r
   cleanups.push(() => second.runtime.close());
   await second.runtime.openChat(agent);
 
-  // The question keeps the turn's work open; nothing has reported yet.
   expect(await second.runtime.turnWork(agent, turn)).toEqual({
     open: true,
     reports: [],
@@ -1042,7 +1014,6 @@ test("a job keeps the bot turn that sent its work through a restart, until its r
   );
 });
 
-/** Runs one job in a workspace with `notes` as its workspace notes, if any; returns each role's prompt sections. */
 async function promptSections(notes?: string) {
   const dir = mkdtempSync(join(tmpdir(), "bot-coding-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));

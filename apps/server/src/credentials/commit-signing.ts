@@ -3,7 +3,6 @@ import { GUEST_CA_PATH } from "../../workspace-image/guest";
 import type { WorkspaceInterceptor } from "../workspaces/workspace-proxy";
 import { answerOverTls, type TlsAuthorities } from "./credential-proxy";
 
-/** The git signing helper the server writes into every guest at boot; it asks the server to sign. */
 export const GUEST_SIGN_PATH = "/usr/local/bin/crumble-ssh-sign";
 
 /** The host the signing helper posts to; the interceptor answers it itself and never resolves it. */
@@ -38,7 +37,6 @@ exec curl -fsS --max-time 30 --cacert ${GUEST_CA_PATH} \\
   --data-binary @"$file" -o "$file.sig" https://${SIGNING_HOST}${SIGNING_PATH}
 `;
 
-/** Signs the posted commit with the bot's key; 403 for a bot without one. */
 async function answerSigning(
   sign: (data: Buffer) => Promise<string | undefined>,
   request: http.IncomingMessage,
@@ -76,7 +74,6 @@ async function answerSigning(
   response.end(signature);
 }
 
-/** Answers the signing helper at `SIGNING_HOST` over the bot's authority. */
 export const commitSigning = (options: {
   agentId: string;
   authorities: TlsAuthorities;

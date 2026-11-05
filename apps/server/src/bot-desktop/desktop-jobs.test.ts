@@ -53,7 +53,6 @@ afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
 });
 
-/** The workspace is a scripted bot desktop: cua-driver answers from replies, nothing runs. */
 class GuestWorkspaces implements Workspaces {
   readonly desktop = true;
   readonly calls: GuestCall[];
@@ -134,7 +133,6 @@ const textOf = (message: Message) =>
 
 type Role = "bot" | "job";
 
-/** One scripted model plays the bot and its desktop job; the tools it was offered tell them apart. */
 function script(
   offered: Map<Role, string[]>,
   models: Map<Role, string>,
@@ -188,7 +186,6 @@ function script(
     if (textOf(last).startsWith("[desktop job"))
       return fauxAssistantMessage([fauxText("The form is filled.")]);
 
-    // A start that succeeds ends the bot's turn, so only a failed one is answered.
     if (last.role === "toolResult")
       return fauxAssistantMessage([fauxText("The job did not start.")]);
 
@@ -203,15 +200,10 @@ function script(
 
 type OpenOptions = {
   intent?: DesktopIntent;
-  /** Arguments the bot adds to its start call. */
   start?: JsonObject;
-  /** The opening message's origin; unset, it has none. */
   origin?: InputOrigin;
-  /** The workspace notes earlier jobs left; unset, there are none. */
   notes?: string;
-  /** The bot's answer that ends the test's wait. */
   done?: string;
-  /** Called with the job kinds before the bot runs. */
   kinds?: (kinds: JobKindContribution[]) => void;
 };
 
@@ -328,8 +320,6 @@ test("a desktop job operates the bot desktop and reports to the bot's chat", asy
   const { runtime, agent, chat, offered, calls } = await open();
   const messages = (await runtime.snapshot(agent, chat)).messages;
 
-  // The job has computer_use and loads the bot's skills: no shell, memory writes, delegation, or jobs. The chat never
-  // gets computer_use.
   expect(offered.get("job")).toEqual(["computer_use", "skill"]);
   expect(offered.get("bot")).toEqual([
     "skill_manage",
@@ -346,7 +336,6 @@ test("a desktop job operates the bot desktop and reports to the bot's chat", asy
 
   expect(latestMessagePreview([card])).toBe("Desktop job form");
 
-  // The job's set_value went to the element of the snapshot it captured.
   expect(calls.find((each) => each.tool === "set_value")?.args).toMatchObject({
     element_token: "s1:2",
     value: "Ada",
@@ -370,7 +359,6 @@ test("the desktop job list reports each job's token usage", async () => {
   const { runtime, agent } = await open({ provider: "faux", model: "desk" });
   const [job] = await runtime.jobs(agent, "desktop");
 
-  // Only the job's own requests: the bot's model does not appear.
   expect(Object.keys(job?.usage?.models ?? {})).toEqual(["faux/desk"]);
   expect(job?.usage?.models["faux/desk"]?.totalTokens).toBeGreaterThan(0);
 });
@@ -389,7 +377,6 @@ test("rebuilding a bot's extensions keeps the same computer_use tool", () => {
 
   const toolOf = () => kind?.extensions(agent).job[0]?.tools?.[0];
 
-  // A running job's snapshots and the lease count it last saw live in that tool.
   expect(toolOf()).toBe(toolOf());
 });
 
@@ -495,7 +482,6 @@ test("a desktop job's prompt has the workspace notes to read; the bot's chat has
     notes: "The shop's dev server runs on http://localhost:3000.\n",
   });
 
-  // A desktop job has no file tools, so it is not asked to keep them.
   expect(sections.get("job")?.[WORKSPACE_NOTES_SECTION]).toBe(
     [
       "<workspace_notes>",
@@ -513,7 +499,6 @@ test("without workspace notes, a desktop job's prompt has no notes section", asy
   expect(sections.get("job")?.[WORKSPACE_NOTES_SECTION]).toBeUndefined();
 });
 
-/** A judge that answers every check as asked for, recording what it read; nothing is ever held. */
 function recordingIntent(seen: IntentRequest[]): DesktopIntent {
   return {
     judgeFor: async () => ({
@@ -541,7 +526,6 @@ test("a desktop job's intent check reads the owner's message verbatim and the jo
     origin: { kind: "owner" },
   });
 
-  // Only the acting set_value is checked; capture observes.
   expect(seen).toHaveLength(1);
   expect(seen[0]).toMatchObject({
     ownerMessages: [

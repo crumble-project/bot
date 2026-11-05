@@ -19,7 +19,6 @@ import {
 import type { PasswordManagerId } from "../contract/secrets";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
 
-/** Where a secret's value comes from: stored in Crumble, or read from a password manager. */
 export type SecretSource =
   | { readonly stored: Redacted.Redacted }
   | {
@@ -36,17 +35,13 @@ export const REFRESH_AFTER = Duration.minutes(55);
 /** While the password manager is unreachable, a value read this long ago is still used. */
 export const STALE_UNTIL = Duration.hours(2);
 
-/** A signed-in client nobody reads through is released after this long. */
 const CLIENT_IDLE = Duration.hours(1);
 
-/** A secret's value can't be read from its password manager, and no usable cached value is left. */
 export class SecretUnavailable extends Schema.TaggedError<SecretUnavailable>()(
   "SecretUnavailable",
   {
-    /** The password manager's name, such as 1Password. */
     passwordManager: Schema.String,
     message: Schema.String,
-    /** The item exists and lacks the field, which is an answer rather than a failure. */
     kind: Schema.optional(Schema.Literal("missing-field")),
   },
 ) {}
@@ -57,7 +52,6 @@ type CachedValue = {
   refreshing: boolean;
 };
 
-/** Why a read failed, and whether a cached value may still stand in for it. */
 type ReadFailure = {
   reason: string;
   retainCache: boolean;
@@ -85,7 +79,6 @@ export class SecretValues extends Context.Service<
       readonly passwordManager: PasswordManagerId;
       readonly reference: string;
     }) => Effect.Effect<Redacted.Redacted, SecretUnavailable>;
-    /** Drops a reference's cached value, such as when its secret is edited or deleted. */
     readonly forget: (
       passwordManager: PasswordManagerId,
       reference: string,
@@ -168,7 +161,6 @@ export class SecretValues extends Context.Service<
           ),
         );
 
-      /** Reads the value and caches it; a failure that means the value is gone drops the cached one. */
       const fetchAndStore = (id: PasswordManagerId, reference: string) =>
         Effect.gen(function* () {
           const key = keyOf(id, reference);

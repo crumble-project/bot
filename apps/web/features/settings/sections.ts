@@ -44,6 +44,5 @@ const SETTINGS_SECTIONS = [
   { to: "/settings/skills", label: "Skills", icon: IconSparkles },
 ] as const;
 
-/** The sections this account may open. */
 export const settingsSections = (admin: boolean) =>
   SETTINGS_SECTIONS.filter((section) => admin || !("admin" in section));

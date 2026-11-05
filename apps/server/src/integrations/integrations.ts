@@ -41,7 +41,6 @@ import {
 } from "./mcp-oauth";
 import type { CodemodeNamespace } from "@earendil-works/pi-durable/codemode";
 
-/** The part of pi-mcp's `McpClient` Crumble uses, so tests can stand in for a server. */
 export type MCPClient = {
   connect(transport: McpTransport): Promise<InitializeResult | void>;
   listTools(options?: McpRequestOptions): Promise<Tool[]>;
@@ -64,7 +63,6 @@ export type MCPClientFactory = (
 export type IntegrationsOptions = {
   requestTimeoutMs?: number;
   clientFactory?: MCPClientFactory;
-  /** The server's OAuth client metadata document, when it has a public address. */
   oauthClient?: ClientDocument | undefined;
 };
 
@@ -117,7 +115,6 @@ function defaultClientFactory(
   };
 }
 
-/** An authentication failure as what the owner should do about it; any other failure as it is. */
 const authFailure = (
   server: MCPServer,
   cause: unknown,
@@ -146,7 +143,6 @@ const closeConnection = (connection: OpenClient) =>
     await connection.transport.close().catch(() => undefined);
   });
 
-/** Runs a tool call until `signal` aborts, which rejects with the signal's own reason. */
 const untilAborted = async <A>(
   call: Effect.Effect<A, unknown>,
   signal: AbortSignal | undefined,
@@ -162,17 +158,13 @@ const untilAborted = async <A>(
   }
 };
 
-/** The account's MCP servers as tools for bots: connections stay open and close with the account. */
 export class McpIntegrations extends Context.Service<
   McpIntegrations,
   {
-    /** The server's OAuth client metadata document, when it has a public address. */
     readonly oauthClient: ClientDocument | undefined;
     /** Why a server's tools were left out of a bot's last turn, until it connects again. */
     readonly failure: (serverId: string) => string | null;
-    /** The bot's MCP tools, for Pi Durable at turn time. */
     readonly extensionsForAgent: (agent: Agent) => Promise<Extension[]>;
-    /** The agent's MCP servers as code mode namespaces, so scripts see each server's tools together. */
     readonly codemodeNamespaces: (agent: Agent) => CodemodeNamespace[];
     /** Drops a server's open connection, so the next use picks up a new token or sign-in. */
     readonly disconnect: (serverId: string) => Effect.Effect<void>;
@@ -217,10 +209,8 @@ export class McpIntegrations extends Context.Service<
             }),
           );
 
-        // Kept as the server's failure even when a tool call reads it, since the token can become unreadable after listing.
         const token = (serverId: string) =>
           secretText(secrets)(mcpTokenKey(serverId)).pipe(
-            // Shown as the server's failure under Integrations, after its name.
             Effect.mapError(
               (error) => new Error(`Token could not be read: ${error.message}`),
             ),
@@ -295,7 +285,6 @@ export class McpIntegrations extends Context.Service<
 
         const failure = (serverId: string) => failures.get(serverId) ?? null;
 
-        /** Connects and lists a server's tools; a server that fails is skipped and its reason kept, so the bot still answers. */
         const listedTools = (server: MCPServer) =>
           Effect.gen(function* () {
             const open = yield* connection(server);
@@ -416,7 +405,6 @@ export class McpIntegrations extends Context.Service<
               tools.push(toolOf(agent, server, remote));
           }
 
-          // Tool names carry a server ID, not its name, so the bot learns which integration each belongs to here.
           const summary = [
             connected.length
               ? `MCP servers the owner connected, with their tools:\n${connected.join("\n")}`
@@ -488,7 +476,6 @@ export class McpIntegrations extends Context.Service<
   }
 }
 
-/** Offers each bot the tools of the MCP servers it may use. */
 export const integrationTools = Layer.effectDiscard(
   Effect.gen(function* () {
     const integrations = yield* McpIntegrations;

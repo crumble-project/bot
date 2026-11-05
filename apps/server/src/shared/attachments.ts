@@ -45,10 +45,6 @@ function attachmentBlock(
   };
 }
 
-/**
- * Turns uploads into model content: images as image blocks, text files as named text blocks.
- * Rejects types the models cannot read, oversized files, and text that is not UTF-8.
- */
 export function prepareAttachments(items: AttachmentInput[]) {
   const blocks: (TextContent | ImageContent)[] = [];
   const info: AttachmentInfo[] = [];
@@ -75,8 +71,6 @@ export function prepareAttachments(items: AttachmentInput[]) {
   return { blocks, info };
 }
 
-/** Identifies an attachment set, so a retried request ID can be checked without keeping the bytes. */
-/** Validates attachments before anything is stored, so a bad file never leaves a message or an execution behind. */
 export const validAttachments = (attachments: AttachmentInput[]) =>
   appErrors(
     Effect.try({
@@ -95,7 +89,6 @@ export function attachmentDigest(items: AttachmentInput[]): string | null {
   return hash.digest("hex");
 }
 
-/** How an attachment is served: its bytes never change, so clients may keep them. */
 export const attachmentHeaders = (mimeType: string) => ({
   "Content-Type": mimeType,
   "Cache-Control": "private, max-age=31536000, immutable",

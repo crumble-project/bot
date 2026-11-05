@@ -22,7 +22,6 @@ export type ChatPreviewActivity = {
   lastMessage: string;
 };
 
-/** What a bot's review of one execution changed, for the notice in its chat. */
 export type LearnedActivity = {
   type: "learned";
   agentId: string;
@@ -51,7 +50,6 @@ type Page<K extends keyof AgentRuntime> = AgentRuntime[K] extends (
   ? A
   : never;
 
-/** The bots' chats: admission of each input as a durable execution, its outcome, and who hears about it. */
 export class Bots extends Context.Service<
   Bots,
   {
@@ -59,7 +57,6 @@ export class Bots extends Context.Service<
     readonly conversation: (
       id: string,
     ) => Effect.Effect<{ conversation: Conversation; agent: Agent }, AppError>;
-    /** Calls `callback` when the conversation changes, until the returned function is called. */
     readonly subscribe: (
       conversationId: string,
       callback: () => void,
@@ -78,7 +75,6 @@ export class Bots extends Context.Service<
      * Job reports reach the chat without an execution, so a finished execution never announces them.
      */
     readonly announceJobAnswer: (answer: JobAnswer) => Effect.Effect<void>;
-    /** Tells activity listeners about a reply that did not come from a bot chat execution, or a learned change. */
     readonly announce: (
       event: ReplyActivity | LearnedActivity,
     ) => Effect.Effect<void>;
@@ -117,13 +113,11 @@ export class Bots extends Context.Service<
       kind: string,
       answer: JobAnswerInput,
     ) => Effect.Effect<void, AppError>;
-    /** The image at `index` of an entry's attachments. */
     readonly attachment: (
       agentId: string,
       entryId: string,
       index: number,
     ) => Effect.Effect<Page<"attachment">, AppError>;
-    /** Calls `callback` with the chat's snapshot now and as it changes, until the returned function is called. */
     readonly watch: (
       agentId: string,
       conversationId: string,
@@ -138,7 +132,6 @@ export class Bots extends Context.Service<
       attachments?: AttachmentInput[],
       timezone?: string,
     ) => Effect.Effect<Execution, AppError>;
-    /** A message from Crumble itself that starts a turn in the bot's chat; `requestId` names its origin. */
     readonly notice: (
       agentId: string,
       content: string,
@@ -156,12 +149,10 @@ export class Bots extends Context.Service<
       requestId: string,
       scheduleId: string,
     ) => Effect.Effect<Execution, AppError>;
-    /** Admits the executions a previous run left pending or running again. */
     readonly recover: Effect.Effect<void>;
     readonly compact: (agentId: string) => Effect.Effect<string, AppError>;
     readonly abortChat: (agentId: string) => Effect.Effect<void, AppError>;
     readonly abort: (conversationId: string) => Effect.Effect<void, AppError>;
-    /** Stops everything the bot runs, as disabling or deleting it does. */
     readonly stopAgent: (agentId: string) => Effect.Effect<void, AppError>;
     readonly deleteAgent: (id: string) => Effect.Effect<void, AppError>;
   }
@@ -172,7 +163,6 @@ export class Bots extends Context.Service<
       const context = yield* botsContext;
       const bots = botsService(context);
 
-      // Takes notices for bots' chats, such as a saved credential's, until the bots close.
       yield* context.notices.handle((agentId, text, requestId) =>
         bots.notice(agentId, text, requestId),
       );
@@ -189,7 +179,6 @@ const SYNC_BOTS = [
   "announce",
 ] as const;
 
-/** The bots for code outside Effect, such as the HTTP handlers. */
 export type BotsAccess = Access<Bots["Service"], (typeof SYNC_BOTS)[number]>;
 
 export const botsAccess = (runner: Runner<Bots>): BotsAccess =>

@@ -12,7 +12,6 @@ import {
   UNKNOWN_SCHEDULE_NAME,
 } from "../transcript/origins";
 
-/** Where the memory tool's call came from: a group turn, or the newest input its chat run is answering. */
 export const memorySourceOf = Effect.fnUntraced(function* (
   agentId: string,
   context: MemoryContext,
@@ -31,7 +30,6 @@ export const memorySourceOf = Effect.fnUntraced(function* (
 
   const source = execution && turnSource(execution);
 
-  // A memory source has no event kind: an event automation's run counts as its automation's.
   if (source?.kind === "task" || source?.kind === "event") {
     const schedule = yield* (yield* ScheduleRepository).get(source.scheduleId);
 

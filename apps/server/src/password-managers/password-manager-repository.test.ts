@@ -14,7 +14,6 @@ afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
 
-/** Opens an account's product database with the repository, runs `use`, and closes it. */
 const withRepository = <A, E>(
   use: (dir: string) => Effect.Effect<A, E, PasswordManagerRepository>,
 ) => {
@@ -31,7 +30,6 @@ const withRepository = <A, E>(
   return runtime.runPromise(use(dir)).finally(() => runtime.dispose());
 };
 
-/** Runs SQL on the account's database beside the repository's connection, with foreign keys enforced as the server does. */
 const sql = (dir: string, statement: string) => {
   const db = new Database(join(dir, "store.sqlite"));
 

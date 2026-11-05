@@ -4,7 +4,6 @@ import { Context, Effect, Layer } from "effect";
 import { ProductDatabase } from "./product-database";
 import { settings } from "./schema";
 
-/** Account settings as JSON values by key. */
 export class SettingsRepository extends Context.Service<
   SettingsRepository,
   {

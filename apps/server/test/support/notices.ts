@@ -4,7 +4,6 @@ import type { Store } from "./store";
 
 export type Notice = { agentId: string; text: string; requestId: string };
 
-/** Takes the account's bot notices until `stop` closes its scope. */
 export function takeNotices(store: Store) {
   const notices: Notice[] = [];
   const scope = store.runtime.runSync(Scope.make());

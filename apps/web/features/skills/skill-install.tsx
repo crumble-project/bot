@@ -33,7 +33,6 @@ const STATUS_LABEL: Partial<Record<Candidate["status"], string>> = {
   update: "Update available",
 };
 
-/** Skipped files, the first few by name. */
 function skippedNote(skipped: string[]) {
   if (!skipped.length) return null;
   const shown = skipped.slice(0, 3).join(", ");
@@ -114,7 +113,6 @@ function RepositoryField({
 }: {
   location: string;
   onChange: (location: string) => void;
-  /** Finds again; shown once the first search answered. */
   onFind: (() => void) | null;
 }) {
   return (
@@ -180,7 +178,6 @@ function CandidateList({
   );
 }
 
-/** Installs the `picked` folders of a listing for `botIds`, then refetches the skill lists. */
 function useInstall(
   picked: Set<string>,
   botIds: Set<string>,
@@ -202,7 +199,6 @@ function useInstall(
   });
 }
 
-/** The skills at `location`, read once it's submitted; a read, so a query rather than a mutation. */
 function useListing(location: string | null) {
   return useQuery({
     queryKey: ["skill-listing", location],
@@ -215,11 +211,9 @@ function useListing(location: string | null) {
   });
 }
 
-/** The repository the owner typed, the skills found there, and which of them are checked. */
 function useSkillSearch() {
   const [location, setLocation] = useState("");
   const [submitted, setSubmitted] = useState<string | null>(null);
-  // Null until the owner changes a checkbox: every installable skill starts checked.
   const [checked, setChecked] = useState<Set<string> | null>(null);
   const browse = useListing(submitted);
   const listing = browse.data;
@@ -246,7 +240,6 @@ function useSkillSearch() {
   };
 }
 
-/** The sheet's button: it finds skills until there's a listing, then installs the checked ones. */
 function sheetAction(
   search: ReturnType<typeof useSkillSearch>,
   install: ReturnType<typeof useInstall>,
@@ -267,7 +260,6 @@ function sheetAction(
       };
 }
 
-/** Finds the skills in a GitHub repository and installs the checked ones as shared skills. */
 export function InstallSkillsSheet({
   bots,
   onClose,
@@ -312,7 +304,6 @@ export function InstallSkillsSheet({
   );
 }
 
-/** Creates an editable shared copy of an installed skill, documents included. */
 export async function copySkill(skill: SharedSkill) {
   const full = await api<"getSkill">(skillPath(skill.id));
 
@@ -372,7 +363,6 @@ function UpdateNotice({
   );
 }
 
-/** An installed skill's content, read-only. */
 function SkillContent({ skill }: { skill: SkillPackage }) {
   return (
     <>
@@ -400,7 +390,6 @@ const fullSkillQuery = (skillId: string) => ({
     api<"getSkill">(skillPath(skillId), { signal }),
 });
 
-/** An installed skill, read-only: its source, content, and a pending update. */
 export function InstalledSkillSheet({
   skill,
   bots,
@@ -482,7 +471,6 @@ function UpdatePreview({
   );
 }
 
-/** The changes an update brings, and applying it. */
 export function SkillUpdateSheet({
   skill,
   onClose,

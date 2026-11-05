@@ -48,7 +48,6 @@ const reasons: Partial<Record<ResolveReferenceError["type"], string>> = {
 // 1Password computes the current code for this attribute; any other one-time code source holds the TOTP secret.
 const COMPUTED_CODE = "?attribute=totp";
 
-/** 1Password, read with a service account token through `@1password/sdk`. */
 export const onePassword: PasswordManagerVendor = {
   id: "1password",
   name: NAME,

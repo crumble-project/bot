@@ -32,7 +32,6 @@ const chromium = {
   windows: [{ pid: 7, window_id: 101, app_name: "Chromium", title: "Home" }],
 };
 
-/** The desktop's recorded password fills; the scripted Chromium is `7 <processStart>`. */
 const fillsOf = (record: DesktopFill[] = []): DesktopFills => ({
   list: async () => [...record],
   add: async (fill) => {
@@ -79,7 +78,6 @@ test("captures the whole running desktop and removes its file", async () => {
     ". /run/crumble-desktop.env; ",
   );
   expect([...guest.files.keys()]).toEqual([]);
-  // Without a password typed, the capture doesn't ask cua-driver anything.
   expect(guest.calls).toEqual([]);
   expect(holds).toEqual({ taken: 1, released: 1 });
 });
@@ -137,7 +135,6 @@ test("refuses while a password typed into the running Chromium may show", async 
   expect(captures(guest.commands)).toEqual([]);
   expect(holds).toEqual({ taken: 1, released: 1 });
 
-  // A restarted Chromium shows none of the old one's pages.
   guest.state.processStart = "Thu Oct 30 11:00:00 2026";
 
   expect(
@@ -256,7 +253,6 @@ test("the owner gets the screenshot in the chat, and the turn ends with it", asy
   expect(shown.toolName).toBe(DESKTOP_SCREENSHOT_TOOL_NAME);
   expect(shown.toolDetails).toEqual({ mimeType: "image/jpeg", size: 4 });
   expect(JSON.stringify(shown.blocks)).not.toContain(JPEG);
-  // The tool ended the turn: nothing follows its result.
   expect(messages.at(-1)).toBe(shown);
   expect(latestMessagePreview(messages)).toBe("Desktop screenshot");
 

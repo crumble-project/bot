@@ -119,7 +119,6 @@ async function textUpload(file: File): Promise<UploadResult> {
   };
 }
 
-/** Turns picked files into message attachments, enforcing the server's limits. */
 export async function toUploads(files: File[]) {
   const uploads: Upload[] = [];
   const errors: string[] = [];
@@ -325,7 +324,6 @@ export function UploadChips({
         <Badge
           key={uploadKeys.get(upload)}
           variant="outline"
-          // 24px thumbnail and remove button, 4px in from a 32px pill: 16 - 4 = 12px corners.
           className="h-8 gap-1.5 rounded-full bg-background p-1 pl-2.5 has-[img]:pl-1"
         >
           {upload.preview ? (
@@ -426,7 +424,6 @@ function AttachControl({
           side="top"
           align="start"
           sideOffset={8}
-          // 14px items, 6px in from the edge, under a 14 + 6 = 20px menu.
           className="w-auto min-w-48 rounded-[20px] p-1.5"
         >
           <DropdownMenuItem
@@ -528,7 +525,6 @@ function ComposerErrors({
   );
 }
 
-/** Enter sends, unless the mention picker took the key; Shift+Enter adds a line. */
 const submitOnEnter =
   (navigate: (event: KeyboardEvent) => boolean, submit: () => Promise<void>) =>
   (event: KeyboardEvent) => {
@@ -538,7 +534,6 @@ const submitOnEnter =
     void submit();
   };
 
-/** Whether the send went through; a rejected send recovers the same way as an unsuccessful one. */
 async function sendDraft(
   onSend: (content: string, uploads: Upload[]) => Promise<boolean>,
   content: string,
@@ -588,13 +583,8 @@ function MessageField({
   );
 }
 
-/** A one-row field is 32px; taller content has wrapped onto a second line. */
 const ONE_ROW_PX = 36;
 
-/**
- * One row, like ChatGPT's, until the text needs a second line: after Shift+Enter, or once it wraps.
- * A wrapped draft stays two rows until it's cleared, since in two rows it has more room than one.
- */
 function useExpanded(draft: string) {
   const [wrapped, setWrapped] = useState(false);
 
@@ -611,7 +601,6 @@ function useExpanded(draft: string) {
   return { expanded, measure };
 }
 
-/** Focuses the field with the caret after any restored draft, not before it. */
 function focusAtEnd(field: HTMLTextAreaElement | null) {
   if (!field) return;
 
@@ -619,7 +608,6 @@ function focusAtEnd(field: HTMLTextAreaElement | null) {
   field.setSelectionRange(field.value.length, field.value.length);
 }
 
-/** The composer's text, saved per chat as it changes so leaving the page doesn't lose it. */
 function useDraft(chat: string) {
   const [draft, setDraft] = useState(() => readDraft(chat));
 
@@ -628,7 +616,6 @@ function useDraft(chat: string) {
   return [draft, setDraft] as const;
 }
 
-/** The text field's draft, element, and layout; it starts focused with the caret after the draft. */
 function useMessageField(draftKey: string) {
   const [draft, setDraft] = useDraft(draftKey);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -656,7 +643,6 @@ export function Composer({
   onSend,
   onStop,
 }: {
-  /** Which chat's draft this is, such as `bot:<id>`; the draft outlives the composer. */
   draftKey: string;
   placeholder: string;
   disabled?: boolean;
@@ -664,7 +650,6 @@ export function Composer({
   replyingTo?: string | undefined;
   onCancelReply?: () => void;
   mentionable?: Mentionable[];
-  /** Controls shown beside the send button. */
   actions?: ReactNode;
   onSend: (content: string, uploads: Upload[]) => Promise<boolean>;
   onStop: () => void;
@@ -723,10 +708,7 @@ export function Composer({
         suggestion={mentions.suggestion}
         onPick={mentions.pick}
       />
-      <div
-        // Concentric corners: 16px controls and chips sit 8px padding + 1px border in, so 16 + 8 + 1 = 25px.
-        className="composer-card flex flex-col gap-1 rounded-[25px] p-2 has-disabled:opacity-50"
-      >
+      <div className="composer-card flex flex-col gap-1 rounded-[25px] p-2 has-disabled:opacity-50">
         <UploadChips
           uploads={uploads}
           onRemove={(index) =>

@@ -6,7 +6,6 @@ import type { Runner } from "../shared/runner";
 import { ChangeReverter } from "./change-reverter";
 import { LearnedChangeRepository } from "../learned-changes/learned-change-repository";
 
-/** The learned changes the bot's reviews produced, and the owner reverting one. */
 export function registerLearningRoutes(options: {
   register: Register;
   service: BotLookup;

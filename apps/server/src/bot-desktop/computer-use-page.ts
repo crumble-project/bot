@@ -50,7 +50,6 @@ const refSchema = z.object({
 
 export type PageRef = z.infer<typeof refSchema>;
 
-/** A `get_browser_state` snapshot in `semantic_v2`: the fields this tool reads, each dropped when its shape is unexpected. */
 const semanticSnapshot = z.object({
   page: loose(z.object({ title: loose(z.string()), url: loose(z.string()) })),
   outline: loose(z.string()),
@@ -62,7 +61,6 @@ const semanticSnapshot = z.object({
 
 export type SemanticSnapshot = z.infer<typeof semanticSnapshot>;
 
-/** The tab a page action acts on, bound for this call. */
 export type PageBinding = {
   target_id: string;
   tab_id: string;
@@ -77,7 +75,6 @@ const ATTACHED =
 
 type Refused = { refused: string };
 
-/** The window page actions act on: the named one, else the focused one when it is Chromium, else the first Chromium. */
 export async function chromiumWindow(
   state: ComputerUseState,
   windowId: number | undefined,
@@ -132,7 +129,6 @@ async function attach(
   return undefined;
 }
 
-/** The active tab of a bind reply, or why there is none. */
 function boundTab(
   reply: DriverReply,
   attachedNow: boolean,
@@ -210,7 +206,6 @@ const refLine = (ref: PageRef) => {
   return `[${ref.ref}] ${ref.role ?? "element"} ${JSON.stringify(ref.name ?? "")}${value}${words.length ? ` (${words.join(", ")})` : ""}`;
 };
 
-/** A snapshot as the job reads it: the page, its outline, then one line per element it can act on. Scrubbed before the cut. */
 function pageText(state: ComputerUseState, read: SemanticSnapshot) {
   const text = scrubText(
     state,
@@ -277,7 +272,6 @@ export async function readPage(
 // Reloading the open URL changes neither, so reaching the requested URL counts as moving too.
 const SETTLE_MS = 1000;
 
-/** Polls the tab until it shows the new page; false when it is still loading at the limit. */
 async function waitForLoad(
   state: ComputerUseState,
   target: Window,
@@ -382,7 +376,6 @@ const pointerCall =
     args: { ...ids, ...FOREGROUND, action },
   });
 
-/** A select takes the option's label; other fields take the value as replacement text. */
 const valueCall: RefCallBuilder = (state, ids, args) => {
   if (args.value === undefined) return { invalid: "set_value needs value" };
 
@@ -396,7 +389,6 @@ const valueCall: RefCallBuilder = (state, ids, args) => {
       };
 };
 
-/** Each page action in the form cua-driver takes for a ref. */
 export const REF_CALLS = {
   click: (_state, ids) => ({
     tool: "browser_click",
@@ -415,7 +407,6 @@ export const REF_CALLS = {
   set_value: valueCall,
 } satisfies Record<string, RefCallBuilder>;
 
-/** Acts on a page ref in the tab of the latest read, the tab the ref came from. `build` is the action's form for refs. */
 export async function actOnRef(
   state: ComputerUseState,
   build: RefCallBuilder | undefined,

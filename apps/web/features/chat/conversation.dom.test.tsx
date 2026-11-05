@@ -63,7 +63,6 @@ const groupSnapshot = {
   activity: { members: [], paused: false },
 };
 
-/** Streams that never send: only their opening matters here. */
 const silentStream = (signal: AbortSignal | null | undefined) =>
   new Response(
     new ReadableStream({
@@ -75,10 +74,6 @@ const silentStream = (signal: AbortSignal | null | undefined) =>
 
 type Answer = Response | ((init?: RequestInit) => Response);
 
-/**
- * Renders `load`'s view at `path` in a happy-dom window, its API answering GETs from `answers`, and runs `check`.
- * `/` is the page a chat that is gone leaves for.
- */
 async function render(
   path: string,
   answers: Map<string, Answer>,
@@ -281,7 +276,6 @@ const chatSnapshot = (status: string, messages: unknown[] = page.messages) => ({
   partial: "",
 });
 
-/** Answers an event stream that records the signal it follows until. */
 const recordingStream =
   (signals: (AbortSignal | null | undefined)[]) => (init?: RequestInit) => {
     signals.push(init?.signal);

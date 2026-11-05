@@ -3,7 +3,6 @@ import { Bots } from "../bots/bots";
 import { JOB_KINDS } from "../shared/job-kinds";
 import { HeldActions, type HeldAction } from "./held-actions";
 
-/** Announces each desktop job action held for the owner's approval, so clients notify the owner who must decide. */
 export const heldActionNotices = Layer.effectDiscard(
   Effect.gen(function* () {
     const bots = yield* Bots;

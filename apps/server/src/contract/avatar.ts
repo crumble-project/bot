@@ -2,7 +2,6 @@ import { z } from "@hono/zod-openapi";
 import { DEFAULT_COLOR, DEFAULT_EYE_COLOR, examples } from "open-bot-avatar";
 import { avatarDefinitionSchema as persistedAvatar } from "../shared/avatar-definition";
 
-/** Named transport contract, derived from the same fields and validator as persisted input. */
 export const avatarDefinitionSchema = z
   .object(persistedAvatar.shape)
   .openapi("BotAvatarDefinition");

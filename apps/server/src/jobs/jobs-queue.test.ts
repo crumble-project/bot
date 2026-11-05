@@ -20,7 +20,6 @@ test(
     gates.release("a");
     await until(() => gates.started.length === 2);
     await Bun.sleep(SETTLE_MS);
-    // Only one of b and c holds the screen.
     expect(gates.started).toHaveLength(2);
 
     const second = gates.started[1]!;

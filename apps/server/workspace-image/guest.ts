@@ -3,13 +3,10 @@ import path from "node:path";
 // What a workspace guest holds, for the server and for Railway's recipes. The Dockerfile and desktop-start.sh can't
 // import it, so src/workspaces/guest-image.test.ts fails when they drift.
 
-/** The guest path where a bot's workspace lives; the bot's shell and its coding jobs start here. */
 export const WORKSPACE_PATH = "/workspace";
 
-/** Where images and uploads keep Crumble's guest files. */
 export const GUEST_FILES = "/opt/crumble";
 
-/** Where a backend uploads the helper programs it runs in the guest. */
 export const GUEST_HELPERS = "/usr/local/lib/crumble";
 
 /** `init.templateDir` of every job: its hook marks commits a bot makes as its owner. */
@@ -18,10 +15,8 @@ export const GIT_TEMPLATE_DIR = `${GUEST_FILES}/git-template`;
 /** Started at boot on a desktop image, not through pi-env: its daemon kills what it started when the connection closes. */
 export const DESKTOP_START = `${GUEST_FILES}/desktop-start.sh`;
 
-/** Makes `DESKTOP_START` return once the VNC server listens, before the browser is up. */
 export const DESKTOP_DISPLAY_ONLY = "--display";
 
-/** Written by `DESKTOP_START`: the display and session bus every command on the bot desktop needs. */
 export const DESKTOP_ENV_FILE = "/run/crumble-desktop.env";
 
 export const VNC_PORT = 5900;
@@ -33,17 +28,14 @@ export const FILES_PROGRAM = "thunar";
 
 export const TERMINAL_PROGRAM = "xfce4-terminal";
 
-/** Where every backend puts the pi-env daemon in the guest. */
 export const GUEST_DAEMON = "/usr/local/bin/pi-env";
 
 /** Where the guest keeps the bot's credential proxy authority, which `update-ca-certificates` adds to the bundle. */
 export const GUEST_CA_PATH =
   "/usr/local/share/ca-certificates/crumble-credentials.crt";
 
-/** The guest's system bundle: public authorities plus the bot's. */
 export const GUEST_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt";
 
-/** Host folders of what goes into a guest. */
 export const DESKTOP_SOURCES = path.join(import.meta.dir, "desktop");
 
 export const GIT_TEMPLATE_SOURCES = path.join(import.meta.dir, "git-template");
@@ -66,7 +58,6 @@ export const BASE_PACKAGES = [
   "xz-utils",
 ];
 
-/** On top of the base packages; each image brings its own Chromium. */
 export const DESKTOP_PACKAGES = [
   "tigervnc-standalone-server",
   "xfwm4",
@@ -123,7 +114,6 @@ export const DESKTOP_ENV = {
   DO_NOT_TRACK: "1",
 };
 
-/** The variables as `NAME=value` words, as a shell command or Dockerfile `ENV` takes them. */
 export const envWords = (env: Record<string, string>) =>
   Object.entries(env)
     .map(([name, value]) => `${name}=${value}`)

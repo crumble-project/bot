@@ -72,7 +72,6 @@ function RunDetails({ run }: { run: ScriptRun }) {
   );
 }
 
-/** One row of the Runs tab: a prompt run opens the bot's chat, a script run its output. */
 type RunEntry = {
   id: string;
   schedule: Schedule | undefined;

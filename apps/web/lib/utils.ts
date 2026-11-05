@@ -15,11 +15,9 @@ export function randomId(): string {
 
 const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six"];
 
-/** A small count as UI text spells it, such as "two"; larger ones stay digits. */
 export const numberWord = (count: number) =>
   NUMBER_WORDS[count] ?? String(count);
 
-/** Markdown as one line of plain text, for previews outside a chat. */
 export function plainMarkdown(markdown: string) {
   return markdown
     .replace(/```[\s\S]*?```/g, " ")

@@ -62,7 +62,6 @@ describe("credential proxy request headers", () => {
       requestHeaders(["Authorization", `Bearer ${placeholder}`], swap),
     ).toEqual({ authorization: [`Bearer ${value}`] });
 
-    // A Basic header holding more than one token is not a credential to decode, so it is swapped as text.
     expect(
       requestHeaders(["Authorization", `Basic ${placeholder} extra`], swap),
     ).toEqual({ authorization: [`Basic ${value} extra`] });
@@ -105,7 +104,6 @@ describe("credential proxy response headers", () => {
   });
 });
 
-/** The body of a raw HTTP/1.1 response, joining chunks when it is chunked. */
 const bodyOf = (response: string) => {
   const split = response.indexOf("\r\n\r\n");
   const head = response.slice(0, split);
@@ -128,7 +126,6 @@ const bodyOf = (response: string) => {
 describe("credentialProxy", () => {
   const value = "proxy-test-value-0123456789";
 
-  /** A bot with ECHO_TOKEN for example.com, an upstream that echoes the Authorization header, and the proxy between. */
   const setup = async () => {
     const dir = mkdtempSync(join(tmpdir(), "crumble-credential-proxy-"));
     const store = new Store(dir);
@@ -218,7 +215,6 @@ describe("credentialProxy", () => {
     const entryPort = (entry.address() as AddressInfo).port;
     const ca = await authorities.certificate(bot.id);
 
-    /** Sends a request with `authorization` from the bot's workspace and returns the raw response. */
     const request = (authorization: string, path = "/check") =>
       new Promise<string>((done, fail) => {
         const socket = tls.connect({

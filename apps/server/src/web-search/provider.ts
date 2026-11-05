@@ -16,16 +16,13 @@ export class WebExtractionError extends Schema.TaggedError<WebExtractionError>()
 
 export const DEFAULT_PROVIDER = "web-search:default-provider";
 
-/** The account's default provider; a stored value this server doesn't know reads as Mixed. */
 export const defaultProvider = (settings: SettingsRepository["Service"]) =>
   Effect.map(settings.get(DEFAULT_PROVIDER), (stored) =>
     z.enum(WEB_SEARCH_PROVIDER_IDS).catch("mixed").parse(stored),
   );
 
-/** The most text one page gives a bot. */
 export const MAX_PAGE_CHARS = 20000;
 
-/** How long a vendor may take to answer. */
 export const VENDOR_TIMEOUT = "30 seconds";
 
 export type WebSearchQuery = {

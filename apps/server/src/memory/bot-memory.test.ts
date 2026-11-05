@@ -30,7 +30,6 @@ const sharing = store.createAgent(
   agentInput.parse({ name: "Ada", tools: ["memory"] }),
 );
 
-// Shared memory comes with the memory tool.
 const solo = store.createAgent(agentInput.parse({ name: "Grace", tools: [] }));
 
 describe("BotMemory", () => {

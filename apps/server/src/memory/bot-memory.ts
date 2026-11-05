@@ -20,7 +20,6 @@ const validContent = (content: string): Effect.Effect<void, AppError> =>
       )
     : Effect.void;
 
-/** What a bot's memory tool reads and changes: its own memories, and the shared ones when it uses shared memory. */
 export class BotMemory extends Context.Service<
   BotMemory,
   {

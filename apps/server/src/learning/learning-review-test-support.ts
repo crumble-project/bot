@@ -8,7 +8,6 @@ import type { LearnedChangeRepository } from "../learned-changes/learned-change-
 import { LearningReview } from "./learning-review";
 import type { ReviewRepository } from "./review-repository";
 
-/** Learning reviews over standalone bots, for a test without an account. */
 export const standaloneLearningReview = (bots: {
   effects: Runner<Bots | BotRuntime | AgentRepository>;
   store: { runtime: Runner<ReviewRepository | LearnedChangeRepository> };

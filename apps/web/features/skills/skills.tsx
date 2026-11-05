@@ -80,7 +80,6 @@ import { allPill, botPill, sharedPill } from "@/features/bots/bot-pills";
 
 const DEFAULT = "default";
 
-/** What the page shows: whose skills (all, shared, default, or a bot's id) and the search. */
 type SkillFilter = { scope: string; needle: string };
 
 type BundledSkill = Extract<ListedSkill, { source: "bundled" }>;
@@ -93,13 +92,11 @@ function removePersonalSkill(botId: string, skillId: string) {
   return send<"deleteAgentSkill">(botSkillPath(botId, skillId), "DELETE");
 }
 
-/** The GitHub sheets: installing, viewing an installed skill, or reviewing its update. */
 type InstalledSheet =
   | { kind: "install" }
   | { kind: "view"; skill: SharedSkill }
   | { kind: "update"; skill: SharedSkill };
 
-/** What the dialog edits: a shared skill, one of a bot's own skills, or a new one. */
 type Editing =
   | { kind: "new" }
   | { kind: "shared"; skill: SharedSkill }
@@ -173,7 +170,6 @@ function SkillPills({
   );
 }
 
-/** Whether a skill's name or instructions contain `needle`. */
 const matches = (
   skill: { name: string; instructions: string },
   needle: string,
@@ -182,7 +178,6 @@ const matches = (
   skill.name.toLowerCase().includes(needle) ||
   skill.instructions.toLowerCase().includes(needle);
 
-/** The first line of a skill's instructions, as a glimpse of what it does. */
 const glimpse = (instructions: string) =>
   instructions
     .split("\n")
@@ -214,7 +209,6 @@ function SkillMenu({
   );
 }
 
-/** A skill row: its name and first line on one line, and what follows on the right. */
 function SkillRow({
   name,
   line,
@@ -257,7 +251,6 @@ function SkillRow({
   );
 }
 
-/** A skill the owner can edit, with Edit and a confirmed Delete in its menu. */
 function EditableSkillRow({
   name,
   instructions,
@@ -313,7 +306,6 @@ function EditableSkillRow({
   );
 }
 
-/** The empty note of a bot's own skills: none at all, or none that match. */
 const botSkillsEmpty = (bot: SkillBot, needle: string) => {
   if (bot.skills.some((skill) => matches(skill, needle))) return null;
 
@@ -335,7 +327,6 @@ function BotSkillSections({
 }) {
   const { scope, needle } = filter;
 
-  // A picked bot shows even when empty; under All, only bots with matching skills do.
   const owners =
     scope === ALL
       ? bots.filter((bot) => bot.skills.some((skill) => matches(skill, needle)))
@@ -550,7 +541,6 @@ function SkillsBody({
   );
 }
 
-/** Every bot with its own skills, and the bots whose skills failed to load. */
 function usePersonalSkills() {
   const { bots, entries, refreshing } = useBotQueries(botSkillsQuery);
 
@@ -575,7 +565,6 @@ function useUpdateCheck() {
   });
 }
 
-/** Checks installed skills for updates now; shown only when any skill is installed. */
 function UpdateCheckButton({
   skills,
   check,
@@ -619,7 +608,6 @@ function UpdateCheckFailures({
   ) : null;
 }
 
-/** The open GitHub sheet: installing, an installed skill, or its update. */
 function InstalledSheets({
   sheet,
   bots,
@@ -654,7 +642,6 @@ const firstError = (remove: ReturnType<typeof useRemoveSkills>) =>
   remove.pin.error ??
   remove.copy.error;
 
-/** Selectable packages only; default server files never enter the selection catalog. */
 function selectionCatalog(
   skills: ListedSkill[],
   bots: SkillBot[],
@@ -815,14 +802,12 @@ function BundledRow({ skill }: { skill: BundledSkill }) {
   );
 }
 
-/** "(used by N)" after a shared skill's line, when any bot uses it. */
 function SkillUsage({ bots, skillId }: { bots: Bot[]; skillId: string }) {
   const count = botsUsing(bots, skillId).size;
 
   return count ? <UsedBy count={count} className="shrink-0 text-xs" /> : null;
 }
 
-/** An installed skill: read-only, so View instead of Edit, plus Update and Make a copy. */
 function InstalledRow({
   skill,
   bots,

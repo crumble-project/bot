@@ -7,7 +7,6 @@ import { DesktopControlRepository } from "./desktop-control-repository";
 
 export type ControlHolder = (typeof CONTROL_HOLDERS)[number];
 
-/** Who operates a bot desktop. `changes` counts every change of holder, so a plan from before one can be recognized. */
 export type ControlState = {
   holder: ControlHolder;
   changes: number;
@@ -22,7 +21,6 @@ const UNCHANGED: ControlState = {
   updatedAt: new Date(0).toISOString(),
 };
 
-/** The control lease of each bot desktop: durable in the database, with listeners for live updates. */
 export class DesktopControl extends Context.Service<
   DesktopControl,
   {
@@ -32,7 +30,6 @@ export class DesktopControl extends Context.Service<
       holder: ControlHolder,
     ) => Effect.Effect<ControlState>;
     readonly subscribe: (agentId: string, listener: Listener) => () => void;
-    /** Hears every bot's changes, such as to keep a bot desktop awake while the owner holds it. */
     readonly subscribeAll: (
       listener: (agentId: string, state: ControlState) => void,
     ) => () => void;
@@ -125,7 +122,6 @@ export class DesktopControl extends Context.Service<
 
 const SYNC_DESKTOP_CONTROL = ["get", "set"] as const;
 
-/** Desktop control for code outside Effect: HTTP handlers, the VNC input filter, and Pi Durable tools. */
 export type DesktopControlAccess = Omit<
   Access<DesktopControl["Service"], (typeof SYNC_DESKTOP_CONTROL)[number]>,
   "untilBot"

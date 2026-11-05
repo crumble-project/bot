@@ -10,7 +10,6 @@ export type GroupChat = z.infer<typeof groupChatResponse>;
 
 export type GroupChatSnapshot = z.infer<typeof groupChatSnapshotResponse>;
 
-/** The members still around, of a group's `memberIds`. */
 export const membersOf = <B>(memberIds: string[], byId: Map<string, B>) =>
   memberIds.flatMap((id) => {
     const bot = byId.get(id);

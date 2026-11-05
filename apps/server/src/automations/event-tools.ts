@@ -10,7 +10,6 @@ import { EVENT_BODY_LIMIT, payloadPage } from "../event-sources/event-payload";
 import { EVENT_PAYLOAD_TOOL_NAME } from "../contract/tools";
 import { EventRunRepository } from "./event-run-repository";
 
-/** Reads a page of an event's body, for events one of the bot's automations ran for. */
 export const readPayload = Effect.fnUntraced(function* (
   events: EventRepository["Service"],
   runs: EventRunRepository["Service"],
@@ -60,7 +59,6 @@ export function eventPayloadExtension(
   return defineExtension({ name: "event-payload", tools: [eventPayload] });
 }
 
-/** Offers every bot the `event_payload` tool. */
 export const eventPayloadTools = Layer.effectDiscard(
   Effect.gen(function* () {
     const events = yield* EventRepository;

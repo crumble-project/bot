@@ -24,7 +24,6 @@ const outcomeError = (result: SubmissionOutcome) =>
         : result.reason
       : "The agent could not answer this input";
 
-/** Waits for a submission's outcome, records it, and announces a finished reply. Closing the bots interrupts only the wait. */
 export const botsMonitor = (context: BotsContext, deps: MonitorDeps) => {
   const { runtime, scope } = context;
   const { settle } = deps.notifications;

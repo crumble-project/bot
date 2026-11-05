@@ -3,7 +3,6 @@ import type { Usage } from "@earendil-works/pi-ai";
 import type { JsonObject } from "@earendil-works/pi-durable";
 import type { OwnerMessage } from "../jobs/owner-request";
 
-/** The element an action acts on, as the job's latest capture or read named it. */
 export type IntentTarget = { role?: string; name?: string };
 
 export type IntentStep = {
@@ -14,13 +13,10 @@ export type IntentStep = {
   value?: string;
 };
 
-/** An acting call: one step, or every step of a `steps` call, checked together. */
 export type ProposedAction = {
   steps: IntentStep[];
   host?: string;
-  /** The window is a terminal emulator, where Enter runs a shell command in the bot's own workspace. */
   terminal?: boolean;
-  /** In a terminal: the command Enter would run, as read from the terminal before the check. */
   command?: string;
 };
 
@@ -31,14 +27,12 @@ export type IntentRequest = {
   action: ProposedAction;
 };
 
-/** Probabilities in 0..1, and the in-intent probability this judge must reach for an irreversible action to run. */
 export type JudgeAnswer = {
   irreversible: number;
   inIntent: number;
   inIntentBar: number;
   /** Enter outside a terminal gets no rule of its own: the intent eval showed this judge catches what Enter commits. */
   decidesEnter?: boolean;
-  /** What the judge's call spent, when its service reports token counts. */
   usage?: Usage;
 };
 
@@ -50,9 +44,7 @@ export type Judge = (
 export type IntentVerdict = {
   held: boolean;
   irreversible: boolean;
-  /** The target matched a known commit point. */
   commitPoint: boolean;
-  /** Undefined when the judge failed or none is set; then the rules decide alone. */
   answer: JudgeAnswer | undefined;
   judgeError?: string;
 };
@@ -139,7 +131,6 @@ const COMMIT_NAME = new RegExp(
   "iu",
 );
 
-// Roles a press commits through; a field's label naming "Order number" is not one.
 const CONTROL_ROLE = /button|link|menu ?item|option/i;
 const ENTER_KEY = /(^|\+)(return|enter|kp_enter)$/i;
 const PRESSES = new Set(["click", "double_click"]);
@@ -164,10 +155,6 @@ const enterLeftToJudge = (
     ? action.command !== undefined
     : answer.decidesEnter === true);
 
-/**
- * The rule floor: a known commit point counts as irreversible whatever the judge says. Enter counts unless it is left
- * to the judge that answered; without an answer, it always counts.
- */
 export const isCommitPoint = (
   action: ProposedAction,
   answer?: Pick<JudgeAnswer, "decidesEnter">,
@@ -178,7 +165,6 @@ export const isCommitPoint = (
       isCommitPress(step),
   );
 
-/** Rules only make the check stricter: a commit point is irreversible even when the judge disagrees. */
 export function decide(
   commitPoint: boolean,
   answer: JudgeAnswer | undefined,
@@ -191,7 +177,6 @@ export function decide(
   return { irreversible, held: irreversible && !inIntent };
 }
 
-/** Runs the intent check; a failed or missing judge leaves the rules to decide. */
 export async function checkIntent(
   judge: Judge | undefined,
   request: IntentRequest,
@@ -243,7 +228,6 @@ const targetWords = (target: IntentTarget | undefined) =>
 const stepWords = (step: IntentStep) =>
   (STEP_WORDS.get(step.action) ?? otherWords)(step, targetWords(step.target));
 
-/** The action in plain words, for the owner's approval card and the judge. */
 export function describeAction(action: ProposedAction) {
   const words = action.steps.map(stepWords).join(", then ");
   const sentence = words.charAt(0).toUpperCase() + words.slice(1);
@@ -256,7 +240,6 @@ export function describeAction(action: ProposedAction) {
   return action.host ? `${sentence} on ${action.host}` : sentence;
 }
 
-/** The judge's state: owner messages, the job's task, and the action with its target. */
 export function judgeState(request: IntentRequest): JsonObject {
   const { ownerMessages, tasks, action } = request;
 

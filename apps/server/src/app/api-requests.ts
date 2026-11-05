@@ -6,7 +6,6 @@ import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import { MAX_MESSAGE_BODY } from "../shared/attachment-rules";
 
-/** A route's JSON body schema; a body the contract leaves optional is the handler's to read. */
 const requiredBody = (definition: RouteConfig) => {
   const body = definition.request?.body;
   const media = body?.required ? body.content["application/json"] : undefined;
@@ -17,7 +16,6 @@ const requiredBody = (definition: RouteConfig) => {
 
 type RequestObject = z.ZodType<object> | undefined;
 
-/** Parses what the route's contract declares, for `c.req.valid`. A `ZodError` becomes the 400 in `handleApiError`. */
 const validated = (
   definition: RouteConfig,
   body: z.ZodType | undefined,
@@ -40,7 +38,6 @@ const validated = (
   };
 };
 
-/** Registers a route behind its contract's request schemas. */
 export const pathRegister =
   <E extends Env>(app: OpenAPIHono<E>): Register<E> =>
   (definition, handler, options) => {
@@ -60,7 +57,6 @@ const messagePaths = [routes.sendMessage, routes.sendGroupMessage].map(
     new RegExp(`^${route.getRoutingPath().replace(/:[^/]+/g, "[^/]+")}$`),
 );
 
-/** Messages may carry attachments; every other request stays small. */
 export const limitBodies = <E extends Env>(app: OpenAPIHono<E>) => {
   const messageBodyLimit = bodyLimit({ maxSize: MAX_MESSAGE_BODY });
   const defaultBodyLimit = bodyLimit({ maxSize: 1024 * 1024 });

@@ -12,7 +12,6 @@ export const GITHUB_HOSTS = [
   "uploads.github.com",
 ];
 
-/** GitHub couldn't be reached or refused a request, or the bot has no GitHub App or machine account for it */
 export class GitHubUnavailable extends Schema.TaggedError<GitHubUnavailable>()(
   "GitHubUnavailable",
   { message: Schema.String, status: Schema.optional(Schema.Number) },
@@ -21,7 +20,6 @@ export class GitHubUnavailable extends Schema.TaggedError<GitHubUnavailable>()(
 export const noreplyEmail = (userId: number, login: string) =>
   `${userId}+${login}@users.noreply.github.com`;
 
-/** The GitHub user a token signs in as. */
 export const githubUser = z.object({
   login: z.string().min(1),
   id: z.number().int(),
@@ -50,7 +48,6 @@ const send = (url: string, init: RequestInit, unreachable: string) =>
     catch: () => new GitHubUnavailable({ message: unreachable }),
   });
 
-/** One call to GitHub's REST API, its answer parsed with `schema`. */
 export const github = <T>(
   path: string,
   schema: z.ZodType<T>,
@@ -86,7 +83,6 @@ export const github = <T>(
     ),
   );
 
-/** A file of a public repository at `commit`, from GitHub's raw host rather than the REST API. */
 export const githubFile = (repository: string, commit: string, path: string) =>
   Effect.tryPromise({
     try: async (signal) => {
@@ -101,7 +97,6 @@ export const githubFile = (repository: string, commit: string, path: string) =>
       new GitHubUnavailable({ message: `Can't read ${path} from GitHub` }),
   }).pipe(timed);
 
-/** Exchanges a code or refresh token at GitHub's OAuth endpoint, on github.com rather than the REST API. */
 export const githubOAuth = <T>(
   params: Record<string, string>,
   schema: z.ZodType<T>,

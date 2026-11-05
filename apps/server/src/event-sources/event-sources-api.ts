@@ -3,7 +3,6 @@ import type { Register } from "../contract/route";
 import type { Runner } from "../shared/runner";
 import { EventSources } from "./event-sources";
 
-/** The event relay's settings and the account's event sources. */
 export function registerEventSourceRoutes(options: {
   register: Register;
   run: Runner<EventSources>;

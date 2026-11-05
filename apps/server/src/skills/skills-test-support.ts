@@ -9,7 +9,6 @@ import type { SkillInstaller } from "./skill-installer";
 import type { SkillRepository } from "./skill-repository";
 import { BotSkills } from "./skills";
 
-/** The skills of `store`'s account with `defaultSkills` as defaults, for a test without an account. */
 export const standaloneSkills = (
   store: {
     runtime: Runner<SkillRepository | ProductDatabase | ExecutionRepository>;
@@ -37,7 +36,6 @@ type OwnerServices =
   | SkillInstaller
   | SkillRepository;
 
-/** The owner's skill rules over `store`'s account, for a test without an account. */
 export const standaloneOwnerSkills = (
   store: { runtime: Runner<OwnerServices> },
   defaultSkills: DefaultSkill[] = [],

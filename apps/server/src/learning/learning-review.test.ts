@@ -131,7 +131,6 @@ test("a tool-heavy turn is reviewed on the review model, which patches a skill a
     };
 
   const { store, service, learned } = open([
-    // The owner's turn: one tool round, then an answer.
     capture(
       fauxAssistantMessage(
         [fauxToolCall("skill", { action: "view", name: "Research" })],
@@ -139,7 +138,6 @@ test("a tool-heavy turn is reviewed on the review model, which patches a skill a
       ),
     ),
     capture(fauxAssistantMessage("Here is what I found.")),
-    // The review: read the skill, patch it, done.
     capture(
       fauxAssistantMessage(
         [fauxToolCall("skill", { action: "view", name: "Research" })],
@@ -194,7 +192,6 @@ test("a tool-heavy turn is reviewed on the review model, which patches a skill a
   expect(store.reviewCounters(agent.id)).toEqual({ skill: 0, memory: 1 });
   expect(store.listPendingReviews()).toEqual([]);
 
-  // The review ran on the cheap model, with only the skill tools and the turn as its input.
   expect(modelsUsed.slice(2)).toEqual(["cheap", "cheap", "cheap"]);
   expect(prompts[2]).toContain("reviewing one of your own finished turns");
   expect(prompts[2]).toContain(
@@ -208,11 +205,9 @@ test("a tool-heavy turn is reviewed on the review model, which patches a skill a
   expect(prompts[2]).not.toContain('"name":"memory"');
   expect(prompts[2]).not.toContain('"name":"history_search"');
 
-  // The review conversation stays out of the bot chat.
   const chat = await service.chatSnapshot(agent.id);
   expect(JSON.stringify(chat.messages)).not.toContain("Patched Research");
 
-  // The result is kept for clients that reconnect.
   expect(store.listReviewResults(agent.id)).toMatchObject([
     {
       executionId: execution.id,
@@ -228,7 +223,6 @@ test("a review stops before its input budget is exceeded and leaves no changes b
       { stopReason: "toolUse" },
     ),
     fauxAssistantMessage("Found it."),
-    // The review's first request already exceeds a 1000-token budget, so none of these should run.
     fauxAssistantMessage(
       [fauxToolCall("skill", { action: "view", name: "Research" })],
       { stopReason: "toolUse" },
@@ -295,7 +289,6 @@ test("only the rounds after a turn's last skill write count towards the next rev
   const execution = await service.sendChat(agent.id, "Learn", uuid(1));
   expect(await settle(service, execution.id)).toBe("done");
   await Bun.sleep(100);
-  // Four rounds in total, one after the skill write: no review, and the skill counter restarted at the write.
   expect(learned).toEqual([]);
   expect(store.reviewCounters(agent.id)).toEqual({ skill: 1, memory: 4 });
 });
@@ -325,8 +318,6 @@ test("turns below the threshold are not reviewed, scheduled runs count like chat
   expect(learned).toEqual([]);
   expect(store.reviewCounters(agent.id)).toEqual({ skill: 0, memory: 0 });
 
-  // A scheduled run counts like a chat turn: its two tool rounds reach the skill threshold, so a review runs and resets
-  // that counter. Memory keeps counting because this bot has no memory tool to review with.
   const schedule = store.createSchedule({
     agentId: agent.id,
     name: "Daily",
@@ -348,7 +339,6 @@ test("turns below the threshold are not reviewed, scheduled runs count like chat
   expect(learned).toEqual([]);
   expect(store.reviewCounters(agent.id)).toEqual({ skill: 0, memory: 2 });
 
-  // A review left pending by a crash is aborted and forgotten on recovery.
   const conversation = await openReviewConversation(
     runtime,
     agent,

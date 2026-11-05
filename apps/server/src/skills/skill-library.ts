@@ -12,7 +12,6 @@ import { groupOf } from "../group-chats/group-conversation";
 import { reviewOf } from "../learned-changes/review-conversation";
 import { SKILL_TOOL_NAME } from "../contract/tools";
 
-/** A skill a bot can load: a default from the repository, one from the shared library, or its own. */
 export type AvailableSkill = {
   id: string;
   name: string;
@@ -22,13 +21,10 @@ export type AvailableSkill = {
   scope: "default" | "shared" | "own";
 };
 
-/** Where a skill tool call runs: the group, the inputs of its run, and the run itself. */
 export type SkillToolContext = {
   groupId: string | null;
   submissionIds: string[];
-  /** Identifies the turn by the inputs it answers, so a write can be checked against reads in the same turn. */
   runKey: string | null;
-  /** The execution a review conversation is reviewing; null in the bot's own conversations. */
   reviewOf: string | null;
 };
 
@@ -53,7 +49,6 @@ export async function skillToolContext(
   };
 }
 
-/** Why a skill tool call was refused; the model reads the message. */
 export class SkillToolError extends Schema.TaggedError<SkillToolError>()(
   "SkillToolError",
   { message: Schema.String },
@@ -61,7 +56,6 @@ export class SkillToolError extends Schema.TaggedError<SkillToolError>()(
 
 const MAX_TRACKED_RUNS = 200;
 
-/** Which skills a turn has loaded, so a write can be refused unless it follows a current read. */
 export class SkillReads {
   private readonly runs = new Map<string, Set<string>>();
 
@@ -95,7 +89,6 @@ export const SKILLS_GUIDANCE =
 export const SKILL_WRITING_GUIDANCE =
   "Skills come first for what you learn while working: a procedure that worked, a pitfall and why, and the owner's preferences and corrections for that kind of work belong in the skill you used or built for the task, through skill_manage, where they load only when relevant. Patch the loaded skill before creating a new one, name new skills at the class of task, and write lessons as rules with their reason, not as a log of what happened. Memory is only for facts that hold in every conversation regardless of task.";
 
-/** A bot's own skill shadows a shared one of the same name, which shadows a default. */
 export function resolveSkill(skills: AvailableSkill[], name: string) {
   const wanted = skillNameKey(name.trim());
 
@@ -106,7 +99,6 @@ export function resolveSkill(skills: AvailableSkill[], name: string) {
   );
 }
 
-/** The one-line description for the index: the stated one, or the start of the instructions. */
 export function skillSummary(
   skill: Pick<AvailableSkill, "description" | "instructions">,
 ) {
@@ -123,7 +115,6 @@ export function skillSummary(
     : firstLine;
 }
 
-/** The skills section of a bot's instructions: names and descriptions, never the content. */
 export function skillIndex(skills: AvailableSkill[]) {
   if (!skills.length) return "";
 
@@ -149,7 +140,6 @@ export type SkillToolCallbacks = {
   used?: (skill: AvailableSkill, runKey: string | null) => void | Promise<void>;
 };
 
-/** The model tool that lists skills and loads one skill or one of its reference documents. */
 export function skillTool(callbacks: SkillToolCallbacks) {
   return defineTool({
     name: SKILL_TOOL_NAME,
@@ -219,7 +209,6 @@ export function skillTool(callbacks: SkillToolCallbacks) {
   });
 }
 
-/** What the skill tool returns: a listing, one skill, or one of its documents. */
 type SkillToolResult =
   | Array<{
       name: string;

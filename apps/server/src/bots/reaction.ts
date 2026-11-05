@@ -5,7 +5,6 @@ import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
 import { REACTION_TOOL_NAME } from "../contract/tools";
 import { EMOJI } from "../transcript/tool-results";
 
-/** Lets a bot acknowledge a message with an emoji instead of a text reply. */
 export function reactionExtension() {
   const react = defineTool({
     name: REACTION_TOOL_NAME,
@@ -34,7 +33,6 @@ export function reactionExtension() {
   return defineExtension({ name: "reaction", tools: [react] });
 }
 
-/** Offers every bot the `react` tool. */
 export const reactionTools = Layer.effectDiscard(
   BotExtensions.use((extensions) =>
     extensions.register(ExtensionPosition.reaction, () => [

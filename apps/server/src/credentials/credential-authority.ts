@@ -11,7 +11,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const AUTHORITY_DAYS = 3650;
 const HOST_DAYS = 7;
 
-// A host certificate this close to expiry is replaced before it is served.
 const RENEW_MS = DAY_MS;
 
 const COMMON_NAME = "2.5.4.3";
@@ -70,7 +69,6 @@ async function keyIdentifier(certificate: pkijs.Certificate) {
   );
 }
 
-/** A certificate serial from random `bytes`. */
 export function serialNumber(bytes: Uint8Array) {
   const serial = Uint8Array.from(bytes);
 
@@ -122,9 +120,7 @@ type HostContext = { context: tls.SecureContext; expires: number };
 export class CredentialAuthorities extends Context.Service<
   CredentialAuthorities,
   {
-    /** The bot's authority certificate in PEM, created on first use. */
     readonly certificate: (agentId: string) => Effect.Effect<string>;
-    /** The TLS context the credential proxy presents for `host` to the bot's workspace. */
     readonly context: (
       agentId: string,
       host: string,
@@ -143,7 +139,6 @@ export class CredentialAuthorities extends Context.Service<
       const authorities = new Map<string, Promise<Authority>>();
       const hosts = new Map<string, Promise<HostContext>>();
 
-      // One key for every host certificate of this process; certificates are cheap, keys need not be.
       const hostKeys = crypto.subtle.generateKey(KEY_ALGORITHM, true, [
         "sign",
         "verify",
@@ -314,7 +309,6 @@ async function newAuthority() {
   };
 }
 
-/** Certificate authorities for code outside Effect: workspace boots and the credential proxy. */
 export type CredentialAuthoritiesAccess = Access<
   CredentialAuthorities["Service"]
 >;

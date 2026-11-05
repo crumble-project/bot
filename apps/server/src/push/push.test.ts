@@ -26,7 +26,6 @@ import { standaloneScheduler } from "../automations/scheduler-test-support";
 import { testAPI } from "../../test/support/api";
 import type { Agent } from "../contract/agents";
 
-// Plain header records, so they spread into the defaults.
 type TestRequestInit = Omit<RequestInit, "headers"> & {
   headers?: Record<string, string>;
 };
@@ -60,7 +59,6 @@ const fcmOnly = (fcm: Omit<PushTransport, "canSend">) =>
     fcm: { canSend: () => true, ...fcm },
   });
 
-/** Push and its repository on a test clock that starts at `startAt`. */
 async function pushRuntime(
   dir: string,
   transports: Layer.Layer<PushTransports, never, PushRepository>,
@@ -364,7 +362,6 @@ describe("push registration and durable delivery", () => {
         yield* service.drain;
         expect(sent).toEqual([]);
 
-        // A different installation with no active presence receives the next event.
         yield* store.upsertDevice(id(), android("token-2"));
         yield* store.enqueue(canonicalReplyEvent(shown, service.serverId));
       }),
@@ -412,7 +409,6 @@ describe("push registration and durable delivery", () => {
     let rotationAttempts = 0;
     let deliveredToken = "";
 
-    // The device registers a new token while the send with its old one is in flight.
     const rotatingTransports = Layer.effect(
       PushTransports,
       Effect.gen(function* () {

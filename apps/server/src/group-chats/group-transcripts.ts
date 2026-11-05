@@ -25,15 +25,12 @@ import { HarnessFiles } from "../shared/harness-files";
 
 export type GroupPost = Omit<GroupMessageData, "requestId" | "timestamp">;
 
-/** A group message with its place in the transcript. */
 export type GroupEntry = GroupMessageData & { entry: number; entryId: string };
 
-/** How a turn and a bot's lookup name who wrote a message. */
 export const senderLabel = (
   sender: { kind: string; name?: string | undefined } | undefined,
 ) => (isOwnerOrigin(sender) ? "Owner" : (sender?.name ?? "A bot"));
 
-/** Each group chat's shared transcript: a Pi store of data entries that never calls a model. */
 export class GroupTranscripts {
   private readonly files: HarnessFiles<{ harness: Harness }>;
 
@@ -54,12 +51,10 @@ export class GroupTranscripts {
     return harness;
   }
 
-  /** Appends one message; a retried request ID returns the entry it already wrote. */
   async post(groupId: string, message: GroupPost, requestId: string) {
     return (await this.write(groupId, message, requestId)).entryId;
   }
 
-  /** Like `post`, and tells whether this call wrote the entry or found it from an earlier one. */
   async write(
     groupId: string,
     message: GroupPost,
@@ -108,7 +103,6 @@ export class GroupTranscripts {
     };
   }
 
-  /** Messages after entry number `cursor`, oldest first. */
   async after(groupId: string, cursor: number): Promise<GroupEntry[]> {
     const root = await (await this.open(groupId)).root(BACKGROUND_CONTEXT);
     const found: GroupEntry[] = [];
@@ -138,7 +132,6 @@ export class GroupTranscripts {
     return found;
   }
 
-  /** One message by its entry ID, or undefined when the group has no such message. */
   async message(groupId: string, entryId: string) {
     const entry = parseEntryId(entryId, groupId);
 
@@ -154,7 +147,6 @@ export class GroupTranscripts {
       : undefined;
   }
 
-  /** The bytes of one of a message's attachments. */
   async attachment(groupId: string, entryId: string, index: number) {
     const item = (await this.message(groupId, entryId))?.attachments?.[index];
 
@@ -163,7 +155,6 @@ export class GroupTranscripts {
     return { mimeType: item.mimeType, data: Buffer.from(item.data, "base64") };
   }
 
-  /** The number of the newest entry, or 0 for an empty transcript. */
   async latest(groupId: string) {
     const root = await (await this.open(groupId)).root(BACKGROUND_CONTEXT);
 

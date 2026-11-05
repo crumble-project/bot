@@ -8,54 +8,42 @@ import { groupChats, groupMembers, groupTurns } from "./schema";
 
 export type GroupChatInput = z.infer<typeof groupChatInput>;
 
-/** A conversation between the owner and several bots, with one shared transcript. */
 export type GroupChat = GroupChatInput & {
   id: string;
   createdAt: string;
   updatedAt: string;
 };
 
-/** Bot-started turns a group allows since the owner's last message before it pauses. */
 export const GROUP_TURN_BUDGET = 8;
 
-/** A member's place in a group: its working conversation and the group messages it has seen. */
 export type GroupMember = {
   groupId: string;
   agentId: string;
-  /** The member's task-owned conversation for this group, created on its first turn. */
   conversationId: string | null;
-  /** Number of the last group entry the member's turns have included. */
   cursor: number;
-  /** Woken while busy: one more turn starts when the current one settles. */
   pending: boolean;
-  /** Every wake behind the pending turn came from a bot message. */
   pendingBotStarted: boolean;
-  /** Summary of the messages before the member joined, written once for its first turn. */
   summary: string | null;
   joinedAt: string;
 };
 
 export type GroupTurnStatus = "running" | "posting" | "settled";
 
-/** One member's turn in a group, carried out by an execution in its group conversation. */
 export type GroupTurn = {
   executionId: string;
   groupId: string;
   agentId: string;
-  /** Number of the last group entry the turn's input included. */
   through: number;
   botStarted: boolean;
   status: GroupTurnStatus;
   createdAt: string;
 };
 
-/** Owner messages, by entry number, whose first bot answer has not notified, with the bots they woke. */
 const awaitingAnswers = z.record(z.string(), z.array(z.string()));
 
 export type GroupProgress = {
   botTurns: number;
   paused: boolean;
-  /** Owner messages, by entry number, whose first bot answer has not notified yet, with the bots they woke. */
   awaitingAnswers: Record<string, string[]>;
 };
 
@@ -76,7 +64,6 @@ const turnOf = (row: typeof groupTurns.$inferSelect): GroupTurn => ({
   createdAt: row.createdAt,
 });
 
-/** Group chats, their members' progress through the shared transcript, and their turns. */
 export class GroupChatRepository extends Context.Service<
   GroupChatRepository,
   {

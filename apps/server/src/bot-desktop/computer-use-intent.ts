@@ -28,7 +28,6 @@ function hostOf(url: string | undefined) {
   }
 }
 
-/** Whether the action acts on the element it names; a key press goes to the focus whatever else the call says. */
 const isTargeted = (action: string) => ACTIONS.get(action)?.targeted === true;
 
 function refTarget(state: ComputerUseState, ref: string) {
@@ -45,7 +44,6 @@ function refTarget(state: ComputerUseState, ref: string) {
   return target;
 }
 
-/** The element the call acts on, in the window it runs in; undefined when it acts on the focus or a point. */
 function targetOf(
   state: ComputerUseState,
   args: Pick<ComputerUseArgs, "action" | "ref" | "element">,
@@ -105,7 +103,6 @@ const proposedSteps = (
       )
     : [stepOf(args.action, targetOf(state, args, window), args)];
 
-/** Where the call acts: the page of the latest read in the browser, else the window's app and title. */
 function placeOf(
   state: ComputerUseState,
   args: ComputerUseArgs,
@@ -119,10 +116,6 @@ function placeOf(
   return { page, host: hostOf(page) };
 }
 
-/**
- * The action an acting call proposes, for the intent check; undefined for observing calls. `window` is the window the
- * call runs in, resolved once so the check and the action see the same one; a ref acts in the page of the latest read.
- */
 export function proposedAction(
   state: ComputerUseState,
   args: ComputerUseArgs,

@@ -7,7 +7,6 @@ import { nowIso } from "../shared/time";
 import type { DesktopFill, DesktopFills } from "./computer-use-login";
 import { desktopFills } from "./schema";
 
-/** The passwords typed on each bot desktop, kept until the bot is deleted. */
 export class DesktopFillRepository extends Context.Service<
   DesktopFillRepository,
   {
@@ -54,7 +53,6 @@ export class DesktopFillRepository extends Context.Service<
   );
 }
 
-/** One bot desktop's fills, as its computer_use tool reaches them. */
 export function desktopFillsAccess(
   runtime: Runner<DesktopFillRepository>,
   agentId: string,

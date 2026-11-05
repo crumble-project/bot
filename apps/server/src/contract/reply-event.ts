@@ -3,7 +3,6 @@ import { WAITING_FOR } from "../shared/domain";
 
 /** Reply origins that name neither a job kind nor a message's origin; the rest are stored kinds, never renamed. */
 export const REPLY_ORIGIN = {
-  /** An answer to another bot, which no owner waits on. */
   bot: "bot",
   group: "group",
 } as const;
@@ -43,7 +42,6 @@ export type ReplyEvent = z.infer<typeof replyEvent>;
 
 export type WaitingFor = (typeof WAITING_FOR)[number];
 
-/** A finished reply anywhere on the server, for clients that notify their owner. */
 export type ReplyActivity = {
   type: "reply";
   executionId: string;
@@ -62,7 +60,6 @@ export type ReplyActivity = {
   waitingFor?: WaitingFor;
 };
 
-/** A reply as clients see it, on the event stream and in a notification alike, so they can match one to the other. */
 export function canonicalReplyEvent(
   activity: Omit<ReplyActivity, "type">,
   serverId: string,

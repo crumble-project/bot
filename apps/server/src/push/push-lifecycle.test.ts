@@ -21,10 +21,8 @@ afterEach(() => {
 
 const id = () => crypto.randomUUID();
 
-/** What the test observes of the store: how often it closed, and outbox reads it should fail. */
 type StoreProbe = { closes: number; failPending: number };
 
-/** The real repository, counting its closes and failing outbox reads on demand. */
 const observedRepository = (dir: string, probe: StoreProbe) =>
   Layer.effect(
     PushRepository,
@@ -50,7 +48,6 @@ const observedRepository = (dir: string, probe: StoreProbe) =>
     }),
   ).pipe(Layer.provide(PushRepository.layer(dir)));
 
-/** A source of activity the test fires, recording unsubscribes. */
 function activitySource() {
   let listener: ((event: Activity) => void) | undefined;
   let unsubscribes = 0;
@@ -71,7 +68,6 @@ function activitySource() {
   };
 }
 
-/** Push with delivery attached, over one device registered for `fcm`. */
 async function setup(transport: Omit<PushTransport, "canSend">) {
   const fcm = { canSend: () => true, ...transport };
 
@@ -165,7 +161,6 @@ describe("push lifecycle", () => {
     expect(probe.closes).toBe(0);
 
     release.resolve();
-    // Disposing interrupts the caller waiting on the pass; the pass itself finishes before the store closes.
     await Promise.allSettled([draining]);
     await closing;
     expect(order).toEqual([
@@ -236,7 +231,6 @@ describe("push lifecycle", () => {
     try {
       probe.failPending = 1;
 
-      // The reply's immediate pass fails; the next poll, a second later, delivers it.
       source.emit(reply());
       await Bun.sleep(50);
       expect(count.sends).toBe(0);

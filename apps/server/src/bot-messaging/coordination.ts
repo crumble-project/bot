@@ -23,7 +23,6 @@ const resultSchema = Type.Object({
   response: Type.Array(Type.String()),
 });
 
-/** Model tools adapt the bot-messaging interface; addressing and exchange policy live there. */
 export function coordinationExtension(
   agent: Agent,
   messaging: BotMessaging["Service"],
@@ -164,7 +163,6 @@ export function coordinationExtension(
   );
 }
 
-/** Offers bots with messaging the tools that reach other bots. */
 export const coordinationTools = Layer.effectDiscard(
   Effect.gen(function* () {
     const messaging = yield* BotMessaging;

@@ -103,7 +103,6 @@ function useMessageSending<S extends HistoryPage>(
   return { replyTo, setReplyTo, sendError, sendMessage };
 }
 
-/** One conversation from its stream to its rows: live messages, older pages, outgoing messages, and sending. */
 export function useConversation<S extends HistoryPage>(
   target: ConversationTarget<S>,
 ) {
@@ -153,7 +152,6 @@ export function useConversation<S extends HistoryPage>(
   };
 }
 
-/** The part of `useConversation` that doesn't depend on the kind of snapshot. */
 export type Conversation = Omit<ReturnType<typeof useConversation>, "snapshot">;
 
 export function ConversationError({ error }: { error: Error }) {
@@ -314,7 +312,6 @@ function OutgoingRow({
   );
 }
 
-/** Every row of a conversation up to its live activity. `empty` shows while there is nothing else. */
 export function ConversationMessages({
   conversation,
   empty,

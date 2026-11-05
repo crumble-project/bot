@@ -137,7 +137,6 @@ export const activityInput = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
   /** Only this kind of item; pass the same kind with every page's cursor. */
   kind: z.enum([...ACTIVITY_KINDS, "change"]).optional(),
-  /** The previous page's `nextCursor`. */
   cursor: z.string().min(1).max(8000).optional(),
 });
 

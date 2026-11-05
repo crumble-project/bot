@@ -15,7 +15,6 @@ import { WORKSPACE_PATH } from "../../workspace-image/guest";
 const IMAGE = process.env["CRUMBLE_WORKSPACE_IMAGE"] ?? "";
 const vmTests = process.env["CRUMBLE_VM_TESTS"] === "1" && IMAGE !== "";
 
-// The same image under another tag, for the image change test.
 const OTHER_IMAGE = process.env["CRUMBLE_WORKSPACE_IMAGE_OTHER"] ?? "";
 
 // Sandboxes and volumes are global to the Microsandbox home, so each run gets its own names.
@@ -171,7 +170,6 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
     expect(new TextDecoder().decode((await reader.read()).value)).toContain(
       "ready",
     );
-    // A crash or SIGKILL skips every shutdown handler.
     owner.kill("SIGKILL");
     await owner.exited;
 
@@ -181,7 +179,6 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
       expect(await readText(next.env("orphaned"), "/workspace/note")).toBe(
         "kept\n",
       );
-      // Taken over, not replaced: what was installed outside the workspace is still there.
       expect(
         await readText(next.env("orphaned"), "/usr/local/bin/marker"),
       ).toBe("installed\n");
@@ -211,7 +208,6 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
       await Effect.runPromise(first.close());
     }
 
-    // A new server process: a new MicrosandboxWorkspaces, the same machine.
     const second = new MicrosandboxWorkspaces(IMAGE, { namePrefix, size });
 
     try {
@@ -219,7 +215,6 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
         "installed\n",
       );
 
-      // The machine's network still reaches its proxy, now started again at the port it was created with.
       const https = await sh(
         second.env("keeps"),
         "curl -sS -m 20 -o /dev/null -w '%{http_code}' https://example.com",
@@ -231,7 +226,6 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
     }
   }, 180_000);
 
-  // A second tag of the same image stands in for an image change without a second build.
   test.skipIf(!OTHER_IMAGE)(
     "another image replaces the machine but keeps the workspace",
     async () => {

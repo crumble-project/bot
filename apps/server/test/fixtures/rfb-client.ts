@@ -68,7 +68,6 @@ export async function connectRfb(url: string) {
   const width = view.getUint16(0);
   const height = view.getUint16(2);
 
-  // Raw encoding only, so updates are easy to skip.
   ws.send(new Uint8Array([2, 0, 0, 1, 0, 0, 0, 0]));
 
   const send = (bytes: number[] | Uint8Array) => ws.send(new Uint8Array(bytes));
@@ -109,7 +108,6 @@ export async function connectRfb(url: string) {
       fields.setUint32(12, 1024);
       send(message);
     },
-    /** Requests a 10x10 update and reads it; false when none arrives within 5 s. */
     async smallUpdate() {
       send([3, 0, 0, 0, 0, 0, 0, 10, 0, 10]);
 

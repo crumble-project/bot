@@ -15,7 +15,6 @@ type ChatRoutesOptions = {
   service: BotsAccess;
 };
 
-/** The bot chat's transcript pages, its coding and desktop jobs, and one job's history. */
 const registerChatReadRoutes = (options: ChatRoutesOptions) => {
   const { register, service } = options;
 
@@ -74,7 +73,6 @@ const registerChatReadRoutes = (options: ChatRoutesOptions) => {
   );
 };
 
-/** Sending a message, reading an attachment a reply refers to, and stopping or compacting a bot's turn. */
 const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
   const { register, service } = options;
 
@@ -113,7 +111,6 @@ const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
   );
 };
 
-/** One bot chat's events, from a snapshot and then as each entry settles. */
 const registerChatEventRoutes = (options: ChatRoutesOptions) => {
   const { register, service } = options;
 
@@ -137,7 +134,6 @@ const registerChatEventRoutes = (options: ChatRoutesOptions) => {
   });
 };
 
-/** The bot chat routes, in the order the contract document lists them. */
 export function registerChatRoutes(options: ChatRoutesOptions) {
   registerChatReadRoutes(options);
   registerChatMessageRoutes(options);

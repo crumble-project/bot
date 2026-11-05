@@ -3,10 +3,6 @@ import { check, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { passwordManagers } from "../password-managers/schema";
 import type { PasswordManagerId } from "../contract/secrets";
 
-/**
- * Values by key, such as every secret the owner enters (see `Secrets`): stored encrypted in `value`, or read from a
- * password manager by `reference`. Exactly one of the two is set; a password manager in use can't be removed.
- */
 export const secrets = sqliteTable(
   "credentials",
   {

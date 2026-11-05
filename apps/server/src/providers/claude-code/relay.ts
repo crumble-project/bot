@@ -18,8 +18,6 @@ import {
   type Block,
 } from "./relay-request";
 
-/** Request-scoped native HTTP admission: forwards Claude Code's first Messages request, refuses the rest. */
-
 // Native's own byte-level watchdog against api.anthropic.com (180 s); behind the relay it widens to 300 s.
 const UPSTREAM_IDLE_MS = 180_000;
 
@@ -73,9 +71,7 @@ function forwardedResponseHeaders(response: Response) {
 }
 
 export type AdmissionOptions = {
-  /** The turn being asked, whose blocks the relay restores in the request. */
   queried?: readonly Block[] | undefined;
-  /** A tool-less one-shot that nothing replays: its message marks are dropped instead of moved. */
   oneShot?: boolean;
   /** The environment the child runs in, whose proxy and certificate settings forbid compression. */
   env: Record<string, string | undefined>;
@@ -138,7 +134,6 @@ export class Admission {
     this.url = `http://127.0.0.1:${this.server.port}${this.prefix}`;
   }
 
-  /** The upstream's own message for a non-200 answer, empty when none was captured. */
   errorText() {
     try {
       const parsed = z
@@ -236,7 +231,6 @@ export class Admission {
     let prefix: Uint8Array | undefined;
 
     if (compressed && [400, 403, 415].includes(response.status)) {
-      // Recorded before the body read, so a failed read still reports this answer as an identity send would.
       this.status = response.status;
       prefix = new Uint8Array(await response.arrayBuffer());
 
@@ -284,7 +278,6 @@ export class Admission {
     const deliver = async (chunk: Uint8Array) => {
       if (response.status === 200) this.capture.feed(chunk);
       else if (this.errorBody.length < 65536)
-        // The rejection reason ("prompt is too long"), bounded.
         this.errorBody += new TextDecoder().decode(chunk);
       await writer.write(chunk);
     };

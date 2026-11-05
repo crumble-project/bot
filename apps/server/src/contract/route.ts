@@ -16,7 +16,6 @@ export type Register<E extends Env = Env> = <R extends RouteConfig>(
   options?: { parsesBody: true },
 ) => void;
 
-/** A `parsesBody` PATCH's input: the body over the stored record, read by `schema`. */
 export const mergedBody = async <S extends z.ZodType>(
   c: { req: { json(): Promise<object> } },
   stored: Partial<z.input<S>>,

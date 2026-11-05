@@ -206,7 +206,6 @@ function Users() {
   );
 }
 
-/** Who may join: open sign-up, or invite links only. */
 function SignUp() {
   const settings = useQuery(serverSettingsQuery);
 
@@ -246,7 +245,6 @@ function SignUp() {
   );
 }
 
-/** Settings > Users: the server's accounts, invite links, and sign-up. Admins only. */
 export function UsersPage() {
   const admin = useIsAdmin();
 

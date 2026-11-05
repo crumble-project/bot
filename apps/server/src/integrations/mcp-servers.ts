@@ -27,19 +27,15 @@ import {
 } from "./mcp-oauth";
 import { McpServerRepository, type MCPServer } from "./mcp-server-repository";
 
-/** The server with its secrets' status, never their values. */
 type McpServerSecrets = z.infer<typeof mcpServerResponse>;
 
-/** The server as the owner's client sees it: its auth state plus the last connection failure. */
 type McpServerStatus = z.infer<typeof describedMcpServerResponse>;
 
-/** The account's MCP servers: their records, secrets, sign-ins, and open connections change together here. */
 export class McpServers extends Context.Service<
   McpServers,
   {
     readonly list: Effect.Effect<McpServerStatus[]>;
     readonly get: (id: string) => Effect.Effect<MCPServer, NotFound>;
-    /** Adds a server and lets the bot that owns it use it right away. */
     readonly create: (
       input: z.output<typeof mcpCreateInput>,
       owner: Agent | null,
@@ -65,7 +61,6 @@ export class McpServers extends Context.Service<
       answer: { code: string; state: string; iss?: string | undefined },
     ) => Effect.Effect<McpServerStatus, AppError>;
     readonly signOut: (id: string) => Effect.Effect<McpServerStatus, NotFound>;
-    /** A bot may use shared servers and its own, never another bot's. */
     readonly check: (
       agentId: string | null,
       serverIds: readonly string[],
@@ -121,7 +116,6 @@ export class McpServers extends Context.Service<
         return server;
       });
 
-      /** Saves, or with null removes, one of the server's secrets; returns whether one was sent. */
       const storeSecret = Effect.fnUntraced(function* (
         key: string,
         input: SecretInput | null | undefined,
@@ -134,7 +128,6 @@ export class McpServers extends Context.Service<
         return true;
       });
 
-      /** Forgets a deleted server's secrets and sign-in and closes its connection. */
       const forget = Effect.fnUntraced(function* (id: string) {
         yield* secrets.delete(mcpTokenKey(id));
         yield* secrets.delete(clientSecretKey(id));
@@ -164,7 +157,6 @@ export class McpServers extends Context.Service<
 
         const server = yield* servers.create(input);
 
-        // A secret that can't be saved, such as an unreadable reference, takes the server with it.
         yield* storeSecret(mcpTokenKey(server.id), input.token).pipe(
           Effect.andThen(
             storeSecret(clientSecretKey(server.id), input.oauthClientSecret),

@@ -60,7 +60,6 @@ import {
   wallClock,
 } from "./timing";
 
-/** What the sheet edits: an automation, or a new one for the bot. */
 export type Editing = { schedule: Schedule | null; agentId: string };
 
 type AutomationDraft = {
@@ -350,7 +349,6 @@ function ScriptFields({
   );
 }
 
-/** When the draft runs next, by the scheduler's own cron parser; null when it cannot run. */
 function nextRun(draft: AutomationDraft) {
   const zone = draft.timezone.trim();
 
@@ -461,7 +459,6 @@ const whenOf = (
   return custom || !recurrence ? "custom" : recurrence.kind;
 };
 
-/** The draft change for a When choice, keeping the current time where it can. */
 function whenPatch(
   value: string,
   recurrence: Recurrence | null,
@@ -575,7 +572,6 @@ function TimeFields({
   patch: (change: Partial<AutomationDraft>) => void;
 }) {
   const recurrence = recurrenceOf(draft.cron);
-  // Custom stays chosen even when the typed cron happens to fit a simple shape.
   const [custom, setCustom] = useState(draft.repeat && recurrence === null);
   const when = whenOf(draft, custom, recurrence);
 

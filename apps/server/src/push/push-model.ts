@@ -11,7 +11,6 @@ export type PushDevice = PushDeviceInput & {
   updatedAt: string;
 };
 
-/** The notification title: the bot, and the group when the answer came from one. */
 export const notificationTitle = (event: ReplyEvent) =>
   event.groupName
     ? `${event.agentName} in ${event.groupName}`

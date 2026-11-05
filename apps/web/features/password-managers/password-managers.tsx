@@ -156,7 +156,6 @@ function PasswordManagerRow({ manager }: { manager: PasswordManager }) {
   );
 }
 
-/** The account's password managers: connecting one with a token, replacing it, and disconnecting it. */
 export function PasswordManagersPage() {
   const managers = useQuery(passwordManagersQuery);
 

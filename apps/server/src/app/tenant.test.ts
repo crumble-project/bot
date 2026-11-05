@@ -40,7 +40,6 @@ type ClaudeProvider = {
   } | null;
 };
 
-/** The Claude Code state of one account, as the provider API describes it. */
 async function claudeProvider(tenant: Tenant) {
   const response = await tenant.app.request("/v1/providers", {
     headers: { authorization: `Bearer ${tenant.token}` },
@@ -62,7 +61,6 @@ function claudeState(configDir: string, loggedIn: string) {
   );
 }
 
-/** Two accounts with their own Claude Code state, and a shared config they must not adopt. */
 function claudeSetup(root: string) {
   const skillsDir = join(root, "skills");
   const sharedConfig = join(root, "shared-claude");
@@ -128,7 +126,6 @@ test.serial(
         workspaceEnv: process.env,
       });
 
-      // Each account keeps its own Claude Code state, private to its owner.
       expect(statSync(join(firstDir, "claude")).mode & 0o777).toBe(0o700);
       expect(statSync(join(secondDir, "claude")).mode & 0o777).toBe(0o700);
 

@@ -13,7 +13,6 @@ type JobKindInfo = {
   tool: JobKind;
   label: string;
   icon: TablerIcon;
-  /** Whether the job works on the bot desktop, so its panel links there. */
   onDesktop: boolean;
 };
 

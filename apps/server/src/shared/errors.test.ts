@@ -37,7 +37,6 @@ test("each app error answers with the HTTP status it had as an AppError", () => 
 
 test("other errors are not app errors", () => {
   expect(isAppError(new Error("x"))).toBe(false);
-  // An error's fields parsed back from JSON are not one.
   expect(
     isAppError(JSON.parse(JSON.stringify(new NotFound({ message: "x" })))),
   ).toBe(false);

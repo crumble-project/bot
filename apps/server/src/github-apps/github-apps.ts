@@ -61,7 +61,6 @@ const STATE_TTL_MS = 60 * 60 * 1000;
 /** The public page a created App links to; the server's own address would be published on it. */
 const HOMEPAGE = "https://docs.crumbli.ng";
 
-/** One of the account's GitHub Apps as the owner sees it. */
 export type GitHubApp = GitHubAppResponse;
 
 /** What the web posts to GitHub to create the App: `manifest` goes in a form field, `state` is already in `url`. */
@@ -111,7 +110,6 @@ const appJwt = (clientId: string, privateKey: string, nowMs: number) => {
 
 const OWNER_SCOPES = new Set(["repos", "orgs", "users"]);
 
-/** The GitHub account a request is about, from its path; undefined for paths without one, such as GraphQL. */
 export const ownerOf = (target: CredentialTarget) => {
   const parts = target.path.split("?")[0]!.split("/").filter(Boolean);
 
@@ -154,18 +152,15 @@ export class GitHubApps extends Context.Service<
   {
     readonly list: Effect.Effect<GitHubApp[]>;
     readonly get: (id: string) => Effect.Effect<GitHubApp, NotFound>;
-    /** The manifest the owner's browser posts to GitHub; `organization` creates the App there instead of on the owner's account. */
     readonly manifest: (input: {
       name: string;
       origin: string;
       organization?: string | undefined;
     }) => Effect.Effect<GitHubAppManifest>;
-    /** Exchanges the code GitHub redirected back with for the App's keys. */
     readonly complete: (input: {
       code: string;
       state: string;
     }) => Effect.Effect<GitHubApp, InvalidInput | GitHubUnavailable>;
-    /** Looks up the App's installation on its account and gives its bots the `GH_TOKEN` credential. */
     readonly connect: (
       id: string,
     ) => Effect.Effect<GitHubApp, NotFound | Conflict | GitHubUnavailable>;
@@ -176,12 +171,10 @@ export class GitHubApps extends Context.Service<
     ) => Effect.Effect<GitHubApp, NotFound | Conflict>;
     /** Forgets the App; it stays on GitHub until the owner deletes it there. */
     readonly remove: (id: string) => Effect.Effect<void, NotFound>;
-    /** Replaces the bots that act as a machine account. */
     readonly assignAccount: (
       id: string,
       botIds: readonly string[],
     ) => Effect.Effect<GitHubAccount, NotFound | Conflict>;
-    /** Forgets a machine account. */
     readonly removeAccount: (id: string) => Effect.Effect<void, NotFound>;
     readonly token: (
       agentId: string,
@@ -190,9 +183,7 @@ export class GitHubApps extends Context.Service<
       Redacted.Redacted,
       GitHubUnavailable | SecretUnavailable
     >;
-    /** The commit identity in each GitHub account the bot works in, default first. */
     readonly identities: (agentId: string) => Effect.Effect<GitHubIdentity[]>;
-    /** Commit identity and git's HTTPS sign-in for the bot's coding jobs; empty without an App or machine account. */
     readonly gitEnv: (agentId: string) => Effect.Effect<Record<string, string>>;
   }
 >()("crumble/github-apps/GitHubApps") {
@@ -256,7 +247,6 @@ export class GitHubApps extends Context.Service<
         return yield* appOf(found);
       });
 
-      /** The bot's Apps, oldest assignment first: the first is its default. */
       const appsOfBot = Effect.fn("GitHubApps.appsOfBot")(function* (
         agentId: string,
       ) {
@@ -270,7 +260,6 @@ export class GitHubApps extends Context.Service<
         return rows.map((each) => each.app);
       }, Effect.orDie);
 
-      /** Whether the bot can get a token: it has an installed App, or a machine account. */
       const hasToken = Effect.fnUntraced(function* (agentId: string) {
         return (
           (yield* appsOfBot(agentId)).some(
@@ -279,7 +268,6 @@ export class GitHubApps extends Context.Service<
         );
       });
 
-      /** Gives a bot `GH_TOKEN` while it can get a token, and takes it away otherwise. */
       const syncCredential = Effect.fn("GitHubApps.syncCredential")(function* (
         agentId: string,
       ) {
@@ -426,7 +414,6 @@ export class GitHubApps extends Context.Service<
         return yield* get(id);
       });
 
-      /** The bots that already use another App for the same GitHub account. */
       const clashes = Effect.fn("GitHubApps.clashes")(function* (
         found: AppRow,
         botIds: readonly string[],
@@ -477,7 +464,6 @@ export class GitHubApps extends Context.Service<
 
         const at = yield* nowIso;
 
-        // Kept bots keep their assignment time, which decides each bot's default App.
         yield* db
           .transaction(() =>
             Effect.gen(function* () {
@@ -595,7 +581,6 @@ export class GitHubApps extends Context.Service<
           : yield* mint(fallback);
       });
 
-      /** The machine account, as the default for every account without an App, then each App's account. */
       const identities = Effect.fn("GitHubApps.identities")(function* (
         agentId: string,
       ) {
@@ -695,7 +680,6 @@ export class GitHubApps extends Context.Service<
   );
 }
 
-/** The GitHub Apps and machine accounts as the source of the `github` credentials. */
 export const githubCredentialSource = Layer.effect(
   CredentialSource,
   Effect.gen(function* () {

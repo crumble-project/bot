@@ -29,7 +29,6 @@ const memoryOf = (row: typeof memories.$inferSelect): Memory => ({
   updatedAt: row.updatedAt,
 });
 
-/** Memories: each bot's own, and the shared ones every bot with memory reads. */
 export class MemoryRepository extends Context.Service<
   MemoryRepository,
   {

@@ -52,7 +52,6 @@ const tempDir = () => {
   return dir;
 };
 
-/** A fake Anthropic upstream answering each request with the next scripted reply. */
 function serve(replies: Reply[]) {
   upstream = Bun.serve({
     hostname: "127.0.0.1",
@@ -168,7 +167,6 @@ const signedIn: ClaudeCodeStatus = {
   plan: "Claude Max",
 };
 
-/** Adapter options around the fake CLI; `fake` settings reach it through its config directory, `env` through Crumble's. */
 function adapter(
   url: string,
   fake: Record<string, string> = {},
@@ -514,7 +512,6 @@ describe("Claude Code adapter", () => {
       .array(z.string())
       .parse(JSON.parse(readFileSync(join(dir, "argv.json"), "utf8")));
 
-    // The fake merges its own settings file into what it was given; only the real environment matters here.
     expect(env["ANTHROPIC_API_KEY"]).toBeUndefined();
     expect(env["CRUMBLE_TOKEN"]).toBeUndefined();
     expect(env["ANTHROPIC_BASE_URL"]).toStartWith("http://127.0.0.1:");
@@ -545,7 +542,6 @@ describe("Claude Code adapter", () => {
     const controller = new AbortController();
     const done = collect(options, [user("go")], { signal: controller.signal });
 
-    // The fake records the CLI and its grandchild once both run.
     for (let tries = 0; tries < 100; tries++) {
       const lines = readFileSync(pids, { encoding: "utf8", flag: "a+" })
         .trim()

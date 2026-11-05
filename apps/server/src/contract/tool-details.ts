@@ -7,7 +7,6 @@ import { webSource } from "./web-search";
 
 const optionalText = z.string().optional().catch(undefined);
 
-/** One provider content block of a message: text, or a call with the arguments clients show. */
 export const contentBlocks = z.array(
   z.looseObject({
     type: z.string().optional(),
@@ -35,26 +34,21 @@ export const usageDocument = z.looseObject({
     .optional(),
 });
 
-/** The `coding` and `desktop` tools: the job a call names. */
 export const jobDetails = z.object({
   name: z.string().min(1),
   status: z.string().optional(),
 });
 
-/** `request_credential` and `request_login`: the saved request. */
 export const ownerRequestDetails = z.object({
   name: z.string().min(1),
   hosts: z.array(z.string()).default([]),
   requestedAt: z.string().optional(),
 });
 
-/** `request_bot`: the saved request. */
 export const botRequestDetails = botRequestResponse;
 
-/** `react`: the emoji it sent. */
 export const reactionDetails = z.object({ emoji: z.string() });
 
-/** `web_search` and `web_extract`: each result, or the failure reading a page. */
 export const webPagesDetails = z.array(
   z.union([webSource, z.object({ url: z.string(), error: z.string() })]),
 );
@@ -69,7 +63,6 @@ const storedLayout = z.custom<ChartLayout>(
       .safeParse(value).success,
 );
 
-/** `show`: the component to draw. */
 export const displayDetails = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("stats"),

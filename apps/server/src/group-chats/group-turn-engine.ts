@@ -22,10 +22,8 @@ import { turnOutcome } from "./group-turn-outcome";
 import { MESSAGE_PREVIEW_CHARS } from "../shared/limits";
 import { nowIso } from "../shared/time";
 
-/** Owner messages a group remembers as awaiting their first answer; older ones stop notifying. */
 const AWAITING_ANSWERS = 50;
 
-/** Everything that leads one turn to the next: the group's context, its members, and what a turn tells its bot. */
 export type GroupTurnDeps = {
   readonly context: GroupChatContext;
   readonly members: GroupChatMembers;
@@ -35,7 +33,6 @@ export type GroupTurnDeps = {
 export type PostedMessage = {
   entry: number;
   woken: string[];
-  /** False when a retry found the message already written. */
   created: boolean;
 };
 
@@ -104,7 +101,6 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
     );
   });
 
-  /** Charges a bot-started turn to the group's budget; false once the budget is spent and the group pauses. */
   const chargeTurn = Effect.fnUntraced(
     function* (groupId: string) {
       const { botTurns } = yield* context.groups.activity(groupId);
@@ -125,7 +121,6 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
     (effect, groupId) => context.queueing(groupId, effect),
   );
 
-  /** Forgets the owner messages this turn answers: the first answer from a bot one woke, in a turn that saw it. */
   const takeAnswered = Effect.fnUntraced(
     function* (groupId: string, turn: GroupTurn, agent: Agent) {
       const { awaitingAnswers } = yield* context.groups.activity(groupId);
@@ -224,7 +219,6 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
         (turn) => turn.agentId === agentId && turn.createdAt >= member.joinedAt,
       );
 
-      // A member that joined after the first message waits, queued, for a summary of what came before.
       if (first && member.cursor > 0 && member.summary === null) {
         yield* queueing(groupId, queueMember(groupId, agentId, botStarted));
         yield* startSummary(groupId, agentId, member.cursor);
@@ -273,7 +267,6 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
         (yield* context.bots
           .send(turn.conversationId, prompt, requestId, { attachments })
           .pipe(
-            // A failed admission still leaves its execution; its settlement reports the failure.
             Effect.catchCause((cause) =>
               context.executions
                 .getByRequest(turn.conversationId, requestId)
@@ -301,10 +294,6 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
       if (!activeExecution(execution)) yield* finish(execution.id);
     });
 
-  /**
-   * Writes a joining member's summary outside the group's queue, so a slow model holds up nothing else, then starts
-   * the turn it waited for unless the group was stopped or the member left meanwhile.
-   */
   const startSummary = (
     groupId: string,
     agentId: string,
@@ -417,7 +406,6 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
       yield* context.changed(groupId);
     });
 
-  /** Posts a settled turn's outcome once, advances the member, and starts its waiting turn. */
   const finish = (executionId: string): Effect.Effect<void, AppError> =>
     Effect.gen(function* () {
       const turn = yield* context.groups.getTurn(executionId);
@@ -444,7 +432,6 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
 
       yield* context.groups.updateTurn(executionId, { status: "settled" });
 
-      // A stopped or failed turn leaves its messages unseen, so the member's next turn includes them.
       if (execution.status === "done")
         yield* context.groups.setMember(group.id, turn.agentId, {
           cursor: Math.max(member.cursor, turn.through),
@@ -461,7 +448,6 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
     yield* context.serial(turn.groupId, finish(turn.executionId));
   });
 
-  /** Remembers this message as awaiting its first answer, forgetting the oldest ones, and re-arms bot turns. */
   const rememberAwaitingAnswers = Effect.fnUntraced(function* (
     groupId: string,
     posted: number,
@@ -487,7 +473,6 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
     });
   });
 
-  /** Queues a turn for every woken member that has messages left and is not already running one. */
   const queueWoken = Effect.fnUntraced(function* (
     groupId: string,
     woken: string[],
@@ -509,7 +494,6 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
     }
   });
 
-  /** Records a posted message. A retried post routes again, but neither resumes the bots nor re-arms its notification. */
   const queue = (groupId: string, message: PostedMessage) =>
     queueing(
       groupId,
@@ -522,7 +506,6 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
       }),
     );
 
-  /** Starts the waiting turns of these members. */
   const startQueued = (groupId: string, agentIds: string[]) =>
     context.serial(
       groupId,
@@ -546,7 +529,6 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
 
 export type GroupTurnEngine = ReturnType<typeof groupTurnEngine>;
 
-/** Settles every turn whose execution the bots settle, until the layer closes. */
 export const keepTurnsSettled = (
   context: GroupChatContext,
   engine: GroupTurnEngine,

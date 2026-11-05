@@ -17,21 +17,17 @@ import { reviewOf } from "../learned-changes/review-conversation";
 export type MemoryRecord = {
   id: string;
   content: string;
-  /** Shared memories are also seen by the other bots that use shared memory. */
   shared?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };
 
-/** Where the memory tool runs: a group turn names its group; another conversation's run names its inputs, oldest first. */
 export type MemoryContext = {
   groupId: string | null;
   submissionIds: string[];
-  /** The execution a review conversation is reviewing; null in the bot's own conversations. */
   reviewOf: string | null;
 };
 
-/** What the memory tool reads and writes for a bot. */
 export type MemoryStore = {
   listMemory: (agentId: string) => MemoryRecord[] | Promise<MemoryRecord[]>;
   createMemory: (
@@ -122,7 +118,6 @@ async function runMemoryAction(
   return deleteMemoryAction(store, agentId, args, context);
 }
 
-/** The bot's `memory` tool and the extension that installs it. `current` reads the bot as it is at each call. */
 export function memoryExtension(
   agent: Agent,
   store: MemoryStore,
@@ -153,7 +148,6 @@ export function memoryExtension(
         reviewOf(api, api.conversationId, callContext),
       ]);
 
-      // A review of a group turn keeps that turn's group, so it is held to the same memory rules.
       const context: MemoryContext = {
         groupId: groupId ?? review?.groupId ?? null,
         submissionIds: (live?.run?.inputs ?? []).map(String),

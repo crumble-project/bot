@@ -18,7 +18,6 @@ import { doorstepPlugin } from "../event-sources/plugin";
 import type { Effect } from "effect";
 import type { SecretUnavailable } from "../secrets/secret-values";
 
-/** The fixed parts of the plugins compiled into the server, in the order their vendors are listed. */
 export const builtinVendors: PluginVendors[] = [
   { id: "1password", passwordManagers: [onePassword] },
   { id: "bitwarden", passwordManagers: [bitwarden] },
@@ -27,25 +26,18 @@ export const builtinVendors: PluginVendors[] = [
   { id: "microsandbox", workspaceBackends: [microsandboxWorkspacesFromEnv] },
 ];
 
-/** What the server hands the built-in plugins; each takes only the part it needs. */
 export type PluginHost = {
-  /** Reads a value from the account's secrets, such as a plugin setting, from its password manager when it holds a reference. */
   secret: (key: string) => Effect.Effect<string | undefined, SecretUnavailable>;
   dataDir: string;
   env: NodeJS.ProcessEnv;
   workspaces: Workspaces | undefined;
   desktopControl: DesktopControlAccess;
-  /** The bots' credentials, offered to coding jobs. */
   credentials: CredentialsAccess;
-  /** The bots' logins, filled by desktop jobs. */
   logins: DesktopLogins;
-  /** What desktop jobs check their actions with before they act. */
   intent: DesktopIntent;
-  /** How long a coding job's question keeps its workspace awake, from the server's settings. */
   questionGraceMs: () => number;
 };
 
-/** Every plugin compiled into the server, in the order their contributions are listed. */
 export const builtinPlugins = (host: PluginHost): CrumblePlugin[] => [
   meliousPlugin(),
   claudeCodePlugin(host.dataDir, host.env),

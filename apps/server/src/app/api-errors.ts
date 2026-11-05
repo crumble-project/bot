@@ -3,7 +3,6 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { httpStatus, isAppError } from "../shared/errors";
 
-/** Every error leaves as JSON with the status its type maps to, until the last resort. */
 export const handleApiError: ErrorHandler = (error, c) => {
   if (error instanceof HTTPException) return error.getResponse();
 

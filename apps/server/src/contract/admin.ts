@@ -3,7 +3,6 @@ import { body, define, empty, json } from "./route";
 
 export const roleSchema = z.enum(["admin", "user"]);
 
-/** Settings an admin sets once for the whole server. */
 export const serverSettingsSchema = z
   .object({
     signUpOpen: z.boolean(),

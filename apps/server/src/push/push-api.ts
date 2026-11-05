@@ -5,7 +5,6 @@ import type { Runner } from "../shared/runner";
 import { Effect } from "effect";
 import { Push } from "./push";
 
-/** The owner's push routes: delivery status, device registration, and presence. */
 export function registerPushRoutes(options: {
   register: Register;
   run: Runner<Push>;

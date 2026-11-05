@@ -164,7 +164,6 @@ function SecretOverlays<I extends Named, R extends SecretRequest>({
   );
 }
 
-/** A settings page of every bot's secrets of one type, and the requests for more. */
 export function SecretPage<D, I extends Named, R extends SecretRequest>({
   text,
   initialBot,

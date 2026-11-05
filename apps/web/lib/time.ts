@@ -1,4 +1,3 @@
-/** Relative dates in full words: "in 2 hours", "yesterday". */
 export const relativeTime = new Intl.RelativeTimeFormat(undefined, {
   numeric: "auto",
 });
@@ -14,7 +13,6 @@ export const when = (iso: string) =>
     timeStyle: "short",
   });
 
-/** "2 hr. ago", "yesterday": short, and never coarser than days. */
 export function ago(iso: string) {
   const minutes = Math.round((Date.parse(iso) - Date.now()) / 60_000);
 
@@ -35,7 +33,6 @@ const STEPS: [Intl.RelativeTimeFormatUnit, number][] = [
   ["year", 12],
 ];
 
-/** "3 days ago", in the largest unit that is at least one. */
 export function agoInLargestUnit(iso: string, now: number) {
   let value = (Date.parse(iso) - now) / 1000;
   let unit: Intl.RelativeTimeFormatUnit = "second";

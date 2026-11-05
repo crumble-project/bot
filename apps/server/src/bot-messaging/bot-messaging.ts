@@ -39,19 +39,16 @@ type Receipt = {
 
 type DelegationResult = Receipt & { error: string | null; response: string[] };
 
-/** A job's answered question, as the tool that answered it reports. */
 type JobQuestionAnswered = { agentId: string; agent: string; job: string };
 
 const JOB_POLL_MS = 500;
 
-/** What a recipient names, without the @ of a mention. */
 const addressed = (recipient: string) => recipient.trim().replace(/^@/, "");
 
 /** Throws the abort reason once the tool call is cancelled, as Pi tools do. */
 const checkAborted = (context: PiContext) =>
   Effect.sync(() => context.abortSignal?.throwIfAborted());
 
-/** The trimmed text of a message the bot may send, or why it may not. */
 const sendableText = (input: {
   message: string;
   requestId: string;
@@ -73,7 +70,6 @@ const sendableText = (input: {
   return Effect.succeed(message);
 };
 
-/** What the delegating bot reads: whose job asks what, and how to answer or hand it to the owner. */
 const jobQuestionText = (asked: JobAsked, assignee: string) => {
   const { question } = asked;
 
@@ -84,7 +80,6 @@ const jobQuestionText = (asked: JobAsked, assignee: string) => {
   return `The ${asked.label} "${asked.name}", working on the task you delegated to me, asks:\n\n${question.text}${options}\n\nIf your brief or what you know settles it, answer with answer_job_question (questionId "${question.id}"). If only the owner can decide, don't guess: tell the owner, who can answer it in ${assignee}'s chat.`;
 };
 
-/** A delegation's status once its turn's jobs count: running while one works, failed when one failed. */
 type Outcome = Pick<Execution, "status" | "error">;
 
 const outcomeOf = (
@@ -98,7 +93,6 @@ const outcomeOf = (
   return { status: execution.status, error: execution.error };
 };
 
-/** The text of the card closing a delegation: the answer, else the error, else why there is none. */
 const closingText = (
   status: Execution["status"],
   response: string[],
@@ -110,7 +104,6 @@ const closingText = (
     ? "The bot returned no text answer."
     : "The bot exchange was cancelled.");
 
-/** Bot addressing and exchanges over the existing durable execution transport. */
 export class BotMessaging extends Context.Service<
   BotMessaging,
   {
@@ -276,7 +269,6 @@ export class BotMessaging extends Context.Service<
         );
       });
 
-      /** The work of the jobs a finished turn started or messaged; none for a turn still running. */
       const jobsOf = (answering: Agent, execution: Execution) => {
         const { submissionId } = execution;
 
@@ -285,7 +277,6 @@ export class BotMessaging extends Context.Service<
           : Effect.succeed(undefined);
       };
 
-      // The wait gives up quietly after `waitMs`; a cancelled tool call or a failed wait still fails.
       const awaitTurn = (
         execution: Execution,
         submissionId: string,
@@ -313,7 +304,6 @@ export class BotMessaging extends Context.Service<
           ),
         );
 
-      // A turn that left jobs working answers once their reports are answered too.
       const awaitJobs = Effect.fnUntraced(function* (
         answering: Agent,
         execution: Execution,
@@ -394,7 +384,6 @@ export class BotMessaging extends Context.Service<
         return target;
       });
 
-      // An exchange still running gets `waitMs` to finish; answers with it as it then stands.
       const waitedFor = Effect.fnUntraced(function* (
         sourceId: string,
         execution: Execution,
@@ -465,7 +454,6 @@ export class BotMessaging extends Context.Service<
             sourceAgentId: from.id,
             targetAgentId: target.id,
           });
-          // The target's chat already shows the delivered message as from the sender.
           yield* record(from.id, from.id, execution, "sent", message);
 
           return yield* receipt(execution);
@@ -541,7 +529,6 @@ export class BotMessaging extends Context.Service<
 
           if (saved?.targetAgentId !== asked.agentId) return false;
 
-          // Without the permission to message the job's bot now, the question stays with the owner.
           const permitted = yield* Effect.option(
             Effect.gen(function* () {
               const reporter = yield* source(saved.sourceAgentId);

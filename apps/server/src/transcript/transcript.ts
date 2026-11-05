@@ -86,7 +86,6 @@ export type TranscriptMessage = {
   role: string;
   content: string;
   blocks?: unknown;
-  /** Provider terminal reason, used to hide aborted/error partials from chat views. */
   stopReason?: string;
   timestamp?: number | undefined;
   kind?: string;
@@ -94,7 +93,6 @@ export type TranscriptMessage = {
   replyPreview?: string;
   origin?: MessageOrigin;
   communication?: BotCommunication;
-  /** On a `job-question` event: the job that asked the owner. */
   jobQuestion?: {
     id: string;
     kind: string;
@@ -102,16 +100,12 @@ export type TranscriptMessage = {
     options?: string[];
     multiple?: boolean;
   };
-  /** On a `held-action` event: the desktop job action waiting for the owner. */
   heldAction?: { id: string; job: string };
   attachments?: AttachmentInfo[];
-  /** Tool result metadata is carried on the model message, rather than its content blocks. */
   toolCallId?: string;
   toolName?: string | undefined;
   isError?: boolean | undefined;
-  /** Provider-specific details, including codemode nested tool calls. */
   toolDetails?: unknown;
-  /** A group message's pages that its bot searched or read. */
   sources?: WebSource[];
 };
 
@@ -121,7 +115,6 @@ export type TranscriptPage = {
   oldestEntryId: string | null;
 };
 
-// Structural-only model output has no text block; normalize() puts a hint in content for chat display.
 function hasTextBlock(message: TranscriptMessage) {
   return Array.isArray(message.blocks)
     ? message.blocks.some((block) => textBlock.safeParse(block).success)
@@ -164,7 +157,6 @@ function previewOf(message: TranscriptMessage): string {
   return botText || eventLabel(message) || conversationPreview(message);
 }
 
-/** Short, user-facing text for an agent list/sidebar. Structural tool and thinking blocks are excluded. */
 export function latestMessagePreview(messages: TranscriptMessage[]): string {
   for (const message of [...messages].reverse()) {
     const preview = previewOf(message);
@@ -180,10 +172,6 @@ const OWNER_REQUEST_TOOLS = new Map<string | undefined, WaitingFor>([
   [REQUEST_LOGIN_TOOL_NAME, "login"],
 ]);
 
-/**
- * The bot's output after the latest input: its last text reply, the emoji it reacted with, and what its successful
- * request tools asked the owner for, if any.
- */
 export function latestReply(messages: TranscriptMessage[]) {
   const input = messages.findLastIndex((message) => message.role === "user");
   const output = messages.slice(input + 1);
@@ -201,13 +189,11 @@ export function latestReply(messages: TranscriptMessage[]) {
   };
 }
 
-/** Words Crumble admitted for the owner, whose metadata text is what they wrote. */
 export const isOwnerInput = (message: TranscriptMessage) =>
   message.kind === MESSAGE_ENTRY &&
   message.role === "user" &&
   !isBotOrigin(message.origin);
 
-/** Plain model turns: the assistant's, and a user's that no other bot sent. */
 export const isConversational = (message: TranscriptMessage) =>
   (message.kind === ASSISTANT_ENTRY && message.role === "assistant") ||
   (message.kind === USER_ENTRY &&
@@ -217,7 +203,6 @@ export const isConversational = (message: TranscriptMessage) =>
 const blocksOf = (message: TranscriptMessage) =>
   z.array(z.unknown()).safeParse(message.blocks).data;
 
-/** A message's text blocks, one per line; a user's plain string; null for anything else. */
 export function textOf(message: TranscriptMessage): string | null {
   const blocks = blocksOf(message);
 
@@ -235,7 +220,6 @@ export function textOf(message: TranscriptMessage): string | null {
   return z.string().safeParse(message.blocks).data ?? null;
 }
 
-/** A provider's tool call or result block, by its position in the message; unreadable fields are unset. */
 export type ToolBlock =
   | {
       type: "toolCall";
@@ -290,7 +274,6 @@ const DEFAULT_LIMIT = 100;
 const REPLY_WINDOW = 20;
 const INPUT_KINDS = new Set<string>([MESSAGE_ENTRY, USER_ENTRY]);
 
-/** An entry that starts a turn. */
 export const isInputEntry = (entry: EntryRecord) => INPUT_KINDS.has(entry.kind);
 
 function blockHint(content: ModelContent): string {
@@ -445,7 +428,6 @@ function normalizeGroupMessage(
   const { text, sender, requestId, timestamp, replyTo, replyPreview } =
     parsed.data;
 
-  // Reactions take the shape of a bot chat's `react` result, attached to the message they answer.
   const message: TranscriptMessage =
     parsed.data.reaction === undefined
       ? {
@@ -539,7 +521,6 @@ function normalizeModelEntry(
   const attachments = attachmentsOf(data?.["attachments"]);
 
   return (entry.model ?? []).flatMap((message, index) => {
-    // Reply inputs carry a quoted context block for the model; owners see the text they wrote.
     const content =
       entry.kind === MESSAGE_ENTRY && input.text !== undefined
         ? input.text
@@ -593,7 +574,6 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
   return normalizeModelEntry(entryId, entry);
 }
 
-/** The conversations of a bot's chat, oldest first. */
 export async function conversations(
   harness: Harness,
 ): Promise<ConversationRecord[]> {
@@ -606,7 +586,6 @@ export async function conversations(
       BACKGROUND_CONTEXT,
     );
 
-    // Task-owned conversations, such as coding jobs, are the bot's internal work, not part of its chat.
     records.push(...page.items.filter((record) => !record.owner));
     cursor = page.next;
   } while (cursor);
@@ -688,7 +667,6 @@ async function readPage(
   };
 }
 
-/** Newest-first page of every chat conversation, so conversations from before the canonical chat read as one transcript. */
 export async function readTranscript(
   harness: Harness,
   agentId: string,
@@ -708,7 +686,6 @@ export async function readTranscript(
   return readPage(agentId, sources, options);
 }
 
-/** Newest-first page of one conversation, such as a coding job, which the chat transcript leaves out. */
 export async function readConversationTranscript(
   harness: Harness,
   agentId: string,
@@ -723,7 +700,6 @@ export async function readConversationTranscript(
   return readPage(agentId, conversation ? [conversation] : [], options);
 }
 
-/** Entries `first` through `last`, oldest first. Both are persisted entry numbers or validated positive integers. */
 const entriesBetween = (
   conversation: Conversation,
   first: number,
@@ -742,7 +718,6 @@ const entriesBetween = (
     BACKGROUND_CONTEXT,
   );
 
-/** The entry numbered `id`, if the conversation holds it. */
 export const entryAt = async (conversation: Conversation, id: number) =>
   (await entriesBetween(conversation, id, id, 1)).items[0];
 
@@ -828,10 +803,6 @@ export async function prepareReply(
   };
 }
 
-/**
- * The image at `index` of an input's attachments or of a desktop screenshot the bot showed, read from the model message
- * that carries it.
- */
 export async function readAttachment(
   harness: Harness,
   agentId: string,
@@ -856,7 +827,6 @@ const imagesOf = (content: ModelContent | undefined) =>
     ? content.flatMap((block) => (block.type === "image" ? [block] : []))
     : [];
 
-/** The image at `index` of an input's attachments. */
 function inputImage(entry: EntryRecord, index: number) {
   const attachments = attachmentsOf(record(entry.data)?.["attachments"]);
 
@@ -870,7 +840,6 @@ function inputImage(entry: EntryRecord, index: number) {
   return imagesOf(entry.model?.[0]?.content)[imageIndex];
 }
 
-/** The image at `index` of a successful `desktop_screenshot` result: the screen the bot showed the owner. */
 function screenshotImage(entry: EntryRecord, index: number) {
   const message = entry.model?.[0];
 
@@ -889,7 +858,6 @@ function outputLines(message: ModelMessage): string[] {
   ];
 }
 
-/** The turn `inputEntryId` started: that input, then every entry up to the next input, however many pages it takes. */
 export async function turnEntries(
   conversation: Conversation,
   inputEntryId: number,
@@ -917,7 +885,6 @@ export async function turnEntries(
   return entries;
 }
 
-/** The model messages after a turn's input, up to the next input. */
 export const turnMessages = async (
   conversation: Conversation,
   inputEntryId: number,
@@ -926,7 +893,6 @@ export const turnMessages = async (
     .slice(1)
     .flatMap((entry) => entry.model ?? []);
 
-/** The newest `limit` entries before `next`, for reading what came before a turn. */
 export async function entriesBefore(
   conversation: Conversation,
   next: number,
@@ -943,7 +909,6 @@ export async function entriesBefore(
   return page.items;
 }
 
-/** Assistant output after one input, stopping at the next input so unrelated chat stays private. */
 export const readResponse = async (
   conversation: Conversation,
   inputEntryId: number,

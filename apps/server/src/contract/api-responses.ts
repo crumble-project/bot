@@ -869,13 +869,10 @@ export const loginMethod = z
   })
   .openapi("ProviderLoginMethod");
 
-/** How a provider that signs in outside Crumble stands, such as Claude Code. */
 export const externalAuthResponse = z
   .object({
     status: z.enum(["signed_in", "signed_out", "cli_missing", "error"]),
-    /** The installed command-line tool's version, when it reported one. */
     cliVersion: z.string().nullable(),
-    /** The command the owner runs on the server to sign in. */
     signInCommand: z.string().nullable(),
     signOutCommand: z.string().nullable(),
     message: z.string().nullable(),
@@ -886,7 +883,6 @@ export const providerResponse = z
   .object({
     provider: z.string(),
     name: z.string(),
-    /** Saved or ambient credentials make the provider usable. */
     configured: z.boolean(),
     authMethods: z.array(loginMethod),
     /** The provider's saved credential; ambient credentials have none. */
@@ -1089,7 +1085,6 @@ export const learnedEvent = z
     type: z.literal("learned"),
     agentId: z.string(),
     agentName: z.string(),
-    // The execution the bot reviewed; the changes name what it learned from it.
     executionId: z.string(),
     changes: z.array(
       z.object({
@@ -1114,7 +1109,6 @@ export const activityEvent = z
 
 export const heartbeatEvent = z.object({}).openapi("HeartbeatEvent");
 
-/** Everything the event streams carry: `component` names it in the OpenAPI document, `artifact` publishes its JSON Schema file. */
 export const eventSchemas: {
   schema: z.ZodType;
   component?: string;

@@ -23,13 +23,9 @@ import {
 } from "../contract/tools";
 
 export type TurnReport = {
-  /** Assistant messages that called tools: the turn's tool-activity rounds. */
   rounds: number;
-  /** Rounds after the turn's last skill write, or null when it wrote none. */
   roundsSinceSkillWrite: number | null;
-  /** Rounds after the turn's last memory write, or null when it wrote none. */
   roundsSinceMemoryWrite: number | null;
-  /** The turn in plain text for a review, preceded by the chat before it, bounded by `maxChars`. */
   digest: string;
 };
 
@@ -120,7 +116,6 @@ function entryLines(entry: EntryRecord, counters?: TurnReport): string[] {
 function clipTurn(turn: string, maxChars: number) {
   if (turn.length <= maxChars) return turn;
 
-  // Keep the input and the end of the turn; the middle is usually tool output.
   const head = Math.floor(maxChars * 0.4);
   const tail = maxChars - head - 24;
 
@@ -150,11 +145,6 @@ async function earlierChat(
     : context;
 }
 
-/**
- * What a review needs to know about one turn: the turn itself in full, preceded by the chat before it for the
- * referents of corrections such as "use the previous format". The earlier chat gives way first when `maxChars`
- * binds, then the middle of the turn.
- */
 async function readTurnReport(
   conversation: Conversation,
   inputEntryId: number,
@@ -189,10 +179,6 @@ async function readTurnReport(
   return report;
 }
 
-/**
- * The characters of model input a whole review may spend, across every request it makes: 75% of the review model's
- * context window, at most 600,000 tokens, lowered to the configured cap; four characters stand for a token.
- */
 export function reviewBudgetChars(
   contextWindow: number | undefined,
   agent: Pick<Agent, "review">,
@@ -204,7 +190,6 @@ export function reviewBudgetChars(
   return Math.min(agent.review?.maxInputTokens ?? ceiling, ceiling) * 4;
 }
 
-/** A settled turn's tool-activity rounds and a bounded plain-text digest for its review. */
 export async function turnReport(
   runtime: Pick<AgentRuntime, "settledTurn">,
   agent: Agent,

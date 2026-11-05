@@ -9,7 +9,6 @@ const INPUT = new Set([4, 5, 6, 250, 251, 255]);
 
 type Length = (bytes: Uint8Array, view: DataView) => number;
 
-/** Message types whose length is fixed; the number is the message's size in bytes. */
 const FIXED_LENGTH = new Map([
   [0, 20], // SetPixelFormat
   [3, 10], // FramebufferUpdateRequest
@@ -19,7 +18,6 @@ const FIXED_LENGTH = new Map([
   [250, 4], // xvp
 ]);
 
-/** Message types whose length comes from their own header; 0 until enough bytes are buffered. */
 const COMPUTED_LENGTH = new Map<number, Length>([
   [2, (bytes, view) => (bytes.length < 4 ? 0 : 4 + 4 * view.getUint16(2))], // SetEncodings
   // The extended clipboard (noVNC, TigerVNC) sends a negative length: the payload is its absolute value.
@@ -29,7 +27,6 @@ const COMPUTED_LENGTH = new Map<number, Length>([
   [255, qemuLength],
 ]);
 
-/** A QEMU client message; only the extended key event is known. */
 function qemuLength(bytes: Uint8Array): number {
   if (bytes.length < 2) return 0;
 
@@ -38,7 +35,6 @@ function qemuLength(bytes: Uint8Array): number {
   throw new RfbProtocolError(`unknown QEMU client message ${bytes[1]}`);
 }
 
-/** Length of the client message at the start of `bytes`; 0 when more bytes are needed to tell. */
 function messageLength(bytes: Uint8Array): number {
   const type = bytes[0];
 
@@ -71,10 +67,6 @@ function concat(parts: Uint8Array[]) {
   return out;
 }
 
-/**
- * Filters a viewer's client-to-server RFB stream: input passes only while `allowInput()` is true, everything else
- * passes. Watching thereby never lets input through; the bot desktop's control lease decides.
- */
 export function rfbFilter(allowInput: () => boolean) {
   let handshake = HANDSHAKE_BYTES;
   let buffer: Uint8Array = new Uint8Array();

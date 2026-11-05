@@ -9,18 +9,15 @@ import type { OWNER_MESSAGE_SOURCES } from "../shared/domain";
 import { MESSAGE_ENTRY } from "../transcript/entries";
 import { requestSource } from "../transcript/origins";
 
-/** An owner message a job acts for, verbatim; a job started by an automation counts the automation's text as one. */
 export type OwnerMessage = {
   requestId: string;
   text: string;
   from: (typeof OWNER_MESSAGE_SOURCES)[number];
 };
 
-/** What a job was asked: the owner's messages it concerns, and each message the bot sent it. */
 export type JobRequest = {
   ownerMessages: OwnerMessage[];
   tasks: string[];
-  /** The job's name and the bot chat it reports to; every start and send sets it, before the job can act. */
   job?: { name: string; chatId: ConversationId };
 };
 
@@ -43,7 +40,6 @@ function ownerMessageOf(entry: EntryRecord): OwnerMessage | undefined {
     : undefined;
 }
 
-/** The chat's owner messages, newest first, read a page at a time. */
 async function* newestOwnerMessages(
   tx: Pick<Tx, "scanEntries">,
   chatId: ConversationId,
@@ -67,10 +63,6 @@ async function* newestOwnerMessages(
   } while (cursor);
 }
 
-/**
- * The owner messages a start or send attaches: the cited ones, in chat order, and always the latest one. Fails with
- * the IDs that are not owner messages of this chat.
- */
 export async function ownerMessages(
   tx: Pick<Tx, "scanEntries">,
   chatId: ConversationId,
@@ -80,7 +72,6 @@ export async function ownerMessages(
   const found: OwnerMessage[] = [];
   let latest: OwnerMessage | undefined;
 
-  // Reads on until every cited message and the latest one are found, however far back they are.
   for await (const message of newestOwnerMessages(tx, chatId)) {
     latest ??= message;
 
@@ -97,7 +88,6 @@ export async function ownerMessages(
   return { messages: found };
 }
 
-/** Adds a start's or send's owner messages and task to what the job was asked, keeping each message once. */
 export function addToRequest(
   request: JobRequest,
   job: NonNullable<JobRequest["job"]>,

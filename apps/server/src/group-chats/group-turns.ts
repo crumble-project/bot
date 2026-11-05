@@ -19,7 +19,6 @@ const GROUP_INSTRUCTIONS =
 // Owns a member's group conversation, so it outlives the bot chat's turns and Esc, like a coding job's anchor.
 const GroupAnchor = defineAnchorTask("crumble.group-anchor");
 
-/** The `pass` tool and the anchor task; installed for every bot and offered only in group conversations. */
 function groupTurnExtension() {
   const pass = defineTool({
     name: PASS_TOOL_NAME,
@@ -41,7 +40,6 @@ function groupTurnExtension() {
   });
 }
 
-/** A member's group conversation: a chat without what stays in the bot's own, which may pass instead of answering. */
 export function groupConversations(): ConversationKind {
   const extension = groupTurnExtension();
 
@@ -68,7 +66,6 @@ export function groupConversations(): ConversationKind {
   };
 }
 
-/** A new working conversation for the bot in one group chat, owned by a background task of its chat. */
 export const openGroupConversation = (
   runtime: Pick<AgentRuntime, "openAnchored">,
   agent: Agent,

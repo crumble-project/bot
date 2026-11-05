@@ -195,7 +195,6 @@ const soundsRoute = createRoute({
   component: SoundsPage,
 });
 
-// A studio for previewing and saving portable bot avatar definitions.
 const avatarsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/avatars",

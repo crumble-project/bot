@@ -12,7 +12,6 @@ import { heldActions } from "./schema";
 
 export type HeldActionStatus = (typeof HELD_ACTION_STATUSES)[number];
 
-/** A desktop job's action an intent check held, waiting for the owner or decided. */
 export type HeldAction = {
   id: string;
   agentId: string;
@@ -32,7 +31,6 @@ export type HoldInput = Pick<
   "agentId" | "job" | "action" | "page" | "ownerMessages" | "reason"
 >;
 
-/** The owner's answer; a wait that ended without one, such as a stopped job, is `expired`. */
 export type HoldDecision =
   | { status: "approved" }
   | { status: "declined"; reason: string | null }
@@ -67,7 +65,6 @@ const heldOf = (row: typeof heldActions.$inferSelect): HeldAction => ({
   decidedAt: row.decidedAt,
 });
 
-/** Held actions: durable in the database, with a wait that ends at the owner's decision. */
 export class HeldActions extends Context.Service<
   HeldActions,
   {
@@ -78,11 +75,9 @@ export class HeldActions extends Context.Service<
       id: string,
       decision: Exclude<HoldDecision, { status: "expired" }>,
     ) => Effect.Effect<HeldAction, NotFound | Conflict>;
-    /** Marks a pending action expired, such as when its job stopped waiting. */
     readonly expire: (id: string) => Effect.Effect<void>;
     /** Succeeds with the owner's decision; a decision made earlier is returned at once. */
     readonly untilDecided: (id: string) => Effect.Effect<HoldDecision>;
-    /** Calls `listener` with each newly held action, until the returned function is called. */
     readonly onHeld: (listener: (held: HeldAction) => void) => () => void;
   }
 >()("crumble/bot-desktop/HeldActions") {
@@ -259,7 +254,6 @@ export class HeldActions extends Context.Service<
 
 const SYNC_HELD_ACTIONS = ["list"] as const;
 
-/** Held actions for HTTP handlers and a desktop job's tool, outside Effect. */
 export type HeldActionsAccess = Omit<
   Access<HeldActions["Service"], (typeof SYNC_HELD_ACTIONS)[number]>,
   "expire" | "untilDecided" | "onHeld"

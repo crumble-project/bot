@@ -119,7 +119,6 @@ function elementLine(
   return { index: Number(index), removed: diff && mark === "-", target };
 }
 
-/** Keeps the role and name of each element under its snapshot, so an action by index can name its target to the judge. */
 function recordElements(
   state: ComputerUseState,
   windowId: number,
@@ -141,7 +140,6 @@ function recordElements(
   state.elements.set(snapshot, known);
 }
 
-/** A window read as the job sees it; its snapshot becomes the window's latest, for element tokens and the next diff. */
 export function windowText(
   state: ComputerUseState,
   target: Window,
@@ -161,7 +159,6 @@ export function windowText(
   return `${headerOf(target, reply, since, query, others)}\n${treeOf(state, reply)}`;
 }
 
-/** The snapshot a capture diffs against: none for vision, full, or query reads, or after a query read. */
 const diffBase = (
   state: ComputerUseState,
   target: Window,

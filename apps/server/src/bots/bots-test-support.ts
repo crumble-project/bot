@@ -27,10 +27,6 @@ type StandaloneServices =
 
 type StoreServices = Exclude<StandaloneServices, Bots | BotRuntime>;
 
-/**
- * The bots over `store`'s account and `runtime`, for a test without an account. Closing them stops the bots, then
- * closes the runtime and the store.
- */
 export function standaloneBots<
   S extends { runtime: Runner<StoreServices>; close(): void },
 >(
@@ -38,10 +34,8 @@ export function standaloneBots<
   runtime: AgentRuntime,
 ): BotsAccess & {
   store: S;
-  /** The store's account, for code that reads its repositories. */
   core: S["runtime"];
   runtime: AgentRuntime;
-  /** Runs effects over the bots and what they stand on, such as features built on the bots in a test. */
   effects: Runner<StandaloneServices>;
   close(): Promise<void>;
 } {

@@ -28,7 +28,6 @@ export const credentialsQuery = (id: string) =>
 export const credentialPath = (id: string, name: string) =>
   `${agentPath(id)}/credentials/${encodeURIComponent(name)}` as const;
 
-/** Every bot's credentials, for writes that reach more than one bot. */
 export const refreshAllCredentials = () =>
   queryClient.invalidateQueries({ queryKey: credentialsKey });
 

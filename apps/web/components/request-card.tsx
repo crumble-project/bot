@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { type UseQueryOptions, useQuery } from "@tanstack/react-query";
 import type { TablerIcon } from "@tabler/icons-react";
 
-/** The one line left of a request once it needs nothing from the owner. */
 export function SettledCard({
   icon: Icon,
   title,

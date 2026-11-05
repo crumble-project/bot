@@ -34,7 +34,6 @@ type Selection = {
 
 const SelectionContext = createContext<Selection | null>(null);
 
-/** Where a checkbox shows: a row's appears on hover, keyboard focus, touch screens, or while anything is selected. */
 const SHOWN = {
   row: "opacity-0 group-hover/row:opacity-100 group-data-selecting/skills:opacity-100 focus-visible:opacity-100 checked:opacity-100 [@media(hover:none)]:opacity-100",
   section:
@@ -173,7 +172,6 @@ function BulkActionBar({
   );
 }
 
-/** Picks the bots that the selected skills are assigned to or removed from. */
 function BotTargetsSheet({
   action,
   bots,
@@ -219,7 +217,6 @@ function BotTargetsSheet({
   );
 }
 
-/** Bulk orchestration uses independent, retry-safe per-skill requests. No successful change is rolled back. */
 export function BulkSkills({
   bots,
   skills,
@@ -292,7 +289,6 @@ export function BulkSkills({
         data-selecting={picked.length > 0 || undefined}
         className="group/skills flex flex-col gap-6"
       >
-        {/* Lines up with the rows' checkboxes, like a column header. */}
         <div className="-mb-3 px-3.25">
           <SelectSkills
             ids={visibleIds}

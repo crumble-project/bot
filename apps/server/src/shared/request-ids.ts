@@ -1,48 +1,40 @@
-/** What a notice to a bot answers: its request for a credential or a login. */
 export type NoticeKind = "credential" | "login";
 
 export const scheduleRequest = (scheduleId: string, due: string) =>
   `schedule:${scheduleId}:${due}`;
 
-/** A script automation's result; the same run always gets the same ID. */
 export const scriptRequest = (scheduleId: string, runId: string) =>
   `script:${scheduleId}:${runId}`;
 
-/** An automation's run for an event; the same run always gets the same ID. */
 export const eventRequest = (eventId: string, scheduleId: string) =>
   `event:${eventId}:${scheduleId}`;
 
 export const delegationRequest = (sourceAgentId: string, taskId: string) =>
   `delegate:${sourceAgentId}:${taskId}`;
 
-/** A job's question relayed from the bot whose job asks to the bot that delegated the job's task. */
 export const jobQuestionRequest = (assigneeId: string, questionId: string) =>
   `job-question:${assigneeId}:${questionId}`;
 
 export const noticeRequest = (kind: NoticeKind, name: string, id: string) =>
   `${kind}:${name}:${id}`;
 
-/** The owner's decision on a bot request. */
 export const botRequestRequest = (botRequestId: string) =>
   `bot-request:${botRequestId}`;
 
 export const gatewayRequest = (adapterId: string, id: string) =>
   `gateway:${adapterId}:${id}`;
 
-/** One state of a bot-to-bot message, as its chat shows it. */
 export const botMessageRequest = (executionId: string, status: string) =>
   `bot-message:${executionId}:${status}`;
 
 export const reviewRequest = (executionId: string) => `review:${executionId}`;
 
-/** A bot's turn in a group, over the group's entries through `through`. */
 export const groupTurnRequest = (
   groupId: string,
   agentId: string,
   through: number,
 ) => `group-turn:${groupId}:${agentId}:${through}`;
 
-/** What a group turn left in the group's transcript. */
 export const groupPostRequest = (executionId: string) =>
   `group-turn:${executionId}`;
 
@@ -54,11 +46,9 @@ export const jobTurnId = (
   submissionId: string,
 ) => `${jobKind}-job:${agentId}:${conversationId}:${submissionId}`;
 
-/** A message delivered into a job's conversation. */
 export const jobDeliveryRequest = (jobKind: string, taskId: number) =>
   `${jobKind}:${taskId}`;
 
-/** A job's report to its bot's chat. */
 export const jobReportRequest = (jobKind: string, taskId: number) =>
   `${jobKind}-report:${taskId}`;
 
@@ -76,7 +66,6 @@ export type ParsedRequest =
   /** A client's own ID. Job deliveries and reports land here too: they never become executions, so nothing decodes them. */
   | { kind: "other" };
 
-/** The bot a turn answers, when another bot asked for it. */
 export function askingBot(request: ParsedRequest) {
   switch (request.kind) {
     case "delegate":

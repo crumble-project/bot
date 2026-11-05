@@ -17,7 +17,6 @@ import { botSecretsPrefix } from "./secret-key";
 
 const REFERENCE = "op://Vault/Linear/token";
 
-/** The secrets table in memory, values unencrypted. */
 const memoryRepository = (rows = new Map<string, SecretSource>()) =>
   Layer.succeed(
     SecretRepository,
@@ -60,7 +59,6 @@ const memoryRepository = (rows = new Map<string, SecretSource>()) =>
     }),
   );
 
-/** Runs `effect` over a fake whose references start with `op://`. */
 const run = <A, E>(
   state: FakePasswordManager,
   effect: Effect.Effect<A, E, Secrets | SecretValues>,
@@ -101,7 +99,6 @@ const read = (source: SecretReference) =>
 
 const KEY = "mcp:server";
 
-/** Saves `source` as a secret, then reads it again. */
 const check = (
   state: FakePasswordManager,
   source: SecretReference,
@@ -251,7 +248,6 @@ test("replacing a reference drops its cached value", async () => {
   );
 
   expect(Exit.isSuccess(exit) && Redacted.value(exit.value)).toBe("lin_value");
-  // Without the drop, the read would come from the cache the save filled.
   expect(state.reads).toBe(2);
 });
 

@@ -127,7 +127,6 @@ function memoryLists(memory: MemoryRecord[]) {
   };
 }
 
-/** What a job knows of its bot: the owner's standing instructions, the skill index and the memory, as the chat has them. */
 export function jobKnowledge(
   instructions: string,
   skills: AvailableSkill[],

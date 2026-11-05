@@ -3,10 +3,8 @@ import net from "node:net";
 import { isPublicAddress } from "../shared/public-address";
 import { readHttpHost, readSni, validPort } from "./workspace-proxy-protocol";
 
-/** Takes over TLS connections to some hosts instead of tunneling them, such as the credential proxy. */
 export type WorkspaceInterceptor = {
   wants(host: string): boolean;
-  /** A host the interceptor answers itself, such as the signing host: it has no address to resolve or dial. */
   answers?(host: string): boolean;
   /** The client socket is positioned at the start of its TLS ClientHello. */
   handle(client: net.Socket, host: string, port: number): Promise<void>;

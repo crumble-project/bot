@@ -8,13 +8,11 @@ import {
 } from "./agent-credential-repository";
 import { credentialLifecycle } from "./credential-lifecycle";
 
-/** A minted credential's value can't be made, such as when its source's service doesn't answer. */
 export class CredentialUnminted extends Schema.TaggedError<CredentialUnminted>()(
   "CredentialUnminted",
   { message: Schema.String },
 ) {}
 
-/** Where the values of minted credentials come from, and what a bot's jobs get from it besides them. */
 export class CredentialSource extends Context.Service<
   CredentialSource,
   {
@@ -25,9 +23,7 @@ export class CredentialSource extends Context.Service<
       Redacted.Redacted,
       CredentialUnminted | SecretUnavailable
     >;
-    /** Variables every command of the bot's coding jobs sees. */
     readonly env: (agentId: string) => Effect.Effect<Record<string, string>>;
-    /** What the bot and its jobs read about the source. */
     readonly lines: (agentId: string) => Effect.Effect<string[]>;
     /** Signs a commit or tag as the bot; undefined when the source has no key for it. */
     readonly sign: (
@@ -47,7 +43,6 @@ export class MintedCredentials extends Context.Service<
       name: string,
       hosts: string[],
     ) => Effect.Effect<void>;
-    /** Deletes the bot's minted credentials and their uses. */
     readonly revoke: (agentId: string) => Effect.Effect<void>;
   }
 >()("crumble/credentials/MintedCredentials") {

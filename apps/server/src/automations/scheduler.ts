@@ -55,7 +55,6 @@ const parsed = (input: ScheduleInput) =>
     catch: (error) => error as z.ZodError,
   });
 
-/** Checks the time fields `parsed` cannot and answers when the schedule next runs. */
 const firstRun = (value: ScheduleInput, now: Date) =>
   Effect.try({
     try: () => {
@@ -122,7 +121,6 @@ export class Scheduler extends Context.Service<
         by: string | null,
         createdByAgentId: string | null = null,
       ) {
-        // A bot acts with its own tools; the owner with those of the bot the automation runs on.
         const acting = yield* agents.get(by ?? agentId);
 
         if (!acting) return yield* new NotFound({ message: "Agent not found" });
@@ -198,7 +196,6 @@ export class Scheduler extends Context.Service<
           new Date(yield* Clock.currentTimeMillis),
         );
 
-        // A one-time run that happened stays done until the owner gives it a new time.
         const finished =
           old.nextRunAt === null &&
           value.cron === null &&
@@ -350,7 +347,6 @@ export class Scheduler extends Context.Service<
 
 const SYNC_SCHEDULER = ["create", "update", "start"] as const;
 
-/** The scheduler for code outside Effect, such as the HTTP handlers. */
 export type SchedulerAccess = Access<
   Scheduler["Service"],
   (typeof SYNC_SCHEDULER)[number]

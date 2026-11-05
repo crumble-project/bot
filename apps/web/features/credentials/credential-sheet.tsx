@@ -60,7 +60,6 @@ function credentialReady(
   );
 }
 
-/** Creates or edits a credential; its value is written once and never shown again. */
 export function CredentialSheet({
   bots,
   botId,
@@ -69,10 +68,8 @@ export function CredentialSheet({
   onClose,
 }: {
   bots: Bot[];
-  /** Null for a new credential from all bots: the sheet asks which bot it is for. */
   botId: string | null;
   existing: Credential | null;
-  /** The bot's request this credential answers; its name, hosts, and reason fill the sheet. */
   request: CredentialRequest | undefined;
   onClose: () => void;
 }) {

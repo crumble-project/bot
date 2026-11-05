@@ -49,7 +49,6 @@ export function hasText(message: Message) {
   );
 }
 
-/** Whether a message has anything to draw besides what a tool shows. */
 export const hasContent = (message: Message) =>
   message.content.trim() !== "" || Boolean(message.attachments?.length);
 
@@ -61,7 +60,6 @@ export type ReactionTarget = (
   lastOwner: string | undefined,
 ) => string | undefined;
 
-/** Emoji reactions from the `react` tool, keyed by the message they react to. */
 export function reactionsOf(messages: Message[], targetOf: ReactionTarget) {
   const reactions = new Map<string, Reaction[]>();
   let lastOwner: string | undefined;
@@ -104,7 +102,6 @@ function timeLabel(timestamp: number) {
     : date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
-/** Rows for a transcript, with a time marker where more than 30 minutes pass. */
 export function withTimeMarkers(messages: Message[]) {
   const rows: (
     | { kind: "time"; key: string; label: string }
@@ -131,10 +128,6 @@ export function withTimeMarkers(messages: Message[]) {
 export const ARRIVAL =
   "animate-in fade-in slide-in-from-bottom-2 duration-200 ease-out";
 
-/**
- * Animates only messages that arrive while the transcript is open, not the
- * history already there when it loaded or pages fetched by scrolling back.
- */
 export function useArrivals(live: Message[] | undefined) {
   const [seen, setSeen] = useState<Set<string> | null>(null);
 
@@ -147,7 +140,6 @@ export function useArrivals(live: Message[] | undefined) {
           ? new Set([...current, ...messages.map((message) => message.id)])
           : current,
       ),
-    // A confirmed owner message replaces its outgoing copy, which already animated.
     arrival: (message: Message) =>
       seen &&
       !seen.has(message.id) &&
@@ -193,7 +185,6 @@ export function EventRow({ message }: { message: Message }) {
   );
 }
 
-/** A turn the owner didn't send, such as an automation or another bot's message: centered, with its text on demand. */
 export function NoticeRow({ message }: { message: Message }) {
   return (
     <CenteredDisclosure
@@ -203,7 +194,6 @@ export function NoticeRow({ message }: { message: Message }) {
   );
 }
 
-/** Whether a user-role message came from somewhere other than the owner. */
 export function isNotice(message: Message) {
   return message.role === "user" && originLabel(message) !== null;
 }
@@ -409,7 +399,6 @@ function MessageReactions({
 
 export type Delivery = Outgoing["state"];
 
-/** An owner message: right-aligned bubble with reply quote, attachments, reactions, and delivery state. */
 export function OwnerMessage({
   message,
   uploads,
@@ -421,7 +410,6 @@ export function OwnerMessage({
   attachmentPath,
 }: {
   message: Message;
-  /** Files of a message not confirmed yet, shown from local data. */
   uploads?: Upload[];
   quote?: string | undefined;
   reactions?: Reaction[] | undefined;
@@ -589,7 +577,6 @@ function OwnerDelivery({
   );
 }
 
-/** A bot's message: Markdown bubble, optionally with the sender for group chats. */
 export function BotMessage({
   message,
   sender,
@@ -600,7 +587,6 @@ export function BotMessage({
 }: {
   message: Message;
   sender?: ReactNode;
-  /** The sender's color, where the transcript mixes bots. */
   color?: string | undefined;
   reactions?: Reaction[] | undefined;
   sources?: Sources | undefined;

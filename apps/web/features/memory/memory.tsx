@@ -84,7 +84,6 @@ const SOURCE_ICONS = {
   group: IconUsersGroup,
 } satisfies Record<NonNullable<Memory["source"]>["kind"], TablerIcon>;
 
-/** The text with every case-insensitive occurrence of `needle` marked. */
 function Highlighted({ text, needle }: { text: string; needle: string }) {
   if (!needle) return text;
 
@@ -292,7 +291,6 @@ function OwnerGroup({
   );
 }
 
-/** Whether a group earns its frame: the one picked, shared, or a bot with matching memories. */
 function groupShown(owner: Owner, scope: string, needle: string) {
   if (scope !== ALL) return scope === owner.id;
 

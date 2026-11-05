@@ -118,7 +118,6 @@ function DetailsBody({ bot, onClose }: { bot: Bot; onClose: () => void }) {
   );
 }
 
-/** The bot inspector beside its chat on wide screens: profile, desktop, and automations. */
 export function DetailsPanel({
   bot,
   onClose,
@@ -136,7 +135,6 @@ export function DetailsPanel({
   );
 }
 
-/** The same inspector as a sheet, for screens too narrow for the side panel. */
 export function DetailsSheet({
   bot,
   open,

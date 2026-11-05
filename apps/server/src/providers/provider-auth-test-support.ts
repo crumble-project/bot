@@ -8,7 +8,6 @@ import { ProviderModels, hostModels } from "./providers";
 
 type StandaloneSignInServices = ProviderCredentials | SettingsRepository;
 
-/** Sign-ins over the credentials and settings `core` reaches, for an API that runs without an account. */
 export function standaloneSignIns(
   core: Runner<StandaloneSignInServices>,
   contributions: readonly ProviderContribution[],

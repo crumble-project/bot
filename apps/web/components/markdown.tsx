@@ -17,7 +17,6 @@ const PELE = `${PELE_PREFIX}/lazy.js`;
 
 const loadPele = (): Promise<typeof Pele> => import(PELE);
 
-/** Renders Mermaid with Pele, loaded with each diagram type on first use; bad diagrams stay code. */
 function Diagram({ source }: { source: string }) {
   const box = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
@@ -75,7 +74,6 @@ const link = (props: ComponentProps<"a">) => (
 
 const siteOf = (href: string) => new URL(href).hostname.replace(/^www\./, "");
 
-/** Finished replies draw Mermaid blocks; a streaming one keeps them as code until it completes. */
 const components = {
   a: link,
   pre: (props: ComponentProps<"pre"> & { "data-lang"?: string }) => {
@@ -132,7 +130,6 @@ const autolinks: MarkdownExtension = {
           length: angle[0].length,
         };
 
-      // A URL starts a word, so "xhttps://" stays text.
       if (index > 0 && /[\p{L}\p{N}]/u.test(source[index - 1]!))
         return undefined;
 
@@ -157,7 +154,6 @@ const finished = [autolinks];
 
 const streaming = [streamingMarkdownExtension(), autolinks];
 
-/** Renders a bot's Markdown; `streaming` hides the unfinished tail of a reply in progress. */
 export function Reply({
   source,
   streaming: partial = false,
@@ -165,7 +161,6 @@ export function Reply({
 }: {
   source: string;
   streaming?: boolean;
-  /** Pages the reply's turn searched or read; links to them show as source chips after the reply. */
   sources?: Sources | undefined;
 }) {
   const { text, chips } = useMemo(

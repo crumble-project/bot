@@ -10,7 +10,6 @@ import { InvalidInput, NotFound, type AppError } from "../shared/errors";
 import type { GroupChatRepository } from "./group-chat-repository";
 import type { GroupTranscripts } from "./group-transcripts";
 
-/** The services one group chats layer build runs on. */
 export type GroupChatServices = {
   readonly groups: GroupChatRepository["Service"];
   readonly agents: AgentRepository["Service"];
@@ -25,10 +24,8 @@ export type GroupChatFork = <A, E>(
   effect: Effect.Effect<A, E>,
 ) => Fiber.Fiber<A, E>;
 
-/** What one layer build owns: its listeners, queues, locks, and the fibers background work runs in. */
 export type GroupChatState = {
   readonly listeners: ReturnType<typeof keyedListeners>;
-  /** Members whose joining summary is being written, by `memberKey`. */
   readonly summarizing: Set<string>;
   // Bumped by each queueing, by `memberKey`, so a turn that was starting meanwhile leaves the new follow-up queued.
   readonly pendingVersions: Map<string, symbol>;
@@ -39,7 +36,6 @@ export type GroupChatState = {
   readonly fork: GroupChatFork;
 };
 
-/** A group chat's services, the state of this layer build, and the helpers its parts share. */
 export type GroupChatContext = GroupChatServices & {
   readonly state: GroupChatState;
   readonly serial: <A, E>(
@@ -57,11 +53,9 @@ export type GroupChatContext = GroupChatServices & {
   readonly checkMembers: (memberIds: string[]) => Effect.Effect<void, AppError>;
 };
 
-/** Names one member of one group in this layer build's state. */
 export const memberKey = (groupId: string, agentId: string) =>
   `${groupId}:${agentId}`;
 
-/** The state of one layer build; its fiber set closes with the layer's scope. */
 export const groupChatState: Effect.Effect<GroupChatState, never, Scope.Scope> =
   Effect.gen(function* () {
     // Closing interrupts background work between steps; the step in progress finishes, and recovery resumes the rest.

@@ -30,5 +30,4 @@ export const {
 
 export const MAX_MCP_SERVER_NAME_CHARS = 100;
 
-/** How many days the owner can look back at a credential's or login's uses. */
 export const BOT_SECRET_USE_RETENTION_DAYS = 90;

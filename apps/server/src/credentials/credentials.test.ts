@@ -54,7 +54,6 @@ function open() {
   return { store, agentId, dir };
 }
 
-/** Assigns the bot a machine account added with `ghp_token`, against a GitHub that signs every token in. */
 async function withMachineAccount(store: Store, agentId: string) {
   const realFetch = globalThis.fetch;
 
@@ -167,7 +166,6 @@ const reference = (path = REFERENCE) => ({
   reference: path,
 });
 
-/** The bot's credentials over a fake 1Password, connected with its token. */
 function withPasswordManager(
   store: Store,
   state: FakePasswordManager,
@@ -371,7 +369,6 @@ test("a host change made while a reference is checked is kept", async () => {
   const gate = Effect.runSync(Deferred.make<void>());
   const fake = fakeVendor(state);
 
-  // Reads wait for the gate, so the test can save in between.
   const vendor: PasswordManagerVendor = {
     ...fake,
     signIn: (token) =>

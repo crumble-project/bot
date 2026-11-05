@@ -47,7 +47,6 @@ const makeAgent = (): Agent => ({
   updatedAt: "",
 });
 
-/** A read-only library for prompt tests; writes are exercised against the real one. */
 function fakeLibrary(
   available: (agent: Agent) => AvailableSkill[],
   used: (skill: AvailableSkill) => void = () => {},
@@ -147,7 +146,6 @@ test("each chat turn receives a fresh server clock and timezone", async () => {
       ...prompt.matchAll(/Current server time \(UTC\): ([\dT:.Z-]+)/g),
     ];
 
-    // Each turn appends its own clock; earlier turns keep theirs.
     expect(times).toHaveLength(index + 1);
     const timestamp = Date.parse(times.at(-1)![1]!);
     expect(timestamp).toBeGreaterThanOrEqual(boundaries[index]![0]);
@@ -438,7 +436,6 @@ test("a bot writes its own skills atomically, after reading them, and every chan
     ],
     useCount: 1,
   });
-  // The failed batch rolled back the patch to Writing.
   expect(skills[1]).toMatchObject({
     instructions: "Short sentences",
     createdBy: "bot",

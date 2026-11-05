@@ -28,7 +28,6 @@ export const skills = sqliteTable("skills", {
   origin: text("origin"),
 });
 
-/** The latest upstream state of an installed skill; `digest` is null when its folder is gone. */
 export const skillUpdates = sqliteTable("skill_updates", {
   skillId: text("skill_id")
     .primaryKey()

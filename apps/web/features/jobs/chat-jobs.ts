@@ -5,7 +5,6 @@ import { JOB_KIND_NAMES, isJobKind } from "@crumble/server/contract/tools";
 import { type JobRef, jobsQuery, refreshJobs } from "./api";
 import { jobOf } from "./job-card";
 
-/** A status lookup for the jobs a chat's messages name; each job message may mean a status changed. */
 export function useChatJobs(botId: string, messages: Message[]) {
   const jobs = messages.flatMap((message) => jobOf(message) ?? []);
   const kinds = new Set(jobs.map((job) => job.kind));

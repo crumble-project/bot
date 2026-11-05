@@ -8,14 +8,12 @@ import {
   credentialSecretKey,
 } from "./agent-credential-repository";
 
-/** What a credential's use records beyond its host: the request it was swapped into. */
 const useDetail = z.object({
   method: z.string(),
   path: z.string(),
   status: z.number().nullable(),
 });
 
-/** The credential kind's lifecycle, shared by the owner's credentials and the minted ones. */
 export const credentialLifecycle = Effect.gen(function* () {
   const repository = yield* AgentCredentialRepository;
   const secrets = yield* Secrets;

@@ -29,10 +29,8 @@ import { DESKTOP_SCREENSHOT_TOOL_NAME, usesDesktop } from "../contract/tools";
 const MIME_TYPE = "image/jpeg";
 const MAX_BYTES = 5 * 1024 * 1024;
 
-/** What a successful screenshot's tool result carries for clients; the image is its result's first image block. */
 export type DesktopScreenshotDetails = { mimeType: string; size: number };
 
-/** The part of the bot's workspaces a screenshot needs. */
 export type ScreenshotWorkspaces = Pick<
   Workspaces,
   "desktop" | "desktopRunning" | "keepAwake"
@@ -55,7 +53,6 @@ const failed = (reason: string) => ({
   error: `The screenshot failed: ${reason.trim().slice(0, 300) || "unknown error"}`,
 });
 
-/** Whether a password may show, failing closed when the desktop can't tell. */
 async function passwordCheck(
   shell: DesktopShell,
   fills: DesktopFills,
@@ -101,10 +98,6 @@ async function grab(shell: DesktopShell, context: Context) {
   }
 }
 
-/**
- * One capture of the whole bot desktop as the owner would see it. Never starts the desktop: the machine is held awake
- * for the capture only once it runs. A running desktop job or the owner's control doesn't matter; the capture only reads.
- */
 export async function captureDesktop(
   workspaces: ScreenshotWorkspaces | undefined,
   agentId: string,
@@ -133,7 +126,6 @@ export async function captureDesktop(
   }
 }
 
-/** Lets a bot show the owner its bot desktop's screen in the chat. */
 export function desktopScreenshotExtension(
   agentId: string,
   workspaces: ScreenshotWorkspaces | undefined,
@@ -177,7 +169,6 @@ export function desktopScreenshotExtension(
   );
 }
 
-/** Offers `desktop_screenshot` to bots with the `desktop` tool. */
 export const desktopScreenshotTools = Layer.effectDiscard(
   Effect.gen(function* () {
     const workspaces = yield* BotWorkspaces;

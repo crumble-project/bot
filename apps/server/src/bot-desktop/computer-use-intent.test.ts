@@ -12,7 +12,6 @@ import { scriptedGuest } from "../../test/fixtures/scripted-guest";
 const shop = { pid: 7, window_id: 101, app_name: "Chromium", title: "Shop" };
 const help = { pid: 8, window_id: 102, app_name: "Help", title: "Help" };
 
-/** An intent gate that records each proposal and answers with `refusal`. */
 function recording(refusal?: string) {
   const seen: ProposedAction[] = [];
 
@@ -74,7 +73,6 @@ test("the check names the element in the window the action runs in", async () =>
     BACKGROUND_CONTEXT,
     gate,
   );
-  // No window: the focused one, 101, for the check and the click alike.
   await computer.run({ action: "click", element: 3 }, BACKGROUND_CONTEXT, gate);
 
   expect(seen[0]!.steps[0]!.target?.name).toBe("Pay now");
@@ -126,7 +124,6 @@ test("an approved action doesn't run when the owner took control while it was he
     }),
   };
 
-  // The owner takes control and hands it back while the action waits for approval.
   const gate: IntentGate = async () => {
     changes += 2;
 
@@ -215,7 +212,6 @@ test("the judge's spend is on the call's result, whether the action ran or was r
     usage,
   });
 
-  // An observing call isn't checked and spends nothing.
   const read = await computer.run(
     { action: "capture" },
     BACKGROUND_CONTEXT,

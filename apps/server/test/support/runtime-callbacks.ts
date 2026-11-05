@@ -12,7 +12,6 @@ const noMemoryStore = () => {
   throw new Error("no memory store in this test");
 };
 
-/** A library with no skills; a test that writes skills supplies a real one. */
 const noSkills: BotSkills["Service"] = {
   available: () => Effect.succeed([]),
   used: () => Effect.void,
@@ -23,7 +22,6 @@ const noSkills: BotSkills["Service"] = {
   transaction: (effect) => effect,
 };
 
-/** A runtime's callbacks for a test: a bot with no skills, memory, or extensions unless the test gives it some. */
 export const runtimeCallbacks = (
   overrides: Partial<RuntimeCallbacks> = {},
 ): RuntimeCallbacks => ({

@@ -24,16 +24,10 @@ const userOf = (user: StoredUser) => ({
   createdAt: user.createdAt.toISOString(),
 });
 
-/**
- * The host's admin API under `/v1/admin/`: users, invites, and server settings. It runs before any account's
- * runtime, since these span accounts.
- */
 export function adminAPI(options: {
   accounts: Accounts;
   origin: () => string;
-  /** Closes the account's runtime and deletes its data, after its user is gone. */
   removeAccount: (userId: string) => Promise<void>;
-  /** Every running account's workspaces that still run an older image. */
   outdatedWorkspaces: () => Promise<{ userId: string; agentId: string }[]>;
 }) {
   const { accounts } = options;

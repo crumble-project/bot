@@ -4,7 +4,6 @@ export const MAX_ATTACHMENTS = 8;
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 export const MAX_TEXT_BYTES = 512 * 1024;
 
-/** Base64 of the largest allowed attachment set, plus room for the rest of the JSON body. */
 export const MAX_MESSAGE_BODY = 32 * 1024 * 1024;
 
 const IMAGE_TYPES = new Set([
@@ -39,7 +38,6 @@ export type AttachmentInput = z.infer<typeof attachmentInput>;
 
 export const ATTACHMENT_KINDS = ["image", "text"] as const;
 
-/** What the transcript shows for an attachment; the bytes stay in the model message. */
 export type AttachmentInfo = {
   name: string;
   mimeType: string;

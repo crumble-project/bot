@@ -6,7 +6,6 @@ import { call, queryClient } from "@/lib/api";
 import { ModelChoiceRow } from "./model-choice";
 import { DEFAULT_JUDGE_MODEL_NAME } from "@crumble/server/contract/tools";
 
-/** What judges now, as the row says it: the classifier, the chat fallback, or nothing. */
 function effectiveText(data: JudgeModel) {
   const { effective } = data;
 

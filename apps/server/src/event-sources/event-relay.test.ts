@@ -41,7 +41,6 @@ const event = (id: string): EventMessage => ({
   body: Buffer.from('{"action":"opened"}').toString("base64"),
 });
 
-/** A Doorstep relay that greets with `protocol`, records acks, and serves the sources API. */
 function fakeRelay(protocol = 1) {
   const acks: string[] = [];
   const authorizations: (string | null)[] = [];

@@ -32,7 +32,6 @@ export const MAX_SKILL_DOCUMENT_CHARS = 64000;
 export const MAX_SKILL_DOCUMENTS = 20;
 export const MAX_SKILL_DOCUMENT_PATH_CHARS = 200;
 
-// Larger files aren't skill instructions.
 export const MAX_SKILL_FILE_BYTES = 512 * 1024;
 
 export const MAX_CREDENTIAL_NAME_CHARS = 64;
@@ -44,12 +43,10 @@ export const MIN_GROUP_MEMBERS = 2;
 export const MAX_GROUP_MEMBERS = 6;
 export const MAX_GROUP_NAME_CHARS = 80;
 
-/** `text` within `max` characters, its cut marked. */
 export const clip = (text: string, max: number) =>
   text.length > max ? `${text.slice(0, max - 1)}…` : text;
 
 /** Theme colors a chart may use, `series-1` on; native clients read them too. */
 export const CHART_SERIES_COLORS = 8;
 
-/** The longest a bot waits on another bot's answer before reporting it as pending. */
 export const MAX_WAIT_SECONDS = 60;

@@ -8,11 +8,9 @@ export type BotCleanup = (
   agentId: string,
 ) => Effect.Effect<Effect.Effect<void>>;
 
-/** What deleting a bot clears beyond its rows, registered by the features that own it, so every delete path gets it. */
 export class BotDeletion extends Context.Service<
   BotDeletion,
   {
-    /** Runs `cleanup` for each bot deleted until the scope closes. */
     readonly register: (
       cleanup: BotCleanup,
     ) => Effect.Effect<void, never, Scope.Scope>;

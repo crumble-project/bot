@@ -25,7 +25,6 @@ let current = stored();
 export const isDark = () =>
   current === "dark" || (current === "system" && systemDark.matches);
 
-/** Tints the browser chrome for the current scheme, with the page background unless told otherwise. */
 export function setThemeColor(color = THEME_COLOR) {
   for (const meta of document.querySelectorAll<HTMLMetaElement>(
     'meta[name="theme-color"]',
@@ -66,7 +65,6 @@ function subscribe(listener: () => void) {
 
 export const useTheme = () => useSyncExternalStore(subscribe, () => current);
 
-/** Applies a theme now and saves it on the account, so other devices follow. */
 export async function setTheme(theme: Theme) {
   adopt(theme);
   await authClient.updateUser({ theme });

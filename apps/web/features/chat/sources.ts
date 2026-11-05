@@ -18,7 +18,6 @@ function pagesOf(message: Message) {
   return (pages ?? []).flatMap((page) => ("title" in page ? [page] : []));
 }
 
-/** A group message's sources, which the server stores with the message. */
 export function groupSourcesOf(message: Message): Sources | undefined {
   if (!message.sources?.length) return undefined;
 

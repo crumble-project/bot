@@ -11,7 +11,6 @@ type LoginRoutesOptions = {
   run: Runner<Logins>;
 };
 
-/** The logins one bot's desktop jobs may fill: listing them with the bot's requests, saving, deleting, declining, and the fill log. */
 export function registerLoginRoutes(options: LoginRoutesOptions) {
   const { register, service, run } = options;
 

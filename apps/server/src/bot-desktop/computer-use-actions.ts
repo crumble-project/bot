@@ -38,10 +38,8 @@ export type Acted = {
   route: "background" | "foreground" | "page";
 };
 
-/** An action the tool refused before reaching cua-driver, such as a missing argument. */
 export type Invalid = { invalid: string };
 
-/** One action's arguments and the window it acts on. */
 type ActionCall = {
   args: ComputerUseArgs;
   base: DriverArgs;
@@ -49,7 +47,6 @@ type ActionCall = {
   context: Context;
 };
 
-/** Input to one window through cua-driver. */
 type WindowInput = (
   state: ComputerUseState,
   call: ActionCall,
@@ -234,7 +231,6 @@ async function perform(
   return input(state, { args, base, target, context });
 }
 
-/** Runs one action, then reports its verdict and, on request, a fresh capture, or a read for a page ref. */
 async function actAndReport(
   state: ComputerUseState,
   args: ComputerUseArgs,
@@ -300,7 +296,6 @@ const inWindow =
       context,
     );
 
-// Page actions act on Chromium even when another window has focus.
 const inChromium =
   (action: WindowAction): Run =>
   async (state, args, context) =>
@@ -323,7 +318,6 @@ const capture: WindowAction = async (state, args, window, context) => ({
   isError: false,
 });
 
-/** A read of a terminal returns its text; a read of anything else reads Chromium's page. */
 const read: Run = async (state, args, context) => {
   const window = await targetWindow(state, args.window_id, context);
 
@@ -356,7 +350,6 @@ const inPage: Run = (state, args, context) =>
     ? Promise.resolve(textResult("use element or ref, not both", true))
     : inChromium(actAndReport)(state, args, context);
 
-/** Input to a window, reported by `actAndReport`, the default of every action without a `run` of its own. */
 const reportedInput = inWindow(actAndReport);
 
 type ActionEntry = {
@@ -366,19 +359,12 @@ type ActionEntry = {
    * `unchecked`: refused as stale after a handover, but not checked. Choosing it for a new action needs a reason here.
    */
   effect: "observe" | "act" | "unchecked";
-  /** The whole action, for those that are more than input to a window. */
   run?: Run;
   input?: WindowInput;
-  /** Acts on the element the call names, which the intent check then shows the judge. */
   targeted?: boolean;
-  /** How it acts on a page ref, for the actions that take one. */
   refCall?: RefCallBuilder;
 };
 
-/**
- * Every `computer_use` action, in the order of the tool's schema. A step of a `steps` call has its form in
- * `computer-use-steps.ts`, whose order the schema also keeps.
- */
 export const ACTIONS = new Map<string, ActionEntry>([
   ["capture", { effect: "observe", run: inWindow(capture) }],
   [
@@ -455,10 +441,8 @@ export const ACTIONS = new Map<string, ActionEntry>([
 
 export const ACTION_NAMES: string[] = [...ACTIONS.keys()];
 
-/** Undefined for an action the table doesn't know, which counts as acting and is refused when it runs. */
 export const effectOf = (action: string) => ACTIONS.get(action)?.effect;
 
-/** Runs the call as its action says, on a page ref when it names one. */
 export function dispatch(
   state: ComputerUseState,
   args: ComputerUseArgs,

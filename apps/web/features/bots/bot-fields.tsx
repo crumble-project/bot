@@ -74,7 +74,6 @@ const webProviderItems = [
   ...webSearchProviders.map(({ id, name }) => ({ label: name, value: id })),
 ];
 
-/** Set-up providers, plus the current one when it is not, so a bot's choice never silently changes. */
 function providerItems(providers: Provider[], current: string) {
   const items = providers.flatMap((each) =>
     each.configured ? [{ label: each.name, value: each.provider }] : [],
@@ -119,7 +118,6 @@ function ProviderSelect({
   );
 }
 
-/** A model ID field with the provider's catalog as suggestions; any ID may be typed. */
 function ModelField({
   id,
   provider,
@@ -165,7 +163,6 @@ function ModelField({
   );
 }
 
-/** One switch in an editor section; `nested` rows belong to the row above them. */
 function ToggleRow({
   id,
   label,
@@ -833,7 +830,6 @@ function BotFieldSections({
   );
 }
 
-/** The state of `BotFields`, held by its caller so the submit button outside the form can read `invalid`. */
 export function useBotFields(initial?: BotInput, botId?: string) {
   const providers = useQuery(providersQuery).data ?? [];
   const details = useBotDetails(initial, botId);
@@ -846,7 +842,6 @@ export function useBotFields(initial?: BotInput, botId?: string) {
   return { initial, botId, providers, details, selection, access, invalid };
 }
 
-/** A bot's form fields, starting from what `useBotFields` was given. */
 export function BotFields({
   fields: { initial, botId, providers, details, selection, access, invalid },
   onSubmit,

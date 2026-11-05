@@ -14,12 +14,6 @@ const CALL = new RegExp(
   `printf '%s' "\\$${DRIVER_ARGS}" \\| cua-driver call (\\w+)( --screenshot-out-file (\\S+))?$`,
 );
 
-/**
- * A bot desktop that runs only cua-driver and xdotool, answering each cua-driver tool from a queue of scripted replies.
- * The last reply of a queue repeats. The focused window is 101. Screenshots convert to JPEG unless `failConvert` is set,
- * and a whole-screen capture writes a JPEG unless `failCapture` is set.
- * `commands` and `writes` record every command line and file written, so tests can check what a value reached.
- */
 type CommandIo = {
   out: (output: string) => void;
   env: Record<string, string> | undefined;
@@ -109,7 +103,6 @@ export function scriptedGuest(replies: Record<string, GuestReply[]>) {
     return 0;
   };
 
-  // `state.processStart` is when every process started; a test changes it to restart Chromium.
   const processStart = (_: RegExpExecArray, io: CommandIo) => {
     io.out(`${state.processStart}\n`);
 
@@ -151,7 +144,6 @@ export function scriptedGuest(replies: Record<string, GuestReply[]>) {
         return 0;
       },
     ],
-    // A launched app starts detached; `commands` records which command line.
     [/setsid .* >\/dev\/null 2>&1 <\/dev\/null &$/, () => 0],
     [CALL, driverCall],
   ];

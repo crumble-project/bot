@@ -3,7 +3,6 @@ import { Context, Effect, Layer } from "effect";
 import { ProductDatabase } from "../shared/product-database";
 import { mcpServers } from "./schema";
 
-/** An MCP server is shared, or belongs to the one bot in `agentId` with its own token or sign-in. */
 export type MCPServer = {
   id: string;
   name: string;
@@ -31,13 +30,11 @@ const serverOf = (row: typeof mcpServers.$inferSelect): MCPServer => ({
   oauthClientId: row.oauthClientId ?? null,
 });
 
-/** MCP servers: shared ones, and each bot's own. */
 export class McpServerRepository extends Context.Service<
   McpServerRepository,
   {
     readonly list: Effect.Effect<MCPServer[]>;
     readonly get: (serverId: string) => Effect.Effect<MCPServer | null>;
-    /** A server the bot may use: enabled, and shared or its own. */
     readonly usable: (
       agentId: string,
       serverId: string,
@@ -46,7 +43,6 @@ export class McpServerRepository extends Context.Service<
       input: NewMCPServer,
       serverId?: string,
     ) => Effect.Effect<MCPServer>;
-    /** Changes a server's settings; which bot it belongs to is fixed at creation. */
     readonly update: (
       serverId: string,
       patch: Partial<Omit<MCPServer, "id" | "agentId">>,

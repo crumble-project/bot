@@ -11,7 +11,6 @@ afterEach(() => {
   dirs = [];
 });
 
-// Answers the version, login and picker handshake like Claude Code's stream-json mode, over no network.
 const PICKER_CLI = `#!/bin/sh
 if [ "$1" = "--version" ]; then
   echo "2.1.309 (Claude Code)"

@@ -49,7 +49,6 @@ const DETAILS_KEY = "crumble.details";
 /** Tailwind's lg breakpoint, where the details panel fits beside the chat. */
 const WIDE = "(min-width: 64rem)";
 
-/** The details panel's state, the job pane that can take its place, and the sheet narrow screens use instead. */
 function useDetails() {
   const [details, setDetails] = useState(
     () => localStorage.getItem(DETAILS_KEY) !== "off",
@@ -63,7 +62,6 @@ function useDetails() {
     setDetails(!details);
   };
 
-  // An open job takes the details panel's place; the toggle brings the details back.
   const showDetails = () => {
     if (!matchMedia(WIDE).matches) return setSheet(true);
 

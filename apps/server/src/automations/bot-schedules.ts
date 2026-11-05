@@ -142,7 +142,6 @@ const trigger = (
 const named = (value: Trigger) =>
   TRIGGER_KEYS.filter((key) => value[key]).length;
 
-// A trigger the draft names replaces the others; a draft that names none keeps the existing one.
 const when = (
   draft: ScheduleDraft,
   existing: Trigger = NO_TRIGGER,
@@ -167,7 +166,6 @@ const worded = Effect.mapError((error: AppError | z.ZodError) =>
     : error,
 );
 
-/** Automations a bot may see or change. Each one targets one bot. */
 export class BotSchedules extends Context.Service<
   BotSchedules,
   {
@@ -187,7 +185,6 @@ export class BotSchedules extends Context.Service<
       sourceId: string,
       id: string,
     ) => Effect.Effect<{ deleted: true; id: string }, AppError>;
-    /** The account's event sources, for event automations. */
     readonly sources: (
       sourceId: string,
     ) => Effect.Effect<PresentedSource[], AppError>;
@@ -223,7 +220,6 @@ export class BotSchedules extends Context.Service<
         return agent;
       });
 
-      /** A bot may assign work to itself, or to a bot it is allowed to message. */
       const target = Effect.fnUntraced(function* (
         from: Agent,
         agentId: string | undefined,
@@ -296,7 +292,6 @@ export class BotSchedules extends Context.Service<
         const fields = kindFields(draft);
         const { kind } = fields;
 
-        // Asked first, so a bot hears about the policy before any fault in its draft.
         if (kind === "script")
           yield* scheduler.scriptPolicy(
             draft.agentId?.trim() || from.id,
@@ -423,7 +418,6 @@ export class BotSchedules extends Context.Service<
   );
 }
 
-/** Model tool for the schedule capability. Policy lives in `BotSchedules`. */
 export function scheduleExtension(
   agent: Agent,
   schedules: BotSchedules["Service"],
@@ -513,7 +507,6 @@ export function scheduleExtension(
   });
 }
 
-/** Offers every bot the schedule tool. */
 export const scheduleTools = Layer.effectDiscard(
   Effect.gen(function* () {
     const schedules = yield* BotSchedules;

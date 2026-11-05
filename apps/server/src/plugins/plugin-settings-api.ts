@@ -11,7 +11,6 @@ import {
   type PluginSetting,
 } from "./plugins";
 
-/** Every plugin's settings: listing whether each has a value, setting one, and removing one. */
 export function registerPluginSettingRoutes(options: {
   register: Register;
   run: Runner<Secrets>;

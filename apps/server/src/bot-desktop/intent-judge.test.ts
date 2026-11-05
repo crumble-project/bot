@@ -51,6 +51,5 @@ test("Jev's spend is priced at TypeSafe's rate, which pi-ai's catalog lacks", ()
     },
   );
 
-  // A catalog price is kept as pi-ai computed it.
   expect(judgeUsage(classifier("openai", "gpt-6-luna"), tokens)).toBe(tokens);
 });

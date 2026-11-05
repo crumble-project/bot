@@ -31,7 +31,6 @@ type Result = {
   expected: { irreversible: boolean; inIntent: boolean };
   ms: number;
   inputTokens: number;
-  /** In $, priced as Crumble records it. */
   cost: number;
 };
 
@@ -66,7 +65,6 @@ const boolAnswer = z.object({
   probability: z.number(),
 });
 
-// A classifier result the eval can use: stopped normally, with both answers.
 const usable = z.object({
   stopReason: z.literal("stop"),
   answers: z.object({ irreversible: boolAnswer, in_intent: boolAnswer }),

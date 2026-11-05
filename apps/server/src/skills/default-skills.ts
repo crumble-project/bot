@@ -11,7 +11,6 @@ export type DefaultSkill = {
   name: string;
   description?: string | undefined;
   instructions: string;
-  /** Reference documents from the skill's `references` directory, by relative path. */
   documents: SkillDocument[];
   path: string;
 };
@@ -75,10 +74,6 @@ function parseSkill(
   };
 }
 
-/** Load one SKILL.md from each immediate skill directory.
- * Missing directories are safe for the built-in default, but an explicitly
- * configured directory is treated as a deployment error by the caller.
- */
 export function loadDefaultSkills(root: string): DefaultSkill[] {
   const resolved = resolve(root);
 
@@ -100,12 +95,10 @@ export function loadDefaultSkills(root: string): DefaultSkill[] {
   });
 }
 
-/** The skills bundled with the server, read-only for every account. */
 export class DefaultSkills extends Context.Service<
   DefaultSkills,
   DefaultSkill[]
 >()("crumble/skills/DefaultSkills") {
-  /** Read from `root`; a missing directory that was configured `explicit`ly fails, a missing default warns. */
   static layer(root: string, explicit: boolean) {
     return Layer.effect(
       DefaultSkills,

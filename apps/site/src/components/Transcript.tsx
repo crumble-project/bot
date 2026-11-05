@@ -240,7 +240,6 @@ const header = css({
 
 const tabs = css({ display: "flex", flexWrap: "wrap", columnGap: "1.25rem" });
 
-// The active tab's underline fills as its scenario plays.
 const tab = css({
   position: "relative",
   pb: ".6rem",
@@ -291,7 +290,6 @@ const row = css({
   _motionReduce: { animation: "none" },
 });
 
-// A fixed-height pane that follows the newest line keeps the card small.
 const viewport = css({
   h: { base: "19rem", sm: "17rem" },
   mx: "-1.25rem",
@@ -305,7 +303,6 @@ const viewport = css({
 
 const list = css({ pt: "2.5rem", pb: ".25rem" });
 
-// A date change gets extra space, so months between messages read as a gap.
 const gap = css({ mt: "1.6em!" });
 
 const time = css({ color: "faint", fontVariantNumeric: "tabular-nums" });
@@ -645,7 +642,6 @@ function prefersReducedMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-// Steps through a scripted animation once started; reduced motion jumps to the end.
 function useTimeline(started: boolean, times: number[]) {
   const [step, setStep] = useState(0);
 
@@ -723,7 +719,6 @@ function Cursor({ style }: { style: CSSProperties }) {
 
 const password = "••••••••••";
 
-// Move to the field, type the password a dot at a time, then move to Pay.
 const desktopTimes = [
   300,
   ...Array.from(password, (_, index) => 1150 + index * 110),

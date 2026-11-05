@@ -1,8 +1,6 @@
 // Ported from Hermes' claude-subscription-directsdk admission.py (MIT, see THIRD_PARTY_NOTICES.md).
 import { z } from "zod";
 
-/** What the relay changes in Claude Code's Messages request before it forwards it. */
-
 const UNCACHEABLE = new Set(["thinking", "redacted_thinking"]);
 
 // Anthropic's cache lookup checks at most this many positions back from a breakpoint, the breakpoint itself
@@ -23,7 +21,6 @@ const block = z.looseObject({
   },
 });
 
-/** A content block of a Messages request, keeping fields this module does not read. */
 export type Block = z.infer<typeof block>;
 
 const message = z.looseObject({
@@ -58,7 +55,6 @@ function decode(payload: string): Body | undefined {
 
 const encode = (value: Body) => JSON.stringify(value);
 
-/** A block without the given keys, compared regardless of cache markers or the restored fields. */
 function without(entry: Block, ...keys: string[]) {
   const copy = { ...entry };
 
@@ -77,7 +73,6 @@ const sameBlocks = (left: readonly Block[], right: readonly Block[]) =>
     return other !== undefined && Bun.deepEquals(plain(item), plain(other));
   });
 
-/** Every `cache_control` in the request: nested ones (tool_result content) and top-level ones included. */
 const breakpoints = (value: Body) =>
   encode(value).match(/[{,]"cache_control":/g)?.length ?? 0;
 
@@ -266,13 +261,11 @@ const cacheControlOf = (item: Message) => {
   return parsed.success ? parsed.data : undefined;
 };
 
-/** A user message carrying anything but tool results: a new turn, or a steering message after them. */
 const opensTurn = (item: Message) =>
   item.role === "user" &&
   (!Array.isArray(item.content) ||
     item.content.some((entry) => entry.type !== "tool_result"));
 
-/** The user message right before the open turn's first assistant message with thinking, or the turn's opening. */
 function turnFrameIndex(messages: Message[], last: number) {
   const opening = messages.slice(0, last).findLastIndex(opensTurn);
 
@@ -360,7 +353,6 @@ function keepTurnMark(
     .slice(frame, target.message)
     .reduce((total, item) => total + blockCount(item), 0);
 
-  // The recurring breakpoint's own lookback still reaches it.
   if (span - mark + target.index + 1 <= LOOKBACK) return false;
 
   return moveTurnMark(value, messages, from, target);
@@ -442,7 +434,6 @@ export function pinMessageBreakpoint(
   return encode(value);
 }
 
-/** Remove native's message marks from a tool-less one-shot that nothing replays; system and tools marks stay. */
 export function dropMessageBreakpoints(payload: string) {
   const value = decode(payload);
 
@@ -504,7 +495,6 @@ const joinedText = (value: Block["content"]) => {
 };
 
 function restoreContent(sent: Block["content"], host: Block["content"]) {
-  // Scalar/list equivalence is allowed only for text with no metadata or markers.
   if (!Array.isArray(host) || !Array.isArray(sent)) {
     const left = joinedText(sent);
     const right = joinedText(host);
@@ -579,7 +569,6 @@ function restoreSequence(sent: Block[], host: Block[]): Block[] {
       const original = bareTextRun(host, hostIndex);
       const actual = bareTextRun(sent, sentIndex);
 
-      // Extensions before a protected host block are insertions, not suffixes.
       if (
         !(original.end === host.length
           ? actual.text.startsWith(original.text)

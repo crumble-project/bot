@@ -63,16 +63,12 @@ const eventOf = (message: EventMessage): RelayEvent => ({
   body: message.body,
 });
 
-/** The account's connection to its event relay: it stores every event the relay sends, then acknowledges it. */
 export class EventRelay extends Context.Service<
   EventRelay,
   {
     readonly status: Effect.Effect<RelayStatusResponse>;
-    /** The relay URL and account token, for calls to the relay's API. */
     readonly access: Effect.Effect<RelayAccess, InvalidInput>;
-    /** Connects, reconnects, or disconnects to match the settings. */
     readonly tick: Effect.Effect<void>;
-    /** Ticks every second until the account closes. */
     readonly start: Effect.Effect<void>;
   }
 >()("crumble/event-sources/EventRelay") {
@@ -89,7 +85,6 @@ export class EventRelay extends Context.Service<
       const state = disconnected();
       let connection: Connection | undefined;
       let configured: string | undefined;
-      // Set by a protocol mismatch; only a settings change clears it.
       let mismatched = false;
       let closed = false;
 
@@ -202,7 +197,6 @@ export class EventRelay extends Context.Service<
         else stopped(state, null);
       };
 
-      // New settings get a fresh connection and clear a protocol mismatch.
       const reconfigure = (key: string) => {
         if (key === configured) return;
         disconnect();

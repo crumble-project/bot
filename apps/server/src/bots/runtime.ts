@@ -83,24 +83,17 @@ import {
   type VisionModelRef,
 } from "../vision/vision";
 
-/** The IANA timezone the owner's client last reported with a chat message. */
 export const OWNER_TIMEZONE = "owner-timezone";
 
 export type RuntimeCallbacks = MemoryStore & {
   models: Models;
-  /** The bot as it is now; null once it is gone. */
   currentAgent: (agent: Agent) => Agent | null;
   ownerTimezone: () => string | undefined;
-  /** The skills a bot can load and the ones it may write. Listed in its instructions by name only. */
   skillLibrary: BotSkills["Service"];
-  /** The account's vision model, read at each use; undefined while it is off. */
   visionModel: () => VisionModelRef | undefined;
   extensions: (agent: Agent) => Extension[] | Promise<Extension[]>;
-  /** Installed but never offered in the bot's chat: jobs select them for the conversations they own. */
   jobExtensions: (agent: Agent) => Extension[] | Promise<Extension[]>;
-  /** The kinds of conversation a bot has besides its chat, built once per bot. */
   conversationKinds: () => ConversationKind[];
-  /** The execution environment of one of the bot's conversations, as configured now. Never asked for a review. */
   env: (
     agent: Agent,
     target: EnvTarget,
@@ -136,7 +129,6 @@ type HarnessRecord = {
   kinds: ConversationKind[];
   jobKnowledgeExtension: Extension;
   registry: ReturnType<typeof createRegistry>;
-  /** Everything installed in the registry: the offered extensions, then the job extensions. */
   extensions: Extension[];
 };
 
@@ -191,14 +183,12 @@ function entryMetadata(
   return metadata;
 }
 
-/** One input's text for the model and the data its entry stores. */
 export type PreparedInput = {
   modelContent: string;
   data: Record<string, JsonValue>;
 };
 
 type HistoryOptions = PageOptions & {
-  /** Operational consumers may need committed tool-call blocks mid-run. */
   includeActiveAssistant?: boolean | undefined;
 };
 
@@ -245,7 +235,6 @@ async function visibleMessages(
   });
 }
 
-// Only reads and answers: a kind's documents and tasks are named by its facts, so these need no plugin.
 const JOB_READERS: Record<JobKindName, JobKind> = {
   coding: defineJobKind(JOB_KINDS.coding),
   desktop: defineJobKind(JOB_KINDS.desktop),
@@ -263,7 +252,6 @@ function numericId(value: string): never {
   return id as never;
 }
 
-/** The style of the conversation: its kind's, or the chat's. */
 async function styleOf(
   kinds: ConversationKind[],
   reader: DocumentReader,
@@ -335,8 +323,6 @@ function inferenceModels(models: Models, choices: { agent: Agent }) {
   });
 }
 
-// With code mode the model writes one script that calls the other tools, instead of calling them itself.
-// Model-only tools, such as code mode itself, stay direct.
 function modelToolsOf(tools: BotTool[]) {
   if (!tools.some((tool) => tool.name === CODEMODE_TOOL_NAME)) return tools;
 
@@ -354,7 +340,6 @@ async function ensureAgentModels(models: Models, agent: Agent) {
 }
 
 export class AgentRuntime {
-  /** Skills each turn has loaded, checked before a bot changes one. */
   private readonly skillReads = new SkillReads();
   private readonly records: HarnessFiles<HarnessRecord>;
   constructor(
@@ -370,7 +355,6 @@ export class AgentRuntime {
     );
   }
 
-  /** Reads the documents features keep on the bot's conversations. */
   async documents(agent: Agent) {
     return (await this.open(agent)).harness;
   }
@@ -450,7 +434,6 @@ export class AgentRuntime {
     for (const kind of kinds) registry.install(kind.extension);
     const choices = { agent };
 
-    // A job loads skills but never writes them or memory: memory writes record chat turns as their source.
     const jobKnowledgeExtension = defineExtension({
       name: JOB_KNOWLEDGE_EXTENSION,
       tools: [skill],
@@ -583,7 +566,6 @@ export class AgentRuntime {
       {
         model: modelRef(model ?? agent),
         thinkingLevel: agent.inference?.thinkingLevel ?? "off",
-        // Only jobs select the job knowledge; the chat has the same in its instructions.
         extensions: style.extensions?.(parts) ?? {
           remove: [record.jobKnowledgeExtension],
         },
@@ -612,7 +594,6 @@ export class AgentRuntime {
     return reference;
   }
 
-  /** A new conversation owned by a background `anchor` task of the bot's chat, set up by `init` in the same commit. */
   async openAnchored(
     agent: Agent,
     anchor: ReturnType<typeof defineAnchorTask>,
@@ -642,7 +623,6 @@ export class AgentRuntime {
     return reference;
   }
 
-  /** The context window of `choice`, which the bot's provider keys reach; undefined when its model lists none. */
   async contextWindow(agent: Agent, choice: Pick<Agent, "provider" | "model">) {
     const { models } = await this.open(agent);
     await ensureModel(models, choice);
@@ -650,7 +630,6 @@ export class AgentRuntime {
     return models.getModel(choice.provider, choice.model)?.contextWindow;
   }
 
-  /** The conversation of a submission and the input entry it wrote; none before the input is written. */
   async settledTurn(
     agent: Agent,
     conversationId: string,
@@ -675,7 +654,6 @@ export class AgentRuntime {
     return { conversation, entry: Number(status.entry) };
   }
 
-  /** Whether the vision model describes images for the bot: one is set and the bot's model can't read them. */
   private describesImagesFor(record: HarnessRecord, agent: Agent) {
     return describesImages(
       this.callbacks.visionModel(),
@@ -683,10 +661,6 @@ export class AgentRuntime {
     );
   }
 
-  /**
-   * Whether the bot takes images: its model reads them, or the account's vision model describes them for it. Catalogs
-   * that list no modalities are trusted, as for chat uploads.
-   */
   async acceptsImages(agent: Agent) {
     const { models } = await this.open(agent);
     await ensureModel(models, agent);
@@ -697,7 +671,6 @@ export class AgentRuntime {
     );
   }
 
-  /** One model answer outside any conversation, written by the bot's own model. */
   async complete(
     agent: Agent,
     systemPrompt: string,
@@ -735,7 +708,6 @@ export class AgentRuntime {
     return String(await conversation.compact(undefined, BACKGROUND_CONTEXT));
   }
 
-  /** An input's model text and stored data; a reply carries bounded context from the message it answers. */
   async prepareInput(
     agent: Agent,
     text: string,
@@ -747,7 +719,6 @@ export class AgentRuntime {
     return prepareReply(harness, agent.id, replyTo, text);
   }
 
-  /** `input` is what admission prepared and framed; without it, the model reads `text` as written. */
   async submit(
     agent: Agent,
     conversationId: string,
@@ -792,7 +763,6 @@ export class AgentRuntime {
     return String(submission.id);
   }
 
-  /** Data-only writes make exchanges visible without starting another model turn. */
   async recordBotMessage(
     agent: Agent,
     conversationId: string,
@@ -820,7 +790,6 @@ export class AgentRuntime {
     );
   }
 
-  /** The bytes of an attached image, read back from the input entry that carries it. */
   async attachment(agent: Agent, entryId: string, index: number) {
     const { harness } = await this.open(agent);
 
@@ -893,7 +862,6 @@ export class AgentRuntime {
     );
   }
 
-  /** The jobs of `kind` the bot started from its chat, oldest first; none for a bot that never ran one. */
   async jobs(agent: Agent, kind: JobKindName) {
     const { harness } = await this.open(agent);
     const root = await harness.root(BACKGROUND_CONTEXT);
@@ -908,7 +876,6 @@ export class AgentRuntime {
     }));
   }
 
-  /** Sends an answer to a job's open question; false when the job no longer waits on it. */
   async answerJob(
     agent: Agent,
     kind: string,
@@ -924,7 +891,6 @@ export class AgentRuntime {
     });
   }
 
-  /** What the jobs of every kind did for the chat turn answering `submissionId`; undefined when it touched none. */
   async turnWork(
     agent: Agent,
     submissionId: string,
@@ -943,7 +909,6 @@ export class AgentRuntime {
     );
   }
 
-  /** One job's transcript, paged like the chat's. */
   async jobHistory(
     agent: Agent,
     kind: JobKindName,
@@ -976,7 +941,6 @@ export class AgentRuntime {
     );
   }
 
-  /** `hideActive`: a chat streams its active turn separately; a job has no stream, so its finished steps show. */
   private async visible(
     harness: Harness,
     options: HistoryOptions,
@@ -1005,7 +969,6 @@ export class AgentRuntime {
     };
   }
 
-  /** Assistant text answering one submission; later chat turns stay out of view. */
   async response(
     agent: Agent,
     conversationId: string,
@@ -1065,11 +1028,9 @@ export class AgentRuntime {
   }
 }
 
-/** The account's bots on Pi Durable, each with the memory, models and tools Crumble gives it. */
 export class BotRuntime extends Context.Service<BotRuntime, AgentRuntime>()(
   "crumble/bots/BotRuntime",
 ) {
-  /** Over `dataDir`'s harness files; `options` are what features outside the bots give every bot. */
   static layer(
     dataDir: string,
     options: Pick<

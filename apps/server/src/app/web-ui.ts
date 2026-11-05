@@ -8,7 +8,6 @@ const PELE = path.join(
   "dist/esm",
 );
 
-/** A Pele module under its ESM build, or undefined for any other path. */
 function peleFile(requested: string) {
   const relative = path.posix.normalize(decodeURIComponent(requested));
 

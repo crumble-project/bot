@@ -12,7 +12,6 @@ import type { ComputerUseResult } from "./computer-use";
 import { driverCall, listWindows, sh } from "./computer-use-driver";
 import { textResult, type ComputerUseState } from "./computer-use-state";
 
-/** Apps whose command takes the folder in its own way; any other app gets the path as its last argument. */
 const FOLDER_APPS = {
   files: (path: string) => `${FILES_PROGRAM} ${shellQuote(path)}`,
   terminal: (path: string) =>
@@ -35,7 +34,6 @@ const installedApps = z.object({
     .default([]),
 });
 
-/** The desktop's installed apps: XDG launcher entries, as `cua-driver` lists them. */
 async function desktopApps(state: ComputerUseState, context: Context) {
   const { reply } = await driverCall(state, "list_apps", {}, context);
 

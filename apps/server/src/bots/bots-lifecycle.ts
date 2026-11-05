@@ -13,14 +13,12 @@ type LifecycleDeps = {
   admit: (execution: Execution) => Effect.Effect<void, unknown>;
 };
 
-/** What ends or repairs a bot's work: cancelling, compacting, recovering, and deleting. */
 export const botsLifecycle = (context: BotsContext, deps: LifecycleDeps) => {
   const { agents, conversations, deletion, executions, runtime } = context;
   const { agent, conversation } = deps.lookup;
   const { changed, record, settled } = deps.notifications;
   const { admit, chat } = deps;
 
-  /** Stops a chat's running executions. */
   const abort = Effect.fn("Bots.abort")(function* (conversationId: string) {
     const { agent: owner } = yield* conversation(conversationId);
 
@@ -38,7 +36,6 @@ export const botsLifecycle = (context: BotsContext, deps: LifecycleDeps) => {
     for (const execution of running) yield* settled(execution.id);
   });
 
-  /** Stops everything the bot runs, in its chat and in its other conversations. */
   const stopAgent = Effect.fn("Bots.stopAgent")(function* (agentId: string) {
     for (const each of yield* conversations.list(agentId))
       yield* abort(each.id);

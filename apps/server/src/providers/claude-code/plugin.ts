@@ -27,7 +27,6 @@ export const CLAUDE_CODE_PROVIDER = "claude-code";
 
 const STATUS_TTL_MS = 30_000;
 
-/** Where Claude Code runs from and keeps its login, from `CRUMBLE_CLAUDE_*` and the data directory. */
 export function claudeCodeOptions(
   dataDir: string,
   env: NodeJS.ProcessEnv,
@@ -129,7 +128,6 @@ export function claudeCodePlugin(
     auth: {
       apiKey: {
         name: "Claude Code sign-in",
-        // Usable only when the CLI is installed and signed in; a turn otherwise fails with the reason.
         check: async () =>
           (await status()).status === "signed_in"
             ? { type: "api_key", source: "Claude Code" }

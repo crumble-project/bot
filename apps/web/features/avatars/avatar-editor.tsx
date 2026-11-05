@@ -15,7 +15,6 @@ export function generationPrompt(description: string) {
   return `${prompt}\n\n## User description\n\n${description.trim()}\n`;
 }
 
-/** Geometry imports use the library validator; colors are separate from the portable definition. */
 export function importDefinition(
   json: string,
   current: BotAvatarDefinition,

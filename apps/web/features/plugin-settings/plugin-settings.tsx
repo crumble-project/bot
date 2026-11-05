@@ -62,7 +62,6 @@ function SecretSettingSheet({
   );
 }
 
-/** One secret a plugin needs: adding it, or editing and removing it from the row menu. */
 function SecretSetting({
   pluginId,
   setting,
@@ -159,7 +158,6 @@ function SecretSetting({
   );
 }
 
-/** Which settings a page shows: a contribution's plugins, one plugin, or the setting stored under a key. */
 type SettingSelection =
   | { contributes: Contribution }
   | { pluginId: string }
@@ -178,13 +176,11 @@ function isSelected(
   return pluginSettingKey(plugin.id, setting.key) === select.secretKey;
 }
 
-/** The selected plugin settings, as the server declares them. */
 export function PluginSettingRows({
   select,
   onChange,
 }: {
   select: SettingSelection;
-  /** Runs after a value is saved or removed, for pages whose own status depends on it. */
   onChange?: () => Promise<void>;
 }) {
   const settings = useQuery(pluginSettingsQuery);

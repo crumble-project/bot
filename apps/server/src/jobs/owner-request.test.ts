@@ -24,7 +24,6 @@ const message = (
   data: { text, requestId, origin: { kind } },
 });
 
-/** A chat whose entries come back newest first, `pageSize` per page. */
 function chat(entries: EntryRecord[], pageSize: number) {
   const newestFirst = [...entries].reverse();
 

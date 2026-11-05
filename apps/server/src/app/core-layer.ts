@@ -29,7 +29,6 @@ assertVendorIds(
   passwordManagers.map((vendor) => vendor.id),
 );
 
-/** The account's repositories and the services that need nothing else: the base every account runtime starts from. */
 export const coreLayer = (dataDir: string) =>
   Layer.mergeAll(
     DesktopControl.layer,

@@ -18,40 +18,29 @@ import type { PasswordManagerVendor } from "../password-managers/password-manage
 import type { WorkspaceBackendOptions } from "../workspaces/machine-workspaces";
 import type { ClosableWorkspaces } from "../workspaces/workspace";
 
-/** How a provider that signs in outside Crumble stands, shown to the owner instead of sign-in methods. */
 export type ExternalAuth = z.output<typeof externalAuthResponse>;
 
-/** A Pi AI provider; its `api` streams are the adapter. */
 export type ProviderContribution = {
   provider: Provider;
-  /** Present for providers whose sign-in happens outside Crumble; they have no Crumble credential to remove. */
   externalAuth?: () => Promise<ExternalAuth>;
 };
 
-/** A kind of background job a bot hands work to, such as coding or desktop jobs. */
 export type JobKindContribution = {
   /** Stored data depends on it: never rename. */
   kind: string;
-  /** Whether the bot may start jobs of this kind. */
   enabled: (agent: Agent) => boolean;
   extensions: (agent: Agent) => JobExtensions;
-  /** The execution environment of this kind's jobs; undefined for a conversation that is not one of them. */
   env: (
     agentId: string,
     target: EnvTarget,
     context: PiContext,
   ) => Promise<ExecutionEnv | undefined>;
-  /** The environment of the bot's own conversations, such as its chat, while the kind is enabled for the bot. */
   botEnv?: (agentId: string) => ExecutionEnv;
-  /** Hears the bot's answer to each job report, for notifications. */
   onAnswer: (listener: (answer: JobAnswer) => void) => () => void;
-  /** Hears each job question about work a bot turn sent the job, so a delegating bot can answer it first. */
   onQuestion?: (listener: (asked: JobAsked) => Promise<void>) => () => void;
-  /** Hears each job turn that reported back, for a kind whose work a learning review reads. */
   onFinished?: (listener: (finished: JobFinished) => void) => () => void;
 };
 
-/** A machine backend: its workspaces when the server's environment configures it, otherwise undefined. */
 export type WorkspaceBackend = (
   env: Record<string, string | undefined>,
   options: WorkspaceBackendOptions,
@@ -69,7 +58,6 @@ export type PluginVendors = {
   workspaceBackends?: WorkspaceBackend[];
 };
 
-/** Fails startup unless the plugins implement each ID of `catalog` exactly once, and no other. */
 export function assertVendorIds(
   kind: string,
   catalog: readonly string[],
@@ -93,7 +81,6 @@ export function assertVendorIds(
 export const pluginPasswordManagers = (vendors: readonly PluginVendors[]) =>
   vendors.flatMap((vendor) => vendor.passwordManagers ?? []);
 
-/** The workspaces of the first backend the environment configures, if any. */
 export function pluginWorkspaces(
   vendors: readonly PluginVendors[],
   env: Record<string, string | undefined>,
@@ -114,10 +101,8 @@ export function pluginWorkspaces(
 export type PluginSetting = {
   /** Stored data keys on it: never rename. */
   key: string;
-  /** Written once and never read back by clients. */
   kind: "secret";
   label: string;
-  /** The status the owner sees while the setting has no value. */
   whenMissing: string;
 };
 
@@ -135,7 +120,6 @@ export type CrumblePlugin = {
   chatAdapters?: ChatAdapter[];
 };
 
-/** The kinds of contribution a plugin makes, as clients group plugins by. */
 export const pluginContributions = (plugin: CrumblePlugin) =>
   (
     ["providers", "jobKinds", "webSearchProviders", "chatAdapters"] as const
@@ -153,7 +137,6 @@ export const pluginWebSearchProviders = (plugins: readonly CrumblePlugin[]) =>
 export const pluginChatAdapters = (plugins: readonly CrumblePlugin[]) =>
   plugins.flatMap((plugin) => plugin.chatAdapters ?? []);
 
-/** The chat and job extensions of every job kind the bot may use. */
 export const jobExtensions = (
   kinds: readonly JobKindContribution[],
   agent: Agent,
@@ -168,10 +151,6 @@ export const jobExtensions = (
   };
 };
 
-/**
- * The first job kind that owns the conversation as its job decides its environment. Any other conversation of the bot
- * gets the bot environment of the first kind enabled for it that has one.
- */
 export async function conversationEnv(
   kinds: readonly JobKindContribution[],
   agent: Agent,
@@ -189,7 +168,6 @@ export async function conversationEnv(
     ?.botEnv?.(agent.id);
 }
 
-/** The plugins compiled into the server, as this account configures them. */
 export class Plugins extends Context.Service<
   Plugins,
   readonly CrumblePlugin[]

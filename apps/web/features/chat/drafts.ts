@@ -2,7 +2,6 @@ import { onSessionReset } from "@/lib/session";
 
 const PREFIX = "crumble.draft:";
 
-/** The unsent text of a chat's composer, such as `bot:<id>`, kept across page changes and reloads. */
 export const readDraft = (chat: string) =>
   localStorage.getItem(`${PREFIX}${chat}`) ?? "";
 

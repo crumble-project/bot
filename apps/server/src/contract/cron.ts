@@ -1,6 +1,5 @@
 import { CronExpressionParser } from "cron-parser";
 
-/** The first time `cron` fires in `timezone` after `from`; throws when the expression is invalid. */
 export const nextOccurrence = (cron: string, timezone: string, from: Date) =>
   CronExpressionParser.parse(cron, { currentDate: from, tz: timezone })
     .next()

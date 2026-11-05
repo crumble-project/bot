@@ -24,14 +24,11 @@ type Exec = Runner<Services>["runSync"];
 type AgentRoutesOptions = {
   register: Register;
   service: BotsAccess;
-  /** Runs the repository effects the bot routes read and write. */
   run: Runner<Services>;
-  /** Accepts a provider ID only if this server can serve it. */
   provider: { parse(value: string): string };
   workspaces: Workspaces | undefined;
 };
 
-/** The owner's view of every bot, and the editing of a bot's own configuration. */
 const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
   const { register, service } = options;
   const exec: Exec = (effect) => options.run.runSync(effect);
@@ -58,7 +55,6 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
     const old = service.agent(c.req.param("id"));
     const body = c.req.valid("json");
 
-    // The inline skills are a view of the bot's packages, which may outgrow the inline limit; only a submitted list is validated.
     const { skills, ...input } = agentInput.parse({
       ...old,
       ...body,
@@ -83,7 +79,6 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
   });
 };
 
-/** Copying a bot, and deleting one. */
 const registerAgentLifecycleRoutes = (options: AgentRoutesOptions) => {
   const { register, service } = options;
   const exec: Exec = (effect) => options.run.runSync(effect);
@@ -100,7 +95,6 @@ const registerAgentLifecycleRoutes = (options: AgentRoutesOptions) => {
   });
 };
 
-/** The bot routes, in the order the contract document lists them. */
 export function registerAgentRoutes(options: AgentRoutesOptions) {
   registerAgentDefinitionRoutes(options);
   registerAgentLifecycleRoutes(options);

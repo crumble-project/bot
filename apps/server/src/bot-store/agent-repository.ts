@@ -15,7 +15,6 @@ export type AgentPatch = Partial<
   Omit<AgentInput, "id" | "createdAt" | "updatedAt">
 >;
 
-/** The account's bots and their settings; their skills live in the skill library. */
 export class AgentRepository extends Context.Service<
   AgentRepository,
   {

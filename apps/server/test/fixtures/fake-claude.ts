@@ -55,7 +55,6 @@ const emit = (value: Json) =>
   process.stdout.write(`${JSON.stringify(value)}\n`);
 
 if (env["FAKE_MODE"] === "hang") {
-  // A grandchild in the same process group, to prove cancellation kills the whole tree.
   const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
     stdio: "ignore",
   });

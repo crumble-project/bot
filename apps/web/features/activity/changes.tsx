@@ -38,7 +38,6 @@ function actorLabel(change: Change, botName: string | null) {
   }
 }
 
-/** What happened, such as "Kev's review changed a skill". */
 export function changeSummary(change: Change, botName: string | null) {
   const target =
     change.target === "skill"
@@ -50,7 +49,6 @@ export function changeSummary(change: Change, botName: string | null) {
   return `${actorLabel(change, botName)} ${VERBS[change.action]} ${target}`;
 }
 
-/** The skill's name or the memory's first line. */
 export function changeTitle(change: Change) {
   const state = change.after ?? change.before;
 

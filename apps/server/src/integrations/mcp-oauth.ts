@@ -23,16 +23,13 @@ import { InvalidInput, isAppError, errorText } from "../shared/errors";
 type SavedOAuth = {
   redirectUrl: string;
   state: McpOAuthState;
-  /** The owner's OAuth app the state belongs to; null when Crumble registered or used its document. */
   clientId: string | null;
 };
 
 const oauthStateKey = (serverId: string) => secretKey("mcp-oauth", serverId);
 
-/** The secret holding an MCP server's bearer token. */
 export const mcpTokenKey = (serverId: string) => secretKey("mcp", serverId);
 
-/** The secret holding the client secret of the owner's OAuth app for an MCP server. */
 export const clientSecretKey = (serverId: string) =>
   secretKey("mcp-oauth-client", serverId);
 
@@ -64,7 +61,6 @@ const CLIENT_METADATA = {
   token_endpoint_auth_method: "none",
 };
 
-/** Where a server with a public address serves its OAuth Client ID Metadata Document. */
 export const CLIENT_DOCUMENT_PATH = "/oauth/client-metadata.json";
 
 /** The native apps' sign-in callbacks; their system sign-in sheets watch these schemes. */
@@ -101,7 +97,6 @@ export type SecretStorage = {
   get(key: string): string | undefined;
   set(key: string, value: string): void;
   delete(key: string): void;
-  /** Read on use, possibly from a password manager. */
   clientSecret(serverId: string): Promise<string | undefined>;
 };
 
@@ -234,7 +229,6 @@ function unavailable(
   });
 }
 
-/** What to do when an authorization server registers no clients: CIMD needs a public address, or a token instead. */
 function registrationHint(
   document: ClientDocument | undefined,
   redirectUrl: string,
@@ -251,7 +245,6 @@ function registrationHint(
   return `Sign in from ${web}, or from the Mac or iOS app, if it supports client metadata documents; otherwise add the server with a token`;
 }
 
-/** The client secret of the owner's OAuth app, when the server uses one. */
 const ownerSecret = (storage: SecretStorage, server: MCPServer) =>
   server.oauthClientId
     ? storage.clientSecret(server.id)
@@ -279,10 +272,6 @@ function restartIfChanged(
   });
 }
 
-/**
- * Discovers the server's authorization server, registers Crumble for `redirectUrl`, and returns the
- * URL the owner signs in at, or `authorized` when the saved tokens still work.
- */
 export async function startAuthorization(
   storage: SecretStorage,
   server: MCPServer,

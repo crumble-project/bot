@@ -4,7 +4,6 @@ import { InvalidInput, type NotFound } from "./errors";
 const ENTRY = /^[1-9][0-9]*$/;
 const MESSAGE_INDEX = /^(0|[1-9][0-9]*)$/;
 
-/** The positive safe integer `raw` spells, or undefined. */
 export const positiveId = (raw: string) =>
   ENTRY.test(raw) && Number.isSafeInteger(Number(raw))
     ? Number(raw)
@@ -13,7 +12,6 @@ export const positiveId = (raw: string) =>
 /** `<owner>:<n>`: a durable entry or conversation of a bot or group. Entry numbers are unique across its conversations. */
 export const formatEntryId = (owner: string, id: number) => `${owner}:${id}`;
 
-/** `<entry>:<index>`: one model message of an entry. */
 export const formatMessageId = (entryId: string, index: number) =>
   `${entryId}:${index}`;
 
@@ -37,7 +35,6 @@ export function parseEntryId(value: string, owner?: string) {
   return positiveId(value.slice(prefix.length)) ?? "malformed";
 }
 
-/** `owner`'s entry number in `value`, an ID a client sent. `Failure` is what the client gets for any other value. */
 export function parseEntryRef(
   owner: string,
   value: string,
@@ -54,7 +51,6 @@ export function parseEntryRef(
   return entry;
 }
 
-/** The local ID of a bot's conversation, from the ID the rest of the server knows it by. */
 export const localConversationId = (
   agentId: string,
   reference: string,
@@ -62,7 +58,6 @@ export const localConversationId = (
   // SAFETY: validated decimal IDs are branded by pi-durable at this boundary.
   parseEntryRef(agentId, reference, "Conversation") as ConversationId;
 
-/** The index of a message of `entryId`, or undefined when `messageId` isn't one. */
 export function parseMessageIndex(entryId: string, messageId: string) {
   const prefix = `${entryId}:`;
   const raw = messageId.slice(prefix.length);

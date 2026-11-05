@@ -33,7 +33,6 @@ export const PALETTE_SHORTCUT = /Mac|iPhone|iPad/.test(navigator.userAgent)
   ? "⌘K"
   : "Ctrl K";
 
-/** Jumps to any chat, page, or settings section, and runs app-wide actions; ⌘K toggles it. */
 export function CommandPalette({
   open,
   onOpenChange,

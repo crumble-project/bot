@@ -45,7 +45,6 @@ import {
 } from "@/components/page";
 import { settingsSections } from "./sections";
 
-/** Settings: a section list beside the open section. */
 export function SettingsLayout() {
   const matchRoute = useMatchRoute();
   const admin = useIsAdmin();

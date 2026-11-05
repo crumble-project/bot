@@ -107,7 +107,6 @@ function DesktopControls({
   );
 }
 
-/** Watch a bot's desktop, and take control from its desktop job or hand it back. */
 export function BotDesktop({ botId }: { botId: string }) {
   const bot = useQuery(botsQuery).data?.find((each) => each.id === botId);
   const path = agentPath(botId);
@@ -193,7 +192,6 @@ function ViewerFrame({
   );
 }
 
-/** A small live view of a bot's desktop that opens the full desktop. */
 export function DesktopPreview({ botId }: { botId: string }) {
   const path = agentPath(botId);
   const [asked, setAsked] = useState(false);

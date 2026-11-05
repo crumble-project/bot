@@ -7,7 +7,6 @@ import {
   type SqliteDatabase,
 } from "../shared/database";
 
-/** An account's push database (push.sqlite): devices, presence, and the delivery outbox. */
 export class PushDatabase extends Context.Service<
   PushDatabase,
   SqliteDatabase

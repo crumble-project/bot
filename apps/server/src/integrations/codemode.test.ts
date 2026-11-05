@@ -58,7 +58,6 @@ test("code mode offers one tool whose scripts call the agent's other tools", asy
   const faux = fauxProvider({ provider: "faux", models: [{ id: "chat" }] });
   faux.setResponses([
     (context) => {
-      // Tools reach the model as declarations on the transcript's system messages.
       offered.push(
         context.messages.flatMap((message) =>
           message.role === "system"
@@ -118,7 +117,6 @@ test("code mode offers one tool whose scripts call the agent's other tools", asy
     "say hi through the tool",
     "00000000-0000-4000-8000-000000000001",
   );
-  // The submission settles when the model answers; the tool call and the final reply follow it.
   let reply = "";
 
   for (let i = 0; i < 500 && !reply; i++) {

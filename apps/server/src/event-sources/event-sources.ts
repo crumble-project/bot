@@ -13,7 +13,6 @@ import { EventRelay, RELAY_URL_SETTING } from "./event-relay";
 
 export type ListedEventSource = EventSource & { usedBy: number };
 
-/** The owner's view of the event relay: its URL, and the sources Crumble creates on it. */
 export class EventSources extends Context.Service<
   EventSources,
   {

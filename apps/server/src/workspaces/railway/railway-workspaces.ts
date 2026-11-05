@@ -72,7 +72,6 @@ const GUEST_STREAM = `${GUEST_HELPERS}/railway-stream.py`;
 const GUEST_PYTHON = "/usr/bin/python3";
 const GUEST_TUNNEL = `${GUEST_HELPERS}/workspace-tunnel.py`;
 
-// A tunnel that ended while its machine runs is restarted after this long.
 const TUNNEL_RESTART_MS = 1_000;
 const GUEST_PROXY = `http://127.0.0.1:${GUEST_PROXY_PORT}`;
 
@@ -87,10 +86,8 @@ const PROXY_ENV = {
 const ARCHIVE = "/tmp/crumble-workspace.tgz";
 const DESKTOP_START_TIMEOUT_SEC = 120;
 
-// One environment for both images, set when the sandbox is created.
 const GUEST_ENV = { ...BASE_ENV, ...DESKTOP_ENV };
 
-/** How long a workspace stays unchanged before a sync becomes a checkpoint. */
 const DEFAULT_CHECKPOINT_DELAY_MS = 30_000;
 
 // Railway destroys a sandbox after this much idle time. The heartbeat keeps a running workspace alive, so it only
@@ -172,7 +169,6 @@ export const DESKTOP_RECIPE: Recipe = {
   ],
 };
 
-/** Names an image by its recipe, so a changed recipe is a new image that bots move to. */
 const imageName = (kind: string, recipe: Recipe) =>
   `railway-${kind}-${createHash("sha256").update(JSON.stringify(recipe)).digest("hex").slice(0, 12)}`;
 
@@ -221,9 +217,7 @@ export class RailwayWorkspaces extends MachineWorkspaces {
 }
 
 const machineRecord = z.object({
-  /** The image of the bot's disk, running or checkpointed. */
   image: z.string(),
-  /** The sandbox last booted for the bot; it may be gone. */
   sandboxId: z.string().optional(),
 });
 
@@ -261,15 +255,10 @@ export class RailwayMachines implements WorkspaceMachines {
     this.proxyEnv = options.intercept && PROXY_ENV;
   }
 
-  /** The bot's checkpoint name. */
   name(agentId: string) {
     return machineName(this.namePrefix, agentId);
   }
 
-  /**
-   * Reconnects to the sandbox a previous server left running, boots the bot's checkpoint, or creates a new sandbox
-   * from the image. A checkpoint of another image has its `/workspace` copied into a new sandbox.
-   */
   readonly boot = Effect.fn("RailwayMachines.boot")(function* (
     this: RailwayMachines,
     agentId: string,
@@ -290,7 +279,6 @@ export class RailwayMachines implements WorkspaceMachines {
 
     const intercept = this.intercept;
 
-    // Without a credential proxy there is nothing to tunnel to: jobs connect directly.
     const proxy = intercept
       ? yield* bootStep("Starting the workspace proxy", () =>
           startWorkspaceProxy({ intercept: intercept(agentId) }),
@@ -308,7 +296,6 @@ export class RailwayMachines implements WorkspaceMachines {
     );
   }, Effect.scoped);
 
-  /** The sandbox to run in: the one still running for the bot, or a new one from its checkpoint. */
   private readonly sandbox = Effect.fn("RailwayMachines.sandbox")(function* (
     this: RailwayMachines,
     agentId: string,
@@ -326,7 +313,6 @@ export class RailwayMachines implements WorkspaceMachines {
 
     const reconnected = record?.image === image ? running : undefined;
 
-    // Keep the files it has written since its last checkpoint.
     if (running && !reconnected)
       yield* bootStep("Checkpointing the sandbox's other image", async () => {
         await checkpoint(running, name);
@@ -488,7 +474,6 @@ class RailwayMachine implements WorkspaceMachine {
     if (proxy) void this.openTunnel(proxy);
   }
 
-  /** Carries the guest's proxy port to the workspace proxy for as long as the machine runs. */
   private async openTunnel(proxy: WorkspaceProxy) {
     if (this.stopped) return;
 
@@ -526,7 +511,6 @@ class RailwayMachine implements WorkspaceMachine {
       stream.fail(new Error("Railway destroyed the sandbox"));
   }
 
-  /** The start script, run again: while the desktop is up it only waits for the browser. */
   get desktopReady() {
     return this.desktop ? startDesktop(this.sandbox) : Effect.void;
   }
@@ -663,7 +647,6 @@ class RailwayMachine implements WorkspaceMachine {
   }
 }
 
-/** The desktop scripts and their configuration, which change with the server rather than the image. */
 async function desktopFiles(): Promise<GuestFile[]> {
   const files = await readdir(DESKTOP_SOURCES);
 
@@ -676,7 +659,6 @@ async function desktopFiles(): Promise<GuestFile[]> {
   );
 }
 
-/** Runs `desktop-start.sh`; its stderr says why the bot desktop did not start. */
 const startDesktop = Effect.fn("startDesktop")(function* (
   sandbox: Sandbox,
   ...args: string[]
@@ -706,7 +688,6 @@ async function checkpoint(sandbox: Sandbox, name: string) {
   await sandbox.checkpoint(name);
 }
 
-/** The running sandbox with this id, or undefined when Railway has destroyed it; other failures throw. */
 async function connectRunning(id: string) {
   try {
     const sandbox = await Sandbox.connect(id);
@@ -725,7 +706,6 @@ async function hasCheckpoint(name: string) {
   );
 }
 
-/** Copies `/workspace` from checkpoint `name` into `target` through Railway's binary file transfer. */
 async function copyWorkspace(
   name: string,
   target: Sandbox,
@@ -755,7 +735,6 @@ async function run(sandbox: Sandbox, command: string) {
     throw new Error(`${command} failed: ${result.stderr || result.stdout}`);
 }
 
-/** Bytes pushed by a callback, read as an async iterable. */
 class ByteQueue implements AsyncIterable<Uint8Array> {
   private readonly chunks: Uint8Array[] = [];
   private done = false;
@@ -787,7 +766,6 @@ class ByteQueue implements AsyncIterable<Uint8Array> {
     }
   }
 
-  /** The next chunk, waiting for one while the queue is open; undefined once it ended or threw. */
   private async next(): Promise<Uint8Array | undefined> {
     while (true) {
       const chunk = this.chunks.shift();

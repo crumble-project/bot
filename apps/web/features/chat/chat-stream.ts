@@ -7,7 +7,6 @@ import type { ConversationTarget } from "./conversation-target";
 type Stream = {
   users: number;
   controller: AbortController;
-  /** Null while no view is open. */
   onGone: (() => void) | null;
   followsAfterView: () => boolean;
 };
@@ -23,7 +22,6 @@ function release(key: string) {
   }
 }
 
-// A bot left while it works stays followed until it finishes, so the sidebar shows it working.
 queryClient.getQueryCache().subscribe((event) => {
   if (event.type === "updated") for (const key of streams.keys()) release(key);
 });
@@ -33,7 +31,6 @@ onSessionReset(() => {
   streams.clear();
 });
 
-/** Keeps the target's query current from its event stream until the stream ends or aborts. */
 function followSnapshots<S extends HistoryPage>(
   target: ConversationTarget<S>,
   stream: Stream,
@@ -59,7 +56,6 @@ function followSnapshots<S extends HistoryPage>(
   });
 }
 
-/** Follows a conversation while mounted, and afterwards as its target says. `onGone` runs if it ends while mounted. */
 export function useChatStream<S extends HistoryPage>(
   target: ConversationTarget<S>,
   onGone: () => void,

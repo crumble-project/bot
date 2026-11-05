@@ -13,11 +13,9 @@ type Exec = Runner<Services>["runSync"];
 type MemoryRoutesOptions = {
   register: Register;
   service: BotLookup;
-  /** Runs the repository effects the memory routes read and write. */
   run: Runner<Services>;
 };
 
-/** The memory, which must belong to the bot or, with `null`, to every bot. */
 const memoryOf = (exec: Exec, agentId: string | null, memoryId: string) => {
   const memory = exec(MemoryRepository.use((r) => r.get(memoryId)));
 
@@ -47,7 +45,6 @@ const updateMemory = (
 const deleteMemory = (exec: Exec, memoryId: string) =>
   exec(MemoryRepository.use((r) => r.delete(memoryId)));
 
-/** The memories a bot remembers for itself alone. */
 const registerBotMemoryRoutes = (options: MemoryRoutesOptions) => {
   const { register, service } = options;
   const exec: Exec = (effect) => options.run.runSync(effect);
@@ -83,7 +80,6 @@ const registerBotMemoryRoutes = (options: MemoryRoutesOptions) => {
   });
 };
 
-/** The memories every bot may read. */
 const registerSharedMemoryRoutes = (options: MemoryRoutesOptions) => {
   const { register } = options;
   const exec: Exec = (effect) => options.run.runSync(effect);
@@ -106,7 +102,6 @@ const registerSharedMemoryRoutes = (options: MemoryRoutesOptions) => {
   });
 };
 
-/** The memory routes, in the order the contract document lists them. */
 export function registerMemoryRoutes(options: MemoryRoutesOptions) {
   registerBotMemoryRoutes(options);
   registerSharedMemoryRoutes(options);

@@ -21,12 +21,10 @@ import { githubAppUsers, githubApps } from "./schema";
 /** A token is refreshed once less than this is left of its eight hours. */
 const TOKEN_MARGIN_MS = 5 * 60 * 1000;
 
-/** The owner has this long to finish signing in on GitHub. */
 const STATE_TTL_MS = 10 * 60 * 1000;
 
 const STATE_FLOW = "github-app-user-state";
 
-/** The secret holding a GitHub App's client secret, which signing the owner in needs. */
 export const githubAppClientSecretKey = (appId: string) =>
   secretKey("github-app-client", appId);
 
@@ -47,13 +45,11 @@ const tokenAnswer = z.union([
   z.object({ error: z.string(), error_description: z.string().optional() }),
 ]);
 
-/** What signing in through an App needs of it. */
 type GitHubAppClient = Pick<
   typeof githubApps.$inferSelect,
   "id" | "name" | "clientId"
 >;
 
-/** The owner as an App's bots act on GitHub. */
 export type GitHubAppUser = { login: string; userId: number };
 
 /**
@@ -65,22 +61,18 @@ export class GitHubAppUsers extends Context.Service<
   GitHubAppUsers,
   {
     readonly of: (appId: string) => Effect.Effect<GitHubAppUser | undefined>;
-    /** GitHub's sign-in page for the App; it sends the owner back to the App's callback URL. */
     readonly authorize: (
       appId: string,
     ) => Effect.Effect<string, NotFound | Conflict>;
-    /** Exchanges the code GitHub sent the owner back with, and returns the App's ID. */
     readonly complete: (input: {
       code: string;
       state: string;
     }) => Effect.Effect<string, InvalidInput | GitHubUnavailable>;
-    /** Forgets the owner's tokens after revoking them on GitHub, when GitHub answers. */
     readonly signOut: (appId: string) => Effect.Effect<void>;
     readonly setClientSecret: (
       appId: string,
       clientSecret: SecretInput,
     ) => Effect.Effect<void, NotFound | InvalidInput>;
-    /** The owner's current token for the App, refreshed when it's about to expire. */
     readonly token: (
       app: GitHubAppClient,
     ) => Effect.Effect<Redacted.Redacted, GitHubUnavailable>;

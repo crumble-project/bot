@@ -19,13 +19,10 @@ import { Admission } from "./relay";
 import { PROCESS_GZIP } from "./relay-gzip";
 
 export type ClaudeCodeOptions = {
-  /** An explicit executable; otherwise `claude` on PATH or in the usual install directories. */
   command?: string | undefined;
-  /** Claude Code's own config directory, holding its login. */
   configDir: string;
   /** Let Claude Code send telemetry and fetch the feature flags that unlock models in its picker. */
   telemetry: boolean;
-  /** The environment Crumble runs in; the child gets an allowlisted part of it. */
   env: NodeJS.ProcessEnv;
 };
 
@@ -114,14 +111,12 @@ const which = (name: string, directories: string[]) =>
     .flatMap((directory) => (directory ? [join(directory, name)] : []))
     .find(executable);
 
-/** The Claude Code executable, or undefined when none is installed. */
 export function resolveClaude(options: ClaudeCodeOptions) {
   const head = options.command ?? "claude";
 
   if (isAbsolute(head)) return executable(head) ? head : undefined;
   const found = which(head, (options.env["PATH"] ?? "").split(delimiter));
 
-  // Only the default bare name: an explicit command is the owner's choice, never second-guessed.
   if (found || head !== "claude") return found;
   const home = options.env["HOME"];
 
@@ -157,7 +152,6 @@ export function childEnv(options: ClaudeCodeOptions) {
 
 type Run = { code: number | null; stdout: string; stderr: string };
 
-/** Runs a short Claude Code command to completion with a deadline. */
 export function run(
   command: string,
   args: string[],
@@ -283,7 +277,6 @@ export async function claudeCodeStatus(
 export type DiscoveredModel = {
   id: string;
   label: string;
-  /** `unpinned` for a model the catalog does not know yet; `usage credits` when it bills to credits. */
   note: string;
 };
 

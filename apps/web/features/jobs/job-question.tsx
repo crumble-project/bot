@@ -4,7 +4,6 @@ import { messageCard } from "@/features/chat/message-card";
 import { JobQuestionAnswer } from "./job-question-answer";
 import { type Job, jobsQuery } from "./api";
 
-/** A coding job's question in the chat: an answer box while the job waits on it, then a settled card. */
 function JobQuestionCard({
   botId,
   question,

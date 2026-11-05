@@ -66,7 +66,6 @@ function fromUri(uri: URL): OneTimeSecret | undefined {
   return key && parameters && { key, ...parameters };
 }
 
-/** A base32 secret or an `otpauth://totp/` URI, as an authenticator app's QR code holds it; undefined when neither. */
 export function parseOneTimeSecret(text: string): OneTimeSecret | undefined {
   const trimmed = text.trim();
 
@@ -78,7 +77,6 @@ export function parseOneTimeSecret(text: string): OneTimeSecret | undefined {
   return key && { key, ...DEFAULTS };
 }
 
-/** The code for the time step containing `atMs`. */
 export function oneTimeCode(secret: OneTimeSecret, atMs: number) {
   const counter = Buffer.alloc(8);
 

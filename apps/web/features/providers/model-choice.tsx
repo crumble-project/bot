@@ -8,7 +8,6 @@ type ModelRef = { provider: string; model: string };
 
 export const modelKey = (ref: ModelRef) => `${ref.provider}/${ref.model}`;
 
-/** A model choice's setting row, whose items add a chosen model whose key is gone, so the owner sees why. */
 export function ModelChoiceRow({
   title,
   tile,
@@ -20,7 +19,6 @@ export function ModelChoiceRow({
 }: {
   title: string;
   tile: ReactNode;
-  /** The item that chooses no model. */
   unset: { value: string; label: string };
   chosen: ModelRef | null;
   choices: (ModelRef & { name: string })[];

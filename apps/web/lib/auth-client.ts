@@ -34,7 +34,6 @@ const DISMISSED = new Set([
   "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY",
 ]);
 
-/** Whether a passkey call succeeded: false when the prompt was dismissed, and throws on any other error. */
 export function passkeyDone(result: {
   error: { code?: string | undefined; message?: string | undefined } | null;
 }) {

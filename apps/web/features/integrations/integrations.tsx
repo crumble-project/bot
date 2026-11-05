@@ -359,7 +359,6 @@ function oauthClientPatch(
     ...((clientId || server?.oauthClientId) && {
       oauthClientId: clientId || null,
     }),
-    // Without an app, its secret has no use; clearing the client ID removes it too.
     ...(clientId && clientSecret.changed
       ? { oauthClientSecret: clientSecret.input }
       : !clientId &&
@@ -567,7 +566,6 @@ function OAuthAppFields({ server, draft, patch, secrets }: DraftFieldsProps) {
   );
 }
 
-/** Finishes an MCP server's OAuth sign-in after the provider redirects back to the web UI. */
 function finishOAuth(
   params: URLSearchParams,
   navigate: UseNavigateResult<string>,

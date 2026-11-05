@@ -54,7 +54,6 @@ const DESKTOP_JOBS = {
 
 type ComputerUseTool = ReturnType<typeof computerUseTool>;
 
-/** What desktop jobs fill logins from, and where each bot desktop records the values typed on it. */
 export type DesktopLogins = {
   access: LoginsAccess;
   fills: (agentId: string) => DesktopFills;
@@ -75,7 +74,6 @@ function toolFor(jobs: DesktopJobs, agentId: string) {
   let tool = jobs.tools.get(agentId);
 
   if (!tool) {
-    // While the owner has control, every computer_use call waits for hand-back.
     tool = computerUseTool({
       gateFor: () => ({
         untilBot: (context) => control.untilBot(agentId, context),
@@ -91,7 +89,6 @@ function toolFor(jobs: DesktopJobs, agentId: string) {
   return tool;
 }
 
-/** Lets a bot run desktop jobs: child conversations with the computer_use tool on its bot desktop. */
 function desktopExtensions(
   jobs: DesktopJobs,
   agent: Pick<Agent, "id" | "desktopModel">,
@@ -127,7 +124,6 @@ function desktopExtensions(
   };
 }
 
-/** Desktop jobs as a plugin: offered to bots with the `desktop` tool while workspaces have bot desktops. */
 export const desktopPlugin = (
   workspaces: Workspaces | undefined,
   control: DesktopControlAccess,

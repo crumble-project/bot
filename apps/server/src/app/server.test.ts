@@ -80,7 +80,6 @@ async function signIn(running: Running, email: string) {
   return { authorization: `Bearer ${body.token}` };
 }
 
-/** Workspaces with only a bot desktop, which `openDesktop` opens. */
 function desktopWorkspaces(openDesktop: Workspaces["openDesktop"]): Workspaces {
   return {
     desktop: true,
@@ -203,7 +202,6 @@ test.serial(
 
     const account = readdirSync(join(dataDir, "users"))[0]!;
 
-    // What a kill -9 leaves behind: lock files nobody released, freshly written.
     writeFileSync(join(dataDir, "server.pid"), ownerRecord(1 << 22));
     mkdirSync(join(dataDir, "users", `${account}.lock`));
 
@@ -397,7 +395,6 @@ test.serial(
     const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-viewer-"));
     const port = 20000 + Math.floor(Math.random() * 1000);
 
-    // A bot desktop that greets like a VNC server and then waits.
     const workspaces = desktopWorkspaces(() =>
       Effect.succeed({
         write: async () => {},
@@ -447,7 +444,6 @@ test.serial(
         ).status,
       ).toBe(200);
 
-      // The account in a ticket only routes it; the secret must be one that account issued.
       expect(
         (
           await fetch(
@@ -490,7 +486,6 @@ test.serial(
   },
 );
 
-// Each failure's message and cause carry a secret, as guest output might: only the log may show them.
 const SECRET = "token=secret-123";
 
 const failure = (tag: string) => ({
@@ -580,7 +575,6 @@ test.serial(
         ).json(),
       );
 
-      // Each viewer link opens one connection; the server boots the bot desktop when it issues one.
       const close = async () => {
         const viewer = await fetch(
           new URL(`/v1/agents/${agent.id}/desktop/viewer`, running.server.url),
@@ -618,7 +612,6 @@ test.serial(
         expect(log).toContain(error.message);
       }
 
-      // A defect has no name for the owner, but the log still has it.
       opening = Effect.die(new Error(`The relay crashed (${SECRET})`));
       logged.length = 0;
 

@@ -14,7 +14,6 @@ type IntegrationServices =
   | ServerSecrets
   | Secrets;
 
-/** MCP integrations over the data `core` reaches, for a test that runs without an account. */
 export function standaloneIntegrations(
   core: Runner<IntegrationServices>,
   options: IntegrationsOptions = {},
@@ -35,7 +34,6 @@ export function standaloneIntegrations(
   };
 }
 
-/** `McpServers` over `integrations` and what `context` holds, for an API test; it lives as long as the test. */
 export const mcpServersOver = (
   context: Context.Context<IntegrationServices | BotDeletion>,
   integrations: McpIntegrations["Service"],

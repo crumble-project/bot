@@ -62,11 +62,6 @@ const TCP_THROUGH_PROXY: NetworkPolicy = {
 export type MicrosandboxWorkspacesOptions = MachineWorkspacesOptions &
   Pick<WorkspaceBackendOptions, "size" | "namePrefix">;
 
-/**
- * The workspaces when `CRUMBLE_WORKSPACE_IMAGE` (an OCI image reference) is set, otherwise undefined: without an image
- * there is no machine to run, so callers leave coding out rather than fail on first use. `CRUMBLE_WORKSPACE_DESKTOP_IMAGE`
- * adds the image for bots with a bot desktop.
- */
 export function microsandboxWorkspacesFromEnv(
   env: Record<string, string | undefined>,
   options: MicrosandboxWorkspacesOptions,
@@ -96,7 +91,6 @@ export class MicrosandboxWorkspaces extends MachineWorkspaces {
     this.microsandbox = machines;
   }
 
-  /** The bot's sandbox and volume name. */
   name(agentId: string) {
     return this.microsandbox.name(agentId);
   }
@@ -161,7 +155,6 @@ class MicrosandboxMachines implements WorkspaceMachines {
     };
   }
 
-  /** The resumed machine with its proxy, or a new machine when either cannot be reused. */
   private readonly machine = Effect.fn("MicrosandboxMachines.machine")(
     function* (
       this: MicrosandboxMachines,
@@ -185,7 +178,6 @@ class MicrosandboxMachines implements WorkspaceMachines {
     },
   );
 
-  /** The proxy a resumed machine takes at its recorded port, when that machine is the expected image. */
   private readonly resumedProxy = Effect.fn(
     "MicrosandboxMachines.resumedProxy",
   )(function* (
@@ -198,7 +190,6 @@ class MicrosandboxMachines implements WorkspaceMachines {
 
     const size = this.size();
 
-    // A machine created at another size than the admin set now is replaced, keeping the volume.
     if (
       record?.image !== image ||
       record.network !== TCP_THROUGH_PROXY_VERSION ||
@@ -218,7 +209,6 @@ class MicrosandboxMachines implements WorkspaceMachines {
     );
   });
 
-  /** A new machine for the bot, with a new proxy, replacing the one that could not be resumed. */
   private readonly create = Effect.fn("MicrosandboxMachines.create")(function* (
     this: MicrosandboxMachines,
     name: string,
@@ -276,7 +266,6 @@ class MicrosandboxMachine implements WorkspaceMachine {
     private readonly desktop: boolean,
   ) {}
 
-  /** The start script, run again: while the desktop is up it only waits for the browser. */
   get desktopReady() {
     return this.desktop ? startDesktop(this.sandbox, []) : Effect.void;
   }
@@ -366,7 +355,6 @@ const closeProxy = async (proxy: WorkspaceProxy | undefined) => {
   await proxy?.close();
 };
 
-/** Runs `desktop-start.sh` with `args`; its output says why the bot desktop did not start. */
 const startDesktop = (sandbox: Sandbox, args: readonly string[]) =>
   Effect.tryPromise({
     try: () => run(sandbox, [DESKTOP_START, ...args].join(" ")),
@@ -388,7 +376,6 @@ async function ensureVolume(name: string) {
   }
 }
 
-/** Where a machine records what it was created from, on its own root disk. */
 const MACHINE_FILE = "/etc/crumble-workspace.json";
 const STOP_TIMEOUT_MS = 10_000;
 

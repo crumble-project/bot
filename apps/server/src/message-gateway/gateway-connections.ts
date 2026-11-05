@@ -30,7 +30,6 @@ import {
 
 const configKey = (id: string) => `message-gateway:${id}`;
 
-/** One call to an adapter, bounded, with every failure a `GatewayTransportError`. */
 export const transport = <A>(operation: () => Promise<A>) =>
   Effect.tryPromise({
     try: operation,
@@ -72,26 +71,21 @@ type ConnectionState = Reconnecting & {
   invalidated: boolean;
 };
 
-/** What the connections ask of the receipts they carry. */
 type ConnectionHooks = {
   receive: (
     adapterId: string,
     message: GatewayMessage,
   ) => Effect.Effect<void, AppError>;
-  /** Stops delivering over the adapter's connection, which is about to go. */
   cancelWorkers: (adapterId: string) => Effect.Effect<void>;
-  /** A connection opened: deliver what waited for it. */
   connected: Effect.Effect<void>;
 };
 
-/** A connection receipts can go out over. Its `generation` ends when the connection does. */
 export type CurrentConnection = {
   connection: GatewayConnection;
   generation: number;
   token: string | undefined;
 };
 
-/** One kept-open connection per adapter: its token, config, reconnects, and the status the owner sees. */
 export const gatewayConnections = Effect.fnUntraced(function* (
   adapters: readonly ChatAdapter[],
   hooks: ConnectionHooks,
@@ -323,7 +317,6 @@ export const gatewayConnections = Effect.fnUntraced(function* (
     }
   });
 
-  /** The adapter's connection, unless it is going away or its settings are changing. */
   const current = (adapterId: string): CurrentConnection | null => {
     const state = states.get(adapterId);
 
@@ -338,11 +331,9 @@ export const gatewayConnections = Effect.fnUntraced(function* (
       : null;
   };
 
-  /** Whether `generation` of the adapter's connection, which may not have opened yet, is still the one in use. */
   const live = (adapterId: string, generation: number) =>
     generationCurrent(adapterId, generation);
 
-  /** Whether `connection` may still carry a receipt. */
   const holds = (
     adapterId: string,
     connection: GatewayConnection,
@@ -352,7 +343,6 @@ export const gatewayConnections = Effect.fnUntraced(function* (
     states.get(adapterId)!.connection === connection &&
     !reconfiguring.has(adapterId);
 
-  /** Stops the adapter's connection while `save` changes its settings; the next tick reconnects. */
   const reconfigure = (id: string, save: Effect.Effect<void>) =>
     Semaphore.withPermit(
       configurationChanges,
@@ -391,13 +381,11 @@ export const gatewayConnections = Effect.fnUntraced(function* (
     readToken,
     installed: (id: string) => states.has(id),
     isClosed: () => closed,
-    /** The status the owner sees. */
     status: (id: string) => {
       const { status, error } = states.get(id)!;
 
       return { status, error };
     },
-    /** Tells the owner what went wrong with the adapter's messages; null clears it. */
     note: (id: string, error: string | null) => {
       const state = states.get(id);
 

@@ -23,7 +23,6 @@ const make = () => {
   return dir;
 };
 
-/** The runtime calls admitting a chat input makes, answered without Pi. */
 type RuntimeFixture = {
   openChat?: () => Promise<string>;
   prepareInput?: (

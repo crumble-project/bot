@@ -86,7 +86,6 @@ const event = (overrides: Partial<ReplyEvent> = {}): ReplyEvent => ({
   ...overrides,
 });
 
-/** The message of the configuration error loading `env` fails with. */
 const configFailure = (env: Record<string, string>) =>
   Effect.runPromise(
     loadPushTransports(env).pipe(

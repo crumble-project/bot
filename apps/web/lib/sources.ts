@@ -1,7 +1,5 @@
-/** Pages a reply may cite, keyed by `sourceKey` of their URL, with their titles. */
 export type Sources = ReadonlyMap<string, string>;
 
-/** Ignores the fragment, a trailing slash, and the host's case, so a cited link matches the page that was read. */
 export function sourceKey(href: string) {
   try {
     const url = new URL(href);
@@ -53,7 +51,6 @@ function takeSources(
     .replace(EMPTY_PARENS, "");
 }
 
-/** Takes the reply's citations of pages its turn read out of its text, outside code, so they show once as chips after it. */
 export function splitSources(markdown: string, sources: Sources) {
   const chips = new Map<string, SourceChip>();
   let fenced = false;

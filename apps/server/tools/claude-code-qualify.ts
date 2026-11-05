@@ -39,7 +39,6 @@ const USAGE = {
 
 const failures: string[] = [];
 
-/** One admission case's receipt. */
 type Row = {
   mode: string;
   stop?: string;
@@ -181,7 +180,6 @@ const wireBody = z.looseObject({
 
 type Wire = z.infer<typeof wireBody>;
 
-/** A local Messages API that answers each parsed request body with `respond`. */
 const fixturePeer = (respond: (wire: Wire) => Response) =>
   Bun.serve({
     hostname: "127.0.0.1",
@@ -571,7 +569,6 @@ async function admissionCase(mode: string): Promise<Row> {
   }
 }
 
-/** Every stop reason, error, disconnect, and cancellation: one upstream request each. */
 async function admission() {
   const rows = [];
 
@@ -644,7 +641,6 @@ const markIndexes = (value: WireContent): number[] => {
   return found;
 };
 
-/** Positions of the message content blocks that carry a cache directive. */
 const breakpoints = (wire: Wire | undefined): [number, number][] =>
   (wire?.messages ?? []).flatMap((item, i) =>
     markIndexes(item.content).map((j): [number, number] => [i, j]),
@@ -891,7 +887,6 @@ async function cacheRound(
   return true;
 }
 
-/** A tool-less one-shot (a summary) carries no message mark: nothing replays its turn. */
 async function checkOneShot(run: CacheRun) {
   run.peerTools.value = false;
   await streamClaudeCode(

@@ -21,17 +21,14 @@ type ResponseOf<R> = R extends { responses: infer S }
   ? z.output<JsonSchema<S[Extract<keyof S, 200 | 201 | 202>]>>
   : never;
 
-/** The JSON body a route takes, as a client writes it. */
 export type RequestBody<N extends RouteName> = RequestOf<Routes[N]>;
 
-/** The JSON body a route answers with. */
 export type ResponseBody<N extends RouteName> = ResponseOf<Routes[N]>;
 
 type FilledPath<P extends string> = P extends `${infer A}{${string}}${infer B}`
   ? `${A}${string}${FilledPath<B>}`
   : P;
 
-/** The URLs a route answers, so a path that matches no contract route fails to compile. */
 export type RoutePath<N extends RouteName> =
   | FilledPath<Routes[N]["path"]>
   | `${FilledPath<Routes[N]["path"]>}?${string}`;
@@ -98,7 +95,6 @@ async function request(path: string, init: RequestInit = {}) {
   return response;
 }
 
-/** Reads a contract route: `N` names it, and types the path and the response. */
 export async function api<N extends RouteName>(
   path: RoutePath<N>,
   init?: RequestInit,
@@ -113,7 +109,6 @@ function withBody<Body>(method: string, body: Body): RequestInit {
   };
 }
 
-/** Sends to a contract route and returns its parsed response. */
 export async function call<N extends RouteName>(
   path: RoutePath<N>,
   method: Method<N>,
@@ -122,7 +117,6 @@ export async function call<N extends RouteName>(
   return (await request(path, withBody(method, body))).json();
 }
 
-/** Sends to a contract route whose response body the UI does not need. */
 export async function send<N extends RouteName>(
   path: RoutePath<N>,
   method: Method<N>,
@@ -131,7 +125,6 @@ export async function send<N extends RouteName>(
   await request(path, withBody(method, body));
 }
 
-/** Fetches an authenticated binary, such as an attachment image. */
 export async function apiBlob(path: string, signal?: AbortSignal) {
   const response = await request(path, { signal: signal ?? null });
 
@@ -139,12 +132,10 @@ export async function apiBlob(path: string, signal?: AbortSignal) {
 }
 
 type StreamHandlers = {
-  /** Each named event with its raw data; heartbeats are skipped. */
   onEvent: (event: string, data: string) => void;
   /** After every (re)connection, since streams have no replay. */
   onOpen?: () => void;
   onStatus?: (status: "connected" | "reconnecting") => void;
-  /** The resource is gone (404); the stream stops. */
   onGone?: () => void;
 };
 
@@ -204,7 +195,6 @@ function endsStream(error: HttpError, handlers: StreamHandlers) {
   return error.status === 401 || error.status === 404;
 }
 
-/** The stream's response; null to retry after a transport error; "ended" when it must stop. */
 async function connect(
   path: string,
   handlers: StreamHandlers,
@@ -221,7 +211,6 @@ async function connect(
   }
 }
 
-/** Follows a server-sent event stream with the session cookie, reconnecting with backoff until `signal` aborts. A handler's exception rejects. */
 export async function follow(
   path: string,
   handlers: StreamHandlers,

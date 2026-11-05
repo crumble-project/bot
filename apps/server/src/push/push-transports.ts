@@ -12,19 +12,16 @@ import {
   type PushTransportName,
 } from "./push-model";
 
-/** The provider rejected the device's token; the device is disabled unless its token has rotated since. */
 export class PermanentRejection extends Schema.TaggedError<PermanentRejection>()(
   "PermanentRejection",
   { message: Schema.String },
 ) {}
 
-/** The provider refused this notification for good; retrying cannot deliver it. */
 export class TerminalResponse extends Schema.TaggedError<TerminalResponse>()(
   "TerminalResponse",
   { message: Schema.String },
 ) {}
 
-/** Any other send failure; the outbox retries it with persisted backoff until it expires. */
 export class TemporaryFailure extends Schema.TaggedError<TemporaryFailure>()(
   "TemporaryFailure",
   { message: Schema.String },
@@ -35,7 +32,6 @@ export type SendFailure =
   | TerminalResponse
   | TemporaryFailure;
 
-/** Sends notifications to one provider; a send fails with what retrying it can achieve. */
 export type PushTransport = {
   readonly send: (
     device: PushDevice,
@@ -44,13 +40,11 @@ export type PushTransport = {
   readonly canSend: (device: PushDeviceInput) => boolean;
 };
 
-/** The server's push configuration is incomplete or invalid. */
 export class PushConfigError extends Schema.TaggedError<PushConfigError>()(
   "PushConfigError",
   { message: Schema.String },
 ) {}
 
-/** The transports this server can deliver through, configured from its environment. */
 export class PushTransports extends Context.Service<
   PushTransports,
   Record<PushTransportName, PushTransport | undefined>
@@ -96,7 +90,6 @@ const apnsTopics = (allowedTopics: string) =>
       .filter(Boolean),
   );
 
-/** The APNs settings the environment names; `undefined` when it names none. */
 export const loadApnsSettings = Effect.fnUntraced(function* (
   env: Record<string, string | undefined>,
 ): Effect.fn.Return<ApnsSettings | undefined, PushConfigError> {
@@ -130,7 +123,6 @@ export const loadApnsSettings = Effect.fnUntraced(function* (
   return { teamId, keyId, keyPath, topics };
 });
 
-/** The FCM service account the environment names; `undefined` when it names none. */
 export const loadFcmSettings = Effect.fnUntraced(function* (
   env: Record<string, string | undefined>,
 ): Effect.fn.Return<ServiceAccount | undefined, PushConfigError> {
@@ -171,7 +163,6 @@ const ApnsResponse = Schema.fromJsonString(
   Schema.Struct({ reason: Schema.optionalKey(Schema.String) }),
 );
 
-/** One APNs request; resolves with the HTTP status and Apple's `reason`, if the body names one. */
 function apnsRequest(
   host: string,
   headers: Record<string, string>,
@@ -226,7 +217,6 @@ function apnsRequest(
   ).finally(() => client.close());
 }
 
-/** The APNs host for the device's environment. */
 export const apnsHost = (environment: PushDevice["environment"]) =>
   environment === "development"
     ? "https://api.sandbox.push.apple.com"
@@ -268,7 +258,6 @@ export function apnsHeaders(
   };
 }
 
-/** What every device receives of a reply, whichever transport carries it. */
 const replyFields = (event: ReplyEvent) => ({
   type: event.type,
   eventId: event.eventId,
@@ -287,7 +276,6 @@ const replyFields = (event: ReplyEvent) => ({
   ...(event.waitingFor && { waitingFor: event.waitingFor }),
 });
 
-/** The APNs alert payload: the shown notification plus the fields the app renders the answer from. */
 export function apnsPayload(event: ReplyEvent) {
   return {
     aps: {
@@ -307,7 +295,6 @@ const apnsRejectedTokens = new Set([
   "DeviceTokenNotForTopic",
 ]);
 
-/** How a retry should treat the response; `undefined` when the notification was accepted or expired. */
 export function classifyApnsResponse(
   status: number,
   reason: string | undefined,
@@ -383,7 +370,6 @@ export function fcmData(event: ReplyEvent): Record<string, string> {
   );
 }
 
-/** The FCM message body for one device. */
 export function fcmMessage(device: PushDevice, event: ReplyEvent) {
   return {
     message: {
@@ -396,7 +382,6 @@ export function fcmMessage(device: PushDevice, event: ReplyEvent) {
 
 const fcmRejectedTokens = new Set(["UNREGISTERED", "SENDER_ID_MISMATCH"]);
 
-/** How a retry should treat the response; `undefined` when the message was accepted. */
 export function classifyFcmResponse(
   status: number,
   errorCode: string | undefined,
@@ -413,7 +398,6 @@ export function classifyFcmResponse(
   return undefined;
 }
 
-/** The error code the response body names; an unreadable body is classified from the status alone. */
 export const fcmErrorCode = (
   response: Response,
 ): Effect.Effect<string | undefined> =>

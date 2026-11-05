@@ -8,10 +8,8 @@ export type EventSource = typeof eventSources.$inferSelect;
 
 export const DELETED_SOURCE = "Deleted source";
 
-/** An event as the relay delivered it; `body` is the raw bytes in base64. */
 export type RelayEvent = Omit<typeof relayEvents.$inferSelect, "storedAt">;
 
-/** What consumes stored events. Event sources stay below it: automations provide it. */
 export class EventConsumers extends Context.Service<
   EventConsumers,
   {
@@ -20,12 +18,10 @@ export class EventConsumers extends Context.Service<
       event: { id: string; sourceId: string },
       at: string,
     ) => Effect.Effect<number>;
-    /** How many consumers use the source. */
     readonly usage: (sourceId: string) => Effect.Effect<number>;
   }
 >()("crumble/event-sources/EventConsumers") {}
 
-/** The account's event sources and the events that arrived at them. */
 export class EventRepository extends Context.Service<
   EventRepository,
   {
@@ -38,11 +34,9 @@ export class EventRepository extends Context.Service<
       event: RelayEvent,
     ) => Effect.Effect<{ stored: boolean; runs: number }>;
     readonly getEvent: (id: string) => Effect.Effect<RelayEvent | null>;
-    /** A stored event and the name of its source, for what an automation reads. */
     readonly eventWithSource: (
       id: string,
     ) => Effect.Effect<{ record: RelayEvent; sourceName: string } | null>;
-    /** Deletes events stored before `before`, an ISO time. */
     readonly prune: (before: string) => Effect.Effect<number>;
   }
 >()("crumble/event-sources/EventRepository") {

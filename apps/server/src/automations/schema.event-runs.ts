@@ -10,7 +10,6 @@ import { schedules } from "../bot-store/schema.schedules";
 
 export type EventRunStatus = "pending" | "dispatched" | "failed";
 
-/** One automation's run for one event; runs of an automation go out oldest event first. */
 export const eventRuns = sqliteTable(
   "event_runs",
   {

@@ -20,14 +20,12 @@ type ChatDeps = {
 
 export type BotsChat = ReturnType<typeof botsChat>;
 
-/** The bot's chat: opening it once, then reading it and writing bot messages into it. */
 export const botsChat = (context: BotsContext, deps: ChatDeps) => {
   const { chatOpenings, conversations, runtime } = context;
   const { agent } = deps.lookup;
   const { changed } = deps.notifications;
   const { forkPreview } = deps.announcements;
 
-  /** The bot's one continuous chat, created on first use and stable across restarts. */
   const chat = Effect.fn("Bots.chat")(function* (agentId: string) {
     return yield* Semaphore.withPermit(
       chatOpenings(agentId),

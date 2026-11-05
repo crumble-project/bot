@@ -6,7 +6,6 @@ import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
 import { providerCredentials } from "./schema";
 
-/** Typed provider credentials keep provider-specific fields such as account IDs and enterprise URLs. */
 const providerCredential = z.discriminatedUnion("type", [
   z
     .object({
@@ -25,7 +24,6 @@ const providerCredential = z.discriminatedUnion("type", [
     .loose(),
 ]);
 
-/** Each model provider's sign-in, or its API key's other fields; the key itself is a secret (`providerApiKeyKey`). */
 export class ProviderCredentialRepository extends Context.Service<
   ProviderCredentialRepository,
   {

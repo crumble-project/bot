@@ -6,7 +6,6 @@ import { join } from "node:path";
 
 type Storage = Awaited<ReturnType<typeof openNodeSqliteStorage>>;
 
-/** One Pi store per key in `dir`: each opens once, and a failed open leaves nothing behind. */
 export class HarnessFiles<Opened extends { harness: Harness }> {
   private readonly opened = new Map<string, Promise<Opened>>();
   private closed = false;
@@ -50,7 +49,6 @@ export class HarnessFiles<Opened extends { harness: Harness }> {
     }
   }
 
-  /** Closes the store if it is open and removes its files. */
   async delete(key: string) {
     const pending = this.opened.get(key);
     this.opened.delete(key);

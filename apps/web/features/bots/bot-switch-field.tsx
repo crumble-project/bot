@@ -3,7 +3,6 @@ import { BotAvatar, type AvatarBot } from "@/components/bot-avatar";
 import { Field, FieldContent, FieldLabel } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
 
-/** One bot in a list of bots switched on and off; `children` follow its name. */
 export function BotSwitchField({
   id,
   bot,

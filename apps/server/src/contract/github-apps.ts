@@ -9,7 +9,6 @@ export const githubAppManifestInput = z
     name: z.string().trim().min(1).max(MAX_GITHUB_APP_NAME_CHARS),
     /** The web UI's origin; GitHub sends the owner back to its callback page. */
     origin: z.url({ protocol: /^https?$/ }).max(2000),
-    /** Create the App on this organization instead of the owner's account. */
     organization: z
       .string()
       .trim()

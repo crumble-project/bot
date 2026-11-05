@@ -34,7 +34,6 @@ afterEach(() => {
 const uuid = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
-/** The account's vision model: its own provider, so its answers queue apart from the bot's. */
 type Vision = { responses: FauxResponseStep[] };
 
 function open(
@@ -275,7 +274,6 @@ describe("continuous bot chat", () => {
   });
 });
 
-// A 1×1 PNG.
 const png =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
 
@@ -668,7 +666,6 @@ describe("vision model", () => {
     tools: Record<string, Usage>;
   };
 
-  /** What the bot's model was sent: the last user message's content, per request. */
   const botSees =
     (seen: unknown[]): FauxResponseFactory =>
     (context) => {
@@ -680,7 +677,6 @@ describe("vision model", () => {
       return fauxAssistantMessage("ok");
     };
 
-  /** The vision model's answer, after recording the images and prompts it was sent. */
   const visionSees = (
     asked: { images: string[]; prompt: string }[],
     answer: { text: string } | { error: string },

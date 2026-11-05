@@ -14,7 +14,6 @@ import {
   MAX_SKILL_NAME_CHARS,
 } from "../shared/limits";
 
-/** A reference document inside a skill package, loaded only when the bot asks for it. */
 export const skillDocumentInput = z.object({
   path: z
     .string()
@@ -47,13 +46,11 @@ export const SKILL_STATES = ["active", "stale", "archived"] as const;
 
 type SkillState = (typeof SKILL_STATES)[number];
 
-/** What the owner may change on a skill beyond its content: its lifecycle state and whether the curator leaves it alone. */
 export const skillLifecycleInput = z.object({
   state: z.enum(SKILL_STATES).optional(),
   pinned: z.boolean().optional(),
 });
 
-/** Where an installed skill came from: a folder in a public GitHub repository, at one commit of a branch. */
 export type SkillOrigin = {
   /** `owner/repo`. */
   repository: string;
@@ -73,7 +70,6 @@ export type Skill = SkillInput & {
   origin: SkillOrigin | null;
   id: string;
   agentId: string | null;
-  /** Who wrote the skill first; a bot's skills carry the execution they were learned from. */
   createdBy: "owner" | "bot";
   sourceExecutionId: string | null;
   useCount: number;
@@ -84,7 +80,6 @@ export type Skill = SkillInput & {
   updatedAt: string;
 };
 
-/** One recorded change to a skill or memory, with the state before and after, so the owner can undo it. */
 export type LearnedChange = {
   id: string;
   /** The bot whose skill or memory changed; null for a shared one. */
@@ -96,7 +91,6 @@ export type LearnedChange = {
   before: Skill | Memory | null;
   after: Skill | Memory | null;
   source: ChangeSource | null;
-  /** The change this one undid. */
   revertsId: string | null;
   createdAt: string;
 };

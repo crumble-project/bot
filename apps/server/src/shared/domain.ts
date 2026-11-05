@@ -10,7 +10,6 @@ export const MEMORY_SOURCE_KINDS = [
 
 const memorySourceKind = z.enum(MEMORY_SOURCE_KINDS);
 
-/** Where a memory was saved; names are the ones current at the time. */
 export const memorySource = z.discriminatedUnion("kind", [
   z.object({ kind: memorySourceKind.extract(["chat"]) }),
   z.object({ kind: memorySourceKind.extract(["owner"]) }),
@@ -33,7 +32,6 @@ export const memorySource = z.discriminatedUnion("kind", [
 
 export type MemorySource = z.infer<typeof memorySource>;
 
-/** A memory belongs to one bot, or is shared when `agentId` is null. */
 export type Memory = {
   id: string;
   agentId: string | null;
@@ -69,7 +67,6 @@ export type Execution = {
   requestId: string;
   prompt: string;
   replyTo?: string | null;
-  /** Identifies the message's attachments, so a retried request ID must carry the same files. */
   attachmentsDigest?: string | null;
   status: (typeof EXECUTION_STATUSES)[number];
   error: string | null;
@@ -97,14 +94,12 @@ export const CHANGE_ACTORS = ["owner", "bot", "review", "curator"] as const;
 
 export type ChangeActor = (typeof CHANGE_ACTORS)[number];
 
-/** Where a learned change came from: the execution and conversation of the turn, or the group it ran in. */
 export type ChangeSource = {
   executionId?: string | null;
   conversationId?: string | null;
   groupId?: string | null;
 };
 
-/** Who made a skill or memory change, and from where; `null` records nothing, for migrations. */
 export type ChangeBy = { actor: ChangeActor; source?: ChangeSource | null };
 
 export const CHANGE_ACTIONS = ["create", "update", "delete", "revert"] as const;
@@ -113,10 +108,8 @@ export const CHANGE_TARGETS = ["skill", "memory"] as const;
 
 export const WAITING_FOR = ["approval", "credential", "login"] as const;
 
-/** Who operates a bot desktop. */
 export const CONTROL_HOLDERS = ["bot", "owner"] as const;
 
-/** Whose words an owner message a job acts for are. */
 export const OWNER_MESSAGE_SOURCES = ["owner", "automation"] as const;
 
 export const HELD_ACTION_STATUSES = [
@@ -126,7 +119,6 @@ export const HELD_ACTION_STATUSES = [
   "expired",
 ] as const;
 
-/** How an owner signs in to a provider. */
 export const SIGN_IN_METHODS = ["api_key", "oauth"] as const;
 
 export const ACTIVITY_KINDS = [
@@ -136,7 +128,6 @@ export const ACTIVITY_KINDS = [
   "bot-message",
 ] as const;
 
-/** A long-lived connection's state: message gateways and the event relay report the same four. */
 export const CONNECTION_STATUSES = [
   "disconnected",
   "connecting",

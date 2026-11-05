@@ -4,7 +4,6 @@ import { ProductDatabase } from "../shared/product-database";
 import type { ControlState } from "./desktop-control";
 import { desktopControl } from "./schema";
 
-/** The control lease of each bot desktop. */
 export class DesktopControlRepository extends Context.Service<
   DesktopControlRepository,
   {

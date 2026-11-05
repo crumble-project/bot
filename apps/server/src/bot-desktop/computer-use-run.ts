@@ -17,7 +17,6 @@ import { isEnter, type ProposedAction } from "./intent-check";
 const STALE =
   "Control changed hands: the owner used the bot desktop and handed it back. The screen may have changed and element numbers are stale. Capture before acting.";
 
-/** Waits for the bot's turn; returns the refusal for a plan made before a handover. */
 async function controlTurn(
   state: ComputerUseState,
   action: string,
@@ -25,7 +24,6 @@ async function controlTurn(
 ): Promise<string | undefined> {
   if (!state.gate) return undefined;
 
-  // A paused job waits here, without a time limit, while the owner has control.
   const lease = await state.gate.untilBot(context);
 
   const changed =
@@ -57,10 +55,6 @@ async function pinned(
   return { args: { ...args, window_id: window.window_id }, window };
 }
 
-/**
- * A terminal Enter with the command it runs: the terminal's current line plus the text this call types before it. A
- * failed read leaves the command out, so the commit-point rule still holds the Enter.
- */
 async function withCommand<T extends { action: ProposedAction }>(
   state: ComputerUseState,
   proposal: T,
@@ -113,7 +107,6 @@ async function intentVerdict(
   };
 }
 
-/** Runs the call, after the intent check when there is one; the result carries the judge's spend. */
 async function checkedDispatch(
   state: ComputerUseState,
   normalized: ComputerUseArgs,

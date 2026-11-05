@@ -102,7 +102,6 @@ function CredentialUsesDialog({
   );
 }
 
-/** Every bot's credentials and requests, with values the owner enters but never sees again. */
 export function CredentialsSettings({
   initialBot,
 }: {

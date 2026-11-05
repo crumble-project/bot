@@ -10,14 +10,12 @@ import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
 import { secrets } from "./schema";
 
-/** A row of the `secrets` table. */
 type SecretSourceRow = {
   value: string | null;
   passwordManager: PasswordManagerId | null;
   reference: string | null;
 };
 
-/** The row's source, decrypting a stored value; the database allows exactly one of the two. */
 const secretSourceOf = (
   box: SecretBox["Service"],
   row: SecretSourceRow,
@@ -31,26 +29,20 @@ const secretSourceOf = (
   return { passwordManager: row.passwordManager, reference: row.reference };
 };
 
-/** Encrypted values by key, such as an MCP server's token. */
 export class SecretRepository extends Context.Service<
   SecretRepository,
   {
     readonly set: (key: string, value: string) => Effect.Effect<void>;
-    /** Reads the value from a password manager, replacing one stored in Crumble. */
     readonly setReference: (
       key: string,
       source: SecretReference,
     ) => Effect.Effect<void>;
     /** A value stored in Crumble; reading one that comes from a password manager is a defect. */
     readonly get: (key: string) => Effect.Effect<string | undefined>;
-    /** Where the value comes from: stored in Crumble, or a password manager reference. */
     readonly source: (key: string) => Effect.Effect<SecretSource | undefined>;
-    /** Whether the key has a secret and where it comes from, read without decrypting anything. */
     readonly status: (key: string) => Effect.Effect<SecretStatus>;
-    /** The keys of the secrets that read their value from a password manager. */
     readonly usedBy: (id: PasswordManagerId) => Effect.Effect<string[]>;
     readonly delete: (key: string) => Effect.Effect<boolean>;
-    /** Deletes every key that starts with `prefix` and returns where their values came from. */
     readonly deleteAll: (prefix: string) => Effect.Effect<SecretSource[]>;
   }
 >()("crumble/secrets/SecretRepository") {
@@ -64,7 +56,6 @@ export class SecretRepository extends Context.Service<
         key: string,
         value: string,
       ) {
-        // Saving a value in Crumble replaces a password manager reference.
         const row = {
           value: box.encrypt(value),
           passwordManager: null,

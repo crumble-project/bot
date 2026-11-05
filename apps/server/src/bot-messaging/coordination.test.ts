@@ -49,7 +49,6 @@ function setup() {
       _prompt: string,
       requestId: string,
     ) => `submission:${requestId}`,
-    // Delegated work stays running so recursion checks see it in flight.
     wait: () => new Promise(() => {}),
     response: async () => ["result"],
   };

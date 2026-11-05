@@ -10,21 +10,17 @@ import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { logins } from "./schema";
 
-/** A login the owner gave one bot for its desktop jobs. Values are write-only and never part of this record. */
 export type Login = z.infer<typeof loginResponse>;
 
-/** The secret holding one field of a login. */
 export const loginFieldKey = (
   agentId: string,
   name: string,
   field: LoginField,
 ) => botSecretKey(agentId, "login", name, field);
 
-/** The prefix of every field of a login. */
 export const loginFieldsPrefix = (agentId: string, name: string) =>
   botSecretsPrefix(agentId, "login", name);
 
-/** A login without its fields, which are secrets of their own. */
 export type LoginRecord = Omit<Login, "fields">;
 
 const metadata = {
@@ -40,7 +36,6 @@ const loginOf = (
   row: Omit<LoginRecord, "hosts"> & { hosts: string },
 ): LoginRecord => ({ ...row, hosts: parseHosts(row.hosts) });
 
-/** The logins the owner gave each bot. */
 export class LoginRepository extends Context.Service<
   LoginRepository,
   {
@@ -56,7 +51,6 @@ export class LoginRepository extends Context.Service<
       hosts: readonly string[],
     ) => Effect.Effect<LoginRecord>;
     readonly delete: (agentId: string, name: string) => Effect.Effect<boolean>;
-    /** Marks the login used at `at`. */
     readonly touch: (
       agentId: string,
       name: string,

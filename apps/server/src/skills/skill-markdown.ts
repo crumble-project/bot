@@ -15,7 +15,6 @@ const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
 const BLOCK_SCALAR = /^[|>][+-]?$/;
 
-/** The indented lines after `start` of a `key: >` or `key: |` value, folded into one line. */
 function blockValue(lines: string[], start: number) {
   const rest = lines.slice(start);
   const end = rest.findIndex((line) => line.trim() && !/^\s/.test(line));
@@ -45,7 +44,6 @@ function frontmatterFields(lines: string[]) {
   return fields;
 }
 
-/** A SKILL.md's frontmatter fields and the instructions after them; null when the frontmatter never closes. */
 export function parseSkillMarkdown(source: string) {
   const trimmed = source.trim();
 

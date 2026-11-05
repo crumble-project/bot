@@ -79,7 +79,6 @@ type Session = {
   timer?: ReturnType<typeof setTimeout>;
 };
 
-/** Sign-in methods a provider can run interactively; ambient-only auth has none. */
 export function loginMethods(provider: Provider): LoginMethod[] {
   const { apiKey, oauth } = provider.auth;
 
@@ -99,7 +98,6 @@ export function loginMethods(provider: Provider): LoginMethod[] {
   ];
 }
 
-/** Sign-ins as the HTTP handlers use them; each failure is an `AppError`. */
 export type ProviderSignInsAccess = Pick<
   SignInSessions,
   | "models"
@@ -380,7 +378,6 @@ class SignInSessions {
         () => this.end(session, "succeeded"),
       );
 
-      // Only the clock can reject a session that is still pending.
       if (!committed) this.end(session, "expired");
     } catch {
       this.fail(session, "storage_failure");
@@ -570,7 +567,6 @@ function abortable<T>(operation: Promise<T>, signal: AbortSignal) {
   });
 }
 
-/** Whether a login failed because the provider's callback port is already taken. */
 export function isPortConflict(error: Error): boolean {
   return (
     selfPortConflict(error) ||

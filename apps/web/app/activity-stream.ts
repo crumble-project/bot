@@ -43,7 +43,6 @@ onSessionReset(() => {
   activityController = null;
 });
 
-/** Follows the server's activity stream: sidebar previews, notifications, and connection status. */
 export function followActivity(links: ChatLinks, signal: AbortSignal) {
   let connections = 0;
   const current = ++activityFollower;

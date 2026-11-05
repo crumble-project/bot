@@ -10,7 +10,6 @@ import { botsMonitor } from "./bots-outcomes";
 import { botsReads } from "./bots-reads";
 import { botsSubmissions } from "./bots-submissions";
 
-/** The bots as the service interface offers them, over one layer build's context. */
 export const botsService = (context: BotsContext): Bots["Service"] => {
   const lookup = botsLookup(context);
   const notifications = botsNotifications(context);

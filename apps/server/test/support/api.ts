@@ -34,7 +34,6 @@ import {
 import { OwnerSkills } from "../../src/skills/owner-skills";
 import { BotWorkspaces, type Workspaces } from "../../src/workspaces/workspace";
 
-/** The account services an API fixture replaces; the rest answer as an empty account. */
 export type TestServices = {
   scheduler?: { service: Scheduler["Service"] };
   groupChats?: { service: GroupChats["Service"] };
@@ -74,7 +73,6 @@ const noIntegrations = McpIntegrations.of({
   disconnect: () => Effect.void,
 });
 
-/** The account context the API reads, over `bots`'s repositories. */
 function testServices(
   bots: TestBots,
   services: TestServices,
@@ -129,7 +127,6 @@ function testServices(
   );
 }
 
-/** The API over `bots`, with `services` replacing what an account would run. */
 export const testAPI = (
   bots: TestBots,
   token: string,

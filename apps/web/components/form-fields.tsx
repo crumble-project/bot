@@ -61,7 +61,6 @@ export function OwnerSelectField({
   );
 }
 
-/** The options of a plain select, one per item. */
 export function SelectOptions({
   items,
 }: {
@@ -80,7 +79,6 @@ export function SelectOptions({
   );
 }
 
-/** A titled, tinted group of fields inside an editor sheet. */
 export function EditorSection({
   title,
   children,
@@ -100,7 +98,6 @@ export function EditorSection({
   );
 }
 
-/** The side sheet every editor opens in: a scrolling form with its actions pinned below. */
 export function EditorSheet({
   title,
   description,
@@ -161,7 +158,6 @@ export function EditorSheet({
 const ICON_SWAP =
   "transition-[opacity,scale,filter] duration-200 ease-[cubic-bezier(0.2,0,0,1)]";
 
-/** Copies `text` and shows a check for a moment once it did. */
 export function CopyButton({
   text,
   size = "icon-sm",

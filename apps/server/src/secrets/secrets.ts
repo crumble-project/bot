@@ -18,10 +18,6 @@ import {
   type SecretUnavailable,
 } from "./secret-values";
 
-/**
- * Every secret the owner enters, by key: stored encrypted in Crumble or read from a password manager. Saving checks
- * a reference by reading it; reading caches it (see `SecretValues`); replacing or deleting one drops its cached value.
- */
 export class Secrets extends Context.Service<
   Secrets,
   {
@@ -42,7 +38,6 @@ export class Secrets extends Context.Service<
         verify?: (value: Redacted.Redacted) => Effect.Effect<void, E, R>;
       }>,
     ) => Effect.Effect<void, E | InvalidInput, R>;
-    /** The value when it is used; undefined when the key has no secret. */
     readonly read: (
       key: string,
     ) => Effect.Effect<Redacted.Redacted | undefined, SecretUnavailable>;
@@ -50,15 +45,12 @@ export class Secrets extends Context.Service<
     readonly probe: (
       source: SecretReference,
     ) => Effect.Effect<boolean, InvalidInput>;
-    /** Whether a reference's value changes by the second, as a computed one-time code does. */
     readonly isVolatile: (source: {
       passwordManager: PasswordManagerId | null;
       reference: string | null;
     }) => boolean;
     readonly status: (key: string) => Effect.Effect<SecretStatus>;
-    /** Returns whether there was a secret to delete. */
     readonly delete: (key: string) => Effect.Effect<boolean>;
-    /** Deletes every secret under a `botSecretsPrefix`, such as a deleted bot's. */
     readonly deleteAll: (prefix: string) => Effect.Effect<void>;
   }
 >()("crumble/secrets/Secrets") {
@@ -199,11 +191,9 @@ export class Secrets extends Context.Service<
   );
 }
 
-/** Reads a secret as text, for plugins and adapters that take a plain string; undefined when there is none. */
 export const secretText = (secrets: Secrets["Service"]) => (key: string) =>
   secrets.read(key).pipe(Effect.map((value) => value && Redacted.value(value)));
 
-/** The secrets API with what it reads through: `SecretValues` and the password managers `vendors` offer. */
 export const secretsLayer = (vendors: ReadonlyArray<PasswordManagerVendor>) =>
   Layer.mergeAll(Secrets.layer, ServerSecrets.layer, PendingStates.layer).pipe(
     Layer.provideMerge(SecretValues.layer),

@@ -74,11 +74,9 @@ const KIND_ORDER = [
   "change",
 ] satisfies Activity["kind"][];
 
-/** A one-line glimpse of what a call sent or a result returned. */
 const previewOf = (text = "") =>
   text.replace(/\s+/g, " ").slice(0, PREVIEW_CHARS);
 
-/** What the bot did, as the verb and object of a sentence that starts with its name. */
 function toolLabel(toolName: string | undefined, name: string | undefined) {
   return toolName ?? name ?? "a tool";
 }
@@ -171,7 +169,6 @@ function dayLabel(timestamp: number | undefined, now: Date) {
   });
 }
 
-/** Activities by the day they happened, newest day first, in feed order. */
 function byDay(activities: Activity[], now: Date) {
   const days = new Map<string, { label: string; items: Activity[] }>();
 
@@ -373,7 +370,6 @@ function ActivityBody({
   );
 }
 
-/** The bot's avatar with a small badge for the kind of activity. */
 function ActivityMark({
   activity,
   bot,

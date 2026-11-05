@@ -52,7 +52,6 @@ import type { ScriptRun } from "../automations/script-run-repository";
 import type { MessageOrigin } from "../transcript/entries";
 import { defaultAvatarDefinition } from "../contract/avatar";
 
-// Plain header records, so they spread into the defaults.
 type TestRequestInit = Omit<RequestInit, "headers"> & {
   headers?: Record<string, string>;
 };
@@ -144,7 +143,6 @@ function setup(options: TestServices = {}) {
   };
 }
 
-/** Reads a stream until its text so far contains `text`, then returns that text. */
 async function readUntil(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   text: string,
@@ -317,7 +315,6 @@ describe("HTTP API for bots, chats, and activity", () => {
       model: "gpt-6-luna",
     });
 
-    // Omitting it keeps the override; null clears it, so jobs use the bot's model again.
     const kept = await req(app, `/v1/agents/${agent.id}`, {
       method: "PATCH",
       body: JSON.stringify({ name: "Desk 2" }),
@@ -843,7 +840,6 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
 
     store.updateAgent(agent.id, { sharedSkills: [shared.id] });
 
-    // A bot's own skill is not in the shared library, so this route leaves it alone.
     expect(
       (await req(app, `/v1/skills/${own.id}`, { method: "DELETE" })).status,
     ).toBe(404);
@@ -938,7 +934,6 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
       oauthClientId: null,
     });
 
-    // The client secret is write-only; writing one replaces whatever was stored.
     const secretWritten = await patch({
       oauthClientId: "client-id",
       oauthClientSecret: { value: "client-secret" },
@@ -959,7 +954,6 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
       oauthClientSecret: { configured: true },
     });
 
-    // A new client ID invalidates the tokens the old client obtained.
     const otherClient = await patch({ oauthClientId: "other-client-id" });
 
     expect(otherClient.status).toBe(200);
@@ -1086,8 +1080,6 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
       skipped: true,
     });
 
-    // Deletion never nulls the source ID or cascades to copies. A new same-name
-    // source has a new identity, and cannot remove copies of the deleted one.
     await assign(source.id, b.id, true);
 
     const surviving = store
@@ -1284,7 +1276,6 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
         .skills,
     ).toEqual([{ name: "Research", instructions: "Check sources" }]);
 
-    // Packages may outgrow the inline limit without blocking unrelated edits; a submitted list is still bounded.
     for (let i = 0; i < 100; i++)
       await req(app, `/v1/agents/${a.id}/skills`, {
         method: "POST",
@@ -1830,7 +1821,6 @@ describe("bot desktop control and viewer", () => {
     expect(page.headers.get("cache-control")).toBe("no-store");
     expect(await page.text()).toContain(`${path}/websockify`);
 
-    // The WebSocket redeems the ticket; afterwards the link is dead.
     expect(viewerTickets.redeem(path.split("/").at(-1))).toEqual({
       agentId: agent.id,
       passive: false,
@@ -1948,7 +1938,6 @@ describe("job answer notifications", () => {
       eventId: "desktop-report:42",
     });
 
-    // A bot of another server in the same process is not ours to announce.
     service.announceJobAnswer({
       agentId: "00000000-0000-4000-8000-000000000999",
       kind: "desktop",
@@ -2043,7 +2032,6 @@ describe("provider API keys from a password manager", () => {
     reference: { passwordManager: "1password", reference: REFERENCE },
   } as const;
 
-  /** The API with provider sign-ins over a fake 1Password, connected with its token. */
   function vaultSetup(state: FakePasswordManager) {
     const { store, service, scheduler } = setup();
     const core = store.run(Effect.context<CoreServices>());
@@ -2160,7 +2148,6 @@ describe("MCP server tokens from a password manager", () => {
     token?: { value?: string; reference?: ReturnType<typeof reference> } | null;
   };
 
-  /** The MCP server routes over a fake 1Password, recording which servers were disconnected. */
   function mcpSetup(state: FakePasswordManager) {
     const { store, service } = setup();
     const core = store.run(Effect.context<CoreServices>());

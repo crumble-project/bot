@@ -91,7 +91,6 @@ const textOf = (message: Message) =>
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("");
 
-/** Each job's model call waits until the test releases that job. */
 class Gates {
   readonly started: string[] = [];
   private readonly gates = new Map<string, () => void>();
@@ -112,7 +111,6 @@ class Gates {
   }
 }
 
-/** The bot starts or stops the errand its message names; a job's model waits at its gate. */
 function script(gates: Gates): FauxResponseFactory {
   return async (context) => {
     const tools = context.messages.flatMap((message) =>
@@ -201,7 +199,6 @@ async function open(kind: typeof exclusiveKind) {
   const chat = await runtime.openChat(agent);
   let requests = 0;
 
-  // Each bot message runs one turn; the next waits until the chat is idle again.
   const say = async (text: string) => {
     const submission = await runtime.submit(
       agent,
@@ -213,7 +210,6 @@ async function open(kind: typeof exclusiveKind) {
     await runtime.wait(submission, agent);
   };
 
-  // The bot's latest job tool result, such as a status listing.
   const lastToolResult = async () =>
     (await runtime.snapshot(agent, chat)).messages.findLast(
       (message) => message.toolName === "errand",
@@ -230,7 +226,6 @@ async function until(check: () => boolean) {
   expect(check()).toBe(true);
 }
 
-// Long enough for a job that did not wait to reach its model.
 const SETTLE_MS = 1500;
 
 // Tests that settle spend seconds in fixed sleeps; bun's 5 s default fails on slow CI runners.

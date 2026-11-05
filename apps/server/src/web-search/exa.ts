@@ -111,7 +111,6 @@ const keyedExtract = (key: string, url: string) =>
     ),
   );
 
-/** Runs `use` with the key, failing with `failure` when it can't be read or isn't set. */
 const withKey = <A, E>(
   key: Effect.Effect<string | undefined, SecretUnavailable>,
   failure: (message: string) => E,
@@ -146,7 +145,6 @@ const exaProvider = (
 
 export const EXA_PLUGIN_ID = "web-search-exa";
 
-/** Where the Exa key is stored. */
 export const EXA_KEY = pluginSettingKey(EXA_PLUGIN_ID, "api-key");
 
 export const exaPlugin = (

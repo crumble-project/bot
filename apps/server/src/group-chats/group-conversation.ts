@@ -5,7 +5,6 @@ import {
 } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord";
 
-/** Marks a bot's conversation as its working context for one group chat. */
 export const GroupConversation = defineDoc<{ groupId: string | null }>({
   kind: "crumble.group-conversation",
   version: 1,
@@ -16,7 +15,6 @@ export const GroupConversation = defineDoc<{ groupId: string | null }>({
   checkpointWhen: () => false,
 });
 
-/** The group chat a conversation works for; null for any other conversation. */
 export const groupOf = async (
   reader: DocumentReader,
   conversationId: ConversationId,

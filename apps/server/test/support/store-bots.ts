@@ -100,7 +100,6 @@ export const botStore = (run: StoreRun) => ({
   listExecutions: (agentId?: string): Execution[] => {
     return run(ExecutionRepository.use((r) => r.list(agentId)));
   },
-  /** Uploads waiting for admission; cleared once Pi holds them, so they are not stored twice. */
   executionAttachments: (executionId: string): AttachmentInput[] => {
     return run(ExecutionRepository.use((r) => r.attachments(executionId)));
   },
@@ -127,7 +126,6 @@ export const botStore = (run: StoreRun) => ({
   createGroupChat: (input: GroupChatInput, groupId?: string): GroupChat => {
     return run(GroupChatRepository.use((r) => r.create(input, groupId)));
   },
-  /** Replaces name and members; members that stay keep their place in the join order. */
   updateGroupChat: (groupId: string, input: GroupChatInput) => {
     return run(GroupChatRepository.use((r) => r.update(groupId, input)));
   },
@@ -162,7 +160,6 @@ export const botStore = (run: StoreRun) => ({
   ) => {
     run(GroupChatRepository.use((r) => r.updateTurn(executionId, change)));
   },
-  /** The member's unsettled turn in the group; there is at most one. */
   activeGroupTurn: (groupId: string, agentId: string) => {
     return run(GroupChatRepository.use((r) => r.activeTurn(groupId, agentId)));
   },

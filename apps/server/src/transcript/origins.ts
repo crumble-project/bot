@@ -2,10 +2,8 @@ import type { Execution, OWNER_MESSAGE_SOURCES } from "../shared/domain";
 import type { JobKindName } from "../shared/job-kinds";
 import { askingBot, parseRequestId } from "../shared/request-ids";
 
-/** The name a bot's message shows once that bot is gone. */
 export const UNKNOWN_BOT_NAME = "Another bot";
 
-/** The name a scheduled turn shows once its automation is gone. */
 export const UNKNOWN_SCHEDULE_NAME = "Scheduled task";
 
 /**
@@ -56,14 +54,12 @@ const REQUEST_SOURCES: Record<
 export const requestSource = (originKind: string) =>
   new Map(Object.entries(REQUEST_SOURCES)).get(originKind);
 
-/** Prefixes an owner or automation message in the bot's model context, so the bot can cite it in `owner_messages`. */
 export const messageTag = (
   originKind: string,
   requestId: string,
   text: string,
 ) => (requestSource(originKind) ? `[message ${requestId}]\n${text}` : text);
 
-/** Where a turn came from, as far as its execution says without looking anything up. */
 export type TurnSource =
   | { kind: "group" }
   | { kind: "event"; eventId: string; scheduleId: string }

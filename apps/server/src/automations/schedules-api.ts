@@ -8,7 +8,6 @@ import { ScriptRuns } from "./script-runs";
 
 type Services = ScheduleRepository | Scheduler | ScriptRuns;
 
-/** The schedules one bot or the owner created, and running one now. */
 export function registerScheduleRoutes(options: {
   register: Register;
   run: Runner<Services>;
@@ -39,7 +38,6 @@ export function registerScheduleRoutes(options: {
     async (c) => {
       const id = c.req.param("id");
 
-      // Before the body: an unknown schedule answers 404 even when the body is not JSON.
       assertSchedule(id);
 
       const input = await c.req.json();

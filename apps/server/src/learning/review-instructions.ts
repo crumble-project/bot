@@ -1,4 +1,3 @@
-/** Which stores one review may change. */
 export type ReviewScope = { skills: boolean; memory: boolean };
 
 /**

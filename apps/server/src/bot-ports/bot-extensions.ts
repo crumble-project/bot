@@ -2,15 +2,10 @@ import type { Extension } from "@earendil-works/pi-durable";
 import { Context, Effect, Layer, Ref, type Scope } from "effect";
 import type { Agent } from "../contract/agents";
 
-/** One feature's extensions for a bot's chat. */
 export type ExtensionSource = (
   agent: Agent,
 ) => Extension[] | Promise<Extension[]>;
 
-/**
- * The extensions each bot's chat offers, registered by the features that own them. The bot runtime reads them at turn
- * time, so it need not depend on every feature whose tools it offers.
- */
 export class BotExtensions extends Context.Service<
   BotExtensions,
   {
@@ -19,7 +14,6 @@ export class BotExtensions extends Context.Service<
       position: number,
       source: ExtensionSource,
     ) => Effect.Effect<void, never, Scope.Scope>;
-    /** Every registered feature's extensions for `agent`, in position order. */
     readonly forAgent: (agent: Agent) => Promise<Extension[]>;
   }
 >()("crumble/bot-ports/BotExtensions") {
@@ -56,7 +50,6 @@ export class BotExtensions extends Context.Service<
   );
 }
 
-/** Where each feature's extensions appear in a bot's chat, in the order bots were offered them before the registry. */
 export const ExtensionPosition = {
   integrations: 10,
   coordination: 20,

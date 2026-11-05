@@ -21,7 +21,6 @@ import { runAction } from "./computer-use-run";
 import type { IntentGate } from "./computer-use-intent";
 import { COMPUTER_USE_TOOL_NAME } from "../contract/tools";
 
-/** The part of a job's environment the tool needs. */
 export type DesktopShell = Pick<
   ExecutionEnv,
   "exec" | "writeFile" | "readBinaryFile"
@@ -30,11 +29,9 @@ export type DesktopShell = Pick<
 export type ComputerUseResult = {
   content: (TextContent | ImageContent)[];
   isError: boolean;
-  /** Model calls the tool made itself, such as an intent check's judge. */
   usage?: Usage;
 };
 
-/** The bot's turn on its desktop: resolves once the bot holds control. */
 export type ControlGate = {
   untilBot(context: Context): Promise<ControlState>;
 };
@@ -51,7 +48,6 @@ export function createComputerUse(
   };
 }
 
-/** The tool for a desktop job, over the job's environment. One instance per job conversation keeps its snapshots. */
 export function computerUseTool({
   gateFor,
   logins,
@@ -61,7 +57,6 @@ export function computerUseTool({
   gateFor?: ((conversationId: string) => ControlGate) | undefined;
   logins?: LoginFill | undefined;
   fills?: DesktopFills | undefined;
-  /** The intent check of one call, which reads the job's request and posts a held action's card. */
   intentFor?: ((api: ToolExecutionApi) => IntentGate) | undefined;
 } = {}) {
   const instances = new Map<string, ReturnType<typeof createComputerUse>>();

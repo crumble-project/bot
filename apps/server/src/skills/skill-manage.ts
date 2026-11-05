@@ -33,7 +33,6 @@ const refuse = (message: string) =>
 
 const MAX_OPERATIONS = 10;
 
-/** Advisory findings about the shape of a skill; they never block a write. */
 export type SkillFinding = { skill: string; rule: string; message: string };
 
 const OVERSIZED_BODY = 12000;
@@ -160,7 +159,6 @@ export type SkillManageCallbacks = {
 
 type Applied = { action: Operation["action"]; name: string; path?: string };
 
-/** Replaces `oldString` in `source` once, or everywhere with `replaceAll`; an ambiguous or missing match is an error. */
 export function applyPatch(
   source: string,
   oldString: string,
@@ -187,7 +185,6 @@ export function applyPatch(
   );
 }
 
-/** The batch being applied: the library, the turn's reads, and what the batch has written so far. */
 type Batch = {
   library: BotSkills["Service"];
   reads: SkillReads;
@@ -434,7 +431,6 @@ const applyOperation = Effect.fnUntraced(function* (
   }
 });
 
-/** The model tool a bot edits its own skills with: an ordered batch, applied atomically. */
 export function skillManageTool(callbacks: SkillManageCallbacks) {
   return defineTool({
     name: SKILL_MANAGE_TOOL_NAME,

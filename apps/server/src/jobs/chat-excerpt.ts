@@ -8,7 +8,6 @@ const EXCERPT_CHARS = 8000;
 const MESSAGE_CHARS = 2000;
 const SCAN_PAGE = 50;
 
-// A long run of tool activity yields no text; the scan stops there rather than reading the whole chat.
 const SCAN_PAGES = 10;
 
 const textOf = (message: Message) => {
@@ -17,7 +16,6 @@ const textOf = (message: Message) => {
   return contentText(message.content).trim();
 };
 
-/** An entry's said lines, newest first. */
 function entryLines(messages: readonly Message[]) {
   return messages.toReversed().flatMap((message) => {
     const text = textOf(message);
@@ -30,7 +28,6 @@ function entryLines(messages: readonly Message[]) {
   });
 }
 
-/** What the chat's model saw said, newest first: the owner's side and the bot's text, without tool calls or results. */
 async function* newestMessages(
   tx: Pick<Tx, "scanEntries">,
   chatId: ConversationId,
@@ -51,10 +48,6 @@ async function* newestMessages(
   } while (cursor && ++pages < SCAN_PAGES);
 }
 
-/**
- * The chat's latest messages, oldest first, for a job it starts: what was said, not the bot's work. Bounded in count
- * and length, so a long chat costs a job no more than a short one. Empty when the chat has none.
- */
 export async function chatExcerpt(
   tx: Pick<Tx, "scanEntries">,
   chatId: ConversationId,

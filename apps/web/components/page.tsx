@@ -28,10 +28,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-/**
- * Opens the sidebar on phones from a page's own header. The shell hides its
- * fallback header row while a page renders one of these.
- */
 export function MobileSidebarTrigger({ className }: { className?: string }) {
   return (
     <SidebarTrigger
@@ -41,7 +37,6 @@ export function MobileSidebarTrigger({ className }: { className?: string }) {
   );
 }
 
-/** The header row and scrolling body every workspace and settings page shares. */
 export function Page({
   title,
   back,
@@ -51,7 +46,6 @@ export function Page({
   children,
 }: {
   title: string;
-  /** A control before the title, such as a link back to the parent page. */
   back?: ReactNode;
   onRefresh?: () => void;
   refreshing?: boolean;
@@ -62,7 +56,6 @@ export function Page({
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b px-4">
         <div className="flex min-w-0 items-center gap-1">
-          {/* Settings pages open the sidebar from the section nav above. */}
           <MobileSidebarTrigger className="in-data-[slot=settings-page]:hidden" />
           {back}
           <h1 className="truncate font-heading text-base font-semibold">
@@ -95,7 +88,6 @@ export function Page({
   );
 }
 
-/** The row above a page's list: a search field, and the page's main action at the end. */
 export function PageToolbar({
   search,
   searchLabel,
@@ -127,7 +119,6 @@ export function PageToolbar({
   );
 }
 
-/** One filter choice: its label, and an optional icon and count. */
 export type FilterPill = {
   value: string;
   label: string;
@@ -135,7 +126,6 @@ export type FilterPill = {
   count?: number;
 };
 
-/** A scrolling row of rounded filter buttons, one pressed. Empty choices hide, and so does a row with one left. */
 export function FilterPills({
   label,
   pills,
@@ -147,7 +137,6 @@ export function FilterPills({
   value: string;
   onChange: (value: string) => void;
 }) {
-  // The pressed pill stays even when empty, so a filter never vanishes from under its page.
   const shown = pills.filter(
     (pill) => pill.count !== 0 || pill.value === value,
   );
@@ -183,7 +172,6 @@ export function FilterPills({
   );
 }
 
-/** A page's create button, such as "New memory". */
 export function NewButton({
   label,
   disabled,
@@ -201,7 +189,6 @@ export function NewButton({
   );
 }
 
-/** Asks before an irreversible delete. */
 export function ConfirmDelete({
   title,
   description,
@@ -259,7 +246,6 @@ export function ConfirmDeleteContent({
   );
 }
 
-/** A titled group of rows in a tinted frame, like a Mac settings section. */
 export function Section({
   title,
   icon,
@@ -269,10 +255,8 @@ export function Section({
   children,
 }: {
   title: string;
-  /** Shown before the title, such as the avatar of the bot a section belongs to. */
   icon?: ReactNode;
   description?: ReactNode;
-  /** A control at the end of the heading, such as an Add button. */
   action?: ReactNode;
   footer?: ReactNode;
   children: ReactNode;
@@ -299,7 +283,6 @@ export function Section({
   );
 }
 
-/** A failure inside a section's frame. */
 export function SectionError({ children }: { children: ReactNode }) {
   return (
     <div className="p-3">
@@ -308,7 +291,6 @@ export function SectionError({ children }: { children: ReactNode }) {
   );
 }
 
-/** "(used by N)", the count a one-line row shows after its name; `prefix` adds to it inside the parentheses. */
 export function UsedBy({
   count,
   prefix,
@@ -329,7 +311,6 @@ export function SectionEmpty({ children }: { children: ReactNode }) {
   return <p className="p-3 text-sm text-muted-foreground">{children}</p>;
 }
 
-/** A square tile that leads a row: an icon or a letter on a soft background. */
 export function RowTile({
   children,
   className,
@@ -349,7 +330,6 @@ export function RowTile({
   );
 }
 
-/** One setting: what it is on the left, its control on the right. */
 export function SettingRow({
   tile,
   title,
@@ -381,7 +361,6 @@ export function SettingRow({
   );
 }
 
-/** A green dot for on, a hollow one for off, with its label. */
 export function StatusDot({ on, label }: { on: boolean; label: string }) {
   return (
     <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -396,7 +375,6 @@ export function StatusDot({ on, label }: { on: boolean; label: string }) {
   );
 }
 
-/** The "…" menu at the end of a row. */
 export function RowMenu({ children }: { children: ReactNode }) {
   return (
     <DropdownMenu>

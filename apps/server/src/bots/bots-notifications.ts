@@ -9,7 +9,6 @@ import type { BotsContext } from "./bots-context";
 
 export type BotsNotifications = ReturnType<typeof botsNotifications>;
 
-/** Who hears about a chat, an activity, or a settled execution, and how an execution's end reaches them. */
 export const botsNotifications = (context: BotsContext) => {
   const { activityListeners, agents, executions, listeners, scope } = context;
   const { settledListeners } = context;
@@ -55,7 +54,6 @@ export const botsNotifications = (context: BotsContext) => {
       );
   });
 
-  // A cancel or a finished answer is final; a deleted execution has nothing to record.
   const record = Effect.fnUntraced(function* (
     execution: Execution,
     patch: Pick<Execution, "status"> & Partial<Pick<Execution, "error">>,
@@ -70,7 +68,6 @@ export const botsNotifications = (context: BotsContext) => {
     return true;
   });
 
-  /** Ends an execution: records how, then tells its chat and the settled listeners. False when it was already over. */
   const settle = Effect.fnUntraced(function* (
     execution: Execution,
     patch: Parameters<typeof record>[1],
@@ -83,10 +80,6 @@ export const botsNotifications = (context: BotsContext) => {
     return true;
   });
 
-  /**
-   * Tells activity listeners about the bot's answer to a job's report, such as a desktop job asking for the owner.
-   * Job reports reach the chat without an execution, so a finished execution never announces them.
-   */
   const announceJobAnswer = Effect.fn("Bots.announceJobAnswer")(function* (
     answer: JobAnswer,
   ) {

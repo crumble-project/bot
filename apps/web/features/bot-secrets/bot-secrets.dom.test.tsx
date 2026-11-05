@@ -31,7 +31,6 @@ const GLOBALS = [
   "cancelAnimationFrame",
 ];
 
-/** The JSON bodies the page sent in the latest `render`. */
 const bodies: unknown[] = [];
 
 const settle = () =>
@@ -80,10 +79,6 @@ const moreAcmeHosts = {
 
 let passwordManagers: { id: string; name: string; connected: boolean }[] = [];
 
-/**
- * Renders `ui` in a happy-dom window with one bot, `bot`, whose API answers GETs from `listings`, and runs `check`.
- * Returns each non-GET request the page sent.
- */
 async function render(
   listings: {
     "/v1/agents/bot/logins"?: Logins;
@@ -204,7 +199,6 @@ async function render(
   return sent;
 }
 
-/** Opens the first "Waiting for you" row's menu and selects Decline. */
 async function declineFirstRequest(container: HTMLElement) {
   const row = [...container.querySelectorAll("span")].find((span) =>
     span.textContent?.includes("asks for"),
@@ -230,14 +224,12 @@ async function declineFirstRequest(container: HTMLElement) {
   await settle();
 }
 
-/** A settings page inside the sidebar it needs. */
 const page = async (load: () => Promise<ReactNode>) => {
   const { SidebarProvider } = await import("@/components/ui/sidebar");
 
   return <SidebarProvider>{await load()}</SidebarProvider>;
 };
 
-/** The chat card for a request tool's result. */
 const requestCard = async (
   toolName: string,
   toolDetails: Logins["requests"][number] | Credentials["requests"][number],
@@ -366,7 +358,6 @@ const typeInto = (input: HTMLInputElement, value: string) =>
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 
-/** Opens the request card's sheet and fills in the value, leaving the sheet to submit. */
 const addRequestedCredential = async (container: HTMLElement) => {
   await act(async () => buttonNamed("Add credential", container)!.click());
   await settle();

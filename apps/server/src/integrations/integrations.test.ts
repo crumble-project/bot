@@ -42,7 +42,6 @@ const agent = (id: string, mcpServers: string[]): Agent => ({
   updatedAt: new Date().toISOString(),
 });
 
-/** The fake clients never use their transport. */
 // SAFETY: The fake clients only require the transport close method.
 const unusedTransport = { close: async () => {} } as McpTransport;
 
@@ -52,7 +51,6 @@ function tempDir() {
 
 const REFERENCE = "op://Vault/Linear/token";
 
-/** The store's services with a fake 1Password holding `values`, and the server's token pointing at `REFERENCE`. */
 function withVaultToken(
   store: Store,
   dir: string,
@@ -87,7 +85,6 @@ function withVaultToken(
   };
 }
 
-/** A server with one `echo` tool that records the headers of every connection. */
 function recordingServer(sent: Record<string, string>[]) {
   return (_server: MCPServer, headers: Record<string, string>) => {
     sent.push(headers);

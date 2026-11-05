@@ -36,7 +36,6 @@ import { GatewayRepository } from "../message-gateway/gateway-repository";
 import { EventRepository } from "../event-sources/event-repository";
 import { githubAppUsers, githubApps } from "../github-apps/schema";
 
-/** Every table with values sealed by the account's key: rows in any of them stop a new key replacing a lost one. */
 export const encryptedTables = {
   secrets,
   providerCredentials,
@@ -47,7 +46,6 @@ export const encryptedTables = {
   githubAppUsers,
 };
 
-/** Every repository of an account's product database, on one migrated connection. */
 export const productLayer = (dataDir: string) => {
   const database = ProductDatabase.layer(dataDir);
 

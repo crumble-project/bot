@@ -472,7 +472,6 @@ test("wait pauses for the given seconds and reports them", async () => {
   expect(text(result)).toBe("waited 0.01s");
 });
 
-/** A control lease the test hands between bot and owner. */
 class FakeGate {
   state: ControlState = { holder: "bot", changes: 0, updatedAt: "" };
   private readonly waiting: (() => void)[] = [];
@@ -530,7 +529,6 @@ test("actions wait while the owner holds control, and a plan from before is refu
   );
   expect(calls.some((c) => c.tool === "set_value")).toBe(false);
 
-  // The old snapshot is gone: the next capture is a full read, not a diff.
   const fresh = await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
 
   expect(fresh.isError).toBe(false);
@@ -695,7 +693,6 @@ test("launch opens Files and Terminal at a folder, and any installed app by its 
 
   expect(text(editor)).toContain("window 404 Mousepad");
 
-  // The path is quoted as one argument, so no part of it runs as a command.
   expect(commands.filter((command) => command.includes("setsid"))).toEqual([
     `. /run/crumble-desktop.env; setsid thunar '/workspace/it'\\''s demo' >/dev/null 2>&1 </dev/null &`,
     `. /run/crumble-desktop.env; setsid mousepad '/workspace/notes.txt' >/dev/null 2>&1 </dev/null &`,

@@ -14,7 +14,6 @@ import { SecretValues } from "./secret-values";
 const REFERENCE = "op://v/i/password";
 const source = { passwordManager: "1password", reference: REFERENCE } as const;
 
-/** Runs `effect` with SecretValues over the fake, on a test clock. */
 const run = <A, E>(
   state: FakePasswordManager,
   effect: Effect.Effect<A, E, SecretValues>,
@@ -59,7 +58,6 @@ const failureOf = (exit: Exit.Exit<unknown, { readonly message: string }>) =>
     Option.map(Exit.findErrorOption(exit), (error) => error.message),
   );
 
-/** Lets a background refresh run to its end. */
 const settle = Effect.repeat(Effect.yieldNow, { times: 20 });
 
 describe("SecretValues", () => {
@@ -150,7 +148,6 @@ describe("SecretValues", () => {
         yield* read;
         state.values.delete(REFERENCE);
         yield* TestClock.adjust("56 minutes");
-        // The background refresh finds the item gone and drops the value.
         yield* read;
         yield* settle;
 

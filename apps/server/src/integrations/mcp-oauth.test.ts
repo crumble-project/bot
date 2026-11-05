@@ -31,13 +31,11 @@ afterEach(() => {
   while (cleanups.length) cleanups.pop()!();
 });
 
-/** One endpoint of the fake server: when it answers a request, and with what. */
 type Route = {
   matches: (url: URL, request: Request) => boolean;
   respond: (url: URL, request: Request) => Response | Promise<Response>;
 };
 
-/** An MCP server's OAuth side: resource metadata, authorization server metadata, registration and tokens. */
 function fakeAuthorizationServer({ issParameter = false } = {}) {
   const tokenRequests: URLSearchParams[] = [];
   let refreshRefused = false;
@@ -86,7 +84,6 @@ function fakeAuthorizationServer({ issParameter = false } = {}) {
     });
   };
 
-  // The MCP endpoint refuses every token, as it would once a sign-in has lapsed.
   const unauthorized = (url: URL) =>
     new Response("unauthorized", {
       status: 401,
@@ -202,7 +199,6 @@ describe("MCP OAuth", () => {
         .update(exchange.get("code_verifier") ?? "")
         .digest("base64url"),
     ).toBe(url.searchParams.get("code_challenge")!);
-    // The state answers one attempt only.
     await expect(
       finishAuthorization(secrets(store), server, "code-1", state),
     ).rejects.toThrow("expired");

@@ -37,18 +37,14 @@ import { allPill, botPill } from "@/features/bots/bot-pills";
 
 const USES_PAGE = 50;
 
-/** What a sheet or dialog acts on: an item of one bot. */
 export type Target<T> = { botId: string; item: T };
 
 export type Named = { name: string; hosts: string[] };
 
-/** A bot's request for a secret, waiting for the owner. */
 export type SecretRequest = Named & { reason: string };
 
-/** One bot with its query for the secrets it holds. */
 export type BotEntry<D> = { bot: Bot; query: UseQueryResult<D> };
 
-/** Hosts as the owner types them: separated by commas, spaces, or lines. */
 export const hostList = (text: string) =>
   text
     .split(/[\s,]+/)
@@ -60,7 +56,6 @@ export const matches = (item: Named, needle: string) =>
   item.name.toLowerCase().includes(needle) ||
   item.hosts.some((host) => host.includes(needle));
 
-/** The bots in scope, and those whose frame shows: the one picked, or one with matching items. */
 function scopedEntries<D>(
   entries: BotEntry<D>[],
   scope: string,
@@ -149,7 +144,6 @@ function RequestRow({
   );
 }
 
-/** The bots' requests in scope that match the search, under "Waiting for you". */
 function WaitingRequests<D, R extends SecretRequest>({
   entries,
   needle,
@@ -186,7 +180,6 @@ function WaitingRequests<D, R extends SecretRequest>({
   );
 }
 
-/** One bot's frame: its error, an empty or no-match note, or its rows. */
 function BotSecretSection<D>({
   entry,
   total,
@@ -215,7 +208,6 @@ function BotSecretSection<D>({
   );
 }
 
-/** A row's name and hosts, which open its editor. */
 export function SecretRowName({
   name,
   hosts,
@@ -225,7 +217,6 @@ export function SecretRowName({
   name: string;
   hosts: string[];
   mono?: boolean;
-  /** Omitted for a row the owner can't edit. */
   onEdit?: (() => void) | undefined;
 }) {
   const label = (
@@ -257,7 +248,6 @@ export function SecretRowName({
   );
 }
 
-/** The newest use's error, else when it was last used. */
 export function LastUse({
   lastUsedAt,
   lastError,
@@ -266,7 +256,6 @@ export function LastUse({
 }: {
   lastUsedAt: string | null;
   lastError: string | null;
-  /** The verb before the time, such as "Used". */
   used: string;
   never: string;
 }) {
@@ -296,10 +285,8 @@ export function SecretRowMenu({
   onEdit,
   onDelete,
 }: {
-  /** The history item's label, with its icon. */
   uses: ReactNode;
   onUses: () => void;
-  /** Omitted, with `onDelete`, for a row the owner can't change. */
   onEdit?: (() => void) | undefined;
   onDelete?: (() => void) | undefined;
 }) {
@@ -325,13 +312,9 @@ export function SecretRowMenu({
   );
 }
 
-/** The bot a new item is for at first: the one given, else the first bot. */
 export const defaultOwner = (botId: string | null, bots: Bot[]) =>
   botId ?? bots[0]?.id ?? "";
 
-/**
- * The editor for one bot's item: `noun` titles a new one. With no `botId`, it first asks which bot the item is for.
- */
 export function SecretSheet({
   noun,
   existing,
@@ -347,9 +330,7 @@ export function SecretSheet({
   children,
 }: {
   noun: string;
-  /** The saved item's name, or null for a new one. */
   existing: string | null;
-  /** Why the bot asked for it, when the sheet answers a request. */
   reason?: string | undefined;
   error: string | undefined;
   ready: boolean;
@@ -385,7 +366,6 @@ export function SecretSheet({
   );
 }
 
-/** An item's uses, newest first, paged by the last use's ID. */
 export function UsesDialog<U extends { id: string; at: string }>({
   title,
   description,
@@ -399,7 +379,6 @@ export function UsesDialog<U extends { id: string; at: string }>({
   description: string;
   empty: string;
   queryKey: readonly unknown[];
-  /** Fetches one page; `query` carries its limit and cursor. */
   load: (query: string, signal: AbortSignal) => Promise<U[]>;
   children: (use: U) => ReactNode;
   onClose: () => void;
@@ -459,7 +438,6 @@ export function UsesDialog<U extends { id: string; at: string }>({
   );
 }
 
-/** The bots' requests, then each bot's frame of items matching the search, then a note. */
 export function SecretGroups<D, I extends Named, R extends SecretRequest>({
   entries,
   scope,
@@ -483,7 +461,6 @@ export function SecretGroups<D, I extends Named, R extends SecretRequest>({
   empty: string;
   noMatch: string;
   note: ReactNode;
-  /** One item's row. */
   children: (botId: string, item: I) => ReactNode;
 }) {
   const { inScope, shown } = scopedEntries(entries, scope, needle, itemsOf);
@@ -519,7 +496,6 @@ export function SecretGroups<D, I extends Named, R extends SecretRequest>({
   );
 }
 
-/** Which item's uses are open and which is being deleted, and declining a bot's request. */
 export function useSecretActions<I>(
   pathOf: (
     botId: string,
@@ -552,7 +528,6 @@ export function useSecretActions<I>(
   return { uses, setUses, deleting, setDeleting, remove, decline };
 }
 
-/** Why the last delete or decline failed, if one did. */
 export function ActionFailure({
   actions,
 }: {

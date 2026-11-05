@@ -73,7 +73,6 @@ const normalizedDefault = (value: string | null) =>
     Match.orElse(() => value),
   );
 
-/** Every user table as SQLite reports it, independent of column order, constraint names, and DDL text. */
 function schemaOf(file: string) {
   const db = new Database(file, { readonly: true });
 

@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { Table, TableHead } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
-/** The rounded, tinted frame both tables sit in. */
 export function TableFrame({ children }: { children: ReactNode }) {
   return (
     <div className="overflow-hidden rounded-xl surface px-2 py-1">

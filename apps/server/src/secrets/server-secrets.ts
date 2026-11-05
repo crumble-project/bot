@@ -3,7 +3,6 @@ import type { z } from "zod";
 import { secretKey } from "./secret-key";
 import { SecretRepository } from "./secret-repository";
 
-/** Values the server makes itself, such as signing keys: always encrypted in Crumble, never a password manager reference. */
 export class ServerSecrets extends Context.Service<
   ServerSecrets,
   {
@@ -20,11 +19,9 @@ export class ServerSecrets extends Context.Service<
   );
 }
 
-/** A flow's state while the owner is away signing in, stored encrypted under `flow` and the state's random ID. */
 export class PendingStates extends Context.Service<
   PendingStates,
   {
-    /** Saves the flow's data, stamped with the time it started. */
     readonly put: (
       flow: string,
       state: string,

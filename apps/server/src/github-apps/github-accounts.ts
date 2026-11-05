@@ -16,10 +16,8 @@ import { assignmentChange } from "./github-identity";
 import { githubAccountBots, githubAccounts } from "./schema";
 import { newSigningKey, sshPublicKey, sshSign } from "./ssh-signing";
 
-/** A machine account as the owner sees it; its token never leaves the server. */
 export type GitHubAccount = z.infer<typeof githubAccountResponse>;
 
-/** The machine account a bot acts as, for the credential proxy and the bot's commits; `token` reads it on use. */
 export type GitHubAccountOfBot = {
   login: string;
   userId: number;
@@ -37,7 +35,6 @@ const tokenKey = (id: string) => secretKey("github-account", id);
 // Made by the server, never entered by the owner, so it stays in Crumble's own encrypted store.
 const signingKeyKey = (id: string) => secretKey("github-account-signing", id);
 
-/** The GitHub user a token signs in as; a token GitHub refuses is the owner's input to fix. */
 const userOf = (token: Redacted.Redacted) =>
   github("/user", githubUser, { token: Redacted.value(token) }).pipe(
     Effect.catchIf(
@@ -71,7 +68,6 @@ export class GitHubAccounts extends Context.Service<
       GitHubAccount,
       InvalidInput | Conflict | GitHubUnavailable
     >;
-    /** Replaces the token, such as one about to expire, with another of the same GitHub user. */
     readonly setToken: (
       id: string,
       token: SecretInput,

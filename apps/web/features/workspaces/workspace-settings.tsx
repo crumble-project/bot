@@ -149,7 +149,6 @@ const HELP = {
   desktop: "Desktop jobs need CRUMBLE_WORKSPACE_DESKTOP_IMAGE on the server.",
 };
 
-/** The workspace settings every bot shares, on the Coding page; only admins can change them. */
 export function WorkspaceSettings() {
   const admin = useIsAdmin();
   const capabilities = useQuery(capabilitiesQuery);

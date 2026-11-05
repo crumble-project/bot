@@ -56,7 +56,6 @@ const component = Type.Union([stats, table, chart]);
 
 type Component = Static<typeof component>;
 
-/** Count rules the schema cannot express; the model gets the message back as a tool error and can retry. */
 function countMismatch(value: Component): string | undefined {
   if (value.kind !== "table") return undefined;
   const width = value.columns.length;
@@ -73,7 +72,6 @@ const CHART_DOCS = join(
   "../docs",
 );
 
-/** Docs for the chart families the sandbox bundles; maps, spatial marks, and DOM interaction are left out. */
 const UNBUNDLED =
   /^(examples\/(index|interactive-charts|maps-and-spatial|themes-and-motion)|marks\/(contour|delaunay|density|focus-guide|geo|hexbin|voronoi))$/;
 
@@ -90,7 +88,6 @@ const chartTopics = new Map<string, string>([
 for (const topic of chartTopics.keys())
   if (UNBUNDLED.test(topic)) chartTopics.delete(topic);
 
-/** Inline chat visuals. Clients render the validated component from the tool result's details. */
 export function displayExtension(charts: ChartCompiler) {
   const show = defineTool({
     name: DISPLAY_TOOL_NAME,
@@ -168,7 +165,6 @@ Read chart_docs before using a mark or chart family you are unsure of.`,
   return defineExtension({ name: "display", tools: [show, docs] });
 }
 
-/** Offers every bot the `show` tool, with a chart sandbox the layer's scope closes. */
 export const displayTools = Layer.effectDiscard(
   Effect.gen(function* () {
     const charts = yield* Effect.acquireRelease(

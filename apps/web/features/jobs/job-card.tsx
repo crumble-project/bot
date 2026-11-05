@@ -7,7 +7,6 @@ import { type Message } from "@/features/chat/api";
 import { toolDetailsOf } from "@/features/chat/tool-details";
 import { messageCard, type CardChat } from "@/features/chat/message-card";
 
-/** A coding or desktop job a tool result started or messaged. */
 export function jobOf(message: Message) {
   const kind = JOB_KIND_NAMES.find(
     (each) => JOB_KINDS[each].tool === message.toolName,
@@ -21,7 +20,6 @@ export function jobOf(message: Message) {
     : null;
 }
 
-/** Whether a job works, as its card and panel show it. */
 export function JobStatus({ working }: { working: boolean }) {
   return working ? (
     <span className="flex items-center gap-1 text-xs text-muted-foreground">

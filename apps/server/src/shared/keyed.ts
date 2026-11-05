@@ -1,11 +1,9 @@
 import { Semaphore } from "effect";
 
-/** Callbacks by key, such as a chat's subscribers. */
 export const keyedListeners = () => {
   const listeners = new Map<string, Set<() => void>>();
 
   return {
-    /** Calls `callback` for each `notify` of `key`, until the returned function is called. */
     add: (key: string, callback: () => void) => {
       const set = listeners.get(key) ?? new Set();
       set.add(callback);
@@ -23,7 +21,6 @@ export const keyedListeners = () => {
   };
 };
 
-/** One lock per key, created on first use. */
 export const keyedLocks = () => {
   const locks = new Map<string, Semaphore.Semaphore>();
 

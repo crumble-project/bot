@@ -7,11 +7,9 @@ import { mentionedMembers } from "./group-mentions";
 import { openGroupConversation } from "./group-turns";
 import type { GroupEntry } from "./group-transcripts";
 
-/** How a group reaches its members: who a message wakes, who joins, and who is stopped. */
 export const groupChatMembers = (context: GroupChatContext) => {
   const { agents, bots, conversations, executions, groups, runtime } = context;
 
-  /** Members a message wakes: its mentions and, for a reply, the bot it answers. */
   const mentions = Effect.fnUntraced(function* (
     group: GroupChat,
     text: string,
@@ -53,7 +51,6 @@ export const groupChatMembers = (context: GroupChatContext) => {
     return conversationId;
   });
 
-  /** Stops the member's turn and drops its queued one; a stopped turn posts nothing. Reports whether there was any. */
   const abortTurn = Effect.fnUntraced(function* (
     groupId: string,
     agentId: string,

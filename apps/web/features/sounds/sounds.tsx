@@ -10,12 +10,10 @@ const NOTICES: { kind: NoticeKind; label: string }[] = [
   { kind: "credential", label: "Credential or login" },
 ];
 
-/** Shows a notice of `kind` as the browser would, with its sound when sound is on. */
 function testNotice(kind: NoticeKind, label: string) {
   showNotice(kind, `Crumble · ${label}`, { body: "A test notification." });
 }
 
-/** A page outside the navigation for hearing the notification sounds and every cue. */
 export function SoundsPage() {
   const [theme, setTheme] = useState<ThemeName>("default");
 

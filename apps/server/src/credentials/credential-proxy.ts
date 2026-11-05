@@ -13,7 +13,6 @@ import type {
 import { isPublicAddress } from "../shared/public-address";
 import type { WorkspaceInterceptor } from "../workspaces/workspace-proxy";
 
-/** Makes the TLS certificates a bot's workspace trusts. */
 export type TlsAuthorities = {
   context(agentId: string, host: string): Promise<tls.SecureContext>;
 };
@@ -50,7 +49,6 @@ const HOP_BY_HOP = new Set([
 
 const latin1 = (text: string) => Buffer.from(text, "utf8").toString("latin1");
 
-/** Replaces each `from` with its `to` in a byte stream, also across chunk boundaries. */
 function replacing(pairs: ReadonlyArray<readonly [string, string]>) {
   const keep = Math.max(...pairs.map(([from]) => from.length)) - 1;
   let pending = "";
@@ -85,7 +83,6 @@ const swappedHeaderValue = (
   return `Basic ${Buffer.from(swap(decoded)).toString("base64")}`;
 };
 
-/** The headers towards the upstream server, with credentials swapped in and hop-by-hop headers dropped. */
 export const requestHeaders = (
   rawHeaders: string[],
   swap: (text: string) => string,
@@ -109,7 +106,6 @@ export const requestHeaders = (
 const forwardable = (key: string, scrubbing: boolean) =>
   !HOP_BY_HOP.has(key) && !(scrubbing && key === "content-length");
 
-/** The headers towards the workspace, with credential values scrubbed and hop-by-hop headers dropped. */
 export const responseHeaders = (
   rawHeaders: string[],
   scrubbing: boolean,
@@ -127,12 +123,10 @@ export const responseHeaders = (
   return headers;
 };
 
-/** A used credential with the value read for it. */
 type SwappedValue = { grant: CredentialGrant; value: string };
 
 type ReadFailure = { name: string; message: string };
 
-/** The credentials whose placeholder the request carries in its headers: the only ones it reads. */
 const usedGrants = (
   grants: readonly CredentialGrant[],
   request: http.IncomingMessage,
@@ -151,7 +145,6 @@ const usedGrants = (
   return [...used.values()];
 };
 
-/** Reads every used credential's value; any failure keeps the request from being sent. */
 const readValues = async (
   used: readonly CredentialGrant[],
   read: (name: string) => Promise<string>,
@@ -178,7 +171,6 @@ const readValues = async (
   return { values, failures };
 };
 
-/** Answers 502 without sending the request, naming each credential that couldn't be read. */
 const refuse = (
   request: http.IncomingMessage,
   response: http.ServerResponse,
@@ -193,7 +185,6 @@ const refuse = (
   );
 };
 
-/** Ends the workspace's TLS with a certificate from the bot's authority and answers HTTP over it. */
 export async function answerOverTls(
   client: net.Socket,
   host: string,

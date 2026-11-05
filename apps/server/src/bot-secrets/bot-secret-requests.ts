@@ -5,12 +5,10 @@ import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { botSecretRequests, parseHosts, type BotSecretKind } from "./schema";
 
-/** A bot's request for a credential or login, waiting for the owner. */
 export type BotSecretRequest = {
   name: string;
   hosts: string[];
   reason: string;
-  /** Logins only: the site asks for a one-time code too. */
   oneTimeCode: boolean;
   requestedAt: string;
 };
@@ -25,7 +23,6 @@ const requestOf = (
   requestedAt: row.requestedAt,
 });
 
-/** Bots asking the owner for a credential or login, answered by saving it or declining; the bot is told either way. */
 export class BotSecretRequests extends Context.Service<
   BotSecretRequests,
   {
@@ -90,7 +87,6 @@ export class BotSecretRequests extends Context.Service<
         return row && requestOf(row);
       }, Effect.orDie);
 
-      /** Deletes the request and tells the bot; false when there was none. */
       const close = Effect.fnUntraced(function* (
         agentId: string,
         kind: BotSecretKind,

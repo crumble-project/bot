@@ -17,7 +17,6 @@ export type SendOptions = {
   attachments?: AttachmentInput[] | undefined;
 };
 
-/** An answer to a job's question; `by` names who answered when it is not the owner. */
 export type JobAnswerInput = {
   name: string;
   questionId: string;
@@ -45,7 +44,6 @@ const differsFrom = (
   (existing.replyTo ?? null) !== replyTo ||
   (existing.attachmentsDigest ?? null) !== attachmentsDigest;
 
-/** Everything that writes into a bot's chat, from an owner's message to a scheduled dispatch. */
 export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
   const { executions, runtime, settings } = context;
   const { conversation, withAgent } = deps.lookup;
@@ -53,7 +51,6 @@ export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
   const { forkPreview } = deps.announcements;
   const { admit, chat } = deps;
 
-  /** Admits one message to a chat, or returns the execution its request ID already names. */
   const send = Effect.fn("Bots.send")(function* (
     conversationId: string,
     content: string,

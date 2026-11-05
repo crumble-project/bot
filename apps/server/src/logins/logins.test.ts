@@ -28,7 +28,6 @@ afterEach(() => {
 
 const ITEM = "op://Vault/GitHub";
 
-/** A bot's logins over a fake 1Password holding `values`, connected with its token. */
 function open(values: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "crumble-logins-"));
   dirs.push(dir);
@@ -434,7 +433,6 @@ test("saving a requested login answers the request with one notice", async () =>
     oneTimeCode: true,
   });
 
-  // The request's hosts apply when the save names none.
   await bot.run(bot.logins.save(bot.agentId, "github", githubFields));
 
   expect(notices.map((notice) => notice.text)).toEqual([

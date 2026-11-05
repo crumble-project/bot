@@ -36,7 +36,6 @@ test("the bot holds control until the owner takes it, and every change counts", 
     changes: 1,
   });
 
-  // Setting the current holder again changes nothing.
   expect(control.set(agentId, "owner")).toMatchObject({
     holder: "owner",
     changes: 1,

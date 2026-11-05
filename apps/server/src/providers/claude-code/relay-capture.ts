@@ -39,7 +39,6 @@ const capturedMessage = z.looseObject({
   usage,
 });
 
-/** The assistant message the relay captured from the upstream stream. */
 export type CapturedMessage = z.infer<typeof capturedMessage>;
 
 const streamEvent = z.discriminatedUnion("type", [
@@ -100,7 +99,6 @@ const TEXT_DELTA_FIELDS = new Map<string, "text" | "thinking" | "signature">([
 
 const eventType = z.looseObject({ type: z.string() });
 
-/** Builds the upstream's assistant message from its server-sent events. */
 export class Capture {
   message: CapturedMessage | undefined;
   complete = false;
@@ -109,7 +107,6 @@ export class Capture {
   private readonly arguments = new Map<number, string>();
   private readonly unparsed: number[] = [];
 
-  /** Tool calls whose streamed arguments were not complete JSON; they were removed from the message. */
   get dropped() {
     return this.unparsed.length;
   }

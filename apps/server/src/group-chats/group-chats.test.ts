@@ -38,13 +38,11 @@ const textOf = (message: Message) =>
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("");
 
-/** How one bot answers a turn's input; a promise holds the turn open. */
 type Bot = (
   input: string,
   signal: AbortSignal | undefined,
 ) => AssistantMessage | Promise<AssistantMessage>;
 
-/** A model call that runs until its turn is aborted, as a provider request does. */
 const hang: Bot = (_input, signal) =>
   new Promise((_resolve, reject) =>
     signal?.addEventListener("abort", () => reject(new Error("aborted"))),
@@ -55,7 +53,6 @@ const say = (text: string) => fauxAssistantMessage([fauxText(text)]);
 const call = (name: string, args: Record<string, string> = {}) =>
   fauxAssistantMessage(fauxToolCall(name, args), { stopReason: "toolUse" });
 
-/** One scripted model plays every bot; the identity line of the prompt tells them apart. */
 function script(
   bots: Record<string, Bot>,
   inputs: Map<string, string[]>,
@@ -67,7 +64,6 @@ function script(
       .map((message) => JSON.stringify(message))
       .join("\n");
 
-    // Summaries for joining members are requests of their own, answered by the `summary` entry.
     const name = system.includes("Summarize this group chat")
       ? "summary"
       : (/You are (.+?), a bot on Crumble/.exec(system)?.[1] ?? "");
@@ -76,7 +72,6 @@ function script(
       (message) => message.role !== "system",
     )!;
 
-    // A tool result means the bot already acted; its final text closes the turn.
     if (last.role === "toolResult") return say("Done.");
     const input = textOf(last);
     inputs.set(name, [...(inputs.get(name) ?? []), input]);
@@ -99,7 +94,6 @@ const bot = (name: string, enabled = true, model = "chat") => ({
   delegates: [],
 });
 
-/** Answers of the account's vision model, on a provider of its own; none leaves the vision model off. */
 type VisionAnswers = string[];
 
 function open(dir: string, bots: Record<string, Bot>, vision?: VisionAnswers) {
@@ -190,7 +184,6 @@ async function until(check: () => boolean | Promise<boolean>) {
   expect(await check()).toBe(true);
 }
 
-/** Waits until no member has a running or queued turn. */
 const quiet = (groups: GroupChatsAccess, groupId: string) =>
   until(() =>
     groups
@@ -447,7 +440,6 @@ describe("group turns", () => {
     const turns = () =>
       (inputs.get("Ada")?.length ?? 0) + (inputs.get("Grace")?.length ?? 0);
 
-    // The owner's message starts one turn; bots start the budget's worth.
     expect(turns()).toBe(1 + GROUP_TURN_BUDGET);
     expect(groups.activity(group.id).botTurns).toBe(GROUP_TURN_BUDGET);
 
@@ -742,7 +734,6 @@ describe("joining members", () => {
     await groups.post(group.id, "@Ada are you in?", "r-3");
     await quiet(groups, group.id);
 
-    // Hopper's summary comes first; Ada's, when she rejoins, covers the message she missed.
     expect(inputs.get("summary")?.at(-1)).toContain("We leave on Friday");
     expect(inputs.get("Ada")!.at(-1)).toContain(
       "While you were away, the group chose Friday.",
@@ -816,7 +807,6 @@ describe("joining members", () => {
 });
 
 describe("attachments", () => {
-  // A 1×1 PNG.
   const png =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
 
@@ -1041,7 +1031,6 @@ describe("group turns across restarts", () => {
     await quiet(groups, group.id);
     expect(await botMessages(groups, group.id)).toHaveLength(1);
 
-    // As if the server stopped after posting but before recording it.
     const [turn] = store.listGroupTurns({ groupId: group.id });
     store.updateGroupTurn(turn!.executionId, { status: "posting" });
     await close();

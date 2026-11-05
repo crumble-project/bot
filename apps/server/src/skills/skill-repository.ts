@@ -18,7 +18,6 @@ import { skillDocuments, skills } from "./schema";
 
 export type SkillDocument = z.infer<typeof skillDocumentInput>;
 
-/** Skill names are the same name whatever their case. */
 export const skillNameKey = (name: string) => name.toLowerCase();
 
 export type NewSkill = SkillInput & {
@@ -44,7 +43,6 @@ const originOf = (json: string) => JSON.parse(json) as SkillOrigin;
 const isSkillState = (state: string): state is Skill["state"] =>
   SKILL_STATES.some((known) => known === state);
 
-/** What a skill's row holds besides its identity and times. */
 const contentColumns = (skill: Skill) => ({
   name: skill.name,
   description: skill.description,
@@ -58,7 +56,6 @@ const contentColumns = (skill: Skill) => ({
   origin: skill.origin ? JSON.stringify(skill.origin) : null,
 });
 
-/** The skill library: shared skills, each bot's own, and their reference documents. */
 export class SkillRepository extends Context.Service<
   SkillRepository,
   {
@@ -85,7 +82,6 @@ export class SkillRepository extends Context.Service<
     readonly discard: (skillId: string) => Effect.Effect<void>;
     /** Loading a skill counts as using it, and brings a stale skill back to active. */
     readonly recordUse: (skillId: string) => Effect.Effect<void>;
-    /** Bot-created skills across every bot, for the curator. */
     readonly listBotCreated: Effect.Effect<Skill[]>;
     /** A bot's inline `skills` write: matched by name, so a kept skill keeps its documents, provenance, and usage. */
     readonly replaceAgentSkills: (
@@ -359,7 +355,6 @@ export class SkillRepository extends Context.Service<
   );
 }
 
-/** The skill library behind a bot's `skills` field, which keeps only the two fields the bot's row shows. */
 export const agentSkillsLayer = Layer.effect(
   AgentSkills,
   Effect.gen(function* () {

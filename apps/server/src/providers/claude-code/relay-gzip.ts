@@ -19,7 +19,6 @@ const PROXY_ENV = ["https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"];
 const GO_BAD_JSON =
   /^bad json: (?:invalid character |unexpected EOF$|unexpected end of JSON input$|EOF$)/;
 
-/** Remembers that the origin refused a compressed body, so no later request compresses one. */
 export class GzipFallback {
   reason: string | undefined;
 
@@ -106,7 +105,6 @@ function bodyRejection(text: string) {
   return originRejection(raw);
 }
 
-/** Why the origin refused a gzip body, when it did; then the latch turns compression off for the process. */
 export function rejectionKind(status: number, headers: Headers, text: string) {
   if (![400, 403, 415].includes(status)) return undefined;
 
@@ -132,7 +130,6 @@ function gzipAllowedByEnv(env: Record<string, string | undefined>) {
   );
 }
 
-/** Whether a request to `upstream` may go compressed. */
 export const gzipEligible = (
   upstream: URL,
   env: Record<string, string | undefined>,

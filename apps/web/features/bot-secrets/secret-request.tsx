@@ -15,7 +15,6 @@ import {
 
 type AskedRequest = SecretRequest & { requestedAt?: string | undefined };
 
-/** A bot's request in the chat: the card `children` makes of it while it waits, then its outcome. */
 function SecretRequestCard<D, R extends AskedRequest>({
   icon,
   asked,
@@ -28,7 +27,6 @@ function SecretRequestCard<D, R extends AskedRequest>({
   asked: { name: string; requestedAt?: string | undefined };
   query: UseQueryOptions<D, Error, D, string[]>;
   requestsOf: (data: D) => R[];
-  /** The bot's saved items of this type. */
   savedOf: (data: D) => Named[];
   children: (request: R) => ReactNode;
 }) {
@@ -59,7 +57,6 @@ function SecretRequestCard<D, R extends AskedRequest>({
   );
 }
 
-/** A request the owner hasn't answered: decline it here, or open `children`'s sheet to add what it asks for. */
 function SecretRequestPending({
   icon: Icon,
   request,
@@ -127,7 +124,6 @@ function SecretRequestPending({
   );
 }
 
-/** The chat card of a tool that asks the owner for a secret, for `TOOL_RESULTS`. */
 export const secretRequestResult = <D, R extends AskedRequest>({
   tool,
   icon,

@@ -71,7 +71,6 @@ export function meliousProvider() {
   });
 }
 
-/** Melious as a plugin: an OpenAI-compatible provider whose catalog loads per account. */
 export const meliousPlugin = (): CrumblePlugin => ({
   id: "melious",
   providers: [{ provider: meliousProvider() }],

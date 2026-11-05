@@ -7,7 +7,6 @@ import type { ProductDatabase } from "../shared/product-database";
 import type { Runner } from "../shared/runner";
 import { BotMessaging } from "./bot-messaging";
 
-/** Bot messaging over standalone bots, for a test without an account. */
 export const standaloneMessaging = (bots: {
   effects: Runner<
     Bots | BotRuntime | AgentRepository | ExecutionRepository | ProductDatabase

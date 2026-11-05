@@ -17,7 +17,6 @@ export const DRIVER_ARGS = "CRUMBLE_DRIVER_ARGS";
 
 const ENDED_SESSION = /session has ended/i;
 
-/** A field dropped when its shape is unexpected. */
 export const loose = <T extends z.ZodType>(schema: T) =>
   schema.optional().catch(undefined);
 
@@ -33,11 +32,9 @@ export type Window = z.infer<typeof windowSchema>;
 export const isChromium = (window: Window) =>
   window.app_name.startsWith("Chromium");
 
-/** The window as a job or the owner reads it. */
 export const windowName = (window: Window) =>
   `${window.app_name} "${window.title}"`;
 
-/** The same, with the id a job targets it by. */
 export const windowLine = (window: Window) =>
   `${window.window_id} ${windowName(window)}`;
 
@@ -47,10 +44,6 @@ const driverError = z.union([
   z.object({ code: loose(z.string()), message: loose(z.string()) }),
 ]);
 
-/**
- * A cua-driver tool result: the fields every action reads, each dropped when its shape is unexpected. Other fields pass
- * through for the tools that read them, such as the browser tools.
- */
 export const driverReply = z.looseObject({
   status: loose(z.string()),
   effect: loose(z.string()),
@@ -79,14 +72,11 @@ export const driverReply = z.looseObject({
 
 export type DriverReply = z.infer<typeof driverReply>;
 
-/** The window's tree as cua-driver sent it: the diff when it sent one. */
 export const replyTree = (reply: DriverReply) =>
   reply.tree_diff ?? reply.tree_markdown ?? "";
 
-/** What a scroll does when the call doesn't say. */
 export const SCROLL_DEFAULTS = { direction: "down", amount: 3 };
 
-/** A key or `+` combo as cua-driver names its keys. */
 export const comboKeys = (keys: string) =>
   keys.split("+").map((key) => key.trim().toLowerCase());
 
@@ -97,7 +87,6 @@ type DriverValue =
   | DriverValue[]
   | { [key: string]: DriverValue };
 
-/** Arguments for a cua-driver tool. */
 export type DriverArgs = Record<string, DriverValue>;
 
 // The reply stays as cua-driver sent it: URLs in it decide which host a login is for. Text is scrubbed when formatted.
@@ -181,9 +170,6 @@ export async function sh(
   return output;
 }
 
-/**
- * One cua-driver call; an ended session is started again, its snapshots dropped, and the call retried once.
- */
 export async function driverCall(
   state: ComputerUseState,
   tool: string,
@@ -253,11 +239,9 @@ const DESKTOP_CHROME = new Set(DESKTOP_CHROME_APPS);
 export async function listWindows(state: ComputerUseState, context: Context) {
   const { reply } = await driverCall(state, "list_windows", {}, context);
 
-  // A refused listing is not an empty desktop.
   if (!reply.windows && refusalOf(reply))
     throw new Error(messageOf(reply) ?? codeOf(reply) ?? "list_windows failed");
 
-  // The panel and the wallpaper are desktop chrome, not windows a job works in.
   return (reply.windows ?? []).filter(
     (each) => !DESKTOP_CHROME.has(each.app_name.toLowerCase()),
   );

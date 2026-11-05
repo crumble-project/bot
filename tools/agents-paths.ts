@@ -14,7 +14,6 @@ const files = Bun.spawnSync([
   .split("\n")
   .filter(Boolean);
 
-// Package names such as `@scope/name` are not paths.
 const looksLikePath = (token: string) =>
   /^[\w.-]+(\/[\w.@-]+)+\/?$|^[\w-]+\.(md|ts|tsx|json|toml|yaml)$/.test(token);
 

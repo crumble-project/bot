@@ -20,7 +20,6 @@ const webSearchSettingsQuery = {
 const refresh = () =>
   queryClient.invalidateQueries({ queryKey: webSearchSettingsQuery.queryKey });
 
-/** The account's web search: which provider bots use, and the keys its providers need. */
 export function WebSearchPage() {
   const settings = useQuery(webSearchSettingsQuery);
 

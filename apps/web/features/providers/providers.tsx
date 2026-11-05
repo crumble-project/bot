@@ -103,7 +103,6 @@ function useProviderCredential(provider: Provider) {
 
 type ProviderCredential = ReturnType<typeof useProviderCredential>;
 
-/** Set-up providers keep their actions in the row menu; others show how to set them up. */
 function providerSignInAvailable(provider: Provider) {
   return (
     provider.authMethods.some((method) => method.type === "oauth") &&
@@ -236,7 +235,6 @@ function ProviderRow({
   );
 }
 
-/** Why a provider that signs in outside Crumble can't run; signed in or out already shows in its status. */
 function externalProblem(provider: Provider) {
   const status = provider.externalAuth?.status;
 
@@ -245,7 +243,6 @@ function externalProblem(provider: Provider) {
     : undefined;
 }
 
-/** A failed save outside the key sheet, and why a provider that signs in outside Crumble can't run. */
 function ProviderNotes({
   provider,
   credential,
@@ -267,7 +264,6 @@ function ProviderNotes({
   );
 }
 
-/** The provider's API key, typed in or read from a connected password manager. */
 function ProviderKeySheet({
   provider,
   credential,
@@ -299,7 +295,6 @@ function ProviderKeySheet({
   );
 }
 
-/** A provider that signs in outside Crumble: its menu copies the command to run on the server. */
 function ExternalActions({
   external,
 }: {
@@ -320,7 +315,6 @@ function ExternalActions({
   );
 }
 
-/** Stays open after a click so it can say the command was copied. */
 function CopyCommandItem({
   command,
   label,
@@ -381,7 +375,6 @@ function ProviderSection({
   );
 }
 
-/** Every provider once, set-up ones first: sign in with an account, add a key, or remove either. */
 export function ProvidersSettings() {
   const providers = useQuery(providersQuery);
   const [search, setSearch] = useState("");

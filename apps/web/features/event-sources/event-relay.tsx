@@ -267,7 +267,6 @@ function SourcesSection() {
   );
 }
 
-/** The account's event relay and the event sources on it. */
 export function EventRelayPage() {
   const relay = useQuery(eventRelayQuery);
 

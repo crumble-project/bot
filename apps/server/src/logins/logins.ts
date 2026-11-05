@@ -44,28 +44,20 @@ export const loginRequestInput = z.object({
   name: loginName,
   hosts: credentialHosts,
   reason: requestReason,
-  /** Whether the site asks for a one-time code too. */
   one_time_code: z.boolean().optional(),
 });
 
 export type LoginRequestInput = z.infer<typeof loginRequestInput>;
 
-/** One fill of a login field into a page. */
 export type LoginUse = z.infer<typeof loginUseResponse>;
 
-/** What a login's use records beyond its host: the field filled. */
 const useDetail = z.object({ field: loginFieldInput });
 
 const ONE_TIME_SECRET =
   "The one-time code needs its secret in base32, or an otpauth://totp/ URI";
 
-/** A save's change to one field: a new secret, or null to remove it. */
 type FieldWrite = { field: LoginField; input: SecretInput | null };
 
-/**
- * Logins the owner gives a bot for its desktop jobs: a username and password, with an optional one-time code, for
- * named hosts. Values are read only to fill them into a page.
- */
 export class Logins extends Context.Service<
   Logins,
   {
@@ -74,7 +66,6 @@ export class Logins extends Context.Service<
       agentId: string,
       name: string,
     ) => Effect.Effect<Login | undefined>;
-    /** The bot's requests for logins the owner has not answered. */
     readonly requests: (agentId: string) => Effect.Effect<BotSecretRequest[]>;
     readonly request: (
       agentId: string,
@@ -90,7 +81,6 @@ export class Logins extends Context.Service<
       name: string,
       input: LoginSaveInput,
     ) => Effect.Effect<Login, AppError>;
-    /** Deletes a login, or declines a request for one. */
     readonly delete: (
       agentId: string,
       name: string,
@@ -163,7 +153,6 @@ export class Logins extends Context.Service<
         useDetail,
       );
 
-      /** A one-time code's secret must parse, wherever it is read from; a computed code needs no check. */
       const verifyField =
         (field: LoginField, input: SecretInput) => (value: Redacted.Redacted) =>
           field === "one_time_code" &&
@@ -172,7 +161,6 @@ export class Logins extends Context.Service<
             ? Effect.fail(new InvalidInput({ message: ONE_TIME_SECRET }))
             : Effect.void;
 
-      /** The fields an item fills; its one-time code only when the item has one. */
       const itemWrites = Effect.fnUntraced(function* (item: SecretReference) {
         const { passwordManager } = item;
         const fields = managers.itemFields(passwordManager, item.reference);
@@ -272,7 +260,6 @@ export class Logins extends Context.Service<
           {
             alreadyYours: (existing) =>
               `Login ${input.name} is already yours for ${hostsText(existing.hosts)}`,
-            // A login that covers the hosts still answers a request for a one-time code it lacks.
             lacks: (existing) =>
               input.one_time_code === true && !existing.fields.one_time_code,
           },
@@ -333,7 +320,6 @@ const SYNC_LOGINS = [
   "recordUse",
 ] as const;
 
-/** Logins for code outside Effect: HTTP handlers and the computer_use tool. */
 export type LoginsAccess = Omit<
   Access<Logins["Service"], (typeof SYNC_LOGINS)[number]>,
   "value"
@@ -363,7 +349,6 @@ export function loginsAccess(runtime: Runner<Logins>): LoginsAccess {
   };
 }
 
-/** One bot's logins, as its desktop jobs' computer_use tool reaches them. */
 export const loginFill = (
   logins: LoginsAccess,
   agentId: string,
@@ -378,7 +363,6 @@ export const loginFill = (
   recordUse: async (name, use) => logins.recordUse(agentId, name, use),
 });
 
-/** What a desktop job reads about the bot's logins; undefined without any. */
 export function jobLoginSection(logins: readonly Login[]) {
   if (!logins.length) return undefined;
 
@@ -389,7 +373,6 @@ export function jobLoginSection(logins: readonly Login[]) {
   ].join("\n");
 }
 
-/** The bot's `request_login` tool and what it knows about its logins, for bots with desktop jobs. */
 export function loginExtension(agentId: string, logins: LoginsAccess) {
   const request = secretRequestTool({
     name: REQUEST_LOGIN_TOOL_NAME,

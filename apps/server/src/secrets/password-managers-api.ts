@@ -41,7 +41,6 @@ const list = Effect.gen(function* () {
   };
 });
 
-/** Signs in once to check the token, then saves it and drops the client and values read with the old one. */
 const connect = Effect.fnUntraced(function* (
   id: PasswordManagerId,
   token: Redacted.Redacted,
@@ -77,7 +76,6 @@ const disconnect = Effect.fnUntraced(function* (id: PasswordManagerId) {
   yield* SecretValues.use((values) => values.disconnect(id));
 });
 
-/** The account's password managers: listing them, connecting one with a token, and disconnecting one. */
 export function registerPasswordManagerRoutes(options: {
   register: Register;
   run: Runner<PasswordManagerServices>;

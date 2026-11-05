@@ -36,7 +36,6 @@ const LEVELS = THINKING_LEVELS.map((value) => ({
   label: LEVEL_LABELS[value],
 }));
 
-/** The levels `model` takes; a model ID outside the catalog may take any. */
 export const levelsOf = (model?: Model): readonly ThinkingLevel[] =>
   model?.thinkingLevels ?? THINKING_LEVELS;
 
@@ -111,7 +110,6 @@ export function ReasoningSelect({
   );
 }
 
-/** The composer's level picker; it saves to the bot, so the next turn uses it. Hidden for models that don't reason. */
 export function BotReasoning({ bot }: { bot: Bot }) {
   const models = useQuery(modelsQuery(bot.provider)).data;
   const levels = levelsOf(models?.find((model) => model.id === bot.model));

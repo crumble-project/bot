@@ -7,10 +7,8 @@ import type {
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { WORKSPACE_PATH } from "../../workspace-image/guest";
 
-/** The workspace notes, relative to the workspace: the bot and every job of it read them in their prompts. */
 export const WORKSPACE_NOTES_FILE = ".crumble/notes.md";
 
-/** Notes past this many bytes are cut, so a runaway file can't crowd out the job's prompt. */
 export const WORKSPACE_NOTES_MAX_BYTES = 4096;
 
 export const WORKSPACE_NOTES_SECTION = "workspace_notes";
@@ -20,7 +18,6 @@ export const WORKSPACE_SECTION = "workspace";
 
 const NOTES_PATH = `${WORKSPACE_PATH}/${WORKSPACE_NOTES_FILE}`;
 
-/** How a program outlives the command that starts it. */
 export const SETSID_COMMAND = `setsid <command> > ${WORKSPACE_PATH}/<name>.log 2>&1 < /dev/null &.`;
 
 const CUT_MARKER = `[Cut: the notes are over ${WORKSPACE_NOTES_MAX_BYTES / 1024} KB.]`;
@@ -32,7 +29,6 @@ const UPDATE =
 const USE_NOTES =
   "Use them instead of rediscovering, and fix a line that proves wrong.";
 
-/** The notes' text, cut at the last whole line within the limit; undefined when there are none. */
 export async function readWorkspaceNotes(
   env: ExecutionEnv,
   context: Context,

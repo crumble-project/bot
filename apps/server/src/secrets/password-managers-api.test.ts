@@ -28,7 +28,6 @@ afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
 });
 
-/** The password manager routes over a fake 1Password holding `REFERENCE`. */
 const setup = (state: FakePasswordManager) => {
   const dir = mkdtempSync(join(tmpdir(), "crumble-password-managers-api-"));
   const store = new Store(dir);

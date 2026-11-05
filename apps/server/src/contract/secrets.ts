@@ -72,7 +72,6 @@ export const passwordManagerIdInput = z.enum(PASSWORD_MANAGER_IDS);
 /** Settings key of a password manager: never rename. */
 export type PasswordManagerId = z.infer<typeof passwordManagerIdInput>;
 
-/** Where to read a secret's value instead of storing it: a password manager and a reference it understands. */
 const secretReferenceInput = z.object({
   passwordManager: passwordManagerIdInput,
   reference: z.string().trim().min(1).max(1000),
@@ -95,7 +94,6 @@ export const secretInput = z
 
 export type SecretInput = z.infer<typeof secretInput>;
 
-/** What a response tells about a secret, never its value. */
 export type SecretStatus = {
   configured: boolean;
   /** The password manager the value is read from; null for a value stored in Crumble or no value. */

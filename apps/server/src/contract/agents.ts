@@ -71,7 +71,6 @@ export const agentInput = z.object({
     )
     .max(MAX_BOT_SKILLS)
     .default([]),
-  /** Shared skills from the skill library this bot uses, besides its own `skills`. */
   sharedSkills: z.array(z.uuid()).max(MAX_BOT_SKILLS).optional(),
   /** Ignored: a bot with memory always uses shared memory too. */
   sharedMemory: z.boolean().optional(),

@@ -20,7 +20,6 @@ const stored = judgeModelInput.shape.judgeModel
   .optional()
   .catch(undefined);
 
-/** The judge model the owner chose; undefined means the default. */
 export const chosenJudge = SettingsRepository.use((r) =>
   r.get(JUDGE_MODEL),
 ).pipe(Effect.map((value): JudgeModelRef | undefined => stored.parse(value)));
@@ -34,7 +33,6 @@ const choiceOf = (model: AnyModel) => ({
     : ("chat" as const),
 });
 
-/** The account's judge model: the owner's choice, the model judging now, and every model that could. */
 export function registerJudgeModelRoutes(options: {
   register: Register;
   run: Runner<SettingsRepository>;

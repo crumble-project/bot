@@ -263,7 +263,6 @@ describe("operational activity", () => {
   });
 
   test("pages bots and changes newest first without gaps or repeats", async () => {
-    // Text messages make some pages empty of activity; timestamps interleave the bots.
     const transcript = (agentId: string, offset: number) =>
       Array.from({ length: 45 }, (_, entry): TranscriptMessage => {
         const base = {
@@ -302,7 +301,6 @@ describe("operational activity", () => {
         { id: "a", name: "A" },
         { id: "b", name: "B" },
       ],
-      // Two entries per page, so the five-page budget runs out mid-transcript.
       history: async (agent: { id: string }, before: string | undefined) => {
         const messages = transcripts.get(agent.id)!;
         const end = before ? Number(before.split(":")[1]) : messages.length;

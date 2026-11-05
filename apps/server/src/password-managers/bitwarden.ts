@@ -21,7 +21,6 @@ const sdk = Effect.tryPromise({
     }),
 });
 
-/** Bitwarden Secrets Manager, read with a machine account's access token through `@bitwarden/sdk-napi`. */
 export const bitwarden: PasswordManagerVendor = {
   id: "bitwarden",
   name: NAME,

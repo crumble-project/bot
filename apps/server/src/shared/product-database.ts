@@ -9,13 +9,11 @@ import {
   type SqliteDatabase,
 } from "./database";
 
-/** Runs `effect` as one transaction: a failure leaves nothing behind. */
 export const atomic =
   (db: SqliteDatabase) =>
   <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     db.transaction(() => effect).pipe(Effect.catchIf(isSqlError, Effect.die));
 
-/** An account's product database (store.sqlite): bots, chats, memories, skills, and everything they own. */
 export class ProductDatabase extends Context.Service<
   ProductDatabase,
   SqliteDatabase

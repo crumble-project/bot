@@ -34,7 +34,6 @@ function firstNotice(key: string) {
   return true;
 }
 
-/** The chat a reply belongs to. */
 export type ReplyChat = { kind: "bot" | "group"; id: string };
 
 const chatOf = ({ groupId, agentId }: ReplyEvent): ReplyChat =>
@@ -54,7 +53,6 @@ function canNotify() {
 const isShowing = (path: string) =>
   document.visibilityState === "visible" && location.pathname.endsWith(path);
 
-// Replies the owner hasn't seen, by the path of their chat; the tab title counts them.
 const unread = new Map<string, number>();
 let unreadTotal = 0;
 const unreadListeners = new Set<() => void>();
@@ -70,7 +68,6 @@ onSessionReset(() => {
   showUnread();
 });
 
-/** How many replies arrived for chats the owner wasn't looking at. */
 export function useUnreadCount() {
   return useSyncExternalStore(
     (listener) => {
@@ -82,7 +79,6 @@ export function useUnreadCount() {
   );
 }
 
-/** Clears the unread count of the chat on screen; call when the route or the tab's visibility changes. */
 export function markSeen() {
   for (const path of unread.keys()) if (isShowing(path)) unread.delete(path);
 
@@ -102,7 +98,6 @@ function noticeTitle(event: ReplyEvent) {
   return `${event.agentName}${job}`;
 }
 
-/** What a notification is about: a reply, or a bot waiting for an approval or for a credential or login. */
 export type NoticeKind = "reply" | "approval" | "credential";
 
 function noticeKind({ waitingFor }: ReplyEvent): NoticeKind {
@@ -113,14 +108,12 @@ function noticeKind({ waitingFor }: ReplyEvent): NoticeKind {
     : "approval";
 }
 
-/** Plays a notification's sound; each kind sounds different, so the owner hears what is asked before looking. */
 export function playNotice(kind: NoticeKind) {
   if (kind === "approval") play("attention");
   else if (kind === "credential") play("attention", { theme: "mech" });
   else play("ready");
 }
 
-/** Sounds a notice of `kind`, and shows it when the browser allows; the sounds page tests with this too. */
 export function showNotice(
   kind: NoticeKind,
   title: string,
@@ -138,13 +131,11 @@ export function showNotice(
   });
 }
 
-/** How the app reaches a chat; the router owns its URLs. */
 export type ChatLinks = {
   open: (chat: ReplyChat) => void;
   pathOf: (chat: ReplyChat) => string;
 };
 
-/** Counts a reply as unread unless its chat is on screen, and notifies the owner. */
 export function notifyReply(event: ReplyEvent, { open, pathOf }: ChatLinks) {
   const chat = chatOf(event);
   const path = pathOf(chat);

@@ -633,7 +633,6 @@ function QueryState({
   return pending ? <Skeleton className="h-64 w-full rounded-xl" /> : null;
 }
 
-/** Every message gateway the server offers, each opening its own page. */
 export function MessageGatewaysPage() {
   const gateways = useQuery(messageGatewaysQuery);
 
@@ -662,7 +661,6 @@ export function MessageGatewaysPage() {
   );
 }
 
-/** One gateway's connection, token, bots, and access, without the page header. */
 export function MessageGatewaySettings({ gatewayId }: { gatewayId: string }) {
   const gateways = useQuery(messageGatewaysQuery);
   const bots = useQuery(botsQuery);

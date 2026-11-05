@@ -5,7 +5,6 @@ import { BotAvatar } from "@/components/bot-avatar";
 import { cn } from "@/lib/utils";
 import { assignSkill } from "./api";
 
-/** Pressed pills, one per bot, for choosing which bots have a skill. */
 export function BotToggles({
   label,
   bots,
@@ -51,7 +50,6 @@ export function BotToggles({
   );
 }
 
-/** A copy of `set` with `key` in it when `on`, without it otherwise. */
 export function toggled(set: Set<string>, key: string, on: boolean) {
   const next = new Set(set);
 
@@ -61,7 +59,6 @@ export function toggled(set: Set<string>, key: string, on: boolean) {
   return next;
 }
 
-/** The bots whose shared skills include `skillId`. */
 export const botsUsing = (bots: Bot[], skillId: string) =>
   new Set(
     bots.flatMap((bot) =>
@@ -69,7 +66,6 @@ export const botsUsing = (bots: Bot[], skillId: string) =>
     ),
   );
 
-/** Turns a shared skill on for the `selected` bots and off for the rest, changing only bots that differ. */
 export async function assignSharedSkill(
   skillId: string,
   bots: Bot[],
@@ -86,7 +82,6 @@ export async function assignSharedSkill(
   );
 }
 
-/** A form field choosing which bots use a shared skill. */
 export function UsedByField({
   bots,
   selected,

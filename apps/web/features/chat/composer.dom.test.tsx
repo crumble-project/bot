@@ -40,7 +40,6 @@ async function withComposer(
       ),
     );
 
-  // Leaving the chat unmounts its composer; coming back mounts a new one.
   const remount = async () => {
     await act(async () => root.unmount());
     root = createRoot(container);

@@ -13,14 +13,11 @@ import {
 } from "./skill-library";
 import { SkillRepository } from "./skill-repository";
 
-/** The skills a bot can read and the ones it may write: the server's defaults, shared skills it uses, and its own. */
 export class BotSkills extends Context.Service<
   BotSkills,
   {
-    /** Defaults, shared skills the bot uses, and its own, archived ones excluded. */
     readonly available: (agent: Agent) => Effect.Effect<AvailableSkill[]>;
     readonly used: (skill: AvailableSkill) => Effect.Effect<void>;
-    /** The bot's own skills, archived ones excluded. */
     readonly own: (agentId: string) => Effect.Effect<Skill[]>;
     readonly create: (
       agentId: string,
@@ -89,7 +86,6 @@ export class BotSkills extends Context.Service<
         return { ...skill, agentId: skill.agentId };
       });
 
-      /** The bot's own skill, which it may change unless the owner pinned it. */
       const writableBy = Effect.fnUntraced(function* (skillId: string) {
         const skill = yield* ownedBy(skillId);
 

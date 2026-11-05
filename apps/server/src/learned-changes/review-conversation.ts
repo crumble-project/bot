@@ -5,10 +5,6 @@ import {
   type DocumentReader,
 } from "@earendil-works/pi-durable";
 
-/**
- * Marks a bot's conversation as the review of one execution: the group chat that execution ran in, what it may
- * write, which stores it reviews, and how many characters of model input the whole review may spend.
- */
 export const ReviewConversation = defineDoc<{
   executionId: string | null;
   groupId: string | null;
@@ -31,7 +27,6 @@ export const ReviewConversation = defineDoc<{
   checkpointWhen: () => false,
 });
 
-/** The review a conversation is; null for any other conversation. */
 export const reviewOf = async (
   reader: DocumentReader,
   conversationId: ConversationId,

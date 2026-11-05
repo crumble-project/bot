@@ -18,7 +18,6 @@ type Services =
 
 type Exec = Runner<Services>["runSync"];
 
-/** The account-wide activity feed, oldest pages first, from the bots' chat history and learned changes. */
 export function registerActivityRoutes(options: {
   register: Register;
   service: BotLookup;

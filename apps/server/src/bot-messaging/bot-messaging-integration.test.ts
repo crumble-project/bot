@@ -288,7 +288,6 @@ const toolsOf = (context: { messages: Message[] }) =>
       : [],
   );
 
-/** Magnum delegates a build, and answers a job's question relayed to it. */
 const magnumScript: FauxResponseFactory = (context) => {
   const last = lastOf(context);
   const text = textOf(last);
@@ -302,7 +301,6 @@ const magnumScript: FauxResponseFactory = (context) => {
   return toolCall("delegate", { agentId: CODER, task: "Build the site" });
 };
 
-/** Coder starts a coding job for the delegated task; its job asks once, after `asking` resolves, then finishes. */
 const coderScript =
   (asking: Promise<void>): FauxResponseFactory =>
   async (context) => {
@@ -334,7 +332,6 @@ const coderScript =
     });
   };
 
-/** Magnum, allowed to delegate to Coder, and Coder, who runs coding jobs; Magnum's message has delegated the build. */
 async function delegatedBuild(asking: Promise<void>) {
   const dir = mkdtempSync(join(tmpdir(), "bot-messaging-jobs-"));
   const workspace = join(dir, "workspace");
@@ -456,7 +453,6 @@ test("a delegation whose bot started a job stays pending until the job's report 
   try {
     const { messaging, delegation } = world;
 
-    // The assignee's turn is over, but the job it started still works.
     expect(world.store.getExecution(delegation.id)?.status).toBe("done");
 
     expect(
@@ -504,7 +500,6 @@ test("a job's question goes to the bot that delegated its task, whose answer res
       name: "Coder",
     });
 
-    // The owner still sees the question in the assignee's chat.
     const card = (await world.coderMessages()).find(
       (message) => message.kind === "job-question",
     );
@@ -520,7 +515,6 @@ test("a job's question goes to the bot that delegated its task, whose answer res
       ),
     );
 
-    // The reporter's answer closed the question; the owner's comes too late.
     await expect(
       service.answerJob(CODER, "coding", {
         name: "builder",

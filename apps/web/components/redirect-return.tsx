@@ -8,13 +8,11 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
-/** Finishes with the redirect's parameters and navigates away; rejects with the message to show. */
 type Finish = (
   params: URLSearchParams,
   navigate: UseNavigateResult<string>,
 ) => Promise<void>;
 
-/** A page an outside service sends the owner back to: finishes once, then navigates away or shows why it couldn't. */
 export function RedirectReturn({
   finish,
   pending,

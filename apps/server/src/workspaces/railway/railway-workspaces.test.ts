@@ -125,7 +125,6 @@ describe("Railway machines when Railway fails", () => {
     const commands: string[] = [];
     const fake = { destroyed: 0, commands };
 
-    // Own properties shadow the SDK's getters and methods, so nothing reaches Railway.
     const sandbox: Sandbox = Object.create(Sandbox.prototype, {
       id: { value: id },
       status: { value: "RUNNING" },
@@ -383,7 +382,6 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
       secret: { value },
     });
 
-    // Stands in for example.com: the proxy checks the real name's public address, then dials this server instead.
     const upstream = tls.createServer(
       {
         SNICallback: (name, done) =>
@@ -514,7 +512,6 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
   test("a server that died leaves its sandbox running for the next server", async () => {
     const module = path.join(import.meta.dir, "railway-workspaces.ts");
 
-    // Exits without close(): no checkpoint, the sandbox keeps running.
     const killed = Bun.spawn(
       [
         process.execPath,

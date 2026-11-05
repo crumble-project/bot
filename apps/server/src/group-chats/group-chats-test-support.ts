@@ -14,10 +14,6 @@ import {
 } from "./group-chats";
 import type { GroupTranscripts } from "./group-transcripts";
 
-/**
- * Group chats over standalone bots and `transcripts`, for a test without an account. Closing them stops their
- * background work and closes the transcripts; the bots stay open.
- */
 export function standaloneGroupChats(
   bots: {
     effects: Runner<

@@ -18,7 +18,6 @@ import type { Message } from "./api";
 
 type Stat = Extract<DisplayDetails, { kind: "stats" }>["items"][number];
 
-/** The `show` tool's component, from a successful tool result; unknown kinds are dropped. */
 const displayOf = (message: Message) =>
   toolDetailsOf(message, displayDetails, DISPLAY_TOOL_NAME);
 
@@ -268,7 +267,6 @@ function ChartNode({ node, id }: { node: Node; id: string }) {
   );
 }
 
-/** Draws the server-compiled chart, choosing the widest layout that fits. */
 function Chart({ layouts }: { layouts: ChartLayout[] }) {
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);

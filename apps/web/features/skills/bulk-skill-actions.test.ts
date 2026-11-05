@@ -65,8 +65,6 @@ test("assignments make bounded progress across independent bots and observe ever
   const pending = applyBulkAction("assign", [skill], bots);
 
   try {
-    // All first four requests start synchronously at the fetch seam. None may
-    // settle until this test releases its gate: no timing or network dependency.
     expect(started).toEqual(["a", "b", "c", "d"]);
     gates[1]!.resolve(Response.json({ error: "Denied" }, { status: 500 }));
     await fifthStarted.promise;

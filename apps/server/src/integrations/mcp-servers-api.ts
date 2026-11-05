@@ -10,12 +10,10 @@ type McpServerRoutesOptions = {
   run: Runner<McpServers>;
 };
 
-/** The account's MCP servers, and the OAuth sign-in flow for the ones that need it. */
 const registerMcpAuthRoutes = ({ register, run }: McpServerRoutesOptions) => {
   register(routes.mcpServers, async (c) =>
     c.json(await run.runPromise(McpServers.use((s) => s.list)), 200),
   );
-  // OAuth sign-in: the client opens the returned URL, then posts back the code, state and issuer it receives.
   register(routes.oauth, async (c) => {
     const { redirectUri } = c.req.valid("json");
 
@@ -44,7 +42,6 @@ const registerMcpAuthRoutes = ({ register, run }: McpServerRoutesOptions) => {
   );
 };
 
-/** Adding, editing, and deleting MCP servers. */
 const registerMcpServerEditRoutes = (options: McpServerRoutesOptions) => {
   const { register, service, run } = options;
 
@@ -80,7 +77,6 @@ const registerMcpServerEditRoutes = (options: McpServerRoutesOptions) => {
   });
 };
 
-/** The MCP server routes, in the order the contract document lists them. */
 export function registerMcpServerRoutes(options: McpServerRoutesOptions) {
   registerMcpAuthRoutes(options);
   registerMcpServerEditRoutes(options);

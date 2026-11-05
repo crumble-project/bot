@@ -32,10 +32,8 @@ import { z } from "zod";
 import { SettingsRepository } from "../shared/settings-repository";
 import { ASK_ABOUT_IMAGE_TOOL_NAME } from "../contract/tools";
 
-/** The account's vision model, as the owner chose it in Settings. */
 export type VisionModelRef = { provider: string; model: string };
 
-/** The setting that holds the vision model; absent means off. */
 export const VISION_MODEL = "vision-model";
 
 const stored = z
@@ -43,22 +41,18 @@ const stored = z
   .optional()
   .catch(undefined);
 
-/** The vision model a stored setting names; undefined means off. */
 export const parseVisionModel = (
   value: JsonValue | undefined,
 ): VisionModelRef | undefined => stored.parse(value);
 
-/** The vision model the owner chose; undefined means off. */
 export const chosenVisionModel = SettingsRepository.use((r) =>
   r.get(VISION_MODEL),
 ).pipe(Effect.map(parseVisionModel));
 
 export const VISION_EXTENSION = "vision";
 
-/** Characters of an image's hash the bot sees as its id. */
 const SHORT_ID_LENGTH = 8;
 
-/** Entries read per page while looking for an image the bot asks about. */
 const ENTRY_PAGE = 50;
 
 const DESCRIBE_INSTRUCTIONS =
@@ -69,7 +63,6 @@ const DESCRIBE_PROMPT = "Describe this image.";
 const ASK_INSTRUCTIONS =
   "You answer an assistant's question about an image it cannot see. Answer from what the image shows, quoting visible text verbatim where it matters. Say so when the image doesn't show the answer. Reply with the answer only.";
 
-/** Image descriptions by the vision model, keyed by the SHA-256 of the image's base64 data. */
 export const VisionDescriptions = defineDoc<{
   descriptions: Record<string, string>;
 }>({
@@ -87,25 +80,20 @@ export const VisionDescriptions = defineDoc<{
 export const readsImages = (model: { input?: readonly string[] } | undefined) =>
   !model?.input || model.input.includes("image");
 
-/** Whether the vision model stands in for `model`: one is set and `model` can't read images itself. */
 export const describesImages = (
   vision: VisionModelRef | undefined,
   model: { input?: readonly string[] } | undefined,
 ) => vision !== undefined && !readsImages(model);
 
-/** The SHA-256 of an image's base64 data: its key in the description cache. */
 export const imageHash = (data: string) =>
   createHash("sha256").update(data).digest("hex");
 
-/** Whether the catalog says a model reads images; a vision model must, unlike a bot's model, which is trusted. */
 const listsImages = (model: { input?: readonly string[] }) =>
   model.input?.includes("image") ?? false;
 
-/** The chat models the account's keys reach that read images: the owner's choices of vision model. */
 export const visionChoices = async (models: Models) =>
   (await models.getAvailable()).filter(listsImages);
 
-/** The vision model `ref` names, when the catalog lists it and it reads images. */
 export async function visionModelOf(
   models: Models,
   ref: VisionModelRef,
@@ -118,7 +106,6 @@ export async function visionModelOf(
   return model && listsImages(model) ? model : undefined;
 }
 
-/** The call's usage, priced at the catalog's price when the provider left the cost out. */
 function pricedUsage(model: Model<Api>, usage: Usage): Usage {
   if (usage.cost.total > 0 || model.cost.input <= 0) return usage;
 
@@ -130,7 +117,6 @@ function pricedUsage(model: Model<Api>, usage: Usage): Usage {
 
 type Look = { text: string; usage: Usage } | { error: string; usage?: Usage };
 
-/** What a reply of the vision model says, priced; a failed or empty reply is an error that still spent. */
 function lookOf(model: Model<Api>, reply: AssistantMessage): Look {
   const usage = pricedUsage(model, reply.usage);
 
@@ -147,7 +133,6 @@ function lookOf(model: Model<Api>, reply: AssistantMessage): Look {
     : { error: "the vision model's answer was empty", usage };
 }
 
-/** One request to the vision model about one image; failures come back as an error with what they spent. */
 async function look(
   models: Models,
   model: Model<Api>,
@@ -227,7 +212,6 @@ const imagesOf = (message: Message): ImageContent[] =>
       )
     : [];
 
-/** The model of the conversation's next request, which alone decides what a request may carry. */
 async function requestModel(api: HookApi, context: Context) {
   const ref = (await api.snapshot(AgentDoc, api.conversationId, context))
     ?.model;
@@ -244,13 +228,11 @@ const failedText = (reason: string) =>
 type VisionOptions = {
   /** The bot's harness; the hook and tool run only once it is open. */
   harness: () => Harness | undefined;
-  /** The account's vision model, read at each use: the owner may change it at any time. */
   visionModel: () => VisionModelRef | undefined;
 };
 
 const failureMemo = (hash: string) => `vision-failed:${hash}`;
 
-/** One request's view of the vision model: the conversation's hook API, and the model when the catalog has it. */
 type Describer = {
   options: VisionOptions;
   chosen: VisionModelRef;
@@ -259,7 +241,6 @@ type Describer = {
   context: Context;
 };
 
-/** Commits a description and what asking for it spent, so later requests and turns reuse it. */
 async function remember(
   describer: Describer,
   model: Model<Api>,
@@ -282,10 +263,6 @@ async function remember(
   }, context);
 }
 
-/**
- * What stands in for one image the conversation has no description of. A failure is remembered for this generation
- * only, so its retries don't ask again, and the next turn does.
- */
 async function describeOne(
   describer: Describer,
   hash: string,
@@ -320,7 +297,6 @@ async function describeOne(
   return failedText(await api.memo(failureMemo(hash), result.error, context));
 }
 
-/** What stands in for each image of one request, by hash: a cached description, a new one, or a failure note. */
 async function standinsFor(
   options: VisionOptions,
   chosen: VisionModelRef,
@@ -355,13 +331,11 @@ async function standinsFor(
   ]);
 }
 
-/** `message` with each image replaced by what stands in for it. */
 function replaced(
   message: Message,
   hashes: Map<ImageContent, string>,
   standins: Map<string, string>,
 ): Message {
-  // Every image of the request has a hash and a stand-in: both were made from these messages.
   const swap = (block: TextContent | ImageContent): TextContent =>
     block.type === "image"
       ? { type: "text", text: standins.get(hashes.get(block)!)! }
@@ -378,7 +352,6 @@ function replaced(
   return message;
 }
 
-/** Stands descriptions in for a request's images while a vision model is set and the request's model can't read them. */
 function describeHook(options: VisionOptions) {
   return hook(GenerationTask, {
     beforeRequest: async ({ messages }, api, context) => {
@@ -411,7 +384,6 @@ function describeHook(options: VisionOptions) {
   });
 }
 
-/** The image block of the conversation's stored entries whose hash starts with `id`, newest first. */
 async function findImage(
   harness: Harness,
   conversationId: ConversationId,
@@ -442,7 +414,6 @@ async function findImage(
   return undefined;
 }
 
-/** The vision model and the image the bot asks about; throws what the bot should hear when either is missing. */
 async function askTarget(
   options: VisionOptions,
   models: Models,
@@ -473,7 +444,6 @@ async function askTarget(
   return { model, image };
 }
 
-/** Lets the bot ask the vision model a question about an image it received as a description. */
 function askTool(options: VisionOptions) {
   return defineTool({
     name: ASK_ABOUT_IMAGE_TOOL_NAME,
@@ -523,11 +493,6 @@ function askTool(options: VisionOptions) {
   });
 }
 
-/**
- * The vision extension. Its generation hook stands a description in for every image of a request whose model can't read
- * images, while the account has a vision model; the stored transcript keeps the image. `ask_about_image` lets the bot
- * ask the vision model about one of those images; the runtime offers it only where the hook describes.
- */
 export function visionExtension(options: VisionOptions) {
   const ask = askTool(options);
 

@@ -7,14 +7,10 @@ import { learningStore } from "./store-learning";
 
 export type StoreRun = <A>(effect: Effect.Effect<A, never, CoreServices>) => A;
 
-/** An account's product database for tests to set up and inspect: each method runs a repository effect synchronously. */
 export class Store {
-  /** Runs effects on the account's services, such as the standalone features a test builds. */
   readonly runtime: Runner<CoreServices>;
-  // Only a store that opened its own database closes it; a shared runner belongs to the account.
   private readonly owned: Scope.Closeable | undefined;
 
-  /** Opens the product database in `source`, or runs over the account's services. */
   constructor(source: string | Runner<CoreServices>) {
     if (Predicate.isString(source)) {
       // Built in this fiber, unlike a ManagedRuntime's forked build, so runSync outlasts a long migration's yields.
@@ -27,7 +23,6 @@ export class Store {
       this.runtime = source;
     }
   }
-  /** Runs `effect` now on the account's services. */
   run<A>(effect: Effect.Effect<A, never, CoreServices>): A {
     return this.runtime.runSync(effect);
   }

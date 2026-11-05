@@ -34,15 +34,12 @@ const nameOf = (change: LearnedChange) => {
   return "name" in state ? state.name : state.content.slice(0, 80);
 };
 
-/** Reviews a bot's settled turns in the background and reports what they changed. */
 export class LearningReview extends Context.Service<
   LearningReview,
   {
     /** A review interrupted by a restart is dropped: its conversation is aborted and forgotten. */
     readonly recover: Effect.Effect<void>;
-    /** Counts the turn's tool activity and runs a review when a counter reaches its threshold. */
     readonly afterExecution: (execution: Execution) => Effect.Effect<void>;
-    /** The same for a coding job's turn: what it learned about a repository becomes the bot's skills. */
     readonly afterJob: (finished: JobFinished) => Effect.Effect<void>;
   }
 >()("crumble/learning/LearningReview") {
@@ -56,7 +53,6 @@ export class LearningReview extends Context.Service<
       const bots = yield* Bots;
       const running = new Set<string>();
 
-      // A reviewed turn: an execution, or a coding job's turn under the ID `jobTurnId` gives it.
       const review = Effect.fnUntraced(function* (
         turn: { id: string; conversationId: string },
         submissionId: string,
@@ -68,7 +64,6 @@ export class LearningReview extends Context.Service<
           agent,
         );
 
-        // The digest may take at most half the budget; the rest pays for the review's own requests.
         const report = yield* pi(() =>
           turnReport(
             runtime,
@@ -79,7 +74,6 @@ export class LearningReview extends Context.Service<
           ),
         );
 
-        // A write inside the turn restarts that store's count; only rounds after it count towards the next review.
         if (report.roundsSinceSkillWrite !== null)
           yield* reviews.setCounter(
             agent.id,
@@ -195,7 +189,6 @@ export class LearningReview extends Context.Service<
         ) {
           const { submissionId } = execution;
 
-          // Scheduled runs, event automations and group turns count too: the bot works in its workspace in all of them.
           if (execution.status === "done" && submissionId)
             yield* reviewOnce(execution, submissionId, execution.agentId);
         }),
@@ -224,7 +217,6 @@ export class LearningReview extends Context.Service<
   );
 }
 
-/** Drops the reviews a restart interrupted, then reviews each settled turn until the layer's scope closes. */
 export const learningReviews = Layer.effectDiscard(
   Effect.gen(function* () {
     const learning = yield* LearningReview;

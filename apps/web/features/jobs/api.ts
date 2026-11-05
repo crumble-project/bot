@@ -28,7 +28,6 @@ export const jobsQuery = (id: string, kind: JobKind) =>
         : IDLE_REFRESH_MS,
   });
 
-/** A bot's jobs of one kind, for everything that shows them. */
 export const useJobs = (id: string, kind: JobKind) =>
   useQuery(jobsQuery(id, kind));
 

@@ -6,7 +6,6 @@ import type { BotsContext } from "./bots-context";
 
 export type BotsLookup = ReturnType<typeof botsLookup>;
 
-/** The bot or the chat an operation names, failing with `NotFound` when it is archived or gone. */
 export const botsLookup = (context: BotsContext) => {
   const { agents, conversations } = context;
 
@@ -30,7 +29,6 @@ export const botsLookup = (context: BotsContext) => {
     return { conversation: found, agent: yield* agent(found.agentId) };
   });
 
-  /** Runs a runtime call for the bot `agentId` names. */
   const withAgent = <A>(agentId: string, run: (owner: Agent) => Promise<A>) =>
     agent(agentId).pipe(Effect.flatMap((owner) => pi(() => run(owner))));
 

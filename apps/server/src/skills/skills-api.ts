@@ -12,11 +12,9 @@ type Services = OwnerSkills | SkillInstaller | SkillRepository;
 type SkillRoutesOptions = {
   register: Register;
   service: BotLookup;
-  /** Runs the skill routes' effects. */
   run: Runner<Services>;
 };
 
-/** The skills one bot owns. */
 export const registerBotSkillRoutes = (options: SkillRoutesOptions) => {
   const { register, service, run } = options;
 
@@ -87,7 +85,6 @@ export const registerBotSkillRoutes = (options: SkillRoutesOptions) => {
   });
 };
 
-/** The shared skills every bot may use, including the default ones the server ships with. */
 const registerSharedSkillRoutes = ({ register, run }: SkillRoutesOptions) => {
   register(routes.skills, async (c) =>
     c.json(await run.runPromise(OwnerSkills.use((s) => s.catalog)), 200),
@@ -131,7 +128,6 @@ const registerSharedSkillRoutes = ({ register, run }: SkillRoutesOptions) => {
   });
 };
 
-/** Installing shared skills from GitHub and updating them from upstream. */
 const registerSkillInstallRoutes = (options: SkillRoutesOptions) => {
   const { register, service, run } = options;
 
@@ -183,7 +179,6 @@ const registerSkillInstallRoutes = (options: SkillRoutesOptions) => {
   );
 };
 
-/** The shared skills and their installs; `app/api.ts` registers the learning routes before them, as the contract lists them. */
 export function registerSkillRoutes(options: SkillRoutesOptions) {
   registerSharedSkillRoutes(options);
   registerSkillInstallRoutes(options);

@@ -22,7 +22,6 @@ import {
   MAX_SKILL_NAME_CHARS,
 } from "../shared/limits";
 
-/** Where to look for skills: a repository, optionally a branch, and a folder in it. */
 export type SkillLocation = {
   repository: string;
   branch: string | null;
@@ -44,7 +43,6 @@ const MAX_DOCUMENT_BYTES = MAX_SKILL_DOCUMENT_CHARS;
 
 const GITHUB_HOSTS = new Set(["github.com", "www.github.com"]);
 
-/** The path segments of a github.com URL, or null for any other address. */
 function githubSegments(text: string) {
   const url = URL.parse(text.includes("://") ? text : `https://${text}`);
 
@@ -53,13 +51,11 @@ function githubSegments(text: string) {
     : null;
 }
 
-/** The folder a `/tree/` path names, or a `/blob/` path to a SKILL.md lives in. */
 const folderIn = (kind: string, path: string) =>
   kind === "blob" && posix.basename(path) === "SKILL.md"
     ? folderOf(path)
     : path;
 
-/** `owner/repo`, or a github.com URL to a repository, a `/tree/<branch>/<folder>`, or a SKILL.md; null otherwise. */
 export function parseSkillLocation(input: string): SkillLocation | null {
   const text = input
     .trim()
@@ -94,7 +90,6 @@ const isInside = (path: string, folder: string) =>
 
 const IGNORED = new Set(["node_modules", ".git"]);
 
-/** Every folder under `base` with a SKILL.md, shallowest first. */
 export function skillFolders(tree: TreeEntry[], base: string) {
   return tree
     .flatMap((entry) =>
@@ -113,7 +108,6 @@ export function skillFolders(tree: TreeEntry[], base: string) {
 const isDocumentPath = (path: string) =>
   skillDocumentInput.shape.path.safeParse(path).success;
 
-/** The files of the skill in `folder`: SKILL.md and its reference documents, and the paths left out. */
 export function skillFiles(tree: TreeEntry[], folder: string) {
   const nested = skillFolders(tree, folder).filter((other) => other !== folder);
 
@@ -156,7 +150,6 @@ export function skillFiles(tree: TreeEntry[], folder: string) {
   };
 }
 
-/** Fingerprint of a skill's imported files at their GitHub blob versions. */
 export function skillDigest(
   files: ReadonlyArray<{ relative: string; sha: string }>,
 ) {
@@ -170,7 +163,6 @@ export function skillDigest(
   return hash.digest("hex");
 }
 
-/** Why a parsed SKILL.md can't be a skill, or null when it can. */
 function markdownProblem(
   parsed: ReturnType<typeof parseSkillMarkdown>,
   name: string,
@@ -192,7 +184,6 @@ const shortened = (description: string) =>
     ? `${description.slice(0, MAX_SKILL_DESCRIPTION_CHARS - 1).trimEnd()}…`
     : description;
 
-/** The skill a SKILL.md and its documents make, or why they make none. */
 export function skillFromMarkdown(
   fallbackName: string,
   markdown: string,
@@ -225,11 +216,9 @@ const treeResponse = z.object({
   truncated: z.boolean(),
 });
 
-/** Reads public GitHub repositories: a branch's head commit, the file tree at a commit, and single files. */
 export class GitHubSkillReader extends Context.Service<
   GitHubSkillReader,
   {
-    /** The branch (the default one for `null`) and its newest commit. */
     readonly head: (
       repository: string,
       branch: string | null,

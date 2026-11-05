@@ -34,25 +34,21 @@ const MAX_BACKOFF_MS = 300_000;
 const decodeEvent = (json: string) =>
   Effect.try(() => replyEvent.parse(JSON.parse(json)));
 
-/** Notifies the owner's devices of replies, through the persisted outbox. */
 export class Push extends Context.Service<
   Push,
   {
     readonly serverId: string;
-    /** Which transports this server is configured for. */
     readonly transports: { readonly apns: boolean; readonly fcm: boolean };
     readonly device: (
       installationId: string,
       input: PushDeviceInput,
     ) => Effect.Effect<PushRegistration>;
     readonly remove: (installationId: string) => Effect.Effect<void>;
-    /** False when the device is not registered. */
     readonly presence: (
       installationId: string,
       active: boolean,
       agentId: string | null,
     ) => Effect.Effect<boolean>;
-    /** Queues a reply for every enabled device. */
     readonly enqueue: (activity: ReplyActivity) => Effect.Effect<void>;
     /** One delivery pass over what is due; passes run one at a time and finish once started. */
     readonly drain: Effect.Effect<void>;
@@ -66,7 +62,6 @@ export class Push extends Context.Service<
       const serverId = yield* repository.serverId;
       const passes = yield* Semaphore.make(1);
 
-      /** One delivery attempt, settled in the outbox; every failure kind decides its own outcome. */
       const send = Effect.fn("Push.send")(function* (
         transport: PushTransport,
         row: PendingDelivery,
@@ -232,10 +227,6 @@ export class Push extends Context.Service<
   }
 }
 
-/**
- * Delivers the owner's replies as they finish and polls for retries that come due; when each retry is due stays
- * in the outbox. Closing stops both and writes replies still in memory to the outbox before `Push` makes its last pass.
- */
 export const PushDelivery = Layer.effectDiscard(
   Effect.gen(function* () {
     const push = yield* Push;
@@ -287,5 +278,4 @@ export const PushDelivery = Layer.effectDiscard(
   }),
 );
 
-/** Runs push effects from code outside Effect, such as HTTP handlers. */
 export type PushRuntime = Runner<Push>;

@@ -11,7 +11,6 @@ import {
   passwordManagersQuery,
 } from "./api";
 
-/** What the owner is entering: a value to store in Crumble, or where a password manager holds it. */
 type SecretSourceDraft =
   | { kind: "value"; value: string }
   | {
@@ -27,7 +26,6 @@ const REFERENCE_PLACEHOLDERS = {
   bitwarden: "Secret ID",
 } as const satisfies Record<PasswordManagerId, string>;
 
-/** The reference the request sends, or null when the draft holds a value. */
 const referenceOf = (draft: SecretSourceDraft) =>
   draft.kind === "reference" && draft.reference.trim()
     ? {
@@ -36,14 +34,12 @@ const referenceOf = (draft: SecretSourceDraft) =>
       }
     : null;
 
-/** The password managers a secret can read from now. */
 export function useConnectedPasswordManagers(): PasswordManager[] {
   return (useQuery(passwordManagersQuery).data ?? []).filter(
     (manager) => manager.connected,
   );
 }
 
-/** The body every secret endpoint takes. */
 export type SecretInput =
   | { value: string }
   | { reference: NonNullable<ReturnType<typeof referenceOf>> };
@@ -90,13 +86,11 @@ export function useSecretDraft(saved?: SecretStatus) {
 
 const STORED_NOTE = "Stored encrypted and never shown again.";
 
-/** A value stored in Crumble is kept unless a new one is typed. */
 export const keepPlaceholder = (saved: SecretStatus | null | undefined) =>
   saved?.configured && !saved.passwordManager
     ? "Keep the saved value"
     : undefined;
 
-/** A secret's value, or a password manager reference once one is connected. */
 export function SecretSourceField({
   id,
   label,
@@ -115,7 +109,6 @@ export function SecretSourceField({
   connected: PasswordManager[];
   valuePlaceholder?: string | undefined;
   valueDescription?: ReactNode;
-  /** False for a value that isn't secret, like a username. */
   concealed?: boolean;
   disabled?: boolean;
 }) {

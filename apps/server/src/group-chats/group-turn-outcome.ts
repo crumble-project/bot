@@ -29,7 +29,6 @@ function toolOutcome(message: ModelMessage): TurnOutcome | null {
   return emoji ? { kind: "reaction", emoji } : null;
 }
 
-/** The pages a turn's web searches and page reads returned, once each and without the ones that failed. */
 function webSourcesOf(messages: ModelMessage[]): WebSource[] {
   const sources = new Map<string, WebSource>();
 
@@ -41,7 +40,6 @@ function webSourcesOf(messages: ModelMessage[]): WebSource[] {
   return [...sources.values()];
 }
 
-/** A group turn's result after its input: a pass or reaction wins, else the final answer, else nothing. */
 async function readTurnOutcome(
   conversation: Conversation,
   inputEntryId: number,
@@ -62,7 +60,6 @@ async function readTurnOutcome(
     : { kind: "pass" };
 }
 
-/** What a settled group turn leaves for the group: its final answer, a reaction, or nothing. */
 export async function turnOutcome(
   runtime: Pick<AgentRuntime, "settledTurn">,
   agent: Agent,

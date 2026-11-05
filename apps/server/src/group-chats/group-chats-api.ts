@@ -10,7 +10,6 @@ type GroupChatRoutesOptions = {
   groupChats: GroupChatsAccess;
 };
 
-/** Listing, creating, editing, and deleting group chats, plus their snapshot and history pages. */
 const registerGroupChatDefinitionRoutes = (options: GroupChatRoutesOptions) => {
   const { register, groupChats } = options;
 
@@ -55,7 +54,6 @@ const registerGroupChatDefinitionRoutes = (options: GroupChatRoutesOptions) => {
   );
 };
 
-/** The group chat's messages, an attachment they refer to, and its events. */
 const registerGroupMessageRoutes = (options: GroupChatRoutesOptions) => {
   const { register, groupChats } = options;
 
@@ -94,7 +92,6 @@ const registerGroupMessageRoutes = (options: GroupChatRoutesOptions) => {
         groupChats.snapshot(groupId, query),
       );
 
-      // A deleted group fails its next snapshot, which ends the stream.
       onClose(
         groupChats.subscribe(groupId, () => {
           void sendSnapshot().catch(close);
@@ -106,7 +103,6 @@ const registerGroupMessageRoutes = (options: GroupChatRoutesOptions) => {
   });
 };
 
-/** The group chat routes, in the order the contract document lists them. */
 export function registerGroupChatRoutes(options: GroupChatRoutesOptions) {
   registerGroupChatDefinitionRoutes(options);
   registerGroupMessageRoutes(options);

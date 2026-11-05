@@ -20,7 +20,6 @@ import {
   parseMessageIndex,
 } from "../shared/entry-ids";
 
-/** One read's bounds; a read around a match spends the older side's first. */
 const WINDOW_MESSAGES = 30;
 const WINDOW_CHARACTERS = 20000;
 const OLDER_MESSAGES = 14;
@@ -268,7 +267,6 @@ function keyOf(chat: HistoryChat, row: Row): MatchKey {
   };
 }
 
-// Undated originals remain undated; they sort after dated messages.
 function compareTimestamps(a: MatchKey, b: MatchKey): number {
   if (a.timestamp === b.timestamp) return 0;
 
@@ -444,7 +442,6 @@ function addPageRows(
   seen: Set<string>,
   rows: Row[],
 ): void {
-  // Every message is validated before any overlap check, so a malformed page reports its invalid identifier.
   const pageRows = page.messages.map((message) => rowOf(chat, message));
 
   for (const row of pageRows) {
@@ -473,7 +470,6 @@ function nextCursor(
   return oldestEntryId ?? undefined;
 }
 
-/** Visits rows from `position`, one `step` at a time, with the offset to read from, until `visit` returns false. */
 function walkRows(
   rows: Row[],
   position: Position,

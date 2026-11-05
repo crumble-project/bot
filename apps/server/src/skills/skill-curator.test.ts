@@ -60,7 +60,6 @@ test("stale and archive bot-created skills by idle time, sparing pinned, schedul
     );
 
     store.updateSkill(skill.id, { ...patch }, null);
-    // The fixtures were "written" long ago; only use or an owner's edit counts as recent activity.
     db.query("UPDATE skills SET updated_at=?, created_at=? WHERE id=?").run(
       daysAgo(100),
       patch.lastUsedAt ? daysAgo(100) : daysAgo(3),
@@ -119,13 +118,11 @@ test("stale and archive bot-created skills by idle time, sparing pinned, schedul
       ?.state,
   ).toBe("active");
 
-  // Curator transitions are recorded and reversible; a second pass changes nothing more.
   expect(
     store.listChanges(agent.id).filter((change) => change.actor === "curator"),
   ).toHaveLength(2);
   expect(curateNow(store, now)).toEqual([]);
 
-  // Using a stale skill makes it active again; the owner restores an archived one, which counts as activity.
   store.recordSkillUse(idle);
   expect(store.getSkill(idle)?.state).toBe("active");
   store.updateSkill(old, { state: "active" });
@@ -133,7 +130,6 @@ test("stale and archive bot-created skills by idle time, sparing pinned, schedul
   expect(curateNow(store, now)).toEqual([]);
   expect(store.getSkill(old)?.state).toBe("active");
 
-  // Never used for long enough, a skill goes into the archive too.
   const later = new Date(now.getTime() + 31 * DAY);
   expect(
     curateNow(store, later).map((action) => [action.name, action.to]),

@@ -103,7 +103,6 @@ function FillsDialog({
   );
 }
 
-/** Every bot's logins and requests, with values the owner enters but never sees again. */
 export function LoginsSettings({
   initialBot,
 }: {

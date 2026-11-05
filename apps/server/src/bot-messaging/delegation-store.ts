@@ -7,7 +7,6 @@ import {
   relayedJobQuestions,
 } from "./schema";
 
-/** What bot messaging remembers between tool calls. Rows go with the bots and executions they name. */
 export const delegationStore = Effect.gen(function* () {
   const db = yield* ProductDatabase;
 

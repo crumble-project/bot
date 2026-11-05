@@ -1,4 +1,3 @@
-/** The workspace environment of a development server: the published images, unless `env` chooses otherwise. */
 export function devWorkspaceEnv(env: Record<string, string | undefined>) {
   if (env["CRUMBLE_WORKSPACE_BACKEND"] === "railway") return env;
 

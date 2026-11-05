@@ -13,11 +13,9 @@ import { ConversationRepository } from "../bot-store/conversation-repository";
 import { ExecutionRepository } from "../bot-store/execution-repository";
 import { BotRuntime } from "./runtime";
 
-/** Group turns run as executions too, but their output belongs to the group, not the bot chat. */
 export const isGroupTurn = (execution: Execution) =>
   parseRequestId(execution.requestId).kind === "group-turn";
 
-/** One layer build's repositories and runtime, and the state its chats keep in memory. */
 export type BotsContext = {
   readonly agents: AgentRepository["Service"];
   readonly conversations: ConversationRepository["Service"];
@@ -39,7 +37,6 @@ export type BotsContext = {
   readonly monitors: FiberMap.FiberMap<string>;
 };
 
-/** The context of one layer build, created once per build and shared by every group of operations. */
 export const botsContext = Effect.gen(function* () {
   return {
     agents: yield* AgentRepository,

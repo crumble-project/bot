@@ -340,7 +340,6 @@ function messageMarkdown(message: Message) {
   });
 }
 
-/** Every page of a job's transcript, oldest message first. */
 async function fullHistory(botId: string, job: JobRef) {
   const base = `${jobPath(botId, job.kind, job.name)}/history` as const;
 
@@ -426,7 +425,6 @@ function DownloadButton({ botId, job }: { botId: string; job: JobRef }) {
   );
 }
 
-/** A job's task, replies and tool steps, read-only, in a pane beside the chat. */
 export function JobPanel({
   botId,
   job,

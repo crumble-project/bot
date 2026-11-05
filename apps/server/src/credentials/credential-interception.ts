@@ -15,7 +15,6 @@ import { credentialProxy } from "./credential-proxy";
 import { credentialsAccess, type Credentials } from "./credentials";
 import { CredentialSource } from "./minted-credentials";
 
-/** `first` takes the hosts it wants; `second` the rest. */
 const either = (
   first: WorkspaceInterceptor,
   second: WorkspaceInterceptor,
@@ -27,7 +26,6 @@ const either = (
     (first.wants(host) ? first : second).handle(client, host, port),
 });
 
-/** What a bot's workspace needs for its credentials: the guest trusts the bot's authority, and the proxy adds the secrets. */
 export const credentialInterception = (
   run: Runner<Credentials | CredentialAuthorities | CredentialSource>,
 ) => {

@@ -18,12 +18,9 @@ import { BotSecretRequests } from "./bot-secret-requests";
 import { BotSecretUses, type BotSecretUse } from "./bot-secret-uses";
 import type { BotSecretKind } from "./schema";
 
-/** What differs between the kinds of a bot's named secrets; the rest of their lifecycle is in `botSecretLifecycle`. */
 type LifecycleHooks<Saved> = {
   kind: BotSecretKind;
-  /** How messages name the kind, such as Credential. */
   title: string;
-  /** What a name of this kind may look like. */
   names: z.ZodType<string>;
   find: (agentId: string, name: string) => Effect.Effect<Saved | undefined>;
   deleteRecord: (agentId: string, name: string) => Effect.Effect<boolean>;
@@ -31,29 +28,24 @@ type LifecycleHooks<Saved> = {
   touch: (agentId: string, name: string, at: string) => Effect.Effect<void>;
 };
 
-/** One save: `store` writes the slow secrets, `write` the record under the hosts settled once they are done. */
 type SaveSteps<Saved, E> = {
   hosts: string[] | undefined;
-  /** Refuses the save, after the hosts are known. */
   check: (
     existing: Saved | undefined,
   ) => Effect.Effect<void, InvalidInput | Conflict>;
   store: Effect.Effect<void, E>;
   write: (hosts: string[]) => Effect.Effect<Saved>;
-  /** What the bot is told when the save answers its request. */
   notice: (saved: Saved) => string;
 };
 
 type UseOptions = { limit: number; before?: string | undefined };
 
-/** Why a bot asks for a secret, as its request tools parse it. */
 export const requestReason = z
   .string()
   .trim()
   .min(1)
   .max(MAX_REQUEST_REASON_CHARS);
 
-/** Asking for, saving, deleting, declining, and logging one kind of a bot's named secrets. */
 export const botSecretLifecycle = <Saved extends { hosts: string[] }, Detail>(
   hooks: LifecycleHooks<Saved>,
   useDetail: z.ZodType<Detail>,
@@ -63,7 +55,6 @@ export const botSecretLifecycle = <Saved extends { hosts: string[] }, Detail>(
     const requests = yield* BotSecretRequests;
     const useLog = yield* BotSecretUses;
 
-    /** The name as saved; a bad one fails with its first problem. */
     const checkedName = (name: string) => {
       const parsed = hooks.names.safeParse(name);
 
@@ -117,7 +108,6 @@ export const botSecretLifecycle = <Saved extends { hosts: string[] }, Detail>(
       },
       options: {
         alreadyYours: (existing: Saved) => string;
-        /** What a saved one lacks though it covers the hosts, so the request still stands. */
         lacks?: (existing: Saved) => boolean;
       },
     ) {
@@ -133,7 +123,6 @@ export const botSecretLifecycle = <Saved extends { hosts: string[] }, Detail>(
       return yield* requests.ask(agentId, kind, input);
     });
 
-    /** Deletes the record, its secrets, and its uses; false when there is none. */
     const forget = Effect.fnUntraced(function* (agentId: string, name: string) {
       if (!(yield* hooks.deleteRecord(agentId, name))) return false;
 
@@ -146,7 +135,6 @@ export const botSecretLifecycle = <Saved extends { hosts: string[] }, Detail>(
     const remove = Effect.fnUntraced(function* (agentId: string, name: string) {
       if (yield* forget(agentId, name)) return;
 
-      // Without a record, deleting declines the bot's request for one.
       if (!(yield* requests.decline(agentId, kind, name)))
         return yield* new NotFound({ message: `${title} not found` });
     });
@@ -204,7 +192,6 @@ export const botSecretLifecycle = <Saved extends { hosts: string[] }, Detail>(
     };
   });
 
-/** Clears a deleted bot's named secrets: every key under its prefix. */
 export const botSecretCleanup = Layer.effectDiscard(
   Effect.gen(function* () {
     const secrets = yield* Secrets;
@@ -215,7 +202,6 @@ export const botSecretCleanup = Layer.effectDiscard(
   }),
 );
 
-/** Why a use can't send a secret's value, as the proxy or the desktop reports it. */
 export const useFailure = (
   name: string,
   error: { readonly message: string },
@@ -226,12 +212,10 @@ export const useFailure = (
 
 export const hostsText = (hosts: readonly string[]) => hosts.join(", ");
 
-/** One line per named secret, with its hosts. */
 export const hostLines = (
   items: readonly { name: string; hosts: readonly string[] }[],
 ) => items.map((item) => `- ${item.name}: ${hostsText(item.hosts)}`);
 
-/** What a bot names, for which hosts, and why, when it asks the owner for a secret. */
 export const requestParameters = {
   name: Type.String({ minLength: 1, maxLength: MAX_CREDENTIAL_NAME_CHARS }),
   hosts: Type.Array(
@@ -244,7 +228,6 @@ export const requestParameters = {
   reason: Type.String({ minLength: 1, maxLength: MAX_REQUEST_REASON_CHARS }),
 };
 
-/** A tool that asks the owner for a secret; the bot never sees the value. */
 export const secretRequestTool = <
   Parameters extends TSchema,
   Request extends JsonValue,

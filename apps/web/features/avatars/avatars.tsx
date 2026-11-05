@@ -13,7 +13,6 @@ import { send } from "@/lib/api";
 import { BotAvatar, type BotState } from "@/components/bot-avatar";
 import { AvatarEditor } from "./avatar-editor";
 
-/** Try portable definitions and save one to a bot. */
 export function AvatarsPage() {
   const { data: bots = [] } = useQuery(botsQuery);
   const [selected, setSelected] = useState("");

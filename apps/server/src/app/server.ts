@@ -31,7 +31,6 @@ const SERVER_PATHS = [
   CLIENT_DOCUMENT_PATH,
 ];
 
-/** The paths the host answers itself, before any account sees the request. */
 function hostedResponse(
   path: string,
   oauthClient: ClientDocument | undefined,
@@ -48,7 +47,6 @@ function hostedResponse(
   return undefined;
 }
 
-/** A request from another site, whether by its origin header or the browser's own mark. */
 function untrustedOrigin(
   request: Request,
   requestOrigin: string | null,
@@ -72,7 +70,6 @@ const closing = () => new Response("Server is closing", { status: 503 });
 
 type Tenant = Awaited<ReturnType<typeof createTenant>>;
 
-/** The origin `publicUrl` names; it must be https, without a path, query, or fragment. */
 function publicOrigin(publicUrl: string) {
   const url = new URL(publicUrl);
 
@@ -111,15 +108,12 @@ type ServerOptions = {
   port?: number;
   publicUrl?: string;
   skillsDir?: string;
-  /** Where workspace backends read their images and secrets; the process's environment by default. */
   workspaceEnv?: Record<string, string | undefined>;
-  /** Each account's workspaces instead of those from the environment, owned by the account's scope. */
   workspaces?: (
     userId: string,
   ) => Effect.Effect<Workspaces | undefined, never, Scope.Scope>;
 };
 
-/** Where the server listens and keeps its data: `options`, else the environment, else the defaults. */
 function listenSettings(options: ServerOptions) {
   return {
     dataDir: resolve(
@@ -341,7 +335,6 @@ export async function startServer(options: ServerOptions = {}) {
   }
 }
 
-/** Ends the process with a one-line message when another server holds the data directory. */
 function exitIfLocked(error: Error): never {
   if (error instanceof DataDirLocked) {
     console.error(error.message);

@@ -34,7 +34,6 @@ const textOf = (message: Message) =>
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("");
 
-/** The owner's message is the tool call's arguments as JSON; a tool result ends the turn. */
 function script(offered: string[][]): FauxResponseFactory {
   return async (context) => {
     offered.push(
@@ -65,7 +64,6 @@ const bot = (name: string) => ({
   instructions: "",
   provider: "faux",
   model: "chat",
-  // Disabled, so posting starts no group turns; the runtime is driven directly.
   enabled: false,
   tools: [],
   skills: [],
@@ -126,7 +124,6 @@ async function setup() {
   const agent = { ...ada!, enabled: true };
   const chat = await runtime.openChat(agent);
 
-  /** Runs one bot chat turn that calls the tool and returns its parsed result. */
   const call = async (args: Record<string, string>) => {
     const submission = await runtime.submit(agent, chat, JSON.stringify(args));
     await runtime.wait(submission, agent);

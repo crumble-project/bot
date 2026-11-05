@@ -4,7 +4,6 @@ import { Effect, Layer } from "effect";
 import { McpIntegrations } from "./integrations";
 import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
 
-/** Offers every bot a QuickJS sandbox that calls their MCP tools; the layer's scope closes the sandbox. */
 export const codemodeTools = Layer.effectDiscard(
   Effect.gen(function* () {
     const integrations = yield* McpIntegrations;

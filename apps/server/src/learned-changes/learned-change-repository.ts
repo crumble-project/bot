@@ -27,7 +27,6 @@ export type ReviewResult = {
   changes: LearnedChange[];
 };
 
-/** The record of skill and memory changes, kept so the owner can review and undo them. */
 export class LearnedChangeRepository extends Context.Service<
   LearnedChangeRepository,
   {
@@ -55,7 +54,6 @@ export class LearnedChangeRepository extends Context.Service<
       executionId: string,
       actor: LearnedChange["actor"],
     ) => Effect.Effect<LearnedChange[]>;
-    /** What a review of one execution changed, kept so clients can show it after the fact. */
     readonly addReviewResult: (
       executionId: string,
       agentId: string,

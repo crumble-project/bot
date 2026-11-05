@@ -131,7 +131,6 @@ const primitive = z.discriminatedUnion("kind", [
 
 const label = z.string().max(500);
 
-/** TanStack tooltip content: an authored string, or its structured title and rows. */
 const tooltip = z.union([
   z
     .string()
@@ -150,7 +149,6 @@ const point = z
   .object({ x: finite, y: finite, color: color.optional(), tooltip })
   .transform(({ tooltip, ...anchor }) => ({ ...anchor, ...tooltip }));
 
-/** One chart compiled at one width: a flat, paint-ordered primitive list in points, plus hover targets. */
 export const chartLayout = z.object({
   width: finite,
   height: finite,
@@ -158,7 +156,6 @@ export const chartLayout = z.object({
   points: z.array(point).max(MAX_PRIMITIVES),
 });
 
-/** What the sandbox runtime emits, before color and tooltip normalization. */
 export type ChartLayoutInput = z.input<typeof chartLayout>;
 
 export type ChartLayout = z.infer<typeof chartLayout>;
