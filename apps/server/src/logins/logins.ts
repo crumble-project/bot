@@ -1,17 +1,18 @@
-import { MAX_REQUEST_REASON_CHARS } from "../shared/limits";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension } from "@earendil-works/pi-durable";
 import { Clock, Context, Effect, Layer, Redacted } from "effect";
 import { z } from "zod";
+import type { loginUseResponse } from "../contract/api-responses";
 import {
   botSecretLifecycle,
   hostLines,
   hostsText,
   requestParameters,
+  requestReason,
   secretRequestTool,
   useFailure,
 } from "../bot-secrets/bot-secret-lifecycle";
-import type { LoginFill, LoginRead } from "../bot-desktop/computer-use-login";
+import type { LoginFill, LoginRead } from "./login-fill";
 import { accessOf, type Access, type Runner } from "../shared/runner";
 import { PasswordManagers } from "../password-managers/password-manager";
 import type { SecretUnavailable } from "../secrets/secret-values";
@@ -24,7 +25,8 @@ import {
   type SecretReference,
   credentialHosts,
   loginSaveInput,
-} from "../shared/domain";
+} from "../contract/secrets";
+import type { BotSecretRequest } from "../bot-secrets/bot-secret-requests";
 import type { Login } from "./login-repository";
 import { InvalidInput, NotFound, type AppError } from "../shared/errors";
 import {
@@ -41,31 +43,15 @@ export type LoginSaveInput = z.infer<typeof loginSaveInput>;
 export const loginRequestInput = z.object({
   name: loginName,
   hosts: credentialHosts,
-  reason: z.string().trim().min(1).max(MAX_REQUEST_REASON_CHARS),
+  reason: requestReason,
   /** Whether the site asks for a one-time code too. */
   one_time_code: z.boolean().optional(),
 });
 
 export type LoginRequestInput = z.infer<typeof loginRequestInput>;
 
-/** A bot's request for a login, waiting for the owner. */
-export type LoginRequest = {
-  name: string;
-  hosts: string[];
-  reason: string;
-  oneTimeCode: boolean;
-  requestedAt: string;
-};
-
 /** One fill of a login field into a page. */
-export type LoginUse = {
-  id: string;
-  at: string;
-  host: string;
-  field: LoginField;
-  /** Why the value couldn't be read, so nothing was typed. */
-  error: string | null;
-};
+export type LoginUse = z.infer<typeof loginUseResponse>;
 
 /** What a login's use records beyond its host: the field filled. */
 const useDetail = z.object({ field: loginFieldInput });
@@ -89,11 +75,11 @@ export class Logins extends Context.Service<
       name: string,
     ) => Effect.Effect<Login | undefined>;
     /** The bot's requests for logins the owner has not answered. */
-    readonly requests: (agentId: string) => Effect.Effect<LoginRequest[]>;
+    readonly requests: (agentId: string) => Effect.Effect<BotSecretRequest[]>;
     readonly request: (
       agentId: string,
       request: LoginRequestInput,
-    ) => Effect.Effect<LoginRequest, AppError>;
+    ) => Effect.Effect<BotSecretRequest, AppError>;
     readonly decline: (
       agentId: string,
       name: string,
@@ -167,6 +153,7 @@ export class Logins extends Context.Service<
         {
           kind: "login",
           title: "Login",
+          names: loginName,
           find: get,
           deleteRecord: repository.delete,
           deleteSecrets: (agentId, name) =>
@@ -237,25 +224,12 @@ export class Logins extends Context.Service<
             );
       };
 
-      const checkedName = (name: string) => {
-        const parsed = loginName.safeParse(name);
-
-        return parsed.success
-          ? Effect.succeed(parsed.data)
-          : Effect.fail(
-              new InvalidInput({
-                message:
-                  parsed.error.issues[0]?.message ?? "Invalid login name",
-              }),
-            );
-      };
-
       const save = Effect.fn("Logins.save")(function* (
         agentId: string,
         name: string,
         input: LoginSaveInput,
       ) {
-        const checked = yield* checkedName(name);
+        const checked = yield* lifecycle.checkedName(name);
         const writes = yield* fieldWrites(input);
 
         return yield* lifecycle.save(agentId, checked, {

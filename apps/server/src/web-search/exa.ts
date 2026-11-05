@@ -87,7 +87,7 @@ const keyedSearch = (key: string, query: WebSearchQuery) =>
         return result;
       }),
     ),
-    Effect.mapError((error) => new WebSearchError(error.message)),
+    Effect.mapError((error) => new WebSearchError({ message: error.message })),
   );
 
 const keyedExtract = (key: string, url: string) =>
@@ -106,21 +106,23 @@ const keyedExtract = (key: string, url: string) =>
         ? { url, title: item.title ?? url, text: item.text }
         : { url, error: "Exa could not extract this page." };
     }),
-    Effect.mapError((error) => new WebExtractionError(error.message)),
+    Effect.mapError(
+      (error) => new WebExtractionError({ message: error.message }),
+    ),
   );
 
-/** Runs `use` with the key, failing as `Failure` when it can't be read or isn't set. */
+/** Runs `use` with the key, failing with `failure` when it can't be read or isn't set. */
 const withKey = <A, E>(
   key: Effect.Effect<string | undefined, SecretUnavailable>,
-  Failure: new (message: string) => E,
+  failure: (message: string) => E,
   use: (value: string) => Effect.Effect<A, E>,
 ) =>
   key.pipe(
-    Effect.mapError((error) => new Failure(error.message)),
+    Effect.mapError((error) => failure(error.message)),
     Effect.flatMap((value) =>
       value
         ? use(value)
-        : Effect.fail(new Failure("Exa API key is not configured.")),
+        : Effect.fail(failure("Exa API key is not configured.")),
     ),
   );
 
@@ -129,9 +131,17 @@ const exaProvider = (
 ): WebSearchProvider => ({
   id: "exa",
   search: (query) =>
-    withKey(key, WebSearchError, (value) => keyedSearch(value, query)),
+    withKey(
+      key,
+      (message) => new WebSearchError({ message }),
+      (value) => keyedSearch(value, query),
+    ),
   extract: (url) =>
-    withKey(key, WebExtractionError, (value) => keyedExtract(value, url)),
+    withKey(
+      key,
+      (message) => new WebExtractionError({ message }),
+      (value) => keyedExtract(value, url),
+    ),
 });
 
 export const EXA_PLUGIN_ID = "web-search-exa";

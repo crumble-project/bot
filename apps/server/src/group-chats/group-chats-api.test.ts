@@ -15,7 +15,7 @@ import { standaloneGroupChats } from "./group-chats-test-support";
 import { GroupTranscripts } from "./group-transcripts";
 import { AgentRuntime } from "../bots/runtime";
 import { standaloneScheduler } from "../automations/scheduler-test-support";
-import { standaloneBots } from "../bots/bots";
+import { standaloneBots } from "../bots/bots-test-support";
 import { Store } from "../../test/support/store";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 

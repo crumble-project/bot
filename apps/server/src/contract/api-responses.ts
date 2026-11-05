@@ -6,16 +6,21 @@ import {
 import { ATTACHMENT_KINDS } from "../shared/attachment-rules";
 import {
   ACTIVITY_KINDS,
-  agentInput,
   CHANGE_ACTIONS,
   CHANGE_ACTORS,
   CHANGE_TARGETS,
+  CONTROL_HOLDERS,
   EXECUTION_STATUSES,
+  HELD_ACTION_STATUSES,
   MEMORY_SOURCE_KINDS,
+  OWNER_MESSAGE_SOURCES,
   SCRIPT_RUN_STATUSES,
-  SKILL_STATES,
-  THINKING_LEVELS,
+  SIGN_IN_METHODS,
 } from "../shared/domain";
+import { agentInput, THINKING_LEVELS } from "./agents";
+import { loginFieldInput } from "./secrets";
+import { SCHEDULE_KINDS } from "./schedules";
+import { SKILL_STATES } from "./skills";
 import { avatarDefinitionSchema } from "./avatar";
 import { replyEvent } from "./reply-event";
 
@@ -297,7 +302,7 @@ export const desktopJobsResponse = jobsResponse("Desktop");
 
 export const desktopControlResponse = z
   .object({
-    holder: z.enum(["bot", "owner"]).openapi({
+    holder: z.enum(CONTROL_HOLDERS).openapi({
       description:
         "Who operates the bot desktop. While the owner holds control, the bot's desktop job pauses and only the owner's viewer input reaches the bot desktop.",
     }),
@@ -568,7 +573,7 @@ export const heldActionResponse = z
         z.object({
           requestId: z.string(),
           text: z.string(),
-          from: z.enum(["owner", "automation"]),
+          from: z.enum(OWNER_MESSAGE_SOURCES),
         }),
       )
       .openapi({
@@ -577,7 +582,7 @@ export const heldActionResponse = z
     reason: z
       .string()
       .openapi({ description: "Why the intent check held it." }),
-    status: z.enum(["pending", "approved", "declined", "expired"]),
+    status: z.enum(HELD_ACTION_STATUSES),
     declineReason: z.string().nullable(),
     heldAt: z.string(),
     decidedAt: z.string().nullable(),
@@ -644,7 +649,7 @@ export const loginUseResponse = z
     id: z.string(),
     at: z.string(),
     host: z.string(),
-    field: z.enum(["username", "password", "one_time_code"]),
+    field: loginFieldInput,
     error: z
       .string()
       .nullable()
@@ -804,7 +809,7 @@ export const scheduleResponse = z
     agentId: z.string(),
     name: z.string(),
     prompt: z.string(),
-    kind: z.enum(["prompt", "script"]),
+    kind: z.enum(SCHEDULE_KINDS),
     command: z.string().nullable(),
     timeoutSeconds: z.number().int(),
     notify: z.boolean(),
@@ -854,7 +859,7 @@ export const activityFeedResponse = z
   })
   .openapi("ActivityFeed");
 
-const authType = z.enum(["api_key", "oauth"]);
+const authType = z.enum(SIGN_IN_METHODS);
 
 export const loginMethod = z
   .object({

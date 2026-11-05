@@ -7,7 +7,8 @@ import type { ImageContent, TextContent, Usage } from "@earendil-works/pi-ai";
 import { defineTool, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { ControlState } from "./desktop-control";
-import type { DesktopFills, LoginFill } from "./computer-use-login";
+import type { LoginFill } from "../logins/login-fill";
+import type { DesktopFills } from "./computer-use-login";
 import {
   computerUseState,
   type ComputerUseOptions,

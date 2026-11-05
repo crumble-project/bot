@@ -1,12 +1,30 @@
 import { Context, Effect, Layer } from "effect";
 import { EventRepository } from "../event-sources/event-repository";
-import type { Agent, Execution, Schedule } from "../shared/domain";
+import type { Agent } from "../contract/agents";
+import type { Execution } from "../shared/domain";
+import type { Schedule } from "../contract/schedules";
 import { eventRequest, scheduleRequest } from "../shared/request-ids";
 import { ScriptRuns } from "./script-runs";
-import { TaskDispatch } from "./task-dispatch";
+import { AutomationDispatch } from "./automation-dispatch";
 
 // A failed start waits this long before it is tried again.
 export const RETRY_AFTER_MS = 30_000;
+
+/** When each key's start last failed. Keys past their wait fall out on any check, so deleted ones leave too. */
+export const retryLedger = () => {
+  const failedAt = new Map<string, number>();
+
+  return {
+    failed: (key: string, at: number) => void failedAt.set(key, at),
+    forget: (key: string) => void failedAt.delete(key),
+    waiting: (key: string, now: number) => {
+      for (const [each, at] of failedAt)
+        if (now - at >= RETRY_AFTER_MS) failedAt.delete(each);
+
+      return failedAt.has(key);
+    },
+  };
+};
 
 /** What starts an automation. A run by hand is an occurrence too, so an event automation started that way gets no event. */
 export type AutomationTrigger =
@@ -44,7 +62,7 @@ export class Automations extends Context.Service<
     Automations,
     Effect.gen(function* () {
       const events = yield* EventRepository;
-      const dispatch = yield* TaskDispatch;
+      const dispatch = yield* AutomationDispatch;
       const scripts = yield* ScriptRuns;
       const inFlight = new Set<string>();
 

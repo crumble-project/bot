@@ -1,5 +1,6 @@
 import { Effect, Layer } from "effect";
 import { Bots } from "../bots/bots";
+import { JOB_KINDS } from "../shared/job-kinds";
 import { HeldActions, type HeldAction } from "./held-actions";
 
 /** Announces each desktop job action held for the owner's approval, so clients notify the owner who must decide. */
@@ -19,7 +20,7 @@ export const heldActionNotices = Layer.effectDiscard(
         agentId: agent.id,
         agentName: agent.name,
         entryId: null,
-        origin: "desktop",
+        origin: JOB_KINDS.desktop.kind,
         jobName: action.job,
         waitingFor: "approval",
         preview: `Waiting for your approval: ${action.action}`,

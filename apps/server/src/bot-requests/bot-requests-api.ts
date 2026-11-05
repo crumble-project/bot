@@ -3,6 +3,7 @@ import type { Effect } from "effect";
 import { pi } from "../shared/app-errors";
 import type { Register } from "../contract/route";
 import type { BotsAccess } from "../bots/bots";
+import { checkBotChoices } from "../bots/bot-choices";
 import type { McpServers } from "../integrations/mcp-servers";
 import type { Runner } from "../shared/runner";
 import { BotRequests } from "./bot-requests";
@@ -11,13 +12,12 @@ type Options = {
   register: Register;
   service: BotsAccess;
   botRequests: BotRequests["Service"];
-  run: Runner<never>;
+  run: Runner<McpServers>;
   provider: { parse(value: string): string };
-  mcpServers: McpServers;
 };
 
 export function registerBotRequestRoutes(options: Options) {
-  const { register, service, botRequests, run, provider, mcpServers } = options;
+  const { register, service, botRequests, run } = options;
 
   const exec = <A, E>(effect: Effect.Effect<A, E>) => run.runSync(effect);
 
@@ -43,8 +43,7 @@ export function registerBotRequestRoutes(options: Options) {
 
             const proposal = body.proposal ?? pending;
 
-            provider.parse(proposal.provider);
-            mcpServers.check(null, proposal.mcpServers, true);
+            await checkBotChoices(options, proposal, null);
 
             return proposal;
           }),

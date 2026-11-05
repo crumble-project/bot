@@ -3,10 +3,10 @@ import { defineTool } from "@earendil-works/pi-durable";
 import {
   skillDocumentInput,
   skillInput,
-  type Agent,
   type Skill,
   type SkillInput,
-} from "../shared/domain";
+} from "../contract/skills";
+import { type Agent } from "../contract/agents";
 import { skillNameKey } from "./skill-repository";
 import { Effect } from "effect";
 import {

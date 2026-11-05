@@ -6,7 +6,8 @@ import { Context, Effect, Exit, Layer, Option, Redacted, Scope } from "effect";
 import type { CoreServices } from "../app/core-layer";
 import { SecretRepository } from "../secrets/secret-repository";
 import { secretsLayer } from "../secrets/secrets";
-import { agentInput, loginSaveInput } from "../shared/domain";
+import { agentInput } from "../contract/agents";
+import { loginSaveInput } from "../contract/secrets";
 import { runnerOf } from "../shared/runner";
 import {
   connectFakePasswordManager,

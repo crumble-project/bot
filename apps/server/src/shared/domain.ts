@@ -1,153 +1,4 @@
 import { z } from "zod";
-import { avatarDefinitionSchema } from "./avatar-definition";
-import {
-  DEFAULT_REVIEW_THRESHOLD,
-  DEFAULT_SCHEDULE_TIMEOUT_SECONDS,
-  DEFAULT_SCHEDULE_TIMEZONE,
-  MAX_BOT_DESCRIPTION_CHARS,
-  MAX_BOT_MCP_SERVERS,
-  MAX_BOT_NAME_CHARS,
-  MAX_BOT_SKILLS,
-  MAX_BOT_TOOLS,
-  MAX_CREDENTIAL_HOST_CHARS,
-  MAX_CREDENTIAL_HOSTS,
-  MAX_CRON_CHARS,
-  MAX_EVENT_SOURCE_ID_CHARS,
-  MAX_GROUP_MEMBERS,
-  MAX_GROUP_NAME_CHARS,
-  MAX_INSTRUCTIONS_CHARS,
-  MAX_MESSAGE_CHARS,
-  MAX_MODEL_ID_CHARS,
-  MAX_PROVIDER_ID_CHARS,
-  MAX_SCHEDULE_COMMAND_CHARS,
-  MAX_SCHEDULE_NAME_CHARS,
-  MAX_SCHEDULE_TIMEOUT_SECONDS,
-  MAX_SECRET_CHARS,
-  MAX_SKILL_DESCRIPTION_CHARS,
-  MAX_SKILL_DOCUMENT_CHARS,
-  MAX_SKILL_DOCUMENTS,
-  MAX_SKILL_NAME_CHARS,
-  MAX_TIMEZONE_CHARS,
-  MAX_TOOL_ID_CHARS,
-  MIN_GROUP_MEMBERS,
-} from "./limits";
-import { guestTrustEnv } from "./guest-env";
-import { PASSWORD_MANAGER_IDS, WEB_SEARCH_PROVIDER_IDS } from "./vendors";
-
-export const THINKING_LEVELS = [
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-] as const;
-
-const providerId = z
-  .string()
-  .trim()
-  .min(1)
-  .max(MAX_PROVIDER_ID_CHARS)
-  .regex(/^[a-z0-9-]+$/);
-
-const modelId = z.string().trim().min(1).max(MAX_MODEL_ID_CHARS);
-
-const modelRef = z.object({ provider: providerId, model: modelId });
-
-/** A model other than the bot's own; null clears it in a patch. */
-const modelChoice = modelRef.nullable().optional();
-
-/** The account's judge model for intent checks; null goes back to the default. */
-export const judgeModelInput = z.object({ judgeModel: modelRef.nullable() });
-
-/** The account's vision model, which reads images for bots whose model can't; null turns it off. */
-export const visionModelInput = z.object({ visionModel: modelRef.nullable() });
-
-export const heldActionDeclineInput = z.object({
-  reason: z.string().trim().max(2000).optional(),
-});
-
-export const agentInput = z.object({
-  name: z.string().trim().min(1).max(MAX_BOT_NAME_CHARS),
-  avatar: avatarDefinitionSchema.optional(),
-  description: z.string().max(MAX_BOT_DESCRIPTION_CHARS).default(""),
-  instructions: z
-    .string()
-    .max(MAX_INSTRUCTIONS_CHARS)
-    .default("You are a thoughtful, capable personal assistant."),
-  provider: providerId.default("openai"),
-  model: modelId.default("gpt-4.1"),
-  webSearchProvider: z.enum(WEB_SEARCH_PROVIDER_IDS).nullable().optional(),
-  enabled: z.boolean().default(true),
-  tools: z
-    .array(z.string().min(1).max(MAX_TOOL_ID_CHARS))
-    .max(MAX_BOT_TOOLS)
-    .default(["memory"]),
-  /** The bot's own skills by name; the full records live in the skill library. Writing replaces them by name. */
-  skills: z
-    .array(
-      z.object({
-        name: z.string().min(1).max(MAX_SKILL_NAME_CHARS),
-        instructions: z.string().max(MAX_INSTRUCTIONS_CHARS),
-      }),
-    )
-    .max(MAX_BOT_SKILLS)
-    .default([]),
-  /** Shared skills from the skill library this bot uses, besides its own `skills`. */
-  sharedSkills: z.array(z.uuid()).max(MAX_BOT_SKILLS).optional(),
-  /** Ignored: a bot with memory always uses shared memory too. */
-  sharedMemory: z.boolean().optional(),
-  mcpServers: z.array(z.uuid()).max(MAX_BOT_MCP_SERVERS).default([]),
-  /** Ignored: a bot that may message other bots reaches every one of them. */
-  delegates: z.array(z.uuid()).max(30).default([]),
-  inference: z
-    .object({
-      thinkingLevel: z.enum(THINKING_LEVELS).default("off"),
-      temperature: z.number().min(0).max(2).optional(),
-      maxOutputTokens: z.number().int().min(1).max(1000000).optional(),
-    })
-    .optional(),
-  /** How the bot reviews its work afterwards to learn skills and memory. Thresholds count tool-activity rounds. */
-  review: z
-    .object({
-      enabled: z.boolean().default(true),
-      skillThreshold: z
-        .number()
-        .int()
-        .min(1)
-        .max(1000)
-        .default(DEFAULT_REVIEW_THRESHOLD),
-      memoryThreshold: z
-        .number()
-        .int()
-        .min(1)
-        .max(1000)
-        .default(DEFAULT_REVIEW_THRESHOLD),
-      /** Caps the turn digest a review reads; unset, 75% of the review model's context window, at most 600000. */
-      maxInputTokens: z.number().int().min(1000).max(2000000).optional(),
-    })
-    .optional(),
-  /** The model that runs this bot's reviews; unset or null, they use the bot's own model. Null clears it in a patch. */
-  reviewModel: modelChoice,
-  /** The model for this bot's desktop jobs; unset or null, they use the bot's own model. Null clears it in a patch. */
-  desktopModel: modelChoice,
-});
-
-export type AgentInput = z.infer<typeof agentInput>;
-
-/** A stored bot: a cleared desktop or review model is absent, never null. */
-export type Agent = Omit<
-  AgentInput,
-  "avatar" | "desktopModel" | "reviewModel"
-> & {
-  avatar: z.infer<typeof avatarDefinitionSchema>;
-  desktopModel?: NonNullable<AgentInput["desktopModel"]>;
-  reviewModel?: NonNullable<AgentInput["reviewModel"]>;
-  id: string;
-  createdAt: string;
-  updatedAt: string;
-};
 
 export const MEMORY_SOURCE_KINDS = [
   "chat",
@@ -201,68 +52,6 @@ export const SCRIPT_RUN_STATUSES = [
   "interrupted",
 ] as const;
 
-export const SCHEDULE_TRIGGER_MESSAGE =
-  "Choose a recurring cron, a one-time date, or an event source";
-
-export const scheduleInput = z
-  .object({
-    agentId: z.uuid(),
-    name: z.string().trim().min(1).max(MAX_SCHEDULE_NAME_CHARS),
-    kind: z.enum(["prompt", "script"]).default("prompt"),
-    prompt: z.string().trim().max(MAX_MESSAGE_CHARS).default(""),
-    command: z
-      .string()
-      .max(MAX_SCHEDULE_COMMAND_CHARS)
-      .nullable()
-      .default(null),
-    timeoutSeconds: z
-      .number()
-      .int()
-      .min(1)
-      .max(MAX_SCHEDULE_TIMEOUT_SECONDS)
-      .default(DEFAULT_SCHEDULE_TIMEOUT_SECONDS),
-    notify: z.boolean().default(true),
-    cron: z.string().max(MAX_CRON_CHARS).nullable().default(null),
-    timezone: z
-      .string()
-      .max(MAX_TIMEZONE_CHARS)
-      .default(DEFAULT_SCHEDULE_TIMEZONE),
-    runAt: z.iso
-      .datetime({ offset: true })
-      .transform((value) => new Date(value).toISOString())
-      .nullable()
-      .default(null),
-    eventSourceId: z
-      .string()
-      .trim()
-      .min(1)
-      .max(MAX_EVENT_SOURCE_ID_CHARS)
-      .nullable()
-      .default(null),
-    enabled: z.boolean().default(true),
-  })
-  .refine(
-    (v) => [v.cron, v.runAt, v.eventSourceId].filter(Boolean).length === 1,
-    SCHEDULE_TRIGGER_MESSAGE,
-  )
-  .refine(
-    (v) =>
-      v.kind === "prompt"
-        ? v.prompt.length > 0 && v.command === null
-        : Boolean(v.command?.trim()),
-    "Prompt tasks need a prompt and no command; script tasks need a command",
-  );
-
-export type ScheduleInput = z.infer<typeof scheduleInput>;
-
-export type Schedule = ScheduleInput & {
-  id: string;
-  nextRunAt: string | null;
-  createdAt: string;
-  /** The bot that saved this task, or null when the owner saved it. */
-  createdByAgentId: string | null;
-};
-
 export const EXECUTION_STATUSES = [
   "pending",
   "running",
@@ -288,111 +77,10 @@ export type Execution = {
   updatedAt: string;
 };
 
+export const ACTIVE_EXECUTION_STATUSES = ["pending", "running"] as const;
+
 export const activeExecution = (execution: Pick<Execution, "status">) =>
-  execution.status === "pending" || execution.status === "running";
-
-// Names the workspace, its shell, or the credential proxy itself depend on.
-const RESERVED_CREDENTIAL_NAMES = new Set([
-  ...Object.keys(guestTrustEnv("", "")),
-  "PATH",
-  "HOME",
-  "USER",
-  "SHELL",
-  "PWD",
-  "TERM",
-  "LANG",
-  "HOSTNAME",
-  "TMPDIR",
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "ALL_PROXY",
-  "NO_PROXY",
-  "NODE_OPTIONS",
-  "SSL_CERT_DIR",
-  "LD_PRELOAD",
-  "LD_LIBRARY_PATH",
-]);
-
-export const credentialName = z
-  .string()
-  .regex(
-    /^[A-Z_][A-Z0-9_]{0,63}$/,
-    "Credential names are environment variable names such as ACME_TOKEN",
-  )
-  .refine(
-    (name) =>
-      !RESERVED_CREDENTIAL_NAMES.has(name) &&
-      !name.startsWith("CRUMBLE_") &&
-      !name.startsWith("GIT_CONFIG_"),
-    "This name is reserved for the workspace",
-  );
-
-const HOST_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
-
-/** A public DNS name, or `*.` and one: the hosts a credential may be sent to. Addresses are not names. */
-const credentialHost = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .max(MAX_CREDENTIAL_HOST_CHARS)
-  .refine((host) => {
-    const labels = host.replace(/^\*\./, "").split(".");
-
-    return (
-      labels.length >= 2 &&
-      labels.every((label) => HOST_LABEL.test(label)) &&
-      !/^[0-9]+$/.test(labels.at(-1)!)
-    );
-  }, "Hosts look like api.example.com or *.example.com");
-
-export const credentialHosts = z
-  .array(credentialHost)
-  .min(1, "Name at least one host")
-  .max(MAX_CREDENTIAL_HOSTS)
-  .transform((hosts) => [...new Set(hosts)]);
-
-export const passwordManagerIdInput = z.enum(PASSWORD_MANAGER_IDS);
-
-/** Settings key of a password manager: never rename. */
-export type PasswordManagerId = z.infer<typeof passwordManagerIdInput>;
-
-/** Where to read a secret's value instead of storing it: a password manager and a reference it understands. */
-const secretReferenceInput = z.object({
-  passwordManager: passwordManagerIdInput,
-  reference: z.string().trim().min(1).max(1000),
-});
-
-export type SecretReference = z.infer<typeof secretReferenceInput>;
-
-// One object with optional fields rather than a union, so client generators keep it.
-/** A secret the owner enters: a value to store in Crumble, kept exactly as sent, or a password manager reference. */
-export const secretInput = z
-  .object({
-    value: z.string().min(1).max(MAX_SECRET_CHARS).optional(),
-    reference: secretReferenceInput.optional(),
-  })
-  .strict()
-  .refine(
-    (input) => (input.value === undefined) !== (input.reference === undefined),
-    { message: "Send exactly one of value or reference" },
-  );
-
-export type SecretInput = z.infer<typeof secretInput>;
-
-/** What a response tells about a secret, never its value. */
-export type SecretStatus = {
-  configured: boolean;
-  /** The password manager the value is read from; null for a value stored in Crumble or no value. */
-  passwordManager: PasswordManagerId | null;
-  reference: string | null;
-};
-
-export const credentialSaveInput = z.object({
-  /** Kept when omitted; required for a credential nobody asked for. */
-  hosts: credentialHosts.optional(),
-  /** A new credential needs it; omit it to keep the saved one. */
-  secret: secretInput.optional(),
-});
+  ACTIVE_EXECUTION_STATUSES.some((status) => status === execution.status);
 
 /** The request a credential's value is read for: some values, such as a GitHub App's token, depend on it. */
 export type CredentialTarget = { host: string; path: string };
@@ -405,128 +93,9 @@ export const hostMatches = (hosts: readonly string[], host: string) =>
       : pattern === host,
   );
 
-export const loginName = z
-  .string()
-  .regex(
-    /^[a-z0-9][a-z0-9._-]{0,63}$/,
-    "Login names look like github or acme-portal",
-  );
-
-export const loginFieldInput = z.enum([
-  "username",
-  "password",
-  "one_time_code",
-]);
-
-export type LoginField = z.infer<typeof loginFieldInput>;
-
-/** The grammar of a 1Password item reference; a field reference continues it with `/<field>`. */
-export const ONE_PASSWORD_ITEM = "op:\\/\\/[^/]+\\/[^/]+";
-
-/** A 1Password item, `op://<vault>/<item>`, that fills every field of a login. */
-const loginItemInput = z.object({
-  passwordManager: z.literal("1password"),
-  reference: z
-    .string()
-    .trim()
-    .regex(
-      new RegExp(`^${ONE_PASSWORD_ITEM}$`),
-      "An item reference looks like op://vault/item",
-    ),
-});
-
-export const loginSaveInput = z
-  .object({
-    /** Kept when omitted; required for a new login. */
-    hosts: credentialHosts.optional(),
-    item: loginItemInput.optional(),
-    /** Fields to change; null removes the one-time code, whose value is the TOTP secret or an `otpauth://totp/` URI. */
-    fields: z
-      .object({
-        username: secretInput.optional(),
-        password: secretInput.optional(),
-        one_time_code: secretInput.nullable().optional(),
-      })
-      .optional(),
-  })
-  .refine((input) => !(input.item && input.fields), {
-    message: "Send an item or fields, not both",
-    path: ["item"],
-  });
-
-/** A reference document inside a skill package, loaded only when the bot asks for it. */
-export const skillDocumentInput = z.object({
-  path: z
-    .string()
-    .regex(
-      /^references\/[a-z0-9][a-z0-9._-]{0,99}\.md$/,
-      "Document paths look like references/topic.md",
-    ),
-  content: z.string().min(1).max(MAX_SKILL_DOCUMENT_CHARS),
-});
-
-export const skillInput = z.object({
-  name: z.string().trim().min(1).max(MAX_SKILL_NAME_CHARS),
-  description: z.string().trim().max(MAX_SKILL_DESCRIPTION_CHARS).default(""),
-  instructions: z.string().max(MAX_INSTRUCTIONS_CHARS),
-  documents: z
-    .array(skillDocumentInput)
-    .max(MAX_SKILL_DOCUMENTS)
-    .default([])
-    .refine(
-      (documents) =>
-        new Set(documents.map((document) => document.path)).size ===
-        documents.length,
-      "Document paths must be unique",
-    ),
-});
-
-export type SkillInput = z.infer<typeof skillInput>;
-
-export const SKILL_STATES = ["active", "stale", "archived"] as const;
-
-type SkillState = (typeof SKILL_STATES)[number];
-
-/** What the owner may change on a skill beyond its content: its lifecycle state and whether the curator leaves it alone. */
-export const skillLifecycleInput = z.object({
-  state: z.enum(SKILL_STATES).optional(),
-  pinned: z.boolean().optional(),
-});
-
-/** Where an installed skill came from: a folder in a public GitHub repository, at one commit of a branch. */
-export type SkillOrigin = {
-  /** `owner/repo`. */
-  repository: string;
-  branch: string;
-  /** The skill's folder in the repository; empty for the root. */
-  path: string;
-  commit: string;
-  /** Fingerprint of the imported files, so a commit that changes nothing else doesn't count as an update. */
-  digest: string;
-};
-
-/** A skill package in the library: a bot's own when `agentId` is set, shared when null. */
-export type Skill = SkillInput & {
-  /** Direct source of an owner-assigned copy; retained if the source is deleted. */
-  copiedFromSkillId?: string | null;
-  /** Set for a skill installed from GitHub, which nobody can edit. */
-  origin: SkillOrigin | null;
-  id: string;
-  agentId: string | null;
-  /** Who wrote the skill first; a bot's skills carry the execution they were learned from. */
-  createdBy: "owner" | "bot";
-  sourceExecutionId: string | null;
-  useCount: number;
-  lastUsedAt: string | null;
-  state: SkillState;
-  pinned: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
-
 export const CHANGE_ACTORS = ["owner", "bot", "review", "curator"] as const;
 
-type ChangeActor = (typeof CHANGE_ACTORS)[number];
+export type ChangeActor = (typeof CHANGE_ACTORS)[number];
 
 /** Where a learned change came from: the execution and conversation of the turn, or the group it ran in. */
 export type ChangeSource = {
@@ -542,34 +111,23 @@ export const CHANGE_ACTIONS = ["create", "update", "delete", "revert"] as const;
 
 export const CHANGE_TARGETS = ["skill", "memory"] as const;
 
-/** One recorded change to a skill or memory, with the state before and after, so the owner can undo it. */
-export type LearnedChange = {
-  id: string;
-  /** The bot whose skill or memory changed; null for a shared one. */
-  agentId: string | null;
-  actor: ChangeActor;
-  target: (typeof CHANGE_TARGETS)[number];
-  targetId: string;
-  action: (typeof CHANGE_ACTIONS)[number];
-  before: Skill | Memory | null;
-  after: Skill | Memory | null;
-  source: ChangeSource | null;
-  /** The change this one undid. */
-  revertsId: string | null;
-  createdAt: string;
-};
-
-export const groupChatInput = z.object({
-  name: z.string().trim().min(1).max(MAX_GROUP_NAME_CHARS),
-  /** Member bots in the order they joined. */
-  memberIds: z
-    .array(z.uuid())
-    .min(MIN_GROUP_MEMBERS)
-    .max(MAX_GROUP_MEMBERS)
-    .refine((ids) => new Set(ids).size === ids.length, "List each bot once"),
-});
-
 export const WAITING_FOR = ["approval", "credential", "login"] as const;
+
+/** Who operates a bot desktop. */
+export const CONTROL_HOLDERS = ["bot", "owner"] as const;
+
+/** Whose words an owner message a job acts for are. */
+export const OWNER_MESSAGE_SOURCES = ["owner", "automation"] as const;
+
+export const HELD_ACTION_STATUSES = [
+  "pending",
+  "approved",
+  "declined",
+  "expired",
+] as const;
+
+/** How an owner signs in to a provider. */
+export const SIGN_IN_METHODS = ["api_key", "oauth"] as const;
 
 export const ACTIVITY_KINDS = [
   "tool-call",

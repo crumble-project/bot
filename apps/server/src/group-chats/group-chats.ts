@@ -25,7 +25,6 @@ export type {
   GroupChatSnapshot,
   GroupMemberActivity,
   GroupMessageReceipt,
-  GroupMembership,
 } from "./group-chat-types";
 
 /** Each group chat's shared transcript files, closed with the layer's scope. */

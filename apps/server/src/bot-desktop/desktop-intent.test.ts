@@ -7,7 +7,7 @@ import { createModels } from "@earendil-works/pi-ai";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { heldActionsAccess } from "./held-actions";
 import type { JudgeAnswer } from "./intent-check";
-import { agentInput } from "../shared/domain";
+import { agentInput } from "../contract/agents";
 import { Conflict } from "../shared/errors";
 import { Store } from "../../test/support/store";
 import { desktopIntentGate, type GateCall } from "./desktop-intent";

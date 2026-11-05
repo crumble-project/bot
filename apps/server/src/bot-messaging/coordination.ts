@@ -1,12 +1,14 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { EXECUTION_STATUSES, type Agent } from "../shared/domain";
+import { EXECUTION_STATUSES } from "../shared/domain";
+import { type Agent } from "../contract/agents";
 import { Effect, Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { chatOnly } from "../shared/chat-only";
 import { BotMessaging } from "./bot-messaging";
 import { toolOutput } from "../shared/tool-output";
 import { BOT_TOOL } from "../contract/tools";
-import { MAX_MESSAGE_CHARS } from "../shared/limits";
+import { MAX_MESSAGE_CHARS, MAX_WAIT_SECONDS } from "../shared/limits";
 
 const receiptSchema = Type.Object({
   executionId: Type.String(),
@@ -54,11 +56,12 @@ export function coordinationExtension(
 
   const status = defineTool({
     name: "delegation_status",
-    description:
-      "Read the status and completed answer of a bot message or task you sent. Other chat turns and private memory stay inaccessible. A task stays pending while jobs the bot started for it work, which can take long; its answer then includes the bot's reply to each job report, and a failed or stopped job fails the task. Optionally wait up to 60 seconds for the answer; if still pending, report that honestly instead of repeatedly checking.",
+    description: `Read the status and completed answer of a bot message or task you sent. Other chat turns and private memory stay inaccessible. A task stays pending while jobs the bot started for it work, which can take long; its answer then includes the bot's reply to each job report, and a failed or stopped job fails the task. Optionally wait up to ${MAX_WAIT_SECONDS} seconds for the answer; if still pending, report that honestly instead of repeatedly checking.`,
     parameters: Type.Object({
       executionId: Type.String(),
-      waitSeconds: Type.Optional(Type.Integer({ minimum: 0, maximum: 60 })),
+      waitSeconds: Type.Optional(
+        Type.Integer({ minimum: 0, maximum: MAX_WAIT_SECONDS }),
+      ),
     }),
     structuredOutputSchema: resultSchema,
     replay: "safe",
@@ -92,8 +95,7 @@ export function coordinationExtension(
 
   const ask = defineTool({
     name: "ask_bot",
-    description:
-      "Ask another permitted bot a question and wait up to 60 seconds for its answer, then relay it to the owner. recipient accepts a bot ID, exact name, or @Name (case insensitive). Send only the question and necessary context. If pending, keep its executionId for delegation_status; never invent an answer.",
+    description: `Ask another permitted bot a question and wait up to ${MAX_WAIT_SECONDS} seconds for its answer, then relay it to the owner. recipient accepts a bot ID, exact name, or @Name (case insensitive). Send only the question and necessary context. If pending, keep its executionId for delegation_status; never invent an answer.`,
     parameters: Type.Object({
       recipient: Type.String({ minLength: 1, maxLength: 100 }),
       message: Type.String({ minLength: 1, maxLength: MAX_MESSAGE_CHARS }),
@@ -118,7 +120,7 @@ export function coordinationExtension(
       return toolOutput(
         await Effect.runPromise(
           messaging.result(agent.id, sent.executionId, {
-            waitMs: 60000,
+            waitMs: MAX_WAIT_SECONDS * 1000,
             context,
           }),
         ),
@@ -152,12 +154,14 @@ export function coordinationExtension(
       ),
   });
 
-  return defineExtension({
-    name: "coordination",
-    tools: agent.tools.includes(BOT_TOOL.delegate)
-      ? [delegate, status, list, ask, answer]
-      : [],
-  });
+  return chatOnly(
+    defineExtension({
+      name: "coordination",
+      tools: agent.tools.includes(BOT_TOOL.delegate)
+        ? [delegate, status, list, ask, answer]
+        : [],
+    }),
+  );
 }
 
 /** Offers bots with messaging the tools that reach other bots. */

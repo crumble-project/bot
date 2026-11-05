@@ -1,13 +1,11 @@
 import type { Register } from "../contract/route";
 import { Effect } from "effect";
 import { upgradeWebSocket } from "@hono/bun";
-import { streamSSE } from "hono/streaming";
 import type { WSContext, WSMessageReceive } from "hono/ws";
 import { routes, type contractApp } from "../contract/api-contract";
 import type { ControlState, DesktopControlAccess } from "./desktop-control";
 import {
   bridgeDesktop,
-  novncResponse,
   VIEWER_PREFIX,
   viewerPage,
   type Viewer,
@@ -17,11 +15,10 @@ import type { BotsAccess } from "../bots/bots";
 import type { DesktopStream, Workspaces } from "../workspaces/workspace";
 import type { DesktopOpenError } from "../workspaces/workspace-errors";
 import { Conflict } from "../shared/errors";
+import { streamEvents } from "../shared/event-stream";
 import type { Runner } from "../shared/runner";
-import type { Agent } from "../shared/domain";
-import { usesDesktop } from "./desktop-vocabulary";
-
-const HEARTBEAT_MS = 15_000;
+import type { Agent } from "../contract/agents";
+import { usesDesktop } from "../contract/tools";
 
 /**
  * WebSocket close reasons the viewer shows, at most 123 bytes each: they name what the owner can fix and carry no guest
@@ -96,35 +93,18 @@ export function registerDesktopRoutes(options: {
   register(routes.desktopEvents, (c) => {
     const agent = service.agent(c.req.param("id"));
 
-    return streamSSE(c, async (stream) => {
-      let finish!: () => void;
-
-      const finished = new Promise<void>((resolve) => {
-        finish = resolve;
-      });
-
-      stream.onAbort(finish);
-
+    return streamEvents(c, async ({ stream, close, onClose }) => {
       const send = (state: ControlState) =>
         stream
           .writeSSE({ event: "control", data: JSON.stringify(state) })
-          .catch(finish);
+          .catch(close);
 
-      const unsubscribe = control.subscribe(agent.id, (state) => {
-        void send(state);
-      });
-
-      const timer = setInterval(() => {
-        stream.writeSSE({ event: "heartbeat", data: "{}" }).catch(finish);
-      }, HEARTBEAT_MS);
-
-      try {
-        await send(control.get(agent.id));
-        await finished;
-      } finally {
-        clearInterval(timer);
-        unsubscribe();
-      }
+      onClose(
+        control.subscribe(agent.id, (state) => {
+          void send(state);
+        }),
+      );
+      await send(control.get(agent.id));
     });
   });
 
@@ -163,11 +143,6 @@ export function registerDesktopRoutes(options: {
 
     return c.json({ path: `${VIEWER_PREFIX}/${ticket}`, expiresAt }, 201);
   });
-
-  app.get(
-    `${VIEWER_PREFIX}/novnc/*`,
-    async (c) => (await novncResponse(c.req.path)) ?? c.notFound(),
-  );
 
   app.get(`${VIEWER_PREFIX}/:ticket`, (c) => {
     const ticket = c.req.param("ticket");

@@ -9,13 +9,14 @@ import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { Store } from "../../test/support/store";
 import { BotNotices } from "../bots/bot-notices";
 import { Credentials } from "../credentials/credentials";
-import { agentInput, scheduleInput, type Schedule } from "../shared/domain";
+import { agentInput } from "../contract/agents";
+import { scheduleInput, type Schedule } from "../contract/schedules";
 import type { ScriptRun } from "./script-run-repository";
 import { BotWorkspaces, type Workspaces } from "../workspaces/workspace";
 import { WORKSPACE_PATH } from "../../workspace-image/guest";
 import { DesktopNotConfigured } from "../workspaces/workspace-errors";
 import { ScriptRunRepository } from "./script-run-repository";
-import { ScriptRuns } from "./script-runs";
+import { ScriptRuns, scriptRunRetention } from "./script-runs";
 import type { ScriptEvent } from "../event-sources/event-payload";
 
 const cleanups: (() => void | Promise<void>)[] = [];
@@ -494,15 +495,35 @@ test("recover interrupts leftover running rows", async () => {
   });
 });
 
-test("list prunes runs older than 90 days and forwards paging", async () => {
-  const { store, service, repository, task } = open();
+test("runs past their retention go without anyone reading them", async () => {
+  const { store, repository, task } = open();
   const schedule = task("true");
   const now = Date.now();
   const old = leftover(schedule, new Date(now - 91 * 86400000).toISOString());
+  const kept = leftover(schedule, new Date(now - 89 * 86400000).toISOString());
+
+  for (const run of [old, kept]) store.run(repository.create(run));
+
+  await store.runtime.runPromise(
+    Layer.build(scriptRunRetention).pipe(
+      Effect.andThen(Effect.sleep("50 millis")),
+      Effect.scoped,
+    ),
+  );
+
+  expect(store.run(repository.list(schedule.id, { limit: 20 }))).toEqual([
+    kept,
+  ]);
+});
+
+test("list forwards paging", async () => {
+  const { store, service, repository, task } = open();
+  const schedule = task("true");
+  const now = Date.now();
   const first = leftover(schedule, new Date(now - 86400000).toISOString());
   const last = leftover(schedule, new Date(now).toISOString());
 
-  for (const run of [old, first, last]) store.run(repository.create(run));
+  for (const run of [first, last]) store.run(repository.create(run));
   expect(
     await store.runtime.runPromise(service.list(schedule.id, { limit: 1 })),
   ).toEqual([last]);

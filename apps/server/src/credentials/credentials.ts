@@ -1,5 +1,5 @@
+import { GUEST_CA_BUNDLE, GUEST_CA_PATH } from "../../workspace-image/guest";
 import { z } from "zod";
-import { MAX_REQUEST_REASON_CHARS } from "../shared/limits";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension } from "@earendil-works/pi-durable";
 import { Context, Effect, Layer, Redacted } from "effect";
@@ -8,15 +8,16 @@ import {
   hostLines,
   hostsText,
   requestParameters,
+  requestReason,
   secretRequestTool,
   useFailure,
 } from "../bot-secrets/bot-secret-lifecycle";
 import {
   credentialName,
-  type CredentialTarget,
   credentialHosts,
   credentialSaveInput,
-} from "../shared/domain";
+} from "../contract/secrets";
+import { type CredentialTarget } from "../shared/domain";
 import type {
   AgentCredential,
   CredentialGrant,
@@ -30,13 +31,12 @@ import {
   credentialSecretKey,
   type CredentialRecord,
 } from "./agent-credential-repository";
+import { credentialLifecycle } from "./credential-lifecycle";
 import {
   CredentialSource,
-  credentialLifecycle,
   type CredentialUnminted,
 } from "./minted-credentials";
 import { guestTrustEnv } from "../shared/guest-env";
-import { GUEST_CA_BUNDLE, GUEST_CA_PATH } from "../workspaces/workspace";
 import {
   Conflict,
   InvalidInput,
@@ -48,7 +48,7 @@ import { REQUEST_CREDENTIAL_TOOL_NAME } from "../contract/tools";
 const credentialRequestInput = z.object({
   name: credentialName,
   hosts: credentialHosts,
-  reason: z.string().trim().min(1).max(MAX_REQUEST_REASON_CHARS),
+  reason: requestReason,
 });
 
 export type CredentialRequestInput = z.infer<typeof credentialRequestInput>;
@@ -195,10 +195,7 @@ export class Credentials extends Context.Service<
         name: string,
         input: CredentialSaveInput,
       ) {
-        const checkedName = yield* Effect.try({
-          try: () => credentialName.parse(name),
-          catch: (cause) => cause,
-        }).pipe(Effect.orDie);
+        const checkedName = yield* lifecycle.checkedName(name);
 
         const credential = yield* lifecycle.save(agentId, checkedName, {
           hosts: input.hosts,

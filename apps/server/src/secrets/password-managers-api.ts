@@ -6,7 +6,7 @@ import type { Runner } from "../shared/runner";
 import { nowIso } from "../shared/time";
 import { PasswordManagers } from "../password-managers/password-manager";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
-import type { PasswordManagerId } from "../shared/domain";
+import type { PasswordManagerId } from "../contract/secrets";
 import { SecretRepository } from "./secret-repository";
 import { SecretValues } from "./secret-values";
 

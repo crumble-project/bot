@@ -1,3 +1,4 @@
+import { errorText } from "../shared/errors";
 import { readFile } from "node:fs/promises";
 import { Effect } from "effect";
 import {
@@ -8,9 +9,12 @@ import {
   type NetworkPolicy,
 } from "microsandbox";
 import { z } from "zod";
-import { DESKTOP_START, WORKSPACE_PATH } from "../../workspace-image/guest";
 import {
+  DESKTOP_START,
   GUEST_DAEMON,
+  WORKSPACE_PATH,
+} from "../../workspace-image/guest";
+import {
   MachineWorkspaces,
   NO_GUEST,
   bootStep,
@@ -23,6 +27,7 @@ import {
   type GuestSetup,
   type MachineStream,
   type MachineWorkspacesOptions,
+  type WorkspaceBackendOptions,
   type WorkspaceMachine,
   type WorkspaceSize,
   type WorkspaceMachines,
@@ -32,7 +37,6 @@ import {
   WorkspaceStopFailed,
   WorkspaceStreamFailed,
   WorkspaceSyncFailed,
-  messageOf,
 } from "./workspace-errors";
 import {
   startWorkspaceProxy,
@@ -55,12 +59,8 @@ const TCP_THROUGH_PROXY: NetworkPolicy = {
   ],
 };
 
-export type MicrosandboxWorkspacesOptions = MachineWorkspacesOptions & {
-  /** The machine size, read at each boot. */
-  size: () => WorkspaceSize;
-  /** Prefix of sandbox and volume names, which are global to the Microsandbox home. */
-  namePrefix: string;
-};
+export type MicrosandboxWorkspacesOptions = MachineWorkspacesOptions &
+  Pick<WorkspaceBackendOptions, "size" | "namePrefix">;
 
 /**
  * The workspaces when `CRUMBLE_WORKSPACE_IMAGE` (an OCI image reference) is set, otherwise undefined: without an image
@@ -290,7 +290,7 @@ class MicrosandboxMachine implements WorkspaceMachine {
       try: () => this.open(command, args),
       catch: (cause) =>
         new WorkspaceStreamFailed({
-          message: `${command} did not start: ${messageOf(cause)}`,
+          message: `${command} did not start: ${errorText(cause)}`,
           cause,
         }),
     });
@@ -302,7 +302,7 @@ class MicrosandboxMachine implements WorkspaceMachine {
       try: () => flush(this.sandbox),
       catch: (cause) =>
         new WorkspaceSyncFailed({
-          message: `Syncing the workspace failed: ${messageOf(cause)}`,
+          message: `Syncing the workspace failed: ${errorText(cause)}`,
           cause,
         }),
     });
@@ -320,7 +320,7 @@ class MicrosandboxMachine implements WorkspaceMachine {
       },
       catch: (cause) =>
         new WorkspaceStopFailed({
-          message: `Stopping the sandbox failed: ${messageOf(cause)}`,
+          message: `Stopping the sandbox failed: ${errorText(cause)}`,
           cause,
         }),
     });
@@ -372,7 +372,7 @@ const startDesktop = (sandbox: Sandbox, args: readonly string[]) =>
     try: () => run(sandbox, [DESKTOP_START, ...args].join(" ")),
     catch: (cause) =>
       new DesktopStartFailed({
-        message: `The bot desktop did not start: ${messageOf(cause)}`,
+        message: `The bot desktop did not start: ${errorText(cause)}`,
         cause,
       }),
   });

@@ -1,7 +1,8 @@
 import { routes } from "../contract/api-contract";
+import { attachmentHeaders } from "../shared/attachments";
 import type { Register } from "../contract/route";
 import { snapshotSender, streamEvents } from "../shared/event-stream";
-import { groupChatInput } from "../shared/domain";
+import { groupChatInput } from "../contract/group-chats";
 import type { GroupChatsAccess } from "./group-chats";
 
 type GroupChatRoutesOptions = {
@@ -73,10 +74,11 @@ const registerGroupMessageRoutes = (options: GroupChatRoutesOptions) => {
     const { id, entryId, index } = c.req.valid("param");
     const file = await groupChats.attachment(id, entryId, index);
 
-    return c.body(new Uint8Array(file.data), 200, {
-      "Content-Type": file.mimeType,
-      "Cache-Control": "private, max-age=31536000, immutable",
-    });
+    return c.body(
+      new Uint8Array(file.data),
+      200,
+      attachmentHeaders(file.mimeType),
+    );
   });
   register(routes.stopGroupChat, async (c) => {
     await groupChats.stop(c.req.param("id"));

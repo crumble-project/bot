@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { openGroupConversation } from "./group-turns";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -15,7 +16,7 @@ import { standaloneGroupChats } from "./group-chats-test-support";
 import { groupLookupExtension } from "./group-lookup";
 import { GroupTranscripts } from "./group-transcripts";
 import { AgentRuntime } from "../bots/runtime";
-import { standaloneBots } from "../bots/bots";
+import { standaloneBots } from "../bots/bots-test-support";
 import { Store } from "../../test/support/store";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
@@ -188,7 +189,7 @@ test("is offered in the bot chat but not in a group turn", async () => {
   await call({ action: "list" });
   expect(offered.at(-1)).toContain("group_chats");
 
-  const group = await runtime.openGroupConversation(agent, "group-1");
+  const group = await openGroupConversation(runtime, agent, "group-1");
 
   const submission = await runtime.submit(
     agent,

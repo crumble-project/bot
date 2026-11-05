@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { desktopControlAccess } from "./desktop-control";
 import { DesktopControlRepository } from "./desktop-control-repository";
-import { agentInput } from "../shared/domain";
+import { agentInput } from "../contract/agents";
 import { Store } from "../../test/support/store";
 
 const dirs: string[] = [];

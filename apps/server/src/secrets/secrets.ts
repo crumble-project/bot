@@ -6,7 +6,7 @@ import type {
   SecretInput,
   SecretReference,
   SecretStatus,
-} from "../shared/domain";
+} from "../contract/secrets";
 import { InvalidInput } from "../shared/errors";
 import {
   PasswordManagers,
@@ -61,7 +61,7 @@ export class Secrets extends Context.Service<
     /** Deletes every secret under a `botSecretsPrefix`, such as a deleted bot's. */
     readonly deleteAll: (prefix: string) => Effect.Effect<void>;
   }
->()("crumble/password-managers/Secrets") {
+>()("crumble/secrets/Secrets") {
   static readonly layer = Layer.effect(
     Secrets,
     Effect.gen(function* () {

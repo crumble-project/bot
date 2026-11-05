@@ -2,7 +2,7 @@ import { errorText } from "../shared/errors";
 import { Cause, Clock, Context, Effect, Layer } from "effect";
 import { AgentRepository } from "../bots/agent-repository";
 import { startTicking } from "../shared/ticker";
-import { Automations, automationOn, RETRY_AFTER_MS } from "./automations";
+import { Automations, automationOn, retryLedger } from "./automations";
 import { EventRunRepository, type EventRun } from "./event-run-repository";
 import { ScheduleRepository } from "./schedule-repository";
 
@@ -25,7 +25,7 @@ export class EventDispatcher extends Context.Service<
       const agents = yield* AgentRepository;
       const automations = yield* Automations;
       const scope = yield* Effect.scope;
-      const failedAt = new Map<string, number>();
+      const retries = retryLedger();
 
       const failed = Effect.fnUntraced(function* (
         run: EventRun,
@@ -36,17 +36,14 @@ export class EventDispatcher extends Context.Service<
 
         yield* Effect.logError(`Event run failed (${run.id}): ${error}`);
 
-        if (attempts >= EVENT_MAX_ATTEMPTS) {
-          failedAt.delete(run.id);
-
+        if (attempts >= EVENT_MAX_ATTEMPTS)
           return yield* runs.mark(run.id, {
             status: "failed",
             attempts,
             error,
           });
-        }
 
-        failedAt.set(run.id, yield* Clock.currentTimeMillis);
+        retries.failed(run.id, yield* Clock.currentTimeMillis);
         yield* runs.mark(run.id, { status: "pending", attempts, error });
       });
 
@@ -66,30 +63,18 @@ export class EventDispatcher extends Context.Service<
           .pipe(
             Effect.flatMap(({ admitted }) =>
               admitted
-                ? runs
-                    .mark(run.id, { status: "dispatched" })
-                    .pipe(
-                      Effect.andThen(
-                        Effect.sync(() => failedAt.delete(run.id)),
-                      ),
-                    )
+                ? runs.mark(run.id, { status: "dispatched" })
                 : Effect.void,
             ),
             Effect.catchCause((cause) => failed(run, Cause.squash(cause))),
           );
       });
 
-      const waiting = (run: EventRun, now: number) => {
-        const at = failedAt.get(run.id);
-
-        return at !== undefined && now - at < RETRY_AFTER_MS;
-      };
-
       const tick = Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
 
         for (const run of yield* runs.nextPending)
-          if (!waiting(run, now)) yield* dispatchRun(run);
+          if (!retries.waiting(run.id, now)) yield* dispatchRun(run);
       }).pipe(
         Effect.catchCause((cause) =>
           Effect.logError("Event dispatch tick failed", cause),

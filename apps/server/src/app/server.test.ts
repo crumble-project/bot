@@ -2,13 +2,20 @@ import { expect, spyOn, test } from "bun:test";
 import { Effect } from "effect";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { Store } from "../../test/support/store";
-import { agentInput, scheduleInput } from "../shared/domain";
+import { agentInput } from "../contract/agents";
+import { scheduleInput } from "../contract/schedules";
 import { ScriptRunRepository } from "../automations/script-run-repository";
 import { DEFAULT_SERVER_SETTINGS } from "./server-settings";
 import { createTenant } from "./tenant";
 import { CLIENT_DOCUMENT_PATH } from "../integrations/mcp-oauth";
 import { ownerRecord } from "./data-lock";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -158,6 +165,47 @@ test.serial(
 
     await exited.exited;
     writeFileSync(join(dataDir, "server.pid"), ownerRecord(exited.pid));
+
+    try {
+      const running = await startServer({ dataDir, port });
+
+      await running.close();
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.serial(
+  "server restarts at once over an account a killed process had open",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-killed-"));
+    const port = 17000 + Math.floor(Math.random() * 1000);
+    const first = await startServer({ dataDir, port });
+
+    // SAFETY: Better Auth returns a token on successful bearer sign-up.
+    const { token } = (await (
+      await fetch(new URL("/api/auth/sign-up/email", first.server.url), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: "Test",
+          email: "killed@example.test",
+          password: "correct horse battery staple",
+        }),
+      })
+    ).json()) as { token: string };
+
+    await fetch(new URL("/v1/agents", first.server.url), {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    await first.close();
+
+    const account = readdirSync(join(dataDir, "users"))[0]!;
+
+    // What a kill -9 leaves behind: lock files nobody released, freshly written.
+    writeFileSync(join(dataDir, "server.pid"), ownerRecord(1 << 22));
+    mkdirSync(join(dataDir, "users", `${account}.lock`));
 
     try {
       const running = await startServer({ dataDir, port });

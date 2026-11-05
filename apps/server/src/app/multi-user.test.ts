@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { error } from "../contract/route";
 import { startServer } from "./server";
 import type { Workspaces } from "../workspaces/workspace";
 
@@ -545,6 +546,48 @@ test.serial(
           })
         ).status,
       ).toBe(401);
+    } finally {
+      await running?.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.serial(
+  "admin routes answer a bad request with the contract's error and cap body size",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-admin-errors-"));
+    let running: Awaited<ReturnType<typeof startServer>> | undefined;
+
+    try {
+      running = await startServer({ dataDir, port: 0 });
+      const admin = await signUp(running, `admin-${crypto.randomUUID()}`);
+
+      const patch = (body: string) =>
+        fetch(new URL("/v1/admin/settings", running!.server.url), {
+          method: "PATCH",
+          headers: json(admin),
+          body,
+        });
+
+      const invalid = await patch(JSON.stringify({ workspaceCpus: 0 }));
+
+      expect(invalid.status).toBe(400);
+      expect(error.parse(await invalid.json())).toMatchObject({
+        error: "Invalid request",
+        details: [expect.objectContaining({ path: ["workspaceCpus"] })],
+      });
+
+      const malformed = await patch("{");
+
+      expect(malformed.status).toBe(400);
+      expect(await malformed.json()).toEqual({ error: "Invalid JSON" });
+
+      const oversized = await patch(
+        JSON.stringify({ codingImage: "a".repeat(1024 * 1024) }),
+      );
+
+      expect(oversized.status).toBe(413);
     } finally {
       await running?.close();
       rmSync(dataDir, { recursive: true, force: true });

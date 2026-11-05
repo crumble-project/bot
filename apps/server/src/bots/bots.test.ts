@@ -2,10 +2,13 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { agentInput, type Agent } from "../shared/domain";
+import { agentInput, type Agent } from "../contract/agents";
+import { Effect, Layer, ManagedRuntime } from "effect";
+import type { CoreServices } from "../app/core-layer";
 import { Store } from "../../test/support/store";
-import { standaloneBots } from "./bots";
-import { AgentRuntime } from "./runtime";
+import { standaloneBots } from "./bots-test-support";
+import { Bots } from "./bots";
+import { AgentRuntime, BotRuntime } from "./runtime";
 
 const dirs: string[] = [];
 
@@ -39,6 +42,38 @@ const fakeRuntime = (fixture: RuntimeFixture) =>
     { close: async () => undefined },
     fixture,
   ) as AgentRuntime;
+
+test("closing the bots leaves the runtime to the layer that opened it", async () => {
+  const store = new Store(make());
+  let closes = 0;
+
+  const counted = Object.assign(fakeRuntime({}), {
+    close: async () => {
+      closes += 1;
+    },
+  });
+
+  const runtime = Layer.effect(
+    BotRuntime,
+    Effect.acquireRelease(Effect.succeed(counted), (opened) =>
+      Effect.promise(() => opened.close()),
+    ),
+  );
+
+  const dependencies = Layer.succeedContext(
+    store.runtime.runSync(Effect.context<CoreServices>()),
+  );
+
+  const bots = ManagedRuntime.make(
+    Bots.layer.pipe(Layer.provide(runtime), Layer.provide(dependencies)),
+  );
+
+  await bots.runPromise(Bots.use(() => Effect.void));
+  await bots.dispose();
+  store.close();
+
+  expect(closes).toBe(1);
+});
 
 test("concurrent first uses of a bot's chat open one chat", async () => {
   const store = new Store(make());

@@ -6,7 +6,7 @@ import {
   Layer,
   Schedule as Cadence,
 } from "effect";
-import type { Skill } from "../shared/domain";
+import type { Skill } from "../contract/skills";
 import { ScheduleRepository } from "../automations/schedule-repository";
 import { SkillRepository } from "./skill-repository";
 

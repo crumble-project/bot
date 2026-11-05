@@ -1,10 +1,11 @@
 import { Context, Effect, Layer } from "effect";
-import { isSqlError } from "effect/sql/SqlError";
-import type { Agent, ChangeBy, Skill, SkillInput } from "../shared/domain";
-import { ProductDatabase } from "../shared/product-database";
+import type { Agent } from "../contract/agents";
+import type { ChangeBy } from "../shared/domain";
+import type { Skill, SkillInput } from "../contract/skills";
+import { atomic, ProductDatabase } from "../shared/product-database";
 import { changeSourceOf } from "../learning/change-source";
 import { ExecutionRepository } from "../bots/execution-repository";
-import { CommonSkills } from "./common-skills";
+import { DefaultSkills } from "./default-skills";
 import {
   SkillToolError,
   type AvailableSkill,
@@ -46,7 +47,7 @@ export class BotSkills extends Context.Service<
     Effect.gen(function* () {
       const skills = yield* SkillRepository;
       const db = yield* ProductDatabase;
-      const commonSkills = yield* CommonSkills;
+      const defaultSkills = yield* DefaultSkills;
       const sources = yield* Effect.context<ExecutionRepository>();
 
       const source = (agentId: string, context: SkillToolContext) =>
@@ -107,7 +108,7 @@ export class BotSkills extends Context.Service<
           );
 
           return [
-            ...commonSkills.map((skill) => ({
+            ...defaultSkills.map((skill) => ({
               ...skill,
               description: skill.description ?? "",
               scope: "default" as const,
@@ -165,10 +166,7 @@ export class BotSkills extends Context.Service<
           const skill = yield* writableBy(skillId);
           yield* skills.delete(skill.id, yield* by(skill.agentId, context));
         }),
-        transaction: (effect) =>
-          db
-            .transaction(() => effect)
-            .pipe(Effect.catchIf(isSqlError, Effect.die)),
+        transaction: atomic(db),
       });
     }),
   );

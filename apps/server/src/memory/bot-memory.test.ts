@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Effect } from "effect";
-import { agentInput } from "../shared/domain";
+import { agentInput } from "../contract/agents";
 import { Store } from "../../test/support/store";
 import type { MemoryContext } from "./memory-tool";
 import { BotMemory } from "./bot-memory";
@@ -60,13 +60,10 @@ describe("BotMemory", () => {
     });
   });
 
-  test("refuses empty memories, shared ones when sharing is off, and shared ones in a group", async () => {
+  test("refuses empty memories, and shared ones in a group", async () => {
     await expect(
       run((memory) => memory.create(solo.id, "  ", false, chat)),
     ).rejects.toThrow("Memory must contain");
-    await expect(
-      run((memory) => memory.create(solo.id, "x", true, chat)),
-    ).rejects.toThrow("Shared memory is off");
     await expect(
       run((memory) =>
         memory.create(sharing.id, "x", true, { ...chat, groupId: "g" }),

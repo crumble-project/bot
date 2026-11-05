@@ -1,6 +1,13 @@
 import { z } from "@hono/zod-openapi";
 import { WAITING_FOR } from "../shared/domain";
 
+/** Reply origins that name neither a job kind nor a message's origin; the rest are stored kinds, never renamed. */
+export const REPLY_ORIGIN = {
+  /** An answer to another bot, which no owner waits on. */
+  bot: "bot",
+  group: "group",
+} as const;
+
 export const replyEvent = z
   .object({
     type: z.literal("reply"),

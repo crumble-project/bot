@@ -2,10 +2,11 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect, Fiber, Layer, ManagedRuntime } from "effect";
+import { Context, Effect, Fiber, Layer, ManagedRuntime } from "effect";
+import { runnerOf } from "../shared/runner";
 import { TestClock } from "effect/testing";
 import { productLayer } from "../app/product-layer";
-import { pathRegister } from "../app/api";
+import { pathRegister } from "../app/api-requests";
 import { handleApiError } from "../app/api-errors";
 import { AgentRepository } from "../bots/agent-repository";
 import { Bots } from "../bots/bots";
@@ -22,7 +23,8 @@ import {
 } from "../../test/support/fake-password-manager";
 import { contractApp } from "../contract/api-contract";
 import { Plugins } from "../plugins/plugins";
-import { agentInput, type Execution } from "../shared/domain";
+import { agentInput } from "../contract/agents";
+import { type Execution } from "../shared/domain";
 import {
   GatewayTransportError,
   type ChatAdapter,
@@ -381,7 +383,7 @@ test("gateway HTTP configuration validates input, hides credentials, and can dis
   app.onError(handleApiError);
   registerGatewayRoutes({
     register: pathRegister(app),
-    messageGateway: f.gateway,
+    run: runnerOf(Context.make(MessageGateway, f.gateway)),
   });
 
   type GatewayTestInput = Omit<GatewayConfig, "enabled"> & {

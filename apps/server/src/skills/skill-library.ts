@@ -9,7 +9,7 @@ import {
   MAX_SKILL_NAME_CHARS,
 } from "../shared/limits";
 import { groupOf } from "../group-chats/group-conversation";
-import { ReviewConversation } from "../learning/review-conversation";
+import { reviewOf } from "../learning/review-conversation";
 import { SKILL_TOOL_NAME } from "../contract/tools";
 
 /** A skill a bot can load: a default from the repository, one from the shared library, or its own. */
@@ -39,7 +39,7 @@ export async function skillToolContext(
   const [live, groupId, review] = await Promise.all([
     api.snapshot(LiveDoc, api.conversationId, callContext),
     groupOf(api, api.conversationId, callContext),
-    api.snapshot(ReviewConversation, api.conversationId, callContext),
+    reviewOf(api, api.conversationId, callContext),
   ]);
 
   return {

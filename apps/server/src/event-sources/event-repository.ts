@@ -6,9 +6,9 @@ import { eventSources, relayEvents } from "./schema";
 
 export type EventSource = typeof eventSources.$inferSelect;
 
-/** An event as the relay delivered it; `body` is the raw bytes in base64. */
 export const DELETED_SOURCE = "Deleted source";
 
+/** An event as the relay delivered it; `body` is the raw bytes in base64. */
 export type RelayEvent = Omit<typeof relayEvents.$inferSelect, "storedAt">;
 
 /** What consumes stored events. Event sources stay below it: automations provide it. */

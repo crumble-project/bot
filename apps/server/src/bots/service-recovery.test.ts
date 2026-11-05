@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentRuntime } from "./runtime";
-import { standaloneBots } from "./bots";
+import { standaloneBots } from "./bots-test-support";
 import { Store } from "../../test/support/store";
-import type { Agent } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 
 const dirs: string[] = [];
 

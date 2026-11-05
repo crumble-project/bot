@@ -1,3 +1,4 @@
+import { errorText } from "../shared/errors";
 import net from "node:net";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -15,6 +16,7 @@ import {
   DESKTOP_DISPLAY_ONLY,
   VNC_PORT,
   WORKSPACE_PATH,
+  GUEST_DAEMON,
 } from "../../workspace-image/guest";
 import type {
   ClosableWorkspaces,
@@ -27,7 +29,6 @@ import {
   DesktopNotRunning,
   WorkspaceBootFailed,
   WorkspacesClosed,
-  messageOf,
   type DesktopOpenError,
   type DesktopStartFailed,
   type WorkspaceStartError,
@@ -39,9 +40,6 @@ import {
 import type { WorkspaceInterceptor } from "./workspace-proxy";
 
 const BRIDGE_PATH = path.join(import.meta.dir, "workspace-bridge.ts");
-
-/** Where every backend puts the pi-env daemon in the guest. */
-export const GUEST_DAEMON = "/usr/local/bin/pi-env";
 
 /** A running workspace stops after this long without a request. */
 const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -172,7 +170,7 @@ export const bootStep = <A>(step: string, run: () => Promise<A>) =>
     try: run,
     catch: (cause) =>
       new WorkspaceBootFailed({
-        message: `${step} failed: ${messageOf(cause)}`,
+        message: `${step} failed: ${errorText(cause)}`,
         cause,
       }),
   });

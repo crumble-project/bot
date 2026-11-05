@@ -6,18 +6,23 @@ import {
 } from "@doorstep/protocol";
 import { Clock, Context, DateTime, Effect, Layer } from "effect";
 import { z } from "zod";
-import type { ConnectionStatus } from "../shared/domain";
+import type { RelayStatusResponse } from "../contract/event-sources";
 import { Secrets, secretText } from "../secrets/secrets";
 import { DOORSTEP_PLUGIN_ID, pluginSettingKey } from "../shared/vendors";
 import { InvalidInput } from "../shared/errors";
 import {
+  blocked,
+  connecting,
   connectionFailed,
+  connectionUp,
   credentialsChanged,
   disconnected,
+  stayedUp,
+  stopped,
   tokenOrFailure,
 } from "../shared/reconnecting";
 import { SettingsRepository } from "../shared/settings-repository";
-import { startTicking } from "../shared/ticker";
+import { pruneHourly, startTicking } from "../shared/ticker";
 import { connectUrl, type RelayAccess } from "./doorstep-client";
 import { EventRepository, type RelayEvent } from "./event-repository";
 
@@ -26,15 +31,6 @@ export const RELAY_URL_SETTING = "event-relay:url";
 export const RELAY_TOKEN_KEY = pluginSettingKey(DOORSTEP_PLUGIN_ID, "token");
 
 export const EVENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
-
-const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
-
-export type RelayStatus = {
-  url: string | null;
-  tokenConfigured: boolean;
-  status: ConnectionStatus;
-  error: string | null;
-};
 
 // A hello the protocol schema rejects still names the version the relay speaks.
 const anyHello = z.object({ type: z.literal("hello"), protocol: z.number() });
@@ -71,7 +67,7 @@ const eventOf = (message: EventMessage): RelayEvent => ({
 export class EventRelay extends Context.Service<
   EventRelay,
   {
-    readonly status: Effect.Effect<RelayStatus>;
+    readonly status: Effect.Effect<RelayStatusResponse>;
     /** The relay URL and account token, for calls to the relay's API. */
     readonly access: Effect.Effect<RelayAccess, InvalidInput>;
     /** Connects, reconnects, or disconnects to match the settings. */
@@ -94,8 +90,7 @@ export class EventRelay extends Context.Service<
       let connection: Connection | undefined;
       let configured: string | undefined;
       // Set by a protocol mismatch; only a settings change clears it.
-      let blocked = false;
-      let pruneAt = 0;
+      let mismatched = false;
       let closed = false;
 
       const relayUrl = settings
@@ -116,7 +111,7 @@ export class EventRelay extends Context.Service<
           if (connection !== current) return;
           connection = undefined;
 
-          if (blocked) return;
+          if (mismatched) return;
           connectionFailed(
             state,
             yield* Clock.currentTimeMillis,
@@ -140,9 +135,11 @@ export class EventRelay extends Context.Service<
             const hello = anyHello.safeParse(json);
 
             if (hello.success) {
-              blocked = true;
-              state.status = "error";
-              state.error = `The relay speaks protocol ${hello.data.protocol}; this server needs ${PROTOCOL_VERSION}.`;
+              mismatched = true;
+              blocked(
+                state,
+                `The relay speaks protocol ${hello.data.protocol}; this server needs ${PROTOCOL_VERSION}.`,
+              );
               disconnect();
             }
 
@@ -151,9 +148,7 @@ export class EventRelay extends Context.Service<
 
           if (message.data.type === "hello") {
             current.greeted = true;
-            state.failures = 0;
-            state.status = "connected";
-            state.error = null;
+            connectionUp(state, yield* Clock.currentTimeMillis);
 
             return;
           }
@@ -182,8 +177,7 @@ export class EventRelay extends Context.Service<
         const current: Connection = { socket, greeted: false };
 
         connection = current;
-        state.status = "connecting";
-        state.error = null;
+        connecting(state);
         socket.addEventListener("message", (message) => {
           const text = textFrame.safeParse(message.data);
 
@@ -202,10 +196,10 @@ export class EventRelay extends Context.Service<
       ) => {
         disconnect();
         configured = undefined;
-        state.status = url ? "error" : "disconnected";
-        state.error = url
-          ? (failure ?? "Configure the Doorstep account token.")
-          : null;
+
+        if (url)
+          blocked(state, failure ?? "Configure the Doorstep account token.");
+        else stopped(state, null);
       };
 
       // New settings get a fresh connection and clear a protocol mismatch.
@@ -213,7 +207,7 @@ export class EventRelay extends Context.Service<
         if (key === configured) return;
         disconnect();
         configured = key;
-        blocked = false;
+        mismatched = false;
         credentialsChanged(state);
       };
 
@@ -224,21 +218,25 @@ export class EventRelay extends Context.Service<
         if (!url || !read.token) return unconfigured(url, read.failure);
         reconfigure(`${url}\n${read.token}`);
 
-        if (blocked || connection) return;
+        const now = yield* Clock.currentTimeMillis;
 
-        if (state.retryAt > (yield* Clock.currentTimeMillis)) return;
+        stayedUp(state, now);
+
+        if (mismatched || connection) return;
+
+        if (state.retryAt > now) return;
         connect({ url, token: read.token });
       });
 
-      const prune = Effect.gen(function* () {
-        const now = yield* Clock.currentTimeMillis;
+      const prune = pruneHourly(
+        Effect.gen(function* () {
+          const now = yield* Clock.currentTimeMillis;
 
-        if (now < pruneAt) return;
-        pruneAt = now + PRUNE_INTERVAL_MS;
-        yield* events.prune(
-          DateTime.formatIso(DateTime.makeUnsafe(now - EVENT_RETENTION_MS)),
-        );
-      });
+          yield* events.prune(
+            DateTime.formatIso(DateTime.makeUnsafe(now - EVENT_RETENTION_MS)),
+          );
+        }),
+      );
 
       const tick = Effect.gen(function* () {
         if (closed) return;

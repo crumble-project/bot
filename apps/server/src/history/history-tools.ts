@@ -7,7 +7,7 @@ import {
   type DocumentReader,
 } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
-import type { Agent } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 import { AgentRepository } from "../bots/agent-repository";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import { BotRuntime, type AgentRuntime } from "../bots/runtime";

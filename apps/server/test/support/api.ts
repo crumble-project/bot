@@ -1,4 +1,4 @@
-import { Context, Effect } from "effect";
+import { Context, Effect, Layer, Scope } from "effect";
 import { createAPI, type ApiServices } from "../../src/app/api";
 import type { CoreServices } from "../../src/app/core-layer";
 import { standaloneScheduler } from "../../src/automations/scheduler-test-support";
@@ -11,6 +11,8 @@ import type { AgentRuntime } from "../../src/bots/runtime";
 import { EventSources } from "../../src/event-sources/event-sources";
 import { GroupChats } from "../../src/group-chats/group-chats";
 import { McpIntegrations } from "../../src/integrations/integrations";
+import { mcpServersOver } from "../../src/integrations/integrations-test-support";
+import { McpServers } from "../../src/integrations/mcp-servers";
 import { MessageGateway } from "../../src/message-gateway/message-gateway";
 import {
   pluginProviders,
@@ -25,7 +27,11 @@ import {
 import { meliousPlugin } from "../../src/providers/melious";
 import { Push } from "../../src/push/push";
 import { runnerOf, type Runner } from "../../src/shared/runner";
-import { CommonSkills, type CommonSkill } from "../../src/skills/common-skills";
+import {
+  DefaultSkills,
+  type DefaultSkill,
+} from "../../src/skills/default-skills";
+import { OwnerSkills } from "../../src/skills/owner-skills";
 import { BotWorkspaces, type Workspaces } from "../../src/workspaces/workspace";
 
 /** The account services an API fixture replaces; the rest answer as an empty account. */
@@ -34,7 +40,7 @@ export type TestServices = {
   groupChats?: { service: GroupChats["Service"] };
   push?: Runner<Push>;
   scriptRuns?: ScriptRuns["Service"];
-  commonSkills?: CommonSkill[];
+  defaultSkills?: DefaultSkill[];
   workspaces?: Workspaces | undefined;
   plugins?: readonly CrumblePlugin[];
   providerAuth?: ProviderSignInsAccess;
@@ -63,6 +69,7 @@ const noScriptRuns = ScriptRuns.of({
 
 const noIntegrations = McpIntegrations.of({
   ...notReached<McpIntegrations["Service"]>(),
+  oauthClient: undefined,
   failure: () => null,
   disconnect: () => Effect.void,
 });
@@ -80,18 +87,20 @@ function testServices(
 
   const push = services.push?.runSync(Push.use(Effect.succeed)) ?? noPush;
 
-  return bots.core.runSync(Effect.context<CoreServices>()).pipe(
+  const core = bots.core.runSync(Effect.context<CoreServices>());
+
+  const context = core.pipe(
+    Context.add(McpServers, mcpServersOver(core, noIntegrations)),
     Context.add(Scheduler, scheduler.service),
     Context.add(ScriptRuns, services.scriptRuns ?? noScriptRuns),
     Context.add(BotWorkspaces, services.workspaces),
-    Context.add(CommonSkills, services.commonSkills ?? []),
+    Context.add(DefaultSkills, services.defaultSkills ?? []),
     Context.add(Plugins, plugins),
     Context.add(
       GroupChats,
       services.groupChats?.service ?? notReached<GroupChats["Service"]>(),
     ),
     Context.add(Push, push),
-    Context.add(McpIntegrations, noIntegrations),
     Context.add(
       ProviderSignIns,
       services.providerAuth ??
@@ -107,6 +116,17 @@ function testServices(
     ),
     Context.add(EventSources, notReached<EventSources["Service"]>()),
   );
+
+  return Context.add(
+    context,
+    OwnerSkills,
+    Effect.runSync(
+      Layer.buildWithScope(OwnerSkills.layer, Scope.makeUnsafe()).pipe(
+        Effect.map(Context.get(OwnerSkills)),
+        Effect.provideContext(context),
+      ),
+    ),
+  );
 }
 
 /** The API over `bots`, with `services` replacing what an account would run. */
@@ -117,5 +137,4 @@ export const testAPI = (
 ) =>
   createAPI({ ...bots, core: runnerOf(testServices(bots, services)) }, token, {
     viewerTickets: services.viewerTickets ?? new ViewerTickets(),
-    oauthClient: undefined,
   });

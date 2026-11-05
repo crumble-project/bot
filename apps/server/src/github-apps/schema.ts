@@ -58,7 +58,7 @@ export const githubAppUsers = sqliteTable("github_app_users", {
 
 /**
  * GitHub users the owner made for bots, each added with a personal access token; GitHub calls them machine users. The
- * token is a keyed secret, `githubAccountTokenKey`, so it can be read from a password manager.
+ * token is a keyed secret, so it can be read from a password manager.
  */
 export const githubAccounts = sqliteTable("github_accounts", {
   id: text("id").primaryKey(),

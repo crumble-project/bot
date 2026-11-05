@@ -1,23 +1,39 @@
-import { GitHubAccounts } from "../github-apps/github-accounts";
+import { Effect } from "effect";
 import type { Runner } from "../shared/runner";
+import { GUEST_CA_PATH } from "../../workspace-image/guest";
+import type { WorkspaceInterceptor } from "../workspaces/workspace-proxy";
 import {
-  GUEST_CA_PATH,
+  commitSigning,
   GUEST_SIGN_PATH,
   signingHelper,
-} from "../workspaces/workspace";
+} from "./commit-signing";
 import {
   credentialAuthoritiesAccess,
   type CredentialAuthorities,
 } from "./credential-authority";
 import { credentialProxy } from "./credential-proxy";
 import { credentialsAccess, type Credentials } from "./credentials";
+import { CredentialSource } from "./minted-credentials";
+
+/** `first` takes the hosts it wants; `second` the rest. */
+const either = (
+  first: WorkspaceInterceptor,
+  second: WorkspaceInterceptor,
+): WorkspaceInterceptor => ({
+  wants: (host) => first.wants(host) || second.wants(host),
+  answers: (host) =>
+    first.answers?.(host) === true || second.answers?.(host) === true,
+  handle: (client, host, port) =>
+    (first.wants(host) ? first : second).handle(client, host, port),
+});
 
 /** What a bot's workspace needs for its credentials: the guest trusts the bot's authority, and the proxy adds the secrets. */
 export const credentialInterception = (
-  run: Runner<Credentials | CredentialAuthorities | GitHubAccounts>,
+  run: Runner<Credentials | CredentialAuthorities | CredentialSource>,
 ) => {
   const credentials = credentialsAccess(run);
   const authorities = credentialAuthoritiesAccess(run);
+  const source = run.runSync(CredentialSource.use(Effect.succeed));
 
   return {
     guest: async (agentId: string) => ({
@@ -36,18 +52,19 @@ export const credentialInterception = (
       ],
     }),
     intercept: (agentId: string) =>
-      credentialProxy({
-        agentId,
-        authorities,
-        grants: () => credentials.grants(agentId),
-        value: (name, target) => credentials.value(agentId, name, target),
-        recordUse: (name, use) => credentials.recordUse(agentId, name, use),
-        sign: async (data) =>
-          (
-            await run.runPromise(
-              GitHubAccounts.use((accounts) => accounts.ofBot(agentId)),
-            )
-          )?.sign(data),
-      }),
+      either(
+        commitSigning({
+          agentId,
+          authorities,
+          sign: (data) => run.runPromise(source.sign(agentId, data)),
+        }),
+        credentialProxy({
+          agentId,
+          authorities,
+          grants: () => credentials.grants(agentId),
+          value: (name, target) => credentials.value(agentId, name, target),
+          recordUse: (name, use) => credentials.recordUse(agentId, name, use),
+        }),
+      ),
   };
 };

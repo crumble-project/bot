@@ -8,7 +8,8 @@ import {
   EventRepository,
   type EventSource,
 } from "./event-repository";
-import { EventRelay, RELAY_URL_SETTING, type RelayStatus } from "./event-relay";
+import type { RelayStatusResponse } from "../contract/event-sources";
+import { EventRelay, RELAY_URL_SETTING } from "./event-relay";
 
 export type ListedEventSource = EventSource & { usedBy: number };
 
@@ -16,8 +17,10 @@ export type ListedEventSource = EventSource & { usedBy: number };
 export class EventSources extends Context.Service<
   EventSources,
   {
-    readonly relay: Effect.Effect<RelayStatus>;
-    readonly setRelayUrl: (url: string | null) => Effect.Effect<RelayStatus>;
+    readonly relay: Effect.Effect<RelayStatusResponse>;
+    readonly setRelayUrl: (
+      url: string | null,
+    ) => Effect.Effect<RelayStatusResponse>;
     readonly list: Effect.Effect<ListedEventSource[]>;
     /** The address carries the source's secret; nothing stores it, so it is shown only now. */
     readonly create: (

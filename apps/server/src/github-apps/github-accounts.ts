@@ -1,3 +1,5 @@
+import type { z } from "zod";
+import type { githubAccountResponse } from "../contract/github-apps";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { Context, Effect, Layer, Redacted } from "effect";
@@ -5,30 +7,17 @@ import { secretKey } from "../secrets/secret-key";
 import type { SecretUnavailable } from "../secrets/secret-values";
 import { Secrets } from "../secrets/secrets";
 import { ServerSecrets } from "../secrets/server-secrets";
-import type { SecretInput, SecretStatus } from "../shared/domain";
+import type { SecretInput } from "../contract/secrets";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { Conflict, InvalidInput, NotFound } from "../shared/errors";
-import {
-  GitHubUnavailable,
-  assignmentChange,
-  github,
-  githubUser,
-} from "./github-api";
+import { GitHubUnavailable, github, githubUser } from "./github-api";
+import { assignmentChange } from "./github-identity";
 import { githubAccountBots, githubAccounts } from "./schema";
 import { newSigningKey, sshPublicKey, sshSign } from "./ssh-signing";
 
 /** A machine account as the owner sees it; its token never leaves the server. */
-export type GitHubAccount = {
-  id: string;
-  login: string;
-  htmlUrl: string;
-  botIds: string[];
-  token: SecretStatus;
-  /** The OpenSSH public key its commits are signed with; the owner adds it on GitHub as a signing key. */
-  signingKey: string;
-  createdAt: string;
-};
+export type GitHubAccount = z.infer<typeof githubAccountResponse>;
 
 /** The machine account a bot acts as, for the credential proxy and the bot's commits; `token` reads it on use. */
 export type GitHubAccountOfBot = {
@@ -90,16 +79,6 @@ export class GitHubAccounts extends Context.Service<
       GitHubAccount,
       NotFound | InvalidInput | GitHubUnavailable
     >;
-    /** Replaces the account's bots and returns every bot whose machine account changed. */
-    readonly assign: (
-      id: string,
-      botIds: readonly string[],
-    ) => Effect.Effect<
-      { account: GitHubAccount; changed: string[] },
-      NotFound | Conflict
-    >;
-    /** Forgets the account and returns the bots that acted as it. */
-    readonly remove: (id: string) => Effect.Effect<string[], NotFound>;
     readonly ofBot: (
       agentId: string,
     ) => Effect.Effect<GitHubAccountOfBot | undefined>;
@@ -250,80 +229,6 @@ export class GitHubAccounts extends Context.Service<
         return yield* get(id);
       });
 
-      const assign = Effect.fn("GitHubAccounts.assign")(function* (
-        id: string,
-        botIds: readonly string[],
-      ) {
-        if (!(yield* row(id)))
-          return yield* new NotFound({ message: "Machine account not found" });
-
-        const { added, removed } = assignmentChange(
-          yield* botIdsOf(id),
-          botIds,
-        );
-
-        const clashing = added.length
-          ? yield* db
-              .select({ agentId: githubAccountBots.agentId })
-              .from(githubAccountBots)
-              .where(
-                and(
-                  inArray(githubAccountBots.agentId, added),
-                  ne(githubAccountBots.accountId, id),
-                ),
-              )
-              .pipe(Effect.orDie)
-          : [];
-
-        if (clashing.length)
-          return yield* new Conflict({
-            message:
-              "A bot already acts as another machine account; take it off that account first",
-          });
-
-        const at = yield* nowIso;
-
-        yield* db
-          .transaction(() =>
-            Effect.gen(function* () {
-              if (removed.length)
-                yield* db
-                  .delete(githubAccountBots)
-                  .where(inArray(githubAccountBots.agentId, removed));
-
-              if (added.length)
-                yield* db.insert(githubAccountBots).values(
-                  added.map((agentId) => ({
-                    agentId,
-                    accountId: id,
-                    assignedAt: at,
-                  })),
-                );
-            }),
-          )
-          .pipe(Effect.orDie);
-
-        return { account: yield* get(id), changed: [...added, ...removed] };
-      });
-
-      const remove = Effect.fn("GitHubAccounts.remove")(function* (id: string) {
-        const botIds = yield* botIdsOf(id);
-
-        const deleted = yield* db
-          .delete(githubAccounts)
-          .where(eq(githubAccounts.id, id))
-          .returning({ id: githubAccounts.id })
-          .pipe(Effect.orDie);
-
-        if (!deleted.length)
-          return yield* new NotFound({ message: "Machine account not found" });
-
-        yield* secrets.delete(tokenKey(id));
-        yield* serverSecrets.delete(signingKeyKey(id));
-
-        return botIds;
-      });
-
       const ofBot = Effect.fn("GitHubAccounts.ofBot")(function* (
         agentId: string,
       ) {
@@ -364,10 +269,88 @@ export class GitHubAccounts extends Context.Service<
         get,
         add,
         setToken,
-        assign,
-        remove,
         ofBot,
       });
     }),
   );
 }
+
+/**
+ * Who acts as a machine account. Only `GitHubApps` runs these: each bot they change needs its `GH_TOKEN` credential
+ * synced, which takes the bot's Apps too.
+ */
+export const accountMembership = Effect.gen(function* () {
+  const db = yield* ProductDatabase;
+  const secrets = yield* Secrets;
+  const serverSecrets = yield* ServerSecrets;
+  const accounts = yield* GitHubAccounts;
+
+  const assign = Effect.fn("accountMembership.assign")(function* (
+    id: string,
+    botIds: readonly string[],
+  ) {
+    const current = yield* accounts.get(id);
+    const { added, removed } = assignmentChange(current.botIds, botIds);
+
+    const clashing = added.length
+      ? yield* db
+          .select({ agentId: githubAccountBots.agentId })
+          .from(githubAccountBots)
+          .where(
+            and(
+              inArray(githubAccountBots.agentId, added),
+              ne(githubAccountBots.accountId, id),
+            ),
+          )
+          .pipe(Effect.orDie)
+      : [];
+
+    if (clashing.length)
+      return yield* new Conflict({
+        message:
+          "A bot already acts as another machine account; take it off that account first",
+      });
+
+    const at = yield* nowIso;
+
+    yield* db
+      .transaction(() =>
+        Effect.gen(function* () {
+          if (removed.length)
+            yield* db
+              .delete(githubAccountBots)
+              .where(inArray(githubAccountBots.agentId, removed));
+
+          if (added.length)
+            yield* db.insert(githubAccountBots).values(
+              added.map((agentId) => ({
+                agentId,
+                accountId: id,
+                assignedAt: at,
+              })),
+            );
+        }),
+      )
+      .pipe(Effect.orDie);
+
+    return {
+      account: yield* accounts.get(id),
+      changed: [...added, ...removed],
+    };
+  });
+
+  const remove = Effect.fn("accountMembership.remove")(function* (id: string) {
+    const { botIds } = yield* accounts.get(id);
+
+    yield* db
+      .delete(githubAccounts)
+      .where(eq(githubAccounts.id, id))
+      .pipe(Effect.orDie);
+    yield* secrets.delete(tokenKey(id));
+    yield* serverSecrets.delete(signingKeyKey(id));
+
+    return botIds;
+  });
+
+  return { assign, remove };
+});

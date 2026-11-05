@@ -33,6 +33,16 @@ export const FILES_PROGRAM = "thunar";
 
 export const TERMINAL_PROGRAM = "xfce4-terminal";
 
+/** Where every backend puts the pi-env daemon in the guest. */
+export const GUEST_DAEMON = "/usr/local/bin/pi-env";
+
+/** Where the guest keeps the bot's credential proxy authority, which `update-ca-certificates` adds to the bundle. */
+export const GUEST_CA_PATH =
+  "/usr/local/share/ca-certificates/crumble-credentials.crt";
+
+/** The guest's system bundle: public authorities plus the bot's. */
+export const GUEST_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt";
+
 /** Host folders of what goes into a guest. */
 export const DESKTOP_SOURCES = path.join(import.meta.dir, "desktop");
 

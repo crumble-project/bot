@@ -1,9 +1,9 @@
-import { GROUP_MESSAGE_ENTRY } from "../bots/entries";
+import { GROUP_MESSAGE_ENTRY } from "../transcript/entries";
 import { expect, test } from "bun:test";
 import {
   type TranscriptMessage,
   type TranscriptPage,
-} from "../bots/transcript";
+} from "../transcript/transcript";
 import {
   HistorySearch,
   type HistoryChat,

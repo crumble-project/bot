@@ -3,10 +3,11 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { Agent } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 import type { MCPServer } from "./mcp-server-repository";
 import type { McpTransport } from "@earendil-works/pi-mcp";
-import { standaloneIntegrations, type MCPClient } from "./integrations";
+import type { MCPClient } from "./integrations";
+import { standaloneIntegrations } from "./integrations-test-support";
 import {
   finishAuthorization,
   hasOAuthTokens,

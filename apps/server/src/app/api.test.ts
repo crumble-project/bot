@@ -1,24 +1,34 @@
 import { describe, expect, test, afterEach } from "bun:test";
+import {
+  inertControl,
+  inertCredentials,
+  inertIntent,
+  inertLogins,
+} from "../../test/support/job-wiring";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { Store } from "../../test/support/store";
 import { codingPlugin } from "../jobs/coding";
 import { desktopPlugin } from "../bot-desktop/desktop-jobs";
 import { desktopControlAccess } from "../bot-desktop/desktop-control";
-import { pathRegister } from "./api";
+import { pathRegister } from "./api-requests";
 import { handleApiError } from "./api-errors";
 import { HeldActions, heldActionsAccess } from "../bot-desktop/held-actions";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
-import { standaloneBots } from "../bots/bots";
+import { standaloneBots } from "../bots/bots-test-support";
 import { standaloneScheduler } from "../automations/scheduler-test-support";
 import { testAPI, type TestServices } from "../../test/support/api";
 import { heldActionNotices } from "../bot-desktop/held-action-notices";
 import { contractApp } from "../contract/api-contract";
-import type { secretInput } from "../shared/domain";
+import type { secretInput } from "../contract/secrets";
 import type { z } from "zod";
 import { registerMcpServerRoutes } from "../integrations/mcp-servers-api";
 import type { McpIntegrations } from "../integrations/integrations";
+import { BotDeletion } from "../bots/bot-deletion";
+import { Secrets } from "../secrets/secrets";
+import { mcpServersOver } from "../integrations/integrations-test-support";
 import { McpServers } from "../integrations/mcp-servers";
+import { mcpTokenKey } from "../integrations/mcp-oauth";
 import { registerPluginSettingRoutes } from "../plugins/plugin-settings-api";
 import { memoryResponse } from "../contract/api-responses";
 import { Context, Effect, Exit, Layer, Scope } from "effect";
@@ -37,9 +47,9 @@ import { runnerOf } from "../shared/runner";
 import { ScriptRuns } from "../automations/script-runs";
 import type { Workspaces } from "../workspaces/workspace";
 import { ScriptRunRepository } from "../automations/script-run-repository";
-import { scheduleInput, type ScheduleInput } from "../shared/domain";
+import { scheduleInput, type ScheduleInput } from "../contract/schedules";
 import type { ScriptRun } from "../automations/script-run-repository";
-import type { MessageOrigin } from "../bots/entries";
+import type { MessageOrigin } from "../transcript/entries";
 import { defaultAvatarDefinition } from "../contract/avatar";
 
 // Plain header records, so they spread into the defaults.
@@ -122,7 +132,6 @@ function setup(options: TestServices = {}) {
     store.runtime,
     (a, p, r, s) => service.dispatch(a, p, r, s),
     undefined,
-    undefined,
     options.workspaces,
   );
 
@@ -181,8 +190,13 @@ describe("HTTP API for bots, chats, and activity", () => {
       scheduler,
       workspaces: workspacesWith({ desktop: true }),
       plugins: [
-        codingPlugin(workspacesWith({}), () => 0),
-        desktopPlugin(workspacesWith({ desktop: true })),
+        codingPlugin(workspacesWith({}), () => 0, inertCredentials),
+        desktopPlugin(
+          workspacesWith({ desktop: true }),
+          inertControl,
+          inertLogins,
+          inertIntent,
+        ),
       ],
     });
 
@@ -440,7 +454,7 @@ describe("HTTP API for bots, chats, and activity", () => {
 
     const app = testAPI(service, token, {
       scheduler,
-      commonSkills: [
+      defaultSkills: [
         {
           id: "common:tasks/SKILL.md",
           name: "Tasks",
@@ -1101,7 +1115,7 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
 
   test("shared assignment changes only the chosen skill and refuses defaults and overflow", async () => {
     const { app, store } = setup({
-      commonSkills: [
+      defaultSkills: [
         {
           id: "default",
           name: "Default",
@@ -1873,34 +1887,6 @@ describe("bot desktop control and viewer", () => {
     expect(booted).toEqual([agent.id]);
   });
 
-  test("only noVNC's core and vendored files are served", async () => {
-    const { app } = desktopApp();
-    const rfb = await app.request("/desktop-viewer/novnc/core/rfb.js");
-
-    expect(rfb.status).toBe(200);
-    expect(rfb.headers.get("content-type")).toContain("javascript");
-    expect(
-      (
-        await app.request(
-          "/desktop-viewer/novnc/vendor/pako/lib/zlib/inflate.js",
-        )
-      ).status,
-    ).toBe(200);
-    expect((await app.request("/desktop-viewer/novnc/app/ui.js")).status).toBe(
-      404,
-    );
-    expect(
-      (await app.request("/desktop-viewer/novnc/core/../package.json")).status,
-    ).toBe(404);
-    expect(
-      (
-        await app.request(
-          "/desktop-viewer/novnc/core/%2e%2e/%2e%2e/LICENSE.txt",
-        )
-      ).status,
-    ).toBe(404);
-  });
-
   test("viewer links and control need the owner's token", async () => {
     const { app, agent } = desktopApp();
 
@@ -2170,6 +2156,7 @@ describe("MCP server tokens from a password manager", () => {
   type ServerBody = {
     name?: string;
     url?: string;
+    agentId?: string;
     token?: { value?: string; reference?: ReturnType<typeof reference> } | null;
   };
 
@@ -2194,6 +2181,7 @@ describe("MCP server tokens from a password manager", () => {
     const disconnected: string[] = [];
 
     const integrations: McpIntegrations["Service"] = {
+      oauthClient: undefined,
       failure: () => null,
       extensionsForAgent: async () => [],
       codemodeNamespaces: () => [],
@@ -2209,7 +2197,13 @@ describe("MCP server tokens from a password manager", () => {
     registerMcpServerRoutes({
       register: pathRegister(app),
       service,
-      mcpServers: new McpServers({ run, integrations }),
+      run: runnerOf(
+        Context.add(
+          Context.merge(core, vault),
+          McpServers,
+          mcpServersOver(Context.merge(core, vault), integrations),
+        ),
+      ),
     });
     registerPluginSettingRoutes({
       register: pathRegister(app),
@@ -2233,6 +2227,8 @@ describe("MCP server tokens from a password manager", () => {
 
     return {
       state,
+      store,
+      run,
       disconnected,
       create: (body: ServerBody) =>
         send("POST", "/v1/mcp-servers", {
@@ -2275,6 +2271,28 @@ describe("MCP server tokens from a password manager", () => {
         token: { passwordManager: "1password", reference: REFERENCE },
       },
     ]);
+    api.close();
+  });
+
+  test("deleting a bot forgets its own servers' secrets and connections", async () => {
+    const api = mcpSetup(fakePasswordManager());
+    const bot = api.store.createAgent(agentInput("Ada"));
+
+    const { id }: { id: string } = await (
+      await api.create({ agentId: bot.id, token: { value: "lin_secret" } })
+    ).json();
+
+    const clear = await api.run.runPromise(
+      BotDeletion.use((deletion) => deletion.prepare(bot.id)),
+    );
+
+    api.store.deleteAgent(bot.id);
+    await api.run.runPromise(clear);
+
+    expect(api.disconnected).toEqual([id]);
+    expect(
+      await api.run.runPromise(Secrets.use((s) => s.status(mcpTokenKey(id)))),
+    ).toMatchObject({ configured: false });
     api.close();
   });
 

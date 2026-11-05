@@ -5,8 +5,16 @@ import type {
   Tx,
 } from "@earendil-works/pi-durable";
 import { z } from "zod";
-import type { OwnerMessage } from "../bot-desktop/desktop-vocabulary";
-import { MESSAGE_ENTRY } from "../bots/entries";
+import type { OWNER_MESSAGE_SOURCES } from "../shared/domain";
+import { MESSAGE_ENTRY } from "../transcript/entries";
+import { requestSource } from "../transcript/origins";
+
+/** An owner message a job acts for, verbatim; a job started by an automation counts the automation's text as one. */
+export type OwnerMessage = {
+  requestId: string;
+  text: string;
+  from: (typeof OWNER_MESSAGE_SOURCES)[number];
+};
 
 /** What a job was asked: the owner's messages it concerns, and each message the bot sent it. */
 export type JobRequest = {
@@ -15,27 +23,6 @@ export type JobRequest = {
   /** The job's name and the bot chat it reports to; every start and send sets it, before the job can act. */
   job?: { name: string; chatId: ConversationId };
 };
-
-// Origins whose words are the owner's request: the owner's own, or the instructions of an automation the owner set up.
-// A script automation's notice is left out: it carries the command's output, which anyone the script reads can write.
-// An event automation's stored text is its prompt alone; the event's payload reaches only the model.
-const REQUEST_ORIGINS = new Map<string, OwnerMessage["from"]>([
-  ["owner", "owner"],
-  ["task", "automation"],
-  ["event", "automation"],
-]);
-
-/** Prefixes an owner or automation message in the bot's model context, so the bot can cite it in `owner_messages`. */
-export const messageTag = (
-  originKind: string | undefined,
-  requestId: string | undefined,
-  text: string,
-) =>
-  originKind !== undefined &&
-  REQUEST_ORIGINS.has(originKind) &&
-  requestId !== undefined
-    ? `[message ${requestId}]\n${text}`
-    : text;
 
 const ownerEntry = z.object({
   text: z.string(),
@@ -49,7 +36,7 @@ function ownerMessageOf(entry: EntryRecord): OwnerMessage | undefined {
   if (entry.kind !== MESSAGE_ENTRY) return undefined;
 
   const data = ownerEntry.safeParse(entry.data).data;
-  const from = data && REQUEST_ORIGINS.get(data.origin.kind);
+  const from = data && requestSource(data.origin.kind);
 
   return data && from
     ? { requestId: data.requestId, text: data.text, from }

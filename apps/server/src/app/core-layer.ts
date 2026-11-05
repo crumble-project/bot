@@ -1,6 +1,7 @@
 import { Layer } from "effect";
 import { DesktopControl } from "../bot-desktop/desktop-control";
 import { HeldActions } from "../bot-desktop/held-actions";
+import { BotDeletion } from "../bots/bot-deletion";
 import { BotNotices } from "../bots/bot-notices";
 import { CredentialAuthorities } from "../credentials/credential-authority";
 import { Credentials } from "../credentials/credentials";
@@ -12,6 +13,7 @@ import { Logins } from "../logins/logins";
 import { ProviderCredentials } from "../providers/provider-credentials";
 import { BotMemory } from "../memory/bot-memory";
 import { secretsLayer } from "../secrets/secrets";
+import { botSecretCleanup } from "../bot-secrets/bot-secret-lifecycle";
 import { BotSecretRequests } from "../bot-secrets/bot-secret-requests";
 import { BotSecretUses } from "../bot-secrets/bot-secret-uses";
 import { assertVendorIds, pluginPasswordManagers } from "../plugins/plugins";
@@ -37,6 +39,7 @@ export const coreLayer = (dataDir: string) =>
     CredentialAuthorities.layer,
     ProviderCredentials.layer,
     BotMemory.layer,
+    botSecretCleanup,
   ).pipe(
     Layer.provideMerge(githubCredentialSource),
     Layer.provideMerge(GitHubApps.layer),
@@ -46,7 +49,7 @@ export const coreLayer = (dataDir: string) =>
     Layer.provideMerge(
       Layer.mergeAll(BotSecretRequests.layer, BotSecretUses.layer),
     ),
-    Layer.provideMerge(BotNotices.layer),
+    Layer.provideMerge(Layer.mergeAll(BotNotices.layer, BotDeletion.layer)),
     Layer.provideMerge(secretsLayer(passwordManagers)),
     Layer.provideMerge(productLayer(dataDir)),
   );

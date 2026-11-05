@@ -11,17 +11,11 @@ import {
   jinaExtract,
   parallelSearch,
   tavilySearch,
-  VendorUnavailable,
 } from "./vendors";
 import type { WebSearchResult } from "../contract/web-search";
 
-export class WebSearchUnavailable extends WebSearchError {
-  constructor() {
-    super(
-      "Web search is unavailable right now: the free services Crumble uses are rate-limited or down. Try again later.",
-    );
-  }
-}
+const ALL_VENDORS_DOWN =
+  "Web search is unavailable right now: the free services Crumble uses are rate-limited or down. Try again later.";
 
 const matchesDomains = (url: string, domains: string[]) => {
   if (!domains.length) return true;
@@ -117,12 +111,9 @@ export const mixedProvider = (): WebSearchProvider => {
       const result = yield* vendor().pipe(Effect.result);
 
       if (Result.isSuccess(result)) return filterResults(result.success, query);
-
-      if (!(result.failure instanceof VendorUnavailable))
-        return yield* Effect.fail(result.failure);
     }
 
-    return yield* Effect.fail(new WebSearchUnavailable());
+    return yield* new WebSearchError({ message: ALL_VENDORS_DOWN });
   });
 
   return {
@@ -131,7 +122,7 @@ export const mixedProvider = (): WebSearchProvider => {
     extract: (url) =>
       jinaExtract(url).pipe(
         Effect.mapError(
-          (error) => new WebExtractionError(error.message, { cause: error }),
+          (error) => new WebExtractionError({ message: error.message }),
         ),
       ),
   };

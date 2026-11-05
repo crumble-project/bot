@@ -1,79 +1,65 @@
 import type { Bots } from "./bots";
-import { botsActivity } from "./bots-activity";
 import { botsAdmission } from "./bots-admission";
 import { botsAnnouncements } from "./bots-announcements";
 import { botsChat } from "./bots-chat";
 import type { BotsContext } from "./bots-context";
 import { botsLifecycle } from "./bots-lifecycle";
 import { botsLookup } from "./bots-lookup";
-import { botsMonitor, botsOutcomes } from "./bots-outcomes";
+import { botsNotifications } from "./bots-notifications";
+import { botsMonitor } from "./bots-outcomes";
 import { botsReads } from "./bots-reads";
 import { botsSubmissions } from "./bots-submissions";
 
-/** The bots' operations, each group built from the context of one layer build. */
-const botsGroups = (context: BotsContext) => {
+/** The bots as the service interface offers them, over one layer build's context. */
+export const botsService = (context: BotsContext): Bots["Service"] => {
   const lookup = botsLookup(context);
-  const activity = botsActivity(context);
+  const notifications = botsNotifications(context);
   const reads = botsReads(context, lookup);
 
   const announcements = botsAnnouncements(context, {
-    notifications: activity,
-    reads,
+    notifications,
+    snapshot: reads.snapshot,
+    origin: reads.origin,
   });
 
   const chat = botsChat(context, {
     lookup,
-    reads,
-    notifications: activity,
+    snapshot: reads.snapshot,
+    notifications,
     announcements,
   });
 
-  const outcomes = botsOutcomes(context, {
-    notifications: activity,
-    announcements,
-  });
-
-  const monitor = botsMonitor(context, outcomes);
-
-  const admission = botsAdmission(context, {
+  const { admit } = botsAdmission(context, {
     lookup,
-    reads,
-    notifications: activity,
-    monitor: monitor.monitor,
+    origin: reads.origin,
+    notifications,
+    monitor: botsMonitor(context, { notifications, announcements }),
   });
 
   const submissions = botsSubmissions(context, {
     lookup,
     chat: chat.chat,
-    notifications: activity,
+    notifications,
     announcements,
-    admit: admission.admit,
+    admit,
   });
 
   const lifecycle = botsLifecycle(context, {
     lookup,
     chat: chat.chat,
-    notifications: activity,
-    admit: admission.admit,
+    notifications,
+    admit,
   });
-
-  return { lookup, activity, reads, chat, submissions, lifecycle };
-};
-
-/** The bots as the service interface offers them, over one layer build's context. */
-export const botsService = (context: BotsContext): Bots["Service"] => {
-  const { lookup, activity, reads, chat, submissions, lifecycle } =
-    botsGroups(context);
 
   return {
     agent: lookup.agent,
     conversation: lookup.conversation,
-    subscribe: activity.subscribe,
-    onActivity: activity.onActivity,
-    onSettled: activity.onSettled,
+    subscribe: notifications.subscribe,
+    onActivity: notifications.onActivity,
+    onSettled: notifications.onSettled,
     agentPreviews: reads.agentPreviews,
-    announceJobAnswer: activity.announceJobAnswer,
-    announce: activity.announce,
+    announceJobAnswer: notifications.announceJobAnswer,
+    announce: notifications.emit,
     snapshot: reads.snapshot,
     chat: chat.chat,
     recordBotMessage: chat.recordBotMessage,

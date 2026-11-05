@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { openGroupConversation } from "../group-chats/group-turns";
 import { afterEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,8 +16,8 @@ import { AgentRuntime, type RuntimeCallbacks } from "./runtime";
 import { hostModels } from "../providers/providers";
 import { ProviderCredentials } from "../providers/provider-credentials";
 import { Store } from "../../test/support/store";
-import { loadCommonSkills } from "../skills/common-skills";
-import { agentInput, type Agent } from "../shared/domain";
+import { loadDefaultSkills } from "../skills/default-skills";
+import { agentInput, type Agent } from "../contract/agents";
 import { defaultAvatarDefinition } from "../contract/avatar";
 import type { AvailableSkill } from "../skills/skill-library";
 import type { BotSkills } from "../skills/skills";
@@ -221,7 +222,7 @@ test("lists skills by name in the prompt and loads their content and documents o
     "---\nname: Tasks\ndescription: Handle tasks\n---\nCommon task rules",
   );
   await Bun.write(join(taskDir, "references", "cron.md"), "Cron depth");
-  const common = loadCommonSkills(skillsRoot);
+  const common = loadDefaultSkills(skillsRoot);
   expect(common).toEqual([
     {
       id: "common:tasks/SKILL.md",
@@ -702,7 +703,7 @@ test("a turn running in another conversation leaves the chat's answers in its hi
 
   const a = makeAgent();
   const chat = await runtime.openChat(a);
-  const group = await runtime.openGroupConversation(a, "group-1");
+  const group = await openGroupConversation(runtime, a, "group-1");
   faux.setResponses([
     fauxAssistantMessage([fauxToolCall("blocked", {})], {
       stopReason: "toolUse",

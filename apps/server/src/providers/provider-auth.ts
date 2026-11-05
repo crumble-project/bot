@@ -23,7 +23,7 @@ import {
   type ProviderCredentialStore,
 } from "./provider-credentials";
 import { ProviderModels } from "./providers";
-import type { SecretInput } from "../shared/domain";
+import type { SecretInput } from "../contract/secrets";
 import {
   InvalidInput,
   NotFound,

@@ -1,24 +1,17 @@
+import type { z } from "zod";
+import type { loginResponse } from "../contract/api-responses";
 import { and, asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { parseHosts } from "../bot-secrets/schema";
 import { botSecretKey, botSecretsPrefix } from "../secrets/secret-key";
 import { lastUseError } from "../bot-secrets/bot-secret-uses";
-import type { LoginField, SecretStatus } from "../shared/domain";
+import type { LoginField } from "../contract/secrets";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { logins } from "./schema";
 
 /** A login the owner gave one bot for its desktop jobs. Values are write-only and never part of this record. */
-export type Login = {
-  name: string;
-  hosts: string[];
-  fields: Partial<Record<LoginField, SecretStatus>>;
-  createdAt: string;
-  updatedAt: string;
-  lastUsedAt: string | null;
-  /** Why the newest fill couldn't read its value; null when it could. */
-  lastError: string | null;
-};
+export type Login = z.infer<typeof loginResponse>;
 
 /** The secret holding one field of a login. */
 export const loginFieldKey = (

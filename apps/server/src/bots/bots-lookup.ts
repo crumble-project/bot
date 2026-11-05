@@ -1,8 +1,10 @@
 import { Effect } from "effect";
 import { pi } from "../shared/app-errors";
-import type { Agent } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 import { NotFound } from "../shared/errors";
 import type { BotsContext } from "./bots-context";
+
+export type BotsLookup = ReturnType<typeof botsLookup>;
 
 /** The bot or the chat an operation names, failing with `NotFound` when it is archived or gone. */
 export const botsLookup = (context: BotsContext) => {

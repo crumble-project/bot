@@ -1,29 +1,24 @@
-import {
-  BOT_MESSAGE_ENTRY,
-  MESSAGE_ENTRY,
-  type MessageOrigin,
-} from "./entries";
+import { BOT_MESSAGE_ENTRY, MESSAGE_ENTRY } from "../transcript/entries";
+import type { InputOrigin } from "../transcript/origins";
 import {
   BACKGROUND_CONTEXT,
   type Context as PiContext,
 } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord";
 import type { Models } from "@earendil-works/pi-ai";
-import { rm } from "node:fs/promises";
 import {
   Harness,
   createRegistry,
   type ConversationId,
+  type DocumentReader,
   type Tx,
   defineExtension,
-  defineTool,
   type EnvTarget,
   type Extension,
   type LiveState,
   watchEvents,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
-import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CODEMODE_TOOL_NAME } from "@earendil-works/pi-durable/codemode";
 import { Context, Effect, Layer, Predicate } from "effect";
 import {
@@ -34,15 +29,16 @@ import {
   type JobKind,
   type TurnWork,
 } from "../jobs/jobs";
-import { JOB_KINDS, jobKindTitle, type JobKindName } from "../jobs/job-kinds";
-import { GroupConversation, groupOf } from "../group-chats/group-conversation";
+import { JOB_KINDS, jobKindTitle, type JobKindName } from "../shared/job-kinds";
+import type { Agent } from "../contract/agents";
 import {
-  GROUP_EXCLUDED_EXTENSIONS,
-  GroupAnchor,
-  groupTurnExtension,
-} from "../group-chats/group-turns";
-import type { Agent } from "../shared/domain";
-import { formatEntryId, parseEntryId } from "../shared/entry-ids";
+  formatEntryId,
+  localConversationId,
+  parseEntryId,
+  positiveId,
+} from "../shared/entry-ids";
+import { HarnessFiles } from "../shared/harness-files";
+import type { defineAnchorTask } from "../shared/anchor-task";
 import { ProviderModels } from "../providers/providers";
 import { BotMemory } from "../memory/bot-memory";
 import { memoryExtension, type MemoryStore } from "../memory/memory-tool";
@@ -50,20 +46,19 @@ import { SettingsRepository } from "../shared/settings-repository";
 import { AgentRepository } from "./agent-repository";
 import { BotExtensions } from "./bot-extensions";
 import {
+  CHAT_STYLE,
+  type BotTool,
+  type ConversationKind,
+  type ConversationStyle,
+} from "./conversation-kind";
+import {
   clockInstructions,
   conversationInstructions,
   jobKnowledge,
-  type ConversationScope,
 } from "./prompts";
 import { SkillReads, skillTool } from "../skills/skill-library";
 import { BotSkills } from "../skills/skills";
 import { skillManageTool } from "../skills/skill-manage";
-import {
-  ReviewAnchor,
-  ReviewConversation,
-  reviewExtension,
-} from "../learning/review-conversation";
-import type { ReviewScope } from "../learning/review-instructions";
 import type { AttachmentInput } from "../shared/attachment-rules";
 import { prepareAttachments } from "../shared/attachments";
 import { BOT_TOOL } from "../contract/tools";
@@ -78,7 +73,7 @@ import {
   type PageOptions,
   type TranscriptMessage,
   type TranscriptPage,
-} from "./transcript";
+} from "../transcript/transcript";
 import { InvalidInput, NotFound } from "../shared/errors";
 import {
   chosenVisionModel,
@@ -92,7 +87,7 @@ import {
 export const OWNER_TIMEZONE = "owner-timezone";
 
 export type RuntimeCallbacks = MemoryStore & {
-  models: Models | ((agent: Agent) => Models | Promise<Models>);
+  models: Models;
   /** The bot as it is now; null once it is gone. */
   currentAgent: (agent: Agent) => Agent | null;
   ownerTimezone: () => string | undefined;
@@ -101,8 +96,10 @@ export type RuntimeCallbacks = MemoryStore & {
   /** The account's vision model, read at each use; undefined while it is off. */
   visionModel: () => VisionModelRef | undefined;
   extensions: (agent: Agent) => Extension[] | Promise<Extension[]>;
-  /** Installed but never offered in the bot's chat: tasks select them for the conversations they own. */
-  taskExtensions: (agent: Agent) => Extension[] | Promise<Extension[]>;
+  /** Installed but never offered in the bot's chat: jobs select them for the conversations they own. */
+  jobExtensions: (agent: Agent) => Extension[] | Promise<Extension[]>;
+  /** The kinds of conversation a bot has besides its chat, built once per bot. */
+  conversationKinds: () => ConversationKind[];
   /** The execution environment of one of the bot's conversations, as configured now. Never asked for a review. */
   env: (
     agent: Agent,
@@ -129,18 +126,17 @@ type HarnessRecord = {
   harness: Harness;
   models: Models;
   choices: { agent: Agent };
-  memory: ReturnType<typeof defineTool>;
-  skill: ReturnType<typeof defineTool>;
-  skillManage: ReturnType<typeof defineTool>;
+  memory: BotTool;
+  skill: BotTool;
+  skillManage: BotTool;
   memoryExtension: Extension;
   skillExtension: Extension;
-  reviewExtension: Extension;
-  groupExtension: Extension;
   visionExtension: Extension;
-  askAboutImage: ReturnType<typeof defineTool>;
+  askAboutImage: BotTool;
+  kinds: ConversationKind[];
   jobKnowledgeExtension: Extension;
   registry: ReturnType<typeof createRegistry>;
-  /** Everything installed in the registry: the offered extensions, then the task extensions. */
+  /** Everything installed in the registry: the offered extensions, then the job extensions. */
   extensions: Extension[];
 };
 
@@ -175,13 +171,13 @@ function inferenceOptions(inference: Agent["inference"]): InferenceOptions {
 
 type EntryMetadata = {
   requestId?: string;
-  origin?: MessageOrigin;
+  origin?: InputOrigin;
   attachments?: Array<{ kind: string; [key: string]: JsonValue }>;
 };
 
 function entryMetadata(
   requestId: string | undefined,
-  origin: MessageOrigin | undefined,
+  origin: InputOrigin | undefined,
   attachments: Array<{ kind: string; [key: string]: JsonValue }>,
 ) {
   const metadata: EntryMetadata = {};
@@ -249,8 +245,6 @@ async function visibleMessages(
   });
 }
 
-type AnchorTask = typeof GroupAnchor;
-
 // Only reads and answers: a kind's documents and tasks are named by its facts, so these need no plugin.
 const JOB_READERS: Record<JobKindName, JobKind> = {
   coding: defineJobKind(JOB_KINDS.coding),
@@ -261,54 +255,29 @@ const isJobKind = (kind: string): kind is JobKindName =>
   Object.hasOwn(JOB_READERS, kind);
 
 function numericId(value: string): never {
-  if (!/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(Number(value)))
-    throw new Error("Invalid durable record ID");
+  const id = positiveId(value);
 
-  // SAFETY: validated decimal IDs are branded by pi-durable at this boundary.
-  return Number(value) as never;
-}
-
-function localConversationId(agentId: string, reference: string): never {
-  const id = parseEntryId(reference, agentId);
-
-  if (id === "foreign")
-    throw new Error("Conversation belongs to a different agent");
-
-  if (id === "malformed") throw new Error("Invalid durable record ID");
+  if (id === undefined) throw new Error("Invalid durable record ID");
 
   // SAFETY: validated decimal IDs are branded by pi-durable at this boundary.
   return id as never;
 }
 
-async function conversationScope(
-  harness: Harness,
-  localId: ConversationId,
-): Promise<ConversationScope> {
-  const group = Boolean(await groupOf(harness, localId, BACKGROUND_CONTEXT));
+/** The style of the conversation: its kind's, or the chat's. */
+async function styleOf(
+  kinds: ConversationKind[],
+  reader: DocumentReader,
+  conversationId: ConversationId,
+  context: PiContext,
+): Promise<ConversationStyle> {
+  for (const kind of kinds) {
+    const style = await kind.recognize(reader, conversationId, context);
 
-  const reviewDoc = await harness.snapshot(
-    ReviewConversation,
-    localId,
-    BACKGROUND_CONTEXT,
-  );
+    if (style) return style;
+  }
 
-  const review: ReviewScope | null = reviewDoc?.executionId
-    ? { skills: reviewDoc.skills, memory: reviewDoc.memory }
-    : null;
-
-  return { group, review };
+  return CHAT_STYLE;
 }
-
-const isReview = async (target: EnvTarget, context: PiContext) =>
-  Boolean(
-    (
-      await target.read.snapshot(
-        ReviewConversation,
-        target.conversationId,
-        context,
-      )
-    )?.executionId,
-  );
 
 async function ensureModel(
   models: Models,
@@ -316,39 +285,6 @@ async function ensureModel(
 ) {
   if (!models.getModel(choice.provider, choice.model))
     await models.refresh({ providers: [choice.provider] });
-}
-
-// The bot can always write its first skill, so management does not wait for the index.
-function chatTools(
-  record: HarnessRecord,
-  agent: Agent,
-  offered: Extension[],
-  options: { hasSkills: boolean; group: boolean; vision: boolean },
-) {
-  return [
-    ...(agent.tools.includes(BOT_TOOL.memory) ? [record.memory] : []),
-    ...(options.hasSkills ? [record.skill] : []),
-    record.skillManage,
-    ...offered.flatMap((extension) => extension.tools ?? []),
-    ...(options.group ? (record.groupExtension.tools ?? []) : []),
-    ...(options.vision ? [record.askAboutImage] : []),
-  ];
-}
-
-// A review gets only the stores it reviews, never chat actions, jobs, delegation, or integrations.
-function reviewTools(
-  record: HarnessRecord,
-  agent: Agent,
-  hasSkills: boolean,
-  review: ReviewScope,
-) {
-  return [
-    ...(agent.tools.includes(BOT_TOOL.memory) && review.memory
-      ? [record.memory]
-      : []),
-    ...(hasSkills ? [record.skill] : []),
-    ...(review.skills ? [record.skillManage] : []),
-  ];
 }
 
 type PreparedAttachments = ReturnType<typeof prepareAttachments>;
@@ -399,46 +335,14 @@ function inferenceModels(models: Models, choices: { agent: Agent }) {
   });
 }
 
-type ConversationTools = ReturnType<typeof chatTools>;
-
 // With code mode the model writes one script that calls the other tools, instead of calling them itself.
 // Model-only tools, such as code mode itself, stay direct.
-function modelToolsOf(tools: ConversationTools) {
+function modelToolsOf(tools: BotTool[]) {
   if (!tools.some((tool) => tool.name === CODEMODE_TOOL_NAME)) return tools;
 
   return tools.filter(
     (tool) => tool.callers !== undefined && !tool.callers.includes("tools"),
   );
-}
-
-function scopedExtensions(
-  record: HarnessRecord,
-  offered: Extension[],
-  scope: { group: unknown; review: unknown },
-) {
-  if (scope.review)
-    return {
-      extensions: [
-        record.memoryExtension,
-        record.skillExtension,
-        record.visionExtension,
-        record.reviewExtension,
-      ],
-    };
-
-  if (scope.group)
-    return {
-      extensions: [
-        record.memoryExtension,
-        record.skillExtension,
-        ...offered,
-        record.groupExtension,
-        record.visionExtension,
-      ],
-    };
-
-  // Only jobs select the job knowledge; the chat has the same in its instructions.
-  return { extensions: { remove: [record.jobKnowledgeExtension] } };
 }
 
 async function ensureAgentModels(models: Models, agent: Agent) {
@@ -452,27 +356,23 @@ async function ensureAgentModels(models: Models, agent: Agent) {
 export class AgentRuntime {
   /** Skills each turn has loaded, checked before a bot changes one. */
   private readonly skillReads = new SkillReads();
-  private readonly records = new Map<string, Promise<HarnessRecord>>();
-  private closed = false;
+  private readonly records: HarnessFiles<HarnessRecord>;
   constructor(
-    private readonly dataDir: string,
+    dataDir: string,
     private readonly callbacks: RuntimeCallbacks,
-  ) {}
+  ) {
+    this.records = new HarnessFiles(dataDir, "Runtime is closed");
+  }
 
-  private async open(agent: Agent): Promise<HarnessRecord> {
-    if (this.closed) throw new Error("Runtime is closed");
-    const existing = this.records.get(agent.id);
+  private open(agent: Agent) {
+    return this.records.get(agent.id, (storage) =>
+      this.openRecord(agent, storage),
+    );
+  }
 
-    if (existing) return existing;
-    const opening = this.openRecord(agent);
-    this.records.set(agent.id, opening);
-
-    try {
-      return await opening;
-    } catch (error) {
-      this.records.delete(agent.id);
-      throw error;
-    }
+  /** Reads the documents features keep on the bot's conversations. */
+  async documents(agent: Agent) {
+    return (await this.open(agent)).harness;
   }
 
   private skillTools(agent: Agent) {
@@ -504,131 +404,114 @@ export class AgentRuntime {
     return { skill, skillManage };
   }
 
-  private async modelsFor(agent: Agent) {
-    const { models } = this.callbacks;
-
-    return models instanceof Function ? models(agent) : models;
-  }
-
   private async extensionsOf(agent: Agent) {
     const next = await this.callbacks.extensions(agent);
 
-    const installed = [
-      ...next,
-      ...(await this.callbacks.taskExtensions(agent)),
-    ];
+    const installed = [...next, ...(await this.callbacks.jobExtensions(agent))];
 
     return { next, installed };
   }
 
-  private async openRecord(agent: Agent): Promise<HarnessRecord> {
-    const storage = await openNodeSqliteStorage(
-      `${this.dataDir}/${agent.id}.sqlite`,
+  private async openRecord(
+    agent: Agent,
+    storage: Parameters<typeof Harness.open>[0],
+  ): Promise<HarnessRecord> {
+    const { models } = this.callbacks;
+
+    const { tool: memory, extension: memoryTools } = memoryExtension(
+      agent,
+      this.callbacks,
+      this.callbacks.currentAgent,
     );
 
-    try {
-      const models = await this.modelsFor(agent);
+    const { skill, skillManage } = this.skillTools(agent);
 
-      const { tool: memory, extension: memoryTools } = memoryExtension(
-        agent,
-        this.callbacks,
-        this.callbacks.currentAgent,
-      );
+    const registry = createRegistry();
 
-      const { skill, skillManage } = this.skillTools(agent);
+    const skillExtension = defineExtension({
+      name: "skills",
+      tools: [skill, skillManage],
+    });
 
-      const registry = createRegistry();
+    registry.install(memoryTools);
+    registry.install(skillExtension);
 
-      const skillExtension = defineExtension({
-        name: "skills",
-        tools: [skill, skillManage],
-      });
+    // Hooks and tools run only once the harness is open; until then nothing calls them.
+    let opened: Harness | undefined;
 
-      const groupExtension = groupTurnExtension();
-      registry.install(memoryTools);
-      registry.install(skillExtension);
-      registry.install(groupExtension);
+    const vision = visionExtension({
+      harness: () => opened,
+      visionModel: () => this.callbacks.visionModel(),
+    });
 
-      // Hooks and tools run only once the harness is open; until then nothing calls them.
-      let opened: Harness | undefined;
+    registry.install(vision.extension);
+    const kinds = this.callbacks.conversationKinds();
 
-      const vision = visionExtension({
-        harness: () => opened,
-        visionModel: () => this.visionModel(),
-      });
+    for (const kind of kinds) registry.install(kind.extension);
+    const choices = { agent };
 
-      registry.install(vision.extension);
-      const reviewExt = reviewExtension();
-      registry.install(reviewExt);
-      const choices = { agent };
-
-      // A job loads skills but never writes them or memory: memory writes record chat turns as their source.
-      const jobKnowledgeExtension = defineExtension({
-        name: JOB_KNOWLEDGE_EXTENSION,
-        tools: [skill],
-        sections: [
-          {
-            key: "bot_knowledge",
-            render: async () => {
-              const current = choices.agent;
-
-              return jobKnowledge(
-                current.instructions,
-                await this.availableSkills(current),
-                await this.callbacks.listMemory(current.id),
-              );
-            },
-          },
-        ],
-      });
-
-      registry.install(jobKnowledgeExtension);
-
-      const { installed: extensions } = await this.extensionsOf(agent);
-
-      for (const extension of extensions) registry.install(extension);
-
-      const configuredModels = inferenceModels(models, choices);
-
-      const harness = await Harness.open(
-        storage,
+    // A job loads skills but never writes them or memory: memory writes record chat turns as their source.
+    const jobKnowledgeExtension = defineExtension({
+      name: JOB_KNOWLEDGE_EXTENSION,
+      tools: [skill],
+      sections: [
         {
-          models: configuredModels,
-          registry,
-          env: async (target, context) =>
-            // A review runs no shell tools, so it gets no environment to reach the workspace through.
-            (await isReview(target, context))
-              ? undefined
-              : this.callbacks.env(choices.agent, target, context),
+          key: "bot_knowledge",
+          render: async () => {
+            const current = choices.agent;
+
+            return jobKnowledge(
+              current.instructions,
+              await this.availableSkills(current),
+              await this.callbacks.listMemory(current.id),
+            );
+          },
         },
-        BACKGROUND_CONTEXT,
-      );
+      ],
+    });
 
-      opened = harness;
+    registry.install(jobKnowledgeExtension);
 
-      if (agent.enabled) harness.resume();
+    const { installed: extensions } = await this.extensionsOf(agent);
 
-      return {
-        harness,
-        models,
-        choices,
-        memory,
-        skill,
-        skillManage,
-        memoryExtension: memoryTools,
-        skillExtension,
-        reviewExtension: reviewExt,
-        groupExtension,
-        visionExtension: vision.extension,
-        askAboutImage: vision.ask,
-        jobKnowledgeExtension,
+    for (const extension of extensions) registry.install(extension);
+
+    const configuredModels = inferenceModels(models, choices);
+
+    const harness = await Harness.open(
+      storage,
+      {
+        models: configuredModels,
         registry,
-        extensions,
-      };
-    } catch (error) {
-      await storage.close(BACKGROUND_CONTEXT);
-      throw error;
-    }
+        env: async (target, context) =>
+          (await styleOf(kinds, target.read, target.conversationId, context))
+            .noEnvironment
+            ? undefined
+            : this.callbacks.env(choices.agent, target, context),
+      },
+      BACKGROUND_CONTEXT,
+    );
+
+    opened = harness;
+
+    if (agent.enabled) harness.resume();
+
+    return {
+      harness,
+      models,
+      choices,
+      memory,
+      skill,
+      skillManage,
+      memoryExtension: memoryTools,
+      skillExtension,
+      visionExtension: vision.extension,
+      askAboutImage: vision.ask,
+      jobKnowledgeExtension,
+      kinds,
+      registry,
+      extensions,
+    };
   }
 
   private async installExtensions(record: HarnessRecord, agent: Agent) {
@@ -644,18 +527,6 @@ export class AgentRuntime {
     return next;
   }
 
-  private async ensuredReviewModel(
-    record: HarnessRecord,
-    agent: Agent,
-    review: boolean,
-  ) {
-    const reviewModel = review ? this.reviewModelOf(agent) : null;
-
-    if (reviewModel) await ensureModel(record.models, reviewModel);
-
-    return reviewModel;
-  }
-
   private async availableSkills(agent: Agent) {
     return Effect.runPromise(this.callbacks.skillLibrary.available(agent));
   }
@@ -668,35 +539,36 @@ export class AgentRuntime {
     record.choices.agent = agent;
 
     await ensureAgentModels(record.models, agent);
-    const next = await this.installExtensions(record, agent);
+    const offered = await this.installExtensions(record, agent);
 
     const localId = localConversationId(agent.id, conversationId);
 
-    const scope = await conversationScope(record.harness, localId);
-    const { group, review } = scope;
-
-    const reviewModel = await this.ensuredReviewModel(
-      record,
-      agent,
-      Boolean(review),
+    const style = await styleOf(
+      record.kinds,
+      record.harness,
+      localId,
+      BACKGROUND_CONTEXT,
     );
 
-    // A group turn can neither delegate nor start coding jobs, and may pass instead of answering.
-    const offered = group
-      ? next.filter(
-          (extension) => !GROUP_EXCLUDED_EXTENSIONS.has(extension.name),
-        )
-      : next;
+    const model = style.model?.(agent);
 
+    if (model) await ensureModel(record.models, model);
     const skills = await this.availableSkills(agent);
 
-    const tools = review
-      ? reviewTools(record, agent, skills.length > 0, review)
-      : chatTools(record, agent, offered, {
-          hasSkills: skills.length > 0,
-          group,
-          vision: this.describesImagesFor(record, agent),
-        });
+    const parts = {
+      memory: agent.tools.includes(BOT_TOOL.memory) ? [record.memory] : [],
+      skill: skills.length > 0 ? [record.skill] : [],
+      skillManage: record.skillManage,
+      vision: this.describesImagesFor(record, agent)
+        ? [record.askAboutImage]
+        : [],
+      memoryExtension: record.memoryExtension,
+      skillExtension: record.skillExtension,
+      visionExtension: record.visionExtension,
+      offered,
+    };
+
+    const tools = style.tools(parts);
 
     const conversation = await record.harness.conversation(
       localId,
@@ -709,13 +581,19 @@ export class AgentRuntime {
 
     await conversation.configure(
       {
-        model: modelRef(reviewModel ?? agent),
+        model: modelRef(model ?? agent),
         thinkingLevel: agent.inference?.thinkingLevel ?? "off",
-        ...scopedExtensions(record, offered, scope),
-        instructions: conversationInstructions(agent, skills, memory, {
-          ...scope,
+        // Only jobs select the job knowledge; the chat has the same in its instructions.
+        extensions: style.extensions?.(parts) ?? {
+          remove: [record.jobKnowledgeExtension],
+        },
+        instructions: conversationInstructions(
+          agent,
+          skills,
+          memory,
+          style.prompt ?? {},
           clock,
-        }),
+        ),
         tools,
         modelTools: modelToolsOf(tools),
       },
@@ -734,17 +612,10 @@ export class AgentRuntime {
     return reference;
   }
 
-  /** A new working conversation for the bot in one group chat, owned by a background task of its chat. */
-  async openGroupConversation(agent: Agent, groupId: string): Promise<string> {
-    return this.openAnchored(agent, GroupAnchor, async (tx, id) => {
-      (await tx.doc(GroupConversation, id)).groupId = groupId;
-    });
-  }
-
   /** A new conversation owned by a background `anchor` task of the bot's chat, set up by `init` in the same commit. */
-  private async openAnchored(
+  async openAnchored(
     agent: Agent,
-    anchor: AnchorTask,
+    anchor: ReturnType<typeof defineAnchorTask>,
     init: (tx: Tx, id: ConversationId) => Promise<void>,
   ): Promise<string> {
     const record = await this.open(agent);
@@ -771,42 +642,9 @@ export class AgentRuntime {
     return reference;
   }
 
-  /** The model a bot's reviews run on: the chosen one, else the bot's own. */
-  private reviewModelOf(agent: Agent) {
-    return (
-      agent.reviewModel ?? { provider: agent.provider, model: agent.model }
-    );
-  }
-
-  /** A new conversation that reviews one execution, owned by a background task so it stays out of the bot chat. */
-  async openReviewConversation(
-    agent: Agent,
-    execution: { id: string; conversationId: string },
-    scope: ReviewScope,
-    budgetChars: number,
-  ): Promise<string> {
-    const { harness } = await this.open(agent);
-
-    const reviewedGroup = await groupOf(
-      harness,
-      localConversationId(agent.id, execution.conversationId),
-      BACKGROUND_CONTEXT,
-    );
-
-    return this.openAnchored(agent, ReviewAnchor, async (tx, id) => {
-      const doc = await tx.doc(ReviewConversation, id);
-      doc.executionId = execution.id;
-      doc.groupId = reviewedGroup;
-      doc.skills = scope.skills;
-      doc.memory = scope.memory;
-      doc.budgetChars = budgetChars;
-    });
-  }
-
-  /** The context window of the bot's review model, which bounds what a review may spend; undefined when it lists none. */
-  async reviewContextWindow(agent: Agent) {
+  /** The context window of `choice`, which the bot's provider keys reach; undefined when its model lists none. */
+  async contextWindow(agent: Agent, choice: Pick<Agent, "provider" | "model">) {
     const { models } = await this.open(agent);
-    const choice = this.reviewModelOf(agent);
     await ensureModel(models, choice);
 
     return models.getModel(choice.provider, choice.model)?.contextWindow;
@@ -837,15 +675,10 @@ export class AgentRuntime {
     return { conversation, entry: Number(status.entry) };
   }
 
-  /** The account's vision model; undefined while it is off. */
-  private visionModel() {
-    return this.callbacks.visionModel?.();
-  }
-
   /** Whether the vision model describes images for the bot: one is set and the bot's model can't read them. */
   private describesImagesFor(record: HarnessRecord, agent: Agent) {
     return describesImages(
-      this.visionModel(),
+      this.callbacks.visionModel(),
       record.models.getModel(agent.provider, agent.model),
     );
   }
@@ -860,7 +693,7 @@ export class AgentRuntime {
 
     return (
       readsImages(models.getModel(agent.provider, agent.model)) ||
-      this.visionModel() !== undefined
+      this.callbacks.visionModel() !== undefined
     );
   }
 
@@ -911,14 +744,7 @@ export class AgentRuntime {
     if (!replyTo) return { modelContent: text, data: { text } };
     const { harness } = await this.open(agent);
 
-    try {
-      return await prepareReply(harness, agent.id, replyTo, text);
-    } catch (error) {
-      throw new InvalidInput({
-        message:
-          error instanceof Error ? error.message : "Invalid reply target",
-      });
-    }
+    return prepareReply(harness, agent.id, replyTo, text);
   }
 
   /** `input` is what admission prepared and framed; without it, the model reads `text` as written. */
@@ -929,7 +755,7 @@ export class AgentRuntime {
     requestId?: string,
     options: {
       input?: PreparedInput | undefined;
-      origin?: MessageOrigin;
+      origin?: InputOrigin;
       attachments?: AttachmentInput[] | undefined;
     } = {},
   ): Promise<string> {
@@ -939,7 +765,12 @@ export class AgentRuntime {
     const conversation = await this.configure(record, agent, conversationId);
     const model = record.models.getModel(agent.provider, agent.model);
 
-    assertImageSupport(agent, model, attached.info, this.visionModel());
+    assertImageSupport(
+      agent,
+      model,
+      attached.info,
+      this.callbacks.visionModel(),
+    );
 
     const draft = {
       type: "input" as const,
@@ -991,16 +822,9 @@ export class AgentRuntime {
 
   /** The bytes of an attached image, read back from the input entry that carries it. */
   async attachment(agent: Agent, entryId: string, index: number) {
-    const record = await this.open(agent);
+    const { harness } = await this.open(agent);
 
-    try {
-      return await readAttachment(record.harness, agent.id, entryId, index);
-    } catch (error) {
-      throw new NotFound({
-        message:
-          error instanceof Error ? error.message : "Attachment not found",
-      });
-    }
+    return readAttachment(harness, agent.id, entryId, index);
   }
 
   async wait(
@@ -1159,33 +983,26 @@ export class AgentRuntime {
     read: () => Promise<TranscriptPage>,
     hideActive = true,
   ) {
-    try {
-      const transcript = await read();
+    const transcript = await read();
 
-      if (options.includeActiveAssistant) return transcript;
+    if (options.includeActiveAssistant) return transcript;
 
-      if (!hideActive)
-        return {
-          ...transcript,
-          messages: hideIncompleteAssistant(transcript.messages),
-        };
-
-      const chats = await conversations(harness);
-
+    if (!hideActive)
       return {
         ...transcript,
-        messages: await visibleMessages(
-          harness,
-          chats.map((chat) => chat.id),
-          transcript.messages,
-        ),
+        messages: hideIncompleteAssistant(transcript.messages),
       };
-    } catch (error) {
-      throw new InvalidInput({
-        message:
-          error instanceof Error ? error.message : "Invalid history cursor",
-      });
-    }
+
+    const chats = await conversations(harness);
+
+    return {
+      ...transcript,
+      messages: await visibleMessages(
+        harness,
+        chats.map((chat) => chat.id),
+        transcript.messages,
+      ),
+    };
   }
 
   /** Assistant text answering one submission; later chat turns stay out of view. */
@@ -1239,25 +1056,12 @@ export class AgentRuntime {
     await conversation?.abort(BACKGROUND_CONTEXT);
   }
 
-  async deleteAgent(agentId: string): Promise<void> {
-    const pending = this.records.get(agentId);
-    this.records.delete(agentId);
-
-    if (pending) await (await pending).harness.close(BACKGROUND_CONTEXT);
-
-    for (const suffix of ["", "-wal", "-shm"])
-      await rm(`${this.dataDir}/${agentId}.sqlite${suffix}`, { force: true });
+  deleteAgent(agentId: string) {
+    return this.records.delete(agentId);
   }
 
-  async close(): Promise<void> {
-    this.closed = true;
-    const records = await Promise.allSettled(this.records.values());
-    await Promise.all(
-      records
-        .filter((record) => record.status === "fulfilled")
-        .map((record) => record.value.harness.close(BACKGROUND_CONTEXT)),
-    );
-    this.records.clear();
+  close() {
+    return this.records.close();
   }
 }
 
@@ -1268,7 +1072,10 @@ export class BotRuntime extends Context.Service<BotRuntime, AgentRuntime>()(
   /** Over `dataDir`'s harness files; `options` are what features outside the bots give every bot. */
   static layer(
     dataDir: string,
-    options: Pick<RuntimeCallbacks, "taskExtensions" | "env">,
+    options: Pick<
+      RuntimeCallbacks,
+      "jobExtensions" | "conversationKinds" | "env"
+    >,
   ) {
     return Layer.effect(
       BotRuntime,

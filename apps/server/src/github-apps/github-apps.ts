@@ -1,4 +1,5 @@
 import { GIT_TEMPLATE_DIR } from "../../workspace-image/guest";
+import { GUEST_SIGN_PATH } from "../credentials/commit-signing";
 import { createSign, randomBytes, randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNotNull, ne } from "drizzle-orm";
 import { Clock, Context, Effect, Layer, Redacted } from "effect";
@@ -9,7 +10,7 @@ import {
   MintedCredentials,
 } from "../credentials/minted-credentials";
 import type { SecretUnavailable } from "../secrets/secret-values";
-import type { CredentialTarget, SecretStatus } from "../shared/domain";
+import type { CredentialTarget } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
 import { nowIso } from "../shared/time";
@@ -18,20 +19,28 @@ import {
   GITHUB_HOSTS,
   GITHUB_TOKEN_CREDENTIAL,
   GitHubUnavailable,
-  assignmentChange,
-  type GitHubIdentity,
   botLogin,
   github,
   noreplyEmail,
 } from "./github-api";
-import { GitHubAccounts, type GitHubAccount } from "./github-accounts";
-import { githubIdentityLines } from "./github-identity";
+import {
+  accountMembership,
+  GitHubAccounts,
+  type GitHubAccount,
+} from "./github-accounts";
+import {
+  assignmentChange,
+  githubIdentityLines,
+  type GitHubIdentity,
+} from "./github-identity";
 import { GitHubAppUsers, githubAppClientSecretKey } from "./github-app-users";
 import { Secrets } from "../secrets/secrets";
 import { PendingStates } from "../secrets/server-secrets";
 import { githubAppBots, githubApps } from "./schema";
-import { GITHUB_APP_WEB_PATHS } from "../contract/github-apps";
-import { GUEST_SIGN_PATH } from "../workspaces/workspace";
+import {
+  GITHUB_APP_WEB_PATHS,
+  type GitHubAppResponse,
+} from "../contract/github-apps";
 
 // Read-only on CI and checks so jobs can follow their PRs; no `workflows`, so jobs can't change CI.
 const PERMISSIONS = {
@@ -53,24 +62,7 @@ const STATE_TTL_MS = 60 * 60 * 1000;
 const HOMEPAGE = "https://docs.crumbli.ng";
 
 /** One of the account's GitHub Apps as the owner sees it. */
-export type GitHubApp = {
-  id: string;
-  slug: string;
-  name: string;
-  /** The name commits and pull requests show, such as `scout[bot]`. */
-  login: string;
-  htmlUrl: string;
-  installUrl: string;
-  /** The GitHub user or organization whose repositories the App works on. */
-  account: string | null;
-  installed: boolean;
-  /** Signing the owner in through the App needs it; Apps created before Crumble kept it need it entered. */
-  clientSecret: SecretStatus;
-  /** The owner's GitHub login when signed in through the App: its bots then act as the owner. */
-  user: string | null;
-  botIds: string[];
-  createdAt: string;
-};
+export type GitHubApp = GitHubAppResponse;
 
 /** What the web posts to GitHub to create the App: `manifest` goes in a form field, `state` is already in `url`. */
 export type GitHubAppManifest = { url: string; manifest: string };
@@ -212,6 +204,7 @@ export class GitHubApps extends Context.Service<
       const pendingStates = yield* PendingStates;
       const users = yield* GitHubAppUsers;
       const accounts = yield* GitHubAccounts;
+      const membership = yield* accountMembership;
       const secrets = yield* Secrets;
       const credentials = yield* MintedCredentials;
       const tokens = new Map<string, { token: string; expiresAt: number }>();
@@ -538,7 +531,7 @@ export class GitHubApps extends Context.Service<
         id: string,
         botIds: readonly string[],
       ) {
-        const { account, changed } = yield* accounts.assign(id, botIds);
+        const { account, changed } = yield* membership.assign(id, botIds);
 
         yield* Effect.forEach(changed, syncCredential);
 
@@ -548,7 +541,7 @@ export class GitHubApps extends Context.Service<
       const removeAccount = Effect.fn("GitHubApps.removeAccount")(function* (
         id: string,
       ) {
-        yield* Effect.forEach(yield* accounts.remove(id), syncCredential);
+        yield* Effect.forEach(yield* membership.remove(id), syncCredential);
       });
 
       const mint = Effect.fn("GitHubApps.mint")(function* (found: AppRow) {
@@ -705,8 +698,11 @@ export class GitHubApps extends Context.Service<
 /** The GitHub Apps and machine accounts as the source of the `github` credentials. */
 export const githubCredentialSource = Layer.effect(
   CredentialSource,
-  Effect.map(GitHubApps, (apps) =>
-    CredentialSource.of({
+  Effect.gen(function* () {
+    const apps = yield* GitHubApps;
+    const accounts = yield* GitHubAccounts;
+
+    return CredentialSource.of({
       value: (agentId, target) =>
         apps
           .token(agentId, target)
@@ -718,6 +714,8 @@ export const githubCredentialSource = Layer.effect(
       env: apps.gitEnv,
       lines: (agentId) =>
         Effect.map(apps.identities(agentId), githubIdentityLines),
-    }),
-  ),
+      sign: (agentId, data) =>
+        Effect.map(accounts.ofBot(agentId), (machine) => machine?.sign(data)),
+    });
+  }),
 );

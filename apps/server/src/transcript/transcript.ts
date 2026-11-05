@@ -15,9 +15,10 @@ import type { AttachmentInfo } from "../shared/attachment-rules";
 import {
   formatEntryId,
   formatMessageId,
-  parseEntryId,
+  parseEntryRef,
 } from "../shared/entry-ids";
-import { JOB_KINDS, jobKindTitle } from "../jobs/job-kinds";
+import { InvalidInput, NotFound } from "../shared/errors";
+import { JOB_KINDS, jobKindTitle } from "../shared/job-kinds";
 import {
   ASSISTANT_ENTRY,
   attachmentInfo,
@@ -29,7 +30,6 @@ import {
   HELD_ACTION_ENTRY,
   heldActionData,
   inputMetadata,
-  jobCardName,
   JOB_QUESTION_ENTRY,
   jobQuestionData,
   MESSAGE_ENTRY,
@@ -39,11 +39,20 @@ import {
   type MessageOrigin,
   type ModelContent,
 } from "./entries";
-import { reactionOf } from "./reaction";
+import { isBotOrigin, isOwnerOrigin } from "./origins";
+import {
+  isToolResult,
+  jobCardName,
+  reactionOf,
+  toolMetadata,
+} from "./tool-results";
 import {
   DESKTOP_SCREENSHOT_TOOL_NAME,
   REACTION_TOOL_NAME,
+  REQUEST_CREDENTIAL_TOOL_NAME,
+  REQUEST_LOGIN_TOOL_NAME,
 } from "../contract/tools";
+import type { WaitingFor } from "../contract/reply-event";
 import type { BotCommunication } from "../contract/api-responses";
 import type { WebSource } from "../contract/web-search";
 import { MESSAGE_PREVIEW_CHARS } from "../shared/limits";
@@ -63,13 +72,6 @@ const toolBlock = z.object({
 });
 
 const jsonRecord = z.record(z.string(), z.json());
-
-export const toolMetadata = z.object({
-  toolCallId: z.string().optional().catch(undefined),
-  toolName: z.string().optional().catch(undefined),
-  isError: z.boolean().optional().catch(undefined),
-  details: z.unknown().optional(),
-});
 
 export type BotMessageEvent = {
   content: string;
@@ -137,9 +139,7 @@ function eventLabel(message: TranscriptMessage): string {
     if (job) return `${jobKindTitle(kind)} ${job}`;
   }
 
-  return message.role === "toolResult" &&
-    message.toolName === DESKTOP_SCREENSHOT_TOOL_NAME &&
-    !message.isError
+  return isToolResult(message, DESKTOP_SCREENSHOT_TOOL_NAME)
     ? "Desktop screenshot"
     : "";
 }
@@ -175,7 +175,15 @@ export function latestMessagePreview(messages: TranscriptMessage[]): string {
   return "";
 }
 
-/** The bot's output after the latest input: its last text reply, and the emoji it reacted with, if any. */
+const OWNER_REQUEST_TOOLS = new Map<string | undefined, WaitingFor>([
+  [REQUEST_CREDENTIAL_TOOL_NAME, "credential"],
+  [REQUEST_LOGIN_TOOL_NAME, "login"],
+]);
+
+/**
+ * The bot's output after the latest input: its last text reply, the emoji it reacted with, and what its successful
+ * request tools asked the owner for, if any.
+ */
 export function latestReply(messages: TranscriptMessage[]) {
   const input = messages.findLastIndex((message) => message.role === "user");
   const output = messages.slice(input + 1);
@@ -185,6 +193,11 @@ export function latestReply(messages: TranscriptMessage[]) {
       (message) => message.role === "assistant" && hasTextBlock(message),
     ),
     reaction: output.map(reactionOf).findLast(Boolean),
+    waitingFor: output
+      .map((message) =>
+        message.isError ? undefined : OWNER_REQUEST_TOOLS.get(message.toolName),
+      )
+      .findLast(Boolean),
   };
 }
 
@@ -192,14 +205,14 @@ export function latestReply(messages: TranscriptMessage[]) {
 export const isOwnerInput = (message: TranscriptMessage) =>
   message.kind === MESSAGE_ENTRY &&
   message.role === "user" &&
-  message.origin?.kind !== "bot";
+  !isBotOrigin(message.origin);
 
 /** Plain model turns: the assistant's, and a user's that no other bot sent. */
 export const isConversational = (message: TranscriptMessage) =>
   (message.kind === ASSISTANT_ENTRY && message.role === "assistant") ||
   (message.kind === USER_ENTRY &&
     message.role === "user" &&
-    message.origin?.kind !== "bot");
+    !isBotOrigin(message.origin));
 
 const blocksOf = (message: TranscriptMessage) =>
   z.array(z.unknown()).safeParse(message.blocks).data;
@@ -279,21 +292,6 @@ const INPUT_KINDS = new Set<string>([MESSAGE_ENTRY, USER_ENTRY]);
 
 /** An entry that starts a turn. */
 export const isInputEntry = (entry: EntryRecord) => INPUT_KINDS.has(entry.kind);
-
-export function parseEntryRef(
-  agentId: string,
-  value: string,
-  label: string,
-): number {
-  const entry = parseEntryId(value, agentId);
-
-  if (entry === "foreign")
-    throw new Error(`${label} belongs to a different agent`);
-
-  if (entry === "malformed") throw new Error(`Invalid ${label}`);
-
-  return entry;
-}
 
 function blockHint(content: ModelContent): string {
   if (!Array.isArray(content)) return "";
@@ -454,7 +452,7 @@ function normalizeGroupMessage(
           id: formatMessageId(entryId, 0),
           entryId,
           requestId,
-          role: sender.kind === "owner" ? "user" : "assistant",
+          role: isOwnerOrigin(sender) ? "user" : "assistant",
           content: text,
           timestamp,
           kind: entry.kind,
@@ -690,7 +688,7 @@ async function readPage(
   };
 }
 
-/** Newest-first page of every chat conversation, so legacy sessions and the canonical chat read as one transcript. */
+/** Newest-first page of every chat conversation, so conversations from before the canonical chat read as one transcript. */
 export async function readTranscript(
   harness: Harness,
   agentId: string,
@@ -725,6 +723,29 @@ export async function readConversationTranscript(
   return readPage(agentId, conversation ? [conversation] : [], options);
 }
 
+/** Entries `first` through `last`, oldest first. Both are persisted entry numbers or validated positive integers. */
+const entriesBetween = (
+  conversation: Conversation,
+  first: number,
+  last: number,
+  limit: number,
+) =>
+  // SAFETY: see above; pi-durable brands entry numbers at this boundary.
+  conversation.entries(
+    {
+      order: "ascending",
+      minEntryId: first as EntryId,
+      maxEntryId: last as EntryId,
+    },
+    limit,
+    undefined,
+    BACKGROUND_CONTEXT,
+  );
+
+/** The entry numbered `id`, if the conversation holds it. */
+export const entryAt = async (conversation: Conversation, id: number) =>
+  (await entriesBetween(conversation, id, id, 1)).items[0];
+
 async function findOwner(
   harness: Harness,
   entryId: number,
@@ -735,19 +756,8 @@ async function findOwner(
       BACKGROUND_CONTEXT,
     );
 
-    // SAFETY: entryId comes from parseEntryRef, which validates the persisted numeric ID.
-    const page = await conversation?.entries(
-      {
-        order: "ascending",
-        minEntryId: entryId as EntryId,
-        maxEntryId: entryId as EntryId,
-      },
-      1,
-      undefined,
-      BACKGROUND_CONTEXT,
-    );
-
-    if (page?.items.length) return conversation;
+    if (conversation && (await entryAt(conversation, entryId)))
+      return conversation;
   }
 
   return undefined;
@@ -763,18 +773,13 @@ export async function prepareReply(
   const target = parseEntryRef(agentId, replyTo, "reply target");
   const owner = await findOwner(harness, target);
 
-  if (!owner) throw new Error("Reply target not found");
+  if (!owner) throw new InvalidInput({ message: "Reply target not found" });
 
-  // SAFETY: target is a validated entry ID; both bounds are positive integer offsets around it.
-  const nearby = await owner.entries(
-    {
-      order: "ascending",
-      minEntryId: Math.max(1, target - REPLY_WINDOW) as EntryId,
-      maxEntryId: (target + REPLY_WINDOW) as EntryId,
-    },
+  const nearby = await entriesBetween(
+    owner,
+    Math.max(1, target - REPLY_WINDOW),
+    target + REPLY_WINDOW,
     REPLY_WINDOW * 2 + 1,
-    undefined,
-    BACKGROUND_CONTEXT,
   );
 
   const rows = nearby.items.flatMap((entry) =>
@@ -787,7 +792,11 @@ export async function prepareReply(
 
   const at = rows.findIndex((row) => Number(row.entry.id) === target);
 
-  if (at < 0) throw new Error("Reply target is not a visible message");
+  if (at < 0)
+    throw new InvalidInput({
+      message: "Reply target is not a visible message",
+    });
+
   const targetMessage = rows[at]!.message;
 
   const quoted = rows.slice(Math.max(0, at - 2), at + 3).map((row) => ({
@@ -829,27 +838,15 @@ export async function readAttachment(
   entryRef: string,
   index: number,
 ): Promise<{ mimeType: string; data: Buffer }> {
-  const target = parseEntryRef(agentId, entryRef, "attachment entry");
+  const target = parseEntryRef(agentId, entryRef, "attachment entry", NotFound);
+
   const owner = await findOwner(harness, target);
+  const entry = owner && (await entryAt(owner, target));
 
-  // SAFETY: target is the positive safe integer validated by parseEntryRef.
-  const page = await owner?.entries(
-    {
-      order: "ascending",
-      minEntryId: target as EntryId,
-      maxEntryId: target as EntryId,
-    },
-    1,
-    undefined,
-    BACKGROUND_CONTEXT,
-  );
+  const image =
+    entry && (inputImage(entry, index) ?? screenshotImage(entry, index));
 
-  const entry = page?.items[0];
-
-  if (!entry) throw new Error("Attachment not found");
-  const image = inputImage(entry, index) ?? screenshotImage(entry, index);
-
-  if (!image) throw new Error("Attachment not found");
+  if (!image) throw new NotFound({ message: "Attachment not found" });
 
   return { mimeType: image.mimeType, data: Buffer.from(image.data, "base64") };
 }
@@ -877,45 +874,57 @@ function inputImage(entry: EntryRecord, index: number) {
 function screenshotImage(entry: EntryRecord, index: number) {
   const message = entry.model?.[0];
 
-  if (message?.role !== "toolResult") return undefined;
-  const { toolName, isError } = toolMetadata.parse(message);
-
-  if (toolName !== DESKTOP_SCREENSHOT_TOOL_NAME || isError) return undefined;
-
-  return imagesOf(message.content)[index];
+  return message && isToolResult(message, DESKTOP_SCREENSHOT_TOOL_NAME)
+    ? imagesOf(message.content)[index]
+    : undefined;
 }
 
 function outputLines(message: ModelMessage): string[] {
-  const lines: string[] = [];
   const text = message.role === "assistant" ? contentText(message.content) : "";
+  const reaction = reactionOf(message);
 
-  if (text) lines.push(text);
-  const { toolName, isError, details } = toolMetadata.parse(message);
-
-  const reaction = reactionOf({
-    role: message.role,
-    toolName,
-    isError,
-    toolDetails: details,
-  });
-
-  if (reaction) lines.push(`Reacted ${reaction}`);
-
-  return lines;
+  return [
+    ...(text ? [text] : []),
+    ...(reaction ? [`Reacted ${reaction}`] : []),
+  ];
 }
 
-/** A page of the entries from `first` on, for reading a turn. */
-export async function entriesFrom(conversation: Conversation, first: number) {
-  // SAFETY: `first` is a persisted entry ID or its successor, so it is a valid inclusive lower bound.
-  const page = await conversation.entries(
-    { order: "ascending", minEntryId: first as EntryId },
-    MAX_LIMIT,
-    undefined,
-    BACKGROUND_CONTEXT,
-  );
+/** The turn `inputEntryId` started: that input, then every entry up to the next input, however many pages it takes. */
+export async function turnEntries(
+  conversation: Conversation,
+  inputEntryId: number,
+) {
+  const entries: EntryRecord[] = [];
+  let cursor: Cursor | undefined;
 
-  return page.items;
+  do {
+    const page = await conversation.entries(
+      // SAFETY: a persisted input's ID is a valid inclusive lower bound.
+      { order: "ascending", minEntryId: inputEntryId as EntryId },
+      MAX_LIMIT,
+      cursor,
+      BACKGROUND_CONTEXT,
+    );
+
+    for (const entry of page.items) {
+      if (entries.length && isInputEntry(entry)) return entries;
+      entries.push(entry);
+    }
+
+    cursor = page.next;
+  } while (cursor);
+
+  return entries;
 }
+
+/** The model messages after a turn's input, up to the next input. */
+export const turnMessages = async (
+  conversation: Conversation,
+  inputEntryId: number,
+) =>
+  (await turnEntries(conversation, inputEntryId))
+    .slice(1)
+    .flatMap((entry) => entry.model ?? []);
 
 /** The newest `limit` entries before `next`, for reading what came before a turn. */
 export async function entriesBefore(
@@ -935,18 +944,7 @@ export async function entriesBefore(
 }
 
 /** Assistant output after one input, stopping at the next input so unrelated chat stays private. */
-export async function readResponse(
+export const readResponse = async (
   conversation: Conversation,
   inputEntryId: number,
-): Promise<string[]> {
-  const output: string[] = [];
-
-  for (const entry of await entriesFrom(conversation, inputEntryId + 1)) {
-    if (isInputEntry(entry)) break;
-
-    for (const message of entry.model ?? [])
-      output.push(...outputLines(message));
-  }
-
-  return output;
-}
+) => (await turnMessages(conversation, inputEntryId)).flatMap(outputLines);

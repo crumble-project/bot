@@ -111,24 +111,6 @@ export const inputMetadata = z.object({
   replyPreview: z.string().optional().catch(undefined),
 });
 
-const jobCard = z.object({ name: z.string().min(1) });
-
-/** The job a start of `toolName` shows as a card; other actions and failed calls show none. */
-export const jobCardName = (
-  toolName: string,
-  message: {
-    role: string;
-    toolName?: string | undefined;
-    isError?: boolean | undefined;
-    toolDetails?: unknown;
-  },
-) =>
-  message.role === "toolResult" &&
-  message.toolName === toolName &&
-  !message.isError
-    ? jobCard.safeParse(message.toolDetails).data?.name
-    : undefined;
-
 /** The text blocks of model content, one per line. */
 export function contentText(content: ModelContent | undefined): string {
   if (!Array.isArray(content)) return content ?? "";

@@ -3,10 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Store } from "../../test/support/store";
-import { standaloneBots } from "../bots/bots";
+import { standaloneBots } from "../bots/bots-test-support";
 import { coordinationExtension } from "./coordination";
-import { standaloneMessaging } from "./bot-messaging";
-import type { Agent } from "../shared/domain";
+import { standaloneMessaging } from "./bot-messaging-test-support";
+import type { Agent } from "../contract/agents";
 
 const dirs: string[] = [];
 

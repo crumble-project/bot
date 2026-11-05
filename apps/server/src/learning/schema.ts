@@ -24,6 +24,7 @@ export const pendingReviews = sqliteTable("pending_reviews", {
 });
 
 export const reviewResults = sqliteTable("review_results", {
+  // The reviewed turn: an execution's ID, or a job turn's `jobTurnId`, which no execution has. So in `pending_reviews`.
   executionId: text("execution_id").primaryKey(),
   agentId: text("agent_id")
     .notNull()

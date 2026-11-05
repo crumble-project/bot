@@ -1,13 +1,8 @@
 import type { AvailableSkill } from "../skills/skill-library";
 import { SKILL_WRITING_GUIDANCE, skillIndex } from "../skills/skill-library";
-import { reviewInstructions } from "../learning/review-instructions";
-import type { ReviewScope } from "../learning/review-instructions";
-import { GROUP_INSTRUCTIONS } from "../group-chats/group-turns";
 import type { MemoryRecord } from "../memory/memory-tool";
-import type { Agent } from "../shared/domain";
-
-/** What kind of conversation a prompt is for: a group turn, a review, or neither. */
-export type ConversationScope = { group: boolean; review: ReviewScope | null };
+import type { Agent } from "../contract/agents";
+import type { ConversationPrompt } from "./conversation-kind";
 
 // Adapted from Hermes Agent's DEFAULT_AGENT_IDENTITY: a behavior spec, not a trait list.
 // Reply style lives in VOICE_GUIDANCE; keep here only what it does not say.
@@ -159,22 +154,22 @@ export function conversationInstructions(
   agent: Agent,
   skills: AvailableSkill[],
   memory: MemoryRecord[],
-  scope: ConversationScope & { clock: string },
+  prompt: ConversationPrompt,
+  clock: string,
 ) {
-  const { group, review, clock } = scope;
   const { own, shared } = memoryLists(memory);
 
   // Stable parts first and the clock last, following Hermes Agent's prompt order.
   return [
     identity(agent.name),
-    review ? "" : VOICE_GUIDANCE,
-    review ? reviewInstructions(review) : agent.instructions,
-    review
-      ? `Your standing instructions in the owner's chat, which the turn followed:\n${agent.instructions}`
-      : CONTEXT_GUIDANCE,
-    group ? GROUP_INSTRUCTIONS : "",
+    ...(prompt.standing?.(agent) ?? [
+      VOICE_GUIDANCE,
+      agent.instructions,
+      CONTEXT_GUIDANCE,
+    ]),
+    prompt.addition ?? "",
     skillIndex(skills),
-    !review || review.skills ? SKILL_WRITING_GUIDANCE : "",
+    prompt.skillWriting === false ? "" : SKILL_WRITING_GUIDANCE,
     MEMORY_GUIDANCE,
     `Persistent memory:\n${own}`,
     sharedSection(shared),

@@ -15,8 +15,8 @@ import {
   type Extension,
 } from "@earendil-works/pi-durable";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
-import { AgentRuntime } from "./runtime";
-import { standaloneBots } from "./bots";
+import { AgentRuntime } from "../bots/runtime";
+import { standaloneBots } from "../bots/bots-test-support";
 import { Store } from "../../test/support/store";
 import { scheduleExtension } from "../automations/bot-schedules";
 import { standaloneBotSchedules } from "../automations/scheduler-test-support";
@@ -25,7 +25,7 @@ import {
   credentialExtension,
   credentialsAccess,
 } from "../credentials/credentials";
-import { standaloneMessaging } from "../bot-messaging/bot-messaging";
+import { standaloneMessaging } from "../bot-messaging/bot-messaging-test-support";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const cleanups: (() => void | Promise<void>)[] = [];

@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import type { ChangeBy, LearnedChange, Memory, Skill } from "../shared/domain";
+import type { ChangeBy, Memory } from "../shared/domain";
+import type { LearnedChange, Skill } from "../contract/skills";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { learnedChanges, reviewResults } from "./schema";

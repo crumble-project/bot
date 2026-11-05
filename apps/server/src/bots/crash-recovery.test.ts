@@ -9,7 +9,7 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { Store } from "../../test/support/store";
 import { AgentRuntime } from "./runtime";
-import { standaloneBots } from "./bots";
+import { standaloneBots } from "./bots-test-support";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const agentId = "00000000-0000-4000-8000-000000000301";

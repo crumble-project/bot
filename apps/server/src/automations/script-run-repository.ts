@@ -1,22 +1,11 @@
-import type { SCRIPT_RUN_STATUSES } from "../shared/domain";
+import type { z } from "zod";
+import type { scriptRunResponse } from "../contract/api-responses";
 import { and, desc, eq, lt, or } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { ProductDatabase } from "../shared/product-database";
 import { scriptRuns } from "./schema.script-runs";
 
-export type ScriptRun = {
-  id: string;
-  scheduleId: string;
-  agentId: string;
-  command: string;
-  status: (typeof SCRIPT_RUN_STATUSES)[number];
-  exitCode: number | null;
-  output: string;
-  droppedBytes: number;
-  error: string | null;
-  startedAt: string;
-  finishedAt: string | null;
-};
+export type ScriptRun = z.infer<typeof scriptRunResponse>;
 
 type FinishedRun = Pick<
   ScriptRun,

@@ -16,10 +16,16 @@ import {
 } from "effect";
 import { GitHubAccounts } from "../github-apps/github-accounts";
 import { GitHubApps } from "../github-apps/github-apps";
-import { agentInput, credentialName } from "../shared/domain";
+import { agentInput } from "../contract/agents";
+import { InvalidInput } from "../shared/errors";
+import { credentialName } from "../contract/secrets";
 import type { CoreServices } from "../app/core-layer";
 import { runnerOf } from "../shared/runner";
 import { type PasswordManagerVendor } from "../password-managers/password-manager";
+import {
+  BOT_SECRET_USE_RETENTION_MS,
+  botSecretUseRetention,
+} from "../bot-secrets/bot-secret-uses";
 import { SecretRepository } from "../secrets/secret-repository";
 import { SecretValues } from "../secrets/secret-values";
 import { secretsLayer } from "../secrets/secrets";
@@ -436,6 +442,64 @@ test("a credential shows the read error of its newest use", async () => {
   expect(lastError()).toBe("Fake could not be reached");
   use("2026-10-29T10:01:00.000Z", null);
   expect(lastError()).toBeNull();
+  store.close();
+});
+
+test("a bad name is refused with its reason", async () => {
+  const { store, agentId } = open();
+
+  const refused = await store.runtime.runPromise(
+    credentials(store)
+      .save(agentId, "lower-case", {
+        hosts: ["api.acme.com"],
+        secret: { value: "secret" },
+      })
+      .pipe(Effect.flip),
+  );
+
+  expect(refused).toBeInstanceOf(InvalidInput);
+  expect(refused.message).toBe(
+    "Credential names are environment variable names such as ACME_TOKEN",
+  );
+  store.close();
+});
+
+test("uses past their retention go without anyone reading them", async () => {
+  const { store, agentId } = open();
+  const service = credentials(store);
+  const now = Date.now();
+
+  await store.runtime.runPromise(
+    service.save(agentId, "ACME_TOKEN", {
+      hosts: ["api.acme.com"],
+      secret: { value: "secret" },
+    }),
+  );
+
+  for (const at of [now - BOT_SECRET_USE_RETENTION_MS - 1000, now])
+    store.run(
+      service.recordUse(agentId, "ACME_TOKEN", {
+        at: new Date(at).toISOString(),
+        method: "GET",
+        host: "api.acme.com",
+        path: "/",
+        status: 200,
+        error: null,
+      }),
+    );
+
+  await store.runtime.runPromise(
+    Layer.build(botSecretUseRetention).pipe(
+      Effect.andThen(Effect.sleep("50 millis")),
+      Effect.scoped,
+    ),
+  );
+
+  expect(
+    await store.runtime.runPromise(
+      service.uses(agentId, "ACME_TOKEN", { limit: 20 }),
+    ),
+  ).toHaveLength(1);
   store.close();
 });
 

@@ -7,7 +7,7 @@ import type {
 import { Context, Effect, Layer, Redacted } from "effect";
 import { secretKey } from "../secrets/secret-key";
 import { Secrets } from "../secrets/secrets";
-import type { SecretInput } from "../shared/domain";
+import type { SecretInput } from "../contract/secrets";
 import { runnerOf, type Runner } from "../shared/runner";
 import { ProviderCredentialRepository } from "./provider-credential-repository";
 

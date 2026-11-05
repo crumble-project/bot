@@ -20,7 +20,7 @@ import { standaloneGroupChats } from "./group-chats-test-support";
 import { GroupTranscripts } from "./group-transcripts";
 import { reactionExtension } from "../bots/reaction";
 import { AgentRuntime } from "../bots/runtime";
-import { standaloneBots } from "../bots/bots";
+import { standaloneBots } from "../bots/bots-test-support";
 import { Store } from "../../test/support/store";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
@@ -978,7 +978,7 @@ describe("group turns across restarts", () => {
   test("an accepted message with no started turn is recovered after reopening", async () => {
     const { dir, groups, group, service, store, close } = setup();
     let attempted = false;
-    service.runtime.openGroupConversation = async () => {
+    service.runtime.openAnchored = async () => {
       attempted = true;
       throw new Error("workspace unavailable");
     };

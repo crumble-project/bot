@@ -25,6 +25,10 @@ export class Conflict extends Schema.TaggedError<Conflict>()("Conflict", {
   message: Schema.String,
 }) {}
 
+/** A request ID names one message, whichever chat or group it reached. */
+export const REQUEST_ID_REUSED =
+  "Request ID already used for a different message";
+
 /** The thing existed but is over, such as a finished provider sign-in. */
 export class Gone extends Schema.TaggedError<Gone>()("Gone", {
   message: Schema.String,
@@ -36,11 +40,14 @@ export class Unavailable extends Schema.TaggedError<Unavailable>()(
   { message: Schema.String },
 ) {}
 
-/** A failure the owner or bot can act on; anything else is a defect. */
-/** A thrown value's message, or the value itself as text. */
-export const errorText = (cause: unknown) =>
-  cause instanceof Error ? cause.message : String(cause);
+/** A thrown value's message; without one, `fallback`, or the value itself as text. */
+export const errorText = (cause: unknown, fallback = String(cause)) =>
+  Predicate.hasProperty(cause, "message") && Predicate.isString(cause.message)
+    ? cause.message
+    : fallback;
 
+/** A failure the owner or bot can act on; anything else is a defect. */
+/** A failure the owner or bot can act on; anything else is a defect. */
 export type AppError =
   | InvalidInput
   | Forbidden

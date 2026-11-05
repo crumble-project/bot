@@ -1,19 +1,26 @@
 import type { Conversation, EntryRecord } from "@earendil-works/pi-durable";
 import { z } from "zod";
-import type { Agent } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 import { clip } from "../shared/limits";
-import { contentText, inputMetadata, type ModelContent } from "../bots/entries";
+import {
+  contentText,
+  inputMetadata,
+  type ModelContent,
+} from "../transcript/entries";
 import type { AgentRuntime } from "../bots/runtime";
+import { toolMetadata } from "../transcript/tool-results";
 import {
   entriesBefore,
-  entriesFrom,
   isInputEntry,
   record,
-  toolMetadata,
+  turnEntries,
   type ModelMessage,
-} from "../bots/transcript";
-import { MEMORY_TOOL_NAME, SKILL_MANAGE_TOOL_NAME } from "../contract/tools";
-import { MEMORY_WRITE_ACTIONS } from "../memory/memory-tool";
+} from "../transcript/transcript";
+import {
+  MEMORY_TOOL_NAME,
+  MEMORY_WRITE_ACTIONS,
+  SKILL_MANAGE_TOOL_NAME,
+} from "../contract/tools";
 
 export type TurnReport = {
   /** Assistant messages that called tools: the turn's tool-activity rounds. */
@@ -153,9 +160,6 @@ async function readTurnReport(
   inputEntryId: number,
   maxChars: number,
 ): Promise<TurnReport> {
-  // The turn is the input entry and everything up to the next input.
-  const turnEntries = await entriesFrom(conversation, inputEntryId);
-
   const report: TurnReport = {
     rounds: 0,
     roundsSinceSkillWrite: null,
@@ -163,12 +167,12 @@ async function readTurnReport(
     digest: "",
   };
 
-  const turnLines: string[] = [];
+  const [input, ...rest] = await turnEntries(conversation, inputEntryId);
 
-  for (const [index, entry] of turnEntries.entries()) {
-    if (index > 0 && isInputEntry(entry)) break;
-    turnLines.push(...entryLines(entry, index > 0 ? report : undefined));
-  }
+  const turnLines = [
+    ...(input ? entryLines(input) : []),
+    ...rest.flatMap((entry) => entryLines(entry, report)),
+  ];
 
   const turn = clipTurn(turnLines.join("\n\n"), maxChars);
   const room = maxChars - turn.length - 40;

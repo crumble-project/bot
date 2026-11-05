@@ -10,7 +10,8 @@ import { AgentRepository } from "../bots/agent-repository";
 import { SecretRepository } from "../secrets/secret-repository";
 import { secretsLayer } from "../secrets/secrets";
 import { ScheduleRepository } from "../automations/schedule-repository";
-import { agentInput, scheduleInput } from "../shared/domain";
+import { agentInput } from "../contract/agents";
+import { scheduleInput } from "../contract/schedules";
 import { ProductDatabase } from "../shared/product-database";
 import { schedules } from "../automations/schema";
 import { EventRepository } from "./event-repository";
@@ -251,6 +252,40 @@ test("a dropped connection reconnects only after the reconnect delay", async () 
   await Bun.sleep(50);
   expect(relay.connections()).toBe(0);
 
+  await run(TestClock.adjust("61 seconds"));
+  await tick();
+  await until(async () => (await status()).status === "connected");
+});
+
+test("a flapping relay backs off until a connection holds", async () => {
+  const relay = fakeRelay();
+  const { configure, status, tick, run } = await fixture();
+
+  const dropped = async () => {
+    relay.drop();
+    await until(async () => (await status()).status === "error");
+  };
+
+  await configure(relay.url);
+  await until(async () => (await status()).status === "connected");
+  await dropped();
+  await run(TestClock.adjust("61 seconds"));
+  await tick();
+  await until(async () => (await status()).status === "connected");
+  await dropped();
+
+  await run(TestClock.adjust("61 seconds"));
+  await tick();
+  await Bun.sleep(50);
+  expect(relay.connections()).toBe(0);
+
+  await run(TestClock.adjust("61 seconds"));
+  await tick();
+  await until(async () => (await status()).status === "connected");
+
+  await run(TestClock.adjust("5 minutes"));
+  await tick();
+  await dropped();
   await run(TestClock.adjust("61 seconds"));
   await tick();
   await until(async () => (await status()).status === "connected");

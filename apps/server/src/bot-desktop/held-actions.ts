@@ -2,14 +2,15 @@ import type { Context as PiContext } from "@earendil-works/chord";
 import { and, desc, eq } from "drizzle-orm";
 import { Context, Deferred, Effect, Layer } from "effect";
 import { z } from "zod";
-import type { OwnerMessage } from "./desktop-vocabulary";
+import type { OwnerMessage } from "../jobs/owner-request";
 import { Conflict, NotFound } from "../shared/errors";
 import { ProductDatabase } from "../shared/product-database";
+import { HELD_ACTION_STATUSES, OWNER_MESSAGE_SOURCES } from "../shared/domain";
 import { accessOf, type Access, type Runner } from "../shared/runner";
 import { nowIso } from "../shared/time";
 import { heldActions } from "./schema";
 
-export type HeldActionStatus = "pending" | "approved" | "declined" | "expired";
+export type HeldActionStatus = (typeof HELD_ACTION_STATUSES)[number];
 
 /** A desktop job's action an intent check held, waiting for the owner or decided. */
 export type HeldAction = {
@@ -44,12 +45,10 @@ const LISTED = 50;
 const ownerMessage = z.object({
   requestId: z.string(),
   text: z.string(),
-  from: z.enum(["owner", "automation"]),
+  from: z.enum(OWNER_MESSAGE_SOURCES),
 });
 
-const statusOf = z
-  .enum(["pending", "approved", "declined", "expired"])
-  .catch("expired");
+const statusOf = z.enum(HELD_ACTION_STATUSES).catch("expired");
 
 const heldOf = (row: typeof heldActions.$inferSelect): HeldAction => ({
   id: row.id,

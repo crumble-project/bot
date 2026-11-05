@@ -10,7 +10,7 @@ import {
   renderAvatarSvg,
 } from "open-bot-avatar";
 import { Store } from "../../test/support/store";
-import { agentInput } from "../shared/domain";
+import { agentInput } from "../contract/agents";
 import {
   avatarDefinitionSchema,
   defaultAvatarDefinition,

@@ -11,7 +11,7 @@ import {
   type FakePasswordManager,
 } from "../../test/support/fake-password-manager";
 import { Store } from "../../test/support/store";
-import { pathRegister } from "../app/api";
+import { pathRegister } from "../app/api-requests";
 import { handleApiError } from "../app/api-errors";
 import { contractApp } from "../contract/api-contract";
 import { passwordManagersResponse } from "../contract/api-responses";

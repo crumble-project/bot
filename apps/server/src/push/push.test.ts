@@ -21,10 +21,10 @@ import {
 import { BotActivity } from "../bots/bot-activity";
 import type { Activity } from "../bots/bots";
 import { Store } from "../../test/support/store";
-import { standaloneBots } from "../bots/bots";
+import { standaloneBots } from "../bots/bots-test-support";
 import { standaloneScheduler } from "../automations/scheduler-test-support";
 import { testAPI } from "../../test/support/api";
-import type { Agent } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 
 // Plain header records, so they spread into the defaults.
 type TestRequestInit = Omit<RequestInit, "headers"> & {

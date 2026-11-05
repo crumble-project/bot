@@ -23,7 +23,7 @@ export function registerGitHubAppRoutes(options: {
 
   // GitHub being unreachable is the server's problem to report, not a defect.
   const github = <A, E>(effect: Effect.Effect<A, E>) =>
-    Effect.runPromise(
+    run.runPromise(
       effect.pipe(
         Effect.mapError((error) =>
           error instanceof GitHubUnavailable

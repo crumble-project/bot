@@ -4,9 +4,11 @@ import {
   type Context as PiContext,
 } from "@earendil-works/chord/context";
 import { Clock, Context, Effect, Layer, Option } from "effect";
-import { activeExecution, type Agent, type Execution } from "../shared/domain";
+import { activeExecution, type Execution } from "../shared/domain";
+import { type Agent } from "../contract/agents";
 import { appErrors, pi } from "../shared/app-errors";
 import {
+  botMessageRequest,
   delegationRequest,
   jobQuestionRequest,
   parseRequestId,
@@ -16,7 +18,6 @@ import { Bots } from "../bots/bots";
 import type { JobAsked, TurnWork } from "../jobs/jobs";
 import { ExecutionRepository } from "../bots/execution-repository";
 import { BotRuntime } from "../bots/runtime";
-import type { Runner } from "../shared/runner";
 import {
   InvalidInput,
   Forbidden,
@@ -26,8 +27,7 @@ import {
 } from "../shared/errors";
 import { BOT_TOOL } from "../contract/tools";
 import { normalize } from "../group-chats/group-mentions";
-import { MAX_MESSAGE_CHARS } from "../shared/limits";
-import type { ProductDatabase } from "../shared/product-database";
+import { MAX_MESSAGE_CHARS, MAX_WAIT_SECONDS } from "../shared/limits";
 import { delegationStore } from "./delegation-store";
 
 type Receipt = {
@@ -51,7 +51,6 @@ const addressed = (recipient: string) => recipient.trim().replace(/^@/, "");
 const checkAborted = (context: PiContext) =>
   Effect.sync(() => context.abortSignal?.throwIfAborted());
 
-/** What the delegating bot reads: whose job asks what, and how to answer or hand it to the owner. */
 /** The trimmed text of a message the bot may send, or why it may not. */
 const sendableText = (input: {
   message: string;
@@ -74,6 +73,7 @@ const sendableText = (input: {
   return Effect.succeed(message);
 };
 
+/** What the delegating bot reads: whose job asks what, and how to answer or hand it to the owner. */
 const jobQuestionText = (asked: JobAsked, assignee: string) => {
   const { question } = asked;
 
@@ -144,453 +144,460 @@ export class BotMessaging extends Context.Service<
     ) => Effect.Effect<JobQuestionAnswered, AppError>;
   }
 >()("crumble/bot-messaging/BotMessaging") {
-  static readonly make = Effect.gen(function* () {
-    const bots = yield* Bots;
-    const runtime = yield* BotRuntime;
-    const agents = yield* AgentRepository;
-    const executions = yield* ExecutionRepository;
-    const delegations = yield* delegationStore;
+  static readonly layer = Layer.effect(
+    BotMessaging,
+    Effect.gen(function* () {
+      const bots = yield* Bots;
+      const runtime = yield* BotRuntime;
+      const agents = yield* AgentRepository;
+      const executions = yield* ExecutionRepository;
+      const delegations = yield* delegationStore;
 
-    const source = Effect.fnUntraced(function* (sourceId: string) {
-      const found = yield* bots.agent(sourceId);
+      const source = Effect.fnUntraced(function* (sourceId: string) {
+        const found = yield* bots.agent(sourceId);
 
-      if (!found.enabled || !found.tools.includes(BOT_TOOL.delegate))
-        return yield* Effect.fail(
-          new Forbidden({
-            message: "This agent has no permission to message other bots",
-          }),
+        if (!found.enabled || !found.tools.includes(BOT_TOOL.delegate))
+          return yield* Effect.fail(
+            new Forbidden({
+              message: "This agent has no permission to message other bots",
+            }),
+          );
+
+        return found;
+      });
+
+      const resolve = Effect.fnUntraced(function* (recipient: string) {
+        const reference = addressed(recipient);
+        const byId = yield* agents.get(reference);
+
+        if (byId) return byId;
+
+        const matches = (yield* agents.list).filter(
+          (agent) => normalize(agent.name) === normalize(reference),
         );
 
-      return found;
-    });
+        if (!matches.length)
+          return yield* Effect.fail(
+            new NotFound({
+              message: "Bot not found; use list_bots to find a recipient",
+            }),
+          );
 
-    const resolve = Effect.fnUntraced(function* (recipient: string) {
-      const reference = addressed(recipient);
-      const byId = yield* agents.get(reference);
+        if (matches.length > 1)
+          return yield* Effect.fail(
+            new Conflict({
+              message: "Bot name is ambiguous; use the ID from list_bots",
+            }),
+          );
 
-      if (byId) return byId;
+        return matches[0]!;
+      });
 
-      const matches = (yield* agents.list).filter(
-        (agent) => normalize(agent.name) === normalize(reference),
-      );
-
-      if (!matches.length)
-        return yield* Effect.fail(
-          new NotFound({
-            message: "Bot not found; use list_bots to find a recipient",
-          }),
-        );
-
-      if (matches.length > 1)
-        return yield* Effect.fail(
-          new Conflict({
-            message: "Bot name is ambiguous; use the ID from list_bots",
-          }),
-        );
-
-      return matches[0]!;
-    });
-
-    const assertCanSend = Effect.fnUntraced(function* (sourceId: string) {
-      if (
-        (yield* executions.list(sourceId)).some(
-          (execution) =>
-            activeExecution(execution) &&
-            parseRequestId(execution.requestId).kind === "delegate",
-        )
-      )
-        return yield* Effect.fail(
-          new Conflict({
-            message: "Delegated tasks cannot start further delegations",
-          }),
-        );
-    });
-
-    const authorize = (from: Agent, target: Agent) => {
-      if (!target.enabled || target.id === from.id)
-        return Effect.fail(
-          new InvalidInput({ message: "Choose another enabled agent" }),
-        );
-
-      return Effect.void;
-    };
-
-    const exchange = Effect.fnUntraced(function* (
-      sourceId: string,
-      executionId: string,
-    ) {
-      const saved = yield* delegations.receipt(executionId);
-      const from = yield* source(sourceId);
-
-      if (saved?.sourceAgentId !== from.id)
-        return yield* Effect.fail(
-          new NotFound({ message: "Delegation receipt not found" }),
-        );
-      const execution = yield* executions.get(executionId);
-
-      if (!execution || execution.agentId !== saved.targetAgentId)
-        return yield* Effect.fail(
-          new NotFound({ message: "Delegation execution not found" }),
-        );
-
-      return execution;
-    });
-
-    const receipt = Effect.fnUntraced(function* (execution: Execution) {
-      return {
-        executionId: execution.id,
-        agentId: execution.agentId,
-        agent: (yield* bots.agent(execution.agentId)).name,
-        status: execution.status,
-      };
-    });
-
-    const record = Effect.fnUntraced(function* (
-      transcriptAgentId: string,
-      sourceId: string,
-      execution: Execution,
-      status: "sent" | "done" | "failed" | "cancelled",
-      content: string,
-    ) {
-      const from = yield* bots.agent(sourceId);
-      const target = yield* bots.agent(execution.agentId);
-
-      const [sender, receiver] =
-        status === "done" ? [target, from] : [from, target];
-
-      yield* bots.recordBotMessage(
-        transcriptAgentId,
-        {
-          content,
-          communication: {
-            executionId: execution.id,
-            fromAgentId: sender.id,
-            fromName: sender.name,
-            toAgentId: receiver.id,
-            toName: receiver.name,
-            status,
-          },
-        },
-        `bot-message:${execution.id}:${status}`,
-      );
-    });
-
-    /** The work of the jobs a finished turn started or messaged; none for a turn still running. */
-    const jobsOf = (answering: Agent, execution: Execution) => {
-      const { submissionId } = execution;
-
-      return execution.status === "done" && submissionId
-        ? pi(() => runtime.turnWork(answering, submissionId))
-        : Effect.succeed(undefined);
-    };
-
-    // The wait gives up quietly after `waitMs`; a cancelled tool call or a failed wait still fails.
-    const awaitTurn = (
-      execution: Execution,
-      submissionId: string,
-      waitMs: number,
-      context: PiContext,
-    ) =>
-      bots.agent(execution.agentId).pipe(
-        Effect.flatMap((target) =>
-          Effect.tryPromise({
-            try: (signal) =>
-              runtime.wait(
-                submissionId,
-                target,
-                withAbortSignal(signal, context),
-              ),
-            catch: (error) => error,
-          }),
-        ),
-        Effect.timeoutOption(waitMs),
-        Effect.catch((error) =>
-          checkAborted(context).pipe(
-            Effect.andThen(appErrors(Effect.fail(error))),
-            Effect.as(Option.none()),
-          ),
-        ),
-      );
-
-    // A turn that left jobs working answers once their reports are answered too.
-    const awaitJobs = Effect.fnUntraced(function* (
-      answering: Agent,
-      execution: Execution,
-      deadline: number,
-      context: PiContext,
-    ) {
-      let work = yield* jobsOf(answering, execution);
-
-      while (work?.open) {
-        const left = deadline - (yield* Clock.currentTimeMillis);
-
-        if (left <= 0) break;
-        yield* Effect.sleep(Math.min(JOB_POLL_MS, left));
-        yield* checkAborted(context);
-        work = yield* jobsOf(answering, execution);
-      }
-
-      return work;
-    });
-
-    // Only completed answers belong to the caller. Partial output and other
-    // turns in the recipient's chat remain private.
-    const turnResponse = (
-      answering: Agent,
-      { status, submissionId, conversationId }: Execution,
-      reports: string[],
-    ): Effect.Effect<string[], AppError> =>
-      status === "done" && submissionId
-        ? pi(async () =>
-            (
-              await Promise.all(
-                [submissionId, ...reports].map((id) =>
-                  runtime.response(answering, conversationId, id),
-                ),
-              )
-            ).flat(),
-          )
-        : Effect.succeed([]);
-
-    // Reserve the destination before awaiting chat admission. A replay cannot send
-    // the same tool invocation to a second bot or change its message.
-    const reserveTarget = Effect.fnUntraced(function* (
-      from: Agent,
-      addressee: string,
-      requestId: string,
-      message: string,
-    ) {
-      const saved = yield* delegations.request(requestId);
-      const recipient = normalize(addressed(addressee));
-
-      // An in-flight tool keeps its resolved destination if the bot is renamed.
-      const target =
-        saved?.recipient === recipient
-          ? yield* bots.agent(saved.targetAgentId)
-          : yield* resolve(addressee);
-
-      yield* authorize(from, target);
-
-      if (
-        saved &&
-        (saved.targetAgentId !== target.id || saved.message !== message)
-      )
-        return yield* Effect.fail(
-          new Conflict({
-            message: "Request ID already used for a different bot message",
-          }),
-        );
-
-      if (!saved)
-        yield* delegations.reserve({
-          requestId,
-          sourceAgentId: from.id,
-          targetAgentId: target.id,
-          recipient,
-          message,
-        });
-
-      return target;
-    });
-
-    // An exchange still running gets `waitMs` to finish; answers with it as it then stands.
-    const waitedFor = Effect.fnUntraced(function* (
-      sourceId: string,
-      execution: Execution,
-      waitMs: number,
-      context: PiContext,
-    ) {
-      if (!activeExecution(execution) || !execution.submissionId || waitMs <= 0)
-        return execution;
-
-      yield* awaitTurn(execution, execution.submissionId, waitMs, context);
-
-      return yield* exchange(sourceId, execution.id);
-    });
-
-    return BotMessaging.of({
-      recipients: Effect.fn("BotMessaging.recipients")(function* (
-        sourceId: string,
-      ) {
-        const from = yield* source(sourceId);
-
-        return (yield* agents.list)
-          .filter((agent) => agent.id !== from.id && agent.enabled)
-          .map(({ id, name, description }) => ({ id, name, description }));
-      }),
-      send: Effect.fn("BotMessaging.send")(function* (
-        sourceId: string,
-        input: { recipient: string; message: string; requestId: string },
-        context: PiContext = BACKGROUND_CONTEXT,
-      ) {
-        yield* checkAborted(context);
-        const from = yield* source(sourceId);
-        const message = yield* sendableText(input);
-        yield* assertCanSend(from.id);
-
-        const requestId = delegationRequest(from.id, input.requestId);
-
-        const target = yield* reserveTarget(
-          from,
-          input.recipient,
-          requestId,
-          message,
-        );
-
-        const chat = yield* bots.chat(target.id);
-        yield* checkAborted(context);
-        // Opening a chat may yield: recheck permissions and capacity immediately before send.
-        yield* authorize(yield* source(from.id), yield* bots.agent(target.id));
-        yield* assertCanSend(from.id);
-        const existing = yield* executions.getByRequest(chat.id, requestId);
-
+      const assertCanSend = Effect.fnUntraced(function* (sourceId: string) {
         if (
-          !existing &&
-          (yield* executions.list(target.id)).filter(activeExecution).length >=
-            4
+          (yield* executions.active(sourceId)).some(
+            (execution) =>
+              parseRequestId(execution.requestId).kind === "delegate",
+          )
         )
           return yield* Effect.fail(
             new Conflict({
-              message:
-                "This agent already has four active tasks; try again later",
+              message: "Delegated tasks cannot start further delegations",
             }),
           );
-        const execution = yield* bots.send(chat.id, message, requestId);
-        yield* delegations.saveReceipt({
-          executionId: execution.id,
-          sourceAgentId: from.id,
-          targetAgentId: target.id,
-        });
-        // The target's chat already shows the delivered message as from the sender.
-        yield* record(from.id, from.id, execution, "sent", message);
+      });
 
-        return yield* receipt(execution);
-      }),
-      result: Effect.fn("BotMessaging.result")(function* (
+      const authorize = (from: Agent, target: Agent) => {
+        if (!target.enabled || target.id === from.id)
+          return Effect.fail(
+            new InvalidInput({ message: "Choose another enabled agent" }),
+          );
+
+        return Effect.void;
+      };
+
+      const exchange = Effect.fnUntraced(function* (
         sourceId: string,
         executionId: string,
-        options: { waitMs?: number; context?: PiContext } = {},
       ) {
-        const first = yield* exchange(sourceId, executionId);
-        const context = options.context ?? BACKGROUND_CONTEXT;
-        yield* checkAborted(context);
-        const waitMs = Math.min(60000, Math.max(0, options.waitMs ?? 0));
-        const deadline = (yield* Clock.currentTimeMillis) + waitMs;
-        const execution = yield* waitedFor(sourceId, first, waitMs, context);
-        const answering = yield* bots.agent(execution.agentId);
-        const work = yield* awaitJobs(answering, execution, deadline, context);
-
-        const { status, error } = outcomeOf(execution, work);
-
-        const response =
-          status === "running"
-            ? []
-            : yield* turnResponse(answering, execution, work?.reports ?? []);
-
-        yield* exchange(sourceId, executionId);
-
-        if (status !== "pending" && status !== "running")
-          yield* record(
-            sourceId,
-            sourceId,
-            execution,
-            status,
-            closingText(status, response, error),
-          );
-
-        yield* exchange(sourceId, executionId);
-
-        return {
-          ...(yield* receipt(execution)),
-          status,
-          error,
-          response,
-        };
-      }),
-      relayQuestion: Effect.fn("BotMessaging.relayQuestion")(function* (
-        asked: JobAsked,
-      ) {
-        const found = yield* Effect.forEach(asked.turn, (id) =>
-          executions.findBySubmission(asked.agentId, id),
-        );
-
-        const delegation = found.find(
-          (execution) =>
-            execution &&
-            parseRequestId(execution.requestId).kind === "delegate",
-        );
-
-        if (!delegation) return false;
-
-        const saved = yield* delegations.receipt(delegation.id);
-
-        if (saved?.targetAgentId !== asked.agentId) return false;
-
-        // Without the permission to message the job's bot now, the question stays with the owner.
-        const permitted = yield* Effect.option(
-          Effect.gen(function* () {
-            const reporter = yield* source(saved.sourceAgentId);
-            const assignee = yield* bots.agent(asked.agentId);
-            yield* authorize(reporter, assignee);
-
-            return { reporter, assignee };
-          }),
-        );
-
-        if (Option.isNone(permitted)) return false;
-        const { reporter, assignee } = permitted.value;
-
-        yield* delegations.saveQuestion({
-          questionId: asked.question.id,
-          reporterAgentId: reporter.id,
-          assigneeAgentId: assignee.id,
-          kind: asked.kind,
-          job: asked.name,
-        });
-        const chat = yield* bots.chat(reporter.id);
-
-        yield* bots.send(
-          chat.id,
-          jobQuestionText(asked, assignee.name),
-          jobQuestionRequest(assignee.id, asked.question.id),
-        );
-
-        return true;
-      }),
-      answerQuestion: Effect.fn("BotMessaging.answerQuestion")(function* (
-        sourceId: string,
-        input: { questionId: string; answer: string },
-      ) {
+        const saved = yield* delegations.receipt(executionId);
         const from = yield* source(sourceId);
 
-        const saved = yield* delegations.question(input.questionId);
-
-        if (saved?.reporterAgentId !== from.id)
+        if (saved?.sourceAgentId !== from.id)
           return yield* Effect.fail(
-            new NotFound({ message: "Job question not found" }),
+            new NotFound({ message: "Delegation receipt not found" }),
+          );
+        const execution = yield* executions.get(executionId);
+
+        if (!execution || execution.agentId !== saved.targetAgentId)
+          return yield* Effect.fail(
+            new NotFound({ message: "Delegation execution not found" }),
           );
 
-        const assignee = yield* bots.agent(saved.assigneeAgentId);
-        yield* authorize(from, assignee);
+        return execution;
+      });
 
-        yield* bots.answerJob(assignee.id, saved.kind, {
-          name: saved.job,
-          questionId: input.questionId,
-          text: input.answer,
-          by: `${from.name}, the bot that delegated your task,`,
-        });
+      const receipt = Effect.fnUntraced(function* (execution: Execution) {
+        return {
+          executionId: execution.id,
+          agentId: execution.agentId,
+          agent: (yield* bots.agent(execution.agentId)).name,
+          status: execution.status,
+        };
+      });
 
-        return { agentId: assignee.id, agent: assignee.name, job: saved.job };
-      }),
-    });
-  });
+      const record = Effect.fnUntraced(function* (
+        transcriptAgentId: string,
+        sourceId: string,
+        execution: Execution,
+        status: "sent" | "done" | "failed" | "cancelled",
+        content: string,
+      ) {
+        const from = yield* bots.agent(sourceId);
+        const target = yield* bots.agent(execution.agentId);
 
-  static readonly layer = Layer.effect(BotMessaging, BotMessaging.make);
+        const [sender, receiver] =
+          status === "done" ? [target, from] : [from, target];
+
+        yield* bots.recordBotMessage(
+          transcriptAgentId,
+          {
+            content,
+            communication: {
+              executionId: execution.id,
+              fromAgentId: sender.id,
+              fromName: sender.name,
+              toAgentId: receiver.id,
+              toName: receiver.name,
+              status,
+            },
+          },
+          botMessageRequest(execution.id, status),
+        );
+      });
+
+      /** The work of the jobs a finished turn started or messaged; none for a turn still running. */
+      const jobsOf = (answering: Agent, execution: Execution) => {
+        const { submissionId } = execution;
+
+        return execution.status === "done" && submissionId
+          ? pi(() => runtime.turnWork(answering, submissionId))
+          : Effect.succeed(undefined);
+      };
+
+      // The wait gives up quietly after `waitMs`; a cancelled tool call or a failed wait still fails.
+      const awaitTurn = (
+        execution: Execution,
+        submissionId: string,
+        waitMs: number,
+        context: PiContext,
+      ) =>
+        bots.agent(execution.agentId).pipe(
+          Effect.flatMap((target) =>
+            Effect.tryPromise({
+              try: (signal) =>
+                runtime.wait(
+                  submissionId,
+                  target,
+                  withAbortSignal(signal, context),
+                ),
+              catch: (error) => error,
+            }),
+          ),
+          Effect.timeoutOption(waitMs),
+          Effect.catch((error) =>
+            checkAborted(context).pipe(
+              Effect.andThen(appErrors(Effect.fail(error))),
+              Effect.as(Option.none()),
+            ),
+          ),
+        );
+
+      // A turn that left jobs working answers once their reports are answered too.
+      const awaitJobs = Effect.fnUntraced(function* (
+        answering: Agent,
+        execution: Execution,
+        deadline: number,
+        context: PiContext,
+      ) {
+        let work = yield* jobsOf(answering, execution);
+
+        while (work?.open) {
+          const left = deadline - (yield* Clock.currentTimeMillis);
+
+          if (left <= 0) break;
+          yield* Effect.sleep(Math.min(JOB_POLL_MS, left));
+          yield* checkAborted(context);
+          work = yield* jobsOf(answering, execution);
+        }
+
+        return work;
+      });
+
+      // Only completed answers belong to the caller. Partial output and other
+      // turns in the recipient's chat remain private.
+      const turnResponse = (
+        answering: Agent,
+        { status, submissionId, conversationId }: Execution,
+        reports: string[],
+      ): Effect.Effect<string[], AppError> =>
+        status === "done" && submissionId
+          ? pi(async () =>
+              (
+                await Promise.all(
+                  [submissionId, ...reports].map((id) =>
+                    runtime.response(answering, conversationId, id),
+                  ),
+                )
+              ).flat(),
+            )
+          : Effect.succeed([]);
+
+      // Reserve the destination before awaiting chat admission. A replay cannot send
+      // the same tool invocation to a second bot or change its message.
+      const reserveTarget = Effect.fnUntraced(function* (
+        from: Agent,
+        addressee: string,
+        requestId: string,
+        message: string,
+      ) {
+        const saved = yield* delegations.request(requestId);
+        const recipient = normalize(addressed(addressee));
+
+        // An in-flight tool keeps its resolved destination if the bot is renamed.
+        const target =
+          saved?.recipient === recipient
+            ? yield* bots.agent(saved.targetAgentId)
+            : yield* resolve(addressee);
+
+        yield* authorize(from, target);
+
+        if (
+          saved &&
+          (saved.targetAgentId !== target.id || saved.message !== message)
+        )
+          return yield* Effect.fail(
+            new Conflict({
+              message: "Request ID already used for a different bot message",
+            }),
+          );
+
+        if (!saved)
+          yield* delegations.reserve({
+            requestId,
+            sourceAgentId: from.id,
+            targetAgentId: target.id,
+            recipient,
+            message,
+          });
+
+        return target;
+      });
+
+      // An exchange still running gets `waitMs` to finish; answers with it as it then stands.
+      const waitedFor = Effect.fnUntraced(function* (
+        sourceId: string,
+        execution: Execution,
+        waitMs: number,
+        context: PiContext,
+      ) {
+        if (
+          !activeExecution(execution) ||
+          !execution.submissionId ||
+          waitMs <= 0
+        )
+          return execution;
+
+        yield* awaitTurn(execution, execution.submissionId, waitMs, context);
+
+        return yield* exchange(sourceId, execution.id);
+      });
+
+      return BotMessaging.of({
+        recipients: Effect.fn("BotMessaging.recipients")(function* (
+          sourceId: string,
+        ) {
+          const from = yield* source(sourceId);
+
+          return (yield* agents.list)
+            .filter((agent) => agent.id !== from.id && agent.enabled)
+            .map(({ id, name, description }) => ({ id, name, description }));
+        }),
+        send: Effect.fn("BotMessaging.send")(function* (
+          sourceId: string,
+          input: { recipient: string; message: string; requestId: string },
+          context: PiContext = BACKGROUND_CONTEXT,
+        ) {
+          yield* checkAborted(context);
+          const from = yield* source(sourceId);
+          const message = yield* sendableText(input);
+          yield* assertCanSend(from.id);
+
+          const requestId = delegationRequest(from.id, input.requestId);
+
+          const target = yield* reserveTarget(
+            from,
+            input.recipient,
+            requestId,
+            message,
+          );
+
+          const chat = yield* bots.chat(target.id);
+          yield* checkAborted(context);
+          // Opening a chat may yield: recheck permissions and capacity immediately before send.
+          yield* authorize(
+            yield* source(from.id),
+            yield* bots.agent(target.id),
+          );
+          yield* assertCanSend(from.id);
+          const existing = yield* executions.getByRequest(chat.id, requestId);
+
+          if (!existing && (yield* executions.active(target.id)).length >= 4)
+            return yield* Effect.fail(
+              new Conflict({
+                message:
+                  "This agent already has four active tasks; try again later",
+              }),
+            );
+          const execution = yield* bots.send(chat.id, message, requestId);
+          yield* delegations.saveReceipt({
+            executionId: execution.id,
+            sourceAgentId: from.id,
+            targetAgentId: target.id,
+          });
+          // The target's chat already shows the delivered message as from the sender.
+          yield* record(from.id, from.id, execution, "sent", message);
+
+          return yield* receipt(execution);
+        }),
+        result: Effect.fn("BotMessaging.result")(function* (
+          sourceId: string,
+          executionId: string,
+          options: { waitMs?: number; context?: PiContext } = {},
+        ) {
+          const first = yield* exchange(sourceId, executionId);
+          const context = options.context ?? BACKGROUND_CONTEXT;
+          yield* checkAborted(context);
+
+          const waitMs = Math.min(
+            MAX_WAIT_SECONDS * 1000,
+            Math.max(0, options.waitMs ?? 0),
+          );
+
+          const deadline = (yield* Clock.currentTimeMillis) + waitMs;
+          const execution = yield* waitedFor(sourceId, first, waitMs, context);
+          const answering = yield* bots.agent(execution.agentId);
+
+          const work = yield* awaitJobs(
+            answering,
+            execution,
+            deadline,
+            context,
+          );
+
+          const { status, error } = outcomeOf(execution, work);
+
+          const response =
+            status === "running"
+              ? []
+              : yield* turnResponse(answering, execution, work?.reports ?? []);
+
+          yield* exchange(sourceId, executionId);
+
+          if (status !== "pending" && status !== "running")
+            yield* record(
+              sourceId,
+              sourceId,
+              execution,
+              status,
+              closingText(status, response, error),
+            );
+
+          yield* exchange(sourceId, executionId);
+
+          return {
+            ...(yield* receipt(execution)),
+            status,
+            error,
+            response,
+          };
+        }),
+        relayQuestion: Effect.fn("BotMessaging.relayQuestion")(function* (
+          asked: JobAsked,
+        ) {
+          const found = yield* Effect.forEach(asked.turn, (id) =>
+            executions.findBySubmission(asked.agentId, id),
+          );
+
+          const delegation = found.find(
+            (execution) =>
+              execution &&
+              parseRequestId(execution.requestId).kind === "delegate",
+          );
+
+          if (!delegation) return false;
+
+          const saved = yield* delegations.receipt(delegation.id);
+
+          if (saved?.targetAgentId !== asked.agentId) return false;
+
+          // Without the permission to message the job's bot now, the question stays with the owner.
+          const permitted = yield* Effect.option(
+            Effect.gen(function* () {
+              const reporter = yield* source(saved.sourceAgentId);
+              const assignee = yield* bots.agent(asked.agentId);
+              yield* authorize(reporter, assignee);
+
+              return { reporter, assignee };
+            }),
+          );
+
+          if (Option.isNone(permitted)) return false;
+          const { reporter, assignee } = permitted.value;
+
+          yield* delegations.saveQuestion({
+            questionId: asked.question.id,
+            reporterAgentId: reporter.id,
+            assigneeAgentId: assignee.id,
+            kind: asked.kind,
+            job: asked.name,
+          });
+          const chat = yield* bots.chat(reporter.id);
+
+          yield* bots.send(
+            chat.id,
+            jobQuestionText(asked, assignee.name),
+            jobQuestionRequest(assignee.id, asked.question.id),
+          );
+
+          return true;
+        }),
+        answerQuestion: Effect.fn("BotMessaging.answerQuestion")(function* (
+          sourceId: string,
+          input: { questionId: string; answer: string },
+        ) {
+          const from = yield* source(sourceId);
+
+          const saved = yield* delegations.question(input.questionId);
+
+          if (saved?.reporterAgentId !== from.id)
+            return yield* Effect.fail(
+              new NotFound({ message: "Job question not found" }),
+            );
+
+          const assignee = yield* bots.agent(saved.assigneeAgentId);
+          yield* authorize(from, assignee);
+
+          yield* bots.answerJob(assignee.id, saved.kind, {
+            name: saved.job,
+            questionId: input.questionId,
+            text: input.answer,
+            by: `${from.name}, the bot that delegated your task,`,
+          });
+
+          return { agentId: assignee.id, agent: assignee.name, job: saved.job };
+        }),
+      });
+    }),
+  );
 }
-
-/** Bot messaging over standalone bots, for a test without an account. */
-export const standaloneMessaging = (bots: {
-  effects: Runner<
-    Bots | BotRuntime | AgentRepository | ExecutionRepository | ProductDatabase
-  >;
-}) => bots.effects.runSync(BotMessaging.make);

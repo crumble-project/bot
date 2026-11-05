@@ -1,11 +1,14 @@
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { Clock, Context, Effect, Layer } from "effect";
+import { BOT_SECRET_USE_RETENTION_DAYS } from "../contract/limits";
 import { ProductDatabase } from "../shared/product-database";
+import { pruneHourly, startTicking } from "../shared/ticker";
 import { botSecretUses, type BotSecretKind } from "./schema";
 
 /** How long the owner can look back at a credential's or login's uses. */
-export const BOT_SECRET_USE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+export const BOT_SECRET_USE_RETENTION_MS =
+  BOT_SECRET_USE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 /** One use of a credential or login; `detail` is what its kind records, such as a request's method and path. */
 export type BotSecretUse = {
@@ -36,7 +39,7 @@ export class BotSecretUses extends Context.Service<
       name: string,
       use: Omit<BotSecretUse, "id">,
     ) => Effect.Effect<void>;
-    /** Newest first; page with `before` set to the last use's ID. Drops expired uses first. */
+    /** Newest first; page with `before` set to the last use's ID. */
     readonly list: (
       agentId: string,
       kind: BotSecretKind,
@@ -63,15 +66,6 @@ export class BotSecretUses extends Context.Service<
           eq(botSecretUses.name, name),
         );
 
-      const prune = Effect.gen(function* () {
-        const now = yield* Clock.currentTimeMillis;
-        const cutoff = new Date(now - BOT_SECRET_USE_RETENTION_MS);
-
-        yield* db
-          .delete(botSecretUses)
-          .where(lt(botSecretUses.at, cutoff.toISOString()));
-      }).pipe(Effect.orDie);
-
       return BotSecretUses.of({
         record: Effect.fn("BotSecretUses.record")(function* (
           agentId,
@@ -91,8 +85,6 @@ export class BotSecretUses extends Context.Service<
         }, Effect.orDie),
         list: Effect.fn("BotSecretUses.list")(
           function* (agentId, kind, name, options) {
-            yield* prune;
-
             const cursor = Number(options.before);
 
             const rows = yield* db
@@ -133,3 +125,21 @@ export class BotSecretUses extends Context.Service<
     }),
   );
 }
+
+/** Drops uses past `BOT_SECRET_USE_RETENTION_MS`, whether or not anyone reads them. */
+export const botSecretUseRetention = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const db = yield* ProductDatabase;
+
+    const prune = Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis;
+      const cutoff = new Date(now - BOT_SECRET_USE_RETENTION_MS);
+
+      yield* db
+        .delete(botSecretUses)
+        .where(lt(botSecretUses.at, cutoff.toISOString()));
+    }).pipe(Effect.orDie);
+
+    yield* startTicking(pruneHourly(prune), yield* Effect.scope);
+  }),
+);

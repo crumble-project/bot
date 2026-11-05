@@ -1,6 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import type { Schedule, ScheduleInput } from "../shared/domain";
+import type { Schedule, ScheduleInput } from "../contract/schedules";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { schedules } from "./schema";
@@ -29,7 +29,7 @@ const columns = (
   nextRunAt,
 });
 
-/** One-time and recurring tasks, each run in one bot's chat. `Scheduler` is the only writer of what a task does and when. */
+/** One-time and recurring automations, each run in one bot's chat. `Scheduler` is the only writer of what one does and when. */
 export class ScheduleRepository extends Context.Service<
   ScheduleRepository,
   {

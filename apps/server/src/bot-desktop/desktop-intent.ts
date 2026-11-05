@@ -5,7 +5,7 @@ import type {
   DocumentReader,
   ToolExecutionApi,
 } from "@earendil-works/pi-durable";
-import { HELD_ACTION_ENTRY } from "../bots/entries";
+import { HELD_ACTION_ENTRY } from "../transcript/entries";
 import type { IntentGate } from "./computer-use-intent";
 import type { HeldActionsAccess } from "./held-actions";
 import {

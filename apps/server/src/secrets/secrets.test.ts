@@ -8,7 +8,7 @@ import {
 } from "../../test/support/fake-password-manager";
 import { SecretRepository } from "./secret-repository";
 import { InvalidInput } from "../shared/errors";
-import type { SecretReference } from "../shared/domain";
+import type { SecretReference } from "../contract/secrets";
 import { PasswordManagers } from "../password-managers/password-manager";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
 import { SecretValues, type SecretSource } from "./secret-values";

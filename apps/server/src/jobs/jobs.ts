@@ -1,4 +1,5 @@
-import { JOB_QUESTION_ENTRY, MESSAGE_ENTRY } from "../bots/entries";
+import { chatOnly } from "../shared/chat-only";
+import { JOB_QUESTION_ENTRY, MESSAGE_ENTRY } from "../transcript/entries";
 import { sleep } from "../shared/time";
 import { jobDeliveryRequest, jobReportRequest } from "../shared/request-ids";
 import type { Context } from "@earendil-works/chord";
@@ -42,10 +43,14 @@ import { replyText } from "../shared/reply-text";
 import { defineAnchorTask } from "../shared/anchor-task";
 import { WORKSPACE_PATH } from "../../workspace-image/guest";
 import type { Workspaces } from "../workspaces/workspace";
-import { addToRequest, ownerMessages, type JobRequest } from "./owner-request";
-import type { OwnerMessage } from "../bot-desktop/desktop-vocabulary";
+import {
+  addToRequest,
+  ownerMessages,
+  type JobRequest,
+  type OwnerMessage,
+} from "./owner-request";
 import { chatExcerpt } from "./chat-excerpt";
-import type { JobKindFacts } from "./job-kinds";
+import type { JobKindFacts } from "../shared/job-kinds";
 import { ASK_OWNER_TOOL_NAME } from "../contract/tools";
 import { MAX_MESSAGE_CHARS, MESSAGE_PREVIEW_CHARS } from "../shared/limits";
 
@@ -200,8 +205,8 @@ type ReporterState =
 
 const WAIT_MS = 1000;
 const STOP_POLL_MS = 50;
-// A delivery that crashed while submitting stays marked; stop aborts after this long anyway.
 
+// A delivery that crashed while submitting stays marked; stop aborts after this long anyway.
 const STOP_WAIT_MS = 10_000;
 
 const COMPLETED = {
@@ -386,7 +391,6 @@ type JobToolArgs = {
   owner_messages?: string[];
 };
 
-/** Everything a job kind creates once: its documents, its anchor task, and its answer listeners. */
 /** A job's open question; once posted, the delivery that asked it and that delivery's turn, so its answer continues both. */
 type PendingQuestion = JobQuestion & {
   posted?: boolean;
@@ -459,7 +463,6 @@ const jobDocuments = (kind: string) => ({
   }),
 });
 
-// A delivery is stopped when its job is gone or was stopped after the delivery was queued.
 // A delivery whose job was stopped since it was queued is settled here, so it no longer keeps the job busy.
 const deliveryTarget = async (
   Jobs: JobsDoc,
@@ -1043,7 +1046,6 @@ const turnOf = async (api: ToolExecutionApi, context: Context) => {
   return inputs.length ? inputs.map(String).join(",") : undefined;
 };
 
-/** Starts a job or messages an existing one, admitting its delivery before it answers. */
 /** The chat excerpt a new job starts with. Read before the start writes anything: a commit's table reads come first. */
 const startExcerpt = (
   tx: Tx,
@@ -1055,6 +1057,7 @@ const startExcerpt = (
     ? chatExcerpt(tx, chatId)
     : Promise.resolve("");
 
+/** Starts a job or messages an existing one, admitting its delivery before it answers. */
 const startOrSend = async (
   kindState: JobKindState,
   call: JobToolCall,
@@ -1369,7 +1372,10 @@ const jobExtensions = (
     tasks: [kindState.Anchor, kindState.Reporter],
   });
 
-  return { chat: [chat], job: [input.job] };
+  return {
+    chat: [chatOnly(chat)],
+    job: [input.job],
+  };
 };
 
 /** The job kind's public surface: its answers, its jobs, and the extensions a bot runs it with. */

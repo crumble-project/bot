@@ -2,7 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer, Redacted } from "effect";
 import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
-import type { PasswordManagerId } from "../shared/domain";
+import type { PasswordManagerId } from "../contract/secrets";
 import { passwordManagers } from "./schema";
 
 export type PasswordManagerConnection = {

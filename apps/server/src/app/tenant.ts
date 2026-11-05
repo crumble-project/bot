@@ -1,15 +1,16 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { randomBytes } from "node:crypto";
-import lockfile from "proper-lockfile";
 import { Effect, Layer, ManagedRuntime, type Scope } from "effect";
 import { BotRuntime } from "../bots/runtime";
 import { Bots, botsAccess, type BotsAccess } from "../bots/bots";
 import { BotMessaging } from "../bot-messaging/bot-messaging";
 import { BotActivity } from "../bots/bot-activity";
+import { groupConversations } from "../group-chats/group-turns";
+import { reviewConversations } from "../learning/review-conversation";
 import { BotExtensions } from "../bots/bot-extensions";
 import { reactionTools } from "../bots/reaction";
-import { codemodeTools } from "../bots/codemode";
+import { codemodeTools } from "../integrations/codemode";
 import { configuredWebSearchTools } from "../web-search/web-search-tools";
 import {
   Scheduler,
@@ -18,8 +19,8 @@ import {
 } from "../automations/scheduler";
 import { BotSchedules, scheduleTools } from "../automations/bot-schedules";
 import { Automations } from "../automations/automations";
-import { TaskDispatch } from "../automations/task-dispatch";
-import { ScriptRuns } from "../automations/script-runs";
+import { AutomationDispatch } from "../automations/automation-dispatch";
+import { ScriptRuns, scriptRunRetention } from "../automations/script-runs";
 import { createAPI, type ApiServices } from "./api";
 import { GroupChats, GroupTranscriptStore } from "../group-chats/group-chats";
 import { groupLookupTools } from "../group-chats/group-lookup";
@@ -29,11 +30,13 @@ import { BotSkills } from "../skills/skills";
 import { LearningReview, learningReviews } from "../learning/learning-review";
 import { SkillCurator, skillCuration } from "../skills/skill-curator";
 import { skillUpdateChecks } from "../skills/skill-installer";
-import { CommonSkills } from "../skills/common-skills";
+import { DefaultSkills } from "../skills/default-skills";
+import { OwnerSkills } from "../skills/owner-skills";
 import {
   integrationTools,
   McpIntegrations,
 } from "../integrations/integrations";
+import { McpServers } from "../integrations/mcp-servers";
 import type { ClientDocument } from "../integrations/mcp-oauth";
 import { coordinationTools } from "../bot-messaging/coordination";
 import { displayTools } from "../display/display";
@@ -55,7 +58,7 @@ import { coreLayer, type CoreServices } from "./core-layer";
 import { runnerOf } from "../shared/runner";
 import { builtinPlugins, builtinVendors } from "./builtin-plugins";
 import { heldActionNotices } from "../bot-desktop/held-action-notices";
-import { jobAnswers, jobQuestions, jobTools } from "../plugins/job-wiring";
+import { jobAnswers, jobQuestions, jobTools } from "./job-wiring";
 import {
   conversationEnv,
   jobExtensions,
@@ -72,13 +75,14 @@ import { desktopKeepAwake } from "../bot-desktop/keep-awake";
 import { desktopScreenshotTools } from "../bot-desktop/desktop-screenshot";
 import { AgentRepository } from "../bots/agent-repository";
 import { BotRequests, botRequestTools } from "../bot-requests/bot-requests";
+import { botSecretUseRetention } from "../bot-secrets/bot-secret-uses";
 import { Secrets, secretText } from "../secrets/secrets";
 import { MessageGateway } from "../message-gateway/message-gateway";
 import { EventRelay } from "../event-sources/event-relay";
 import { EventSources } from "../event-sources/event-sources";
 import { EventDispatcher } from "../automations/event-dispatcher";
 import { eventPayloadTools } from "../automations/event-tools";
-import { usesDesktop } from "../bot-desktop/desktop-vocabulary";
+import { usesDesktop } from "../contract/tools";
 import type { ServerSettings } from "./server-settings";
 
 export type TenantOptions = {
@@ -113,12 +117,12 @@ function accountLayer(options: TenantOptions, dataDir: string) {
     options.skillsDir ?? resolve(import.meta.dir, "../../skills"),
   );
 
-  const commonSkills = CommonSkills.layer(
+  const defaultSkills = DefaultSkills.layer(
     skillsDir,
     options.skillsDir !== undefined,
   );
 
-  const base = Layer.mergeAll(commonSkills, BotExtensions.layer).pipe(
+  const base = Layer.mergeAll(defaultSkills, BotExtensions.layer).pipe(
     Layer.provideMerge(coreLayer(dataDir)),
   );
 
@@ -126,6 +130,7 @@ function accountLayer(options: TenantOptions, dataDir: string) {
     Effect.gen(function* () {
       const agents = yield* AgentRepository;
       const { serverSettings } = options;
+      const run = runnerOf(yield* Effect.context<CoreServices>());
 
       const machineOptions = {
         dataDir,
@@ -140,9 +145,7 @@ function accountLayer(options: TenantOptions, dataDir: string) {
           memoryMib: serverSettings().workspaceMemoryMib,
         }),
         baseImage: () => serverSettings().codingImage,
-        ...credentialInterception(
-          runnerOf(yield* Effect.context<CoreServices>()),
-        ),
+        ...credentialInterception(run),
       };
 
       return BotWorkspaces.layer(
@@ -200,16 +203,19 @@ function accountLayer(options: TenantOptions, dataDir: string) {
     ),
   );
 
-  const integrations = McpIntegrations.layer({
-    oauthClient: options.oauthClient,
-  });
+  const integrations = McpServers.layer.pipe(
+    Layer.provideMerge(
+      McpIntegrations.layer({ oauthClient: options.oauthClient }),
+    ),
+  );
 
   const runtime = Layer.unwrap(
     Effect.gen(function* () {
       const jobKinds = pluginJobKinds(yield* Plugins);
 
       return BotRuntime.layer(join(dataDir, "agents"), {
-        taskExtensions: (agent) => jobExtensions(jobKinds, agent).job,
+        jobExtensions: (agent) => jobExtensions(jobKinds, agent).job,
+        conversationKinds: () => [groupConversations(), reviewConversations()],
         env: (agent, target, context) =>
           conversationEnv(jobKinds, agent, target, context),
       });
@@ -234,13 +240,13 @@ function accountLayer(options: TenantOptions, dataDir: string) {
   const curation = skillCuration.pipe(Layer.provide(SkillCurator.layer));
 
   const dispatch = Layer.effect(
-    TaskDispatch,
+    AutomationDispatch,
     Bots.use((service) => Effect.succeed(service.dispatch)),
   );
 
   const automations = Automations.layer.pipe(Layer.provide(dispatch));
 
-  const scheduler = Scheduler.layer().pipe(Layer.provide(automations));
+  const scheduler = Scheduler.layer.pipe(Layer.provide(automations));
 
   const groups = GroupChats.layer.pipe(
     Layer.provide(
@@ -276,6 +282,8 @@ function accountLayer(options: TenantOptions, dataDir: string) {
     MessageGateway.layer,
     EventSources.layer.pipe(Layer.provideMerge(EventRelay.layer)),
     EventDispatcher.layer.pipe(Layer.provide(automations)),
+    scriptRunRetention,
+    botSecretUseRetention,
   );
 
   const conversations = Layer.mergeAll(scheduler, groups, activity);
@@ -299,7 +307,7 @@ function accountLayer(options: TenantOptions, dataDir: string) {
     Layer.provideMerge(ScriptRuns.layer),
     Layer.provideMerge(bots),
     Layer.provideMerge(runtime),
-    Layer.provideMerge(BotSkills.layer),
+    Layer.provideMerge(Layer.mergeAll(BotSkills.layer, OwnerSkills.layer)),
     Layer.provideMerge(sandboxedTools),
     Layer.provideMerge(signIns),
     Layer.provideMerge(models),
@@ -317,21 +325,7 @@ export async function createTenant(
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   chmodSync(dataDir, 0o700);
 
-  // The data directory's lock is taken before anything opens it and released after everything closed it.
-  const locked = Layer.unwrap(
-    Effect.gen(function* () {
-      yield* Effect.acquireRelease(
-        Effect.promise(() =>
-          lockfile.lock(dataDir, { stale: 30000, update: 10000, retries: 0 }),
-        ),
-        (release) => Effect.promise(() => release()),
-      );
-
-      return accountLayer(options, dataDir);
-    }),
-  );
-
-  const account = ManagedRuntime.make(locked);
+  const account = ManagedRuntime.make(accountLayer(options, dataDir));
 
   try {
     return await account.runPromise(
@@ -349,7 +343,6 @@ export async function createTenant(
           token,
           {
             viewerTickets: new ViewerTickets(Date.now, options.tenantId),
-            oauthClient: options.oauthClient,
           },
         );
 

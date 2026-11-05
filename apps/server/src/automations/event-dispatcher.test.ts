@@ -7,9 +7,11 @@ import { TestClock } from "effect/testing";
 import { productLayer } from "../app/product-layer";
 import { AgentRepository } from "../bots/agent-repository";
 import { ScheduleRepository } from "./schedule-repository";
-import { TaskDispatch } from "./task-dispatch";
+import { AutomationDispatch } from "./automation-dispatch";
 import { ScriptRuns } from "./script-runs";
-import { agentInput, scheduleInput, type Execution } from "../shared/domain";
+import { agentInput } from "../contract/agents";
+import { scheduleInput } from "../contract/schedules";
+import { type Execution } from "../shared/domain";
 import { Automations, RETRY_AFTER_MS } from "./automations";
 import { EVENT_MAX_ATTEMPTS, EventDispatcher } from "./event-dispatcher";
 import { EventRunRepository } from "./event-run-repository";
@@ -67,15 +69,17 @@ async function fixture() {
     }),
   );
 
-  const dispatch = Layer.succeed(TaskDispatch, (_agentId, prompt, requestId) =>
-    failing
-      ? Effect.fail(new Error("chat unavailable"))
-      : Effect.sync(() => {
-          dispatched.push({ prompt, requestId });
+  const dispatch = Layer.succeed(
+    AutomationDispatch,
+    (_agentId, prompt, requestId) =>
+      failing
+        ? Effect.fail(new Error("chat unavailable"))
+        : Effect.sync(() => {
+            dispatched.push({ prompt, requestId });
 
-          // SAFETY: the dispatcher reads only id from the execution.
-          return { id: requestId } as Execution;
-        }),
+            // SAFETY: the dispatcher reads only id from the execution.
+            return { id: requestId } as Execution;
+          }),
   );
 
   const runtime = ManagedRuntime.make(

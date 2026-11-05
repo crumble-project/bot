@@ -1,30 +1,9 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { z } from "zod";
 import { Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "./bot-extensions";
 import { REACTION_TOOL_NAME } from "../contract/tools";
-
-const EMOJI = /^\p{RGI_Emoji}$/v;
-
-const reaction = z.object({ emoji: z.string().regex(EMOJI) });
-
-/** The emoji of a successful `react` tool result; clients attach it to the latest input before it. */
-export function reactionOf(message: {
-  role: string;
-  toolName?: string | undefined;
-  isError?: boolean | undefined;
-  toolDetails?: unknown;
-}): string | undefined {
-  if (
-    message.role !== "toolResult" ||
-    message.toolName !== REACTION_TOOL_NAME ||
-    message.isError
-  )
-    return undefined;
-
-  return reaction.safeParse(message.toolDetails).data?.emoji;
-}
+import { EMOJI } from "../transcript/tool-results";
 
 /** Lets a bot acknowledge a message with an emoji instead of a text reply. */
 export function reactionExtension() {

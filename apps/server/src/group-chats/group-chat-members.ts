@@ -4,6 +4,7 @@ import { Effect } from "effect";
 import type { GroupChat } from "./group-chat-repository";
 import { type GroupChatContext } from "./group-chat-context";
 import { mentionedMembers } from "./group-mentions";
+import { openGroupConversation } from "./group-turns";
 import type { GroupEntry } from "./group-transcripts";
 
 /** How a group reaches its members: who a message wakes, who joins, and who is stopped. */
@@ -40,11 +41,10 @@ export const groupChatMembers = (context: GroupChatContext) => {
     agentId: string,
   ) {
     const agent = yield* bots.agent(agentId);
-    // Opening the bot chat first keeps an upgraded bot's chat from adopting the group conversation as its session.
     yield* bots.chat(agentId);
 
     const conversationId = yield* pi(() =>
-      runtime.openGroupConversation(agent, group.id),
+      openGroupConversation(runtime, agent, group.id),
     );
 
     yield* conversations.create({ agentId, title: group.name }, conversationId);

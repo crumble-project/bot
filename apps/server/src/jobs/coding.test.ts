@@ -1,4 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
+import { openGroupConversation } from "../group-chats/group-turns";
+import { inertCredentials } from "../../test/support/job-wiring";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -15,7 +17,7 @@ import {
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { codingPlugin } from "./coding";
-import { jobCardName } from "../bots/entries";
+import { jobCardName } from "../transcript/tool-results";
 import type { JobAsked } from "./jobs";
 import {
   WORKSPACE_NOTES_FILE,
@@ -23,12 +25,12 @@ import {
   WORKSPACE_SECTION,
 } from "./workspace-notes";
 import { conversationEnv, jobExtensions } from "../plugins/plugins";
-import type { Agent } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 import { testAPI } from "../../test/support/api";
 import { codingJobsResponse, historyResponse } from "../contract/api-responses";
 import { AgentRuntime, type RuntimeCallbacks } from "../bots/runtime";
 import { standaloneScheduler } from "../automations/scheduler-test-support";
-import { standaloneBots } from "../bots/bots";
+import { standaloneBots } from "../bots/bots-test-support";
 import { Store } from "../../test/support/store";
 import type { AvailableSkill } from "../skills/skill-library";
 import type { BotSkills } from "../skills/skills";
@@ -231,7 +233,7 @@ function open(
   callbacks: Partial<
     Pick<RuntimeCallbacks, "listMemory" | "skillLibrary">
   > = {},
-  plugin = codingPlugin(workspaces, () => 900_000),
+  plugin = codingPlugin(workspaces, () => 900_000, inertCredentials),
 ) {
   const faux = fauxProvider({ provider: "faux", models: [{ id: "chat" }] });
   faux.setResponses(Array.from({ length: 40 }, () => steps));
@@ -246,7 +248,7 @@ function open(
       ...callbacks,
       models,
       extensions: (current) => jobExtensions(kinds, current).chat,
-      taskExtensions: (current) => jobExtensions(kinds, current).job,
+      jobExtensions: (current) => jobExtensions(kinds, current).job,
       env: (current, target, context) =>
         conversationEnv(kinds, current, target, context),
     }),
@@ -329,6 +331,7 @@ test("a coding job works in the workspace and reports to the bot's chat once", a
     "edit",
     "bash",
     "coding",
+    "request_credential",
   ]);
   expect(offered.get("job")?.toSorted()).toEqual([
     "ask_owner",
@@ -346,7 +349,8 @@ test("a bot's extensions are built once, so a later turn can still wake what a q
   const { agent } = setup(dir);
 
   const [kind] =
-    codingPlugin(new DirectoryWorkspaces(dir), () => 900_000).jobKinds ?? [];
+    codingPlugin(new DirectoryWorkspaces(dir), () => 900_000, inertCredentials)
+      .jobKinds ?? [];
 
   expect(kind!.extensions(agent).job[0]).toBe(kind!.extensions(agent).job[0]!);
 });
@@ -622,10 +626,11 @@ test("the bot works in its workspace itself, in its chat and group chats", async
     "edit",
     "bash",
     "coding",
+    "request_credential",
   ]);
 
   rmSync(join(workspace, "direct.txt"));
-  const group = await runtime.openGroupConversation(agent, "group-1");
+  const group = await openGroupConversation(runtime, agent, "group-1");
   await say(group, "Write it in the group");
 
   // A group turn has the workspace too, though no coding jobs.
@@ -637,6 +642,7 @@ test("the bot works in its workspace itself, in its chat and group chats", async
     "write",
     "edit",
     "bash",
+    "request_credential",
     "pass",
   ]);
 });
@@ -985,7 +991,7 @@ test("a job keeps the bot turn that sent its work through a restart, until its r
   const workspaces = new DirectoryWorkspaces(workspace);
   const asked: JobAsked[] = [];
 
-  const plugin = codingPlugin(workspaces, () => 900_000);
+  const plugin = codingPlugin(workspaces, () => 900_000, inertCredentials);
 
   cleanups.push(
     plugin.jobKinds![0]!.onQuestion!(

@@ -9,6 +9,7 @@ import {
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { chatOnly } from "../shared/chat-only";
 import { BotWorkspaces, type Workspaces } from "../workspaces/workspace";
 import type { DesktopShell } from "./computer-use";
 import {
@@ -23,11 +24,7 @@ import {
   desktopFillsAccess,
 } from "./desktop-fill-repository";
 import { runnerOf } from "../shared/runner";
-import { DESKTOP_SCREENSHOT_TOOL_NAME } from "../contract/tools";
-import {
-  DESKTOP_SCREENSHOT_EXTENSION,
-  usesDesktop,
-} from "./desktop-vocabulary";
+import { DESKTOP_SCREENSHOT_TOOL_NAME, usesDesktop } from "../contract/tools";
 
 const MIME_TYPE = "image/jpeg";
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -174,10 +171,10 @@ export function desktopScreenshotExtension(
     },
   });
 
-  return defineExtension({
-    name: DESKTOP_SCREENSHOT_EXTENSION,
-    tools: [screenshot],
-  });
+  // A group's transcript can't show the image.
+  return chatOnly(
+    defineExtension({ name: "desktop-screenshot", tools: [screenshot] }),
+  );
 }
 
 /** Offers `desktop_screenshot` to bots with the `desktop` tool. */

@@ -1,9 +1,15 @@
 import type { JsonValue } from "@earendil-works/chord";
 import { z } from "zod";
 import type { BotCommunication } from "../contract/api-responses";
-import type { ACTIVITY_KINDS, Agent, LearnedChange } from "../shared/domain";
-import { toolBlocks, type TranscriptMessage } from "../bots/transcript";
-import { isMcpTool } from "../integrations/integrations";
+import type { ACTIVITY_KINDS } from "../shared/domain";
+import type { Agent } from "../contract/agents";
+import type { LearnedChange } from "../contract/skills";
+import {
+  toolBlocks,
+  type TranscriptMessage,
+  type TranscriptPage,
+} from "../transcript/transcript";
+import { isMcpTool } from "../contract/tools";
 import { parseEntryId } from "../shared/entry-ids";
 
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
@@ -249,12 +255,6 @@ export function decodeCursor(value: string): Cursor | null {
 const encodeCursor = (cursor: Cursor) =>
   Buffer.from(JSON.stringify(cursor)).toString("base64url");
 
-type HistoryPage = {
-  messages: TranscriptMessage[];
-  hasMore: boolean;
-  oldestEntryId: string | null;
-};
-
 // Bounded per bot and request, so a text-heavy transcript keeps the feed a cheap read.
 const HISTORY_PAGES = 5;
 const HISTORY_PAGE_SIZE = 200;
@@ -265,7 +265,7 @@ type ActivityPageOptions<A extends Pick<Agent, "id" | "name">> = {
     agent: A,
     before: string | undefined,
     limit: number,
-  ) => Promise<HistoryPage>;
+  ) => Promise<TranscriptPage>;
   /** Changes newest first in the store's order, after the change `before`. */
   changes: (limit: number, before: string | undefined) => LearnedChange[];
   agentName: (id: string) => string | null;
@@ -310,7 +310,7 @@ function sortedQueue(items: FeedItem[], tags: (string | null)[]) {
   };
 }
 
-async function readHistoryPages<A extends Pick<Agent, "id" | "name">>(
+async function readTranscriptPages<A extends Pick<Agent, "id" | "name">>(
   agent: A,
   start: string | null | undefined,
   options: ActivityPageOptions<A>,
@@ -319,7 +319,7 @@ async function readHistoryPages<A extends Pick<Agent, "id" | "name">>(
   let before = start ?? undefined;
   const items: FeedItem[] = [];
   const tags: (string | null)[] = [];
-  let page: HistoryPage | null = null;
+  let page: TranscriptPage | null = null;
 
   for (let index = 0; index < HISTORY_PAGES; index++) {
     page = await options.history(agent, before, HISTORY_PAGE_SIZE);
@@ -343,7 +343,11 @@ async function agentActivityQueue<A extends Pick<Agent, "id" | "name">>(
   start: string | null | undefined,
   options: ActivityPageOptions<A>,
 ) {
-  const { items, tags, page } = await readHistoryPages(agent, start, options);
+  const { items, tags, page } = await readTranscriptPages(
+    agent,
+    start,
+    options,
+  );
 
   const more = Boolean(page?.hasMore && page.oldestEntryId);
   // Unread history is older than the oldest message read, so nothing older may be returned yet.

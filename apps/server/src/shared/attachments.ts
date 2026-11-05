@@ -7,6 +7,8 @@ import {
   type AttachmentInfo,
   type AttachmentInput,
 } from "./attachment-rules";
+import { Effect } from "effect";
+import { appErrors } from "./app-errors";
 import { InvalidInput } from "./errors";
 
 function attachmentBytes(item: AttachmentInput, kind: AttachmentInfo["kind"]) {
@@ -74,6 +76,15 @@ export function prepareAttachments(items: AttachmentInput[]) {
 }
 
 /** Identifies an attachment set, so a retried request ID can be checked without keeping the bytes. */
+/** Validates attachments before anything is stored, so a bad file never leaves a message or an execution behind. */
+export const validAttachments = (attachments: AttachmentInput[]) =>
+  appErrors(
+    Effect.try({
+      try: () => prepareAttachments(attachments),
+      catch: (error) => error,
+    }),
+  );
+
 export function attachmentDigest(items: AttachmentInput[]): string | null {
   if (!items.length) return null;
   const hash = createHash("sha256");
@@ -83,3 +94,9 @@ export function attachmentDigest(items: AttachmentInput[]): string | null {
 
   return hash.digest("hex");
 }
+
+/** How an attachment is served: its bytes never change, so clients may keep them. */
+export const attachmentHeaders = (mimeType: string) => ({
+  "Content-Type": mimeType,
+  "Cache-Control": "private, max-age=31536000, immutable",
+});

@@ -29,6 +29,10 @@ export const botRequestRequest = (botRequestId: string) =>
 export const gatewayRequest = (adapterId: string, id: string) =>
   `gateway:${adapterId}:${id}`;
 
+/** One state of a bot-to-bot message, as its chat shows it. */
+export const botMessageRequest = (executionId: string, status: string) =>
+  `bot-message:${executionId}:${status}`;
+
 export const reviewRequest = (executionId: string) => `review:${executionId}`;
 
 /** A bot's turn in a group, over the group's entries through `through`. */
@@ -41,6 +45,14 @@ export const groupTurnRequest = (
 /** What a group turn left in the group's transcript. */
 export const groupPostRequest = (executionId: string) =>
   `group-turn:${executionId}`;
+
+/** The ID a job's turn is reviewed under: it has no execution, so nothing resolves this as one. */
+export const jobTurnId = (
+  jobKind: string,
+  agentId: string,
+  conversationId: string,
+  submissionId: string,
+) => `${jobKind}-job:${agentId}:${conversationId}:${submissionId}`;
 
 /** A message delivered into a job's conversation. */
 export const jobDeliveryRequest = (jobKind: string, taskId: number) =>

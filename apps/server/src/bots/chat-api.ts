@@ -6,6 +6,7 @@ import type {
   desktopJobsResponse,
 } from "../contract/api-responses";
 import type { Register } from "../contract/route";
+import { attachmentHeaders } from "../shared/attachments";
 import { snapshotSender, streamEvents } from "../shared/event-stream";
 import type { BotsAccess } from "./bots";
 
@@ -96,10 +97,11 @@ const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
     const { id, entryId, index } = c.req.valid("param");
     const image = await service.attachment(id, entryId, index);
 
-    return c.body(new Uint8Array(image.data), 200, {
-      "Content-Type": image.mimeType,
-      "Cache-Control": "private, max-age=31536000, immutable",
-    });
+    return c.body(
+      new Uint8Array(image.data),
+      200,
+      attachmentHeaders(image.mimeType),
+    );
   });
   register(routes.abort, async (c) => {
     await service.abortChat(c.req.param("id"));

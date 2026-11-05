@@ -2,11 +2,11 @@ import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
-import type { Agent } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { chatOnly } from "../shared/chat-only";
 import { GroupChats } from "./group-chats";
 import { senderLabel } from "./group-transcripts";
-import { GROUP_LOOKUP_EXTENSION } from "./group-turns";
 
 const READ_LIMIT = 30;
 
@@ -59,7 +59,8 @@ export function groupLookupExtension(
     },
   });
 
-  return defineExtension({ name: GROUP_LOOKUP_EXTENSION, tools: [tool] });
+  // A group turn has no lookup of other groups.
+  return chatOnly(defineExtension({ name: "group-lookup", tools: [tool] }));
 }
 
 /** Offers every bot the lookup of its group chats. */

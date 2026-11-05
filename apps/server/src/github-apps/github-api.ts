@@ -18,24 +18,6 @@ export class GitHubUnavailable extends Schema.TaggedError<GitHubUnavailable>()(
   { message: Schema.String, status: Schema.optional(Schema.Number) },
 ) {}
 
-/** How a bot commits in one GitHub account's repositories, or in every other one for a machine account (`account`
- * null); `trailer` marks commits made as the owner. */
-export type GitHubIdentity = {
-  account: string | null;
-  name: string;
-  email: string;
-  trailer?: string | undefined;
-};
-
-/** The bots an assignment adds and takes off, from the identity's current bots and the requested ones. */
-export const assignmentChange = (
-  previous: readonly string[],
-  botIds: readonly string[],
-) => ({
-  added: botIds.filter((botId) => !previous.includes(botId)),
-  removed: previous.filter((botId) => !botIds.includes(botId)),
-});
-
 export const noreplyEmail = (userId: number, login: string) =>
   `${userId}+${login}@users.noreply.github.com`;
 
@@ -103,6 +85,21 @@ export const github = <T>(
           ),
     ),
   );
+
+/** A file of a public repository at `commit`, from GitHub's raw host rather than the REST API. */
+export const githubFile = (repository: string, commit: string, path: string) =>
+  Effect.tryPromise({
+    try: async (signal) => {
+      const url = `https://raw.githubusercontent.com/${repository}/${commit}/${path.split("/").map(encodeURIComponent).join("/")}`;
+      const response = await fetch(url, { signal });
+
+      if (!response.ok) throw new Error(String(response.status));
+
+      return response.text();
+    },
+    catch: () =>
+      new GitHubUnavailable({ message: `Can't read ${path} from GitHub` }),
+  }).pipe(timed);
 
 /** Exchanges a code or refresh token at GitHub's OAuth endpoint, on github.com rather than the REST API. */
 export const githubOAuth = <T>(

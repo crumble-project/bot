@@ -3,7 +3,7 @@ import { Context, Effect, Layer } from "effect";
 import { ProductDatabase } from "../shared/product-database";
 import { mcpServers } from "./schema";
 
-/** An MCP server is shared, or belongs to the one bot in `agentId` with its own credentials. */
+/** An MCP server is shared, or belongs to the one bot in `agentId` with its own token or sign-in. */
 export type MCPServer = {
   id: string;
   name: string;

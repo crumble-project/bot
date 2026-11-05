@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { check, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { passwordManagers } from "../password-managers/schema";
-import type { PasswordManagerId } from "../shared/domain";
+import type { PasswordManagerId } from "../contract/secrets";
 
 /**
  * Values by key, such as every secret the owner enters (see `Secrets`): stored encrypted in `value`, or read from a

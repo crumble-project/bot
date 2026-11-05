@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../../test/support/store";
-import { pathRegister } from "../app/api";
+import { pathRegister } from "../app/api-requests";
 import { handleApiError } from "../app/api-errors";
 import { contractApp } from "../contract/api-contract";
 import {
@@ -11,7 +11,7 @@ import {
   loginsResponse,
   loginUseResponse,
 } from "../contract/api-responses";
-import { agentInput } from "../shared/domain";
+import { agentInput } from "../contract/agents";
 import type { LoginSaveInput } from "./logins";
 import { NotFound } from "../shared/errors";
 import { loginsAccess } from "./logins";
@@ -46,7 +46,7 @@ const setup = () => {
         return store.getAgent(id)!;
       },
     },
-    logins,
+    run: store.runtime,
   });
 
   const request = (path: string, init: RequestInit = {}) =>

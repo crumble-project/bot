@@ -19,6 +19,7 @@ export const {
   MAX_GROUP_MEMBERS,
   MAX_GROUP_NAME_CHARS,
   MAX_INSTRUCTIONS_CHARS,
+  MAX_MEMORY_CHARS,
   MAX_MESSAGE_CHARS,
   MAX_SCHEDULE_COMMAND_CHARS,
   MAX_SCHEDULE_NAME_CHARS,
@@ -28,3 +29,6 @@ export const {
 } = limits;
 
 export const MAX_MCP_SERVER_NAME_CHARS = 100;
+
+/** How many days the owner can look back at a credential's or login's uses. */
+export const BOT_SECRET_USE_RETENTION_DAYS = 90;

@@ -2,7 +2,7 @@ import { isModelType, type AnyModel, type Models } from "@earendil-works/pi-ai";
 import { Effect } from "effect";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import { judgeModelInput } from "../shared/domain";
+import { judgeModelInput } from "../contract/agents";
 import { InvalidInput } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import { SettingsRepository } from "../shared/settings-repository";

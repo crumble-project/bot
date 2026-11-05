@@ -1,6 +1,6 @@
 import type { Message } from "@earendil-works/pi-ai";
 import type { ConversationId, Cursor, Tx } from "@earendil-works/pi-durable";
-import { contentText } from "../bots/entries";
+import { contentText } from "../transcript/entries";
 import { clip } from "../shared/limits";
 
 const EXCERPT_MESSAGES = 12;

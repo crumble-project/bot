@@ -1,8 +1,11 @@
 import { Type, type Static, type TSchema } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-durable";
 import type { JsonValue } from "@earendil-works/chord";
-import { Effect, Predicate } from "effect";
-import type { z } from "zod";
+import { Effect, Layer, Predicate } from "effect";
+import { z } from "zod";
+import { BotDeletion } from "../bots/bot-deletion";
+import { botSecretsPrefix } from "../secrets/secret-key";
+import { Secrets } from "../secrets/secrets";
 import { Conflict, InvalidInput, NotFound } from "../shared/errors";
 import {
   MAX_CREDENTIAL_HOST_CHARS,
@@ -20,6 +23,8 @@ type LifecycleHooks<Saved> = {
   kind: BotSecretKind;
   /** How messages name the kind, such as Credential. */
   title: string;
+  /** What a name of this kind may look like. */
+  names: z.ZodType<string>;
   find: (agentId: string, name: string) => Effect.Effect<Saved | undefined>;
   deleteRecord: (agentId: string, name: string) => Effect.Effect<boolean>;
   deleteSecrets: (agentId: string, name: string) => Effect.Effect<void>;
@@ -41,6 +46,13 @@ type SaveSteps<Saved, E> = {
 
 type UseOptions = { limit: number; before?: string | undefined };
 
+/** Why a bot asks for a secret, as its request tools parse it. */
+export const requestReason = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_REQUEST_REASON_CHARS);
+
 /** Asking for, saving, deleting, declining, and logging one kind of a bot's named secrets. */
 export const botSecretLifecycle = <Saved extends { hosts: string[] }, Detail>(
   hooks: LifecycleHooks<Saved>,
@@ -50,6 +62,21 @@ export const botSecretLifecycle = <Saved extends { hosts: string[] }, Detail>(
     const { kind, title } = hooks;
     const requests = yield* BotSecretRequests;
     const useLog = yield* BotSecretUses;
+
+    /** The name as saved; a bad one fails with its first problem. */
+    const checkedName = (name: string) => {
+      const parsed = hooks.names.safeParse(name);
+
+      return parsed.success
+        ? Effect.succeed(parsed.data)
+        : Effect.fail(
+            new InvalidInput({
+              message:
+                parsed.error.issues[0]?.message ??
+                `Invalid ${title.toLowerCase()} name`,
+            }),
+          );
+    };
 
     const save = Effect.fnUntraced(function* <E>(
       agentId: string,
@@ -166,6 +193,7 @@ export const botSecretLifecycle = <Saved extends { hosts: string[] }, Detail>(
 
     return {
       requests: (agentId: string) => requests.list(agentId, kind),
+      checkedName,
       ask,
       save,
       forget,
@@ -175,6 +203,17 @@ export const botSecretLifecycle = <Saved extends { hosts: string[] }, Detail>(
       recordUse,
     };
   });
+
+/** Clears a deleted bot's named secrets: every key under its prefix. */
+export const botSecretCleanup = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const secrets = yield* Secrets;
+
+    yield* (yield* BotDeletion).register((agentId) =>
+      Effect.succeed(secrets.deleteAll(botSecretsPrefix(agentId))),
+    );
+  }),
+);
 
 /** Why a use can't send a secret's value, as the proxy or the desktop reports it. */
 export const useFailure = (

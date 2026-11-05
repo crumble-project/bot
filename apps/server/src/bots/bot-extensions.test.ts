@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { defineExtension } from "@earendil-works/pi-durable";
 import { Effect, Exit, Scope } from "effect";
-import { agentInput } from "../shared/domain";
+import { agentInput } from "../contract/agents";
 import { Store } from "../../test/support/store";
 import { BotExtensions } from "./bot-extensions";
 

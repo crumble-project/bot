@@ -17,7 +17,7 @@ import { GroupTranscripts } from "../group-chats/group-transcripts";
 import { HistorySearch } from "./history-search";
 import { historySource } from "./history-tools";
 import { AgentRuntime } from "../bots/runtime";
-import { standaloneBots } from "../bots/bots";
+import { standaloneBots } from "../bots/bots-test-support";
 import { Store } from "../../test/support/store";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 

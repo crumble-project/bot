@@ -1,3 +1,4 @@
+import { commitSigning, SIGNING_HOST } from "./commit-signing";
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -15,7 +16,6 @@ import {
   responseHeaders,
 } from "./credential-proxy";
 import { credentialsAccess } from "./credentials";
-import { SIGNING_HOST } from "../workspaces/workspace";
 
 const placeholder = "$ACME_TOKEN";
 const value = "s3cret-value";
@@ -365,17 +365,8 @@ test("the signing host is answered by the proxy, for a bot with a machine accoun
   const ca = await authorities.certificate(bot.id);
   const signed: string[] = [];
 
-  const serve = async (
-    sign?: (data: Buffer) => Promise<string | undefined>,
-  ) => {
-    const proxy = credentialProxy({
-      agentId: bot.id,
-      authorities,
-      grants: () => [],
-      value: async () => "",
-      recordUse: () => {},
-      ...(sign && { sign }),
-    });
+  const serve = async (sign: (data: Buffer) => Promise<string | undefined>) => {
+    const proxy = commitSigning({ agentId: bot.id, authorities, sign });
 
     const entry = net.createServer(
       (socket) => void proxy.handle(socket, SIGNING_HOST, 443),
@@ -415,11 +406,18 @@ test("the signing host is answered by the proxy, for a bot with a machine accoun
   });
 
   const without = await serve(async () => undefined);
-  const none = await serve();
+
+  const none = credentialProxy({
+    agentId: bot.id,
+    authorities,
+    grants: () => [],
+    value: async () => "",
+    recordUse: () => {},
+  });
 
   try {
     expect(withAccount.proxy.answers?.(SIGNING_HOST)).toBe(true);
-    expect(none.proxy.wants(SIGNING_HOST)).toBe(false);
+    expect(none.wants(SIGNING_HOST)).toBe(false);
 
     const answer = await post(withAccount.entry, "tree abc\n");
 
@@ -432,7 +430,6 @@ test("the signing host is answered by the proxy, for a bot with a machine accoun
   } finally {
     withAccount.entry.close();
     without.entry.close();
-    none.entry.close();
     store.close();
     rmSync(dir, { recursive: true, force: true });
   }

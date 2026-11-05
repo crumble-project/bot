@@ -7,6 +7,7 @@ import { Plugins, pluginWebSearchProviders } from "../plugins/plugins";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import { isPublicAddress } from "../shared/public-address";
 import {
+  defaultProvider,
   MAX_PAGE_CHARS,
   WebExtractionError,
   WebSearchError,
@@ -15,7 +16,6 @@ import {
 } from "./provider";
 import { AgentRepository } from "../bots/agent-repository";
 import { SettingsRepository } from "../shared/settings-repository";
-import { defaultProvider } from "./settings";
 import {
   BOT_TOOL,
   WEB_EXTRACT_TOOL_NAME,
@@ -189,7 +189,7 @@ export const configuredWebSearchTools = Layer.effectDiscard(
           Effect.flatMap((provider) =>
             provider?.search
               ? provider.search(query, bot)
-              : Effect.fail(new WebSearchError(unavailable)),
+              : Effect.fail(new WebSearchError({ message: unavailable })),
           ),
         );
 
@@ -198,7 +198,7 @@ export const configuredWebSearchTools = Layer.effectDiscard(
           Effect.flatMap((provider) =>
             provider?.extract
               ? provider.extract(url)
-              : Effect.fail(new WebExtractionError(unavailable)),
+              : Effect.fail(new WebExtractionError({ message: unavailable })),
           ),
         );
 

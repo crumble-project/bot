@@ -6,7 +6,8 @@ import { NotFound, type AppError } from "../shared/errors";
 import { type GroupChatContext } from "./group-chat-context";
 import type { GroupChatMembers } from "./group-chat-members";
 import { groupChatPost } from "./group-chat-post";
-import type { GroupMemberActivity, PageOptions } from "./group-chat-types";
+import type { PageOptions } from "../transcript/transcript";
+import type { GroupMemberActivity } from "./group-chat-types";
 import type { GroupTurnEngine } from "./group-turn-engine";
 
 /** Group chats between the owner and several bots: membership, the shared transcript, turns, and change notifications. */
@@ -221,18 +222,8 @@ export const groupChatsService = (
   });
 
   /** Calls `callback` when the group changes, until the returned function is called. */
-  const subscribe = (groupId: string, callback: () => void) => {
-    const { listeners } = context.state;
-    const set = listeners.get(groupId) ?? new Set();
-    set.add(callback);
-    listeners.set(groupId, set);
-
-    return () => {
-      set.delete(callback);
-
-      if (!set.size) listeners.delete(groupId);
-    };
-  };
+  const subscribe = (groupId: string, callback: () => void) =>
+    context.state.listeners.add(groupId, callback);
 
   /** Finishes turns a restart interrupted, then starts the turns that were waiting. Run after the bots recover. */
   const recover: Effect.Effect<void, AppError> = Effect.gen(function* () {

@@ -3,19 +3,17 @@ import {
   ToolTask,
   defineExtension,
   hook,
-  type EnvTarget,
   type PromptSection,
 } from "@earendil-works/pi-durable";
-import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { createCodingTools } from "@earendil-works/pi-durable/tools";
 import { Effect } from "effect";
 import {
   credentialExtension,
   type CredentialsAccess,
 } from "../credentials/credentials";
-import type { Agent } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 import { defineJobKind, type JobExtensions, type JobKind } from "./jobs";
-import { JOB_KINDS } from "./job-kinds";
+import { JOB_KINDS } from "../shared/job-kinds";
 import type { CrumblePlugin } from "../plugins/plugins";
 import { WORKSPACE_PATH } from "../../workspace-image/guest";
 import type { Workspaces } from "../workspaces/workspace";
@@ -51,31 +49,6 @@ const CODING_JOBS = {
   ].join(" "),
 };
 
-/** A coding job's environment: the bot's workspace with its credentials. None for any other conversation. */
-async function codingEnv(
-  coding: JobKind,
-  workspaces: Workspaces,
-  agentId: string,
-  target: EnvTarget,
-  context: Context,
-  credentials?: CredentialsAccess,
-): Promise<ExecutionEnv | undefined> {
-  return coding.env(
-    workspaces,
-    agentId,
-    target,
-    context,
-    credentials?.env(agentId),
-  );
-}
-
-/** The environment of the bot's own conversations: its workspace with its credentials, as its coding jobs get. Lazy. */
-const codingBotEnv = (
-  workspaces: Workspaces,
-  agentId: string,
-  credentials?: CredentialsAccess,
-): ExecutionEnv => workspaces.env(agentId, credentials?.env(agentId));
-
 const credentialSection = (
   key: string,
   agentId: string,
@@ -107,7 +80,7 @@ function codingExtensions(
   agent: Pick<Agent, "id">,
   workspaces: Workspaces,
   questionGraceMs: () => number,
-  credentials?: CredentialsAccess,
+  credentials: CredentialsAccess,
 ): JobExtensions {
   // While the owner considers a question, the workspace stays up for the grace period, so servers the job started live.
   let awake:
@@ -138,17 +111,13 @@ function codingExtensions(
     tools: [...tools, ask],
     sections: [
       workspaceNotesSection(coding.isJob, true),
-      ...(credentials
-        ? [
-            credentialSection(
-              "workspace_credentials",
-              agent.id,
-              credentials,
-              (input, context) =>
-                coding.isJob(input.read, input.conversationId, context),
-            ),
-          ]
-        : []),
+      credentialSection(
+        "workspace_credentials",
+        agent.id,
+        credentials,
+        (input, context) =>
+          coding.isJob(input.read, input.conversationId, context),
+      ),
     ],
     hooks: [
       hook(ToolTask, {
@@ -172,9 +141,7 @@ function codingExtensions(
     tools,
     sections: [
       chatWorkspaceSection(() => workspaces.running(agent.id)),
-      ...(credentials
-        ? [credentialSection("shell_credentials", agent.id, credentials)]
-        : []),
+      credentialSection("shell_credentials", agent.id, credentials),
     ],
     hooks: [
       hook(ToolTask, {
@@ -195,11 +162,7 @@ function codingExtensions(
 
   return {
     ...extensions,
-    chat: [
-      own,
-      ...extensions.chat,
-      ...(credentials ? [credentialExtension(agent.id, credentials)] : []),
-    ],
+    chat: [own, ...extensions.chat, credentialExtension(agent.id, credentials)],
   };
 }
 
@@ -207,7 +170,7 @@ function codingExtensions(
 export const codingPlugin = (
   workspaces: Workspaces | undefined,
   questionGraceMs: () => number,
-  credentials?: CredentialsAccess,
+  credentials: CredentialsAccess,
 ): CrumblePlugin => {
   const coding = defineJobKind(JOB_KINDS.coding);
   // One build per bot: the grace period's hold lives in its closure, and a later build could not release it.
@@ -236,15 +199,15 @@ export const codingPlugin = (
               return extensions;
             },
             env: (agentId, target, context) =>
-              codingEnv(
-                coding,
+              coding.env(
                 workspaces,
                 agentId,
                 target,
                 context,
-                credentials,
+                credentials.env(agentId),
               ),
-            botEnv: (agentId) => codingBotEnv(workspaces, agentId, credentials),
+            botEnv: (agentId) =>
+              workspaces.env(agentId, credentials.env(agentId)),
             onAnswer: coding.onAnswer,
             onQuestion: coding.onQuestion,
             onFinished: coding.onFinished,

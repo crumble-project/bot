@@ -1,4 +1,4 @@
-import { ONE_PASSWORD_ITEM } from "../shared/domain";
+import { ONE_PASSWORD_ITEM } from "../contract/secrets";
 import { errorText } from "../shared/errors";
 import {
   AuthExpiredError,

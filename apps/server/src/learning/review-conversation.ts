@@ -1,10 +1,22 @@
 import {
+  BACKGROUND_CONTEXT,
+  type Context,
+} from "@earendil-works/chord/context";
+import {
   defineDoc,
   defineExtension,
   GenerationTask,
   hook,
+  type ConversationId,
+  type DocumentReader,
 } from "@earendil-works/pi-durable";
+import type { AgentRuntime } from "../bots/runtime";
+import type { ConversationKind } from "../bots/conversation-kind";
 import { defineAnchorTask } from "../shared/anchor-task";
+import type { Agent } from "../contract/agents";
+import { localConversationId } from "../shared/entry-ids";
+import { groupOf } from "../group-chats/group-conversation";
+import { reviewInstructions, type ReviewScope } from "./review-instructions";
 
 export const REVIEW_EXTENSION = "learning-review";
 
@@ -34,6 +46,21 @@ export const ReviewConversation = defineDoc<{
   checkpointWhen: () => false,
 });
 
+/** The review a conversation is; null for any other conversation. */
+export const reviewOf = async (
+  reader: DocumentReader,
+  conversationId: ConversationId,
+  context: Context,
+) => {
+  const review = await reader.snapshot(
+    ReviewConversation,
+    conversationId,
+    context,
+  );
+
+  return review?.executionId ? review : null;
+};
+
 // Owns a review conversation, so it stays out of the bot chat transcript, like a group conversation's anchor.
 export const ReviewAnchor = defineAnchorTask("crumble.review-anchor");
 
@@ -50,18 +77,14 @@ export class ReviewBudgetExceeded extends Error {
  * review makes and stops the review before a request would exceed the budget. Spending lives in memory, since a
  * restart drops reviews anyway.
  */
-export function reviewExtension() {
+function reviewExtension() {
   const spent = new Map<string, number>();
 
   const budget = hook(GenerationTask, {
     beforeRequest: async (request, api, context) => {
-      const review = await api.snapshot(
-        ReviewConversation,
-        api.conversationId,
-        context,
-      );
+      const review = await reviewOf(api, api.conversationId, context);
 
-      if (!review?.executionId || !review.budgetChars) return undefined;
+      if (!review?.budgetChars) return undefined;
       const key = String(api.conversationId);
       const used = spent.get(key) ?? 0;
       const next = used + JSON.stringify(request.messages).length;
@@ -81,5 +104,70 @@ export function reviewExtension() {
     name: REVIEW_EXTENSION,
     tasks: [ReviewAnchor],
     hooks: [budget],
+  });
+}
+
+/** The model a bot's reviews run on: the chosen one, else the bot's own. */
+export const reviewModelOf = (agent: Agent) =>
+  agent.reviewModel ?? { provider: agent.provider, model: agent.model };
+
+/** A review conversation: only the stores it reviews, never chat actions, jobs, delegation, or integrations. */
+export function reviewConversations(): ConversationKind {
+  const extension = reviewExtension();
+
+  return {
+    extension,
+    recognize: async (reader, conversationId, context) => {
+      const review = await reviewOf(reader, conversationId, context);
+
+      if (!review) return undefined;
+
+      return {
+        tools: (parts) => [
+          ...(review.memory ? parts.memory : []),
+          ...parts.skill,
+          ...(review.skills ? [parts.skillManage] : []),
+        ],
+        extensions: (parts) => [
+          parts.memoryExtension,
+          parts.skillExtension,
+          parts.visionExtension,
+          extension,
+        ],
+        prompt: {
+          standing: (agent) => [
+            reviewInstructions(review),
+            `Your standing instructions in the owner's chat, which the turn followed:\n${agent.instructions}`,
+          ],
+          skillWriting: review.skills,
+        },
+        model: reviewModelOf,
+        noEnvironment: true,
+      };
+    },
+  };
+}
+
+/** A new conversation that reviews one execution, owned by a background task so it stays out of the bot chat. */
+export async function openReviewConversation(
+  runtime: Pick<AgentRuntime, "documents" | "openAnchored">,
+  agent: Agent,
+  reviewed: { id: string; conversationId: string },
+  scope: ReviewScope,
+  budgetChars: number,
+) {
+  const reviewedGroup = await groupOf(
+    await runtime.documents(agent),
+    localConversationId(agent.id, reviewed.conversationId),
+    BACKGROUND_CONTEXT,
+  );
+
+  return runtime.openAnchored(agent, ReviewAnchor, async (tx, id) => {
+    const doc = await tx.doc(ReviewConversation, id);
+    doc.executionId = reviewed.id;
+    doc.groupId = reviewedGroup;
+    doc.skills = scope.skills;
+    doc.memory = scope.memory;
+    doc.budgetChars = budgetChars;
   });
 }

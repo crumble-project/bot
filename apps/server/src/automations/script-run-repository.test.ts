@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Store } from "../../test/support/store";
-import { agentInput, scheduleInput } from "../shared/domain";
+import { agentInput } from "../contract/agents";
+import { scheduleInput } from "../contract/schedules";
 import type { ScriptRun } from "./script-run-repository";
 import type { Workspaces } from "../workspaces/workspace";
 import { ScheduleRepository } from "./schedule-repository";
@@ -23,7 +24,6 @@ const schedulerOver = (store: Store) =>
   standaloneScheduler(
     store.runtime,
     async () => undefined,
-    undefined,
     undefined,
     // SAFETY: these tests never start a run, so no method is called.
     {} as Workspaces,

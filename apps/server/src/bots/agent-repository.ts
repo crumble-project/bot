@@ -1,6 +1,6 @@
 import { asc, eq, ne } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import type { Agent, AgentInput } from "../shared/domain";
+import type { Agent, AgentInput } from "../contract/agents";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { SkillRepository } from "../skills/skill-repository";

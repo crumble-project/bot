@@ -112,13 +112,6 @@ export class BotMemory extends Context.Service<
             yield* validContent(content);
             yield* assertOwnMemoryInGroup(context, shared);
 
-            if (shared && !(yield* usesSharedMemory(agentId)))
-              return yield* Effect.fail(
-                new InvalidInput({
-                  message: "Shared memory is off for this agent",
-                }),
-              );
-
             const source = yield* memorySourceOf(agentId, context).pipe(
               Effect.provideContext(sources),
             );

@@ -11,8 +11,8 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "../bots/runtime";
 import { defaultAvatarDefinition } from "../contract/avatar";
-import { latestMessagePreview } from "../bots/transcript";
-import { agentInput, type Agent } from "../shared/domain";
+import { latestMessagePreview } from "../transcript/transcript";
+import { agentInput, type Agent } from "../contract/agents";
 import { scriptedGuest } from "../../test/fixtures/scripted-guest";
 import type { DesktopFill, DesktopFills } from "./computer-use-login";
 import {

@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/errors";
 import { shellQuote } from "../../shared/shell";
 import { createHash } from "node:crypto";
 import net from "node:net";
@@ -24,6 +25,7 @@ import {
   GH,
   GIT_TEMPLATE_DIR,
   GIT_TEMPLATE_SOURCES,
+  GUEST_DAEMON,
   GUEST_FILES,
   GUEST_HELPERS,
   UV_VERSION,
@@ -31,7 +33,6 @@ import {
   envWords,
 } from "../../../workspace-image/guest";
 import {
-  GUEST_DAEMON,
   MachineWorkspaces,
   NO_GUEST,
   bootStep,
@@ -44,7 +45,6 @@ import {
   type GuestOps,
   type GuestSetup,
   type MachineStream,
-  type MachineWorkspacesOptions,
   type WorkspaceBackendOptions,
   type WorkspaceMachine,
   type WorkspaceMachines,
@@ -55,7 +55,6 @@ import {
   WorkspaceStopFailed,
   WorkspaceStreamFailed,
   WorkspaceUnreachable,
-  messageOf,
 } from "../workspace-errors";
 import {
   startWorkspaceProxy,
@@ -178,15 +177,9 @@ const imageName = (kind: string, recipe: Recipe) =>
   `railway-${kind}-${createHash("sha256").update(JSON.stringify(recipe)).digest("hex").slice(0, 12)}`;
 
 export type RailwayWorkspacesOptions = Omit<
-  MachineWorkspacesOptions,
-  "desktopImage" | "baseImage"
+  WorkspaceBackendOptions,
+  "baseImage"
 > & {
-  /** The machine size, read at each boot. */
-  size: () => WorkspaceSize;
-  /** Where each bot's sandbox id and image are recorded, so a restarted server finds its machines. */
-  dataDir: string;
-  /** Prefix of checkpoint names, which are global to the Railway environment. */
-  namePrefix: string;
   /** Region of new sandboxes; one that already has a checkpoint stays where it is. */
   region?: string;
   checkpointDelayMs?: number;
@@ -543,7 +536,7 @@ class RailwayMachine implements WorkspaceMachine {
       try: () => this.alive(),
       catch: (cause) =>
         new WorkspaceUnreachable({
-          message: `Railway could not report on the sandbox: ${messageOf(cause)}`,
+          message: `Railway could not report on the sandbox: ${errorText(cause)}`,
           cause,
         }),
     });
@@ -554,7 +547,7 @@ class RailwayMachine implements WorkspaceMachine {
       try: () => this.open(command, args),
       catch: (cause) =>
         new WorkspaceStreamFailed({
-          message: `${command} did not start: ${messageOf(cause)}`,
+          message: `${command} did not start: ${errorText(cause)}`,
           cause,
         }),
     });
@@ -652,7 +645,7 @@ class RailwayMachine implements WorkspaceMachine {
       },
       catch: (cause) =>
         new WorkspaceStopFailed({
-          message: `Stopping the sandbox failed: ${messageOf(cause)}`,
+          message: `Stopping the sandbox failed: ${errorText(cause)}`,
           cause,
         }),
     });
@@ -695,7 +688,7 @@ const startDesktop = Effect.fn("startDesktop")(function* (
       }),
     catch: (cause) =>
       new DesktopStartFailed({
-        message: `The bot desktop did not start: ${messageOf(cause)}`,
+        message: `The bot desktop did not start: ${errorText(cause)}`,
         cause,
       }),
   });

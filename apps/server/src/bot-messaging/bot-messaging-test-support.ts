@@ -1,0 +1,18 @@
+import { Effect } from "effect";
+import type { AgentRepository } from "../bots/agent-repository";
+import type { Bots } from "../bots/bots";
+import type { ExecutionRepository } from "../bots/execution-repository";
+import type { BotRuntime } from "../bots/runtime";
+import type { ProductDatabase } from "../shared/product-database";
+import type { Runner } from "../shared/runner";
+import { BotMessaging } from "./bot-messaging";
+
+/** Bot messaging over standalone bots, for a test without an account. */
+export const standaloneMessaging = (bots: {
+  effects: Runner<
+    Bots | BotRuntime | AgentRepository | ExecutionRepository | ProductDatabase
+  >;
+}) =>
+  bots.effects.runSync(
+    BotMessaging.use(Effect.succeed).pipe(Effect.provide(BotMessaging.layer)),
+  );

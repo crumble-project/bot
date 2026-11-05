@@ -1,11 +1,5 @@
-import {
-  Cause,
-  Effect,
-  FiberSet,
-  Semaphore,
-  type Fiber,
-  type Scope,
-} from "effect";
+import { Effect, FiberSet, Semaphore, type Fiber, type Scope } from "effect";
+import { keyedListeners, keyedLocks } from "../shared/keyed";
 import type { AgentRepository } from "../bots/agent-repository";
 import type { Bots } from "../bots/bots";
 import type { ConversationRepository } from "../bots/conversation-repository";
@@ -33,15 +27,15 @@ export type GroupChatFork = <A, E>(
 
 /** What one layer build owns: its listeners, queues, locks, and the fibers background work runs in. */
 export type GroupChatState = {
-  readonly listeners: Map<string, Set<() => void>>;
+  readonly listeners: ReturnType<typeof keyedListeners>;
   /** Members whose joining summary is being written, by `memberKey`. */
   readonly summarizing: Set<string>;
   // Bumped by each queueing, by `memberKey`, so a turn that was starting meanwhile leaves the new follow-up queued.
   readonly pendingVersions: Map<string, symbol>;
   // Turn state changes run one at a time per group, so a member never gets two turns.
-  readonly locks: Map<string, Semaphore.Semaphore>;
+  readonly locks: ReturnType<typeof keyedLocks>;
   // Held only across store writes: posting takes this one, as a turn's startup can hold `locks` while it submits.
-  readonly queueLocks: Map<string, Semaphore.Semaphore>;
+  readonly queueLocks: ReturnType<typeof keyedLocks>;
   readonly fork: GroupChatFork;
 };
 
@@ -63,11 +57,6 @@ export type GroupChatContext = GroupChatServices & {
   readonly checkMembers: (memberIds: string[]) => Effect.Effect<void, AppError>;
 };
 
-export const logged = (label: string, ...subjects: string[]) =>
-  Effect.catchCause((cause: Cause.Cause<unknown>) =>
-    Effect.logError(label, ...subjects, Cause.squash(cause)),
-  );
-
 /** Names one member of one group in this layer build's state. */
 export const memberKey = (groupId: string, agentId: string) =>
   `${groupId}:${agentId}`;
@@ -80,11 +69,11 @@ export const groupChatState: Effect.Effect<GroupChatState, never, Scope.Scope> =
     const fork = yield* FiberSet.runtime(background)<never>();
 
     return {
-      listeners: new Map<string, Set<() => void>>(),
+      listeners: keyedListeners(),
       summarizing: new Set<string>(),
       pendingVersions: new Map<string, symbol>(),
-      locks: new Map<string, Semaphore.Semaphore>(),
-      queueLocks: new Map<string, Semaphore.Semaphore>(),
+      locks: keyedLocks(),
+      queueLocks: keyedLocks(),
       fork,
     };
   });
@@ -96,22 +85,12 @@ export const groupChatContext = (
   const { groups, agents } = services;
 
   const locked =
-    (locks: Map<string, Semaphore.Semaphore>) =>
-    <A, E>(groupId: string, work: Effect.Effect<A, E>) => {
-      let lock = locks.get(groupId);
-
-      if (!lock) {
-        lock = Semaphore.makeUnsafe(1);
-        locks.set(groupId, lock);
-      }
-
-      return Semaphore.withPermit(lock, Effect.uninterruptible(work));
-    };
+    (lockOf: ReturnType<typeof keyedLocks>) =>
+    <A, E>(groupId: string, work: Effect.Effect<A, E>) =>
+      Semaphore.withPermit(lockOf(groupId), Effect.uninterruptible(work));
 
   const changed = (groupId: string) =>
-    Effect.sync(() => {
-      for (const listener of state.listeners.get(groupId) ?? []) listener();
-    });
+    Effect.sync(() => state.listeners.notify(groupId));
 
   const get = Effect.fn("GroupChats.get")(function* (groupId: string) {
     const group = yield* groups.get(groupId);

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { Effect } from "effect";
 import { desktopFillsAccess } from "./desktop-fill-repository";
 import { desktopFills } from "./schema";
-import { agentInput } from "../shared/domain";
+import { agentInput } from "../contract/agents";
 import { ProductDatabase } from "../shared/product-database";
 import { Store } from "../../test/support/store";
 

@@ -40,7 +40,6 @@
     "open-bot-avatar": "0.1.2",
     "pele": "1.9.0",
     "pkijs": "4.0.0",
-    "proper-lockfile": "4.1.2",
     "railway": "3.16.0",
     "svgpath": "2.6.0",
     "zod": "4.6.7"
@@ -48,7 +47,6 @@
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",
     "@types/d3-scale": "4.0.9",
-    "@types/proper-lockfile": "^4.1.4",
     "ajv": "8.20.0",
     "drizzle-kit": "1.0.0-rc.5"
   }

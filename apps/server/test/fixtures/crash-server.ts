@@ -2,7 +2,7 @@ import { createModels, type AssistantMessage } from "@earendil-works/pi-ai";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import { Store } from "../support/store";
 import { AgentRuntime } from "../../src/bots/runtime";
-import { standaloneBots } from "../../src/bots/bots";
+import { standaloneBots } from "../../src/bots/bots-test-support";
 import { runtimeCallbacks } from "../support/runtime-callbacks";
 
 const dir = process.env["BOT_CRASH_DIR"];

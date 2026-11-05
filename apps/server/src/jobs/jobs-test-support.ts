@@ -15,7 +15,7 @@ import {
 import { defineExtension } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { defineJobKind } from "./jobs";
-import type { JobKindFacts } from "./job-kinds";
+import type { JobKindFacts } from "../shared/job-kinds";
 import { AgentRuntime } from "../bots/runtime";
 import { Store } from "../../test/support/store";
 import type { Workspaces } from "../workspaces/workspace";
@@ -77,7 +77,6 @@ const kindFacts = (exclusive: boolean): JobKindFacts => ({
   toolName: "errand",
   label: "errand",
   extension: "errand-job",
-  inGroupTurns: false,
   exclusive,
 });
 
@@ -191,7 +190,7 @@ async function open(kind: typeof exclusiveKind) {
     runtimeCallbacks({
       models,
       extensions: () => extensions.chat,
-      taskExtensions: () => extensions.job,
+      jobExtensions: () => extensions.job,
       env: (current, target, context) =>
         kind.env(workspaces, current.id, target, context),
     }),

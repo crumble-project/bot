@@ -18,7 +18,7 @@ import { InvalidInput, isAppError, errorText } from "../shared/errors";
 
 /**
  * A server's OAuth state as pi-mcp keeps it (client registration, tokens, PKCE verifier, state),
- * plus the redirect URL it was registered for. Stored with the encrypted credentials.
+ * plus the redirect URL it was registered for. Stored encrypted, as a server secret.
  */
 type SavedOAuth = {
   redirectUrl: string;
@@ -27,7 +27,7 @@ type SavedOAuth = {
   clientId: string | null;
 };
 
-const credentialKey = (serverId: string) => secretKey("mcp-oauth", serverId);
+const oauthStateKey = (serverId: string) => secretKey("mcp-oauth", serverId);
 
 /** The secret holding an MCP server's bearer token. */
 export const mcpTokenKey = (serverId: string) => secretKey("mcp", serverId);
@@ -130,12 +130,12 @@ function read(
   storage: SecretStorage,
   serverId: string,
 ): SavedOAuth | undefined {
-  const raw = storage.get(credentialKey(serverId));
+  const raw = storage.get(oauthStateKey(serverId));
 
   if (!raw) return undefined;
 
   try {
-    // SAFETY: write() serializes SavedOAuth under this private credential key;
+    // SAFETY: write() serializes SavedOAuth under this private key;
     // only this module writes that key, and malformed JSON is rejected below.
     return JSON.parse(raw) as SavedOAuth;
   } catch {
@@ -144,7 +144,7 @@ function read(
 }
 
 function write(storage: SecretStorage, serverId: string, saved: SavedOAuth) {
-  storage.set(credentialKey(serverId), JSON.stringify(saved));
+  storage.set(oauthStateKey(serverId), JSON.stringify(saved));
 }
 
 export function hasOAuthTokens(storage: SecretStorage, serverId: string) {
@@ -152,7 +152,7 @@ export function hasOAuthTokens(storage: SecretStorage, serverId: string) {
 }
 
 export function signOut(storage: SecretStorage, serverId: string) {
-  storage.delete(credentialKey(serverId));
+  storage.delete(oauthStateKey(serverId));
 }
 
 function provider(

@@ -4,12 +4,12 @@ import { Context, Effect, Layer } from "effect";
 import { OWNER } from "../shared/change-by";
 import {
   SKILL_STATES,
-  type ChangeBy,
   type Skill,
   type SkillInput,
   type SkillOrigin,
   type skillDocumentInput,
-} from "../shared/domain";
+} from "../contract/skills";
+import { type ChangeBy } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { LearnedChangeRepository } from "../learning/learned-change-repository";

@@ -50,3 +50,6 @@ export const clip = (text: string, max: number) =>
 
 /** Theme colors a chart may use, `series-1` on; native clients read them too. */
 export const CHART_SERIES_COLORS = 8;
+
+/** The longest a bot waits on another bot's answer before reporting it as pending. */
+export const MAX_WAIT_SECONDS = 60;

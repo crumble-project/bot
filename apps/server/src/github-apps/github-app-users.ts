@@ -5,7 +5,7 @@ import { z } from "zod";
 import { secretKey } from "../secrets/secret-key";
 import { Secrets } from "../secrets/secrets";
 import { PendingStates } from "../secrets/server-secrets";
-import type { SecretInput } from "../shared/domain";
+import type { SecretInput } from "../contract/secrets";
 import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
 import { Conflict, InvalidInput, NotFound } from "../shared/errors";

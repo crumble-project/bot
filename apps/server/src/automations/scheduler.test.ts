@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import { standaloneScheduler } from "./scheduler-test-support";
 import { ScriptRuns } from "./script-runs";
-import type { Schedule } from "../shared/domain";
+import type { Schedule } from "../contract/schedules";
 import type { ScriptRun } from "./script-run-repository";
 import { Conflict } from "../shared/errors";
 import { Store } from "../../test/support/store";
@@ -133,7 +133,6 @@ describe("Scheduler", () => {
       async (_agent, prompt) => {
         prompts.push(prompt);
       },
-      undefined,
       scripts.service,
     );
 
@@ -157,7 +156,6 @@ describe("Scheduler", () => {
     const scheduler = standaloneScheduler(
       store.runtime,
       async () => undefined,
-      undefined,
       scripts.service,
     );
 
@@ -184,7 +182,6 @@ describe("Scheduler", () => {
     const scheduler = standaloneScheduler(
       store.runtime,
       async () => undefined,
-      undefined,
       scripts.service,
     );
 
@@ -213,7 +210,6 @@ describe("Scheduler", () => {
       async (_agent, prompt) => {
         prompts.push(prompt);
       },
-      undefined,
       scripts.service,
     );
 
@@ -279,6 +275,54 @@ describe("Scheduler", () => {
     await scheduler.tick(new Date());
     expect(calls).toEqual([`schedule:${schedule.id}:${due}`]);
     expect(store.getSchedule(schedule.id)?.nextRunAt).toBeNull();
+    store.close();
+  });
+
+  test("editing a finished one-time schedule does not run it again", async () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const calls: string[] = [];
+
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async (_a, _p, requestId) => {
+        calls.push(requestId);
+      },
+    );
+
+    const due = new Date("2026-10-17T00:00:00.000Z");
+
+    const schedule = scheduler.create({
+      agentId: agent.id,
+      name: "once",
+      kind: "prompt",
+      command: null,
+      timeoutSeconds: 600,
+      notify: true,
+      prompt: "hello",
+      cron: null,
+      timezone: "UTC",
+      runAt: due.toISOString(),
+      eventSourceId: null,
+      enabled: true,
+    });
+
+    await scheduler.tick(due);
+    expect(calls).toHaveLength(1);
+
+    expect(
+      scheduler.update(schedule.id, { name: "renamed" })?.nextRunAt,
+    ).toBeNull();
+    scheduler.update(schedule.id, { enabled: false });
+    scheduler.update(schedule.id, { enabled: true });
+    await scheduler.tick(new Date(due.valueOf() + 1000));
+    expect(calls).toHaveLength(1);
+
+    const moved = new Date(due.valueOf() + 60_000).toISOString();
+
+    expect(scheduler.update(schedule.id, { runAt: moved })?.nextRunAt).toBe(
+      moved,
+    );
     store.close();
   });
 
@@ -444,14 +488,10 @@ describe("Scheduler", () => {
     const release = Promise.withResolvers<void>();
     const started = Promise.withResolvers<void>();
 
-    const scheduler = standaloneScheduler(
-      store.runtime,
-      async () => {
-        started.resolve();
-        await release.promise;
-      },
-      10,
-    );
+    const scheduler = standaloneScheduler(store.runtime, async () => {
+      started.resolve();
+      await release.promise;
+    });
 
     const schedule = scheduler.create({
       agentId: agent.id,
@@ -496,13 +536,12 @@ describe("Scheduler", () => {
       async (_a, _p, requestId) => {
         calls.push(requestId);
       },
-      10,
     );
 
     scheduler.start();
     await scheduler.stop();
 
-    scheduler.create({
+    store.createSchedule({
       agentId: agent.id,
       name: "once",
       kind: "prompt",

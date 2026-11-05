@@ -1,10 +1,11 @@
 import type { Context as PiContext } from "@earendil-works/chord";
 import { Context, Deferred, Effect, Layer } from "effect";
+import type { CONTROL_HOLDERS } from "../shared/domain";
 import { accessOf, type Access, type Runner } from "../shared/runner";
 import { nowIso } from "../shared/time";
 import { DesktopControlRepository } from "./desktop-control-repository";
 
-export type ControlHolder = "bot" | "owner";
+export type ControlHolder = (typeof CONTROL_HOLDERS)[number];
 
 /** Who operates a bot desktop. `changes` counts every change of holder, so a plan from before one can be recognized. */
 export type ControlState = {

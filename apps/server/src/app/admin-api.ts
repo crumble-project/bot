@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import type { createAuth } from "./auth";
 import { ADMIN_ROLE, adminCount } from "./auth";
 import { handleApiError } from "./api-errors";
+import { limitBodies, pathRegister } from "./api-requests";
 import { routes } from "../contract/api-contract";
 
 type Accounts = Awaited<ReturnType<typeof createAuth>>;
@@ -38,7 +39,9 @@ export function adminAPI(options: {
   const { accounts } = options;
   const { adapter, auth, settings, invites } = accounts;
   const app = new OpenAPIHono<{ Variables: { adminId: string } }>();
+  const register = pathRegister(app);
 
+  limitBodies(app);
   app.use("/v1/admin/*", async (c, next) => {
     const session = await auth.api.getSession({ headers: c.req.raw.headers });
 
@@ -62,7 +65,7 @@ export function adminAPI(options: {
     return user;
   };
 
-  app.openapi(routes.adminUsers, async (c) => {
+  register(routes.adminUsers, async (c) => {
     const users = await adapter.findMany<StoredUser>({
       model: "user",
       sortBy: { field: "createdAt", direction: "asc" },
@@ -71,7 +74,7 @@ export function adminAPI(options: {
     return c.json({ users: users.map(userOf) }, 200);
   });
 
-  app.openapi(routes.setUserRole, async (c) => {
+  register(routes.setUserRole, async (c) => {
     const { id } = c.req.valid("param");
     const { role } = c.req.valid("json");
     const user = await findUser(id);
@@ -90,7 +93,7 @@ export function adminAPI(options: {
     return c.json(userOf(await findUser(id)), 200);
   });
 
-  app.openapi(routes.removeUser, async (c) => {
+  register(routes.removeUser, async (c) => {
     const { id } = c.req.valid("param");
 
     if (id === c.get("adminId"))
@@ -105,7 +108,7 @@ export function adminAPI(options: {
     return c.body(null, 204);
   });
 
-  app.openapi(routes.invites, async (c) => {
+  register(routes.invites, async (c) => {
     const pending = await invites.pending();
 
     return c.json(
@@ -119,7 +122,7 @@ export function adminAPI(options: {
     );
   });
 
-  app.openapi(routes.createInvite, async (c) => {
+  register(routes.createInvite, async (c) => {
     const { id, token } = await invites.create(c.get("adminId"));
     const url = new URL("/connect", options.origin());
 
@@ -131,20 +134,20 @@ export function adminAPI(options: {
     );
   });
 
-  app.openapi(routes.revokeInvite, async (c) => {
+  register(routes.revokeInvite, async (c) => {
     if (!(await invites.revoke(c.req.valid("param").id)))
       return c.json({ error: "No such invite" }, 404);
 
     return c.body(null, 204);
   });
 
-  app.openapi(routes.outdatedWorkspaces, async (c) =>
+  register(routes.outdatedWorkspaces, async (c) =>
     c.json({ workspaces: await options.outdatedWorkspaces() }, 200),
   );
 
-  app.openapi(routes.serverSettings, (c) => c.json(settings.get(), 200));
+  register(routes.serverSettings, (c) => c.json(settings.get(), 200));
 
-  app.openapi(routes.updateServerSettings, async (c) =>
+  register(routes.updateServerSettings, async (c) =>
     c.json(await settings.update(c.req.valid("json")), 200),
   );
 

@@ -9,7 +9,8 @@ import { AgentRepository } from "../bots/agent-repository";
 import { agents } from "../bots/schema";
 import { ScheduleRepository } from "./schedule-repository";
 import { schedules } from "./schema";
-import { agentInput, scheduleInput } from "../shared/domain";
+import { agentInput } from "../contract/agents";
+import { scheduleInput } from "../contract/schedules";
 import { ProductDatabase } from "../shared/product-database";
 import {
   EventConsumers,

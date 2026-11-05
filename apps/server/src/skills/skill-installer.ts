@@ -1,8 +1,15 @@
+import type { z } from "zod";
+import type {
+  pendingSkillUpdateResponse,
+  skillCandidateResponse,
+  skillCheckResponse,
+  skillListingResponse,
+} from "../contract/skill-install";
 import { posix } from "node:path";
 import { Cause, Clock, Context, Effect, Layer, Schedule } from "effect";
 import { GitHubUnavailable } from "../github-apps/github-api";
 import { OWNER } from "../shared/change-by";
-import { type Skill, type SkillInput } from "../shared/domain";
+import { type Skill, type SkillInput } from "../contract/skills";
 import { skillNameKey, type SkillDocument } from "./skill-repository";
 import { MAX_SKILL_FILE_BYTES } from "../shared/limits";
 import {
@@ -30,29 +37,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const CHECK_TICK_MS = 60 * 60 * 1000;
 
 /** One skill found in a repository, and whether it can be installed. */
-export type SkillCandidate = {
-  /** The skill's folder in the repository; empty for the root. */
-  path: string;
-  name: string;
-  description: string;
-  status: "new" | "installed" | "update" | "clash" | "invalid";
-  /** Why a `clash` or `invalid` skill can't be installed. */
-  problem: string | null;
-  /** Files in the folder that won't be imported. */
-  skipped: string[];
-  /** The installed skill, for `installed` and `update`. */
-  skillId: string | null;
-};
+export type SkillCandidate = z.infer<typeof skillCandidateResponse>;
 
-export type SkillListing = {
-  repository: string;
-  branch: string;
-  commit: string;
-  path: string;
-  skills: SkillCandidate[];
-  /** Skills beyond the first hundred, left out of `skills`. */
-  omitted: number;
-};
+export type SkillListing = z.infer<typeof skillListingResponse>;
 
 export type SkillInstall = {
   repository: string;
@@ -62,17 +49,12 @@ export type SkillInstall = {
 };
 
 /** What an installed skill would become: the upstream skill at `commit`. */
-export type PendingSkillUpdate = SkillInput & {
-  commit: string;
-  skipped: string[];
-};
+export type PendingSkillUpdate = z.infer<typeof pendingSkillUpdateResponse>;
 
 /** An installed skill's upstream moved on; `removed` when its folder is gone. */
 export type SkillUpdate = { commit: string; removed: boolean };
 
-export type SkillCheck = {
-  failed: { repository: string; branch: string; message: string }[];
-};
+export type SkillCheck = z.infer<typeof skillCheckResponse>;
 
 type Installed = Skill & { origin: NonNullable<Skill["origin"]> };
 

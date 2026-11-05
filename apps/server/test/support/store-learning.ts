@@ -10,7 +10,8 @@ import {
   type NewSkill,
   type SkillPatch,
 } from "../../src/skills/skill-repository";
-import type { ChangeBy, LearnedChange, Skill } from "../../src/shared/domain";
+import type { ChangeBy } from "../../src/shared/domain";
+import type { LearnedChange, Skill } from "../../src/contract/skills";
 import type { StoreRun } from "./store";
 
 export const learningStore = (run: StoreRun) => ({

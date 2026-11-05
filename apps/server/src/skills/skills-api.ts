@@ -1,80 +1,40 @@
 import { routes } from "../contract/api-contract";
-import type { Register } from "../contract/route";
-import { AgentRepository } from "../bots/agent-repository";
-import type { BotsAccess } from "../bots/bots";
-import { skillInput, skillLifecycleInput } from "../shared/domain";
-import { NotFound, ReadOnly } from "../shared/errors";
-import type { ProductDatabase } from "../shared/product-database";
+import { mergedBody } from "../contract/route";
+import { registerLearningRoutes } from "../learning/learning-api";
+import { skillInput, skillLifecycleInput } from "../contract/skills";
 import type { Runner } from "../shared/runner";
-import { ChangeReverter } from "../learning/change-reverter";
-import type { CommonSkill } from "./common-skills";
-import { LearnedChangeRepository } from "../learning/learned-change-repository";
+import { OwnerSkills } from "./owner-skills";
 import { SkillInstaller } from "./skill-installer";
 import { SkillRepository } from "./skill-repository";
-import {
-  assignSkill,
-  editableSharedSkill,
-  removeSharedSkill,
-  shareWith,
-} from "./skill-sharing";
 
-type Services =
-  | AgentRepository
-  | ChangeReverter
-  | LearnedChangeRepository
-  | ProductDatabase
-  | SkillInstaller
-  | SkillRepository;
+type Services = OwnerSkills | SkillInstaller | SkillRepository;
 
-type Exec = Runner<Services>["runSync"];
-
-type SkillRoutesOptions = {
-  register: Register;
-  service: BotsAccess;
-  /** Runs the repository effects the skill routes read and write. */
+type SkillRoutesOptions = Parameters<typeof registerLearningRoutes>[0] & {
+  /** Runs the skill routes' effects. */
   run: Runner<Services>;
-  /** Skills the server ships with; they are read-only. */
-  commonSkills: CommonSkill[];
 };
-
-/** The bot's own skill, which must belong to that bot. */
-const agentSkill = (exec: Exec, agentId: string, skillId: string) => {
-  const skill = exec(SkillRepository.use((r) => r.get(skillId)));
-
-  if (!skill || skill.agentId !== agentId)
-    throw new NotFound({ message: "Skill not found" });
-
-  return skill;
-};
-
-const isCommonSkill = (commonSkills: CommonSkill[], skillId: string) =>
-  commonSkills.some((skill) => skill.id === skillId);
 
 /** The skills one bot owns. */
 const registerBotSkillRoutes = (options: SkillRoutesOptions) => {
-  const { register, service } = options;
-  const exec: Exec = (effect) => options.run.runSync(effect);
+  const { register, service, run } = options;
 
   register(routes.assignSkillBot, async (c) => {
     const { botId, assigned } = c.req.valid("json");
     const target = service.agent(botId);
-    const skillId = c.req.param("id");
-
-    if (isCommonSkill(options.commonSkills, skillId))
-      throw new ReadOnly({ message: "Default skills cannot be assigned" });
-    const source = exec(SkillRepository.use((r) => r.get(skillId)));
-
-    if (!source) throw new NotFound({ message: "Skill not found" });
 
     return c.json(
-      { skipped: exec(assignSkill(source, target, assigned)) },
+      {
+        skipped: await run.runPromise(
+          OwnerSkills.use((s) => s.assign(c.req.param("id"), target, assigned)),
+        ),
+      },
       200,
     );
   });
 
   register(routes.agentSkills, (c) =>
     c.json(
-      exec(
+      run.runSync(
         SkillRepository.use((r) => r.list(service.agent(c.req.param("id")).id)),
       ),
       200,
@@ -86,161 +46,84 @@ const registerBotSkillRoutes = (options: SkillRoutesOptions) => {
       agentId: service.agent(c.req.param("id")).id,
     };
 
-    return c.json(exec(SkillRepository.use((r) => r.create(input))), 201);
+    return c.json(
+      run.runSync(SkillRepository.use((r) => r.create(input))),
+      201,
+    );
   });
   register(
     routes.updateAgentSkill,
     async (c) => {
       const agentId = service.agent(c.req.param("id")).id;
-      const old = agentSkill(exec, agentId, c.req.param("skillId"));
 
-      const body = await c.req.json();
-      const lifecycle = skillLifecycleInput.parse(body);
+      const old = await run.runPromise(
+        OwnerSkills.use((s) => s.own(agentId, c.req.param("skillId"))),
+      );
+
+      const lifecycle = skillLifecycleInput.parse(await c.req.json());
+      const input = await mergedBody(c, old, skillInput);
 
       return c.json(
-        exec(
-          SkillRepository.use((r) =>
-            r.update(old.id, {
-              ...skillInput.parse({ ...old, ...body }),
-              ...(lifecycle.state && { state: lifecycle.state }),
-              ...(lifecycle.pinned !== undefined && {
-                pinned: lifecycle.pinned,
-              }),
-            }),
-          ),
+        await run.runPromise(
+          OwnerSkills.use((s) => s.updateOwn(old.id, input, lifecycle)),
         ),
         200,
       );
     },
     { parsesBody: true },
   );
-  register(routes.deleteAgentSkill, (c) => {
+  register(routes.deleteAgentSkill, async (c) => {
     const agentId = service.agent(c.req.param("id")).id;
-    const skill = agentSkill(exec, agentId, c.req.param("skillId"));
 
-    exec(SkillRepository.use((r) => r.delete(skill.id)));
+    const skill = await run.runPromise(
+      OwnerSkills.use((s) => s.own(agentId, c.req.param("skillId"))),
+    );
+
+    run.runSync(SkillRepository.use((r) => r.delete(skill.id)));
 
     return c.body(null, 204);
   });
 };
 
-/** The learned changes the bot's reviews produced, and the owner reverting one. */
-const registerSkillReviewRoutes = (options: SkillRoutesOptions) => {
-  const { register, service } = options;
-  const exec: Exec = (effect) => options.run.runSync(effect);
-
-  register(routes.agentReviews, (c) =>
+/** The shared skills every bot may use, including the default ones the server ships with. */
+const registerSharedSkillRoutes = ({ register, run }: SkillRoutesOptions) => {
+  register(routes.skills, async (c) =>
+    c.json(await run.runPromise(OwnerSkills.use((s) => s.catalog)), 200),
+  );
+  register(routes.getSkill, async (c) =>
     c.json(
-      exec(
-        LearnedChangeRepository.use((r) =>
-          r.listReviewResults(
-            service.agent(c.req.param("id")).id,
-            c.req.valid("query").limit,
-          ),
-        ),
-      ),
+      await run.runPromise(OwnerSkills.use((s) => s.shared(c.req.param("id")))),
       200,
     ),
   );
-  register(routes.changes, (c) => {
-    const query = c.req.valid("query");
-
-    if (query.agentId && query.agentId !== "shared")
-      service.agent(query.agentId);
-
-    return c.json(
-      exec(
-        LearnedChangeRepository.use((r) =>
-          r.list(query.agentId === "shared" ? null : query.agentId, {
-            limit: query.limit,
-            before: query.before,
-          }),
-        ),
-      ),
-      200,
-    );
-  });
-  register(routes.revertChange, (c) => {
-    const reverted = exec(
-      ChangeReverter.use((r) =>
-        r.revert(c.req.param("id"), { actor: "owner" }),
-      ),
-    );
-
-    if (!reverted) throw new NotFound({ message: "Change not found" });
-
-    return c.json(reverted, 201);
-  });
-};
-
-/** Every skill a bot may use: the bundled ones the server ships and the shared ones the owner added. */
-const skillCatalog = (exec: Exec, commonSkills: CommonSkill[]) => [
-  ...commonSkills.map(
-    ({ id, name, description, instructions, documents, path }) => ({
-      id,
-      name,
-      description,
-      instructions,
-      documents,
-      path,
-      source: "bundled" as const,
-    }),
-  ),
-  ...sharedWithUpdates(exec),
-];
-
-const sharedWithUpdates = (exec: Exec) => {
-  const updates = exec(SkillInstaller.use((r) => r.updates));
-
-  return exec(SkillRepository.use((r) => r.list(null))).map((skill) => ({
-    ...skill,
-    update: updates.get(skill.id) ?? null,
-    source: "shared" as const,
-  }));
-};
-
-/** The shared skills every bot may use, including the bundled ones the server ships with. */
-const registerSharedSkillRoutes = (options: SkillRoutesOptions) => {
-  const { register, commonSkills } = options;
-  const exec: Exec = (effect) => options.run.runSync(effect);
-
-  register(routes.skills, (c) => c.json(skillCatalog(exec, commonSkills), 200));
-  register(routes.getSkill, (c) => {
-    const skill = exec(SkillRepository.use((r) => r.get(c.req.param("id"))));
-
-    if (!skill || skill.agentId)
-      throw new NotFound({ message: "Skill not found" });
-
-    return c.json(skill, 200);
-  });
   register(routes.createSkill, (c) => {
     const input = c.req.valid("json");
 
-    return c.json(exec(SkillRepository.use((r) => r.create(input))), 201);
+    return c.json(
+      run.runSync(SkillRepository.use((r) => r.create(input))),
+      201,
+    );
   });
   register(
     routes.updateSkill,
     async (c) => {
-      if (isCommonSkill(commonSkills, c.req.param("id")))
-        throw new ReadOnly({ message: "Bundled skills are read-only" });
+      const old = await run.runPromise(
+        OwnerSkills.use((s) => s.editable(c.req.param("id"))),
+      );
 
-      const old = exec(editableSharedSkill(c.req.param("id")));
-      const input = skillInput.parse({ ...old, ...(await c.req.json()) });
+      const input = await mergedBody(c, old, skillInput);
 
       return c.json(
-        exec(SkillRepository.use((r) => r.update(old.id, input))),
+        run.runSync(SkillRepository.use((r) => r.update(old.id, input))),
         200,
       );
     },
     { parsesBody: true },
   );
-  register(routes.deleteSkill, (c) => {
-    const skillId = c.req.param("id");
-
-    if (isCommonSkill(commonSkills, skillId))
-      throw new ReadOnly({ message: "Bundled skills are read-only" });
-
-    exec(removeSharedSkill(skillId));
+  register(routes.deleteSkill, async (c) => {
+    await run.runPromise(
+      OwnerSkills.use((s) => s.removeShared(c.req.param("id"))),
+    );
 
     return c.body(null, 204);
   });
@@ -267,9 +150,11 @@ const registerSkillInstallRoutes = (options: SkillRoutesOptions) => {
     );
 
     await run.runPromise(
-      shareWith(
-        bots,
-        installed.map((skill) => skill.id),
+      OwnerSkills.use((s) =>
+        s.shareWith(
+          bots,
+          installed.map((skill) => skill.id),
+        ),
       ),
     );
 
@@ -296,10 +181,10 @@ const registerSkillInstallRoutes = (options: SkillRoutesOptions) => {
   );
 };
 
-/** The skill routes, in the order the contract document lists them. */
+/** The skill routes, in the order the contract document lists them; the learning routes sit among them. */
 export function registerSkillRoutes(options: SkillRoutesOptions) {
   registerBotSkillRoutes(options);
-  registerSkillReviewRoutes(options);
+  registerLearningRoutes(options);
   registerSharedSkillRoutes(options);
   registerSkillInstallRoutes(options);
 }

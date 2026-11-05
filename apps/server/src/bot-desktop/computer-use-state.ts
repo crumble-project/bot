@@ -3,7 +3,8 @@ import type {
   ControlGate,
   DesktopShell,
 } from "./computer-use";
-import type { DesktopFills, LoginFill } from "./computer-use-login";
+import type { LoginFill } from "../logins/login-fill";
+import type { DesktopFills } from "./computer-use-login";
 import type { PageBinding, SemanticSnapshot } from "./computer-use-page";
 import type { IntentTarget } from "./intent-check";
 

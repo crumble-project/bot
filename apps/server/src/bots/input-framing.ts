@@ -2,13 +2,16 @@ import {
   eventRelayText,
   type ScriptEvent,
 } from "../event-sources/event-payload";
-import { messageTag } from "../jobs/owner-request";
 import { parseRequestId } from "../shared/request-ids";
-import type { MessageOrigin } from "./entries";
+import { messageTag, type InputOrigin } from "../transcript/origins";
 
 // A relayed job question says itself how to answer; a plain reply never reaches the job.
-function botRelayText(origin: MessageOrigin, text: string, requestId: string) {
-  const from = `Message from bot ${JSON.stringify(origin.name ?? "Another bot")} (${origin.agentId ?? "unknown"}):\n\n${text}`;
+function botRelayText(
+  origin: Extract<InputOrigin, { kind: "bot" }>,
+  text: string,
+  requestId: string,
+) {
+  const from = `Message from bot ${JSON.stringify(origin.name)} (${origin.agentId}):\n\n${text}`;
 
   return parseRequestId(requestId).kind === "job-question"
     ? from
@@ -21,7 +24,7 @@ function botRelayText(origin: MessageOrigin, text: string, requestId: string) {
  */
 export function frameInput(
   text: string,
-  origin: MessageOrigin,
+  origin: InputOrigin,
   requestId: string,
   event?: ScriptEvent,
 ) {

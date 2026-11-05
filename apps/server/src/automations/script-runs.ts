@@ -11,8 +11,8 @@ import {
 import { ExecutionError, toError } from "@earendil-works/pi-durable/env";
 import {
   Cause,
+  Clock,
   Context,
-  DateTime,
   Effect,
   Exit,
   Layer,
@@ -22,9 +22,10 @@ import {
 import { AgentRepository } from "../bots/agent-repository";
 import { BotNotices } from "../bots/bot-notices";
 import { Credentials } from "../credentials/credentials";
-import type { Schedule } from "../shared/domain";
+import type { Schedule } from "../contract/schedules";
 import type { ScriptRun } from "./script-run-repository";
 import type { AppError } from "../shared/errors";
+import { pruneHourly, startTicking } from "../shared/ticker";
 import { nowIso } from "../shared/time";
 import { WORKSPACE_PATH } from "../../workspace-image/guest";
 import { BotWorkspaces } from "../workspaces/workspace";
@@ -37,6 +38,9 @@ type Outcome = {
   exitCode: number | null;
   error: string | null;
 };
+
+/** How long the owner can look back at an automation's script runs. */
+export const SCRIPT_RUN_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
 const OUTPUT_LIMITS = {
   maxBytes: 65536,
@@ -305,19 +309,24 @@ export class ScriptRuns extends Context.Service<
 
       const recover = Effect.flatMap(nowIso, repository.interruptRunning);
 
-      const list = Effect.fn("ScriptRuns.list")(function* (
-        scheduleId: string,
-        options: { limit: number; before?: string | undefined },
-      ) {
-        const now = yield* DateTime.now;
-        yield* repository.prune(
-          DateTime.formatIso(DateTime.subtract(now, { days: 90 })),
-        );
-
-        return yield* repository.list(scheduleId, options);
-      });
-
-      return ScriptRuns.of({ start, recover, list });
+      return ScriptRuns.of({ start, recover, list: repository.list });
     }),
   );
 }
+
+/** Drops runs past `SCRIPT_RUN_RETENTION_MS`, whether or not anyone reads them. */
+export const scriptRunRetention = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const repository = yield* ScriptRunRepository;
+
+    const prune = Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis;
+
+      yield* repository.prune(
+        new Date(now - SCRIPT_RUN_RETENTION_MS).toISOString(),
+      );
+    });
+
+    yield* startTicking(pruneHourly(prune), yield* Effect.scope);
+  }),
+);

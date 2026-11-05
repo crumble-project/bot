@@ -15,13 +15,9 @@ import {
 } from "../../src/group-chats/group-chat-repository";
 import { ScheduleRepository } from "../../src/automations/schedule-repository";
 import type { AttachmentInput } from "../../src/shared/attachment-rules";
-import type {
-  Agent,
-  AgentInput,
-  Execution,
-  Schedule,
-  ScheduleInput,
-} from "../../src/shared/domain";
+import type { Agent, AgentInput } from "../../src/contract/agents";
+import type { Execution } from "../../src/shared/domain";
+import type { Schedule, ScheduleInput } from "../../src/contract/schedules";
 import type { Conversation } from "../../src/bots/conversation-repository";
 import type {
   GroupChat,

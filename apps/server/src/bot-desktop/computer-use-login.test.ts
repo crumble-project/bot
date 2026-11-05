@@ -1,15 +1,11 @@
 import { expect, test } from "bun:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { LoginField } from "../shared/domain";
+import type { LoginField } from "../contract/secrets";
 import { createComputerUse } from "./computer-use";
 import type { IntentGate } from "./computer-use-intent";
 import type { ProposedAction } from "./intent-check";
-import type {
-  DesktopFill,
-  DesktopFills,
-  LoginFill,
-  LoginRead,
-} from "./computer-use-login";
+import type { LoginFill, LoginRead } from "../logins/login-fill";
+import type { DesktopFill, DesktopFills } from "./computer-use-login";
 import {
   scriptedGuest,
   type GuestReply,

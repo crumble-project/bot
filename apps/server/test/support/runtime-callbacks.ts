@@ -1,4 +1,6 @@
 import { Effect } from "effect";
+import { groupConversations } from "../../src/group-chats/group-turns";
+import { reviewConversations } from "../../src/learning/review-conversation";
 import { hostModels } from "../../src/providers/providers";
 import type { RuntimeCallbacks } from "../../src/bots/runtime";
 import type { BotSkills } from "../../src/skills/skills";
@@ -35,7 +37,8 @@ export const runtimeCallbacks = (
   skillLibrary: noSkills,
   visionModel: () => undefined,
   extensions: () => [],
-  taskExtensions: () => [],
+  jobExtensions: () => [],
+  conversationKinds: () => [groupConversations(), reviewConversations()],
   env: () => undefined,
   ...overrides,
 });

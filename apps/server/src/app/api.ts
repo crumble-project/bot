@@ -1,12 +1,9 @@
 import { bearerAuth } from "hono/bearer-auth";
-import { bodyLimit } from "hono/body-limit";
-import type { MiddlewareHandler } from "hono";
-import type { RouteConfig } from "@hono/zod-openapi";
-import { z } from "zod";
 import { Context, Effect } from "effect";
 import { contractApp, routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import { registerAgentRoutes } from "../bots/agents-api";
+import { registerExecutionRoutes } from "../bots/executions-api";
 import { registerBotActivityRoutes } from "../bots/bot-activity-api";
 import type { AgentRuntime } from "../bots/runtime";
 import type { BotsAccess } from "../bots/bots";
@@ -20,16 +17,12 @@ import { registerLoginRoutes } from "../logins/logins-api";
 import { registerHeldActionRoutes } from "../bot-desktop/held-actions-api";
 import { heldActionsAccess } from "../bot-desktop/held-actions";
 import { registerJudgeModelRoutes } from "../bot-desktop/judge-settings";
-import { registerVisionModelRoutes } from "../vision/vision-settings";
-import { loginsAccess } from "../logins/logins";
+import { registerVisionModelRoutes } from "../vision/vision-api";
 import { registerBotRequestRoutes } from "../bot-requests/bot-requests-api";
 import { BotRequests } from "../bot-requests/bot-requests";
-import { credentialsAccess } from "../credentials/credentials";
 import { registerGroupChatRoutes } from "../group-chats/group-chats-api";
 import { GroupChats, groupChatsAccess } from "../group-chats/group-chats";
 import { registerMcpServerRoutes } from "../integrations/mcp-servers-api";
-import { McpIntegrations } from "../integrations/integrations";
-import type { ClientDocument } from "../integrations/mcp-oauth";
 import { McpServers } from "../integrations/mcp-servers";
 import { registerMemoryRoutes } from "../memory/memory-api";
 import { registerPasswordManagerRoutes } from "../secrets/password-managers-api";
@@ -42,32 +35,32 @@ import { ProviderSignIns } from "../providers/provider-auth";
 import { Push } from "../push/push";
 import { registerPushRoutes } from "../push/push-api";
 import { registerScheduleRoutes } from "../automations/schedules-api";
-import { Scheduler, schedulerAccess } from "../automations/scheduler";
-import { ScriptRuns } from "../automations/script-runs";
-import { MAX_MESSAGE_BODY } from "../shared/attachment-rules";
+import type { Scheduler } from "../automations/scheduler";
+import type { ScriptRuns } from "../automations/script-runs";
 import type { CoreServices } from "./core-layer";
-import { CommonSkills } from "../skills/common-skills";
+import type { OwnerSkills } from "../skills/owner-skills";
 import type { Runner } from "../shared/runner";
 import { registerActivityRoutes } from "../activity/activity-api";
 import { registerSkillRoutes } from "../skills/skills-api";
 import { pluginJobKinds, pluginProviders, Plugins } from "../plugins/plugins";
 import { BotWorkspaces } from "../workspaces/workspace";
-import { registerWebSearchRoutes } from "../web-search/settings";
+import { registerWebSearchRoutes } from "../web-search/web-search-api";
 import { registerGatewayRoutes } from "../message-gateway/gateway-api";
-import { MessageGateway } from "../message-gateway/message-gateway";
-import { EventSources } from "../event-sources/event-sources";
+import type { MessageGateway } from "../message-gateway/message-gateway";
+import type { EventSources } from "../event-sources/event-sources";
 import { registerEventSourceRoutes } from "../event-sources/event-sources-api";
 import { handleApiError } from "./api-errors";
+import { limitBodies, pathRegister } from "./api-requests";
 
 /** Every account service the routes read. */
 export type ApiServices =
   | CoreServices
   | BotRequests
   | BotWorkspaces
-  | CommonSkills
+  | OwnerSkills
   | EventSources
   | GroupChats
-  | McpIntegrations
+  | McpServers
   | MessageGateway
   | Plugins
   | ProviderSignIns
@@ -87,75 +80,6 @@ type ApiApp = ReturnType<typeof contractApp>;
 export type ApiOptions = {
   /** Single-use viewer links. */
   viewerTickets: ViewerTickets;
-  /** The server's OAuth client metadata document, when it has a public address. */
-  oauthClient: ClientDocument | undefined;
-};
-
-/** A route's JSON body schema; a body the contract leaves optional is the handler's to read. */
-const requiredBody = (definition: RouteConfig) => {
-  const body = definition.request?.body;
-  const media = body?.required ? body.content["application/json"] : undefined;
-  const schema = media && "schema" in media ? media.schema : undefined;
-
-  return schema instanceof z.ZodType ? schema : undefined;
-};
-
-type RequestObject = z.ZodType<object> | undefined;
-
-/** Parses what the route's contract declares, for `c.req.valid`. A `ZodError` becomes the 400 in `handleApiError`. */
-const validated = (
-  definition: RouteConfig,
-  body: z.ZodType | undefined,
-): MiddlewareHandler => {
-  // SAFETY: a contract's params, query, and JSON bodies are all objects.
-  const { params, query, json } = {
-    params: definition.request?.params as RequestObject,
-    query: definition.request?.query as RequestObject,
-    json: body as RequestObject,
-  };
-
-  return async (c, next) => {
-    if (params) c.req.addValidatedData("param", params.parse(c.req.param()));
-
-    if (query) c.req.addValidatedData("query", query.parse(c.req.query()));
-
-    if (json) c.req.addValidatedData("json", json.parse(await c.req.json()));
-
-    await next();
-  };
-};
-
-/** Registers a route behind its contract's request schemas. */
-export const pathRegister =
-  (app: ApiApp): Register =>
-  (definition, handler, options) => {
-    const body = options?.parsesBody ? undefined : requiredBody(definition);
-
-    app.openAPIRegistry.registerPath(definition);
-    app.on(
-      definition.method,
-      definition.getRoutingPath(),
-      validated(definition, body),
-      handler,
-    );
-  };
-
-const messagePaths = [routes.sendMessage, routes.sendGroupMessage].map(
-  (route) =>
-    new RegExp(`^${route.getRoutingPath().replace(/:[^/]+/g, "[^/]+")}$`),
-);
-
-/** Messages may carry attachments; every other request stays small. */
-const limitBodies = (app: ApiApp) => {
-  const messageBodyLimit = bodyLimit({ maxSize: MAX_MESSAGE_BODY });
-  const defaultBodyLimit = bodyLimit({ maxSize: 1024 * 1024 });
-
-  app.use("*", (c, next) =>
-    c.req.method === "POST" &&
-    messagePaths.some((path) => path.test(c.req.path))
-      ? messageBodyLimit(c, next)
-      : defaultBodyLimit(c, next),
-  );
 };
 
 /** Every value the feature routes are built from; each feature's register function takes the part it needs. */
@@ -176,10 +100,7 @@ function apiContext(
     service,
     run: core,
     runtime,
-    scheduler: schedulerAccess(core),
-    scriptRuns: Context.get(services, ScriptRuns),
     workspaces: Context.get(services, BotWorkspaces),
-    commonSkills: Context.get(services, CommonSkills),
     plugins,
     jobKinds: pluginJobKinds(plugins).map((kind) => kind.kind),
     groupChats: groupChatsAccess(Context.get(services, GroupChats)),
@@ -189,20 +110,11 @@ function apiContext(
       ),
     ),
     botRequests: Context.get(services, BotRequests),
-    messageGateway: Context.get(services, MessageGateway),
-    eventSources: Context.get(services, EventSources),
-    credentials: credentialsAccess(core),
-    mcpServers: new McpServers({
-      run: core,
-      integrations: Context.get(services, McpIntegrations),
-      oauthClient: options.oauthClient,
-    }),
     provider: providerSchema(providerAuth.models),
     models: providerAuth.models,
     providerAuth,
     desktopControl: desktopControlAccess(core),
     viewerTickets: options.viewerTickets,
-    logins: loginsAccess(core),
     held: heldActionsAccess(core),
     serverId: Context.get(services, Push).serverId,
   };
@@ -247,6 +159,7 @@ const featureRoutes: ReadonlyArray<(api: ApiContext) => void> = [
   registerMemoryRoutes,
   registerSkillRoutes,
   registerScheduleRoutes,
+  registerExecutionRoutes,
   registerActivityRoutes,
   registerProviderRoutes,
   registerPasswordManagerRoutes,

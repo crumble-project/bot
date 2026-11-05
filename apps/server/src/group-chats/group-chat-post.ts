@@ -1,13 +1,12 @@
-import { pi } from "../shared/app-errors";
+import { logged, pi } from "../shared/app-errors";
 import { Effect } from "effect";
-import { appErrors } from "../shared/app-errors";
 import type {
   AttachmentInfo,
   AttachmentInput,
 } from "../shared/attachment-rules";
-import { prepareAttachments } from "../shared/attachments";
+import { validAttachments } from "../shared/attachments";
 import { InvalidInput, type AppError } from "../shared/errors";
-import { logged, type GroupChatContext } from "./group-chat-context";
+import type { GroupChatContext } from "./group-chat-context";
 import type { GroupChatMembers } from "./group-chat-members";
 import type { GroupMessageReceipt } from "./group-chat-types";
 import type { GroupEntry } from "./group-transcripts";
@@ -32,7 +31,7 @@ export type GroupChatPostDeps = {
   readonly turns: GroupTurnEngine;
 };
 
-type OwnerMessage = {
+type OwnerPost = {
   content: string;
   attachments: AttachmentInput[];
   info: AttachmentInfo[];
@@ -47,7 +46,7 @@ export const groupChatPost = ({
   const writeOwnerMessage = Effect.fnUntraced(function* (
     groupId: string,
     requestId: string,
-    message: OwnerMessage,
+    message: OwnerPost,
   ) {
     const { content, attachments, info, target } = message;
 
@@ -77,13 +76,7 @@ export const groupChatPost = ({
     yield* context.get(groupId);
     const attachments = options.attachments ?? [];
 
-    // Validate before anything is written, so a bad file never leaves a message behind.
-    const { info } = yield* appErrors(
-      Effect.try({
-        try: () => prepareAttachments(attachments),
-        catch: (error) => error,
-      }),
-    );
+    const { info } = yield* validAttachments(attachments);
 
     const replyTo = options.replyTo;
 

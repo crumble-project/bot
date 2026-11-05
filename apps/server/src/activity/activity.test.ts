@@ -10,13 +10,13 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { AgentRuntime } from "../bots/runtime";
-import { standaloneBots } from "../bots/bots";
+import { standaloneBots } from "../bots/bots-test-support";
 import { standaloneScheduler } from "../automations/scheduler-test-support";
 import { Store } from "../../test/support/store";
 import { testAPI } from "../../test/support/api";
 import { activityPage, decodeCursor, operationalActivity } from "./activity";
-import type { LearnedChange } from "../shared/domain";
-import type { TranscriptMessage } from "../bots/transcript";
+import type { LearnedChange } from "../contract/skills";
+import type { TranscriptMessage } from "../transcript/transcript";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const dirs: string[] = [];

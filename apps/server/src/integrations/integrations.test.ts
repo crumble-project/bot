@@ -6,14 +6,12 @@ import {
   BACKGROUND_CONTEXT,
   withAbortSignal,
 } from "@earendil-works/chord/context";
-import type { Agent } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 import type { MCPServer } from "./mcp-server-repository";
 import { defaultAvatarDefinition } from "../contract/avatar";
-import {
-  mcpToolPrefix,
-  standaloneIntegrations,
-  type MCPClient,
-} from "./integrations";
+import { mcpToolPrefix } from "../contract/tools";
+import type { MCPClient } from "./integrations";
+import { standaloneIntegrations } from "./integrations-test-support";
 import { Store } from "../../test/support/store";
 import {
   connectFakePasswordManager,

@@ -1,30 +1,36 @@
 import { pi } from "../shared/app-errors";
 import { Effect, Semaphore } from "effect";
-import type { botsActivity } from "./bots-activity";
-import type { botsAnnouncements } from "./bots-announcements";
-import { type BotsContext } from "./bots-context";
-import type { botsLookup } from "./bots-lookup";
-import type { botsReads } from "./bots-reads";
-import type { BotMessageEvent } from "./transcript";
+import type { BotMessageEvent } from "../transcript/transcript";
+import type { AppError } from "../shared/errors";
+import type { ChatSnapshot } from "./bots";
+import type { BotsAnnouncements } from "./bots-announcements";
+import type { BotsContext } from "./bots-context";
+import type { BotsLookup } from "./bots-lookup";
+import type { BotsNotifications } from "./bots-notifications";
 
-/** The bot's one continuous chat, created on first use and stable across restarts. */
-const botsChatOpening = (
-  context: BotsContext,
-  lookup: ReturnType<typeof botsLookup>,
-) => {
+type ChatDeps = {
+  lookup: BotsLookup;
+  snapshot: (
+    conversationId: string,
+    options?: { limit?: number | undefined },
+  ) => Effect.Effect<ChatSnapshot, AppError>;
+  notifications: BotsNotifications;
+  announcements: BotsAnnouncements;
+};
+
+export type BotsChat = ReturnType<typeof botsChat>;
+
+/** The bot's chat: opening it once, then reading it and writing bot messages into it. */
+export const botsChat = (context: BotsContext, deps: ChatDeps) => {
   const { chatOpenings, conversations, runtime } = context;
-  const { agent } = lookup;
+  const { agent } = deps.lookup;
+  const { changed } = deps.notifications;
+  const { forkPreview } = deps.announcements;
 
+  /** The bot's one continuous chat, created on first use and stable across restarts. */
   const chat = Effect.fn("Bots.chat")(function* (agentId: string) {
-    let lock = chatOpenings.get(agentId);
-
-    if (!lock) {
-      lock = Semaphore.makeUnsafe(1);
-      chatOpenings.set(agentId, lock);
-    }
-
     return yield* Semaphore.withPermit(
-      lock,
+      chatOpenings(agentId),
       Effect.gen(function* () {
         const owner = yield* agent(agentId);
         const existing = yield* conversations.chatOf(agentId);
@@ -42,27 +48,12 @@ const botsChatOpening = (
     );
   });
 
-  return { chat };
-};
-
-/** The reads and writes a bot's chat offers once it exists, such as its snapshot and bot-written messages. */
-const botsChatRecords = (
-  context: BotsContext,
-  deps: ChatDeps,
-  chat: ReturnType<typeof botsChatOpening>["chat"],
-) => {
-  const { runtime } = context;
-  const { agent } = deps.lookup;
-  const { changed } = deps.notifications;
-  const { snapshot } = deps.reads;
-  const { forkPreview } = deps.announcements;
-
   const chatSnapshot = (
     agentId: string,
     options: { limit?: number | undefined } = {},
   ) =>
     chat(agentId).pipe(
-      Effect.flatMap((opened) => snapshot(opened.id, options)),
+      Effect.flatMap((opened) => deps.snapshot(opened.id, options)),
     );
 
   const recordBotMessage = Effect.fn("Bots.recordBotMessage")(function* (
@@ -80,19 +71,5 @@ const botsChatRecords = (
     yield* forkPreview(agentId, opened.id, agentId);
   });
 
-  return { chatSnapshot, recordBotMessage };
-};
-
-type ChatDeps = {
-  lookup: ReturnType<typeof botsLookup>;
-  reads: ReturnType<typeof botsReads>;
-  notifications: ReturnType<typeof botsActivity>;
-  announcements: ReturnType<typeof botsAnnouncements>;
-};
-
-/** The bot's chat: opening it once, then reading it and writing bot messages into it. */
-export const botsChat = (context: BotsContext, deps: ChatDeps) => {
-  const { chat } = botsChatOpening(context, deps.lookup);
-
-  return { chat, ...botsChatRecords(context, deps, chat) };
+  return { chat, chatSnapshot, recordBotMessage };
 };

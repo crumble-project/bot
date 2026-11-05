@@ -2,10 +2,10 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { standaloneMessaging } from "./bot-messaging";
+import { standaloneMessaging } from "./bot-messaging-test-support";
 import { accessOf, noServices } from "../shared/runner";
-import { standaloneBots } from "../bots/bots";
-import type { Agent } from "../shared/domain";
+import { standaloneBots } from "../bots/bots-test-support";
+import type { Agent } from "../contract/agents";
 import { Store } from "../../test/support/store";
 import {
   awaitWithContext,

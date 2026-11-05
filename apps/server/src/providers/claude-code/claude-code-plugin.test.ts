@@ -22,7 +22,7 @@ import { pluginProviders } from "../../plugins/plugins";
 import { standaloneSignIns } from "../provider-auth-test-support";
 import type { AgentRuntime } from "../../bots/runtime";
 import { standaloneScheduler } from "../../automations/scheduler-test-support";
-import { standaloneBots } from "../../bots/bots";
+import { standaloneBots } from "../../bots/bots-test-support";
 import { Store } from "../../../test/support/store";
 
 const FAKE = join(import.meta.dir, "../../../test/fixtures/fake-claude.ts");

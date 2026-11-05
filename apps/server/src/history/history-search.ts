@@ -4,7 +4,8 @@ import {
   ASSISTANT_ENTRY,
   GROUP_MESSAGE_ENTRY,
   type MessageOrigin,
-} from "../bots/entries";
+} from "../transcript/entries";
+import { isBotOrigin, isOwnerOrigin } from "../transcript/origins";
 import {
   isConversational,
   isOwnerInput,
@@ -12,7 +13,7 @@ import {
   toolCalls,
   type TranscriptMessage,
   type TranscriptPage,
-} from "../bots/transcript";
+} from "../transcript/transcript";
 import {
   formatEntryId,
   parseEntryId,
@@ -204,7 +205,7 @@ function groupBody(message: TranscriptMessage): string | null {
 
   if (message.role !== "user" && message.role !== "assistant") return null;
 
-  if (message.origin?.kind !== "owner" && message.origin?.kind !== "bot")
+  if (!isOwnerOrigin(message.origin) && !isBotOrigin(message.origin))
     return null;
 
   return message.content;

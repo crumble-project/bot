@@ -1,5 +1,14 @@
+import type { ConversationId } from "@earendil-works/pi-durable";
+import { InvalidInput, type NotFound } from "./errors";
+
 const ENTRY = /^[1-9][0-9]*$/;
 const MESSAGE_INDEX = /^(0|[1-9][0-9]*)$/;
+
+/** The positive safe integer `raw` spells, or undefined. */
+export const positiveId = (raw: string) =>
+  ENTRY.test(raw) && Number.isSafeInteger(Number(raw))
+    ? Number(raw)
+    : undefined;
 
 /** `<owner>:<n>`: a durable entry or conversation of a bot or group. Entry numbers are unique across its conversations. */
 export const formatEntryId = (owner: string, id: number) => `${owner}:${id}`;
@@ -25,12 +34,33 @@ export function parseEntryId(value: string, owner?: string) {
 
   if (!value.startsWith(prefix)) return "foreign";
 
-  const raw = value.slice(prefix.length);
-
-  return ENTRY.test(raw) && Number.isSafeInteger(Number(raw))
-    ? Number(raw)
-    : "malformed";
+  return positiveId(value.slice(prefix.length)) ?? "malformed";
 }
+
+/** `owner`'s entry number in `value`, an ID a client sent. `Failure` is what the client gets for any other value. */
+export function parseEntryRef(
+  owner: string,
+  value: string,
+  label: string,
+  Failure: typeof InvalidInput | typeof NotFound = InvalidInput,
+): number {
+  const entry = parseEntryId(value, owner);
+
+  if (entry === "foreign")
+    throw new Failure({ message: `${label} belongs to a different agent` });
+
+  if (entry === "malformed") throw new Failure({ message: `Invalid ${label}` });
+
+  return entry;
+}
+
+/** The local ID of a bot's conversation, from the ID the rest of the server knows it by. */
+export const localConversationId = (
+  agentId: string,
+  reference: string,
+): ConversationId =>
+  // SAFETY: validated decimal IDs are branded by pi-durable at this boundary.
+  parseEntryRef(agentId, reference, "Conversation") as ConversationId;
 
 /** The index of a message of `entryId`, or undefined when `messageId` isn't one. */
 export function parseMessageIndex(entryId: string, messageId: string) {

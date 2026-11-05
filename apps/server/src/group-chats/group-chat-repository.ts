@@ -1,4 +1,4 @@
-import type { groupChatInput } from "../shared/domain";
+import type { groupChatInput } from "../contract/group-chats";
 import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { z } from "zod";

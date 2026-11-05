@@ -1,14 +1,35 @@
 import { asc, eq, sql } from "drizzle-orm";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Redacted } from "effect";
 import type {
   PasswordManagerId,
   SecretReference,
   SecretStatus,
-} from "../shared/domain";
-import { secretSourceOf, type SecretSource } from "./secret-values";
+} from "../contract/secrets";
+import type { SecretSource } from "./secret-values";
 import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
 import { secrets } from "./schema";
+
+/** A row of the `secrets` table. */
+type SecretSourceRow = {
+  value: string | null;
+  passwordManager: PasswordManagerId | null;
+  reference: string | null;
+};
+
+/** The row's source, decrypting a stored value; the database allows exactly one of the two. */
+const secretSourceOf = (
+  box: SecretBox["Service"],
+  row: SecretSourceRow,
+): SecretSource => {
+  if (row.value !== null)
+    return { stored: Redacted.make(box.decrypt(row.value)) };
+
+  if (row.passwordManager === null || row.reference === null)
+    throw new Error("A secret has neither a stored value nor a reference");
+
+  return { passwordManager: row.passwordManager, reference: row.reference };
+};
 
 /** Encrypted values by key, such as an MCP server's token. */
 export class SecretRepository extends Context.Service<
@@ -32,7 +53,7 @@ export class SecretRepository extends Context.Service<
     /** Deletes every key that starts with `prefix` and returns where their values came from. */
     readonly deleteAll: (prefix: string) => Effect.Effect<SecretSource[]>;
   }
->()("crumble/credentials/SecretRepository") {
+>()("crumble/secrets/SecretRepository") {
   static readonly layer = Layer.effect(
     SecretRepository,
     Effect.gen(function* () {

@@ -2,7 +2,7 @@ import type { Context as PiContext } from "@earendil-works/chord";
 import type { Provider } from "@earendil-works/pi-ai";
 import type { EnvTarget } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
-import type { Agent } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 import { Context } from "effect";
 import type { z } from "zod";
 import type { externalAuthResponse } from "../contract/api-responses";

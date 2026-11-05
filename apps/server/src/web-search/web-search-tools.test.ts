@@ -8,7 +8,7 @@ import type { CoreServices } from "../app/core-layer";
 import { BotExtensions } from "../bots/bot-extensions";
 import { WEB_SEARCH_TOOL_NAME } from "../contract/tools";
 import { Plugins } from "../plugins/plugins";
-import { agentInput } from "../shared/domain";
+import { agentInput } from "../contract/agents";
 import { configuredWebSearchTools } from "./web-search-tools";
 
 const dirs: string[] = [];

@@ -1,30 +1,19 @@
-import { Context, Effect, Layer, ManagedRuntime } from "effect";
+import { Context, Effect, Layer } from "effect";
 import type { JobAnswer } from "../jobs/jobs";
-import type { JobKindName } from "../jobs/job-kinds";
+import type { JobKindName } from "../shared/job-kinds";
 import type { AttachmentInput } from "../shared/attachment-rules";
-import type { Agent, Execution, LearnedChange } from "../shared/domain";
+import type { Agent } from "../contract/agents";
+import type { Execution } from "../shared/domain";
+import type { LearnedChange } from "../contract/skills";
 import type { Conversation } from "./conversation-repository";
 import type { ReplyActivity } from "../contract/reply-event";
 import type { AppError } from "../shared/errors";
 import { accessOf, type Access, type Runner } from "../shared/runner";
-import { SettingsRepository } from "../shared/settings-repository";
-import { ScheduleRepository } from "../automations/schedule-repository";
-import { ProductDatabase } from "../shared/product-database";
-import { AgentRepository } from "./agent-repository";
 import { botsContext } from "./bots-context";
 import { botsService } from "./bots-service";
-import { BotNotices } from "./bot-notices";
-import { ConversationRepository } from "./conversation-repository";
-import { ExecutionRepository } from "./execution-repository";
-import {
-  BotRuntime,
-  type AgentRuntime,
-  type RuntimeSnapshot,
-  type RuntimeWatch,
-} from "./runtime";
+import type { AgentRuntime, RuntimeSnapshot, RuntimeWatch } from "./runtime";
 import type { JobAnswerInput, SendOptions } from "./bots-submissions";
-import { EventRepository } from "../event-sources/event-repository";
-import type { BotMessageEvent, PageOptions } from "./transcript";
+import type { BotMessageEvent, PageOptions } from "../transcript/transcript";
 
 export type ChatPreviewActivity = {
   type: "chat-preview";
@@ -205,59 +194,3 @@ export type BotsAccess = Access<Bots["Service"], (typeof SYNC_BOTS)[number]>;
 
 export const botsAccess = (runner: Runner<Bots>): BotsAccess =>
   accessOf(runner.runSync(Bots.use(Effect.succeed)), runner, SYNC_BOTS);
-
-/**
- * The bots over `store`'s account and `runtime`, for a test or an API without an account. Closing them closes the
- * runtime and then the store.
- */
-type StandaloneServices =
-  | Bots
-  | BotRuntime
-  | AgentRepository
-  | ConversationRepository
-  | ExecutionRepository
-  | SettingsRepository
-  | ScheduleRepository
-  | EventRepository
-  | BotNotices
-  | ProductDatabase;
-
-type StoreServices = Exclude<StandaloneServices, Bots | BotRuntime>;
-
-export function standaloneBots<
-  S extends { runtime: Runner<StoreServices>; close(): void },
->(
-  store: S,
-  runtime: AgentRuntime,
-): BotsAccess & {
-  store: S;
-  /** The store's account, for code that reads its repositories. */
-  core: S["runtime"];
-  runtime: AgentRuntime;
-  /** Runs effects over the bots and what they stand on, such as features built on the bots in a test. */
-  effects: Runner<StandaloneServices>;
-  close(): Promise<void>;
-} {
-  const bots = ManagedRuntime.make(
-    Bots.layer.pipe(
-      Layer.provideMerge(Layer.succeed(BotRuntime, runtime)),
-      Layer.provideMerge(
-        Layer.succeedContext(
-          store.runtime.runSync(Effect.context<StoreServices>()),
-        ),
-      ),
-    ),
-  );
-
-  return {
-    ...botsAccess(bots),
-    store,
-    core: store.runtime,
-    runtime,
-    effects: bots,
-    close: async () => {
-      await bots.dispose();
-      store.close();
-    },
-  };
-}

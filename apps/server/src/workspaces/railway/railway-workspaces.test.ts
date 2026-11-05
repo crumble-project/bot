@@ -35,8 +35,7 @@ import {
   RailwayWorkspaces,
   railwayWorkspacesFromEnv,
 } from "./railway-workspaces";
-import { WORKSPACE_PATH } from "../../../workspace-image/guest";
-import { GUEST_CA_PATH } from "../workspace";
+import { GUEST_CA_PATH, WORKSPACE_PATH } from "../../../workspace-image/guest";
 import { credentialAuthoritiesAccess } from "../../credentials/credential-authority";
 import { credentialProxy } from "../../credentials/credential-proxy";
 import { credentialsAccess } from "../../credentials/credentials";

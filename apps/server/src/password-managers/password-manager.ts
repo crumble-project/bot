@@ -9,7 +9,7 @@ import {
   Schema,
   type Scope,
 } from "effect";
-import type { LoginField, PasswordManagerId } from "../shared/domain";
+import type { LoginField, PasswordManagerId } from "../contract/secrets";
 import { InvalidInput } from "../shared/errors";
 
 /** How long a sign-in or read may take; the 1Password SDK otherwise waits minutes when the network is gone. */

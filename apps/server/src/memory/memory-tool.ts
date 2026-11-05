@@ -4,11 +4,15 @@ import {
   defineTool,
   LiveDoc,
 } from "@earendil-works/pi-durable";
-import { BOT_TOOL, MEMORY_TOOL_NAME } from "../contract/tools";
+import {
+  BOT_TOOL,
+  MEMORY_TOOL_NAME,
+  MEMORY_WRITE_ACTIONS,
+} from "../contract/tools";
 import { groupOf } from "../group-chats/group-conversation";
-import type { Agent } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 import { MAX_MEMORY_CHARS } from "../shared/limits";
-import { ReviewConversation } from "../learning/review-conversation";
+import { reviewOf } from "../learning/review-conversation";
 
 export type MemoryRecord = {
   id: string;
@@ -48,9 +52,6 @@ export type MemoryStore = {
     context: MemoryContext,
   ) => void | Promise<void>;
 };
-
-/** The memory tool's actions that change a memory. */
-export const MEMORY_WRITE_ACTIONS = ["create", "update", "delete"] as const;
 
 type MemoryArgs = {
   action: "list" | (typeof MEMORY_WRITE_ACTIONS)[number];
@@ -149,7 +150,7 @@ export function memoryExtension(
 
       const [groupId, review] = await Promise.all([
         groupOf(api, api.conversationId, callContext),
-        api.snapshot(ReviewConversation, api.conversationId, callContext),
+        reviewOf(api, api.conversationId, callContext),
       ]);
 
       // A review of a group turn keeps that turn's group, so it is held to the same memory rules.

@@ -9,6 +9,7 @@ import {
   Schedule,
   Semaphore,
 } from "effect";
+import { REPLY_ORIGIN } from "../contract/reply-event";
 import type { Runner } from "../shared/runner";
 import { BotActivity } from "../bots/bot-activity";
 import {
@@ -256,7 +257,7 @@ export const PushDelivery = Layer.effectDiscard(
     yield* Effect.acquireRelease(
       Effect.sync(() =>
         activity.subscribe((event) => {
-          if (event.type === "reply" && event.origin !== "bot")
+          if (event.type === "reply" && event.origin !== REPLY_ORIGIN.bot)
             Queue.offerUnsafe(replies, event);
         }),
       ),

@@ -1,20 +1,19 @@
-import { reviewRequest } from "../shared/request-ids";
-import { Cause, Context, Effect, FiberSet, Layer } from "effect";
-import type {
-  Agent,
-  Execution,
-  LearnedChange,
-  Memory,
-  Skill,
-} from "../shared/domain";
+import { jobTurnId, reviewRequest } from "../shared/request-ids";
+import { Context, Effect, FiberSet, Layer } from "effect";
+import type { Agent } from "../contract/agents";
+import type { Execution, Memory } from "../shared/domain";
+import type { LearnedChange, Skill } from "../contract/skills";
 import { AgentRepository } from "../bots/agent-repository";
 import { BotRuntime } from "../bots/runtime";
 import { Bots } from "../bots/bots";
 import { pluginJobKinds, Plugins } from "../plugins/plugins";
 import type { JobFinished } from "../jobs/jobs";
+import { logged, pi } from "../shared/app-errors";
 import { formatEntryId } from "../shared/entry-ids";
+import { nowIso } from "../shared/time";
 import { LearnedChangeRepository } from "./learned-change-repository";
 import { ReviewRepository } from "./review-repository";
+import { openReviewConversation, reviewModelOf } from "./review-conversation";
 import type { ReviewScope } from "./review-instructions";
 import { reviewBudgetChars, turnReport } from "./turn-report";
 import { BOT_TOOL } from "../contract/tools";
@@ -35,7 +34,7 @@ const nameOf = (change: LearnedChange) => {
   return "name" in state ? state.name : state.content.slice(0, 80);
 };
 
-/** Reviews a bot's settled bot-chat turns in the background and reports what they changed. */
+/** Reviews a bot's settled turns in the background and reports what they changed. */
 export class LearningReview extends Context.Service<
   LearningReview,
   {
@@ -57,18 +56,15 @@ export class LearningReview extends Context.Service<
       const bots = yield* Bots;
       const running = new Set<string>();
 
-      const pi = <A>(run: () => Promise<A>) =>
-        Effect.tryPromise({ try: run, catch: (error) => error });
-
-      // A reviewed turn: a bot-chat execution, or a coding job's turn under an ID of its own.
+      // A reviewed turn: an execution, or a coding job's turn under the ID `jobTurnId` gives it.
       const review = Effect.fnUntraced(function* (
-        execution: { id: string; conversationId: string },
+        turn: { id: string; conversationId: string },
         submissionId: string,
         agent: Agent,
         settings: typeof DEFAULTS,
       ) {
         const budgetChars = reviewBudgetChars(
-          yield* pi(() => runtime.reviewContextWindow(agent)),
+          yield* pi(() => runtime.contextWindow(agent, reviewModelOf(agent))),
           agent,
         );
 
@@ -77,7 +73,7 @@ export class LearningReview extends Context.Service<
           turnReport(
             runtime,
             agent,
-            execution.conversationId,
+            turn.conversationId,
             submissionId,
             Math.floor(budgetChars / 2),
           ),
@@ -118,10 +114,10 @@ export class LearningReview extends Context.Service<
         if (scope.memory) yield* reviews.setCounter(agent.id, "memory", 0);
 
         const conversation = yield* pi(() =>
-          runtime.openReviewConversation(agent, execution, scope, budgetChars),
+          openReviewConversation(runtime, agent, turn, scope, budgetChars),
         );
 
-        yield* reviews.addPending(execution.id, agent.id, conversation);
+        yield* reviews.addPending(turn.id, agent.id, conversation);
 
         yield* Effect.gen(function* () {
           const submission = yield* pi(() =>
@@ -129,20 +125,20 @@ export class LearningReview extends Context.Service<
               agent,
               conversation,
               report.digest || "(The turn left no readable digest.)",
-              reviewRequest(execution.id),
+              reviewRequest(turn.id),
               { origin: { kind: "review" } },
             ),
           );
 
           yield* pi(() => runtime.wait(submission, agent));
-        }).pipe(Effect.ensuring(reviews.removePending(execution.id)));
+        }).pipe(Effect.ensuring(reviews.removePending(turn.id)));
 
-        const made = yield* changes.listOfExecution(execution.id, "review");
+        const made = yield* changes.listOfExecution(turn.id, "review");
 
         if (!made.length) return;
 
         yield* changes.addReviewResult(
-          execution.id,
+          turn.id,
           agent.id,
           made.map((change) => change.id),
         );
@@ -151,14 +147,14 @@ export class LearningReview extends Context.Service<
           type: "learned",
           agentId: agent.id,
           agentName: agent.name,
-          executionId: execution.id,
+          executionId: turn.id,
           changes: made.map((change) => ({
             changeId: change.id,
             target: change.target,
             action: change.action,
             name: nameOf(change),
           })),
-          createdAt: new Date().toISOString(),
+          createdAt: yield* nowIso,
         });
       });
 
@@ -175,13 +171,7 @@ export class LearningReview extends Context.Service<
         running.add(turn.id);
 
         yield* review(turn, submissionId, agent, settings).pipe(
-          Effect.catchCause((cause) =>
-            Effect.logError(
-              "Learning review failed",
-              turn.id,
-              Cause.squash(cause),
-            ),
-          ),
+          logged("Learning review failed", turn.id),
           Effect.ensuring(Effect.sync(() => running.delete(turn.id))),
         );
       });
@@ -195,13 +185,7 @@ export class LearningReview extends Context.Service<
               yield* pi(() =>
                 runtime.abort(agent, pending.conversationId),
               ).pipe(
-                Effect.catch((error) =>
-                  Effect.logError(
-                    "Dropping a pending review failed",
-                    pending.executionId,
-                    error,
-                  ),
-                ),
+                logged("Dropping a pending review failed", pending.executionId),
               );
             yield* reviews.removePending(pending.executionId);
           }
@@ -220,7 +204,12 @@ export class LearningReview extends Context.Service<
         ) {
           yield* reviewOnce(
             {
-              id: `${finished.kind}-job:${finished.agentId}:${finished.conversationId}:${finished.submissionId}`,
+              id: jobTurnId(
+                finished.kind,
+                finished.agentId,
+                String(finished.conversationId),
+                finished.submissionId,
+              ),
               conversationId: formatEntryId(
                 finished.agentId,
                 Number(finished.conversationId),
@@ -235,7 +224,7 @@ export class LearningReview extends Context.Service<
   );
 }
 
-/** Drops the reviews a restart interrupted, then reviews each settled bot-chat turn until the layer's scope closes. */
+/** Drops the reviews a restart interrupted, then reviews each settled turn until the layer's scope closes. */
 export const learningReviews = Layer.effectDiscard(
   Effect.gen(function* () {
     const learning = yield* LearningReview;

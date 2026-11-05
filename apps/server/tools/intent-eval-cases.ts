@@ -2,7 +2,7 @@ import type {
   IntentRequest,
   IntentStep,
 } from "../src/bot-desktop/intent-check";
-import type { OwnerMessage } from "../src/bot-desktop/desktop-vocabulary";
+import type { OwnerMessage } from "../src/jobs/owner-request";
 
 /** A labeled desktop action: what the judge should answer. A case should be held when irreversible and not asked for. */
 export type IntentCase = {

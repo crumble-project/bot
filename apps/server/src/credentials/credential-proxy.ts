@@ -12,13 +12,15 @@ import type {
 } from "./agent-credential-repository";
 import { isPublicAddress } from "../shared/public-address";
 import type { WorkspaceInterceptor } from "../workspaces/workspace-proxy";
-import { SIGNING_HOST } from "../workspaces/workspace";
+
+/** Makes the TLS certificates a bot's workspace trusts. */
+export type TlsAuthorities = {
+  context(agentId: string, host: string): Promise<tls.SecureContext>;
+};
 
 export type CredentialProxyOptions = {
   agentId: string;
-  authorities: {
-    context(agentId: string, host: string): Promise<tls.SecureContext>;
-  };
+  authorities: TlsAuthorities;
   /** Read for every request, so a changed or deleted credential applies at once. */
   grants: () => CredentialGrant[];
   /** Reads a used credential's value; rejects with the reason the request can't be sent. */
@@ -28,8 +30,6 @@ export type CredentialProxyOptions = {
   isPublicAddress?: (address: string) => boolean;
   /** Extra certificate authorities upstream servers may use, in PEM; the system's are always trusted. */
   upstreamCa?: string;
-  /** Signs a commit for the bot's machine account; undefined when it has none. Answered at `SIGNING_HOST`. */
-  sign?: (data: Buffer) => Promise<string | undefined>;
 };
 
 // Shorter values would match ordinary bytes in responses; a reflected one that short is not worth corrupting bodies.
@@ -178,47 +178,6 @@ const readValues = async (
   return { values, failures };
 };
 
-// A commit object is far smaller; a larger body is not a commit.
-const MAX_SIGNED_BYTES = 1024 * 1024;
-
-/** Signs the posted commit with the bot's machine account key; 403 for a bot without one. */
-async function answerSigning(
-  sign: (data: Buffer) => Promise<string | undefined>,
-  request: http.IncomingMessage,
-  response: http.ServerResponse,
-) {
-  const chunks: Buffer[] = [];
-  let size = 0;
-
-  for await (const chunk of request) {
-    size += chunk.length;
-
-    if (size > MAX_SIGNED_BYTES) {
-      response.writeHead(413, { "content-type": "text/plain" });
-
-      return void response.end("Crumble signing: too large to be a commit\n");
-    }
-
-    chunks.push(chunk);
-  }
-
-  const signature =
-    request.method === "POST" && request.url === "/sign"
-      ? await sign(Buffer.concat(chunks))
-      : undefined;
-
-  if (signature === undefined) {
-    response.writeHead(403, { "content-type": "text/plain" });
-
-    return void response.end(
-      "Crumble signing: this bot has no machine account to sign as\n",
-    );
-  }
-
-  response.writeHead(200, { "content-type": "text/plain" });
-  response.end(signature);
-}
-
 /** Answers 502 without sending the request, naming each credential that couldn't be read. */
 const refuse = (
   request: http.IncomingMessage,
@@ -233,6 +192,30 @@ const refuse = (
       .join(""),
   );
 };
+
+/** Ends the workspace's TLS with a certificate from the bot's authority and answers HTTP over it. */
+export async function answerOverTls(
+  client: net.Socket,
+  host: string,
+  options: { agentId: string; authorities: TlsAuthorities },
+  answer: http.RequestListener,
+) {
+  const secureContext = await options.authorities.context(
+    options.agentId,
+    host,
+  );
+
+  const secure = new tls.TLSSocket(client, {
+    isServer: true,
+    secureContext,
+    // HTTP/2 would need its own relay; clients fall back to HTTP/1.1.
+    ALPNProtocols: ["http/1.1"],
+  });
+
+  secure.on("error", () => secure.destroy());
+  // The TLS socket takes over reading the client; resuming the client as well stalls the handshake in Bun.
+  http.createServer(answer).emit("connection", secure);
+}
 
 /**
  * Swaps a bot's credential placeholders for their values on requests to the credentials' hosts, and the values back
@@ -393,33 +376,12 @@ export function credentialProxy(
   const forward =
     (host: string, port: number) =>
     (request: http.IncomingMessage, response: http.ServerResponse) => {
-      (host === SIGNING_HOST && options.sign
-        ? answerSigning(options.sign, request, response)
-        : send(host, port, request, response)
-      ).catch(() => response.destroy());
+      send(host, port, request, response).catch(() => response.destroy());
     };
 
   return {
-    wants: (host) =>
-      (host === SIGNING_HOST && options.sign !== undefined) ||
-      relevant(host).length > 0,
-    answers: (host) => host === SIGNING_HOST && options.sign !== undefined,
-    async handle(client: net.Socket, host: string, port: number) {
-      const secureContext = await options.authorities.context(
-        options.agentId,
-        host,
-      );
-
-      const secure = new tls.TLSSocket(client, {
-        isServer: true,
-        secureContext,
-        // HTTP/2 would need its own relay; clients fall back to HTTP/1.1.
-        ALPNProtocols: ["http/1.1"],
-      });
-
-      secure.on("error", () => secure.destroy());
-      // The TLS socket takes over reading the client; resuming the client as well stalls the handshake in Bun.
-      http.createServer(forward(host, port)).emit("connection", secure);
-    },
+    wants: (host) => relevant(host).length > 0,
+    handle: (client, host, port) =>
+      answerOverTls(client, host, options, forward(host, port)),
   };
 }

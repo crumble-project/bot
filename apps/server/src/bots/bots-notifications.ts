@@ -1,25 +1,21 @@
 import { Effect } from "effect";
 import type { JobAnswer } from "../jobs/jobs";
+import { logged } from "../shared/app-errors";
 import { activeExecution, type Execution } from "../shared/domain";
 import { formatEntryId } from "../shared/entry-ids";
+import { nowIso } from "../shared/time";
 import type { Activity } from "./bots";
 import type { BotsContext } from "./bots-context";
 
-/** The callbacks code outside the bots registers to hear about a chat, an activity, or a settled execution. */
-export const botsSubscribers = (context: BotsContext) => {
-  const { listeners, activityListeners, settledListeners } = context;
+export type BotsNotifications = ReturnType<typeof botsNotifications>;
 
-  const subscribe = (conversationId: string, callback: () => void) => {
-    const set = listeners.get(conversationId) ?? new Set();
-    set.add(callback);
-    listeners.set(conversationId, set);
+/** Who hears about a chat, an activity, or a settled execution, and how an execution's end reaches them. */
+export const botsNotifications = (context: BotsContext) => {
+  const { activityListeners, agents, executions, listeners, scope } = context;
+  const { settledListeners } = context;
 
-    return () => {
-      set.delete(callback);
-
-      if (!set.size) listeners.delete(conversationId);
-    };
-  };
+  const subscribe = (conversationId: string, callback: () => void) =>
+    listeners.add(conversationId, callback);
 
   const onActivity = (callback: (event: Activity) => void) => {
     activityListeners.add(callback);
@@ -39,18 +35,8 @@ export const botsSubscribers = (context: BotsContext) => {
     };
   };
 
-  return { subscribe, onActivity, onSettled };
-};
-
-/** Tells the registered listeners what changed: one chat, one activity, one settled execution. */
-export const botsNotifications = (context: BotsContext) => {
-  const { activityListeners, executions, listeners, settledListeners } =
-    context;
-
   const changed = (conversationId: string) =>
-    Effect.sync(() => {
-      for (const listener of listeners.get(conversationId) ?? []) listener();
-    });
+    Effect.sync(() => listeners.notify(conversationId));
 
   const emit = (event: Activity) =>
     Effect.sync(() => {
@@ -63,8 +49,9 @@ export const botsNotifications = (context: BotsContext) => {
     if (!execution || activeExecution(execution)) return;
 
     for (const listener of settledListeners)
-      void Promise.resolve(listener(execution)).catch((error) =>
-        console.error("Settled execution handler failed", executionId, error),
+      yield* Effect.tryPromise(async () => listener(execution)).pipe(
+        logged("Settled execution handler failed", executionId),
+        Effect.forkIn(scope),
       );
   });
 
@@ -96,20 +83,10 @@ export const botsNotifications = (context: BotsContext) => {
     return true;
   });
 
-  return { changed, emit, settled, record, settle };
-};
-
-/**
- * Tells activity listeners about the bot's answer to a job's report, such as a desktop job asking for the owner.
- * Job reports reach the chat without an execution, so a finished execution never announces them.
- */
-export const botsJobAnswers = (
-  context: BotsContext,
-  notifications: ReturnType<typeof botsNotifications>,
-) => {
-  const { agents } = context;
-  const { emit } = notifications;
-
+  /**
+   * Tells activity listeners about the bot's answer to a job's report, such as a desktop job asking for the owner.
+   * Job reports reach the chat without an execution, so a finished execution never announces them.
+   */
   const announceJobAnswer = Effect.fn("Bots.announceJobAnswer")(function* (
     answer: JobAnswer,
   ) {
@@ -127,24 +104,19 @@ export const botsJobAnswers = (
       origin: answer.kind,
       jobName: answer.name,
       preview: answer.preview,
-      createdAt: new Date().toISOString(),
+      createdAt: yield* nowIso,
     });
   });
 
-  return { announce: emit, announceJobAnswer };
-};
-
-/** Everything the bots tell their listeners: subscriptions, notifications, and job answers. */
-export const botsActivity = (context: BotsContext) => {
-  const notifications = botsNotifications(context);
-
   return {
-    ...botsSubscribers(context),
-    ...botsJobAnswers(context, notifications),
-    changed: notifications.changed,
-    emit: notifications.emit,
-    settled: notifications.settled,
-    record: notifications.record,
-    settle: notifications.settle,
+    subscribe,
+    onActivity,
+    onSettled,
+    changed,
+    emit,
+    settled,
+    record,
+    settle,
+    announceJobAnswer,
   };
 };

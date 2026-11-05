@@ -1,15 +1,21 @@
-import { Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
 import type { z } from "zod";
+import type { Agent } from "../contract/agents";
+import type {
+  describedMcpServerResponse,
+  mcpServerResponse,
+} from "../contract/api-responses";
 import type { mcpCreateInput, mcpInput } from "../contract/api-contract";
+import type { SecretInput } from "../contract/secrets";
 import { AgentRepository } from "../bots/agent-repository";
+import { BotDeletion } from "../bots/bot-deletion";
 import { Secrets } from "../secrets/secrets";
 import type { ServerSecrets } from "../secrets/server-secrets";
-import type { Agent, SecretInput } from "../shared/domain";
-import type { MCPServer } from "./mcp-server-repository";
-import { InvalidInput, NotFound } from "../shared/errors";
+import { pi } from "../shared/app-errors";
+import { InvalidInput, NotFound, type AppError } from "../shared/errors";
 import { MAX_BOT_MCP_SERVERS } from "../shared/limits";
-import type { Runner } from "../shared/runner";
-import type { McpIntegrations } from "./integrations";
+import { runnerOf } from "../shared/runner";
+import { McpIntegrations } from "./integrations";
 import {
   clientSecretKey,
   finishAuthorization,
@@ -18,241 +24,274 @@ import {
   secretStorage,
   signOut,
   startAuthorization,
-  type ClientDocument,
-  type SecretStorage,
 } from "./mcp-oauth";
-import { McpServerRepository } from "./mcp-server-repository";
+import { McpServerRepository, type MCPServer } from "./mcp-server-repository";
 
-type Services = AgentRepository | McpServerRepository | Secrets | ServerSecrets;
+/** The server with its secrets' status, never their values. */
+type McpServerSecrets = z.infer<typeof mcpServerResponse>;
 
-type McpServersOptions = {
-  run: Runner<Services>;
-  integrations: Pick<McpIntegrations["Service"], "failure" | "disconnect">;
-  /** The server's OAuth client metadata document, when it has a public address. */
-  oauthClient?: ClientDocument | undefined;
-};
+/** The server as the owner's client sees it: its auth state plus the last connection failure. */
+type McpServerStatus = z.infer<typeof describedMcpServerResponse>;
 
 /** The account's MCP servers: their records, secrets, sign-ins, and open connections change together here. */
-export class McpServers {
-  private readonly storage: SecretStorage;
-
-  constructor(private readonly options: McpServersOptions) {
-    this.storage = secretStorage(options.run);
+export class McpServers extends Context.Service<
+  McpServers,
+  {
+    readonly list: Effect.Effect<McpServerStatus[]>;
+    readonly get: (id: string) => Effect.Effect<MCPServer, NotFound>;
+    /** Adds a server and lets the bot that owns it use it right away. */
+    readonly create: (
+      input: z.output<typeof mcpCreateInput>,
+      owner: Agent | null,
+    ) => Effect.Effect<McpServerSecrets, AppError>;
+    /**
+     * Saves the secrets an edit sends. A new token, or another OAuth app, closes the open connection; another OAuth app
+     * also signs the server out, since tokens belong to the client that obtained them.
+     */
+    readonly update: (
+      old: MCPServer,
+      input: z.output<typeof mcpInput>,
+    ) => Effect.Effect<McpServerSecrets | null, AppError>;
+    readonly delete: (id: string) => Effect.Effect<void, NotFound>;
+    readonly startSignIn: (
+      id: string,
+      redirectUri: string,
+    ) => Effect.Effect<
+      { authorizationUrl: string } | { authorized: true },
+      AppError
+    >;
+    readonly finishSignIn: (
+      id: string,
+      answer: { code: string; state: string; iss?: string | undefined },
+    ) => Effect.Effect<McpServerStatus, AppError>;
+    readonly signOut: (id: string) => Effect.Effect<McpServerStatus, NotFound>;
+    /** A bot may use shared servers and its own, never another bot's. */
+    readonly check: (
+      agentId: string | null,
+      serverIds: readonly string[],
+      requireExisting?: boolean,
+    ) => Effect.Effect<void, InvalidInput>;
   }
+>()("crumble/integrations/McpServers") {
+  static readonly layer = Layer.effect(
+    McpServers,
+    Effect.gen(function* () {
+      const servers = yield* McpServerRepository;
+      const agents = yield* AgentRepository;
+      const secrets = yield* Secrets;
+      const integrations = yield* McpIntegrations;
+      const deletion = yield* BotDeletion;
+      const { oauthClient } = integrations;
 
-  private exec<A>(effect: Effect.Effect<A, never, Services>) {
-    return this.options.run.runSync(effect);
-  }
+      const storage = secretStorage(
+        runnerOf(yield* Effect.context<ServerSecrets | Secrets>()),
+      );
 
-  /** The server with its secrets' status, never their values. */
-  private withSecrets(server: MCPServer) {
-    return {
-      ...server,
-      token: this.exec(Secrets.use((s) => s.status(mcpTokenKey(server.id)))),
-      oauthClientSecret: this.exec(
-        Secrets.use((s) => s.status(clientSecretKey(server.id))),
-      ),
-    };
-  }
-
-  /** The server as the owner's client sees it: its auth state plus the last connection failure. */
-  private describe(server: MCPServer) {
-    const described = this.withSecrets(server);
-
-    const auth = hasOAuthTokens(this.storage, server.id)
-      ? "oauth"
-      : described.token.configured
-        ? "token"
-        : "none";
-
-    return {
-      ...described,
-      auth,
-      authenticated: auth !== "none",
-      error: this.options.integrations.failure(server.id),
-    } as const;
-  }
-
-  get(id: string) {
-    const server = this.exec(McpServerRepository.use((r) => r.get(id)));
-
-    if (!server) throw new NotFound({ message: "MCP server not found" });
-
-    return server;
-  }
-
-  /** Closes the open connection, so the next use picks up the server's new auth. */
-  private disconnect(id: string) {
-    return Effect.runPromise(this.options.integrations.disconnect(id));
-  }
-
-  /** Saves, or with null removes, one of the server's secrets; returns whether one was sent. */
-  private async storeSecret(
-    key: string,
-    input: SecretInput | null | undefined,
-  ) {
-    if (input === undefined) return false;
-
-    await this.options.run.runPromise(
-      Secrets.use((s) =>
-        input === null ? Effect.asVoid(s.delete(key)) : s.save(key, input),
-      ),
-    );
-
-    return true;
-  }
-
-  /** Forgets a deleted server's secrets and sign-in and closes its connection. */
-  private async forget(id: string) {
-    this.exec(Secrets.use((s) => s.delete(mcpTokenKey(id))));
-    this.exec(Secrets.use((s) => s.delete(clientSecretKey(id))));
-    signOut(this.storage, id);
-    await this.disconnect(id);
-  }
-
-  list() {
-    return this.exec(McpServerRepository.use((r) => r.list)).map((server) =>
-      this.describe(server),
-    );
-  }
-
-  /** Adds a server and lets the bot that owns it use it right away. */
-  async create(input: z.output<typeof mcpCreateInput>, owner: Agent | null) {
-    if (owner && owner.mcpServers.length >= MAX_BOT_MCP_SERVERS)
-      throw new InvalidInput({
-        message: `${owner.name} already uses ${MAX_BOT_MCP_SERVERS} MCP servers`,
+      const withSecrets = Effect.fnUntraced(function* (server: MCPServer) {
+        return {
+          ...server,
+          token: yield* secrets.status(mcpTokenKey(server.id)),
+          oauthClientSecret: yield* secrets.status(clientSecretKey(server.id)),
+        };
       });
 
-    const server = this.exec(McpServerRepository.use((r) => r.create(input)));
+      const describe = Effect.fnUntraced(function* (server: MCPServer) {
+        const described = yield* withSecrets(server);
 
-    try {
-      await this.storeSecret(mcpTokenKey(server.id), input.token);
-      await this.storeSecret(
-        clientSecretKey(server.id),
-        input.oauthClientSecret,
-      );
-    } catch (error) {
-      // A secret that can't be saved, such as an unreadable reference, takes the server with it.
-      this.exec(McpServerRepository.use((r) => r.delete(server.id)));
-      this.exec(Secrets.use((s) => s.delete(mcpTokenKey(server.id))));
-      throw error;
-    }
+        const auth = hasOAuthTokens(storage, server.id)
+          ? "oauth"
+          : described.token.configured
+            ? "token"
+            : "none";
 
-    if (owner)
-      this.exec(
-        AgentRepository.use((r) =>
-          r.update(owner.id, {
-            mcpServers: [...owner.mcpServers, server.id],
-          }),
+        return {
+          ...described,
+          auth,
+          authenticated: auth !== "none",
+          error: integrations.failure(server.id),
+        } as const;
+      });
+
+      const get = Effect.fn("McpServers.get")(function* (id: string) {
+        const server = yield* servers.get(id);
+
+        if (!server)
+          return yield* new NotFound({ message: "MCP server not found" });
+
+        return server;
+      });
+
+      /** Saves, or with null removes, one of the server's secrets; returns whether one was sent. */
+      const storeSecret = Effect.fnUntraced(function* (
+        key: string,
+        input: SecretInput | null | undefined,
+      ) {
+        if (input === undefined) return false;
+
+        if (input === null) yield* secrets.delete(key);
+        else yield* secrets.save(key, input);
+
+        return true;
+      });
+
+      /** Forgets a deleted server's secrets and sign-in and closes its connection. */
+      const forget = Effect.fnUntraced(function* (id: string) {
+        yield* secrets.delete(mcpTokenKey(id));
+        yield* secrets.delete(clientSecretKey(id));
+        signOut(storage, id);
+        yield* integrations.disconnect(id);
+      });
+
+      // A bot's personal servers go with it in the delete's cascade, so they are listed first.
+      yield* deletion.register((agentId) =>
+        Effect.map(servers.list, (all) =>
+          Effect.forEach(
+            all.filter((server) => server.agentId === agentId),
+            (server) => forget(server.id),
+            { discard: true },
+          ),
         ),
       );
 
-    return this.withSecrets(server);
-  }
+      const create = Effect.fn("McpServers.create")(function* (
+        input: z.output<typeof mcpCreateInput>,
+        owner: Agent | null,
+      ) {
+        if (owner && owner.mcpServers.length >= MAX_BOT_MCP_SERVERS)
+          return yield* new InvalidInput({
+            message: `${owner.name} already uses ${MAX_BOT_MCP_SERVERS} MCP servers`,
+          });
 
-  /**
-   * Saves the secrets an edit sends. A new token, or another OAuth app, closes the open connection; another OAuth app
-   * also signs the server out, since tokens belong to the client that obtained them.
-   */
-  async update(old: MCPServer, input: z.output<typeof mcpInput>) {
-    const tokenChanged = await this.storeSecret(
-      mcpTokenKey(old.id),
-      input.token,
-    );
+        const server = yield* servers.create(input);
 
-    const appChanged =
-      (await this.storeSecret(
-        clientSecretKey(old.id),
-        input.oauthClientSecret,
-      )) || (input.oauthClientId ?? null) !== old.oauthClientId;
+        // A secret that can't be saved, such as an unreadable reference, takes the server with it.
+        yield* storeSecret(mcpTokenKey(server.id), input.token).pipe(
+          Effect.andThen(
+            storeSecret(clientSecretKey(server.id), input.oauthClientSecret),
+          ),
+          Effect.onError(() =>
+            servers
+              .delete(server.id)
+              .pipe(Effect.andThen(secrets.delete(mcpTokenKey(server.id)))),
+          ),
+        );
 
-    if (appChanged) signOut(this.storage, old.id);
+        if (owner)
+          yield* agents.update(owner.id, {
+            mcpServers: [...owner.mcpServers, server.id],
+          });
 
-    if (tokenChanged || appChanged) await this.disconnect(old.id);
+        return yield* withSecrets(server);
+      });
 
-    const updated = this.exec(
-      McpServerRepository.use((r) =>
-        r.update(old.id, {
+      const update = Effect.fn("McpServers.update")(function* (
+        old: MCPServer,
+        input: z.output<typeof mcpInput>,
+      ) {
+        const tokenChanged = yield* storeSecret(
+          mcpTokenKey(old.id),
+          input.token,
+        );
+
+        const appChanged =
+          (yield* storeSecret(
+            clientSecretKey(old.id),
+            input.oauthClientSecret,
+          )) || (input.oauthClientId ?? null) !== old.oauthClientId;
+
+        if (appChanged) signOut(storage, old.id);
+
+        if (tokenChanged || appChanged) yield* integrations.disconnect(old.id);
+
+        const updated = yield* servers.update(old.id, {
           ...input,
           oauthClientId: input.oauthClientId ?? null,
-        }),
-      ),
-    );
-
-    return updated && this.withSecrets(updated);
-  }
-
-  async delete(id: string) {
-    if (!this.exec(McpServerRepository.use((r) => r.delete(id))))
-      throw new NotFound({ message: "MCP server not found" });
-
-    await this.forget(id);
-  }
-
-  startSignIn(id: string, redirectUri: string) {
-    return startAuthorization(
-      this.storage,
-      this.get(id),
-      redirectUri,
-      this.options.oauthClient,
-    );
-  }
-
-  async finishSignIn(
-    id: string,
-    answer: { code: string; state: string; iss?: string | undefined },
-  ) {
-    const server = this.get(id);
-
-    await finishAuthorization(
-      this.storage,
-      server,
-      answer.code,
-      answer.state,
-      answer.iss,
-      this.options.oauthClient,
-    );
-    await this.disconnect(server.id);
-
-    return this.describe(server);
-  }
-
-  async signOut(id: string) {
-    const server = this.get(id);
-
-    signOut(this.storage, server.id);
-    await this.disconnect(server.id);
-
-    return this.describe(server);
-  }
-
-  /** A bot may use shared servers and its own, never another bot's. */
-  check(
-    agentId: string | null,
-    serverIds: readonly string[],
-    requireExisting = false,
-  ) {
-    for (const serverId of serverIds) {
-      const server = this.exec(McpServerRepository.use((r) => r.get(serverId)));
-
-      if (!server && requireExisting)
-        throw new InvalidInput({ message: "That MCP server does not exist" });
-
-      if (server?.agentId && server.agentId !== agentId)
-        throw new InvalidInput({
-          message: "That MCP server belongs to another bot",
         });
-    }
-  }
 
-  /** Runs `deleteBot`, whose cascade takes the bot's personal servers, then forgets them. Lists them first for that. */
-  async forgetBot(agentId: string, deleteBot: () => Promise<void>) {
-    const personal = this.exec(McpServerRepository.use((r) => r.list)).filter(
-      (server) => server.agentId === agentId,
-    );
+        return updated && (yield* withSecrets(updated));
+      });
 
-    await deleteBot();
+      const remove = Effect.fn("McpServers.delete")(function* (id: string) {
+        if (!(yield* servers.delete(id)))
+          return yield* new NotFound({ message: "MCP server not found" });
 
-    for (const server of personal) await this.forget(server.id);
-  }
+        yield* forget(id);
+      });
+
+      const startSignIn = Effect.fn("McpServers.startSignIn")(function* (
+        id: string,
+        redirectUri: string,
+      ) {
+        const server = yield* get(id);
+
+        return yield* pi(() =>
+          startAuthorization(storage, server, redirectUri, oauthClient),
+        );
+      });
+
+      const finishSignIn = Effect.fn("McpServers.finishSignIn")(function* (
+        id: string,
+        answer: { code: string; state: string; iss?: string | undefined },
+      ) {
+        const server = yield* get(id);
+
+        yield* pi(() =>
+          finishAuthorization(
+            storage,
+            server,
+            answer.code,
+            answer.state,
+            answer.iss,
+            oauthClient,
+          ),
+        );
+        yield* integrations.disconnect(server.id);
+
+        return yield* describe(server);
+      });
+
+      const signOutServer = Effect.fn("McpServers.signOut")(function* (
+        id: string,
+      ) {
+        const server = yield* get(id);
+
+        signOut(storage, server.id);
+        yield* integrations.disconnect(server.id);
+
+        return yield* describe(server);
+      });
+
+      const check = Effect.fn("McpServers.check")(function* (
+        agentId: string | null,
+        serverIds: readonly string[],
+        requireExisting = false,
+      ) {
+        for (const serverId of serverIds) {
+          const server = yield* servers.get(serverId);
+
+          if (!server && requireExisting)
+            return yield* new InvalidInput({
+              message: "That MCP server does not exist",
+            });
+
+          if (server?.agentId && server.agentId !== agentId)
+            return yield* new InvalidInput({
+              message: "That MCP server belongs to another bot",
+            });
+        }
+      });
+
+      return McpServers.of({
+        list: Effect.flatMap(servers.list, Effect.forEach(describe)),
+        get,
+        create,
+        update,
+        delete: remove,
+        startSignIn,
+        finishSignIn,
+        signOut: signOutServer,
+        check,
+      });
+    }),
+  );
 }

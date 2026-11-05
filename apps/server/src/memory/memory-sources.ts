@@ -1,4 +1,3 @@
-import { askingBot, parseRequestId } from "../shared/request-ids";
 import { Effect } from "effect";
 import type { MemorySource } from "../shared/domain";
 import type { MemoryContext } from "./memory-tool";
@@ -7,6 +6,11 @@ import { newestExecution } from "../learning/change-source";
 import { GroupChatRepository } from "../group-chats/group-chat-repository";
 import { ScheduleRepository } from "../automations/schedule-repository";
 import { InvalidInput, type AppError } from "../shared/errors";
+import {
+  turnSource,
+  UNKNOWN_BOT_NAME,
+  UNKNOWN_SCHEDULE_NAME,
+} from "../transcript/origins";
 
 /** Where the memory tool's call came from: a group turn, or the newest input its chat run is answering. */
 export const memorySourceOf = Effect.fnUntraced(function* (
@@ -25,27 +29,26 @@ export const memorySourceOf = Effect.fnUntraced(function* (
 
   const execution = yield* newestExecution(agentId, context.submissionIds);
 
-  if (execution?.scheduleId) {
-    const schedule = yield* (yield* ScheduleRepository).get(
-      execution.scheduleId,
-    );
+  const source = execution && turnSource(execution);
+
+  // A memory source has no event kind: an event automation's run counts as its automation's.
+  if (source?.kind === "task" || source?.kind === "event") {
+    const schedule = yield* (yield* ScheduleRepository).get(source.scheduleId);
 
     return {
       kind: "task",
-      scheduleId: execution.scheduleId,
-      name: schedule?.name ?? "Scheduled task",
+      scheduleId: source.scheduleId,
+      name: schedule?.name ?? UNKNOWN_SCHEDULE_NAME,
     } satisfies MemorySource;
   }
 
-  const sourceId = execution && askingBot(parseRequestId(execution.requestId));
-
-  if (sourceId) {
-    const agent = yield* (yield* AgentRepository).get(sourceId);
+  if (source?.kind === "bot") {
+    const agent = yield* (yield* AgentRepository).get(source.agentId);
 
     return {
       kind: "bot",
-      agentId: sourceId,
-      name: agent?.name ?? "Another bot",
+      agentId: source.agentId,
+      name: agent?.name ?? UNKNOWN_BOT_NAME,
     } satisfies MemorySource;
   }
 

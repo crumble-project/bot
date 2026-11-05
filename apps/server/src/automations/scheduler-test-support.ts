@@ -9,7 +9,7 @@ import { BotSchedules, type ScheduleDraft } from "./bot-schedules";
 import type { ScheduleRepository } from "./schedule-repository";
 import { Scheduler, schedulerAccess, type SchedulerAccess } from "./scheduler";
 import { ScriptRuns } from "./script-runs";
-import { TaskDispatch } from "./task-dispatch";
+import { AutomationDispatch } from "./automation-dispatch";
 
 type Core = Runner<ScheduleRepository | AgentRepository | EventRepository>;
 
@@ -36,18 +36,20 @@ const standaloneDependencies = (
       Layer.mergeAll(
         Layer.succeed(ScriptRuns, scriptRuns),
         Layer.succeed(BotWorkspaces, workspaces),
-        Layer.succeed(TaskDispatch, (agentId, prompt, requestId, scheduleId) =>
-          Effect.tryPromise({
-            // SAFETY: test dispatchers return an Execution or nothing the scheduler reads.
-            try: async () =>
-              (await dispatch(
-                agentId,
-                prompt,
-                requestId,
-                scheduleId,
-              )) as Execution,
-            catch: (error) => error,
-          }),
+        Layer.succeed(
+          AutomationDispatch,
+          (agentId, prompt, requestId, scheduleId) =>
+            Effect.tryPromise({
+              // SAFETY: test dispatchers return an Execution or nothing the scheduler reads.
+              try: async () =>
+                (await dispatch(
+                  agentId,
+                  prompt,
+                  requestId,
+                  scheduleId,
+                )) as Execution,
+              catch: (error) => error,
+            }),
         ),
         Layer.succeedContext(
           core.runSync(
@@ -64,12 +66,15 @@ const standaloneDependencies = (
 export function standaloneScheduler(
   core: Core,
   dispatch: StandaloneDispatch,
-  intervalMs?: number,
   scriptRuns?: ScriptRuns["Service"],
   workspaces?: Workspaces,
-): SchedulerAccess & { service: Scheduler["Service"] } {
+): SchedulerAccess & {
+  service: Scheduler["Service"];
+  /** Ends the scheduler's scope, as closing an account does. */
+  stop: () => Promise<void>;
+} {
   const runtime = ManagedRuntime.make(
-    Scheduler.layer(intervalMs).pipe(
+    Scheduler.layer.pipe(
       Layer.provide(
         standaloneDependencies(core, dispatch, scriptRuns, workspaces),
       ),
@@ -79,6 +84,7 @@ export function standaloneScheduler(
   return {
     ...schedulerAccess(runtime),
     service: runtime.runSync(Scheduler.use(Effect.succeed)),
+    stop: () => runtime.dispose(),
   };
 }
 
@@ -91,7 +97,7 @@ export function standaloneBotSchedules(
 ) {
   const runtime = ManagedRuntime.make(
     BotSchedules.layer.pipe(
-      Layer.provideMerge(Scheduler.layer()),
+      Layer.provideMerge(Scheduler.layer),
       Layer.provide(
         standaloneDependencies(core, dispatch, scriptRuns, workspaces),
       ),

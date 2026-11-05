@@ -1,7 +1,7 @@
 import { errorText } from "../shared/errors";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { JsonObject } from "@earendil-works/pi-durable";
-import type { OwnerMessage } from "./desktop-vocabulary";
+import type { OwnerMessage } from "../jobs/owner-request";
 
 /** The element an action acts on, as the job's latest capture or read named it. */
 export type IntentTarget = { role?: string; name?: string };

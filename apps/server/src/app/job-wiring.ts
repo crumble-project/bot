@@ -2,7 +2,7 @@ import { Effect, Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import { Bots } from "../bots/bots";
 import { BotMessaging } from "../bot-messaging/bot-messaging";
-import { jobExtensions, pluginJobKinds, Plugins } from "./plugins";
+import { jobExtensions, pluginJobKinds, Plugins } from "../plugins/plugins";
 
 /** Runs each subscription until the layer's scope closes. */
 const whileOpen = (subscribe: () => ReadonlyArray<() => void>) =>

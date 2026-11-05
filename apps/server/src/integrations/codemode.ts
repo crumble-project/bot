@@ -1,8 +1,8 @@
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { Effect, Layer } from "effect";
-import { McpIntegrations } from "../integrations/integrations";
-import { BotExtensions, ExtensionPosition } from "./bot-extensions";
+import { McpIntegrations } from "./integrations";
+import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 
 /** Offers every bot a QuickJS sandbox that calls their MCP tools; the layer's scope closes the sandbox. */
 export const codemodeTools = Layer.effectDiscard(

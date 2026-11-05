@@ -1,21 +1,26 @@
-import { Effect } from "effect";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import type { MessageGateway } from "./message-gateway";
+import type { Runner } from "../shared/runner";
+import { MessageGateway } from "./message-gateway";
 
 export function registerGatewayRoutes(options: {
   register: Register;
-  messageGateway: MessageGateway["Service"];
+  run: Runner<MessageGateway>;
 }) {
-  const { register, messageGateway } = options;
+  const { register, run } = options;
 
   register(routes.messageGateways, async (c) =>
-    c.json({ gateways: await Effect.runPromise(messageGateway.list) }, 200),
+    c.json(
+      { gateways: await run.runPromise(MessageGateway.use((s) => s.list)) },
+      200,
+    ),
   );
   register(routes.updateMessageGateway, async (c) =>
     c.json(
-      await Effect.runPromise(
-        messageGateway.update(c.req.param("id"), c.req.valid("json")),
+      await run.runPromise(
+        MessageGateway.use((s) =>
+          s.update(c.req.param("id"), c.req.valid("json")),
+        ),
       ),
       200,
     ),

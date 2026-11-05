@@ -1,6 +1,6 @@
 import type { Extension } from "@earendil-works/pi-durable";
 import { Context, Effect, Layer, Ref, type Scope } from "effect";
-import type { Agent } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 
 /** One feature's extensions for a bot's chat. */
 export type ExtensionSource = (

@@ -1,4 +1,9 @@
 import { afterEach, expect, test } from "bun:test";
+import {
+  inertControl,
+  inertIntent,
+  inertLogins,
+} from "../../test/support/job-wiring";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -21,13 +26,13 @@ import {
 } from "../jobs/workspace-notes";
 import type { DesktopIntent } from "./desktop-intent";
 import type { IntentRequest } from "./intent-check";
-import type { MessageOrigin } from "../bots/entries";
-import type { Agent } from "../shared/domain";
+import type { InputOrigin } from "../transcript/origins";
+import type { Agent } from "../contract/agents";
 import type { Login } from "../logins/login-repository";
 import type { LoginsAccess } from "../logins/logins";
 import { AgentRuntime } from "../bots/runtime";
 import { Store } from "../../test/support/store";
-import { latestMessagePreview } from "../bots/transcript";
+import { latestMessagePreview } from "../transcript/transcript";
 import { frameInput } from "../bots/input-framing";
 import {
   conversationEnv,
@@ -201,7 +206,7 @@ type OpenOptions = {
   /** Arguments the bot adds to its start call. */
   start?: JsonObject;
   /** The opening message's origin; unset, it has none. */
-  origin?: MessageOrigin;
+  origin?: InputOrigin;
   /** The workspace notes earlier jobs left; unset, there are none. */
   notes?: string;
   /** The bot's answer that ends the test's wait. */
@@ -257,7 +262,12 @@ async function open(
     await Bun.write(join(dir, WORKSPACE_NOTES_FILE), options.notes);
 
   const kinds =
-    desktopPlugin(workspaces, undefined, logins, options.intent).jobKinds ?? [];
+    desktopPlugin(
+      workspaces,
+      inertControl,
+      logins ?? inertLogins,
+      options.intent ?? inertIntent,
+    ).jobKinds ?? [];
 
   options.kinds?.(kinds);
 
@@ -266,7 +276,7 @@ async function open(
     runtimeCallbacks({
       models,
       extensions: (current) => jobExtensions(kinds, current).chat,
-      taskExtensions: (current) => jobExtensions(kinds, current).job,
+      jobExtensions: (current) => jobExtensions(kinds, current).job,
       env: (current, target, context) =>
         conversationEnv(kinds, current, target, context),
     }),
@@ -321,7 +331,11 @@ test("a desktop job operates the bot desktop and reports to the bot's chat", asy
   // The job has computer_use and loads the bot's skills: no shell, memory writes, delegation, or jobs. The chat never
   // gets computer_use.
   expect(offered.get("job")).toEqual(["computer_use", "skill"]);
-  expect(offered.get("bot")).toEqual(["skill_manage", "desktop"]);
+  expect(offered.get("bot")).toEqual([
+    "skill_manage",
+    "desktop",
+    "request_login",
+  ]);
 
   const report = messages.find((message) => message.origin?.kind === "desktop");
 
@@ -364,7 +378,15 @@ test("the desktop job list reports each job's token usage", async () => {
 test("rebuilding a bot's extensions keeps the same computer_use tool", () => {
   // SAFETY: the tool is built from the bot's ID alone.
   const agent = { id: "00000000-0000-4000-8000-000000000501" } as Agent;
-  const [kind] = desktopPlugin(new GuestWorkspaces("/tmp")).jobKinds ?? [];
+
+  const [kind] =
+    desktopPlugin(
+      new GuestWorkspaces("/tmp"),
+      inertControl,
+      inertLogins,
+      inertIntent,
+    ).jobKinds ?? [];
+
   const toolOf = () => kind?.extensions(agent).job[0]?.tools?.[0];
 
   // A running job's snapshots and the lease count it last saw live in that tool.

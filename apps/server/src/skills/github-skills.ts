@@ -2,14 +2,18 @@ import { createHash } from "node:crypto";
 import { posix } from "node:path";
 import { Context, Effect, Layer } from "effect";
 import { z } from "zod";
-import { github, GitHubUnavailable } from "../github-apps/github-api";
+import {
+  github,
+  githubFile,
+  GitHubUnavailable,
+} from "../github-apps/github-api";
 import {
   skillDocumentInput,
   skillInput,
   type SkillInput,
-} from "../shared/domain";
+} from "../contract/skills";
 import type { SkillDocument } from "./skill-repository";
-import { parseSkillMarkdown } from "./common-skills";
+import { parseSkillMarkdown } from "./skill-markdown";
 import {
   MAX_INSTRUCTIONS_CHARS,
   MAX_SKILL_DESCRIPTION_CHARS,
@@ -281,29 +285,7 @@ export class GitHubSkillReader extends Context.Service<
         commit: string,
         path: string,
       ) {
-        const url = `https://raw.githubusercontent.com/${repository}/${commit}/${path.split("/").map(encodeURIComponent).join("/")}`;
-
-        return yield* Effect.tryPromise({
-          try: async (signal) => {
-            const response = await fetch(url, { signal });
-
-            if (!response.ok) throw new Error(String(response.status));
-
-            return response.text();
-          },
-          catch: () =>
-            new GitHubUnavailable({
-              message: `Can't read ${path} from GitHub`,
-            }),
-        }).pipe(
-          Effect.timeoutOrElse({
-            duration: "15 seconds",
-            orElse: () =>
-              Effect.fail(
-                new GitHubUnavailable({ message: "GitHub timed out" }),
-              ),
-          }),
-        );
+        return yield* githubFile(repository, commit, path);
       }),
     }),
   );

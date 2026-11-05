@@ -16,8 +16,7 @@ import {
   PasswordManagers,
   type ConnectedClient,
 } from "../password-managers/password-manager";
-import type { PasswordManagerId } from "../shared/domain";
-import type { SecretBox } from "../shared/secret-box";
+import type { PasswordManagerId } from "../contract/secrets";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
 
 /** Where a secret's value comes from: stored in Crumble, or read from a password manager. */
@@ -27,27 +26,6 @@ export type SecretSource =
       readonly passwordManager: PasswordManagerId;
       readonly reference: string;
     };
-
-/** A row of the `secrets` table. */
-type SecretSourceRow = {
-  value: string | null;
-  passwordManager: PasswordManagerId | null;
-  reference: string | null;
-};
-
-/** The row's source, decrypting a stored value; the database allows exactly one of the two. */
-export const secretSourceOf = (
-  box: SecretBox["Service"],
-  row: SecretSourceRow,
-): SecretSource => {
-  if (row.value !== null)
-    return { stored: Redacted.make(box.decrypt(row.value)) };
-
-  if (row.passwordManager === null || row.reference === null)
-    throw new Error("A secret has neither a stored value nor a reference");
-
-  return { passwordManager: row.passwordManager, reference: row.reference };
-};
 
 /** A read value is used without asking the password manager again for this long. */
 export const FRESH_FOR = Duration.hours(1);
@@ -117,7 +95,7 @@ export class SecretValues extends Context.Service<
       passwordManager: PasswordManagerId,
     ) => Effect.Effect<void>;
   }
->()("crumble/password-managers/SecretValues") {
+>()("crumble/secrets/SecretValues") {
   static readonly layer = Layer.effect(
     SecretValues,
     Effect.gen(function* () {

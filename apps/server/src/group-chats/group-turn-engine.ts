@@ -1,9 +1,10 @@
+import { REPLY_ORIGIN } from "../contract/reply-event";
 import { formatEntryId } from "../shared/entry-ids";
-import { activeExecution } from "../shared/domain";
-import { pi } from "../shared/app-errors";
+import { activeExecution, type Execution } from "../shared/domain";
+import { logged, pi } from "../shared/app-errors";
 import { Effect } from "effect";
 import { groupPostRequest, groupTurnRequest } from "../shared/request-ids";
-import { type Agent, type Execution } from "../shared/domain";
+import { type Agent } from "../contract/agents";
 import {
   GROUP_TURN_BUDGET,
   type GroupChat,
@@ -11,13 +12,15 @@ import {
   type GroupTurn,
 } from "./group-chat-repository";
 import type { AppError } from "../shared/errors";
-import { logged, memberKey, type GroupChatContext } from "./group-chat-context";
+import type { InputOrigin } from "../transcript/origins";
+import { memberKey, type GroupChatContext } from "./group-chat-context";
 import type { GroupChatMembers } from "./group-chat-members";
 import { mentionsOwner } from "./group-mentions";
 import type { GroupEntry, GroupPost } from "./group-transcripts";
 import type { GroupTurnInput } from "./group-turn-input";
 import { turnOutcome } from "./group-turn-outcome";
 import { MESSAGE_PREVIEW_CHARS } from "../shared/limits";
+import { nowIso } from "../shared/time";
 
 /** Owner messages a group remembers as awaiting their first answer; older ones stop notifying. */
 const AWAITING_ANSWERS = 50;
@@ -162,9 +165,9 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
       agentId: agent.id,
       agentName: agent.name,
       entryId,
-      origin: "group",
+      origin: REPLY_ORIGIN.group,
       preview: text.trim().slice(0, MESSAGE_PREVIEW_CHARS),
-      createdAt: new Date().toISOString(),
+      createdAt: yield* nowIso,
       groupId: group.id,
       groupName: group.name,
     });
@@ -359,7 +362,13 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
       );
 
       if (outcome.kind === "pass") return;
-      const sender = { kind: "bot", agentId: agent.id, name: agent.name };
+
+      const sender = {
+        kind: "bot",
+        agentId: agent.id,
+        name: agent.name,
+      } satisfies InputOrigin;
+
       const requestId = groupPostRequest(turn.executionId);
 
       if (outcome.kind === "reaction") {

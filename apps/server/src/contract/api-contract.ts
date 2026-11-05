@@ -2,19 +2,19 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
 import {
   ACTIVITY_KINDS,
-  agentInput,
+  CONTROL_HOLDERS,
+  SIGN_IN_METHODS,
+} from "../shared/domain";
+import { agentInput, judgeModelInput, visionModelInput } from "./agents";
+import {
   credentialSaveInput,
-  groupChatInput,
-  heldActionDeclineInput,
-  judgeModelInput,
   loginSaveInput,
   passwordManagerIdInput,
-  scheduleInput,
   secretInput,
-  skillInput,
-  skillLifecycleInput,
-  visionModelInput,
-} from "../shared/domain";
+} from "./secrets";
+import { groupChatInput } from "./group-chats";
+import { scheduleInput } from "./schedules";
+import { skillInput, skillLifecycleInput } from "./skills";
 import { attachmentInput, MAX_ATTACHMENTS } from "../shared/attachment-rules";
 import {
   MAX_MEMORY_CHARS,
@@ -78,8 +78,12 @@ export const historyInput = snapshotInput.extend({
   before: z.string().min(1).max(200).optional(),
 });
 
+export const heldActionDeclineInput = z.object({
+  reason: z.string().trim().max(2000).optional(),
+});
+
 export const desktopControlInput = z.object({
-  holder: z.enum(["bot", "owner"]),
+  holder: z.enum(CONTROL_HOLDERS),
 });
 
 export const desktopViewerInput = z.object({
@@ -153,7 +157,7 @@ const pluginSettingParams = z.object({
 const MAX_LOGIN_VALUE = 16384;
 
 export const providerLoginInput = z.object({
-  method: z.enum(["api_key", "oauth"]),
+  method: z.enum(SIGN_IN_METHODS),
 });
 
 export const providerLoginAnswerInput = z.object({

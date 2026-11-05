@@ -10,7 +10,7 @@ import {
   gateCallOf,
   type DesktopIntent,
 } from "./desktop-intent";
-import type { Agent } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 import {
   jobLoginSection,
   loginExtension,
@@ -23,11 +23,11 @@ import {
   type JobExtensions,
   type JobKind,
 } from "../jobs/jobs";
-import { JOB_KINDS } from "../jobs/job-kinds";
+import { JOB_KINDS } from "../shared/job-kinds";
 import type { CrumblePlugin } from "../plugins/plugins";
 import type { Workspaces } from "../workspaces/workspace";
 import { workspaceNotesSection } from "../jobs/workspace-notes";
-import { usesDesktop } from "./desktop-vocabulary";
+import { usesDesktop } from "../contract/tools";
 
 const DESKTOP_JOBS = {
   description:
@@ -65,9 +65,9 @@ type DesktopJobs = {
   // One tool per bot: the runtime rebuilds a bot's extensions whenever it reconfigures the bot, and a running job must
   // keep its snapshots and the lease change count it last saw.
   tools: Map<string, ComputerUseTool>;
-  control: DesktopControlAccess | undefined;
-  logins: DesktopLogins | undefined;
-  intent: DesktopIntent | undefined;
+  control: DesktopControlAccess;
+  logins: DesktopLogins;
+  intent: DesktopIntent;
 };
 
 function toolFor(jobs: DesktopJobs, agentId: string) {
@@ -77,17 +77,13 @@ function toolFor(jobs: DesktopJobs, agentId: string) {
   if (!tool) {
     // While the owner has control, every computer_use call waits for hand-back.
     tool = computerUseTool({
-      gateFor:
-        control &&
-        (() => ({
-          untilBot: (context) => control.untilBot(agentId, context),
-        })),
-      logins: logins && loginFill(logins.access, agentId),
-      fills: logins?.fills(agentId),
-      intentFor:
-        intent &&
-        ((api) =>
-          desktopIntentGate(intent, agentId, gateCallOf(api, desktop.request))),
+      gateFor: () => ({
+        untilBot: (context) => control.untilBot(agentId, context),
+      }),
+      logins: loginFill(logins.access, agentId),
+      fills: logins.fills(agentId),
+      intentFor: (api) =>
+        desktopIntentGate(intent, agentId, gateCallOf(api, desktop.request)),
     });
     jobs.tools.set(agentId, tool);
   }
@@ -107,18 +103,14 @@ function desktopExtensions(
     tools: [toolFor(jobs, agent.id)],
     sections: [
       workspaceNotesSection(desktop.isJob, false),
-      ...(logins
-        ? [
-            {
-              key: "desktop_logins",
-              // Installed job extensions render in the bot's chat too; only a job needs this.
-              render: async (input, context) =>
-                (await desktop.isJob(input.read, input.conversationId, context))
-                  ? jobLoginSection(logins.access.list(agent.id))
-                  : undefined,
-            } satisfies PromptSection,
-          ]
-        : []),
+      {
+        key: "desktop_logins",
+        // Installed job extensions render in the bot's chat too; only a job needs this.
+        render: async (input, context) =>
+          (await desktop.isJob(input.read, input.conversationId, context))
+            ? jobLoginSection(logins.access.list(agent.id))
+            : undefined,
+      } satisfies PromptSection,
     ],
   });
 
@@ -129,20 +121,18 @@ function desktopExtensions(
     ...(agent.desktopModel && { model: modelRef(agent.desktopModel) }),
   });
 
-  return logins
-    ? {
-        ...extensions,
-        chat: [...extensions.chat, loginExtension(agent.id, logins.access)],
-      }
-    : extensions;
+  return {
+    ...extensions,
+    chat: [...extensions.chat, loginExtension(agent.id, logins.access)],
+  };
 }
 
 /** Desktop jobs as a plugin: offered to bots with the `desktop` tool while workspaces have bot desktops. */
 export const desktopPlugin = (
   workspaces: Workspaces | undefined,
-  control?: DesktopControlAccess,
-  logins?: DesktopLogins,
-  intent?: DesktopIntent,
+  control: DesktopControlAccess,
+  logins: DesktopLogins,
+  intent: DesktopIntent,
 ): CrumblePlugin => {
   const desktop = defineJobKind(JOB_KINDS.desktop);
 

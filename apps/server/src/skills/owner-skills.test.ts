@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Exit } from "effect";
 import { Store } from "../../test/support/store";
-import { agentInput } from "../shared/domain";
+import { agentInput } from "../contract/agents";
 import { MAX_BOT_SKILLS } from "../shared/limits";
-import { removeSharedSkill, shareWith } from "./skill-sharing";
 import { SkillRepository } from "./skill-repository";
+import { standaloneOwnerSkills } from "./skills-test-support";
 
 const cleanups: (() => void)[] = [];
 
@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 const setup = () => {
-  const dir = mkdtempSync(join(tmpdir(), "crumble-skill-sharing-"));
+  const dir = mkdtempSync(join(tmpdir(), "crumble-owner-skills-"));
   const store = new Store(dir);
 
   cleanups.push(() => {
@@ -41,8 +41,10 @@ test("sharing an installed skill stops at a bot's limit and shares with no bot",
     sharedSkills: full,
   });
 
-  const exit = store.runtime.runSync(
-    shareWith([roomy.id, crowded.id], skillIds(1)).pipe(Effect.exit),
+  const exit = Effect.runSync(
+    standaloneOwnerSkills(store)
+      .shareWith([roomy.id, crowded.id], skillIds(1))
+      .pipe(Effect.exit),
   );
 
   expect(Exit.isFailure(exit)).toBeTrue();
@@ -72,7 +74,7 @@ test("deleting a shared skill drops it from every bot in one step", () => {
     sharedSkills: [skill.id],
   });
 
-  store.runtime.runSync(removeSharedSkill(skill.id));
+  Effect.runSync(standaloneOwnerSkills(store).removeShared(skill.id));
 
   expect(store.getAgent(agent.id)?.sharedSkills ?? []).toEqual([]);
   expect(store.run(SkillRepository.use((r) => r.get(skill.id)))).toBeNull();

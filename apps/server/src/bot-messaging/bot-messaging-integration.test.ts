@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { inertCredentials } from "../../test/support/job-wiring";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -14,9 +15,9 @@ import { codingPlugin } from "../jobs/coding";
 import { DirectoryWorkspaces } from "../jobs/jobs-test-support";
 import { conversationEnv, jobExtensions } from "../plugins/plugins";
 import { Store } from "../../test/support/store";
-import { standaloneBots } from "../bots/bots";
+import { standaloneBots } from "../bots/bots-test-support";
 import { coordinationExtension } from "./coordination";
-import { standaloneMessaging } from "./bot-messaging";
+import { standaloneMessaging } from "./bot-messaging-test-support";
 import { accessOf, noServices } from "../shared/runner";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
@@ -27,7 +28,7 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
 
   try {
     const sourceFaux = fauxProvider({
-      provider: "faux",
+      provider: "faux-source",
       models: [{ id: "test" }],
     });
 
@@ -53,7 +54,7 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
     ]);
 
     const targetFaux = fauxProvider({
-      provider: "faux",
+      provider: "faux-target",
       models: [{ id: "test" }],
     });
 
@@ -69,14 +70,9 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
       },
     ]);
 
-    const models = (agent: { id: string }) => {
-      const selected = createModels();
-      selected.setProvider(
-        agent.id === sourceId ? sourceFaux.provider : targetFaux.provider,
-      );
-
-      return selected;
-    };
+    const models = createModels();
+    models.setProvider(sourceFaux.provider);
+    models.setProvider(targetFaux.provider);
 
     const store = new Store(dir);
 
@@ -86,7 +82,7 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
         description: "",
         instructions: "Ask when needed",
         // SAFETY: The faux provider is registered in the test model registry.
-        provider: "faux" as any,
+        provider: "faux-source" as any,
         model: "test",
         enabled: true,
         tools: ["delegate"],
@@ -103,7 +99,7 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
         description: "",
         instructions: "Answer honestly",
         // SAFETY: The faux provider is registered in the test model registry.
-        provider: "faux" as any,
+        provider: "faux-target" as any,
         model: "test",
         enabled: true,
         tools: [],
@@ -344,9 +340,9 @@ async function delegatedBuild(asking: Promise<void>) {
   const workspace = join(dir, "workspace");
   await Bun.write(join(workspace, ".keep"), "");
 
-  const faux = (steps: FauxResponseFactory) => {
+  const faux = (name: string, steps: FauxResponseFactory) => {
     const provider = fauxProvider({
-      provider: "faux",
+      provider: name,
       models: [{ id: "test" }],
     });
 
@@ -355,17 +351,9 @@ async function delegatedBuild(asking: Promise<void>) {
     return provider.provider;
   };
 
-  const providers = new Map([
-    [MAGNUM, faux(magnumScript)],
-    [CODER, faux(coderScript(asking))],
-  ]);
-
-  const models = (agent: { id: string }) => {
-    const selected = createModels();
-    selected.setProvider(providers.get(agent.id)!);
-
-    return selected;
-  };
+  const models = createModels();
+  models.setProvider(faux("faux-magnum", magnumScript));
+  models.setProvider(faux("faux-coder", coderScript(asking)));
 
   const store = new Store(dir);
 
@@ -373,7 +361,7 @@ async function delegatedBuild(asking: Promise<void>) {
     name,
     description: "",
     instructions: "",
-    provider: "faux",
+    provider: `faux-${name.toLowerCase()}`,
     model: "test",
     enabled: true,
     tools,
@@ -390,8 +378,11 @@ async function delegatedBuild(asking: Promise<void>) {
   const coder = store.createAgent(bot("Coder", ["coding"], []), CODER);
 
   const kinds =
-    codingPlugin(new DirectoryWorkspaces(workspace), () => 900_000).jobKinds ??
-    [];
+    codingPlugin(
+      new DirectoryWorkspaces(workspace),
+      () => 900_000,
+      inertCredentials,
+    ).jobKinds ?? [];
 
   let service!: ReturnType<typeof standaloneBots<Store>>;
 
@@ -403,7 +394,7 @@ async function delegatedBuild(asking: Promise<void>) {
         coordinationExtension(agent, standaloneMessaging(service)),
         ...jobExtensions(kinds, agent).chat,
       ],
-      taskExtensions: (agent) => jobExtensions(kinds, agent).job,
+      jobExtensions: (agent) => jobExtensions(kinds, agent).job,
       env: (agent, target, context) =>
         conversationEnv(kinds, agent, target, context),
     }),

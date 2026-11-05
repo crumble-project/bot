@@ -1,4 +1,4 @@
-import { Predicate, Schema } from "effect";
+import { Schema } from "effect";
 
 /** The server has no desktop workspace image: `CRUMBLE_WORKSPACE_DESKTOP_IMAGE` is unset. */
 export class DesktopNotConfigured extends Schema.TaggedError<DesktopNotConfigured>()(
@@ -75,9 +75,3 @@ export type DesktopOpenError =
   | DesktopNotRunning
   | WorkspaceStreamFailed
   | WorkspaceStartError;
-
-/** The message of a thrown value, for an error that wraps it. */
-export const messageOf = (cause: unknown) =>
-  Predicate.hasProperty(cause, "message") && Predicate.isString(cause.message)
-    ? cause.message
-    : String(cause);

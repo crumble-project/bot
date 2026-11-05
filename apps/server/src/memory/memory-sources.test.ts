@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { openGroupConversation } from "../group-chats/group-turns";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -10,7 +11,7 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
 import { Effect, Exit } from "effect";
-import type { Agent } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 import { assertOwnMemoryInGroup, memorySourceOf } from "./memory-sources";
 import { AgentRuntime } from "../bots/runtime";
 import type { MemoryContext } from "./memory-tool";
@@ -214,7 +215,7 @@ test("the memory tool reports where it runs", async () => {
 
   cleanups.push(() => runtime.close());
   const chat = await runtime.openChat(agent);
-  const group = await runtime.openGroupConversation(agent, "group-1");
+  const group = await openGroupConversation(runtime, agent, "group-1");
 
   const submissions: string[] = [];
 

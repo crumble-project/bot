@@ -4,21 +4,20 @@ import type { Register } from "../contract/route";
 import type { McpServerRepository } from "../integrations/mcp-server-repository";
 import type { McpServers } from "../integrations/mcp-servers";
 import type { SkillRepository } from "../skills/skill-repository";
-import { botSecretsPrefix } from "../secrets/secret-key";
-import { Secrets } from "../secrets/secrets";
-import { agentInput } from "../shared/domain";
+import { agentInput } from "../contract/agents";
 import type { Runner } from "../shared/runner";
 import { AgentRepository } from "./agent-repository";
+import { checkBotChoices } from "./bot-choices";
 import { duplicateAgent } from "./agent-duplicate";
 import type { BotsAccess } from "./bots";
-import { usesDesktop } from "../bot-desktop/desktop-vocabulary";
+import { usesDesktop } from "../contract/tools";
 import type { Workspaces } from "../workspaces/workspace";
 
 type Services =
   | AgentRepository
   | McpServerRepository
-  | SkillRepository
-  | Secrets;
+  | McpServers
+  | SkillRepository;
 
 type Exec = Runner<Services>["runSync"];
 
@@ -29,7 +28,6 @@ type AgentRoutesOptions = {
   run: Runner<Services>;
   /** Accepts a provider ID only if this server can serve it. */
   provider: { parse(value: string): string };
-  mcpServers: McpServers;
   workspaces: Workspaces | undefined;
 };
 
@@ -49,8 +47,7 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
   register(routes.createAgent, async (c) => {
     const input = c.req.valid("json");
 
-    options.provider.parse(input.provider);
-    options.mcpServers.check(null, input.mcpServers, true);
+    await checkBotChoices(options, input, null);
 
     return c.json(exec(AgentRepository.use((r) => r.create(input))), 201);
   });
@@ -68,8 +65,7 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
       skills: body["skills"] ?? [],
     });
 
-    options.provider.parse(input.provider);
-    options.mcpServers.check(old.id, input.mcpServers);
+    await checkBotChoices(options, input, old.id);
 
     if (!input.enabled && old.enabled) await service.stopAgent(old.id);
 
@@ -87,9 +83,9 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
   });
 };
 
-/** Copying a bot, and deleting one along with the secrets of the MCP servers it owned. */
+/** Copying a bot, and deleting one. */
 const registerAgentLifecycleRoutes = (options: AgentRoutesOptions) => {
-  const { register, service, mcpServers } = options;
+  const { register, service } = options;
   const exec: Exec = (effect) => options.run.runSync(effect);
 
   register(routes.duplicateAgent, (c) => {
@@ -98,10 +94,7 @@ const registerAgentLifecycleRoutes = (options: AgentRoutesOptions) => {
     return c.json(exec(duplicateAgent(c.req.param("id"))), 201);
   });
   register(routes.deleteAgent, async (c) => {
-    const id = c.req.param("id");
-
-    await mcpServers.forgetBot(id, () => service.deleteAgent(id));
-    exec(Secrets.use((s) => s.deleteAll(botSecretsPrefix(id))));
+    await service.deleteAgent(c.req.param("id"));
 
     return c.body(null, 204);
   });

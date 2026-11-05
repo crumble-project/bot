@@ -2,90 +2,77 @@ import { pi } from "../shared/app-errors";
 import { Effect } from "effect";
 import type { Execution } from "../shared/domain";
 import type { BotsContext } from "./bots-context";
-import type { botsLookup } from "./bots-lookup";
+import type { BotsLookup } from "./bots-lookup";
 import { DELETED_SOURCE } from "../event-sources/event-repository";
-import { askingBot, parseRequestId } from "../shared/request-ids";
-import type { MessageOrigin } from "./entries";
+import {
+  turnSource,
+  UNKNOWN_BOT_NAME,
+  UNKNOWN_SCHEDULE_NAME,
+  type InputOrigin,
+} from "../transcript/origins";
 import type { RuntimeWatch } from "./runtime";
-import { latestMessagePreview, type PageOptions } from "./transcript";
-import type { JobKindName } from "../jobs/job-kinds";
+import {
+  latestMessagePreview,
+  type PageOptions,
+} from "../transcript/transcript";
+import type { JobKindName } from "../shared/job-kinds";
 
-/** Where a turn came from, as its transcript shows it: the owner, a group, a task, a credential, or another bot. */
-export const botsOrigin = (context: BotsContext) => {
-  const { agents, schedules, events } = context;
+/** Everything the bots read back for a caller: transcripts, jobs, previews, and where a turn came from. */
+export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
+  const { agents, conversations, events, executions, runtime, schedules } =
+    context;
 
-  const eventOrigin = Effect.fnUntraced(function* (run: {
-    eventId: string;
-    scheduleId: string;
-  }) {
-    const schedule = yield* schedules.get(run.scheduleId);
-    const event = yield* events.eventWithSource(run.eventId);
+  const { conversation, withAgent } = lookup;
 
-    return {
-      kind: "event",
-      name: schedule?.name ?? "Automation",
-      source: event?.sourceName ?? DELETED_SOURCE,
-    } satisfies MessageOrigin;
-  });
+  const scheduleName = (scheduleId: string) =>
+    Effect.map(schedules.get(scheduleId), (schedule) => schedule?.name);
 
-  const botOrigin = (agentId: string) =>
-    Effect.map(agents.get(agentId), (source) => ({
-      kind: "bot",
-      agentId,
-      name: source?.name ?? "Another bot",
-    }));
-
-  const origin = (execution: Execution): Effect.Effect<MessageOrigin> =>
+  /** Where a turn came from, as its transcript shows it: the owner, a group, an automation, a credential, or another bot. */
+  const origin = (execution: Execution): Effect.Effect<InputOrigin> =>
     Effect.gen(function* () {
-      const request = parseRequestId(execution.requestId);
+      const source = turnSource(execution);
 
-      if (request.kind === "group-turn") return { kind: "group" };
+      switch (source.kind) {
+        case "event": {
+          const event = yield* events.eventWithSource(source.eventId);
 
-      if (request.kind === "event") return yield* eventOrigin(request);
-
-      if (execution.scheduleId) {
-        const schedule = yield* schedules.get(execution.scheduleId);
-
-        return { kind: "task", name: schedule?.name ?? "Scheduled task" };
-      }
-
-      const asking = askingBot(request);
-
-      if (asking) return yield* botOrigin(asking);
-
-      switch (request.kind) {
-        case "script": {
-          const schedule = yield* schedules.get(request.scheduleId);
-
-          return { kind: "script", name: schedule?.name ?? "Script task" };
+          return {
+            kind: "event",
+            name: (yield* scheduleName(source.scheduleId)) ?? "Automation",
+            source: event?.sourceName ?? DELETED_SOURCE,
+          };
         }
 
-        // MessageOrigin documents no login kind, and clients label a login like a credential.
-        case "notice":
-          return { kind: "credential", name: request.name };
-        case "bot-request":
-          return { kind: "bot_request" };
-        case "gateway":
-          return { kind: "owner", via: request.adapterId };
+        case "task":
+          return {
+            kind: "task",
+            name:
+              (yield* scheduleName(source.scheduleId)) ?? UNKNOWN_SCHEDULE_NAME,
+          };
+        case "script":
+          return {
+            kind: "script",
+            name: (yield* scheduleName(source.scheduleId)) ?? "Script task",
+          };
+        case "bot": {
+          const bot = yield* agents.get(source.agentId);
+
+          return {
+            kind: "bot",
+            agentId: source.agentId,
+            name: bot?.name ?? UNKNOWN_BOT_NAME,
+          };
+        }
+
         default:
-          return { kind: "owner" };
+          return source;
       }
     });
 
-  return { origin };
-};
-
-/** A chat's transcript, with the error of its latest execution when that one failed. */
-export const botsSnapshot = (
-  context: BotsContext,
-  lookup: ReturnType<typeof botsLookup>,
-) => {
-  const { executions, runtime } = context;
-  const { conversation } = lookup;
-
+  /** A chat's transcript, with the error of its latest execution when that one failed. */
   const snapshot = Effect.fn("Bots.snapshot")(function* (
     conversationId: string,
-    options: { limit?: number | undefined },
+    options: { limit?: number | undefined } = {},
   ) {
     const { agent: owner, conversation: found } =
       yield* conversation(conversationId);
@@ -94,9 +81,7 @@ export const botsSnapshot = (
       runtime.snapshot(owner, conversationId, options),
     );
 
-    const latest = (yield* executions.list(owner.id)).find(
-      (execution) => execution.conversationId === conversationId,
-    );
+    const latest = yield* executions.latestIn(conversationId);
 
     return {
       ...read,
@@ -106,13 +91,7 @@ export const botsSnapshot = (
     };
   });
 
-  return { snapshot };
-};
-
-/** Sidebar summaries from durable history, without opening a chat. */
-export const botsAgentPreviews = (context: BotsContext) => {
-  const { agents, conversations, runtime } = context;
-
+  /** Sidebar summaries from durable history, without opening a chat. */
   const agentPreviews = Effect.gen(function* () {
     return yield* Effect.forEach(
       yield* agents.list,
@@ -134,18 +113,10 @@ export const botsAgentPreviews = (context: BotsContext) => {
     );
   });
 
-  return { agentPreviews };
-};
-
-/** The runtime's own reads: a chat's history, the jobs a bot started from it, and an attachment. */
-export const botsRuntimeReads = (
-  context: BotsContext,
-  lookup: ReturnType<typeof botsLookup>,
-) => {
-  const { runtime } = context;
-  const { withAgent } = lookup;
-
   return {
+    origin,
+    snapshot,
+    agentPreviews,
     history: (agentId: string, options: PageOptions) =>
       withAgent(agentId, (owner) => runtime.history(owner, options)),
     jobs: (agentId: string, kind: JobKindName) =>
@@ -170,23 +141,5 @@ export const botsRuntimeReads = (
       withAgent(agentId, (owner) =>
         runtime.watch(owner, conversationId, callback, options),
       ),
-  };
-};
-
-/** Everything the bots read back for a caller: transcripts, jobs, previews, and where a turn came from. */
-export const botsReads = (
-  context: BotsContext,
-  lookup: ReturnType<typeof botsLookup>,
-) => {
-  const { snapshot } = botsSnapshot(context, lookup);
-
-  return {
-    snapshot: (
-      conversationId: string,
-      options: { limit?: number | undefined } = {},
-    ) => snapshot(conversationId, options),
-    ...botsOrigin(context),
-    ...botsAgentPreviews(context),
-    ...botsRuntimeReads(context, lookup),
   };
 };

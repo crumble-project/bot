@@ -5,7 +5,7 @@ import {
   fauxProvider,
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "./runtime";
-import type { Agent } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 import { defaultAvatarDefinition } from "../contract/avatar";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 

@@ -4,14 +4,14 @@ import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Context, Effect, Layer } from "effect";
-import { agentInput, type Agent, type AgentInput } from "../shared/domain";
+import { agentInput, type Agent, type AgentInput } from "../contract/agents";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { AgentRepository } from "../bots/agent-repository";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
-import { BotNotices } from "../bots/bot-notices";
+import { BotNotices, loggedNotices } from "../bots/bot-notices";
 import { Conflict, NotFound, type AppError } from "../shared/errors";
-import { botRequests } from "./schema";
+import { BOT_REQUEST_STATUSES, botRequests } from "./schema";
 import { toolOutput } from "../shared/tool-output";
 import { defaultAvatarDefinition } from "../contract/avatar";
 import { BOT_TOOL, REQUEST_BOT_TOOL_NAME } from "../contract/tools";
@@ -32,16 +32,10 @@ export type BotRequest = {
   agentId: string;
   proposal: AgentInput;
   reason: string;
-  status: "pending" | "approved" | "declined";
+  status: (typeof BOT_REQUEST_STATUSES)[number];
   createdAgentId: string | null;
   requestedAt: string;
   decidedAt: string | null;
-};
-
-const statusOf = (value: string): BotRequest["status"] => {
-  if (value === "approved" || value === "declined") return value;
-
-  return "pending";
 };
 
 const requestOf = (row: typeof botRequests.$inferSelect): BotRequest => ({
@@ -49,7 +43,7 @@ const requestOf = (row: typeof botRequests.$inferSelect): BotRequest => ({
   agentId: row.agentId,
   proposal: agentInput.parse(JSON.parse(row.proposal)),
   reason: row.reason,
-  status: statusOf(row.status),
+  status: row.status,
   createdAgentId: row.createdAgentId,
   requestedAt: row.requestedAt,
   decidedAt: row.decidedAt,
@@ -82,14 +76,7 @@ export class BotRequests extends Context.Service<
       const agents = yield* AgentRepository;
       const notices = yield* BotNotices;
 
-      const notify = (agentId: string, text: string, requestId: string) =>
-        notices
-          .notice(agentId, text, requestId)
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.logError("Bot request notice failed", agentId, cause),
-            ),
-          );
+      const notify = loggedNotices(notices, "Bot request notice failed");
 
       const getRow = Effect.fnUntraced(function* (
         agentId: string,
@@ -355,8 +342,6 @@ export function botRequestExtension(
         mcpServers: args.mcpServers,
         skills: [],
         sharedSkills: [],
-        sharedMemory: false,
-        delegates: [],
         inference: agent.inference,
       });
 

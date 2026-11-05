@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { openGroupConversation } from "../group-chats/group-turns";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -14,13 +15,14 @@ import { AgentRuntime } from "./runtime";
 import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { ASK_ABOUT_IMAGE_TOOL_NAME } from "../contract/tools";
 import { imageHash } from "../vision/vision";
-import { standaloneBots, type Activity } from "./bots";
+import { standaloneBots } from "./bots-test-support";
+import { type Activity } from "./bots";
 import { Store } from "../../test/support/store";
 import { Effect } from "effect";
 import { EventRepository } from "../event-sources/event-repository";
 import { eventRequest } from "../shared/request-ids";
 import { ScheduleRepository } from "../automations/schedule-repository";
-import { scheduleInput } from "../shared/domain";
+import { scheduleInput } from "../contract/schedules";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const dirs: string[] = [];
@@ -329,7 +331,8 @@ describe("group turns", () => {
       fauxAssistantMessage("For the group."),
     ]);
 
-    const reference = await service.runtime.openGroupConversation(
+    const reference = await openGroupConversation(
+      service.runtime,
       agent,
       "group-1",
     );
@@ -356,7 +359,8 @@ describe("group turns", () => {
   test("report a cancelled execution as settled", async () => {
     const { service, store, agent } = setup([() => new Promise(() => {})]);
 
-    const reference = await service.runtime.openGroupConversation(
+    const reference = await openGroupConversation(
+      service.runtime,
       agent,
       "group-1",
     );

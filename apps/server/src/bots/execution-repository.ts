@@ -1,7 +1,7 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import type { AttachmentInput } from "../shared/attachment-rules";
-import type { Execution } from "../shared/domain";
+import { ACTIVE_EXECUTION_STATUSES, type Execution } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { executions } from "./schema.executions";
@@ -34,6 +34,12 @@ export class ExecutionRepository extends Context.Service<
   {
     /** Newest first. */
     readonly list: (agentId?: string) => Effect.Effect<Execution[]>;
+    /** The pending and running ones, of one bot or of every bot; newest first. */
+    readonly active: (agentId?: string) => Effect.Effect<Execution[]>;
+    /** The conversation's newest execution. */
+    readonly latestIn: (
+      conversationId: string,
+    ) => Effect.Effect<Execution | null>;
     readonly get: (executionId: string) => Effect.Effect<Execution | null>;
     readonly getByRequest: (
       conversationId: string,
@@ -78,6 +84,36 @@ export class ExecutionRepository extends Context.Service<
           .orderBy(desc(executions.createdAt));
 
         return rows.map(executionOf);
+      }, Effect.orDie);
+
+      const active = Effect.fn("ExecutionRepository.active")(function* (
+        agentId: string | undefined,
+      ) {
+        const rows = yield* db
+          .select()
+          .from(executions)
+          .where(
+            and(
+              inArray(executions.status, ACTIVE_EXECUTION_STATUSES),
+              agentId ? eq(executions.agentId, agentId) : undefined,
+            ),
+          )
+          .orderBy(desc(executions.createdAt));
+
+        return rows.map(executionOf);
+      }, Effect.orDie);
+
+      const latestIn = Effect.fn("ExecutionRepository.latestIn")(function* (
+        conversationId: string,
+      ) {
+        const [row] = yield* db
+          .select()
+          .from(executions)
+          .where(eq(executions.conversationId, conversationId))
+          .orderBy(desc(executions.createdAt))
+          .limit(1);
+
+        return row ? executionOf(row) : null;
       }, Effect.orDie);
 
       const first = Effect.fnUntraced(function* (
@@ -214,6 +250,8 @@ export class ExecutionRepository extends Context.Service<
 
       return ExecutionRepository.of({
         list: (agentId) => list(agentId),
+        active: (agentId) => active(agentId),
+        latestIn,
         get,
         getByRequest,
         findByRequest,

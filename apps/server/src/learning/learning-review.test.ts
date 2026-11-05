@@ -1,4 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
+import { openGroupConversation } from "../group-chats/group-turns";
+import { openReviewConversation } from "./review-conversation";
 import type { Effect } from "effect";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,7 +15,8 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { standaloneLearningReview } from "./learning-review-test-support";
 import { AgentRuntime } from "../bots/runtime";
-import { standaloneBots, type LearnedActivity } from "../bots/bots";
+import { standaloneBots } from "../bots/bots-test-support";
+import { type LearnedActivity } from "../bots/bots";
 import { standaloneSkills } from "../skills/skills-test-support";
 import { BotMemory } from "../memory/bot-memory";
 import { Store } from "../../test/support/store";
@@ -346,7 +349,8 @@ test("turns below the threshold are not reviewed, scheduled runs count like chat
   expect(store.reviewCounters(agent.id)).toEqual({ skill: 0, memory: 2 });
 
   // A review left pending by a crash is aborted and forgotten on recovery.
-  const conversation = await runtime.openReviewConversation(
+  const conversation = await openReviewConversation(
+    runtime,
     agent,
     first,
     { skills: true, memory: false },
@@ -400,7 +404,7 @@ test("a review of a group turn cannot change shared memory, while a review of a 
   await until(() => store.listPendingReviews().length === 0);
   expect(await shared()).toEqual(["from the chat"]);
 
-  const group = await runtime.openGroupConversation(agent, "group-1");
+  const group = await openGroupConversation(runtime, agent, "group-1");
   store.createConversation({ agentId: agent.id, title: "Group" }, group);
   const groupTurn = await service.send(group, "hello", "group-turn:1");
   expect(await settle(service, groupTurn.id)).toBe("done");

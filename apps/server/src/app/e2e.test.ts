@@ -9,7 +9,7 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "../bots/runtime";
 import { Store } from "../../test/support/store";
-import { standaloneBots } from "../bots/bots";
+import { standaloneBots } from "../bots/bots-test-support";
 import { standaloneScheduler } from "../automations/scheduler-test-support";
 import { testAPI } from "../../test/support/api";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
