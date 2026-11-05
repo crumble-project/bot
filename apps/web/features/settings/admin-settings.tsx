@@ -22,8 +22,8 @@ import {
   SectionEmpty,
   SectionError,
   SettingRow,
-  WorkspacePage,
-} from "@/components/workspace";
+  Page,
+} from "@/components/page";
 import { api, call, send } from "@/lib/api";
 import { useIsAdmin, useSession } from "@/lib/auth-client";
 import { refreshAdmin, serverSettingsQuery } from "./api";
@@ -251,7 +251,7 @@ export function UsersPage() {
   const admin = useIsAdmin();
 
   return (
-    <WorkspacePage title="Users">
+    <Page title="Users">
       {admin ? (
         <>
           <Users />
@@ -262,6 +262,6 @@ export function UsersPage() {
           <SectionEmpty>Only admins manage users.</SectionEmpty>
         </Section>
       )}
-    </WorkspacePage>
+    </Page>
   );
 }

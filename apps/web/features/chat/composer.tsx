@@ -28,8 +28,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
-import { readDraft, saveDraft } from "@/lib/drafts";
-import { cn } from "@/lib/utils";
+import { readDraft, saveDraft } from "./drafts";
+import { cn, randomId } from "@/lib/utils";
 import type { Bot } from "@/features/bots/api";
 import {
   attachmentKind,
@@ -138,7 +138,7 @@ export async function toUploads(files: File[]) {
   for (const result of results) {
     if ("error" in result) errors.push(result.error);
     else {
-      uploadKeys.set(result.upload, crypto.randomUUID());
+      uploadKeys.set(result.upload, randomId());
       uploads.push(result.upload);
     }
   }

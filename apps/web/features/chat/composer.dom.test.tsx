@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { Window } from "happy-dom";
 import { act } from "react";
 import { Composer } from "./composer";
@@ -285,4 +285,23 @@ test("typing keeps working when the draft can't be saved", async () => {
       expect(container.querySelector("textarea")!.value).toBe("still here");
     },
   );
+});
+
+test("attachments work where crypto.randomUUID is missing, as on plain http", async () => {
+  const randomUUID = spyOn(crypto, "randomUUID").mockImplementation(() => {
+    throw new TypeError("crypto.randomUUID is not a function");
+  });
+
+  try {
+    await withComposer(
+      async () => true,
+      async (container) => {
+        await act(async () => attach(container, ["notes.txt"]));
+        await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+        expect(container.textContent).toContain("notes.txt");
+      },
+    );
+  } finally {
+    randomUUID.mockRestore();
+  }
 });

@@ -1,5 +1,5 @@
 import { queryClient } from "@/lib/api";
-import { personalSkillsKey, skillsQuery } from "./api";
+import { botSkillsKey, skillsQuery } from "./api";
 import { refreshBots } from "@/features/bots/api";
 
 /** One shared skill's full package. */
@@ -13,7 +13,7 @@ export async function invalidateSkills() {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: skillsQuery.queryKey }),
     refreshBots(),
-    queryClient.invalidateQueries({ queryKey: personalSkillsKey }),
+    queryClient.invalidateQueries({ queryKey: botSkillsKey }),
   ]);
 }
 

@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -156,52 +155,6 @@ export function EditorSheet({
         </form>
       </SheetContent>
     </Sheet>
-  );
-}
-
-/** A one-line form for an API key or other secret; the value is never shown again. */
-export function SecretForm({
-  label,
-  value,
-  pending,
-  onChange,
-  onSave,
-  onCancel,
-}: {
-  label: string;
-  value: string;
-  pending: boolean;
-  onChange: (value: string) => void;
-  onSave: () => void;
-  onCancel?: () => void;
-}) {
-  return (
-    <form
-      className="flex gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-
-        if (value.trim()) onSave();
-      }}
-    >
-      <Input
-        type="password"
-        aria-label={label}
-        autoFocus
-        autoComplete="off"
-        placeholder="API key"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-      <Button type="submit" disabled={!value.trim() || pending}>
-        Save
-      </Button>
-      {onCancel && (
-        <Button type="button" variant="ghost" onClick={onCancel}>
-          Cancel
-        </Button>
-      )}
-    </form>
   );
 }
 

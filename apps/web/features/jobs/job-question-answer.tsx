@@ -12,9 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { send } from "@/lib/api";
-import { type CodingJob, jobPath, refreshJobs } from "./api";
+import { type Job, jobPath, refreshJobs } from "./api";
 
-export type Question = NonNullable<CodingJob["question"]>;
+export type Question = NonNullable<Job["question"]>;
 
 /** One option row: a radio for a single choice, a checkbox for several. */
 function OptionRow({

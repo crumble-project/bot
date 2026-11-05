@@ -1,19 +1,22 @@
-import { type ReactNode, useState } from "react";
+import { type ComponentType, type ReactNode, useState } from "react";
 import type { UseQueryOptions } from "@tanstack/react-query";
 import type { TablerIcon } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { SettledCard, useFreshRequest } from "@/components/request-card";
+import type { Bot } from "@/features/bots/api";
+import { messageCard } from "@/features/chat/message-card";
+import { toolDetailsOf } from "@/features/chat/tool-details";
+import { ownerRequestDetails } from "@crumble/server/contract/tool-details";
 import {
   type Named,
   type SecretRequest,
   useSecretActions,
 } from "./bot-secrets";
 
+type AskedRequest = SecretRequest & { requestedAt?: string | undefined };
+
 /** A bot's request in the chat: the card `children` makes of it while it waits, then its outcome. */
-export function SecretRequestCard<
-  D,
-  R extends SecretRequest & { requestedAt?: string | undefined },
->({
+function SecretRequestCard<D, R extends AskedRequest>({
   icon,
   asked,
   query,
@@ -57,7 +60,7 @@ export function SecretRequestCard<
 }
 
 /** A request the owner hasn't answered: decline it here, or open `children`'s sheet to add what it asks for. */
-export function SecretRequestPending({
+function SecretRequestPending({
   icon: Icon,
   request,
   botId,
@@ -123,3 +126,65 @@ export function SecretRequestPending({
     </div>
   );
 }
+
+/** The chat card of a tool that asks the owner for a secret, for `TOOL_RESULTS`. */
+export const secretRequestResult = <D, R extends AskedRequest>({
+  tool,
+  icon,
+  query,
+  requestsOf,
+  savedOf,
+  pathOf,
+  refresh,
+  addLabel,
+  Sheet,
+}: {
+  tool: string;
+  icon: TablerIcon;
+  query: (botId: string) => UseQueryOptions<D, Error, D, string[]>;
+  requestsOf: (data: D) => R[];
+  savedOf: (data: D) => Named[];
+  pathOf: Parameters<typeof useSecretActions>[0];
+  refresh: (botId: string) => Promise<void>;
+  addLabel: string;
+  Sheet: ComponentType<{
+    bots: Bot[];
+    botId: string;
+    existing: null;
+    request: R;
+    onClose: () => void;
+  }>;
+}) =>
+  messageCard(
+    (message) => toolDetailsOf(message, ownerRequestDetails, tool),
+    ({ result, chat: { botId } }) => (
+      <SecretRequestCard
+        icon={icon}
+        asked={result}
+        query={query(botId)}
+        requestsOf={requestsOf}
+        savedOf={savedOf}
+      >
+        {(request) => (
+          <SecretRequestPending
+            icon={icon}
+            request={request}
+            botId={botId}
+            pathOf={pathOf}
+            refresh={refresh}
+            addLabel={addLabel}
+          >
+            {(onClose) => (
+              <Sheet
+                bots={[]}
+                botId={botId}
+                existing={null}
+                request={request}
+                onClose={onClose}
+              />
+            )}
+          </SecretRequestPending>
+        )}
+      </SecretRequestCard>
+    ),
+  );

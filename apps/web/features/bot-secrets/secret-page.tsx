@@ -1,9 +1,9 @@
 import { type ComponentType, Fragment, useState } from "react";
 import type { UseQueryOptions } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
-import { NewButton, PageToolbar, WorkspacePage } from "@/components/workspace";
+import { NewButton, PageToolbar, Page } from "@/components/page";
 import type { Bot } from "@/features/bots/api";
-import { ALL, useBotQueries } from "@/lib/bot-queries";
+import { ALL, useBotQueries } from "@/features/bots/queries";
 import {
   ActionFailure,
   type BotEntry,
@@ -205,7 +205,7 @@ export function SecretPage<D, I extends Named, R extends SecretRequest>({
     query.data ? itemsOf(query.data).length + requestsOf(query.data).length : 0;
 
   return (
-    <WorkspacePage
+    <Page
       title={text.title}
       refreshing={refreshing}
       onRefresh={() =>
@@ -248,6 +248,6 @@ export function SecretPage<D, I extends Named, R extends SecretRequest>({
         Uses={Uses}
         Sheet={Sheet}
       />
-    </WorkspacePage>
+    </Page>
   );
 }

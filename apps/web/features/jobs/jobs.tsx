@@ -26,7 +26,7 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { Spinner } from "@/components/ui/spinner";
-import { type CodingJob, jobPath, useJobs } from "./api";
+import { type Job, jobPath, useJobs } from "./api";
 import { JobStatus } from "./job-card";
 import {
   type HistoryPage,
@@ -34,7 +34,8 @@ import {
   historyPage,
 } from "@/features/chat/api";
 import { api } from "@/lib/api";
-import { JOB_KINDS, type JobRef } from "@/lib/job-kinds";
+import { JOB_KINDS } from "./kinds";
+import { type JobRef } from "./api";
 import { Reply } from "@/components/markdown";
 import {
   type ContentBlock,
@@ -44,7 +45,7 @@ import { COMPUTER_USE_TOOL_NAME } from "@crumble/server/contract/tools";
 import { blocksOf } from "@/features/chat/tool-details";
 
 /** A job's cost over its models. Subscription providers such as Claude Code report zero, which says nothing. */
-export function costLine(usage: CodingJob["usage"]) {
+export function costLine(usage: Job["usage"]) {
   const models = Object.values(
     usageDocument.safeParse(usage).data?.models ?? {},
   );
@@ -381,13 +382,7 @@ async function downloadTranscript(botId: string, job: JobRef) {
   URL.revokeObjectURL(url);
 }
 
-function JobTitle({
-  job,
-  current,
-}: {
-  job: JobRef;
-  current: CodingJob | undefined;
-}) {
+function JobTitle({ job, current }: { job: JobRef; current: Job | undefined }) {
   const { icon: Icon } = JOB_KINDS[job.kind];
 
   const subtitle = [current?.model?.model, costLine(current?.usage)];
@@ -457,7 +452,7 @@ export function JobPanel({
           <span className="mr-1">
             <JobStatus working={working} />
           </span>
-          {job.kind === "desktop" && (
+          {JOB_KINDS[job.kind].onDesktop && (
             <Button
               variant="ghost"
               size="icon-sm"

@@ -25,11 +25,12 @@ import { groupChatQuery, groupsQuery } from "@/features/group-chats/api";
 import { authClient } from "@/lib/auth-client";
 import { ActivityPage } from "@/features/activity/activity";
 import { BotForm } from "@/features/bots/bot-form";
-import { Chat } from "@/features/chat/chat";
+import { Chat } from "@/features/bot-chat/chat";
 import { CredentialsSettings } from "@/features/credentials/credentials";
 import { GITHUB_APP_WEB_PATHS } from "@crumble/server/contract/github-apps";
 import { MCP_OAUTH_WEB_PATH } from "@crumble/server/contract/mcp-oauth";
-import { CodingPage, GitHubAppCallback } from "@/features/settings/coding";
+import { CodingPage } from "@/features/settings/coding";
+import { GitHubAppCallback } from "@/features/github-apps/github-apps";
 import { UsersPage } from "@/features/settings/admin-settings";
 import { LoginsSettings } from "@/features/logins/logins";
 import { BotDesktop } from "@/features/bot-desktop/desktop";
@@ -39,19 +40,19 @@ import {
   OAuthCallback,
 } from "@/features/integrations/integrations";
 import { MemoryPage } from "@/features/memory/memory";
-import { ProvidersSettings } from "@/features/settings/providers";
+import { ProvidersSettings } from "@/features/providers/providers";
 import { GeneralSettings, SettingsLayout } from "@/features/settings/settings";
-import { WebSearchPage } from "@/features/settings/web-search-settings";
-import { JudgeModelPage } from "@/features/settings/judge-model-settings";
-import { VisionModelPage } from "@/features/settings/vision-model-settings";
+import { WebSearchPage } from "@/features/web-search/web-search-settings";
+import { JudgeModelPage } from "@/features/providers/judge-model-settings";
+import { VisionModelPage } from "@/features/providers/vision-model-settings";
 import {
   MessageGatewayPage,
   MessageGatewaysPage,
-} from "@/features/settings/message-gateways";
-import { EventRelayPage } from "@/features/settings/event-relay";
-import { PasswordManagersPage } from "@/features/settings/password-managers";
+} from "@/features/message-gateways/message-gateways";
+import { EventRelayPage } from "@/features/event-sources/event-relay";
+import { PasswordManagersPage } from "@/features/password-managers/password-managers";
 import { SkillsPage } from "@/features/skills/skills";
-import { AutomationsPage } from "@/features/schedules/automations";
+import { AutomationsPage } from "@/features/automations/automations";
 import { SoundsPage } from "@/features/sounds/sounds";
 import { AvatarsPage } from "@/features/avatars/avatars";
 

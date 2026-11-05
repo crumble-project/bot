@@ -23,7 +23,7 @@ import { BotAvatar } from "@/components/bot-avatar";
 import { BotFields, useBotFields } from "@/features/bots/bot-fields";
 import { CAPABILITIES } from "@/features/bots/capabilities";
 import { toolDetailsOf } from "@/features/chat/tool-details";
-import { toolResult } from "@/features/chat/tool-result";
+import { messageCard } from "@/features/chat/message-card";
 import type { Message } from "@/features/chat/api";
 import { mcpServersQuery } from "@/features/integrations/api";
 import { call, queryClient } from "@/lib/api";
@@ -321,6 +321,7 @@ function BotRequestEditor({
   );
 }
 
-export const botRequestResult = toolResult(botRequestOf, ({ result, chat }) => (
-  <BotRequestCard request={result} botId={chat.botId} />
-));
+export const botRequestResult = messageCard(
+  botRequestOf,
+  ({ result, chat }) => <BotRequestCard request={result} botId={chat.botId} />,
+);

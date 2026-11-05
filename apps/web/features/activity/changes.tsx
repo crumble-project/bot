@@ -16,7 +16,7 @@ import type { Change } from "./api";
 import { queryClient, send } from "@/lib/api";
 import { activityKey } from "./api";
 import { refreshMemories } from "@/features/memory/api";
-import { skillsQuery } from "@/features/skills/api";
+import { invalidateSkills } from "@/features/skills/skill-cache";
 
 const VERBS: Record<Change["action"], string> = {
   create: "added",
@@ -75,7 +75,7 @@ export function RevertChange({ change }: { change: Change }) {
       Promise.all([
         queryClient.invalidateQueries({ queryKey: activityKey }),
         refreshMemories(),
-        queryClient.invalidateQueries({ queryKey: skillsQuery.queryKey }),
+        invalidateSkills(),
       ]),
   });
 

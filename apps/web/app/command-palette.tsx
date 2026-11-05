@@ -20,7 +20,7 @@ import { setTheme, useTheme } from "@/lib/theme";
 import { BotAvatar } from "@/components/bot-avatar";
 import { settingsSections } from "@/features/settings/sections";
 import { useIsAdmin } from "@/lib/auth-client";
-import { THEME_OPTIONS, WORKSPACE } from "./navigation";
+import { THEME_OPTIONS, PAGES } from "./navigation";
 import { MIN_GROUP_MEMBERS } from "@crumble/server/contract/limits";
 
 // Chat items keep their id as the value so equal names stay distinct; match them by name only.
@@ -143,7 +143,7 @@ export function CommandPalette({
             )}
           </CommandGroup>
           <CommandGroup heading="Workspace">
-            {WORKSPACE.map((item) => (
+            {PAGES.map((item) => (
               <CommandItem key={item.to} onSelect={() => go({ to: item.to })}>
                 <item.icon />
                 {item.label}

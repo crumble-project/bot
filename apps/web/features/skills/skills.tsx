@@ -15,7 +15,6 @@ import {
   IconRefresh,
   IconServer,
   IconTrash,
-  IconUsersGroup,
 } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog } from "@/components/ui/alert-dialog";
@@ -37,13 +36,18 @@ import {
   skillsQuery,
   type SharedSkill,
   checkSkillUpdates,
-  personalSkillPath,
-  personalSkillsPath,
-  personalSkillsQuery,
+  botSkillPath,
+  botSkillsPath,
+  botSkillsQuery,
   skillPath,
 } from "./api";
 import { call, send } from "@/lib/api";
-import { ALL, SHARED, ownerItems, useBotQueries } from "@/lib/bot-queries";
+import {
+  ALL,
+  SHARED,
+  ownerItems,
+  useBotQueries,
+} from "@/features/bots/queries";
 import {
   ConfirmDeleteContent,
   FilterPills,
@@ -53,11 +57,11 @@ import {
   Section,
   SectionEmpty,
   UsedBy,
-  WorkspacePage,
-} from "@/components/workspace";
+  Page,
+} from "@/components/page";
 import { BotAvatar } from "@/components/bot-avatar";
 import { cn } from "@/lib/utils";
-import { UsedByField, assignSharedSkill, botsUsing } from "./bot-pills";
+import { UsedByField, assignSharedSkill, botsUsing } from "./skill-assignment";
 import { invalidateSkills } from "./skill-cache";
 import {
   InstallSkillsSheet,
@@ -72,6 +76,7 @@ import {
   MAX_INSTRUCTIONS_CHARS,
   MAX_SKILL_NAME_CHARS,
 } from "@crumble/server/contract/limits";
+import { allPill, botPill, sharedPill } from "@/features/bots/bot-pills";
 
 const DEFAULT = "default";
 
@@ -85,7 +90,7 @@ type BotSkill = SkillPackage;
 type SkillBot = Omit<Bot, "skills"> & { skills: BotSkill[] };
 
 function removePersonalSkill(botId: string, skillId: string) {
-  return send<"deleteAgentSkill">(personalSkillPath(botId, skillId), "DELETE");
+  return send<"deleteAgentSkill">(botSkillPath(botId, skillId), "DELETE");
 }
 
 /** The GitHub sheets: installing, viewing an installed skill, or reviewing its update. */
@@ -98,7 +103,7 @@ type InstalledSheet =
 type Editing =
   | { kind: "new" }
   | { kind: "shared"; skill: SharedSkill }
-  | { kind: "personal"; bot: SkillBot; skill: BotSkill };
+  | { kind: "bot"; bot: SkillBot; skill: BotSkill };
 
 function useRemoveSkills() {
   const shared = useMutation({
@@ -107,7 +112,7 @@ function useRemoveSkills() {
     onSettled: invalidateSkills,
   });
 
-  const personal = useMutation({
+  const botSkill = useMutation({
     mutationFn: ({ bot, skill }: { bot: SkillBot; skill: BotSkill }) =>
       removePersonalSkill(bot.id, skill.id),
     onSettled: invalidateSkills,
@@ -115,7 +120,7 @@ function useRemoveSkills() {
 
   const pin = useMutation({
     mutationFn: ({ bot, skill }: { bot: SkillBot; skill: BotSkill }) =>
-      send<"updateAgentSkill">(personalSkillPath(bot.id, skill.id), "PATCH", {
+      send<"updateAgentSkill">(botSkillPath(bot.id, skill.id), "PATCH", {
         pinned: !skill.pinned,
       }),
     onSettled: invalidateSkills,
@@ -126,7 +131,7 @@ function useRemoveSkills() {
     onSettled: invalidateSkills,
   });
 
-  return { shared, personal, pin, copy };
+  return { shared, botSkill, pin, copy };
 }
 
 function SkillPills({
@@ -152,26 +157,11 @@ function SkillPills({
       value={scope}
       onChange={onScope}
       pills={[
-        unavailable.size
-          ? { value: ALL, label: "All" }
-          : { value: ALL, label: "All", count: shared + own + bundled },
-        {
-          value: SHARED,
-          label: "Shared",
-          icon: <IconUsersGroup />,
-          count: shared,
-        },
-        ...bots.map((bot) => {
-          const pill = {
-            value: bot.id,
-            label: bot.name,
-            icon: <BotAvatar bot={bot} size={18} />,
-          };
-
-          return unavailable.has(bot.id)
-            ? pill
-            : { ...pill, count: bot.skills.length };
-        }),
+        allPill(unavailable.size ? undefined : shared + own + bundled),
+        sharedPill(shared),
+        ...bots.map((bot) =>
+          botPill(bot, unavailable.has(bot.id) ? undefined : bot.skills.length),
+        ),
         {
           value: DEFAULT,
           label: "Default",
@@ -324,7 +314,7 @@ function EditableSkillRow({
 }
 
 /** The empty note of a bot's own skills: none at all, or none that match. */
-const personalEmpty = (bot: SkillBot, needle: string) => {
+const botSkillsEmpty = (bot: SkillBot, needle: string) => {
   if (bot.skills.some((skill) => matches(skill, needle))) return null;
 
   return bot.skills.length
@@ -332,7 +322,7 @@ const personalEmpty = (bot: SkillBot, needle: string) => {
     : "No skills of its own yet.";
 };
 
-function PersonalSections({
+function BotSkillSections({
   bots,
   filter,
   remove,
@@ -369,8 +359,8 @@ function PersonalSections({
         />
       }
     >
-      {personalEmpty(bot, needle) && (
-        <SectionEmpty>{personalEmpty(bot, needle)}</SectionEmpty>
+      {botSkillsEmpty(bot, needle) && (
+        <SectionEmpty>{botSkillsEmpty(bot, needle)}</SectionEmpty>
       )}
       {bot.skills.map((skill) =>
         matches(skill, needle) ? (
@@ -394,8 +384,8 @@ function PersonalSections({
               </DropdownMenuItem>
             }
             deleteDescription={`${bot.name} loses this skill. This cannot be undone.`}
-            onEdit={() => onEdit({ kind: "personal", bot, skill })}
-            onDelete={() => remove.personal.mutate({ bot, skill })}
+            onEdit={() => onEdit({ kind: "bot", bot, skill })}
+            onDelete={() => remove.botSkill.mutate({ bot, skill })}
           />
         ) : null,
       )}
@@ -474,7 +464,7 @@ function SkillSections({
         </Section>
       )}
       {ownScope && (
-        <PersonalSections
+        <BotSkillSections
           bots={bots.filter((bot) => !unavailable.has(bot.id))}
           filter={filter}
           remove={remove}
@@ -501,8 +491,8 @@ function SkillSections({
 function SkillsBody({
   bots,
   skillBots,
-  personalPending,
-  personalErrors,
+  botSkillsPending,
+  botSkillErrors,
   skills,
   filter,
   remove,
@@ -511,15 +501,15 @@ function SkillsBody({
 }: {
   bots: UseQueryResult<Bot[]>;
   skillBots: SkillBot[];
-  personalPending: boolean;
-  personalErrors: { bot: Bot; error: Error }[];
+  botSkillsPending: boolean;
+  botSkillErrors: { bot: Bot; error: Error }[];
   skills: UseQueryResult<ListedSkill[]>;
   filter: SkillFilter;
   remove: ReturnType<typeof useRemoveSkills>;
   onEdit: (editing: Editing) => void;
   onInstalled: (sheet: InstalledSheet) => void;
 }) {
-  if (skills.isPending || bots.isPending || personalPending)
+  if (skills.isPending || bots.isPending || botSkillsPending)
     return <Skeleton className="h-40" />;
 
   if (bots.isError)
@@ -538,7 +528,7 @@ function SkillsBody({
 
   return (
     <>
-      {personalErrors.map(({ bot, error }) => (
+      {botSkillErrors.map(({ bot, error }) => (
         <Alert key={bot.id} variant="destructive">
           <AlertDescription>
             Could not load {bot.name}'s skills: {error.message}
@@ -554,28 +544,28 @@ function SkillsBody({
         remove={remove}
         onEdit={onEdit}
         onInstalled={onInstalled}
-        unavailable={new Set(personalErrors.map(({ bot }) => bot.id))}
+        unavailable={new Set(botSkillErrors.map(({ bot }) => bot.id))}
       />
     </>
   );
 }
 
-/** Every bot with its personal skills, and the bots whose skills failed to load. */
+/** Every bot with its own skills, and the bots whose skills failed to load. */
 function usePersonalSkills() {
-  const { bots, entries, refreshing } = useBotQueries(personalSkillsQuery);
+  const { bots, entries, refreshing } = useBotQueries(botSkillsQuery);
 
   const skillBots = entries.map(({ bot, query }) => ({
     ...bot,
     skills: query.data ?? [],
   }));
 
-  const personalErrors = entries.flatMap(({ bot, query }) =>
+  const botSkillErrors = entries.flatMap(({ bot, query }) =>
     query.isError ? [{ bot, error: query.error }] : [],
   );
 
-  const personalPending = entries.some(({ query }) => query.isPending);
+  const botSkillsPending = entries.some(({ query }) => query.isPending);
 
-  return { bots, refreshing, skillBots, personalPending, personalErrors };
+  return { bots, refreshing, skillBots, botSkillsPending, botSkillErrors };
 }
 
 function useUpdateCheck() {
@@ -660,7 +650,7 @@ function InstalledSheets({
 
 const firstError = (remove: ReturnType<typeof useRemoveSkills>) =>
   remove.shared.error ??
-  remove.personal.error ??
+  remove.botSkill.error ??
   remove.pin.error ??
   remove.copy.error;
 
@@ -698,12 +688,12 @@ function selectionCatalog(
 }
 
 export function SkillsPage() {
-  const { bots, refreshing, skillBots, personalPending, personalErrors } =
+  const { bots, refreshing, skillBots, botSkillsPending, botSkillErrors } =
     usePersonalSkills();
 
   const skills = useQuery(skillsQuery);
 
-  const unavailable = new Set(personalErrors.map(({ bot }) => bot.id));
+  const unavailable = new Set(botSkillErrors.map(({ bot }) => bot.id));
   const [editing, setEditing] = useState<Editing | null>(null);
   const [installed, setInstalled] = useState<InstalledSheet | null>(null);
   const [search, setSearch] = useState("");
@@ -724,7 +714,7 @@ export function SkillsPage() {
     .map((skill) => skill.id);
 
   return (
-    <WorkspacePage
+    <Page
       title="Skills"
       refreshing={refreshing || skills.isFetching}
       onRefresh={() => void invalidateSkills()}
@@ -766,8 +756,8 @@ export function SkillsPage() {
         <SkillsBody
           bots={bots}
           skillBots={skillBots}
-          personalPending={personalPending}
-          personalErrors={personalErrors}
+          botSkillsPending={botSkillsPending}
+          botSkillErrors={botSkillErrors}
           skills={skills}
           filter={{ scope, needle: search.trim().toLowerCase() }}
           remove={remove}
@@ -789,7 +779,7 @@ export function SkillsPage() {
           onSheet={setInstalled}
         />
       )}
-    </WorkspacePage>
+    </Page>
   );
 }
 
@@ -945,7 +935,7 @@ function skillDraft(editing: Editing) {
   const skill = editing.skill;
 
   return {
-    owner: editing.kind === "personal" ? editing.bot.id : SHARED,
+    owner: editing.kind === "bot" ? editing.bot.id : SHARED,
     name: skill?.name ?? "",
     instructions: skill?.instructions ?? "",
   };
@@ -963,9 +953,9 @@ async function saveSkill(
     return editing.skill.id;
   }
 
-  if (editing.kind === "personal") {
+  if (editing.kind === "bot") {
     await send<"updateAgentSkill">(
-      personalSkillPath(editing.bot.id, editing.skill.id),
+      botSkillPath(editing.bot.id, editing.skill.id),
       "PATCH",
       skill,
     );
@@ -979,7 +969,7 @@ async function saveSkill(
   const bot = bots.find((each) => each.id === owner);
 
   if (!bot) throw new Error("Choose a bot.");
-  await send<"createAgentSkill">(personalSkillsPath(bot.id), "POST", skill);
+  await send<"createAgentSkill">(botSkillsPath(bot.id), "POST", skill);
 
   return null;
 }

@@ -2,10 +2,12 @@ import { queryOptions, useQuery } from "@tanstack/react-query";
 import type { z } from "@hono/zod-openapi";
 import type { codingJobsResponse } from "@crumble/server/contract/api-responses";
 import { agentPath } from "@/features/bots/api";
+import type { JobKind } from "@crumble/server/contract/tools";
 import { api, queryClient } from "@/lib/api";
-import type { JobKind } from "@/lib/job-kinds";
 
-export type CodingJob = z.infer<typeof codingJobsResponse>["jobs"][number];
+export type JobRef = { kind: JobKind; name: string };
+
+export type Job = z.infer<typeof codingJobsResponse>["jobs"][number];
 
 type JobsRoute = "codingJobs" | "desktopJobs";
 
@@ -27,8 +29,8 @@ export const jobsQuery = (id: string, kind: JobKind) =>
   });
 
 /** A bot's jobs of one kind, for everything that shows them. */
-export const useJobs = (id: string, kind: JobKind, enabled = true) =>
-  useQuery({ ...jobsQuery(id, kind), enabled });
+export const useJobs = (id: string, kind: JobKind) =>
+  useQuery(jobsQuery(id, kind));
 
 export const refreshJobs = (id: string, kind: JobKind) =>
   queryClient.invalidateQueries({ queryKey: jobsQuery(id, kind).queryKey });

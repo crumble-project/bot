@@ -37,9 +37,12 @@ import {
   type Provider,
   modelsQuery,
   providersQuery,
-} from "@/features/settings/api";
+} from "@/features/providers/api";
 import { BotAvatar } from "@/components/bot-avatar";
-import { isWebSearchProviderId, webSearchProviders } from "@/lib/web-search";
+import {
+  isWebSearchProviderId,
+  webSearchProviders,
+} from "@/features/web-search/web-search";
 import { SelectOptions } from "@/components/form-fields";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 import { AvatarEditor } from "@/features/avatars/avatar-editor";
@@ -56,7 +59,7 @@ import {
   MAX_BOT_NAME_CHARS,
   MAX_INSTRUCTIONS_CHARS,
 } from "@crumble/server/contract/limits";
-import { agentInput } from "@crumble/server/contract/inputs";
+import { agentInput } from "@crumble/server/contract/agents";
 
 const DEFAULT_TOOLS: string[] = [
   BOT_TOOL.memory,
@@ -809,7 +812,7 @@ function BotFieldSections({
               <SelectOptions items={webProviderItems} />
             </Select>
             <FieldDescription>
-              Manage the default and Exa key in Settings → Providers.
+              Manage the default and Exa key in Settings → Web search.
             </FieldDescription>
           </Field>
         )}

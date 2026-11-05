@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { z } from "zod";
 import type { Bot } from "@/features/bots/api";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
-import { assignSharedSkill } from "./bot-pills";
+import { assignSharedSkill } from "./skill-assignment";
 import { applyBulkAction, type SelectableSkill } from "./bulk-skill-actions";
 
 const bot = (id: string, name = id): Bot => ({

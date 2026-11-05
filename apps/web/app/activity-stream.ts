@@ -3,7 +3,7 @@ import type { ActivityEvent } from "@/features/activity/api";
 import { type Bot, botsQuery, refreshBots } from "@/features/bots/api";
 import { groupsQuery } from "@/features/group-chats/api";
 import { follow, queryClient } from "@/lib/api";
-import { notifyReply, type ReplyChat } from "@/lib/notifications";
+import { type ChatLinks, notifyReply } from "@/lib/notifications";
 import { onSessionReset } from "@/lib/session";
 
 type Status = "connected" | "reconnecting" | "disconnected";
@@ -44,10 +44,7 @@ onSessionReset(() => {
 });
 
 /** Follows the server's activity stream: sidebar previews, notifications, and connection status. */
-export function followActivity(
-  open: (chat: ReplyChat) => void,
-  signal: AbortSignal,
-) {
+export function followActivity(links: ChatLinks, signal: AbortSignal) {
   let connections = 0;
   const current = ++activityFollower;
 
@@ -82,7 +79,7 @@ export function followActivity(
 
         if (event.type === "chat-preview")
           preview(event.agentId, event.lastMessage);
-        else notifyReply(event, open);
+        else notifyReply(event, links);
       },
     },
     controller.signal,

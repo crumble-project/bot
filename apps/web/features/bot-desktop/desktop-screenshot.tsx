@@ -1,6 +1,6 @@
 import type { Message } from "@/features/chat/api";
 import { AttachmentImage } from "@/features/chat/transcript";
-import { toolResult } from "@/features/chat/tool-result";
+import { messageCard } from "@/features/chat/message-card";
 import { DESKTOP_SCREENSHOT_TOOL_NAME } from "@crumble/server/contract/tools";
 
 /** A successful `desktop_screenshot` result, whose image is its entry's attachment 0. */
@@ -11,7 +11,7 @@ const screenshotOf = (message: Message) =>
     ? message
     : null;
 
-export const desktopScreenshotResult = toolResult(
+export const desktopScreenshotResult = messageCard(
   screenshotOf,
   ({ result, chat }) => (
     <AttachmentImage

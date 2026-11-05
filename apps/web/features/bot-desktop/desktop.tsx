@@ -9,7 +9,7 @@ import { IconArrowLeft, IconRefresh, IconZzz } from "@tabler/icons-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { MobileSidebarTrigger } from "@/components/workspace";
+import { MobileSidebarTrigger } from "@/components/page";
 import {
   type DesktopControl,
   type DesktopViewer,
@@ -17,6 +17,7 @@ import {
 } from "./api";
 import { agentPath, botsQuery } from "@/features/bots/api";
 import { call, follow, send } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 function useDesktopControl(path: ReturnType<typeof agentPath>) {
   const [control, setControl] = useState<DesktopControl | null>(null);
@@ -167,6 +168,31 @@ export function BotDesktop({ botId }: { botId: string }) {
   );
 }
 
+function ViewerFrame({
+  path,
+  title,
+  tabIndex,
+  className,
+}: {
+  path: string;
+  title: string;
+  tabIndex?: number;
+  className?: string;
+}) {
+  return (
+    <iframe
+      key={path}
+      title={title}
+      src={path}
+      // The viewer is our own noVNC page; its module imports need the real origin.
+      // react-doctor-disable-next-line iframe-missing-sandbox
+      sandbox="allow-scripts allow-same-origin"
+      {...(tabIndex !== undefined && { tabIndex })}
+      className={cn("size-full border-0", className)}
+    />
+  );
+}
+
 /** A small live view of a bot's desktop that opens the full desktop. */
 export function DesktopPreview({ botId }: { botId: string }) {
   const path = agentPath(botId);
@@ -230,15 +256,11 @@ export function DesktopPreview({ botId }: { botId: string }) {
         </span>
       )}
       {viewer.data && (
-        <iframe
-          key={viewer.data.path}
+        <ViewerFrame
+          path={viewer.data.path}
           title="Bot desktop preview"
-          src={viewer.data.path}
-          // The viewer is our own noVNC page; its module imports need the real origin.
-          // react-doctor-disable-next-line iframe-missing-sandbox
-          sandbox="allow-scripts allow-same-origin"
           tabIndex={-1}
-          className="pointer-events-none size-full border-0"
+          className="pointer-events-none"
         />
       )}
     </Link>
@@ -268,15 +290,7 @@ function ViewerPane({
         </Alert>
       )}
       {viewer.data && (
-        <iframe
-          key={viewer.data.path}
-          title="Bot desktop"
-          src={viewer.data.path}
-          // The viewer is our own noVNC page; its module imports need the real origin.
-          // react-doctor-disable-next-line iframe-missing-sandbox
-          sandbox="allow-scripts allow-same-origin"
-          className="size-full border-0"
-        />
+        <ViewerFrame path={viewer.data.path} title="Bot desktop" />
       )}
     </div>
   );

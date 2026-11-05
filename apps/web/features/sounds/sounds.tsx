@@ -1,7 +1,7 @@
 import { play, sounds, themes, type ThemeName } from "cuelume";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Section, SettingRow, WorkspacePage } from "@/components/workspace";
+import { Section, SettingRow, Page } from "@/components/page";
 import { type NoticeKind, playNotice, showNotice } from "@/lib/notifications";
 
 const NOTICES: { kind: NoticeKind; label: string }[] = [
@@ -20,7 +20,7 @@ export function SoundsPage() {
   const [theme, setTheme] = useState<ThemeName>("default");
 
   return (
-    <WorkspacePage title="Sounds">
+    <Page title="Sounds">
       <Section title="Notifications">
         {NOTICES.map(({ kind, label }) => (
           <SettingRow key={kind} title={label}>
@@ -64,6 +64,6 @@ export function SoundsPage() {
           ))}
         </div>
       </Section>
-    </WorkspacePage>
+    </Page>
   );
 }

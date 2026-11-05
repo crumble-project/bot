@@ -20,6 +20,7 @@ import {
 } from "@/features/bot-secrets/secret-page";
 import { LoginSheet } from "./login-sheet";
 import { api } from "@/lib/api";
+import { BOT_SECRET_USE_RETENTION_DAYS } from "@crumble/server/contract/limits";
 
 const FIELD_LABELS = {
   username: "Username",
@@ -73,7 +74,7 @@ function FillsDialog({
   return (
     <UsesDialog<LoginUse>
       title={`Fills of ${item.name}`}
-      description="Fields desktop jobs filled in the last 90 days, newest first."
+      description={`Fields desktop jobs filled in the last ${BOT_SECRET_USE_RETENTION_DAYS} days, newest first.`}
       empty="Not filled yet."
       queryKey={["login-uses", botId, item.name]}
       load={(query, signal) =>
@@ -118,7 +119,7 @@ export function LoginsSettings({
         empty:
           "None yet. The bot asks for one when a desktop job needs to sign in.",
         noMatch: "No logins match your search.",
-        note: "Desktop jobs fill a login only into https pages on its hosts, and never see its password. Fills are kept for 90 days.",
+        note: `Desktop jobs fill a login only into https pages on its hosts, and never see its password. Fills are kept for ${BOT_SECRET_USE_RETENTION_DAYS} days.`,
         deleteDescription:
           "Desktop jobs can no longer fill it, and its fills are deleted. This cannot be undone.",
       }}

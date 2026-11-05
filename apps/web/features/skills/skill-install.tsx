@@ -16,7 +16,7 @@ import {
   assignSharedSkill,
   botsUsing,
   toggled,
-} from "./bot-pills";
+} from "./skill-assignment";
 import {
   invalidateSkills,
   invalidateSkill,

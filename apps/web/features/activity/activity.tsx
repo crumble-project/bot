@@ -6,7 +6,6 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { z } from "zod";
 import {
   IconBrain,
   IconChevronRight,
@@ -43,8 +42,10 @@ import { api, queryClient } from "@/lib/api";
 import { BotAvatar } from "@/components/bot-avatar";
 import { StateDiff } from "@/components/state-diff";
 import { RevertChange, changeSummary, changeTitle } from "./changes";
-import { FilterPills, WorkspacePage } from "@/components/workspace";
+import { FilterPills, Page } from "@/components/page";
 import { activityKey } from "./api";
+import { ALL } from "@/features/bots/queries";
+import { activityDetails } from "@crumble/server/contract/activity-details";
 
 type Activity = ActivityFeed["activities"][number];
 
@@ -52,30 +53,10 @@ type Operational = Exclude<Activity, { kind: "change" }>;
 
 const PREVIEW_CHARS = 240;
 
-// Anything a call sent or a result returned, as text: strings as they are, other values as JSON.
-const asText = z.union([
-  z.string(),
-  z.unknown().transform((value) => JSON.stringify(value) ?? ""),
-]);
-
-const detailsInput = z.object({
-  toolName: z.string().optional(),
-  name: z.string().optional(),
-  content: asText.optional(),
-  arguments: asText.optional(),
-  args: z.string().optional(),
-  isError: z.boolean().optional(),
-  error: z.string().optional(),
-  communication: z
-    .object({ fromName: z.string().optional(), toName: z.string().optional() })
-    .optional(),
-});
-
 const details = (activity: Operational) =>
-  detailsInput.safeParse(activity.details).data ?? {};
+  activityDetails.parse(activity.details);
 
 const PAGE_SIZE = 50;
-const ALL = "all";
 
 const KINDS = {
   "tool-call": { label: "Tool calls", icon: IconTool },
@@ -217,7 +198,7 @@ export function ActivityPage() {
   const botsById = new Map((bots.data ?? []).map((bot) => [bot.id, bot]));
 
   return (
-    <WorkspacePage
+    <Page
       title="Activity"
       refreshing={feed.isFetching}
       onRefresh={() => void queryClient.resetQueries({ queryKey: activityKey })}
@@ -231,7 +212,7 @@ export function ActivityPage() {
         />
       </div>
       <ActivityBody feed={feed} kind={kind} botsById={botsById} />
-    </WorkspacePage>
+    </Page>
   );
 }
 

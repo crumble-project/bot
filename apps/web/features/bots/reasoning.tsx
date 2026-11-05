@@ -15,9 +15,9 @@ import {
   type BotInput,
   refreshBots,
 } from "./api";
-import { type Model, modelsQuery } from "@/features/settings/api";
+import { type Model, modelsQuery } from "@/features/providers/api";
 import { queryClient, send } from "@/lib/api";
-import { THINKING_LEVELS } from "@crumble/server/contract/inputs";
+import { THINKING_LEVELS } from "@crumble/server/contract/agents";
 
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 

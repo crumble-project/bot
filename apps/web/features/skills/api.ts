@@ -27,20 +27,20 @@ export type SkillCheck = z.infer<typeof skillCheckResponse>;
 export const skillPath = (id: string) =>
   `/v1/skills/${encodeURIComponent(id)}` as const;
 
-export const personalSkillsPath = (botId: string) =>
+export const botSkillsPath = (botId: string) =>
   `${agentPath(botId)}/skills` as const;
 
-export const personalSkillPath = (botId: string, skillId: string) =>
-  `${personalSkillsPath(botId)}/${encodeURIComponent(skillId)}` as const;
+export const botSkillPath = (botId: string, skillId: string) =>
+  `${botSkillsPath(botId)}/${encodeURIComponent(skillId)}` as const;
 
-/** Every bot's personal skills, for refreshing them together. */
-export const personalSkillsKey = ["personal-skills"];
+/** Every bot's own skills, for refreshing them together. */
+export const botSkillsKey = ["bot-skills"];
 
-export const personalSkillsQuery = (botId: string) =>
+export const botSkillsQuery = (botId: string) =>
   queryOptions({
-    queryKey: [...personalSkillsKey, botId],
+    queryKey: [...botSkillsKey, botId],
     queryFn: ({ signal }) =>
-      api<"agentSkills">(personalSkillsPath(botId), { signal }),
+      api<"agentSkills">(botSkillsPath(botId), { signal }),
   });
 
 export const skillsQuery = queryOptions({

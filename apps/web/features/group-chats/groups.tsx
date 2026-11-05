@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldError,
   FieldGroup,
@@ -19,8 +18,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { MessageScrollerItem } from "@/components/ui/message-scroller";
-import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
+import { cn, numberWord } from "@/lib/utils";
 import {
   Tooltip,
   TooltipContent,
@@ -33,14 +31,12 @@ import {
   groupChatQuery,
   groupPath,
   groupsQuery,
+  membersOf,
 } from "./api";
 import type { Message } from "@/features/chat/api";
 import { call, queryClient, send } from "@/lib/api";
 import { BotAvatar, botColor } from "@/components/bot-avatar";
-import {
-  ConfirmDeleteContent,
-  MobileSidebarTrigger,
-} from "@/components/workspace";
+import { ConfirmDeleteContent, MobileSidebarTrigger } from "@/components/page";
 import {
   ConversationEmpty,
   ConversationError,
@@ -64,6 +60,7 @@ import {
   MAX_GROUP_NAME_CHARS,
   MIN_GROUP_MEMBERS,
 } from "@crumble/server/contract/limits";
+import { BotSwitchField } from "@/features/bots/bot-switch-field";
 
 function senderBot(message: Message, byId: Map<string, Bot>) {
   return message.origin?.agentId ? byId.get(message.origin.agentId) : undefined;
@@ -228,14 +225,6 @@ function colorOf(message: Message, byId: Map<string, Bot>) {
   return bot ? botColor(bot) : undefined;
 }
 
-function membersOf(memberIds: string[], byId: Map<string, Bot>) {
-  return memberIds.flatMap((id) => {
-    const bot = byId.get(id);
-
-    return bot ? [bot] : [];
-  });
-}
-
 function GroupSender({
   message,
   byId,
@@ -315,39 +304,6 @@ export function GroupChatView({ groupId }: { groupId: string }) {
         onStop={() => conversation.stop.mutate()}
       />
     </div>
-  );
-}
-
-function GroupMemberField({
-  bot,
-  on,
-  full,
-  onToggle,
-}: {
-  bot: Bot;
-  on: boolean;
-  full: boolean;
-  onToggle: (next: boolean) => void;
-}) {
-  return (
-    <Field orientation="horizontal">
-      <FieldContent>
-        <FieldLabel
-          htmlFor={`member-${bot.id}`}
-          className="flex items-center gap-2"
-        >
-          <BotAvatar bot={bot} size={22} />
-          {bot.name}
-          {!bot.enabled && <Badge variant="outline">Disabled</Badge>}
-        </FieldLabel>
-      </FieldContent>
-      <Switch
-        id={`member-${bot.id}`}
-        checked={on}
-        disabled={!on && full}
-        onCheckedChange={onToggle}
-      />
-    </Field>
   );
 }
 
@@ -499,18 +455,22 @@ export function GroupForm({ group }: { group?: GroupChat }) {
         <FieldSet>
           <FieldLegend variant="label">Members</FieldLegend>
           <FieldDescription>
-            Choose two to six bots. A bot added later gets a summary of the
-            conversation so far.
+            {`Choose ${numberWord(MIN_GROUP_MEMBERS)} to ${numberWord(MAX_GROUP_MEMBERS)} bots. A bot added later gets a summary of the conversation so far.`}
           </FieldDescription>
           <FieldGroup>
             {bots.map((bot) => (
-              <GroupMemberField
+              <BotSwitchField
                 key={bot.id}
+                id={`member-${bot.id}`}
                 bot={bot}
-                on={selected.has(bot.id)}
-                full={memberIds.length >= MAX_GROUP_MEMBERS}
-                onToggle={(next) => toggle(bot, next)}
-              />
+                checked={selected.has(bot.id)}
+                disabled={
+                  !selected.has(bot.id) && memberIds.length >= MAX_GROUP_MEMBERS
+                }
+                onCheckedChange={(next) => toggle(bot, next)}
+              >
+                {!bot.enabled && <Badge variant="outline">Disabled</Badge>}
+              </BotSwitchField>
             ))}
           </FieldGroup>
         </FieldSet>

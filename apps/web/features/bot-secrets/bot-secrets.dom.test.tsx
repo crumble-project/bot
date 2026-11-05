@@ -12,7 +12,7 @@ import type { Credentials } from "@/features/credentials/api";
 import type { Logins } from "@/features/logins/api";
 import { queryClient } from "@/lib/api";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
-import { credentialSaveInput } from "@crumble/server/shared/domain";
+import { credentialSaveInput } from "@crumble/server/contract/secrets";
 
 const GLOBALS = [
   "window",
@@ -242,7 +242,7 @@ const requestCard = async (
   toolName: string,
   toolDetails: Logins["requests"][number] | Credentials["requests"][number],
 ) => {
-  const { ToolResultRow } = await import("@/features/chat/tool-results");
+  const { ToolResultRow } = await import("@/features/bot-chat/chat-cards");
 
   // The sheet it opens links to the password manager settings.
   const router = createRouter({ routeTree: createRootRoute() });

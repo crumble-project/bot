@@ -20,6 +20,7 @@ import {
   SecretPage,
   type SecretRowProps,
 } from "@/features/bot-secrets/secret-page";
+import { BOT_SECRET_USE_RETENTION_DAYS } from "@crumble/server/contract/limits";
 
 const credentialsOf = (data: Credentials) => data.credentials;
 
@@ -75,7 +76,7 @@ function CredentialUsesDialog({
   return (
     <UsesDialog<CredentialUse>
       title={`Uses of ${item.name}`}
-      description="Requests sent with the value in the last 90 days, newest first."
+      description={`Requests sent with the value in the last ${BOT_SECRET_USE_RETENTION_DAYS} days, newest first.`}
       empty="Not used yet."
       queryKey={["credential-uses", botId, item.name]}
       load={(query, signal) =>
@@ -116,7 +117,7 @@ export function CredentialsSettings({
         pillsLabel: "Whose credentials",
         empty: "None yet. The bot asks for one when a coding job needs it.",
         noMatch: "No credentials match your search.",
-        note: "Coding jobs get a placeholder for each credential; the value only goes to its hosts. Uses are kept for 90 days.",
+        note: `Coding jobs get a placeholder for each credential; the value only goes to its hosts. Uses are kept for ${BOT_SECRET_USE_RETENTION_DAYS} days.`,
         deleteDescription:
           "Requests with its placeholder stop working at once, and its uses are deleted. This cannot be undone.",
       }}

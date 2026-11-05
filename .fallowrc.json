@@ -35,14 +35,27 @@
       { "name": "app", "patterns": ["apps/server/src/app/**"] },
       { "name": "shared", "patterns": ["apps/server/src/shared/**"] },
       { "name": "contract", "patterns": ["apps/server/src/contract/**"] },
+      { "name": "workspaces", "patterns": ["apps/server/src/workspaces/**"] },
       { "name": "features", "patterns": ["apps/server/src/**"] },
+      // Web, leaf first: a feature's api.ts is importable by every feature, the chat kernel by features, and the bot chat assembles features.
+      { "name": "web-base", "patterns": ["apps/web/lib/**", "apps/web/components/**", "apps/web/hooks/**"] },
+      { "name": "web-api", "patterns": ["apps/web/features/*/api.ts"] },
+      { "name": "web-chat", "patterns": ["apps/web/features/chat/**"] },
+      { "name": "web-bot-chat", "patterns": ["apps/web/features/bot-chat/**"] },
+      { "name": "web-features", "patterns": ["apps/web/features/**"] },
       { "name": "web", "patterns": ["apps/web/**"] }
     ],
     "rules": [
       { "from": "shared", "allow": [] },
       { "from": "contract", "allow": ["shared"] },
-      { "from": "features", "allow": ["shared", "contract"] },
-      { "from": "web", "allow": ["contract"] }
+      { "from": "workspaces", "allow": ["shared"] },
+      { "from": "features", "allow": ["shared", "contract", "workspaces"] },
+      { "from": "web-base", "allow": ["contract"] },
+      { "from": "web-api", "allow": ["web-base", "contract"] },
+      { "from": "web-chat", "allow": ["web-api", "web-base", "contract"] },
+      { "from": "web-features", "allow": ["web-chat", "web-api", "web-base", "contract"] },
+      { "from": "web-bot-chat", "allow": ["web-features", "web-chat", "web-api", "web-base", "contract"] },
+      { "from": "web", "allow": ["web-bot-chat", "web-features", "web-chat", "web-api", "web-base", "contract"] }
     ]
   },
   "health": {

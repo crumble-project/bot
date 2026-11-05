@@ -215,7 +215,7 @@ const loadGroup = async () => {
 };
 
 const loadChat = async () => {
-  const { Chat } = await import("./chat");
+  const { Chat } = await import("@/features/bot-chat/chat");
 
   return () => <Chat botId="bot" />;
 };

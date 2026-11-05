@@ -13,6 +13,12 @@ export function randomId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six"];
+
+/** A small count as UI text spells it, such as "two"; larger ones stay digits. */
+export const numberWord = (count: number) =>
+  NUMBER_WORDS[count] ?? String(count);
+
 /** Markdown as one line of plain text, for previews outside a chat. */
 export function plainMarkdown(markdown: string) {
   return markdown

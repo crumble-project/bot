@@ -29,7 +29,7 @@ import { RedirectReturn } from "@/components/redirect-return";
 import {
   SecretSourceField,
   useSecretDraft,
-} from "@/components/secret-source-field";
+} from "@/features/password-managers/secret-source-field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
@@ -44,11 +44,11 @@ import {
   RowTile,
   Section,
   SectionEmpty,
-  WorkspacePage,
-} from "@/components/workspace";
+  Page,
+} from "@/components/page";
 import { BotAvatar } from "@/components/bot-avatar";
-import { SHARED, ownerItems } from "@/lib/bot-queries";
-import { refreshSecrets } from "@/lib/secrets";
+import { SHARED, ownerItems } from "@/features/bots/queries";
+import { refreshSecrets } from "@/features/password-managers/api";
 import { MAX_MCP_SERVER_NAME_CHARS } from "@crumble/server/contract/limits";
 import { MCP_OAUTH_WEB_PATH } from "@crumble/server/contract/mcp-oauth";
 
@@ -80,7 +80,7 @@ function validUrl(value: string) {
 
 type Editing = { server: McpServer | null };
 
-function personalServers(bots: Bot[], list: McpServer[]) {
+function botServers(bots: Bot[], list: McpServer[]) {
   return bots.flatMap((bot) => {
     const own = list.filter((server) => server.agentId === bot.id);
 
@@ -90,11 +90,11 @@ function personalServers(bots: Bot[], list: McpServer[]) {
 
 function IntegrationSections({
   shared,
-  personal,
+  botOwn,
   onEdit,
 }: {
   shared: McpServer[];
-  personal: { bot: Bot; servers: McpServer[] }[];
+  botOwn: { bot: Bot; servers: McpServer[] }[];
   onEdit: (server: McpServer) => void;
 }) {
   return (
@@ -114,7 +114,7 @@ function IntegrationSections({
           />
         ))}
       </Section>
-      {personal.map(({ bot, servers: own }) => (
+      {botOwn.map(({ bot, servers: own }) => (
         <Section
           key={bot.id}
           title={bot.name}
@@ -149,7 +149,7 @@ export function IntegrationsPage() {
   );
 
   return (
-    <WorkspacePage
+    <Page
       title="Integrations"
       refreshing={bots.isFetching || servers.isFetching}
       onRefresh={() => void refresh()}
@@ -173,7 +173,7 @@ export function IntegrationsPage() {
       ) : (
         <IntegrationSections
           shared={list.filter((server) => server.agentId === null)}
-          personal={personalServers(bots.data ?? [], list)}
+          botOwn={botServers(bots.data ?? [], list)}
           onEdit={(server) => setEditing({ server })}
         />
       )}
@@ -184,7 +184,7 @@ export function IntegrationsPage() {
           onClose={() => setEditing(null)}
         />
       )}
-    </WorkspacePage>
+    </Page>
   );
 }
 

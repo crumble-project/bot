@@ -7,9 +7,9 @@ import { FieldError } from "@/components/ui/field";
 import { type Bot, type BotInput, agentPath, refreshBots } from "./api";
 import { BotFields, useBotFields } from "./bot-fields";
 import { call, queryClient, send } from "@/lib/api";
-import { ConfirmDeleteContent, WorkspacePage } from "@/components/workspace";
+import { ConfirmDeleteContent, Page } from "@/components/page";
 import { chatQuery } from "@/features/chat/api";
-import { refreshSchedules } from "@/features/schedules/api";
+import { refreshSchedules } from "@/features/automations/api";
 
 function useBotMutations(bot: Bot | undefined) {
   const navigate = useNavigate();
@@ -164,7 +164,7 @@ export function BotForm({ bot }: { bot?: Bot }) {
   const { save, duplicate, remove } = useBotMutations(bot);
 
   return (
-    <WorkspacePage
+    <Page
       title={bot ? `Edit ${bot.name}` : "New bot"}
       actions={
         <BotFormActions bot={bot} disabled={fields.invalid || save.isPending} />
@@ -179,6 +179,6 @@ export function BotForm({ bot }: { bot?: Bot }) {
       />
       {save.isError && <FieldError>{save.error.message}</FieldError>}
       <BotManagementActions bot={bot} duplicate={duplicate} remove={remove} />
-    </WorkspacePage>
+    </Page>
   );
 }

@@ -4,6 +4,7 @@ import {
   Link,
   useMatchRoute,
   useNavigate,
+  useRouter,
   useRouterState,
   Outlet,
 } from "@tanstack/react-router";
@@ -35,9 +36,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CrumbleMark } from "@/components/crumble-mark";
-import { cn, plainMarkdown } from "@/lib/utils";
+import { cn, numberWord, plainMarkdown } from "@/lib/utils";
 import { type Bot, botsQuery } from "@/features/bots/api";
-import { type GroupChat, groupsQuery } from "@/features/group-chats/api";
+import {
+  type GroupChat,
+  groupsQuery,
+  membersOf,
+} from "@/features/group-chats/api";
 import { authClient } from "@/lib/auth-client";
 import {
   setTheme,
@@ -46,14 +51,15 @@ import {
   useTheme,
 } from "@/lib/theme";
 import { resetSession, signedOut } from "@/lib/session";
-import { botStatusLine, isBusy, useActivity } from "@/features/bots/activity";
+import { botStatusLine, isBusy, useWorking } from "@/features/bot-chat/working";
 import { followActivity, useConnectionStatus } from "./activity-stream";
 import { markSeen, useUnreadCount } from "@/lib/notifications";
 import { BotAvatar, botColor, botStyle } from "@/components/bot-avatar";
-import { LiveBotAvatar } from "@/features/bots/avatar";
+import { LiveBotAvatar } from "@/features/bot-chat/avatar";
 import { CommandPalette, PALETTE_SHORTCUT } from "./command-palette";
-import { THEME_OPTIONS, WORKSPACE } from "./navigation";
+import { THEME_OPTIONS, PAGES } from "./navigation";
 import { MIN_GROUP_MEMBERS } from "@crumble/server/contract/limits";
+import type { ReplyChat } from "@/lib/notifications";
 
 function useResetOnUserChange(userId: string | undefined) {
   const previousUserId = useRef(userId);
@@ -71,8 +77,14 @@ function useResetOnUserChange(userId: string | undefined) {
   }, [userId]);
 }
 
+const chatLocation = ({ kind, id }: ReplyChat) =>
+  kind === "group"
+    ? ({ to: "/groups/$groupId", params: { groupId: id } } as const)
+    : ({ to: "/bots/$botId", params: { botId: id } } as const);
+
 function useFollowActivity() {
   const navigate = useNavigate();
+  const router = useRouter();
   const path = useRouterState({ select: (state) => state.location.pathname });
 
   useEffect(markSeen, [path]);
@@ -80,14 +92,16 @@ function useFollowActivity() {
   useEffect(() => {
     const controller = new AbortController();
 
-    followActivity(({ kind, id }) => {
-      if (kind === "group")
-        void navigate({ to: "/groups/$groupId", params: { groupId: id } });
-      else void navigate({ to: "/bots/$botId", params: { botId: id } });
-    }, controller.signal);
+    followActivity(
+      {
+        open: (chat) => void navigate(chatLocation(chat)),
+        pathOf: (chat) => router.buildLocation(chatLocation(chat)).pathname,
+      },
+      controller.signal,
+    );
 
     return () => controller.abort();
-  }, [navigate]);
+  }, [navigate, router]);
 }
 
 /** Titles the tab with the unseen replies and the open chat, such as `(3) Atlas | Crumble`. */
@@ -248,18 +262,14 @@ function GroupsSection({
             <GroupRow
               key={group.id}
               group={group}
-              members={group.memberIds.flatMap((id) => {
-                const member = byId.get(id);
-
-                return member ? [member] : [];
-              })}
+              members={membersOf(group.memberIds, byId)}
             />
           ))}
           {groups?.length === 0 && (
             <p className="px-2 text-xs text-muted-foreground">
               {canGroup
                 ? "No group chats yet"
-                : "Create two bots to start a group chat"}
+                : `Create ${numberWord(MIN_GROUP_MEMBERS)} bots to start a group chat`}
             </p>
           )}
         </SidebarMenu>
@@ -308,7 +318,7 @@ function WorkspaceSection() {
       <SidebarGroupLabel>Workspace</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
-          {WORKSPACE.map((item) => (
+          {PAGES.map((item) => (
             <SidebarMenuItem key={item.to}>
               <SidebarMenuButton
                 isActive={Boolean(matchRoute({ to: item.to }))}
@@ -418,7 +428,7 @@ function ConnectionStatus() {
 }
 
 function BotRow({ bot, active }: { bot: Bot; active: boolean }) {
-  const working = isBusy(useActivity(bot.id));
+  const working = isBusy(useWorking(bot.id));
 
   return (
     <SidebarMenuItem style={botStyle(botColor(bot))}>

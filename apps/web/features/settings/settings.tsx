@@ -41,8 +41,8 @@ import {
   SectionEmpty,
   SectionError,
   SettingRow,
-  WorkspacePage,
-} from "@/components/workspace";
+  Page,
+} from "@/components/page";
 import { settingsSections } from "./sections";
 
 /** Settings: a section list beside the open section. */
@@ -427,11 +427,11 @@ function Server() {
 
 export function GeneralSettings() {
   return (
-    <WorkspacePage title="General">
+    <Page title="General">
       <Account />
       <Notifications />
       <Passkeys />
       <Server />
-    </WorkspacePage>
+    </Page>
   );
 }

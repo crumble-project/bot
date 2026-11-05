@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
-import { WorkspacePage } from "@/components/workspace";
+import { Page } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import {
   agentPath,
@@ -29,7 +29,7 @@ export function AvatarsPage() {
   });
 
   return (
-    <WorkspacePage title="Avatars">
+    <Page title="Avatars">
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-4 sm:p-6">
         <p className="text-sm text-muted-foreground">
           Choose a gallery shape, import a definition, or copy a prompt to
@@ -99,6 +99,6 @@ export function AvatarsPage() {
         )}
         {save.isSuccess && <p role="status">Avatar saved.</p>}
       </div>
-    </WorkspacePage>
+    </Page>
   );
 }

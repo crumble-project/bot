@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { play } from "cuelume";
 import type { ReplyEvent } from "@crumble/server/contract/reply-event";
-import { isJobKind } from "@/lib/job-kinds";
+import { isJobKind } from "@crumble/server/contract/tools";
 import { onSessionReset } from "@/lib/session";
 import { plainMarkdown } from "@/lib/utils";
 
@@ -39,9 +39,6 @@ export type ReplyChat = { kind: "bot" | "group"; id: string };
 
 const chatOf = ({ groupId, agentId }: ReplyEvent): ReplyChat =>
   groupId ? { kind: "group", id: groupId } : { kind: "bot", id: agentId };
-
-const chatPath = ({ kind, id }: ReplyChat) =>
-  kind === "group" ? `/groups/${id}` : `/bots/${id}`;
 
 const chatTag = ({ kind, id }: ReplyChat) =>
   kind === "group" ? `reply-group-${id}` : `reply-${id}`;
@@ -141,13 +138,16 @@ export function showNotice(
   });
 }
 
+/** How the app reaches a chat; the router owns its URLs. */
+export type ChatLinks = {
+  open: (chat: ReplyChat) => void;
+  pathOf: (chat: ReplyChat) => string;
+};
+
 /** Counts a reply as unread unless its chat is on screen, and notifies the owner. */
-export function notifyReply(
-  event: ReplyEvent,
-  open: (chat: ReplyChat) => void,
-) {
+export function notifyReply(event: ReplyEvent, { open, pathOf }: ChatLinks) {
   const chat = chatOf(event);
-  const path = chatPath(chat);
+  const path = pathOf(chat);
 
   if (event.origin === "bot" || isShowing(path)) return;
 

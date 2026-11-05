@@ -2,12 +2,7 @@ import { type Bot } from "@/features/bots/api";
 import type { ListedSkill, SkillCheck } from "./api";
 import { api, send } from "@/lib/api";
 import { invalidateSkill } from "./skill-cache";
-import {
-  assignSkill,
-  checkSkillUpdates,
-  skillPath,
-  personalSkillPath,
-} from "./api";
+import { assignSkill, checkSkillUpdates, skillPath, botSkillPath } from "./api";
 
 export type SelectableSkill = {
   id: string;
@@ -120,9 +115,7 @@ async function assignBots(
 
 async function deleteSkill(skill: SelectableSkill) {
   await send<"deleteAgentSkill" | "deleteSkill">(
-    skill.botId
-      ? personalSkillPath(skill.botId, skill.id)
-      : skillPath(skill.id),
+    skill.botId ? botSkillPath(skill.botId, skill.id) : skillPath(skill.id),
     "DELETE",
   );
 

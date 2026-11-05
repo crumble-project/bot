@@ -1,15 +1,17 @@
 import { Spinner } from "@/components/ui/spinner";
-import { JOB_KINDS, type JobRef, isJobKind } from "@/lib/job-kinds";
+import { JOB_KINDS } from "./kinds";
+import { type JobRef } from "./api";
+import { JOB_KIND_NAMES } from "@crumble/server/contract/tools";
 import { jobDetails } from "@crumble/server/contract/tool-details";
 import { type Message } from "@/features/chat/api";
 import { toolDetailsOf } from "@/features/chat/tool-details";
-import { toolResult, type ToolResultChat } from "@/features/chat/tool-result";
-
-const kinds = Object.keys(JOB_KINDS).filter(isJobKind);
+import { messageCard, type CardChat } from "@/features/chat/message-card";
 
 /** A coding or desktop job a tool result started or messaged. */
 export function jobOf(message: Message) {
-  const kind = kinds.find((each) => JOB_KINDS[each].tool === message.toolName);
+  const kind = JOB_KIND_NAMES.find(
+    (each) => JOB_KINDS[each].tool === message.toolName,
+  );
 
   const details =
     kind && toolDetailsOf(message, jobDetails, JOB_KINDS[kind].tool);
@@ -36,7 +38,7 @@ function JobCard({
   chat,
 }: {
   job: JobRef & { status?: string | undefined };
-  chat: ToolResultChat;
+  chat: CardChat;
 }) {
   const { icon: Icon, label } = JOB_KINDS[job.kind];
   const status = chat.jobStatus(job) ?? job.status;
@@ -57,6 +59,6 @@ function JobCard({
   );
 }
 
-export const jobResult = toolResult(jobOf, ({ result, chat }) => (
+export const jobResult = messageCard(jobOf, ({ result, chat }) => (
   <JobCard job={result} chat={chat} />
 ));

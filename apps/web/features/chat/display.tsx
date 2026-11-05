@@ -11,7 +11,7 @@ import {
 } from "@crumble/server/contract/tool-details";
 import { DISPLAY_TOOL_NAME } from "@crumble/server/contract/tools";
 import { toolDetailsOf } from "./tool-details";
-import { toolResult } from "./tool-result";
+import { messageCard } from "./message-card";
 import type { ChartLayout } from "@crumble/server/contract/chart";
 import { CHART_SERIES_COLORS } from "@crumble/server/contract/limits";
 import type { Message } from "./api";
@@ -22,7 +22,7 @@ type Stat = Extract<DisplayDetails, { kind: "stats" }>["items"][number];
 const displayOf = (message: Message) =>
   toolDetailsOf(message, displayDetails, DISPLAY_TOOL_NAME);
 
-export const displayResult = toolResult(displayOf, ({ result }) => (
+export const displayResult = messageCard(displayOf, ({ result }) => (
   <DisplayCard display={result} />
 ));
 

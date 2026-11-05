@@ -6,7 +6,7 @@ import { queryClient } from "@/lib/api";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 
 for (const scenario of ["failure", "refresh"] as const) {
-  test(`personal skills ${scenario} preserves the rest of the page`, async () => {
+  test(`bot skills ${scenario} preserves the rest of the page`, async () => {
     const window = new Window({ url: "http://localhost" });
     const globals = Object.getOwnPropertyDescriptors(globalThis);
 
@@ -158,7 +158,7 @@ for (const scenario of ["failure", "refresh"] as const) {
       } else {
         await act(async () => {
           void queryClient.invalidateQueries({
-            queryKey: ["personal-skills", "bad"],
+            queryKey: ["bot-skills", "bad"],
           });
         });
         await settle();

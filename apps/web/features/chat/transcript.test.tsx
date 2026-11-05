@@ -5,8 +5,8 @@ import { Suspense, act, startTransition } from "react";
 import { createRoot } from "react-dom/client";
 import type { Message } from "./api";
 import { ARRIVAL, Attachments, mergeMessages, useArrivals } from "./transcript";
-import type { ToolResultChat } from "./tool-result";
-import { shownInChat, ToolResultRow } from "./tool-results";
+import type { CardChat } from "./message-card";
+import { shownInChat, ToolResultRow } from "@/features/bot-chat/chat-cards";
 
 const message = (id: string): Message => ({
   id,
@@ -17,7 +17,7 @@ const message = (id: string): Message => ({
 
 const pending = new Promise<never>(() => {});
 
-const chat: ToolResultChat = {
+const chat: CardChat = {
   botId: "bot",
   attachmentPath: () => "/screen",
   jobStatus: () => undefined,

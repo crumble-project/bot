@@ -32,7 +32,12 @@ import {
   refreshMemories,
 } from "./api";
 import { send } from "@/lib/api";
-import { ALL, SHARED, ownerItems, useBotQueries } from "@/lib/bot-queries";
+import {
+  ALL,
+  SHARED,
+  ownerItems,
+  useBotQueries,
+} from "@/features/bots/queries";
 import { agoInLargestUnit } from "@/lib/time";
 import { BotAvatar } from "@/components/bot-avatar";
 import {
@@ -41,8 +46,10 @@ import {
   NewButton,
   PageToolbar,
   SectionEmpty,
-  WorkspacePage,
-} from "@/components/workspace";
+  Page,
+} from "@/components/page";
+import { MAX_MEMORY_CHARS } from "@crumble/server/contract/limits";
+import { allPill, botPill, sharedPill } from "@/features/bots/bot-pills";
 
 type Editing = { memory: Memory | null; owner: string };
 
@@ -134,17 +141,12 @@ function OwnerPills({
       value={scope}
       onChange={onScope}
       pills={[
-        { value: ALL, label: "All", count: total },
-        ...owners.map((owner) => ({
-          value: owner.id,
-          label: owner.name,
-          count: owner.memories.data?.length ?? 0,
-          icon: owner.bot ? (
-            <BotAvatar bot={owner.bot} size={18} />
-          ) : (
-            <IconUsersGroup />
-          ),
-        })),
+        allPill(total),
+        ...owners.map(({ bot, memories }) => {
+          const count = memories.data?.length ?? 0;
+
+          return bot ? botPill(bot, count) : sharedPill(count);
+        }),
       ]}
     />
   );
@@ -384,7 +386,7 @@ export function MemoryPage() {
   const remove = useDeleteMemory();
 
   return (
-    <WorkspacePage
+    <Page
       title="Memory"
       refreshing={refreshing}
       onRefresh={() => void refreshMemories()}
@@ -431,7 +433,7 @@ export function MemoryPage() {
           onClose={() => setEditing(null)}
         />
       )}
-    </WorkspacePage>
+    </Page>
   );
 }
 
@@ -487,7 +489,7 @@ function MemoryDialog({
         <Textarea
           id="memory-content"
           className="min-h-32"
-          maxLength={32000}
+          maxLength={MAX_MEMORY_CHARS}
           value={content}
           onChange={(event) => setContent(event.target.value)}
         />

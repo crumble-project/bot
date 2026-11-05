@@ -6,7 +6,7 @@ import type {
 } from "@crumble/server/contract/api-responses";
 import { agentPath } from "@/features/bots/api";
 import { api, queryClient } from "@/lib/api";
-import { refreshSecrets } from "@/lib/secrets";
+import { refreshSecrets } from "@/features/password-managers/api";
 
 export type Credentials = z.infer<typeof credentialsResponse>;
 

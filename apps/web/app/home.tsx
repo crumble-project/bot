@@ -13,9 +13,9 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { type Bot, botsQuery } from "@/features/bots/api";
-import { botStatusLine, isBusy, useActivity } from "@/features/bots/activity";
+import { botStatusLine, isBusy, useWorking } from "@/features/bot-chat/working";
 import { botColor, botStyle } from "@/components/bot-avatar";
-import { LiveBotAvatar } from "@/features/bots/avatar";
+import { LiveBotAvatar } from "@/features/bot-chat/avatar";
 
 function greeting(hour: number) {
   if (hour < 5) return "Up late";
@@ -103,7 +103,7 @@ export function Home() {
 }
 
 function HouseholdBot({ bot, index }: { bot: Bot; index: number }) {
-  const working = isBusy(useActivity(bot.id));
+  const working = isBusy(useWorking(bot.id));
 
   return (
     <li

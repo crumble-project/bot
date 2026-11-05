@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { credentialName } from "@crumble/server/contract/inputs";
+import { credentialName } from "@crumble/server/contract/secrets";
 import { useMutation } from "@tanstack/react-query";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,7 @@ import {
   SecretSourceField,
   keepPlaceholder,
   useSecretDraft,
-} from "@/components/secret-source-field";
+} from "@/features/password-managers/secret-source-field";
 import {
   SecretSheet,
   defaultOwner,

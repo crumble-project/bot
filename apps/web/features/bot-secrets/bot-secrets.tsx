@@ -27,12 +27,13 @@ import {
   RowMenu,
   Section,
   SectionEmpty,
-} from "@/components/workspace";
+} from "@/components/page";
 import type { Bot } from "@/features/bots/api";
 import { send, type RoutePath } from "@/lib/api";
-import { ALL } from "@/lib/bot-queries";
+import { ALL } from "@/features/bots/queries";
 import { ago, when } from "@/lib/time";
 import { BotAvatar } from "@/components/bot-avatar";
+import { allPill, botPill } from "@/features/bots/bot-pills";
 
 const USES_PAGE = 50;
 
@@ -101,17 +102,8 @@ export function BotPills<D>({
       value={scope}
       onChange={onScope}
       pills={[
-        {
-          value: ALL,
-          label: "All",
-          count: entries.reduce((sum, entry) => sum + countOf(entry), 0),
-        },
-        ...entries.map((entry) => ({
-          value: entry.bot.id,
-          label: entry.bot.name,
-          icon: <BotAvatar bot={entry.bot} size={18} />,
-          count: countOf(entry),
-        })),
+        allPill(entries.reduce((sum, entry) => sum + countOf(entry), 0)),
+        ...entries.map((entry) => botPill(entry.bot, countOf(entry))),
       ]}
     />
   );

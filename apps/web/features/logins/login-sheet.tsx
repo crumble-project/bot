@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { loginName, ONE_PASSWORD_ITEM } from "@crumble/server/contract/inputs";
+import { loginName, ONE_PASSWORD_ITEM } from "@crumble/server/contract/secrets";
 import { useMutation } from "@tanstack/react-query";
 import {
   SecretSheet,
@@ -15,7 +15,7 @@ import {
   keepPlaceholder,
   useConnectedPasswordManagers,
   useSecretDraft,
-} from "@/components/secret-source-field";
+} from "@/features/password-managers/secret-source-field";
 import type { Bot } from "@/features/bots/api";
 import { type Login, type LoginRequest, loginPath, refreshLogins } from "./api";
 import { call, type RequestBody } from "@/lib/api";

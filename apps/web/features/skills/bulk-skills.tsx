@@ -13,10 +13,10 @@ import { AlertDialog } from "@/components/ui/alert-dialog";
 import { IconX } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { EditorSheet } from "@/components/form-fields";
-import { ConfirmDeleteContent } from "@/components/workspace";
+import { ConfirmDeleteContent } from "@/components/page";
 import type { Bot } from "@/features/bots/api";
 import { cn } from "@/lib/utils";
-import { BotToggles, toggled } from "./bot-pills";
+import { BotToggles, toggled } from "./skill-assignment";
 import { invalidateSkills } from "./skill-cache";
 import {
   applyBulkAction,
