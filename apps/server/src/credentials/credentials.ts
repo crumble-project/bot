@@ -37,8 +37,13 @@ import {
   type AppError,
 } from "../shared/errors";
 import { toolOutput } from "../shared/tool-output";
-
-export const REQUEST_CREDENTIAL_TOOL = "request_credential";
+import { REQUEST_CREDENTIAL_TOOL_NAME } from "../contract/tools";
+import {
+  MAX_CREDENTIAL_HOST_CHARS,
+  MAX_CREDENTIAL_HOSTS,
+  MAX_CREDENTIAL_NAME_CHARS,
+  MAX_REQUEST_REASON_CHARS,
+} from "../shared/limits";
 
 const hostsText = (hosts: readonly string[]) => hosts.join(", ");
 
@@ -486,12 +491,15 @@ const pendingLines = (requests: readonly CredentialRequest[]) =>
 
 /** What a bot names, for which hosts, and why, when it asks the owner for a secret. */
 export const requestParameters = {
-  name: Type.String({ minLength: 1, maxLength: 64 }),
-  hosts: Type.Array(Type.String({ minLength: 1, maxLength: 253 }), {
-    minItems: 1,
-    maxItems: 20,
-  }),
-  reason: Type.String({ minLength: 1, maxLength: 1000 }),
+  name: Type.String({ minLength: 1, maxLength: MAX_CREDENTIAL_NAME_CHARS }),
+  hosts: Type.Array(
+    Type.String({ minLength: 1, maxLength: MAX_CREDENTIAL_HOST_CHARS }),
+    {
+      minItems: 1,
+      maxItems: MAX_CREDENTIAL_HOSTS,
+    },
+  ),
+  reason: Type.String({ minLength: 1, maxLength: MAX_REQUEST_REASON_CHARS }),
 };
 
 /** The bot's `request_credential` tool and the requests the owner has not answered, for bots with coding. */
@@ -500,7 +508,7 @@ export function credentialExtension(
   credentials: CredentialsAccess,
 ) {
   const request = defineTool({
-    name: REQUEST_CREDENTIAL_TOOL,
+    name: REQUEST_CREDENTIAL_TOOL_NAME,
     description:
       "Ask the owner for a credential your shell commands or coding jobs need, such as an API token for a service without an MCP server. Name it like an environment variable (ACME_TOKEN), list the hosts it is for (api.acme.com, *.acme.com), and say why. The owner enters the value outside the chat; you never see it. Your commands and coding jobs then get the variable with a placeholder that works only on requests to those hosts. After calling, tell the owner what you asked for and why, then end your turn: a message arrives when the owner answers.",
     parameters: Type.Object(requestParameters),

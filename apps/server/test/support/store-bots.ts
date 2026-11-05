@@ -13,7 +13,7 @@ import {
   type GroupMemberChange,
 } from "../../src/group-chats/group-chat-repository";
 import { ScheduleRepository } from "../../src/schedules/schedule-repository";
-import type { AttachmentInput } from "../../src/shared/attachments";
+import type { AttachmentInput } from "../../src/shared/attachment-rules";
 import type {
   Agent,
   AgentInput,

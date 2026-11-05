@@ -17,8 +17,8 @@ import {
   type ChatAdapter,
   type GatewayConnection,
   type GatewayMessage,
-  type GatewayStatus,
 } from "../adapter";
+import type { ConnectionStatus } from "../../shared/domain";
 
 export const DISCORD_SECRET_KEY = "discord:token";
 const SEND_TIMEOUT_MS = 10_000;
@@ -195,7 +195,7 @@ export function discordAdapter(
           : message;
       };
 
-      const status = (value: GatewayStatus, error?: string) => {
+      const status = (value: ConnectionStatus, error?: string) => {
         if (!closed) host.onStatus(value, error);
       };
 

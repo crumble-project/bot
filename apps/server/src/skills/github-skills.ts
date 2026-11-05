@@ -4,13 +4,19 @@ import { Context, Effect, Layer } from "effect";
 import { z } from "zod";
 import { github, GitHubUnavailable } from "../github-apps/github-api";
 import {
-  MAX_SKILL_DOCUMENTS,
   skillDocumentInput,
   skillInput,
   type SkillDocument,
   type SkillInput,
 } from "../shared/domain";
 import { parseSkillMarkdown } from "./common-skills";
+import {
+  MAX_INSTRUCTIONS_CHARS,
+  MAX_SKILL_DESCRIPTION_CHARS,
+  MAX_SKILL_DOCUMENT_CHARS,
+  MAX_SKILL_DOCUMENTS,
+  MAX_SKILL_NAME_CHARS,
+} from "../shared/limits";
 
 /** Where to look for skills: a repository, optionally a branch, and a folder in it. */
 export type SkillLocation = {
@@ -30,7 +36,7 @@ export type TreeEntry = z.infer<typeof treeEntry>;
 
 const REPOSITORY = /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/;
 
-const MAX_DOCUMENT_BYTES = 64000;
+const MAX_DOCUMENT_BYTES = MAX_SKILL_DOCUMENT_CHARS;
 
 /** Same limit as common skills; larger files aren't skill instructions. */
 export const MAX_SKILL_FILE_BYTES = 512 * 1024;
@@ -163,10 +169,6 @@ export function skillDigest(
   return hash.digest("hex");
 }
 
-const MAX_DESCRIPTION = 300;
-const MAX_NAME = 100;
-const MAX_INSTRUCTIONS = 32000;
-
 /** Why a parsed SKILL.md can't be a skill, or null when it can. */
 function markdownProblem(
   parsed: ReturnType<typeof parseSkillMarkdown>,
@@ -176,17 +178,17 @@ function markdownProblem(
 
   if (!parsed.body) return "SKILL.md has no instructions";
 
-  if (parsed.body.length > MAX_INSTRUCTIONS)
-    return `Its instructions are longer than ${MAX_INSTRUCTIONS.toLocaleString("en")} characters`;
+  if (parsed.body.length > MAX_INSTRUCTIONS_CHARS)
+    return `Its instructions are longer than ${MAX_INSTRUCTIONS_CHARS.toLocaleString("en")} characters`;
 
-  return name.length > MAX_NAME
-    ? `Its name is longer than ${MAX_NAME} characters`
+  return name.length > MAX_SKILL_NAME_CHARS
+    ? `Its name is longer than ${MAX_SKILL_NAME_CHARS} characters`
     : null;
 }
 
 const shortened = (description: string) =>
-  description.length > MAX_DESCRIPTION
-    ? `${description.slice(0, MAX_DESCRIPTION - 1).trimEnd()}…`
+  description.length > MAX_SKILL_DESCRIPTION_CHARS
+    ? `${description.slice(0, MAX_SKILL_DESCRIPTION_CHARS - 1).trimEnd()}…`
     : description;
 
 /** The skill a SKILL.md and its documents make, or why they make none. */

@@ -58,10 +58,10 @@ import {
   reviewInstructions,
   type ReviewScope,
 } from "../skills/review-instructions";
-import {
-  prepareAttachments,
-  type AttachmentInput,
-} from "../shared/attachments";
+import type { AttachmentInput } from "../shared/attachment-rules";
+import { prepareAttachments } from "../shared/attachments";
+import { BOT_TOOL, MEMORY_TOOL_NAME } from "../contract/tools";
+import { MAX_MEMORY_CHARS } from "../shared/limits";
 import {
   prepareReply,
   readAttachment,
@@ -432,7 +432,7 @@ function chatTools(
   options: { hasSkills: boolean; group: boolean; vision: boolean },
 ) {
   return [
-    ...(agent.tools.includes("memory") ? [record.memory] : []),
+    ...(agent.tools.includes(BOT_TOOL.memory) ? [record.memory] : []),
     ...(options.hasSkills ? [record.skill] : []),
     ...(record.skillManage ? [record.skillManage] : []),
     ...offered.flatMap((extension) => extension.tools ?? []),
@@ -449,7 +449,9 @@ function reviewTools(
   review: ReviewScope,
 ) {
   return [
-    ...(agent.tools.includes("memory") && review.memory ? [record.memory] : []),
+    ...(agent.tools.includes(BOT_TOOL.memory) && review.memory
+      ? [record.memory]
+      : []),
     ...(hasSkills ? [record.skill] : []),
     ...(record.skillManage && review.skills ? [record.skillManage] : []),
   ];
@@ -534,7 +536,7 @@ function conversationInstructions(
 }
 
 function assertMemoryEnabled(agent: Agent | null | undefined) {
-  if (!agent?.enabled || !agent.tools.includes("memory"))
+  if (!agent?.enabled || !agent.tools.includes(BOT_TOOL.memory))
     throw new Error("Memory access is disabled for this agent");
 }
 
@@ -768,7 +770,7 @@ export class AgentRuntime {
 
   private memoryTool(agent: Agent) {
     return defineTool({
-      name: "memory",
+      name: MEMORY_TOOL_NAME,
       description:
         "Read and manage this agent’s persistent memory. When the agent uses shared memory, `list` also returns shared memories (marked `shared`), which other agents see too; create one with `shared: true` only for what every agent should know. In a group chat only your own memory can be changed.",
       parameters: Type.Object({
@@ -779,7 +781,9 @@ export class AgentRuntime {
           Type.Literal("delete"),
         ]),
         id: Type.Optional(Type.String({ minLength: 1 })),
-        content: Type.Optional(Type.String({ minLength: 1, maxLength: 32000 })),
+        content: Type.Optional(
+          Type.String({ minLength: 1, maxLength: MAX_MEMORY_CHARS }),
+        ),
         shared: Type.Optional(Type.Boolean()),
       }),
       // Writes are not replay-safe: interrupted calls report an interruption instead of duplicating a memory.

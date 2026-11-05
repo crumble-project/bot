@@ -3,7 +3,7 @@ import {
   MAX_ATTACHMENTS,
   attachmentKind,
   type AttachmentInput,
-} from "../shared/attachments";
+} from "../shared/attachment-rules";
 import type { Agent, GroupChat } from "../shared/domain";
 import type { AppError } from "../shared/errors";
 import { pi, type GroupChatContext } from "./group-chat-context";

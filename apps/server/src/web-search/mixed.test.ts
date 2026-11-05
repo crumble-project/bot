@@ -1,6 +1,7 @@
 import { expect, mock, test } from "bun:test";
 import { Effect } from "effect";
-import type { WebSearchQuery, WebSearchResult } from "./provider";
+import type { WebSearchResult } from "../contract/web-search";
+import type { WebSearchQuery } from "./provider";
 
 class VendorUnavailable extends Error {}
 

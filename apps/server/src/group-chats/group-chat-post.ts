@@ -1,16 +1,17 @@
 import { Effect } from "effect";
 import { appErrors } from "../shared/app-errors";
-import {
-  prepareAttachments,
-  type AttachmentInfo,
-  type AttachmentInput,
-} from "../shared/attachments";
+import type {
+  AttachmentInfo,
+  AttachmentInput,
+} from "../shared/attachment-rules";
+import { prepareAttachments } from "../shared/attachments";
 import { InvalidInput, type AppError } from "../shared/errors";
 import { logged, pi, type GroupChatContext } from "./group-chat-context";
 import type { GroupChatMembers } from "./group-chat-members";
 import type { GroupMessageReceipt } from "./group-chat-types";
 import type { GroupEntry } from "./group-transcripts";
 import type { GroupTurnEngine } from "./group-turn-engine";
+import { MESSAGE_PREVIEW_CHARS } from "../shared/limits";
 
 /** Owner messages a group remembers as awaiting their first answer; older ones stop notifying. */
 const AWAITING_ANSWERS = 50;
@@ -132,7 +133,7 @@ const writeOwnerMessage = Effect.fnUntraced(function* (
         ...(attachments.length && { attachments, files: info }),
         ...(target && {
           replyTo: target.entryId,
-          replyPreview: target.text.slice(0, 240),
+          replyPreview: target.text.slice(0, MESSAGE_PREVIEW_CHARS),
         }),
       },
       requestId,

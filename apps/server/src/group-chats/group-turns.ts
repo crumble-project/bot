@@ -5,8 +5,7 @@ import {
   defineTool,
 } from "@earendil-works/pi-durable";
 import { defineAnchorTask } from "../shared/anchor-task";
-
-export const PASS_TOOL_NAME = "pass";
+import { PASS_TOOL_NAME } from "../contract/tools";
 
 export const GROUP_TURN_EXTENSION = "group-turn";
 

@@ -1,5 +1,5 @@
 import { z } from "@hono/zod-openapi";
-import { body, define, empty, json } from "../contract/route";
+import { body, define, empty, json } from "./route";
 
 export const pushInput = z
   .object({

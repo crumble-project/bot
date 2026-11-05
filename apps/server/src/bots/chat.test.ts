@@ -12,7 +12,8 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "./runtime";
 import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
-import { ASK_ABOUT_IMAGE_TOOL_NAME, imageHash } from "../vision/vision";
+import { ASK_ABOUT_IMAGE_TOOL_NAME } from "../contract/tools";
+import { imageHash } from "../vision/vision";
 import { standaloneBots, type Activity } from "./bots";
 import { Store } from "../../test/support/store";
 import { Effect } from "effect";

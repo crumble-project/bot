@@ -27,6 +27,7 @@ import { nowIso } from "../shared/time";
 import { BotWorkspaces, WORKSPACE_PATH } from "../workspaces/workspace";
 import { ScriptRunRepository } from "./script-run-repository";
 import { scriptEvent, type ScriptEvent } from "../event-sources/event-payload";
+import { BOT_TOOL } from "../contract/tools";
 
 type Outcome = {
   status: Exclude<ScriptRun["status"], "running">;
@@ -137,7 +138,7 @@ export class ScriptRuns extends Context.Service<
 
           const agent = yield* agents.get(schedule.agentId);
 
-          if (!agent?.tools.includes("coding"))
+          if (!agent?.tools.includes(BOT_TOOL.coding))
             return {
               status: "failed",
               exitCode: null,

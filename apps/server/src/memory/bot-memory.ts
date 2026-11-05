@@ -12,11 +12,14 @@ import {
   memorySourceOf,
 } from "./memory-sources";
 import { InvalidInput, NotFound, type AppError } from "../shared/errors";
+import { MAX_MEMORY_CHARS } from "../shared/limits";
 
 const validContent = (content: string): Effect.Effect<void, AppError> =>
-  !content.trim() || content.length > 32000
+  !content.trim() || content.length > MAX_MEMORY_CHARS
     ? Effect.fail(
-        new InvalidInput({ message: "Memory must contain 1–32000 characters" }),
+        new InvalidInput({
+          message: `Memory must contain 1–${MAX_MEMORY_CHARS} characters`,
+        }),
       )
     : Effect.void;
 

@@ -40,8 +40,7 @@ import {
 import { oneTimeCode, parseOneTimeSecret } from "./one-time-codes";
 import { toolOutput } from "../shared/tool-output";
 import { requestParameters } from "../credentials/credentials";
-
-export const REQUEST_LOGIN_TOOL = "request_login";
+import { REQUEST_LOGIN_TOOL_NAME } from "../contract/tools";
 
 /** What a login's use records beyond its host: the field filled. */
 const useDetail = z.object({ field: loginFieldInput });
@@ -488,7 +487,7 @@ export function jobLoginSection(logins: readonly Login[]) {
 /** The bot's `request_login` tool and what it knows about its logins, for bots with desktop jobs. */
 export function loginExtension(agentId: string, logins: LoginsAccess) {
   const request = defineTool({
-    name: REQUEST_LOGIN_TOOL,
+    name: REQUEST_LOGIN_TOOL_NAME,
     description:
       "Ask the owner for a login your desktop jobs need to sign in to a website, for example when a desktop job reports a sign-in page no login covers. Name it like github or acme-portal, list the hosts it is for (github.com, *.github.com), say why, and set one_time_code when the site asks for a two-factor code. The owner enters it outside the chat; you never see the values. Desktop jobs can then fill it on those hosts. After calling, tell the owner what you asked for and why, then end your turn: a message arrives when the owner answers.",
     parameters: Type.Object({

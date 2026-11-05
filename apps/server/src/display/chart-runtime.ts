@@ -23,7 +23,7 @@ import type {
 } from "@tanstack/charts";
 import { scaleLog, scaleSqrt, scaleTime, scaleUtc } from "d3-scale";
 import svgpath from "svgpath";
-import type { ChartLayoutInput } from "./charts";
+import type { ChartLayoutInput } from "../contract/chart";
 
 type Primitive = ChartLayoutInput["nodes"][number];
 

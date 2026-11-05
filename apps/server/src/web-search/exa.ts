@@ -5,8 +5,8 @@ import {
   WebExtractionError,
   WebSearchError,
   type WebSearchProvider,
-  type WebSearchResult,
 } from "./provider";
+import type { WebSearchResult } from "../contract/web-search";
 
 const response = Schema.Struct({
   results: Schema.Array(

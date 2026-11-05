@@ -36,8 +36,8 @@ import type {
   scheduleResponse,
   scriptRunResponse,
   skillPackageResponse,
-  ChartLayout,
 } from "@crumble/server/contract/api-responses";
+import type { ChartLayout } from "@crumble/server/contract/chart";
 import type { BotInput } from "@crumble/server/contract/api-contract";
 import type {
   gatewayConfigInput,

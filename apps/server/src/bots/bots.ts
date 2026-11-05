@@ -1,7 +1,13 @@
 import { Context, Effect, Layer, ManagedRuntime } from "effect";
 import type { JobAnswer } from "../jobs/jobs";
-import type { AttachmentInput } from "../shared/attachments";
-import type { Agent, Conversation, Execution } from "../shared/domain";
+import type { AttachmentInput } from "../shared/attachment-rules";
+import type {
+  Agent,
+  Conversation,
+  Execution,
+  LearnedChange,
+  WAITING_FOR,
+} from "../shared/domain";
 import type { AppError } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import { SettingsRepository } from "../shared/settings-repository";
@@ -49,7 +55,7 @@ export type ReplyActivity = {
   waitingFor?: WaitingFor;
 };
 
-export type WaitingFor = "approval" | "credential" | "login";
+export type WaitingFor = (typeof WAITING_FOR)[number];
 
 export type ChatPreviewActivity = {
   type: "chat-preview";
@@ -66,8 +72,8 @@ export type LearnedActivity = {
   executionId: string;
   changes: Array<{
     changeId: string;
-    target: "skill" | "memory";
-    action: "create" | "update" | "delete" | "revert";
+    target: LearnedChange["target"];
+    action: LearnedChange["action"];
     name: string;
   }>;
   createdAt: string;

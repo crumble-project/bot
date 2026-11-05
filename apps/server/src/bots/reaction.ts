@@ -3,8 +3,7 @@ import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { z } from "zod";
 import { Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "./bot-extensions";
-
-export const REACTION_TOOL_NAME = "react";
+import { REACTION_TOOL_NAME } from "../contract/tools";
 
 const EMOJI = /^\p{RGI_Emoji}$/v;
 

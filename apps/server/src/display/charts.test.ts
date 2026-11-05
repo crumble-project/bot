@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { CHART_WIDTHS, ChartCompiler, chartColor } from "./charts";
+import { chartColor } from "../contract/chart";
+import { CHART_WIDTHS, ChartCompiler } from "./charts";
 
 const compiler = new ChartCompiler();
 

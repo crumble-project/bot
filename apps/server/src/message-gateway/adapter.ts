@@ -1,3 +1,5 @@
+import type { ConnectionStatus } from "../shared/domain";
+
 export type GatewayMessage = {
   id: string;
   channelId: string;
@@ -8,12 +10,6 @@ export type GatewayMessage = {
   replyTo?: string;
   hasAttachments?: boolean;
 };
-
-export type GatewayStatus =
-  | "disconnected"
-  | "connecting"
-  | "connected"
-  | "error";
 
 export type GatewayConnection = {
   send(input: {
@@ -36,7 +32,7 @@ export type ChatAdapter = {
     token: string;
     onMessage(message: GatewayMessage): Promise<void>;
     onInvalidated(error?: string): void;
-    onStatus(status: GatewayStatus, error?: string): void;
+    onStatus(status: ConnectionStatus, error?: string): void;
   }): Promise<GatewayConnection>;
 };
 

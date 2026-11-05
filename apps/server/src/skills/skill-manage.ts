@@ -1,7 +1,6 @@
 import { Type, type Static } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-durable";
 import {
-  MAX_SKILL_DOCUMENTS,
   skillDocumentInput,
   skillInput,
   type Agent,
@@ -18,11 +17,17 @@ import {
   type SkillToolContext,
 } from "./skill-library";
 import type { BotSkills } from "./skills";
+import { SKILL_MANAGE_TOOL_NAME } from "../contract/tools";
+import {
+  MAX_INSTRUCTIONS_CHARS,
+  MAX_SKILL_DESCRIPTION_CHARS,
+  MAX_SKILL_DOCUMENT_CHARS,
+  MAX_SKILL_DOCUMENTS,
+  MAX_SKILL_NAME_CHARS,
+} from "../shared/limits";
 
 const refuse = (message: string) =>
   Effect.fail(new SkillToolError({ message }));
-
-export const SKILL_MANAGE_TOOL_NAME = "skill_manage";
 
 const MAX_OPERATIONS = 10;
 
@@ -71,20 +76,28 @@ export function lintSkill(skill: SkillInput): SkillFinding[] {
   return findings;
 }
 
-const name = Type.String({ minLength: 1, maxLength: 100 });
+const name = Type.String({ minLength: 1, maxLength: MAX_SKILL_NAME_CHARS });
 const path = Type.String({ minLength: 1, maxLength: 200 });
 
 const operation = Type.Union([
   Type.Object({
     action: Type.Literal("create"),
     name,
-    description: Type.Optional(Type.String({ maxLength: 300 })),
-    instructions: Type.String({ minLength: 1, maxLength: 32000 }),
+    description: Type.Optional(
+      Type.String({ maxLength: MAX_SKILL_DESCRIPTION_CHARS }),
+    ),
+    instructions: Type.String({
+      minLength: 1,
+      maxLength: MAX_INSTRUCTIONS_CHARS,
+    }),
     documents: Type.Optional(
       Type.Array(
         Type.Object({
           path,
-          content: Type.String({ minLength: 1, maxLength: 64000 }),
+          content: Type.String({
+            minLength: 1,
+            maxLength: MAX_SKILL_DOCUMENT_CHARS,
+          }),
         }),
         { maxItems: MAX_SKILL_DOCUMENTS },
       ),
@@ -101,14 +114,19 @@ const operation = Type.Union([
   Type.Object({
     action: Type.Literal("rewrite"),
     name,
-    instructions: Type.String({ minLength: 1, maxLength: 32000 }),
-    description: Type.Optional(Type.String({ maxLength: 300 })),
+    instructions: Type.String({
+      minLength: 1,
+      maxLength: MAX_INSTRUCTIONS_CHARS,
+    }),
+    description: Type.Optional(
+      Type.String({ maxLength: MAX_SKILL_DESCRIPTION_CHARS }),
+    ),
   }),
   Type.Object({
     action: Type.Literal("write_document"),
     name,
     path,
-    content: Type.String({ minLength: 1, maxLength: 64000 }),
+    content: Type.String({ minLength: 1, maxLength: MAX_SKILL_DOCUMENT_CHARS }),
   }),
   Type.Object({
     action: Type.Literal("remove_document"),

@@ -2,7 +2,7 @@ import { mkdir, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import Ajv2020 from "ajv/dist/2020";
 import { z } from "zod";
-import { openAPIDocument } from "./api-contract";
+import { openAPIDocument } from "../src/contract/api-contract";
 
 const isEventSchema = (name: string) => name.endsWith(".schema.json");
 
@@ -193,7 +193,7 @@ if (import.meta.main) {
     await compareContracts(resolve(args[0]!), current, reports);
   } else {
     throw new Error(
-      "Usage: bun apps/server/src/contract/contract-check.ts validate [DIRECTORY] | compatibility BASELINE_DIRECTORY",
+      "Usage: bun apps/server/tools/contract-check.ts validate [DIRECTORY] | compatibility BASELINE_DIRECTORY",
     );
   }
 }

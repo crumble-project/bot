@@ -1,6 +1,7 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
 import {
+  ACTIVITY_KINDS,
   agentInput,
   credentialSaveInput,
   groupChatInput,
@@ -14,10 +15,15 @@ import {
   skillLifecycleInput,
   visionModelInput,
 } from "../shared/domain";
-import { attachmentInput, MAX_ATTACHMENTS } from "../shared/attachments";
+import { attachmentInput, MAX_ATTACHMENTS } from "../shared/attachment-rules";
+import {
+  MAX_MEMORY_CHARS,
+  MAX_MESSAGE_CHARS,
+  MAX_SECRET_CHARS,
+} from "../shared/limits";
 import * as response from "./api-responses";
 import { body, define, empty, error, json } from "./route";
-import { pushRoutes } from "../push/push-contract";
+import { pushRoutes } from "./push";
 import { adminRoutes } from "./admin";
 import {
   gatewayConfigInput,
@@ -56,11 +62,11 @@ export type BotInput = z.input<typeof agentInput>;
 
 export const jobAnswerInput = z.object({
   questionId: z.string().min(1),
-  text: z.string().trim().min(1).max(32000),
+  text: z.string().trim().min(1).max(MAX_MESSAGE_CHARS),
 });
 
 export const memoryInput = z.object({
-  content: z.string().trim().min(1).max(32000),
+  content: z.string().trim().min(1).max(MAX_MEMORY_CHARS),
 });
 
 export const snapshotInput = z.object({
@@ -80,7 +86,7 @@ export const desktopViewerInput = z.object({
 });
 
 const messageFields = z.object({
-  content: z.string().trim().max(32000),
+  content: z.string().trim().max(MAX_MESSAGE_CHARS),
   requestId: z.uuid(),
   replyTo: z.string().min(1).max(200).optional(),
   attachments: z.array(attachmentInput).max(MAX_ATTACHMENTS).default([]),
@@ -125,16 +131,14 @@ export const activityInput = z.object({
   agentId: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(100),
   /** Only this kind of item; pass the same kind with every page's cursor. */
-  kind: z
-    .enum(["tool-call", "tool-result", "mcp-call", "bot-message", "change"])
-    .optional(),
+  kind: z.enum([...ACTIVITY_KINDS, "change"]).optional(),
   /** The previous page's `nextCursor`. */
   cursor: z.string().min(1).max(8000).optional(),
 });
 
 /** Write-only: the token never appears in a response. */
 export const passwordManagerTokenInput = z.object({
-  token: z.string().trim().min(1).max(16000),
+  token: z.string().trim().min(1).max(MAX_SECRET_CHARS),
 });
 
 const passwordManagerParams = z.object({ id: passwordManagerIdInput });
@@ -1471,11 +1475,9 @@ export function contractApp() {
     description:
       "Better Auth session cookie. HTTPS deployments use the __Secure- prefix. Cookie-authenticated writes require the configured Origin.",
   });
-  app.openAPIRegistry.register("ReplyEvent", response.replyEvent);
-  app.openAPIRegistry.register("ChatPreviewEvent", response.chatPreviewEvent);
-  app.openAPIRegistry.register("HeartbeatEvent", response.heartbeatEvent);
-  app.openAPIRegistry.register("ActivityEvent", response.activityEvent);
-  app.openAPIRegistry.register("LearnedEvent", response.learnedEvent);
+
+  for (const { component, schema } of response.eventSchemas)
+    if (component) app.openAPIRegistry.register(component, schema);
 
   return app;
 }

@@ -18,9 +18,18 @@ import { Conflict, NotFound, type AppError } from "../shared/errors";
 import { botRequests } from "./schema";
 import { toolOutput } from "../shared/tool-output";
 import { defaultAvatarDefinition } from "../contract/avatar";
-
-export const REQUEST_BOT_TOOL = "request_bot";
-export const CREATE_BOTS_CAPABILITY = "create_bots";
+import { BOT_TOOL, REQUEST_BOT_TOOL_NAME } from "../contract/tools";
+import {
+  MAX_BOT_DESCRIPTION_CHARS,
+  MAX_BOT_MCP_SERVERS,
+  MAX_BOT_NAME_CHARS,
+  MAX_BOT_TOOLS,
+  MAX_INSTRUCTIONS_CHARS,
+  MAX_MODEL_ID_CHARS,
+  MAX_PROVIDER_ID_CHARS,
+  MAX_REQUEST_REASON_CHARS,
+  MAX_TOOL_ID_CHARS,
+} from "../shared/limits";
 
 const statusOf = (value: string): BotRequest["status"] => {
   if (value === "approved" || value === "declined") return value;
@@ -300,22 +309,32 @@ export function botRequestExtension(
   service: BotRequests["Service"],
 ) {
   const request = defineTool({
-    name: REQUEST_BOT_TOOL,
+    name: REQUEST_BOT_TOOL_NAME,
     description:
       "Ask the owner to create a new bot. The owner approves, edits, or declines your proposal in this chat. The new bot is independent of you, and credentials are never shared: it must request its own credentials. Only one request can be pending at a time. After calling, tell the owner what you proposed and why, then end your turn: a message arrives when the owner answers.",
     parameters: Type.Object({
-      name: Type.String({ minLength: 1, maxLength: 80 }),
-      description: Type.String({ maxLength: 1000 }),
-      instructions: Type.String({ maxLength: 32000 }),
-      tools: Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
-        maxItems: 100,
-      }),
+      name: Type.String({ minLength: 1, maxLength: MAX_BOT_NAME_CHARS }),
+      description: Type.String({ maxLength: MAX_BOT_DESCRIPTION_CHARS }),
+      instructions: Type.String({ maxLength: MAX_INSTRUCTIONS_CHARS }),
+      tools: Type.Array(
+        Type.String({ minLength: 1, maxLength: MAX_TOOL_ID_CHARS }),
+        {
+          maxItems: MAX_BOT_TOOLS,
+        },
+      ),
       mcpServers: Type.Array(Type.String({ minLength: 1, maxLength: 36 }), {
-        maxItems: 30,
+        maxItems: MAX_BOT_MCP_SERVERS,
       }),
-      reason: Type.String({ minLength: 1, maxLength: 1000 }),
-      provider: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
-      model: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+      reason: Type.String({
+        minLength: 1,
+        maxLength: MAX_REQUEST_REASON_CHARS,
+      }),
+      provider: Type.Optional(
+        Type.String({ minLength: 1, maxLength: MAX_PROVIDER_ID_CHARS }),
+      ),
+      model: Type.Optional(
+        Type.String({ minLength: 1, maxLength: MAX_MODEL_ID_CHARS }),
+      ),
     }),
     callers: ["model"],
     replay: "unsafe",
@@ -378,7 +397,7 @@ export const botRequestTools = Layer.effectDiscard(
     yield* (yield* BotExtensions).register(
       ExtensionPosition.botRequests,
       (agent) =>
-        agent.tools.includes(CREATE_BOTS_CAPABILITY)
+        agent.tools.includes(BOT_TOOL.createBots)
           ? [botRequestExtension(agent, service)]
           : [],
     );

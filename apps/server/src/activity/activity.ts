@@ -1,13 +1,10 @@
 import type { JsonValue } from "@earendil-works/chord";
 import { z } from "zod";
-import type { Agent, LearnedChange } from "../shared/domain";
-import type { BotCommunication, TranscriptMessage } from "../bots/transcript";
+import type { BotCommunication } from "../contract/api-responses";
+import type { ACTIVITY_KINDS, Agent, LearnedChange } from "../shared/domain";
+import type { TranscriptMessage } from "../bots/transcript";
 
-export type ActivityKind =
-  | "tool-call"
-  | "tool-result"
-  | "mcp-call"
-  | "bot-message";
+export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
 export type ActivityDetail = JsonValue | BotCommunication;
 

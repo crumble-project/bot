@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import type { AttachmentInput } from "../shared/attachments";
+import type { AttachmentInput } from "../shared/attachment-rules";
 import type { Execution } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";

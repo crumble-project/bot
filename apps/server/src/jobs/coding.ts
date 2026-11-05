@@ -21,8 +21,7 @@ import { defineJobKind, type JobExtensions, type JobInfo } from "./jobs";
 import type { CrumblePlugin } from "../plugins/plugins";
 import { WORKSPACE_PATH, type Workspaces } from "../workspaces/workspace";
 import { chatWorkspaceSection, workspaceNotesSection } from "./workspace-notes";
-
-export const CODING_TOOL_NAME = "coding";
+import { BOT_TOOL, CODING_TOOL_NAME } from "../contract/tools";
 
 /** The bot's own read, write, edit, and bash in its workspace; group turns keep it, unlike the job tool. */
 const WORKSPACE_EXTENSION = "workspace";
@@ -239,7 +238,7 @@ export const codingPlugin = (
     ? [
         {
           kind: "coding",
-          enabled: (agent) => agent.tools.includes(CODING_TOOL_NAME),
+          enabled: (agent) => agent.tools.includes(BOT_TOOL.coding),
           extensions: (agent) =>
             codingExtensions(agent, workspaces, credentials, questionGraceMs),
           env: (agentId, target, context) =>

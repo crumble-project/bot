@@ -23,8 +23,7 @@ import {
   desktopFillsAccess,
 } from "./desktop-fill-repository";
 import { runnerOf } from "../shared/runner";
-
-export const DESKTOP_SCREENSHOT_TOOL_NAME = "desktop_screenshot";
+import { BOT_TOOL, DESKTOP_SCREENSHOT_TOOL_NAME } from "../contract/tools";
 
 /** The extension's name; group turns leave it out, since a group's transcript can't show the image. */
 export const DESKTOP_SCREENSHOT_EXTENSION = "desktop-screenshot";
@@ -193,7 +192,7 @@ const screenshotWorkspaces = (
     shell: (agentId) => workspaces.env(agentId),
   };
 
-const hasDesktop = (agent: Agent) => agent.tools.includes("desktop");
+const hasDesktop = (agent: Agent) => agent.tools.includes(BOT_TOOL.desktop);
 
 /** Offers `desktop_screenshot` to bots with the `desktop` tool. */
 export const desktopScreenshotTools = Layer.effectDiscard(

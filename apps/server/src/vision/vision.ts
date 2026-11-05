@@ -28,6 +28,7 @@ import {
 import { Effect } from "effect";
 import { z } from "zod";
 import { SettingsRepository } from "../shared/settings-repository";
+import { ASK_ABOUT_IMAGE_TOOL_NAME } from "../contract/tools";
 
 /** The account's vision model, as the owner chose it in Settings. */
 export type VisionModelRef = { provider: string; model: string };
@@ -51,8 +52,6 @@ export const chosenVisionModel = SettingsRepository.use((r) =>
 ).pipe(Effect.map(parseVisionModel));
 
 export const VISION_EXTENSION = "vision";
-
-export const ASK_ABOUT_IMAGE_TOOL_NAME = "ask_about_image";
 
 /** Characters of an image's hash the bot sees as its id. */
 const SHORT_ID_LENGTH = 8;

@@ -19,6 +19,7 @@ import type { GroupChatMembers } from "./group-chat-members";
 import { mentionsOwner } from "./group-mentions";
 import type { GroupEntry, GroupPost } from "./group-transcripts";
 import type { GroupTurnInput } from "./group-turn-input";
+import { MESSAGE_PREVIEW_CHARS } from "../shared/limits";
 
 /** Everything that leads one turn to the next: the group's context, its members, and what a turn tells its bot. */
 export type GroupTurnDeps = {
@@ -129,7 +130,7 @@ const notify = Effect.fnUntraced(function* (
     agentName: agent.name,
     entryId,
     origin: "group",
-    preview: text.trim().slice(0, 240),
+    preview: text.trim().slice(0, MESSAGE_PREVIEW_CHARS),
     createdAt: new Date().toISOString(),
     groupId: group.id,
     groupName: group.name,

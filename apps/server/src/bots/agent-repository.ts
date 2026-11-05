@@ -1,7 +1,7 @@
 import { asc, eq, ne } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { OWNER } from "../shared/change-by";
-import { STANDARD_TOOLS, type Agent, type AgentInput } from "../shared/domain";
+import type { Agent, AgentInput } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { McpServerRepository } from "../integrations/mcp-server-repository";
@@ -12,6 +12,7 @@ import {
   defaultAvatarDefinition,
 } from "../contract/avatar";
 import { migrateAvatars } from "./avatar-migration";
+import { BOT_TOOL, STANDARD_TOOLS } from "../contract/tools";
 
 export type AgentPatch = Partial<
   Omit<AgentInput, "id" | "createdAt" | "updatedAt">
@@ -79,7 +80,7 @@ export class AgentRepository extends Context.Service<
             instructions,
           })),
           sharedSkills: JSON.parse(row.sharedSkills),
-          sharedMemory: tools.includes("memory"),
+          sharedMemory: tools.includes(BOT_TOOL.memory),
           mcpServers: JSON.parse(row.mcpServers),
           delegates: others.map((other) => other.id),
           inference: JSON.parse(row.inference),

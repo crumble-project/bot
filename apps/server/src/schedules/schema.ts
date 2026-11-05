@@ -1,6 +1,7 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { agents } from "../bots/schema";
 import type { ScheduleKind } from "../shared/domain";
+import { DEFAULT_SCHEDULE_TIMEOUT_SECONDS } from "../shared/limits";
 
 export const schedules = sqliteTable("schedules", {
   id: text("id").primaryKey(),
@@ -11,7 +12,9 @@ export const schedules = sqliteTable("schedules", {
   kind: text("kind").$type<ScheduleKind>().notNull().default("prompt"),
   prompt: text("prompt").notNull(),
   command: text("command"),
-  timeoutSeconds: integer("timeout_seconds").notNull().default(600),
+  timeoutSeconds: integer("timeout_seconds")
+    .notNull()
+    .default(DEFAULT_SCHEDULE_TIMEOUT_SECONDS),
   notify: integer("notify", { mode: "boolean" }).notNull().default(true),
   cron: text("cron"),
   timezone: text("timezone").notNull(),

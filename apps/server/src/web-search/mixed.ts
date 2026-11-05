@@ -5,7 +5,6 @@ import {
   WebSearchError,
   type WebSearchProvider,
   type WebSearchQuery,
-  type WebSearchResult,
 } from "./provider";
 import {
   exaSearch,
@@ -14,6 +13,7 @@ import {
   tavilySearch,
   VendorUnavailable,
 } from "./vendors";
+import type { WebSearchResult } from "../contract/web-search";
 
 export class WebSearchUnavailable extends WebSearchError {
   constructor() {

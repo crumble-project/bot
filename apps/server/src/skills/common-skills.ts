@@ -1,11 +1,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { Context, Effect, Layer } from "effect";
-import {
-  MAX_SKILL_DOCUMENTS,
-  skillDocumentInput,
-  type SkillDocument,
-} from "../shared/domain";
+import { skillDocumentInput, type SkillDocument } from "../shared/domain";
+import { MAX_SKILL_DOCUMENTS } from "../shared/limits";
 
 export type CommonSkill = {
   id: string;

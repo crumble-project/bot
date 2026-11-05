@@ -3,8 +3,11 @@ import type { Execution } from "../shared/domain";
 import type { botsActivity } from "./bots-activity";
 import { background, type BotsContext } from "./bots-context";
 import type { botsReads } from "./bots-reads";
-import { REQUEST_CREDENTIAL_TOOL } from "../credentials/credentials";
-import { REQUEST_LOGIN_TOOL } from "../logins/logins";
+import {
+  REQUEST_CREDENTIAL_TOOL_NAME,
+  REQUEST_LOGIN_TOOL_NAME,
+} from "../contract/tools";
+import { MESSAGE_PREVIEW_CHARS } from "../shared/limits";
 import type { WaitingFor } from "./bots";
 import {
   latestMessagePreview,
@@ -56,8 +59,8 @@ const botsPreviews = (context: BotsContext, deps: AnnouncementDeps) => {
 };
 
 const REQUEST_TOOLS = new Map<string | undefined, WaitingFor>([
-  [REQUEST_CREDENTIAL_TOOL, "credential"],
-  [REQUEST_LOGIN_TOOL, "login"],
+  [REQUEST_CREDENTIAL_TOOL_NAME, "credential"],
+  [REQUEST_LOGIN_TOOL_NAME, "login"],
 ]);
 
 /** What the turn since the owner's last input asked the owner for, from its successful request tools. */
@@ -105,7 +108,7 @@ const botsReplies = (context: BotsContext, deps: AnnouncementDeps) => {
       agentName: owner.name,
       entryId: reply?.entryId ?? null,
       origin: (yield* origin(execution)).kind,
-      preview: reply?.content.trim().slice(0, 240) ?? "",
+      preview: reply?.content.trim().slice(0, MESSAGE_PREVIEW_CHARS) ?? "",
       createdAt: execution.createdAt,
       ...(waiting && { waitingFor: waiting }),
     });

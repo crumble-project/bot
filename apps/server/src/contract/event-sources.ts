@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CONNECTION_STATUSES } from "../shared/domain";
 
 export const relayUrlInput = z
   .object({
@@ -16,7 +17,7 @@ export const eventSourceInput = z
 export const relayStatusResponse = z.object({
   url: z.string().nullable(),
   tokenConfigured: z.boolean(),
-  status: z.enum(["disconnected", "connecting", "connected", "error"]),
+  status: z.enum(CONNECTION_STATUSES),
   error: z.string().nullable(),
 });
 

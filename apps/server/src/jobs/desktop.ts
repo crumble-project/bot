@@ -26,8 +26,7 @@ import { defineJobKind, type JobExtensions } from "./jobs";
 import type { CrumblePlugin } from "../plugins/plugins";
 import type { Workspaces } from "../workspaces/workspace";
 import { workspaceNotesSection } from "./workspace-notes";
-
-export const DESKTOP_TOOL_NAME = "desktop";
+import { BOT_TOOL, DESKTOP_TOOL_NAME } from "../contract/tools";
 
 const desktop = defineJobKind({
   kind: "desktop",
@@ -181,7 +180,7 @@ export const desktopPlugin = (
     ? [
         {
           kind: "desktop",
-          enabled: (agent) => agent.tools.includes(DESKTOP_TOOL_NAME),
+          enabled: (agent) => agent.tools.includes(BOT_TOOL.desktop),
           extensions: (agent) =>
             desktopExtensions(agent, control, logins, intent),
           env: (agentId, target, context) =>

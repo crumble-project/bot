@@ -1,7 +1,8 @@
 import { McpClient, StreamableHttpTransport } from "@earendil-works/pi-mcp";
 import { Effect } from "effect";
 import { z } from "zod";
-import type { WebSearchQuery, WebSearchResult } from "./provider";
+import type { WebSearchResult } from "../contract/web-search";
+import type { WebSearchQuery } from "./provider";
 
 export class VendorUnavailable extends Error {}
 

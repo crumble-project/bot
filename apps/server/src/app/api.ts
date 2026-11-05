@@ -67,7 +67,7 @@ import {
   type SchedulerAccess,
 } from "../schedules/scheduler";
 import { ScriptRuns } from "../schedules/script-runs";
-import { MAX_MESSAGE_BODY } from "../shared/attachments";
+import { MAX_MESSAGE_BODY } from "../shared/attachment-rules";
 import type { CoreServices } from "./core-layer";
 import { CommonSkills, type CommonSkill } from "../skills/common-skills";
 import { httpStatus, isAppError } from "../shared/errors";

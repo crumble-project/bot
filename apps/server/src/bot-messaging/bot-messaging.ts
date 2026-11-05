@@ -20,6 +20,8 @@ import {
   Conflict,
   type AppError,
 } from "../shared/errors";
+import { BOT_TOOL } from "../contract/tools";
+import { MAX_MESSAGE_CHARS } from "../shared/limits";
 
 type Receipt = {
   executionId: string;
@@ -152,7 +154,7 @@ export class BotMessaging extends Context.Service<
     const source = Effect.fnUntraced(function* (sourceId: string) {
       const found = yield* bots.agent(sourceId);
 
-      if (!found.enabled || !found.tools.includes("delegate"))
+      if (!found.enabled || !found.tools.includes(BOT_TOOL.delegate))
         return yield* Effect.fail(
           new Forbidden({
             message: "This agent has no permission to message other bots",
@@ -386,10 +388,10 @@ export class BotMessaging extends Context.Service<
         const from = yield* source(sourceId);
         const message = input.message.trim();
 
-        if (!message || message.length > 32000)
+        if (!message || message.length > MAX_MESSAGE_CHARS)
           return yield* Effect.fail(
             new InvalidInput({
-              message: "A bot message must contain 1–32000 characters",
+              message: `A bot message must contain 1–${MAX_MESSAGE_CHARS} characters`,
             }),
           );
 

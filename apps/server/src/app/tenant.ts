@@ -36,7 +36,6 @@ import {
 import { clientDocument, type ClientDocument } from "../integrations/mcp-oauth";
 import { coordinationTools } from "../bot-messaging/coordination";
 import { displayTools } from "../display/display";
-import { DESKTOP_TOOL_NAME } from "../jobs/desktop";
 import { desktopControlAccess } from "../bot-desktop/desktop-control";
 import { heldActionsAccess } from "../bot-desktop/held-actions";
 import { chosenJudge } from "../bot-desktop/judge-settings";
@@ -87,6 +86,7 @@ import { EventRelay } from "../event-sources/event-relay";
 import { EventSources } from "../event-sources/event-sources";
 import { EventDispatcher } from "../event-sources/event-dispatcher";
 import { eventPayloadTools } from "../event-sources/event-tools";
+import { BOT_TOOL } from "../contract/tools";
 
 export type TenantOptions = {
   dataDir: string;
@@ -167,7 +167,7 @@ function accountLayer(
         namePrefix: `crumble-${options.tenantId.replace(/[^A-Za-z0-9_-]/g, "-")}`,
         wantsDesktop: (agentId: string) =>
           Effect.runSync(agents.get(agentId))?.tools.includes(
-            DESKTOP_TOOL_NAME,
+            BOT_TOOL.desktop,
           ) === true,
         caCertificate: (agentId: string) => authorities.certificate(agentId),
         ...(settings && {

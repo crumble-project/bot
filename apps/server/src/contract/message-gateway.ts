@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CONNECTION_STATUSES } from "../shared/domain";
 
 export const normalizeGatewayHandle = (handle: string) =>
   handle.normalize("NFKC").toLowerCase();
@@ -48,7 +49,7 @@ export const gatewayResponse = z.object({
   secretKey: z.string(),
   tokenConfigured: z.boolean(),
   config: gatewayConfigInput,
-  status: z.enum(["disconnected", "connecting", "connected", "error"]),
+  status: z.enum(CONNECTION_STATUSES),
   error: z.string().nullable(),
   pendingCount: z.number().int().nonnegative(),
   failedCount: z.number().int().nonnegative(),

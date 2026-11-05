@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import type { AttachmentInput } from "../shared/attachments";
+import type { AttachmentInput } from "../shared/attachment-rules";
 import { attachmentDigest, prepareAttachments } from "../shared/attachments";
 import { appErrors } from "../shared/app-errors";
 import type { Execution } from "../shared/domain";

@@ -45,6 +45,8 @@ import {
   type OwnerMessage,
 } from "./owner-request";
 import { chatExcerpt } from "./chat-excerpt";
+import { ASK_OWNER_TOOL_NAME } from "../contract/tools";
+import { MAX_MESSAGE_CHARS, MESSAGE_PREVIEW_CHARS } from "../shared/limits";
 
 /**
  * Installed by the bot's runtime: its memory, read-only, and its skills with the `skill` tool. Every job selects it
@@ -795,7 +797,7 @@ const announceCheckpoint = async (
     checkpoint: {
       phase: "announce",
       entryId: String(settled.answer),
-      preview: preview.slice(0, 240),
+      preview: preview.slice(0, MESSAGE_PREVIEW_CHARS),
     },
   };
 };
@@ -1323,7 +1325,9 @@ const jobParameters = {
     Type.Literal("status"),
   ]),
   name: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
-  message: Type.Optional(Type.String({ minLength: 1, maxLength: 32000 })),
+  message: Type.Optional(
+    Type.String({ minLength: 1, maxLength: MAX_MESSAGE_CHARS }),
+  ),
   followUp: Type.Optional(Type.Boolean()),
 };
 
@@ -1513,14 +1517,12 @@ const jobKindApi = (state: JobKindState) => {
   };
 };
 
-const QUESTION_TOOL = "ask_owner";
-
 const questionTool = (
   kindState: JobKindBase,
   onAsked: ((conversationId: ConversationId) => void) | undefined,
 ) =>
   defineTool({
-    name: QUESTION_TOOL,
+    name: ASK_OWNER_TOOL_NAME,
     description:
       "Ask the owner a question and end your turn. Ask only when the answer changes what you build or a decision is theirs to make; otherwise decide yourself and proceed. When the answer is one of a few choices, list them as options: the owner picks one with a click or writes their own. When another bot delegated your task, that bot may answer first from its brief; the owner can still answer. The answer arrives as your next message.",
     parameters: Type.Object({

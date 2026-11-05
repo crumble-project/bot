@@ -7,11 +7,8 @@ import {
   REST,
   type ClientOptions,
 } from "discord.js";
-import {
-  GatewayTransportError,
-  type GatewayMessage,
-  type GatewayStatus,
-} from "../adapter";
+import { GatewayTransportError, type GatewayMessage } from "../adapter";
+import type { ConnectionStatus } from "../../shared/domain";
 import {
   discordAdapter,
   normalizeDiscordMessage,
@@ -52,7 +49,7 @@ class FakeClient extends EventEmitter implements DiscordClient {
 
 function fixture(deadline?: (milliseconds: number) => AbortSignal) {
   const client = new FakeClient();
-  const states: { status: GatewayStatus; error?: string }[] = [];
+  const states: { status: ConnectionStatus; error?: string }[] = [];
   const onMessage = mock(async (_message: GatewayMessage) => undefined);
   const onInvalidated = mock((_error?: string) => undefined);
   const clientFactory = mock((_options: ClientOptions) => client);
@@ -62,7 +59,7 @@ function fixture(deadline?: (milliseconds: number) => AbortSignal) {
     token: "test-token",
     onMessage,
     onInvalidated,
-    onStatus(status: GatewayStatus, error?: string) {
+    onStatus(status: ConnectionStatus, error?: string) {
       const state: (typeof states)[number] = { status };
 
       if (error) state.error = error;

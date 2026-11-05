@@ -23,6 +23,7 @@ import type { DesktopStream } from "../workspaces/workspace";
 import type { DesktopOpenError } from "../workspaces/workspace-errors";
 import { Conflict } from "../shared/errors";
 import type { Runner } from "../shared/runner";
+import { BOT_TOOL } from "../contract/tools";
 
 const HEARTBEAT_MS = 15_000;
 
@@ -88,7 +89,7 @@ export function registerDesktopRoutes(options: {
   const desktopAgent = (id: string) => {
     const agent = service.agent(id);
 
-    if (!options.desktop || !agent.tools.includes("desktop"))
+    if (!options.desktop || !agent.tools.includes(BOT_TOOL.desktop))
       throw new Conflict({ message: "This bot has no bot desktop" });
 
     return agent;
@@ -147,7 +148,7 @@ export function registerDesktopRoutes(options: {
       {
         running:
           options.desktop &&
-          agent.tools.includes("desktop") &&
+          agent.tools.includes(BOT_TOOL.desktop) &&
           options.desktopRunning?.(agent.id) === true,
       },
       200,

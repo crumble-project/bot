@@ -3,7 +3,7 @@ import type { Register } from "../contract/route";
 import { Effect } from "effect";
 import { Push, type PushRuntime } from "./push";
 import type { PushDeviceInput } from "./push-model";
-import { presenceInput, pushInput, pushRoutes } from "./push-contract";
+import { presenceInput, pushInput, pushRoutes } from "../contract/push";
 import { NotFound, Unavailable } from "../shared/errors";
 
 /** The owner's push routes: delivery status, device registration, and presence. Without a runtime, push is unavailable. */

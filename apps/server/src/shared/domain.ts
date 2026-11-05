@@ -1,18 +1,55 @@
 import { z } from "zod";
 import { avatarDefinitionSchema } from "./avatar-definition";
+import {
+  DEFAULT_SCHEDULE_TIMEOUT_SECONDS,
+  MAX_BOT_DESCRIPTION_CHARS,
+  MAX_BOT_MCP_SERVERS,
+  MAX_BOT_NAME_CHARS,
+  MAX_BOT_SKILLS,
+  MAX_BOT_TOOLS,
+  MAX_CREDENTIAL_HOST_CHARS,
+  MAX_CREDENTIAL_HOSTS,
+  MAX_CRON_CHARS,
+  MAX_EVENT_SOURCE_ID_CHARS,
+  MAX_GROUP_MEMBERS,
+  MAX_GROUP_NAME_CHARS,
+  MAX_INSTRUCTIONS_CHARS,
+  MAX_MESSAGE_CHARS,
+  MAX_MODEL_ID_CHARS,
+  MAX_PROVIDER_ID_CHARS,
+  MAX_REQUEST_REASON_CHARS,
+  MAX_SCHEDULE_COMMAND_CHARS,
+  MAX_SCHEDULE_NAME_CHARS,
+  MAX_SCHEDULE_TIMEOUT_SECONDS,
+  MAX_SECRET_CHARS,
+  MAX_SKILL_DESCRIPTION_CHARS,
+  MAX_SKILL_DOCUMENT_CHARS,
+  MAX_SKILL_DOCUMENTS,
+  MAX_SKILL_NAME_CHARS,
+  MAX_TIMEZONE_CHARS,
+  MAX_TOOL_ID_CHARS,
+  MIN_GROUP_MEMBERS,
+} from "./limits";
 import { PASSWORD_MANAGER_IDS, WEB_SEARCH_PROVIDER_IDS } from "./vendors";
 
-/** Tools every bot has, whatever its saved `tools` say. */
-export const STANDARD_TOOLS = ["schedule", "codemode"];
+export const THINKING_LEVELS = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
 
 const modelRef = z.object({
   provider: z
     .string()
     .trim()
     .min(1)
-    .max(80)
+    .max(MAX_PROVIDER_ID_CHARS)
     .regex(/^[a-z0-9-]+$/),
-  model: z.string().trim().min(1).max(200),
+  model: z.string().trim().min(1).max(MAX_MODEL_ID_CHARS),
 });
 
 /** A model other than the bot's own; null clears it in a patch. */
@@ -29,46 +66,47 @@ export const heldActionDeclineInput = z.object({
 });
 
 export const agentInput = z.object({
-  name: z.string().trim().min(1).max(80),
+  name: z.string().trim().min(1).max(MAX_BOT_NAME_CHARS),
   avatar: avatarDefinitionSchema.optional(),
-  description: z.string().max(1000).default(""),
+  description: z.string().max(MAX_BOT_DESCRIPTION_CHARS).default(""),
   instructions: z
     .string()
-    .max(32000)
+    .max(MAX_INSTRUCTIONS_CHARS)
     .default("You are a thoughtful, capable personal assistant."),
   provider: z
     .string()
     .trim()
     .min(1)
-    .max(80)
+    .max(MAX_PROVIDER_ID_CHARS)
     .regex(/^[a-z0-9-]+$/)
     .default("openai"),
-  model: z.string().trim().min(1).max(200).default("gpt-4.1"),
+  model: z.string().trim().min(1).max(MAX_MODEL_ID_CHARS).default("gpt-4.1"),
   webSearchProvider: z.enum(WEB_SEARCH_PROVIDER_IDS).nullable().optional(),
   enabled: z.boolean().default(true),
-  tools: z.array(z.string().min(1).max(200)).max(100).default(["memory"]),
+  tools: z
+    .array(z.string().min(1).max(MAX_TOOL_ID_CHARS))
+    .max(MAX_BOT_TOOLS)
+    .default(["memory"]),
   /** The bot's own skills by name; the full records live in the skill library. Writing replaces them by name. */
   skills: z
     .array(
       z.object({
-        name: z.string().min(1).max(100),
-        instructions: z.string().max(32000),
+        name: z.string().min(1).max(MAX_SKILL_NAME_CHARS),
+        instructions: z.string().max(MAX_INSTRUCTIONS_CHARS),
       }),
     )
-    .max(100)
+    .max(MAX_BOT_SKILLS)
     .default([]),
   /** Shared skills from the skill library this bot uses, besides its own `skills`. */
-  sharedSkills: z.array(z.uuid()).max(100).optional(),
+  sharedSkills: z.array(z.uuid()).max(MAX_BOT_SKILLS).optional(),
   /** Ignored: a bot with memory always uses shared memory too. */
   sharedMemory: z.boolean().optional(),
-  mcpServers: z.array(z.uuid()).max(30).default([]),
+  mcpServers: z.array(z.uuid()).max(MAX_BOT_MCP_SERVERS).default([]),
   /** Ignored: a bot that may message other bots reaches every one of them. */
   delegates: z.array(z.uuid()).max(30).default([]),
   inference: z
     .object({
-      thinkingLevel: z
-        .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
-        .default("off"),
+      thinkingLevel: z.enum(THINKING_LEVELS).default("off"),
       temperature: z.number().min(0).max(2).optional(),
       maxOutputTokens: z.number().int().min(1).max(1000000).optional(),
     })
@@ -124,18 +162,36 @@ export type Conversation = {
   archived?: boolean;
 };
 
+export const MEMORY_SOURCE_KINDS = [
+  "chat",
+  "owner",
+  "task",
+  "bot",
+  "group",
+] as const;
+
+const memorySourceKind = z.enum(MEMORY_SOURCE_KINDS);
+
 /** A memory belongs to one bot, or is shared when `agentId` is null. */
 /** Where a memory was saved; names are the ones current at the time. */
 export const memorySource = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("chat") }),
-  z.object({ kind: z.literal("owner") }),
+  z.object({ kind: memorySourceKind.extract(["chat"]) }),
+  z.object({ kind: memorySourceKind.extract(["owner"]) }),
   z.object({
-    kind: z.literal("task"),
+    kind: memorySourceKind.extract(["task"]),
     scheduleId: z.string(),
     name: z.string(),
   }),
-  z.object({ kind: z.literal("bot"), agentId: z.string(), name: z.string() }),
-  z.object({ kind: z.literal("group"), groupId: z.string(), name: z.string() }),
+  z.object({
+    kind: memorySourceKind.extract(["bot"]),
+    agentId: z.string(),
+    name: z.string(),
+  }),
+  z.object({
+    kind: memorySourceKind.extract(["group"]),
+    groupId: z.string(),
+    name: z.string(),
+  }),
 ]);
 
 export type MemorySource = z.infer<typeof memorySource>;
@@ -152,12 +208,15 @@ export type Memory = {
 
 export type ScheduleKind = "prompt" | "script";
 
-export type ScriptRunStatus =
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "timed_out"
-  | "interrupted";
+export const SCRIPT_RUN_STATUSES = [
+  "running",
+  "succeeded",
+  "failed",
+  "timed_out",
+  "interrupted",
+] as const;
+
+export type ScriptRunStatus = (typeof SCRIPT_RUN_STATUSES)[number];
 
 export type ScriptRun = {
   id: string;
@@ -176,20 +235,35 @@ export type ScriptRun = {
 export const scheduleInput = z
   .object({
     agentId: z.uuid(),
-    name: z.string().trim().min(1).max(200),
+    name: z.string().trim().min(1).max(MAX_SCHEDULE_NAME_CHARS),
     kind: z.enum(["prompt", "script"]).default("prompt"),
-    prompt: z.string().trim().max(32000).default(""),
-    command: z.string().max(8000).nullable().default(null),
-    timeoutSeconds: z.number().int().min(1).max(3600).default(600),
+    prompt: z.string().trim().max(MAX_MESSAGE_CHARS).default(""),
+    command: z
+      .string()
+      .max(MAX_SCHEDULE_COMMAND_CHARS)
+      .nullable()
+      .default(null),
+    timeoutSeconds: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_SCHEDULE_TIMEOUT_SECONDS)
+      .default(DEFAULT_SCHEDULE_TIMEOUT_SECONDS),
     notify: z.boolean().default(true),
-    cron: z.string().max(100).nullable().default(null),
-    timezone: z.string().max(100).default("UTC"),
+    cron: z.string().max(MAX_CRON_CHARS).nullable().default(null),
+    timezone: z.string().max(MAX_TIMEZONE_CHARS).default("UTC"),
     runAt: z.iso
       .datetime({ offset: true })
       .transform((value) => new Date(value).toISOString())
       .nullable()
       .default(null),
-    eventSourceId: z.string().trim().min(1).max(200).nullable().default(null),
+    eventSourceId: z
+      .string()
+      .trim()
+      .min(1)
+      .max(MAX_EVENT_SOURCE_ID_CHARS)
+      .nullable()
+      .default(null),
     enabled: z.boolean().default(true),
   })
   .refine(
@@ -227,6 +301,14 @@ export type Schedule = ScheduleInput & {
   createdByAgentId: string | null;
 };
 
+export const EXECUTION_STATUSES = [
+  "pending",
+  "running",
+  "done",
+  "failed",
+  "cancelled",
+] as const;
+
 export type Execution = {
   id: string;
   agentId: string;
@@ -238,7 +320,7 @@ export type Execution = {
   replyTo?: string | null;
   /** Identifies the message's attachments, so a retried request ID must carry the same files. */
   attachmentsDigest?: string | null;
-  status: "pending" | "running" | "done" | "failed" | "cancelled";
+  status: (typeof EXECUTION_STATUSES)[number];
   error: string | null;
   createdAt: string;
   updatedAt: string;
@@ -301,7 +383,7 @@ export const credentialHost = z
   .string()
   .trim()
   .toLowerCase()
-  .max(253)
+  .max(MAX_CREDENTIAL_HOST_CHARS)
   .refine((host) => {
     const labels = host.replace(/^\*\./, "").split(".");
 
@@ -315,13 +397,13 @@ export const credentialHost = z
 export const credentialHosts = z
   .array(credentialHost)
   .min(1, "Name at least one host")
-  .max(20)
+  .max(MAX_CREDENTIAL_HOSTS)
   .transform((hosts) => [...new Set(hosts)]);
 
 export const credentialRequestInput = z.object({
   name: credentialName,
   hosts: credentialHosts,
-  reason: z.string().trim().min(1).max(1000),
+  reason: z.string().trim().min(1).max(MAX_REQUEST_REASON_CHARS),
 });
 
 export type CredentialRequestInput = z.infer<typeof credentialRequestInput>;
@@ -343,7 +425,7 @@ export type SecretReference = z.infer<typeof secretReferenceInput>;
 /** A secret the owner enters: a value to store in Crumble, kept exactly as sent, or a password manager reference. */
 export const secretInput = z
   .object({
-    value: z.string().min(1).max(16000).optional(),
+    value: z.string().min(1).max(MAX_SECRET_CHARS).optional(),
     reference: secretReferenceInput.optional(),
   })
   .strict()
@@ -488,7 +570,7 @@ export type Login = {
 export const loginRequestInput = z.object({
   name: loginName,
   hosts: credentialHosts,
-  reason: z.string().trim().min(1).max(1000),
+  reason: z.string().trim().min(1).max(MAX_REQUEST_REASON_CHARS),
   /** Whether the site asks for a one-time code too. */
   one_time_code: z.boolean().optional(),
 });
@@ -514,8 +596,6 @@ export type LoginUse = {
   error: string | null;
 };
 
-export const MAX_SKILL_DOCUMENTS = 20;
-
 /** A reference document inside a skill package, loaded only when the bot asks for it. */
 export const skillDocumentInput = z.object({
   path: z
@@ -524,15 +604,15 @@ export const skillDocumentInput = z.object({
       /^references\/[a-z0-9][a-z0-9._-]{0,99}\.md$/,
       "Document paths look like references/topic.md",
     ),
-  content: z.string().min(1).max(64000),
+  content: z.string().min(1).max(MAX_SKILL_DOCUMENT_CHARS),
 });
 
 export type SkillDocument = z.infer<typeof skillDocumentInput>;
 
 export const skillInput = z.object({
-  name: z.string().trim().min(1).max(100),
-  description: z.string().trim().max(300).default(""),
-  instructions: z.string().max(32000),
+  name: z.string().trim().min(1).max(MAX_SKILL_NAME_CHARS),
+  description: z.string().trim().max(MAX_SKILL_DESCRIPTION_CHARS).default(""),
+  instructions: z.string().max(MAX_INSTRUCTIONS_CHARS),
   documents: z
     .array(skillDocumentInput)
     .max(MAX_SKILL_DOCUMENTS)
@@ -547,13 +627,13 @@ export const skillInput = z.object({
 
 export type SkillInput = z.infer<typeof skillInput>;
 
-export const skillStates = ["active", "stale", "archived"] as const;
+export const SKILL_STATES = ["active", "stale", "archived"] as const;
 
-export type SkillState = (typeof skillStates)[number];
+export type SkillState = (typeof SKILL_STATES)[number];
 
 /** What the owner may change on a skill beyond its content: its lifecycle state and whether the curator leaves it alone. */
 export const skillLifecycleInput = z.object({
-  state: z.enum(skillStates).optional(),
+  state: z.enum(SKILL_STATES).optional(),
   pinned: z.boolean().optional(),
 });
 
@@ -588,9 +668,9 @@ export type Skill = SkillInput & {
   updatedAt: string;
 };
 
-export const changeActors = ["owner", "bot", "review", "curator"] as const;
+export const CHANGE_ACTORS = ["owner", "bot", "review", "curator"] as const;
 
-export type ChangeActor = (typeof changeActors)[number];
+export type ChangeActor = (typeof CHANGE_ACTORS)[number];
 
 /** Where a learned change came from: the execution and conversation of the turn, or the group it ran in. */
 export type ChangeSource = {
@@ -602,7 +682,9 @@ export type ChangeSource = {
 /** Who made a skill or memory change, and from where; `null` records nothing, for migrations. */
 export type ChangeBy = { actor: ChangeActor; source?: ChangeSource | null };
 
-export const changeActions = ["create", "update", "delete", "revert"] as const;
+export const CHANGE_ACTIONS = ["create", "update", "delete", "revert"] as const;
+
+export const CHANGE_TARGETS = ["skill", "memory"] as const;
 
 /** One recorded change to a skill or memory, with the state before and after, so the owner can undo it. */
 export type LearnedChange = {
@@ -610,9 +692,9 @@ export type LearnedChange = {
   /** The bot whose skill or memory changed; null for a shared one. */
   agentId: string | null;
   actor: ChangeActor;
-  target: "skill" | "memory";
+  target: (typeof CHANGE_TARGETS)[number];
   targetId: string;
-  action: (typeof changeActions)[number];
+  action: (typeof CHANGE_ACTIONS)[number];
   before: Skill | Memory | null;
   after: Skill | Memory | null;
   source: ChangeSource | null;
@@ -621,11 +703,8 @@ export type LearnedChange = {
   createdAt: string;
 };
 
-export const MIN_GROUP_MEMBERS = 2;
-export const MAX_GROUP_MEMBERS = 6;
-
 export const groupChatInput = z.object({
-  name: z.string().trim().min(1).max(80),
+  name: z.string().trim().min(1).max(MAX_GROUP_NAME_CHARS),
   /** Member bots in the order they joined. */
   memberIds: z
     .array(z.uuid())
@@ -680,3 +759,22 @@ export type GroupTurn = {
 /** The public ID of one of an agent's conversations; a client passes it back as given. */
 export const conversationReference = (agentId: string, localId: number) =>
   `${agentId}:${localId}`;
+
+export const WAITING_FOR = ["approval", "credential", "login"] as const;
+
+export const ACTIVITY_KINDS = [
+  "tool-call",
+  "tool-result",
+  "mcp-call",
+  "bot-message",
+] as const;
+
+/** A long-lived connection's state: message gateways and the event relay report the same four. */
+export const CONNECTION_STATUSES = [
+  "disconnected",
+  "connecting",
+  "connected",
+  "error",
+] as const;
+
+export type ConnectionStatus = (typeof CONNECTION_STATUSES)[number];

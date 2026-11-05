@@ -16,6 +16,7 @@ import { conversationReference } from "../shared/domain";
 import { LearnedChangeRepository } from "./learned-change-repository";
 import { ReviewRepository } from "./review-repository";
 import type { ReviewScope } from "./review-instructions";
+import { BOT_TOOL } from "../contract/tools";
 
 const DEFAULTS = { enabled: true, skillThreshold: 10, memoryThreshold: 10 };
 
@@ -95,7 +96,7 @@ export class LearningReview extends Context.Service<
         skills: counters.skill >= settings.skillThreshold,
         memory:
           counters.memory >= settings.memoryThreshold &&
-          agent.tools.includes("memory"),
+          agent.tools.includes(BOT_TOOL.memory),
       };
 
       if (!scope.skills && !scope.memory) return;

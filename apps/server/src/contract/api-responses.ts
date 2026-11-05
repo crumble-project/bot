@@ -3,11 +3,21 @@ import {
   PASSWORD_MANAGER_IDS,
   WEB_SEARCH_PROVIDER_IDS,
 } from "../shared/vendors";
-import { botCommunication } from "../bots/transcript";
-import { agentInput } from "../shared/domain";
+import { ATTACHMENT_KINDS } from "../shared/attachment-rules";
+import {
+  ACTIVITY_KINDS,
+  agentInput,
+  CHANGE_ACTIONS,
+  CHANGE_ACTORS,
+  CHANGE_TARGETS,
+  EXECUTION_STATUSES,
+  MEMORY_SOURCE_KINDS,
+  SCRIPT_RUN_STATUSES,
+  SKILL_STATES,
+  THINKING_LEVELS,
+  WAITING_FOR,
+} from "../shared/domain";
 import { avatarDefinitionSchema } from "./avatar";
-import type * as charts from "../display/charts";
-import type * as webSearch from "../web-search/provider";
 
 export const secretStatusResponse = z
   .object({
@@ -24,23 +34,9 @@ export const secretStatusResponse = z
     description: "A secret the owner entered; its value is never returned.",
   });
 
-export type ChartLayout = charts.ChartLayout;
-
-export type WebPage = webSearch.WebPage;
-
-export type WebSearchResult = webSearch.WebSearchResult;
-
 const strings = z.array(z.string());
 
-const thinkingLevel = z.enum([
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-]);
+const thinkingLevel = z.enum(THINKING_LEVELS);
 
 const inference = z.object({
   thinkingLevel: thinkingLevel.optional(),
@@ -163,17 +159,25 @@ const origin = z
   })
   .openapi("MessageOrigin");
 
-// Rebuilt with the OpenAPI-extended `z`: a schema made before the extension loads has no `.openapi`.
-const communication = z
-  .object(botCommunication.shape)
+export const botCommunication = z
+  .object({
+    executionId: z.string(),
+    fromAgentId: z.string(),
+    fromName: z.string(),
+    toAgentId: z.string(),
+    toName: z.string(),
+    status: z.enum(["sent", "done", "failed", "cancelled"]),
+  })
   .openapi("BotCommunication");
+
+export type BotCommunication = z.infer<typeof botCommunication>;
 
 const attachment = z
   .object({
     name: z.string(),
     mimeType: z.string(),
     size: z.number(),
-    kind: z.enum(["image", "text"]),
+    kind: z.enum(ATTACHMENT_KINDS),
   })
   .openapi("AttachmentInfo");
 
@@ -193,7 +197,7 @@ const message = z
     replyTo: z.string().optional(),
     replyPreview: z.string().optional(),
     origin: origin.optional(),
-    communication: communication.optional(),
+    communication: botCommunication.optional(),
     jobQuestion: z
       .object({
         id: z.string(),
@@ -402,7 +406,7 @@ export const executionResponse = z
     prompt: z.string(),
     replyTo: z.string().nullable().optional(),
     attachmentsDigest: z.string().nullable().optional(),
-    status: z.enum(["pending", "running", "done", "failed", "cancelled"]),
+    status: z.enum(EXECUTION_STATUSES),
     error: z.string().nullable(),
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -415,13 +419,7 @@ export const scriptRunResponse = z
     scheduleId: z.string(),
     agentId: z.string(),
     command: z.string(),
-    status: z.enum([
-      "running",
-      "succeeded",
-      "failed",
-      "timed_out",
-      "interrupted",
-    ]),
+    status: z.enum(SCRIPT_RUN_STATUSES),
     exitCode: z.number().int().nullable(),
     output: z.string().openapi({
       description: "The last 64 KiB and 2000 lines of combined output.",
@@ -453,7 +451,7 @@ export const scheduleRunResponse = z
 // One object with optional fields rather than a union, so client generators keep it.
 const memorySourceResponse = z
   .object({
-    kind: z.enum(["chat", "owner", "task", "bot", "group"]),
+    kind: z.enum(MEMORY_SOURCE_KINDS),
     name: z.string().optional().openapi({
       description:
         "The task, bot, or group chat, as named when the memory was saved.",
@@ -740,7 +738,7 @@ export const skillPackageResponse = z
     sourceExecutionId: z.string().nullable(),
     useCount: z.number().int(),
     lastUsedAt: z.string().nullable(),
-    state: z.enum(["active", "stale", "archived"]),
+    state: z.enum(SKILL_STATES),
     pinned: z.boolean(),
     copiedFromSkillId: z.uuid().nullable().optional(),
     origin: skillOriginResponse.nullable().optional(),
@@ -779,10 +777,10 @@ export const learnedChangeResponse = z
     id: z.string(),
     // The bot whose skill or memory changed; null for a shared one.
     agentId: z.string().nullable(),
-    actor: z.enum(["owner", "bot", "review", "curator"]),
-    target: z.enum(["skill", "memory"]),
+    actor: z.enum(CHANGE_ACTORS),
+    target: z.enum(CHANGE_TARGETS),
     targetId: z.string(),
-    action: z.enum(["create", "update", "delete", "revert"]),
+    action: z.enum(CHANGE_ACTIONS),
     before: z.union([skillPackageResponse, memoryResponse, z.null()]),
     after: z.union([skillPackageResponse, memoryResponse, z.null()]),
     source: z.union([changeSourceResponse, z.null()]),
@@ -831,7 +829,7 @@ const operationalActivity = z
     agentName: z.string(),
     entryId: z.string(),
     timestamp: z.number().optional(),
-    kind: z.enum(["tool-call", "tool-result", "mcp-call", "bot-message"]),
+    kind: z.enum(ACTIVITY_KINDS),
     details: z.record(z.string(), z.unknown()),
   })
   .openapi("OperationalActivity");
@@ -1096,7 +1094,7 @@ export const replyEvent = z
         "Set when a bot answered in a group chat; open the group rather than the bot chat.",
     }),
     groupName: z.string().optional(),
-    waitingFor: z.enum(["approval", "credential", "login"]).optional().openapi({
+    waitingFor: z.enum(WAITING_FOR).optional().openapi({
       description:
         "Set when the bot waits for the owner's answer: approval (a desktop job action held by an intent check), credential, or login (a request the owner saves or declines). Clients may receive other values later.",
     }),
@@ -1122,8 +1120,8 @@ export const learnedEvent = z
     changes: z.array(
       z.object({
         changeId: z.string(),
-        target: z.enum(["skill", "memory"]),
-        action: z.enum(["create", "update", "delete", "revert"]),
+        target: z.enum(CHANGE_TARGETS),
+        action: z.enum(CHANGE_ACTIONS),
         name: z.string(),
       }),
     ),
@@ -1141,3 +1139,34 @@ export const activityEvent = z
   .openapi("ActivityEvent");
 
 export const heartbeatEvent = z.object({}).openapi("HeartbeatEvent");
+
+/** Everything the event streams carry: `component` names it in the OpenAPI document, `artifact` publishes its JSON Schema file. */
+export const eventSchemas: {
+  schema: z.ZodType;
+  component?: string;
+  artifact?: string;
+}[] = [
+  { schema: replyEvent, component: "ReplyEvent" },
+  { schema: chatPreviewEvent, component: "ChatPreviewEvent" },
+  {
+    schema: heartbeatEvent,
+    component: "HeartbeatEvent",
+    artifact: "heartbeat.schema.json",
+  },
+  {
+    schema: activityEvent,
+    component: "ActivityEvent",
+    artifact: "activity-event.schema.json",
+  },
+  {
+    schema: learnedEvent,
+    component: "LearnedEvent",
+    artifact: "learned-event.schema.json",
+  },
+  { schema: chatSnapshotResponse, artifact: "chat-snapshot.schema.json" },
+  {
+    schema: groupChatSnapshotResponse,
+    artifact: "group-chat-snapshot.schema.json",
+  },
+  { schema: desktopControlResponse, artifact: "desktop-control.schema.json" },
+];

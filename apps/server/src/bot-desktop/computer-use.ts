@@ -21,8 +21,7 @@ import {
 } from "./computer-use-state";
 import { runAction } from "./computer-use-run";
 import type { IntentGate } from "./computer-use-intent";
-
-export const COMPUTER_USE_TOOL_NAME = "computer_use";
+import { COMPUTER_USE_TOOL_NAME } from "../contract/tools";
 
 /** The part of a job's environment the tool needs. */
 export type DesktopShell = Pick<

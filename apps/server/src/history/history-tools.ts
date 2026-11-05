@@ -19,6 +19,10 @@ import {
   type HistoryContext,
   type HistorySource,
 } from "./history-search";
+import {
+  HISTORY_READ_TOOL_NAME,
+  HISTORY_SEARCH_TOOL_NAME,
+} from "../contract/tools";
 
 export const HISTORY_TOOLS_EXTENSION = "history-tools";
 
@@ -46,7 +50,7 @@ export function historyToolsExtension(
   };
 
   const search = defineTool({
-    name: "history_search",
+    name: HISTORY_SEARCH_TOOL_NAME,
     description:
       "Search original owner and bot messages in your own bot chat and current group chats. In a group turn, only that group's shared messages are available. Search is literal and case-insensitive; use the returned match token with history_read to read surrounding messages. Pass the cursor to continue a result page.",
     parameters: Type.Object({
@@ -65,7 +69,7 @@ export function historyToolsExtension(
   });
 
   const read = defineTool({
-    name: "history_read",
+    name: HISTORY_READ_TOOL_NAME,
     description:
       "Read original messages around a history_search match, or continue a read with its cursor. Use direction to continue before or after the selected messages. Access is checked again on every request.",
     parameters: Type.Object({

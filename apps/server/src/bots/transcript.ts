@@ -11,20 +11,31 @@ import type {
   Harness,
 } from "@earendil-works/pi-durable";
 
-import { attachmentInput, type AttachmentInfo } from "../shared/attachments";
+import {
+  ATTACHMENT_KINDS,
+  attachmentInput,
+  type AttachmentInfo,
+} from "../shared/attachment-rules";
 import { codingJobOf } from "../jobs/coding";
 import { desktopJobOf } from "../jobs/desktop";
 import { HELD_ACTION_ENTRY } from "../jobs/desktop-intent";
-import { DESKTOP_SCREENSHOT_TOOL_NAME } from "../bot-desktop/desktop-screenshot";
 import { JOB_QUESTION_ENTRY } from "../jobs/jobs";
-import { REACTION_TOOL_NAME, reactionOf } from "./reaction";
-import { PASS_TOOL_NAME } from "../group-chats/group-turns";
+import { reactionOf } from "./reaction";
 import {
+  DESKTOP_SCREENSHOT_TOOL_NAME,
+  MEMORY_TOOL_NAME,
+  PASS_TOOL_NAME,
+  REACTION_TOOL_NAME,
+  SKILL_MANAGE_TOOL_NAME,
   WEB_EXTRACT_TOOL_NAME,
   WEB_SEARCH_TOOL_NAME,
-  webSource,
-  type WebSource,
-} from "../web-search/provider";
+} from "../contract/tools";
+import {
+  botCommunication,
+  type BotCommunication,
+} from "../contract/api-responses";
+import { webSource, type WebSource } from "../contract/web-search";
+import { MESSAGE_PREVIEW_CHARS } from "../shared/limits";
 
 type ModelContent = NonNullable<EntryRecord["model"]>[number]["content"];
 
@@ -60,16 +71,7 @@ const attachmentInfo = z.object({
   name: z.string(),
   mimeType: z.string(),
   size: z.number(),
-  kind: z.enum(["image", "text"]),
-});
-
-export const botCommunication = z.object({
-  executionId: z.string(),
-  fromAgentId: z.string(),
-  fromName: z.string(),
-  toAgentId: z.string(),
-  toName: z.string(),
-  status: z.enum(["sent", "done", "failed", "cancelled"]),
+  kind: z.enum(ATTACHMENT_KINDS),
 });
 
 const jobQuestionData = z.object({
@@ -139,15 +141,6 @@ export type MessageOrigin = {
   via?: string;
   /** The event source whose event started an event automation's message. */
   source?: string;
-};
-
-export type BotCommunication = {
-  executionId: string;
-  fromAgentId: string;
-  fromName: string;
-  toAgentId: string;
-  toName: string;
-  status: "sent" | "done" | "failed" | "cancelled";
 };
 
 export type BotMessageEvent = {
@@ -227,7 +220,8 @@ function conversationPreview(message: TranscriptMessage): string {
   if (message.role !== "user" && message.role !== "assistant") return "";
   const text = message.content.trim();
 
-  if (text && hasTextBlock(message)) return text.slice(0, 240);
+  if (text && hasTextBlock(message))
+    return text.slice(0, MESSAGE_PREVIEW_CHARS);
   const attachment = message.attachments?.[0];
 
   return attachment ? `Attachment: ${attachment.name}` : "";
@@ -235,7 +229,9 @@ function conversationPreview(message: TranscriptMessage): string {
 
 function previewOf(message: TranscriptMessage): string {
   const botText =
-    message.kind === "bot-message" ? message.content.trim().slice(0, 240) : "";
+    message.kind === "bot-message"
+      ? message.content.trim().slice(0, MESSAGE_PREVIEW_CHARS)
+      : "";
 
   return botText || eventLabel(message) || conversationPreview(message);
 }
@@ -808,7 +804,7 @@ export async function prepareReply(
     data: {
       text: content,
       replyTo,
-      replyPreview: targetMessage.content.slice(0, 240),
+      replyPreview: targetMessage.content.slice(0, MESSAGE_PREVIEW_CHARS),
       contextEntryIds: [...new Set(quoted.map((item) => item.id))],
     },
   };
@@ -959,11 +955,12 @@ function recordToolRound(calls: ToolCall[], counters: TurnReport): void {
     counters.roundsSinceMemoryWrite++;
 
   for (const call of calls) {
-    if (call.name === "skill_manage") counters.roundsSinceSkillWrite = 0;
+    if (call.name === SKILL_MANAGE_TOOL_NAME)
+      counters.roundsSinceSkillWrite = 0;
 
     const memoryWrite = memoryWriteCall.safeParse(call.arguments);
 
-    if (call.name === "memory" && memoryWrite.success)
+    if (call.name === MEMORY_TOOL_NAME && memoryWrite.success)
       counters.roundsSinceMemoryWrite = 0;
   }
 }

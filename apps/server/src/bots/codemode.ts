@@ -3,6 +3,7 @@ import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { Effect, Layer } from "effect";
 import { McpIntegrations } from "../integrations/integrations";
 import { BotExtensions, ExtensionPosition } from "./bot-extensions";
+import { BOT_TOOL } from "../contract/tools";
 
 /** Offers bots with code mode a QuickJS sandbox that calls their MCP tools; the layer's scope closes the sandbox. */
 export const codemodeTools = Layer.effectDiscard(
@@ -19,7 +20,7 @@ export const codemodeTools = Layer.effectDiscard(
     yield* (yield* BotExtensions).register(
       ExtensionPosition.codemode,
       (agent) =>
-        agent.tools.includes("codemode")
+        agent.tools.includes(BOT_TOOL.codemode)
           ? [
               createCodemodeExtension({
                 sandbox,

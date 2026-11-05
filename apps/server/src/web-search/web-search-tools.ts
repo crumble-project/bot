@@ -7,16 +7,19 @@ import { Plugins, pluginWebSearchProviders } from "../plugins/plugins";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import { isPublicAddress } from "../workspaces/public-address";
 import {
-  WEB_EXTRACT_TOOL_NAME,
-  WEB_SEARCH_TOOL_NAME,
   WebExtractionError,
   WebSearchError,
-  type WebPage,
   type WebSearchProvider,
 } from "./provider";
 import { AgentRepository } from "../bots/agent-repository";
 import { SettingsRepository } from "../shared/settings-repository";
 import { DEFAULT_PROVIDER } from "./settings";
+import {
+  BOT_TOOL,
+  WEB_EXTRACT_TOOL_NAME,
+  WEB_SEARCH_TOOL_NAME,
+} from "../contract/tools";
+import type { WebPage } from "../contract/web-search";
 
 const refused = "Crumble does not read private or local addresses.";
 const date = Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" }));
@@ -178,7 +181,7 @@ export const configuredWebSearchTools = Layer.effectDiscard(
     const settings = yield* SettingsRepository;
     const extensions = yield* BotExtensions;
     yield* extensions.register(ExtensionPosition.webSearch, (agent) => {
-      if (!agent.tools.includes("web")) return [];
+      if (!agent.tools.includes(BOT_TOOL.web)) return [];
 
       const resolve = Effect.fnUntraced(function* () {
         const current = yield* agents.get(agent.id);
@@ -230,7 +233,7 @@ export const webSearchTools = Layer.effectDiscard(
     yield* (yield* BotExtensions).register(
       ExtensionPosition.webSearch,
       (agent) =>
-        agent.tools.includes("web")
+        agent.tools.includes(BOT_TOOL.web)
           ? [webSearchExtension(providers, agent.id)]
           : [],
     );

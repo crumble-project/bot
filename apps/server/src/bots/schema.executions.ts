@@ -1,6 +1,7 @@
 import { sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { schedules } from "../schedules/schema";
 import { agents, conversations } from "./schema";
+import { EXECUTION_STATUSES } from "../shared/domain";
 
 export const executions = sqliteTable(
   "executions",
@@ -19,9 +20,7 @@ export const executions = sqliteTable(
     requestId: text("request_id").notNull(),
     prompt: text("prompt"),
     replyTo: text("reply_to"),
-    status: text("status", {
-      enum: ["pending", "running", "done", "failed", "cancelled"],
-    }).notNull(),
+    status: text("status", { enum: EXECUTION_STATUSES }).notNull(),
     error: text("error"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),

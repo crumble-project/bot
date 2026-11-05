@@ -5,7 +5,7 @@ import { ConversationRepository } from "../bots/conversation-repository";
 import { ExecutionRepository } from "../bots/execution-repository";
 import { BotRuntime } from "../bots/runtime";
 import type { TranscriptPage } from "../bots/transcript";
-import type { AttachmentInput } from "../shared/attachments";
+import type { AttachmentInput } from "../shared/attachment-rules";
 import type { GroupChat, GroupChatInput } from "../shared/domain";
 import type { Runner } from "../shared/runner";
 import {

@@ -16,6 +16,7 @@ import type { Runner } from "../shared/runner";
 import { AgentRepository } from "./agent-repository";
 import type { BotsAccess } from "./bots";
 import { ConversationRepository } from "./conversation-repository";
+import { BOT_TOOL } from "../contract/tools";
 
 type Services =
   | AgentRepository
@@ -125,7 +126,10 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
     );
 
     // The desktop tool picks the workspace image; a bot that gains or loses it needs a fresh boot.
-    if (old.tools.includes("desktop") !== input.tools.includes("desktop"))
+    if (
+      old.tools.includes(BOT_TOOL.desktop) !==
+      input.tools.includes(BOT_TOOL.desktop)
+    )
       await options.restartWorkspace?.(old.id);
 
     return c.json(updated, 200);

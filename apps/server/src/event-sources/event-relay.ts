@@ -6,7 +6,7 @@ import {
 } from "@doorstep/protocol";
 import { Clock, Context, DateTime, Effect, Layer } from "effect";
 import { z } from "zod";
-import type { GatewayStatus } from "../message-gateway/adapter";
+import type { ConnectionStatus } from "../shared/domain";
 import { reconnectDelay } from "../message-gateway/message-gateway";
 import { Secrets, secretText } from "../password-managers/secrets";
 import { pluginSettingKey } from "../plugins/plugins";
@@ -28,7 +28,7 @@ const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
 export type RelayStatus = {
   url: string | null;
   tokenConfigured: boolean;
-  status: GatewayStatus;
+  status: ConnectionStatus;
   error: string | null;
 };
 
@@ -87,7 +87,7 @@ export class EventRelay extends Context.Service<
       const scope = yield* Effect.scope;
       const run = Effect.runPromiseWith(yield* Effect.context<never>());
 
-      let status: GatewayStatus = "disconnected";
+      let status: ConnectionStatus = "disconnected";
       let error: string | null = null;
       let connection: Connection | undefined;
       let generation = 0;

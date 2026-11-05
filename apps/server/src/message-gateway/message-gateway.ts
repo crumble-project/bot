@@ -31,10 +31,11 @@ import {
   type ChatAdapter,
   type GatewayConnection,
   type GatewayMessage,
-  type GatewayStatus,
 } from "./adapter";
 import { GatewayRepository, type GatewayReceipt } from "./gateway-repository";
 import { authorizedMessage, gatewayChunks, selectGatewayBot } from "./routing";
+import { MAX_MESSAGE_CHARS } from "../shared/limits";
+import type { ConnectionStatus } from "../shared/domain";
 
 const configKey = (id: string) => `message-gateway:${id}`;
 
@@ -81,7 +82,7 @@ const retryDelay = (attempt: number) =>
 type ConnectionState = {
   connection?: GatewayConnection | undefined;
   token?: string | undefined;
-  status: GatewayStatus;
+  status: ConnectionStatus;
   error: string | null;
   generation: number;
   retryAt: number;
@@ -198,9 +199,9 @@ export class MessageGateway extends Context.Service<
           ];
         else if (!(message.routingText ?? message.text).trim())
           response = ["Send a text message for a bot to answer."];
-        else if (message.text.length > 32000)
+        else if (message.text.length > MAX_MESSAGE_CHARS)
           response = [
-            "This message is too long. Send at most 32000 characters.",
+            `This message is too long. Send at most ${MAX_MESSAGE_CHARS} characters.`,
           ];
         else {
           const replyBot = message.replyTo

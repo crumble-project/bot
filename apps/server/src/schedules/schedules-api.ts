@@ -14,6 +14,7 @@ import type { ScriptRuns } from "./script-runs";
 import type { Runner } from "../shared/runner";
 import { ScheduleRepository } from "./schedule-repository";
 import type { SchedulerAccess } from "./scheduler";
+import { BOT_TOOL } from "../contract/tools";
 
 type Services = AgentRepository | ExecutionRepository | ScheduleRepository;
 
@@ -39,7 +40,7 @@ export function registerScheduleRoutes(options: {
 
     if (!agent) throw new NotFound({ message: "Agent not found" });
 
-    if (!agent.tools.includes("coding"))
+    if (!agent.tools.includes(BOT_TOOL.coding))
       throw new Forbidden({ message: "Script tasks need coding jobs" });
 
     if (createdByAgentId && createdByAgentId !== input.agentId)

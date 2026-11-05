@@ -6,9 +6,8 @@ import type { JsonValue } from "@earendil-works/chord";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { DISPLAY_TOOL_NAME } from "../contract/tools";
 import { ChartCompiler, DEFAULT_CHART_HEIGHT } from "./charts";
-
-export const DISPLAY_TOOL_NAME = "show";
 
 const label = Type.String({ minLength: 1, maxLength: 120 });
 const title = Type.Optional(Type.String({ minLength: 1, maxLength: 200 }));

@@ -18,12 +18,12 @@ import type { DesktopFill, DesktopFills } from "./computer-use-login";
 import {
   captureDesktop,
   DESKTOP_NOT_RUNNING,
-  DESKTOP_SCREENSHOT_TOOL_NAME,
   desktopScreenshotExtension,
   NO_DESKTOP_IMAGE,
   PASSWORD_MAY_SHOW,
   type ScreenshotWorkspaces,
 } from "./desktop-screenshot";
+import { DESKTOP_SCREENSHOT_TOOL_NAME } from "../contract/tools";
 
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xd9]).toString("base64");
 

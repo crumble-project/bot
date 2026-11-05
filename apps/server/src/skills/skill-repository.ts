@@ -2,7 +2,7 @@ import { asc, eq, isNull, sql } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { OWNER } from "../shared/change-by";
 import {
-  skillStates,
+  SKILL_STATES,
   type ChangeBy,
   type Skill,
   type SkillDocument,
@@ -35,7 +35,7 @@ export type SkillPatch = Partial<
 const originOf = (json: string) => JSON.parse(json) as SkillOrigin;
 
 const isSkillState = (state: string): state is Skill["state"] =>
-  skillStates.some((known) => known === state);
+  SKILL_STATES.some((known) => known === state);
 
 /** The skill library: shared skills, each bot's own, and their reference documents. */
 export class SkillRepository extends Context.Service<

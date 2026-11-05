@@ -6,6 +6,7 @@ import { Schema } from "effect";
 import type { SkillDocument } from "../shared/domain";
 import { GroupConversation } from "../group-chats/group-turns";
 import { ReviewConversation } from "./review-conversation";
+import { SKILL_TOOL_NAME } from "../contract/tools";
 
 /** A skill a bot can load: a default from the repository, one from the shared library, or its own. */
 export type AvailableSkill = {
@@ -16,8 +17,6 @@ export type AvailableSkill = {
   documents: SkillDocument[];
   scope: "default" | "shared" | "own";
 };
-
-export const SKILL_TOOL_NAME = "skill";
 
 /** Where a skill tool call runs: the group, the inputs of its run, and the run itself. */
 export type SkillToolContext = {

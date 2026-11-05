@@ -2,7 +2,7 @@ import type { Message } from "@/lib/api";
 import type {
   WebPage,
   WebSearchResult,
-} from "@crumble/server/contract/api-responses";
+} from "@crumble/server/contract/web-search";
 
 /** Pages a reply may cite, keyed by `sourceKey` of their URL, with their titles. */
 export type Sources = ReadonlyMap<string, string>;
