@@ -33,15 +33,9 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import {
-  type Bot,
-  type McpServer,
-  botsQuery,
-  call,
-  mcpServersQuery,
-  queryClient,
-  send,
-} from "@/lib/api";
+import { type Bot, botsQuery, refreshBots } from "@/features/bots/api";
+import { type McpServer, mcpServersQuery, mcpServerPath } from "./api";
+import { call, queryClient, send } from "@/lib/api";
 import {
   ConfirmDeleteContent,
   NewButton,
@@ -52,19 +46,19 @@ import {
   SectionEmpty,
   WorkspacePage,
 } from "@/components/workspace";
-import { BotAvatar } from "@/features/bots/avatar";
+import { BotAvatar } from "@/components/bot-avatar";
+import { SHARED, ownerItems } from "@/lib/bot-queries";
+import { refreshSecrets } from "@/lib/secrets";
+import { MAX_MCP_SERVER_NAME_CHARS } from "@crumble/server/contract/limits";
+import { MCP_OAUTH_WEB_PATH } from "@crumble/server/contract/mcp-oauth";
 
-const SHARED = "shared";
 const OAUTH_SERVER_KEY = "crumble.oauth.server";
-
-type OAuthStart = { authorizationUrl: string } | { authorized: true };
-
-const serverPath = (id: string) => `/v1/mcp-servers/${encodeURIComponent(id)}`;
 
 async function refresh() {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: mcpServersQuery.queryKey }),
-    queryClient.invalidateQueries({ queryKey: botsQuery.queryKey }),
+    refreshBots(),
+    refreshSecrets(),
   ]);
 }
 
@@ -197,10 +191,10 @@ export function IntegrationsPage() {
 function useServerActions(server: McpServer) {
   const signIn = useMutation({
     mutationFn: async () => {
-      const result = await call<OAuthStart, { redirectUri: string }>(
-        `${serverPath(server.id)}/oauth`,
+      const result = await call<"oauth">(
+        `${mcpServerPath(server.id)}/oauth`,
         "POST",
-        { redirectUri: `${location.origin}/oauth/callback` },
+        { redirectUri: `${location.origin}${MCP_OAUTH_WEB_PATH}` },
       );
 
       if ("authorizationUrl" in result) {
@@ -212,12 +206,14 @@ function useServerActions(server: McpServer) {
   });
 
   const signOut = useMutation({
-    mutationFn: () => send(`${serverPath(server.id)}/oauth`, "DELETE"),
+    mutationFn: () =>
+      send<"deleteOauth">(`${mcpServerPath(server.id)}/oauth`, "DELETE"),
     onSettled: refresh,
   });
 
   const remove = useMutation({
-    mutationFn: () => send(serverPath(server.id), "DELETE"),
+    mutationFn: () =>
+      send<"deleteMcpServer">(mcpServerPath(server.id), "DELETE"),
     onSettled: refresh,
   });
 
@@ -396,8 +392,8 @@ function useSaveServer(
       const body = serverBody(draft, server, secrets);
 
       return server
-        ? send(serverPath(server.id), "PATCH", body)
-        : send("/v1/mcp-servers", "POST", {
+        ? send<"updateMcpServer">(mcpServerPath(server.id), "PATCH", body)
+        : send<"createMcpServer">("/v1/mcp-servers", "POST", {
             ...body,
             agentId: draft.owner === SHARED ? null : draft.owner,
           });
@@ -482,18 +478,13 @@ function ServerFields({
   patch,
   secrets,
 }: DraftFieldsProps & { bots: Bot[] }) {
-  const owners = [
-    { label: "Every bot (shared)", value: SHARED },
-    ...bots.map((bot) => ({ label: bot.name, value: bot.id })),
-  ];
-
   const urlInvalid = draft.url.trim() !== "" && !validUrl(draft.url.trim());
 
   return (
     <>
       <OwnerSelectField
         label="Available to"
-        owners={owners}
+        owners={ownerItems("Every bot (shared)", bots)}
         value={draft.owner}
         disabled={server !== null}
         onValueChange={(value) => patch({ owner: value ?? SHARED })}
@@ -502,7 +493,7 @@ function ServerFields({
         <FieldLabel htmlFor="mcp-name">Name</FieldLabel>
         <Input
           id="mcp-name"
-          maxLength={100}
+          maxLength={MAX_MCP_SERVER_NAME_CHARS}
           value={draft.name}
           onChange={(event) => patch({ name: event.target.value })}
         />
@@ -537,7 +528,7 @@ function ServerFields({
 }
 
 function OAuthAppFields({ server, draft, patch, secrets }: DraftFieldsProps) {
-  const callback = `${location.origin}/oauth/callback`;
+  const callback = `${location.origin}${MCP_OAUTH_WEB_PATH}`;
 
   return (
     <FieldSet>
@@ -597,11 +588,15 @@ function finishOAuth(
       new Error("This sign-in link is incomplete or was already used."),
     );
 
-  return send(`${serverPath(serverId)}/oauth/callback`, "POST", {
-    code,
-    state,
-    ...(iss && { iss }),
-  }).then(async () => {
+  return send<"oauthCallback">(
+    `${mcpServerPath(serverId)}/oauth/callback`,
+    "POST",
+    {
+      code,
+      state,
+      ...(iss && { iss }),
+    },
+  ).then(async () => {
     await refresh();
     await navigate({ to: "/settings/integrations", replace: true });
   });

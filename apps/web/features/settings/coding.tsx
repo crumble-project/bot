@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { CopyButton, EditorSheet } from "@/components/form-fields";
-import { WorkspaceSettings } from "./admin-settings";
+import { WorkspaceSettings } from "./workspace-settings";
 import {
   SecretSourceField,
   type SecretInput,
@@ -26,38 +26,34 @@ import {
   RowTile,
   Section,
   SectionEmpty,
+  SectionError,
   SettingRow,
+  UsedBy,
   WorkspacePage,
 } from "@/components/workspace";
+import { type Bot, botsQuery } from "@/features/bots/api";
 import {
-  type Bot,
   type GitHubAccount,
   type GitHubApp,
   type GitHubAppManifest,
-  botsQuery,
-  call,
   githubAccountPath,
   githubAccountsQuery,
   githubAppPath,
   githubAppsQuery,
-  passwordManagersQuery,
-  queryClient,
-  send,
-} from "@/lib/api";
-import { BotAvatar } from "@/features/bots/avatar";
+  refreshGithub,
+} from "./api";
+import { call, send } from "@/lib/api";
+import { BotAvatar } from "@/components/bot-avatar";
+import {
+  GITHUB_APP_WEB_PATHS,
+  MAX_GITHUB_APP_NAME_CHARS,
+} from "@crumble/server/contract/github-apps";
+
+/** Which of the pages in `GITHUB_APP_WEB_PATHS` GitHub sent the owner back to. */
+type GitHubAppStep = keyof typeof GITHUB_APP_WEB_PATHS;
 
 /** The App GitHub sends the owner back for after installing; GitHub's redirect doesn't say which. */
 const INSTALLING_KEY = "crumble.github-app.installing";
-
-// A bot's GH_TOKEN appears or goes with its Apps and machine account, so credentials refresh too, and a token's
-// reference changes what each password manager is used by.
-const refresh = () =>
-  Promise.all([
-    queryClient.invalidateQueries({ queryKey: githubAppsQuery.queryKey }),
-    queryClient.invalidateQueries({ queryKey: githubAccountsQuery.queryKey }),
-    queryClient.invalidateQueries({ queryKey: ["credentials"] }),
-    queryClient.invalidateQueries({ queryKey: passwordManagersQuery.queryKey }),
-  ]).then(() => undefined);
 
 /** GitHub creates an App only from a form post with the manifest, so the browser leaves for github.com here. */
 function postManifest({ url, manifest }: GitHubAppManifest) {
@@ -97,8 +93,8 @@ function InstallButton({ app }: { app: GitHubApp }) {
 
 function AppRow({ app, onEdit }: { app: GitHubApp; onEdit: () => void }) {
   const remove = useMutation({
-    mutationFn: () => send(githubAppPath(app.id), "DELETE"),
-    onSuccess: refresh,
+    mutationFn: () => send<"deleteGithubApp">(githubAppPath(app.id), "DELETE"),
+    onSuccess: refreshGithub,
   });
 
   return (
@@ -107,9 +103,10 @@ function AppRow({ app, onEdit }: { app: GitHubApp; onEdit: () => void }) {
       title={
         <>
           <span className="truncate">{app.login}</span>
-          <span className="font-normal text-muted-foreground">
-            ({app.user && `as ${app.user}, `}used by {app.botIds.length})
-          </span>
+          <UsedBy
+            count={app.botIds.length}
+            prefix={app.user ? `as ${app.user}, ` : undefined}
+          />
         </>
       }
       description={remove.error?.message}
@@ -146,14 +143,15 @@ function CreateAppSheet({ onClose }: { onClose: () => void }) {
   const create = useMutation({
     mutationFn: async () =>
       postManifest(
-        await call<
-          GitHubAppManifest,
-          { name: string; origin: string; organization?: string }
-        >("/v1/github-apps/manifest", "POST", {
-          name: name.trim(),
-          origin: location.origin,
-          ...(organization.trim() && { organization: organization.trim() }),
-        }),
+        await call<"createGithubAppManifest">(
+          "/v1/github-apps/manifest",
+          "POST",
+          {
+            name: name.trim(),
+            origin: location.origin,
+            ...(organization.trim() && { organization: organization.trim() }),
+          },
+        ),
       ),
   });
 
@@ -172,7 +170,7 @@ function CreateAppSheet({ onClose }: { onClose: () => void }) {
         <Input
           id="github-app-name"
           placeholder="frien-bot"
-          maxLength={34}
+          maxLength={MAX_GITHUB_APP_NAME_CHARS}
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
@@ -260,8 +258,9 @@ function BotsField({
 
 function InstallationField({ app }: { app: GitHubApp }) {
   const connect = useMutation({
-    mutationFn: () => send(`${githubAppPath(app.id)}/connect`, "POST"),
-    onSuccess: refresh,
+    mutationFn: () =>
+      send<"connectGithubApp">(`${githubAppPath(app.id)}/connect`, "POST"),
+    onSuccess: refreshGithub,
   });
 
   return (
@@ -291,7 +290,8 @@ function InstallationField({ app }: { app: GitHubApp }) {
 }
 
 /** Where GitHub sends the owner back after signing in; every App lists it as a callback URL. */
-const authorizedUrl = () => `${location.origin}/github-app/authorized`;
+const authorizedUrl = () =>
+  `${location.origin}${GITHUB_APP_WEB_PATHS.authorized}`;
 
 /** GitHub refuses the sign-in until the App lists this URL; Apps Crumble creates already do. */
 function CallbackUrl() {
@@ -309,12 +309,12 @@ function ClientSecretForm({ app }: { app: GitHubApp }) {
 
   const save = useMutation({
     mutationFn: (body: SecretInput) =>
-      call<GitHubApp, SecretInput>(
+      call<"setGithubAppClientSecret">(
         `${githubAppPath(app.id)}/client-secret`,
         "PUT",
         body,
       ),
-    onSuccess: refresh,
+    onSuccess: refreshGithub,
   });
 
   return (
@@ -342,7 +342,7 @@ function ClientSecretForm({ app }: { app: GitHubApp }) {
 function SignInButton({ app }: { app: GitHubApp }) {
   const signIn = useMutation({
     mutationFn: async () => {
-      const { url } = await call<{ url: string }, { origin: string }>(
+      const { url } = await call<"signInGithubApp">(
         `${githubAppPath(app.id)}/sign-in`,
         "POST",
         { origin: location.origin },
@@ -371,8 +371,9 @@ function SignInButton({ app }: { app: GitHubApp }) {
 
 function SignOutButton({ app }: { app: GitHubApp }) {
   const signOut = useMutation({
-    mutationFn: () => send(`${githubAppPath(app.id)}/user`, "DELETE"),
-    onSuccess: refresh,
+    mutationFn: () =>
+      send<"signOutGithubApp">(`${githubAppPath(app.id)}/user`, "DELETE"),
+    onSuccess: refreshGithub,
   });
 
   return (
@@ -428,13 +429,11 @@ function AppSheet({ app, onClose }: { app: GitHubApp; onClose: () => void }) {
 
   const save = useMutation({
     mutationFn: () =>
-      call<GitHubApp, { botIds: string[] }>(
-        `${githubAppPath(app.id)}/bots`,
-        "PUT",
-        { botIds },
-      ),
+      call<"setGithubAppBots">(`${githubAppPath(app.id)}/bots`, "PUT", {
+        botIds,
+      }),
     onSuccess: async () => {
-      await refresh();
+      await refreshGithub();
       onClose();
     },
   });
@@ -487,11 +486,7 @@ function AppsSection() {
         <NewButton label="New GitHub App" onClick={() => setCreating(true)} />
       }
     >
-      {apps.isError && (
-        <div className="p-3">
-          <FieldError>{apps.error.message}</FieldError>
-        </div>
-      )}
+      {apps.isError && <SectionError>{apps.error.message}</SectionError>}
       {apps.data?.length === 0 && (
         <SectionEmpty>No GitHub Apps yet.</SectionEmpty>
       )}
@@ -512,8 +507,9 @@ function AccountRow({
   onEdit: () => void;
 }) {
   const remove = useMutation({
-    mutationFn: () => send(githubAccountPath(account.id), "DELETE"),
-    onSuccess: refresh,
+    mutationFn: () =>
+      send<"deleteGithubAccount">(githubAccountPath(account.id), "DELETE"),
+    onSuccess: refreshGithub,
   });
 
   return (
@@ -522,9 +518,7 @@ function AccountRow({
       title={
         <>
           <span className="truncate">{account.login}</span>
-          <span className="font-normal text-muted-foreground">
-            (used by {account.botIds.length})
-          </span>
+          <UsedBy count={account.botIds.length} />
         </>
       }
       description={remove.error?.message}
@@ -587,9 +581,9 @@ function AddAccountSheet({ onClose }: { onClose: () => void }) {
 
   const add = useMutation({
     mutationFn: (body: SecretInput) =>
-      call<GitHubAccount, SecretInput>("/v1/github-accounts", "POST", body),
+      call<"addGithubAccount">("/v1/github-accounts", "POST", body),
     onSuccess: async () => {
-      await refresh();
+      await refreshGithub();
       onClose();
     },
   });
@@ -622,20 +616,20 @@ function AccountSheet({
   const save = useMutation({
     mutationFn: async () => {
       if (token.input && token.changed)
-        await call<GitHubAccount, SecretInput>(
+        await call<"setGithubAccountToken">(
           `${githubAccountPath(account.id)}/token`,
           "PUT",
           token.input,
         );
 
-      await call<GitHubAccount, { botIds: string[] }>(
+      await call<"setGithubAccountBots">(
         `${githubAccountPath(account.id)}/bots`,
         "PUT",
         { botIds },
       );
     },
     onSuccess: async () => {
-      await refresh();
+      await refreshGithub();
       onClose();
     },
   });
@@ -707,9 +701,7 @@ function AccountsSection() {
       }
     >
       {accounts.isError && (
-        <div className="p-3">
-          <FieldError>{accounts.error.message}</FieldError>
-        </div>
+        <SectionError>{accounts.error.message}</SectionError>
       )}
       {accounts.data?.length === 0 && (
         <SectionEmpty>No machine accounts yet.</SectionEmpty>
@@ -737,7 +729,7 @@ export function CodingPage() {
   return (
     <WorkspacePage
       title="Coding"
-      onRefresh={() => void refresh()}
+      onRefresh={() => void refreshGithub()}
       refreshing={apps.isFetching || accounts.isFetching}
     >
       <WorkspaceSettings />
@@ -749,20 +741,21 @@ export function CodingPage() {
 
 /** Where GitHub sends the owner back: after creating an App or signing in through one with a code, and after installing one without. */
 function finishGitHubApp(
+  step: GitHubAppStep,
   params: URLSearchParams,
   navigate: UseNavigateResult<string>,
 ) {
   const installing = sessionStorage.getItem(INSTALLING_KEY);
   const code = params.get("code");
   const state = params.get("state");
-  const step = location.pathname.split("/").at(-1);
 
   const finish =
     step === "installed"
-      ? installing && send(`${githubAppPath(installing)}/connect`, "POST")
+      ? installing &&
+        send<"connectGithubApp">(`${githubAppPath(installing)}/connect`, "POST")
       : code &&
         state &&
-        send(
+        send<"completeGithubApp" | "completeGithubAppSignIn">(
           step === "authorized"
             ? "/v1/github-apps/sign-in/complete"
             : "/v1/github-apps/complete",
@@ -777,15 +770,15 @@ function finishGitHubApp(
 
   return finish.then(async () => {
     sessionStorage.removeItem(INSTALLING_KEY);
-    await refresh();
+    await refreshGithub();
     await navigate({ to: "/settings/coding", replace: true });
   });
 }
 
-export function GitHubAppCallback() {
+export function GitHubAppCallback({ step }: { step: GitHubAppStep }) {
   return (
     <RedirectReturn
-      finish={finishGitHubApp}
+      finish={(params, navigate) => finishGitHubApp(step, params, navigate)}
       pending="Finishing GitHub setup…"
       backTo="/settings/coding"
       backLabel="Back to Coding"

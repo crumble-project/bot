@@ -2,11 +2,8 @@ import { expect, spyOn, test } from "bun:test";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
-import {
-  type MessageGateway,
-  messageGatewaysQuery,
-  queryClient,
-} from "@/lib/api";
+import { type MessageGateway, messageGatewaysQuery } from "./api";
+import { queryClient } from "@/lib/api";
 
 test("owner validation, refresh, and failed disable preserve edits after its default bot is deleted", async () => {
   const window = new Window({ url: "http://localhost" });

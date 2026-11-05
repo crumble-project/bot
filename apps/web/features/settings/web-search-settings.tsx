@@ -1,40 +1,20 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { IconWorld } from "@tabler/icons-react";
-import { FieldError } from "@/components/ui/field";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   RowTile,
   Section,
+  SectionError,
   SettingRow,
   WorkspacePage,
 } from "@/components/workspace";
-import { api, type Bot, call, queryClient } from "@/lib/api";
+import { api, call, queryClient } from "@/lib/api";
+import { isWebSearchProviderId, webSearchProviders } from "@/lib/web-search";
 import { PluginSettingRows } from "./plugin-settings";
 
-type WebSearchProviderId = NonNullable<Bot["webSearchProvider"]>;
-
-/** The name of each web search provider the server offers; a provider the server adds needs one here. */
-const providerNames: Record<WebSearchProviderId, string> = {
-  mixed: "Mixed",
-  exa: "Exa",
-};
-
-export const isWebSearchProviderId = (
-  value: string,
-): value is WebSearchProviderId => Object.hasOwn(providerNames, value);
-
-export const webSearchProviders = Object.entries(providerNames).flatMap(
-  ([id, name]) => (isWebSearchProviderId(id) ? [{ id, name }] : []),
-);
-
-export type WebSearchSettings = {
-  defaultProvider: WebSearchProviderId;
-  exaKeyConfigured: boolean;
-};
-
-export const webSearchSettingsQuery = {
+const webSearchSettingsQuery = {
   queryKey: ["web-search-settings"],
-  queryFn: () => api<WebSearchSettings>("/v1/web-search"),
+  queryFn: () => api<"getWebSearch">("/v1/web-search"),
 };
 
 const refresh = () =>
@@ -45,11 +25,8 @@ export function WebSearchPage() {
   const settings = useQuery(webSearchSettingsQuery);
 
   const change = useMutation({
-    mutationFn: (defaultProvider: WebSearchSettings["defaultProvider"]) =>
-      call<
-        WebSearchSettings,
-        { defaultProvider: WebSearchSettings["defaultProvider"] }
-      >("/v1/web-search", "PUT", { defaultProvider }),
+    mutationFn: (defaultProvider: (typeof webSearchProviders)[number]["id"]) =>
+      call<"updateWebSearch">("/v1/web-search", "PUT", { defaultProvider }),
     onSuccess: refresh,
   });
 
@@ -62,9 +39,7 @@ export function WebSearchPage() {
         description="Bots use this unless their own settings choose another provider."
       >
         {settings.isError && (
-          <div className="p-3">
-            <FieldError>{settings.error.message}</FieldError>
-          </div>
+          <SectionError>{settings.error.message}</SectionError>
         )}
         {data && (
           <>
@@ -97,7 +72,7 @@ export function WebSearchPage() {
               </Tabs>
             </SettingRow>
             <PluginSettingRows
-              contributes="webSearchProviders"
+              select={{ contributes: "webSearchProviders" }}
               onChange={refresh}
             />
           </>

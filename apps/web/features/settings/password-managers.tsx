@@ -18,16 +18,18 @@ import {
   RowTile,
   Section,
   SectionEmpty,
+  SectionError,
   SettingRow,
+  UsedBy,
   WorkspacePage,
 } from "@/components/workspace";
 import {
   type PasswordManager,
   passwordManagerPath,
   passwordManagersQuery,
-  queryClient,
-  send,
-} from "@/lib/api";
+  refreshSecrets,
+} from "@/lib/secrets";
+import { send } from "@/lib/api";
 
 const LOGOS = {
   "1password": si1password,
@@ -38,9 +40,6 @@ const TOKEN_LABELS = {
   "1password": "Service account token",
   bitwarden: "Access token",
 } as const satisfies Record<PasswordManager["id"], string>;
-
-const refresh = () =>
-  queryClient.invalidateQueries({ queryKey: passwordManagersQuery.queryKey });
 
 function TokenSheet({
   manager,
@@ -53,9 +52,11 @@ function TokenSheet({
 
   const connect = useMutation({
     mutationFn: () =>
-      send(passwordManagerPath(manager.id), "PUT", { token: token.trim() }),
+      send<"connectPasswordManager">(passwordManagerPath(manager.id), "PUT", {
+        token: token.trim(),
+      }),
     onSuccess: async () => {
-      await refresh();
+      await refreshSecrets();
       onClose();
     },
   });
@@ -101,8 +102,12 @@ function PasswordManagerRow({ manager }: { manager: PasswordManager }) {
   const inUse = manager.usedBy.length > 0;
 
   const disconnect = useMutation({
-    mutationFn: () => send(passwordManagerPath(manager.id), "DELETE"),
-    onSuccess: refresh,
+    mutationFn: () =>
+      send<"disconnectPasswordManager">(
+        passwordManagerPath(manager.id),
+        "DELETE",
+      ),
+    onSuccess: refreshSecrets,
   });
 
   return (
@@ -115,11 +120,7 @@ function PasswordManagerRow({ manager }: { manager: PasswordManager }) {
       title={
         <>
           {manager.name}
-          {inUse && (
-            <span className="font-normal text-muted-foreground">
-              (used by {manager.usedBy.length})
-            </span>
-          )}
+          {inUse && <UsedBy count={manager.usedBy.length} />}
         </>
       }
       description={
@@ -166,9 +167,7 @@ export function PasswordManagersPage() {
         description="Credentials, provider API keys, and MCP server tokens can be read from a connected password manager instead of being stored in Crumble."
       >
         {managers.isError && (
-          <div className="p-3">
-            <FieldError>{managers.error.message}</FieldError>
-          </div>
+          <SectionError>{managers.error.message}</SectionError>
         )}
         {managers.isPending && <SectionEmpty>Loading…</SectionEmpty>}
         {managers.data?.map((manager) => (

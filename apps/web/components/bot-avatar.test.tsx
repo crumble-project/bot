@@ -33,7 +33,7 @@ test("static and live avatars update geometry, moods and colors, stop sleeping, 
   for (const [key, value] of Object.entries(values))
     Object.defineProperty(globalThis, key, { configurable: true, value });
   const { createRoot } = await import("react-dom/client");
-  const { BotAvatar, botColor } = await import("./avatar");
+  const { BotAvatar, botColor } = await import("./bot-avatar");
   const container = document.createElement("div");
   const root = createRoot(container);
 

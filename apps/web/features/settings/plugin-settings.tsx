@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { pluginSettingKey } from "@crumble/server/contract/plugins";
 import { IconKey, IconPencil, IconTrash } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -10,15 +11,19 @@ import {
   type SecretInput,
   useSecretDraft,
 } from "@/components/secret-source-field";
-import { RowMenu, RowTile, SettingRow } from "@/components/workspace";
+import {
+  RowMenu,
+  RowTile,
+  SectionError,
+  SettingRow,
+} from "@/components/workspace";
 import {
   type PluginSettings,
-  passwordManagersQuery,
   pluginSettingPath,
   pluginSettingsQuery,
-  queryClient,
-  send,
-} from "@/lib/api";
+} from "./api";
+import { passwordManagersQuery, refreshSecrets } from "@/lib/secrets";
+import { queryClient, send } from "@/lib/api";
 
 type Plugin = PluginSettings["plugins"][number];
 
@@ -54,7 +59,6 @@ function SecretSettingSheet({
         id={`plugin-setting-${setting.key}`}
         label="Value"
         {...secret.field}
-        valueDescription="Stored encrypted and never shown again."
       />
     </EditorSheet>
   );
@@ -80,16 +84,16 @@ function SecretSetting({
 
   const save = useMutation({
     mutationFn: (input: SecretInput | null) =>
-      input === null ? send(path, "DELETE") : send(path, "PUT", input),
+      input === null
+        ? send<"deletePluginSetting">(path, "DELETE")
+        : send<"setPluginSetting">(path, "PUT", input),
     onSuccess: async () => {
       setEditing(false);
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: pluginSettingsQuery.queryKey,
         }),
-        queryClient.invalidateQueries({
-          queryKey: passwordManagersQuery.queryKey,
-        }),
+        refreshSecrets(),
         onChange?.(),
       ]);
       // Drop the submitted value from the mutation state.
@@ -157,51 +161,49 @@ function SecretSetting({
   );
 }
 
-/** The settings of every plugin that contributes `contributes`, as the server declares them. */
+/** Which settings a page shows: a contribution's plugins, one plugin, or the setting stored under a key. */
+type SettingSelection =
+  | { contributes: Contribution }
+  | { pluginId: string }
+  | { secretKey: string };
+
+function isSelected(
+  select: SettingSelection,
+  plugin: Plugin,
+  setting: Setting,
+) {
+  if ("contributes" in select)
+    return plugin.contributes.includes(select.contributes);
+
+  if ("pluginId" in select) return plugin.id === select.pluginId;
+
+  return pluginSettingKey(plugin.id, setting.key) === select.secretKey;
+}
+
+/** The selected plugin settings, as the server declares them. */
 export function PluginSettingRows({
-  contributes,
-  pluginId,
-  secretKey,
+  select,
   onChange,
 }: {
-  contributes?: Contribution;
-  /** Limits the rows to one plugin's settings, for a plugin that contributes only settings. */
-  pluginId?: string;
-  /** Limits the rows to the setting stored under this key, `pluginId:key`. */
-  secretKey?: string;
+  select: SettingSelection;
   /** Runs after a value is saved or removed, for pages whose own status depends on it. */
   onChange?: () => Promise<void>;
 }) {
   const settings = useQuery(pluginSettingsQuery);
 
   if (settings.isError)
-    return (
-      <div className="p-3">
-        <FieldError>{settings.error.message}</FieldError>
-      </div>
-    );
+    return <SectionError>{settings.error.message}</SectionError>;
 
-  return settings.data?.plugins
-    .filter(
-      (plugin) =>
-        (contributes === undefined ||
-          plugin.contributes.includes(contributes)) &&
-        (pluginId === undefined || plugin.id === pluginId),
-    )
-    .flatMap((plugin) =>
-      plugin.settings
-        .filter(
-          (setting) =>
-            secretKey === undefined ||
-            `${plugin.id}:${setting.key}` === secretKey,
-        )
-        .map((setting) => (
-          <SecretSetting
-            key={`${plugin.id}/${setting.key}`}
-            pluginId={plugin.id}
-            setting={setting}
-            onChange={onChange}
-          />
-        )),
-    );
+  return settings.data?.plugins.flatMap((plugin) =>
+    plugin.settings
+      .filter((setting) => isSelected(select, plugin, setting))
+      .map((setting) => (
+        <SecretSetting
+          key={`${plugin.id}/${setting.key}`}
+          pluginId={plugin.id}
+          setting={setting}
+          onChange={onChange}
+        />
+      )),
+  );
 }

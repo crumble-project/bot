@@ -1,18 +1,11 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { IconHandStop } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  type HeldAction,
-  heldActionPath,
-  heldActionsQuery,
-  queryClient,
-  send,
-} from "@/lib/api";
-import { SettledCard } from "./transcript";
-
-const PENDING_POLL_MS = 5000;
+import { SettledCard, useFreshRequest } from "@/components/request-card";
+import { type HeldAction, heldActionPath, heldActionsQuery } from "./api";
+import { queryClient, send } from "@/lib/api";
 
 const OUTCOMES: Record<Exclude<HeldAction["status"], "pending">, string> = {
   approved: "Approved",
@@ -30,30 +23,27 @@ export function HeldActionCard({
   title: string;
   botId: string;
 }) {
-  // The cached list can predate an action that was just held; read it anew before calling it decided. While it waits,
-  // a stopped job, a restart, or another client can end it, so keep reading.
-  const state = useQuery({
-    ...heldActionsQuery(botId),
-    refetchOnMount: "always",
-    refetchInterval: (query) =>
-      query.state.data?.find((item) => item.id === held.id)?.status ===
-      "pending"
-        ? PENDING_POLL_MS
-        : false,
-  });
+  const heldIn = (actions: HeldAction[]) =>
+    actions.find((item) => item.id === held.id);
 
-  const action = state.data?.find((item) => item.id === held.id);
+  // A settled action stays settled; a waiting one in the cache may have ended since.
+  const { data, reading } = useFreshRequest(
+    heldActionsQuery(botId),
+    (actions) => {
+      const action = heldIn(actions);
 
-  if (!action || (action.status === "pending" && !state.isFetchedAfterMount))
+      return action !== undefined && action.status !== "pending";
+    },
+  );
+
+  const action = data && heldIn(data);
+
+  if (reading || !action)
     return (
       <SettledCard
         icon={IconHandStop}
         title={title}
-        outcome={
-          state.isError || (state.isSuccess && !action)
-            ? "Unavailable"
-            : "Loading…"
-        }
+        outcome={reading ?? "Unavailable"}
       />
     );
 
@@ -81,11 +71,16 @@ function HeldActionPending({
 
   const decide = useMutation({
     mutationFn: (decision: "approve" | "decline") =>
-      send(
-        `${heldActionPath(botId, action.id)}/${decision}`,
-        "POST",
-        decision === "decline" ? { reason: reason.trim() || undefined } : {},
-      ),
+      decision === "decline"
+        ? send<"declineAgentHeldAction">(
+            `${heldActionPath(botId, action.id)}/decline`,
+            "POST",
+            { reason: reason.trim() || undefined },
+          )
+        : send<"approveAgentHeldAction">(
+            `${heldActionPath(botId, action.id)}/approve`,
+            "POST",
+          ),
     onSettled: () =>
       queryClient.invalidateQueries({
         queryKey: heldActionsQuery(botId).queryKey,

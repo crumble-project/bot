@@ -18,19 +18,17 @@ import {
 import { Connect } from "./connect";
 import { Home } from "./home";
 import { Shell } from "./shell";
-import {
-  HttpError,
-  botsQuery,
-  chatQuery,
-  groupChatQuery,
-  groupsQuery,
-  queryClient,
-} from "@/lib/api";
+import { HttpError, queryClient } from "@/lib/api";
+import { botsQuery } from "@/features/bots/api";
+import { chatQuery } from "@/features/chat/api";
+import { groupChatQuery, groupsQuery } from "@/features/group-chats/api";
 import { authClient } from "@/lib/auth-client";
 import { ActivityPage } from "@/features/activity/activity";
 import { BotForm } from "@/features/bots/bot-form";
 import { Chat } from "@/features/chat/chat";
 import { CredentialsSettings } from "@/features/credentials/credentials";
+import { GITHUB_APP_WEB_PATHS } from "@crumble/server/contract/github-apps";
+import { MCP_OAUTH_WEB_PATH } from "@crumble/server/contract/mcp-oauth";
 import { CodingPage, GitHubAppCallback } from "@/features/settings/coding";
 import { UsersPage } from "@/features/settings/admin-settings";
 import { LoginsSettings } from "@/features/logins/logins";
@@ -41,11 +39,8 @@ import {
   OAuthCallback,
 } from "@/features/integrations/integrations";
 import { MemoryPage } from "@/features/memory/memory";
-import {
-  GeneralSettings,
-  ProvidersSettings,
-  SettingsLayout,
-} from "@/features/settings/settings";
+import { ProvidersSettings } from "@/features/settings/providers";
+import { GeneralSettings, SettingsLayout } from "@/features/settings/settings";
 import { WebSearchPage } from "@/features/settings/web-search-settings";
 import { JudgeModelPage } from "@/features/settings/judge-model-settings";
 import { VisionModelPage } from "@/features/settings/vision-model-settings";
@@ -134,19 +129,6 @@ const desktopRoute = createRoute({
   },
 });
 
-// Credentials moved into settings; a bot's old link opens them with the bot picked.
-const credentialsRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: "/bots/$botId/credentials",
-  beforeLoad: ({ params }) => {
-    throw redirect({
-      to: "/settings/credentials",
-      search: { bot: params.botId },
-      replace: true,
-    });
-  },
-});
-
 const newGroupRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/groups/new",
@@ -193,27 +175,10 @@ const memoryRoute = createRoute({
   component: MemoryPage,
 });
 
-// Skills and integrations moved into settings; old links still land there.
-const skillsRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: "/skills",
-  beforeLoad: () => {
-    throw redirect({ to: "/settings/skills", replace: true });
-  },
-});
-
 const automationsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/automations",
   component: AutomationsPage,
-});
-
-const tasksRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: "/tasks",
-  beforeLoad: () => {
-    throw redirect({ to: "/automations", replace: true });
-  },
 });
 
 const activityRoute = createRoute({
@@ -236,36 +201,28 @@ const avatarsRoute = createRoute({
   component: AvatarsPage,
 });
 
-const integrationsRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: "/integrations",
-  beforeLoad: () => {
-    throw redirect({ to: "/settings/integrations", replace: true });
-  },
-});
-
 const oauthRoute = createRoute({
   getParentRoute: () => appRoute,
-  path: "/oauth/callback",
+  path: MCP_OAUTH_WEB_PATH,
   component: OAuthCallback,
 });
 
 const githubAppCallbackRoute = createRoute({
   getParentRoute: () => appRoute,
-  path: "/github-app/callback",
-  component: GitHubAppCallback,
+  path: GITHUB_APP_WEB_PATHS.created,
+  component: () => <GitHubAppCallback step="created" />,
 });
 
 const githubAppInstalledRoute = createRoute({
   getParentRoute: () => appRoute,
-  path: "/github-app/installed",
-  component: GitHubAppCallback,
+  path: GITHUB_APP_WEB_PATHS.installed,
+  component: () => <GitHubAppCallback step="installed" />,
 });
 
 const githubAppAuthorizedRoute = createRoute({
   getParentRoute: () => appRoute,
-  path: "/github-app/authorized",
-  component: GitHubAppCallback,
+  path: GITHUB_APP_WEB_PATHS.authorized,
+  component: () => <GitHubAppCallback step="authorized" />,
 });
 
 const codingRoute = createRoute({
@@ -395,18 +352,14 @@ export const router = createRouter({
       botRoute,
       editBotRoute,
       desktopRoute,
-      credentialsRoute,
       newGroupRoute,
       groupRoute,
       editGroupRoute,
       memoryRoute,
-      skillsRoute,
       automationsRoute,
-      tasksRoute,
       activityRoute,
       soundsRoute,
       avatarsRoute,
-      integrationsRoute,
       oauthRoute,
       githubAppCallbackRoute,
       githubAppInstalledRoute,

@@ -5,39 +5,28 @@ import {
   IconArrowUp,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import type { ChartLayout, Message } from "@/lib/api";
+import {
+  type DisplayDetails,
+  displayDetails,
+} from "@crumble/server/contract/tool-details";
+import { DISPLAY_TOOL_NAME } from "@crumble/server/contract/tools";
+import { toolDetailsOf } from "./tool-details";
+import { toolResult } from "./tool-result";
+import type { ChartLayout } from "@crumble/server/contract/chart";
+import { CHART_SERIES_COLORS } from "@crumble/server/contract/limits";
+import type { Message } from "./api";
 
-type Stat = {
-  label: string;
-  value: string;
-  change?: string;
-  trend?: "up" | "down" | "flat";
-  caption?: string;
-};
-
-type Display =
-  | { kind: "stats"; title?: string; items: Stat[] }
-  | {
-      kind: "table";
-      title?: string;
-      columns: string[];
-      rows: (string | number)[][];
-    }
-  | { kind: "chart"; title?: string; layouts: ChartLayout[] };
+type Stat = Extract<DisplayDetails, { kind: "stats" }>["items"][number];
 
 /** The `show` tool's component, from a successful tool result; unknown kinds are dropped. */
-export function displayOf(message: Message): Display | null {
-  if (message.toolName !== "show" || message.isError) return null;
+const displayOf = (message: Message) =>
+  toolDetailsOf(message, displayDetails, DISPLAY_TOOL_NAME);
 
-  // SAFETY: The server validates `show` details against these three shapes before storing them.
-  const details = message.toolDetails as Display | undefined;
+export const displayResult = toolResult(displayOf, ({ result }) => (
+  <DisplayCard display={result} />
+));
 
-  return details && ["stats", "table", "chart"].includes(details.kind)
-    ? details
-    : null;
-}
-
-export function DisplayCard({ display }: { display: Display }) {
+function DisplayCard({ display }: { display: DisplayDetails }) {
   return (
     <div className="flex max-w-full flex-col gap-2 rounded-xl border p-3">
       {display.title && (
@@ -157,13 +146,13 @@ type Node = ChartLayout["nodes"][number];
 
 type Point = ChartLayout["points"][number];
 
-const SERIES = [
-  "var(--chart-1)",
-  "var(--chart-2)",
-  "var(--chart-3)",
-  "var(--chart-4)",
-  "var(--chart-5)",
-];
+// `styles.css` defines these; a chart may name more series, which reuse them.
+const THEME_CHART_COLORS = 5;
+
+const SERIES = Array.from(
+  { length: CHART_SERIES_COLORS },
+  (_, index) => `var(--chart-${((index + 1) % THEME_CHART_COLORS) + 1})`,
+);
 
 function paint(color: string | undefined, fallback: string) {
   if (!color) return fallback;
@@ -174,7 +163,7 @@ function paint(color: string | undefined, fallback: string) {
 
   const series = /^series-(\d+)$/.exec(color);
 
-  return series ? SERIES[Number(series[1]) % SERIES.length]! : color;
+  return series ? SERIES[Number(series[1]) - 1]! : color;
 }
 
 function pathData(commands: Extract<Node, { kind: "path" }>["commands"]) {

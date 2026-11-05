@@ -1,26 +1,12 @@
 import { GatewayIcon, gatewayLabel } from "@/components/gateway-brand";
-import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
-import {
-  type ComponentProps,
-  type ReactNode,
-  useEffect,
-  useState,
-} from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { type ReactNode, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   IconChevronRight,
-  IconDeviceDesktop,
-  IconCopy,
   IconFileText,
-  IconHammer,
   IconKey,
-  IconLogin2,
-  IconPencil,
   IconArrowBackUp,
-  IconCheck,
   IconUsersGroup,
-  type TablerIcon,
 } from "@tabler/icons-react";
 import { Bubble, BubbleContent, BubbleReactions } from "@/components/ui/bubble";
 import { Badge } from "@/components/ui/badge";
@@ -34,239 +20,69 @@ import {
 } from "@/components/ui/message";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import {
-  type Bot,
-  type BotInput,
-  type BotRequest,
-  type Credential,
-  type LoginRequest,
-  type Message,
-  apiBlob,
-  botRequestPath,
-  botRequestsQuery,
-  botsQuery,
-  call,
-  credentialPath,
-  credentialsQuery,
-  loginPath,
-  loginsQuery,
-  mcpServersQuery,
-  queryClient,
-  send,
-} from "@/lib/api";
-import { BotAvatar, botStyle } from "@/features/bots/avatar";
-import { LoginSheet } from "@/features/logins/login-sheet";
-import {
-  BotFields,
-  CAPABILITIES,
-  useBotFields,
-} from "@/features/bots/bot-form";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import { Input } from "@/components/ui/input";
+import type { Message } from "./api";
+import { apiBlob } from "@/lib/api";
+import { botStyle } from "@/components/bot-avatar";
 import type { Upload } from "./composer";
-import { DisplayCard, displayOf } from "./display";
-import { JobStatus } from "@/features/jobs/jobs";
+import type { Outgoing } from "./delivery";
+import { CopyButton } from "@/components/form-fields";
 import { Reply } from "@/components/markdown";
-import type { Sources } from "./sources";
+import { reactionDetails } from "@crumble/server/contract/tool-details";
+import { REACTION_TOOL_NAME } from "@crumble/server/contract/tools";
+import { blocksOf, toolDetailsOf } from "./tool-details";
+import type { Sources } from "@/lib/sources";
 
-/** Orders `agent:entry:index` message IDs numerically; others keep their place at the end. */
-function position(id: string) {
-  const parts = id.split(":");
-  const entry = Number(parts.at(-2));
-  const index = Number(parts.at(-1));
-
-  return Number.isFinite(entry) && Number.isFinite(index)
-    ? [entry, index]
-    : [Infinity, 0];
-}
-
-/** Merges older pages into the live page by ID, in transcript order. */
+/** Merges older pages into the live page, dropping IDs they share. Every page is in transcript order, oldest first. */
 export function mergeMessages(older: Message[], live: Message[]) {
   const byId = new Map<string, Message>();
 
   for (const message of [...older, ...live]) byId.set(message.id, message);
 
-  return [...byId.values()].sort((a, b) => {
-    const [ae, ai] = position(a.id);
-    const [be, bi] = position(b.id);
-
-    return ae! - be! || ai! - bi!;
-  });
+  return [...byId.values()];
 }
 
-function hasText(message: Message) {
+export function hasText(message: Message) {
   if (!Array.isArray(message.blocks)) return message.content.trim() !== "";
 
-  // SAFETY: Provider content blocks are objects with a `type`; text blocks carry `text`.
-  const blocks = message.blocks as { type?: string; text?: string }[];
-
-  return blocks.some(
+  return blocksOf(message).some(
     (block) => block.type === "text" && Boolean(block.text?.trim()),
   );
 }
 
-export type JobDetails = { name: string; status?: string };
+/** Whether a message has anything to draw besides what a tool shows. */
+export const hasContent = (message: Message) =>
+  message.content.trim() !== "" || Boolean(message.attachments?.length);
 
-/** A coding or desktop job a tool result started or messaged. */
-export function jobOf(message: Message) {
-  if (message.role !== "toolResult" || message.isError) return null;
+export type Reaction = { emoji: string; from?: string | undefined };
 
-  if (message.toolName !== "coding" && message.toolName !== "desktop")
-    return null;
-
-  // SAFETY: Job tool results carry the job's name and status in their details.
-  const details = message.toolDetails as Partial<JobDetails> | undefined;
-
-  const kind: "coding" | "desktop" =
-    message.toolName === "coding" ? "coding" : "desktop";
-
-  return details?.name
-    ? {
-        kind,
-        name: details.name,
-        status: details.status,
-      }
-    : null;
-}
-
-/** The credential a `request_credential` result asked the owner for. */
-export function credentialRequestOf(message: Message) {
-  if (
-    message.role !== "toolResult" ||
-    message.isError ||
-    message.toolName !== "request_credential"
-  )
-    return null;
-
-  // SAFETY: The tool stores the saved request, with its name and hosts, as its details.
-  const details = message.toolDetails as
-    | { name?: string; hosts?: string[]; requestedAt?: string }
-    | undefined;
-
-  return details?.name
-    ? {
-        name: details.name,
-        hosts: details.hosts ?? [],
-        ...(details.requestedAt && { requestedAt: details.requestedAt }),
-      }
-    : null;
-}
-
-/** The login a `request_login` result asked the owner for. */
-export function loginRequestOf(message: Message) {
-  if (
-    message.role !== "toolResult" ||
-    message.isError ||
-    message.toolName !== "request_login"
-  )
-    return null;
-
-  // SAFETY: The tool stores the saved request, with its name and hosts, as its details.
-  const details = message.toolDetails as
-    | { name?: string; hosts?: string[]; requestedAt?: string }
-    | undefined;
-
-  return details?.name
-    ? {
-        name: details.name,
-        hosts: details.hosts ?? [],
-        ...(details.requestedAt && { requestedAt: details.requestedAt }),
-      }
-    : null;
-}
-
-export function botRequestOf(message: Message): BotRequest | null {
-  if (
-    message.role !== "toolResult" ||
-    message.isError ||
-    message.toolName !== "request_bot"
-  )
-    return null;
-
-  // SAFETY: request_bot stores the validated request in toolDetails.
-  const details = message.toolDetails as BotRequest | undefined;
-
-  return details?.id && details.proposal ? details : null;
-}
-
-function userShown(message: Message) {
-  return (
-    (message.content.trim() !== "" || Boolean(message.attachments?.length)) &&
-    message.origin?.kind !== "coding" &&
-    message.origin?.kind !== "desktop"
-  );
-}
-
-function toolResultShown(message: Message) {
-  return (
-    displayOf(message) !== null ||
-    isDesktopScreenshot(message) ||
-    jobOf(message) !== null ||
-    credentialRequestOf(message) !== null ||
-    loginRequestOf(message) !== null ||
-    botRequestOf(message) !== null
-  );
-}
-
-export function shownInChat(message: Message) {
-  switch (message.role) {
-    case "user":
-      return userShown(message);
-    case "assistant":
-      return hasText(message);
-    case "toolResult":
-      return toolResultShown(message);
-    case "event":
-      return message.content.trim() !== "";
-    default:
-      return false;
-  }
-}
-
-function reactionEmoji(message: Message) {
-  if (message.role !== "toolResult" || message.toolName !== "react") return;
-
-  if (message.isError) return;
-
-  // SAFETY: The react tool records the emoji it sent in its details.
-  return (message.toolDetails as { emoji?: string } | undefined)?.emoji;
-}
-
-function reactionLabel(message: Message, emoji: string, group: boolean) {
-  return group && message.origin?.name
-    ? `${message.origin.name} ${emoji}`
-    : emoji;
-}
-
-function addReaction(
-  reactions: Map<string, string[]>,
-  target: string,
-  label: string,
-) {
-  reactions.set(target, [...(reactions.get(target) ?? []), label]);
-}
+/** The entry a reaction answers: bots react to the owner's last message, unless the group's records its target. */
+export type ReactionTarget = (
+  message: Message,
+  lastOwner: string | undefined,
+) => string | undefined;
 
 /** Emoji reactions from the `react` tool, keyed by the message they react to. */
-export function reactionsOf(messages: Message[], group: boolean) {
-  const reactions = new Map<string, string[]>();
-  let lastUser: string | undefined;
+export function reactionsOf(messages: Message[], targetOf: ReactionTarget) {
+  const reactions = new Map<string, Reaction[]>();
+  let lastOwner: string | undefined;
 
   for (const message of messages) {
-    if (message.role === "user" && message.entryId) lastUser = message.entryId;
+    if (message.role === "user" && message.entryId) lastOwner = message.entryId;
 
-    const emoji = reactionEmoji(message);
-    const target = group ? message.replyTo : lastUser;
+    const reaction = toolDetailsOf(
+      message,
+      reactionDetails,
+      REACTION_TOOL_NAME,
+    );
 
-    if (!emoji || !target) continue;
+    const target = targetOf(message, lastOwner);
 
-    addReaction(reactions, target, reactionLabel(message, emoji, group));
+    if (!reaction || !target) continue;
+
+    reactions.set(target, [
+      ...(reactions.get(target) ?? []),
+      { emoji: reaction.emoji, from: message.origin?.name },
+    ]);
   }
 
   return reactions;
@@ -426,7 +242,7 @@ function CenteredDisclosure({
   );
 }
 
-function AttachmentImage({
+export function AttachmentImage({
   path,
   name,
   className,
@@ -499,16 +315,9 @@ function originLabel(message: Message) {
 
   if (!origin) return null;
 
-  if (origin.kind === "owner")
-    return botRequestNotice(message) ? "Bot request" : null;
-
   if (origin.kind === "bot_request") return "Bot request";
 
   return originContent(origin);
-}
-
-function botRequestNotice(message: Message) {
-  return message.requestId?.startsWith("bot-request:") === true;
 }
 
 function automationOrigin(origin: NonNullable<Message["origin"]>) {
@@ -570,46 +379,8 @@ export function MessageActions({
           <IconArrowBackUp />
         </Button>
       )}
-      <CopyButton text={message.content} />
+      <CopyButton text={message.content} size="icon-xs" />
     </div>
-  );
-}
-
-const ICON_SWAP =
-  "transition-[opacity,scale,filter] duration-200 ease-[cubic-bezier(0.2,0,0,1)]";
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!copied) return;
-
-    const timer = setTimeout(() => setCopied(false), 1500);
-
-    return () => clearTimeout(timer);
-  }, [copied]);
-
-  return (
-    <Button
-      variant="ghost"
-      size="icon-xs"
-      title={copied ? "Copied" : "Copy"}
-      className="relative"
-      onClick={() =>
-        void navigator.clipboard.writeText(text).then(() => setCopied(true))
-      }
-    >
-      <IconCopy
-        className={cn(ICON_SWAP, copied && "scale-25 opacity-0 blur-[4px]")}
-      />
-      <IconCheck
-        className={cn(
-          ICON_SWAP,
-          "absolute",
-          !copied && "scale-25 opacity-0 blur-[4px]",
-        )}
-      />
-    </Button>
   );
 }
 
@@ -617,21 +388,26 @@ function MessageReactions({
   reactions,
   align,
 }: {
-  reactions: string[] | undefined;
+  reactions: Reaction[] | undefined;
   align: "start" | "end";
 }) {
   if (!reactions || reactions.length === 0) return null;
 
   return (
     <BubbleReactions side="bottom" align={align}>
-      <Badge variant="secondary" title={reactions.join(", ")}>
-        {reactions.map((reaction) => reaction.split(" ").at(-1)).join("")}
+      <Badge
+        variant="secondary"
+        title={reactions
+          .map(({ emoji, from }) => (from ? `${from} ${emoji}` : emoji))
+          .join(", ")}
+      >
+        {reactions.map(({ emoji }) => emoji).join("")}
       </Badge>
     </BubbleReactions>
   );
 }
 
-export type Delivery = "sending" | "failed";
+export type Delivery = Outgoing["state"];
 
 /** An owner message: right-aligned bubble with reply quote, attachments, reactions, and delivery state. */
 export function OwnerMessage({
@@ -648,7 +424,7 @@ export function OwnerMessage({
   /** Files of a message not confirmed yet, shown from local data. */
   uploads?: Upload[];
   quote?: string | undefined;
-  reactions?: string[] | undefined;
+  reactions?: Reaction[] | undefined;
   delivery?: Delivery;
   onRetry?: () => void;
   onReply?: ((message: Message) => void) | undefined;
@@ -685,7 +461,7 @@ function OwnerMessageBody({
   message: Message;
   uploads?: Upload[] | undefined;
   quote?: string | undefined;
-  reactions?: string[] | undefined;
+  reactions?: Reaction[] | undefined;
   delivery?: Delivery | undefined;
   onRetry?: (() => void) | undefined;
   onReply?: ((message: Message) => void) | undefined;
@@ -751,7 +527,7 @@ function OwnerContent({
 }: {
   message: Message;
   delivery?: Delivery | undefined;
-  reactions?: string[] | undefined;
+  reactions?: Reaction[] | undefined;
   onReply?: ((message: Message) => void) | undefined;
 }) {
   if (!message.content.trim()) return null;
@@ -826,7 +602,7 @@ export function BotMessage({
   sender?: ReactNode;
   /** The sender's color, where the transcript mixes bots. */
   color?: string | undefined;
-  reactions?: string[] | undefined;
+  reactions?: Reaction[] | undefined;
   sources?: Sources | undefined;
   onReply?: ((message: Message) => void) | undefined;
 }) {
@@ -852,688 +628,6 @@ export function BotMessage({
       </MessageContent>
     </MessageRow>
   );
-}
-
-export function SettledCard({
-  icon: Icon,
-  title,
-  outcome,
-  action,
-}: {
-  icon: TablerIcon;
-  title: string;
-  outcome: string;
-  action?: ReactNode;
-}) {
-  return (
-    <div className="flex w-full max-w-sm items-center gap-3 rounded-xl border p-3">
-      <Icon className="size-4 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate text-sm font-medium">
-        {title}
-      </span>
-      <span className="text-xs text-muted-foreground">{outcome}</span>
-      {action}
-    </div>
-  );
-}
-
-function CredentialRequestCard({
-  credential,
-  botId,
-}: {
-  credential: { name: string; hosts: string[]; requestedAt?: string };
-  botId: string;
-}) {
-  // The cached list can predate a request that just arrived; read it anew before calling the request answered.
-  const state = useQuery({
-    ...credentialsQuery(botId),
-    refetchOnMount: "always",
-  });
-
-  const current = state.data;
-
-  const request = current?.requests.find(
-    (item) =>
-      item.name === credential.name &&
-      (!credential.requestedAt || item.requestedAt === credential.requestedAt),
-  );
-
-  const saved = current?.credentials.find(
-    (item) => item.name === credential.name,
-  );
-
-  if (!state.isSuccess || (!request && !state.isFetchedAfterMount))
-    return (
-      <SettledCard
-        icon={IconKey}
-        title={credential.name}
-        outcome={state.isError ? "Unavailable" : "Loading…"}
-      />
-    );
-
-  if (!request && saved)
-    return (
-      <SettledCard icon={IconKey} title={credential.name} outcome="Saved" />
-    );
-
-  if (!request)
-    return (
-      <SettledCard icon={IconKey} title={credential.name} outcome="Declined" />
-    );
-
-  return (
-    <CredentialPendingCard
-      credential={credential}
-      request={request}
-      botId={botId}
-    />
-  );
-}
-
-function CredentialPendingCard({
-  credential,
-  request,
-  botId,
-}: {
-  credential: { name: string; hosts: string[] };
-  request: { hosts: string[] };
-  botId: string;
-}) {
-  const [value, setValue] = useState("");
-  const [expanded, setExpanded] = useState(false);
-
-  const save = useMutation({
-    mutationFn: () =>
-      call<Credential, { hosts: string[]; value: string }>(
-        credentialPath(botId, credential.name),
-        "PUT",
-        { hosts: request.hosts, value },
-      ),
-    onSuccess: async () => {
-      setValue("");
-      await queryClient.invalidateQueries({
-        queryKey: credentialsQuery(botId).queryKey,
-      });
-    },
-  });
-
-  const decline = useMutation({
-    mutationFn: () =>
-      send(`${credentialPath(botId, credential.name)}/decline`, "POST"),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: credentialsQuery(botId).queryKey,
-      }),
-  });
-
-  const hosts = expanded ? request.hosts : request.hosts.slice(0, 1);
-
-  return (
-    <div className="flex w-full max-w-sm flex-col gap-3 rounded-xl border p-4">
-      <CredentialRequestHeader
-        name={credential.name}
-        hosts={hosts}
-        more={request.hosts.length - 1}
-        expanded={expanded}
-        onToggle={() => setExpanded(!expanded)}
-      />
-      <Input
-        type="password"
-        autoComplete="off"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        placeholder="Credential value"
-      />
-      {(save.isError || decline.isError) && (
-        <p className="text-xs text-destructive">
-          {(save.error ?? decline.error)?.message}
-        </p>
-      )}
-      <CredentialRequestActions
-        onDecline={() => decline.mutate()}
-        onSave={() => save.mutate()}
-        canSave={Boolean(value)}
-        busy={save.isPending || decline.isPending}
-      />
-    </div>
-  );
-}
-
-function CredentialRequestHeader({
-  icon: Icon = IconKey,
-  name,
-  hosts,
-  more,
-  expanded,
-  onToggle,
-}: {
-  icon?: TablerIcon;
-  name: string;
-  hosts: string[];
-  more: number;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <div className="flex items-start gap-3">
-      <Icon className="mt-0.5 size-4 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium">{name}</div>
-        <div className="flex flex-wrap gap-x-1 text-xs text-muted-foreground">
-          {hosts.map((host) => (
-            <span key={host}>{host}</span>
-          ))}
-          {more > 0 && (
-            <button type="button" className="underline" onClick={onToggle}>
-              {expanded ? "Show less" : `${more} more`}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CredentialRequestActions({
-  onDecline,
-  onSave,
-  canSave,
-  busy,
-}: {
-  onDecline: () => void;
-  onSave: () => void;
-  canSave: boolean;
-  busy: boolean;
-}) {
-  return (
-    <div className="flex justify-end gap-2">
-      <Button variant="ghost" size="sm" onClick={onDecline} disabled={busy}>
-        Decline
-      </Button>
-      <Button size="sm" onClick={onSave} disabled={!canSave || busy}>
-        Save
-      </Button>
-    </div>
-  );
-}
-
-function LoginRequestCard({
-  login,
-  botId,
-}: {
-  login: { name: string; hosts: string[]; requestedAt?: string };
-  botId: string;
-}) {
-  // The cached list can predate a request that just arrived; read it anew before calling the request answered.
-  const state = useQuery({ ...loginsQuery(botId), refetchOnMount: "always" });
-
-  const request = state.data?.requests.find(
-    (item) =>
-      item.name === login.name &&
-      (!login.requestedAt || item.requestedAt === login.requestedAt),
-  );
-
-  const saved = state.data?.logins.some((item) => item.name === login.name);
-
-  if (!state.isSuccess || (!request && !state.isFetchedAfterMount))
-    return (
-      <SettledCard
-        icon={IconLogin2}
-        title={login.name}
-        outcome={state.isError ? "Unavailable" : "Loading…"}
-      />
-    );
-
-  if (!request)
-    return (
-      <SettledCard
-        icon={IconLogin2}
-        title={login.name}
-        outcome={saved ? "Saved" : "Declined"}
-      />
-    );
-
-  return <LoginPendingCard request={request} botId={botId} />;
-}
-
-function LoginPendingCard({
-  request,
-  botId,
-}: {
-  request: LoginRequest;
-  botId: string;
-}) {
-  const [adding, setAdding] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-
-  const decline = useMutation({
-    mutationFn: () => send(`${loginPath(botId, request.name)}/decline`, "POST"),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: loginsQuery(botId).queryKey,
-      }),
-  });
-
-  return (
-    <div className="flex w-full max-w-sm flex-col gap-3 rounded-xl border p-4">
-      <CredentialRequestHeader
-        icon={IconLogin2}
-        name={request.name}
-        hosts={expanded ? request.hosts : request.hosts.slice(0, 1)}
-        more={request.hosts.length - 1}
-        expanded={expanded}
-        onToggle={() => setExpanded(!expanded)}
-      />
-      {decline.isError && (
-        <p className="text-xs text-destructive">{decline.error.message}</p>
-      )}
-      <div className="flex justify-end gap-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => decline.mutate()}
-          disabled={decline.isPending}
-        >
-          Decline
-        </Button>
-        <Button size="sm" onClick={() => setAdding(true)}>
-          Add login
-        </Button>
-      </div>
-      {adding && (
-        <LoginSheet
-          bots={[]}
-          botId={botId}
-          existing={null}
-          request={request}
-          onClose={() => setAdding(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-function BotRequestCard({
-  request,
-  botId,
-}: {
-  request: BotRequest;
-  botId: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const current = useQuery(botRequestsQuery(botId));
-  const live = current.data?.find((item) => item.id === request.id) ?? request;
-
-  const { approve, decline } = useBotRequestMutations(
-    botId,
-    request.id,
-    setOpen,
-  );
-
-  if (live.status !== "pending") return <BotRequestSettled request={live} />;
-
-  return (
-    <BotPendingCard
-      live={live}
-      requestId={request.id}
-      open={open}
-      setOpen={setOpen}
-      onApprove={(proposal) => approve.mutate(proposal)}
-      onDecline={() => decline.mutate()}
-      approvePending={approve.isPending}
-      declinePending={decline.isPending}
-      approveError={approve.isError ? (approve.error?.message ?? "") : ""}
-      declineError={decline.isError ? (decline.error?.message ?? "") : ""}
-    />
-  );
-}
-
-function BotRequestSettled({ request }: { request: BotRequest }) {
-  return (
-    <SettledCard
-      icon={IconUsersGroup}
-      title={request.proposal.name}
-      outcome={request.status === "approved" ? "Approved" : "Declined"}
-      action={
-        request.createdAgentId ? (
-          <Button
-            render={
-              <Link
-                to="/bots/$botId"
-                params={{ botId: request.createdAgentId }}
-              />
-            }
-            size="xs"
-            variant="outline"
-          >
-            Open chat
-          </Button>
-        ) : undefined
-      }
-    />
-  );
-}
-
-function useBotRequestMutations(
-  botId: string,
-  requestId: string,
-  setOpen: (open: boolean) => void,
-) {
-  const refresh = () =>
-    queryClient.invalidateQueries({
-      queryKey: botRequestsQuery(botId).queryKey,
-    });
-
-  const approve = useMutation({
-    mutationFn: (proposal?: BotInput) =>
-      call<{ request: BotRequest; agent: Bot }, { proposal?: BotInput }>(
-        `${botRequestPath(botId, requestId)}/approve`,
-        "POST",
-        proposal ? { proposal } : undefined,
-      ),
-    onSuccess: ({ agent }) => {
-      setOpen(false);
-      queryClient.setQueryData<Bot[]>(botsQuery.queryKey, (bots) =>
-        !bots || bots.some((bot) => bot.id === agent.id)
-          ? bots
-          : [...bots, agent],
-      );
-      void refresh();
-      void queryClient.invalidateQueries({ queryKey: botsQuery.queryKey });
-    },
-    onError: refresh,
-  });
-
-  const decline = useMutation({
-    mutationFn: () =>
-      call<BotRequest>(`${botRequestPath(botId, requestId)}/decline`, "POST"),
-    onSuccess: refresh,
-    onError: refresh,
-  });
-
-  return { approve, decline };
-}
-
-function BotPendingCard({
-  live,
-  requestId,
-  open,
-  setOpen,
-  onApprove,
-  onDecline,
-  approvePending,
-  declinePending,
-  approveError,
-  declineError,
-}: {
-  live: BotRequest;
-  requestId: string;
-  open: boolean;
-  setOpen: (open: boolean) => void;
-  onApprove: (proposal?: BotInput) => void;
-  onDecline: () => void;
-  approvePending: boolean;
-  declinePending: boolean;
-  approveError: string;
-  declineError: string;
-}) {
-  const servers = useQuery(mcpServersQuery);
-
-  const serverNames = new Map(
-    (servers.data ?? []).map((server) => [server.id, server.name]),
-  );
-
-  return (
-    <div className="flex w-full max-w-sm flex-col gap-3 rounded-xl border p-4">
-      <BotRequestHeader
-        requestId={requestId}
-        proposal={live.proposal}
-        onEdit={() => setOpen(true)}
-      />
-      <p className="text-sm text-muted-foreground">
-        {live.proposal.description}
-      </p>
-      <BotRequestBadges proposal={live.proposal} serverNames={serverNames} />
-      {(approveError || declineError) && (
-        <p className="text-xs text-destructive">
-          {approveError || declineError}
-        </p>
-      )}
-      <BotRequestActions
-        onDecline={onDecline}
-        onApprove={() => onApprove()}
-        busy={approvePending || declinePending}
-      />
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent className="overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>Edit bot proposal</SheetTitle>
-            <SheetDescription>
-              Review the proposed bot before approving it.
-            </SheetDescription>
-          </SheetHeader>
-          <BotRequestEditor
-            requestId={requestId}
-            proposal={live.proposal}
-            error={approveError}
-            pending={approvePending}
-            // SAFETY: BotFields validates and emits the API bot input shape.
-            onSubmit={onApprove}
-          />
-        </SheetContent>
-      </Sheet>
-    </div>
-  );
-}
-
-function BotRequestHeader({
-  requestId,
-  proposal,
-  onEdit,
-}: {
-  requestId: string;
-  proposal: BotRequest["proposal"];
-  onEdit: () => void;
-}) {
-  return (
-    <div className="flex items-center gap-3">
-      <BotAvatar
-        bot={{
-          id: requestId,
-          avatar: proposal.avatar ?? defaultAvatarDefinition(requestId),
-        }}
-        size={32}
-      />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{proposal.name}</div>
-        <div className="text-xs text-muted-foreground">
-          {proposal.provider} · {proposal.model}
-        </div>
-      </div>
-      <Button variant="ghost" size="icon-xs" title="Edit" onClick={onEdit}>
-        <IconPencil />
-      </Button>
-    </div>
-  );
-}
-
-function BotRequestBadges({
-  proposal,
-  serverNames,
-}: {
-  proposal: BotRequest["proposal"];
-  serverNames: Map<string, string>;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1">
-      {proposal.tools.map((tool) => (
-        <Badge key={tool} variant="outline">
-          {CAPABILITIES.find((capability) => capability.tool === tool)?.label ??
-            tool}
-        </Badge>
-      ))}
-      {proposal.mcpServers.map((server) => (
-        <Badge key={server} variant="secondary">
-          {serverNames.get(server) ?? server}
-        </Badge>
-      ))}
-    </div>
-  );
-}
-
-function BotRequestActions({
-  onDecline,
-  onApprove,
-  busy,
-}: {
-  onDecline: () => void;
-  onApprove: () => void;
-  busy: boolean;
-}) {
-  return (
-    <div className="flex justify-end gap-2">
-      <Button variant="ghost" size="sm" onClick={onDecline} disabled={busy}>
-        Decline
-      </Button>
-      <Button size="sm" onClick={onApprove} disabled={busy}>
-        Approve
-      </Button>
-    </div>
-  );
-}
-
-function BotRequestEditor({
-  requestId,
-  proposal,
-  error,
-  pending,
-  onSubmit,
-}: {
-  requestId: string;
-  proposal: BotRequest["proposal"];
-  error?: string;
-  pending: boolean;
-  onSubmit: NonNullable<ComponentProps<typeof BotFields>["onSubmit"]>;
-}) {
-  const formId = `bot-request-${requestId}`;
-  // SAFETY: Request proposals are validated agent inputs from the server.
-  const fields = useBotFields(proposal as BotInput);
-
-  return (
-    <>
-      <div className="p-4">
-        <BotFields formId={formId} fields={fields} onSubmit={onSubmit} />
-        {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
-      </div>
-      <SheetFooter>
-        <Button
-          type="submit"
-          form={formId}
-          disabled={pending || fields.invalid}
-        >
-          Approve
-        </Button>
-      </SheetFooter>
-    </>
-  );
-}
-
-function JobCard({
-  job,
-  jobStatus,
-  onOpenJob,
-}: {
-  job: {
-    kind: "coding" | "desktop";
-    name: string;
-    status?: string | undefined;
-  };
-  jobStatus?: string | undefined;
-  onOpenJob?:
-    | ((job: { kind: "coding" | "desktop"; name: string }) => void)
-    | undefined;
-}) {
-  const status = jobStatus ?? job.status;
-  const working = status === "working" || status === "running";
-  const Icon = job.kind === "coding" ? IconHammer : IconDeviceDesktop;
-
-  return (
-    <button
-      type="button"
-      className="flex w-full max-w-sm items-center gap-3 rounded-xl border p-3 text-left hover:bg-muted/50"
-      onClick={() => onOpenJob?.(job)}
-    >
-      <Icon className="size-4 text-muted-foreground" />
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-sm font-medium">{job.name}</span>
-        <span className="text-xs text-muted-foreground">
-          {job.kind === "coding" ? "Coding job" : "Desktop job"}
-        </span>
-      </span>
-      <JobStatus working={working} />
-    </button>
-  );
-}
-
-/** Whether the message is a successful `desktop_screenshot` result, whose image is its entry's attachment 0. */
-export function isDesktopScreenshot(message: Message) {
-  return (
-    message.role === "toolResult" &&
-    message.toolName === "desktop_screenshot" &&
-    !message.isError
-  );
-}
-
-export function ToolResultRow({
-  message,
-  botId,
-  jobStatus,
-  onOpenJob,
-  attachmentPath,
-}: {
-  message: Message;
-  /** The bot whose chat this is; a credential request links to its credentials. */
-  botId?: string;
-  jobStatus?: string | undefined;
-  onOpenJob?: (job: { kind: "coding" | "desktop"; name: string }) => void;
-  /** Where the chat's images are read; a desktop screenshot shows only with it. */
-  attachmentPath?: (entryId: string, index: number) => string;
-}) {
-  const display = displayOf(message);
-
-  if (display) return <DisplayCard display={display} />;
-
-  if (isDesktopScreenshot(message))
-    return attachmentPath ? (
-      <AttachmentImage
-        name="Desktop screenshot"
-        path={attachmentPath(message.entryId, 0)}
-        className="max-h-[32rem]"
-      />
-    ) : null;
-
-  const credential = credentialRequestOf(message);
-
-  if (credential)
-    return botId ? (
-      <CredentialRequestCard credential={credential} botId={botId} />
-    ) : null;
-
-  const login = loginRequestOf(message);
-
-  if (login)
-    return botId ? <LoginRequestCard login={login} botId={botId} /> : null;
-
-  const botRequest = botRequestOf(message);
-
-  if (botRequest)
-    return botId ? <BotRequestCard request={botRequest} botId={botId} /> : null;
-
-  const job = jobOf(message);
-
-  if (!job) return null;
-
-  return <JobCard job={job} jobStatus={jobStatus} onOpenJob={onOpenJob} />;
 }
 
 export function TypingDots() {

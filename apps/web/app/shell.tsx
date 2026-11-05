@@ -35,38 +35,25 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CrumbleMark } from "@/components/crumble-mark";
-import { cn } from "@/lib/utils";
-import {
-  type Bot,
-  type GroupChat,
-  botsQuery,
-  groupsQuery,
-  clearUserData,
-} from "@/lib/api";
+import { cn, plainMarkdown } from "@/lib/utils";
+import { type Bot, botsQuery } from "@/features/bots/api";
+import { type GroupChat, groupsQuery } from "@/features/group-chats/api";
 import { authClient } from "@/lib/auth-client";
 import {
-  THEME_COLOR,
-  isDark,
   setTheme,
+  setThemeColor,
   useAccountTheme,
   useTheme,
 } from "@/lib/theme";
-import {
-  clearLiveStreams,
-  followActivity,
-  markSeen,
-  useConnectionStatus,
-  useUnreadCount,
-  useWorking,
-} from "@/lib/live";
-import {
-  BotAvatar,
-  LiveBotAvatar,
-  botColor,
-  botStyle,
-} from "@/features/bots/avatar";
+import { resetSession, signedOut } from "@/lib/session";
+import { botStatusLine, isBusy, useActivity } from "@/features/bots/activity";
+import { followActivity, useConnectionStatus } from "./activity-stream";
+import { markSeen, useUnreadCount } from "@/lib/notifications";
+import { BotAvatar, botColor, botStyle } from "@/components/bot-avatar";
+import { LiveBotAvatar } from "@/features/bots/avatar";
 import { CommandPalette, PALETTE_SHORTCUT } from "./command-palette";
 import { THEME_OPTIONS, WORKSPACE } from "./navigation";
+import { MIN_GROUP_MEMBERS } from "@crumble/server/contract/limits";
 
 function useResetOnUserChange(userId: string | undefined) {
   const previousUserId = useRef(userId);
@@ -76,10 +63,8 @@ function useResetOnUserChange(userId: string | undefined) {
       previousUserId.current !== undefined &&
       previousUserId.current !== userId
     ) {
-      clearLiveStreams();
-      clearUserData();
-
-      if (!userId) window.location.assign("/connect");
+      if (userId) resetSession();
+      else signedOut();
     }
 
     previousUserId.current = userId;
@@ -95,10 +80,10 @@ function useFollowActivity() {
   useEffect(() => {
     const controller = new AbortController();
 
-    followActivity(({ botId, groupId }) => {
-      if (groupId)
-        void navigate({ to: "/groups/$groupId", params: { groupId } });
-      else if (botId) void navigate({ to: "/bots/$botId", params: { botId } });
+    followActivity(({ kind, id }) => {
+      if (kind === "group")
+        void navigate({ to: "/groups/$groupId", params: { groupId: id } });
+      else void navigate({ to: "/bots/$botId", params: { botId: id } });
     }, controller.signal);
 
     return () => controller.abort();
@@ -143,19 +128,9 @@ function SidebarThemeColor() {
   useEffect(() => {
     if (!tinted) return;
 
-    const metas = [
-      ...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]'),
-    ];
+    setThemeColor(SIDEBAR_THEME_COLOR);
 
-    for (const meta of metas)
-      meta.content = isDark()
-        ? SIDEBAR_THEME_COLOR.dark
-        : SIDEBAR_THEME_COLOR.light;
-
-    return () => {
-      for (const meta of metas)
-        meta.content = isDark() ? THEME_COLOR.dark : THEME_COLOR.light;
-    };
+    return () => setThemeColor();
   }, [tinted, theme]);
 
   return null;
@@ -253,7 +228,7 @@ function GroupsSection({
   groups: GroupChat[] | undefined;
 }) {
   const byId = new Map(bots?.map((bot) => [bot.id, bot]));
-  const canGroup = (bots?.length ?? 0) >= 2;
+  const canGroup = (bots?.length ?? 0) >= MIN_GROUP_MEMBERS;
 
   return (
     <SidebarGroup>
@@ -443,7 +418,7 @@ function ConnectionStatus() {
 }
 
 function BotRow({ bot, active }: { bot: Bot; active: boolean }) {
-  const working = useWorking(bot.id);
+  const working = isBusy(useActivity(bot.id));
 
   return (
     <SidebarMenuItem style={botStyle(botColor(bot))}>
@@ -464,13 +439,13 @@ function BotRow({ bot, active }: { bot: Bot; active: boolean }) {
             {bot.name}
           </span>
           <span className="truncate text-xs text-muted-foreground">
-            {working
-              ? "Working…"
-              : !bot.enabled
-                ? "Paused"
-                : bot.lastMessage
-                  ? bot.lastMessage.replace(/[*_`#>]/g, "").slice(0, 120)
-                  : bot.description || "No messages yet"}
+            {botStatusLine(
+              bot,
+              working,
+              bot.lastMessage
+                ? plainMarkdown(bot.lastMessage).slice(0, 120)
+                : bot.description || "No messages yet",
+            )}
           </span>
         </span>
       </SidebarMenuButton>

@@ -299,6 +299,32 @@ export function Section({
   );
 }
 
+/** A failure inside a section's frame. */
+export function SectionError({ children }: { children: ReactNode }) {
+  return (
+    <div className="p-3">
+      <FieldError>{children}</FieldError>
+    </div>
+  );
+}
+
+/** "(used by N)", the count a one-line row shows after its name; `prefix` adds to it inside the parentheses. */
+export function UsedBy({
+  count,
+  prefix,
+  className = "font-normal",
+}: {
+  count: number;
+  prefix?: string | undefined;
+  className?: string;
+}) {
+  return (
+    <span className={cn("text-muted-foreground", className)}>
+      ({prefix}used by {count})
+    </span>
+  );
+}
+
 export function SectionEmpty({ children }: { children: ReactNode }) {
   return <p className="p-3 text-sm text-muted-foreground">{children}</p>;
 }

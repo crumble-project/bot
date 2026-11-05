@@ -1,11 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { type Bot, agentPath, send } from "@/lib/api";
-import { BotAvatar } from "@/features/bots/avatar";
+import type { Bot } from "@/features/bots/api";
+import { BotAvatar } from "@/components/bot-avatar";
 import { cn } from "@/lib/utils";
+import { assignSkill } from "./api";
 
 /** Pressed pills, one per bot, for choosing which bots have a skill. */
-export function BotPills({
+export function BotToggles({
   label,
   bots,
   isOn,
@@ -80,14 +81,7 @@ export async function assignSharedSkill(
     bots.flatMap((bot) => {
       const on = selected.has(bot.id);
 
-      if (on === using.has(bot.id)) return [];
-      const others = (bot.sharedSkills ?? []).filter((id) => id !== skillId);
-
-      return [
-        send(agentPath(bot.id), "PATCH", {
-          sharedSkills: (on ? [...others, skillId] : others).toSorted(),
-        }),
-      ];
+      return on === using.has(bot.id) ? [] : [assignSkill(skillId, bot.id, on)];
     }),
   );
 }
@@ -107,7 +101,7 @@ export function UsedByField({
   return (
     <Field>
       <FieldLabel>Used by</FieldLabel>
-      <BotPills
+      <BotToggles
         label="Bots that use this skill"
         bots={bots}
         isOn={(bot) => selected.has(bot.id)}

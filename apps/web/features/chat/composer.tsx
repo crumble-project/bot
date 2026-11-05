@@ -30,7 +30,13 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { readDraft, saveDraft } from "@/lib/drafts";
 import { cn } from "@/lib/utils";
-import type { Bot } from "@/lib/api";
+import type { Bot } from "@/features/bots/api";
+import {
+  attachmentKind,
+  MAX_ATTACHMENTS,
+  MAX_IMAGE_BYTES,
+  MAX_TEXT_BYTES,
+} from "@crumble/server/contract/limits";
 
 export type Upload = {
   name: string;
@@ -39,10 +45,6 @@ export type Upload = {
   preview?: string;
 };
 
-const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
-const MAX_IMAGE = 5 * 1024 * 1024;
-const MAX_TEXT = 512 * 1024;
-const MAX_FILES = 8;
 const uploadKeys = new WeakMap<Upload, string>();
 
 function base64(bytes: ArrayBuffer) {
@@ -73,11 +75,15 @@ async function reencode(file: File) {
 type UploadResult = { upload: Upload } | { error: string };
 
 async function imageUpload(file: File): Promise<UploadResult> {
-  const direct = IMAGE_TYPES.includes(file.type) && file.size <= MAX_IMAGE;
+  const direct =
+    attachmentKind(file.type) === "image" && file.size <= MAX_IMAGE_BYTES;
+
   const blob = direct ? file : await reencode(file);
 
-  if (blob.size > MAX_IMAGE)
-    return { error: `${file.name} is larger than 5 MB.` };
+  if (blob.size > MAX_IMAGE_BYTES)
+    return {
+      error: `${file.name} is larger than ${MAX_IMAGE_BYTES / 1024 / 1024} MB.`,
+    };
 
   const data = base64(await blob.arrayBuffer());
 
@@ -94,8 +100,10 @@ async function imageUpload(file: File): Promise<UploadResult> {
 async function textUpload(file: File): Promise<UploadResult> {
   const bytes = await file.arrayBuffer();
 
-  if (bytes.byteLength > MAX_TEXT)
-    return { error: `${file.name} is larger than 512 KB.` };
+  if (bytes.byteLength > MAX_TEXT_BYTES)
+    return {
+      error: `${file.name} is larger than ${MAX_TEXT_BYTES / 1024} KB.`,
+    };
 
   new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 
@@ -163,21 +171,21 @@ function useAttachments() {
     const started = recovery.current;
 
     const { uploads: added, errors: failed } = await toUploads(
-      files.slice(0, MAX_FILES),
+      files.slice(0, MAX_ATTACHMENTS),
     );
 
     setState((current) => {
       const room =
         started === recovery.current
-          ? Math.max(0, MAX_FILES - current.uploads.length)
-          : MAX_FILES;
+          ? Math.max(0, MAX_ATTACHMENTS - current.uploads.length)
+          : MAX_ATTACHMENTS;
 
       return {
         uploads: [...current.uploads, ...added.slice(0, room)],
         errors: [
           ...failed,
           ...(files.length > room
-            ? [`Attach at most ${MAX_FILES} files.`]
+            ? [`Attach at most ${MAX_ATTACHMENTS} files.`]
             : []),
         ],
       };
@@ -427,7 +435,7 @@ function AttachControl({
             onClick={() => picker.current?.click()}
           >
             <IconPaperclip className="text-muted-foreground" />
-            {full ? `At most ${MAX_FILES} files` : "Attach files"}
+            {full ? `At most ${MAX_ATTACHMENTS} files` : "Attach files"}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -491,7 +499,7 @@ function canSendDraft(
   return (
     !disabled &&
     !sending &&
-    uploads.length <= MAX_FILES &&
+    uploads.length <= MAX_ATTACHMENTS &&
     (draft.trim() !== "" || uploads.length > 0)
   );
 }
@@ -505,10 +513,10 @@ function ComposerErrors({
 }) {
   return (
     <>
-      {uploads > MAX_FILES && (
+      {uploads > MAX_ATTACHMENTS && (
         <p className="text-xs text-destructive">
-          Attach at most {MAX_FILES} files. Remove {uploads - MAX_FILES} to
-          send.
+          Attach at most {MAX_ATTACHMENTS} files. Remove{" "}
+          {uploads - MAX_ATTACHMENTS} to send.
         </p>
       )}
       {errors.map((error) => (
@@ -748,7 +756,7 @@ export function Composer({
           <div className="[grid-area:attach]">
             <AttachControl
               disabled={disabled}
-              full={uploads.length >= MAX_FILES}
+              full={uploads.length >= MAX_ATTACHMENTS}
               onFiles={(files) => void add(files)}
             />
           </div>

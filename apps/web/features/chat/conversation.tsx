@@ -1,5 +1,6 @@
-import { type ReactNode, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,20 +19,33 @@ import {
 } from "@/components/ui/message-scroller";
 import { Skeleton } from "@/components/ui/skeleton";
 import { randomId } from "@/lib/utils";
-import { type HistoryPage, type Message, api } from "@/lib/api";
+import { type HistoryPage, type Message, historyPage } from "./api";
+import { api, type RoutePath } from "@/lib/api";
+import { useChatStream } from "./chat-stream";
 import type { Upload } from "./composer";
-import { deliver } from "./delivery";
+import type { ConversationTarget, HistoryRoute } from "./conversation-target";
 import {
+  type Outgoing,
+  confirm,
+  deliver,
+  outgoingMessage,
+  useOutgoing,
+} from "./delivery";
+import {
+  ARRIVAL,
   NoticeRow,
   OwnerMessage,
+  type Reaction,
   TimeMarker,
   isNotice,
   mergeMessages,
+  reactionsOf,
+  useArrivals,
   withTimeMarkers,
 } from "./transcript";
 
-export function useHistory(
-  path: string,
+function useHistory(
+  path: RoutePath<HistoryRoute>,
   remember: (messages: Message[]) => void,
 ) {
   const [older, setOlder] = useState<HistoryPage | null>(null);
@@ -40,9 +54,7 @@ export function useHistory(
   // react-doctor-disable-next-line query-mutation-missing-invalidation
   const loadEarlier = useMutation({
     mutationFn: (before: string) =>
-      api<HistoryPage>(
-        `${path}?before=${encodeURIComponent(before)}&limit=100`,
-      ),
+      api<HistoryRoute>(historyPage(path, 100, before)),
     onSuccess: (page) => {
       remember(page.messages);
       setOlder({
@@ -56,6 +68,94 @@ export function useHistory(
   return { older, loadEarlier };
 }
 
+function useMessageSending<S extends HistoryPage>(
+  target: ConversationTarget<S>,
+) {
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  const sendMessage = async (
+    content: string,
+    uploads: Upload[],
+    requestId: string = randomId(),
+    reply = replyTo?.entryId,
+  ) => {
+    setReplyTo(null);
+    setSendError(null);
+
+    const failure = await deliver(
+      target.key,
+      `${target.path}/messages`,
+      {
+        requestId,
+        content,
+        uploads,
+        ...(reply && { replyTo: reply }),
+      },
+      target.sendContext(),
+    );
+
+    if (failure) setSendError(`Message was not confirmed: ${failure}`);
+
+    return failure === null;
+  };
+
+  return { replyTo, setReplyTo, sendError, sendMessage };
+}
+
+/** One conversation from its stream to its rows: live messages, older pages, outgoing messages, and sending. */
+export function useConversation<S extends HistoryPage>(
+  target: ConversationTarget<S>,
+) {
+  const navigate = useNavigate();
+  const snapshot = useQuery(target.query);
+  const outgoing = useOutgoing(target.key);
+  const sending = useMessageSending(target);
+
+  const leave = useCallback(() => void navigate({ to: "/" }), [navigate]);
+
+  useChatStream(target, leave);
+
+  const live = snapshot.data?.messages;
+  const { arrival, remember } = useArrivals(live);
+  const { older, loadEarlier } = useHistory(target.history, remember);
+
+  useEffect(() => {
+    if (live)
+      confirm(
+        target.key,
+        new Set(live.flatMap((message) => message.requestId ?? [])),
+      );
+  }, [target, live]);
+
+  // The live transcript reports the stopped turn.
+  // react-doctor-disable-next-line query-mutation-missing-invalidation
+  const stop = useMutation({ mutationFn: target.stop });
+
+  const messages = mergeMessages(older?.messages ?? [], live ?? []);
+  const page = older ?? snapshot.data;
+
+  return {
+    snapshot,
+    outgoing,
+    sending,
+    stop,
+    messages,
+    arrival,
+    loadEarlier,
+    hasMore: page?.hasMore,
+    oldest: page?.oldestEntryId,
+    shown: messages.filter(target.shown),
+    reactions: reactionsOf(messages, target.reactionTarget),
+    byEntry: new Map(messages.map((message) => [message.entryId, message])),
+    attachmentPath: (entryId: string, index: number) =>
+      `${target.path}/attachments/${encodeURIComponent(entryId)}/${index}`,
+  };
+}
+
+/** The part of `useConversation` that doesn't depend on the kind of snapshot. */
+export type Conversation = Omit<ReturnType<typeof useConversation>, "snapshot">;
+
 export function ConversationError({ error }: { error: Error }) {
   return (
     <Alert variant="destructive" className="m-6 w-auto">
@@ -64,21 +164,11 @@ export function ConversationError({ error }: { error: Error }) {
   );
 }
 
-export function ConversationLoading({
-  notFound = false,
-}: {
-  notFound?: boolean;
-}) {
+export function ConversationLoading() {
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-6">
-      {notFound ? (
-        <p className="text-muted-foreground">Bot not found.</p>
-      ) : (
-        <>
-          <Skeleton className="h-10 w-1/2 self-end" />
-          <Skeleton className="h-20 w-3/4" />
-        </>
-      )}
+      <Skeleton className="h-10 w-1/2 self-end" />
+      <Skeleton className="h-20 w-3/4" />
     </div>
   );
 }
@@ -98,7 +188,7 @@ export function ConversationScroller({ children }: { children: ReactNode }) {
   );
 }
 
-export function LoadEarlier({
+function LoadEarlier({
   pending,
   onLoad,
 }: {
@@ -139,14 +229,14 @@ export function ConversationEmpty({
   );
 }
 
-export function quoteOf(message: Message, byEntry: Map<string, Message>) {
+function quoteOf(message: Message, byEntry: Map<string, Message>) {
   return (
     message.replyPreview ??
     (message.replyTo ? byEntry.get(message.replyTo)?.content : undefined)
   );
 }
 
-export function ConversationRows({
+function ConversationRows({
   messages,
   arrival,
   byEntry,
@@ -158,7 +248,7 @@ export function ConversationRows({
   messages: Message[];
   arrival: (message: Message) => string | undefined;
   byEntry: Map<string, Message>;
-  reactions: Map<string, string[]>;
+  reactions: Map<string, Reaction[]>;
   onReply: (message: Message) => void;
   attachmentPath: (entryId: string, index: number) => string;
   renderMessage: (message: Message) => ReactNode;
@@ -192,39 +282,85 @@ export function ConversationRows({
   );
 }
 
-export function useMessageSending(
-  chat: string,
-  path: string,
-  extra?: () => { timezone: string },
-) {
-  const [replyTo, setReplyTo] = useState<Message | null>(null);
-  const [sendError, setSendError] = useState<string | null>(null);
+function OutgoingRow({
+  message,
+  conversation,
+}: {
+  message: Outgoing;
+  conversation: Conversation;
+}) {
+  const { byEntry, attachmentPath, sending } = conversation;
 
-  const sendMessage = async (
-    content: string,
-    uploads: Upload[],
-    requestId: string = randomId(),
-    target = replyTo?.entryId,
-  ) => {
-    setReplyTo(null);
-    setSendError(null);
+  return (
+    <MessageScrollerItem messageId={message.requestId} className={ARRIVAL}>
+      <OwnerMessage
+        message={outgoingMessage(message)}
+        uploads={message.uploads}
+        quote={
+          message.replyTo ? byEntry.get(message.replyTo)?.content : undefined
+        }
+        delivery={message.state}
+        onRetry={() =>
+          void sending.sendMessage(
+            message.content,
+            message.uploads,
+            message.requestId,
+            message.replyTo,
+          )
+        }
+        attachmentPath={attachmentPath}
+      />
+    </MessageScrollerItem>
+  );
+}
 
-    const failure = await deliver(
-      chat,
-      `${path}/messages`,
-      {
-        requestId,
-        content,
-        uploads,
-        ...(target && { replyTo: target }),
-      },
-      extra?.(),
-    );
+/** Every row of a conversation up to its live activity. `empty` shows while there is nothing else. */
+export function ConversationMessages({
+  conversation,
+  empty,
+  renderMessage,
+}: {
+  conversation: Conversation;
+  empty: ReactNode;
+  renderMessage: (message: Message) => ReactNode;
+}) {
+  const { hasMore, oldest, loadEarlier, shown, outgoing } = conversation;
 
-    if (failure) setSendError(`Message was not confirmed: ${failure}`);
+  return (
+    <>
+      {hasMore && oldest && (
+        <LoadEarlier
+          pending={loadEarlier.isPending}
+          onLoad={() => loadEarlier.mutate(oldest)}
+        />
+      )}
+      {shown.length === 0 && outgoing.length === 0 && empty}
+      <ConversationRows
+        messages={shown}
+        arrival={conversation.arrival}
+        byEntry={conversation.byEntry}
+        reactions={conversation.reactions}
+        onReply={conversation.sending.setReplyTo}
+        attachmentPath={conversation.attachmentPath}
+        renderMessage={renderMessage}
+      />
+      {outgoing.map((message) => (
+        <OutgoingRow
+          key={message.requestId}
+          message={message}
+          conversation={conversation}
+        />
+      ))}
+    </>
+  );
+}
 
-    return failure === null;
-  };
+export function SendError({ message }: { message: string | null }) {
+  if (!message) return null;
 
-  return { replyTo, setReplyTo, sendError, sendMessage };
+  return (
+    <p className="mx-auto w-full max-w-4xl px-4 text-xs text-destructive">
+      {message}
+    </p>
+  );
 }

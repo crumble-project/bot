@@ -1,11 +1,8 @@
 import { type ReactNode, useState } from "react";
 import {
-  type UseQueryOptions,
   type UseQueryResult,
   useInfiniteQuery,
   useMutation,
-  useQueries,
-  useQuery,
 } from "@tanstack/react-query";
 import { IconBell, IconPencil, IconTrash, IconX } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -31,21 +28,21 @@ import {
   Section,
   SectionEmpty,
 } from "@/components/workspace";
-import { type Bot, api, botsQuery, send } from "@/lib/api";
-import { BotAvatar } from "@/features/bots/avatar";
-
-/** The scope that shows every bot. */
-export const ALL = "all";
+import type { Bot } from "@/features/bots/api";
+import { send, type RoutePath } from "@/lib/api";
+import { ALL } from "@/lib/bot-queries";
+import { ago, when } from "@/lib/time";
+import { BotAvatar } from "@/components/bot-avatar";
 
 const USES_PAGE = 50;
 
 /** What a sheet or dialog acts on: an item of one bot. */
 export type Target<T> = { botId: string; item: T };
 
-type Named = { name: string; hosts: string[] };
+export type Named = { name: string; hosts: string[] };
 
 /** A bot's request for a secret, waiting for the owner. */
-type Request = Named & { reason: string };
+export type SecretRequest = Named & { reason: string };
 
 /** One bot with its query for the secrets it holds. */
 export type BotEntry<D> = { bot: Bot; query: UseQueryResult<D> };
@@ -57,54 +54,10 @@ export const hostList = (text: string) =>
     .map((host) => host.trim().toLowerCase())
     .filter(Boolean);
 
-export const when = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-
-const relative = new Intl.RelativeTimeFormat(undefined, {
-  numeric: "auto",
-  style: "short",
-});
-
-/** "2 hours ago", "yesterday": how long ago something was last used. */
-export function ago(iso: string) {
-  const minutes = Math.round((Date.parse(iso) - Date.now()) / 60_000);
-
-  if (minutes > -60) return relative.format(minutes, "minute");
-
-  if (minutes > -24 * 60)
-    return relative.format(Math.round(minutes / 60), "hour");
-
-  return relative.format(Math.round(minutes / (24 * 60)), "day");
-}
-
 export const matches = (item: Named, needle: string) =>
   !needle ||
   item.name.toLowerCase().includes(needle) ||
   item.hosts.some((host) => host.includes(needle));
-
-/** Every bot, each with its own query from `queryOf`. */
-export function useBotQueries<D>(
-  queryOf: (botId: string) => UseQueryOptions<D, Error, D, string[]>,
-) {
-  const bots = useQuery(botsQuery);
-
-  const queries = useQueries({
-    queries: (bots.data ?? []).map((bot) => queryOf(bot.id)),
-  });
-
-  const entries = (bots.data ?? []).flatMap((bot, index) => {
-    const query = queries[index];
-
-    return query ? [{ bot, query }] : [];
-  });
-
-  const refreshing = bots.isFetching || queries.some((q) => q.isFetching);
-
-  return { bots, entries, refreshing };
-}
 
 /** The bots in scope, and those whose frame shows: the one picked, or one with matching items. */
 function scopedEntries<D>(
@@ -171,7 +124,7 @@ function RequestRow({
   onDecline,
 }: {
   bot: Bot;
-  request: Request;
+  request: SecretRequest;
   onAdd: () => void;
   onDecline: () => void;
 }) {
@@ -205,7 +158,7 @@ function RequestRow({
 }
 
 /** The bots' requests in scope that match the search, under "Waiting for you". */
-function WaitingRequests<D, R extends Request>({
+function WaitingRequests<D, R extends SecretRequest>({
   entries,
   needle,
   requestsOf,
@@ -280,14 +233,11 @@ export function SecretRowName({
   name: string;
   hosts: string[];
   mono?: boolean;
-  onEdit: () => void;
+  /** Omitted for a row the owner can't edit. */
+  onEdit?: (() => void) | undefined;
 }) {
-  return (
-    <button
-      type="button"
-      className="flex min-w-0 flex-1 cursor-pointer items-baseline gap-2 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-      onClick={onEdit}
-    >
+  const label = (
+    <>
       <span
         className={`shrink-0 text-sm font-medium${mono ? " font-mono" : ""}`}
       >
@@ -296,6 +246,21 @@ export function SecretRowName({
       <span className="truncate text-xs text-muted-foreground">
         {hosts.join(", ")}
       </span>
+    </>
+  );
+
+  if (!onEdit)
+    return (
+      <div className="flex min-w-0 flex-1 items-baseline gap-2">{label}</div>
+    );
+
+  return (
+    <button
+      type="button"
+      className="flex min-w-0 flex-1 cursor-pointer items-baseline gap-2 rounded-md text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      onClick={onEdit}
+    >
+      {label}
     </button>
   );
 }
@@ -342,21 +307,28 @@ export function SecretRowMenu({
   /** The history item's label, with its icon. */
   uses: ReactNode;
   onUses: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
+  /** Omitted, with `onDelete`, for a row the owner can't change. */
+  onEdit?: (() => void) | undefined;
+  onDelete?: (() => void) | undefined;
 }) {
   return (
     <RowMenu>
       <DropdownMenuItem onClick={onUses}>{uses}</DropdownMenuItem>
-      <DropdownMenuItem onClick={onEdit}>
-        <IconPencil />
-        Edit
-      </DropdownMenuItem>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem variant="destructive" onClick={onDelete}>
-        <IconTrash />
-        Delete
-      </DropdownMenuItem>
+      {onEdit && (
+        <DropdownMenuItem onClick={onEdit}>
+          <IconPencil />
+          Edit
+        </DropdownMenuItem>
+      )}
+      {onDelete && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onClick={onDelete}>
+            <IconTrash />
+            Delete
+          </DropdownMenuItem>
+        </>
+      )}
     </RowMenu>
   );
 }
@@ -427,7 +399,7 @@ export function UsesDialog<U extends { id: string; at: string }>({
   description,
   empty,
   queryKey,
-  path,
+  load,
   children,
   onClose,
 }: {
@@ -435,8 +407,8 @@ export function UsesDialog<U extends { id: string; at: string }>({
   description: string;
   empty: string;
   queryKey: readonly unknown[];
-  /** The uses endpoint, without its query. */
-  path: string;
+  /** Fetches one page; `query` carries its limit and cursor. */
+  load: (query: string, signal: AbortSignal) => Promise<U[]>;
   children: (use: U) => ReactNode;
   onClose: () => void;
 }) {
@@ -444,9 +416,9 @@ export function UsesDialog<U extends { id: string; at: string }>({
     queryKey,
     initialPageParam: "",
     queryFn: ({ pageParam, signal }) =>
-      api<U[]>(
-        `${path}?limit=${USES_PAGE}${pageParam && `&before=${encodeURIComponent(pageParam)}`}`,
-        { signal },
+      load(
+        `limit=${USES_PAGE}${pageParam && `&before=${encodeURIComponent(pageParam)}`}`,
+        signal,
       ),
     getNextPageParam: (page) =>
       page.length === USES_PAGE ? page.at(-1)?.id : undefined,
@@ -496,7 +468,7 @@ export function UsesDialog<U extends { id: string; at: string }>({
 }
 
 /** The bots' requests, then each bot's frame of items matching the search, then a note. */
-export function SecretGroups<D, I extends Named, R extends Request>({
+export function SecretGroups<D, I extends Named, R extends SecretRequest>({
   entries,
   scope,
   needle,
@@ -557,7 +529,10 @@ export function SecretGroups<D, I extends Named, R extends Request>({
 
 /** Which item's uses are open and which is being deleted, and declining a bot's request. */
 export function useSecretActions<I>(
-  pathOf: (botId: string, name: string) => string,
+  pathOf: (
+    botId: string,
+    name: string,
+  ) => RoutePath<"deleteAgentCredential" | "deleteAgentLogin">,
   invalidate: (botId: string) => Promise<void>,
 ) {
   const [uses, setUses] = useState<Target<I> | null>(null);
@@ -565,14 +540,20 @@ export function useSecretActions<I>(
 
   const remove = useMutation({
     mutationFn: ({ botId, item }: Target<string>) =>
-      send(pathOf(botId, item), "DELETE"),
+      send<"deleteAgentCredential" | "deleteAgentLogin">(
+        pathOf(botId, item),
+        "DELETE",
+      ),
     onSettled: (_result, _error, { botId }) => invalidate(botId),
   });
 
   // Never DELETE: a saved item and a request for more under its name can coexist.
   const decline = useMutation({
     mutationFn: ({ botId, item }: Target<string>) =>
-      send(`${pathOf(botId, item)}/decline`, "POST"),
+      send<"declineAgentCredential" | "declineAgentLogin">(
+        `${pathOf(botId, item)}/decline`,
+        "POST",
+      ),
     onSettled: (_result, _error, { botId }) => invalidate(botId),
   });
 

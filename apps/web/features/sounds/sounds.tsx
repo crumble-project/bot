@@ -2,7 +2,7 @@ import { play, sounds, themes, type ThemeName } from "cuelume";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Section, SettingRow, WorkspacePage } from "@/components/workspace";
-import { type NoticeKind, notifications, playNotice } from "@/lib/live";
+import { type NoticeKind, playNotice, showNotice } from "@/lib/notifications";
 
 const NOTICES: { kind: NoticeKind; label: string }[] = [
   { kind: "reply", label: "Reply" },
@@ -12,15 +12,7 @@ const NOTICES: { kind: NoticeKind; label: string }[] = [
 
 /** Shows a notice of `kind` as the browser would, with its sound when sound is on. */
 function testNotice(kind: NoticeKind, label: string) {
-  if (notifications.sound()) playNotice(kind);
-
-  if (notifications.permission() === "granted")
-    new Notification(`Crumble · ${label}`, {
-      body: "A test notification.",
-      icon: "/icon-192.png",
-      requireInteraction: kind !== "reply",
-      silent: notifications.sound(),
-    });
+  showNotice(kind, `Crumble · ${label}`, { body: "A test notification." });
 }
 
 /** A page outside the navigation for hearing the notification sounds and every cue. */

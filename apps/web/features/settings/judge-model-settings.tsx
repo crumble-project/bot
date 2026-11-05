@@ -1,20 +1,14 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { IconScale } from "@tabler/icons-react";
-import { FieldError } from "@/components/ui/field";
-import { Select, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { SelectOptions } from "@/components/form-fields";
 import {
   RowTile,
   Section,
-  SettingRow,
+  SectionError,
   WorkspacePage,
 } from "@/components/workspace";
-import { type JudgeModel, call, judgeModelQuery, queryClient } from "@/lib/api";
-
-const DEFAULT = "default";
-
-const keyOf = (ref: { provider: string; model: string }) =>
-  `${ref.provider}/${ref.model}`;
+import { type JudgeModel, judgeModelQuery } from "./api";
+import { call, queryClient } from "@/lib/api";
+import { ModelChoiceRow } from "./model-choice";
 
 /** What judges now, as the row says it: the classifier, the chat fallback, or nothing. */
 function effectiveText(data: JudgeModel) {
@@ -28,63 +22,27 @@ function effectiveText(data: JudgeModel) {
     : `${effective.name} judges now.`;
 }
 
-/** The choices: the default, each reachable classifier, and a chosen one whose key is gone, so the owner sees why. */
-function judgeItems(data: JudgeModel) {
-  const chosen = data.judgeModel;
-
-  const gone =
-    chosen && !data.choices.some((item) => keyOf(item) === keyOf(chosen))
-      ? [{ value: keyOf(chosen), label: `${chosen.model} (no key)` }]
-      : [];
-
-  return [
-    { value: DEFAULT, label: "Default (GPT-6 Luna)" },
-    ...data.choices.map((item) => ({ value: keyOf(item), label: item.name })),
-    ...gone,
-  ];
-}
-
 function JudgeModelRow({ data }: { data: JudgeModel }) {
-  const items = judgeItems(data);
-
-  const change = useMutation({
-    mutationFn: (value: string) => {
-      const choice = data.choices.find((item) => keyOf(item) === value);
-
-      return call<
-        JudgeModel,
-        { judgeModel: { provider: string; model: string } | null }
-      >("/v1/judge-model", "PUT", {
-        judgeModel: choice
-          ? { provider: choice.provider, model: choice.model }
-          : null,
-      });
-    },
-    onSuccess: (next) =>
-      queryClient.setQueryData(judgeModelQuery.queryKey, next),
-  });
-
   return (
-    <SettingRow
+    <ModelChoiceRow
+      title="Judge model"
       tile={
         <RowTile>
           <IconScale />
         </RowTile>
       }
-      title="Judge model"
-      description={change.error?.message ?? effectiveText(data)}
-    >
-      <Select
-        items={items}
-        value={data.judgeModel ? keyOf(data.judgeModel) : DEFAULT}
-        onValueChange={(next) => change.mutate(next ?? DEFAULT)}
-      >
-        <SelectTrigger aria-label="Judge model" className="w-56">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectOptions items={items} />
-      </Select>
-    </SettingRow>
+      unset={{ value: "default", label: "Default (GPT-6 Luna)" }}
+      chosen={data.judgeModel}
+      choices={data.choices}
+      description={effectiveText(data)}
+      save={async (judgeModel) => {
+        const next = await call<"updateJudgeModel">("/v1/judge-model", "PUT", {
+          judgeModel,
+        });
+
+        queryClient.setQueryData(judgeModelQuery.queryKey, next);
+      }}
+    />
   );
 }
 
@@ -98,9 +56,7 @@ export function JudgeModelPage() {
         description="Before a desktop job clicks, types, or presses a key, this model checks whether the action is irreversible and whether you asked for it. Actions it can't clear wait for your approval in the bot's chat."
       >
         {settings.isError && (
-          <div className="p-3">
-            <FieldError>{settings.error.message}</FieldError>
-          </div>
+          <SectionError>{settings.error.message}</SectionError>
         )}
         {settings.data && <JudgeModelRow data={settings.data} />}
       </Section>

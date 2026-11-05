@@ -1,10 +1,18 @@
 import { expect, spyOn, test } from "bun:test";
 import type { ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import {
+  RouterContextProvider,
+  createRootRoute,
+  createRouter,
+} from "@tanstack/react-router";
 import { Window } from "happy-dom";
 import { act } from "react";
-import { type Credentials, type Logins, queryClient } from "@/lib/api";
+import type { Credentials } from "@/features/credentials/api";
+import type { Logins } from "@/features/logins/api";
+import { queryClient } from "@/lib/api";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
+import { credentialSaveInput } from "@crumble/server/shared/domain";
 
 const GLOBALS = [
   "window",
@@ -22,6 +30,9 @@ const GLOBALS = [
   "requestAnimationFrame",
   "cancelAnimationFrame",
 ];
+
+/** The JSON bodies the page sent in the latest `render`. */
+const bodies: unknown[] = [];
 
 const settle = () =>
   act(async () => {
@@ -66,6 +77,8 @@ const moreAcmeHosts = {
   reason: "Uploads",
   requestedAt: "2026-10-30T11:00:00.000Z",
 } satisfies Credentials["requests"][number];
+
+let passwordManagers: { id: string; name: string; connected: boolean }[] = [];
 
 /**
  * Renders `ui` in a happy-dom window with one bot, `bot`, whose API answers GETs from `listings`, and runs `check`.
@@ -118,6 +131,7 @@ async function render(
   });
 
   const sent: string[] = [];
+  bodies.length = 0;
 
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
@@ -127,6 +141,8 @@ async function render(
 
         if (method !== "GET") {
           sent.push(`${method} ${path}`);
+
+          if (init?.body) bodies.push(await new Response(init.body).json());
 
           return new Response(null, { status: 204 });
         }
@@ -142,7 +158,7 @@ async function render(
               },
             ],
           ],
-          ["/v1/password-managers", { passwordManagers: [] }],
+          ["/v1/password-managers", { passwordManagers }],
           ...Object.entries(listings),
         ]);
 
@@ -182,6 +198,7 @@ async function render(
     }
 
     window.close();
+    passwordManagers = [];
   }
 
   return sent;
@@ -225,20 +242,30 @@ const requestCard = async (
   toolName: string,
   toolDetails: Logins["requests"][number] | Credentials["requests"][number],
 ) => {
-  const { ToolResultRow } = await import("@/features/chat/transcript");
+  const { ToolResultRow } = await import("@/features/chat/tool-results");
+
+  // The sheet it opens links to the password manager settings.
+  const router = createRouter({ routeTree: createRootRoute() });
 
   return (
-    <ToolResultRow
-      botId="bot"
-      message={{
-        id: "m1",
-        role: "toolResult",
-        content: "",
-        entryId: "e1",
-        toolName,
-        toolDetails,
-      }}
-    />
+    <RouterContextProvider router={router}>
+      <ToolResultRow
+        chat={{
+          botId: "bot",
+          attachmentPath: () => "",
+          jobStatus: () => undefined,
+          onOpenJob: () => {},
+        }}
+        message={{
+          id: "m1",
+          role: "toolResult",
+          content: "",
+          entryId: "e1",
+          toolName,
+          toolDetails,
+        }}
+      />
+    </RouterContextProvider>
   );
 };
 
@@ -311,11 +338,143 @@ test("a request newer than the cached credentials offers its answers", async () 
     },
     () => requestCard("request_credential", moreAcmeHosts),
     async (container) => {
-      expect(
-        container.querySelectorAll('input[placeholder="Credential value"]')
-          .length,
-      ).toBe(1);
+      expect(buttonNamed("Add credential", container)).toBeDefined();
       expect(container.textContent).not.toContain("Saved");
+    },
+  );
+});
+
+const credentialsPage = () =>
+  page(async () => {
+    const { CredentialsSettings } =
+      await import("@/features/credentials/credentials");
+
+    return <CredentialsSettings />;
+  });
+
+const buttonNamed = (name: string, root: ParentNode) =>
+  [...root.querySelectorAll("button")].find(
+    (button) => button.textContent === name,
+  );
+
+const typeInto = (input: HTMLInputElement, value: string) =>
+  act(async () => {
+    Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(input),
+      "value",
+    )!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+
+/** Opens the request card's sheet and fills in the value, leaving the sheet to submit. */
+const addRequestedCredential = async (container: HTMLElement) => {
+  await act(async () => buttonNamed("Add credential", container)!.click());
+  await settle();
+};
+
+test("saving a requested credential from chat sends its value as the secret", async () => {
+  const sent = await render(
+    {
+      "/v1/agents/bot/credentials": {
+        credentials: [],
+        requests: [moreAcmeHosts],
+      },
+    },
+    () => requestCard("request_credential", moreAcmeHosts),
+    async (container) => {
+      await addRequestedCredential(container);
+      await typeInto(
+        document.querySelector<HTMLInputElement>("#credential-value")!,
+        "s3cret",
+      );
+      await act(async () => buttonNamed("Add", document)!.click());
+      await settle();
+    },
+  );
+
+  expect(sent).toEqual(["PUT /v1/agents/bot/credentials/ACME_TOKEN"]);
+  expect(credentialSaveInput.parse(bodies[0])).toEqual({
+    hosts: moreAcmeHosts.hosts,
+    secret: { value: "s3cret" },
+  });
+});
+
+test("a requested credential from chat can be read from a password manager", async () => {
+  passwordManagers = [{ id: "1password", name: "1Password", connected: true }];
+
+  const sent = await render(
+    {
+      "/v1/agents/bot/credentials": {
+        credentials: [],
+        requests: [moreAcmeHosts],
+      },
+    },
+    () => requestCard("request_credential", moreAcmeHosts),
+    async (container) => {
+      await addRequestedCredential(container);
+
+      const tab = [
+        ...document.querySelectorAll<HTMLElement>('[role="tab"]'),
+      ].find((each) => each.textContent === "1Password")!;
+
+      await act(async () => {
+        tab.dispatchEvent(
+          new window.MouseEvent("click", { bubbles: true, cancelable: true }),
+        );
+      });
+      await typeInto(
+        document.querySelector<HTMLInputElement>("#credential-value")!,
+        "op://vault/acme/token",
+      );
+      await act(async () => buttonNamed("Add", document)!.click());
+      await settle();
+    },
+  );
+
+  expect(sent).toEqual(["PUT /v1/agents/bot/credentials/ACME_TOKEN"]);
+  expect(credentialSaveInput.parse(bodies[0])).toEqual({
+    hosts: moreAcmeHosts.hosts,
+    secret: {
+      reference: {
+        passwordManager: "1password",
+        reference: "op://vault/acme/token",
+      },
+    },
+  });
+});
+
+test("a GitHub credential offers its uses but neither Edit nor Delete", async () => {
+  const token = {
+    ...acme,
+    name: "GH_TOKEN",
+    hosts: ["github.com"],
+    secret: null,
+    github: true,
+  };
+
+  await render(
+    { "/v1/agents/bot/credentials": { credentials: [token], requests: [] } },
+    credentialsPage,
+    async (container) => {
+      const name = [...container.querySelectorAll("span")].find(
+        (span) => span.textContent === "GH_TOKEN",
+      )!;
+
+      expect(name.closest("button")).toBeNull();
+
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>('[title="More"]')!
+          .dispatchEvent(
+            new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+          );
+      });
+
+      const items = [
+        ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+      ].map((item) => item.textContent);
+
+      expect(items).toEqual(["Uses"]);
     },
   );
 });

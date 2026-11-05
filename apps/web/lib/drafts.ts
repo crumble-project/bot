@@ -1,3 +1,5 @@
+import { onSessionReset } from "@/lib/session";
+
 const PREFIX = "crumble.draft:";
 
 /** The unsent text of a chat's composer, such as `bot:<id>`, kept across page changes and reloads. */
@@ -14,12 +16,12 @@ export function saveDraft(chat: string, text: string) {
   }
 }
 
-/** Forgets every chat's draft, as when another person signs in on this browser. */
-export function clearDrafts() {
+// Another person may sign in on this browser.
+onSessionReset(() => {
   const keys = Array.from({ length: localStorage.length }, (_, index) =>
     localStorage.key(index),
   );
 
   for (const key of keys)
     if (key?.startsWith(PREFIX)) localStorage.removeItem(key);
-}
+});

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { BotAvatar } from "@/features/bots/avatar";
+import { BotAvatar } from "@/components/bot-avatar";
 import prompt from "./generate-avatar-prompt.txt" with { type: "text" };
 
 export function generationPrompt(description: string) {

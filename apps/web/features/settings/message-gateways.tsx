@@ -12,7 +12,11 @@ import {
   IconTrash,
   IconUser,
 } from "@tabler/icons-react";
-import { gatewayConfigInput } from "@crumble/server/contract/message-gateway";
+import {
+  gatewayConfigInput,
+  MAX_GATEWAY_ALIAS_CHARS,
+  MAX_GATEWAY_ID_CHARS,
+} from "@crumble/server/contract/message-gateway";
 import { GatewayIcon } from "@/components/gateway-brand";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -30,16 +34,14 @@ import {
   SettingRow,
   WorkspacePage,
 } from "@/components/workspace";
+import { type Bot, botsQuery } from "@/features/bots/api";
 import {
-  type Bot,
   type GatewayConfig,
   type MessageGateway,
-  botsQuery,
-  call,
   messageGatewayPath,
   messageGatewaysQuery,
-  queryClient,
-} from "@/lib/api";
+} from "./api";
+import { call, queryClient } from "@/lib/api";
 import { PluginSettingRows } from "./plugin-settings";
 
 type Draft = Omit<
@@ -255,8 +257,7 @@ function ConnectionSection({
         </div>
       )}
       <PluginSettingRows
-        contributes="chatAdapters"
-        secretKey={gateway.secretKey}
+        select={{ secretKey: gateway.secretKey }}
         onChange={refresh}
       />
     </Section>
@@ -327,7 +328,7 @@ function BotsSection({ prefix, draft, bots, errors, patch }: FieldsProps) {
               aria-label={`Alias ${index + 1}`}
               placeholder="research"
               value={alias.handle}
-              maxLength={100}
+              maxLength={MAX_GATEWAY_ALIAS_CHARS}
               autoComplete="off"
               className="h-8 max-w-48"
               aria-invalid={Boolean(errors["aliases"]) || undefined}
@@ -408,7 +409,7 @@ function AccessSection({
           id={`${prefix}-owner`}
           value={draft.ownerId}
           onChange={(event) => patch({ ownerId: event.target.value })}
-          maxLength={200}
+          maxLength={MAX_GATEWAY_ID_CHARS}
           autoComplete="off"
           spellCheck={false}
           className="h-8 w-48 font-mono"
@@ -444,7 +445,7 @@ function AccessSection({
               aria-label={`Channel ID ${index + 1}`}
               placeholder="Channel ID"
               value={channel.value}
-              maxLength={200}
+              maxLength={MAX_GATEWAY_ID_CHARS}
               autoComplete="off"
               spellCheck={false}
               className="h-8 max-w-48 font-mono"
@@ -548,11 +549,7 @@ function GatewayEditor({
 
   const save = useMutation({
     mutationFn: (next: GatewayConfig) =>
-      call<MessageGateway, GatewayConfig>(
-        messageGatewayPath(gateway.id),
-        "PUT",
-        next,
-      ),
+      call<"updateMessageGateway">(messageGatewayPath(gateway.id), "PUT", next),
     onSuccess: async (next) => {
       setDraft(draftOf(next.config));
       setAttempted(false);

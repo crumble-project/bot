@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from "react";
-import { send } from "@/lib/api";
+import { type RoutePath, send } from "@/lib/api";
+import { onSessionReset } from "@/lib/session";
+import type { Message } from "./api";
 import type { Upload } from "./composer";
 
 export type Outgoing = {
@@ -8,8 +10,15 @@ export type Outgoing = {
   replyTo?: string;
   uploads: Upload[];
   state: "sending" | "failed";
-  createdAt: number;
 };
+
+/** An outgoing message drawn like a transcript message until the server confirms it. */
+export const outgoingMessage = (message: Outgoing): Message => ({
+  id: `local:${message.requestId}`,
+  entryId: "",
+  role: "user",
+  content: message.content,
+});
 
 const outgoing = new Map<string, Outgoing[]>();
 const listeners = new Set<() => void>();
@@ -20,6 +29,12 @@ function update(chat: string, change: (list: Outgoing[]) => Outgoing[]) {
 
   for (const listener of listeners) listener();
 }
+
+onSessionReset(() => {
+  outgoing.clear();
+
+  for (const listener of listeners) listener();
+});
 
 /** Messages sent to `chat` that its transcript does not show yet. */
 export function useOutgoing(chat: string) {
@@ -49,17 +64,17 @@ export function confirm(chat: string, requestIds: Set<string>) {
  */
 export async function deliver(
   chat: string,
-  path: string,
-  message: Omit<Outgoing, "state" | "createdAt">,
+  path: RoutePath<"sendMessage" | "sendGroupMessage">,
+  message: Omit<Outgoing, "state">,
   extra: { timezone?: string } = {},
 ) {
   update(chat, (list) => [
     ...list.filter((each) => each.requestId !== message.requestId),
-    { ...message, state: "sending", createdAt: Date.now() },
+    { ...message, state: "sending" },
   ]);
 
   try {
-    await send(path, "POST", {
+    await send<"sendMessage" | "sendGroupMessage">(path, "POST", {
       content: message.content,
       requestId: message.requestId,
       ...(message.replyTo && { replyTo: message.replyTo }),

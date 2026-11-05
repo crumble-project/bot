@@ -10,43 +10,22 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import type { Bot } from "@/features/bots/api";
 import {
-  type Bot,
   type Schedule,
-  eventSourcesQuery,
-  queryClient,
   schedulesQuery,
-  send,
-} from "@/lib/api";
+  toggleScheduleOptions,
+} from "@/features/schedules/api";
+import { eventSourcesQuery } from "@/features/settings/api";
 import { LiveBotAvatar } from "@/features/bots/avatar";
 import { DesktopPreview } from "@/features/bot-desktop/desktop";
-import { automationTiming, finished } from "@/features/schedules/automations";
+import { automationTiming, finished } from "@/features/schedules/timing";
+import { BOT_TOOL } from "@crumble/server/contract/tools";
 
 function Automation({ schedule }: { schedule: Schedule }) {
   const sources = useQuery(eventSourcesQuery).data;
 
-  const toggle = useMutation({
-    mutationFn: (enabled: boolean) =>
-      send(`/v1/schedules/${encodeURIComponent(schedule.id)}`, "PATCH", {
-        enabled,
-      }),
-    onMutate: async (enabled) => {
-      await queryClient.cancelQueries({ queryKey: schedulesQuery.queryKey });
-      const previous = queryClient.getQueryData(schedulesQuery.queryKey);
-
-      queryClient.setQueryData(schedulesQuery.queryKey, (list?: Schedule[]) =>
-        list?.map((each) =>
-          each.id === schedule.id ? { ...each, enabled } : each,
-        ),
-      );
-
-      return previous;
-    },
-    onError: (_error, _enabled, previous) =>
-      queryClient.setQueryData(schedulesQuery.queryKey, previous),
-    onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: schedulesQuery.queryKey }),
-  });
+  const toggle = useMutation(toggleScheduleOptions(schedule.id));
 
   return (
     <div className="flex items-start gap-3">
@@ -123,7 +102,7 @@ function DetailsBody({ bot, onClose }: { bot: Bot; onClose: () => void }) {
   return (
     <div className="flex flex-col gap-4 p-4">
       <ProfileSummary bot={bot} onClose={onClose} />
-      {bot.tools.includes("desktop") && (
+      {bot.tools.includes(BOT_TOOL.desktop) && (
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-medium text-muted-foreground">Desktop</h2>
           <DesktopPreview key={bot.id} botId={bot.id} />

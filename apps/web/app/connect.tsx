@@ -9,7 +9,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { clearUserData } from "@/lib/api";
+import { resetSession } from "@/lib/session";
 import {
   authClient,
   INVITE_HEADER,
@@ -42,7 +42,7 @@ const MODE_COPY = {
 const invite = new URLSearchParams(location.search).get("invite") ?? undefined;
 
 function enter() {
-  clearUserData();
+  resetSession();
   window.location.assign("/");
 }
 

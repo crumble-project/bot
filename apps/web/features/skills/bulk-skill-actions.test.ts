@@ -1,7 +1,8 @@
 import { expect, spyOn, test } from "bun:test";
 import { z } from "zod";
-import type { Bot } from "@/lib/api";
+import type { Bot } from "@/features/bots/api";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
+import { assignSharedSkill } from "./bot-pills";
 import { applyBulkAction, type SelectableSkill } from "./bulk-skill-actions";
 
 const bot = (id: string, name = id): Bot => ({
@@ -188,6 +189,45 @@ test("skills run in order even when the first skill has a per-bot failure", asyn
   } finally {
     for (const gate of gates) gate.resolve(Response.json({ skipped: false }));
     await pending;
+    fetch.mockRestore();
+  }
+});
+
+test("saving a skill's bots posts one assignment per changed bot and ignores a skip", async () => {
+  const bots = [
+    { ...bot("on"), sharedSkills: ["other", "skill"] },
+    { ...bot("off"), sharedSkills: ["other"] },
+    { ...bot("same"), sharedSkills: ["skill"] },
+  ];
+
+  const fetch = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(() => Promise.resolve(Response.json({ skipped: true })), {
+      preconnect: globalThis.fetch.preconnect,
+    }),
+  );
+
+  try {
+    await assignSharedSkill("skill", bots, new Set(["off", "same"]));
+
+    const calls = fetch.mock.calls.map(([path, init]) => [
+      path,
+      init?.method,
+      init?.body,
+    ]);
+
+    expect(calls).toEqual([
+      [
+        "/v1/skills/skill/assignment",
+        "POST",
+        JSON.stringify({ botId: "on", assigned: false }),
+      ],
+      [
+        "/v1/skills/skill/assignment",
+        "POST",
+        JSON.stringify({ botId: "off", assigned: true }),
+      ],
+    ]);
+  } finally {
     fetch.mockRestore();
   }
 });

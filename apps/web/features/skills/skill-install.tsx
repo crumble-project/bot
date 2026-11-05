@@ -7,16 +7,10 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EditorSheet } from "@/components/form-fields";
-import {
-  type Bot,
-  type ListedSkill,
-  type PendingSkillUpdate,
-  type SkillListing,
-  type SkillPackage,
-  api,
-  call,
-} from "@/lib/api";
-import { StateDiff } from "@/features/activity/changes";
+import type { Bot } from "@/features/bots/api";
+import type { PendingSkillUpdate, SkillListing, SkillPackage } from "./api";
+import { api, call, send } from "@/lib/api";
+import { StateDiff } from "@/components/state-diff";
 import {
   UsedByField,
   assignSharedSkill,
@@ -29,13 +23,10 @@ import {
   skillKey,
   skillUpdateKey,
 } from "./skill-cache";
-
-type SharedSkill = Extract<ListedSkill, { source: "shared" }>;
+import { MAX_SKILL_NAME_CHARS } from "@crumble/server/contract/limits";
+import { type SharedSkill, skillPath } from "./api";
 
 type Candidate = SkillListing["skills"][number];
-
-const skillPath = (skillId: string) =>
-  `/v1/skills/${encodeURIComponent(skillId)}`;
 
 const STATUS_LABEL: Partial<Record<Candidate["status"], string>> = {
   installed: "Installed",
@@ -197,7 +188,7 @@ function useInstall(
 ) {
   return useMutation({
     mutationFn: (found: SkillListing) =>
-      call<SkillPackage[], object>("/v1/skills/github/install", "POST", {
+      call<"installSkills">("/v1/skills/github/install", "POST", {
         repository: found.repository,
         branch: found.branch,
         commit: found.commit,
@@ -216,11 +207,9 @@ function useListing(location: string | null) {
   return useQuery({
     queryKey: ["skill-listing", location],
     queryFn: () =>
-      call<SkillListing, { location: string }>(
-        "/v1/skills/github/browse",
-        "POST",
-        { location: location ?? "" },
-      ),
+      call<"browseSkillRepository">("/v1/skills/github/browse", "POST", {
+        location: location ?? "",
+      }),
     enabled: location !== null,
     retry: false,
   });
@@ -325,10 +314,10 @@ export function InstallSkillsSheet({
 
 /** Creates an editable shared copy of an installed skill, documents included. */
 export async function copySkill(skill: SharedSkill) {
-  const full = await api<SkillPackage>(skillPath(skill.id));
+  const full = await api<"getSkill">(skillPath(skill.id));
 
-  await call<SkillPackage, object>("/v1/skills", "POST", {
-    name: `${full.name} copy`.slice(0, 100),
+  await send<"createSkill">("/v1/skills", "POST", {
+    name: `${full.name} copy`.slice(0, MAX_SKILL_NAME_CHARS),
     description: full.description,
     instructions: full.instructions,
     documents: full.documents,
@@ -408,7 +397,7 @@ function SkillContent({ skill }: { skill: SkillPackage }) {
 const fullSkillQuery = (skillId: string) => ({
   queryKey: skillKey(skillId),
   queryFn: ({ signal }: { signal: AbortSignal }) =>
-    api<SkillPackage>(skillPath(skillId), { signal }),
+    api<"getSkill">(skillPath(skillId), { signal }),
 });
 
 /** An installed skill, read-only: its source, content, and a pending update. */
@@ -506,12 +495,12 @@ export function SkillUpdateSheet({
   const pending = useQuery({
     queryKey: skillUpdateKey(skill.id),
     queryFn: ({ signal }) =>
-      api<PendingSkillUpdate>(`${skillPath(skill.id)}/update`, { signal }),
+      api<"pendingSkillUpdate">(`${skillPath(skill.id)}/update`, { signal }),
   });
 
   const apply = useMutation({
     mutationFn: () =>
-      call<SkillPackage>(`${skillPath(skill.id)}/update`, "POST"),
+      send<"applySkillUpdate">(`${skillPath(skill.id)}/update`, "POST"),
     onSuccess: async () => {
       await invalidateSkill(skill.id);
       onClose();

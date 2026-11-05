@@ -12,9 +12,10 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { type Bot, botsQuery } from "@/lib/api";
-import { useWorking } from "@/lib/live";
-import { LiveBotAvatar, botColor, botStyle } from "@/features/bots/avatar";
+import { type Bot, botsQuery } from "@/features/bots/api";
+import { botStatusLine, isBusy, useActivity } from "@/features/bots/activity";
+import { botColor, botStyle } from "@/components/bot-avatar";
+import { LiveBotAvatar } from "@/features/bots/avatar";
 
 function greeting(hour: number) {
   if (hour < 5) return "Up late";
@@ -102,7 +103,7 @@ export function Home() {
 }
 
 function HouseholdBot({ bot, index }: { bot: Bot; index: number }) {
-  const working = useWorking(bot.id);
+  const working = isBusy(useActivity(bot.id));
 
   return (
     <li
@@ -133,11 +134,7 @@ function HouseholdBot({ bot, index }: { bot: Bot; index: number }) {
               <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-bot-strong" />
             )}
             <span className="truncate">
-              {working
-                ? "Working…"
-                : !bot.enabled
-                  ? "Paused"
-                  : bot.description || "Ready"}
+              {botStatusLine(bot, working, bot.description || "Ready")}
             </span>
           </span>
         </span>

@@ -9,7 +9,7 @@ import {
   type PasswordManagerId,
   type SecretStatus,
   passwordManagersQuery,
-} from "@/lib/api";
+} from "@/lib/secrets";
 
 /** What the owner is entering: a value to store in Crumble, or where a password manager holds it. */
 type SecretSourceDraft =
@@ -88,6 +88,14 @@ export function useSecretDraft(saved?: SecretStatus) {
   };
 }
 
+const STORED_NOTE = "Stored encrypted and never shown again.";
+
+/** A value stored in Crumble is kept unless a new one is typed. */
+export const keepPlaceholder = (saved: SecretStatus | null | undefined) =>
+  saved?.configured && !saved.passwordManager
+    ? "Keep the saved value"
+    : undefined;
+
 /** A secret's value, or a password manager reference once one is connected. */
 export function SecretSourceField({
   id,
@@ -96,7 +104,7 @@ export function SecretSourceField({
   onChange,
   connected,
   valuePlaceholder,
-  valueDescription,
+  valueDescription = STORED_NOTE,
   concealed = true,
   disabled,
 }: {
@@ -106,7 +114,7 @@ export function SecretSourceField({
   onChange: (next: SecretSourceDraft) => void;
   connected: PasswordManager[];
   valuePlaceholder?: string | undefined;
-  valueDescription: ReactNode;
+  valueDescription?: ReactNode;
   /** False for a value that isn't secret, like a username. */
   concealed?: boolean;
   disabled?: boolean;

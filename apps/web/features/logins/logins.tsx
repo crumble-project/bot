@@ -1,32 +1,25 @@
-import { useState } from "react";
 import { IconHistory } from "@tabler/icons-react";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   type Login,
-  type LoginRequest,
   type LoginUse,
   type Logins,
   loginPath,
   loginsQuery,
-  queryClient,
-} from "@/lib/api";
-import { NewButton, PageToolbar, WorkspacePage } from "@/components/workspace";
+  refreshLogins,
+} from "./api";
 import {
-  ALL,
-  ActionFailure,
-  BotPills,
-  DeleteSecretDialog,
   LastUse,
-  SecretGroups,
   SecretRowMenu,
   SecretRowName,
   UsesDialog,
-  useBotQueries,
-  useSecretActions,
-  type BotEntry,
   type Target,
-} from "@/components/bot-secrets";
+} from "@/features/bot-secrets/bot-secrets";
+import {
+  SecretPage,
+  type SecretRowProps,
+} from "@/features/bot-secrets/secret-page";
 import { LoginSheet } from "./login-sheet";
+import { api } from "@/lib/api";
 
 const FIELD_LABELS = {
   username: "Username",
@@ -34,35 +27,16 @@ const FIELD_LABELS = {
   one_time_code: "One-time code",
 } as const satisfies Record<LoginUse["field"], string>;
 
-/** What the sheet edits: a login, a request to answer, or a new login. */
-type Editing = {
-  botId: string | null;
-  login: Login | null;
-  request?: LoginRequest;
-};
-
-const invalidate = (botId: string) =>
-  queryClient.invalidateQueries({ queryKey: loginsQuery(botId).queryKey });
-
 const loginsOf = (data: Logins) => data.logins;
 
 const requestsOf = (data: Logins) => data.requests;
 
-const countOf = (entry: BotEntry<Logins>) =>
-  (entry.query.data?.logins.length ?? 0) +
-  (entry.query.data?.requests.length ?? 0);
-
 function LoginRow({
-  login,
+  item: login,
   onEdit,
   onUses,
   onDelete,
-}: {
-  login: Login;
-  onEdit: () => void;
-  onUses: () => void;
-  onDelete: () => void;
-}) {
+}: SecretRowProps<Login>) {
   return (
     <div className="flex items-center gap-2 px-3 py-2 transition-colors hover:bg-muted/50">
       <SecretRowName name={login.name} hosts={login.hosts} onEdit={onEdit} />
@@ -102,7 +76,11 @@ function FillsDialog({
       description="Fields desktop jobs filled in the last 90 days, newest first."
       empty="Not filled yet."
       queryKey={["login-uses", botId, item.name]}
-      path={`${loginPath(botId, item.name)}/uses`}
+      load={(query, signal) =>
+        api<"agentLoginUses">(`${loginPath(botId, item.name)}/uses?${query}`, {
+          signal,
+        })
+      }
       onClose={onClose}
     >
       {(use) => (
@@ -130,92 +108,29 @@ export function LoginsSettings({
 }: {
   initialBot?: string | undefined;
 }) {
-  const { bots, entries, refreshing } = useBotQueries(loginsQuery);
-  const [scope, setScope] = useState(initialBot ?? ALL);
-  const [search, setSearch] = useState("");
-  const [editing, setEditing] = useState<Editing | null>(null);
-  const actions = useSecretActions<Login>(loginPath, invalidate);
-
   return (
-    <WorkspacePage
-      title="Logins"
-      refreshing={refreshing}
-      onRefresh={() =>
-        void Promise.all(entries.map((entry) => invalidate(entry.bot.id)))
-      }
-    >
-      <div className="flex flex-col gap-3">
-        <PageToolbar
-          search={search}
-          searchLabel="Search logins"
-          onSearch={setSearch}
-        >
-          <NewButton
-            label="New login"
-            disabled={!bots.data?.length}
-            onClick={() =>
-              setEditing({ botId: scope === ALL ? null : scope, login: null })
-            }
-          />
-        </PageToolbar>
-        <BotPills
-          label="Whose logins"
-          entries={entries}
-          scope={scope}
-          onScope={setScope}
-          countOf={countOf}
-        />
-      </div>
-      <ActionFailure actions={actions} />
-      {bots.isPending ? (
-        <Skeleton className="h-40 rounded-xl" />
-      ) : (
-        <SecretGroups
-          entries={entries}
-          scope={scope}
-          needle={search.trim().toLowerCase()}
-          itemsOf={loginsOf}
-          requestsOf={requestsOf}
-          onAdd={(botId, request) =>
-            setEditing({ botId, login: null, request })
-          }
-          onDecline={(botId, name) =>
-            actions.decline.mutate({ botId, item: name })
-          }
-          empty="None yet. The bot asks for one when a desktop job needs to sign in."
-          noMatch="No logins match your search."
-          note="Desktop jobs fill a login only into https pages on its hosts, and never see its password. Fills are kept for 90 days."
-        >
-          {(botId, login) => (
-            <LoginRow
-              key={login.name}
-              login={login}
-              onEdit={() => setEditing({ botId, login })}
-              onUses={() => actions.setUses({ botId, item: login })}
-              onDelete={() => actions.setDeleting({ botId, item: login.name })}
-            />
-          )}
-        </SecretGroups>
-      )}
-      {editing && (
-        <LoginSheet
-          bots={bots.data ?? []}
-          botId={editing.botId}
-          existing={editing.login}
-          request={editing.request}
-          onClose={() => setEditing(null)}
-        />
-      )}
-      {actions.uses && (
-        <FillsDialog
-          target={actions.uses}
-          onClose={() => actions.setUses(null)}
-        />
-      )}
-      <DeleteSecretDialog
-        actions={actions}
-        description="Desktop jobs can no longer fill it, and its fills are deleted. This cannot be undone."
-      />
-    </WorkspacePage>
+    <SecretPage
+      text={{
+        title: "Logins",
+        searchLabel: "Search logins",
+        newLabel: "New login",
+        pillsLabel: "Whose logins",
+        empty:
+          "None yet. The bot asks for one when a desktop job needs to sign in.",
+        noMatch: "No logins match your search.",
+        note: "Desktop jobs fill a login only into https pages on its hosts, and never see its password. Fills are kept for 90 days.",
+        deleteDescription:
+          "Desktop jobs can no longer fill it, and its fills are deleted. This cannot be undone.",
+      }}
+      initialBot={initialBot}
+      queryOf={loginsQuery}
+      pathOf={loginPath}
+      refresh={refreshLogins}
+      itemsOf={loginsOf}
+      requestsOf={requestsOf}
+      Row={LoginRow}
+      Uses={FillsDialog}
+      Sheet={LoginSheet}
+    />
   );
 }

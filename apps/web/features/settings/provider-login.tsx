@@ -14,32 +14,23 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { HttpError, queryClient, send, call } from "@/lib/api";
 import {
-  HttpError,
   type LoginSession,
   type Provider,
-  api,
   loginQuery,
-  providersQuery,
-  queryClient,
-  send,
-} from "@/lib/api";
-
-export async function refreshProviders() {
-  await queryClient.invalidateQueries({ queryKey: providersQuery.queryKey });
-  await queryClient.invalidateQueries({ queryKey: ["models"] });
-}
+  providerLoginPath,
+  providerPath,
+  refreshProviders,
+} from "./api";
 
 function useProviderLogin(provider: Provider, onClose: () => void) {
   const [sessionId, setSessionId] = useState(provider.activeLoginId);
-  const path = `/v1/providers/${encodeURIComponent(provider.provider)}/login`;
+  const path = `${providerPath(provider.provider)}/login` as const;
 
   const start = useMutation({
     mutationFn: () =>
-      api<LoginSession>(path, {
-        method: "POST",
-        body: JSON.stringify({ method: "oauth" }),
-      }),
+      call<"startProviderLogin">(path, "POST", { method: "oauth" }),
     onSuccess: async (session) => {
       setSessionId(session.id);
       await refreshProviders();
@@ -53,7 +44,7 @@ function useProviderLogin(provider: Provider, onClose: () => void) {
 
   const cancel = useMutation({
     mutationFn: (id: string) =>
-      send(`/v1/provider-logins/${encodeURIComponent(id)}`, "DELETE"),
+      send<"cancelProviderLogin">(providerLoginPath(id), "DELETE"),
     onSettled: async () => {
       await refreshProviders();
       onClose();
@@ -262,12 +253,10 @@ function PromptForm({ session }: { session: LoginSession }) {
 
   const answer = useMutation({
     mutationFn: (answer: string) =>
-      api<LoginSession>(
-        `/v1/provider-logins/${encodeURIComponent(session.id)}/responses`,
-        {
-          method: "POST",
-          body: JSON.stringify({ promptId: prompt.id, value: answer }),
-        },
+      call<"answerProviderLogin">(
+        `${providerLoginPath(session.id)}/responses`,
+        "POST",
+        { promptId: prompt.id, value: answer },
       ),
     onSuccess: (next) => {
       queryClient.setQueryData(loginQuery(session.id).queryKey, next);

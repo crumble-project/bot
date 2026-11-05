@@ -1,6 +1,6 @@
-import { botsQuery, queryClient, skillsQuery } from "@/lib/api";
-
-export const personalSkillsKey = ["personal-skills"];
+import { queryClient } from "@/lib/api";
+import { personalSkillsKey, skillsQuery } from "./api";
+import { refreshBots } from "@/features/bots/api";
 
 /** One shared skill's full package. */
 export const skillKey = (skillId: string) => ["skill", skillId];
@@ -12,7 +12,7 @@ export const skillUpdateKey = (skillId: string) => ["skill-update", skillId];
 export async function invalidateSkills() {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: skillsQuery.queryKey }),
-    queryClient.invalidateQueries({ queryKey: botsQuery.queryKey }),
+    refreshBots(),
     queryClient.invalidateQueries({ queryKey: personalSkillsKey }),
   ]);
 }

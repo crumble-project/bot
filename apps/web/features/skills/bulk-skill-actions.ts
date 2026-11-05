@@ -1,13 +1,13 @@
-import {
-  type Bot,
-  type ListedSkill,
-  type SkillCheck,
-  agentPath,
-  api,
-  call,
-  send,
-} from "@/lib/api";
+import { type Bot } from "@/features/bots/api";
+import type { ListedSkill, SkillCheck } from "./api";
+import { api, send } from "@/lib/api";
 import { invalidateSkill } from "./skill-cache";
+import {
+  assignSkill,
+  checkSkillUpdates,
+  skillPath,
+  personalSkillPath,
+} from "./api";
 
 export type SelectableSkill = {
   id: string;
@@ -25,9 +25,6 @@ export type BulkAction = "delete" | "update" | "assign" | "remove";
 export const skillLabel = (skill: SelectableSkill) =>
   `${skill.name} (${skill.ownerName})`;
 
-const skillPath = (skill: SelectableSkill) =>
-  `/v1/skills/${encodeURIComponent(skill.id)}`;
-
 type UpdateCheck = {
   catalog: ListedSkill[];
   check: SkillCheck;
@@ -37,9 +34,9 @@ type UpdateCheck = {
 /** The existing checker refreshes upstream metadata; only selected skills are applied. */
 async function checkUpdates(): Promise<UpdateCheck> {
   try {
-    const check = await call<SkillCheck>("/v1/skills/updates/check", "POST");
+    const check = await checkSkillUpdates();
 
-    return { check, catalog: await api<ListedSkill[]>("/v1/skills") };
+    return { check, catalog: await api<"skills">("/v1/skills") };
   } catch (error) {
     return { catalog: [], check: { failed: [] }, error };
   }
@@ -63,7 +60,7 @@ async function updateSkill(skill: SelectableSkill, updates: UpdateCheck) {
   if (failure) throw new Error(failure.message);
 
   if (!current.update) return "already up to date";
-  await send(`${skillPath(skill)}/update`, "POST");
+  await send<"applySkillUpdate">(`${skillPath(skill.id)}/update`, "POST");
   await invalidateSkill(skill.id);
 
   return null;
@@ -74,10 +71,7 @@ async function assignBot(skill: SelectableSkill, bot: Bot, assigned: boolean) {
   const messages: BulkMessage[] = [];
 
   try {
-    const result = await call<
-      { skipped: boolean },
-      { botId: string; assigned: boolean }
-    >(`${skillPath(skill)}/assignment`, "POST", { botId: bot.id, assigned });
+    const result = await assignSkill(skill.id, bot.id, assigned);
 
     if (result.skipped)
       messages.push({
@@ -124,24 +118,19 @@ async function assignBots(
   return results.some((result) => result.failed);
 }
 
-async function applySkillAction(
-  skill: SelectableSkill,
-  action: BulkAction,
-  updates: UpdateCheck | undefined,
-  bots: Bot[],
-  messages: BulkMessage[],
-) {
-  if (action === "delete") {
-    const path = skill.botId
-      ? `${agentPath(skill.botId)}/skills/${encodeURIComponent(skill.id)}`
-      : skillPath(skill);
+async function deleteSkill(skill: SelectableSkill) {
+  await send<"deleteAgentSkill" | "deleteSkill">(
+    skill.botId
+      ? personalSkillPath(skill.botId, skill.id)
+      : skillPath(skill.id),
+    "DELETE",
+  );
 
-    await send(path, "DELETE");
+  return false;
+}
 
-    return false;
-  }
-
-  if (updates) {
+function updater(updates: UpdateCheck, messages: BulkMessage[]) {
+  return async (skill: SelectableSkill) => {
     const skipped = await updateSkill(skill, updates);
 
     if (skipped)
@@ -151,9 +140,7 @@ async function applySkillAction(
       });
 
     return false;
-  }
-
-  return assignBots(skill, bots, action === "assign", messages);
+  };
 }
 
 /** Each request is independent: keep failures selected, never roll back successes. */
@@ -164,12 +151,20 @@ export async function applyBulkAction(
 ) {
   const failed = new Set<string>();
   const messages: BulkMessage[] = [];
-  const updates = action === "update" ? await checkUpdates() : undefined;
+
+  const assigner = (skill: SelectableSkill) =>
+    assignBots(skill, bots, action === "assign", messages);
+
+  const apply =
+    action === "update"
+      ? updater(await checkUpdates(), messages)
+      : action === "delete"
+        ? deleteSkill
+        : assigner;
 
   for (const skill of picked) {
     try {
-      if (await applySkillAction(skill, action, updates, bots, messages))
-        failed.add(skill.id);
+      if (await apply(skill)) failed.add(skill.id);
     } catch (error) {
       failed.add(skill.id);
       messages.push({

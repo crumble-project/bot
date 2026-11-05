@@ -1,5 +1,19 @@
 import { useSyncExternalStore } from "react";
-import { type ChatSnapshot, chatQuery, queryClient } from "@/lib/api";
+import {
+  HISTORY_READ_TOOL_NAME,
+  HISTORY_SEARCH_TOOL_NAME,
+  MEMORY_TOOL_NAME,
+  WEB_EXTRACT_TOOL_NAME,
+  WEB_SEARCH_TOOL_NAME,
+} from "@crumble/server/contract/tools";
+import { blocksOf } from "@/features/chat/tool-details";
+import {
+  type ChatSnapshot,
+  chatQuery,
+  type Message,
+} from "@/features/chat/api";
+import { queryClient } from "@/lib/api";
+import { type Bot } from "./api";
 
 /** What a bot is doing, read from its chat, so its avatar can act it out. */
 export type Activity =
@@ -12,29 +26,21 @@ export type Activity =
   | "struggling"
   | "failed";
 
-const SEARCHING = new Set([
-  "web_search",
-  "web_extract",
-  "history_search",
-  "history_read",
+const SEARCHING = new Set<string>([
+  WEB_SEARCH_TOOL_NAME,
+  WEB_EXTRACT_TOOL_NAME,
+  HISTORY_SEARCH_TOOL_NAME,
+  HISTORY_READ_TOOL_NAME,
 ]);
 
-type Block = { type?: string; name?: string };
-
-function toolCalls(message: ChatSnapshot["messages"][number]) {
-  // SAFETY: Provider content blocks are objects with a `type`.
-  const blocks = Array.isArray(message.blocks)
-    ? (message.blocks as Block[])
-    : [];
-
-  return blocks.filter((block) => block.type === "toolCall");
-}
+const toolCalls = (message: Message) =>
+  blocksOf(message).filter((block) => block.type === "toolCall");
 
 /** What a bot does while waiting on these tool calls. */
 function toolActivity(names: string[]): Activity {
   if (names.some((name) => SEARCHING.has(name))) return "searching";
 
-  return names.includes("memory") ? "remembering" : "tinkering";
+  return names.includes(MEMORY_TOOL_NAME) ? "remembering" : "tinkering";
 }
 
 /** A running turn's activity: streaming its reply, recovering from a tool error, or waiting on tools. */
@@ -81,3 +87,14 @@ export const activityLabel: Record<Activity, string> = {
   struggling: "Retrying",
   failed: "Working",
 };
+
+/** The line under a bot's name: working or paused say so, otherwise `idle` shows. */
+export function botStatusLine(
+  bot: Pick<Bot, "enabled">,
+  working: boolean,
+  idle: string,
+) {
+  if (working) return "Working…";
+
+  return bot.enabled ? idle : "Paused";
+}

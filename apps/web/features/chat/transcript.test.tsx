@@ -3,14 +3,10 @@ import { Window } from "happy-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Suspense, act, startTransition } from "react";
 import { createRoot } from "react-dom/client";
-import type { Message } from "@/lib/api";
-import {
-  ARRIVAL,
-  Attachments,
-  shownInChat,
-  ToolResultRow,
-  useArrivals,
-} from "./transcript";
+import type { Message } from "./api";
+import { ARRIVAL, Attachments, mergeMessages, useArrivals } from "./transcript";
+import type { ToolResultChat } from "./tool-result";
+import { shownInChat, ToolResultRow } from "./tool-results";
 
 const message = (id: string): Message => ({
   id,
@@ -20,6 +16,13 @@ const message = (id: string): Message => ({
 });
 
 const pending = new Promise<never>(() => {});
+
+const chat: ToolResultChat = {
+  botId: "bot",
+  attachmentPath: () => "/screen",
+  jobStatus: () => undefined,
+  onOpenJob: () => {},
+};
 
 test("attachment image URLs follow replacement and unmount", async () => {
   const window = new Window();
@@ -218,10 +221,13 @@ test("a desktop screenshot shows its entry's first image; a refused one shows no
         <QueryClientProvider client={client}>
           <ToolResultRow
             message={screenshot}
-            attachmentPath={(entryId, index) => {
-              paths.push(`${entryId}/${index}`);
+            chat={{
+              ...chat,
+              attachmentPath: (entryId, index) => {
+                paths.push(`${entryId}/${index}`);
 
-              return "/screen";
+                return "/screen";
+              },
             }}
           />
         </QueryClientProvider>,
@@ -236,7 +242,7 @@ test("a desktop screenshot shows its entry's first image; a refused one shows no
     await act(async () =>
       root.render(
         <QueryClientProvider client={client}>
-          <ToolResultRow message={refused} attachmentPath={() => "/screen"} />
+          <ToolResultRow message={refused} chat={chat} />
         </QueryClientProvider>,
       ),
     );
@@ -255,4 +261,34 @@ test("a desktop screenshot shows its entry's first image; a refused one shows no
 
     window.close();
   }
+});
+
+const show = (toolDetails: Message["toolDetails"]): Message => ({
+  ...message("show:1"),
+  role: "toolResult",
+  toolName: "show",
+  toolDetails,
+});
+
+test("a stored chart keeps its compiled layouts; details that don't parse show nothing", () => {
+  const layouts = [{ width: 320, height: 200, nodes: [], points: [{ x: 1 }] }];
+
+  expect(shownInChat(show({ kind: "chart", layouts }))).toBe(true);
+  expect(shownInChat(show({ kind: "chart", layouts: [{}] }))).toBe(false);
+  expect(shownInChat(show({ kind: "stats" }))).toBe(false);
+});
+
+test("older pages stay before the live page, and a message in both shows once", () => {
+  const ids = mergeMessages(
+    [message("bot:1:0"), message("bot:9:0"), message("bot:10:0")],
+    [message("bot:10:0"), message("bot:10:1"), message("bot:11:0")],
+  ).map(({ id }) => id);
+
+  expect(ids).toEqual([
+    "bot:1:0",
+    "bot:9:0",
+    "bot:10:0",
+    "bot:10:1",
+    "bot:11:0",
+  ]);
 });

@@ -2,7 +2,6 @@ import { type ReactNode, useState } from "react";
 import {
   type UseQueryResult,
   useMutation,
-  useQueries,
   useQuery,
 } from "@tanstack/react-query";
 import {
@@ -31,18 +30,20 @@ import { Input } from "@/components/ui/input";
 import { EditorSheet, OwnerSelectField } from "@/components/form-fields";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import type { Bot } from "@/features/bots/api";
 import {
-  type Bot,
   type ListedSkill,
-  type SkillCheck,
   type SkillPackage,
-  agentPath,
-  api,
-  call,
-  botsQuery,
-  send,
   skillsQuery,
-} from "@/lib/api";
+  type SharedSkill,
+  checkSkillUpdates,
+  personalSkillPath,
+  personalSkillsPath,
+  personalSkillsQuery,
+  skillPath,
+} from "./api";
+import { call, send } from "@/lib/api";
+import { ALL, SHARED, ownerItems, useBotQueries } from "@/lib/bot-queries";
 import {
   ConfirmDeleteContent,
   FilterPills,
@@ -51,12 +52,13 @@ import {
   RowMenu,
   Section,
   SectionEmpty,
+  UsedBy,
   WorkspacePage,
 } from "@/components/workspace";
-import { BotAvatar } from "@/features/bots/avatar";
+import { BotAvatar } from "@/components/bot-avatar";
 import { cn } from "@/lib/utils";
 import { UsedByField, assignSharedSkill, botsUsing } from "./bot-pills";
-import { personalSkillsKey, invalidateSkills } from "./skill-cache";
+import { invalidateSkills } from "./skill-cache";
 import {
   InstallSkillsSheet,
   InstalledSkillSheet,
@@ -66,32 +68,24 @@ import {
 
 import { BulkSkills, SelectSkills } from "./bulk-skills";
 import type { SelectableSkill } from "./bulk-skill-actions";
+import {
+  MAX_INSTRUCTIONS_CHARS,
+  MAX_SKILL_NAME_CHARS,
+} from "@crumble/server/contract/limits";
 
-const SHARED = "shared";
-const ALL = "all";
 const DEFAULT = "default";
 
 /** What the page shows: whose skills (all, shared, default, or a bot's id) and the search. */
 type SkillFilter = { scope: string; needle: string };
 
-type SharedSkill = Extract<ListedSkill, { source: "shared" }>;
-
 type BundledSkill = Extract<ListedSkill, { source: "bundled" }>;
 
-type BotSkill = {
-  id: string;
-  name: string;
-  instructions: string;
-  pinned?: boolean;
-};
+type BotSkill = SkillPackage;
 
 type SkillBot = Omit<Bot, "skills"> & { skills: BotSkill[] };
 
-const personalSkillPath = (botId: string, skillId: string) =>
-  `${agentPath(botId)}/skills/${encodeURIComponent(skillId)}`;
-
 function removePersonalSkill(botId: string, skillId: string) {
-  return send(personalSkillPath(botId, skillId), "DELETE");
+  return send<"deleteAgentSkill">(personalSkillPath(botId, skillId), "DELETE");
 }
 
 /** The GitHub sheets: installing, viewing an installed skill, or reviewing its update. */
@@ -109,7 +103,7 @@ type Editing =
 function useRemoveSkills() {
   const shared = useMutation({
     mutationFn: (skill: SharedSkill) =>
-      send(`/v1/skills/${encodeURIComponent(skill.id)}`, "DELETE"),
+      send<"deleteSkill">(skillPath(skill.id), "DELETE"),
     onSettled: invalidateSkills,
   });
 
@@ -121,7 +115,7 @@ function useRemoveSkills() {
 
   const pin = useMutation({
     mutationFn: ({ bot, skill }: { bot: SkillBot; skill: BotSkill }) =>
-      send(personalSkillPath(bot.id, skill.id), "PATCH", {
+      send<"updateAgentSkill">(personalSkillPath(bot.id, skill.id), "PATCH", {
         pinned: !skill.pinned,
       }),
     onSettled: invalidateSkills,
@@ -568,34 +562,25 @@ function SkillsBody({
 
 /** Every bot with its personal skills, and the bots whose skills failed to load. */
 function usePersonalSkills() {
-  const bots = useQuery(botsQuery);
-  const list = bots.data ?? [];
+  const { bots, entries, refreshing } = useBotQueries(personalSkillsQuery);
 
-  const personal = useQueries({
-    queries: list.map((bot) => ({
-      queryKey: [...personalSkillsKey, bot.id],
-      queryFn: ({ signal }: { signal: AbortSignal }) =>
-        api<BotSkill[]>(`${agentPath(bot.id)}/skills`, { signal }),
-    })),
-  });
-
-  const skillBots = list.map((bot, index) => ({
+  const skillBots = entries.map(({ bot, query }) => ({
     ...bot,
-    skills: personal[index]?.data ?? [],
+    skills: query.data ?? [],
   }));
 
-  const personalErrors = list.flatMap((bot, index) => {
-    const query = personal[index];
+  const personalErrors = entries.flatMap(({ bot, query }) =>
+    query.isError ? [{ bot, error: query.error }] : [],
+  );
 
-    return query?.isError ? [{ bot, error: query.error }] : [];
-  });
+  const personalPending = entries.some(({ query }) => query.isPending);
 
-  return { bots, personal, skillBots, personalErrors };
+  return { bots, refreshing, skillBots, personalPending, personalErrors };
 }
 
 function useUpdateCheck() {
   return useMutation({
-    mutationFn: () => call<SkillCheck>("/v1/skills/updates/check", "POST"),
+    mutationFn: checkSkillUpdates,
     onSettled: invalidateSkills,
   });
 }
@@ -713,7 +698,9 @@ function selectionCatalog(
 }
 
 export function SkillsPage() {
-  const { bots, personal, skillBots, personalErrors } = usePersonalSkills();
+  const { bots, refreshing, skillBots, personalPending, personalErrors } =
+    usePersonalSkills();
+
   const skills = useQuery(skillsQuery);
 
   const unavailable = new Set(personalErrors.map(({ bot }) => bot.id));
@@ -739,11 +726,7 @@ export function SkillsPage() {
   return (
     <WorkspacePage
       title="Skills"
-      refreshing={
-        bots.isFetching ||
-        skills.isFetching ||
-        personal.some((query) => query.isFetching)
-      }
+      refreshing={refreshing || skills.isFetching}
       onRefresh={() => void invalidateSkills()}
     >
       <div className="flex flex-col gap-3">
@@ -783,7 +766,7 @@ export function SkillsPage() {
         <SkillsBody
           bots={bots}
           skillBots={skillBots}
-          personalPending={personal.some((query) => query.isPending)}
+          personalPending={personalPending}
           personalErrors={personalErrors}
           skills={skills}
           filter={{ scope, needle: search.trim().toLowerCase() }}
@@ -843,14 +826,10 @@ function BundledRow({ skill }: { skill: BundledSkill }) {
 }
 
 /** "(used by N)" after a shared skill's line, when any bot uses it. */
-function UsedBy({ bots, skillId }: { bots: Bot[]; skillId: string }) {
+function SkillUsage({ bots, skillId }: { bots: Bot[]; skillId: string }) {
   const count = botsUsing(bots, skillId).size;
 
-  return count ? (
-    <span className="shrink-0 text-xs text-muted-foreground">
-      (used by {count})
-    </span>
-  ) : null;
+  return count ? <UsedBy count={count} className="shrink-0 text-xs" /> : null;
 }
 
 /** An installed skill: read-only, so View instead of Edit, plus Update and Make a copy. */
@@ -892,7 +871,7 @@ function InstalledRow({
       onOpen={onView}
       actions={
         <>
-          <UsedBy bots={bots} skillId={skill.id} />
+          <SkillUsage bots={bots} skillId={skill.id} />
           <RowMenu>
             <DropdownMenuItem onClick={onView}>
               <IconEye />
@@ -951,7 +930,7 @@ function SharedRow({
       }
       name={skill.name}
       instructions={skill.instructions}
-      usage={<UsedBy bots={bots} skillId={skill.id} />}
+      usage={<SkillUsage bots={bots} skillId={skill.id} />}
       deleteDescription="Every bot that uses it loses it. This cannot be undone."
       onEdit={onEdit}
       onDelete={onDelete}
@@ -979,17 +958,13 @@ async function saveSkill(
   skill: { name: string; instructions: string },
 ) {
   if (editing.kind === "shared") {
-    await send(
-      `/v1/skills/${encodeURIComponent(editing.skill.id)}`,
-      "PATCH",
-      skill,
-    );
+    await send<"updateSkill">(skillPath(editing.skill.id), "PATCH", skill);
 
     return editing.skill.id;
   }
 
   if (editing.kind === "personal") {
-    await send(
+    await send<"updateAgentSkill">(
       personalSkillPath(editing.bot.id, editing.skill.id),
       "PATCH",
       skill,
@@ -999,13 +974,12 @@ async function saveSkill(
   }
 
   if (owner === SHARED)
-    return (await call<SkillPackage, typeof skill>("/v1/skills", "POST", skill))
-      .id;
+    return (await call<"createSkill">("/v1/skills", "POST", skill)).id;
 
   const bot = bots.find((each) => each.id === owner);
 
   if (!bot) throw new Error("Choose a bot.");
-  await send(`${agentPath(bot.id)}/skills`, "POST", skill);
+  await send<"createAgentSkill">(personalSkillsPath(bot.id), "POST", skill);
 
   return null;
 }
@@ -1031,11 +1005,6 @@ function SkillDialog({
   );
 
   const valid = Boolean(name.trim() && instructions.trim());
-
-  const owners = [
-    { label: "Every bot (shared)", value: SHARED },
-    ...bots.map((bot) => ({ label: bot.name, value: bot.id })),
-  ];
 
   const save = useMutation({
     mutationFn: async () => {
@@ -1063,7 +1032,7 @@ function SkillDialog({
     >
       <OwnerSelectField
         label="Available to"
-        owners={owners}
+        owners={ownerItems("Every bot (shared)", bots)}
         value={owner}
         disabled={editing.kind !== "new"}
         onValueChange={(value) => setOwner(value ?? SHARED)}
@@ -1072,7 +1041,7 @@ function SkillDialog({
         <FieldLabel htmlFor="skill-name">Name</FieldLabel>
         <Input
           id="skill-name"
-          maxLength={100}
+          maxLength={MAX_SKILL_NAME_CHARS}
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
@@ -1082,7 +1051,7 @@ function SkillDialog({
         <Textarea
           id="skill-instructions"
           className="min-h-40"
-          maxLength={32000}
+          maxLength={MAX_INSTRUCTIONS_CHARS}
           value={instructions}
           onChange={(event) => setInstructions(event.target.value)}
         />

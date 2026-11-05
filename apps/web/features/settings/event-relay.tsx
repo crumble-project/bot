@@ -1,15 +1,11 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { DOORSTEP_PLUGIN_ID } from "@crumble/server/contract/plugins";
 import { IconTrash, IconWebhook } from "@tabler/icons-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldLabel,
-} from "@/components/ui/field";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { CopyButton, EditorSheet } from "@/components/form-fields";
 import {
@@ -18,21 +14,21 @@ import {
   RowTile,
   Section,
   SectionEmpty,
+  SectionError,
   SettingRow,
+  UsedBy,
   WorkspacePage,
 } from "@/components/workspace";
+import { call, queryClient, send } from "@/lib/api";
 import {
-  call,
   eventRelayQuery,
   eventSourcePath,
   eventSourcesQuery,
-  queryClient,
-  send,
-  type CreatedEventSource,
   type EventSource,
   type RelayStatus,
-} from "@/lib/api";
+} from "./api";
 import { PluginSettingRows } from "./plugin-settings";
+import { MAX_EVENT_SOURCE_NAME_CHARS } from "@crumble/server/contract/event-sources";
 
 const refresh = () =>
   Promise.all([
@@ -68,9 +64,7 @@ function RelayUrlRow({ relay }: { relay: RelayStatus }) {
 
   const save = useMutation({
     mutationFn: (next: string | null) =>
-      call<RelayStatus, { url: string | null }>("/v1/event-relay", "PUT", {
-        url: next,
-      }),
+      call<"updateEventRelay">("/v1/event-relay", "PUT", { url: next }),
     onSuccess: (next) => {
       queryClient.setQueryData(eventRelayQuery.queryKey, next);
       setUrl(next.url ?? "");
@@ -124,11 +118,7 @@ function RelaySection() {
       title="Relay"
       description="A Doorstep relay receives webhooks for this account and forwards them to this server, so the server needs no public address."
     >
-      {relay.isError && (
-        <div className="p-3">
-          <FieldError>{relay.error.message}</FieldError>
-        </div>
-      )}
+      {relay.isError && <SectionError>{relay.error.message}</SectionError>}
       {relay.data && (
         <>
           <RelayUrlRow key={relay.data.url ?? ""} relay={relay.data} />
@@ -140,7 +130,10 @@ function RelaySection() {
               </Alert>
             </div>
           )}
-          <PluginSettingRows pluginId="doorstep" onChange={refresh} />
+          <PluginSettingRows
+            select={{ pluginId: DOORSTEP_PLUGIN_ID }}
+            onChange={refresh}
+          />
         </>
       )}
     </Section>
@@ -149,7 +142,8 @@ function RelaySection() {
 
 function SourceRow({ source }: { source: EventSource }) {
   const remove = useMutation({
-    mutationFn: () => send(eventSourcePath(source.id), "DELETE"),
+    mutationFn: () =>
+      send<"deleteEventSource">(eventSourcePath(source.id), "DELETE"),
     onSuccess: refresh,
   });
 
@@ -159,9 +153,7 @@ function SourceRow({ source }: { source: EventSource }) {
       title={
         <>
           <span className="truncate">{source.name}</span>
-          <span className="font-normal text-muted-foreground">
-            (used by {source.usedBy})
-          </span>
+          <UsedBy count={source.usedBy} />
         </>
       }
       description={remove.error?.message}
@@ -194,9 +186,7 @@ function AddSourceSheet({ onClose }: { onClose: () => void }) {
 
   const create = useMutation({
     mutationFn: (value: string) =>
-      call<CreatedEventSource, { name: string }>("/v1/event-sources", "POST", {
-        name: value,
-      }),
+      call<"createEventSource">("/v1/event-sources", "POST", { name: value }),
     onSuccess: refresh,
   });
 
@@ -246,7 +236,7 @@ function AddSourceSheet({ onClose }: { onClose: () => void }) {
         <Input
           id="event-source-name"
           placeholder="GitHub issues"
-          maxLength={200}
+          maxLength={MAX_EVENT_SOURCE_NAME_CHARS}
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
@@ -265,11 +255,7 @@ function SourcesSection() {
       description="Each source is one webhook address. Automations that use a source run when an event arrives there."
       action={<NewButton label="Add source" onClick={() => setAdding(true)} />}
     >
-      {sources.isError && (
-        <div className="p-3">
-          <FieldError>{sources.error.message}</FieldError>
-        </div>
-      )}
+      {sources.isError && <SectionError>{sources.error.message}</SectionError>}
       {sources.data?.length === 0 && (
         <SectionEmpty>No event sources yet.</SectionEmpty>
       )}

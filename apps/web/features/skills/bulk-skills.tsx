@@ -14,9 +14,9 @@ import { IconX } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { EditorSheet } from "@/components/form-fields";
 import { ConfirmDeleteContent } from "@/components/workspace";
-import { type Bot } from "@/lib/api";
+import type { Bot } from "@/features/bots/api";
 import { cn } from "@/lib/utils";
-import { BotPills, toggled } from "./bot-pills";
+import { BotToggles, toggled } from "./bot-pills";
 import { invalidateSkills } from "./skill-cache";
 import {
   applyBulkAction,
@@ -209,7 +209,7 @@ function BotTargetsSheet({
           : "Shared skills are disabled. Only linked bot-specific copies are deleted, including edited copies; same-name skills and the original are kept."}
       </p>
       <p className="text-sm">{picked.map(skillLabel).join(", ")}</p>
-      <BotPills
+      <BotToggles
         label="Choose bots"
         bots={bots}
         isOn={(bot) => targets.has(bot.id)}

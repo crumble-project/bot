@@ -13,14 +13,12 @@ import { MobileSidebarTrigger } from "@/components/workspace";
 import {
   type DesktopControl,
   type DesktopViewer,
-  agentPath,
-  botsQuery,
-  call,
   desktopStatusQuery,
-  follow,
-} from "@/lib/api";
+} from "./api";
+import { agentPath, botsQuery } from "@/features/bots/api";
+import { call, follow, send } from "@/lib/api";
 
-function useDesktopControl(path: string) {
+function useDesktopControl(path: ReturnType<typeof agentPath>) {
   const [control, setControl] = useState<DesktopControl | null>(null);
   const holder = useRef<DesktopControl["holder"]>("bot");
 
@@ -52,7 +50,9 @@ function useDesktopControl(path: string) {
 
       // Leaving the desktop hands control back, so the bot's job can continue.
       if (holder.current === "owner")
-        void call(`${path}/desktop/control`, "PUT", { holder: "bot" });
+        void send<"putDesktopControl">(`${path}/desktop/control`, "PUT", {
+          holder: "bot",
+        });
     };
   }, [path]);
 
@@ -60,11 +60,9 @@ function useDesktopControl(path: string) {
   // react-doctor-disable-next-line query-mutation-missing-invalidation
   const take = useMutation({
     mutationFn: (next: DesktopControl["holder"]) =>
-      call<DesktopControl, { holder: DesktopControl["holder"] }>(
-        `${path}/desktop/control`,
-        "PUT",
-        { holder: next },
-      ),
+      call<"putDesktopControl">(`${path}/desktop/control`, "PUT", {
+        holder: next,
+      }),
     onSuccess: apply,
   });
 
@@ -117,7 +115,8 @@ export function BotDesktop({ botId }: { botId: string }) {
   // The viewer link works once, so every connection needs a fresh one.
   // react-doctor-disable-next-line query-mutation-missing-invalidation
   const viewer = useMutation({
-    mutationFn: () => call<DesktopViewer>(`${path}/desktop/viewer`, "POST"),
+    mutationFn: () =>
+      call<"createDesktopViewer">(`${path}/desktop/viewer`, "POST"),
   });
 
   const { mutate: connect } = viewer;
@@ -184,8 +183,10 @@ export function DesktopPreview({ botId }: { botId: string }) {
   // Until asked, the link only watches: it neither boots the machine nor keeps it awake.
   const viewer = useMutation({
     mutationFn: () =>
-      call<DesktopViewer>(
-        `${path}/desktop/viewer${asked ? "" : "?passive=true"}`,
+      call<"createDesktopViewer">(
+        asked
+          ? `${path}/desktop/viewer`
+          : `${path}/desktop/viewer?passive=true`,
         "POST",
       ),
   });

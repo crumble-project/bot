@@ -3,8 +3,14 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 import { WorkspacePage } from "@/components/workspace";
 import { Button } from "@/components/ui/button";
-import { agentPath, botsQuery, queryClient, send } from "@/lib/api";
-import { BotAvatar, type BotState } from "@/features/bots/avatar";
+import {
+  agentPath,
+  botsQuery,
+  type BotInput,
+  refreshBots,
+} from "@/features/bots/api";
+import { send } from "@/lib/api";
+import { BotAvatar, type BotState } from "@/components/bot-avatar";
 import { AvatarEditor } from "./avatar-editor";
 
 /** Try portable definitions and save one to a bot. */
@@ -15,8 +21,11 @@ export function AvatarsPage() {
   const [value, setValue] = useState(() => defaultAvatarDefinition("crumble"));
 
   const save = useMutation({
-    mutationFn: () => send(agentPath(selected), "PATCH", { avatar: value }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["bots"] }),
+    mutationFn: () =>
+      send<"updateAgent">(agentPath(selected), "PATCH", {
+        avatar: value,
+      } satisfies Partial<BotInput>),
+    onSuccess: refreshBots,
   });
 
   return (

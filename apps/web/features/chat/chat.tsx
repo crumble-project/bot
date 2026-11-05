@@ -1,75 +1,52 @@
-import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { MessageScrollerItem } from "@/components/ui/message-scroller";
 import {
   type Bot,
-  type ChatSnapshot,
-  type Message,
   agentPath,
   botsQuery,
-  chatQuery,
-  jobsQuery,
-  send,
-} from "@/lib/api";
-import {
-  BotAvatar,
-  LiveBotAvatar,
-  botColor,
-  botStyle,
-} from "@/features/bots/avatar";
+  refreshBots,
+} from "@/features/bots/api";
+import { type ChatSnapshot, type Message, chatQuery } from "./api";
+import { refreshJobs, useJobs } from "@/features/jobs/api";
+import { jobOf } from "@/features/jobs/job-card";
+import { send } from "@/lib/api";
+import { BotAvatar, botColor, botStyle } from "@/components/bot-avatar";
+import { LiveBotAvatar } from "@/features/bots/avatar";
 import { activityLabel, useActivity } from "@/features/bots/activity";
-import { type Outgoing, confirm, useOutgoing } from "./delivery";
 import {
+  type Conversation,
   ConversationEmpty,
   ConversationError,
   ConversationLoading,
-  ConversationRows,
+  ConversationMessages,
   ConversationScroller,
-  LoadEarlier,
-  useHistory,
-  useMessageSending,
+  SendError,
+  useConversation,
 } from "./conversation";
+import type { ConversationTarget } from "./conversation-target";
 import { DetailsPanel, DetailsSheet } from "./details";
-import { type JobRef, JobPanel } from "@/features/jobs/jobs";
-import { useChatStream } from "@/lib/live";
+import { JobPanel } from "@/features/jobs/jobs";
+import { type JobRef, isJobKind } from "@/lib/job-kinds";
 import { BotReasoning } from "@/features/bots/reasoning";
-import {
-  BotMessage,
-  EventRow,
-  OwnerMessage,
-  ToolResultRow,
-  ARRIVAL,
-  useArrivals,
-  jobOf,
-  mergeMessages,
-  reactionsOf,
-  shownInChat,
-} from "./transcript";
+import { BotMessage, EventRow, ARRIVAL } from "./transcript";
+import type { ToolResultChat } from "./tool-result";
+import { ToolResultRow, shownInChat } from "./tool-results";
 import { HeldActionCard } from "./held-action";
 import { JobQuestionCard } from "./job-question";
 import { Composer } from "./composer";
-import { type Sources, sourcesOf } from "./sources";
+import type { Sources } from "@/lib/sources";
+import { sourcesOf } from "./sources";
 import { MobileSidebarTrigger } from "@/components/workspace";
+import { BOT_TOOL } from "@crumble/server/contract/tools";
 
 const DETAILS_KEY = "crumble.details";
 
 /** Tailwind's lg breakpoint, where the details panel fits beside the chat. */
 const WIDE = "(min-width: 64rem)";
-
-type SendMessage = ReturnType<typeof useMessageSending>["sendMessage"];
-
-/** An outgoing message drawn like a transcript message until the server confirms it. */
-export function outgoingMessage(message: Outgoing): Message {
-  return {
-    id: `local:${message.requestId}`,
-    entryId: "",
-    role: "user",
-    content: message.content,
-  };
-}
 
 /** The details panel's state, the job pane that can take its place, and the sheet narrow screens use instead. */
 function useDetails() {
@@ -99,73 +76,62 @@ function useDetails() {
   return { details, toggleDetails, showDetails, job, setJob, sheet, setSheet };
 }
 
-function useChatMessages(botId: string, snapshot: ChatSnapshot | undefined) {
-  useChatStream(botId);
-
-  const path = agentPath(botId);
-  const live = snapshot?.messages;
-  const { arrival, remember } = useArrivals(live);
-  const { older, loadEarlier } = useHistory(`${path}/chat/history`, remember);
-
-  useEffect(() => {
-    if (live)
-      confirm(
-        `bot:${botId}`,
-        new Set(live.flatMap((message) => message.requestId ?? [])),
-      );
-  }, [botId, live]);
-
-  const messages = mergeMessages(older?.messages ?? [], live ?? []);
+const botConversation = (id: string): ConversationTarget<ChatSnapshot> => {
+  const path = agentPath(id);
 
   return {
-    messages,
-    arrival,
-    loadEarlier,
-    hasMore: older ? older.hasMore : snapshot?.hasMore,
-    oldest: older ? older.oldestEntryId : snapshot?.oldestEntryId,
-    reactions: reactionsOf(messages, false),
-    sources: sourcesOf(messages),
-    byEntry: new Map(messages.map((message) => [message.entryId, message])),
-    shown: messages.filter(shownInChat),
-    attachmentPath: (entryId: string, index: number) =>
-      `${path}/attachments/${encodeURIComponent(entryId)}/${index}`,
+    key: `bot:${id}`,
+    path,
+    history: `${path}/chat/history`,
+    query: chatQuery(id),
+    shown: shownInChat,
+    reactionTarget: (_message, lastOwner) => lastOwner,
+    sendContext: () => ({
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    }),
+    stop: () => send<"abort">(`${path}/abort`, "POST"),
+    followsAfterView: (snapshot) => snapshot.status === "running",
+    refreshList: refreshBots,
   };
-}
+};
 
 function useChatJobs(botId: string, messages: Message[]) {
-  const jobMessages = messages.filter(
-    (message) =>
-      jobOf(message) !== null ||
-      message.origin?.kind === "coding" ||
-      message.origin?.kind === "desktop",
-  ).length;
+  const jobs = messages.flatMap((message) => jobOf(message) ?? []);
+  const kinds = new Set(jobs.map((job) => job.kind));
+  const coding = useJobs(botId, "coding", kinds.has("coding"));
+  const desktop = useJobs(botId, "desktop", kinds.has("desktop"));
 
-  const kinds = new Set(
-    messages.flatMap((message) => jobOf(message)?.kind ?? []),
-  );
+  const jobMessages =
+    jobs.length +
+    messages.filter((message) => isJobKind(message.origin?.kind)).length;
 
-  const codingJobs = useQuery({
-    ...jobsQuery(botId, "coding", jobMessages),
-    enabled: kinds.has("coding"),
-  });
+  const counted = useRef(jobMessages);
 
-  const desktopJobs = useQuery({
-    ...jobsQuery(botId, "desktop", jobMessages),
-    enabled: kinds.has("desktop"),
-  });
+  // A job's message means its status may have changed.
+  useEffect(() => {
+    if (counted.current === jobMessages) return;
+    counted.current = jobMessages;
+    void refreshJobs(botId, "coding");
+    void refreshJobs(botId, "desktop");
+  }, [botId, jobMessages]);
 
-  const jobs = [...(codingJobs.data ?? []), ...(desktopJobs.data ?? [])];
-
-  return (name?: string) => jobs.find((each) => each.name === name);
+  return ({ kind, name }: JobRef) =>
+    (kind === "coding" ? coding : desktop).data?.find(
+      (each) => each.name === name,
+    )?.status;
 }
 
 function mentionableBots(bot: Bot, bots: Bot[]) {
-  if (!bot.tools.includes("delegate")) return [];
+  if (!bot.tools.includes(BOT_TOOL.delegate)) return [];
 
-  const delegates = new Set(bot.delegates);
+  return bots.filter((other) => other.enabled && other.id !== bot.id);
+}
 
-  return bots.filter(
-    (other) => other.enabled && other.id !== bot.id && delegates.has(other.id),
+function BotNotFound() {
+  return (
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-6">
+      <p className="text-muted-foreground">Bot not found.</p>
+    </div>
   );
 }
 
@@ -232,70 +198,22 @@ function EventMessage({ message, botId }: { message: Message; botId: string }) {
 
 function ChatMessage({
   message,
-  botId,
-  jobFor,
+  chat,
   sources,
   onReply,
-  onOpenJob,
-  attachmentPath,
 }: {
   message: Message;
-  botId: string;
-  jobFor: ReturnType<typeof useChatJobs>;
+  chat: ToolResultChat;
   sources: Sources | undefined;
   onReply: (message: Message) => void;
-  onOpenJob: (job: JobRef) => void;
-  attachmentPath: (entryId: string, index: number) => string;
 }) {
   if (message.role === "assistant")
     return <BotMessage message={message} sources={sources} onReply={onReply} />;
 
   if (message.role === "event")
-    return <EventMessage message={message} botId={botId} />;
+    return <EventMessage message={message} botId={chat.botId} />;
 
-  return (
-    <ToolResultRow
-      message={message}
-      botId={botId}
-      jobStatus={jobFor(jobOf(message)?.name)?.status}
-      onOpenJob={onOpenJob}
-      attachmentPath={attachmentPath}
-    />
-  );
-}
-
-function OutgoingRow({
-  message,
-  byEntry,
-  attachmentPath,
-  sendMessage,
-}: {
-  message: Outgoing;
-  byEntry: Map<string, Message>;
-  attachmentPath: (entryId: string, index: number) => string;
-  sendMessage: SendMessage;
-}) {
-  return (
-    <MessageScrollerItem messageId={message.requestId} className={ARRIVAL}>
-      <OwnerMessage
-        message={outgoingMessage(message)}
-        uploads={message.uploads}
-        quote={
-          message.replyTo ? byEntry.get(message.replyTo)?.content : undefined
-        }
-        delivery={message.state}
-        onRetry={() =>
-          void sendMessage(
-            message.content,
-            message.uploads,
-            message.requestId,
-            message.replyTo,
-          )
-        }
-        attachmentPath={attachmentPath}
-      />
-    </MessageScrollerItem>
-  );
+  return <ToolResultRow message={message} chat={chat} />;
 }
 
 function ChatFailure({ error }: { error: string }) {
@@ -321,78 +239,48 @@ function ChatFailure({ error }: { error: string }) {
 
 function ChatTranscript({
   bot,
-  transcript,
-  outgoing,
+  conversation,
   running,
   error,
-  jobFor,
-  onReply,
+  jobStatus,
   onOpenJob,
-  sendMessage,
 }: {
   bot: Bot;
-  transcript: ReturnType<typeof useChatMessages>;
-  outgoing: Outgoing[];
+  conversation: Conversation;
   running: boolean;
   error: ChatSnapshot["error"];
-  jobFor: ReturnType<typeof useChatJobs>;
-  onReply: (message: Message) => void;
+  jobStatus: ReturnType<typeof useChatJobs>;
   onOpenJob: (job: JobRef) => void;
-  sendMessage: SendMessage;
 }) {
-  const {
-    hasMore,
-    oldest,
-    loadEarlier,
-    shown,
-    arrival,
-    byEntry,
-    reactions,
-    sources,
-    attachmentPath,
-  } = transcript;
+  const sources = sourcesOf(conversation.messages);
+
+  const chat: ToolResultChat = {
+    botId: bot.id,
+    attachmentPath: conversation.attachmentPath,
+    jobStatus,
+    onOpenJob,
+  };
 
   return (
     <ConversationScroller>
-      {hasMore && oldest && (
-        <LoadEarlier
-          pending={loadEarlier.isPending}
-          onLoad={() => loadEarlier.mutate(oldest)}
-        />
-      )}
-      {shown.length === 0 && outgoing.length === 0 && !running && (
-        <ConversationEmpty title={<>Say hello to {bot.name}</>}>
-          It keeps its memory and work between visits.
-        </ConversationEmpty>
-      )}
-      <ConversationRows
-        messages={shown}
-        arrival={arrival}
-        byEntry={byEntry}
-        reactions={reactions}
-        onReply={onReply}
-        attachmentPath={attachmentPath}
+      <ConversationMessages
+        conversation={conversation}
+        empty={
+          !running && (
+            <ConversationEmpty title={<>Say hello to {bot.name}</>}>
+              It keeps its memory and work between visits.
+            </ConversationEmpty>
+          )
+        }
         renderMessage={(message) => (
           <ChatMessage
             message={message}
-            botId={bot.id}
-            jobFor={jobFor}
+            chat={chat}
             sources={sources.get(message.id)}
-            onReply={onReply}
-            onOpenJob={onOpenJob}
-            attachmentPath={attachmentPath}
+            onReply={conversation.sending.setReplyTo}
           />
         )}
       />
-      {outgoing.map((message) => (
-        <OutgoingRow
-          key={message.requestId}
-          message={message}
-          byEntry={byEntry}
-          attachmentPath={attachmentPath}
-          sendMessage={sendMessage}
-        />
-      ))}
       {running && (
         <MessageScrollerItem messageId="typing" className={ARRIVAL}>
           <WorkingStatus bot={bot} />
@@ -419,13 +307,15 @@ function WorkingStatus({ bot }: { bot: Bot }) {
 function ChatComposer({
   bot,
   bots,
+  draftKey,
   sending,
   running,
   onStop,
 }: {
   bot: Bot;
   bots: Bot[];
-  sending: ReturnType<typeof useMessageSending>;
+  draftKey: string;
+  sending: Conversation["sending"];
   running: boolean;
   onStop: () => void;
 }) {
@@ -433,14 +323,10 @@ function ChatComposer({
 
   return (
     <>
-      {sendError && (
-        <p className="mx-auto w-full max-w-4xl px-4 text-xs text-destructive">
-          {sendError}
-        </p>
-      )}
+      <SendError message={sendError} />
       <Composer
         key={bot.id}
-        draftKey={`bot:${bot.id}`}
+        draftKey={draftKey}
         placeholder={
           bot.enabled
             ? `Message ${bot.name}`
@@ -461,41 +347,24 @@ function ChatComposer({
   );
 }
 
-function useChatDelivery(botId: string) {
-  const outgoing = useOutgoing(`bot:${botId}`);
-  const path = agentPath(botId);
-
-  const sending = useMessageSending(`bot:${botId}`, path, () => ({
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-  }));
-
-  // The live transcript reports the stopped turn.
-  // react-doctor-disable-next-line query-mutation-missing-invalidation
-  const stop = useMutation({ mutationFn: () => send(`${path}/abort`, "POST") });
-
-  return { outgoing, sending, stop };
-}
-
 export function Chat({ botId }: { botId: string }) {
-  const chat = useQuery(chatQuery(botId));
+  const target = useMemo(() => botConversation(botId), [botId]);
+  const { snapshot, ...conversation } = useConversation(target);
   const bots = useQuery(botsQuery);
   const bot = bots.data?.find((each) => each.id === botId);
-  const { outgoing, sending, stop } = useChatDelivery(botId);
 
   const { details, toggleDetails, showDetails, job, setJob, sheet, setSheet } =
     useDetails();
 
-  const { setReplyTo, sendMessage } = sending;
-  const transcript = useChatMessages(botId, chat.data);
-  const jobFor = useChatJobs(botId, transcript.messages);
+  const jobStatus = useChatJobs(botId, conversation.messages);
 
-  if (chat.isError) return <ConversationError error={chat.error} />;
+  if (snapshot.isError) return <ConversationError error={snapshot.error} />;
 
-  if (!chat.data || !bot)
-    return <ConversationLoading notFound={bots.isSuccess && !bot} />;
+  if (bots.isSuccess && !bot) return <BotNotFound />;
 
-  const { status, error } = chat.data;
+  if (!snapshot.data || !bot) return <ConversationLoading />;
 
+  const { status, error } = snapshot.data;
   const running = status === "running";
 
   return (
@@ -509,21 +378,19 @@ export function Chat({ botId }: { botId: string }) {
         />
         <ChatTranscript
           bot={bot}
-          transcript={transcript}
-          outgoing={outgoing}
+          conversation={conversation}
           running={running}
           error={error}
-          jobFor={jobFor}
-          onReply={setReplyTo}
+          jobStatus={jobStatus}
           onOpenJob={setJob}
-          sendMessage={sendMessage}
         />
         <ChatComposer
           bot={bot}
           bots={bots.data ?? []}
-          sending={sending}
+          draftKey={target.key}
+          sending={conversation.sending}
           running={running}
-          onStop={() => stop.mutate()}
+          onStop={() => conversation.stop.mutate()}
         />
       </div>
       {job ? (

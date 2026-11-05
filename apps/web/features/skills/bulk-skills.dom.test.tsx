@@ -2,7 +2,8 @@ import { expect, spyOn, test } from "bun:test";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act, type ReactNode } from "react";
-import { queryClient, type Bot } from "@/lib/api";
+import { queryClient } from "@/lib/api";
+import type { Bot } from "@/features/bots/api";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 
 type Package = {

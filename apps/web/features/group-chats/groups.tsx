@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { IconPencil } from "@tabler/icons-react";
@@ -26,55 +26,44 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { type Bot, botsQuery } from "@/features/bots/api";
 import {
-  type Bot,
   type GroupChat,
   type GroupChatSnapshot,
-  type Message,
-  botsQuery,
-  call,
-  follow,
   groupChatQuery,
   groupPath,
   groupsQuery,
-  queryClient,
-  send,
-} from "@/lib/api";
-import { BotAvatar, botColor } from "@/features/bots/avatar";
+} from "./api";
+import type { Message } from "@/features/chat/api";
+import { call, queryClient, send } from "@/lib/api";
+import { BotAvatar, botColor } from "@/components/bot-avatar";
 import {
   ConfirmDeleteContent,
   MobileSidebarTrigger,
 } from "@/components/workspace";
-import { outgoingMessage } from "@/features/chat/chat";
-import { confirm, useOutgoing } from "@/features/chat/delivery";
 import {
   ConversationEmpty,
   ConversationError,
   ConversationLoading,
-  ConversationRows,
+  ConversationMessages,
   ConversationScroller,
-  LoadEarlier,
-  useHistory,
-  useMessageSending,
+  SendError,
+  useConversation,
 } from "@/features/chat/conversation";
+import type { ConversationTarget } from "@/features/chat/conversation-target";
 import {
   BotMessage,
-  OwnerMessage,
   TypingDots,
   ARRIVAL,
-  useArrivals,
-  mergeMessages,
-  reactionsOf,
+  hasContent,
 } from "@/features/chat/transcript";
 import { Composer } from "@/features/chat/composer";
 import { groupSourcesOf } from "@/features/chat/sources";
-
-function isShown(message: Message) {
-  return (
-    (message.role === "user" || message.role === "assistant") &&
-    (message.content.trim() !== "" || Boolean(message.attachments?.length))
-  );
-}
+import {
+  MAX_GROUP_MEMBERS,
+  MAX_GROUP_NAME_CHARS,
+  MIN_GROUP_MEMBERS,
+} from "@crumble/server/contract/limits";
 
 function senderBot(message: Message, byId: Map<string, Bot>) {
   return message.origin?.agentId ? byId.get(message.origin.agentId) : undefined;
@@ -93,39 +82,27 @@ const MEMBER_STATUS = {
   idle: "is here",
 };
 
-function useGroupFollow(groupId: string, path: string) {
-  const navigate = useNavigate();
+const groupConversation = (
+  id: string,
+): ConversationTarget<GroupChatSnapshot> => {
+  const path = groupPath(id);
 
-  useEffect(() => {
-    const controller = new AbortController();
-
-    void follow(
-      `${path}/events`,
-      {
-        onOpen: () =>
-          void queryClient.invalidateQueries({
-            queryKey: groupChatQuery(groupId).queryKey,
-          }),
-        onEvent: (event, data) => {
-          if (event === "snapshot")
-            queryClient.setQueryData(
-              groupChatQuery(groupId).queryKey,
-              JSON.parse(data),
-            );
-        },
-        onGone: () => {
-          void queryClient.invalidateQueries({
-            queryKey: groupsQuery.queryKey,
-          });
-          void navigate({ to: "/" });
-        },
-      },
-      controller.signal,
-    );
-
-    return () => controller.abort();
-  }, [groupId, path, navigate]);
-}
+  return {
+    key: `group:${id}`,
+    path,
+    history: `${path}/history`,
+    query: groupChatQuery(id),
+    shown: (message) =>
+      (message.role === "user" || message.role === "assistant") &&
+      hasContent(message),
+    reactionTarget: (message) => message.replyTo,
+    sendContext: () => ({}),
+    stop: () => send<"stopGroupChat">(`${path}/stop`, "POST"),
+    followsAfterView: () => false,
+    refreshList: () =>
+      queryClient.invalidateQueries({ queryKey: groupsQuery.queryKey }),
+  };
+};
 
 function GroupHeader({
   groupId,
@@ -245,39 +222,10 @@ function isRunning(activity: GroupChatSnapshot["activity"]) {
   );
 }
 
-function earliestOf(
-  older: { hasMore: boolean; oldestEntryId: string | null } | null | undefined,
-  live: GroupChatSnapshot,
-) {
-  const page = older ?? live;
-
-  return { hasMore: page.hasMore, oldest: page.oldestEntryId };
-}
-
 function colorOf(message: Message, byId: Map<string, Bot>) {
   const bot = senderBot(message, byId);
 
   return bot ? botColor(bot) : undefined;
-}
-
-function SendError({ message }: { message: string | null | undefined }) {
-  if (!message) return null;
-
-  return (
-    <p className="mx-auto w-full max-w-4xl px-4 text-xs text-destructive">
-      {message}
-    </p>
-  );
-}
-
-function useConfirmed(groupId: string, live: Message[] | undefined) {
-  useEffect(() => {
-    if (live)
-      confirm(
-        `group:${groupId}`,
-        new Set(live.flatMap((message) => message.requestId ?? [])),
-      );
-  }, [groupId, live]);
 }
 
 function membersOf(memberIds: string[], byId: Map<string, Bot>) {
@@ -307,53 +255,11 @@ function GroupSender({
   );
 }
 
-function useGroupChatSession(groupId: string) {
-  const snapshot = useQuery(groupChatQuery(groupId));
-  const bots = useQuery(botsQuery).data ?? [];
-  const outgoing = useOutgoing(`group:${groupId}`);
-  const path = groupPath(groupId);
-  const sending = useMessageSending(`group:${groupId}`, path);
-
-  useGroupFollow(groupId, path);
-
-  const live = snapshot.data?.messages;
-  const { arrival, remember } = useArrivals(live);
-  const { older, loadEarlier } = useHistory(`${path}/history`, remember);
-
-  useConfirmed(groupId, live);
-
-  // The live transcript reports the stopped turn.
-  // react-doctor-disable-next-line query-mutation-missing-invalidation
-  const stop = useMutation({ mutationFn: () => send(`${path}/stop`, "POST") });
-
-  return {
-    snapshot,
-    bots,
-    outgoing,
-    path,
-    ...sending,
-    arrival,
-    older,
-    loadEarlier,
-    stop,
-  };
-}
-
 export function GroupChatView({ groupId }: { groupId: string }) {
-  const {
-    snapshot,
-    bots,
-    outgoing,
-    path,
-    replyTo,
-    setReplyTo,
-    sendError,
-    sendMessage,
-    arrival,
-    older,
-    loadEarlier,
-    stop,
-  } = useGroupChatSession(groupId);
+  const target = useMemo(() => groupConversation(groupId), [groupId]);
+  const { snapshot, ...conversation } = useConversation(target);
+  const bots = useQuery(botsQuery).data ?? [];
+  const { replyTo, setReplyTo, sendError, sendMessage } = conversation.sending;
 
   if (snapshot.isError) return <ConversationError error={snapshot.error} />;
 
@@ -361,27 +267,10 @@ export function GroupChatView({ groupId }: { groupId: string }) {
 
   const { groupChat, activity } = snapshot.data;
   const byId = new Map(bots.map((bot) => [bot.id, bot]));
-
   const members = membersOf(groupChat.memberIds, byId);
 
   const statusOf = (id: string) =>
     activity.members.find((member) => member.agentId === id);
-
-  const messages = mergeMessages(older?.messages ?? [], snapshot.data.messages);
-
-  const shown = messages.filter(isShown);
-
-  const reactions = reactionsOf(messages, true);
-
-  const byEntry = new Map(
-    messages.map((message) => [message.entryId, message]),
-  );
-
-  const running = isRunning(activity);
-  const { hasMore, oldest } = earliestOf(older, snapshot.data);
-
-  const attachmentPath = (entryId: string, index: number) =>
-    `${path}/attachments/${encodeURIComponent(entryId)}/${index}`;
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -392,71 +281,38 @@ export function GroupChatView({ groupId }: { groupId: string }) {
         statusOf={statusOf}
       />
       <ConversationScroller>
-        {hasMore && oldest && (
-          <LoadEarlier
-            pending={loadEarlier.isPending}
-            onLoad={() => loadEarlier.mutate(oldest)}
-          />
-        )}
-        {shown.length === 0 && outgoing.length === 0 && (
-          <ConversationEmpty title="Start the conversation">
-            Everyone here reads every message. Mention a bot with @ to ask only
-            it.
-          </ConversationEmpty>
-        )}
-        <ConversationRows
-          messages={shown}
-          arrival={arrival}
-          byEntry={byEntry}
-          reactions={reactions}
-          onReply={setReplyTo}
-          attachmentPath={attachmentPath}
+        <ConversationMessages
+          conversation={conversation}
+          empty={
+            <ConversationEmpty title="Start the conversation">
+              Everyone here reads every message. Mention a bot with @ to ask
+              only it.
+            </ConversationEmpty>
+          }
           renderMessage={(message) => (
             <BotMessage
               message={message}
               sender={<GroupSender message={message} byId={byId} />}
               color={colorOf(message, byId)}
-              reactions={reactions.get(message.entryId)}
+              reactions={conversation.reactions.get(message.entryId)}
               sources={groupSourcesOf(message)}
               onReply={setReplyTo}
             />
           )}
         />
-        {outgoing.map((message) => (
-          <MessageScrollerItem
-            key={message.requestId}
-            messageId={message.requestId}
-            className={ARRIVAL}
-          >
-            <OwnerMessage
-              message={outgoingMessage(message)}
-              uploads={message.uploads}
-              delivery={message.state}
-              onRetry={() =>
-                void sendMessage(
-                  message.content,
-                  message.uploads,
-                  message.requestId,
-                  message.replyTo,
-                )
-              }
-              attachmentPath={attachmentPath}
-            />
-          </MessageScrollerItem>
-        ))}
         <GroupActivityRows activity={activity} byId={byId} />
       </ConversationScroller>
       <SendError message={sendError} />
       <Composer
         key={groupId}
-        draftKey={`group:${groupId}`}
+        draftKey={target.key}
         placeholder={`Message ${groupChat.name}`}
-        running={running}
+        running={isRunning(activity)}
         replyingTo={replyLabel(replyTo)}
         onCancelReply={() => setReplyTo(null)}
         mentionable={members.filter((member) => member.enabled)}
         onSend={(content, uploads) => sendMessage(content, uploads)}
-        onStop={() => stop.mutate()}
+        onStop={() => conversation.stop.mutate()}
       />
     </div>
   );
@@ -565,7 +421,11 @@ function GroupFormButtons({
 }
 
 function isValidGroup(name: string, memberIds: string[]) {
-  return name.trim() !== "" && memberIds.length >= 2 && memberIds.length <= 6;
+  return (
+    name.trim() !== "" &&
+    memberIds.length >= MIN_GROUP_MEMBERS &&
+    memberIds.length <= MAX_GROUP_MEMBERS
+  );
 }
 
 /** Creates a group chat, or edits `group` when given. */
@@ -583,8 +443,8 @@ export function GroupForm({ group }: { group?: GroupChat }) {
       const input = { name: name.trim(), memberIds };
 
       return group
-        ? call<GroupChat, typeof input>(groupPath(group.id), "PATCH", input)
-        : call<GroupChat, typeof input>("/v1/group-chats", "POST", input);
+        ? call<"updateGroupChat">(groupPath(group.id), "PATCH", input)
+        : call<"createGroupChat">("/v1/group-chats", "POST", input);
     },
     onSuccess: async (saved) => {
       await queryClient.invalidateQueries({ queryKey: groupsQuery.queryKey });
@@ -596,7 +456,8 @@ export function GroupForm({ group }: { group?: GroupChat }) {
   });
 
   const remove = useMutation({
-    mutationFn: (id: string) => send(groupPath(id), "DELETE"),
+    mutationFn: (id: string) =>
+      send<"deleteGroupChat">(groupPath(id), "DELETE"),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: groupsQuery.queryKey });
       await navigate({ to: "/" });
@@ -628,7 +489,7 @@ export function GroupForm({ group }: { group?: GroupChat }) {
               <Input
                 id="group-name"
                 required
-                maxLength={80}
+                maxLength={MAX_GROUP_NAME_CHARS}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
               />
@@ -647,7 +508,7 @@ export function GroupForm({ group }: { group?: GroupChat }) {
                 key={bot.id}
                 bot={bot}
                 on={selected.has(bot.id)}
-                full={memberIds.length >= 6}
+                full={memberIds.length >= MAX_GROUP_MEMBERS}
                 onToggle={(next) => toggle(bot, next)}
               />
             ))}

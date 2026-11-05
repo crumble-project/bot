@@ -11,14 +11,10 @@ import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { agentPath, queryClient, send } from "@/lib/api";
+import { send } from "@/lib/api";
+import { type CodingJob, jobPath, refreshJobs } from "./api";
 
-export type Question = {
-  id: string;
-  text: string;
-  options?: string[] | undefined;
-  multiple?: boolean | undefined;
-};
+export type Question = NonNullable<CodingJob["question"]>;
 
 /** One option row: a radio for a single choice, a checkbox for several. */
 function OptionRow({
@@ -90,13 +86,12 @@ export function JobQuestionAnswer({
 
   const answer = useMutation({
     mutationFn: (sent: string) =>
-      send(
-        `${agentPath(botId)}/coding-jobs/${encodeURIComponent(job)}/answer`,
+      send<"answerCodingJob">(
+        `${jobPath(botId, "coding", job)}/answer`,
         "POST",
         { questionId: question.id, text: sent },
       ),
-    onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: ["jobs", botId, "coding"] }),
+    onSettled: () => refreshJobs(botId, "coding"),
   });
 
   const submit = () => {

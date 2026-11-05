@@ -10,31 +10,35 @@ import {
 import { cn } from "@/lib/utils";
 import {
   type Bot,
-  type Model,
   agentPath,
   botsQuery,
-  call,
-  modelsQuery,
-  queryClient,
-} from "@/lib/api";
+  type BotInput,
+  refreshBots,
+} from "./api";
+import { type Model, modelsQuery } from "@/features/settings/api";
+import { queryClient, send } from "@/lib/api";
+import { THINKING_LEVELS } from "@crumble/server/contract/inputs";
 
-export const THINKING_LEVELS = [
-  { label: "Off", value: "off" },
-  { label: "Minimal", value: "minimal" },
-  { label: "Low", value: "low" },
-  { label: "Medium", value: "medium" },
-  { label: "High", value: "high" },
-  { label: "Extra high", value: "xhigh" },
-  { label: "Maximum", value: "max" },
-] as const;
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 
-export type ThinkingLevel = (typeof THINKING_LEVELS)[number]["value"];
+const LEVEL_LABELS: Record<ThinkingLevel, string> = {
+  off: "Off",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Maximum",
+};
 
-const ORDER = THINKING_LEVELS.map((level) => level.value);
+const LEVELS = THINKING_LEVELS.map((value) => ({
+  value,
+  label: LEVEL_LABELS[value],
+}));
 
 /** The levels `model` takes; a model ID outside the catalog may take any. */
 export const levelsOf = (model?: Model): readonly ThinkingLevel[] =>
-  model?.thinkingLevels ?? ORDER;
+  model?.thinkingLevels ?? THINKING_LEVELS;
 
 /** The level a turn runs at, the nearest supported one preferring higher, as Pi AI's `clampThinkingLevel`. */
 export function clampLevel(
@@ -44,12 +48,12 @@ export function clampLevel(
   const supported = new Set(levels);
 
   if (supported.has(level)) return level;
-  const index = ORDER.indexOf(level);
+  const index = THINKING_LEVELS.indexOf(level);
 
   return (
-    ORDER.slice(index + 1).find((each) => supported.has(each)) ??
-    ORDER.slice(0, index)
-      .reverse()
+    THINKING_LEVELS.slice(index + 1).find((each) => supported.has(each)) ??
+    THINKING_LEVELS.slice(0, index)
+      .toReversed()
       .find((each) => supported.has(each)) ??
     levels[0] ??
     "off"
@@ -71,7 +75,7 @@ export function ReasoningSelect({
   compact?: boolean;
   disabled?: boolean;
 }) {
-  const items = THINKING_LEVELS.filter((level) => levels.includes(level.value));
+  const items = LEVELS.filter((level) => levels.includes(level.value));
 
   return (
     <Select
@@ -115,9 +119,9 @@ export function BotReasoning({ bot }: { bot: Bot }) {
 
   const save = useMutation({
     mutationFn: (thinkingLevel: ThinkingLevel) =>
-      call<Bot, Pick<Bot, "inference">>(agentPath(bot.id), "PATCH", {
+      send<"updateAgent">(agentPath(bot.id), "PATCH", {
         inference: { ...bot.inference, thinkingLevel },
-      }),
+      } satisfies Partial<BotInput>),
     onMutate: (thinkingLevel) =>
       queryClient.setQueryData(botsQuery.queryKey, (bots) =>
         bots?.map((each) =>
@@ -126,8 +130,7 @@ export function BotReasoning({ bot }: { bot: Bot }) {
             : each,
         ),
       ),
-    onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: botsQuery.queryKey }),
+    onSettled: () => refreshBots(),
   });
 
   if (levels.length < 2) return null;

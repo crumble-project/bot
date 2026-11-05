@@ -7,13 +7,13 @@ import {
   useState,
 } from "react";
 import { Markdown, type MarkdownComponents } from "@tanstack/markdown/react";
+import { PELE_PREFIX } from "@crumble/server/contract/ui-modules";
 import type * as Pele from "pele/lazy";
 import { streamingMarkdownExtension } from "@tanstack/markdown/extensions/streaming";
 import type { MarkdownExtension } from "@tanstack/markdown";
-import { type Sources, splitSources } from "@/features/chat/sources";
+import { type Sources, splitSources } from "@/lib/sources";
 
-// Served unbundled by src/web-ui.ts (PELE_PREFIX), so each diagram type loads only when shown.
-const PELE = "/ui-modules/pele/lazy.js";
+const PELE = `${PELE_PREFIX}/lazy.js`;
 
 const loadPele = (): Promise<typeof Pele> => import(PELE);
 

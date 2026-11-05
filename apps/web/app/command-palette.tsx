@@ -14,12 +14,14 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { useSidebar } from "@/components/ui/sidebar";
-import { botsQuery, groupsQuery } from "@/lib/api";
+import { botsQuery } from "@/features/bots/api";
+import { groupsQuery } from "@/features/group-chats/api";
 import { setTheme, useTheme } from "@/lib/theme";
-import { BotAvatar } from "@/features/bots/avatar";
-import { SETTINGS_SECTIONS } from "@/features/settings/settings";
-import { useIsAdmin } from "@/features/settings/admin-settings";
+import { BotAvatar } from "@/components/bot-avatar";
+import { settingsSections } from "@/features/settings/sections";
+import { useIsAdmin } from "@/lib/auth-client";
 import { THEME_OPTIONS, WORKSPACE } from "./navigation";
+import { MIN_GROUP_MEMBERS } from "@crumble/server/contract/limits";
 
 // Chat items keep their id as the value so equal names stay distinct; match them by name only.
 const filter = (value: string, search: string, keywords?: string[]) =>
@@ -133,7 +135,7 @@ export function CommandPalette({
               <IconPlus />
               New bot
             </CommandItem>
-            {(bots.data?.length ?? 0) >= 2 && (
+            {(bots.data?.length ?? 0) >= MIN_GROUP_MEMBERS && (
               <CommandItem onSelect={() => go({ to: "/groups/new" })}>
                 <IconPlus />
                 New group chat
@@ -149,20 +151,16 @@ export function CommandPalette({
             ))}
           </CommandGroup>
           <CommandGroup heading="Settings">
-            {SETTINGS_SECTIONS.flatMap((section) =>
-              admin || !("admin" in section)
-                ? [
-                    <CommandItem
-                      key={section.to}
-                      value={`Settings ${section.label}`}
-                      onSelect={() => go({ to: section.to })}
-                    >
-                      <section.icon />
-                      {section.label}
-                    </CommandItem>,
-                  ]
-                : [],
-            )}
+            {settingsSections(admin).map((section) => (
+              <CommandItem
+                key={section.to}
+                value={`Settings ${section.label}`}
+                onSelect={() => go({ to: section.to })}
+              >
+                <section.icon />
+                {section.label}
+              </CommandItem>
+            ))}
           </CommandGroup>
           <CommandGroup heading="Theme">
             {THEME_OPTIONS.map((option) => (

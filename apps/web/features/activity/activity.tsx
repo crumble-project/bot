@@ -37,21 +37,14 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import {
-  type ActivityFeed,
-  type Bot,
-  api,
-  botsQuery,
-  queryClient,
-} from "@/lib/api";
-import { BotAvatar } from "@/features/bots/avatar";
-import {
-  ChangeDiff,
-  RevertChange,
-  changeSummary,
-  changeTitle,
-} from "./changes";
+import type { ActivityFeed } from "./api";
+import { type Bot, botsQuery } from "@/features/bots/api";
+import { api, queryClient } from "@/lib/api";
+import { BotAvatar } from "@/components/bot-avatar";
+import { StateDiff } from "@/components/state-diff";
+import { RevertChange, changeSummary, changeTitle } from "./changes";
 import { FilterPills, WorkspacePage } from "@/components/workspace";
+import { activityKey } from "./api";
 
 type Activity = ActivityFeed["activities"][number];
 
@@ -150,7 +143,7 @@ function detailText(activity: Operational) {
 
 function useActivityFeed(kind: string, agentId: string) {
   return useInfiniteQuery({
-    queryKey: ["activity", kind, agentId],
+    queryKey: [...activityKey, kind, agentId],
     initialPageParam: "",
     queryFn: ({ pageParam, signal }) => {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
@@ -161,7 +154,7 @@ function useActivityFeed(kind: string, agentId: string) {
 
       if (pageParam) params.set("cursor", pageParam);
 
-      return api<ActivityFeed>(`/v1/activity/feed?${params}`, { signal });
+      return api<"activity">(`/v1/activity/feed?${params}`, { signal });
     },
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
@@ -227,9 +220,7 @@ export function ActivityPage() {
     <WorkspacePage
       title="Activity"
       refreshing={feed.isFetching}
-      onRefresh={() =>
-        void queryClient.resetQueries({ queryKey: ["activity"] })
-      }
+      onRefresh={() => void queryClient.resetQueries({ queryKey: activityKey })}
     >
       <div className="flex items-center justify-between gap-2">
         <KindPills kind={kind} onChange={setKind} />
@@ -543,7 +534,10 @@ function ActivityDetails({ activity }: { activity: Activity }) {
   return (
     <div className="flex flex-col gap-2 px-3 pb-3 pl-[3.375rem]">
       {activity.kind === "change" ? (
-        <ChangeDiff change={activity.change} />
+        <StateDiff
+          before={activity.change.before}
+          after={activity.change.after}
+        />
       ) : (
         <pre className="max-h-96 overflow-auto rounded-lg border bg-muted/50 p-3 font-mono text-xs whitespace-pre-wrap break-all">
           {detailText(activity)}
