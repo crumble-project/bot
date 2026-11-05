@@ -1,8 +1,8 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import type { createAuth } from "./auth";
-import { ADMIN_ROLE } from "./auth";
-import { handleApiError } from "./api";
+import { ADMIN_ROLE, adminCount } from "./auth";
+import { handleApiError } from "./api-errors";
 import { routes } from "../contract/api-contract";
 
 type Accounts = Awaited<ReturnType<typeof createAuth>>;
@@ -62,12 +62,6 @@ export function adminAPI(options: {
     return user;
   };
 
-  const adminCount = () =>
-    adapter.count({
-      model: "user",
-      where: [{ field: "role", value: ADMIN_ROLE }],
-    });
-
   app.openapi(routes.adminUsers, async (c) => {
     const users = await adapter.findMany<StoredUser>({
       model: "user",
@@ -85,7 +79,7 @@ export function adminAPI(options: {
     if (
       role === "user" &&
       user.role === ADMIN_ROLE &&
-      (await adminCount()) <= 1
+      (await adminCount(adapter)) <= 1
     )
       return c.json({ error: "The server needs at least one admin" }, 409);
     await auth.api.setRole({

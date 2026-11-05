@@ -1,7 +1,8 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { agents } from "../bots/schema";
-import type { ScheduleKind } from "../shared/domain";
 import { DEFAULT_SCHEDULE_TIMEOUT_SECONDS } from "../shared/limits";
+
+export type ScheduleKind = "prompt" | "script";
 
 export const schedules = sqliteTable("schedules", {
   id: text("id").primaryKey(),

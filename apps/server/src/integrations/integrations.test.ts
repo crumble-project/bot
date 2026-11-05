@@ -6,7 +6,8 @@ import {
   BACKGROUND_CONTEXT,
   withAbortSignal,
 } from "@earendil-works/chord/context";
-import type { Agent, MCPServer } from "../shared/domain";
+import type { Agent } from "../shared/domain";
+import type { MCPServer } from "./mcp-server-repository";
 import { defaultAvatarDefinition } from "../contract/avatar";
 import {
   mcpToolPrefix,

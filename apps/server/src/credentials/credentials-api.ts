@@ -1,8 +1,7 @@
-import { routes, credentialUsesInput } from "../contract/api-contract";
+import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import type { CredentialsAccess } from "./credentials";
 import type { BotsAccess } from "../bots/bots";
-import { credentialSaveInput } from "../shared/domain";
 
 type CredentialRoutesOptions = {
   register: Register;
@@ -21,10 +20,13 @@ export function registerCredentialRoutes(options: CredentialRoutesOptions) {
   });
   register(routes.saveAgentCredential, async (c) => {
     service.agent(c.req.param("id"));
-    const input = credentialSaveInput.parse(await c.req.json());
 
     return c.json(
-      await credentials.save(c.req.param("id"), c.req.param("name"), input),
+      await credentials.save(
+        c.req.param("id"),
+        c.req.param("name"),
+        c.req.valid("json"),
+      ),
       200,
     );
   });
@@ -42,10 +44,13 @@ export function registerCredentialRoutes(options: CredentialRoutesOptions) {
   });
   register(routes.agentCredentialUses, (c) => {
     service.agent(c.req.param("id"));
-    const query = credentialUsesInput.parse(c.req.query());
 
     return c.json(
-      credentials.uses(c.req.param("id"), c.req.param("name"), query),
+      credentials.uses(
+        c.req.param("id"),
+        c.req.param("name"),
+        c.req.valid("query"),
+      ),
       200,
     );
   });

@@ -3,12 +3,7 @@ import { Effect } from "effect";
 import { upgradeWebSocket } from "@hono/bun";
 import { streamSSE } from "hono/streaming";
 import type { WSContext, WSMessageReceive } from "hono/ws";
-import {
-  desktopControlInput,
-  desktopViewerInput,
-  routes,
-  type contractApp,
-} from "../contract/api-contract";
+import { routes, type contractApp } from "../contract/api-contract";
 import type { ControlState, DesktopControlAccess } from "./desktop-control";
 import {
   bridgeDesktop,
@@ -19,7 +14,7 @@ import {
   type ViewerTickets,
 } from "./desktop-viewer";
 import type { BotsAccess } from "../bots/bots";
-import type { DesktopStream } from "../workspaces/workspace";
+import type { DesktopStream, Workspaces } from "../workspaces/workspace";
 import type { DesktopOpenError } from "../workspaces/workspace-errors";
 import { Conflict } from "../shared/errors";
 import type { Runner } from "../shared/runner";
@@ -66,29 +61,18 @@ const bytesOf = async (data: WSMessageReceive) => {
 export function registerDesktopRoutes(options: {
   app: ReturnType<typeof contractApp>;
   register: Register;
-  service: BotsAccess;
+  service: Pick<BotsAccess, "agent">;
   run: Runner<never>;
-  /** Whether the server has a desktop workspace image. */
-  desktop: boolean;
+  workspaces: Workspaces | undefined;
   control: DesktopControlAccess;
   tickets: ViewerTickets;
-  openDesktop?:
-    | ((
-        agentId: string,
-        options: { passive: boolean },
-      ) => Effect.Effect<DesktopStream, DesktopOpenError>)
-    | undefined;
-  startDesktop?:
-    | ((agentId: string) => Effect.Effect<void, DesktopOpenError>)
-    | undefined;
-  desktopRunning?: ((agentId: string) => boolean) | undefined;
 }) {
-  const { app, register, service, run, control, tickets } = options;
+  const { app, register, service, run, workspaces, control, tickets } = options;
   // The viewer of each connection, from its redeemed ticket to its WebSocket.
   const viewers = new WeakMap<Request, Viewer>();
 
   const hasBotDesktop = (agent: Pick<Agent, "tools">) =>
-    options.desktop && usesDesktop(agent);
+    workspaces?.desktop === true && usesDesktop(agent);
 
   const desktopAgent = (id: string) => {
     const agent = service.agent(id);
@@ -105,9 +89,8 @@ export function registerDesktopRoutes(options: {
 
   register(routes.putDesktopControl, async (c) => {
     const agent = desktopAgent(c.req.param("id"));
-    const input = desktopControlInput.parse(await c.req.json());
 
-    return c.json(control.set(agent.id, input.holder), 200);
+    return c.json(control.set(agent.id, c.req.valid("json").holder), 200);
   });
 
   register(routes.desktopEvents, (c) => {
@@ -151,7 +134,7 @@ export function registerDesktopRoutes(options: {
     return c.json(
       {
         running:
-          hasBotDesktop(agent) && options.desktopRunning?.(agent.id) === true,
+          hasBotDesktop(agent) && workspaces?.desktopRunning(agent.id) === true,
       },
       200,
     );
@@ -159,13 +142,13 @@ export function registerDesktopRoutes(options: {
 
   register(routes.createDesktopViewer, (c) => {
     const agent = desktopAgent(c.req.param("id"));
-    const { passive = false } = desktopViewerInput.parse(c.req.query());
+    const { passive = false } = c.req.valid("query");
     const { ticket, expiresAt } = tickets.issue(agent.id, passive);
 
     // The machine boots while the client loads the page; the viewer's WebSocket reports any failure to the owner.
-    if (!passive && options.startDesktop)
+    if (!passive && workspaces)
       run.runFork(
-        options
+        workspaces
           .startDesktop(agent.id)
           .pipe(
             Effect.catchCause((cause) =>
@@ -200,7 +183,7 @@ export function registerDesktopRoutes(options: {
       // Spent here, before the upgrade: a link opens one connection.
       const viewer = tickets.redeem(c.req.param("ticket"));
 
-      if (!viewer || !options.openDesktop) return c.notFound();
+      if (!viewer || !workspaces) return c.notFound();
 
       viewers.set(c.req.raw, viewer);
 
@@ -237,7 +220,7 @@ export function registerDesktopRoutes(options: {
             Effect.sync(() => ws.close(1011, reason));
 
           run.runFork(
-            options.openDesktop!(agentId, { passive }).pipe(
+            workspaces!.openDesktop(agentId, { passive }).pipe(
               Effect.flatMap((stream) => Effect.sync(() => attach(stream))),
               Effect.tapCause((cause) =>
                 Effect.logError("Opening a bot desktop failed", agentId, cause),

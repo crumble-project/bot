@@ -5,10 +5,14 @@ import {
   type RouteHandler,
 } from "@hono/zod-openapi";
 
-/** Registers a contract route's handler on the API app. */
+/**
+ * Registers a contract route's handler on the API app, behind the route's request schemas. `parsesBody` leaves the
+ * body to a handler that must read it first, such as a PATCH that merges it over the stored record.
+ */
 export type Register = <R extends RouteConfig>(
   definition: R & { getRoutingPath: () => string },
   handler: RouteHandler<R>,
+  options?: { parsesBody: true },
 ) => void;
 
 export const json = <S extends z.ZodType>(

@@ -1,10 +1,15 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { type BunWebSocketData, websocket } from "@hono/bun";
 import { createAuth, trustedOriginsFor } from "./auth";
+import { accountDir, accountsDir } from "./data-dir";
 import { DataDirLocked, lockDataDir } from "./data-lock";
 import { adminAPI } from "./admin-api";
-import { novncResponse, ticketOwner } from "../bot-desktop/desktop-viewer";
+import {
+  novncResponse,
+  VIEWER_PREFIX,
+  viewerPathOwner,
+} from "../bot-desktop/desktop-viewer";
 import { createTenant } from "./tenant";
 import { webUIRoutes } from "./web-ui";
 import {
@@ -15,10 +20,10 @@ import {
 } from "../integrations/mcp-oauth";
 import type { Effect, Scope } from "effect";
 import type { Workspaces } from "../workspaces/workspace";
-import { configureDevWorkspaces } from "./dev-workspaces";
+import { devWorkspaceEnv } from "./dev-workspaces";
 import { MASTER_KEY_VARIABLE } from "../shared/secret-box";
 
-const TENANT_PREFIXES = ["/v1/", "/desktop-viewer/", "/api/auth/"];
+const TENANT_PREFIXES = ["/v1/", `${VIEWER_PREFIX}/`, "/api/auth/"];
 
 const SERVER_PATHS = [
   ...TENANT_PREFIXES.map((prefix) => `${prefix}*`),
@@ -35,7 +40,9 @@ function hostedResponse(
 
   if (path === CLIENT_DOCUMENT_PATH)
     return oauthClient
-      ? Response.json(clientDocumentBody(oauthClient))
+      ? Response.json(clientDocumentBody(oauthClient), {
+          headers: { "Cache-Control": "public, max-age=3600" },
+        })
       : new Response("Not found", { status: 404 });
 
   return undefined;
@@ -61,13 +68,7 @@ function needsOriginForWrite(request: Request, requestOrigin: string | null) {
   );
 }
 
-// A viewer link is its own credential: a web view cannot send the owner's session, so without one the link
-// goes to the account it names. A session keeps it within the session's account.
-function ticketOwnerOf(path: string) {
-  return ticketOwner(
-    /^\/desktop-viewer\/([^/]+)(?:\/websockify)?$/.exec(path)?.[1] ?? "",
-  );
-}
+const closing = () => new Response("Server is closing", { status: 503 });
 
 type Tenant = Awaited<ReturnType<typeof createTenant>>;
 
@@ -110,6 +111,8 @@ type ServerOptions = {
   port?: number;
   publicUrl?: string;
   skillsDir?: string;
+  /** Where workspace backends read their images and secrets; the process's environment by default. */
+  workspaceEnv?: Record<string, string | undefined>;
   /** Each account's workspaces instead of those from the environment, owned by the account's scope. */
   workspaces?: (
     userId: string,
@@ -131,6 +134,10 @@ function listenSettings(options: ServerOptions) {
 export async function startServer(options: ServerOptions = {}) {
   const { dataDir, publicUrl, hostname, port } = listenSettings(options);
 
+  const oauthClient = publicUrl
+    ? clientDocument(publicOrigin(publicUrl))
+    : undefined;
+
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   chmodSync(dataDir, 0o700);
 
@@ -147,27 +154,18 @@ export async function startServer(options: ServerOptions = {}) {
   let ready: Promise<void>;
 
   const tenant = (userId: string) => {
-    if (!/^[A-Za-z0-9_-]{1,128}$/.test(userId))
-      throw new Error("Invalid account ID");
+    const userDir = accountDir(dataDir, userId);
     let pending = tenants.get(userId);
 
     if (!pending) {
       pending = createTenant({
-        dataDir: join(dataDir, "users", userId),
+        dataDir: userDir,
         tenantId: userId,
         skillsDir: options.skillsDir ?? process.env["CRUMBLE_SKILLS_DIR"],
-        publicUrl,
+        oauthClient,
+        workspaceEnv: options.workspaceEnv ?? process.env,
         workspaces: options.workspaces?.(userId),
-        workspaceSettings: () => {
-          const settings = identity!.settings.get();
-
-          return {
-            cpus: settings.workspaceCpus,
-            memoryMib: settings.workspaceMemoryMib,
-            baseImage: settings.codingImage,
-            questionGraceMs: settings.questionGraceMinutes * 60_000,
-          };
-        },
+        serverSettings: () => identity!.settings.get(),
       });
       tenants.set(userId, pending);
       void pending.catch(() => tenants.delete(userId));
@@ -181,7 +179,7 @@ export async function startServer(options: ServerOptions = {}) {
 
     tenants.delete(userId);
     await pending?.then((context) => context.close()).catch(() => undefined);
-    rmSync(join(dataDir, "users", userId), { recursive: true, force: true });
+    rmSync(accountDir(dataDir, userId), { recursive: true, force: true });
   };
 
   const close = async () => {
@@ -219,7 +217,9 @@ export async function startServer(options: ServerOptions = {}) {
       headers: request.headers,
     });
 
-    const owner = session ? undefined : ticketOwnerOf(path);
+    // A viewer link is its own credential: a web view cannot send the owner's session, so without one the link
+    // goes to the account it names. A session keeps it within the session's account.
+    const owner = session ? undefined : viewerPathOwner(path);
 
     if (owner && identity!.hasUser(owner) && !closed)
       return forward(request, bunServer, owner);
@@ -227,7 +227,7 @@ export async function startServer(options: ServerOptions = {}) {
     if (!session)
       return Response.json({ error: "Sign in required" }, { status: 401 });
 
-    if (closed) return new Response("Server is closing", { status: 503 });
+    if (closed) return closing();
     const response = await forward(request, bunServer, session.user.id);
 
     if (response) response.headers.set("Cache-Control", "no-store");
@@ -236,7 +236,7 @@ export async function startServer(options: ServerOptions = {}) {
   };
 
   const adminResponse = async (request: Request) => {
-    if (closed) return new Response("Server is closing", { status: 503 });
+    if (closed) return closing();
     const response = await admin!.fetch(request);
 
     response.headers.set("Cache-Control", "no-store");
@@ -245,7 +245,7 @@ export async function startServer(options: ServerOptions = {}) {
   };
 
   const restoreTenants = async (accounts: NonNullable<typeof identity>) => {
-    const usersDir = join(dataDir, "users");
+    const usersDir = accountsDir(dataDir);
 
     if (!existsSync(usersDir)) return;
 
@@ -256,10 +256,6 @@ export async function startServer(options: ServerOptions = {}) {
   };
 
   try {
-    const oauthClient = publicUrl
-      ? clientDocument(publicOrigin(publicUrl))
-      : undefined;
-
     const handle = async (
       request: Request,
       bunServer: Bun.Server<BunWebSocketData>,
@@ -356,10 +352,11 @@ function exitIfLocked(error: Error): never {
 }
 
 if (import.meta.main) {
-  if (process.argv.includes("--dev-workspaces"))
-    configureDevWorkspaces(process.env);
-
-  const running = await startServer().catch(exitIfLocked);
+  const running = await startServer(
+    process.argv.includes("--dev-workspaces")
+      ? { workspaceEnv: devWorkspaceEnv(process.env) }
+      : {},
+  ).catch(exitIfLocked);
 
   console.log(`Crumble server listening on ${running.server.url}`);
   console.log("Open it to create an account or sign in.");

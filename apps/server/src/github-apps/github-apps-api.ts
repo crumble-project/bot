@@ -1,13 +1,6 @@
 import { Effect } from "effect";
 import { routes } from "../contract/api-contract";
-import {
-  githubAppCompleteInput,
-  githubAppSignInInput,
-  githubAppManifestInput,
-  githubBotsInput,
-} from "../contract/github-apps";
 import type { Register } from "../contract/route";
-import { secretInput } from "../shared/domain";
 import type { BotsAccess } from "../bots/bots";
 import type { Runner } from "../shared/runner";
 import { Unavailable } from "../shared/errors";
@@ -50,7 +43,7 @@ export function registerGitHubAppRoutes(options: {
     c.json({ apps: await github(githubApps.list) }, 200),
   );
   register(routes.createGithubAppManifest, async (c) => {
-    const input = githubAppManifestInput.parse(await c.req.json());
+    const input = c.req.valid("json");
 
     return c.json(
       await github(
@@ -62,11 +55,9 @@ export function registerGitHubAppRoutes(options: {
       200,
     );
   });
-  register(routes.completeGithubApp, async (c) => {
-    const input = githubAppCompleteInput.parse(await c.req.json());
-
-    return c.json(await github(githubApps.complete(input)), 200);
-  });
+  register(routes.completeGithubApp, async (c) =>
+    c.json(await github(githubApps.complete(c.req.valid("json"))), 200),
+  );
   register(routes.connectGithubApp, async (c) =>
     c.json(await github(githubApps.connect(c.req.param("id"))), 200),
   );
@@ -75,7 +66,7 @@ export function registerGitHubAppRoutes(options: {
       await github(
         githubApps.assign(
           c.req.param("id"),
-          botIdsOf(githubBotsInput.parse(await c.req.json()).botIds),
+          botIdsOf(c.req.valid("json").botIds),
         ),
       ),
       200,
@@ -87,16 +78,14 @@ export function registerGitHubAppRoutes(options: {
     return c.body(null, 204);
   });
 
-  register(routes.signInGithubApp, async (c) => {
-    githubAppSignInInput.parse(await c.req.json());
-
-    return c.json(
+  register(routes.signInGithubApp, async (c) =>
+    c.json(
       { url: await github(githubAppUsers.authorize(c.req.param("id"))) },
       200,
-    );
-  });
+    ),
+  );
   register(routes.completeGithubAppSignIn, async (c) => {
-    const input = githubAppCompleteInput.parse(await c.req.json());
+    const input = c.req.valid("json");
 
     return c.json(
       await github(
@@ -123,7 +112,7 @@ export function registerGitHubAppRoutes(options: {
   register(routes.setGithubAppClientSecret, async (c) => {
     const id = c.req.param("id");
 
-    const clientSecret = secretInput.parse(await c.req.json());
+    const clientSecret = c.req.valid("json");
 
     return c.json(
       await github(
@@ -139,12 +128,12 @@ export function registerGitHubAppRoutes(options: {
     c.json({ accounts: await github(githubAccounts.list) }, 200),
   );
   register(routes.addGithubAccount, async (c) => {
-    const token = secretInput.parse(await c.req.json());
+    const token = c.req.valid("json");
 
     return c.json(await github(githubAccounts.add(token)), 200);
   });
   register(routes.setGithubAccountToken, async (c) => {
-    const token = secretInput.parse(await c.req.json());
+    const token = c.req.valid("json");
 
     return c.json(
       await github(githubAccounts.setToken(c.req.param("id"), token)),
@@ -152,7 +141,7 @@ export function registerGitHubAppRoutes(options: {
     );
   });
   register(routes.setGithubAccountBots, async (c) => {
-    const botIds = botIdsOf(githubBotsInput.parse(await c.req.json()).botIds);
+    const botIds = botIdsOf(c.req.valid("json").botIds);
 
     return c.json(
       await github(githubApps.assignAccount(c.req.param("id"), botIds)),

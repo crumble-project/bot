@@ -9,7 +9,7 @@ import {
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { createAPI } from "../../app/api";
+import { testAPI } from "../../../test/support/api";
 import {
   acceptsThinkingDisable,
   contextWindow,
@@ -19,7 +19,7 @@ import {
 import { claudeCodePlugin, claudeCodeOptions } from "./plugin";
 import { childEnv, claudeCodeStatus } from "./setup";
 import { pluginProviders } from "../../plugins/plugins";
-import { standaloneSignIns } from "../provider-auth";
+import { standaloneSignIns } from "../provider-auth-test-support";
 import type { AgentRuntime } from "../../bots/runtime";
 import { standaloneScheduler } from "../../automations/scheduler-test-support";
 import { standaloneBots } from "../../bots/bots";
@@ -216,8 +216,11 @@ function api(fake: Record<string, string>) {
   const dir = dataDir(fake);
   const store = new Store(dir);
   const plugin = claudeCodePlugin(dir, env());
-  const providers = pluginProviders([plugin]);
-  const providerAuth = standaloneSignIns(store.runtime, providers);
+
+  const providerAuth = standaloneSignIns(
+    store.runtime,
+    pluginProviders([plugin]),
+  );
   // SAFETY: provider routes never reach the runtime.
 
   const service = standaloneBots(store, {} as AgentRuntime);
@@ -226,14 +229,10 @@ function api(fake: Record<string, string>) {
     service.dispatch(a, p, r, s),
   );
 
-  const app = createAPI(service, token, {
+  const app = testAPI(service, token, {
     scheduler,
     providerAuth,
-    externalAuth: new Map(
-      providers.flatMap(({ provider: item, externalAuth }) =>
-        externalAuth ? [[item.id, externalAuth]] : [],
-      ),
-    ),
+    plugins: [plugin],
   });
 
   const request = (path: string, init: RequestInit = {}) =>

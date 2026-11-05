@@ -67,16 +67,19 @@ export function standaloneScheduler(
   intervalMs?: number,
   scriptRuns?: ScriptRuns["Service"],
   workspaces?: Workspaces,
-): SchedulerAccess {
-  return schedulerAccess(
-    ManagedRuntime.make(
-      Scheduler.layer(intervalMs).pipe(
-        Layer.provide(
-          standaloneDependencies(core, dispatch, scriptRuns, workspaces),
-        ),
+): SchedulerAccess & { service: Scheduler["Service"] } {
+  const runtime = ManagedRuntime.make(
+    Scheduler.layer(intervalMs).pipe(
+      Layer.provide(
+        standaloneDependencies(core, dispatch, scriptRuns, workspaces),
       ),
     ),
   );
+
+  return {
+    ...schedulerAccess(runtime),
+    service: runtime.runSync(Scheduler.use(Effect.succeed)),
+  };
 }
 
 /** Bot schedules and their scheduler over the tasks `core` reaches, with errors thrown, for a test without an account. */

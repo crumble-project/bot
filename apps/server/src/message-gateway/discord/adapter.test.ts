@@ -16,7 +16,7 @@ import {
   type DiscordMessage,
 } from "./adapter";
 import { discordPlugin } from "./plugin";
-import { pluginSettingKey } from "../../plugins/plugins";
+import { pluginSettingKey } from "../../shared/vendors";
 
 const message = (overrides: Partial<DiscordMessage> = {}): DiscordMessage => ({
   id: "inbound",

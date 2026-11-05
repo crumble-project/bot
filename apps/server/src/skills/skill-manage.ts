@@ -6,8 +6,8 @@ import {
   type Agent,
   type Skill,
   type SkillInput,
-  skillNameKey,
 } from "../shared/domain";
+import { skillNameKey } from "./skill-repository";
 import { Effect } from "effect";
 import {
   resolveSkill,

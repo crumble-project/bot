@@ -3,7 +3,7 @@ import { defineTool, LiveDoc } from "@earendil-works/pi-durable";
 import type { ToolExecutionApi } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord/context";
 import { Schema } from "effect";
-import { skillNameKey, type SkillDocument } from "../shared/domain";
+import { skillNameKey, type SkillDocument } from "./skill-repository";
 import {
   MAX_SKILL_DOCUMENT_PATH_CHARS,
   MAX_SKILL_NAME_CHARS,

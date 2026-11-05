@@ -24,6 +24,7 @@ import type {
 import { scaleLog, scaleSqrt, scaleTime, scaleUtc } from "d3-scale";
 import svgpath from "svgpath";
 import type { ChartLayoutInput } from "../contract/chart";
+import { CHART_SERIES_COLORS } from "../shared/limits";
 
 type Primitive = ChartLayoutInput["nodes"][number];
 
@@ -60,7 +61,10 @@ const theme = {
   muted: "currentColor",
   grid: "currentColor",
   background: "transparent",
-  palette: Array.from({ length: 8 }, (_, index) => `series-${index + 1}`),
+  palette: Array.from(
+    { length: CHART_SERIES_COLORS },
+    (_, index) => `series-${index + 1}`,
+  ),
 };
 
 const charts = {

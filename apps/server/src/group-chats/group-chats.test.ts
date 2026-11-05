@@ -14,7 +14,7 @@ import {
   fauxToolCall,
   type FauxResponseFactory,
 } from "@earendil-works/pi-ai/providers/faux";
-import { GROUP_TURN_BUDGET } from "../shared/domain";
+import { GROUP_TURN_BUDGET } from "./group-chat-repository";
 import type { GroupChatsAccess } from "./group-chats";
 import { standaloneGroupChats } from "./group-chats-test-support";
 import { GroupTranscripts } from "./group-transcripts";

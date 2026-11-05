@@ -1,6 +1,7 @@
 import type { SecretUnavailable } from "../secrets/secret-values";
 import { Effect, Schema } from "effect";
-import { pluginSettingKey, type CrumblePlugin } from "../plugins/plugins";
+import type { CrumblePlugin } from "../plugins/plugins";
+import { pluginSettingKey } from "../shared/vendors";
 import {
   MAX_PAGE_CHARS,
   VENDOR_TIMEOUT,

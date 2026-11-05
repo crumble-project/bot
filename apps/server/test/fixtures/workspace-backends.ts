@@ -29,6 +29,8 @@ export type BackendWorkspaces = {
   isRunning: (agentId: string) => Promise<boolean>;
 };
 
+const size = () => ({ cpus: 2, memoryMib: 4096 });
+
 const IMAGE = process.env["CRUMBLE_WORKSPACE_IMAGE"] ?? "";
 const DESKTOP_IMAGE = process.env["CRUMBLE_WORKSPACE_DESKTOP_IMAGE"] ?? "";
 
@@ -42,6 +44,7 @@ const microsandbox: WorkspaceBackend = {
   create: (options) => {
     const workspaces = new MicrosandboxWorkspaces(IMAGE, {
       ...options,
+      size,
       desktopImage: DESKTOP_IMAGE,
     });
 
@@ -99,6 +102,7 @@ const railway: WorkspaceBackend = {
   create: (options) => ({
     workspaces: new RailwayWorkspaces({
       ...options,
+      size,
       dataDir: railwayDataDir,
       ...(process.env["CRUMBLE_RAILWAY_REGION"] && {
         region: process.env["CRUMBLE_RAILWAY_REGION"],

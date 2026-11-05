@@ -9,12 +9,8 @@ import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { Store } from "../../test/support/store";
 import { BotNotices } from "../bots/bot-notices";
 import { Credentials } from "../credentials/credentials";
-import {
-  agentInput,
-  scheduleInput,
-  type Schedule,
-  type ScriptRun,
-} from "../shared/domain";
+import { agentInput, scheduleInput, type Schedule } from "../shared/domain";
+import type { ScriptRun } from "./script-run-repository";
 import { BotWorkspaces, type Workspaces } from "../workspaces/workspace";
 import { WORKSPACE_PATH } from "../../workspace-image/guest";
 import { DesktopNotConfigured } from "../workspaces/workspace-errors";

@@ -1,10 +1,6 @@
 import { z } from "zod";
 import { getSupportedThinkingLevels, type Models } from "@earendil-works/pi-ai";
-import {
-  routes,
-  providerLoginAnswerInput,
-  providerLoginInput,
-} from "../contract/api-contract";
+import { routes, providerLoginAnswerInput } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import type { ExternalAuth } from "../plugins/plugins";
 import {
@@ -14,13 +10,12 @@ import {
   Unavailable,
 } from "../shared/errors";
 import { loginMethods, type ProviderSignInsAccess } from "./provider-auth";
-import { secretInput } from "../shared/domain";
 
 type ProviderRoutesOptions = {
   register: Register;
   providerAuth: ProviderSignInsAccess;
   /** Providers whose sign-in happens outside Crumble, by provider ID. */
-  externalAuth?: ReadonlyMap<string, () => Promise<ExternalAuth>> | undefined;
+  externalAuth: ReadonlyMap<string, () => Promise<ExternalAuth>>;
 };
 
 /** The providers this server can serve; a saved credential may name a provider that has since been dropped. */
@@ -61,7 +56,7 @@ const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
           authMethods: loginMethods(item),
           ...providerAuth.status(item.id),
           activeLoginId: providerAuth.activeLoginId(item.id),
-          externalAuth: (await options.externalAuth?.get(item.id)?.()) ?? null,
+          externalAuth: (await options.externalAuth.get(item.id)?.()) ?? null,
         })),
       ),
       200,
@@ -94,13 +89,13 @@ const registerProviderCredentialRoutes = (options: ProviderRoutesOptions) => {
   register(routes.putProvider, async (c) => {
     const name = provider.parse(c.req.param("provider"));
 
-    await providerAuth.setApiKey(name, secretInput.parse(await c.req.json()));
+    await providerAuth.setApiKey(name, c.req.valid("json"));
 
     return c.json({ provider: name, configured: true }, 200);
   });
   register(routes.deleteProvider, async (c) => {
     const name = provider.parse(c.req.param("provider"));
-    const external = await options.externalAuth?.get(name)?.();
+    const external = await options.externalAuth.get(name)?.();
 
     if (external)
       throw new Conflict({
@@ -123,28 +118,31 @@ const registerProviderLoginRoutes = (options: ProviderRoutesOptions) => {
 
     if (!models.getProvider(name))
       throw new NotFound({ message: "Unknown provider" });
-    const input = providerLoginInput.parse(await c.req.json());
 
-    return c.json(providerAuth.start(name, input.method), 202);
+    return c.json(providerAuth.start(name, c.req.valid("json").method), 202);
   });
   register(routes.getProviderLogin, (c) =>
     c.json(providerAuth.get(c.req.param("id")), 200),
   );
-  register(routes.answerProviderLogin, async (c) => {
-    const input = providerLoginAnswerInput.safeParse(await c.req.json());
+  register(
+    routes.answerProviderLogin,
+    async (c) => {
+      const input = providerLoginAnswerInput.safeParse(await c.req.json());
 
-    // Answers can be secrets or callback URLs; never echo them in validation details.
-    if (!input.success) throw new InvalidInput({ message: "Invalid answer" });
+      // Answers can be secrets or callback URLs; never echo them in validation details.
+      if (!input.success) throw new InvalidInput({ message: "Invalid answer" });
 
-    return c.json(
-      providerAuth.answer(
-        c.req.param("id"),
-        input.data.promptId,
-        input.data.value,
-      ),
-      200,
-    );
-  });
+      return c.json(
+        providerAuth.answer(
+          c.req.param("id"),
+          input.data.promptId,
+          input.data.value,
+        ),
+        200,
+      );
+    },
+    { parsesBody: true },
+  );
   register(routes.cancelProviderLogin, (c) =>
     c.json(providerAuth.cancel(c.req.param("id")), 200),
   );

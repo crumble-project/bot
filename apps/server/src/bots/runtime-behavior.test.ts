@@ -55,7 +55,7 @@ function fakeLibrary(
 
   return {
     available: (agent) => Effect.sync(() => available(agent)),
-    used: (_agent, skill) => Effect.sync(() => used(skill)),
+    used: (skill) => Effect.sync(() => used(skill)),
     own: () => Effect.succeed([]),
     create: unsupported,
     update: unsupported,

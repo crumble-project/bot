@@ -10,7 +10,6 @@ import {
 import { z } from "zod";
 import { DESKTOP_START, WORKSPACE_PATH } from "../../workspace-image/guest";
 import {
-  DEFAULT_WORKSPACE_SIZE,
   GUEST_DAEMON,
   MachineWorkspaces,
   NO_GUEST,
@@ -57,6 +56,8 @@ const TCP_THROUGH_PROXY: NetworkPolicy = {
 };
 
 export type MicrosandboxWorkspacesOptions = MachineWorkspacesOptions & {
+  /** The machine size, read at each boot. */
+  size: () => WorkspaceSize;
   /** Prefix of sandbox and volume names, which are global to the Microsandbox home. */
   namePrefix: string;
 };
@@ -111,7 +112,7 @@ class MicrosandboxMachines implements WorkspaceMachines {
   private readonly size: () => WorkspaceSize;
 
   constructor(options: MicrosandboxWorkspacesOptions) {
-    this.size = options.size ?? (() => DEFAULT_WORKSPACE_SIZE);
+    this.size = options.size;
     this.intercept = options.intercept;
     this.namePrefix = options.namePrefix;
   }

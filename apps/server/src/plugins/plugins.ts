@@ -121,10 +121,6 @@ export type PluginSetting = {
   whenMissing: string;
 };
 
-/** Where a plugin's setting is stored in the account's secrets. */
-export const pluginSettingKey = (pluginId: string, key: string) =>
-  `${pluginId}:${key}`;
-
 /**
  * A plugin's runtime part, built once the account's services exist: model providers, job kinds, and web search
  * providers. See docs/adr/0004-plugin-interfaces.md.

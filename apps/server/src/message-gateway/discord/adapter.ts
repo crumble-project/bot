@@ -18,7 +18,7 @@ import {
   type GatewayConnection,
   type GatewayMessage,
 } from "../adapter";
-import { pluginSettingKey } from "../../plugins/plugins";
+import { pluginSettingKey } from "../../shared/vendors";
 import type { ConnectionStatus } from "../../shared/domain";
 
 export const DISCORD_PLUGIN_ID = "discord";

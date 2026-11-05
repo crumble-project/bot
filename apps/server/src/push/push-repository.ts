@@ -2,6 +2,7 @@ import { and, asc, eq, lte } from "drizzle-orm";
 import { Clock, Context, DateTime, Effect, Layer, Option } from "effect";
 import { PushDatabase } from "./push-database";
 import type { ReplyEvent } from "../contract/reply-event";
+import { PUSH_TTL_SECONDS } from "../shared/push-devices";
 import type { PushDevice, PushDeviceInput } from "./push-model";
 import {
   pushDelivery,
@@ -23,7 +24,7 @@ export type PendingDelivery = {
 // A presence report counts for two minutes; clients refresh it while a chat is visible.
 const PRESENCE_TTL_MS = 120_000;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const PUSH_TTL_MS = PUSH_TTL_SECONDS * 1000;
 
 const deviceOf = (row: typeof pushDevices.$inferSelect): PushDevice => {
   const device: PushDevice = {
@@ -66,13 +67,8 @@ export class PushRepository extends Context.Service<
       installationId: string,
       agentId: string,
     ) => Effect.Effect<boolean>;
-    readonly enqueue: (
-      event: ReplyEvent,
-      ttlMs?: number,
-    ) => Effect.Effect<void>;
-    readonly pending: (
-      limit?: number,
-    ) => Effect.Effect<ReadonlyArray<PendingDelivery>>;
+    readonly enqueue: (event: ReplyEvent) => Effect.Effect<void>;
+    readonly pending: () => Effect.Effect<ReadonlyArray<PendingDelivery>>;
     readonly markDelivered: (
       outboxId: string,
       installationId: string,
@@ -218,7 +214,6 @@ export class PushRepository extends Context.Service<
 
       const enqueue = Effect.fn("PushRepository.enqueue")(function* (
         event: ReplyEvent,
-        ttlMs: number = DAY_MS,
       ) {
         const now = yield* Clock.currentTimeMillis;
         const createdAt = DateTime.formatIso(yield* DateTime.now);
@@ -232,7 +227,7 @@ export class PushRepository extends Context.Service<
                 eventId: event.eventId,
                 eventJson: JSON.stringify(event),
                 createdAt,
-                expiresAt: now + ttlMs,
+                expiresAt: now + PUSH_TTL_MS,
               })
               .onConflictDoNothing();
 
@@ -263,9 +258,7 @@ export class PushRepository extends Context.Service<
         );
       }, Effect.orDie);
 
-      const pending = Effect.fn("PushRepository.pending")(function* (
-        limit: number = 100,
-      ) {
+      const pending = Effect.fn("PushRepository.pending")(function* () {
         return yield* db
           .select({
             outboxId: pushDelivery.outboxId,
@@ -288,7 +281,7 @@ export class PushRepository extends Context.Service<
             ),
           )
           .orderBy(asc(pushDelivery.nextAttemptAt))
-          .limit(limit);
+          .limit(100);
       }, Effect.orDie);
 
       const delivery = (outboxId: string, installationId: string) =>

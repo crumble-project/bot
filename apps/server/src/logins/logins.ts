@@ -1,3 +1,4 @@
+import { MAX_REQUEST_REASON_CHARS } from "../shared/limits";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension } from "@earendil-works/pi-durable";
 import { Clock, Context, Effect, Layer, Redacted } from "effect";
@@ -11,23 +12,20 @@ import {
   useFailure,
 } from "../bot-secrets/bot-secret-lifecycle";
 import type { LoginFill, LoginRead } from "../bot-desktop/computer-use-login";
-import type { Runner } from "../shared/runner";
+import { accessOf, type Access, type Runner } from "../shared/runner";
 import { PasswordManagers } from "../password-managers/password-manager";
 import type { SecretUnavailable } from "../secrets/secret-values";
 import { Secrets } from "../secrets/secrets";
 import {
   loginFieldInput,
   loginName,
-  loginRequestInput,
-  type Login,
   type LoginField,
-  type LoginRequest,
-  type LoginRequestInput,
-  type LoginSaveInput,
-  type LoginUse,
   type SecretInput,
   type SecretReference,
+  credentialHosts,
+  loginSaveInput,
 } from "../shared/domain";
+import type { Login } from "./login-repository";
 import { InvalidInput, NotFound, type AppError } from "../shared/errors";
 import {
   LoginRepository,
@@ -37,6 +35,37 @@ import {
 } from "./login-repository";
 import { oneTimeCode, parseOneTimeSecret } from "./one-time-codes";
 import { REQUEST_LOGIN_TOOL_NAME } from "../contract/tools";
+
+export type LoginSaveInput = z.infer<typeof loginSaveInput>;
+
+export const loginRequestInput = z.object({
+  name: loginName,
+  hosts: credentialHosts,
+  reason: z.string().trim().min(1).max(MAX_REQUEST_REASON_CHARS),
+  /** Whether the site asks for a one-time code too. */
+  one_time_code: z.boolean().optional(),
+});
+
+export type LoginRequestInput = z.infer<typeof loginRequestInput>;
+
+/** A bot's request for a login, waiting for the owner. */
+export type LoginRequest = {
+  name: string;
+  hosts: string[];
+  reason: string;
+  oneTimeCode: boolean;
+  requestedAt: string;
+};
+
+/** One fill of a login field into a page. */
+export type LoginUse = {
+  id: string;
+  at: string;
+  host: string;
+  field: LoginField;
+  /** Why the value couldn't be read, so nothing was typed. */
+  error: string | null;
+};
 
 /** What a login's use records beyond its host: the field filled. */
 const useDetail = z.object({ field: loginFieldInput });
@@ -321,40 +350,28 @@ export class Logins extends Context.Service<
   );
 }
 
+const SYNC_LOGINS = [
+  "list",
+  "requests",
+  "request",
+  "get",
+  "uses",
+  "recordUse",
+] as const;
+
 /** Logins for code outside Effect: HTTP handlers and the computer_use tool. */
-export type LoginsAccess = {
-  list(agentId: string): Login[];
-  requests(agentId: string): LoginRequest[];
-  request(agentId: string, request: LoginRequestInput): LoginRequest;
-  decline(agentId: string, name: string): Promise<void>;
-  get(agentId: string, name: string): Login | undefined;
-  save(agentId: string, name: string, input: LoginSaveInput): Promise<Login>;
-  delete(agentId: string, name: string): Promise<void>;
-  uses(
-    agentId: string,
-    name: string,
-    options: { limit: number; before?: string | undefined },
-  ): LoginUse[];
+export type LoginsAccess = Omit<
+  Access<Logins["Service"], (typeof SYNC_LOGINS)[number]>,
+  "value"
+> & {
   read(agentId: string, name: string, field: LoginField): Promise<LoginRead>;
-  recordUse(agentId: string, name: string, use: Omit<LoginUse, "id">): void;
 };
 
 export function loginsAccess(runtime: Runner<Logins>): LoginsAccess {
   const logins = runtime.runSync(Logins.use(Effect.succeed));
 
   return {
-    list: (agentId) => runtime.runSync(logins.list(agentId)),
-    requests: (agentId) => runtime.runSync(logins.requests(agentId)),
-    request: (agentId, request) =>
-      runtime.runSync(logins.request(agentId, request)),
-    decline: (agentId, name) =>
-      runtime.runPromise(logins.decline(agentId, name)),
-    get: (agentId, name) => runtime.runSync(logins.get(agentId, name)),
-    save: (agentId, name, input) =>
-      runtime.runPromise(logins.save(agentId, name, input)),
-    delete: (agentId, name) => runtime.runPromise(logins.delete(agentId, name)),
-    uses: (agentId, name, options) =>
-      runtime.runSync(logins.uses(agentId, name, options)),
+    ...accessOf(logins, runtime, SYNC_LOGINS),
     read: (agentId, name, field) =>
       runtime.runPromise(
         logins.value(agentId, name, field).pipe(
@@ -369,8 +386,6 @@ export function loginsAccess(runtime: Runner<Logins>): LoginsAccess {
           ),
         ),
       ),
-    recordUse: (agentId, name, use) =>
-      runtime.runSync(logins.recordUse(agentId, name, use)),
   };
 }
 

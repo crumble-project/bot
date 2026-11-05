@@ -22,7 +22,8 @@ import {
 import type { DesktopIntent } from "./desktop-intent";
 import type { IntentRequest } from "./intent-check";
 import type { MessageOrigin } from "../bots/entries";
-import type { Agent, Login } from "../shared/domain";
+import type { Agent } from "../shared/domain";
+import type { Login } from "../logins/login-repository";
 import type { LoginsAccess } from "../logins/logins";
 import { AgentRuntime } from "../bots/runtime";
 import { Store } from "../../test/support/store";

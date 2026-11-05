@@ -3,14 +3,13 @@ import { activeExecution } from "../shared/domain";
 import { pi } from "../shared/app-errors";
 import { Effect } from "effect";
 import { groupPostRequest, groupTurnRequest } from "../shared/request-ids";
+import { type Agent, type Execution } from "../shared/domain";
 import {
   GROUP_TURN_BUDGET,
-  type Agent,
-  type Execution,
   type GroupChat,
   type GroupMember,
   type GroupTurn,
-} from "../shared/domain";
+} from "./group-chat-repository";
 import type { AppError } from "../shared/errors";
 import { logged, memberKey, type GroupChatContext } from "./group-chat-context";
 import type { GroupChatMembers } from "./group-chat-members";
@@ -399,6 +398,16 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
         yield* wake(group.id, agentId, true);
     });
 
+  const startWaiting = (groupId: string, agentId: string) =>
+    Effect.gen(function* () {
+      const current = (yield* context.groups.member(groupId, agentId))!;
+
+      if (current.pending)
+        yield* wake(groupId, agentId, current.pendingBotStarted);
+
+      yield* context.changed(groupId);
+    });
+
   /** Posts a settled turn's outcome once, advances the member, and starts its waiting turn. */
   const finish = (executionId: string): Effect.Effect<void, AppError> =>
     Effect.gen(function* () {
@@ -410,12 +419,13 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
       const group = yield* context.groups.get(turn.groupId);
       const member = yield* context.groups.member(turn.groupId, turn.agentId);
 
-      if (
-        group &&
-        member &&
-        execution.status === "done" &&
-        execution.submissionId
-      )
+      if (!group || !member) {
+        yield* context.groups.updateTurn(executionId, { status: "settled" });
+
+        return;
+      }
+
+      if (execution.status === "done" && execution.submissionId)
         yield* publish(
           group,
           turn,
@@ -425,20 +435,13 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
 
       yield* context.groups.updateTurn(executionId, { status: "settled" });
 
-      if (!group || !member) return;
-
       // A stopped or failed turn leaves its messages unseen, so the member's next turn includes them.
       if (execution.status === "done")
         yield* context.groups.setMember(group.id, turn.agentId, {
           cursor: Math.max(member.cursor, turn.through),
         });
 
-      const current = (yield* context.groups.member(group.id, turn.agentId))!;
-
-      if (current.pending)
-        yield* wake(group.id, turn.agentId, current.pendingBotStarted);
-
-      yield* context.changed(group.id);
+      yield* startWaiting(group.id, turn.agentId);
     });
 
   const settled = Effect.fnUntraced(function* (execution: Execution) {

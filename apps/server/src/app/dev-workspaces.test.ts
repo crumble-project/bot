@@ -1,13 +1,11 @@
 import { expect, test } from "bun:test";
-import { configureDevWorkspaces } from "./dev-workspaces";
+import { devWorkspaceEnv } from "./dev-workspaces";
 import { microsandboxWorkspacesFromEnv } from "../workspaces/microsandbox-workspaces";
 
 test("development enables coding and desktop workspaces by default", () => {
-  const env: Record<string, string | undefined> = {};
-  configureDevWorkspaces(env);
-
-  const workspaces = microsandboxWorkspacesFromEnv(env, {
+  const workspaces = microsandboxWorkspacesFromEnv(devWorkspaceEnv({}), {
     namePrefix: "crumble",
+    size: () => ({ cpus: 2, memoryMib: 4096 }),
     wantsDesktop: () => true,
   });
 
@@ -23,14 +21,8 @@ test("development preserves workspace overrides and Railway configuration", () =
     CRUMBLE_WORKSPACE_DESKTOP_IMAGE: "",
   };
 
-  configureDevWorkspaces(env);
-
-  expect(env).toEqual({
-    CRUMBLE_WORKSPACE_IMAGE: "custom",
-    CRUMBLE_WORKSPACE_DESKTOP_IMAGE: "",
-  });
+  expect(devWorkspaceEnv(env)).toEqual(env);
 
   const railway = { CRUMBLE_WORKSPACE_BACKEND: "railway" };
-  configureDevWorkspaces(railway);
-  expect(railway).toEqual({ CRUMBLE_WORKSPACE_BACKEND: "railway" });
+  expect(devWorkspaceEnv(railway)).toEqual(railway);
 });

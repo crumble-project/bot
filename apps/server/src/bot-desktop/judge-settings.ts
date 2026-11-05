@@ -56,7 +56,7 @@ export function registerJudgeModelRoutes(options: {
 
   register(routes.getJudgeModel, async (c) => c.json(await status(), 200));
   register(routes.updateJudgeModel, async (c) => {
-    const { judgeModel: chosen } = judgeModelInput.parse(await c.req.json());
+    const { judgeModel: chosen } = c.req.valid("json");
 
     if (
       chosen &&

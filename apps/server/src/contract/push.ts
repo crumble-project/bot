@@ -1,12 +1,17 @@
 import { z } from "@hono/zod-openapi";
+import {
+  PUSH_ENVIRONMENTS,
+  PUSH_PLATFORMS,
+  PUSH_TRANSPORTS,
+} from "../shared/push-devices";
 import { body, define, empty, json } from "./route";
 
 export const pushInput = z
   .object({
-    platform: z.enum(["macos", "ios", "android"]),
-    transport: z.enum(["apns", "fcm"]),
+    platform: z.enum(PUSH_PLATFORMS),
+    transport: z.enum(PUSH_TRANSPORTS),
     token: z.string().trim().min(1).max(4096),
-    environment: z.enum(["development", "production"]),
+    environment: z.enum(PUSH_ENVIRONMENTS),
     bundleId: z.string().trim().min(1).max(255).optional(),
     enabled: z.boolean(),
   })

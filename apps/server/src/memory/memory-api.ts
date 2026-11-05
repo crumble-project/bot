@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { memoryInput, routes } from "../contract/api-contract";
+import { routes, type memoryInput } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import type { BotsAccess } from "../bots/bots";
 import { NotFound } from "../shared/errors";
@@ -64,21 +64,14 @@ const registerBotMemoryRoutes = (options: MemoryRoutesOptions) => {
     service.agent(c.req.param("id"));
 
     return c.json(
-      createMemory(
-        exec,
-        c.req.param("id"),
-        memoryInput.parse(await c.req.json()),
-      ),
+      createMemory(exec, c.req.param("id"), c.req.valid("json")),
       201,
     );
   });
   register(routes.updateAgentMemory, async (c) => {
     const memory = memoryOf(exec, c.req.param("id"), c.req.param("memoryId"));
 
-    return c.json(
-      updateMemory(exec, memory.id, memoryInput.parse(await c.req.json())),
-      200,
-    );
+    return c.json(updateMemory(exec, memory.id, c.req.valid("json")), 200);
   });
   register(routes.deleteAgentMemory, (c) => {
     deleteMemory(
@@ -99,18 +92,12 @@ const registerSharedMemoryRoutes = (options: MemoryRoutesOptions) => {
     c.json(exec(MemoryRepository.use((r) => r.list(null))), 200),
   );
   register(routes.createMemory, async (c) =>
-    c.json(
-      createMemory(exec, null, memoryInput.parse(await c.req.json())),
-      201,
-    ),
+    c.json(createMemory(exec, null, c.req.valid("json")), 201),
   );
   register(routes.updateMemory, async (c) => {
     const memory = memoryOf(exec, null, c.req.param("id"));
 
-    return c.json(
-      updateMemory(exec, memory.id, memoryInput.parse(await c.req.json())),
-      200,
-    );
+    return c.json(updateMemory(exec, memory.id, c.req.valid("json")), 200);
   });
   register(routes.deleteMemory, (c) => {
     deleteMemory(exec, memoryOf(exec, null, c.req.param("id")).id);

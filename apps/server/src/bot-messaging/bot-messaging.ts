@@ -52,6 +52,28 @@ const checkAborted = (context: PiContext) =>
   Effect.sync(() => context.abortSignal?.throwIfAborted());
 
 /** What the delegating bot reads: whose job asks what, and how to answer or hand it to the owner. */
+/** The trimmed text of a message the bot may send, or why it may not. */
+const sendableText = (input: {
+  message: string;
+  requestId: string;
+}): Effect.Effect<string, InvalidInput> => {
+  const message = input.message.trim();
+
+  if (!message || message.length > MAX_MESSAGE_CHARS)
+    return Effect.fail(
+      new InvalidInput({
+        message: `A bot message must contain 1–${MAX_MESSAGE_CHARS} characters`,
+      }),
+    );
+
+  if (!input.requestId)
+    return Effect.fail(
+      new InvalidInput({ message: "A bot message needs a request ID" }),
+    );
+
+  return Effect.succeed(message);
+};
+
 const jobQuestionText = (asked: JobAsked, assignee: string) => {
   const { question } = asked;
 
@@ -330,6 +352,62 @@ export class BotMessaging extends Context.Service<
           )
         : Effect.succeed([]);
 
+    // Reserve the destination before awaiting chat admission. A replay cannot send
+    // the same tool invocation to a second bot or change its message.
+    const reserveTarget = Effect.fnUntraced(function* (
+      from: Agent,
+      addressee: string,
+      requestId: string,
+      message: string,
+    ) {
+      const saved = yield* delegations.request(requestId);
+      const recipient = normalize(addressed(addressee));
+
+      // An in-flight tool keeps its resolved destination if the bot is renamed.
+      const target =
+        saved?.recipient === recipient
+          ? yield* bots.agent(saved.targetAgentId)
+          : yield* resolve(addressee);
+
+      yield* authorize(from, target);
+
+      if (
+        saved &&
+        (saved.targetAgentId !== target.id || saved.message !== message)
+      )
+        return yield* Effect.fail(
+          new Conflict({
+            message: "Request ID already used for a different bot message",
+          }),
+        );
+
+      if (!saved)
+        yield* delegations.reserve({
+          requestId,
+          sourceAgentId: from.id,
+          targetAgentId: target.id,
+          recipient,
+          message,
+        });
+
+      return target;
+    });
+
+    // An exchange still running gets `waitMs` to finish; answers with it as it then stands.
+    const waitedFor = Effect.fnUntraced(function* (
+      sourceId: string,
+      execution: Execution,
+      waitMs: number,
+      context: PiContext,
+    ) {
+      if (!activeExecution(execution) || !execution.submissionId || waitMs <= 0)
+        return execution;
+
+      yield* awaitTurn(execution, execution.submissionId, waitMs, context);
+
+      return yield* exchange(sourceId, execution.id);
+    });
+
     return BotMessaging.of({
       recipients: Effect.fn("BotMessaging.recipients")(function* (
         sourceId: string,
@@ -347,53 +425,18 @@ export class BotMessaging extends Context.Service<
       ) {
         yield* checkAborted(context);
         const from = yield* source(sourceId);
-        const message = input.message.trim();
-
-        if (!message || message.length > MAX_MESSAGE_CHARS)
-          return yield* Effect.fail(
-            new InvalidInput({
-              message: `A bot message must contain 1–${MAX_MESSAGE_CHARS} characters`,
-            }),
-          );
-
-        if (!input.requestId)
-          return yield* Effect.fail(
-            new InvalidInput({ message: "A bot message needs a request ID" }),
-          );
+        const message = yield* sendableText(input);
         yield* assertCanSend(from.id);
 
         const requestId = delegationRequest(from.id, input.requestId);
-        const saved = yield* delegations.request(requestId);
-        const recipient = normalize(addressed(input.recipient));
 
-        // An in-flight tool keeps its resolved destination if the bot is renamed.
-        const target =
-          saved?.recipient === recipient
-            ? yield* bots.agent(saved.targetAgentId)
-            : yield* resolve(input.recipient);
+        const target = yield* reserveTarget(
+          from,
+          input.recipient,
+          requestId,
+          message,
+        );
 
-        yield* authorize(from, target);
-
-        if (
-          saved &&
-          (saved.targetAgentId !== target.id || saved.message !== message)
-        )
-          return yield* Effect.fail(
-            new Conflict({
-              message: "Request ID already used for a different bot message",
-            }),
-          );
-
-        // Reserve the destination before awaiting chat admission. A replay cannot send
-        // the same tool invocation to a second bot or change its message.
-        if (!saved)
-          yield* delegations.reserve({
-            requestId,
-            sourceAgentId: from.id,
-            targetAgentId: target.id,
-            recipient,
-            message,
-          });
         const chat = yield* bots.chat(target.id);
         yield* checkAborted(context);
         // Opening a chat may yield: recheck permissions and capacity immediately before send.
@@ -428,21 +471,12 @@ export class BotMessaging extends Context.Service<
         executionId: string,
         options: { waitMs?: number; context?: PiContext } = {},
       ) {
-        let execution = yield* exchange(sourceId, executionId);
+        const first = yield* exchange(sourceId, executionId);
         const context = options.context ?? BACKGROUND_CONTEXT;
         yield* checkAborted(context);
         const waitMs = Math.min(60000, Math.max(0, options.waitMs ?? 0));
         const deadline = (yield* Clock.currentTimeMillis) + waitMs;
-
-        if (
-          activeExecution(execution) &&
-          execution.submissionId &&
-          waitMs > 0
-        ) {
-          yield* awaitTurn(execution, execution.submissionId, waitMs, context);
-          execution = yield* exchange(sourceId, executionId);
-        }
-
+        const execution = yield* waitedFor(sourceId, first, waitMs, context);
         const answering = yield* bots.agent(execution.agentId);
         const work = yield* awaitJobs(answering, execution, deadline, context);
 
@@ -553,28 +587,6 @@ export class BotMessaging extends Context.Service<
 
   static readonly layer = Layer.effect(BotMessaging, BotMessaging.make);
 }
-
-/** Bot messaging for code outside Effect, such as tests, with the Promise API it had. */
-export const botMessagingAccess = (messaging: BotMessaging["Service"]) => ({
-  recipients: (sourceId: string) =>
-    Effect.runSync(messaging.recipients(sourceId)),
-  send: (
-    sourceId: string,
-    input: { recipient: string; message: string; requestId: string },
-    context?: PiContext,
-  ) => Effect.runPromise(messaging.send(sourceId, input, context)),
-  result: (
-    sourceId: string,
-    executionId: string,
-    options?: { waitMs?: number; context?: PiContext },
-  ) => Effect.runPromise(messaging.result(sourceId, executionId, options)),
-  relayQuestion: (asked: JobAsked) =>
-    Effect.runPromise(messaging.relayQuestion(asked)),
-  answerQuestion: (
-    sourceId: string,
-    input: { questionId: string; answer: string },
-  ) => Effect.runPromise(messaging.answerQuestion(sourceId, input)),
-});
 
 /** Bot messaging over standalone bots, for a test without an account. */
 export const standaloneMessaging = (bots: {

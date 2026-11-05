@@ -5,12 +5,11 @@ import type { LookupFunction } from "node:net";
 import type net from "node:net";
 import { Transform } from "node:stream";
 import tls from "node:tls";
-import {
-  hostMatches,
-  type CredentialGrant,
-  type CredentialTarget,
-  type CredentialUse,
-} from "../shared/domain";
+import { hostMatches, type CredentialTarget } from "../shared/domain";
+import type {
+  CredentialGrant,
+  CredentialUse,
+} from "./agent-credential-repository";
 import { isPublicAddress } from "../shared/public-address";
 import type { WorkspaceInterceptor } from "../workspaces/workspace-proxy";
 import { SIGNING_HOST } from "../workspaces/workspace";

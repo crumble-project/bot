@@ -91,7 +91,7 @@ To start the server:
 | `apps/server/src/`             | Server feature modules such as `bots/` and `jobs/`, with colocated `*.test.ts` files |
 | `apps/server/drizzle/`         | SQLite migrations for `store.sqlite` and `push.sqlite`                                          |
 | `apps/server/skills/`          | Bundled default skills                                                                          |
-| `apps/server/workspace-image/` | Dockerfile and desktop scripts for workspace images                                             |
+| `apps/server/workspace-image/` | Guest manifest, Dockerfile, and desktop scripts for workspace images                            |
 | `apps/web/`                    | Web UI, grouped by feature and bundled by the server                                            |
 | `apps/docs/`                   | User and contributor docs at [docs.crumbli.ng](https://docs.crumbli.ng)                         |
 | `apps/site/`                   | Landing page at [crumbli.ng](https://crumbli.ng)                                                |

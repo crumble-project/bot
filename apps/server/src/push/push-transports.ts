@@ -1,4 +1,5 @@
 import type { ReplyEvent } from "../contract/reply-event";
+import { PUSH_TTL_SECONDS } from "../shared/push-devices";
 import { existsSync, readFileSync } from "node:fs";
 import { createHash, createPrivateKey, createSign } from "node:crypto";
 import { connect } from "node:http2";
@@ -40,7 +41,7 @@ export type PushTransport = {
     device: PushDevice,
     event: ReplyEvent,
   ) => Effect.Effect<"delivered" | "expired", SendFailure>;
-  readonly canSend?: (device: PushDeviceInput) => boolean;
+  readonly canSend: (device: PushDeviceInput) => boolean;
 };
 
 /** The server's push configuration is incomplete or invalid. */
@@ -258,7 +259,7 @@ export function apnsHeaders(
     "apns-topic": topic,
     "apns-push-type": "alert",
     "apns-priority": "10",
-    "apns-expiration": String(seconds + 86400),
+    "apns-expiration": String(seconds + PUSH_TTL_SECONDS),
     "apns-collapse-id": createHash("sha256")
       .update(`${event.serverId}:${event.agentId}`)
       .digest("hex")
@@ -336,13 +337,6 @@ function apnsTransport(settings: ApnsSettings): PushTransport {
   return {
     canSend: (device) => !!device.bundleId && topics.has(device.bundleId),
     send: Effect.fn("APNs.send")(function* (device, event) {
-      const topic = device.bundleId;
-
-      if (!topic || !topics.has(topic))
-        return yield* new TemporaryFailure({
-          message: "APNs bundle topic is not allowed",
-        });
-
       const seconds = Math.floor((yield* Clock.currentTimeMillis) / 1000);
       const jwt = apnsJwt(settings, seconds);
 
@@ -350,7 +344,7 @@ function apnsTransport(settings: ApnsSettings): PushTransport {
         try: () =>
           apnsRequest(
             apnsHost(device.environment),
-            apnsHeaders(topic, device, event, jwt, seconds),
+            apnsHeaders(device.bundleId!, device, event, jwt, seconds),
             JSON.stringify(apnsPayload(event)),
           ),
         catch: temporaryFailure,
@@ -395,7 +389,7 @@ export function fcmMessage(device: PushDevice, event: ReplyEvent) {
     message: {
       token: device.token,
       data: fcmData(event),
-      android: { priority: "HIGH", ttl: "86400s" },
+      android: { priority: "HIGH", ttl: `${PUSH_TTL_SECONDS}s` },
     },
   };
 }

@@ -6,9 +6,9 @@ import { github, GitHubUnavailable } from "../github-apps/github-api";
 import {
   skillDocumentInput,
   skillInput,
-  type SkillDocument,
   type SkillInput,
 } from "../shared/domain";
+import type { SkillDocument } from "./skill-repository";
 import { parseSkillMarkdown } from "./common-skills";
 import {
   MAX_INSTRUCTIONS_CHARS,

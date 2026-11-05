@@ -18,4 +18,3 @@ apps/site
 apps/server/test
 apps/server/src/**/*.test.ts
 apps/server/tools
-!apps/server/tools/assign-legacy-owner.ts

@@ -1,8 +1,18 @@
 import { asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import type { MCPServer } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { mcpServers } from "./schema";
+
+/** An MCP server is shared, or belongs to the one bot in `agentId` with its own credentials. */
+export type MCPServer = {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  agentId: string | null;
+  /** A client the owner registered with the server's authorization server, for servers that register none themselves. */
+  oauthClientId: string | null;
+};
 
 export type NewMCPServer = Omit<
   MCPServer,

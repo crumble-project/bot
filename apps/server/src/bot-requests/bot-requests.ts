@@ -4,12 +4,7 @@ import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Context, Effect, Layer } from "effect";
-import {
-  agentInput,
-  type Agent,
-  type AgentInput,
-  type BotRequest,
-} from "../shared/domain";
+import { agentInput, type Agent, type AgentInput } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { AgentRepository } from "../bots/agent-repository";
@@ -31,6 +26,17 @@ import {
   MAX_REQUEST_REASON_CHARS,
   MAX_TOOL_ID_CHARS,
 } from "../shared/limits";
+
+export type BotRequest = {
+  id: string;
+  agentId: string;
+  proposal: AgentInput;
+  reason: string;
+  status: "pending" | "approved" | "declined";
+  createdAgentId: string | null;
+  requestedAt: string;
+  decidedAt: string | null;
+};
 
 const statusOf = (value: string): BotRequest["status"] => {
   if (value === "approved" || value === "declined") return value;

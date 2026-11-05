@@ -39,9 +39,9 @@ const observedRepository = (dir: string, probe: StoreProbe) =>
 
       return PushRepository.of({
         ...repository,
-        pending: (limit) =>
+        pending: () =>
           Effect.suspend(() => {
-            if (probe.failPending <= 0) return repository.pending(limit);
+            if (probe.failPending <= 0) return repository.pending();
             probe.failPending--;
 
             return Effect.die(new Error("outbox unreadable"));
@@ -72,7 +72,9 @@ function activitySource() {
 }
 
 /** Push with delivery attached, over one device registered for `fcm`. */
-async function setup(fcm: PushTransport) {
+async function setup(transport: Omit<PushTransport, "canSend">) {
+  const fcm = { canSend: () => true, ...transport };
+
   const dir = mkdtempSync(join("/tmp", "crumble-push-lifecycle-"));
   dirs.push(dir);
   const probe: StoreProbe = { closes: 0, failPending: 0 };
@@ -125,7 +127,7 @@ const enqueueReply = Push.use((push) =>
   ),
 );
 
-const delivering = (count: { sends: number }): PushTransport => ({
+const delivering = (count: { sends: number }) => ({
   send: () =>
     Effect.sync(() => {
       count.sends++;

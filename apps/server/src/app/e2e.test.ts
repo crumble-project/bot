@@ -11,7 +11,7 @@ import { AgentRuntime } from "../bots/runtime";
 import { Store } from "../../test/support/store";
 import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../automations/scheduler-test-support";
-import { createAPI } from "./api";
+import { testAPI } from "../../test/support/api";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const token = "e".repeat(40);
@@ -37,7 +37,7 @@ describe("HTTP/runtime persistence", () => {
         service.dispatch(a, p, r, s),
       );
 
-      return createAPI(service, token, { scheduler });
+      return testAPI(service, token, { scheduler });
     };
 
     try {

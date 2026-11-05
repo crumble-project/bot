@@ -1,12 +1,5 @@
 import type { z } from "zod";
-import {
-  routes,
-  attachmentIndex,
-  historyInput,
-  jobAnswerInput,
-  messageInput,
-  snapshotInput,
-} from "../contract/api-contract";
+import { routes } from "../contract/api-contract";
 import type {
   chatSnapshotResponse,
   codingJobsResponse,
@@ -27,18 +20,13 @@ const registerChatReadRoutes = (options: ChatRoutesOptions) => {
 
   register(routes.chat, async (c) => {
     const snapshot: z.output<typeof chatSnapshotResponse> =
-      await service.chatSnapshot(
-        c.req.param("id"),
-        snapshotInput.parse(c.req.query()),
-      );
+      await service.chatSnapshot(c.req.param("id"), c.req.valid("query"));
 
     return c.json(snapshot, 200);
   });
-  register(routes.history, async (c) => {
-    const input = historyInput.parse(c.req.query());
-
-    return c.json(await service.history(c.req.param("id"), input), 200);
-  });
+  register(routes.history, async (c) =>
+    c.json(await service.history(c.req.param("id"), c.req.valid("query")), 200),
+  );
   register(routes.codingJobs, async (c) => {
     const jobs: z.output<typeof codingJobsResponse> = {
       jobs: await service.jobs(c.req.param("id"), "coding"),
@@ -49,7 +37,7 @@ const registerChatReadRoutes = (options: ChatRoutesOptions) => {
   register(routes.answerCodingJob, async (c) => {
     await service.answerJob(c.req.param("id"), "coding", {
       name: c.req.param("name"),
-      ...jobAnswerInput.parse(await c.req.json()),
+      ...c.req.valid("json"),
     });
 
     return c.body(null, 204);
@@ -60,7 +48,7 @@ const registerChatReadRoutes = (options: ChatRoutesOptions) => {
         c.req.param("id"),
         "coding",
         c.req.param("name"),
-        historyInput.parse(c.req.query()),
+        c.req.valid("query"),
       ),
       200,
     ),
@@ -78,7 +66,7 @@ const registerChatReadRoutes = (options: ChatRoutesOptions) => {
         c.req.param("id"),
         "desktop",
         c.req.param("name"),
-        historyInput.parse(c.req.query()),
+        c.req.valid("query"),
       ),
       200,
     ),
@@ -90,7 +78,7 @@ const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
   const { register, service } = options;
 
   register(routes.sendMessage, async (c) => {
-    const input = messageInput.parse(await c.req.json());
+    const input = c.req.valid("json");
 
     return c.json(
       await service.sendChat(
@@ -105,13 +93,8 @@ const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
     );
   });
   register(routes.attachment, async (c) => {
-    const index = attachmentIndex.parse(c.req.param("index"));
-
-    const image = await service.attachment(
-      c.req.param("id"),
-      c.req.param("entryId"),
-      index,
-    );
+    const { id, entryId, index } = c.req.valid("param");
+    const image = await service.attachment(id, entryId, index);
 
     return c.body(new Uint8Array(image.data), 200, {
       "Content-Type": image.mimeType,
@@ -133,7 +116,7 @@ const registerChatEventRoutes = (options: ChatRoutesOptions) => {
   const { register, service } = options;
 
   register(routes.chatEvents, async (c) => {
-    const snapshot = snapshotInput.parse(c.req.query());
+    const snapshot = c.req.valid("query");
     const agent = service.agent(c.req.param("id"));
     const chat = await service.chat(agent.id);
 

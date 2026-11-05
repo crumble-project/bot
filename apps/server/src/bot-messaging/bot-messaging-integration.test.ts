@@ -16,7 +16,8 @@ import { conversationEnv, jobExtensions } from "../plugins/plugins";
 import { Store } from "../../test/support/store";
 import { standaloneBots } from "../bots/bots";
 import { coordinationExtension } from "./coordination";
-import { botMessagingAccess, standaloneMessaging } from "./bot-messaging";
+import { standaloneMessaging } from "./bot-messaging";
+import { accessOf, noServices } from "../shared/runner";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 test("a real faux turn asks another bot and only exposes its answer", async () => {
@@ -170,7 +171,11 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
     expect(JSON.stringify(snapshot.messages)).toContain(
       "Bot2 says it feels fine.",
     );
-    const messaging = botMessagingAccess(standaloneMessaging(service));
+
+    const messaging = accessOf(standaloneMessaging(service), noServices, [
+      "recipients",
+    ]);
+
     const targetChat = await service.chat(targetId);
     let targetChanges = 0;
 
@@ -383,7 +388,11 @@ async function delegatedBuild(asking: Promise<void>) {
   );
 
   const coder = store.createAgent(bot("Coder", ["coding"], []), CODER);
-  const kinds = codingPlugin(new DirectoryWorkspaces(workspace)).jobKinds ?? [];
+
+  const kinds =
+    codingPlugin(new DirectoryWorkspaces(workspace), () => 900_000).jobKinds ??
+    [];
+
   let service!: ReturnType<typeof standaloneBots<Store>>;
 
   const runtime = new AgentRuntime(
@@ -401,7 +410,10 @@ async function delegatedBuild(asking: Promise<void>) {
   );
 
   service = standaloneBots(store, runtime);
-  const messaging = botMessagingAccess(standaloneMessaging(service));
+
+  const messaging = accessOf(standaloneMessaging(service), noServices, [
+    "recipients",
+  ]);
 
   const stopRelay = kinds[0]!.onQuestion!(async (asked) => {
     await messaging.relayQuestion(asked);

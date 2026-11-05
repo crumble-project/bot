@@ -164,11 +164,7 @@ export class Push extends Context.Service<
 
           const transport = transports[device.transport];
 
-          if (
-            suppressed ||
-            !transport ||
-            (transport.canSend && !transport.canSend(device))
-          ) {
+          if (suppressed || !transport || !transport.canSend(device)) {
             yield* repository.markDelivered(
               row.outboxId,
               device.installationId,
@@ -200,9 +196,7 @@ export class Push extends Context.Service<
         return {
           serverId,
           remoteDelivery:
-            input.enabled &&
-            !!transport &&
-            (!transport.canSend || transport.canSend(input)),
+            input.enabled && !!transport && transport.canSend(input),
         };
       });
 

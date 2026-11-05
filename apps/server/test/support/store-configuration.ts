@@ -11,8 +11,8 @@ import {
 import type {
   CredentialRequest,
   CredentialUse,
-  MCPServer,
-} from "../../src/shared/domain";
+} from "../../src/credentials/agent-credential-repository";
+import type { MCPServer } from "../../src/integrations/mcp-server-repository";
 import { SettingsRepository } from "../../src/shared/settings-repository";
 import type { StoreRun } from "./store";
 

@@ -2,15 +2,11 @@ import { Context, Effect, Layer, ManagedRuntime } from "effect";
 import type { JobAnswer } from "../jobs/jobs";
 import type { JobKindName } from "../jobs/job-kinds";
 import type { AttachmentInput } from "../shared/attachment-rules";
-import type {
-  Agent,
-  Conversation,
-  Execution,
-  LearnedChange,
-} from "../shared/domain";
+import type { Agent, Execution, LearnedChange } from "../shared/domain";
+import type { Conversation } from "./conversation-repository";
 import type { ReplyActivity } from "../contract/reply-event";
 import type { AppError } from "../shared/errors";
-import type { Runner } from "../shared/runner";
+import { accessOf, type Access, type Runner } from "../shared/runner";
 import { SettingsRepository } from "../shared/settings-repository";
 import { ScheduleRepository } from "../automations/schedule-repository";
 import { ProductDatabase } from "../shared/product-database";
@@ -197,145 +193,18 @@ export class Bots extends Context.Service<
   );
 }
 
-/** The bots for code outside Effect, such as the HTTP handlers, with the API `CrumbleService` had. */
-export type BotsAccess = {
-  agent(id: string): Agent;
-  conversation(id: string): { conversation: Conversation; agent: Agent };
-  subscribe(conversationId: string, callback: () => void): () => void;
-  onActivity(callback: (event: Activity) => void): () => void;
-  onSettled(
-    callback: (execution: Execution) => void | Promise<void>,
-  ): () => void;
-  agentPreviews(): Promise<{ agent: Agent; lastMessage: string }[]>;
-  announceJobAnswer(answer: JobAnswer): void;
-  announce(event: ReplyActivity | LearnedActivity): void;
-  snapshot(
-    conversationId: string,
-    options?: { limit?: number | undefined },
-  ): Promise<ChatSnapshot>;
-  chat(agentId: string): Promise<Conversation>;
-  recordBotMessage(
-    agentId: string,
-    event: BotMessageEvent,
-    requestId: string,
-  ): Promise<void>;
-  chatSnapshot(
-    agentId: string,
-    options?: { limit?: number | undefined },
-  ): Promise<ChatSnapshot>;
-  history(agentId: string, options: PageOptions): Promise<Page<"history">>;
-  jobs(agentId: string, kind: JobKindName): Promise<Page<"jobs">>;
-  jobHistory(
-    agentId: string,
-    kind: JobKindName,
-    name: string,
-    options: PageOptions,
-  ): Promise<Page<"jobHistory">>;
-  answerJob(
-    agentId: string,
-    kind: string,
-    answer: JobAnswerInput,
-  ): Promise<void>;
-  attachment(
-    agentId: string,
-    entryId: string,
-    index: number,
-  ): Promise<Page<"attachment">>;
-  watch(
-    agentId: string,
-    conversationId: string,
-    callback: RuntimeWatch,
-    options: { limit?: number | undefined },
-  ): Promise<() => Promise<void>>;
-  sendChat(
-    agentId: string,
-    content: string,
-    requestId: string,
-    replyTo?: string,
-    attachments?: AttachmentInput[],
-    timezone?: string,
-  ): Promise<Execution>;
-  notice(
-    agentId: string,
-    content: string,
-    requestId: string,
-  ): Promise<Execution>;
-  send(
-    conversationId: string,
-    content: string,
-    requestId: string,
-    options?: SendOptions,
-  ): Promise<Execution>;
-  dispatch(
-    agentId: string,
-    prompt: string,
-    requestId: string,
-    scheduleId: string,
-  ): Promise<Execution>;
-  recover(): Promise<void>;
-  compact(agentId: string): Promise<string>;
-  abortChat(agentId: string): Promise<void>;
-  abort(conversationId: string): Promise<void>;
-  stopAgent(agentId: string): Promise<void>;
-  deleteAgent(id: string): Promise<void>;
-};
+const SYNC_BOTS = [
+  "agent",
+  "conversation",
+  "announceJobAnswer",
+  "announce",
+] as const;
 
-export function botsAccess(runner: Runner<Bots>): BotsAccess {
-  const bots = runner.runSync(Bots.use(Effect.succeed));
+/** The bots for code outside Effect, such as the HTTP handlers. */
+export type BotsAccess = Access<Bots["Service"], (typeof SYNC_BOTS)[number]>;
 
-  return {
-    agent: (id) => runner.runSync(bots.agent(id)),
-    conversation: (id) => runner.runSync(bots.conversation(id)),
-    subscribe: bots.subscribe,
-    onActivity: bots.onActivity,
-    onSettled: bots.onSettled,
-    agentPreviews: () => runner.runPromise(bots.agentPreviews),
-    announceJobAnswer: (answer) =>
-      runner.runSync(bots.announceJobAnswer(answer)),
-    announce: (event) => runner.runSync(bots.announce(event)),
-    snapshot: (conversationId, options) =>
-      runner.runPromise(bots.snapshot(conversationId, options)),
-    chat: (agentId) => runner.runPromise(bots.chat(agentId)),
-    recordBotMessage: (agentId, event, requestId) =>
-      runner.runPromise(bots.recordBotMessage(agentId, event, requestId)),
-    chatSnapshot: (agentId, options) =>
-      runner.runPromise(bots.chatSnapshot(agentId, options)),
-    history: (agentId, options) =>
-      runner.runPromise(bots.history(agentId, options)),
-    jobs: (agentId, kind) => runner.runPromise(bots.jobs(agentId, kind)),
-    jobHistory: (agentId, kind, name, options) =>
-      runner.runPromise(bots.jobHistory(agentId, kind, name, options)),
-    answerJob: (agentId, kind, answer) =>
-      runner.runPromise(bots.answerJob(agentId, kind, answer)),
-    attachment: (agentId, entryId, index) =>
-      runner.runPromise(bots.attachment(agentId, entryId, index)),
-    watch: (agentId, conversationId, callback, options) =>
-      runner.runPromise(bots.watch(agentId, conversationId, callback, options)),
-    sendChat: (agentId, content, requestId, replyTo, attachments, timezone) =>
-      runner.runPromise(
-        bots.sendChat(
-          agentId,
-          content,
-          requestId,
-          replyTo,
-          attachments,
-          timezone,
-        ),
-      ),
-    notice: (agentId, content, requestId) =>
-      runner.runPromise(bots.notice(agentId, content, requestId)),
-    send: (conversationId, content, requestId, options) =>
-      runner.runPromise(bots.send(conversationId, content, requestId, options)),
-    dispatch: (agentId, prompt, requestId, scheduleId) =>
-      runner.runPromise(bots.dispatch(agentId, prompt, requestId, scheduleId)),
-    recover: () => runner.runPromise(bots.recover),
-    compact: (agentId) => runner.runPromise(bots.compact(agentId)),
-    abortChat: (agentId) => runner.runPromise(bots.abortChat(agentId)),
-    abort: (conversationId) => runner.runPromise(bots.abort(conversationId)),
-    stopAgent: (agentId) => runner.runPromise(bots.stopAgent(agentId)),
-    deleteAgent: (id) => runner.runPromise(bots.deleteAgent(id)),
-  };
-}
+export const botsAccess = (runner: Runner<Bots>): BotsAccess =>
+  accessOf(runner.runSync(Bots.use(Effect.succeed)), runner, SYNC_BOTS);
 
 /**
  * The bots over `store`'s account and `runtime`, for a test or an API without an account. Closing them closes the

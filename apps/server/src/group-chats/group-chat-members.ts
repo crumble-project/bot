@@ -1,7 +1,7 @@
 import { activeExecution } from "../shared/domain";
 import { pi } from "../shared/app-errors";
 import { Effect } from "effect";
-import type { GroupChat } from "../shared/domain";
+import type { GroupChat } from "./group-chat-repository";
 import { type GroupChatContext } from "./group-chat-context";
 import { mentionedMembers } from "./group-mentions";
 import type { GroupEntry } from "./group-transcripts";

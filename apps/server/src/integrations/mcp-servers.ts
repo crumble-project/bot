@@ -4,7 +4,8 @@ import type { mcpCreateInput, mcpInput } from "../contract/api-contract";
 import { AgentRepository } from "../bots/agent-repository";
 import { Secrets } from "../secrets/secrets";
 import type { ServerSecrets } from "../secrets/server-secrets";
-import type { Agent, MCPServer, SecretInput } from "../shared/domain";
+import type { Agent, SecretInput } from "../shared/domain";
+import type { MCPServer } from "./mcp-server-repository";
 import { InvalidInput, NotFound } from "../shared/errors";
 import { MAX_BOT_MCP_SERVERS } from "../shared/limits";
 import type { Runner } from "../shared/runner";
@@ -26,8 +27,7 @@ type Services = AgentRepository | McpServerRepository | Secrets | ServerSecrets;
 
 type McpServersOptions = {
   run: Runner<Services>;
-  /** Absent when the API runs without the account's connections, such as in fixtures. */
-  integrations?: McpIntegrations["Service"] | undefined;
+  integrations: Pick<McpIntegrations["Service"], "failure" | "disconnect">;
   /** The server's OAuth client metadata document, when it has a public address. */
   oauthClient?: ClientDocument | undefined;
 };
@@ -69,7 +69,7 @@ export class McpServers {
       ...described,
       auth,
       authenticated: auth !== "none",
-      error: this.options.integrations?.failure(server.id) ?? null,
+      error: this.options.integrations.failure(server.id),
     } as const;
   }
 
@@ -83,11 +83,7 @@ export class McpServers {
 
   /** Closes the open connection, so the next use picks up the server's new auth. */
   private disconnect(id: string) {
-    const { integrations } = this.options;
-
-    return integrations
-      ? Effect.runPromise(integrations.disconnect(id))
-      : Promise.resolve();
+    return Effect.runPromise(this.options.integrations.disconnect(id));
   }
 
   /** Saves, or with null removes, one of the server's secrets; returns whether one was sent. */

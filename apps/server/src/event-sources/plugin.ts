@@ -1,6 +1,5 @@
 import type { CrumblePlugin } from "../plugins/plugins";
-
-export const DOORSTEP_PLUGIN_ID = "doorstep";
+import { DOORSTEP_PLUGIN_ID } from "../shared/vendors";
 
 export const doorstepPlugin = (): CrumblePlugin => ({
   id: DOORSTEP_PLUGIN_ID,

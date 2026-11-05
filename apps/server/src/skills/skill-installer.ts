@@ -2,12 +2,8 @@ import { posix } from "node:path";
 import { Cause, Clock, Context, Effect, Layer, Schedule } from "effect";
 import { GitHubUnavailable } from "../github-apps/github-api";
 import { OWNER } from "../shared/change-by";
-import {
-  skillNameKey,
-  type Skill,
-  type SkillDocument,
-  type SkillInput,
-} from "../shared/domain";
+import { type Skill, type SkillInput } from "../shared/domain";
+import { skillNameKey, type SkillDocument } from "./skill-repository";
 import { MAX_SKILL_FILE_BYTES } from "../shared/limits";
 import {
   Conflict,

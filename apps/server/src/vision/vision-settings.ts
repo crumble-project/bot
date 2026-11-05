@@ -1,7 +1,6 @@
 import type { Models } from "@earendil-works/pi-ai";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import { visionModelInput } from "../shared/domain";
 import { InvalidInput } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import { SettingsRepository } from "../shared/settings-repository";
@@ -50,7 +49,7 @@ export function registerVisionModelRoutes(options: {
 
   register(routes.getVisionModel, async (c) => c.json(await status(), 200));
   register(routes.updateVisionModel, async (c) => {
-    const { visionModel } = visionModelInput.parse(await c.req.json());
+    const { visionModel } = c.req.valid("json");
 
     if (visionModel && !(await reachable(visionModel)))
       throw new InvalidInput({

@@ -21,6 +21,7 @@ import {
   MAX_MESSAGE_CHARS,
   MAX_SECRET_CHARS,
 } from "../shared/limits";
+import { MAX_MCP_SERVER_NAME_CHARS } from "./limits";
 import * as response from "./api-responses";
 import { body, define, empty, error, json } from "./route";
 import { pushRoutes } from "./push";
@@ -178,7 +179,7 @@ export const oauthCallbackInput = z.object({
 });
 
 export const mcpInput = z.object({
-  name: z.string().trim().min(1).max(100),
+  name: z.string().trim().min(1).max(MAX_MCP_SERVER_NAME_CHARS),
   url: z
     .url()
     .refine(
@@ -221,6 +222,9 @@ export function patchInput(schema: z.ZodObject) {
 
   return z.object(fields);
 }
+
+/** Replaces the bot's proposal with the owner's edit of it; an approval may have no body at all. */
+export const botRequestApproval = z.object({ proposal: agentInput.optional() });
 
 const gone = json(error, "Login session ended or was lost on restart");
 
@@ -870,7 +874,7 @@ export const routes = {
         required: false,
         content: {
           "application/json": {
-            schema: z.object({ proposal: agentInput.optional() }),
+            schema: botRequestApproval,
           },
         },
       },

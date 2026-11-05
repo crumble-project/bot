@@ -7,8 +7,8 @@ import {
   type Agent,
   type Schedule,
   type ScheduleInput,
-  type ScheduleKind,
 } from "../shared/domain";
+import type { ScheduleKind } from "./schema";
 import { AgentRepository } from "../bots/agent-repository";
 import { EventRepository } from "../event-sources/event-repository";
 import { ScheduleRepository } from "./schedule-repository";

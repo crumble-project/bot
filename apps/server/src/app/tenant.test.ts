@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { accountModels } from "../providers/providers";
+import { DEFAULT_SERVER_SETTINGS } from "./server-settings";
 import { createTenant } from "./tenant";
 
 const original = process.env["OPENAI_API_KEY"];
@@ -116,11 +117,15 @@ test.serial(
         dataDir: firstDir,
         tenantId: "first-user",
         skillsDir,
+        serverSettings: () => DEFAULT_SERVER_SETTINGS,
+        workspaceEnv: process.env,
       });
       second = await createTenant({
         dataDir: secondDir,
         tenantId: "second-user",
         skillsDir,
+        serverSettings: () => DEFAULT_SERVER_SETTINGS,
+        workspaceEnv: process.env,
       });
 
       // Each account keeps its own Claude Code state, private to its owner.

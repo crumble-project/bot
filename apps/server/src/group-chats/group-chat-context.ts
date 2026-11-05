@@ -11,7 +11,7 @@ import type { Bots } from "../bots/bots";
 import type { ConversationRepository } from "../bots/conversation-repository";
 import type { ExecutionRepository } from "../bots/execution-repository";
 import type { BotRuntime } from "../bots/runtime";
-import type { GroupChat } from "../shared/domain";
+import type { GroupChat } from "./group-chat-repository";
 import { InvalidInput, NotFound, type AppError } from "../shared/errors";
 import type { GroupChatRepository } from "./group-chat-repository";
 import type { GroupTranscripts } from "./group-transcripts";

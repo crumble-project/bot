@@ -19,7 +19,6 @@ import {
   MAX_MESSAGE_CHARS,
   MAX_MODEL_ID_CHARS,
   MAX_PROVIDER_ID_CHARS,
-  MAX_REQUEST_REASON_CHARS,
   MAX_SCHEDULE_COMMAND_CHARS,
   MAX_SCHEDULE_NAME_CHARS,
   MAX_SCHEDULE_TIMEOUT_SECONDS,
@@ -45,15 +44,16 @@ export const THINKING_LEVELS = [
   "max",
 ] as const;
 
-const modelRef = z.object({
-  provider: z
-    .string()
-    .trim()
-    .min(1)
-    .max(MAX_PROVIDER_ID_CHARS)
-    .regex(/^[a-z0-9-]+$/),
-  model: z.string().trim().min(1).max(MAX_MODEL_ID_CHARS),
-});
+const providerId = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_PROVIDER_ID_CHARS)
+  .regex(/^[a-z0-9-]+$/);
+
+const modelId = z.string().trim().min(1).max(MAX_MODEL_ID_CHARS);
+
+const modelRef = z.object({ provider: providerId, model: modelId });
 
 /** A model other than the bot's own; null clears it in a patch. */
 const modelChoice = modelRef.nullable().optional();
@@ -76,14 +76,8 @@ export const agentInput = z.object({
     .string()
     .max(MAX_INSTRUCTIONS_CHARS)
     .default("You are a thoughtful, capable personal assistant."),
-  provider: z
-    .string()
-    .trim()
-    .min(1)
-    .max(MAX_PROVIDER_ID_CHARS)
-    .regex(/^[a-z0-9-]+$/)
-    .default("openai"),
-  model: z.string().trim().min(1).max(MAX_MODEL_ID_CHARS).default("gpt-4.1"),
+  provider: providerId.default("openai"),
+  model: modelId.default("gpt-4.1"),
   webSearchProvider: z.enum(WEB_SEARCH_PROVIDER_IDS).nullable().optional(),
   enabled: z.boolean().default(true),
   tools: z
@@ -155,26 +149,6 @@ export type Agent = Omit<
   updatedAt: string;
 };
 
-export type BotRequest = {
-  id: string;
-  agentId: string;
-  proposal: AgentInput;
-  reason: string;
-  status: "pending" | "approved" | "declined";
-  createdAgentId: string | null;
-  requestedAt: string;
-  decidedAt: string | null;
-};
-
-export type Conversation = {
-  id: string;
-  agentId: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  archived?: boolean;
-};
-
 export const MEMORY_SOURCE_KINDS = [
   "chat",
   "owner",
@@ -185,7 +159,6 @@ export const MEMORY_SOURCE_KINDS = [
 
 const memorySourceKind = z.enum(MEMORY_SOURCE_KINDS);
 
-/** A memory belongs to one bot, or is shared when `agentId` is null. */
 /** Where a memory was saved; names are the ones current at the time. */
 export const memorySource = z.discriminatedUnion("kind", [
   z.object({ kind: memorySourceKind.extract(["chat"]) }),
@@ -209,6 +182,7 @@ export const memorySource = z.discriminatedUnion("kind", [
 
 export type MemorySource = z.infer<typeof memorySource>;
 
+/** A memory belongs to one bot, or is shared when `agentId` is null. */
 export type Memory = {
   id: string;
   agentId: string | null;
@@ -219,8 +193,6 @@ export type Memory = {
   updatedAt: string;
 };
 
-export type ScheduleKind = "prompt" | "script";
-
 export const SCRIPT_RUN_STATUSES = [
   "running",
   "succeeded",
@@ -228,22 +200,6 @@ export const SCRIPT_RUN_STATUSES = [
   "timed_out",
   "interrupted",
 ] as const;
-
-export type ScriptRunStatus = (typeof SCRIPT_RUN_STATUSES)[number];
-
-export type ScriptRun = {
-  id: string;
-  scheduleId: string;
-  agentId: string;
-  command: string;
-  status: ScriptRunStatus;
-  exitCode: number | null;
-  output: string;
-  droppedBytes: number;
-  error: string | null;
-  startedAt: string;
-  finishedAt: string | null;
-};
 
 export const SCHEDULE_TRIGGER_MESSAGE =
   "Choose a recurring cron, a one-time date, or an event source";
@@ -299,19 +255,6 @@ export const scheduleInput = z
 
 export type ScheduleInput = z.infer<typeof scheduleInput>;
 
-export const mergeScheduleInput = (
-  existing: ScheduleInput,
-  patch: Partial<ScheduleInput>,
-): ScheduleInput => {
-  const next = { ...existing, ...patch };
-
-  return {
-    ...next,
-    prompt: next.kind === "script" ? "" : next.prompt,
-    command: next.kind === "prompt" ? null : next.command,
-  };
-};
-
 export type Schedule = ScheduleInput & {
   id: string;
   nextRunAt: string | null;
@@ -347,17 +290,6 @@ export type Execution = {
 
 export const activeExecution = (execution: Pick<Execution, "status">) =>
   execution.status === "pending" || execution.status === "running";
-
-/** An MCP server is shared, or belongs to the one bot in `agentId` with its own credentials. */
-export type MCPServer = {
-  id: string;
-  name: string;
-  url: string;
-  enabled: boolean;
-  agentId: string | null;
-  /** A client the owner registered with the server's authorization server, for servers that register none themselves. */
-  oauthClientId: string | null;
-};
 
 // Names the workspace, its shell, or the credential proxy itself depend on.
 const RESERVED_CREDENTIAL_NAMES = new Set([
@@ -398,7 +330,7 @@ export const credentialName = z
 const HOST_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 /** A public DNS name, or `*.` and one: the hosts a credential may be sent to. Addresses are not names. */
-export const credentialHost = z
+const credentialHost = z
   .string()
   .trim()
   .toLowerCase()
@@ -419,21 +351,13 @@ export const credentialHosts = z
   .max(MAX_CREDENTIAL_HOSTS)
   .transform((hosts) => [...new Set(hosts)]);
 
-export const credentialRequestInput = z.object({
-  name: credentialName,
-  hosts: credentialHosts,
-  reason: z.string().trim().min(1).max(MAX_REQUEST_REASON_CHARS),
-});
-
-export type CredentialRequestInput = z.infer<typeof credentialRequestInput>;
-
 export const passwordManagerIdInput = z.enum(PASSWORD_MANAGER_IDS);
 
 /** Settings key of a password manager: never rename. */
 export type PasswordManagerId = z.infer<typeof passwordManagerIdInput>;
 
 /** Where to read a secret's value instead of storing it: a password manager and a reference it understands. */
-export const secretReferenceInput = z.object({
+const secretReferenceInput = z.object({
   passwordManager: passwordManagerIdInput,
   reference: z.string().trim().min(1).max(1000),
 });
@@ -470,39 +394,6 @@ export const credentialSaveInput = z.object({
   secret: secretInput.optional(),
 });
 
-export type CredentialSaveInput = z.infer<typeof credentialSaveInput>;
-
-/** A credential the owner gave one bot. Its value is write-only and never part of this record. */
-export type AgentCredential = {
-  name: string;
-  hosts: string[];
-  /** Null for a token from the bot's GitHub App, which is neither stored nor referenced. */
-  secret: SecretStatus | null;
-  createdAt: string;
-  updatedAt: string;
-  lastUsedAt: string | null;
-  /** Why the newest use couldn't read the value; null when it could. */
-  lastError: string | null;
-  /** The value is a token from the bot's GitHub App, as the App or the owner signed in through it; neither stored nor referenced. */
-  github: boolean;
-};
-
-/** A bot's request for a credential, waiting for the owner. */
-export type CredentialRequest = {
-  name: string;
-  hosts: string[];
-  reason: string;
-  requestedAt: string;
-};
-
-/** What the credential proxy needs to swap a credential in: never leaves the server. */
-/** A credential the proxy may swap in; its value is read only when a request uses the placeholder. */
-export type CredentialGrant = {
-  name: string;
-  hosts: string[];
-  placeholder: string;
-};
-
 /** The request a credential's value is read for: some values, such as a GitHub App's token, depend on it. */
 export type CredentialTarget = { host: string; path: string };
 
@@ -513,18 +404,6 @@ export const hostMatches = (hosts: readonly string[], host: string) =>
       ? host.endsWith(pattern.slice(1))
       : pattern === host,
   );
-
-/** One request the credential proxy sent with the real value. */
-export type CredentialUse = {
-  id: string;
-  at: string;
-  method: string;
-  host: string;
-  path: string;
-  status: number | null;
-  /** Why the value couldn't be read, so the request was never sent. */
-  error: string | null;
-};
 
 export const loginName = z
   .string()
@@ -575,49 +454,6 @@ export const loginSaveInput = z
     path: ["item"],
   });
 
-export type LoginSaveInput = z.infer<typeof loginSaveInput>;
-
-/** A login the owner gave one bot for its desktop jobs. Values are write-only and never part of this record. */
-export type Login = {
-  name: string;
-  hosts: string[];
-  fields: Partial<Record<LoginField, SecretStatus>>;
-  createdAt: string;
-  updatedAt: string;
-  lastUsedAt: string | null;
-  /** Why the newest fill couldn't read its value; null when it could. */
-  lastError: string | null;
-};
-
-export const loginRequestInput = z.object({
-  name: loginName,
-  hosts: credentialHosts,
-  reason: z.string().trim().min(1).max(MAX_REQUEST_REASON_CHARS),
-  /** Whether the site asks for a one-time code too. */
-  one_time_code: z.boolean().optional(),
-});
-
-export type LoginRequestInput = z.infer<typeof loginRequestInput>;
-
-/** A bot's request for a login, waiting for the owner. */
-export type LoginRequest = {
-  name: string;
-  hosts: string[];
-  reason: string;
-  oneTimeCode: boolean;
-  requestedAt: string;
-};
-
-/** One fill of a login field into a page. */
-export type LoginUse = {
-  id: string;
-  at: string;
-  host: string;
-  field: LoginField;
-  /** Why the value couldn't be read, so nothing was typed. */
-  error: string | null;
-};
-
 /** A reference document inside a skill package, loaded only when the bot asks for it. */
 export const skillDocumentInput = z.object({
   path: z
@@ -628,8 +464,6 @@ export const skillDocumentInput = z.object({
     ),
   content: z.string().min(1).max(MAX_SKILL_DOCUMENT_CHARS),
 });
-
-export type SkillDocument = z.infer<typeof skillDocumentInput>;
 
 export const skillInput = z.object({
   name: z.string().trim().min(1).max(MAX_SKILL_NAME_CHARS),
@@ -649,12 +483,9 @@ export const skillInput = z.object({
 
 export type SkillInput = z.infer<typeof skillInput>;
 
-/** Skill names are the same name whatever their case. */
-export const skillNameKey = (name: string) => name.toLowerCase();
-
 export const SKILL_STATES = ["active", "stale", "archived"] as const;
 
-export type SkillState = (typeof SKILL_STATES)[number];
+type SkillState = (typeof SKILL_STATES)[number];
 
 /** What the owner may change on a skill beyond its content: its lifecycle state and whether the curator leaves it alone. */
 export const skillLifecycleInput = z.object({
@@ -695,7 +526,7 @@ export type Skill = SkillInput & {
 
 export const CHANGE_ACTORS = ["owner", "bot", "review", "curator"] as const;
 
-export type ChangeActor = (typeof CHANGE_ACTORS)[number];
+type ChangeActor = (typeof CHANGE_ACTORS)[number];
 
 /** Where a learned change came from: the execution and conversation of the turn, or the group it ran in. */
 export type ChangeSource = {
@@ -737,49 +568,6 @@ export const groupChatInput = z.object({
     .max(MAX_GROUP_MEMBERS)
     .refine((ids) => new Set(ids).size === ids.length, "List each bot once"),
 });
-
-export type GroupChatInput = z.infer<typeof groupChatInput>;
-
-/** A conversation between the owner and several bots, with one shared transcript. */
-export type GroupChat = GroupChatInput & {
-  id: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-/** Bot-started turns a group allows since the owner's last message before it pauses. */
-export const GROUP_TURN_BUDGET = 8;
-
-/** A member's place in a group: its working conversation and the group messages it has seen. */
-export type GroupMember = {
-  groupId: string;
-  agentId: string;
-  /** The member's task-owned conversation for this group, created on its first turn. */
-  conversationId: string | null;
-  /** Number of the last group entry the member's turns have included. */
-  cursor: number;
-  /** Woken while busy: one more turn starts when the current one settles. */
-  pending: boolean;
-  /** Every wake behind the pending turn came from a bot message. */
-  pendingBotStarted: boolean;
-  /** Summary of the messages before the member joined, written once for its first turn. */
-  summary: string | null;
-  joinedAt: string;
-};
-
-export type GroupTurnStatus = "running" | "posting" | "settled";
-
-/** One member's turn in a group, carried out by an execution in its group conversation. */
-export type GroupTurn = {
-  executionId: string;
-  groupId: string;
-  agentId: string;
-  /** Number of the last group entry the turn's input included. */
-  through: number;
-  botStarted: boolean;
-  status: GroupTurnStatus;
-  createdAt: string;
-};
 
 export const WAITING_FOR = ["approval", "credential", "login"] as const;
 

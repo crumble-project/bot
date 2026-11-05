@@ -1,14 +1,56 @@
+import type { SecretStatus } from "../shared/domain";
 import { randomBytes } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { parseHosts } from "../bot-secrets/schema";
 import { lastUseError } from "../bot-secrets/bot-secret-uses";
-import type { AgentCredential, CredentialGrant } from "../shared/domain";
 import { botSecretKey } from "../secrets/secret-key";
 import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
 import { nowIso } from "../shared/time";
 import { agentCredentials, credentialAuthorities } from "./schema";
+
+/** A credential the owner gave one bot. Its value is write-only and never part of this record. */
+export type AgentCredential = {
+  name: string;
+  hosts: string[];
+  /** Null for a token from the bot's GitHub App, which is neither stored nor referenced. */
+  secret: SecretStatus | null;
+  createdAt: string;
+  updatedAt: string;
+  lastUsedAt: string | null;
+  /** Why the newest use couldn't read the value; null when it could. */
+  lastError: string | null;
+  /** The value is a token from the bot's GitHub App, as the App or the owner signed in through it; neither stored nor referenced. */
+  github: boolean;
+};
+
+/** A bot's request for a credential, waiting for the owner. */
+export type CredentialRequest = {
+  name: string;
+  hosts: string[];
+  reason: string;
+  requestedAt: string;
+};
+
+/** A credential the proxy may swap in; its value is read only when a request uses the placeholder. */
+export type CredentialGrant = {
+  name: string;
+  hosts: string[];
+  placeholder: string;
+};
+
+/** One request the credential proxy sent with the real value. */
+export type CredentialUse = {
+  id: string;
+  at: string;
+  method: string;
+  host: string;
+  path: string;
+  status: number | null;
+  /** Why the value couldn't be read, so the request was never sent. */
+  error: string | null;
+};
 
 /** The secret holding a credential's value. */
 export const credentialSecretKey = (agentId: string, name: string) =>

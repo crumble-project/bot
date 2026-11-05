@@ -36,21 +36,20 @@ export type PluginHost = {
   workspaces: Workspaces | undefined;
   desktopControl: DesktopControlAccess;
   /** The bots' credentials, offered to coding jobs. */
-  credentials?: CredentialsAccess;
+  credentials: CredentialsAccess;
   /** The bots' logins, filled by desktop jobs. */
-  logins?: DesktopLogins;
+  logins: DesktopLogins;
   /** What desktop jobs check their actions with before they act. */
-  intent?: DesktopIntent;
+  intent: DesktopIntent;
   /** How long a coding job's question keeps its workspace awake, from the server's settings. */
-  questionGraceMs?: () => number;
-  /** Disable host-level Claude Code authentication for tenant runtimes. */
+  questionGraceMs: () => number;
 };
 
 /** Every plugin compiled into the server, in the order their contributions are listed. */
 export const builtinPlugins = (host: PluginHost): CrumblePlugin[] => [
   meliousPlugin(),
   claudeCodePlugin(host.dataDir, host.env),
-  codingPlugin(host.workspaces, host.credentials, host.questionGraceMs),
+  codingPlugin(host.workspaces, host.questionGraceMs, host.credentials),
   desktopPlugin(host.workspaces, host.desktopControl, host.logins, host.intent),
   webSearchPlugin(),
   exaPlugin(host.secret),

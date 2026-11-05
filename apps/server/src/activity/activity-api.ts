@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { activityInput, routes } from "../contract/api-contract";
+import { routes } from "../contract/api-contract";
 import type { activityFeedResponse } from "../contract/api-responses";
 import type { Register } from "../contract/route";
 import { decodeCursor, activityPage } from "./activity";
@@ -29,7 +29,7 @@ export function registerActivityRoutes(options: {
   const exec: Exec = (effect) => options.run.runSync(effect);
 
   register(routes.activity, async (c) => {
-    const input = activityInput.parse(c.req.query());
+    const input = c.req.valid("query");
     const cursor = input.cursor ? decodeCursor(input.cursor) : null;
 
     if (input.cursor && !cursor)

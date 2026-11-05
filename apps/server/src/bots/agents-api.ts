@@ -1,4 +1,5 @@
-import { patchInput, routes } from "../contract/api-contract";
+import { Effect } from "effect";
+import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import type { McpServerRepository } from "../integrations/mcp-server-repository";
 import type { McpServers } from "../integrations/mcp-servers";
@@ -11,6 +12,7 @@ import { AgentRepository } from "./agent-repository";
 import { duplicateAgent } from "./agent-duplicate";
 import type { BotsAccess } from "./bots";
 import { usesDesktop } from "../bot-desktop/desktop-vocabulary";
+import type { Workspaces } from "../workspaces/workspace";
 
 type Services =
   | AgentRepository
@@ -28,8 +30,7 @@ type AgentRoutesOptions = {
   /** Accepts a provider ID only if this server can serve it. */
   provider: { parse(value: string): string };
   mcpServers: McpServers;
-  /** Stops a bot's workspace machine, so its next use boots the image its tools need now. */
-  restartWorkspace?: ((agentId: string) => Promise<void>) | undefined;
+  workspaces: Workspaces | undefined;
 };
 
 /** The owner's view of every bot, and the editing of a bot's own configuration. */
@@ -46,7 +47,7 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
     ),
   );
   register(routes.createAgent, async (c) => {
-    const input = agentInput.parse(await c.req.json());
+    const input = c.req.valid("json");
 
     options.provider.parse(input.provider);
     options.mcpServers.check(null, input.mcpServers, true);
@@ -58,7 +59,7 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
   );
   register(routes.updateAgent, async (c) => {
     const old = service.agent(c.req.param("id"));
-    const body = patchInput(agentInput).parse(await c.req.json());
+    const body = c.req.valid("json");
 
     // The inline skills are a view of the bot's packages, which may outgrow the inline limit; only a submitted list is validated.
     const { skills, ...input } = agentInput.parse({
@@ -79,8 +80,8 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
     );
 
     // The desktop tool picks the workspace image; a bot that gains or loses it needs a fresh boot.
-    if (usesDesktop(old) !== usesDesktop(input))
-      await options.restartWorkspace?.(old.id);
+    if (options.workspaces && usesDesktop(old) !== usesDesktop(input))
+      await Effect.runPromise(options.workspaces.restart(old.id));
 
     return c.json(updated, 200);
   });

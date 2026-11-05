@@ -23,7 +23,8 @@ import {
   type ToolRegistration,
 } from "@earendil-works/pi-durable";
 import type { Context as PiContext } from "@earendil-works/chord/context";
-import type { Agent, MCPServer } from "../shared/domain";
+import type { Agent } from "../shared/domain";
+import type { MCPServer } from "./mcp-server-repository";
 import { Context, Effect, Layer, ManagedRuntime } from "effect";
 import { AgentRepository } from "../bots/agent-repository";
 import { Secrets, secretText } from "../secrets/secrets";
@@ -293,8 +294,7 @@ class McpConnections {
     }
   }
 
-  private async connection(server: MCPServer) {
-    const generation = this.generation(server.id);
+  private async credentials(server: MCPServer) {
     // A signed-in server authenticates through OAuth, which refreshes its own access token.
     const oauth = hasOAuthTokens(this.data.secrets, server.id);
 
@@ -304,7 +304,12 @@ class McpConnections {
       ? { Authorization: `Bearer ${token}` }
       : {};
 
-    const hadCredentials = oauth || Object.keys(headers).length > 0;
+    return { oauth, headers, hadCredentials: oauth || Boolean(token) };
+  }
+
+  private async connection(server: MCPServer) {
+    const generation = this.generation(server.id);
+    const { oauth, headers, hadCredentials } = await this.credentials(server);
     const fingerprint = digest({ url: server.url, headers, oauth });
     const existing = this.connections.get(server.id);
 

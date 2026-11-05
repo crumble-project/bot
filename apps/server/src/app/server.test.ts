@@ -4,7 +4,9 @@ import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { Store } from "../../test/support/store";
 import { agentInput, scheduleInput } from "../shared/domain";
 import { ScriptRunRepository } from "../automations/script-run-repository";
+import { DEFAULT_SERVER_SETTINGS } from "./server-settings";
 import { createTenant } from "./tenant";
+import { CLIENT_DOCUMENT_PATH } from "../integrations/mcp-oauth";
 import { ownerRecord } from "./data-lock";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -110,6 +112,37 @@ test.serial(
       await running.close();
       const reopened = await startServer({ dataDir, port });
       await reopened.close();
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.serial(
+  "the OAuth client document tells authorization servers to cache it",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-"));
+    const port = 18000 + Math.floor(Math.random() * 1000);
+
+    try {
+      const running = await startServer({
+        dataDir,
+        port,
+        publicUrl: "https://crumble.example",
+      });
+
+      try {
+        const response = await fetch(
+          new URL(CLIENT_DOCUMENT_PATH, running.server.url),
+        );
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("cache-control")).toBe(
+          "public, max-age=3600",
+        );
+      } finally {
+        await running.close();
+      }
     } finally {
       rmSync(dataDir, { recursive: true, force: true });
     }
@@ -621,6 +654,8 @@ test.serial(
       tenant = await createTenant({
         dataDir,
         tenantId: "script-test",
+        serverSettings: () => DEFAULT_SERVER_SETTINGS,
+        workspaceEnv: process.env,
         workspaces: Effect.succeed(workspaces),
       });
       const headers = { authorization: `Bearer ${tenant.token}` };

@@ -20,6 +20,7 @@ const OTHER_IMAGE = process.env["CRUMBLE_WORKSPACE_IMAGE_OTHER"] ?? "";
 
 // Sandboxes and volumes are global to the Microsandbox home, so each run gets its own names.
 const namePrefix = `crumble-test-${process.pid}`;
+const size = () => ({ cpus: 2, memoryMib: 4096 });
 
 async function sh(env: ExecutionEnv, command: string) {
   let output = "";
@@ -45,7 +46,9 @@ async function readText(env: ExecutionEnv, file: string) {
 
 describe("workspace configuration", () => {
   test("workspaces are unavailable without an image", () => {
-    expect(microsandboxWorkspacesFromEnv({}, { namePrefix })).toBeUndefined();
+    expect(
+      microsandboxWorkspacesFromEnv({}, { namePrefix, size }),
+    ).toBeUndefined();
   });
 
   test("desktop bots boot the desktop image when one is configured", () => {
@@ -56,7 +59,7 @@ describe("workspace configuration", () => {
         CRUMBLE_WORKSPACE_IMAGE: "crumble-workspace:dev",
         CRUMBLE_WORKSPACE_DESKTOP_IMAGE: "crumble-workspace-desktop:dev",
       },
-      { namePrefix, wantsDesktop: (agentId) => desktopBots.has(agentId) },
+      { namePrefix, size, wantsDesktop: (agentId) => desktopBots.has(agentId) },
     )!;
 
     expect(workspaces.desktop).toBe(true);
@@ -67,7 +70,7 @@ describe("workspace configuration", () => {
   test("without a desktop image no bot gets a bot desktop", () => {
     const workspaces = microsandboxWorkspacesFromEnv(
       { CRUMBLE_WORKSPACE_IMAGE: "crumble-workspace:dev" },
-      { namePrefix, wantsDesktop: () => true },
+      { namePrefix, size, wantsDesktop: () => true },
     )!;
 
     expect(workspaces.desktop).toBe(false);
@@ -77,6 +80,7 @@ describe("workspace configuration", () => {
   test("agent ids cannot name another machine", () => {
     const workspaces = new MicrosandboxWorkspaces("crumble-workspace:dev", {
       namePrefix,
+      size,
     });
 
     for (const agentId of ["", "../other", "a/b", "x".repeat(65)])
@@ -85,7 +89,7 @@ describe("workspace configuration", () => {
 });
 
 describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
-  const workspaces = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
+  const workspaces = new MicrosandboxWorkspaces(IMAGE, { namePrefix, size });
 
   afterAll(() => Effect.runPromise(workspaces.close()));
 
@@ -131,12 +135,12 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
   }, 120_000);
 
   test("files survive a restart on the same volume", async () => {
-    const first = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
+    const first = new MicrosandboxWorkspaces(IMAGE, { namePrefix, size });
 
     await sh(first.env("persist"), "echo kept > /workspace/note");
     await Effect.runPromise(first.close());
 
-    const second = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
+    const second = new MicrosandboxWorkspaces(IMAGE, { namePrefix, size });
 
     try {
       expect(await readText(second.env("persist"), "/workspace/note")).toBe(
@@ -155,7 +159,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
         process.execPath,
         "-e",
         `const { MicrosandboxWorkspaces } = await import(${JSON.stringify(module)});
-         const workspaces = new MicrosandboxWorkspaces(${JSON.stringify(IMAGE)}, { namePrefix: ${JSON.stringify(namePrefix)} });
+         const workspaces = new MicrosandboxWorkspaces(${JSON.stringify(IMAGE)}, { namePrefix: ${JSON.stringify(namePrefix)}, size: () => ({ cpus: 2, memoryMib: 4096 }) });
          const result = await workspaces.env("orphaned").exec("echo kept > /workspace/note && echo installed > /usr/local/bin/marker && sync", {}, (await import("@earendil-works/chord/context")).BACKGROUND_CONTEXT);
          console.log(result.ok ? "ready" : "failed");
          setInterval(() => {}, 1000);`,
@@ -171,7 +175,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
     owner.kill("SIGKILL");
     await owner.exited;
 
-    const next = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
+    const next = new MicrosandboxWorkspaces(IMAGE, { namePrefix, size });
 
     try {
       expect(await readText(next.env("orphaned"), "/workspace/note")).toBe(
@@ -189,6 +193,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
   test("programs outside the workspace survive an idle stop and a server restart", async () => {
     const first = new MicrosandboxWorkspaces(IMAGE, {
       namePrefix,
+      size,
       idleTimeoutMs: 500,
     });
 
@@ -207,7 +212,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
     }
 
     // A new server process: a new MicrosandboxWorkspaces, the same machine.
-    const second = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
+    const second = new MicrosandboxWorkspaces(IMAGE, { namePrefix, size });
 
     try {
       expect(await readText(second.env("keeps"), "/usr/local/bin/marker")).toBe(
@@ -230,7 +235,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
   test.skipIf(!OTHER_IMAGE)(
     "another image replaces the machine but keeps the workspace",
     async () => {
-      const first = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
+      const first = new MicrosandboxWorkspaces(IMAGE, { namePrefix, size });
 
       try {
         await sh(
@@ -241,7 +246,10 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
         await Effect.runPromise(first.close());
       }
 
-      const second = new MicrosandboxWorkspaces(OTHER_IMAGE, { namePrefix });
+      const second = new MicrosandboxWorkspaces(OTHER_IMAGE, {
+        namePrefix,
+        size,
+      });
 
       try {
         const result = await sh(
@@ -260,6 +268,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
   test("an idle workspace stops and starts again with its files", async () => {
     const idle = new MicrosandboxWorkspaces(IMAGE, {
       namePrefix,
+      size,
       idleTimeoutMs: 500,
     });
 
@@ -277,7 +286,7 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
   }, 120_000);
 
   test("a machine that died restarts on the next operation", async () => {
-    const dying = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
+    const dying = new MicrosandboxWorkspaces(IMAGE, { namePrefix, size });
 
     try {
       await sh(dying.env("died"), "echo kept > /workspace/note && sync");
@@ -316,7 +325,7 @@ except OSError: print('none')"`,
   }, 60_000);
 
   test("a machine created before the UDP rule is created anew, keeping the workspace", async () => {
-    const first = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
+    const first = new MicrosandboxWorkspaces(IMAGE, { namePrefix, size });
 
     try {
       await sh(
@@ -328,7 +337,7 @@ except OSError: print('none')"`,
       await Effect.runPromise(first.close());
     }
 
-    const second = new MicrosandboxWorkspaces(IMAGE, { namePrefix });
+    const second = new MicrosandboxWorkspaces(IMAGE, { namePrefix, size });
 
     try {
       const result = await sh(

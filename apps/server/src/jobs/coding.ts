@@ -29,8 +29,6 @@ import { BOT_TOOL } from "../contract/tools";
 /** The bot's own read, write, edit, and bash in its workspace; group turns keep it, unlike the job tool. */
 const WORKSPACE_EXTENSION = "workspace";
 
-const DEFAULT_QUESTION_GRACE_MS = 15 * 60 * 1000;
-
 // Tools whose success may have changed the workspace's files. A failed bash can still have written files.
 const FILE_CHANGING_TOOLS = new Set(["write", "edit", "bash"]);
 
@@ -108,8 +106,8 @@ function codingExtensions(
   coding: JobKind,
   agent: Pick<Agent, "id">,
   workspaces: Workspaces,
+  questionGraceMs: () => number,
   credentials?: CredentialsAccess,
-  questionGraceMs: () => number = () => DEFAULT_QUESTION_GRACE_MS,
 ): JobExtensions {
   // While the owner considers a question, the workspace stays up for the grace period, so servers the job started live.
   let awake:
@@ -208,8 +206,8 @@ function codingExtensions(
 /** Coding as a plugin: workspace tools and coding jobs for bots with the `coding` tool, while workspaces exist. */
 export const codingPlugin = (
   workspaces: Workspaces | undefined,
+  questionGraceMs: () => number,
   credentials?: CredentialsAccess,
-  questionGraceMs?: () => number,
 ): CrumblePlugin => {
   const coding = defineJobKind(JOB_KINDS.coding);
   // One build per bot: the grace period's hold lives in its closure, and a later build could not release it.
@@ -229,8 +227,8 @@ export const codingPlugin = (
                   coding,
                   agent,
                   workspaces,
-                  credentials,
                   questionGraceMs,
+                  credentials,
                 );
 
               built.set(agent.id, extensions);

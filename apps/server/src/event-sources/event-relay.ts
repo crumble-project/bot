@@ -8,7 +8,7 @@ import { Clock, Context, DateTime, Effect, Layer } from "effect";
 import { z } from "zod";
 import type { ConnectionStatus } from "../shared/domain";
 import { Secrets, secretText } from "../secrets/secrets";
-import { pluginSettingKey } from "../plugins/plugins";
+import { DOORSTEP_PLUGIN_ID, pluginSettingKey } from "../shared/vendors";
 import { InvalidInput } from "../shared/errors";
 import {
   connectionFailed,
@@ -20,7 +20,6 @@ import { SettingsRepository } from "../shared/settings-repository";
 import { startTicking } from "../shared/ticker";
 import { connectUrl, type RelayAccess } from "./doorstep-client";
 import { EventRepository, type RelayEvent } from "./event-repository";
-import { DOORSTEP_PLUGIN_ID } from "./plugin";
 
 export const RELAY_URL_SETTING = "event-relay:url";
 

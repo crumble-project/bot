@@ -1,9 +1,11 @@
 import { z } from "zod";
+import { CHART_SERIES_COLORS } from "../shared/limits";
 
 const MAX_PRIMITIVES = 6000;
 
-const COLOR =
-  /^(none|foreground|background|series-[1-8]|#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8}))$/;
+const COLOR = new RegExp(
+  `^(none|foreground|background|series-[1-${CHART_SERIES_COLORS}]|#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8}))$`,
+);
 
 const RGB =
   /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+%?))?\s*\)$/;

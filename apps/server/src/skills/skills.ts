@@ -18,7 +18,7 @@ export class BotSkills extends Context.Service<
   {
     /** Defaults, shared skills the bot uses, and its own, archived ones excluded. */
     readonly available: (agent: Agent) => Effect.Effect<AvailableSkill[]>;
-    readonly used: (agent: Agent, skill: AvailableSkill) => Effect.Effect<void>;
+    readonly used: (skill: AvailableSkill) => Effect.Effect<void>;
     /** The bot's own skills, archived ones excluded. */
     readonly own: (agentId: string) => Effect.Effect<Skill[]>;
     readonly create: (
@@ -123,7 +123,7 @@ export class BotSkills extends Context.Service<
             })),
           ];
         }),
-        used: (_agent, skill) =>
+        used: (skill) =>
           skill.scope === "default" ? Effect.void : skills.recordUse(skill.id),
         own,
         create: Effect.fn("BotSkills.create")(function* (

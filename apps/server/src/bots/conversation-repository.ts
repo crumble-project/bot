@@ -1,9 +1,17 @@
 import { and, desc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import type { Conversation } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { conversations } from "./schema";
+
+export type Conversation = {
+  id: string;
+  agentId: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  archived?: boolean;
+};
 
 const conversationOf = (
   row: typeof conversations.$inferSelect,

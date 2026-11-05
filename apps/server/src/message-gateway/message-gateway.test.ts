@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { Effect, Fiber, Layer, ManagedRuntime } from "effect";
 import { TestClock } from "effect/testing";
 import { productLayer } from "../app/product-layer";
-import { handleApiError } from "../app/api";
+import { pathRegister } from "../app/api";
+import { handleApiError } from "../app/api-errors";
 import { AgentRepository } from "../bots/agent-repository";
 import { Bots } from "../bots/bots";
 import { ConversationRepository } from "../bots/conversation-repository";
@@ -379,8 +380,7 @@ test("gateway HTTP configuration validates input, hides credentials, and can dis
   const app = contractApp();
   app.onError(handleApiError);
   registerGatewayRoutes({
-    register: (definition, handler) =>
-      app.on(definition.method, definition.getRoutingPath(), handler),
+    register: pathRegister(app),
     messageGateway: f.gateway,
   });
 

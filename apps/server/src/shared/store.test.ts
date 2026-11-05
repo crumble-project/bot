@@ -3,11 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { Effect } from "effect";
 import { Store } from "../../test/support/store";
-import { migrateFile, migrationsFolder } from "./database";
-import { upgradeLegacyStore } from "./legacy-schema";
-import { defaultAvatarDefinition } from "../contract/avatar";
 import { ConversationRepository } from "../bots/conversation-repository";
 import { SettingsRepository } from "./settings-repository";
 
@@ -199,39 +195,6 @@ describe("Store", () => {
       false,
     );
     expect(store.deleteMCPServer(server.id)).toBe(true);
-    store.close();
-  });
-
-  test("migrates an older agent schema without losing rows", () => {
-    const dir = make();
-    const db = new Database(join(dir, "store.sqlite"));
-    db.run(
-      "CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT, avatar TEXT, description TEXT, instructions TEXT, provider TEXT, model TEXT, enabled INTEGER, folder TEXT NOT NULL, tools TEXT, skills TEXT, mcp_servers TEXT, created_at TEXT, updated_at TEXT)",
-    );
-    db.query("INSERT INTO agents VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(
-      "legacy",
-      "Legacy",
-      JSON.stringify(defaultAvatarDefinition("legacy")),
-      "",
-      "old",
-      "openai",
-      "gpt-4.1",
-      1,
-      "Personal",
-      "[]",
-      "[]",
-      "[]",
-      "2020-01-01",
-      "2020-01-01",
-    );
-    db.close();
-    const store = new Store(dir);
-    expect(store.getAgent("legacy")?.name).toBe("Legacy");
-    expect(store.getAgent("legacy")?.delegates).toEqual([]);
-    // SAFETY: Migration adds the optional inference field to legacy agents.
-    expect((store.getAgent("legacy") as any)?.inference).toEqual({});
-    expect(store.getAgent("legacy")).not.toHaveProperty("folder");
-    expect(store.createAgent(input).name).toBe(input.name);
     store.close();
   });
 
@@ -517,7 +480,7 @@ describe("Store", () => {
 });
 
 describe("Store memory sources", () => {
-  test("keeps a memory's source and reports older memories without one", async () => {
+  test("keeps a memory's source and reports older memories without one", () => {
     const dir = make();
     const first = new Store(dir);
     const agent = first.createAgent(input);
@@ -531,86 +494,12 @@ describe("Store memory sources", () => {
 
     first.close();
 
-    const db = new Database(join(dir, "store.sqlite"));
-    // A server before Drizzle had no migrations table.
-    // Secrets, requests, and uses moved out of the credential tables after the baseline, which had them.
-    db.run(`DROP TABLE __drizzle_migrations;
-      DROP TABLE relayed_job_questions;
-      DROP TABLE delegation_receipts;
-      DROP TABLE bot_message_requests;
-      ALTER TABLE conversations DROP COLUMN chat;
-      ALTER TABLE agents ADD COLUMN skills text NOT NULL DEFAULT '[]';
-      ALTER TABLE agents ADD COLUMN delegates text NOT NULL DEFAULT '[]';
-      ALTER TABLE agents ADD COLUMN shared_memory integer NOT NULL DEFAULT 0;
-      ALTER TABLE agent_credentials ADD COLUMN value text;
-      DROP TABLE skill_updates;
-      ALTER TABLE skills DROP COLUMN origin;
-      ALTER TABLE skills DROP COLUMN copied_from_skill_id;
-      DROP TABLE github_account_bots;
-      DROP TABLE github_accounts;
-      DROP TABLE github_app_users;
-      DROP TABLE github_app_bots;
-      DROP TABLE github_apps;
-      DROP TABLE event_runs;
-      DROP TABLE relay_events;
-      DROP TABLE event_sources;
-      ALTER TABLE schedules DROP COLUMN event_source_id;
-      DROP TABLE gateway_cooldowns;
-      DROP TABLE gateway_sent_messages;
-      DROP TABLE gateway_receipts;
-      DROP TABLE bot_requests;
-      DROP TABLE script_runs;
-      DROP TABLE desktop_fills;
-      DROP TABLE held_actions;
-      DROP TABLE logins;
-      DROP TABLE password_managers;
-      DROP TABLE bot_secret_uses;
-      DROP TABLE bot_secret_requests;
-      CREATE TABLE credential_requests (agent_id text NOT NULL, name text NOT NULL, hosts text NOT NULL, reason text NOT NULL, requested_at text NOT NULL, PRIMARY KEY (agent_id, name), FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE);
-      CREATE TABLE credential_uses (id integer PRIMARY KEY AUTOINCREMENT, agent_id text NOT NULL, name text NOT NULL, at text NOT NULL, method text NOT NULL, host text NOT NULL, path text NOT NULL, status integer, FOREIGN KEY (agent_id, name) REFERENCES agent_credentials(agent_id, name) ON DELETE CASCADE);
-      CREATE INDEX credential_uses_by_credential ON credential_uses (agent_id, name, id);
-      CREATE INDEX credential_uses_by_time ON credential_uses (at);
-      ALTER TABLE schedules DROP COLUMN kind;
-      ALTER TABLE schedules DROP COLUMN command;
-      ALTER TABLE schedules DROP COLUMN timeout_seconds;
-      ALTER TABLE schedules DROP COLUMN notify;
-      ALTER TABLE agents DROP COLUMN web_search_provider;`);
-    db.run("ALTER TABLE memories DROP COLUMN source");
-    db.close();
-
-    await Effect.runPromise(
-      migrateFile(join(dir, "store.sqlite"), migrationsFolder("store"), {
-        table: "agents",
-        upgrade: upgradeLegacyStore,
-      }),
-    );
-
-    const upgraded = new Store(dir);
-    expect(upgraded.getMemory(sourced.id)?.source).toBeNull();
-
-    const migrated = new Database(join(dir, "store.sqlite"), {
-      readonly: true,
-    });
-
-    expect(
-      migrated.query("SELECT COUNT(*) AS n FROM gateway_receipts").get(),
-    ).toEqual({ n: 0 });
-    migrated.close();
-
-    const again = upgraded.createMemory({
-      agentId: agent.id,
-      content: "Leaves Friday",
-      source: { kind: "task", scheduleId: "schedule-1", name: "Morning" },
-    });
-
-    upgraded.close();
-
     const reopened = new Store(dir);
     expect(reopened.getMemory(older.id)?.source).toBeNull();
-    expect(reopened.getMemory(again.id)?.source).toEqual({
-      kind: "task",
-      scheduleId: "schedule-1",
-      name: "Morning",
+    expect(reopened.getMemory(sourced.id)?.source).toEqual({
+      kind: "group",
+      groupId: "group-1",
+      name: "Trip",
     });
     reopened.close();
   });
@@ -674,110 +563,6 @@ describe("Store group chats", () => {
       n: 0,
     });
     db.close();
-  });
-
-  test("upgrades a milestone 1 database and keeps its groups", async () => {
-    const dir = make();
-    const first = new Store(dir);
-    const a = first.createAgent({ ...input, name: "A" });
-    const b = first.createAgent({ ...input, name: "B" });
-
-    const group = first.createGroupChat({
-      name: "Trip",
-      memberIds: [a.id, b.id],
-    });
-
-    first.close();
-
-    const db = new Database(join(dir, "store.sqlite"));
-    // A server before Drizzle had no migrations table.
-    // Secrets, requests, and uses moved out of the credential tables after the baseline, which had them.
-    db.run(`DROP TABLE __drizzle_migrations;
-      DROP TABLE relayed_job_questions;
-      DROP TABLE delegation_receipts;
-      DROP TABLE bot_message_requests;
-      ALTER TABLE conversations DROP COLUMN chat;
-      ALTER TABLE agents ADD COLUMN skills text NOT NULL DEFAULT '[]';
-      ALTER TABLE agents ADD COLUMN delegates text NOT NULL DEFAULT '[]';
-      ALTER TABLE agents ADD COLUMN shared_memory integer NOT NULL DEFAULT 0;
-      ALTER TABLE agent_credentials ADD COLUMN value text;
-      DROP TABLE skill_updates;
-      ALTER TABLE skills DROP COLUMN origin;
-      ALTER TABLE skills DROP COLUMN copied_from_skill_id;
-      DROP TABLE github_account_bots;
-      DROP TABLE github_accounts;
-      DROP TABLE github_app_users;
-      DROP TABLE github_app_bots;
-      DROP TABLE github_apps;
-      DROP TABLE event_runs;
-      DROP TABLE relay_events;
-      DROP TABLE event_sources;
-      ALTER TABLE schedules DROP COLUMN event_source_id;
-      DROP TABLE gateway_cooldowns;
-      DROP TABLE gateway_sent_messages;
-      DROP TABLE gateway_receipts;
-      DROP TABLE bot_requests;
-      DROP TABLE script_runs;
-      DROP TABLE desktop_fills;
-      DROP TABLE held_actions;
-      DROP TABLE logins;
-      DROP TABLE password_managers;
-      DROP TABLE bot_secret_uses;
-      DROP TABLE bot_secret_requests;
-      CREATE TABLE credential_requests (agent_id text NOT NULL, name text NOT NULL, hosts text NOT NULL, reason text NOT NULL, requested_at text NOT NULL, PRIMARY KEY (agent_id, name), FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE);
-      CREATE TABLE credential_uses (id integer PRIMARY KEY AUTOINCREMENT, agent_id text NOT NULL, name text NOT NULL, at text NOT NULL, method text NOT NULL, host text NOT NULL, path text NOT NULL, status integer, FOREIGN KEY (agent_id, name) REFERENCES agent_credentials(agent_id, name) ON DELETE CASCADE);
-      CREATE INDEX credential_uses_by_credential ON credential_uses (agent_id, name, id);
-      CREATE INDEX credential_uses_by_time ON credential_uses (at);
-      ALTER TABLE schedules DROP COLUMN kind;
-      ALTER TABLE schedules DROP COLUMN command;
-      ALTER TABLE schedules DROP COLUMN timeout_seconds;
-      ALTER TABLE schedules DROP COLUMN notify;
-      DROP TABLE group_turns;
-      ALTER TABLE group_chats DROP COLUMN bot_turns;
-      ALTER TABLE group_chats DROP COLUMN paused;
-      ALTER TABLE group_chats DROP COLUMN awaiting_answers;
-      ALTER TABLE group_members DROP COLUMN conversation_id;
-      ALTER TABLE group_members DROP COLUMN cursor;
-      ALTER TABLE group_members DROP COLUMN pending;
-      ALTER TABLE group_members DROP COLUMN pending_bot_started;
-      ALTER TABLE group_members DROP COLUMN summary;
-      ALTER TABLE agents DROP COLUMN web_search_provider;`);
-    db.close();
-
-    await Effect.runPromise(
-      migrateFile(join(dir, "store.sqlite"), migrationsFolder("store"), {
-        table: "agents",
-        upgrade: upgradeLegacyStore,
-      }),
-    );
-
-    const second = new Store(dir);
-    expect(second.getGroupChat(group.id)?.memberIds).toEqual([a.id, b.id]);
-
-    const migrated = new Database(join(dir, "store.sqlite"), {
-      readonly: true,
-    });
-
-    expect(
-      migrated.query("SELECT COUNT(*) AS n FROM gateway_receipts").get(),
-    ).toEqual({ n: 0 });
-    migrated.close();
-    expect(second.groupMember(group.id, a.id)).toEqual({
-      groupId: group.id,
-      agentId: a.id,
-      conversationId: null,
-      cursor: 0,
-      pending: false,
-      pendingBotStarted: false,
-      summary: null,
-      joinedAt: expect.any(String),
-    });
-    expect(second.groupActivity(group.id)).toEqual({
-      botTurns: 0,
-      paused: false,
-      awaitingAnswers: {},
-    });
-    second.close();
   });
 
   test("keeps member progress, group activity, and turns across reopen", () => {

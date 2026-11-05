@@ -2,13 +2,17 @@ import { describe, expect, test, afterEach } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { Store } from "../../test/support/store";
+import { codingPlugin } from "../jobs/coding";
+import { desktopPlugin } from "../bot-desktop/desktop-jobs";
 import { desktopControlAccess } from "../bot-desktop/desktop-control";
+import { pathRegister } from "./api";
+import { handleApiError } from "./api-errors";
 import { HeldActions, heldActionsAccess } from "../bot-desktop/held-actions";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../automations/scheduler-test-support";
-import { createAPI, handleApiError, type ApiOptions } from "./api";
-import { heldActionNotices } from "./plugin-layers";
+import { testAPI, type TestServices } from "../../test/support/api";
+import { heldActionNotices } from "../bot-desktop/held-action-notices";
 import { contractApp } from "../contract/api-contract";
 import type { secretInput } from "../shared/domain";
 import type { z } from "zod";
@@ -26,18 +30,15 @@ import {
 } from "../../test/support/fake-password-manager";
 import { SecretValues } from "../secrets/secret-values";
 import { secretsLayer } from "../secrets/secrets";
-import { standaloneSignIns } from "../providers/provider-auth";
+import { standaloneSignIns } from "../providers/provider-auth-test-support";
 import { ProviderCredentials } from "../providers/provider-credentials";
 import type { CoreServices } from "./core-layer";
 import { runnerOf } from "../shared/runner";
 import { ScriptRuns } from "../automations/script-runs";
 import type { Workspaces } from "../workspaces/workspace";
 import { ScriptRunRepository } from "../automations/script-run-repository";
-import {
-  scheduleInput,
-  type ScheduleInput,
-  type ScriptRun,
-} from "../shared/domain";
+import { scheduleInput, type ScheduleInput } from "../shared/domain";
+import type { ScriptRun } from "../automations/script-run-repository";
 import type { MessageOrigin } from "../bots/entries";
 import { defaultAvatarDefinition } from "../contract/avatar";
 
@@ -73,13 +74,16 @@ const agentInput = (name: string, enabled = true) => ({
   delegates: [],
 });
 
+// SAFETY: a route under test calls only the members given; script policy only checks that workspaces exist.
+const workspacesWith = (members: Partial<Workspaces>) => members as Workspaces;
+
 const dirs: string[] = [];
 
 afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
 
-function setup(options: Parameters<typeof createAPI>[2] = {}) {
+function setup(options: TestServices = {}) {
   const dir = mkdtempSync(join("/tmp", "bot-api-"));
   dirs.push(dir);
   let sequence = 0;
@@ -119,12 +123,11 @@ function setup(options: Parameters<typeof createAPI>[2] = {}) {
     (a, p, r, s) => service.dispatch(a, p, r, s),
     undefined,
     undefined,
-    // SAFETY: script policy only checks that workspaces exist; no method is called.
-    options.coding ? ({} as Workspaces) : undefined,
+    options.workspaces,
   );
 
   return {
-    app: createAPI(service, token, { scheduler, ...options }),
+    app: testAPI(service, token, { scheduler, ...options }),
     store,
     runtime,
     service,
@@ -169,16 +172,18 @@ describe("HTTP API for bots, chats, and activity", () => {
       service.dispatch(a, p, r, s),
     );
 
-    const withCoding = createAPI(service, token, {
+    const withCoding = testAPI(service, token, {
       scheduler,
-      coding: true,
+      workspaces: workspacesWith({ desktop: false }),
     });
 
-    const withDesktop = createAPI(service, token, {
+    const withDesktop = testAPI(service, token, {
       scheduler,
-      coding: true,
-      desktop: true,
-      jobKinds: ["coding", "desktop"],
+      workspaces: workspacesWith({ desktop: true }),
+      plugins: [
+        codingPlugin(workspacesWith({}), () => 0),
+        desktopPlugin(workspacesWith({ desktop: true })),
+      ],
     });
 
     const without = await req(app, "/v1/capabilities");
@@ -328,9 +333,11 @@ describe("HTTP API for bots, chats, and activity", () => {
 
     const restarted: string[] = [];
 
-    const app = createAPI(service, token, {
+    const app = testAPI(service, token, {
       scheduler,
-      restartWorkspace: async (agentId) => void restarted.push(agentId),
+      workspaces: workspacesWith({
+        restart: (agentId) => Effect.sync(() => void restarted.push(agentId)),
+      }),
     });
 
     const agent = store.createAgent({
@@ -431,7 +438,7 @@ describe("HTTP API for bots, chats, and activity", () => {
       service.dispatch(a, p, r, s),
     );
 
-    const app = createAPI(service, token, {
+    const app = testAPI(service, token, {
       scheduler,
       commonSkills: [
         {
@@ -1418,7 +1425,7 @@ describe("HTTP API for MCP servers, skills, and memory", () => {
 
 describe("HTTP API for script tasks and schedules", () => {
   test("owner script tasks require coding jobs and workspaces on create and update", async () => {
-    const { app, store, scheduler } = setup({ coding: true });
+    const { app, store, scheduler } = setup({ workspaces: workspacesWith({}) });
     const plain = store.createAgent(agentInput("Plain"));
 
     const coder = store.createAgent({
@@ -1565,7 +1572,7 @@ describe("HTTP API for script tasks and schedules", () => {
       list: repository.list,
     });
 
-    const app = createAPI(service, token, { scheduler, scriptRuns });
+    const app = testAPI(service, token, { scheduler, scriptRuns });
 
     const agent = store.createAgent({
       ...agentInput("Coder"),
@@ -1708,7 +1715,7 @@ describe("HTTP API for script tasks and schedules", () => {
 describe("bot desktop control and viewer", () => {
   function desktopApp(
     tools = ["desktop"],
-    workspace: Pick<ApiOptions, "desktopRunning" | "startDesktop"> = {},
+    workspace: Partial<Workspaces> = {},
   ) {
     const { store, runtime } = setup();
     const service = standaloneBots(store, runtime);
@@ -1720,12 +1727,15 @@ describe("bot desktop control and viewer", () => {
     const desktopControl = desktopControlAccess(store.runtime);
     const viewerTickets = new ViewerTickets();
 
-    const app = createAPI(service, token, {
+    const app = testAPI(service, token, {
       scheduler,
-      desktop: true,
-      desktopControl,
+      workspaces: workspacesWith({
+        desktop: true,
+        desktopRunning: () => false,
+        startDesktop: () => Effect.void,
+        ...workspace,
+      }),
       viewerTickets,
-      ...workspace,
     });
 
     const agent = store.createAgent({
@@ -2070,7 +2080,7 @@ describe("provider API keys from a password manager", () => {
       [],
     );
 
-    const app = createAPI(service, token, {
+    const app = testAPI(service, token, {
       scheduler,
       providerAuth,
     });
@@ -2197,14 +2207,12 @@ describe("MCP server tokens from a password manager", () => {
 
     app.onError(handleApiError);
     registerMcpServerRoutes({
-      register: (definition, handler) =>
-        app.on(definition.method, definition.getRoutingPath(), handler),
+      register: pathRegister(app),
       service,
       mcpServers: new McpServers({ run, integrations }),
     });
     registerPluginSettingRoutes({
-      register: (definition, handler) =>
-        app.on(definition.method, definition.getRoutingPath(), handler),
+      register: pathRegister(app),
       run,
       plugins: [
         {

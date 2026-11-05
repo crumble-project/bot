@@ -1,8 +1,10 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { createAuth, passkeyOriginFor } from "./auth";
+import { DEFAULT_SERVER_SETTINGS } from "./server-settings";
 import { INVITE_HEADER } from "./invites";
 
 test("binds passkeys to localhost for a loopback origin", () => {
@@ -35,6 +37,55 @@ const roleOf = async (
   accounts: Awaited<ReturnType<typeof createAuth>>,
   userId: string,
 ) => ((await accounts.isAdmin(userId)) ? "admin" : "user");
+
+test("one stored setting that no longer validates keeps sign-up closed", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "auth-"));
+  const first = await createAuth(dataDir, "http://localhost:7337");
+
+  await first.settings.update({ signUpOpen: false, workspaceCpus: 8 });
+  first.close();
+
+  const database = new Database(join(dataDir, "auth.sqlite"));
+
+  database.run(
+    "UPDATE serverSetting SET value = '1000' WHERE key = 'workspaceCpus'",
+  );
+  database.close();
+
+  const reopened = await createAuth(dataDir, "http://localhost:7337");
+
+  try {
+    expect(reopened.settings.get()).toEqual({
+      ...DEFAULT_SERVER_SETTINGS,
+      signUpOpen: false,
+    });
+  } finally {
+    reopened.close();
+  }
+});
+
+test("a stored sign-up setting that no longer validates reads as closed", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "auth-"));
+  const first = await createAuth(dataDir, "http://localhost:7337");
+
+  await first.settings.update({ signUpOpen: false });
+  first.close();
+
+  const database = new Database(join(dataDir, "auth.sqlite"));
+
+  database.run(
+    "UPDATE serverSetting SET value = 'not json' WHERE key = 'signUpOpen'",
+  );
+  database.close();
+
+  const reopened = await createAuth(dataDir, "http://localhost:7337");
+
+  try {
+    expect(reopened.settings.get().signUpOpen).toBe(false);
+  } finally {
+    reopened.close();
+  }
+});
 
 test("makes the first account admin and later ones users", async () => {
   const accounts = await createAuth(

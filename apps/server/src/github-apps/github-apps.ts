@@ -1,3 +1,4 @@
+import { GIT_TEMPLATE_DIR } from "../../workspace-image/guest";
 import { createSign, randomBytes, randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNotNull, ne } from "drizzle-orm";
 import { Clock, Context, Effect, Layer, Redacted } from "effect";
@@ -141,9 +142,6 @@ const trailerOf = (row: AppRow) => {
 
   return `Co-authored-by: ${name} <${email}>`;
 };
-
-/** The hook in the workspace image's git template adds CRUMBLE_COMMIT_TRAILER to every commit in new clones. */
-const GIT_TEMPLATE_DIR = "/opt/crumble/git-template";
 
 /** The key stays on the server: git hands the commit to a guest helper that asks it for the signature. */
 const signingEntries = (signingKey: string): [string, string][] => [

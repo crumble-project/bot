@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { ACCOUNT_ID_PATTERN } from "../shared/account-id";
 import { RfbProtocolError, rfbFilter } from "./rfb-filter";
 import type { DesktopStream } from "../workspaces/workspace";
 
@@ -48,9 +49,16 @@ export async function novncResponse(requestPath: string) {
     : undefined;
 }
 
+const TICKET = new RegExp(`^(${ACCOUNT_ID_PATTERN})\\.[A-Za-z0-9_-]+$`);
+
+const VIEWER_PATH = new RegExp(`^${VIEWER_PREFIX}/([^/]+)(?:/websockify)?$`);
+
 /** The account a ticket was issued in, from its `<account>.<secret>` form; the server routes the link there. */
-export const ticketOwner = (ticket: string) =>
-  /^([A-Za-z0-9_-]{1,128})\.[A-Za-z0-9_-]+$/.exec(ticket)?.[1];
+export const ticketOwner = (ticket: string) => TICKET.exec(ticket)?.[1];
+
+/** The account a viewer path's ticket names, if the path is a viewer's. */
+export const viewerPathOwner = (path: string) =>
+  ticketOwner(VIEWER_PATH.exec(path)?.[1] ?? "");
 
 /** Whom a viewer link shows, and whether it only watches: no boot, no keeping the machine awake. */
 export type Viewer = { agentId: string; passive: boolean };

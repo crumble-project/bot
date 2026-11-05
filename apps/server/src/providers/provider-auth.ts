@@ -15,16 +15,14 @@ import type {
   loginPrompt,
   loginSessionResponse,
 } from "../contract/api-responses";
-import { Context, Effect, Layer, ManagedRuntime, Predicate } from "effect";
+import { Context, Effect, Layer, Predicate } from "effect";
 import { REMOTE_HINTS } from "./provider-hints";
-import type { ProviderContribution } from "../plugins/plugins";
 import { SettingsRepository } from "../shared/settings-repository";
-import type { Runner } from "../shared/runner";
 import {
   ProviderCredentials,
   type ProviderCredentialStore,
 } from "./provider-credentials";
-import { ProviderModels, hostModels } from "./providers";
+import { ProviderModels } from "./providers";
 import type { SecretInput } from "../shared/domain";
 import {
   InvalidInput,
@@ -637,21 +635,4 @@ function trimEvents(events: LoginEvent[]) {
 
     events.splice(index === -1 ? 0 : index, 1);
   }
-}
-
-type StandaloneSignInServices = ProviderCredentials | SettingsRepository;
-
-/** Sign-ins over the credentials and settings `core` reaches, for an API that runs without an account. */
-export function standaloneSignIns(
-  core: Runner<StandaloneSignInServices>,
-  contributions: readonly ProviderContribution[],
-): ProviderSignInsAccess {
-  const context = core.runSync(Effect.context<StandaloneSignInServices>());
-
-  return ManagedRuntime.make(
-    ProviderSignIns.layer.pipe(
-      Layer.provide(ProviderModels.layer(hostModels, contributions)),
-      Layer.provide(Layer.succeedContext(context)),
-    ),
-  ).runSync(ProviderSignIns.use(Effect.succeed));
 }

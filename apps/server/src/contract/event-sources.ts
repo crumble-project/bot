@@ -10,8 +10,10 @@ export const relayUrlInput = z
   })
   .strict();
 
+export const MAX_EVENT_SOURCE_NAME_CHARS = 200;
+
 export const eventSourceInput = z
-  .object({ name: z.string().trim().min(1).max(200) })
+  .object({ name: z.string().trim().min(1).max(MAX_EVENT_SOURCE_NAME_CHARS) })
   .strict();
 
 export const relayStatusResponse = z.object({

@@ -47,3 +47,6 @@ export const MAX_GROUP_NAME_CHARS = 80;
 /** `text` within `max` characters, its cut marked. */
 export const clip = (text: string, max: number) =>
   text.length > max ? `${text.slice(0, max - 1)}…` : text;
+
+/** Theme colors a chart may use, `series-1` on; native clients read them too. */
+export const CHART_SERIES_COLORS = 8;

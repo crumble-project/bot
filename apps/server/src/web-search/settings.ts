@@ -32,14 +32,10 @@ export function registerWebSearchRoutes(options: {
 
   register(routes.getWebSearch, (c) => c.json(status(), 200));
   register(routes.updateWebSearch, async (c) => {
-    const input = z
-      .object({ defaultProvider: z.enum(WEB_SEARCH_PROVIDER_IDS) })
-      .parse(await c.req.json());
+    const { defaultProvider } = c.req.valid("json");
 
     run.runSync(
-      SettingsRepository.use((r) =>
-        r.set(DEFAULT_PROVIDER, input.defaultProvider),
-      ),
+      SettingsRepository.use((r) => r.set(DEFAULT_PROVIDER, defaultProvider)),
     );
 
     return c.json(status(), 200);

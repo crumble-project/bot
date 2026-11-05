@@ -20,7 +20,7 @@ import { BotSchedules, scheduleTools } from "../automations/bot-schedules";
 import { Automations } from "../automations/automations";
 import { TaskDispatch } from "../automations/task-dispatch";
 import { ScriptRuns } from "../automations/script-runs";
-import { createAPI } from "./api";
+import { createAPI, type ApiServices } from "./api";
 import { GroupChats, GroupTranscriptStore } from "../group-chats/group-chats";
 import { groupLookupTools } from "../group-chats/group-lookup";
 import { GroupTranscripts } from "../group-chats/group-transcripts";
@@ -34,7 +34,7 @@ import {
   integrationTools,
   McpIntegrations,
 } from "../integrations/integrations";
-import { clientDocument, type ClientDocument } from "../integrations/mcp-oauth";
+import type { ClientDocument } from "../integrations/mcp-oauth";
 import { coordinationTools } from "../bot-messaging/coordination";
 import { displayTools } from "../display/display";
 import { desktopControlAccess } from "../bot-desktop/desktop-control";
@@ -43,27 +43,19 @@ import { chosenJudge } from "../bot-desktop/judge-settings";
 import { accountJudge } from "../bot-desktop/desktop-intent";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import type { Workspaces } from "../workspaces/workspace";
-import {
-  acquireWorkspaces,
-  type WorkspaceSize,
-} from "../workspaces/machine-workspaces";
+import { acquireWorkspaces } from "../workspaces/machine-workspaces";
 import { Push, PushDelivery } from "../push/push";
 import { ProviderModels, accountModels } from "../providers/providers";
 import { ProviderSignIns } from "../providers/provider-auth";
 import { credentialsAccess } from "../credentials/credentials";
 import { loginsAccess } from "../logins/logins";
 import { desktopFillsAccess } from "../bot-desktop/desktop-fill-repository";
-import { credentialAuthoritiesAccess } from "../credentials/credential-authority";
-import { credentialProxy } from "../credentials/credential-proxy";
+import { credentialInterception } from "../credentials/credential-interception";
 import { coreLayer, type CoreServices } from "./core-layer";
 import { runnerOf } from "../shared/runner";
 import { builtinPlugins, builtinVendors } from "./builtin-plugins";
-import {
-  heldActionNotices,
-  jobAnswers,
-  jobQuestions,
-  jobTools,
-} from "./plugin-layers";
+import { heldActionNotices } from "../bot-desktop/held-action-notices";
+import { jobAnswers, jobQuestions, jobTools } from "../plugins/job-wiring";
 import {
   conversationEnv,
   jobExtensions,
@@ -75,13 +67,7 @@ import {
   assertVendorIds,
 } from "../plugins/plugins";
 import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
-import {
-  BotWorkspaces,
-  GUEST_CA_PATH,
-  GUEST_SIGN_PATH,
-  signingHelper,
-} from "../workspaces/workspace";
-import { GitHubAccounts } from "../github-apps/github-accounts";
+import { BotWorkspaces } from "../workspaces/workspace";
 import { desktopKeepAwake } from "../bot-desktop/keep-awake";
 import { desktopScreenshotTools } from "../bot-desktop/desktop-screenshot";
 import { AgentRepository } from "../bots/agent-repository";
@@ -92,24 +78,23 @@ import { EventRelay } from "../event-sources/event-relay";
 import { EventSources } from "../event-sources/event-sources";
 import { EventDispatcher } from "../automations/event-dispatcher";
 import { eventPayloadTools } from "../automations/event-tools";
-import { BOT_TOOL } from "../contract/tools";
+import { usesDesktop } from "../bot-desktop/desktop-vocabulary";
+import type { ServerSettings } from "./server-settings";
 
 export type TenantOptions = {
   dataDir: string;
   skillsDir?: string | undefined;
-  publicUrl?: string | undefined;
+  /** The server's OAuth client metadata document, when it has a public address. */
+  oauthClient?: ClientDocument | undefined;
+  /** Where workspace backends read their images and secrets. */
+  workspaceEnv: Record<string, string | undefined>;
   /** Replaces the workspaces from the environment; the account's scope owns what it acquires. */
   workspaces?:
     | Effect.Effect<Workspaces | undefined, never, Scope.Scope>
     | undefined;
-  /** The server's workspace settings, read at each boot; set by the host from its admin settings. */
-  workspaceSettings?: (() => WorkspaceSettings) | undefined;
+  /** The server's admin settings; workspaces and jobs read them at each use. */
+  serverSettings: () => ServerSettings;
   tenantId: string;
-};
-
-export type WorkspaceSettings = WorkspaceSize & {
-  baseImage: string | null;
-  questionGraceMs: number;
 };
 
 export type TenantRuntime = {
@@ -122,37 +107,15 @@ export type TenantRuntime = {
   close: () => Promise<void>;
 };
 
-function isHttpsOrigin(url: URL) {
-  return url.protocol === "https:" && !url.search && !url.hash;
-}
-
-function httpsUrl(value: string) {
-  const url = URL.canParse(value) ? new URL(value) : undefined;
-
-  if (!url || !isHttpsOrigin(url))
-    throw new Error(
-      `publicUrl must be an https address without a query: ${value}`,
-    );
-
-  return url;
-}
-
 /** Every part of one account, in dependency order; closing the account releases them in reverse. */
-function accountLayer(
-  options: TenantOptions,
-  dataDir: string,
-  oauthClient: ClientDocument | undefined,
-) {
-  const explicitSkillsDir =
-    options.skillsDir ?? process.env["CRUMBLE_SKILLS_DIR"];
-
+function accountLayer(options: TenantOptions, dataDir: string) {
   const skillsDir = resolve(
-    explicitSkillsDir ?? resolve(import.meta.dir, "../../skills"),
+    options.skillsDir ?? resolve(import.meta.dir, "../../skills"),
   );
 
   const commonSkills = CommonSkills.layer(
     skillsDir,
-    explicitSkillsDir !== undefined,
+    options.skillsDir !== undefined,
   );
 
   const base = Layer.mergeAll(commonSkills, BotExtensions.layer).pipe(
@@ -161,59 +124,35 @@ function accountLayer(
 
   const workspaces = Layer.unwrap(
     Effect.gen(function* () {
-      const run = runnerOf(yield* Effect.context<CoreServices>());
       const agents = yield* AgentRepository;
-      const credentials = credentialsAccess(run);
-      const authorities = credentialAuthoritiesAccess(run);
-
-      const settings = options.workspaceSettings;
+      const { serverSettings } = options;
 
       const machineOptions = {
         dataDir,
         namePrefix: `crumble-${options.tenantId.replace(/[^A-Za-z0-9_-]/g, "-")}`,
-        wantsDesktop: (agentId: string) =>
-          Effect.runSync(agents.get(agentId))?.tools.includes(
-            BOT_TOOL.desktop,
-          ) === true,
-        guest: async (agentId: string) => ({
-          files: [
-            { path: GUEST_SIGN_PATH, content: signingHelper(), mode: 0o755 },
-            {
-              path: GUEST_CA_PATH,
-              content: await authorities.certificate(agentId),
-            },
-          ],
-          commands: [
-            {
-              step: "Installing the credential authority",
-              command: "update-ca-certificates >/dev/null",
-            },
-          ],
+        wantsDesktop: (agentId: string) => {
+          const agent = Effect.runSync(agents.get(agentId));
+
+          return agent !== null && usesDesktop(agent);
+        },
+        size: () => ({
+          cpus: serverSettings().workspaceCpus,
+          memoryMib: serverSettings().workspaceMemoryMib,
         }),
-        ...(settings && {
-          size: settings,
-          baseImage: () => settings().baseImage,
-        }),
-        intercept: (agentId: string) =>
-          credentialProxy({
-            agentId,
-            authorities,
-            grants: () => credentials.grants(agentId),
-            value: (name, target) => credentials.value(agentId, name, target),
-            recordUse: (name, use) => credentials.recordUse(agentId, name, use),
-            sign: async (data) =>
-              (
-                await run.runPromise(
-                  GitHubAccounts.use((accounts) => accounts.ofBot(agentId)),
-                )
-              )?.sign(data),
-          }),
+        baseImage: () => serverSettings().codingImage,
+        ...credentialInterception(
+          runnerOf(yield* Effect.context<CoreServices>()),
+        ),
       };
 
       return BotWorkspaces.layer(
         options.workspaces ??
           acquireWorkspaces(() =>
-            pluginWorkspaces(builtinVendors, process.env, machineOptions),
+            pluginWorkspaces(
+              builtinVendors,
+              options.workspaceEnv,
+              machineOptions,
+            ),
           ),
       );
     }),
@@ -224,16 +163,13 @@ function accountLayer(
     Effect.gen(function* () {
       const run = runnerOf(yield* Effect.context<CoreServices>());
 
-      const workspaceSettings = options.workspaceSettings;
-
       const installed = builtinPlugins({
         dataDir,
         secret: secretText(yield* Secrets),
         env: process.env,
         workspaces: yield* BotWorkspaces,
-        ...(workspaceSettings && {
-          questionGraceMs: () => workspaceSettings().questionGraceMs,
-        }),
+        questionGraceMs: () =>
+          options.serverSettings().questionGraceMinutes * 60_000,
         desktopControl: desktopControlAccess(run),
         credentials: credentialsAccess(run),
         logins: {
@@ -264,7 +200,9 @@ function accountLayer(
     ),
   );
 
-  const integrations = McpIntegrations.layer({ oauthClient });
+  const integrations = McpIntegrations.layer({
+    oauthClient: options.oauthClient,
+  });
 
   const runtime = Layer.unwrap(
     Effect.gen(function* () {
@@ -379,10 +317,6 @@ export async function createTenant(
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   chmodSync(dataDir, 0o700);
 
-  const oauthClient = options.publicUrl
-    ? clientDocument(httpsUrl(options.publicUrl))
-    : undefined;
-
   // The data directory's lock is taken before anything opens it and released after everything closed it.
   const locked = Layer.unwrap(
     Effect.gen(function* () {
@@ -393,7 +327,7 @@ export async function createTenant(
         (release) => Effect.promise(() => release()),
       );
 
-      return accountLayer(options, dataDir, oauthClient);
+      return accountLayer(options, dataDir);
     }),
   );
 
@@ -405,25 +339,21 @@ export async function createTenant(
         const bots = yield* Bots;
         const service = botsAccess(runnerOf(yield* Effect.context<Bots>()));
 
-        const scheduler = schedulerAccess(
-          runnerOf(yield* Effect.context<Scheduler>()),
-        );
-
+        const run = runnerOf(yield* Effect.context<ApiServices>());
+        const scheduler = schedulerAccess(run);
         const chats = yield* GroupChats;
-        // Typed as the core, but its context holds every account service, which createAPI reads.
-        const run = runnerOf(yield* Effect.context<CoreServices>());
         const token = randomBytes(32).toString("hex");
 
         const app = createAPI(
           { ...service, core: run, runtime: yield* BotRuntime },
           token,
           {
-            scheduler,
             viewerTickets: new ViewerTickets(Date.now, options.tenantId),
-            oauthClient,
+            oauthClient: options.oauthClient,
           },
         );
 
+        // After the API: what recovery and start deliver may reach it. Work a layer's scope owns is already running.
         yield* bots.recover;
         yield* (yield* ScriptRuns).recover;
         yield* chats.recover;

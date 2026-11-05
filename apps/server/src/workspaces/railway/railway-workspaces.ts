@@ -31,7 +31,6 @@ import {
   envWords,
 } from "../../../workspace-image/guest";
 import {
-  DEFAULT_WORKSPACE_SIZE,
   GUEST_DAEMON,
   MachineWorkspaces,
   NO_GUEST,
@@ -182,6 +181,8 @@ export type RailwayWorkspacesOptions = Omit<
   MachineWorkspacesOptions,
   "desktopImage" | "baseImage"
 > & {
+  /** The machine size, read at each boot. */
+  size: () => WorkspaceSize;
   /** Where each bot's sandbox id and image are recorded, so a restarted server finds its machines. */
   dataDir: string;
   /** Prefix of checkpoint names, which are global to the Railway environment. */
@@ -260,7 +261,7 @@ export class RailwayMachines implements WorkspaceMachines {
     this.records = path.join(options.dataDir, "workspaces", "railway");
     this.namePrefix = options.namePrefix;
     this.region = options.region;
-    this.size = options.size ?? (() => DEFAULT_WORKSPACE_SIZE);
+    this.size = options.size;
     this.checkpointDelayMs =
       options.checkpointDelayMs ?? DEFAULT_CHECKPOINT_DELAY_MS;
     this.intercept = options.intercept;

@@ -2,7 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { botMessagingAccess, standaloneMessaging } from "./bot-messaging";
+import { standaloneMessaging } from "./bot-messaging";
+import { accessOf, noServices } from "../shared/runner";
 import { standaloneBots } from "../bots/bots";
 import type { Agent } from "../shared/domain";
 import { Store } from "../../test/support/store";
@@ -88,7 +89,9 @@ function setup(
     service,
     source,
     target,
-    messaging: botMessagingAccess(standaloneMessaging(service)),
+    messaging: accessOf(standaloneMessaging(service), noServices, [
+      "recipients",
+    ]),
   };
 }
 

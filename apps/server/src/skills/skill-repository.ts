@@ -1,3 +1,4 @@
+import type { z } from "zod";
 import { asc, eq, isNull, sql } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { OWNER } from "../shared/change-by";
@@ -5,14 +6,19 @@ import {
   SKILL_STATES,
   type ChangeBy,
   type Skill,
-  type SkillDocument,
   type SkillInput,
   type SkillOrigin,
+  type skillDocumentInput,
 } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { LearnedChangeRepository } from "../learning/learned-change-repository";
 import { skillDocuments, skills } from "./schema";
+
+export type SkillDocument = z.infer<typeof skillDocumentInput>;
+
+/** Skill names are the same name whatever their case. */
+export const skillNameKey = (name: string) => name.toLowerCase();
 
 export type NewSkill = SkillInput & {
   agentId?: string | null;

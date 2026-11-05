@@ -1,7 +1,9 @@
+import { z } from "zod";
+import { MAX_REQUEST_REASON_CHARS } from "../shared/limits";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension } from "@earendil-works/pi-durable";
 import { Context, Effect, Layer, Redacted } from "effect";
-import type { Runner } from "../shared/runner";
+import { accessOf, type Access, type Runner } from "../shared/runner";
 import {
   hostLines,
   hostsText,
@@ -11,15 +13,16 @@ import {
 } from "../bot-secrets/bot-secret-lifecycle";
 import {
   credentialName,
-  credentialRequestInput,
-  type AgentCredential,
-  type CredentialGrant,
-  type CredentialRequest,
-  type CredentialRequestInput,
-  type CredentialSaveInput,
   type CredentialTarget,
-  type CredentialUse,
+  credentialHosts,
+  credentialSaveInput,
 } from "../shared/domain";
+import type {
+  AgentCredential,
+  CredentialGrant,
+  CredentialRequest,
+  CredentialUse,
+} from "./agent-credential-repository";
 import type { SecretUnavailable } from "../secrets/secret-values";
 import { Secrets } from "../secrets/secrets";
 import {
@@ -41,6 +44,16 @@ import {
   type AppError,
 } from "../shared/errors";
 import { REQUEST_CREDENTIAL_TOOL_NAME } from "../contract/tools";
+
+const credentialRequestInput = z.object({
+  name: credentialName,
+  hosts: credentialHosts,
+  reason: z.string().trim().min(1).max(MAX_REQUEST_REASON_CHARS),
+});
+
+export type CredentialRequestInput = z.infer<typeof credentialRequestInput>;
+
+export type CredentialSaveInput = z.infer<typeof credentialSaveInput>;
 
 /** A minted credential's value and hosts are its source's, so the owner's save or delete would break its tokens. */
 const refuseMinted = (record: CredentialRecord | undefined) =>
@@ -259,39 +272,27 @@ export class Credentials extends Context.Service<
   );
 }
 
+const SYNC_CREDENTIALS = [
+  "list",
+  "request",
+  "uses",
+  "env",
+  "workspaceSection",
+  "grants",
+  "recordUse",
+] as const;
+
 /** Credentials for code outside Effect: HTTP handlers, the credential proxy, and Pi Durable tools. */
-export type CredentialsAccess = {
-  list(agentId: string): {
-    credentials: AgentCredential[];
-    requests: CredentialRequest[];
-  };
-  request(agentId: string, request: CredentialRequestInput): CredentialRequest;
-  save(
-    agentId: string,
-    name: string,
-    input: CredentialSaveInput,
-  ): Promise<AgentCredential>;
-  delete(agentId: string, name: string): Promise<void>;
-  decline(agentId: string, name: string): Promise<void>;
-  uses(
-    agentId: string,
-    name: string,
-    options: { limit: number; before?: string | undefined },
-  ): CredentialUse[];
-  env(agentId: string): Record<string, string>;
-  workspaceSection(agentId: string): string | undefined;
-  grants(agentId: string): CredentialGrant[];
+export type CredentialsAccess = Omit<
+  Access<Credentials["Service"], (typeof SYNC_CREDENTIALS)[number]>,
+  "value"
+> & {
   /** Rejects with the message the credential proxy answers with. */
   value(
     agentId: string,
     name: string,
     target: CredentialTarget,
   ): Promise<string>;
-  recordUse(
-    agentId: string,
-    name: string,
-    use: Omit<CredentialUse, "id">,
-  ): void;
 };
 
 export function credentialsAccess(
@@ -300,21 +301,7 @@ export function credentialsAccess(
   const credentials = runtime.runSync(Credentials.use(Effect.succeed));
 
   return {
-    list: (agentId) => runtime.runSync(credentials.list(agentId)),
-    request: (agentId, request) =>
-      runtime.runSync(credentials.request(agentId, request)),
-    save: (agentId, name, input) =>
-      runtime.runPromise(credentials.save(agentId, name, input)),
-    delete: (agentId, name) =>
-      runtime.runPromise(credentials.delete(agentId, name)),
-    decline: (agentId, name) =>
-      runtime.runPromise(credentials.decline(agentId, name)),
-    uses: (agentId, name, options) =>
-      runtime.runSync(credentials.uses(agentId, name, options)),
-    env: (agentId) => runtime.runSync(credentials.env(agentId)),
-    workspaceSection: (agentId) =>
-      runtime.runSync(credentials.workspaceSection(agentId)),
-    grants: (agentId) => runtime.runSync(credentials.grants(agentId)),
+    ...accessOf(credentials, runtime, SYNC_CREDENTIALS),
     value: (agentId, name, target) =>
       runtime.runPromise(
         credentials.value(agentId, name, target).pipe(
@@ -322,8 +309,6 @@ export function credentialsAccess(
           Effect.mapError((error) => new Error(useFailure(name, error))),
         ),
       ),
-    recordUse: (agentId, name, use) =>
-      runtime.runSync(credentials.recordUse(agentId, name, use)),
   };
 }
 

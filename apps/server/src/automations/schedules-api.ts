@@ -1,8 +1,7 @@
-import { routes, scriptRunsInput } from "../contract/api-contract";
+import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import { ExecutionRepository } from "../bots/execution-repository";
-import { scheduleInput } from "../shared/domain";
-import { NotFound, Unavailable } from "../shared/errors";
+import { NotFound } from "../shared/errors";
 import { AgentRepository } from "../bots/agent-repository";
 import type { ScriptRuns } from "./script-runs";
 import type { Runner } from "../shared/runner";
@@ -18,10 +17,15 @@ export function registerScheduleRoutes(options: {
   register: Register;
   run: Runner<Services>;
   scheduler: SchedulerAccess;
-  scriptRuns?: ScriptRuns["Service"] | undefined;
+  scriptRuns: ScriptRuns["Service"];
 }) {
   const { register, scheduler } = options;
   const exec: Exec = (effect) => options.run.runSync(effect);
+
+  const assertSchedule = (id: string) => {
+    if (!exec(ScheduleRepository.use((r) => r.get(id))))
+      throw new NotFound({ message: "Schedule not found" });
+  };
 
   register(routes.schedules, (c) =>
     c.json(
@@ -29,21 +33,21 @@ export function registerScheduleRoutes(options: {
       200,
     ),
   );
-  register(routes.createSchedule, async (c) => {
-    return c.json(
-      scheduler.create(scheduleInput.parse(await c.req.json())),
-      201,
-    );
-  });
-  register(routes.updateSchedule, async (c) => {
-    const id = c.req.param("id");
+  register(routes.createSchedule, (c) =>
+    c.json(scheduler.create(c.req.valid("json")), 201),
+  );
+  register(
+    routes.updateSchedule,
+    async (c) => {
+      const id = c.req.param("id");
 
-    // Before the body: an unknown schedule answers 404 even when the body is not JSON.
-    if (!exec(ScheduleRepository.use((r) => r.get(id))))
-      throw new NotFound({ message: "Schedule not found" });
+      // Before the body: an unknown schedule answers 404 even when the body is not JSON.
+      assertSchedule(id);
 
-    return c.json(scheduler.update(id, await c.req.json()), 200);
-  });
+      return c.json(scheduler.update(id, await c.req.json()), 200);
+    },
+    { parsesBody: true },
+  );
   register(routes.deleteSchedule, (c) => {
     if (!exec(ScheduleRepository.use((r) => r.delete(c.req.param("id")))))
       throw new NotFound({ message: "Schedule not found" });
@@ -56,16 +60,12 @@ export function registerScheduleRoutes(options: {
   register(routes.listScriptRuns, async (c) => {
     const id = c.req.param("id");
 
-    if (!exec(ScheduleRepository.use((r) => r.get(id))))
-      throw new NotFound({ message: "Schedule not found" });
-
-    const query = scriptRunsInput.parse(c.req.query());
-
-    if (!options.scriptRuns)
-      throw new Unavailable({ message: "Script runs are unavailable" });
+    assertSchedule(id);
 
     return c.json(
-      await options.run.runPromise(options.scriptRuns.list(id, query)),
+      await options.run.runPromise(
+        options.scriptRuns.list(id, c.req.valid("query")),
+      ),
       200,
     );
   });

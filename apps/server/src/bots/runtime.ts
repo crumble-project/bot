@@ -491,7 +491,7 @@ export class AgentRuntime {
       skills: async () => Effect.runPromise(library.available(currentAgent())),
       used: async (loaded, runKey) => {
         this.skillReads.mark(runKey, loaded.id);
-        await Effect.runPromise(library.used(currentAgent(), loaded));
+        await Effect.runPromise(library.used(loaded));
       },
     });
 

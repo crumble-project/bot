@@ -22,7 +22,8 @@ import {
 import { AgentRepository } from "../bots/agent-repository";
 import { BotNotices } from "../bots/bot-notices";
 import { Credentials } from "../credentials/credentials";
-import type { Schedule, ScriptRun } from "../shared/domain";
+import type { Schedule } from "../shared/domain";
+import type { ScriptRun } from "./script-run-repository";
 import type { AppError } from "../shared/errors";
 import { nowIso } from "../shared/time";
 import { WORKSPACE_PATH } from "../../workspace-image/guest";

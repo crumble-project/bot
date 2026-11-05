@@ -18,13 +18,12 @@ import {
 import { BOT_TOOL } from "../contract/tools";
 import {
   scheduleInput,
-  mergeScheduleInput,
   type Schedule,
   type ScheduleInput,
 } from "../shared/domain";
 import { AgentRepository } from "../bots/agent-repository";
 import { EventRepository } from "../event-sources/event-repository";
-import type { Runner } from "../shared/runner";
+import { accessOf, type Access, type Runner } from "../shared/runner";
 import { BotWorkspaces } from "../workspaces/workspace";
 import {
   Automations,
@@ -41,6 +40,19 @@ import {
   type AppError,
   errorText,
 } from "../shared/errors";
+
+const mergeScheduleInput = (
+  existing: ScheduleInput,
+  patch: Partial<ScheduleInput>,
+): ScheduleInput => {
+  const next = { ...existing, ...patch };
+
+  return {
+    ...next,
+    prompt: next.kind === "script" ? "" : next.prompt,
+    command: next.kind === "prompt" ? null : next.command,
+  };
+};
 
 const nextRun = (cron: string, timezone: string, from: Date) =>
   nextOccurrence(cron, timezone, from).toISOString();
@@ -369,29 +381,17 @@ export class Scheduler extends Context.Service<
   }
 }
 
+const SYNC_SCHEDULER = ["create", "update", "start"] as const;
+
 /** The scheduler for code outside Effect, such as the HTTP handlers. */
-export type SchedulerAccess = {
-  create(input: ScheduleInput, by?: string | null): Schedule;
-  update(
-    id: string,
-    input: Partial<ScheduleInput>,
-    by?: string | null,
-  ): Schedule | null;
-  runNow(id: string): Promise<AutomationStarted>;
-  tick(now?: Date): Promise<void>;
-  start(): void;
-  stop(): Promise<void>;
-};
+export type SchedulerAccess = Access<
+  Scheduler["Service"],
+  (typeof SYNC_SCHEDULER)[number]
+>;
 
-export function schedulerAccess(runtime: Runner<Scheduler>): SchedulerAccess {
-  const scheduler = runtime.runSync(Scheduler.use(Effect.succeed));
-
-  return {
-    create: (input, by) => runtime.runSync(scheduler.create(input, by)),
-    update: (id, input, by) => runtime.runSync(scheduler.update(id, input, by)),
-    runNow: (id) => runtime.runPromise(scheduler.runNow(id)),
-    tick: (now) => runtime.runPromise(scheduler.tick(now)),
-    start: () => runtime.runSync(scheduler.start),
-    stop: () => runtime.runPromise(scheduler.stop),
-  };
-}
+export const schedulerAccess = (runtime: Runner<Scheduler>): SchedulerAccess =>
+  accessOf(
+    runtime.runSync(Scheduler.use(Effect.succeed)),
+    runtime,
+    SYNC_SCHEDULER,
+  );

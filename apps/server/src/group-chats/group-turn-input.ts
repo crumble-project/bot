@@ -5,7 +5,8 @@ import {
   attachmentKind,
   type AttachmentInput,
 } from "../shared/attachment-rules";
-import type { Agent, GroupChat } from "../shared/domain";
+import type { Agent } from "../shared/domain";
+import type { GroupChat } from "./group-chat-repository";
 import { replyText } from "../shared/reply-text";
 import { type GroupChatContext } from "./group-chat-context";
 import { senderLabel, type GroupEntry } from "./group-transcripts";

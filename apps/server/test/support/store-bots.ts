@@ -18,16 +18,18 @@ import type { AttachmentInput } from "../../src/shared/attachment-rules";
 import type {
   Agent,
   AgentInput,
-  Conversation,
   Execution,
+  Schedule,
+  ScheduleInput,
+} from "../../src/shared/domain";
+import type { Conversation } from "../../src/bots/conversation-repository";
+import type {
   GroupChat,
   GroupChatInput,
   GroupMember,
   GroupTurn,
   GroupTurnStatus,
-  Schedule,
-  ScheduleInput,
-} from "../../src/shared/domain";
+} from "../../src/group-chats/group-chat-repository";
 import type { StoreRun } from "./store";
 
 export const botStore = (run: StoreRun) => ({

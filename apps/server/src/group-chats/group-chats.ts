@@ -1,12 +1,10 @@
 import { Context, Effect, Layer } from "effect";
+import { accessOf, noServices, type Access } from "../shared/runner";
 import { AgentRepository } from "../bots/agent-repository";
 import { Bots } from "../bots/bots";
 import { ConversationRepository } from "../bots/conversation-repository";
 import { ExecutionRepository } from "../bots/execution-repository";
 import { BotRuntime } from "../bots/runtime";
-import type { TranscriptPage } from "../bots/transcript";
-import type { AttachmentInput } from "../shared/attachment-rules";
-import type { GroupChat, GroupChatInput } from "../shared/domain";
 import {
   groupChatContext,
   groupChatState,
@@ -18,14 +16,6 @@ import {
   groupChatsService,
   type GroupChatsService,
 } from "./group-chat-service";
-import type {
-  GroupActivity,
-  GroupAttachment,
-  GroupChatSnapshot,
-  GroupMessageReceipt,
-  GroupMembership,
-  PageOptions,
-} from "./group-chat-types";
 import type { GroupTranscripts } from "./group-transcripts";
 import { groupTurnEngine, keepTurnsSettled } from "./group-turn-engine";
 import { groupTurnInput } from "./group-turn-input";
@@ -87,65 +77,14 @@ export class GroupChats extends Context.Service<
   );
 }
 
-/** Group chats for code outside Effect, such as the HTTP handlers, with the API they had. */
-export type GroupChatsAccess = {
-  list(): GroupChat[];
-  get(groupId: string): GroupChat;
-  create(input: GroupChatInput): GroupChat;
-  update(groupId: string, input: GroupChatInput): Promise<GroupChat>;
-  delete(groupId: string): Promise<void>;
-  post(
-    groupId: string,
-    content: string,
-    requestId: string,
-    options?: {
-      replyTo?: string | undefined;
-      attachments?: AttachmentInput[] | undefined;
-    },
-  ): Promise<GroupMessageReceipt>;
-  stop(groupId: string): Promise<void>;
-  activity(groupId: string): GroupActivity;
-  attachment(
-    groupId: string,
-    entryId: string,
-    index: number,
-  ): Promise<GroupAttachment>;
-  forMember(agentId: string): Promise<GroupMembership[]>;
-  readAsMember(
-    agentId: string,
-    groupId: string,
-    options: PageOptions,
-  ): Promise<TranscriptPage>;
-  history(groupId: string, options: PageOptions): Promise<TranscriptPage>;
-  snapshot(
-    groupId: string,
-    options: { limit?: number | undefined },
-  ): Promise<GroupChatSnapshot>;
-  subscribe(groupId: string, callback: () => void): () => void;
-  recover(): Promise<void>;
-};
+const SYNC_GROUP_CHATS = ["list", "get", "create", "activity"] as const;
+
+/** Group chats for code outside Effect, such as the HTTP handlers. */
+export type GroupChatsAccess = Access<
+  GroupChats["Service"],
+  (typeof SYNC_GROUP_CHATS)[number]
+>;
 
 export const groupChatsAccess = (
   chats: GroupChats["Service"],
-): GroupChatsAccess => ({
-  list: () => Effect.runSync(chats.list),
-  get: (groupId) => Effect.runSync(chats.get(groupId)),
-  create: (input) => Effect.runSync(chats.create(input)),
-  update: (groupId, input) => Effect.runPromise(chats.update(groupId, input)),
-  delete: (groupId) => Effect.runPromise(chats.delete(groupId)),
-  post: (groupId, content, requestId, options) =>
-    Effect.runPromise(chats.post(groupId, content, requestId, options)),
-  stop: (groupId) => Effect.runPromise(chats.stop(groupId)),
-  activity: (groupId) => Effect.runSync(chats.activity(groupId)),
-  attachment: (groupId, entryId, index) =>
-    Effect.runPromise(chats.attachment(groupId, entryId, index)),
-  forMember: (agentId) => Effect.runPromise(chats.forMember(agentId)),
-  readAsMember: (agentId, groupId, options) =>
-    Effect.runPromise(chats.readAsMember(agentId, groupId, options)),
-  history: (groupId, options) =>
-    Effect.runPromise(chats.history(groupId, options)),
-  snapshot: (groupId, options) =>
-    Effect.runPromise(chats.snapshot(groupId, options)),
-  subscribe: chats.subscribe,
-  recover: () => Effect.runPromise(chats.recover),
-});
+): GroupChatsAccess => accessOf(chats, noServices, SYNC_GROUP_CHATS);

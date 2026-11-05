@@ -49,6 +49,7 @@ const railwayTests =
 
 // Checkpoint names are global to the Railway environment, so each run gets its own.
 const namePrefix = `crumble-test-${process.pid}`;
+const size = () => ({ cpus: 2, memoryMib: 4096 });
 const dataDir = mkdtempSync(path.join(tmpdir(), "crumble-railway-test-"));
 const recordsDir = path.join(dataDir, "workspaces", "railway");
 
@@ -89,12 +90,12 @@ const readRecord = (agentId: string): { image: string; sandboxId?: string } =>
 describe("Railway workspace configuration", () => {
   test("workspaces are unavailable unless Railway is the backend", () => {
     expect(
-      railwayWorkspacesFromEnv({}, { dataDir, namePrefix }),
+      railwayWorkspacesFromEnv({}, { dataDir, namePrefix, size }),
     ).toBeUndefined();
     expect(
       railwayWorkspacesFromEnv(
         { CRUMBLE_WORKSPACE_BACKEND: "railway" },
-        { dataDir, namePrefix },
+        { dataDir, namePrefix, size },
       ),
     ).toBeInstanceOf(RailwayWorkspaces);
   });
@@ -103,6 +104,7 @@ describe("Railway workspace configuration", () => {
     const workspaces = new RailwayWorkspaces({
       dataDir,
       namePrefix,
+      size,
       wantsDesktop: (agentId) => agentId === "desk",
     });
 
@@ -112,7 +114,7 @@ describe("Railway workspace configuration", () => {
   });
 
   test("agent ids cannot name another machine", () => {
-    const workspaces = new RailwayWorkspaces({ dataDir, namePrefix });
+    const workspaces = new RailwayWorkspaces({ dataDir, namePrefix, size });
 
     for (const agentId of ["", "../other", "a/b", "x".repeat(65)])
       expect(() => workspaces.env(agentId)).toThrow("Invalid agent id");
@@ -174,6 +176,7 @@ describe("Railway machines when Railway fails", () => {
       machines: new RailwayMachines({
         dataDir: machineDir,
         namePrefix,
+        size,
         ...(region && { region }),
       }),
     };
@@ -295,7 +298,7 @@ describe("Railway machines when Railway fails", () => {
 });
 
 describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
-  const workspaces = new RailwayWorkspaces({ dataDir, namePrefix });
+  const workspaces = new RailwayWorkspaces({ dataDir, namePrefix, size });
 
   afterAll(async () => {
     await Effect.runPromise(workspaces.close());
@@ -420,6 +423,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
     const workspaces = new RailwayWorkspaces({
       dataDir,
       namePrefix,
+      size,
       guest: async (agentId) => ({
         files: [
           {
@@ -490,13 +494,13 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
   }, 600_000);
 
   test("files survive a stop through the checkpoint", async () => {
-    const first = new RailwayWorkspaces({ dataDir, namePrefix });
+    const first = new RailwayWorkspaces({ dataDir, namePrefix, size });
 
     await sh(first.env("persist"), "echo kept > /workspace/note");
     const { sandboxId } = readRecord("persist");
     await Effect.runPromise(first.close());
 
-    const second = new RailwayWorkspaces({ dataDir, namePrefix });
+    const second = new RailwayWorkspaces({ dataDir, namePrefix, size });
 
     try {
       expect(await readText(second.env("persist"), "/workspace/note")).toBe(
@@ -518,7 +522,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
         "-e",
         `const { RailwayWorkspaces } = await import(${JSON.stringify(module)});
          const { BACKGROUND_CONTEXT } = await import("@earendil-works/chord/context");
-         const workspaces = new RailwayWorkspaces({ dataDir: ${JSON.stringify(dataDir)}, namePrefix: ${JSON.stringify(namePrefix)} });
+         const workspaces = new RailwayWorkspaces({ dataDir: ${JSON.stringify(dataDir)}, namePrefix: ${JSON.stringify(namePrefix)}, size: () => ({ cpus: 2, memoryMib: 4096 }) });
          const result = await workspaces.env("orphan").exec("echo unsynced > /workspace/note", {}, BACKGROUND_CONTEXT);
          process.exit(result.ok && result.value.exitCode === 0 ? 0 : 1);`,
       ],
@@ -528,7 +532,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
     expect(await killed.exited).toBe(0);
 
     const { sandboxId } = readRecord("orphan");
-    const next = new RailwayWorkspaces({ dataDir, namePrefix });
+    const next = new RailwayWorkspaces({ dataDir, namePrefix, size });
 
     try {
       expect(await readText(next.env("orphan"), "/workspace/note")).toBe(
@@ -544,6 +548,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
     const lossy = new RailwayWorkspaces({
       dataDir,
       namePrefix,
+      size,
       checkpointDelayMs: 500,
     });
 
@@ -569,6 +574,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
     const idle = new RailwayWorkspaces({
       dataDir,
       namePrefix,
+      size,
       idleTimeoutMs: 500,
     });
 
@@ -587,7 +593,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
   }, 300_000);
 
   test("a checkpoint of another image moves its workspace to the current one", async () => {
-    const first = new RailwayWorkspaces({ dataDir, namePrefix });
+    const first = new RailwayWorkspaces({ dataDir, namePrefix, size });
 
     await sh(
       first.env("moved"),
@@ -600,7 +606,7 @@ describe.skipIf(!railwayTests)("Railway sandbox workspaces", () => {
       JSON.stringify({ ...readRecord("moved"), image: "railway-base-old" }),
     );
 
-    const second = new RailwayWorkspaces({ dataDir, namePrefix });
+    const second = new RailwayWorkspaces({ dataDir, namePrefix, size });
 
     try {
       expect(await readText(second.env("moved"), "/workspace/dir/note")).toBe(

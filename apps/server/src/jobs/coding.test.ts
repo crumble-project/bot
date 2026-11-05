@@ -24,7 +24,7 @@ import {
 } from "./workspace-notes";
 import { conversationEnv, jobExtensions } from "../plugins/plugins";
 import type { Agent } from "../shared/domain";
-import { createAPI } from "../app/api";
+import { testAPI } from "../../test/support/api";
 import { codingJobsResponse, historyResponse } from "../contract/api-responses";
 import { AgentRuntime, type RuntimeCallbacks } from "../bots/runtime";
 import { standaloneScheduler } from "../automations/scheduler-test-support";
@@ -231,7 +231,7 @@ function open(
   callbacks: Partial<
     Pick<RuntimeCallbacks, "listMemory" | "skillLibrary">
   > = {},
-  plugin = codingPlugin(workspaces),
+  plugin = codingPlugin(workspaces, () => 900_000),
 ) {
   const faux = fauxProvider({ provider: "faux", models: [{ id: "chat" }] });
   faux.setResponses(Array.from({ length: 40 }, () => steps));
@@ -344,7 +344,9 @@ test("a bot's extensions are built once, so a later turn can still wake what a q
   const dir = mkdtempSync(join(tmpdir(), "bot-coding-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   const { agent } = setup(dir);
-  const [kind] = codingPlugin(new DirectoryWorkspaces(dir)).jobKinds ?? [];
+
+  const [kind] =
+    codingPlugin(new DirectoryWorkspaces(dir), () => 900_000).jobKinds ?? [];
 
   expect(kind!.extensions(agent).job[0]).toBe(kind!.extensions(agent).job[0]!);
 });
@@ -364,7 +366,7 @@ function learnedSkills(used: string[]): BotSkills["Service"] {
 
   return {
     available: () => Effect.succeed([releaseSkill]),
-    used: (_agent, skill) => Effect.sync(() => void used.push(skill.name)),
+    used: (skill) => Effect.sync(() => void used.push(skill.name)),
     own: () => Effect.succeed([]),
     create: unsupported,
     update: unsupported,
@@ -719,7 +721,7 @@ function serve(store: Store, runtime: AgentRuntime) {
     service.dispatch(a, p, r, s),
   );
 
-  const app = createAPI(service, token, { scheduler });
+  const app = testAPI(service, token, { scheduler });
 
   return (path: string, init: RequestInit = {}) => {
     const headers = new Headers(init.headers);
@@ -983,7 +985,7 @@ test("a job keeps the bot turn that sent its work through a restart, until its r
   const workspaces = new DirectoryWorkspaces(workspace);
   const asked: JobAsked[] = [];
 
-  const plugin = codingPlugin(workspaces);
+  const plugin = codingPlugin(workspaces, () => 900_000);
 
   cleanups.push(
     plugin.jobKinds![0]!.onQuestion!(

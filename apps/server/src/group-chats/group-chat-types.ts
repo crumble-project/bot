@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { groupActivityResponse } from "../contract/api-responses";
 import type { TranscriptPage } from "../bots/transcript";
-import type { GroupChat } from "../shared/domain";
+import type { GroupChat } from "./group-chat-repository";
 import type { GroupTranscripts } from "./group-transcripts";
 
 export type GroupActivity = z.output<typeof groupActivityResponse>;

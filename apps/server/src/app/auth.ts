@@ -43,15 +43,16 @@ const signUpClosed = () =>
     message: "Sign-up is closed. Ask an admin for an invite link.",
   });
 
+/** How many admins the server has. */
+export const adminCount = (adapter: Pick<DBAdapter, "count">) =>
+  adapter.count({
+    model: "user",
+    where: [{ field: "role", value: ADMIN_ROLE }],
+  });
+
 /** Promotes the oldest user on a server that has users but no admin, as one upgraded from before roles. */
 async function ensureAdmin<O extends BetterAuthOptions>(adapter: DBAdapter<O>) {
-  if (
-    await adapter.count({
-      model: "user",
-      where: [{ field: "role", value: ADMIN_ROLE }],
-    })
-  )
-    return;
+  if (await adminCount(adapter)) return;
 
   const [oldest] = await adapter.findMany<{ id: string }>({
     model: "user",
@@ -105,14 +106,18 @@ export async function createAuth(dataDir: string, baseURL: string) {
     adapter: DBTransactionAdapter<O>,
   ) => (await adapter.count({ model: "user" })) === 0;
 
-  /** Whether someone without an account may create one now: first user, open sign-up, or an open invite. */
+  const consumeInvite = (invite: string) => inviteStore.consume(invite);
+  const inviteOpen = (invite: string) => inviteStore.isOpen(invite);
+
+  /** Whether someone without an account may create one now: first user, open sign-up, or an invite `accepts` takes. */
   const mayJoin = async <O extends BetterAuthOptions>(
     adapter: DBTransactionAdapter<O>,
-    invite: string | undefined,
+    invite: string | null | undefined,
+    accepts: (invite: string) => Promise<boolean>,
   ) =>
     (await isFirstUser(adapter)) ||
     settings.get().signUpOpen ||
-    (invite !== undefined && (await inviteStore.isOpen(invite)));
+    (!!invite && (await accepts(invite)));
 
   const options = {
     appName: "Crumble",
@@ -141,10 +146,9 @@ export async function createAuth(dataDir: string, baseURL: string) {
               case "/passkey/verify-registration":
                 return;
               case "/sign-up/email": {
-                if (settings.get().signUpOpen) return;
                 const invite = context.headers?.get(INVITE_HEADER);
 
-                if (invite && (await inviteStore.consume(invite))) return;
+                if (await mayJoin(adapter, invite, consumeInvite)) return;
                 throw signUpClosed();
               }
 
@@ -185,7 +189,7 @@ export async function createAuth(dataDir: string, baseURL: string) {
                 message: "An account with this email already exists",
               });
 
-            if (!(await mayJoin(ctx.context.adapter, invite)))
+            if (!(await mayJoin(ctx.context.adapter, invite, inviteOpen)))
               throw signUpClosed();
 
             return { id: randomUUID(), name: email, displayName: name };
@@ -198,11 +202,7 @@ export async function createAuth(dataDir: string, baseURL: string) {
 
             const adapter = await getCurrentAdapter(ctx.context.adapter);
 
-            if (
-              !(await isFirstUser(adapter)) &&
-              !settings.get().signUpOpen &&
-              !(invite !== undefined && (await inviteStore.consume(invite)))
-            )
+            if (!(await mayJoin(adapter, invite, consumeInvite)))
               throw signUpClosed();
 
             const created = await ctx.context.internalAdapter.createUser(

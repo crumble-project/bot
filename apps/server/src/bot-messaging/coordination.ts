@@ -3,7 +3,7 @@ import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { EXECUTION_STATUSES, type Agent } from "../shared/domain";
 import { Effect, Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
-import { BotMessaging, botMessagingAccess } from "./bot-messaging";
+import { BotMessaging } from "./bot-messaging";
 import { toolOutput } from "../shared/tool-output";
 import { BOT_TOOL } from "../contract/tools";
 import { MAX_MESSAGE_CHARS } from "../shared/limits";
@@ -24,10 +24,8 @@ const resultSchema = Type.Object({
 /** Model tools adapt the bot-messaging interface; addressing and exchange policy live there. */
 export function coordinationExtension(
   agent: Agent,
-  service: BotMessaging["Service"],
+  messaging: BotMessaging["Service"],
 ) {
-  const messaging = botMessagingAccess(service);
-
   const delegate = defineTool({
     name: "delegate",
     description:
@@ -40,14 +38,16 @@ export function coordinationExtension(
     replay: "safe",
     execute: async (args, api, context) =>
       toolOutput(
-        await messaging.send(
-          agent.id,
-          {
-            recipient: args.agentId,
-            message: args.task,
-            requestId: String(api.taskId),
-          },
-          context,
+        await Effect.runPromise(
+          messaging.send(
+            agent.id,
+            {
+              recipient: args.agentId,
+              message: args.task,
+              requestId: String(api.taskId),
+            },
+            context,
+          ),
         ),
       ),
   });
@@ -64,10 +64,12 @@ export function coordinationExtension(
     replay: "safe",
     execute: async (args, _api, context) =>
       toolOutput(
-        await messaging.result(agent.id, args.executionId, {
-          waitMs: (args.waitSeconds ?? 0) * 1000,
-          context,
-        }),
+        await Effect.runPromise(
+          messaging.result(agent.id, args.executionId, {
+            waitMs: (args.waitSeconds ?? 0) * 1000,
+            context,
+          }),
+        ),
       ),
   });
 
@@ -84,7 +86,8 @@ export function coordinationExtension(
       }),
     ),
     replay: "safe",
-    execute: async () => toolOutput(messaging.recipients(agent.id)),
+    execute: async () =>
+      toolOutput(Effect.runSync(messaging.recipients(agent.id))),
   });
 
   const ask = defineTool({
@@ -100,21 +103,25 @@ export function coordinationExtension(
     execute: async (args, api, context) => {
       context.abortSignal?.throwIfAborted();
 
-      const sent = await messaging.send(
-        agent.id,
-        {
-          recipient: args.recipient,
-          message: args.message,
-          requestId: String(api.taskId),
-        },
-        context,
+      const sent = await Effect.runPromise(
+        messaging.send(
+          agent.id,
+          {
+            recipient: args.recipient,
+            message: args.message,
+            requestId: String(api.taskId),
+          },
+          context,
+        ),
       );
 
       return toolOutput(
-        await messaging.result(agent.id, sent.executionId, {
-          waitMs: 60000,
-          context,
-        }),
+        await Effect.runPromise(
+          messaging.result(agent.id, sent.executionId, {
+            waitMs: 60000,
+            context,
+          }),
+        ),
       );
     },
   });
@@ -136,10 +143,12 @@ export function coordinationExtension(
     replay: "unsafe",
     execute: async (args) =>
       toolOutput(
-        await messaging.answerQuestion(agent.id, {
-          questionId: args.questionId,
-          answer: args.answer,
-        }),
+        await Effect.runPromise(
+          messaging.answerQuestion(agent.id, {
+            questionId: args.questionId,
+            answer: args.answer,
+          }),
+        ),
       ),
   });
 

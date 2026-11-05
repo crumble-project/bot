@@ -11,7 +11,8 @@ import {
   type FakePasswordManager,
 } from "../../test/support/fake-password-manager";
 import { Store } from "../../test/support/store";
-import { handleApiError } from "../app/api";
+import { pathRegister } from "../app/api";
+import { handleApiError } from "../app/api-errors";
 import { contractApp } from "../contract/api-contract";
 import { passwordManagersResponse } from "../contract/api-responses";
 import type { CoreServices } from "../app/core-layer";
@@ -54,8 +55,7 @@ const setup = (state: FakePasswordManager) => {
 
   app.onError(handleApiError);
   registerPasswordManagerRoutes({
-    register: (definition, handler) =>
-      app.on(definition.method, definition.getRoutingPath(), handler),
+    register: pathRegister(app),
     run,
   });
 

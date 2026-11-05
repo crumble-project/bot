@@ -1,15 +1,12 @@
 import { Effect, Predicate, Redacted } from "effect";
-import { passwordManagerTokenInput, routes } from "../contract/api-contract";
+import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import { Conflict, InvalidInput, Unavailable } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import { nowIso } from "../shared/time";
 import { PasswordManagers } from "../password-managers/password-manager";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
-import {
-  passwordManagerIdInput,
-  type PasswordManagerId,
-} from "../shared/domain";
+import type { PasswordManagerId } from "../shared/domain";
 import { SecretRepository } from "./secret-repository";
 import { SecretValues } from "./secret-values";
 
@@ -86,20 +83,21 @@ export function registerPasswordManagerRoutes(options: {
   run: Runner<PasswordManagerServices>;
 }) {
   const { register, run } = options;
-  const idOf = (param: string) => passwordManagerIdInput.parse(param);
 
   register(routes.passwordManagers, (c) => c.json(run.runSync(list), 200));
   register(routes.connectPasswordManager, async (c) => {
-    const id = idOf(c.req.param("id"));
-    const input = passwordManagerTokenInput.parse(await c.req.json());
-
     return c.json(
-      await run.runPromise(connect(id, Redacted.make(input.token))),
+      await run.runPromise(
+        connect(
+          c.req.valid("param").id,
+          Redacted.make(c.req.valid("json").token),
+        ),
+      ),
       200,
     );
   });
   register(routes.disconnectPasswordManager, async (c) => {
-    await run.runPromise(disconnect(idOf(c.req.param("id"))));
+    await run.runPromise(disconnect(c.req.valid("param").id));
 
     return c.body(null, 204);
   });

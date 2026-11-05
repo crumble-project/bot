@@ -3,7 +3,7 @@ import type { JsonValue } from "@earendil-works/chord";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAPI } from "../app/api";
+import { testAPI } from "../../test/support/api";
 import {
   activityEvent,
   groupChatResponse,
@@ -49,7 +49,7 @@ function setup() {
 
   const groupChats = standaloneGroupChats(service, transcripts);
 
-  const app = createAPI(service, token, { scheduler, groupChats });
+  const app = testAPI(service, token, { scheduler, groupChats });
 
   const bots = ["Planner", "Researcher", "Critic"].map((name) =>
     store.createAgent({
@@ -80,7 +80,7 @@ function setup() {
 }
 
 const req = (
-  app: ReturnType<typeof createAPI>,
+  app: ReturnType<typeof testAPI>,
   path: string,
   init: TestRequestInit = {},
 ) =>
@@ -94,7 +94,7 @@ const req = (
   });
 
 const post = (
-  app: ReturnType<typeof createAPI>,
+  app: ReturnType<typeof testAPI>,
   path: string,
   body: Record<string, JsonValue>,
 ) => req(app, path, { method: "POST", body: JSON.stringify(body) });

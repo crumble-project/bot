@@ -1,13 +1,12 @@
 import { Effect } from "effect";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
+import { pluginSettingKey } from "../shared/vendors";
 import { Secrets } from "../secrets/secrets";
-import { secretInput } from "../shared/domain";
 import { NotFound } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import {
   pluginContributions,
-  pluginSettingKey,
   type CrumblePlugin,
   type PluginSetting,
 } from "./plugins";
@@ -16,12 +15,12 @@ import {
 export function registerPluginSettingRoutes(options: {
   register: Register;
   run: Runner<Secrets>;
-  plugins?: readonly CrumblePlugin[] | undefined;
+  plugins: readonly CrumblePlugin[];
 }) {
   const { register, run } = options;
   const secrets = run.runSync(Secrets.use(Effect.succeed));
 
-  const plugins = (options.plugins ?? []).filter(
+  const plugins = options.plugins.filter(
     (plugin) => (plugin.settings?.length ?? 0) > 0,
   );
 
@@ -67,9 +66,7 @@ export function registerPluginSettingRoutes(options: {
       c.req.param("key"),
     );
 
-    await run.runPromise(
-      secrets.save(stored, secretInput.parse(await c.req.json())),
-    );
+    await run.runPromise(secrets.save(stored, c.req.valid("json")));
 
     return c.json(describe(plugin, setting), 200);
   });

@@ -1,17 +1,10 @@
+import type { z } from "@hono/zod-openapi";
+import type { pushInput } from "../contract/push";
 import type { ReplyEvent } from "../contract/reply-event";
 
-export type PushPlatform = "macos" | "ios" | "android";
+export type PushDeviceInput = z.output<typeof pushInput>;
 
-export type PushTransportName = "apns" | "fcm";
-
-export type PushDeviceInput = {
-  platform: PushPlatform;
-  transport: PushTransportName;
-  token: string;
-  environment: "development" | "production";
-  bundleId?: string | undefined;
-  enabled: boolean;
-};
+export type PushTransportName = PushDeviceInput["transport"];
 
 export type PushDevice = PushDeviceInput & {
   installationId: string;

@@ -3,7 +3,7 @@ import tls from "node:tls";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { Context, Effect, Layer } from "effect";
-import type { Runner } from "../shared/runner";
+import { accessOf, type Access, type Runner } from "../shared/runner";
 import { AgentCredentialRepository } from "./agent-credential-repository";
 
 const KEY_ALGORITHM = { name: "ECDSA", namedCurve: "P-256" } as const;
@@ -315,22 +315,11 @@ async function newAuthority() {
 }
 
 /** Certificate authorities for code outside Effect: workspace boots and the credential proxy. */
-export type CredentialAuthoritiesAccess = {
-  certificate(agentId: string): Promise<string>;
-  context(agentId: string, host: string): Promise<tls.SecureContext>;
-};
+export type CredentialAuthoritiesAccess = Access<
+  CredentialAuthorities["Service"]
+>;
 
-export function credentialAuthoritiesAccess(
+export const credentialAuthoritiesAccess = (
   runtime: Runner<CredentialAuthorities>,
-): CredentialAuthoritiesAccess {
-  const authorities = runtime.runSync(
-    CredentialAuthorities.use(Effect.succeed),
-  );
-
-  return {
-    certificate: (agentId) =>
-      runtime.runPromise(authorities.certificate(agentId)),
-    context: (agentId, host) =>
-      runtime.runPromise(authorities.context(agentId, host)),
-  };
-}
+): CredentialAuthoritiesAccess =>
+  accessOf(runtime.runSync(CredentialAuthorities.use(Effect.succeed)), runtime);

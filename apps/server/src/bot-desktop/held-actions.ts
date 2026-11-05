@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { OwnerMessage } from "./desktop-vocabulary";
 import { Conflict, NotFound } from "../shared/errors";
 import { ProductDatabase } from "../shared/product-database";
-import type { Runner } from "../shared/runner";
+import { accessOf, type Access, type Runner } from "../shared/runner";
 import { nowIso } from "../shared/time";
 import { heldActions } from "./schema";
 
@@ -258,15 +258,13 @@ export class HeldActions extends Context.Service<
   );
 }
 
+const SYNC_HELD_ACTIONS = ["list"] as const;
+
 /** Held actions for HTTP handlers and a desktop job's tool, outside Effect. */
-export type HeldActionsAccess = {
-  list(agentId: string): HeldAction[];
-  decide(
-    agentId: string,
-    id: string,
-    decision: Exclude<HoldDecision, { status: "expired" }>,
-  ): Promise<HeldAction>;
-  hold(input: HoldInput): Promise<HeldAction>;
+export type HeldActionsAccess = Omit<
+  Access<HeldActions["Service"], (typeof SYNC_HELD_ACTIONS)[number]>,
+  "expire" | "untilDecided" | "onHeld"
+> & {
   /** Resolves with the owner's decision; cancelling `context` expires the action and ends the wait. */
   until(id: string, context: PiContext): Promise<HoldDecision>;
 };
@@ -277,10 +275,7 @@ export function heldActionsAccess(
   const held = runtime.runSync(HeldActions.use(Effect.succeed));
 
   return {
-    list: (agentId) => runtime.runSync(held.list(agentId)),
-    decide: (agentId, id, decision) =>
-      runtime.runPromise(held.decide(agentId, id, decision)),
-    hold: (input) => runtime.runPromise(held.hold(input)),
+    ...accessOf(held, runtime, SYNC_HELD_ACTIONS),
     until: async (id, context) => {
       try {
         return await runtime.runPromise(held.untilDecided(id), {

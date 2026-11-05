@@ -1,8 +1,22 @@
+import type { SCRIPT_RUN_STATUSES } from "../shared/domain";
 import { and, desc, eq, lt, or } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import type { ScriptRun } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { scriptRuns } from "./schema.script-runs";
+
+export type ScriptRun = {
+  id: string;
+  scheduleId: string;
+  agentId: string;
+  command: string;
+  status: (typeof SCRIPT_RUN_STATUSES)[number];
+  exitCode: number | null;
+  output: string;
+  droppedBytes: number;
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+};
 
 type FinishedRun = Pick<
   ScriptRun,

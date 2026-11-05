@@ -13,7 +13,7 @@ import { AgentRuntime } from "../bots/runtime";
 import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../automations/scheduler-test-support";
 import { Store } from "../../test/support/store";
-import { createAPI } from "../app/api";
+import { testAPI } from "../../test/support/api";
 import { activityPage, decodeCursor, operationalActivity } from "./activity";
 import type { LearnedChange } from "../shared/domain";
 import type { TranscriptMessage } from "../bots/transcript";
@@ -70,7 +70,7 @@ describe("operational activity", () => {
     );
 
     const token = "t".repeat(40);
-    const app = createAPI(service, token, { scheduler });
+    const app = testAPI(service, token, { scheduler });
 
     const agent = store.createAgent({
       name: "Helper",

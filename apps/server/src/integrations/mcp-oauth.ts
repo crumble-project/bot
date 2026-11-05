@@ -7,8 +7,9 @@ import {
   type McpOAuthState,
   type McpOAuthStateStore,
 } from "@earendil-works/pi-mcp/oauth";
-import { type MCPServer } from "../shared/domain";
+import type { MCPServer } from "./mcp-server-repository";
 import { Effect } from "effect";
+import { MCP_OAUTH_WEB_PATH } from "../contract/mcp-oauth";
 import { secretKey } from "../secrets/secret-key";
 import { Secrets, secretText } from "../secrets/secrets";
 import { ServerSecrets } from "../secrets/server-secrets";
@@ -84,7 +85,7 @@ export function clientDocument(publicUrl: URL): ClientDocument {
 
   return {
     url: `${base}${CLIENT_DOCUMENT_PATH}`,
-    redirectUris: [`${base}/oauth/callback`, ...NATIVE_REDIRECTS],
+    redirectUris: [`${base}${MCP_OAUTH_WEB_PATH}`, ...NATIVE_REDIRECTS],
   };
 }
 

@@ -1,3 +1,4 @@
+import { PUSH_TTL_SECONDS } from "../shared/push-devices";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -22,7 +23,7 @@ import type { Activity } from "../bots/bots";
 import { Store } from "../../test/support/store";
 import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../automations/scheduler-test-support";
-import { createAPI } from "../app/api";
+import { testAPI } from "../../test/support/api";
 import type { Agent } from "../shared/domain";
 
 // Plain header records, so they spread into the defaults.
@@ -53,8 +54,11 @@ const android = (token: string): PushDeviceInput => ({
   enabled: true,
 });
 
-const fcmOnly = (fcm: PushTransport) =>
-  Layer.succeed(PushTransports, { apns: undefined, fcm });
+const fcmOnly = (fcm: Omit<PushTransport, "canSend">) =>
+  Layer.succeed(PushTransports, {
+    apns: undefined,
+    fcm: { canSend: () => true, ...fcm },
+  });
 
 /** Push and its repository on a test clock that starts at `startAt`. */
 async function pushRuntime(
@@ -146,7 +150,7 @@ describe("push registration and durable delivery", () => {
       fcmOnly({ send: () => Effect.succeed("delivered") }),
     );
 
-    const app = createAPI(service, token, { scheduler, push });
+    const app = testAPI(service, token, { scheduler, push });
     const installationId = id();
 
     const request = (path: string, init: TestRequestInit = {}) =>
@@ -395,9 +399,8 @@ describe("push registration and durable delivery", () => {
         });
         yield* store.enqueue(
           canonicalReplyEvent(reply(agentId, now), service.serverId),
-          100,
         );
-        yield* TestClock.adjust(200);
+        yield* TestClock.adjust(PUSH_TTL_SECONDS * 1000 + 100);
         yield* service.drain;
         expect(
           Option.getOrThrow(yield* store.getDevice(installationId)).enabled,
@@ -418,6 +421,7 @@ describe("push registration and durable delivery", () => {
         return {
           apns: undefined,
           fcm: {
+            canSend: () => true,
             send: (device) =>
               Effect.gen(function* () {
                 rotationAttempts++;
@@ -434,7 +438,11 @@ describe("push registration and durable delivery", () => {
       }),
     );
 
-    const rotating = await pushRuntime(dir, rotatingTransports, now + 200);
+    const rotating = await pushRuntime(
+      dir,
+      rotatingTransports,
+      now + PUSH_TTL_SECONDS * 1000 + 200,
+    );
 
     await rotating.runPromise(
       Effect.gen(function* () {

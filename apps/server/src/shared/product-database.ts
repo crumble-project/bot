@@ -7,7 +7,6 @@ import {
   sqliteDatabase,
   type SqliteDatabase,
 } from "./database";
-import { upgradeLegacyStore } from "./legacy-schema";
 
 /** An account's product database (store.sqlite): bots, chats, memories, skills, and everything they own. */
 export class ProductDatabase extends Context.Service<
@@ -17,10 +16,7 @@ export class ProductDatabase extends Context.Service<
   static layer(dataDir: string) {
     return Layer.effect(
       ProductDatabase,
-      sqliteDatabase(migrationsFolder("store"), {
-        table: "agents",
-        upgrade: upgradeLegacyStore,
-      }),
+      sqliteDatabase(migrationsFolder("store")),
     ).pipe(
       Layer.provide(
         Layer.unwrap(

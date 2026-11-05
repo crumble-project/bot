@@ -126,16 +126,8 @@ export interface WorkspaceMachines {
 /** The machine size an admin sets for the whole server, read at each boot. */
 export type WorkspaceSize = { cpus: number; memoryMib: number };
 
-/** The size of a machine on a server without the setting. */
-export const DEFAULT_WORKSPACE_SIZE: WorkspaceSize = {
-  cpus: 2,
-  memoryMib: 4096,
-};
-
 export type MachineWorkspacesOptions = {
   idleTimeoutMs?: number;
-  /** The machine size, read at each boot; `DEFAULT_WORKSPACE_SIZE` without it. */
-  size?: () => WorkspaceSize;
   /** An image that replaces the base image, read at each boot; only backends that boot OCI images pass it on. */
   baseImage?: () => string | null;
   /** The image for bots with a bot desktop: the base image plus the desktop. */
@@ -153,6 +145,8 @@ export type WorkspaceBackendOptions = Omit<
   MachineWorkspacesOptions,
   "desktopImage"
 > & {
+  /** The machine size, read at each boot. */
+  size: () => WorkspaceSize;
   /** Where a backend may record its machines, so a restarted server finds them. */
   dataDir: string;
   /** Prefix of machine names, which may be global to the backend's account. */
