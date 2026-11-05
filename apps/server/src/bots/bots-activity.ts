@@ -1,8 +1,9 @@
 import { Effect } from "effect";
 import type { JobAnswer } from "../jobs/jobs";
-import { conversationReference, type Execution } from "../shared/domain";
+import { activeExecution, type Execution } from "../shared/domain";
+import { formatEntryId } from "../shared/entry-ids";
 import type { Activity } from "./bots";
-import { active, type BotsContext } from "./bots-context";
+import { type BotsContext } from "./bots-context";
 
 /** The callbacks code outside the bots registers to hear about a chat, an activity, or a settled execution. */
 export const botsSubscribers = (context: BotsContext) => {
@@ -59,7 +60,7 @@ export const botsNotifications = (context: BotsContext) => {
   const settled = Effect.fnUntraced(function* (executionId: string) {
     const execution = yield* executions.get(executionId);
 
-    if (!execution || active(execution)) return;
+    if (!execution || activeExecution(execution)) return;
 
     for (const listener of settledListeners)
       void Promise.resolve(listener(execution)).catch((error) =>
@@ -94,7 +95,7 @@ export const botsJobAnswers = (
       executionId: answer.eventId,
       agentId: owner.id,
       agentName: owner.name,
-      entryId: conversationReference(owner.id, Number(answer.entryId)),
+      entryId: formatEntryId(owner.id, Number(answer.entryId)),
       origin: answer.kind,
       jobName: answer.name,
       preview: answer.preview,

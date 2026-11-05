@@ -1,5 +1,6 @@
 /* oxlint-disable anti-slop/require-readable-spacing */
 
+import { errorText } from "../shared/errors";
 import { Database } from "bun:sqlite";
 import lockfile from "proper-lockfile";
 import {
@@ -93,9 +94,7 @@ function legacyUser(
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("Legacy migration:"))
       throw error;
-    fail(
-      `cannot read auth.sqlite: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    fail(`cannot read auth.sqlite: ${errorText(error)}`);
   } finally {
     db?.close();
   }

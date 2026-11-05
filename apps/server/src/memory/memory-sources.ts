@@ -1,3 +1,4 @@
+import { askingBot, parseRequestId } from "../shared/request-ids";
 import { Effect } from "effect";
 import { type ChangeSource, type MemorySource } from "../shared/domain";
 import type { MemoryContext } from "../bots/runtime";
@@ -50,14 +51,14 @@ export const memorySourceOf = Effect.fnUntraced(function* (
     } satisfies MemorySource;
   }
 
-  const [prefix, sourceAgentId] = execution?.requestId.split(":") ?? [];
+  const sourceId = execution && askingBot(parseRequestId(execution.requestId));
 
-  if (prefix === "delegate" && sourceAgentId) {
-    const agent = yield* (yield* AgentRepository).get(sourceAgentId);
+  if (sourceId) {
+    const agent = yield* (yield* AgentRepository).get(sourceId);
 
     return {
       kind: "bot",
-      agentId: sourceAgentId,
+      agentId: sourceId,
       name: agent?.name ?? "Another bot",
     } satisfies MemorySource;
   }

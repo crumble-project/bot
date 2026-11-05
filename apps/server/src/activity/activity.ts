@@ -2,7 +2,9 @@ import type { JsonValue } from "@earendil-works/chord";
 import { z } from "zod";
 import type { BotCommunication } from "../contract/api-responses";
 import type { ACTIVITY_KINDS, Agent, LearnedChange } from "../shared/domain";
-import type { TranscriptMessage } from "../bots/transcript";
+import { toolBlocks, type TranscriptMessage } from "../bots/transcript";
+import { isMcpTool } from "../integrations/integrations";
+import { parseEntryId } from "../shared/entry-ids";
 
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
@@ -20,7 +22,6 @@ export type OperationalActivity = {
   details: ActivityDetails;
 };
 
-const jsonValue: z.ZodType<JsonValue> = z.json();
 const toolDetailsInput = z.object({ calls: z.unknown().optional() });
 
 const nestedCallInput = z.object({
@@ -31,18 +32,6 @@ const nestedCallInput = z.object({
   durationMs: z.unknown().optional(),
   error: z.unknown().optional(),
 });
-
-const blockInput = z.object({
-  type: z.unknown().optional(),
-  id: z.unknown().optional(),
-  name: z.unknown().optional(),
-  arguments: z.unknown().optional(),
-  toolCallId: z.unknown().optional(),
-  content: z.unknown().optional(),
-  isError: z.unknown().optional(),
-});
-
-const isMcpTool = (name: string) => /^(mcp(?:[_:/-]|$))/i.test(name);
 
 type ActivityAgent = Pick<Agent, "id" | "name">;
 
@@ -157,24 +146,31 @@ function nestedCallEvents(agent: ActivityAgent, message: TranscriptMessage) {
   });
 }
 
-function blockEvent(
+function blockEvents(
   agent: ActivityAgent,
   message: TranscriptMessage,
-  block: z.infer<typeof blockInput>,
-  type: string,
-  index: number,
 ): OperationalActivity[] {
-  const id = `${agent.id}:${message.id}:block-${index}`;
+  return toolBlocks(message).flatMap((block) => {
+    const id = `${agent.id}:${message.id}:block-${block.index}`;
 
-  if (type === "toolCall") {
-    const name = z.string().safeParse(block.name).data;
+    if (block.type === "toolResult") {
+      const details = {
+        toolCallId: block.toolCallId,
+        content: block.content,
+        isError: block.isError,
+      } satisfies ActivityDetails;
+
+      return [activityOf(agent, message, id, "tool-result", details)];
+    }
+
+    const { name } = block;
 
     if (name === undefined) return [];
 
     const details = {
-      id: z.string().safeParse(block.id).data,
+      id: block.id,
       name,
-      arguments: jsonValue.safeParse(block.arguments).data,
+      arguments: block.arguments,
     } satisfies ActivityDetails;
 
     return [
@@ -186,27 +182,6 @@ function blockEvent(
         details,
       ),
     ];
-  }
-
-  if (type !== "toolResult") return [];
-
-  const details = {
-    toolCallId: z.string().safeParse(block.toolCallId).data,
-    content: jsonValue.safeParse(block.content).data,
-    isError: z.boolean().safeParse(block.isError).data,
-  } satisfies ActivityDetails;
-
-  return [activityOf(agent, message, id, "tool-result", details)];
-}
-
-function blockEvents(agent: ActivityAgent, message: TranscriptMessage) {
-  const blocks = z.array(z.unknown()).safeParse(message.blocks).data;
-
-  return (blocks ?? []).flatMap((rawBlock, index) => {
-    const block = blockInput.safeParse(rawBlock).data;
-    const type = z.string().safeParse(block?.type).data;
-
-    return block && type ? blockEvent(agent, message, block, type, index) : [];
   });
 }
 
@@ -222,19 +197,6 @@ export function operationalActivity(
   ]);
 }
 
-export function sortActivity(items: OperationalActivity[]) {
-  return items.sort((a, b) => {
-    const timestamp = (b.timestamp ?? 0) - (a.timestamp ?? 0);
-
-    if (timestamp) return timestamp;
-
-    const entry = (id: string) =>
-      Number(id.slice(id.lastIndexOf(":") + 1)) || 0;
-
-    return entry(b.entryId) - entry(a.entryId) || b.id.localeCompare(a.id);
-  });
-}
-
 export type ChangeActivity = {
   id: string;
   agentId: string | null;
@@ -248,8 +210,7 @@ export type FeedItem = OperationalActivity | ChangeActivity;
 
 type Key = { t: number; e: number; id: string };
 
-const entryNumber = (entryId: string) =>
-  Number(entryId.slice(entryId.lastIndexOf(":") + 1)) || 0;
+const entryNumber = (entryId: string) => parseEntryId(entryId) || 0;
 
 function keyOf(item: FeedItem): Key {
   return {
@@ -259,7 +220,7 @@ function keyOf(item: FeedItem): Key {
   };
 }
 
-/** Positive when `a` is newer than `b`, in the order sortActivity uses. */
+/** Positive when `a` is newer than `b`. */
 function compareKeys(a: Key, b: Key) {
   return a.t - b.t || a.e - b.e || a.id.localeCompare(b.id);
 }

@@ -4,11 +4,14 @@ import { join } from "node:path";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { TestClock } from "effect/testing";
 import { Push, PushDelivery } from "./push";
-import { canonicalReplyEvent } from "./push-model";
+import {
+  canonicalReplyEvent,
+  type ReplyActivity,
+} from "../contract/reply-event";
 import { PushRepository } from "./push-repository";
 import { PushTransports, type PushTransport } from "./push-transports";
 import { BotActivity } from "../bots/bot-activity";
-import type { Activity, ReplyActivity } from "../bots/bots";
+import type { Activity } from "../bots/bots";
 
 const dirs: string[] = [];
 

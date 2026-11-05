@@ -1,7 +1,9 @@
+import { activeExecution } from "../shared/domain";
+import { pi } from "../shared/app-errors";
 import { Effect } from "effect";
 import type { GroupChat } from "../shared/domain";
 import type { AppError } from "../shared/errors";
-import { active, pi, type GroupChatContext } from "./group-chat-context";
+import { type GroupChatContext } from "./group-chat-context";
 import { mentionedMembers } from "./group-mentions";
 import type { GroupEntry } from "./group-transcripts";
 
@@ -111,7 +113,7 @@ const abortTurn = Effect.fnUntraced(function* (
     ? yield* context.executions.get(turn.executionId)
     : null;
 
-  if (!execution || !active(execution)) return queued;
+  if (!execution || !activeExecution(execution)) return queued;
   yield* context.bots.abort(execution.conversationId);
 
   return true;

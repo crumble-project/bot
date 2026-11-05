@@ -1,3 +1,4 @@
+import { errorText } from "../shared/errors";
 import { McpClient, StreamableHttpTransport } from "@earendil-works/pi-mcp";
 import { Effect } from "effect";
 import { z } from "zod";
@@ -41,10 +42,7 @@ const jinaResponse = z.object({
 const unavailable = (name: string, cause: unknown) =>
   cause instanceof VendorUnavailable
     ? cause
-    : new VendorUnavailable(
-        `${name}: ${cause instanceof Error ? cause.message : String(cause)}`,
-        { cause },
-      );
+    : new VendorUnavailable(`${name}: ${errorText(cause)}`, { cause });
 
 const timed = <A>(name: string, effect: Effect.Effect<A, VendorUnavailable>) =>
   effect.pipe(

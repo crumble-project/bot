@@ -1,16 +1,16 @@
+import { sleep } from "../shared/time";
+import { shellQuote } from "../shared/shell";
 import type { Context } from "@earendil-works/chord";
 import { z } from "zod";
 import type { ComputerUseArgs, ComputerUseResult } from "./computer-use";
 import { driverCall, listWindows, sh } from "./computer-use-driver";
 import { textResult, type ComputerUseState } from "./computer-use-state";
 
-const quote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
-
 /** Apps whose command takes the folder in its own way; any other app gets the path as its last argument. */
 const FOLDER_APPS = {
-  files: (path: string) => `thunar ${quote(path)}`,
+  files: (path: string) => `thunar ${shellQuote(path)}`,
   terminal: (path: string) =>
-    `xfce4-terminal --working-directory=${quote(path)}`,
+    `xfce4-terminal --working-directory=${shellQuote(path)}`,
 } satisfies Record<string, (path: string) => string>;
 
 const isFolderApp = (name: string): name is keyof typeof FOLDER_APPS =>
@@ -70,7 +70,7 @@ async function commandFor(
 
   if (!entry?.launch_path) return undefined;
 
-  return path ? `${entry.launch_path} ${quote(path)}` : entry.launch_path;
+  return path ? `${entry.launch_path} ${shellQuote(path)}` : entry.launch_path;
 }
 
 const WINDOW_WAIT_MS = 8000;
@@ -120,7 +120,7 @@ export async function launchApp(
         `opened ${args.app}${args.path ? ` at ${args.path}` : ""}: window ${opened.window_id} ${opened.app_name} "${opened.title}". Capture it to act in it.`,
       );
 
-    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+    await sleep(POLL_MS);
   }
 
   return textResult(

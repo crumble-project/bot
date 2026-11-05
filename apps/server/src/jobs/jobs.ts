@@ -1,9 +1,12 @@
+import { MESSAGE_ENTRY } from "../bots/entries";
+import { sleep } from "../shared/time";
+import { jobDeliveryRequest, jobReportRequest } from "../shared/request-ids";
 import type { Context } from "@earendil-works/chord";
 import {
   BACKGROUND_CONTEXT,
   awaitWithContext,
 } from "@earendil-works/chord/context";
-import { Type, type AssistantMessage } from "@earendil-works/pi-ai";
+import { Type } from "@earendil-works/pi-ai";
 import {
   AgentDoc,
   AssistantEntry,
@@ -35,7 +38,8 @@ import {
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { z } from "zod";
-import { conversationReference } from "../shared/domain";
+import { formatEntryId } from "../shared/entry-ids";
+import { replyText } from "../shared/reply-text";
 import { defineAnchorTask } from "../shared/anchor-task";
 import { WORKSPACE_PATH, type Workspaces } from "../workspaces/workspace";
 import {
@@ -215,11 +219,6 @@ const STOP_POLL_MS = 50;
 
 const STOP_WAIT_MS = 10_000;
 
-const textOf = (message: AssistantMessage | undefined) =>
-  (message?.content ?? [])
-    .flatMap((block) => (block.type === "text" ? [block.text] : []))
-    .join("");
-
 const releaseHolder = (state: JobsState, name: string) => {
   if (state.holder?.name !== name) return;
   state.holder.deliveries -= 1;
@@ -350,10 +349,7 @@ function jobReply(
     details: {
       name: found.name,
       status: found.status,
-      conversationId: conversationReference(
-        agentId,
-        Number(found.conversationId),
-      ),
+      conversationId: formatEntryId(agentId, Number(found.conversationId)),
     },
   };
 }
@@ -553,10 +549,7 @@ const jobReporterWait =
 
       if (!waiting) return;
 
-      await awaitWithContext(
-        new Promise((resolve) => setTimeout(resolve, WAIT_MS)),
-        taskContext,
-      );
+      await awaitWithContext(sleep(WAIT_MS), taskContext);
     }
   };
 
@@ -622,7 +615,7 @@ const deliveryReport = async (
 
   const answer = (await tx.entry(AssistantEntry, settled.answer))?.model?.[0];
 
-  return `[${kindState.label} ${name} finished] ${answer?.role === "assistant" ? textOf(answer) : ""}`;
+  return `[${kindState.label} ${name} finished] ${answer?.role === "assistant" ? replyText(answer) : ""}`;
 };
 
 /** Submits the admitted message to the job, then commits the report its settlement became. */
@@ -641,7 +634,7 @@ const submitAndReport = async (
       type: "input",
       content: message,
       whenBusy: followUp ? "followUp" : "steer",
-      requestId: `${kindState.kind}:${reporter.id}`,
+      requestId: jobDeliveryRequest(kindState.kind, reporter.id),
     },
     taskContext,
   );
@@ -787,7 +780,7 @@ const announceCheckpoint = async (
 
   const answer = (await tx.entry(AssistantEntry, settled.answer))?.model?.[0];
 
-  const preview = answer?.role === "assistant" ? textOf(answer).trim() : "";
+  const preview = answer?.role === "assistant" ? replyText(answer).trim() : "";
 
   // A reaction or a tool call alone is no answer worth a notification.
   if (!preview) return done;
@@ -849,9 +842,9 @@ const jobReporterReport =
         type: "input",
         content: report,
         whenBusy: "followUp",
-        requestId: `${kindState.kind}-report:${reporter.id}`,
+        requestId: jobReportRequest(kindState.kind, reporter.id),
         entry: {
-          kind: "crumble.message",
+          kind: MESSAGE_ENTRY,
           data: {
             text,
             origin: { kind: kindState.kind, name: reporter.input.name },
@@ -903,7 +896,7 @@ const jobReporterAnnounce =
           name,
           entryId,
           preview,
-          eventId: `${kindState.kind}-report:${reporter.id}`,
+          eventId: jobReportRequest(kindState.kind, reporter.id),
         });
 
     await runtime.commit(
@@ -1031,10 +1024,7 @@ const stopJob = async (
     waited < STOP_WAIT_MS && (await submitting(kindState, api, context, name));
     waited += STOP_POLL_MS
   )
-    await awaitWithContext(
-      new Promise((resolve) => setTimeout(resolve, STOP_POLL_MS)),
-      context,
-    );
+    await awaitWithContext(sleep(STOP_POLL_MS), context);
 
   await (await api.conversation(existing.conversationId, context))!.abort(
     context,

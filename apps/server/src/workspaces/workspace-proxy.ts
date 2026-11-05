@@ -1,9 +1,7 @@
 import dns from "node:dns/promises";
 import net from "node:net";
-import { isPublicAddress } from "./public-address";
+import { isPublicAddress } from "../shared/public-address";
 import { readHttpHost, readSni, validPort } from "./workspace-proxy-protocol";
-
-export { isPublicAddress } from "./public-address";
 
 export { readHttpHost, readSni } from "./workspace-proxy-protocol";
 

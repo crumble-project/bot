@@ -1,3 +1,4 @@
+import { gatewayRequest } from "../shared/request-ids";
 import type { JsonValue } from "@earendil-works/chord";
 import { createHash } from "node:crypto";
 import {
@@ -22,7 +23,7 @@ import {
 } from "../contract/message-gateway";
 import { Secrets, secretText } from "../password-managers/secrets";
 import { Plugins, pluginChatAdapters } from "../plugins/plugins";
-import type { Agent } from "../shared/domain";
+import { activeExecution, type Agent } from "../shared/domain";
 import { InvalidInput, NotFound, type AppError } from "../shared/errors";
 import { SettingsRepository } from "../shared/settings-repository";
 import { startTicking } from "../shared/ticker";
@@ -261,7 +262,7 @@ export class MessageGateway extends Context.Service<
           senderId: message.senderId,
           isDirectMessage: message.isDirectMessage,
           botId,
-          requestId: `gateway:${adapterId}:${crypto.randomUUID()}`,
+          requestId: gatewayRequest(adapterId, crypto.randomUUID()),
           text: message.text,
           executionId: null,
           chunks:
@@ -484,10 +485,7 @@ export class MessageGateway extends Context.Service<
           : null;
 
         if (!execution)
-          execution =
-            (yield* executions.list(botId)).find(
-              (entry) => entry.requestId === receipt.requestId,
-            ) ?? null;
+          execution = yield* executions.findByRequest(botId, receipt.requestId);
 
         if (execution) return execution;
 
@@ -517,8 +515,7 @@ export class MessageGateway extends Context.Service<
 
         if (!execution) return null;
 
-        if (execution.status === "pending" || execution.status === "running")
-          return null;
+        if (activeExecution(execution)) return null;
 
         if (execution.status !== "done")
           return [

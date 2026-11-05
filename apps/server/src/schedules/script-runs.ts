@@ -1,3 +1,4 @@
+import { scriptRequest } from "../shared/request-ids";
 import {
   BACKGROUND_CONTEXT,
   withAbortSignal,
@@ -112,7 +113,7 @@ export class ScriptRuns extends Context.Service<
             .notice(
               schedule.agentId,
               noticeText(schedule, result, output),
-              `script:${schedule.id}:${run.id}`,
+              scriptRequest(schedule.id, run.id),
             )
             .pipe(
               Effect.catchCause((cause) =>

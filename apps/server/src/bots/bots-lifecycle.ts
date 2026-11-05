@@ -1,7 +1,9 @@
+import { activeExecution } from "../shared/domain";
+import { pi } from "../shared/app-errors";
 import { Effect } from "effect";
 import type { botsActivity } from "./bots-activity";
 import type { botsAdmission } from "./bots-admission";
-import { active, background, pi, type BotsContext } from "./bots-context";
+import { background, type BotsContext } from "./bots-context";
 import type { botsChat } from "./bots-chat";
 import type { botsLookup } from "./bots-lookup";
 
@@ -23,7 +25,8 @@ const botsCancellation = (context: BotsContext, deps: LifecycleDeps) => {
 
     const running = (yield* executions.list(owner.id)).filter(
       (execution) =>
-        execution.conversationId === conversationId && active(execution),
+        execution.conversationId === conversationId &&
+        activeExecution(execution),
     );
 
     // Cancelled before the runtime stops, so the aborted wait doesn't record the runs as failed first.
@@ -67,7 +70,7 @@ const botsMaintenance = (
   });
 
   const recover = Effect.gen(function* () {
-    for (const execution of (yield* executions.list()).filter(active))
+    for (const execution of (yield* executions.list()).filter(activeExecution))
       yield* admit(execution).pipe(
         background("Execution recovery failed", execution.id),
       );

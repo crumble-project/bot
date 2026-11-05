@@ -11,12 +11,12 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { attachmentDigest } from "../shared/attachments";
 import {
-  GROUP_MESSAGE_KIND,
+  GROUP_MESSAGE_ENTRY,
   groupMessageData,
-  readTranscript,
   type GroupMessageData,
-  type TranscriptPage,
-} from "../bots/transcript";
+} from "../bots/entries";
+import { readTranscript, type TranscriptPage } from "../bots/transcript";
+import { formatEntryId, parseEntryId } from "../shared/entry-ids";
 import { InvalidInput, NotFound, Conflict } from "../shared/errors";
 
 export type GroupPost = Omit<GroupMessageData, "requestId" | "timestamp">;
@@ -78,7 +78,7 @@ export class GroupTranscripts {
     groupId: string,
     message: GroupPost,
     requestId: string,
-  ): Promise<{ entryId: string; created: boolean }> {
+  ): Promise<{ entry: number; entryId: string; created: boolean }> {
     const root = await (await this.open(groupId)).root(BACKGROUND_CONTEXT);
 
     const data: GroupMessageData = {
@@ -88,7 +88,7 @@ export class GroupTranscripts {
     };
 
     const submission = await root.submit(
-      { type: "write", requestId, entry: { kind: GROUP_MESSAGE_KIND, data } },
+      { type: "write", requestId, entry: { kind: GROUP_MESSAGE_ENTRY, data } },
       BACKGROUND_CONTEXT,
     );
 
@@ -126,7 +126,8 @@ export class GroupTranscripts {
       });
 
     return {
-      entryId: `${groupId}:${Number(settled.entry)}`,
+      entry: Number(settled.entry),
+      entryId: formatEntryId(groupId, Number(settled.entry)),
       // An earlier call's entry carries that call's time.
       created: written.data.timestamp === data.timestamp,
     };
@@ -150,11 +151,11 @@ export class GroupTranscripts {
       for (const item of page.items) {
         const parsed = groupMessageData.safeParse(item.data);
 
-        if (item.kind === GROUP_MESSAGE_KIND && parsed.success)
+        if (item.kind === GROUP_MESSAGE_ENTRY && parsed.success)
           found.push({
             ...parsed.data,
             entry: Number(item.id),
-            entryId: `${groupId}:${Number(item.id)}`,
+            entryId: formatEntryId(groupId, Number(item.id)),
           });
       }
     } while (page.next);
@@ -164,15 +165,9 @@ export class GroupTranscripts {
 
   /** One message by its entry ID, or undefined when the group has no such message. */
   async message(groupId: string, entryId: string) {
-    const prefix = `${groupId}:`;
-    const entry = Number(entryId.slice(prefix.length));
+    const entry = parseEntryId(entryId, groupId);
 
-    if (
-      !entryId.startsWith(prefix) ||
-      !Number.isSafeInteger(entry) ||
-      entry < 1
-    )
-      return undefined;
+    if (entry === "foreign" || entry === "malformed") return undefined;
 
     const root = await (await this.open(groupId)).root(BACKGROUND_CONTEXT);
 
@@ -191,7 +186,7 @@ export class GroupTranscripts {
     const item = page.items[0];
     const parsed = groupMessageData.safeParse(item?.data);
 
-    return item?.kind === GROUP_MESSAGE_KIND && parsed.success
+    return item?.kind === GROUP_MESSAGE_ENTRY && parsed.success
       ? { ...parsed.data, entry, entryId }
       : undefined;
   }

@@ -1,3 +1,5 @@
+import { sleep } from "../shared/time";
+import { errorText } from "../shared/errors";
 import type { Context } from "@earendil-works/chord";
 import type { ComputerUseArgs, ComputerUseResult } from "./computer-use";
 import { perform, verdict } from "./computer-use-actions";
@@ -111,7 +113,7 @@ async function listing(state: ComputerUseState, context: Context) {
 async function pause(seconds?: number) {
   const bounded = Math.min(Math.max(seconds ?? 1, 0), 30);
 
-  await new Promise((resolve) => setTimeout(resolve, bounded * 1000));
+  await sleep(bounded * 1000);
 
   return bounded;
 }
@@ -292,10 +294,6 @@ async function pinned(
 }
 
 /**
- * Asks the intent check about an acting call; a refusal is the call's result. The owner may take control while an
- * action is held, so an approved one runs only if the bot still holds the desktop it was checked on.
- */
-/**
  * A terminal Enter with the command it runs: the terminal's current line plus the text this call types before it. A
  * failed read leaves the command out, so the commit-point rule still holds the Enter.
  */
@@ -325,6 +323,10 @@ async function withCommand<T extends { action: ProposedAction }>(
   return { ...proposal, action: { ...proposal.action, command: line + typed } };
 }
 
+/**
+ * Asks the intent check about an acting call; a refusal is the call's result. The owner may take control while an
+ * action is held, so an approved one runs only if the bot still holds the desktop it was checked on.
+ */
 async function intentVerdict(
   state: ComputerUseState,
   args: ComputerUseArgs,
@@ -391,9 +393,6 @@ export async function runAction(
       await checkedDispatch(state, normalize(raw), intent, context),
     );
   } catch (error) {
-    return textResult(
-      `error: ${error instanceof Error ? error.message : String(error)}`,
-      true,
-    );
+    return textResult(`error: ${errorText(error)}`, true);
   }
 }

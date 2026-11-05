@@ -1,3 +1,4 @@
+import { botRequestRequest } from "../shared/request-ids";
 import { and, desc, eq } from "drizzle-orm";
 import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
@@ -268,7 +269,7 @@ export class BotRequests extends Context.Service<
         yield* notify(
           agentId,
           `The owner approved your request for bot ${agent.name}.`,
-          `bot-request:${requestId}`,
+          botRequestRequest(requestId),
         );
 
         return { request: requestOf(updated), agent };
@@ -293,7 +294,7 @@ export class BotRequests extends Context.Service<
         yield* notify(
           agentId,
           `The owner declined your request for bot ${requestOf(row).proposal.name}.`,
-          `bot-request:${requestId}`,
+          botRequestRequest(requestId),
         );
 
         return requestOf(updated);

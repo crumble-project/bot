@@ -154,9 +154,7 @@ const botsTurns = (context: BotsContext, deps: TurnDeps) => {
     requestId: string,
     scheduleId: string,
   ) {
-    const existing = (yield* executions.list(agentId)).find(
-      (execution) => execution.requestId === requestId,
-    );
+    const existing = yield* executions.findByRequest(agentId, requestId);
 
     if (existing) {
       yield* admit(existing);

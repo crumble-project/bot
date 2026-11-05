@@ -8,3 +8,7 @@ export const appErrors = <A>(effect: Effect.Effect<A, unknown>) =>
       isAppError(error) ? Effect.fail(error) : Effect.die(error),
     ),
   );
+
+/** A Pi Durable call: AppErrors it throws are failures, anything else is a defect. */
+export const pi = <A>(run: () => Promise<A>) =>
+  appErrors(Effect.tryPromise({ try: run, catch: (error) => error }));

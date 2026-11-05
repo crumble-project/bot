@@ -1,3 +1,4 @@
+import { pi } from "../shared/app-errors";
 import { Effect } from "effect";
 import {
   MAX_ATTACHMENTS,
@@ -6,7 +7,7 @@ import {
 } from "../shared/attachment-rules";
 import type { Agent, GroupChat } from "../shared/domain";
 import type { AppError } from "../shared/errors";
-import { pi, type GroupChatContext } from "./group-chat-context";
+import { type GroupChatContext } from "./group-chat-context";
 import type { GroupEntry } from "./group-transcripts";
 
 /** How long a joining member's summary may take before its turn starts without one. */

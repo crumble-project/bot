@@ -1,8 +1,8 @@
 import net from "node:net";
 import tls from "node:tls";
 import { afterEach, describe, expect, test } from "bun:test";
+import { isPublicAddress } from "../shared/public-address";
 import {
-  isPublicAddress,
   readHttpHost,
   readSni,
   startWorkspaceProxy,

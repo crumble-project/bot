@@ -8,7 +8,7 @@ import {
   REQUEST_LOGIN_TOOL_NAME,
 } from "../contract/tools";
 import { MESSAGE_PREVIEW_CHARS } from "../shared/limits";
-import type { WaitingFor } from "./bots";
+import type { WaitingFor } from "../contract/reply-event";
 import {
   latestMessagePreview,
   latestReply,

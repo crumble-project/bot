@@ -1,7 +1,8 @@
 import { and, asc, eq, lte } from "drizzle-orm";
 import { Clock, Context, DateTime, Effect, Layer, Option } from "effect";
 import { PushDatabase } from "./push-database";
-import type { PushDevice, PushDeviceInput, ReplyPushEvent } from "./push-model";
+import type { ReplyEvent } from "../contract/reply-event";
+import type { PushDevice, PushDeviceInput } from "./push-model";
 import {
   pushDelivery,
   pushDevices,
@@ -66,7 +67,7 @@ export class PushRepository extends Context.Service<
       agentId: string,
     ) => Effect.Effect<boolean>;
     readonly enqueue: (
-      event: ReplyPushEvent,
+      event: ReplyEvent,
       ttlMs?: number,
     ) => Effect.Effect<void>;
     readonly pending: (
@@ -216,7 +217,7 @@ export class PushRepository extends Context.Service<
       }, Effect.orDie);
 
       const enqueue = Effect.fn("PushRepository.enqueue")(function* (
-        event: ReplyPushEvent,
+        event: ReplyEvent,
         ttlMs: number = DAY_MS,
       ) {
         const now = yield* Clock.currentTimeMillis;

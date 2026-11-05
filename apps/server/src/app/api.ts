@@ -314,9 +314,10 @@ function apiContext(
     viewerTickets: options.viewerTickets ?? new ViewerTickets(),
     logins: loginsAccess(core),
     held: heldActionsAccess(core),
-    pushServerId: options.push?.runSync(
-      Push.use((push) => Effect.succeed(push.serverId)),
-    ),
+    serverId:
+      options.push?.runSync(
+        Push.use((push) => Effect.succeed(push.serverId)),
+      ) ?? "",
   };
 }
 

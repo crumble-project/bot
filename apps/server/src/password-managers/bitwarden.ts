@@ -1,3 +1,4 @@
+import { errorText } from "../shared/errors";
 import { Effect, Redacted, Result, Schema } from "effect";
 import {
   PasswordManagerTokenRejected,
@@ -10,15 +11,12 @@ import {
 
 const NAME = "Bitwarden";
 
-const messageOf = (cause: unknown) =>
-  cause instanceof Error ? cause.message : String(cause);
-
 // The native SDK has no Linux arm64 build; importing it on first use keeps the server starting there.
 const sdk = Effect.tryPromise({
   try: () => import("@bitwarden/sdk-napi"),
   catch: (cause) =>
     new PasswordManagerUnsupported({
-      message: `isn't supported on ${process.platform} ${process.arch}: ${messageOf(cause)}`,
+      message: `isn't supported on ${process.platform} ${process.arch}: ${errorText(cause)}`,
       cause,
     }),
 });
@@ -37,12 +35,12 @@ export const bitwarden: PasswordManagerVendor = {
       yield* Effect.tryPromise({
         try: () => client.auth().loginAccessToken(Redacted.value(token)),
         catch: (cause) =>
-          /access token/i.test(messageOf(cause))
+          /access token/i.test(errorText(cause))
             ? new PasswordManagerTokenRejected({
-                message: `rejected the access token: ${messageOf(cause)}`,
+                message: `rejected the access token: ${errorText(cause)}`,
               })
             : new PasswordManagerUnreachable({
-                message: `could not be reached: ${messageOf(cause)}`,
+                message: `could not be reached: ${errorText(cause)}`,
                 cause,
               }),
       });
@@ -54,7 +52,7 @@ export const bitwarden: PasswordManagerVendor = {
             try: () => client.secrets().getByIds([...references]),
             catch: (cause) =>
               new PasswordManagerUnreachable({
-                message: `could not be reached: ${messageOf(cause)}`,
+                message: `could not be reached: ${errorText(cause)}`,
                 cause,
               }),
           }).pipe(

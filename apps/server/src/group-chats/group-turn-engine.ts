@@ -1,5 +1,8 @@
+import { formatEntryId } from "../shared/entry-ids";
+import { activeExecution } from "../shared/domain";
+import { pi } from "../shared/app-errors";
 import { Effect } from "effect";
-import { GROUP_TURN_PREFIX } from "../bots/bots";
+import { groupPostRequest, groupTurnRequest } from "../shared/request-ids";
 import {
   GROUP_TURN_BUDGET,
   type Agent,
@@ -9,12 +12,7 @@ import {
   type GroupTurn,
 } from "../shared/domain";
 import type { AppError } from "../shared/errors";
-import {
-  active,
-  logged,
-  pi,
-  type GroupChatContext,
-} from "./group-chat-context";
+import { logged, type GroupChatContext } from "./group-chat-context";
 import type { GroupChatMembers } from "./group-chat-members";
 import { mentionsOwner } from "./group-mentions";
 import type { GroupEntry, GroupPost } from "./group-transcripts";
@@ -228,7 +226,7 @@ const dispatchTurn = (
     const { context, input } = deps;
     const { group, agent, member, unseen } = turn;
     const summary = turn.first ? member.summary : null;
-    const requestId = `${GROUP_TURN_PREFIX}${group.id}:${agent.id}:${turn.through}`;
+    const requestId = groupTurnRequest(group.id, agent.id, turn.through);
 
     const { attachments, omitted } = yield* input.turnAttachments(
       agent,
@@ -270,7 +268,7 @@ const dispatchTurn = (
     yield* consumePending(context, group.id, agent.id, turn.pendingVersion);
 
     // An execution that failed to start settled before its turn existed, so its settlement found nothing.
-    if (!active(execution)) yield* finish(deps, execution.id);
+    if (!activeExecution(execution)) yield* finish(deps, execution.id);
   });
 
 /**
@@ -339,7 +337,7 @@ const publish = (
 
     if (outcome.kind === "pass") return;
     const sender = { kind: "bot", agentId: agent.id, name: agent.name };
-    const requestId = `${GROUP_TURN_PREFIX}${turn.executionId}`;
+    const requestId = groupPostRequest(turn.executionId);
 
     if (outcome.kind === "reaction") {
       yield* pi(() =>
@@ -349,7 +347,7 @@ const publish = (
             text: "",
             sender,
             reaction: outcome.emoji,
-            replyTo: `${group.id}:${turn.through}`,
+            replyTo: formatEntryId(group.id, turn.through),
           },
           requestId,
         ),

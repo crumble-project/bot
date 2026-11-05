@@ -1,8 +1,10 @@
+import { pi } from "../shared/app-errors";
 import { Cause, Effect, FiberMap } from "effect";
 import type { Agent, Execution } from "../shared/domain";
-import { eventRequest } from "../event-sources/event-payload";
+import { errorText } from "../shared/errors";
+import { parseRequestId } from "../shared/request-ids";
 import type { botsActivity } from "./bots-activity";
-import { pi, type BotsContext } from "./bots-context";
+import { type BotsContext } from "./bots-context";
 import type { botsLookup } from "./bots-lookup";
 import type { botsMonitor } from "./bots-outcomes";
 import type { botsReads } from "./bots-reads";
@@ -21,13 +23,11 @@ const botsSubmissionSteps = (context: BotsContext, deps: AdmissionDeps) => {
 
   // A pruned event leaves the automation's prompt alone.
   const eventInput = Effect.fnUntraced(function* (execution: Execution) {
-    const run = eventRequest(execution.requestId);
-    const record = run && (yield* events.getEvent(run.eventId));
+    const request = parseRequestId(execution.requestId);
 
-    if (!record) return undefined;
-    const source = yield* events.getSource(record.sourceId);
+    if (request.kind !== "event") return undefined;
 
-    return { record, sourceName: source?.name ?? "Deleted source" };
+    return (yield* events.eventWithSource(request.eventId)) ?? undefined;
   });
 
   const { changed, settled } = deps.notifications;
@@ -85,11 +85,9 @@ const botsAdmissionFailure = (
     Cause.hasInterruptsOnly(cause)
       ? Effect.void
       : Effect.gen(function* () {
-          const error = Cause.squash(cause);
-
           yield* executions.update(execution.id, {
             status: "failed",
-            error: String(error instanceof Error ? error.message : error),
+            error: errorText(Cause.squash(cause)),
           });
           yield* changed(execution.conversationId);
           yield* settled(execution.id);

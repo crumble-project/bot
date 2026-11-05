@@ -1,3 +1,4 @@
+import { errorText } from "../shared/errors";
 import { Cause, Clock, Context, Effect, Layer } from "effect";
 import { AgentRepository } from "../bots/agent-repository";
 import { ScheduleRepository } from "../schedules/schedule-repository";
@@ -6,15 +7,12 @@ import type { Schedule } from "../shared/domain";
 import { TaskDispatch } from "../schedules/task-dispatch";
 import { startTicking } from "../shared/ticker";
 import { EventRepository, type EventRun } from "./event-repository";
-import { eventRequestId } from "./event-payload";
+import { eventRequest } from "../shared/request-ids";
 
 // A failed run waits this long before it is dispatched again, like a failed scheduled run.
 export const EVENT_RETRY_AFTER_MS = 30_000;
 
 export const EVENT_MAX_ATTEMPTS = 10;
-
-const errorText = (cause: unknown) =>
-  cause instanceof Error ? cause.message : String(cause);
 
 /** Hands each automation's oldest pending event run to its bot chat or its script, one run per automation at a time. */
 export class EventDispatcher extends Context.Service<
@@ -68,22 +66,18 @@ export class EventDispatcher extends Context.Service<
           yield* dispatch(
             schedule.agentId,
             schedule.prompt,
-            eventRequestId(run.eventId, schedule.id),
+            eventRequest(run.eventId, schedule.id),
             schedule.id,
           );
 
           return true;
         }
 
-        const record = yield* events.getEvent(run.eventId);
+        const event = yield* events.eventWithSource(run.eventId);
 
-        if (!record) return yield* Effect.fail(new Error("The event is gone"));
-        const source = yield* events.getSource(record.sourceId);
+        if (!event) return yield* Effect.fail(new Error("The event is gone"));
 
-        const { admitted } = yield* scripts.start(schedule, {
-          record,
-          sourceName: source?.name ?? "Deleted source",
-        });
+        const { admitted } = yield* scripts.start(schedule, event);
 
         return admitted;
       });

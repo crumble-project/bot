@@ -7,18 +7,17 @@ import {
   Option,
   Queue,
   Schedule,
-  Schema,
   Semaphore,
 } from "effect";
 import type { Runner } from "../shared/runner";
 import { BotActivity } from "../bots/bot-activity";
-import type { ReplyActivity } from "../bots/bots";
 import {
   canonicalReplyEvent,
-  ReplyPushEvent,
-  type PushDevice,
-  type PushDeviceInput,
-} from "./push-model";
+  replyEvent,
+  type ReplyActivity,
+  type ReplyEvent,
+} from "../contract/reply-event";
+import type { PushDevice, PushDeviceInput } from "./push-model";
 import { PushRepository, type PendingDelivery } from "./push-repository";
 import { PushTransports, type PushTransport } from "./push-transports";
 
@@ -31,9 +30,8 @@ const MAX_ATTEMPTS = 7;
 
 const MAX_BACKOFF_MS = 300_000;
 
-const decodeEvent = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(ReplyPushEvent),
-);
+const decodeEvent = (json: string) =>
+  Effect.try(() => replyEvent.parse(JSON.parse(json)));
 
 /** Notifies the owner's devices of replies, through the persisted outbox. */
 export class Push extends Context.Service<
@@ -72,7 +70,7 @@ export class Push extends Context.Service<
         transport: PushTransport,
         row: PendingDelivery,
         device: PushDevice,
-        event: ReplyPushEvent,
+        event: ReplyEvent,
       ) {
         const terminal = Effect.gen(function* () {
           yield* repository.removeDelivery(row.outboxId, device.installationId);

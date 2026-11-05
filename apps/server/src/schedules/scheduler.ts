@@ -1,3 +1,4 @@
+import { parseRequestId, scheduleRequest } from "../shared/request-ids";
 import { CronExpressionParser } from "cron-parser";
 import {
   Cause,
@@ -27,6 +28,7 @@ import {
   NotFound,
   Conflict,
   type AppError,
+  errorText,
 } from "../shared/errors";
 
 export type { ScheduleDispatchResult } from "./task-dispatch";
@@ -78,9 +80,6 @@ const validate = (input: ScheduleInput) =>
         message: error instanceof Error ? error.message : "Invalid schedule",
       }),
   });
-
-const errorText = (cause: unknown) =>
-  cause instanceof Error ? cause.message : String(cause);
 
 /** Persistent schedule coordinator. A dispatch that succeeds means the work was durably admitted. */
 export class Scheduler extends Context.Service<
@@ -187,8 +186,12 @@ export class Scheduler extends Context.Service<
 
           if (!updated) return null;
 
-          for (const key of failed.keys())
-            if (key.startsWith(`schedule:${id}:`)) failed.delete(key);
+          for (const key of failed.keys()) {
+            const request = parseRequestId(key);
+
+            if (request.kind === "schedule" && request.scheduleId === id)
+              failed.delete(key);
+          }
 
           return yield* setInitialNext(updated);
         });
@@ -234,7 +237,7 @@ export class Scheduler extends Context.Service<
             const result = yield* dispatch(
               schedule.agentId,
               schedule.prompt,
-              `schedule:${id}:${due}`,
+              scheduleRequest(id, due),
               schedule.id,
             );
 
@@ -320,7 +323,7 @@ export class Scheduler extends Context.Service<
           const due = new Date(schedule.nextRunAt);
 
           if (Number.isNaN(due.valueOf()) || due > now) return;
-          const key = `schedule:${schedule.id}:${due.toISOString()}`;
+          const key = scheduleRequest(schedule.id, due.toISOString());
 
           if (dispatchBlocked(schedule.id, key, now)) return;
 

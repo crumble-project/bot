@@ -11,8 +11,7 @@ import type { Bots } from "../bots/bots";
 import type { ConversationRepository } from "../bots/conversation-repository";
 import type { ExecutionRepository } from "../bots/execution-repository";
 import type { BotRuntime } from "../bots/runtime";
-import { appErrors } from "../shared/app-errors";
-import type { Execution, GroupChat } from "../shared/domain";
+import type { GroupChat } from "../shared/domain";
 import { InvalidInput, NotFound, type AppError } from "../shared/errors";
 import type { GroupChatRepository } from "./group-chat-repository";
 import type { GroupTranscripts } from "./group-transcripts";
@@ -56,17 +55,10 @@ export type GroupChatContext = GroupChatServices & {
   readonly checkMembers: (memberIds: string[]) => Effect.Effect<void, AppError>;
 };
 
-/** Runs a promise-based service call as an Effect that fails with the AppErrors it raises. */
-export const pi = <A>(run: () => Promise<A>) =>
-  appErrors(Effect.tryPromise({ try: run, catch: (error) => error }));
-
 export const logged = (label: string, ...subjects: string[]) =>
   Effect.catchCause((cause: Cause.Cause<unknown>) =>
     Effect.logError(label, ...subjects, Cause.squash(cause)),
   );
-
-export const active = (execution: Execution) =>
-  execution.status === "pending" || execution.status === "running";
 
 /** The state of one layer build; its fiber set closes with the layer's scope. */
 export const groupChatState: Effect.Effect<GroupChatState, never, Scope.Scope> =

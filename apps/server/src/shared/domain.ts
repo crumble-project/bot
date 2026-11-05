@@ -326,6 +326,9 @@ export type Execution = {
   updatedAt: string;
 };
 
+export const activeExecution = (execution: Pick<Execution, "status">) =>
+  execution.status === "pending" || execution.status === "running";
+
 /** An MCP server is shared, or belongs to the one bot in `agentId` with its own credentials. */
 export type MCPServer = {
   id: string;
@@ -755,10 +758,6 @@ export type GroupTurn = {
   status: GroupTurnStatus;
   createdAt: string;
 };
-
-/** The public ID of one of an agent's conversations; a client passes it back as given. */
-export const conversationReference = (agentId: string, localId: number) =>
-  `${agentId}:${localId}`;
 
 export const WAITING_FOR = ["approval", "credential", "login"] as const;
 

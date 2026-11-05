@@ -378,9 +378,11 @@ describe("group chat API", () => {
         .find((line) => line.startsWith("data: ") && line.includes("Booked."))
         ?.slice("data: ".length);
 
+      const { executionId, ...shown } = reply;
+
       expect(activityEvent.parse(JSON.parse(data!))).toEqual({
-        ...reply,
-        eventId: "execution-1",
+        ...shown,
+        eventId: executionId,
         serverId: "",
       });
     } finally {

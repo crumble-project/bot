@@ -11,15 +11,34 @@ import type {
   Harness,
 } from "@earendil-works/pi-durable";
 
+import type { AttachmentInfo } from "../shared/attachment-rules";
 import {
-  ATTACHMENT_KINDS,
-  attachmentInput,
-  type AttachmentInfo,
-} from "../shared/attachment-rules";
+  formatEntryId,
+  formatMessageId,
+  parseEntryId,
+} from "../shared/entry-ids";
 import { codingJobOf } from "../jobs/coding";
 import { desktopJobOf } from "../jobs/desktop";
 import { HELD_ACTION_ENTRY } from "../jobs/desktop-intent";
 import { JOB_QUESTION_ENTRY } from "../jobs/jobs";
+import {
+  ASSISTANT_ENTRY,
+  attachmentInfo,
+  BOT_MESSAGE_ENTRY,
+  botMessage,
+  contentText,
+  GROUP_MESSAGE_ENTRY,
+  groupMessageData,
+  heldActionData,
+  inputMetadata,
+  jobQuestionData,
+  MESSAGE_ENTRY,
+  messageOrigin,
+  USER_ENTRY,
+  type GroupMessageData,
+  type MessageOrigin,
+  type ModelContent,
+} from "./entries";
 import { reactionOf } from "./reaction";
 import {
   DESKTOP_SCREENSHOT_TOOL_NAME,
@@ -30,101 +49,25 @@ import {
   WEB_EXTRACT_TOOL_NAME,
   WEB_SEARCH_TOOL_NAME,
 } from "../contract/tools";
-import {
-  botCommunication,
-  type BotCommunication,
-} from "../contract/api-responses";
-import { webSource, type WebSource } from "../contract/web-search";
+import type { BotCommunication } from "../contract/api-responses";
+import type { WebSource } from "../contract/web-search";
 import { MESSAGE_PREVIEW_CHARS } from "../shared/limits";
-
-type ModelContent = NonNullable<EntryRecord["model"]>[number]["content"];
 
 type TranscriptEntryQuery = { order: "descending"; maxEntryId?: EntryId };
 
 const textBlock = z.object({ type: z.literal("text"), text: z.string() });
+
+const toolBlock = z.object({
+  type: z.unknown().optional(),
+  id: z.unknown().optional(),
+  name: z.unknown().optional(),
+  arguments: z.unknown().optional(),
+  toolCallId: z.unknown().optional(),
+  content: z.unknown().optional(),
+  isError: z.unknown().optional(),
+});
+
 const jsonRecord = z.record(z.string(), z.json());
-
-// Drops an unreadable name or agent ID instead of keeping it as `undefined`, so origins stay JSON.
-const messageOrigin = z
-  .object({
-    kind: z.string(),
-    name: z.string().optional().catch(undefined),
-    agentId: z.string().optional().catch(undefined),
-    via: z.string().optional().catch(undefined),
-    source: z.string().optional().catch(undefined),
-  })
-  .transform(({ kind, name, agentId, via, source }) => {
-    const origin: MessageOrigin = { kind };
-
-    if (name !== undefined) origin.name = name;
-
-    if (agentId !== undefined) origin.agentId = agentId;
-
-    if (via !== undefined) origin.via = via;
-
-    if (source !== undefined) origin.source = source;
-
-    return origin;
-  });
-
-const attachmentInfo = z.object({
-  name: z.string(),
-  mimeType: z.string(),
-  size: z.number(),
-  kind: z.enum(ATTACHMENT_KINDS),
-});
-
-const jobQuestionData = z.object({
-  id: z.string(),
-  kind: z.string(),
-  job: z.string(),
-  text: z.string(),
-  timestamp: z.number(),
-  options: z.array(z.string()).optional(),
-  multiple: z.boolean().optional(),
-});
-
-const heldActionData = z.object({
-  id: z.string(),
-  job: z.string(),
-  action: z.string(),
-  timestamp: z.number().optional().catch(undefined),
-});
-
-const botMessage = z.object({
-  content: z.string(),
-  timestamp: z.number().optional().catch(undefined),
-  communication: botCommunication,
-});
-
-export const GROUP_MESSAGE_KIND = "crumble.group-message";
-
-/** A group chat message: the owner's or a bot's words, or a bot's reaction, written once under its request ID. */
-export const groupMessageData = z.object({
-  text: z.string(),
-  sender: messageOrigin,
-  requestId: z.string(),
-  timestamp: z.number(),
-  replyTo: z.string().exactOptional(),
-  replyPreview: z.string().exactOptional(),
-  /** The emoji of a reaction to `replyTo`; a reaction has no text. */
-  reaction: z.string().exactOptional(),
-  /** The owner's uploads, kept with the message so every member turn can include them. */
-  attachments: z.array(attachmentInput).exactOptional(),
-  /** What pages show for each upload, without its bytes. */
-  files: z.array(attachmentInfo).exactOptional(),
-  /** Pages the bot's turn searched or read, which the message may cite. */
-  sources: z.array(webSource).exactOptional(),
-});
-
-export type GroupMessageData = z.infer<typeof groupMessageData>;
-
-const inputMetadata = z.object({
-  text: z.string().optional().catch(undefined),
-  replyTo: z.string().optional().catch(undefined),
-  requestId: z.string().optional().catch(undefined),
-  replyPreview: z.string().optional().catch(undefined),
-});
 
 const toolMetadata = z.object({
   toolCallId: z.string().optional().catch(undefined),
@@ -132,16 +75,6 @@ const toolMetadata = z.object({
   isError: z.boolean().optional().catch(undefined),
   details: z.unknown().optional(),
 });
-
-export type MessageOrigin = {
-  kind: string;
-  name?: string;
-  agentId?: string;
-  /** The message gateway an owner message arrived through, such as `discord`. */
-  via?: string;
-  /** The event source whose event started an event automation's message. */
-  source?: string;
-};
 
 export type BotMessageEvent = {
   content: string;
@@ -260,36 +193,108 @@ export function latestReply(messages: TranscriptMessage[]) {
   };
 }
 
+/** Words Crumble admitted for the owner, whose metadata text is what they wrote. */
+export const isOwnerInput = (message: TranscriptMessage) =>
+  message.kind === MESSAGE_ENTRY &&
+  message.role === "user" &&
+  message.origin?.kind !== "bot";
+
+/** Plain model turns: the assistant's, and a user's that no other bot sent. */
+export const isConversational = (message: TranscriptMessage) =>
+  (message.kind === ASSISTANT_ENTRY && message.role === "assistant") ||
+  (message.kind === USER_ENTRY &&
+    message.role === "user" &&
+    message.origin?.kind !== "bot");
+
+const blocksOf = (message: TranscriptMessage) =>
+  z.array(z.unknown()).safeParse(message.blocks).data;
+
+/** A message's text blocks, one per line; a user's plain string; null for anything else. */
+export function textOf(message: TranscriptMessage): string | null {
+  const blocks = blocksOf(message);
+
+  if (blocks)
+    return blocks
+      .flatMap((block) => {
+        const parsed = textBlock.safeParse(block);
+
+        return parsed.success ? [parsed.data.text] : [];
+      })
+      .join("\n");
+
+  if (message.role !== "user") return null;
+
+  return z.string().safeParse(message.blocks).data ?? null;
+}
+
+/** A provider's tool call or result block, by its position in the message; unreadable fields are unset. */
+export type ToolBlock =
+  | {
+      type: "toolCall";
+      index: number;
+      id: string | undefined;
+      name: string | undefined;
+      arguments: JsonValue | undefined;
+    }
+  | {
+      type: "toolResult";
+      index: number;
+      toolCallId: string | undefined;
+      content: JsonValue | undefined;
+      isError: boolean | undefined;
+    };
+
+export function toolBlocks(message: TranscriptMessage): ToolBlock[] {
+  return (blocksOf(message) ?? []).flatMap((raw, index): ToolBlock[] => {
+    const block = toolBlock.safeParse(raw).data;
+
+    if (block?.type === "toolCall")
+      return [
+        {
+          type: "toolCall",
+          index,
+          id: z.string().safeParse(block.id).data,
+          name: z.string().safeParse(block.name).data,
+          arguments: z.json().safeParse(block.arguments).data,
+        },
+      ];
+
+    if (block?.type === "toolResult")
+      return [
+        {
+          type: "toolResult",
+          index,
+          toolCallId: z.string().safeParse(block.toolCallId).data,
+          content: z.json().safeParse(block.content).data,
+          isError: z.boolean().safeParse(block.isError).data,
+        },
+      ];
+
+    return [];
+  });
+}
+
+export const toolCalls = (message: TranscriptMessage) =>
+  toolBlocks(message).filter((block) => block.type === "toolCall");
+
 const MAX_LIMIT = 200;
 const DEFAULT_LIMIT = 100;
 const REPLY_WINDOW = 20;
-const INPUT_KINDS = new Set(["crumble.message", "pi.user"]);
+const INPUT_KINDS = new Set<string>([MESSAGE_ENTRY, USER_ENTRY]);
 
 export function parseEntryRef(
   agentId: string,
   value: string,
   label: string,
 ): number {
-  const prefix = `${agentId}:`;
+  const entry = parseEntryId(value, agentId);
 
-  if (!value.startsWith(prefix))
+  if (entry === "foreign")
     throw new Error(`${label} belongs to a different agent`);
-  const raw = value.slice(prefix.length);
 
-  if (!/^[1-9][0-9]*$/.test(raw) || !Number.isSafeInteger(Number(raw)))
-    throw new Error(`Invalid ${label}`);
+  if (entry === "malformed") throw new Error(`Invalid ${label}`);
 
-  return Number(raw);
-}
-
-const entryRef = (agentId: string, id: number) => `${agentId}:${id}`;
-
-function textOf(content: ModelContent | undefined): string {
-  if (!Array.isArray(content)) return content ?? "";
-
-  return content
-    .flatMap((block) => (block.type === "text" ? [block.text] : []))
-    .join("\n");
+  return entry;
 }
 
 function blockHint(content: ModelContent): string {
@@ -349,12 +354,12 @@ function normalizeBoundary(
 
   return [
     {
-      id: `${entryId}:0`,
+      id: formatMessageId(entryId, 0),
       entryId,
       role: "event",
       kind: entry.kind === "pi.compaction" ? "compaction" : "reset",
       content:
-        textOf(message?.content) ||
+        contentText(message?.content) ||
         (entry.kind === "pi.reset"
           ? "Conversation reset"
           : "Conversation compacted"),
@@ -373,7 +378,7 @@ function normalizeBotMessage(
 
   return [
     {
-      id: `${entryId}:0`,
+      id: formatMessageId(entryId, 0),
       entryId,
       role: "event",
       kind: "bot-message",
@@ -395,7 +400,7 @@ function normalizeJobQuestion(
 
   return [
     {
-      id: `${entryId}:0`,
+      id: formatMessageId(entryId, 0),
       entryId,
       role: "event",
       kind: "job-question",
@@ -422,7 +427,7 @@ function normalizeHeldAction(
 
   return [
     {
-      id: `${entryId}:0`,
+      id: formatMessageId(entryId, 0),
       entryId,
       role: "event",
       kind: "held-action",
@@ -448,7 +453,7 @@ function normalizeGroupMessage(
   const message: TranscriptMessage =
     parsed.data.reaction === undefined
       ? {
-          id: `${entryId}:0`,
+          id: formatMessageId(entryId, 0),
           entryId,
           requestId,
           role: sender.kind === "owner" ? "user" : "assistant",
@@ -458,7 +463,7 @@ function normalizeGroupMessage(
           origin: sender,
         }
       : {
-          id: `${entryId}:0`,
+          id: formatMessageId(entryId, 0),
           entryId,
           requestId,
           role: "toolResult",
@@ -540,9 +545,9 @@ function normalizeModelEntry(
   return (entry.model ?? []).flatMap((message, index) => {
     // Reply inputs carry a quoted context block for the model; owners see the text they wrote.
     const content =
-      entry.kind === "crumble.message" && input.text !== undefined
+      entry.kind === MESSAGE_ENTRY && input.text !== undefined
         ? input.text
-        : textOf(message.content) || blockHint(message.content);
+        : contentText(message.content) || blockHint(message.content);
 
     const attached = message.role === "user" ? attachments : [];
     const metadata = toolMetadata.parse(message);
@@ -550,7 +555,7 @@ function normalizeModelEntry(
     if (emptyMessage(message, content, attached, metadata)) return [];
 
     const result: TranscriptMessage = {
-      id: `${entryId}:${index}`,
+      id: formatMessageId(entryId, index),
       entryId,
       role: message.role,
       content,
@@ -572,15 +577,15 @@ function normalizeModelEntry(
 }
 
 function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
-  const entryId = entryRef(agentId, Number(entry.id));
+  const entryId = formatEntryId(agentId, Number(entry.id));
 
   if (entry.kind === "pi.compaction" || entry.kind === "pi.reset")
     return normalizeBoundary(entryId, entry);
 
-  if (entry.kind === "crumble.bot-message")
+  if (entry.kind === BOT_MESSAGE_ENTRY)
     return normalizeBotMessage(entryId, entry);
 
-  if (entry.kind === GROUP_MESSAGE_KIND)
+  if (entry.kind === GROUP_MESSAGE_ENTRY)
     return normalizeGroupMessage(entryId, entry);
 
   if (entry.kind === HELD_ACTION_ENTRY)
@@ -592,7 +597,10 @@ function normalize(agentId: string, entry: EntryRecord): TranscriptMessage[] {
   return normalizeModelEntry(entryId, entry);
 }
 
-async function conversations(harness: Harness): Promise<ConversationRecord[]> {
+/** The conversations of a bot's chat, oldest first. */
+export async function conversations(
+  harness: Harness,
+): Promise<ConversationRecord[]> {
   const records: ConversationRecord[] = [];
   let cursor: Cursor | undefined;
 
@@ -677,7 +685,7 @@ async function readPage(
   return {
     messages,
     hasMore: truncated || consumed < entries.length,
-    oldestEntryId: oldest === null ? null : entryRef(agentId, oldest),
+    oldestEntryId: oldest === null ? null : formatEntryId(agentId, oldest),
   };
 }
 
@@ -878,7 +886,7 @@ function screenshotImage(entry: EntryRecord, index: number) {
 
 function outputLines(message: ModelMessage): string[] {
   const lines: string[] = [];
-  const text = message.role === "assistant" ? textOf(message.content) : "";
+  const text = message.role === "assistant" ? contentText(message.content) : "";
 
   if (text) lines.push(text);
   const { toolName, isError, details } = toolMetadata.parse(message);
@@ -970,7 +978,7 @@ function assistantLines(
   counters?: TurnReport,
 ): string[] {
   const lines: string[] = [];
-  const text = textOf(content).trim();
+  const text = contentText(content).trim();
 
   if (text) lines.push(`Assistant:\n${text}`);
 
@@ -993,7 +1001,7 @@ function toolResultLine(
 ): string {
   const { toolName, isError } = toolMetadata.parse(message);
 
-  return `${isError ? "Tool error" : "Tool result"} ${toolName ?? "unknown"}: ${clip(textOf(message.content).trim(), 4000)}`;
+  return `${isError ? "Tool error" : "Tool result"} ${toolName ?? "unknown"}: ${clip(contentText(message.content).trim(), 4000)}`;
 }
 
 function messageLines(
@@ -1006,7 +1014,7 @@ function messageLines(
   if (message.role === "toolResult") return [toolResultLine(message)];
 
   if (message.role !== "user") return [];
-  const text = textOf(message.content).trim();
+  const text = contentText(message.content).trim();
 
   return text ? [`Owner:\n${text}`] : [];
 }
@@ -1015,7 +1023,7 @@ function entryLines(entry: EntryRecord, counters?: TurnReport): string[] {
   if (INPUT_KINDS.has(entry.kind)) {
     const input = inputMetadata.parse(record(entry.data) ?? {});
 
-    return [`Owner:\n${input.text ?? textOf(entry.model?.[0]?.content)}`];
+    return [`Owner:\n${input.text ?? contentText(entry.model?.[0]?.content)}`];
   }
 
   return (entry.model ?? []).flatMap((message) =>
@@ -1184,7 +1192,8 @@ export async function readTurnOutcome(
   let text = "";
 
   for (const message of messages) {
-    if (message.role === "assistant") text = textOf(message.content).trim();
+    if (message.role === "assistant")
+      text = contentText(message.content).trim();
     const outcome = toolOutcome(message);
 
     if (outcome) return outcome;

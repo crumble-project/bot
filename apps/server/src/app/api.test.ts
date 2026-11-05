@@ -37,7 +37,7 @@ import {
   type ScheduleInput,
   type ScriptRun,
 } from "../shared/domain";
-import type { MessageOrigin } from "../bots/transcript";
+import type { MessageOrigin } from "../bots/entries";
 import { defaultAvatarDefinition } from "../contract/avatar";
 
 // Plain header records, so they spread into the defaults.
@@ -1642,6 +1642,8 @@ describe("HTTP API for script tasks and schedules", () => {
       `script:${task.id}:run-1`,
     );
     expect(origin).toEqual({ kind: "script", name: "Daily check" });
+    await service.notice(agent.id, "Saved", "login:github:notice-1");
+    expect(origin).toEqual({ kind: "credential", name: "github" });
     await service.close();
   });
 

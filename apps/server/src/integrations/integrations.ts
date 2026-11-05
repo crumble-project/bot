@@ -1,3 +1,4 @@
+import { errorText } from "../shared/errors";
 import { createHash } from "node:crypto";
 import {
   McpAuthRequiredError,
@@ -70,6 +71,9 @@ export type IntegrationsOptions = {
 /** Every tool of one MCP server starts with this, which also groups them in code mode. */
 export const mcpToolPrefix = (serverId: string) =>
   `mcp_${serverId.replaceAll("-", "").slice(0, 8)}_`;
+
+/** Any MCP server's tool, under this server's prefix or a provider's own `mcp` naming. */
+export const isMcpTool = (name: string) => /^(mcp(?:[_:/-]|$))/i.test(name);
 
 const stable = (value: JsonValue): string => {
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
@@ -304,10 +308,7 @@ class McpConnections {
     try {
       return await this.data.token(serverId);
     } catch (error) {
-      this.failures.set(
-        serverId,
-        error instanceof Error ? error.message : String(error),
-      );
+      this.failures.set(serverId, errorText(error));
 
       throw error;
     }
@@ -387,10 +388,7 @@ class McpConnections {
 
       return listed;
     } catch (error) {
-      this.failures.set(
-        server.id,
-        error instanceof Error ? error.message : String(error),
-      );
+      this.failures.set(server.id, errorText(error));
 
       return [];
     }

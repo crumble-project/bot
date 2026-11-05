@@ -39,6 +39,11 @@ export class ExecutionRepository extends Context.Service<
       conversationId: string,
       requestId: string,
     ) => Effect.Effect<Execution | null>;
+    /** The bot's newest execution under `requestId`, whichever conversation holds it. */
+    readonly findByRequest: (
+      agentId: string,
+      requestId: string,
+    ) => Effect.Effect<Execution | null>;
     readonly findBySubmission: (
       agentId: string,
       submissionId: string,
@@ -97,6 +102,25 @@ export class ExecutionRepository extends Context.Service<
               eq(executions.requestId, requestId),
             ),
           ),
+        Effect.orDie,
+      );
+
+      const findByRequest = Effect.fn("ExecutionRepository.findByRequest")(
+        function* (agentId: string, requestId: string) {
+          const [row] = yield* db
+            .select()
+            .from(executions)
+            .where(
+              and(
+                eq(executions.agentId, agentId),
+                eq(executions.requestId, requestId),
+              ),
+            )
+            .orderBy(desc(executions.createdAt))
+            .limit(1);
+
+          return row ? executionOf(row) : null;
+        },
         Effect.orDie,
       );
 
@@ -204,6 +228,7 @@ export class ExecutionRepository extends Context.Service<
         list: (agentId) => list(agentId),
         get,
         getByRequest,
+        findByRequest,
         findBySubmission,
         create,
         update,

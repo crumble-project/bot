@@ -1,9 +1,11 @@
+import { activeExecution } from "../shared/domain";
+import { pi } from "../shared/app-errors";
 import { Effect } from "effect";
 import type { TranscriptPage } from "../bots/transcript";
 import type { AttachmentInput } from "../shared/attachment-rules";
 import type { GroupChat, GroupChatInput } from "../shared/domain";
 import { NotFound, type AppError } from "../shared/errors";
-import { active, pi, type GroupChatContext } from "./group-chat-context";
+import { type GroupChatContext } from "./group-chat-context";
 import type { GroupChatMembers } from "./group-chat-members";
 import { groupChatPost } from "./group-chat-post";
 import type {
@@ -313,7 +315,8 @@ const recover = (
     })) {
       const execution = yield* context.executions.get(turn.executionId);
 
-      if (execution && !active(execution)) yield* engine.settled(execution);
+      if (execution && !activeExecution(execution))
+        yield* engine.settled(execution);
     }
 
     for (const group of yield* context.groups.list)

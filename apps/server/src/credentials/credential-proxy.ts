@@ -11,7 +11,7 @@ import {
   type CredentialTarget,
   type CredentialUse,
 } from "../shared/domain";
-import { isPublicAddress } from "../workspaces/public-address";
+import { isPublicAddress } from "../shared/public-address";
 import type { WorkspaceInterceptor } from "../workspaces/workspace-proxy";
 import { SIGNING_HOST } from "../workspaces/workspace";
 

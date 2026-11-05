@@ -3,7 +3,8 @@ import { createPublicKey, generateKeyPairSync, verify } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
-import type { PushDevice, ReplyPushEvent } from "./push-model";
+import type { ReplyEvent } from "../contract/reply-event";
+import type { PushDevice } from "./push-model";
 import {
   apnsHeaders,
   apnsHost,
@@ -72,7 +73,7 @@ const device = (overrides: Partial<PushDevice> = {}): PushDevice => ({
   ...overrides,
 });
 
-const event = (overrides: Partial<ReplyPushEvent> = {}): ReplyPushEvent => ({
+const event = (overrides: Partial<ReplyEvent> = {}): ReplyEvent => ({
   type: "reply",
   eventId: "event",
   serverId: "server",
@@ -318,6 +319,14 @@ describe("APNs requests", () => {
     expect(payload.aps.alert.title).toBe("Bot");
     expect(payload).toHaveProperty("jobName", "github-login");
   });
+
+  test("the payload says what the reply waits for", () => {
+    expect(apnsPayload(event({ waitingFor: "approval" }))).toHaveProperty(
+      "waitingFor",
+      "approval",
+    );
+    expect(apnsPayload(event())).not.toHaveProperty("waitingFor");
+  });
 });
 
 describe("APNs response classification", () => {
@@ -396,6 +405,14 @@ describe("FCM requests", () => {
       groupName: "",
       jobName: "github-login",
     });
+  });
+
+  test("data says what the reply waits for", () => {
+    expect(fcmData(event({ waitingFor: "login" }))).toHaveProperty(
+      "waitingFor",
+      "login",
+    );
+    expect(fcmData(event())).not.toHaveProperty("waitingFor");
   });
 
   test("the message targets one device with high priority", () => {

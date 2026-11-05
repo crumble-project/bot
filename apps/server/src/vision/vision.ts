@@ -1,3 +1,5 @@
+import { replyText } from "../shared/reply-text";
+import { errorText } from "../shared/errors";
 import { createHash } from "node:crypto";
 import type { Context, JsonValue } from "@earendil-works/chord";
 import {
@@ -122,12 +124,6 @@ function pricedUsage(model: Model<Api>, usage: Usage): Usage {
 
 type Look = { text: string; usage: Usage } | { error: string; usage?: Usage };
 
-const textOf = (reply: AssistantMessage) =>
-  reply.content
-    .flatMap((block) => (block.type === "text" ? [block.text] : []))
-    .join("")
-    .trim();
-
 /** What a reply of the vision model says, priced; a failed or empty reply is an error that still spent. */
 function lookOf(model: Model<Api>, reply: AssistantMessage): Look {
   const usage = pricedUsage(model, reply.usage);
@@ -138,7 +134,7 @@ function lookOf(model: Model<Api>, reply: AssistantMessage): Look {
       usage,
     };
 
-  const text = textOf(reply);
+  const text = replyText(reply).trim();
 
   return text
     ? { text, usage }
@@ -174,7 +170,7 @@ async function look(
   } catch (error) {
     if (signal?.aborted) throw error;
 
-    return { error: error instanceof Error ? error.message : String(error) };
+    return { error: errorText(error) };
   }
 }
 

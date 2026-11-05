@@ -1,3 +1,4 @@
+import { sleep } from "../shared/time";
 import type { Context } from "@earendil-works/chord";
 import { z } from "zod";
 import type { ComputerUseArgs, ComputerUseResult } from "./computer-use";
@@ -271,8 +272,6 @@ export async function readPage(
   return readBound(state, page, args, context);
 }
 
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 // A tab shows the new URL as soon as navigation starts; a URL that holds this long without a new title has loaded.
 // Reloading the open URL changes neither, so reaching the requested URL counts as moving too.
 const SETTLE_MS = 1000;
@@ -289,7 +288,7 @@ async function waitForLoad(
   let movedAt: number | undefined;
 
   while (Date.now() < deadline) {
-    await pause(state.pageLoad.pollMs);
+    await sleep(state.pageLoad.pollMs);
 
     const now = await bindPage(state, target, context);
 

@@ -1,3 +1,4 @@
+import { shellQuote } from "../shared/shell";
 import { createHash } from "node:crypto";
 import net from "node:net";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -611,7 +612,7 @@ class RailwayMachine implements WorkspaceMachine {
     this.streams.add(output);
 
     const exec = this.sandbox.exec(
-      [GUEST_PYTHON, GUEST_STREAM, command, ...args].map(quote).join(" "),
+      [GUEST_PYTHON, GUEST_STREAM, command, ...args].map(shellQuote).join(" "),
       {
         stdin: true,
         ephemeral: true,
@@ -795,8 +796,6 @@ async function run(sandbox: Sandbox, command: string) {
   if (result.exitCode !== 0)
     throw new Error(`${command} failed: ${result.stderr || result.stdout}`);
 }
-
-const quote = (arg: string) => `'${arg.replaceAll("'", `'\\''`)}'`;
 
 /** Bytes pushed by a callback, read as an async iterable. */
 class ByteQueue implements AsyncIterable<Uint8Array> {

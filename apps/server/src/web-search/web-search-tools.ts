@@ -5,7 +5,7 @@ import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
 import { Plugins, pluginWebSearchProviders } from "../plugins/plugins";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
-import { isPublicAddress } from "../workspaces/public-address";
+import { isPublicAddress } from "../shared/public-address";
 import {
   WebExtractionError,
   WebSearchError,

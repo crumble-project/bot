@@ -1,3 +1,4 @@
+import { replyText } from "../shared/reply-text";
 import {
   calculateCost,
   isModelType,
@@ -152,9 +153,7 @@ function chatJudge(models: Models, model: Model<Api>): Judge {
     if (reply.stopReason === "error" || reply.stopReason === "aborted")
       throw new Error(reply.errorMessage ?? "The judge gave no answer");
 
-    const text = reply.content
-      .flatMap((block) => (block.type === "text" ? [block.text] : []))
-      .join("");
+    const text = replyText(reply);
 
     const parsed = chatAnswer.safeParse(
       (() => {

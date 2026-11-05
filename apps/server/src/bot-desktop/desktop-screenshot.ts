@@ -1,3 +1,4 @@
+import { errorText } from "../shared/errors";
 import { randomUUID } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import {
@@ -130,7 +131,7 @@ export async function captureDesktop(
 
     return await grab(shell, context);
   } catch (error) {
-    return failed(error instanceof Error ? error.message : String(error));
+    return failed(errorText(error));
   } finally {
     release();
   }

@@ -18,6 +18,8 @@ export type EventRun = typeof eventRuns.$inferSelect;
 export type { EventRunStatus };
 
 /** An event as the relay delivered it; `body` is the raw bytes in base64. */
+export const DELETED_SOURCE = "Deleted source";
+
 export type RelayEvent = Omit<typeof relayEvents.$inferSelect, "storedAt">;
 
 /** The account's event sources and the events that arrived at them. */
@@ -47,6 +49,10 @@ export class EventRepository extends Context.Service<
       agentId: string,
     ) => Effect.Effect<boolean>;
     readonly getEvent: (id: string) => Effect.Effect<RelayEvent | null>;
+    /** A stored event and the name of its source, for what an automation reads. */
+    readonly eventWithSource: (
+      id: string,
+    ) => Effect.Effect<{ record: RelayEvent; sourceName: string } | null>;
     /** Deletes events stored before `before`, an ISO time. */
     readonly prune: (before: string) => Effect.Effect<number>;
   }
@@ -202,6 +208,15 @@ export class EventRepository extends Context.Service<
         return event;
       }, Effect.orDie);
 
+      const eventWithSource = Effect.fnUntraced(function* (id: string) {
+        const record = yield* getEvent(id);
+
+        if (!record) return null;
+        const source = yield* getSource(record.sourceId);
+
+        return { record, sourceName: source?.name ?? DELETED_SOURCE };
+      });
+
       const prune = Effect.fn("EventRepository.prune")(function* (
         before: string,
       ) {
@@ -224,6 +239,7 @@ export class EventRepository extends Context.Service<
         markRun,
         hasRunForAgent,
         getEvent,
+        eventWithSource,
         prune,
       });
     }),

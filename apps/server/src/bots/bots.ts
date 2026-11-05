@@ -6,8 +6,8 @@ import type {
   Conversation,
   Execution,
   LearnedChange,
-  WAITING_FOR,
 } from "../shared/domain";
+import type { ReplyActivity } from "../contract/reply-event";
 import type { AppError } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import { SettingsRepository } from "../shared/settings-repository";
@@ -18,44 +18,9 @@ import { botsService } from "./bots-service";
 import { BotNotices } from "./bot-notices";
 import { ConversationRepository } from "./conversation-repository";
 import { ExecutionRepository } from "./execution-repository";
-import {
-  BotRuntime,
-  JOB_QUESTION_REQUEST,
-  type AgentRuntime,
-  type RuntimeSnapshot,
-} from "./runtime";
+import { BotRuntime, type AgentRuntime, type RuntimeSnapshot } from "./runtime";
 import { EventRepository } from "../event-sources/event-repository";
 import type { BotMessageEvent } from "./transcript";
-
-export { GROUP_TURN_PREFIX } from "./bots-context";
-
-export const delegationRequest = (sourceAgentId: string, taskId: string) =>
-  `delegate:${sourceAgentId}:${taskId}`;
-
-/** A job's question relayed from the bot whose job asks to the bot that delegated the job's task. */
-export const jobQuestionRequest = (assigneeId: string, questionId: string) =>
-  `${JOB_QUESTION_REQUEST}:${assigneeId}:${questionId}`;
-
-/** A finished reply anywhere on the server, for clients that notify their owner. */
-export type ReplyActivity = {
-  type: "reply";
-  executionId: string;
-  agentId: string;
-  agentName: string;
-  entryId: string | null;
-  origin: string;
-  preview: string;
-  createdAt: string;
-  /** Set for a bot's answer in a group chat; clients open the group instead of the bot chat. */
-  groupId?: string;
-  /** Set for a bot's answer to a coding or desktop job's report (origin `coding` or `desktop`): the job's name. */
-  jobName?: string;
-  groupName?: string;
-  /** Set when the reply waits for the owner's answer: a held desktop action, or a credential or login request. */
-  waitingFor?: WaitingFor;
-};
-
-export type WaitingFor = (typeof WAITING_FOR)[number];
 
 export type ChatPreviewActivity = {
   type: "chat-preview";

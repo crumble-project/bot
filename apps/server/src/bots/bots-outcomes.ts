@@ -1,3 +1,4 @@
+import { errorText } from "../shared/errors";
 import { Effect, Predicate, Result } from "effect";
 import type { Agent, Execution } from "../shared/domain";
 import type { botsActivity } from "./bots-activity";
@@ -42,7 +43,7 @@ export const botsOutcomes = (context: BotsContext, deps: OutcomeDeps) => {
 
     yield* executions.update(execution.id, {
       status: "failed",
-      error: String(cause instanceof Error ? cause.message : cause),
+      error: errorText(cause),
     });
     yield* changed(execution.conversationId);
     yield* settled(execution.id);

@@ -133,6 +133,23 @@ describe("memorySourceOf", () => {
     expect(source(["unknown"])).toEqual({ kind: "chat" });
   });
 
+  test("a job question relayed to a bot comes from the bot whose job asks", () => {
+    const { store, agent, other, execution } = setup();
+    const requestId = `job-question:${other.id}:question-1`;
+
+    execution(requestId);
+
+    expect(
+      store.runtime.runSync(
+        memorySourceOf(agent.id, {
+          groupId: null,
+          submissionIds: [requestId],
+          reviewOf: null,
+        }),
+      ),
+    ).toEqual({ kind: "bot", agentId: other.id, name: "Grace" });
+  });
+
   test("keeps group turns out of shared memory", () => {
     const group: MemoryContext = {
       groupId: "group-1",

@@ -14,12 +14,7 @@ import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
 import { Store } from "../../test/support/store";
 import { createAPI } from "../app/api";
-import {
-  activityPage,
-  decodeCursor,
-  operationalActivity,
-  sortActivity,
-} from "./activity";
+import { activityPage, decodeCursor, operationalActivity } from "./activity";
 import type { LearnedChange } from "../shared/domain";
 import type { TranscriptMessage } from "../bots/transcript";
 
@@ -214,9 +209,10 @@ describe("operational activity", () => {
       },
     ]);
 
-    const sorted = sortActivity(events);
-    expect(sorted.map((event) => event.entryId)).toEqual(["a:2", "a:1"]);
-    expect(sorted[1]?.id).toBe("a:a:1:0:block-0");
+    expect(events.map((event) => event.id)).toEqual([
+      "a:a:1:0:block-0",
+      "a:a:2:0:block-0",
+    ]);
   });
 
   test("exposes nested codemode calls, including MCP calls", () => {
@@ -325,10 +321,10 @@ describe("operational activity", () => {
     };
 
     const all = [
-      ...sortActivity([
+      ...[
         ...operationalActivity({ id: "a", name: "A" }, transcripts.get("a")!),
         ...operationalActivity({ id: "b", name: "B" }, transcripts.get("b")!),
-      ]).map((item) => ({ id: item.id, kind: item.kind, t: item.timestamp! })),
+      ].map((item) => ({ id: item.id, kind: item.kind, t: item.timestamp! })),
       ...changes.map((c) => ({
         id: c.id,
         kind: "change" as const,

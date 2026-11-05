@@ -1,5 +1,5 @@
 import { Cause, Effect, FiberMap, Semaphore, type Scope } from "effect";
-import { appErrors } from "../shared/app-errors";
+import { parseRequestId } from "../shared/request-ids";
 import type { Execution } from "../shared/domain";
 import { SettingsRepository } from "../shared/settings-repository";
 import { ScheduleRepository } from "../schedules/schedule-repository";
@@ -12,17 +12,8 @@ import { ExecutionRepository } from "./execution-repository";
 import { BotRuntime } from "./runtime";
 
 /** Group turns run as executions too, but their output belongs to the group, not the bot chat. */
-export const GROUP_TURN_PREFIX = "group-turn:";
-
 export const isGroupTurn = (execution: Execution) =>
-  execution.requestId.startsWith(GROUP_TURN_PREFIX);
-
-export const active = (execution: Execution) =>
-  execution.status === "pending" || execution.status === "running";
-
-/** A Pi Durable call: AppErrors it throws are failures, anything else is a defect. */
-export const pi = <A>(run: () => Promise<A>) =>
-  appErrors(Effect.tryPromise({ try: run, catch: (error) => error }));
+  parseRequestId(execution.requestId).kind === "group-turn";
 
 export const background = (label: string, subject: string) =>
   Effect.catchCause((cause: Cause.Cause<unknown>) =>

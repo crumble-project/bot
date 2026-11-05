@@ -18,7 +18,7 @@ import { standaloneBots, type Activity } from "./bots";
 import { Store } from "../../test/support/store";
 import { Effect } from "effect";
 import { EventRepository } from "../event-sources/event-repository";
-import { eventRequestId } from "../event-sources/event-payload";
+import { eventRequest } from "../shared/request-ids";
 import { ScheduleRepository } from "../schedules/schedule-repository";
 import { scheduleInput } from "../shared/domain";
 
@@ -445,7 +445,7 @@ describe("event automations", () => {
       }),
     );
 
-    const requestId = eventRequestId(event.id, schedule.id);
+    const requestId = eventRequest(event.id, schedule.id);
 
     const execution = await service.dispatch(
       agent.id,

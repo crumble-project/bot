@@ -5,6 +5,7 @@ import type {
   Tx,
 } from "@earendil-works/pi-durable";
 import { z } from "zod";
+import { MESSAGE_ENTRY } from "../bots/entries";
 
 /** An owner message a job acts for, verbatim; a job started by an automation counts the automation's text as one. */
 export type OwnerMessage = {
@@ -51,7 +52,7 @@ const ownerEntry = z.object({
 const SCAN_PAGE = 200;
 
 function ownerMessageOf(entry: EntryRecord): OwnerMessage | undefined {
-  if (entry.kind !== "crumble.message") return undefined;
+  if (entry.kind !== MESSAGE_ENTRY) return undefined;
 
   const data = ownerEntry.safeParse(entry.data).data;
   const from = data && REQUEST_ORIGINS.get(data.origin.kind);

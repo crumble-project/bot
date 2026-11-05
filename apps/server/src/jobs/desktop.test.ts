@@ -26,7 +26,7 @@ import {
 } from "./workspace-notes";
 import type { DesktopIntent } from "./desktop-intent";
 import type { IntentRequest } from "../bot-desktop/intent-check";
-import type { MessageOrigin } from "../bots/transcript";
+import type { MessageOrigin } from "../bots/entries";
 import type { Agent, Login } from "../shared/domain";
 import type { LoginsAccess } from "../logins/logins";
 import { AgentRuntime } from "../bots/runtime";

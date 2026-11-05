@@ -37,6 +37,10 @@ export class Unavailable extends Schema.TaggedError<Unavailable>()(
 ) {}
 
 /** A failure the owner or bot can act on; anything else is a defect. */
+/** A thrown value's message, or the value itself as text. */
+export const errorText = (cause: unknown) =>
+  cause instanceof Error ? cause.message : String(cause);
+
 export type AppError =
   | InvalidInput
   | Forbidden

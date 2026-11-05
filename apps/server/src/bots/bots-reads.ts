@@ -1,11 +1,13 @@
+import { pi } from "../shared/app-errors";
 import { Conflict } from "../shared/errors";
 import { Effect } from "effect";
 import type { Execution } from "../shared/domain";
-import { isGroupTurn, pi, type BotsContext } from "./bots-context";
+import type { BotsContext } from "./bots-context";
 import type { botsLookup } from "./bots-lookup";
-import { eventRequest } from "../event-sources/event-payload";
-import { latestMessagePreview, type MessageOrigin } from "./transcript";
-import { JOB_QUESTION_REQUEST } from "./runtime";
+import { DELETED_SOURCE } from "../event-sources/event-repository";
+import { askingBot, parseRequestId } from "../shared/request-ids";
+import type { MessageOrigin } from "./entries";
+import { latestMessagePreview } from "./transcript";
 
 type PageOptions = {
   before?: string | undefined;
@@ -21,53 +23,29 @@ export const botsOrigin = (context: BotsContext) => {
     scheduleId: string;
   }) {
     const schedule = yield* schedules.get(run.scheduleId);
-    const event = yield* events.getEvent(run.eventId);
-    const source = event && (yield* events.getSource(event.sourceId));
+    const event = yield* events.eventWithSource(run.eventId);
 
     return {
       kind: "event",
       name: schedule?.name ?? "Automation",
-      source: source?.name ?? "Deleted source",
+      source: event?.sourceName ?? DELETED_SOURCE,
     } satisfies MessageOrigin;
   });
 
-  const scriptOrigin = (subject: string) =>
-    Effect.map(schedules.get(subject), (schedule) => ({
-      kind: "script",
-      name: schedule?.name ?? "Script task",
-    }));
-
-  const botOrigin = (subject: string) =>
-    Effect.map(agents.get(subject), (source) => ({
+  const botOrigin = (agentId: string) =>
+    Effect.map(agents.get(agentId), (source) => ({
       kind: "bot",
-      agentId: subject,
+      agentId,
       name: source?.name ?? "Another bot",
     }));
 
-  // Request IDs of the form `<prefix>:<subject>` name where a turn came from.
-  const prefixed = new Map<
-    string,
-    (subject: string) => Effect.Effect<MessageOrigin>
-  >([
-    ["script", scriptOrigin],
-    ["delegate", botOrigin],
-    [JOB_QUESTION_REQUEST, botOrigin],
-    [
-      "credential",
-      (subject) => Effect.succeed({ kind: "credential", name: subject }),
-    ],
-    ["bot-request", () => Effect.succeed({ kind: "bot_request" })],
-    ["gateway", (subject) => Effect.succeed({ kind: "owner", via: subject })],
-  ]);
-
-  const owner: MessageOrigin = { kind: "owner" };
-
   const origin = (execution: Execution): Effect.Effect<MessageOrigin> =>
     Effect.gen(function* () {
-      if (isGroupTurn(execution)) return { kind: "group" };
-      const run = eventRequest(execution.requestId);
+      const request = parseRequestId(execution.requestId);
 
-      if (run) return yield* eventOrigin(run);
+      if (request.kind === "group-turn") return { kind: "group" };
+
+      if (request.kind === "event") return yield* eventOrigin(request);
 
       if (execution.scheduleId) {
         const schedule = yield* schedules.get(execution.scheduleId);
@@ -75,10 +53,27 @@ export const botsOrigin = (context: BotsContext) => {
         return { kind: "task", name: schedule?.name ?? "Scheduled task" };
       }
 
-      const [prefix = "", subject] = execution.requestId.split(":");
-      const read = subject ? prefixed.get(prefix) : undefined;
+      const asking = askingBot(request);
 
-      return read && subject ? yield* read(subject) : owner;
+      if (asking) return yield* botOrigin(asking);
+
+      switch (request.kind) {
+        case "script": {
+          const schedule = yield* schedules.get(request.scheduleId);
+
+          return { kind: "script", name: schedule?.name ?? "Script task" };
+        }
+
+        // MessageOrigin documents no login kind, and clients label a login like a credential.
+        case "notice":
+          return { kind: "credential", name: request.name };
+        case "bot-request":
+          return { kind: "bot_request" };
+        case "gateway":
+          return { kind: "owner", via: request.adapterId };
+        default:
+          return { kind: "owner" };
+      }
     });
 
   return { origin };

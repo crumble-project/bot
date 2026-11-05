@@ -1,4 +1,10 @@
 import {
+  BOT_MESSAGE_ENTRY,
+  MESSAGE_ENTRY,
+  type MessageOrigin,
+} from "./entries";
+import { parseRequestId } from "../shared/request-ids";
+import {
   BACKGROUND_CONTEXT,
   type Context as PiContext,
 } from "@earendil-works/chord/context";
@@ -34,7 +40,9 @@ import {
   GroupConversation,
   groupTurnExtension,
 } from "../group-chats/group-turns";
-import { conversationReference, type Agent } from "../shared/domain";
+import type { Agent } from "../shared/domain";
+import { formatEntryId, parseEntryId } from "../shared/entry-ids";
+import { replyText } from "../shared/reply-text";
 import { ProviderModels, providerModels } from "../providers/providers";
 import { BotMemory } from "../memory/bot-memory";
 import { SettingsRepository } from "../shared/settings-repository";
@@ -65,12 +73,12 @@ import { MAX_MEMORY_CHARS } from "../shared/limits";
 import {
   prepareReply,
   readAttachment,
+  conversations,
   readResponse,
   readConversationTranscript,
   readTranscript,
   readTurnOutcome,
   readTurnReport,
-  type MessageOrigin,
   type BotMessageEvent,
   type TranscriptMessage,
   type TranscriptPage,
@@ -230,12 +238,6 @@ function entryMetadata(
 
 type PreparedReply = { modelContent: string; data: Record<string, JsonValue> };
 
-function entryNumber(entryId: string): number {
-  const value = Number(entryId.slice(entryId.lastIndexOf(":") + 1));
-
-  return Number.isSafeInteger(value) ? value : -1;
-}
-
 type HistoryOptions = {
   before?: string | undefined;
   limit?: number | undefined;
@@ -243,24 +245,47 @@ type HistoryOptions = {
   includeActiveAssistant?: boolean | undefined;
 };
 
-function hideActiveAssistant(messages: TranscriptMessage[], cutoffs: number[]) {
-  const cutoff = cutoffs.length ? Math.min(...cutoffs) : -1;
-
-  return cutoff < 0
-    ? messages
-    : messages.filter(
-        (message) =>
-          message.role !== "assistant" ||
-          entryNumber(message.entryId) <= cutoff,
-      );
-}
-
 function hideIncompleteAssistant(messages: TranscriptMessage[]) {
   return messages.filter(
     (message) =>
       message.role !== "assistant" ||
       (message.stopReason !== "aborted" && message.stopReason !== "error"),
   );
+}
+
+/**
+ * What clients may show of `conversations`. A model can commit a tool-calling assistant entry before its tool round
+ * completes, so assistant entries after an active input stay hidden until the run settles and no text segment leaks
+ * mid-turn. Entry IDs are global across the bot's conversations, so only inputs of these conversations count.
+ */
+async function visibleMessages(
+  harness: Harness,
+  conversations: readonly ConversationId[],
+  messages: TranscriptMessage[],
+) {
+  const { submissions } = await harness.inspect(BACKGROUND_CONTEXT);
+
+  const cutoffs = submissions.flatMap((submission) =>
+    submission.type === "input" &&
+    submission.status === "placed" &&
+    conversations.includes(submission.conversationId)
+      ? [Number(submission.entry)]
+      : [],
+  );
+
+  const finished = hideIncompleteAssistant(messages);
+
+  if (!cutoffs.length) return finished;
+  const cutoff = Math.min(...cutoffs);
+
+  return finished.filter((message) => {
+    const entry = parseEntryId(message.entryId);
+
+    return (
+      message.role !== "assistant" ||
+      (Number.isSafeInteger(entry) ? entry : -1) <= cutoff
+    );
+  });
 }
 
 // Adapted from Hermes Agent's DEFAULT_AGENT_IDENTITY: a behavior spec, not a trait list.
@@ -373,12 +398,15 @@ function numericId(value: string): never {
 }
 
 function localConversationId(agentId: string, reference: string): never {
-  const prefix = `${agentId}:`;
+  const id = parseEntryId(reference, agentId);
 
-  if (!reference.startsWith(prefix))
+  if (id === "foreign")
     throw new Error("Conversation belongs to a different agent");
 
-  return numericId(reference.slice(prefix.length));
+  if (id === "malformed") throw new Error("Invalid durable record ID");
+
+  // SAFETY: validated decimal IDs are branded by pi-durable at this boundary.
+  return id as never;
 }
 
 type ConversationScope = { group: boolean; review: ReviewScope | null };
@@ -644,9 +672,6 @@ function assertImageSupport(
     });
 }
 
-/** Request IDs of job questions relayed to the bot that delegated the job's task: `job-question:<asking bot>:<question>`. */
-export const JOB_QUESTION_REQUEST = "job-question";
-
 // A relayed job question says itself how to answer; a plain reply never reaches the job.
 function botRelayText(
   origin: MessageOrigin,
@@ -655,7 +680,7 @@ function botRelayText(
 ) {
   const from = `Message from bot ${JSON.stringify(origin.name ?? "Another bot")} (${origin.agentId ?? "unknown"}):\n\n${text}`;
 
-  return requestId?.startsWith(`${JOB_QUESTION_REQUEST}:`)
+  return requestId && parseRequestId(requestId).kind === "job-question"
     ? from
     : `${from}\n\nReply to this bot's message. Your answer will be returned to the requesting bot.`;
 }
@@ -1098,7 +1123,7 @@ export class AgentRuntime {
       BACKGROUND_CONTEXT,
     );
 
-    const reference = conversationReference(agent.id, conversation.id);
+    const reference = formatEntryId(agent.id, conversation.id);
     await this.configure(record, agent, reference);
 
     return reference;
@@ -1107,7 +1132,7 @@ export class AgentRuntime {
   async openChat(agent: Agent): Promise<string> {
     const record = await this.open(agent);
     const root = await record.harness.root(BACKGROUND_CONTEXT);
-    const reference = conversationReference(agent.id, Number(root.id));
+    const reference = formatEntryId(agent.id, Number(root.id));
     await this.configure(record, agent, reference);
 
     return reference;
@@ -1144,7 +1169,7 @@ export class AgentRuntime {
       return child.id;
     }, BACKGROUND_CONTEXT);
 
-    const reference = conversationReference(agent.id, Number(id));
+    const reference = formatEntryId(agent.id, Number(id));
     await this.configure(record, agent, reference);
 
     return reference;
@@ -1307,10 +1332,7 @@ export class AgentRuntime {
       options,
     );
 
-    const summary = answer.content
-      .flatMap((block) => (block.type === "text" ? [block.text] : []))
-      .join("")
-      .trim();
+    const summary = replyText(answer).trim();
 
     if (answer.stopReason === "error" || answer.stopReason === "aborted")
       throw new Error(answer.errorMessage ?? "The summary failed");
@@ -1381,7 +1403,7 @@ export class AgentRuntime {
       type: "input" as const,
       content,
       entry: {
-        kind: "crumble.message",
+        kind: MESSAGE_ENTRY,
         data: {
           ...prepared.data,
           ...entryMetadata(requestId, options.origin, attached.info),
@@ -1417,7 +1439,7 @@ export class AgentRuntime {
         type: "write",
         requestId,
         entry: {
-          kind: "crumble.bot-message",
+          kind: BOT_MESSAGE_ENTRY,
           data: { ...event, timestamp: Date.now() },
         },
       },
@@ -1476,30 +1498,11 @@ export class AgentRuntime {
       // SAFETY: pi-durable owns this document key and serializes it as LiveState.
       const live = view.value.docs["pi.live"] as LiveState | undefined;
 
-      let messages = hideIncompleteAssistant(transcript.messages);
-
-      if (live?.run) {
-        // A model can commit a tool-calling assistant entry before its tool
-        // round completes. Hide assistant entries after the active input until
-        // the run settles, so a text segment never leaks mid-turn.
-        const activeInputEntries = await Promise.all(
-          live.run.inputs.map(async (id) =>
-            (await harness.submission(id, BACKGROUND_CONTEXT))?.status(
-              BACKGROUND_CONTEXT,
-            ),
-          ),
-        );
-
-        const activeEntries = activeInputEntries.flatMap((status) =>
-          status && "entry" in status && status.entry !== undefined
-            ? [Number(status.entry)]
-            : [],
-        );
-
-        const cutoff = activeEntries.length ? Math.min(...activeEntries) : -1;
-
-        if (cutoff >= 0) messages = hideActiveAssistant(messages, [cutoff]);
-      }
+      const messages = await visibleMessages(
+        harness,
+        [conversation.id],
+        transcript.messages,
+      );
 
       return {
         conversationId,
@@ -1588,10 +1591,7 @@ export class AgentRuntime {
 
     return (await list(harness, root.id)).map((job) => ({
       name: job.name,
-      conversationId: conversationReference(
-        agent.id,
-        Number(job.conversationId),
-      ),
+      conversationId: formatEntryId(agent.id, Number(job.conversationId)),
       status: job.status,
       ...(job.model && { model: job.model }),
       ...(job.usage && { usage: job.usage }),
@@ -1647,21 +1647,14 @@ export class AgentRuntime {
           messages: hideIncompleteAssistant(transcript.messages),
         };
 
-      const inspection = await harness.inspect(BACKGROUND_CONTEXT);
-
-      const cutoffs = inspection.submissions.flatMap((submission) =>
-        submission.type === "input" &&
-        submission.status === "placed" &&
-        submission.entry !== undefined
-          ? [Number(submission.entry)]
-          : [],
-      );
+      const chats = await conversations(harness);
 
       return {
         ...transcript,
-        messages: hideActiveAssistant(
-          hideIncompleteAssistant(transcript.messages),
-          cutoffs,
+        messages: await visibleMessages(
+          harness,
+          chats.map((chat) => chat.id),
+          transcript.messages,
         ),
       };
     } catch (error) {

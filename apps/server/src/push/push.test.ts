@@ -6,10 +6,10 @@ import { TestClock } from "effect/testing";
 import { Push, PushDelivery } from "./push";
 import {
   canonicalReplyEvent,
-  notificationTitle,
-  type PushDeviceInput,
-  type ReplyPushEvent,
-} from "./push-model";
+  type ReplyActivity,
+  type ReplyEvent,
+} from "../contract/reply-event";
+import { notificationTitle, type PushDeviceInput } from "./push-model";
 import { PushRepository } from "./push-repository";
 import {
   PermanentRejection,
@@ -18,7 +18,7 @@ import {
   type PushTransport,
 } from "./push-transports";
 import { BotActivity } from "../bots/bot-activity";
-import type { Activity, ReplyActivity } from "../bots/bots";
+import type { Activity } from "../bots/bots";
 import { Store } from "../../test/support/store";
 import { standaloneBots } from "../bots/bots";
 import { standaloneScheduler } from "../schedules/scheduler";
@@ -261,7 +261,7 @@ describe("push registration and durable delivery", () => {
     const now = 1_000_000;
     const installationId = id();
     const agentId = id();
-    const sent: ReplyPushEvent[] = [];
+    const sent: ReplyEvent[] = [];
 
     const push = await pushRuntime(
       dir,
@@ -528,7 +528,7 @@ describe("push registration and durable delivery", () => {
 
     const service = standaloneBots(store, runtime);
     const installationId = id();
-    let delivered: ReplyPushEvent | undefined;
+    let delivered: ReplyEvent | undefined;
 
     const push = ManagedRuntime.make(
       PushDelivery.pipe(

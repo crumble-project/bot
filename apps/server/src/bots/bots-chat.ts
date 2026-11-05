@@ -1,8 +1,9 @@
+import { pi } from "../shared/app-errors";
 import { Effect, Predicate, Semaphore } from "effect";
 import type { Conversation } from "../shared/domain";
 import type { botsActivity } from "./bots-activity";
 import type { botsAnnouncements } from "./bots-announcements";
-import { pi, type BotsContext } from "./bots-context";
+import { type BotsContext } from "./bots-context";
 import type { botsLookup } from "./bots-lookup";
 import type { botsReads } from "./bots-reads";
 import type { BotMessageEvent } from "./transcript";

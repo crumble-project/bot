@@ -1,3 +1,4 @@
+import { errorText } from "../shared/errors";
 import {
   AuthExpiredError,
   createClient,
@@ -15,24 +16,21 @@ import {
 
 const NAME = "1Password";
 
-const messageOf = (cause: unknown) =>
-  cause instanceof Error ? cause.message : String(cause);
-
 // Seen in the SDK: a malformed token fails as "invalid user input" locally, a wrong one as "authentication error".
 const rejectsToken = (cause: unknown) =>
   cause instanceof AuthExpiredError ||
-  /invalid user input|authentication error/i.test(messageOf(cause));
+  /invalid user input|authentication error/i.test(errorText(cause));
 
 const failure = (cause: unknown) =>
   rejectsToken(cause)
     ? new PasswordManagerTokenRejected({
-        message: `rejected the service account token: ${messageOf(cause)}`,
+        message: `rejected the service account token: ${errorText(cause)}`,
       })
     : new PasswordManagerUnreachable({
         message:
           cause instanceof RateLimitExceededError
-            ? `limited this account's requests: ${messageOf(cause)}`
-            : `could not be reached: ${messageOf(cause)}`,
+            ? `limited this account's requests: ${errorText(cause)}`
+            : `could not be reached: ${errorText(cause)}`,
         cause,
       });
 

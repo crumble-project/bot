@@ -1,3 +1,4 @@
+import { sleep } from "../shared/time";
 import { afterEach, expect } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -212,8 +213,7 @@ async function open(kind: typeof exclusiveKind) {
 }
 
 async function until(check: () => boolean) {
-  for (let i = 0; i < 500 && !check(); i++)
-    await new Promise((resolve) => setTimeout(resolve, 20));
+  for (let i = 0; i < 500 && !check(); i++) await sleep(20);
 
   expect(check()).toBe(true);
 }

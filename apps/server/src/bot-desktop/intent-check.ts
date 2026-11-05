@@ -1,3 +1,4 @@
+import { errorText } from "../shared/errors";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { JsonObject } from "@earendil-works/pi-durable";
 import type { OwnerMessage } from "../jobs/owner-request";
@@ -228,7 +229,7 @@ export async function checkIntent(
       ...decide(rulesOnly, undefined),
       commitPoint: rulesOnly,
       answer: undefined,
-      judgeError: error instanceof Error ? error.message : String(error),
+      judgeError: errorText(error),
     };
   }
 }

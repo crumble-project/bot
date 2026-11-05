@@ -15,9 +15,9 @@ import {
   SCRIPT_RUN_STATUSES,
   SKILL_STATES,
   THINKING_LEVELS,
-  WAITING_FOR,
 } from "../shared/domain";
 import { avatarDefinitionSchema } from "./avatar";
+import { replyEvent } from "./reply-event";
 
 export const secretStatusResponse = z
   .object({
@@ -1069,37 +1069,6 @@ export const oauthStartResponse = z
 export const compactResponse = z
   .object({ taskId: z.string() })
   .openapi("Compaction");
-
-export const replyEvent = z
-  .object({
-    type: z.literal("reply"),
-    eventId: z.string(),
-    serverId: z.string(),
-    agentId: z.string(),
-    agentName: z.string(),
-    entryId: z.string().nullable(),
-    origin: z.string().openapi({
-      description:
-        "What the bot answered: owner (a message from the owner), task (a scheduled task), script (a script task's result), bot (another bot's request), group (a group chat turn), or coding or desktop (a job's report; jobName names the job). Clients may receive other values later.",
-    }),
-    preview: z.string(),
-    createdAt: z.string(),
-    executionId: z.string().optional(),
-    jobName: z.string().optional().openapi({
-      description:
-        "The job whose report the bot answered, for origin coding or desktop. A desktop job's report often asks for the owner; clients may open the bot desktop.",
-    }),
-    groupId: z.string().optional().openapi({
-      description:
-        "Set when a bot answered in a group chat; open the group rather than the bot chat.",
-    }),
-    groupName: z.string().optional(),
-    waitingFor: z.enum(WAITING_FOR).optional().openapi({
-      description:
-        "Set when the bot waits for the owner's answer: approval (a desktop job action held by an intent check), credential, or login (a request the owner saves or declines). Clients may receive other values later.",
-    }),
-  })
-  .openapi("ReplyEvent");
 
 export const chatPreviewEvent = z
   .object({

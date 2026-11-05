@@ -677,6 +677,53 @@ test("hides text from an assistant tool round until the whole turn completes", a
   ]);
 });
 
+test("a turn running in another conversation leaves the chat's answers in its history", async () => {
+  let release!: () => void;
+  const toolDone = new Promise<void>((resolve) => (release = resolve));
+
+  const tool = defineTool({
+    name: "blocked",
+    description: "Wait for the test",
+    parameters: Type.Object({}),
+    execute: async () => {
+      await toolDone;
+
+      return { output: [{ type: "text", text: "tool finished" }] };
+    },
+  });
+
+  const { runtime, faux } = setup({
+    extensions: () => [defineExtension({ name: "blocked", tools: [tool] })],
+  });
+
+  const a = makeAgent();
+  const chat = await runtime.openChat(a);
+  const group = await runtime.openGroupConversation(a, "group-1");
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("blocked", {})], {
+      stopReason: "toolUse",
+    }),
+    fauxAssistantMessage("The chat's answer."),
+    fauxAssistantMessage("The group turn's answer."),
+  ]);
+  const turn = await runtime.submit(a, group, "group turn", "group-input");
+  let running = await runtime.snapshot(a, group);
+
+  for (let attempt = 0; attempt < 50 && !running.live; attempt++) {
+    await Bun.sleep(10);
+    running = await runtime.snapshot(a, group);
+  }
+
+  const asked = await runtime.submit(a, chat, "chat turn", "chat-input");
+  expect((await runtime.wait(asked, a)).status).toBe("done");
+
+  expect((await runtime.history(a)).messages.map((m) => m.content)).toContain(
+    "The chat's answer.",
+  );
+  release();
+  expect((await runtime.wait(turn, a)).status).toBe("done");
+});
+
 test("inference overrides reach provider options and deleting an agent removes its durable files", async () => {
   const { runtime, faux } = setup();
   const agent = makeAgent();

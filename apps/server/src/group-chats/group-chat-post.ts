@@ -1,3 +1,4 @@
+import { pi } from "../shared/app-errors";
 import { Effect } from "effect";
 import { appErrors } from "../shared/app-errors";
 import type {
@@ -6,7 +7,7 @@ import type {
 } from "../shared/attachment-rules";
 import { prepareAttachments } from "../shared/attachments";
 import { InvalidInput, type AppError } from "../shared/errors";
-import { logged, pi, type GroupChatContext } from "./group-chat-context";
+import { logged, type GroupChatContext } from "./group-chat-context";
 import type { GroupChatMembers } from "./group-chat-members";
 import type { GroupMessageReceipt } from "./group-chat-types";
 import type { GroupEntry } from "./group-transcripts";
@@ -45,7 +46,7 @@ type OwnerMessage = {
 const rememberAwaitingAnswers = Effect.fnUntraced(function* (
   context: GroupChatContext,
   groupId: string,
-  entryId: string,
+  posted: number,
   woken: string[],
 ) {
   const { awaitingAnswers } = yield* context.groups.activity(groupId);
@@ -60,10 +61,7 @@ const rememberAwaitingAnswers = Effect.fnUntraced(function* (
   ))
     delete awaitingAnswers[entry];
 
-  awaitingAnswers[entryId.slice(groupId.length + 1)] = yield* Effect.filter(
-    woken,
-    context.enabled,
-  );
+  awaitingAnswers[posted] = yield* Effect.filter(woken, context.enabled);
   yield* context.groups.setActivity(groupId, {
     botTurns: 0,
     paused: false,
@@ -173,7 +171,7 @@ const post = Effect.fn("GroupChats.post")(function* (
       }),
     );
 
-  const { entryId, created } = yield* writeOwnerMessage(
+  const { entry, entryId, created } = yield* writeOwnerMessage(
     context,
     groupId,
     requestId,
@@ -185,11 +183,9 @@ const post = Effect.fn("GroupChats.post")(function* (
   const woken = mentioned.length ? mentioned : group.memberIds;
 
   // A retried post routes again, but neither resumes the bots nor re-arms its notification.
-  if (created) yield* rememberAwaitingAnswers(context, groupId, entryId, woken);
+  if (created) yield* rememberAwaitingAnswers(context, groupId, entry, woken);
 
-  const through = Number(entryId.slice(groupId.length + 1));
-
-  yield* queueWoken(context, members, groupId, woken, through, created);
+  yield* queueWoken(context, members, groupId, woken, entry, created);
   yield* context.changed(groupId);
 
   context.state.fork(

@@ -1,5 +1,6 @@
 import type { Message } from "@earendil-works/pi-ai";
 import type { ConversationId, Cursor, Tx } from "@earendil-works/pi-durable";
+import { contentText } from "../bots/entries";
 
 const EXCERPT_MESSAGES = 12;
 const EXCERPT_CHARS = 8000;
@@ -12,12 +13,7 @@ const SCAN_PAGES = 10;
 const textOf = (message: Message) => {
   if (message.role !== "user" && message.role !== "assistant") return "";
 
-  if (!Array.isArray(message.content)) return message.content.trim();
-
-  return message.content
-    .flatMap((block) => (block.type === "text" ? [block.text] : []))
-    .join("\n")
-    .trim();
+  return contentText(message.content).trim();
 };
 
 const clip = (text: string) =>

@@ -1,3 +1,4 @@
+import { reviewRequest } from "../shared/request-ids";
 import { Cause, Context, Effect, FiberSet, Layer } from "effect";
 import type {
   Agent,
@@ -12,7 +13,7 @@ import { BotRuntime } from "../bots/runtime";
 import { Bots } from "../bots/bots";
 import { codingJobsFinished } from "../jobs/coding";
 import type { JobFinished } from "../jobs/jobs";
-import { conversationReference } from "../shared/domain";
+import { formatEntryId } from "../shared/entry-ids";
 import { LearnedChangeRepository } from "./learned-change-repository";
 import { ReviewRepository } from "./review-repository";
 import type { ReviewScope } from "./review-instructions";
@@ -117,7 +118,7 @@ export class LearningReview extends Context.Service<
             agent,
             conversation,
             report.digest || "(The turn left no readable digest.)",
-            `review:${execution.id}`,
+            reviewRequest(execution.id),
             { origin: { kind: "review" } },
           ),
         );
@@ -212,7 +213,7 @@ export class LearningReview extends Context.Service<
         yield* review(
           {
             id,
-            conversationId: conversationReference(
+            conversationId: formatEntryId(
               finished.agentId,
               Number(finished.conversationId),
             ),

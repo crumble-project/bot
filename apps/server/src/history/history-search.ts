@@ -1,11 +1,23 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { z } from "zod";
 import {
-  GROUP_MESSAGE_KIND,
+  ASSISTANT_ENTRY,
+  GROUP_MESSAGE_ENTRY,
   type MessageOrigin,
+} from "../bots/entries";
+import {
+  isConversational,
+  isOwnerInput,
+  textOf,
+  toolCalls,
   type TranscriptMessage,
   type TranscriptPage,
 } from "../bots/transcript";
+import {
+  formatEntryId,
+  parseEntryId,
+  parseMessageIndex,
+} from "../shared/entry-ids";
 
 export type HistoryContext = { agentId: string; groupId: string | null };
 
@@ -114,9 +126,6 @@ const tokenSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
-const textBlockSchema = z.object({ type: z.literal("text"), text: z.string() });
-const toolCallSchema = z.object({ type: z.literal("toolCall") });
-
 type Snapshot = z.infer<typeof snapshotSchema>;
 
 type Position = z.infer<typeof positionSchema>;
@@ -152,61 +161,36 @@ function ordinal(a: string, b: string): number {
 }
 
 function entryNumber(chat: HistoryChat, entryId: string): number {
-  const prefix = `${chat.id}:`;
-  const suffix = entryId.slice(prefix.length);
-  const entry = Number(suffix);
+  const entry = parseEntryId(entryId, chat.id);
 
-  if (
-    !entryId.startsWith(prefix) ||
-    !/^[1-9][0-9]*$/.test(suffix) ||
-    !Number.isSafeInteger(entry)
-  )
+  if (entry === "foreign" || entry === "malformed")
     throw new Error("History source returned an invalid entry identifier");
 
   return entry;
 }
 
 function messageIndex(entryId: string, messageId: string): number {
-  const prefix = `${entryId}:`;
-  const suffix = messageId.slice(prefix.length);
-  const index = Number(suffix);
+  const index = parseMessageIndex(entryId, messageId);
 
-  if (
-    !messageId.startsWith(prefix) ||
-    !/^(0|[1-9][0-9]*)$/.test(suffix) ||
-    !Number.isSafeInteger(index)
-  )
+  if (index === undefined)
     throw new Error("History source returned an invalid message identifier");
 
   return index;
 }
 
-function blockList(message: TranscriptMessage): unknown[] | null {
-  const blocks = z.array(z.unknown()).safeParse(message.blocks);
-
-  return blocks.success ? blocks.data : null;
-}
-
-function hasToolCall(blocks: unknown[] | null): boolean {
-  return (
-    blocks?.some((block) => toolCallSchema.safeParse(block).success) ?? false
-  );
-}
-
 function toolActivityOf(
   chat: HistoryChat,
   message: TranscriptMessage,
-  blocks: unknown[] | null,
 ): boolean {
   if (chat.kind !== "bot") return false;
 
   if (message.role === "toolResult") return true;
 
-  return message.kind === "pi.assistant" && hasToolCall(blocks);
+  return message.kind === ASSISTANT_ENTRY && toolCalls(message).length > 0;
 }
 
 function groupBody(message: TranscriptMessage): string | null {
-  if (message.kind !== GROUP_MESSAGE_KIND) return null;
+  if (message.kind !== GROUP_MESSAGE_ENTRY) return null;
 
   if (message.role !== "user" && message.role !== "assistant") return null;
 
@@ -216,70 +200,25 @@ function groupBody(message: TranscriptMessage): string | null {
   return message.content;
 }
 
-function isOwnerMessage(message: TranscriptMessage): boolean {
-  if (message.kind !== "crumble.message" || message.role !== "user")
-    return false;
-
-  return message.origin?.kind !== "bot";
-}
-
-function isConversational(message: TranscriptMessage): boolean {
-  if (message.kind === "pi.assistant" && message.role === "assistant")
-    return true;
-
-  return (
-    message.kind === "pi.user" &&
-    message.role === "user" &&
-    message.origin?.kind !== "bot"
-  );
-}
-
-function textBody(
-  message: TranscriptMessage,
-  blocks: unknown[] | null,
-): string | null {
-  if (blocks)
-    return blocks
-      .flatMap((block) => {
-        const parsed = textBlockSchema.safeParse(block);
-
-        return parsed.success ? [parsed.data.text] : [];
-      })
-      .join("\n");
-
-  if (message.role !== "user") return null;
-
-  const text = z.string().safeParse(message.blocks);
-
-  return text.success ? text.data : null;
-}
-
-function bodyOf(
-  chat: HistoryChat,
-  message: TranscriptMessage,
-  blocks: unknown[] | null,
-): string | null {
+function bodyOf(chat: HistoryChat, message: TranscriptMessage): string | null {
   if (chat.kind === "group") return groupBody(message);
 
   // Reply context lives in blocks; normalize preserves the owner's metadata text in content.
-  if (isOwnerMessage(message)) return message.content;
+  if (isOwnerInput(message)) return message.content;
 
-  if (!isConversational(message)) return null;
-
-  return textBody(message, blocks);
+  return isConversational(message) ? textOf(message) : null;
 }
 
 function rowOf(chat: HistoryChat, message: TranscriptMessage): Row {
   const entry = entryNumber(chat, message.entryId);
   const index = messageIndex(message.entryId, message.id);
-  const blocks = blockList(message);
 
   return {
     original: message,
     entry,
     index,
-    body: bodyOf(chat, message, blocks),
-    toolActivity: toolActivityOf(chat, message, blocks),
+    body: bodyOf(chat, message),
+    toolActivity: toolActivityOf(chat, message),
   };
 }
 
@@ -799,7 +738,9 @@ export class HistorySearch {
     if (cutoff === 0) return { snapshot: { chat, cutoff }, rows };
 
     let before =
-      cutoff < Number.MAX_SAFE_INTEGER ? `${chat.id}:${cutoff + 1}` : undefined;
+      cutoff < Number.MAX_SAFE_INTEGER
+        ? formatEntryId(chat.id, cutoff + 1)
+        : undefined;
 
     for (;;) {
       const page = await this.source.page(context, chat, before);

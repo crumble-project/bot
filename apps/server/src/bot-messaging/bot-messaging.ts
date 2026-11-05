@@ -4,11 +4,16 @@ import {
   type Context as PiContext,
 } from "@earendil-works/chord/context";
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect";
-import { type Agent, type Execution } from "../shared/domain";
-import { appErrors } from "../shared/app-errors";
+import { activeExecution, type Agent, type Execution } from "../shared/domain";
+import { appErrors, pi } from "../shared/app-errors";
+import {
+  delegationRequest,
+  jobQuestionRequest,
+  parseRequestId,
+} from "../shared/request-ids";
 import { SettingsRepository } from "../shared/settings-repository";
 import { AgentRepository } from "../bots/agent-repository";
-import { Bots, delegationRequest, jobQuestionRequest } from "../bots/bots";
+import { Bots } from "../bots/bots";
 import type { JobAsked, TurnWork } from "../jobs/jobs";
 import { ExecutionRepository } from "../bots/execution-repository";
 import { BotRuntime } from "../bots/runtime";
@@ -36,9 +41,6 @@ type DelegationResult = Receipt & { error: string | null; response: string[] };
 type JobQuestionAnswered = { agentId: string; agent: string; job: string };
 
 const JOB_POLL_MS = 500;
-
-const active = (execution: Execution) =>
-  execution.status === "pending" || execution.status === "running";
 
 const normalize = (name: string) => name.normalize("NFKC").toLowerCase();
 
@@ -148,9 +150,6 @@ export class BotMessaging extends Context.Service<
     const executions = yield* ExecutionRepository;
     const settings = yield* SettingsRepository;
 
-    const pi = <A>(run: () => Promise<A>) =>
-      appErrors(Effect.tryPromise({ try: run, catch: (error) => error }));
-
     const source = Effect.fnUntraced(function* (sourceId: string) {
       const found = yield* bots.agent(sourceId);
 
@@ -195,7 +194,8 @@ export class BotMessaging extends Context.Service<
       if (
         (yield* executions.list(sourceId)).some(
           (execution) =>
-            active(execution) && execution.requestId.startsWith("delegate:"),
+            activeExecution(execution) &&
+            parseRequestId(execution.requestId).kind === "delegate",
         )
       )
         return yield* Effect.fail(
@@ -445,7 +445,8 @@ export class BotMessaging extends Context.Service<
 
         if (
           !existing &&
-          (yield* executions.list(target.id)).filter(active).length >= 4
+          (yield* executions.list(target.id)).filter(activeExecution).length >=
+            4
         )
           return yield* Effect.fail(
             new Conflict({
@@ -474,7 +475,11 @@ export class BotMessaging extends Context.Service<
         const waitMs = Math.min(60000, Math.max(0, options.waitMs ?? 0));
         const deadline = (yield* Clock.currentTimeMillis) + waitMs;
 
-        if (active(execution) && execution.submissionId && waitMs > 0) {
+        if (
+          activeExecution(execution) &&
+          execution.submissionId &&
+          waitMs > 0
+        ) {
           yield* awaitTurn(execution, execution.submissionId, waitMs, context);
           execution = yield* exchange(sourceId, executionId);
         }
@@ -516,8 +521,10 @@ export class BotMessaging extends Context.Service<
           executions.findBySubmission(asked.agentId, id),
         );
 
-        const delegation = found.find((execution) =>
-          execution?.requestId.startsWith("delegate:"),
+        const delegation = found.find(
+          (execution) =>
+            execution &&
+            parseRequestId(execution.requestId).kind === "delegate",
         );
 
         if (!delegation) return false;

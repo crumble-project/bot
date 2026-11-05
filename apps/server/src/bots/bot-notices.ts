@@ -1,3 +1,4 @@
+import { noticeRequest, type NoticeKind } from "../shared/request-ids";
 import { Context, Effect, Layer, Ref, type Scope } from "effect";
 
 /** Posts a notice to a bot's chat that starts a turn. */
@@ -49,10 +50,10 @@ export class BotNotices extends Context.Service<
  * turn, such as a disabled one, is only logged: the owner already sees the outcome in its settings.
  */
 export const requestAnswers =
-  (notices: BotNotices["Service"], kind: string) =>
+  (notices: BotNotices["Service"], kind: NoticeKind) =>
   (agentId: string, name: string, text: string) =>
     notices
-      .notice(agentId, text, `${kind}:${name}:${crypto.randomUUID()}`)
+      .notice(agentId, text, noticeRequest(kind, name, crypto.randomUUID()))
       .pipe(
         Effect.catchCause((cause) =>
           Effect.logError(`${kind} notice failed`, agentId, name, cause),

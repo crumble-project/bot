@@ -1,3 +1,4 @@
+import { errorText } from "../shared/errors";
 import { fileURLToPath } from "node:url";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { z } from "zod";
@@ -81,9 +82,7 @@ export class ChartCompiler {
     try {
       chart = chartFunction(code);
     } catch (error) {
-      throw new Error(
-        `Chart code does not parse: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      throw new Error(`Chart code does not parse: ${errorText(error)}`);
     }
 
     const script = `${chart}\n${await this.bundle()}\nreturn __crumbleCompileChart(await __chart(), ${JSON.stringify(CHART_WIDTHS)}, ${height});`;

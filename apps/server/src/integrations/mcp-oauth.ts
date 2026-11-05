@@ -13,7 +13,12 @@ import { SecretRepository } from "../credentials/secret-repository";
 import { Secrets, secretKey, secretText } from "../password-managers/secrets";
 import { appErrors } from "../shared/app-errors";
 import { runnerOf, type Runner } from "../shared/runner";
-import { InvalidInput, isAppError, type AppError } from "../shared/errors";
+import {
+  InvalidInput,
+  isAppError,
+  type AppError,
+  errorText,
+} from "../shared/errors";
 
 /**
  * A server's OAuth state as pi-mcp keeps it (client registration, tokens, PKCE verifier, state),
@@ -228,7 +233,7 @@ function unavailable(
   step: "start" | "finish" = "start",
 ): never {
   if (isAppError(cause)) throw cause;
-  const reason = cause instanceof Error ? cause.message : String(cause);
+  const reason = errorText(cause);
   throw new InvalidInput({
     message: `${server.name} could not ${step} OAuth sign-in: ${reason}`,
   });

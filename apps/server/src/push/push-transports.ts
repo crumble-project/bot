@@ -1,3 +1,4 @@
+import type { ReplyEvent } from "../contract/reply-event";
 import { existsSync, readFileSync } from "node:fs";
 import { createHash, createPrivateKey, createSign } from "node:crypto";
 import { connect } from "node:http2";
@@ -8,7 +9,6 @@ import {
   type PushDevice,
   type PushDeviceInput,
   type PushTransportName,
-  type ReplyPushEvent,
 } from "./push-model";
 
 /** The provider rejected the device's token; the device is disabled unless its token has rotated since. */
@@ -38,7 +38,7 @@ export type SendFailure =
 export type PushTransport = {
   readonly send: (
     device: PushDevice,
-    event: ReplyPushEvent,
+    event: ReplyEvent,
   ) => Effect.Effect<"delivered" | "expired", SendFailure>;
   readonly canSend?: (device: PushDeviceInput) => boolean;
 };
@@ -247,7 +247,7 @@ export function apnsJwt(settings: ApnsSettings, seconds: number) {
 export function apnsHeaders(
   topic: string,
   device: PushDevice,
-  event: ReplyPushEvent,
+  event: ReplyEvent,
   jwt: string,
   seconds: number,
 ) {
@@ -267,8 +267,27 @@ export function apnsHeaders(
   };
 }
 
+/** What every device receives of a reply, whichever transport carries it. */
+const replyFields = (event: ReplyEvent) => ({
+  type: event.type,
+  eventId: event.eventId,
+  serverId: event.serverId,
+  agentId: event.agentId,
+  agentName: event.agentName,
+  entryId: event.entryId,
+  origin: event.origin,
+  preview: event.preview,
+  createdAt: event.createdAt,
+  ...(event.groupId && {
+    groupId: event.groupId,
+    groupName: event.groupName,
+  }),
+  ...(event.jobName && { jobName: event.jobName }),
+  ...(event.waitingFor && { waitingFor: event.waitingFor }),
+});
+
 /** The APNs alert payload: the shown notification plus the fields the app renders the answer from. */
-export function apnsPayload(event: ReplyPushEvent) {
+export function apnsPayload(event: ReplyEvent) {
   return {
     aps: {
       alert: {
@@ -277,20 +296,7 @@ export function apnsPayload(event: ReplyPushEvent) {
       },
       sound: "default",
     },
-    type: event.type,
-    eventId: event.eventId,
-    serverId: event.serverId,
-    agentId: event.agentId,
-    agentName: event.agentName,
-    entryId: event.entryId,
-    preview: event.preview,
-    origin: event.origin,
-    createdAt: event.createdAt,
-    ...(event.groupId && {
-      groupId: event.groupId,
-      groupName: event.groupName,
-    }),
-    ...(event.jobName && { jobName: event.jobName }),
+    ...replyFields(event),
   };
 }
 
@@ -373,28 +379,18 @@ const FcmError = Schema.Struct({
   ),
 });
 
-/** The FCM data payload: everything the app needs to render the answer itself. */
-export function fcmData(event: ReplyPushEvent) {
-  return {
-    type: event.type,
-    eventId: event.eventId,
-    serverId: event.serverId,
-    agentId: event.agentId,
-    agentName: event.agentName,
-    entryId: event.entryId ?? "",
-    origin: event.origin,
-    preview: event.preview,
-    createdAt: event.createdAt,
-    ...(event.groupId && {
-      groupId: event.groupId,
-      groupName: event.groupName ?? "",
-    }),
-    ...(event.jobName && { jobName: event.jobName }),
-  } satisfies Record<string, string>;
+/** The FCM data payload: everything the app needs to render the answer itself, as FCM's string values. */
+export function fcmData(event: ReplyEvent): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(replyFields(event)).map(([key, value]) => [
+      key,
+      value ?? "",
+    ]),
+  );
 }
 
 /** The FCM message body for one device. */
-export function fcmMessage(device: PushDevice, event: ReplyPushEvent) {
+export function fcmMessage(device: PushDevice, event: ReplyEvent) {
   return {
     message: {
       token: device.token,
