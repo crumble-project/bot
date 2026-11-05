@@ -42,11 +42,11 @@ import { McpIntegrations } from "../integrations/integrations";
 import {
   CLIENT_DOCUMENT_PATH,
   clientDocumentBody,
-  secretStorage,
   type ClientDocument,
 } from "../integrations/mcp-oauth";
+import { McpServers } from "../integrations/mcp-servers";
 import { registerMemoryRoutes } from "../memory/memory-api";
-import { registerPasswordManagerRoutes } from "../password-managers/password-managers-api";
+import { registerPasswordManagerRoutes } from "../secrets/password-managers-api";
 import { registerPluginSettingRoutes } from "../plugins/plugin-settings-api";
 import {
   registerProviderRoutes,
@@ -54,19 +54,19 @@ import {
 } from "../providers/providers-api";
 import {
   ProviderSignIns,
-  providerSignInsAccess,
   standaloneSignIns,
   type ProviderSignInsAccess,
 } from "../providers/provider-auth";
+import { meliousPlugin } from "../providers/melious";
 import { Push, type PushRuntime } from "../push/push";
 import { registerPushRoutes } from "../push/push-api";
-import { registerScheduleRoutes } from "../schedules/schedules-api";
+import { registerScheduleRoutes } from "../automations/schedules-api";
 import {
   Scheduler,
   schedulerAccess,
   type SchedulerAccess,
-} from "../schedules/scheduler";
-import { ScriptRuns } from "../schedules/script-runs";
+} from "../automations/scheduler";
+import { ScriptRuns } from "../automations/script-runs";
 import { MAX_MESSAGE_BODY } from "../shared/attachment-rules";
 import type { CoreServices } from "./core-layer";
 import { CommonSkills, type CommonSkill } from "../skills/common-skills";
@@ -180,7 +180,6 @@ function accountOptions(core: Runner<CoreServices>): ApiOptions {
   const plugins = service(Plugins) ?? [];
   const scheduler = service(Scheduler);
   const push = service(Push);
-  const signIns = service(ProviderSignIns);
   const groupChats = service(GroupChats);
 
   return {
@@ -195,9 +194,7 @@ function accountOptions(core: Runner<CoreServices>): ApiOptions {
     plugins,
     jobKinds: pluginJobKinds(plugins).map((kind) => kind.kind),
     groupChats: groupChats && groupChatsAccess(groupChats),
-    providerAuth:
-      signIns &&
-      providerSignInsAccess(runnerOf(Context.make(ProviderSignIns, signIns))),
+    providerAuth: service(ProviderSignIns),
     externalAuth: new Map(
       pluginProviders(plugins).flatMap(({ provider, externalAuth }) =>
         externalAuth ? [[provider.id, externalAuth] as const] : [],
@@ -290,7 +287,11 @@ function apiContext(
   register: Register,
 ) {
   const { core, runtime } = service;
-  const providerAuth = options.providerAuth ?? standaloneSignIns(core);
+
+  const providerAuth =
+    options.providerAuth ??
+    standaloneSignIns(core, pluginProviders([meliousPlugin()]));
+
   const desktopControl = options.desktopControl ?? desktopControlAccess(core);
 
   if (!options.scheduler)
@@ -307,8 +308,13 @@ function apiContext(
     scheduler: options.scheduler,
     runtime,
     credentials: options.credentials ?? credentialsAccess(core),
-    secrets: secretStorage(core),
+    mcpServers: new McpServers({
+      run: core,
+      integrations: options.integrations,
+      oauthClient: options.oauthClient,
+    }),
     provider: providerSchema(providerAuth.models),
+    models: providerAuth.models,
     providerAuth,
     desktopControl,
     viewerTickets: options.viewerTickets ?? new ViewerTickets(),

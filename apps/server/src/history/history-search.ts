@@ -19,6 +19,16 @@ import {
   parseMessageIndex,
 } from "../shared/entry-ids";
 
+/** One read's bounds; a read around a match spends the older side's first. */
+const WINDOW_MESSAGES = 30;
+const WINDOW_CHARACTERS = 20000;
+const OLDER_MESSAGES = 14;
+const OLDER_CHARACTERS = 10000;
+
+const RESULT_MATCHES = 20;
+const EXCERPT_POINTS = 500;
+const MAX_QUERY_POINTS = 500;
+
 export type HistoryContext = { agentId: string; groupId: string | null };
 
 export type HistoryChat = { id: string; kind: "bot" | "group"; name: string };
@@ -292,8 +302,8 @@ function excerpt(body: string, query: string) {
   const start = Math.max(0, offset - (lowered > match ? 1 : 0));
 
   return {
-    excerpt: points.slice(start, start + 500).join(""),
-    truncated: start > 0 || start + 500 < points.length,
+    excerpt: points.slice(start, start + EXCERPT_POINTS).join(""),
+    truncated: start > 0 || start + EXCERPT_POINTS < points.length,
   };
 }
 
@@ -328,9 +338,13 @@ function positionIndex(rows: Row[], position: Position): number {
 }
 
 function validQuery(query: string | undefined): string {
-  if (query === undefined || !query.trim() || Array.from(query).length > 500)
+  if (
+    query === undefined ||
+    !query.trim() ||
+    Array.from(query).length > MAX_QUERY_POINTS
+  )
     throw new Error(
-      "History query must contain non-whitespace text and at most 500 Unicode code points",
+      `History query must contain non-whitespace text and at most ${MAX_QUERY_POINTS} Unicode code points`,
     );
 
   return query;
@@ -557,8 +571,8 @@ function readWindow(
     rows,
     token.position,
     direction ?? token.direction,
-    30,
-    20000,
+    WINDOW_MESSAGES,
+    WINDOW_CHARACTERS,
   );
 }
 
@@ -567,7 +581,14 @@ function aroundWindow(
   rows: Row[],
   position: Position,
 ): Window {
-  const older = windowFrom(chat, rows, position, "before", 14, 10000);
+  const older = windowFrom(
+    chat,
+    rows,
+    position,
+    "before",
+    OLDER_MESSAGES,
+    OLDER_CHARACTERS,
+  );
 
   const used = older.messages.reduce(
     (sum, message) => sum + Array.from(message.text).length,
@@ -579,8 +600,8 @@ function aroundWindow(
     rows,
     position,
     "after",
-    30 - older.messages.length,
-    20000 - used,
+    WINDOW_MESSAGES - older.messages.length,
+    WINDOW_CHARACTERS - used,
   );
 
   return {
@@ -610,7 +631,14 @@ function matchWindow(
   if (direction === "after")
     position.offset = Array.from(anchor.body ?? "").length;
 
-  return windowFrom(chat, rows, position, direction, 30, 20000);
+  return windowFrom(
+    chat,
+    rows,
+    position,
+    direction,
+    WINDOW_MESSAGES,
+    WINDOW_CHARACTERS,
+  );
 }
 
 function atBeginning(index: number, position: Position): boolean {
@@ -909,7 +937,7 @@ export class HistorySearch {
     );
 
     candidates.sort((a, b) => compareKeys(a.key, b.key));
-    const selected = candidates.slice(0, 20);
+    const selected = candidates.slice(0, RESULT_MATCHES);
     const tail = selected.at(-1);
 
     return {
@@ -917,7 +945,7 @@ export class HistorySearch {
         this.matchOf(context, candidate, query),
       ),
       cursor:
-        candidates.length > 20 && tail
+        candidates.length > RESULT_MATCHES && tail
           ? this.token({
               ...context,
               type: "search",

@@ -1,20 +1,12 @@
+import type { z } from "zod";
+import type { groupActivityResponse } from "../contract/api-responses";
 import type { TranscriptPage } from "../bots/transcript";
 import type { GroupChat } from "../shared/domain";
 import type { GroupTranscripts } from "./group-transcripts";
 
-export type GroupMemberActivity = {
-  agentId: string;
-  status: "idle" | "queued" | "running" | "disabled";
-  /** Why the member's latest turn failed; null after a turn that did not fail. */
-  error: string | null;
-};
+export type GroupActivity = z.output<typeof groupActivityResponse>;
 
-export type GroupActivity = {
-  /** Bot-started turns are paused until the owner's next message. */
-  paused: boolean;
-  botTurns: number;
-  members: GroupMemberActivity[];
-};
+export type GroupMemberActivity = GroupActivity["members"][number];
 
 export type GroupChatSnapshot = TranscriptPage & {
   groupChat: GroupChat;

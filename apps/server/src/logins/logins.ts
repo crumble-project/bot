@@ -1,17 +1,20 @@
 import { Type } from "@earendil-works/pi-ai";
-import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { Clock, Context, Effect, Layer, Predicate, Redacted } from "effect";
+import { defineExtension } from "@earendil-works/pi-durable";
+import { Clock, Context, Effect, Layer, Redacted } from "effect";
 import { z } from "zod";
-import { BotSecretRequests } from "../bot-secrets/bot-secret-requests";
-import { BotSecretUses } from "../bot-secrets/bot-secret-uses";
+import {
+  botSecretLifecycle,
+  hostLines,
+  hostsText,
+  requestParameters,
+  secretRequestTool,
+  useFailure,
+} from "../bot-secrets/bot-secret-lifecycle";
 import type { LoginFill, LoginRead } from "../bot-desktop/computer-use-login";
 import type { Runner } from "../shared/runner";
-import { FIELD_NOT_FOUND } from "../password-managers/one-password";
-import {
-  SecretValues,
-  type SecretUnavailable,
-} from "../password-managers/secret-values";
-import { Secrets } from "../password-managers/secrets";
+import { PasswordManagers } from "../password-managers/password-manager";
+import type { SecretUnavailable } from "../secrets/secret-values";
+import { Secrets } from "../secrets/secrets";
 import {
   loginFieldInput,
   loginName,
@@ -25,12 +28,7 @@ import {
   type SecretInput,
   type SecretReference,
 } from "../shared/domain";
-import {
-  Conflict,
-  InvalidInput,
-  NotFound,
-  type AppError,
-} from "../shared/errors";
+import { InvalidInput, NotFound, type AppError } from "../shared/errors";
 import {
   LoginRepository,
   loginFieldKey,
@@ -38,31 +36,13 @@ import {
   type LoginRecord,
 } from "./login-repository";
 import { oneTimeCode, parseOneTimeSecret } from "./one-time-codes";
-import { toolOutput } from "../shared/tool-output";
-import { requestParameters } from "../credentials/credentials";
 import { REQUEST_LOGIN_TOOL_NAME } from "../contract/tools";
 
 /** What a login's use records beyond its host: the field filled. */
 const useDetail = z.object({ field: loginFieldInput });
 
-// 1Password computes the current code for this attribute; any other one-time code source holds the TOTP secret.
-const COMPUTED_CODE = "?attribute=totp";
-
 const ONE_TIME_SECRET =
   "The one-time code needs its secret in base32, or an otpauth://totp/ URI";
-
-/** The field references a 1Password item stands for; its one-time code is used only if the item has one. */
-const itemFields = (item: SecretReference) => ({
-  username: { ...item, reference: `${item.reference}/username` },
-  password: { ...item, reference: `${item.reference}/password` },
-  one_time_code: {
-    ...item,
-    reference: `${item.reference}/one-time password${COMPUTED_CODE}`,
-  },
-});
-
-const isComputedCode = (reference: string | null) =>
-  reference?.endsWith(COMPUTED_CODE) === true;
 
 /** A save's change to one field: a new secret, or null to remove it. */
 type FieldWrite = { field: LoginField; input: SecretInput | null };
@@ -125,10 +105,8 @@ export class Logins extends Context.Service<
     Logins,
     Effect.gen(function* () {
       const repository = yield* LoginRepository;
-      const values = yield* SecretValues;
+      const managers = yield* PasswordManagers;
       const secrets = yield* Secrets;
-      const requests = yield* BotSecretRequests;
-      const useLog = yield* BotSecretUses;
 
       const withFields = Effect.fnUntraced(function* (
         agentId: string,
@@ -156,35 +134,48 @@ export class Logins extends Context.Service<
         return record && (yield* withFields(agentId, record));
       });
 
+      const lifecycle = yield* botSecretLifecycle(
+        {
+          kind: "login",
+          title: "Login",
+          find: get,
+          deleteRecord: repository.delete,
+          deleteSecrets: (agentId, name) =>
+            secrets.deleteAll(loginFieldsPrefix(agentId, name)),
+          touch: repository.touch,
+        },
+        useDetail,
+      );
+
       /** A one-time code's secret must parse, wherever it is read from; a computed code needs no check. */
       const verifyField =
         (field: LoginField, input: SecretInput) => (value: Redacted.Redacted) =>
           field === "one_time_code" &&
-          !isComputedCode(input.reference?.reference ?? null) &&
+          !(input.reference && secrets.isVolatile(input.reference)) &&
           !parseOneTimeSecret(Redacted.value(value))
             ? Effect.fail(new InvalidInput({ message: ONE_TIME_SECRET }))
             : Effect.void;
 
       /** The fields an item fills; its one-time code only when the item has one. */
       const itemWrites = Effect.fnUntraced(function* (item: SecretReference) {
-        const fields = itemFields(item);
+        const { passwordManager } = item;
+        const fields = managers.itemFields(passwordManager, item.reference);
+
+        const reference = (field: LoginField) => ({
+          reference: { passwordManager, reference: fields[field] },
+        });
 
         // Only a confirmed missing field means no code; any other failure must not drop a saved one.
-        const hasCode = yield* values.readNow(fields.one_time_code).pipe(
-          Effect.as(true),
-          Effect.catchTag("SecretUnavailable", (error) =>
-            error.reason === FIELD_NOT_FOUND
-              ? Effect.succeed(false)
-              : Effect.fail(new InvalidInput({ message: error.message })),
-          ),
+        const hasCode = yield* secrets.probe(
+          reference("one_time_code").reference,
         );
 
         return [
-          { field: "username", input: { reference: fields.username } },
-          { field: "password", input: { reference: fields.password } },
+          { field: "username", input: reference("username") },
+          { field: "password", input: reference("password") },
           {
             field: "one_time_code",
-            input: hasCode ? { reference: fields.one_time_code } : null,
+            input: hasCode ? reference("one_time_code") : null,
           },
         ] satisfies FieldWrite[];
       });
@@ -238,101 +229,51 @@ export class Logins extends Context.Service<
         const checked = yield* checkedName(name);
         const writes = yield* fieldWrites(input);
 
-        const hosts = Effect.gen(function* () {
-          const pending = yield* requests.get(agentId, "login", checked);
-          const existing = yield* get(agentId, checked);
-          const found = input.hosts ?? existing?.hosts ?? pending?.hosts;
+        return yield* lifecycle.save(agentId, checked, {
+          hosts: input.hosts,
+          check: (existing) => checkComplete(existing, writes),
+          store: Effect.gen(function* () {
+            yield* secrets.saveAll(
+              writes.flatMap(({ field, input: source }) =>
+                source
+                  ? [
+                      {
+                        key: loginFieldKey(agentId, checked, field),
+                        input: source,
+                        verify: verifyField(field, source),
+                      },
+                    ]
+                  : [],
+              ),
+            );
 
-          if (!found)
-            return yield* new InvalidInput({
-              message: "Name at least one host",
-            });
-
-          yield* checkComplete(existing, writes);
-
-          return found;
+            for (const { field } of writes.filter((write) => !write.input))
+              yield* secrets.delete(loginFieldKey(agentId, checked, field));
+          }),
+          write: (hosts) =>
+            Effect.flatMap(repository.save(agentId, checked, hosts), (record) =>
+              withFields(agentId, record),
+            ),
+          notice: (login) =>
+            `The owner saved login ${login.name} for ${hostsText(login.hosts)}. Desktop jobs can fill it with fill_login.`,
         });
-
-        // Checked first, then read again after the fields' slow save, so a save made meanwhile isn't overwritten.
-        yield* hosts;
-
-        yield* secrets.saveAll(
-          writes.flatMap(({ field, input: source }) =>
-            source
-              ? [
-                  {
-                    key: loginFieldKey(agentId, checked, field),
-                    input: source,
-                    verify: verifyField(field, source),
-                  },
-                ]
-              : [],
-          ),
-        );
-
-        for (const { field } of writes.filter((write) => !write.input))
-          yield* secrets.delete(loginFieldKey(agentId, checked, field));
-
-        const login = yield* withFields(
-          agentId,
-          yield* repository.save(agentId, checked, yield* hosts),
-        );
-
-        yield* requests.answer(
-          agentId,
-          "login",
-          login.name,
-          `The owner saved login ${login.name} for ${login.hosts.join(", ")}. Desktop jobs can fill it with fill_login.`,
-        );
-
-        return login;
       });
 
       const request = Effect.fn("Logins.request")(function* (
         agentId: string,
         input: LoginRequestInput,
       ) {
-        const existing = yield* get(agentId, input.name);
-
-        // A login that covers the hosts still answers a request for a one-time code it lacks.
-        if (
-          existing &&
-          input.hosts.every((host) => existing.hosts.includes(host)) &&
-          !(input.one_time_code && !existing.fields.one_time_code)
-        )
-          return yield* new Conflict({
-            message: `Login ${input.name} is already yours for ${existing.hosts.join(", ")}`,
-          });
-
-        return yield* requests.ask(agentId, "login", {
-          ...input,
-          oneTimeCode: input.one_time_code,
-        });
-      });
-
-      const decline = Effect.fn("Logins.decline")(function* (
-        agentId: string,
-        name: string,
-      ) {
-        if (!(yield* requests.decline(agentId, "login", name)))
-          return yield* new Conflict({
-            message: "Login request has already been answered",
-          });
-      });
-
-      const remove = Effect.fn("Logins.delete")(function* (
-        agentId: string,
-        name: string,
-      ) {
-        if (yield* repository.delete(agentId, name)) {
-          yield* secrets.deleteAll(loginFieldsPrefix(agentId, name));
-
-          return yield* useLog.forget(agentId, "login", name);
-        }
-
-        // Without a login, deleting declines the bot's request for one.
-        if (!(yield* requests.decline(agentId, "login", name)))
-          return yield* new NotFound({ message: "Login not found" });
+        return yield* lifecycle.ask(
+          agentId,
+          { ...input, oneTimeCode: input.one_time_code },
+          {
+            alreadyYours: (existing) =>
+              `Login ${input.name} is already yours for ${hostsText(existing.hosts)}`,
+            // A login that covers the hosts still answers a request for a one-time code it lacks.
+            lacks: (existing) =>
+              input.one_time_code === true && !existing.fields.one_time_code,
+          },
+        );
       });
 
       const value = Effect.fn("Logins.value")(function* (
@@ -341,9 +282,8 @@ export class Logins extends Context.Service<
         field: LoginField,
       ) {
         const key = loginFieldKey(agentId, name, field);
-        // A computed code expires within seconds, so it is never served from the cache.
-        const computed = isComputedCode((yield* secrets.status(key)).reference);
-        const read = yield* secrets.read(key, { fresh: computed });
+        const computed = secrets.isVolatile(yield* secrets.status(key));
+        const read = yield* secrets.read(key);
 
         if (!read)
           return yield* new NotFound({
@@ -362,39 +302,20 @@ export class Logins extends Context.Service<
         );
       });
 
-      const uses = Effect.fn("Logins.uses")(function* (
-        agentId: string,
-        name: string,
-        options: { limit: number; before?: string | undefined },
-      ) {
-        if (!(yield* repository.get(agentId, name)))
-          return yield* new NotFound({ message: "Login not found" });
-
-        const listed = yield* useLog.list(agentId, "login", name, options);
-
-        return listed.map(({ detail, ...use }): LoginUse => ({
-          ...use,
-          field: useDetail.parse(detail).field,
-        }));
-      });
-
       return Logins.of({
         list: (agentId) =>
           Effect.flatMap(repository.list(agentId), (records) =>
             Effect.forEach(records, (record) => withFields(agentId, record)),
           ),
         get,
-        requests: (agentId) => requests.list(agentId, "login"),
+        requests: lifecycle.requests,
         request,
-        decline,
+        decline: lifecycle.decline,
         save,
-        delete: remove,
-        uses,
+        delete: lifecycle.remove,
+        uses: lifecycle.uses,
         value,
-        recordUse: (agentId, name, { field, ...use }) =>
-          useLog
-            .record(agentId, "login", name, { ...use, detail: { field } })
-            .pipe(Effect.andThen(repository.touch(agentId, name, use.at))),
+        recordUse: lifecycle.recordUse,
       });
     }),
   );
@@ -443,9 +364,7 @@ export function loginsAccess(runtime: Runner<Logins>): LoginsAccess {
           ),
           Effect.catch((error) =>
             Effect.succeed<LoginRead>({
-              unreadable: Predicate.isTagged(error, "SecretUnavailable")
-                ? `${name} could not be read: ${error.message}`
-                : error.message,
+              unreadable: useFailure(name, error),
             }),
           ),
         ),
@@ -470,23 +389,20 @@ export const loginFill = (
   recordUse: async (name, use) => logins.recordUse(agentId, name, use),
 });
 
-const loginLines = (items: readonly { name: string; hosts: string[] }[]) =>
-  items.map((item) => `- ${item.name}: ${item.hosts.join(", ")}`);
-
 /** What a desktop job reads about the bot's logins; undefined without any. */
 export function jobLoginSection(logins: readonly Login[]) {
   if (!logins.length) return undefined;
 
   return [
     "Logins the owner gave this bot, with the hosts each works for:",
-    ...loginLines(logins),
+    ...hostLines(logins),
     "To sign in, read the sign-in page, then call computer_use with action='fill_login', login, field (username, password, or one_time_code), and the field's ref. You never see the values. If no login covers a sign-in page, stop and say so in your answer, naming the host.",
   ].join("\n");
 }
 
 /** The bot's `request_login` tool and what it knows about its logins, for bots with desktop jobs. */
 export function loginExtension(agentId: string, logins: LoginsAccess) {
-  const request = defineTool({
+  const request = secretRequestTool({
     name: REQUEST_LOGIN_TOOL_NAME,
     description:
       "Ask the owner for a login your desktop jobs need to sign in to a website, for example when a desktop job reports a sign-in page no login covers. Name it like github or acme-portal, list the hosts it is for (github.com, *.github.com), say why, and set one_time_code when the site asks for a two-factor code. The owner enters it outside the chat; you never see the values. Desktop jobs can then fill it on those hosts. After calling, tell the owner what you asked for and why, then end your turn: a message arrives when the owner answers.",
@@ -494,15 +410,7 @@ export function loginExtension(agentId: string, logins: LoginsAccess) {
       ...requestParameters,
       one_time_code: Type.Optional(Type.Boolean()),
     }),
-    // The chat offers the owner the form from this call's own result, so code mode keeps it a direct model tool.
-    callers: ["model"],
-    replay: "unsafe",
-    execute: async (args) => {
-      const request = logins.request(agentId, loginRequestInput.parse(args));
-
-      // Clients read the request from the details to offer the owner its form.
-      return { ...toolOutput({ request }), details: request };
-    },
+    request: (args) => logins.request(agentId, loginRequestInput.parse(args)),
   });
 
   return defineExtension({
@@ -519,12 +427,12 @@ export function loginExtension(agentId: string, logins: LoginsAccess) {
 
           return [
             ...(granted.length
-              ? ["Logins your desktop jobs have:", ...loginLines(granted)]
+              ? ["Logins your desktop jobs have:", ...hostLines(granted)]
               : []),
             ...(requests.length
               ? [
                   "Logins you asked for that the owner has not answered:",
-                  ...loginLines(requests),
+                  ...hostLines(requests),
                 ]
               : []),
           ].join("\n");

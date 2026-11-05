@@ -10,7 +10,7 @@ import {
   MicrosandboxWorkspaces,
   microsandboxWorkspacesFromEnv,
 } from "./microsandbox-workspaces";
-import { WORKSPACE_PATH, type WorkspaceRequest } from "./workspace";
+import { WORKSPACE_PATH } from "../../workspace-image/guest";
 
 const IMAGE = process.env["CRUMBLE_WORKSPACE_IMAGE"] ?? "";
 const vmTests = process.env["CRUMBLE_VM_TESTS"] === "1" && IMAGE !== "";
@@ -45,7 +45,7 @@ async function readText(env: ExecutionEnv, file: string) {
 
 describe("workspace configuration", () => {
   test("workspaces are unavailable without an image", () => {
-    expect(microsandboxWorkspacesFromEnv({})).toBeUndefined();
+    expect(microsandboxWorkspacesFromEnv({}, { namePrefix })).toBeUndefined();
   });
 
   test("desktop bots boot the desktop image when one is configured", () => {
@@ -56,7 +56,7 @@ describe("workspace configuration", () => {
         CRUMBLE_WORKSPACE_IMAGE: "crumble-workspace:dev",
         CRUMBLE_WORKSPACE_DESKTOP_IMAGE: "crumble-workspace-desktop:dev",
       },
-      { wantsDesktop: (agentId) => desktopBots.has(agentId) },
+      { namePrefix, wantsDesktop: (agentId) => desktopBots.has(agentId) },
     )!;
 
     expect(workspaces.desktop).toBe(true);
@@ -67,7 +67,7 @@ describe("workspace configuration", () => {
   test("without a desktop image no bot gets a bot desktop", () => {
     const workspaces = microsandboxWorkspacesFromEnv(
       { CRUMBLE_WORKSPACE_IMAGE: "crumble-workspace:dev" },
-      { wantsDesktop: () => true },
+      { namePrefix, wantsDesktop: () => true },
     )!;
 
     expect(workspaces.desktop).toBe(false);
@@ -75,7 +75,9 @@ describe("workspace configuration", () => {
   });
 
   test("agent ids cannot name another machine", () => {
-    const workspaces = new MicrosandboxWorkspaces("crumble-workspace:dev");
+    const workspaces = new MicrosandboxWorkspaces("crumble-workspace:dev", {
+      namePrefix,
+    });
 
     for (const agentId of ["", "../other", "a/b", "x".repeat(65)])
       expect(() => workspaces.env(agentId)).toThrow("Invalid agent id");
@@ -295,39 +297,6 @@ describe.skipIf(!vmTests)("Microsandbox VM workspaces", () => {
   test("sync is a no-op for a stopped workspace", async () => {
     await Effect.runPromise(workspaces.sync("never-started"));
   });
-
-  test("the network policy decides each connection before it leaves", async () => {
-    const asked: WorkspaceRequest[] = [];
-
-    const denying = new MicrosandboxWorkspaces(IMAGE, {
-      namePrefix,
-      network: (request) => {
-        asked.push(request);
-
-        return false;
-      },
-    });
-
-    try {
-      const https = await sh(
-        denying.env("denied"),
-        "curl -sS -m 10 -o /dev/null https://example.com/path",
-      );
-
-      const ssh = await sh(
-        denying.env("denied"),
-        "timeout 10 bash -c 'head -c 4 < /dev/tcp/github.com/22'",
-      );
-
-      expect(https.exitCode).not.toBe(0);
-      expect(ssh.output).not.toContain("SSH");
-      expect(asked).toEqual([
-        { agentId: "denied", host: "example.com", port: 443 },
-      ]);
-    } finally {
-      await Effect.runPromise(denying.close());
-    }
-  }, 120_000);
 
   test("UDP leaves the machine only as DNS to its resolver", async () => {
     const udp = (address: string, port: number) =>

@@ -4,8 +4,19 @@ import { accessSync, constants, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { delimiter, isAbsolute, join } from "node:path";
 import { z } from "zod";
-import { catalogLabel, nativeModel, pinnedRoutes } from "./catalog";
+import {
+  catalogLabel,
+  creditBilledModels,
+  isLongContext,
+  longContextRoute,
+  nativeModel,
+  pinnedRouteSet,
+  pinnedRoutes,
+  routeModel,
+} from "./catalog";
+import { ANTHROPIC_ORIGIN, baseCliArgs } from "./native";
 import { Admission } from "./relay";
+import { PROCESS_GZIP } from "./relay-gzip";
 
 export type ClaudeCodeOptions = {
   /** An explicit executable; otherwise `claude` on PATH or in the usual install directories. */
@@ -319,8 +330,14 @@ type PickerContent = { rows: z.infer<typeof pickerRow>[]; plan: string };
 
 async function readPicker(command: string, options: ClaudeCodeOptions) {
   const env = childEnv(options);
-  const gate = new Admission("https://api.anthropic.com", 40_000);
+
+  const gate = new Admission(ANTHROPIC_ORIGIN, 40_000, {
+    env: options.env,
+    gzip: PROCESS_GZIP,
+  });
+
   const cwd = mkdtempSync(join(tmpdir(), "crumble-claude-picker-"));
+
   let content: PickerContent = { rows: [], plan: "" };
 
   try {
@@ -352,25 +369,7 @@ async function pickerHandshake(
 ) {
   const result = await run(
     command,
-    [
-      "-p",
-      "--model",
-      "sonnet",
-      "--input-format",
-      "stream-json",
-      "--output-format",
-      "stream-json",
-      "--verbose",
-      "--tools",
-      "",
-      "--setting-sources",
-      "",
-      "--strict-mcp-config",
-      "--mcp-config",
-      '{"mcpServers":{}}',
-      "--disable-slash-commands",
-      "--no-session-persistence",
-    ],
+    [...baseCliArgs("sonnet"), "--mcp-config", '{"mcpServers":{}}'],
     env,
     40_000,
     `${JSON.stringify({ type: "control_request", request_id: "crumble-picker", request: { subtype: "initialize" } })}\n`,
@@ -395,7 +394,7 @@ function unpinnedRoute(
   if (!row.resolvedModel) return undefined;
 
   return {
-    route: longContext.has(base) ? `${base}[1m]` : route,
+    route: longContext.has(base) ? longContextRoute(base) : route,
     known: false,
     base,
   };
@@ -407,7 +406,7 @@ function pickerRoute(
   pinned: Set<string>,
   longContext: Set<string>,
 ): PickerRoute | undefined {
-  const base = announced.replace(/\[1m\]$/, "");
+  const base = routeModel(announced);
 
   if (!base) return undefined;
   const route = nativeModel(base);
@@ -455,11 +454,11 @@ function mergePickerRows(
   announced: string[],
   creditBilled: Set<string>,
 ) {
-  const pinned = new Set(pinnedRoutes().map((entry) => entry.route));
+  const pinned = pinnedRouteSet();
 
   const longContext = new Set(
     announced.flatMap((model) =>
-      model.endsWith("[1m]") ? [model.replace(/\[1m\]$/, "")] : [],
+      isLongContext(model) ? [routeModel(model)] : [],
     ),
   );
 
@@ -493,10 +492,7 @@ function addPinnedRoutes(
 }
 
 function pickerModels(rows: z.infer<typeof pickerRow>[], plan: string) {
-  // Pro and Team standard seats bill Fable to usage credits from the first request.
-  const creditBilled = new Set(
-    plan && !plan.includes("max") ? ["claude-fable-5-1"] : [],
-  );
+  const creditBilled = creditBilledModels(plan);
 
   const announced = rows.map((row) => row.resolvedModel ?? row.value ?? "");
   const routes = mergePickerRows(rows, announced, creditBilled);

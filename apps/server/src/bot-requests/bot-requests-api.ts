@@ -1,8 +1,9 @@
 import { routes } from "../contract/api-contract";
 import type { Effect } from "effect";
+import { pi } from "../shared/app-errors";
 import type { Register } from "../contract/route";
 import type { BotsAccess } from "../bots/bots";
-import { validateAgentProposal } from "../bots/agents-api";
+import type { McpServers } from "../integrations/mcp-servers";
 import type { Runner } from "../shared/runner";
 import { BotRequests } from "./bot-requests";
 import { z } from "zod";
@@ -15,10 +16,11 @@ type Options = {
   botRequests?: BotRequests["Service"] | undefined;
   run: Runner<never>;
   provider: { parse(value: string): string };
+  mcpServers: McpServers;
 };
 
 export function registerBotRequestRoutes(options: Options) {
-  const { register, service, botRequests, run, provider } = options;
+  const { register, service, botRequests, run, provider, mcpServers } = options;
 
   if (!botRequests) return;
 
@@ -34,30 +36,25 @@ export function registerBotRequestRoutes(options: Options) {
 
     service.agent(agentId);
 
-    const existing = exec(botRequests.list(agentId)).find(
-      (request) => request.id === c.req.param("requestId"),
-    );
-
-    if (!existing || existing.status !== "pending")
-      return c.json(
-        exec(botRequests.approve(agentId, c.req.param("requestId"))),
-        200,
-      );
-
-    const raw = await c.req.text();
-
-    const body = z
-      .object({ proposal: agentInput.optional() })
-      .parse(raw.trim() ? JSON.parse(raw) : {});
-
-    const proposal = validateAgentProposal(
-      exec,
-      provider,
-      body.proposal ?? existing.proposal,
-    );
-
     return c.json(
-      exec(botRequests.approve(agentId, c.req.param("requestId"), proposal)),
+      await run.runPromise(
+        botRequests.approve(agentId, c.req.param("requestId"), (pending) =>
+          pi(async () => {
+            const raw = await c.req.text();
+
+            const body = z
+              .object({ proposal: agentInput.optional() })
+              .parse(raw.trim() ? JSON.parse(raw) : {});
+
+            const proposal = body.proposal ?? pending;
+
+            provider.parse(proposal.provider);
+            mcpServers.check(null, proposal.mcpServers, true);
+
+            return proposal;
+          }),
+        ),
+      ),
       200,
     );
   });

@@ -5,7 +5,8 @@ import type {
   CredentialStore,
 } from "@earendil-works/pi-ai";
 import { Context, Effect, Layer, Redacted } from "effect";
-import { Secrets, secretKey } from "../password-managers/secrets";
+import { secretKey } from "../secrets/secret-key";
+import { Secrets } from "../secrets/secrets";
 import type { SecretInput } from "../shared/domain";
 import { runnerOf, type Runner } from "../shared/runner";
 import { ProviderCredentialRepository } from "./provider-credential-repository";
@@ -19,6 +20,7 @@ export type ProviderCredentialStore = CredentialStore & {
   commitLogin: QueuedCredentialStore["commitLogin"];
   setApiKey: QueuedCredentialStore["setApiKey"];
   idle: QueuedCredentialStore["idle"];
+  status: QueuedCredentialStore["status"];
 };
 
 type Services = ProviderCredentialRepository | Secrets;
@@ -35,24 +37,6 @@ export class ProviderCredentials extends Context.Service<
   static readonly layer = Layer.effect(
     ProviderCredentials,
     Effect.gen(function* () {
-      const repository = yield* ProviderCredentialRepository;
-      const secrets = yield* Secrets;
-
-      // API keys saved inside the credential before they were secrets move out once.
-      for (const { providerId, type } of yield* repository.list) {
-        const credential =
-          type === "api_key" && (yield* repository.get(providerId));
-
-        if (credential && credential.type === "api_key" && credential.key) {
-          const { key, ...rest } = credential;
-
-          yield* secrets
-            .save(providerApiKeyKey(providerId), { value: key })
-            .pipe(Effect.orDie);
-          yield* repository.set(providerId, rest);
-        }
-      }
-
       return new QueuedCredentialStore(
         runnerOf(yield* Effect.context<Services>()),
       );
@@ -113,6 +97,19 @@ class QueuedCredentialStore implements CredentialStore {
     );
 
     return key ? { ...credential, key: Redacted.value(key) } : credential;
+  }
+
+  /** How the provider is signed in, for the owner's list: never a credential's value. */
+  status(providerId: string) {
+    return {
+      credentialType:
+        this.repository((r) => r.list).find(
+          (info) => info.providerId === providerId,
+        )?.type ?? null,
+      apiKey: this.run.runSync(
+        Secrets.use((s) => s.status(providerApiKeyKey(providerId))),
+      ),
+    };
   }
 
   async read(providerId: string, options?: AuthOperationOptions) {

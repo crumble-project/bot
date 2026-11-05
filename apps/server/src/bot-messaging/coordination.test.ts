@@ -6,6 +6,7 @@ import { Store } from "../../test/support/store";
 import { standaloneBots } from "../bots/bots";
 import { coordinationExtension } from "./coordination";
 import { standaloneMessaging } from "./bot-messaging";
+import type { Agent } from "../shared/domain";
 
 const dirs: string[] = [];
 
@@ -38,6 +39,10 @@ function setup() {
     recordBotMessage: async () => {},
     openChat: async (agent: { id: string }) =>
       `${agent.id}:${++conversationNumber}`,
+    prepareInput: async (_agent: Agent, text: string) => ({
+      modelContent: text,
+      data: { text },
+    }),
     submit: async (
       _agent: { id: string },
       _conversation: string,

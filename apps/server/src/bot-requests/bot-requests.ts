@@ -57,10 +57,11 @@ export class BotRequests extends Context.Service<
       input: { proposal: AgentInput; reason: string },
     ) => Effect.Effect<BotRequest, AppError>;
     readonly list: (agentId: string) => Effect.Effect<BotRequest[]>;
+    /** `decide` runs only on a pending request: what the owner approves, given what the bot proposed. */
     readonly approve: (
       agentId: string,
       requestId: string,
-      proposal?: AgentInput,
+      decide?: (proposal: AgentInput) => Effect.Effect<AgentInput, AppError>,
     ) => Effect.Effect<{ request: BotRequest; agent: Agent }, AppError>;
     readonly decline: (
       agentId: string,
@@ -102,20 +103,35 @@ export class BotRequests extends Context.Service<
         return row;
       });
 
-      const alreadyDecided = Effect.fnUntraced(function* (
+      const pendingRow = Effect.fnUntraced(function* (
         agentId: string,
         requestId: string,
       ) {
-        const current = yield* getRow(agentId, requestId);
+        const row = yield* getRow(agentId, requestId);
 
-        return yield* current
-          ? Effect.fail(
+        if (!row)
+          return yield* Effect.fail(
+            new NotFound({ message: "Bot request not found" }),
+          );
+
+        if (row.status !== "pending")
+          return yield* Effect.fail(
+            new Conflict({ message: "Bot request has already been decided" }),
+          );
+
+        return row;
+      });
+
+      const alreadyDecided = (agentId: string, requestId: string) =>
+        pendingRow(agentId, requestId).pipe(
+          Effect.flatMap(() =>
+            Effect.fail(
               new Conflict({
                 message: "Bot request has already been decided",
               }),
-            )
-          : Effect.fail(new NotFound({ message: "Bot request not found" }));
-      });
+            ),
+          ),
+        );
 
       const claim = Effect.fnUntraced(function* (
         agentId: string,
@@ -137,25 +153,6 @@ export class BotRequests extends Context.Service<
           .pipe(Effect.orDie);
 
         return changed.length > 0;
-      });
-
-      const pendingRow = Effect.fnUntraced(function* (
-        agentId: string,
-        requestId: string,
-      ) {
-        const row = yield* getRow(agentId, requestId);
-
-        if (!row)
-          return yield* Effect.fail(
-            new NotFound({ message: "Bot request not found" }),
-          );
-
-        if (row.status !== "pending")
-          return yield* Effect.fail(
-            new Conflict({ message: "Bot request has already been decided" }),
-          );
-
-        return row;
       });
 
       const request = Effect.fn("BotRequests.request")(function* (
@@ -232,12 +229,13 @@ export class BotRequests extends Context.Service<
       const approve = Effect.fn("BotRequests.approve")(function* (
         agentId: string,
         requestId: string,
-        proposal?: AgentInput,
+        decide: (
+          proposal: AgentInput,
+        ) => Effect.Effect<AgentInput, AppError> = Effect.succeed,
       ) {
         const row = yield* pendingRow(agentId, requestId);
-
+        const nextProposal = yield* decide(requestOf(row).proposal);
         const at = yield* nowIso;
-        const nextProposal = proposal ?? requestOf(row).proposal;
 
         const { agent, updated } = yield* db
           .transaction(() =>

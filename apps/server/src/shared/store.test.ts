@@ -7,6 +7,9 @@ import { Effect } from "effect";
 import { Store } from "../../test/support/store";
 import { migrateFile, migrationsFolder } from "./database";
 import { upgradeLegacyStore } from "./legacy-schema";
+import { defaultAvatarDefinition } from "../contract/avatar";
+import { ConversationRepository } from "../bots/conversation-repository";
+import { SettingsRepository } from "./settings-repository";
 
 const dirs: string[] = [];
 
@@ -51,9 +54,17 @@ describe("Store", () => {
     first.close();
     const db = new Database(join(dir, "store.sqlite"));
 
-    // Recreate the schema before copy provenance and the two avatar migrations.
+    // Recreate the schema before copy provenance, the two avatar migrations, and the dropped agent columns.
     db.run(
-      "ALTER TABLE skills DROP COLUMN copied_from_skill_id; DELETE FROM __drizzle_migrations WHERE id IN (SELECT id FROM __drizzle_migrations ORDER BY id DESC LIMIT 3)",
+      `DROP TABLE relayed_job_questions;
+      DROP TABLE delegation_receipts;
+      DROP TABLE bot_message_requests;
+      ALTER TABLE conversations DROP COLUMN chat;
+      ALTER TABLE agents ADD COLUMN skills text NOT NULL DEFAULT '[]';
+      ALTER TABLE agents ADD COLUMN delegates text NOT NULL DEFAULT '[]';
+      ALTER TABLE agents ADD COLUMN shared_memory integer NOT NULL DEFAULT 0;
+      ALTER TABLE skills DROP COLUMN copied_from_skill_id;
+      DELETE FROM __drizzle_migrations WHERE id IN (SELECT id FROM __drizzle_migrations ORDER BY id DESC LIMIT 4)`,
     );
     db.close();
     const reopened = new Store(dir);
@@ -200,7 +211,7 @@ describe("Store", () => {
     db.query("INSERT INTO agents VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(
       "legacy",
       "Legacy",
-      "sparkles",
+      JSON.stringify(defaultAvatarDefinition("legacy")),
       "",
       "old",
       "openai",
@@ -224,41 +235,65 @@ describe("Store", () => {
     store.close();
   });
 
-  test("moves inline agent skills into the library and keeps packages on inline writes", () => {
+  test("moves each bot's chat from the settings to its conversation", () => {
     const dir = make();
+    const first = new Store(dir);
+    const agent = first.createAgent(input);
+    const chat = first.createConversation({ agentId: agent.id, title: "Chat" });
+    const other = first.createConversation({ agentId: agent.id, title: "Job" });
+    first.close();
+
     const db = new Database(join(dir, "store.sqlite"));
-    db.run(
-      "CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, avatar TEXT NOT NULL, description TEXT NOT NULL, instructions TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, enabled INTEGER NOT NULL, tools TEXT NOT NULL, skills TEXT NOT NULL, mcp_servers TEXT NOT NULL, delegates TEXT NOT NULL DEFAULT '[]', inference TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL); CREATE TABLE skills (id TEXT PRIMARY KEY, name TEXT NOT NULL, instructions TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);",
-    );
-    db.query(
-      "INSERT INTO agents (id,name,avatar,description,instructions,provider,model,enabled,tools,skills,mcp_servers,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-    ).run(
-      "legacy",
-      "Legacy",
-      "sparkles",
-      "",
-      "old",
-      "openai",
-      "gpt-4.1",
-      1,
-      "[]",
-      JSON.stringify([{ name: "Research", instructions: "Check sources" }]),
-      "[]",
-      "2020-01-01",
-      "2020-01-01",
-    );
-    db.query("INSERT INTO skills VALUES (?,?,?,?,?)").run(
-      "shared",
-      "Shared",
-      "Shared rules",
-      "2020-01-01",
-      "2020-01-01",
+
+    db.run(`DROP TABLE relayed_job_questions;
+      DROP TABLE delegation_receipts;
+      DROP TABLE bot_message_requests;
+      ALTER TABLE conversations DROP COLUMN chat;
+      ALTER TABLE agents ADD COLUMN skills text NOT NULL DEFAULT '[]';
+      ALTER TABLE agents ADD COLUMN delegates text NOT NULL DEFAULT '[]';
+      ALTER TABLE agents ADD COLUMN shared_memory integer NOT NULL DEFAULT 0;
+      DELETE FROM __drizzle_migrations WHERE id = (SELECT MAX(id) FROM __drizzle_migrations)`);
+    db.query("INSERT INTO settings (key, value) VALUES (?, ?)").run(
+      `chat:${agent.id}`,
+      JSON.stringify(chat.id),
     );
     db.close();
-    const store = new Store(dir);
-    expect(store.getAgent("legacy")?.skills).toEqual([
-      { name: "Research", instructions: "Check sources" },
-    ]);
+
+    const reopened = new Store(dir);
+
+    expect(
+      reopened.run(
+        ConversationRepository.use((conversations) =>
+          conversations.chatOf(agent.id),
+        ),
+      )?.id,
+    ).toBe(chat.id);
+    expect(other.id).not.toBe(chat.id);
+    expect(
+      reopened.run(
+        SettingsRepository.use((settings) => settings.get(`chat:${agent.id}`)),
+      ),
+    ).toBeUndefined();
+    reopened.close();
+  });
+
+  test("keeps a skill's package when the bot's inline skills are written", () => {
+    const store = new Store(make());
+
+    store.createAgent(
+      {
+        ...input,
+        skills: [{ name: "Research", instructions: "Check sources" }],
+      },
+      "legacy",
+    );
+    store.createSkill({
+      agentId: null,
+      name: "Shared",
+      description: "",
+      instructions: "Shared rules",
+      documents: [],
+    });
     const [research] = store.listSkills("legacy");
     expect(research).toMatchObject({
       agentId: "legacy",
@@ -302,28 +337,6 @@ describe("Store", () => {
     expect(store.getSkill(research!.id)).toBeNull();
     const copy = store.duplicateAgent("legacy");
     expect(copy?.skills).toEqual([]);
-    store.close();
-  });
-
-  test("moves inline skills left behind by an interrupted migration", () => {
-    const dir = make();
-    const first = new Store(dir);
-    const agent = first.createAgent(input);
-    first.close();
-    // The schema is current, but a crash left this bot's skills inline.
-    const db = new Database(join(dir, "store.sqlite"));
-    db.query("UPDATE agents SET skills=? WHERE id=?").run(
-      JSON.stringify([{ name: "Left", instructions: "Behind" }]),
-      agent.id,
-    );
-    db.close();
-    const store = new Store(dir);
-    expect(store.getAgent(agent.id)?.skills).toEqual([
-      { name: "Left", instructions: "Behind" },
-    ]);
-    expect(store.listSkills(agent.id).map((skill) => skill.name)).toEqual([
-      "Left",
-    ]);
     store.close();
   });
 
@@ -522,6 +535,13 @@ describe("Store memory sources", () => {
     // A server before Drizzle had no migrations table.
     // Secrets, requests, and uses moved out of the credential tables after the baseline, which had them.
     db.run(`DROP TABLE __drizzle_migrations;
+      DROP TABLE relayed_job_questions;
+      DROP TABLE delegation_receipts;
+      DROP TABLE bot_message_requests;
+      ALTER TABLE conversations DROP COLUMN chat;
+      ALTER TABLE agents ADD COLUMN skills text NOT NULL DEFAULT '[]';
+      ALTER TABLE agents ADD COLUMN delegates text NOT NULL DEFAULT '[]';
+      ALTER TABLE agents ADD COLUMN shared_memory integer NOT NULL DEFAULT 0;
       ALTER TABLE agent_credentials ADD COLUMN value text;
       DROP TABLE skill_updates;
       ALTER TABLE skills DROP COLUMN origin;
@@ -673,6 +693,13 @@ describe("Store group chats", () => {
     // A server before Drizzle had no migrations table.
     // Secrets, requests, and uses moved out of the credential tables after the baseline, which had them.
     db.run(`DROP TABLE __drizzle_migrations;
+      DROP TABLE relayed_job_questions;
+      DROP TABLE delegation_receipts;
+      DROP TABLE bot_message_requests;
+      ALTER TABLE conversations DROP COLUMN chat;
+      ALTER TABLE agents ADD COLUMN skills text NOT NULL DEFAULT '[]';
+      ALTER TABLE agents ADD COLUMN delegates text NOT NULL DEFAULT '[]';
+      ALTER TABLE agents ADD COLUMN shared_memory integer NOT NULL DEFAULT 0;
       ALTER TABLE agent_credentials ADD COLUMN value text;
       DROP TABLE skill_updates;
       ALTER TABLE skills DROP COLUMN origin;

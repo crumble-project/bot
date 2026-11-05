@@ -1,82 +1,21 @@
-import { sleep } from "../shared/time";
 import { errorText } from "../shared/errors";
 import type { Context } from "@earendil-works/chord";
-import type { ComputerUseArgs, ComputerUseResult } from "./computer-use";
-import { perform, verdict } from "./computer-use-actions";
-import { captureWindow } from "./computer-use-capture";
-import { listWindows, targetWindow, type Window } from "./computer-use-driver";
+import type { ComputerUseResult } from "./computer-use";
+import { dispatch, effectOf } from "./computer-use-actions";
+import { normalize, type ComputerUseArgs } from "./computer-use-args";
+import { targetWindow, type Window } from "./computer-use-driver";
 import {
-  actOnRef,
-  chromiumWindow,
-  openPage,
-  readPage,
-  REF_ACTIONS,
-} from "./computer-use-page";
-import { textResult, type ComputerUseState } from "./computer-use-state";
-import { runSteps } from "./computer-use-steps";
-import { fillLogin, restoreFilled, scrubFilled } from "./computer-use-login";
-import { launchApp, listApps } from "./computer-use-launch";
-import {
-  isTerminal,
-  readTerminal,
-  terminalText,
-} from "./computer-use-terminal";
+  forgetScreen,
+  textResult,
+  type ComputerUseState,
+} from "./computer-use-state";
+import { restoreFilled, scrubFilled } from "./computer-use-login";
+import { terminalText } from "./computer-use-terminal";
 import { proposedAction, type IntentGate } from "./computer-use-intent";
-import { ACTING_ACTIONS, isEnter, type ProposedAction } from "./intent-check";
-
-// Actions that only look; they stay allowed right after control changed hands.
-const OBSERVE = new Set([
-  "capture",
-  "list_windows",
-  "list_apps",
-  "wait",
-  "read",
-]);
+import { isEnter, type ProposedAction } from "./intent-check";
 
 const STALE =
   "Control changed hands: the owner used the bot desktop and handed it back. The screen may have changed and element numbers are stale. Capture before acting.";
-
-/** Normalizes placeholder arguments: some models (gpt-6-luna) fill every optional field with 0, "", or [0, 0]. */
-const unsetPoint = (p?: number[]) => !p || (p[0] === 0 && p[1] === 0);
-
-// Element [0] is the window frame itself, never a useful target.
-const ZERO_UNSET = ["window_id", "element", "amount", "seconds"] as const;
-
-const POINTS = ["coordinate", "from_coordinate", "to_coordinate"] as const;
-
-const EMPTY_UNSET = [
-  "keys",
-  "name",
-  "mode",
-  "query",
-  "url",
-  "ref",
-  "login",
-  "field",
-  "app",
-  "path",
-] as const;
-
-/** Empty text means unset, except for the action that takes it: an empty set_value clears a field. */
-function dropEmptyText(args: ComputerUseArgs) {
-  if (args.value === "" && args.action !== "set_value") delete args.value;
-
-  if (args.text === "" && args.action !== "type") delete args.text;
-}
-
-export function normalize(raw: ComputerUseArgs): ComputerUseArgs {
-  const args = { ...raw };
-
-  for (const key of ZERO_UNSET) if (!args[key]) delete args[key];
-
-  for (const key of POINTS) if (unsetPoint(args[key])) delete args[key];
-
-  for (const key of EMPTY_UNSET) if (args[key] === "") delete args[key];
-
-  dropEmptyText(args);
-
-  return args;
-}
 
 /** Waits for the bot's turn; returns the refusal for a plan made before a handover. */
 async function controlTurn(
@@ -96,184 +35,9 @@ async function controlTurn(
 
   if (!changed) return undefined;
 
-  state.snapshots.clear();
-  state.lastRead = undefined;
+  forgetScreen(state);
 
-  return OBSERVE.has(action) ? undefined : STALE;
-}
-
-async function listing(state: ComputerUseState, context: Context) {
-  const lines = (await listWindows(state, context)).map(
-    (each) => `${each.window_id} ${each.app_name} "${each.title}"`,
-  );
-
-  return lines.join("\n") || "no windows";
-}
-
-async function pause(seconds?: number) {
-  const bounded = Math.min(Math.max(seconds ?? 1, 0), 30);
-
-  await sleep(bounded * 1000);
-
-  return bounded;
-}
-
-/** Runs one action, then reports its verdict and, on request, a fresh capture, or a read for a page ref. */
-async function actAndReport(
-  state: ComputerUseState,
-  args: ComputerUseArgs,
-  window: Window,
-  context: Context,
-): Promise<ComputerUseResult> {
-  const { ref } = args;
-
-  const acted =
-    ref === undefined
-      ? await perform(state, args, window, context)
-      : await actOnRef(state, { ...args, ref }, context);
-
-  if ("invalid" in acted) return textResult(acted.invalid, true);
-
-  const { text: summary, error } = verdict(acted);
-
-  const after =
-    !args.capture_after || error
-      ? []
-      : ref === undefined
-        ? await captureWindow(
-            state,
-            await targetWindow(state, args.window_id, context),
-            "ax",
-            false,
-            undefined,
-            context,
-          )
-        : (await readPage(state, {}, window, context)).content;
-
-  return {
-    content: [{ type: "text", text: summary }, ...after],
-    isError: error,
-  };
-}
-
-type WindowAction = (
-  state: ComputerUseState,
-  args: ComputerUseArgs,
-  window: Window,
-  context: Context,
-) => Promise<ComputerUseResult>;
-
-const capture: WindowAction = async (state, args, window, context) => ({
-  content: await captureWindow(
-    state,
-    window,
-    args.mode ?? "ax",
-    args.full === true,
-    args.query,
-    context,
-  ),
-  isError: false,
-});
-
-// Page actions act on Chromium even when another window has focus.
-const PAGE_ACTIONS = new Map<string, WindowAction>([
-  ["open", openPage],
-  ["read", readPage],
-]);
-
-const WINDOW_ACTIONS = new Map<string, WindowAction>([
-  ["steps", runSteps],
-  ["capture", capture],
-]);
-
-async function refAction(
-  state: ComputerUseState,
-  args: ComputerUseArgs,
-  context: Context,
-) {
-  if (args.element !== undefined)
-    return textResult("use element or ref, not both", true);
-
-  return actAndReport(
-    state,
-    args,
-    await chromiumWindow(state, args.window_id, context),
-    context,
-  );
-}
-
-/** Actions that act on no window of their own. */
-const DESKTOP_ACTIONS = new Map<
-  string,
-  (
-    state: ComputerUseState,
-    args: ComputerUseArgs,
-    context: Context,
-  ) => Promise<ComputerUseResult>
->([
-  [
-    "list_windows",
-    async (state, _args, context) => textResult(await listing(state, context)),
-  ],
-  [
-    "wait",
-    async (_state, args) => textResult(`waited ${await pause(args.seconds)}s`),
-  ],
-  ["fill_login", fillLogin],
-  ["launch", launchApp],
-  ["list_apps", (state, _args, context) => listApps(state, context)],
-]);
-
-/** A read of a terminal returns its text; a read of anything else reads Chromium's page. */
-async function readAction(
-  state: ComputerUseState,
-  args: ComputerUseArgs,
-  context: Context,
-) {
-  const window = await targetWindow(state, args.window_id, context);
-
-  return isTerminal(window)
-    ? readTerminal(state, window, context)
-    : readPage(
-        state,
-        args,
-        await chromiumWindow(state, args.window_id, context),
-        context,
-      );
-}
-
-async function dispatch(
-  state: ComputerUseState,
-  args: ComputerUseArgs,
-  context: Context,
-): Promise<ComputerUseResult> {
-  const desktop = DESKTOP_ACTIONS.get(args.action);
-
-  if (desktop) return desktop(state, args, context);
-
-  if (args.ref !== undefined && REF_ACTIONS.has(args.action))
-    return refAction(state, args, context);
-
-  if (args.action === "read") return readAction(state, args, context);
-
-  const page = PAGE_ACTIONS.get(args.action);
-
-  if (page)
-    return page(
-      state,
-      args,
-      await chromiumWindow(state, args.window_id, context),
-      context,
-    );
-
-  const window = await targetWindow(state, args.window_id, context);
-
-  return (WINDOW_ACTIONS.get(args.action) ?? actAndReport)(
-    state,
-    args,
-    window,
-    context,
-  );
+  return effectOf(action) === "observe" ? undefined : STALE;
 }
 
 /**
@@ -285,7 +49,7 @@ async function pinned(
   args: ComputerUseArgs,
   context: Context,
 ): Promise<{ args: ComputerUseArgs; window: Window | undefined }> {
-  if (!ACTING_ACTIONS.has(args.action) || args.ref !== undefined)
+  if (effectOf(args.action) !== "act" || args.ref !== undefined)
     return { args, window: undefined };
 
   const window = await targetWindow(state, args.window_id, context);

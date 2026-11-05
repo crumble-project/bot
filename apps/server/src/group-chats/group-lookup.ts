@@ -5,8 +5,8 @@ import { Effect, Layer } from "effect";
 import type { Agent } from "../shared/domain";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import { GroupChats } from "./group-chats";
-
-export const GROUP_LOOKUP_EXTENSION = "group-lookup";
+import { senderLabel } from "./group-transcripts";
+import { GROUP_LOOKUP_EXTENSION } from "./group-turns";
 
 const READ_LIMIT = 30;
 
@@ -48,10 +48,7 @@ export function groupLookupExtension(
       return text({
         messages: page.messages.map((message) => ({
           entryId: message.entryId,
-          sender:
-            message.origin?.kind === "owner"
-              ? "Owner"
-              : (message.origin?.name ?? "A bot"),
+          sender: senderLabel(message.origin),
           text: message.content,
           ...(message.timestamp && {
             at: new Date(message.timestamp).toISOString(),

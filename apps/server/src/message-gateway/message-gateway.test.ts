@@ -12,8 +12,8 @@ import { ConversationRepository } from "../bots/conversation-repository";
 import { ExecutionRepository } from "../bots/execution-repository";
 import { BotRuntime, type AgentRuntime } from "../bots/runtime";
 import { SettingsRepository } from "../shared/settings-repository";
-import { SecretRepository } from "../credentials/secret-repository";
-import { secretsLayer } from "../password-managers/secrets";
+import { SecretRepository } from "../secrets/secret-repository";
+import { secretsLayer } from "../secrets/secrets";
 import {
   connectFakePasswordManager,
   fakePasswordManager,
@@ -92,6 +92,7 @@ async function fixture(
     label: "Test platform",
     secretKey: "test-platform:token",
     maxMessageLength: 60,
+    typingRenewalMs: 8000,
     async connect(host) {
       hostCallbacks = host;
       tokens.push(host.token);
@@ -191,17 +192,18 @@ async function fixture(
           recordBotMessage: unexpected,
           chatSnapshot: unexpected,
           history: unexpected,
-          codingJobs: unexpected,
-          codingJobHistory: unexpected,
-          answerCodingJob: unexpected,
-          desktopJobs: unexpected,
-          desktopJobHistory: unexpected,
+          jobs: unexpected,
+          jobHistory: unexpected,
+          answerJob: unexpected,
+          attachment: unexpected,
+          watch: unexpected,
           notice: unexpected,
           send: unexpected,
           dispatch: unexpected,
           recover: unexpected(),
           compact: unexpected,
           abortChat: unexpected,
+          stopAgent: unexpected,
           abort: unexpected,
           deleteAgent: unexpected,
         });
@@ -701,7 +703,7 @@ test("diagnostic adapter errors do not recreate a healthy connection", async () 
   const f = await fixture();
   await f.update();
   await f.tick();
-  f.host.onStatus("error", "SDK error");
+  f.host.onStatus("error");
   await f.tick();
   await f.tick();
   expect(f.tokens).toHaveLength(1);
@@ -734,7 +736,6 @@ for (const status of [403, 404])
     await f.update();
     f.sendError = new GatewayTransportError("private platform details", {
       permanent: true,
-      status,
     });
     await f.receive(f.message(`permanent-${status}`));
     await f.tick();
@@ -753,7 +754,6 @@ test("429 adapter cooldown includes new receipts and survives restarting the cor
   await f.update({ ...f.config, allowedChannelIds: ["channel", "other"] });
   f.sendError = new GatewayTransportError("rate limited", {
     permanent: false,
-    status: 429,
     retryAfterMs: 90000,
     rateLimit: { scope: "adapter" },
   });
@@ -985,7 +985,6 @@ test("a cooldown learned while a response is loading is checked again before sen
   expect(f.responseCalls).toHaveLength(1);
   f.sendError = new GatewayTransportError("rate limited", {
     permanent: false,
-    status: 429,
     retryAfterMs: 90000,
     rateLimit: { scope: "adapter" },
   });
@@ -1010,7 +1009,6 @@ test("channel cooldown blocks new messages on that channel while other channels 
   await f.update({ ...f.config, allowedChannelIds: ["channel", "other"] });
   f.sendError = new GatewayTransportError("rate limited", {
     permanent: false,
-    status: 429,
     retryAfterMs: 90000,
     rateLimit: { scope: "channel" },
   });

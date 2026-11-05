@@ -2,7 +2,7 @@ import { Cause, Effect, FiberMap, Semaphore, type Scope } from "effect";
 import { parseRequestId } from "../shared/request-ids";
 import type { Execution } from "../shared/domain";
 import { SettingsRepository } from "../shared/settings-repository";
-import { ScheduleRepository } from "../schedules/schedule-repository";
+import { ScheduleRepository } from "../automations/schedule-repository";
 import { EventRepository } from "../event-sources/event-repository";
 import { AgentRepository } from "./agent-repository";
 import type { Activity } from "./bots";

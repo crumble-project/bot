@@ -1,84 +1,22 @@
 import type { Context } from "@earendil-works/chord";
 import { isTerminal } from "./computer-use-terminal";
 import type { Usage } from "@earendil-works/pi-ai";
-import { z } from "zod";
-import type { ComputerUseArgs, StepArgs } from "./computer-use";
-import type { DriverReply, Window } from "./computer-use-driver";
-import type { ComputerUseState } from "./computer-use-state";
+import type { ComputerUseArgs, StepArgs } from "./computer-use-args";
+import { ACTIONS, effectOf } from "./computer-use-actions";
+import { windowName, type Window } from "./computer-use-driver";
 import {
-  ACTING_ACTIONS,
-  type IntentStep,
-  type IntentTarget,
-  type ProposedAction,
-} from "./intent-check";
+  currentPage,
+  refOf,
+  scrubText,
+  type ComputerUseState,
+} from "./computer-use-state";
+import type { IntentStep, IntentTarget, ProposedAction } from "./intent-check";
 
 /** Whether an acting call may run: a refusal stops it. Waits while the owner decides. `usage` is the judge's spend. */
 export type IntentGate = (
   proposal: { action: ProposedAction; page: string | undefined },
   context: Context,
 ) => Promise<{ refusal?: string; usage?: Usage }>;
-
-// `- [3] push button "Pay now" [actions=...]` in a full tree; a diff marks lines `+`, `~`, or `-` (removed). The role
-// runs up to the name's quote or the first `[`, so it keeps every word.
-const ELEMENT_LINE =
-  /^\s*([-+~])?\s*\[(\d+)\]\s+([^"[\n]*)(?:"((?:[^"\\]|\\.)*)")?/;
-
-const unquote = (name: string) => {
-  try {
-    return z
-      .string()
-      .catch(name)
-      .parse(JSON.parse(`"${name}"`));
-  } catch {
-    return name;
-  }
-};
-
-const treeOf = (reply: DriverReply) =>
-  reply.tree_diff ?? reply.tree_markdown ?? "";
-
-type ElementLine = { index: number; removed: boolean; target: IntentTarget };
-
-function elementLine(line: string, diff: boolean): ElementLine | undefined {
-  const match = ELEMENT_LINE.exec(line);
-
-  if (!match) return undefined;
-
-  const [, mark, index, role = "", name] = match;
-  const target: IntentTarget = {};
-
-  if (role.trim()) target.role = role.trim();
-
-  if (name !== undefined) target.name = unquote(name);
-
-  // Only a diff marks removals; a full tree's `-` is a list bullet.
-  return { index: Number(index), removed: diff && mark === "-", target };
-}
-
-/**
- * Keeps the role and name of each element a capture shows under its snapshot, so an action by index can name its
- * target. Call before the snapshot becomes the window's latest: a diff applies to the one before it.
- */
-export function recordElements(
-  state: ComputerUseState,
-  windowId: number,
-  snapshot: string,
-  reply: DriverReply,
-) {
-  const diff = reply.tree_diff !== undefined;
-  const previous = state.snapshots.get(windowId);
-  const known = new Map(diff ? state.elements.get(previous ?? "") : undefined);
-
-  for (const line of treeOf(reply).split("\n")) {
-    const element = elementLine(line, diff);
-
-    if (element?.removed) known.delete(element.index);
-    else if (element) known.set(element.index, element.target);
-  }
-
-  if (previous) state.elements.delete(previous);
-  state.elements.set(snapshot, known);
-}
 
 function hostOf(url: string | undefined) {
   if (!url) return undefined;
@@ -90,26 +28,19 @@ function hostOf(url: string | undefined) {
   }
 }
 
-// Steps and actions that act on the element they name; a key press goes to the focus whatever else the call says.
-const TARGETED = new Set([
-  "click",
-  "double_click",
-  "right_click",
-  "set_value",
-  "type",
-  "scroll",
-]);
+/** Whether the action acts on the element it names; a key press goes to the focus whatever else the call says. */
+const isTargeted = (action: string) => ACTIONS.get(action)?.targeted === true;
 
 function refTarget(state: ComputerUseState, ref: string) {
-  const found = state.lastRead?.read.refs.find((each) => each.ref === ref);
+  const found = refOf(state, ref);
 
   if (!found) return undefined;
 
   const target: IntentTarget = {};
 
-  if (found.role) target.role = found.role;
+  if (found.role) target.role = scrubText(state, found.role);
 
-  if (found.name) target.name = found.name;
+  if (found.name) target.name = scrubText(state, found.name);
 
   return target;
 }
@@ -120,7 +51,7 @@ function targetOf(
   args: Pick<ComputerUseArgs, "action" | "ref" | "element">,
   window: Window | undefined,
 ): IntentTarget | undefined {
-  if (!TARGETED.has(args.action)) return undefined;
+  if (!isTargeted(args.action)) return undefined;
 
   if (args.ref !== undefined) return refTarget(state, args.ref);
 
@@ -132,7 +63,7 @@ function targetOf(
 }
 
 function stepTarget(step: StepArgs): IntentTarget | undefined {
-  if (!TARGETED.has(step.action)) return undefined;
+  if (!isTargeted(step.action)) return undefined;
 
   if (step.role === undefined && step.name === undefined) return undefined;
 
@@ -181,9 +112,9 @@ function placeOf(
   window: Window | undefined,
 ) {
   if (args.ref === undefined && !isBrowser(window))
-    return { page: window && `${window.app_name} "${window.title}"` };
+    return { page: window && windowName(window) };
 
-  const page = state.lastRead?.read.page?.url ?? state.lastRead?.page.url;
+  const page = currentPage(state);
 
   return { page, host: hostOf(page) };
 }
@@ -197,7 +128,7 @@ export function proposedAction(
   args: ComputerUseArgs,
   window: Window | undefined,
 ): { action: ProposedAction; page: string | undefined } | undefined {
-  if (!ACTING_ACTIONS.has(args.action)) return undefined;
+  if (effectOf(args.action) !== "act") return undefined;
 
   const steps = proposedSteps(state, args, window);
   const { page, host } = placeOf(state, args, window);

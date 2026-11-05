@@ -1,6 +1,5 @@
-import { Clock, Effect, Schema } from "effect";
-import type { z } from "zod";
-import type { SecretRepository } from "../credentials/secret-repository";
+import { Effect, Schema } from "effect";
+import { z } from "zod";
 
 const API = "https://api.github.com";
 
@@ -40,30 +39,53 @@ export const assignmentChange = (
 export const noreplyEmail = (userId: number, login: string) =>
   `${userId}+${login}@users.noreply.github.com`;
 
+/** The GitHub user a token signs in as. */
+export const githubUser = z.object({
+  login: z.string().min(1),
+  id: z.number().int(),
+});
+
+/** The name a GitHub App's commits and pull requests show. */
+export const botLogin = (slug: string) => `${slug}[bot]`;
+
+const timed = <A, E>(effect: Effect.Effect<A, E>) =>
+  effect.pipe(
+    Effect.timeoutOrElse({
+      duration: "15 seconds",
+      orElse: () =>
+        Effect.fail(new GitHubUnavailable({ message: "GitHub timed out" })),
+    }),
+  );
+
+const REST_HEADERS = {
+  Accept: "application/vnd.github+json",
+  "X-GitHub-Api-Version": "2022-11-28",
+};
+
+const send = (url: string, init: RequestInit, unreachable: string) =>
+  Effect.tryPromise({
+    try: (signal) => fetch(url, { ...init, signal }),
+    catch: () => new GitHubUnavailable({ message: unreachable }),
+  });
+
 /** One call to GitHub's REST API, its answer parsed with `schema`. */
 export const github = <T>(
   path: string,
   schema: z.ZodType<T>,
   init: { method?: string; token?: string } = {},
 ) =>
-  Effect.tryPromise({
-    try: (signal) =>
-      fetch(`${API}${path}`, {
-        method: init.method ?? "GET",
-        signal,
-        headers: {
-          Accept: "application/vnd.github+json",
-          "X-GitHub-Api-Version": "2022-11-28",
-          ...(init.token && { Authorization: `Bearer ${init.token}` }),
-        },
-      }),
-    catch: () => new GitHubUnavailable({ message: "Can't reach GitHub" }),
-  }).pipe(
-    Effect.timeoutOrElse({
-      duration: "15 seconds",
-      orElse: () =>
-        Effect.fail(new GitHubUnavailable({ message: "GitHub timed out" })),
-    }),
+  send(
+    `${API}${path}`,
+    {
+      method: init.method ?? "GET",
+      headers: {
+        ...REST_HEADERS,
+        ...(init.token && { Authorization: `Bearer ${init.token}` }),
+      },
+    },
+    "Can't reach GitHub",
+  ).pipe(
+    timed,
     Effect.flatMap((response) =>
       response.ok
         ? Effect.tryPromise({
@@ -82,19 +104,44 @@ export const github = <T>(
     ),
   );
 
-/** The state saved before sending the owner to GitHub; undefined when unknown or older than `ttlMs`. */
-export const pendingState = <T extends { createdAt: number }>(
-  secrets: SecretRepository["Service"],
-  key: string,
+/** Exchanges a code or refresh token at GitHub's OAuth endpoint, on github.com rather than the REST API. */
+export const githubOAuth = <T>(
+  params: Record<string, string>,
   schema: z.ZodType<T>,
-  ttlMs: number,
 ) =>
-  Effect.gen(function* () {
-    const raw = yield* secrets.get(key);
-    const parsed = raw ? schema.safeParse(JSON.parse(raw)) : undefined;
-    const now = yield* Clock.currentTimeMillis;
+  send(
+    "https://github.com/login/oauth/access_token",
+    {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      body: new URLSearchParams(params),
+    },
+    "GitHub's sign-in didn't answer",
+  ).pipe(
+    Effect.flatMap((response) =>
+      Effect.tryPromise({
+        try: async () => schema.parse(await response.json()),
+        catch: () =>
+          new GitHubUnavailable({ message: "GitHub's sign-in didn't answer" }),
+      }),
+    ),
+    timed,
+  );
 
-    return parsed?.success && now - parsed.data.createdAt <= ttlMs
-      ? parsed.data
-      : undefined;
-  });
+/** Revokes an OAuth app's grant, which also ends its refresh token; GitHub's answer is not awaited for more than that. */
+export const revokeGitHubGrant = (
+  client: { clientId: string; clientSecret: string },
+  accessToken: string,
+) =>
+  send(
+    `${API}/applications/${client.clientId}/grant`,
+    {
+      method: "DELETE",
+      headers: {
+        ...REST_HEADERS,
+        Authorization: `Basic ${Buffer.from(`${client.clientId}:${client.clientSecret}`).toString("base64")}`,
+      },
+      body: JSON.stringify({ access_token: accessToken }),
+    },
+    "Can't reach GitHub",
+  ).pipe(timed, Effect.ignore);

@@ -2,9 +2,9 @@ import {
   MemoryRepository,
   type NewMemory,
 } from "../../src/memory/memory-repository";
-import { ChangeReverter } from "../../src/skills/change-reverter";
-import { LearnedChangeRepository } from "../../src/skills/learned-change-repository";
-import { ReviewRepository } from "../../src/skills/review-repository";
+import { ChangeReverter } from "../../src/learning/change-reverter";
+import { LearnedChangeRepository } from "../../src/learning/learned-change-repository";
+import { ReviewRepository } from "../../src/learning/review-repository";
 import {
   SkillRepository,
   type NewSkill,

@@ -11,7 +11,7 @@ import {
 } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
-import { LearnedChangeRepository } from "./learned-change-repository";
+import { LearnedChangeRepository } from "../learning/learned-change-repository";
 import { skillDocuments, skills } from "./schema";
 
 export type NewSkill = SkillInput & {
@@ -36,6 +36,20 @@ const originOf = (json: string) => JSON.parse(json) as SkillOrigin;
 
 const isSkillState = (state: string): state is Skill["state"] =>
   SKILL_STATES.some((known) => known === state);
+
+/** What a skill's row holds besides its identity and times. */
+const contentColumns = (skill: Skill) => ({
+  name: skill.name,
+  description: skill.description,
+  instructions: skill.instructions,
+  createdBy: skill.createdBy,
+  sourceExecutionId: skill.sourceExecutionId,
+  useCount: skill.useCount,
+  lastUsedAt: skill.lastUsedAt,
+  state: skill.state,
+  pinned: skill.pinned,
+  origin: skill.origin ? JSON.stringify(skill.origin) : null,
+});
 
 /** The skill library: shared skills, each bot's own, and their reference documents. */
 export class SkillRepository extends Context.Service<
@@ -208,19 +222,7 @@ export class SkillRepository extends Context.Service<
           Effect.gen(function* () {
             yield* db
               .update(skills)
-              .set({
-                name: next.name,
-                description: next.description,
-                instructions: next.instructions,
-                createdBy: next.createdBy,
-                sourceExecutionId: next.sourceExecutionId,
-                useCount: next.useCount,
-                lastUsedAt: next.lastUsedAt,
-                state: next.state,
-                pinned: next.pinned,
-                origin: next.origin ? JSON.stringify(next.origin) : null,
-                updatedAt: at,
-              })
+              .set({ ...contentColumns(next), updatedAt: at })
               .where(eq(skills.id, skillId));
 
             if (patch.documents)
@@ -262,16 +264,7 @@ export class SkillRepository extends Context.Service<
               id: skill.id,
               agentId: skill.agentId,
               copiedFromSkillId: skill.copiedFromSkillId ?? null,
-              name: skill.name,
-              description: skill.description,
-              instructions: skill.instructions,
-              createdBy: skill.createdBy,
-              sourceExecutionId: skill.sourceExecutionId,
-              useCount: skill.useCount,
-              lastUsedAt: skill.lastUsedAt,
-              state: skill.state,
-              pinned: skill.pinned,
-              origin: skill.origin ? JSON.stringify(skill.origin) : null,
+              ...contentColumns(skill),
               createdAt: skill.createdAt,
               updatedAt: skill.updatedAt,
             });

@@ -15,7 +15,7 @@ import { groupChats, groupMembers, groupTurns } from "./schema";
 /** Owner messages, by entry number, whose first bot answer has not notified, with the bots they woke. */
 const awaitingAnswers = z.record(z.string(), z.array(z.string()));
 
-export type GroupActivity = {
+export type GroupProgress = {
   botTurns: number;
   paused: boolean;
   /** Owner messages, by entry number, whose first bot answer has not notified yet, with the bots they woke. */
@@ -65,10 +65,10 @@ export class GroupChatRepository extends Context.Service<
       agentId: string,
       change: GroupMemberChange,
     ) => Effect.Effect<void>;
-    readonly activity: (groupId: string) => Effect.Effect<GroupActivity>;
+    readonly activity: (groupId: string) => Effect.Effect<GroupProgress>;
     readonly setActivity: (
       groupId: string,
-      change: Partial<GroupActivity>,
+      change: Partial<GroupProgress>,
     ) => Effect.Effect<void>;
     readonly createTurn: (
       turn: Omit<GroupTurn, "createdAt">,
@@ -288,7 +288,7 @@ export class GroupChatRepository extends Context.Service<
           .from(groupChats)
           .where(eq(groupChats.id, groupId));
 
-        const state: GroupActivity = {
+        const state: GroupProgress = {
           botTurns: row?.botTurns ?? 0,
           paused: row?.paused ?? false,
           awaitingAnswers:
@@ -300,7 +300,7 @@ export class GroupChatRepository extends Context.Service<
       }, Effect.orDie);
 
       const setActivity = Effect.fn("GroupChatRepository.setActivity")(
-        function* (groupId: string, change: Partial<GroupActivity>) {
+        function* (groupId: string, change: Partial<GroupProgress>) {
           const next = { ...(yield* activity(groupId)), ...change };
 
           yield* db

@@ -32,7 +32,16 @@ import {
   nativeModel,
   supportsAdaptiveThinking,
 } from "./catalog";
-import { Admission, type Block, type CapturedMessage } from "./relay";
+import {
+  ANTHROPIC_ORIGIN,
+  CRUMBLE_MCP_SERVER,
+  CRUMBLE_TOOL_PREFIX,
+  baseCliArgs,
+} from "./native";
+import { Admission } from "./relay";
+import type { CapturedMessage } from "./relay-capture";
+import { PROCESS_GZIP } from "./relay-gzip";
+import type { Block } from "./relay-request";
 import {
   childEnv,
   installHint,
@@ -46,7 +55,6 @@ import { Match } from "effect";
 /** The Pi AI api id of the Claude Code adapter. */
 export const CLAUDE_CODE_API = "claude-code";
 
-const PREFIX = "mcp__crumble__";
 const INERT_MCP = join(import.meta.dir, "inert-mcp.ts");
 // A clean answer returns at the CLI's result event; a CLI that will not exit is killed after this.
 
@@ -142,7 +150,7 @@ const jsonSchema = z.record(z.string(), z.json());
  * Anthropic's validator rejects top-level oneOf/allOf/anyOf and the null branch of nullable unions. The combinators
  * are advisory (Crumble re-validates arguments); nested unions other than nullable ones stay untouched.
  */
-export function normalizeInputSchema(schema: z.infer<typeof jsonSchema>) {
+function normalizeInputSchema(schema: z.infer<typeof jsonSchema>) {
   const normalized = stripNullable(schema);
 
   if (COMBINATORS.some((key) => key in normalized)) {
@@ -254,7 +262,7 @@ function assistantHistoryBlock(
     {
       type: "tool_use",
       id: item.id,
-      name: name === undefined ? item.name : `${PREFIX}${name}`,
+      name: name === undefined ? item.name : `${CRUMBLE_TOOL_PREFIX}${name}`,
       input: item.arguments,
     },
   ];
@@ -300,7 +308,7 @@ function historyContent(
 }
 
 /** The system prompt and the conversation as stream-json frames, ending in the frame that queries. */
-export function prepareHistory(
+function prepareHistory(
   context: TranscriptContext,
   model: Model<Api>,
   names: Map<string, string>,
@@ -611,7 +619,7 @@ function prepareRequest(
   });
 
   body["tools"] = manifest.map((tool) => ({
-    name: `${PREFIX}${tool.name}`,
+    name: `${CRUMBLE_TOOL_PREFIX}${tool.name}`,
     description: tool.description,
     input_schema: tool.inputSchema,
   }));
@@ -656,7 +664,7 @@ function prepareCli(
 
   const mcp = {
     mcpServers: {
-      crumble: {
+      [CRUMBLE_MCP_SERVER]: {
         command: process.execPath,
         args: [INERT_MCP, join(scratch, "tools.json")],
       },
@@ -664,30 +672,16 @@ function prepareCli(
   };
 
   const args = [
-    "-p",
-    "--model",
-    nativeModel(model.id),
-    "--input-format",
-    "stream-json",
-    "--output-format",
-    "stream-json",
-    "--verbose",
+    ...baseCliArgs(nativeModel(model.id)),
     "--include-partial-messages",
-    "--tools",
-    "",
     "--system-prompt-file",
     join(scratch, "system.md"),
     "--settings",
     join(scratch, "settings.json"),
-    "--setting-sources",
-    "",
-    "--strict-mcp-config",
-    "--disable-slash-commands",
     "--max-turns",
     "1",
     "--permission-mode",
     "dontAsk",
-    "--no-session-persistence",
     "--mcp-config",
     JSON.stringify(mcp),
     // The CLI applies its own effort message, which overrides the request body's effort.
@@ -984,16 +978,6 @@ function validateResponse(
   return captured;
 }
 
-function nativeResultFailed(
-  final: StreamJson | undefined,
-  fast: boolean,
-  exitCode: number | null,
-) {
-  return (
-    (!fast && exitCode !== 0) || final?.is_error || final?.subtype !== "success"
-  );
-}
-
 function singleResult(results: StreamJson[]) {
   if (results.length !== 1)
     throw new Error("Incomplete native response: one result required");
@@ -1001,15 +985,32 @@ function singleResult(results: StreamJson[]) {
   return results[0];
 }
 
-const toolBoundary = (
+/** What the CLI's result says about the answer the relay captured. */
+function classify(
+  result: StreamJson | undefined,
   captured: CapturedMessage,
-  final: StreamJson | undefined,
+): "clean" | "tool_boundary" | "refused" | "failed" {
+  // The CLI reports a refusal as an error of its own; the captured answer stands.
+  if (captured.stop_reason === "refusal") return "refused";
+
+  // One turn is all a request gets, so an answer that calls tools ends at the turn limit.
+  if (
+    result?.subtype === "error_max_turns" &&
+    captured.content.some((item) => item.type === "tool_use")
+  )
+    return "tool_boundary";
+
+  return result?.subtype === "success" && !result.is_error ? "clean" : "failed";
+}
+
+/** Whether the result ends the turn as a good one does; a fast return never saw the exit code. */
+const endedWell = (
+  outcome: ReturnType<typeof classify>,
   fast: boolean,
   exitCode: number | null,
 ) =>
-  captured.content.some((item) => item.type === "tool_use") &&
-  final?.subtype === "error_max_turns" &&
-  (fast || exitCode === 1);
+  (outcome === "clean" && (fast || exitCode === 0)) ||
+  (outcome === "tool_boundary" && (fast || exitCode === 1));
 
 function validateNativeResult(
   captured: CapturedMessage,
@@ -1019,17 +1020,16 @@ function validateNativeResult(
   stderrTail: () => string,
 ) {
   const { results, nativeError, nativeErrorCode, fast } = response;
+  const outcome = classify(results[0], captured);
   // A refusal or a denied recovery attempt makes the CLI report an error of its own; the first response stands.
-  const handled = denied > 0 || captured.stop_reason === "refusal";
+  const handled = denied > 0 || outcome === "refused";
 
   if (nativeError !== undefined && !handled)
     throw nativeFailure(nativeErrorCode, nativeError);
 
   const final = singleResult(results);
 
-  const boundary = toolBoundary(captured, final, fast, exitCode);
-
-  if (!boundary && !handled && nativeResultFailed(final, fast, exitCode))
+  if (!handled && !endedWell(outcome, fast, exitCode))
     throw new Error(
       `Native request failed: ${final?.subtype ?? "no result"}${stderrTail()}`,
     );
@@ -1050,7 +1050,10 @@ function thinkingBlock(item: NativeBlock): ThinkingContent {
 
 function toolCallBlock(item: NativeBlock, crumble: Map<string, string>) {
   // Built-ins are off, so any other name is the model's; Crumble answers an unknown name with an error.
-  const offered = (item.name ?? "").replace(new RegExp(`^${PREFIX}`), "");
+  const offered = (item.name ?? "").replace(
+    new RegExp(`^${CRUMBLE_TOOL_PREFIX}`),
+    "",
+  );
 
   const input = toolInput.safeParse(item.input ?? {});
 
@@ -1190,15 +1193,12 @@ function openAdmission(
   manifest: unknown[],
   timeoutMs: number,
 ) {
-  const admission = new Admission(
-    adapter.upstream ?? "https://api.anthropic.com",
-    timeoutMs,
-    frames.at(-1)?.message.content,
-  );
-
-  admission.oneShot = manifest.length === 0 && frames.length === 1;
-
-  return admission;
+  return new Admission(adapter.upstream ?? ANTHROPIC_ORIGIN, timeoutMs, {
+    queried: frames.at(-1)?.message.content,
+    oneShot: manifest.length === 0 && frames.length === 1,
+    env: adapter.env,
+    gzip: PROCESS_GZIP,
+  });
 }
 
 function stderrCollector() {
@@ -1357,15 +1357,9 @@ function fastEligible(
     nativeError === undefined &&
     admission.denied === 0 &&
     message !== undefined &&
-    message.stop_reason !== "refusal" &&
-    resultEndsCleanly(result, message)
+    endedWell(classify(result, message), true, null)
   );
 }
-
-const resultEndsCleanly = (result: StreamJson, message: CapturedMessage) =>
-  (result.subtype === "success" && !result.is_error) ||
-  (result.subtype === "error_max_turns" &&
-    message.content.some((item) => item.type === "tool_use"));
 
 /** Lets a finished CLI exit on its own, killing it after a grace period; the consumed admission stays up until then. */
 function handOff(child: ChildProcessWithoutNullStreams, admission: Admission) {

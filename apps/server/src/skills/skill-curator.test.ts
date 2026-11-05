@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { TestClock } from "effect/testing";
-import { curateNow, SkillCurator, skillCuration } from "./skill-curator";
+import { SkillCurator, skillCuration } from "./skill-curator";
+import { curateNow } from "./skill-curator-test-support";
 import { Store } from "../../test/support/store";
 
 const dirs: string[] = [];

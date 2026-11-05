@@ -49,9 +49,9 @@ class FakeClient extends EventEmitter implements DiscordClient {
 
 function fixture(deadline?: (milliseconds: number) => AbortSignal) {
   const client = new FakeClient();
-  const states: { status: ConnectionStatus; error?: string }[] = [];
+  const states: { status: ConnectionStatus }[] = [];
   const onMessage = mock(async (_message: GatewayMessage) => undefined);
-  const onInvalidated = mock((_error?: string) => undefined);
+  const onInvalidated = mock(() => undefined);
   const clientFactory = mock((_options: ClientOptions) => client);
   const adapter = discordAdapter(clientFactory, deadline);
 
@@ -59,11 +59,8 @@ function fixture(deadline?: (milliseconds: number) => AbortSignal) {
     token: "test-token",
     onMessage,
     onInvalidated,
-    onStatus(status: ConnectionStatus, error?: string) {
-      const state: (typeof states)[number] = { status };
-
-      if (error) state.error = error;
-      states.push(state);
+    onStatus(status: ConnectionStatus) {
+      states.push({ status });
     },
   };
 
@@ -197,7 +194,7 @@ describe("Discord connection", () => {
       new Error("Missing access for test-token"),
     );
     await expect(connection.send(input)).rejects.toThrow(
-      "Missing access for [redacted]",
+      "Discord message delivery failed.",
     );
     expect(states.at(-1)?.status).toBe("connected");
     await connection.close();
@@ -395,7 +392,6 @@ describe("Discord connection", () => {
       expect(error).toMatchObject({
         details: {
           permanent: false,
-          status: 429,
           rateLimit: {
             scope: "adapter",
           },
@@ -424,29 +420,30 @@ describe("Discord connection", () => {
         text: "answer",
         nonce: "request",
       }),
-    ).rejects.toThrow("Discord returned an invalid message response.");
+    ).rejects.toThrow("Discord message delivery failed.");
     await connection.close();
   });
 
-  test("failed login destroys the client and redacts credentials", async () => {
+  test("failed login destroys the client and keeps credentials out of its error", async () => {
     const { adapter, host, client, states } = fixture();
     client.login.mockRejectedValueOnce(new Error("Invalid test-token"));
 
-    await expect(adapter.connect(host)).rejects.toThrow("Invalid [redacted]");
+    await expect(adapter.connect(host)).rejects.toThrow(
+      "Discord login failed.",
+    );
     expect(client.destroy).toHaveBeenCalledTimes(1);
     expect(client.eventNames()).toEqual([]);
-    expect(states.at(-1)).toEqual({
-      status: "error",
-      error: "Invalid [redacted]",
-    });
+    expect(states.at(-1)).toEqual({ status: "error" });
   });
 
-  test("a cleanup failure preserves the original login failure", async () => {
+  test("a cleanup failure keeps the login failure", async () => {
     const { adapter, host, client } = fixture();
     client.login.mockRejectedValueOnce(new Error("Invalid token"));
     client.destroy.mockRejectedValueOnce(new Error("Cleanup failed"));
 
-    await expect(adapter.connect(host)).rejects.toThrow("Invalid token");
+    await expect(adapter.connect(host)).rejects.toThrow(
+      "Discord login failed.",
+    );
     expect(client.eventNames()).toEqual([]);
   });
 
@@ -461,10 +458,7 @@ describe("Discord connection", () => {
     client.emit("messageCreate", message());
     await Promise.resolve();
 
-    expect(states.at(-1)).toEqual({
-      status: "error",
-      error: "processing failed",
-    });
+    expect(states.at(-1)).toEqual({ status: "error" });
     expect(onInvalidated).not.toHaveBeenCalled();
     expect(client.destroy).not.toHaveBeenCalled();
     expect(
@@ -483,9 +477,6 @@ describe("Discord connection", () => {
     client.emit("invalidated");
     client.emit("invalidated");
     expect(onInvalidated).toHaveBeenCalledTimes(1);
-    expect(onInvalidated).toHaveBeenCalledWith(
-      "Discord session invalidated. Reconnect the gateway.",
-    );
     await connection.close();
     client.emit("invalidated");
     expect(onInvalidated).toHaveBeenCalledTimes(1);
@@ -558,7 +549,7 @@ describe("Discord connection", () => {
           text: "answer",
           nonce: "request",
         }),
-      ).rejects.toMatchObject({ details: { permanent: true, status } });
+      ).rejects.toMatchObject({ details: { permanent: true } });
     }
 
     client.post.mockRejectedValueOnce(
@@ -576,8 +567,10 @@ describe("Discord connection", () => {
       .send({ channelId: "channel", text: "answer", nonce: "request" })
       .catch((error: Error) => error);
 
-    expect(error).toMatchObject({ details: { permanent: true, status: 403 } });
-    expect(String(error)).toBe("GatewayTransportError: Missing [redacted]");
+    expect(error).toMatchObject({ details: { permanent: true } });
+    expect(String(error)).toBe(
+      "GatewayTransportError: Discord message delivery failed.",
+    );
     await connection.close();
   });
 
@@ -610,7 +603,6 @@ describe("Discord connection", () => {
       ).rejects.toMatchObject({
         details: {
           permanent: false,
-          status: 429,
           retryAfterMs: 90_000,
           rateLimit: {
             scope: scope === "global" ? "adapter" : "channel",
@@ -645,7 +637,6 @@ describe("Discord connection", () => {
     ).rejects.toMatchObject({
       details: {
         permanent: false,
-        status: 429,
         retryAfterMs: 65_500,
         rateLimit: {
           scope: "adapter",

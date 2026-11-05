@@ -1,22 +1,22 @@
 import { claudeCodePlugin } from "../providers/claude-code/plugin";
 import { codingPlugin } from "../jobs/coding";
 import type { CredentialsAccess } from "../credentials/credentials";
-import { desktopPlugin, type DesktopLogins } from "../jobs/desktop";
-import type { DesktopIntent } from "../jobs/desktop-intent";
+import { desktopPlugin, type DesktopLogins } from "../bot-desktop/desktop-jobs";
+import type { DesktopIntent } from "../bot-desktop/desktop-intent";
 import type { DesktopControlAccess } from "../bot-desktop/desktop-control";
 import type { CrumblePlugin, PluginVendors } from "../plugins/plugins";
 import { bitwarden } from "../password-managers/bitwarden";
 import { onePassword } from "../password-managers/one-password";
 import { microsandboxWorkspacesFromEnv } from "../workspaces/microsandbox-workspaces";
-import { railwayWorkspacesFromEnv } from "../workspaces/railway-workspaces";
-import { meliousPlugin } from "../providers/providers";
+import { railwayWorkspacesFromEnv } from "../workspaces/railway/railway-workspaces";
+import { meliousPlugin } from "../providers/melious";
 import type { Workspaces } from "../workspaces/workspace";
 import { webSearchPlugin } from "../web-search/mixed";
 import { exaPlugin } from "../web-search/exa";
 import { discordPlugin } from "../message-gateway/discord/plugin";
 import { doorstepPlugin } from "../event-sources/plugin";
 import type { Effect } from "effect";
-import type { SecretUnavailable } from "../password-managers/secret-values";
+import type { SecretUnavailable } from "../secrets/secret-values";
 
 /** The fixed parts of the plugins compiled into the server, in the order their vendors are listed. */
 export const builtinVendors: PluginVendors[] = [

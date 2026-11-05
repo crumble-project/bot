@@ -1,6 +1,7 @@
 import type { Message } from "@earendil-works/pi-ai";
 import type { ConversationId, Cursor, Tx } from "@earendil-works/pi-durable";
 import { contentText } from "../bots/entries";
+import { clip } from "../shared/limits";
 
 const EXCERPT_MESSAGES = 12;
 const EXCERPT_CHARS = 8000;
@@ -16,16 +17,15 @@ const textOf = (message: Message) => {
   return contentText(message.content).trim();
 };
 
-const clip = (text: string) =>
-  text.length > MESSAGE_CHARS ? `${text.slice(0, MESSAGE_CHARS - 1)}…` : text;
-
 /** An entry's said lines, newest first. */
 function entryLines(messages: readonly Message[]) {
   return messages.toReversed().flatMap((message) => {
     const text = textOf(message);
 
     return text
-      ? [`${message.role === "user" ? "Owner" : "Bot"}: ${clip(text)}`]
+      ? [
+          `${message.role === "user" ? "Owner" : "Bot"}: ${clip(text, MESSAGE_CHARS)}`,
+        ]
       : [];
   });
 }

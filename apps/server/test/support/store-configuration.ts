@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { BotSecretRequests } from "../../src/bot-secrets/bot-secret-requests";
 import { AgentCredentialRepository } from "../../src/credentials/agent-credential-repository";
 import { Credentials } from "../../src/credentials/credentials";
-import { SecretRepository } from "../../src/credentials/secret-repository";
+import { SecretRepository } from "../../src/secrets/secret-repository";
 import {
   McpServerRepository,
   type NewMCPServer,

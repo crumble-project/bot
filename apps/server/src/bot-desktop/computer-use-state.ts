@@ -20,8 +20,7 @@ export type ComputerUseState = {
   lastChanges: number | undefined;
   // Latest snapshot per window: element tokens are `${snapshot}:${N}`, and the next capture diffs against it.
   snapshots: Map<number, string>;
-  // Role and name of each element [N] by snapshot, as captures showed them, for the intent check's target. Keyed like
-  // element tokens, so a cleared snapshot takes its labels with it.
+  // Role and name of each element [N] by snapshot, as captures showed them, for the intent check's target.
   elements: Map<string, Map<number, IntentTarget>>;
   // Windows whose latest snapshot came from a query: a diff against it would hide everything outside the query.
   queried: Set<number>;
@@ -48,7 +47,7 @@ export type ComputerUseOptions = {
 
 // One label for every job on a bot desktop, which runs one job at a time: cua-driver lets only the session that attached
 // Chromium use its page tools, and another session can't attach while that one lives.
-export const DESKTOP_SESSION = "crumble-desktop";
+const DESKTOP_SESSION = "crumble-desktop";
 
 export function computerUseState(
   shell: DesktopShell,
@@ -71,6 +70,22 @@ export function computerUseState(
     session: DESKTOP_SESSION,
   };
 }
+
+/** The screen changed under the job: what it read no longer holds, and the next capture starts over. */
+export function forgetScreen(state: ComputerUseState) {
+  state.snapshots.clear();
+  state.elements.clear();
+  state.queried.clear();
+  state.lastRead = undefined;
+}
+
+/** The element of the latest page read with this ref. */
+export const refOf = (state: ComputerUseState, ref: string | undefined) =>
+  state.lastRead?.read.refs.find((each) => each.ref === ref);
+
+/** The URL of the latest page read: what the page reported, else the tab it was bound to. */
+export const currentPage = (state: ComputerUseState) =>
+  state.lastRead?.read.page?.url ?? state.lastRead?.page.url;
 
 export const textResult = (
   value: string,

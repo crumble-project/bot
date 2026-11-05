@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { LoginField } from "../shared/domain";
 import { createComputerUse } from "./computer-use";
+import type { IntentGate } from "./computer-use-intent";
+import type { ProposedAction } from "./intent-check";
 import type {
   DesktopFill,
   DesktopFills,
@@ -610,4 +612,50 @@ test("without logins, fill_login is refused", async () => {
   );
 
   expect(text(result)).toBe("REFUSED: this bot has no logins here");
+});
+
+test("a typed password in an element's label stays out of what the intent check sees", async () => {
+  const url = "https://github.com/login";
+  const seen: ProposedAction[] = [];
+
+  const gate: IntentGate = async ({ action }) => {
+    seen.push(action);
+
+    return {};
+  };
+
+  const { tool } = await readThenFill(
+    url,
+    { login: "github", field: "password", ref: "p1:2" },
+    {
+      get_browser_state: [
+        ...signIn(url),
+        {
+          target_id: "bt-1",
+          tabs: [{ tab_id: "tab-1", url, title: "Sign in", active: true }],
+        },
+        {
+          page: { title: "Sign in", url },
+          refs: [{ ref: "p2:1", role: "link", name: "Forgot hunter2?" }],
+        },
+      ],
+      get_window_state: [
+        { snapshot_id: "s1", tree_markdown: '- [3] link "Forgot hunter2?"' },
+      ],
+      click: [{ effect: "confirmed" }],
+      browser_click: [{ effect: "confirmed" }],
+    },
+  );
+
+  await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+  await tool.run({ action: "click", element: 3 }, BACKGROUND_CONTEXT, gate);
+  await tool.run({ action: "read" }, BACKGROUND_CONTEXT);
+  await tool.run({ action: "click", ref: "p2:1" }, BACKGROUND_CONTEXT, gate);
+
+  const name = "Forgot [login github password]?";
+
+  expect(seen.map((action) => action.steps[0]?.target)).toEqual([
+    { role: "link", name },
+    { role: "link", name },
+  ]);
 });

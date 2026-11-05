@@ -47,18 +47,19 @@ export const jobQuestions = Layer.effectDiscard(
 
     yield* Effect.acquireRelease(
       Effect.sync(() =>
-        jobKinds.map((kind) =>
-          kind.onQuestion((asked) =>
-            Effect.runPromise(
-              messaging.relayQuestion(asked).pipe(
-                // The owner still sees the question's card and can answer it.
-                Effect.catchCause((cause) =>
-                  Effect.logError("Job question relay failed", cause),
+        jobKinds.flatMap(
+          (kind) =>
+            kind.onQuestion?.((asked) =>
+              Effect.runPromise(
+                messaging.relayQuestion(asked).pipe(
+                  // The owner still sees the question's card and can answer it.
+                  Effect.catchCause((cause) =>
+                    Effect.logError("Job question relay failed", cause),
+                  ),
+                  Effect.asVoid,
                 ),
-                Effect.asVoid,
               ),
-            ),
-          ),
+            ) ?? [],
         ),
       ),
       (stops) =>

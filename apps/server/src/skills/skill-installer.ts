@@ -2,7 +2,13 @@ import { posix } from "node:path";
 import { Cause, Clock, Context, Effect, Layer, Schedule } from "effect";
 import { GitHubUnavailable } from "../github-apps/github-api";
 import { OWNER } from "../shared/change-by";
-import type { Skill, SkillDocument, SkillInput } from "../shared/domain";
+import {
+  skillNameKey,
+  type Skill,
+  type SkillDocument,
+  type SkillInput,
+} from "../shared/domain";
+import { MAX_SKILL_FILE_BYTES } from "../shared/limits";
 import {
   Conflict,
   InvalidInput,
@@ -13,7 +19,6 @@ import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import {
   GitHubSkillReader,
-  MAX_SKILL_FILE_BYTES,
   parseSkillLocation,
   skillDigest,
   skillFiles,
@@ -190,7 +195,7 @@ export class SkillInstaller extends Context.Service<
         };
 
       const named = library.find(
-        (skill) => skill.name.toLowerCase() === name.toLowerCase(),
+        (skill) => skillNameKey(skill.name) === skillNameKey(name),
       );
 
       return named
@@ -290,7 +295,7 @@ export class SkillInstaller extends Context.Service<
           });
 
         const { skill, digest } = found;
-        const key = skill.name.toLowerCase();
+        const key = skillNameKey(skill.name);
 
         const status = statusOf(
           library,
@@ -507,7 +512,7 @@ export class SkillInstaller extends Context.Service<
       const named = (yield* shared).find(
         (other) =>
           other.id !== skill.id &&
-          other.name.toLowerCase() === found.skill.name.toLowerCase(),
+          skillNameKey(other.name) === skillNameKey(found.skill.name),
       );
 
       if (named)

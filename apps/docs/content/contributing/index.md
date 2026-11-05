@@ -24,7 +24,7 @@ The server and web app are licensed under the
 | `apps/server/src/`             | Server feature modules, with tests next to the code.     |
 | `apps/server/drizzle/`         | SQLite migrations for the product store.                 |
 | `apps/server/skills/`          | Default skills that ship with the server.                |
-| `apps/server/workspace-image/` | Dockerfile and desktop scripts for workspace images.     |
+| `apps/server/workspace-image/` | Guest manifest, Dockerfile, and desktop scripts.         |
 | `apps/web/`                    | The web app, grouped by feature.                         |
 | `apps/docs/`                   | This documentation site, built with Blume.               |
 | `apps/site/`                   | The landing page at crumbli.ng.                          |

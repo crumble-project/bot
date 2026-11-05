@@ -34,11 +34,14 @@ export type GroupChatFork = <A, E>(
 /** What one layer build owns: its listeners, queues, locks, and the fibers background work runs in. */
 export type GroupChatState = {
   readonly listeners: Map<string, Set<() => void>>;
-  /** Members whose joining summary is being written, as `group:agent`. */
+  /** Members whose joining summary is being written, by `memberKey`. */
   readonly summarizing: Set<string>;
+  // Bumped by each queueing, by `memberKey`, so a turn that was starting meanwhile leaves the new follow-up queued.
   readonly pendingVersions: Map<string, symbol>;
   // Turn state changes run one at a time per group, so a member never gets two turns.
   readonly locks: Map<string, Semaphore.Semaphore>;
+  // Held only across store writes: posting takes this one, as a turn's startup can hold `locks` while it submits.
+  readonly queueLocks: Map<string, Semaphore.Semaphore>;
   readonly fork: GroupChatFork;
 };
 
@@ -46,6 +49,11 @@ export type GroupChatState = {
 export type GroupChatContext = GroupChatServices & {
   readonly state: GroupChatState;
   readonly serial: <A, E>(
+    groupId: string,
+    work: Effect.Effect<A, E>,
+  ) => Effect.Effect<A, E>;
+  /** Guards a group's queue and budget records. Taken inside `serial`, never around it; only store writes inside. */
+  readonly queueing: <A, E>(
     groupId: string,
     work: Effect.Effect<A, E>,
   ) => Effect.Effect<A, E>;
@@ -60,6 +68,10 @@ export const logged = (label: string, ...subjects: string[]) =>
     Effect.logError(label, ...subjects, Cause.squash(cause)),
   );
 
+/** Names one member of one group in this layer build's state. */
+export const memberKey = (groupId: string, agentId: string) =>
+  `${groupId}:${agentId}`;
+
 /** The state of one layer build; its fiber set closes with the layer's scope. */
 export const groupChatState: Effect.Effect<GroupChatState, never, Scope.Scope> =
   Effect.gen(function* () {
@@ -72,6 +84,7 @@ export const groupChatState: Effect.Effect<GroupChatState, never, Scope.Scope> =
       summarizing: new Set<string>(),
       pendingVersions: new Map<string, symbol>(),
       locks: new Map<string, Semaphore.Semaphore>(),
+      queueLocks: new Map<string, Semaphore.Semaphore>(),
       fork,
     };
   });
@@ -82,16 +95,18 @@ export const groupChatContext = (
 ): GroupChatContext => {
   const { groups, agents } = services;
 
-  const serial = <A, E>(groupId: string, work: Effect.Effect<A, E>) => {
-    let lock = state.locks.get(groupId);
+  const locked =
+    (locks: Map<string, Semaphore.Semaphore>) =>
+    <A, E>(groupId: string, work: Effect.Effect<A, E>) => {
+      let lock = locks.get(groupId);
 
-    if (!lock) {
-      lock = Semaphore.makeUnsafe(1);
-      state.locks.set(groupId, lock);
-    }
+      if (!lock) {
+        lock = Semaphore.makeUnsafe(1);
+        locks.set(groupId, lock);
+      }
 
-    return Semaphore.withPermit(lock, Effect.uninterruptible(work));
-  };
+      return Semaphore.withPermit(lock, Effect.uninterruptible(work));
+    };
 
   const changed = (groupId: string) =>
     Effect.sync(() => {
@@ -123,7 +138,8 @@ export const groupChatContext = (
   return {
     ...services,
     state,
-    serial,
+    serial: locked(state.locks),
+    queueing: locked(state.queueLocks),
     changed,
     get,
     enabled,

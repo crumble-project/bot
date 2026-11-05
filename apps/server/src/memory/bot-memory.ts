@@ -1,16 +1,13 @@
 import { Context, Effect, Layer } from "effect";
 import { type ChangeBy, type Memory } from "../shared/domain";
-import type { MemoryContext } from "../bots/runtime";
+import type { MemoryContext } from "./memory-tool";
 import { AgentRepository } from "../bots/agent-repository";
 import { ExecutionRepository } from "../bots/execution-repository";
 import { GroupChatRepository } from "../group-chats/group-chat-repository";
-import { ScheduleRepository } from "../schedules/schedule-repository";
+import { ScheduleRepository } from "../automations/schedule-repository";
+import { changeSourceOf } from "../learning/change-source";
 import { MemoryRepository } from "./memory-repository";
-import {
-  assertOwnMemoryInGroup,
-  changeSourceOf,
-  memorySourceOf,
-} from "./memory-sources";
+import { assertOwnMemoryInGroup, memorySourceOf } from "./memory-sources";
 import { InvalidInput, NotFound, type AppError } from "../shared/errors";
 import { MAX_MEMORY_CHARS } from "../shared/limits";
 

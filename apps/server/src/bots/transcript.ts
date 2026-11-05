@@ -17,10 +17,7 @@ import {
   formatMessageId,
   parseEntryId,
 } from "../shared/entry-ids";
-import { codingJobOf } from "../jobs/coding";
-import { desktopJobOf } from "../jobs/desktop";
-import { HELD_ACTION_ENTRY } from "../jobs/desktop-intent";
-import { JOB_QUESTION_ENTRY } from "../jobs/jobs";
+import { JOB_KINDS, jobKindTitle } from "../jobs/job-kinds";
 import {
   ASSISTANT_ENTRY,
   attachmentInfo,
@@ -29,8 +26,11 @@ import {
   contentText,
   GROUP_MESSAGE_ENTRY,
   groupMessageData,
+  HELD_ACTION_ENTRY,
   heldActionData,
   inputMetadata,
+  jobCardName,
+  JOB_QUESTION_ENTRY,
   jobQuestionData,
   MESSAGE_ENTRY,
   messageOrigin,
@@ -42,12 +42,7 @@ import {
 import { reactionOf } from "./reaction";
 import {
   DESKTOP_SCREENSHOT_TOOL_NAME,
-  MEMORY_TOOL_NAME,
-  PASS_TOOL_NAME,
   REACTION_TOOL_NAME,
-  SKILL_MANAGE_TOOL_NAME,
-  WEB_EXTRACT_TOOL_NAME,
-  WEB_SEARCH_TOOL_NAME,
 } from "../contract/tools";
 import type { BotCommunication } from "../contract/api-responses";
 import type { WebSource } from "../contract/web-search";
@@ -69,7 +64,7 @@ const toolBlock = z.object({
 
 const jsonRecord = z.record(z.string(), z.json());
 
-const toolMetadata = z.object({
+export const toolMetadata = z.object({
   toolCallId: z.string().optional().catch(undefined),
   toolName: z.string().optional().catch(undefined),
   isError: z.boolean().optional().catch(undefined),
@@ -135,12 +130,12 @@ function eventLabel(message: TranscriptMessage): string {
   const reaction = reactionOf(message);
 
   if (reaction) return `Reacted ${reaction}`;
-  const job = codingJobOf(message);
 
-  if (job) return `Coding job ${job}`;
-  const desktopJob = desktopJobOf(message);
+  for (const kind of Object.values(JOB_KINDS)) {
+    const job = jobCardName(kind.toolName, message);
 
-  if (desktopJob) return `Desktop job ${desktopJob}`;
+    if (job) return `${jobKindTitle(kind)} ${job}`;
+  }
 
   return message.role === "toolResult" &&
     message.toolName === DESKTOP_SCREENSHOT_TOOL_NAME &&
@@ -282,6 +277,9 @@ const DEFAULT_LIMIT = 100;
 const REPLY_WINDOW = 20;
 const INPUT_KINDS = new Set<string>([MESSAGE_ENTRY, USER_ENTRY]);
 
+/** An entry that starts a turn. */
+export const isInputEntry = (entry: EntryRecord) => INPUT_KINDS.has(entry.kind);
+
 export function parseEntryRef(
   agentId: string,
   value: string,
@@ -313,7 +311,7 @@ function blockHint(content: ModelContent): string {
     .join("\n");
 }
 
-function record(value: JsonValue | undefined) {
+export function record(value: JsonValue | undefined) {
   const parsed = jsonRecord.safeParse(value);
 
   return parsed.success ? parsed.data : undefined;
@@ -490,7 +488,7 @@ function addGroupExtras(message: TranscriptMessage, data: GroupMessageData) {
   if (data.sources?.length) message.sources = data.sources;
 }
 
-type ModelMessage = NonNullable<EntryRecord["model"]>[number];
+export type ModelMessage = NonNullable<EntryRecord["model"]>[number];
 
 type ToolMetadata = ReturnType<typeof toolMetadata.parse>;
 
@@ -618,7 +616,10 @@ export async function conversations(
   return records;
 }
 
-type PageOptions = { before?: string | undefined; limit?: number | undefined };
+export type PageOptions = {
+  before?: string | undefined;
+  limit?: number | undefined;
+};
 
 const pageLimit = (limit: number | undefined) =>
   Math.min(Math.max(limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
@@ -903,303 +904,49 @@ function outputLines(message: ModelMessage): string[] {
   return lines;
 }
 
-/** Assistant output after one input, stopping at the next input so unrelated chat stays private. */
-export async function readResponse(
-  conversation: Conversation,
-  inputEntryId: number,
-): Promise<string[]> {
-  // SAFETY: inputEntryId is the persisted input entry; its successor starts the response range.
+/** A page of the entries from `first` on, for reading a turn. */
+export async function entriesFrom(conversation: Conversation, first: number) {
+  // SAFETY: `first` is a persisted entry ID or its successor, so it is a valid inclusive lower bound.
   const page = await conversation.entries(
-    { order: "ascending", minEntryId: (inputEntryId + 1) as EntryId },
+    { order: "ascending", minEntryId: first as EntryId },
     MAX_LIMIT,
     undefined,
     BACKGROUND_CONTEXT,
   );
 
+  return page.items;
+}
+
+/** The newest `limit` entries before `next`, for reading what came before a turn. */
+export async function entriesBefore(
+  conversation: Conversation,
+  next: number,
+  limit: number,
+) {
+  // SAFETY: the entry before a persisted input is the inclusive upper bound of what preceded it.
+  const page = await conversation.entries(
+    { order: "descending", maxEntryId: (next - 1) as EntryId },
+    limit,
+    undefined,
+    BACKGROUND_CONTEXT,
+  );
+
+  return page.items;
+}
+
+/** Assistant output after one input, stopping at the next input so unrelated chat stays private. */
+export async function readResponse(
+  conversation: Conversation,
+  inputEntryId: number,
+): Promise<string[]> {
   const output: string[] = [];
 
-  for (const entry of page.items) {
-    if (INPUT_KINDS.has(entry.kind)) break;
+  for (const entry of await entriesFrom(conversation, inputEntryId + 1)) {
+    if (isInputEntry(entry)) break;
 
     for (const message of entry.model ?? [])
       output.push(...outputLines(message));
   }
 
   return output;
-}
-
-export type TurnReport = {
-  /** Assistant messages that called tools: the turn's tool-activity rounds. */
-  rounds: number;
-  /** Rounds after the turn's last skill write, or null when it wrote none. */
-  roundsSinceSkillWrite: number | null;
-  /** Rounds after the turn's last memory write, or null when it wrote none. */
-  roundsSinceMemoryWrite: number | null;
-  /** The turn in plain text for a review, preceded by the chat before it, bounded by `maxChars`. */
-  digest: string;
-};
-
-const clip = (text: string, max: number) =>
-  text.length > max ? `${text.slice(0, max - 1)}…` : text;
-
-const CONTEXT_ENTRIES = 40;
-
-/** The memory tool's arguments when the call writes. */
-const memoryWriteCall = z.object({
-  action: z.enum(["create", "update", "delete"]),
-});
-
-type ToolCall = Extract<
-  Extract<ModelContent, unknown[]>[number],
-  { type: "toolCall" }
->;
-
-function recordToolRound(calls: ToolCall[], counters: TurnReport): void {
-  counters.rounds++;
-
-  if (counters.roundsSinceSkillWrite !== null) counters.roundsSinceSkillWrite++;
-
-  if (counters.roundsSinceMemoryWrite !== null)
-    counters.roundsSinceMemoryWrite++;
-
-  for (const call of calls) {
-    if (call.name === SKILL_MANAGE_TOOL_NAME)
-      counters.roundsSinceSkillWrite = 0;
-
-    const memoryWrite = memoryWriteCall.safeParse(call.arguments);
-
-    if (call.name === MEMORY_TOOL_NAME && memoryWrite.success)
-      counters.roundsSinceMemoryWrite = 0;
-  }
-}
-
-function assistantLines(
-  content: ModelContent,
-  counters?: TurnReport,
-): string[] {
-  const lines: string[] = [];
-  const text = contentText(content).trim();
-
-  if (text) lines.push(`Assistant:\n${text}`);
-
-  const calls = Array.isArray(content)
-    ? content.filter((block) => block?.type === "toolCall")
-    : [];
-
-  if (calls.length && counters) recordToolRound(calls, counters);
-
-  for (const call of calls)
-    lines.push(
-      `Tool call ${String(call.name ?? "unknown")}: ${clip(JSON.stringify(call.arguments ?? {}), 2000)}`,
-    );
-
-  return lines;
-}
-
-function toolResultLine(
-  message: NonNullable<EntryRecord["model"]>[number],
-): string {
-  const { toolName, isError } = toolMetadata.parse(message);
-
-  return `${isError ? "Tool error" : "Tool result"} ${toolName ?? "unknown"}: ${clip(contentText(message.content).trim(), 4000)}`;
-}
-
-function messageLines(
-  message: ModelMessage,
-  counters: TurnReport | undefined,
-): string[] {
-  if (message.role === "assistant")
-    return assistantLines(message.content, counters);
-
-  if (message.role === "toolResult") return [toolResultLine(message)];
-
-  if (message.role !== "user") return [];
-  const text = contentText(message.content).trim();
-
-  return text ? [`Owner:\n${text}`] : [];
-}
-
-function entryLines(entry: EntryRecord, counters?: TurnReport): string[] {
-  if (INPUT_KINDS.has(entry.kind)) {
-    const input = inputMetadata.parse(record(entry.data) ?? {});
-
-    return [`Owner:\n${input.text ?? contentText(entry.model?.[0]?.content)}`];
-  }
-
-  return (entry.model ?? []).flatMap((message) =>
-    messageLines(message, counters),
-  );
-}
-
-function clipTurn(turn: string, maxChars: number) {
-  if (turn.length <= maxChars) return turn;
-
-  // Keep the input and the end of the turn; the middle is usually tool output.
-  const head = Math.floor(maxChars * 0.4);
-  const tail = maxChars - head - 24;
-
-  return `${turn.slice(0, head)}\n\n[… omitted for length …]\n\n${turn.slice(-tail)}`;
-}
-
-async function earlierChat(
-  conversation: Conversation,
-  inputEntryId: number,
-  room: number,
-) {
-  // SAFETY: the entry before the input is the inclusive upper bound of the earlier chat.
-  const earlier = await conversation.entries(
-    { order: "descending", maxEntryId: (inputEntryId - 1) as EntryId },
-    CONTEXT_ENTRIES,
-    undefined,
-    BACKGROUND_CONTEXT,
-  );
-
-  const contextLines = [...earlier.items]
-    .reverse()
-    .filter((entry) => INPUT_KINDS.has(entry.kind) || entry.model?.length)
-    .flatMap((entry) => entryLines(entry));
-
-  const context = contextLines.join("\n\n");
-
-  return context.length > room
-    ? `[… earlier chat omitted …]\n\n${context.slice(-room)}`
-    : context;
-}
-
-/**
- * What a review needs to know about one turn: the turn itself in full, preceded by the chat before it for the
- * referents of corrections such as "use the previous format". The earlier chat gives way first when `maxChars`
- * binds, then the middle of the turn.
- */
-export async function readTurnReport(
-  conversation: Conversation,
-  inputEntryId: number,
-  maxChars: number,
-): Promise<TurnReport> {
-  // SAFETY: inputEntryId is the persisted input entry; the turn is that entry and everything up to the next input.
-  const turnPage = await conversation.entries(
-    { order: "ascending", minEntryId: inputEntryId as EntryId },
-    MAX_LIMIT,
-    undefined,
-    BACKGROUND_CONTEXT,
-  );
-
-  const report: TurnReport = {
-    rounds: 0,
-    roundsSinceSkillWrite: null,
-    roundsSinceMemoryWrite: null,
-    digest: "",
-  };
-
-  const turnLines: string[] = [];
-
-  for (const [index, entry] of turnPage.items.entries()) {
-    if (index > 0 && INPUT_KINDS.has(entry.kind)) break;
-    turnLines.push(...entryLines(entry, index > 0 ? report : undefined));
-  }
-
-  const turn = clipTurn(turnLines.join("\n\n"), maxChars);
-  const room = maxChars - turn.length - 40;
-
-  const context =
-    room > 200 && inputEntryId > 1
-      ? await earlierChat(conversation, inputEntryId, room)
-      : "";
-
-  report.digest = context
-    ? `Earlier chat:\n\n${context}\n\nThe turn to review:\n\n${turn}`
-    : `The turn to review:\n\n${turn}`;
-
-  return report;
-}
-
-export type TurnOutcome =
-  | { kind: "message"; text: string; sources: WebSource[] }
-  | { kind: "reaction"; emoji: string }
-  | { kind: "pass" };
-
-function toolOutcome(message: ModelMessage): TurnOutcome | null {
-  const { toolName, isError, details } = toolMetadata.parse(message);
-
-  if (message.role !== "toolResult" || isError) return null;
-
-  if (toolName === PASS_TOOL_NAME) return { kind: "pass" };
-
-  const emoji = reactionOf({
-    role: message.role,
-    toolName,
-    isError,
-    toolDetails: details,
-  });
-
-  return emoji ? { kind: "reaction", emoji } : null;
-}
-
-const pages = z.array(
-  z.object({
-    url: z.string(),
-    title: z.string().catch(""),
-    error: z.unknown().optional(),
-  }),
-);
-
-function isWebResult(message: ModelMessage) {
-  const { toolName, isError } = toolMetadata.parse(message);
-
-  return (
-    message.role === "toolResult" &&
-    !isError &&
-    (toolName === WEB_SEARCH_TOOL_NAME || toolName === WEB_EXTRACT_TOOL_NAME)
-  );
-}
-
-/** The pages a turn's web searches and page reads returned, once each and without the ones that failed. */
-function webSourcesOf(messages: ModelMessage[]): WebSource[] {
-  const sources = new Map<string, WebSource>();
-
-  for (const message of messages.filter(isWebResult))
-    for (const { url, title, error } of pages.safeParse(
-      toolMetadata.parse(message).details,
-    ).data ?? [])
-      if (error === undefined) sources.set(url, { url, title });
-
-  return [...sources.values()];
-}
-
-/** The model messages after a turn's input, up to the next input. */
-function turnMessages(entries: readonly EntryRecord[]) {
-  const end = entries.findIndex((entry) => INPUT_KINDS.has(entry.kind));
-
-  return (end === -1 ? entries : entries.slice(0, end)).flatMap(
-    (entry) => entry.model ?? [],
-  );
-}
-
-/** A group turn's result after its input: a pass or reaction wins, else the final answer, else nothing. */
-export async function readTurnOutcome(
-  conversation: Conversation,
-  inputEntryId: number,
-): Promise<TurnOutcome> {
-  // SAFETY: inputEntryId is the persisted input entry; its successor starts the response range.
-  const page = await conversation.entries(
-    { order: "ascending", minEntryId: (inputEntryId + 1) as EntryId },
-    MAX_LIMIT,
-    undefined,
-    BACKGROUND_CONTEXT,
-  );
-
-  const messages = turnMessages(page.items);
-  let text = "";
-
-  for (const message of messages) {
-    if (message.role === "assistant")
-      text = contentText(message.content).trim();
-    const outcome = toolOutcome(message);
-
-    if (outcome) return outcome;
-  }
-
-  return text
-    ? { kind: "message", text, sources: webSourcesOf(messages) }
-    : { kind: "pass" };
 }

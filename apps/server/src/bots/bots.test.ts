@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { agentInput } from "../shared/domain";
+import { agentInput, type Agent } from "../shared/domain";
 import { Store } from "../../test/support/store";
 import { standaloneBots } from "./bots";
 import { AgentRuntime } from "./runtime";
@@ -23,7 +23,12 @@ const make = () => {
 /** The runtime calls admitting a chat input makes, answered without Pi. */
 type RuntimeFixture = {
   openChat?: () => Promise<string>;
+  prepareInput?: (
+    agent: Agent,
+    text: string,
+  ) => Promise<{ modelContent: string; data: { text: string } }>;
   submit?: () => Promise<string>;
+  abort?: () => Promise<void>;
   wait?: () => Promise<{ status: "done" }>;
 };
 
@@ -63,6 +68,46 @@ test("concurrent first uses of a bot's chat open one chat", async () => {
   await bots.close();
 });
 
+test("a failed admission leaves an execution cancelled meanwhile cancelled", async () => {
+  const store = new Store(make());
+  const agent = store.createAgent(agentInput.parse({ name: "Ada" }));
+  const submitting = Promise.withResolvers<void>();
+  const submission = Promise.withResolvers<string>();
+
+  const bots = standaloneBots(
+    store,
+    fakeRuntime({
+      openChat: async () => `${agent.id}:1`,
+      prepareInput: async (_agent, text) => ({
+        modelContent: text,
+        data: { text },
+      }),
+      submit: () => {
+        submitting.resolve();
+
+        return submission.promise;
+      },
+      abort: async () => undefined,
+    }),
+  );
+
+  const settled: string[] = [];
+  bots.onSettled((execution) => void settled.push(execution.status));
+
+  const sending = bots.sendChat(agent.id, "hello", "request-1");
+  await submitting.promise;
+  await bots.abort((await bots.chat(agent.id)).id);
+  submission.reject(new Error("The harness went away"));
+  await sending.catch(() => undefined);
+
+  const [execution] = store.listExecutions(agent.id);
+
+  expect(execution?.status).toBe("cancelled");
+  expect(execution?.error).toBeNull();
+  expect(settled).toEqual(["cancelled"]);
+  await bots.close();
+});
+
 test("closing stops waiting for outcomes, and the next start finishes them", async () => {
   const dir = make();
   const store = new Store(dir);
@@ -73,6 +118,10 @@ test("closing stops waiting for outcomes, and the next start finishes them", asy
     store,
     fakeRuntime({
       openChat: async () => `${agent.id}:1`,
+      prepareInput: async (_agent: Agent, text: string) => ({
+        modelContent: text,
+        data: { text },
+      }),
       submit: async () => "1",
       wait: () => new Promise<never>(() => {}),
     }),

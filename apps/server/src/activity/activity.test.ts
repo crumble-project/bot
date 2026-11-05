@@ -11,12 +11,13 @@ import {
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { AgentRuntime } from "../bots/runtime";
 import { standaloneBots } from "../bots/bots";
-import { standaloneScheduler } from "../schedules/scheduler";
+import { standaloneScheduler } from "../automations/scheduler-test-support";
 import { Store } from "../../test/support/store";
 import { createAPI } from "../app/api";
 import { activityPage, decodeCursor, operationalActivity } from "./activity";
 import type { LearnedChange } from "../shared/domain";
 import type { TranscriptMessage } from "../bots/transcript";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const dirs: string[] = [];
 
@@ -51,12 +52,15 @@ describe("operational activity", () => {
 
     const service = standaloneBots(
       store,
-      new AgentRuntime(dir, {
-        models,
-        extensions: () => [
-          defineExtension({ name: "lookup", tools: [lookup] }),
-        ],
-      }),
+      new AgentRuntime(
+        dir,
+        runtimeCallbacks({
+          models,
+          extensions: () => [
+            defineExtension({ name: "lookup", tools: [lookup] }),
+          ],
+        }),
+      ),
     );
 
     const scheduler = standaloneScheduler(

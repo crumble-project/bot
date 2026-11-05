@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import type { Effect } from "effect";
 import { agentInput } from "../shared/domain";
 import { Store } from "../../test/support/store";
-import type { MemoryContext } from "../bots/runtime";
+import type { MemoryContext } from "./memory-tool";
 import { BotMemory } from "./bot-memory";
 
 const dir = mkdtempSync(join(tmpdir(), "crumble-bot-memory-"));

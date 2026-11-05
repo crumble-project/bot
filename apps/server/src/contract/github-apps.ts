@@ -93,3 +93,10 @@ export const githubAccountResponse = z
 export const githubAccountsResponse = z.object({
   accounts: z.array(githubAccountResponse),
 });
+
+/** The web pages GitHub sends the owner back to, published in each App's manifest; older Apps keep what they registered. */
+export const GITHUB_APP_WEB_PATHS = {
+  created: "/github-app/callback",
+  installed: "/github-app/installed",
+  authorized: "/github-app/authorized",
+} as const;

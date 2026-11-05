@@ -2,11 +2,9 @@ import net from "node:net";
 import tls from "node:tls";
 import { afterEach, describe, expect, test } from "bun:test";
 import { isPublicAddress } from "../shared/public-address";
+import { readHttpHost, readSni } from "./workspace-proxy-protocol";
 import {
-  readHttpHost,
-  readSni,
   startWorkspaceProxy,
-  type ProxyRequest,
   type WorkspaceProxyOptions,
 } from "./workspace-proxy";
 
@@ -35,19 +33,15 @@ async function upstream() {
   return { port: address.port, requests };
 }
 
-async function proxy(
-  decide: WorkspaceProxyOptions["decide"],
-  overrides: Partial<WorkspaceProxyOptions> = {},
-) {
-  const asked: ProxyRequest[] = [];
+async function proxy(overrides: Partial<WorkspaceProxyOptions> = {}) {
+  const asked: string[] = [];
 
   const started = await startWorkspaceProxy({
-    decide: (request) => {
-      asked.push(request);
+    lookup: async (host) => {
+      asked.push(host);
 
-      return decide(request);
+      return ["127.0.0.1"];
     },
-    lookup: async () => ["127.0.0.1"],
     isPublicAddress: () => true,
     firstByteTimeoutMs: 200,
     ...overrides,
@@ -84,28 +78,22 @@ function received(socket: net.Socket) {
 }
 
 describe("workspace proxy", () => {
-  test("an approved request reaches its host by name after the policy decides", async () => {
+  test("a request reaches its host by name", async () => {
     const target = await upstream();
-
-    const { address, asked } = await proxy(async () => {
-      await Bun.sleep(100);
-
-      return true;
-    });
-
+    const { address, asked } = await proxy();
     const socket = await tunnel(address, target.port);
     const reply = received(socket);
 
     socket.write("GET / HTTP/1.1\r\nHost: example.test\r\n\r\n");
 
     expect(await reply).toStartWith("HTTP/1.1 204");
-    expect(asked).toEqual([{ host: "example.test", port: target.port }]);
+    expect(asked).toEqual(["example.test"]);
     expect(target.requests[0]).toStartWith("GET / HTTP/1.1");
   });
 
   test("fragmented CONNECT and coalesced fragmented HTTP reach the named host", async () => {
     const target = await upstream();
-    const { address, asked } = await proxy(() => true);
+    const { address, asked } = await proxy();
     const [host, port] = address.split(":");
     const socket = net.connect(Number(port), host);
     const reply = received(socket);
@@ -120,24 +108,11 @@ describe("workspace proxy", () => {
     socket.write("st: example.test\r\n\r\n");
 
     expect(await reply).toContain("HTTP/1.1 204");
-    expect(asked).toEqual([{ host: "example.test", port: target.port }]);
-  });
-
-  test("a denied request never leaves", async () => {
-    const target = await upstream();
-    const { address, asked } = await proxy(() => false);
-    const socket = await tunnel(address, target.port);
-    const reply = received(socket);
-
-    socket.write("GET / HTTP/1.1\r\nHost: example.test\r\n\r\n");
-
-    expect(await reply).toBe("");
-    expect(asked).toEqual([{ host: "example.test", port: target.port }]);
-    expect(target.requests).toEqual([]);
+    expect(asked).toEqual(["example.test"]);
   });
 
   test("the host comes from the TLS ClientHello", async () => {
-    const { address, asked } = await proxy(() => false);
+    const { address, asked } = await proxy({ isPublicAddress: () => false });
     const socket = await tunnel(address, 443);
 
     const closed = new Promise<void>((resolve) =>
@@ -147,24 +122,22 @@ describe("workspace proxy", () => {
     tls.connect({ socket, servername: "example.test" }).on("error", () => {});
     await closed;
 
-    expect(asked).toEqual([{ host: "example.test", port: 443 }]);
+    expect(asked).toEqual(["example.test"]);
   });
 
-  test("a protocol where the server speaks first is refused without asking", async () => {
+  test("a protocol where the server speaks first is refused before any lookup", async () => {
     const target = await upstream();
-    const { address, asked } = await proxy(() => true);
+    const { address, asked } = await proxy();
     const socket = await tunnel(address, target.port);
 
     expect(await received(socket)).toBe("");
     expect(asked).toEqual([]);
   });
 
-  test("a host that resolves only to private addresses is refused without asking", async () => {
+  test("a host that resolves only to private addresses is refused", async () => {
     const target = await upstream();
 
-    const { address, asked } = await proxy(() => true, {
-      isPublicAddress: () => false,
-    });
+    const { address } = await proxy({ isPublicAddress: () => false });
 
     const socket = await tunnel(address, target.port);
     const reply = received(socket);
@@ -172,7 +145,6 @@ describe("workspace proxy", () => {
     socket.write("GET / HTTP/1.1\r\nHost: example.test\r\n\r\n");
 
     expect(await reply).toBe("");
-    expect(asked).toEqual([]);
     expect(target.requests).toEqual([]);
   });
 });
@@ -236,15 +208,13 @@ describe("request parsing", () => {
 });
 
 test("the proxy listens on a requested port, and refuses a taken one", async () => {
-  const first = await startWorkspaceProxy({ decide: () => true });
+  const first = await startWorkspaceProxy({});
   const port = Number(first.address.split(":")[1]);
   await first.close();
 
-  const again = await startWorkspaceProxy({ decide: () => true, port });
+  const again = await startWorkspaceProxy({ port });
   expect(again.address).toBe(`127.0.0.1:${port}`);
 
-  await expect(
-    startWorkspaceProxy({ decide: () => true, port }),
-  ).rejects.toThrow("EADDRINUSE");
+  await expect(startWorkspaceProxy({ port })).rejects.toThrow("EADDRINUSE");
   await again.close();
 });

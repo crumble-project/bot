@@ -3,7 +3,7 @@ import type { ThinkingLevelMap } from "@earendil-works/pi-ai";
 import { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models";
 
 /** Pinned native routes with their context windows; a loopback gateway needs explicit long-context selection. */
-export const CONTEXT_WINDOWS = new Map([
+const CONTEXT_WINDOWS = new Map([
   ["claude-sonnet-5-5", 1_000_000],
   ["claude-sonnet-5", 1_000_000],
   ["claude-haiku-5-5", 1_000_000],
@@ -15,7 +15,18 @@ export const CONTEXT_WINDOWS = new Map([
 ]);
 
 /** The window Claude Code applies to an id it cannot verify behind the relay. */
-export const UNPINNED_WINDOW = 200_000;
+const UNPINNED_WINDOW = 200_000;
+
+const LONG_CONTEXT = "[1m]";
+
+/** The route's model without the long-context suffix. */
+export const routeModel = (route: string) =>
+  route.endsWith(LONG_CONTEXT) ? route.slice(0, -LONG_CONTEXT.length) : route;
+
+export const isLongContext = (route: string) => route.endsWith(LONG_CONTEXT);
+
+/** The route of `model` with a 1M context window. */
+export const longContextRoute = (model: string) => `${model}${LONG_CONTEXT}`;
 
 // Families that 400 on `thinking: {type: "disabled"}`; a disable becomes the lowest effort instead.
 const MANDATORY_THINKING = [
@@ -25,7 +36,7 @@ const MANDATORY_THINKING = [
   "claude-haiku-5-5",
 ];
 
-export const ALIASES = new Map([
+const ALIASES = new Map([
   ["sonnet", "claude-sonnet-5-5"],
   ["haiku", "claude-haiku-5-5"],
   ["claude-haiku-4-5", "claude-haiku-4-5-20251001"],
@@ -51,7 +62,7 @@ function routeBase(base: string): string {
 }
 
 const canonicalOf = (model: string) => {
-  const base = routeBase(model.replace(/\[1m\]$/, ""));
+  const base = routeBase(routeModel(model));
 
   return ALIASES.get(base) ?? base;
 };
@@ -61,10 +72,10 @@ export function nativeModel(model: string) {
   const canonical = canonicalOf(model);
   const window = CONTEXT_WINDOWS.get(canonical);
 
-  if (window === 1_000_000) return `${canonical}[1m]`;
+  if (window === 1_000_000) return longContextRoute(canonical);
 
   if (window === 200_000) {
-    if (model.endsWith("[1m]"))
+    if (isLongContext(model))
       throw new Error(`${canonical} does not support a 1M context window`);
 
     return canonical;
@@ -106,7 +117,7 @@ export function contextWindow(route: string) {
 
   if (pinned !== undefined) return pinned;
 
-  return route.endsWith("[1m]") ? 1_000_000 : UNPINNED_WINDOW;
+  return isLongContext(route) ? 1_000_000 : UNPINNED_WINDOW;
 }
 
 /** `claude-opus-4-8` reads `Opus 4.8`; a trailing snapshot date is dropped. */
@@ -128,3 +139,10 @@ export const pinnedRoutes = () =>
     route: nativeModel(model),
     canonical: model,
   }));
+
+export const pinnedRouteSet = () =>
+  new Set(pinnedRoutes().map((entry) => entry.route));
+
+/** Pro and Team standard seats bill Fable to usage credits from the first request. */
+export const creditBilledModels = (plan: string) =>
+  new Set(plan && !plan.includes("max") ? ["claude-fable-5-1"] : []);

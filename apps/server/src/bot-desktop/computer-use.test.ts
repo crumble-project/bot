@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createComputerUse } from "./computer-use";
+import { ACTIONS, ACTION_NAMES, effectOf } from "./computer-use-actions";
+import { normalize } from "./computer-use-args";
+import { STEP_ACTION_NAMES } from "./computer-use-steps";
 import type { ControlState } from "./desktop-control";
 import { scriptedGuest } from "../../test/fixtures/scripted-guest";
 
@@ -150,7 +153,6 @@ test("placeholder arguments count as unset", async () => {
       keys: "",
       value: "",
       seconds: 0,
-      name: "",
     },
     BACKGROUND_CONTEXT,
   );
@@ -792,4 +794,93 @@ test("list_apps names each app once, running if any of its processes is", async 
       ),
     ),
   ).toBe("Chromium (running)\nMousepad");
+});
+
+test("each action's effect sets who checks it, and an action the table lacks counts as acting", () => {
+  const withEffect = (effect: string) =>
+    [...ACTIONS].flatMap(([name, entry]) =>
+      entry.effect === effect ? [name] : [],
+    );
+
+  expect(withEffect("observe")).toEqual([
+    "capture",
+    "wait",
+    "list_windows",
+    "list_apps",
+    "read",
+  ]);
+  expect(withEffect("act")).toEqual([
+    "click",
+    "double_click",
+    "right_click",
+    "drag",
+    "type",
+    "key",
+    "set_value",
+    "steps",
+  ]);
+  expect(withEffect("unchecked")).toEqual([
+    "scroll",
+    "focus_window",
+    "launch",
+    "open",
+    "fill_login",
+  ]);
+  expect(effectOf("hover")).toBeUndefined();
+});
+
+test("the schema lists actions and steps in their published order, and every step is an action", () => {
+  expect(ACTION_NAMES).toEqual([
+    "capture",
+    "click",
+    "double_click",
+    "right_click",
+    "drag",
+    "scroll",
+    "type",
+    "key",
+    "set_value",
+    "wait",
+    "list_windows",
+    "focus_window",
+    "launch",
+    "list_apps",
+    "open",
+    "read",
+    "steps",
+    "fill_login",
+  ]);
+  expect(STEP_ACTION_NAMES).toEqual([
+    "click",
+    "double_click",
+    "right_click",
+    "set_value",
+    "type",
+    "key",
+    "scroll",
+  ]);
+  expect(ACTION_NAMES).toEqual(expect.arrayContaining(STEP_ACTION_NAMES));
+});
+
+test("every optional argument a model fills with a placeholder counts as unset", () => {
+  expect(
+    normalize({
+      action: "scroll",
+      direction: "",
+      amount: 0,
+      coordinate: [0, 0],
+      query: "",
+      text: "",
+      value: "",
+      capture_after: false,
+    }),
+  ).toEqual({ action: "scroll", capture_after: false });
+  expect(normalize({ action: "set_value", value: "", text: "" })).toEqual({
+    action: "set_value",
+    value: "",
+  });
+  expect(normalize({ action: "type", text: "", value: "" })).toEqual({
+    action: "type",
+    text: "",
+  });
 });

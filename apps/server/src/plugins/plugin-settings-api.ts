@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import { Secrets } from "../password-managers/secrets";
+import { Secrets } from "../secrets/secrets";
 import { secretInput } from "../shared/domain";
 import { NotFound } from "../shared/errors";
 import type { Runner } from "../shared/runner";

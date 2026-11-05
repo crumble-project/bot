@@ -6,7 +6,7 @@ import {
   SecretUnreadable,
   type PasswordManagerVendor,
 } from "../../src/password-managers/password-manager";
-import { FIELD_NOT_FOUND } from "../../src/password-managers/one-password";
+import { onePassword } from "../../src/password-managers/one-password";
 
 export const FAKE_TOKEN = "fake-token";
 
@@ -44,11 +44,20 @@ const itemOf = (reference: string) =>
   reference.split("/").slice(0, 4).join("/");
 
 /** As 1Password answers: a missing field on an item it holds, otherwise no such item. */
-const missingReason = (state: FakePasswordManager, reference: string) =>
-  state.unreadable.get(reference) ??
-  ([...state.values.keys()].some((held) => itemOf(held) === itemOf(reference))
-    ? FIELD_NOT_FOUND
-    : "has no item that matches");
+const missing = (state: FakePasswordManager, reference: string) => {
+  const reason = state.unreadable.get(reference);
+
+  if (reason) return { message: reason };
+
+  return [...state.values.keys()].some(
+    (held) => itemOf(held) === itemOf(reference),
+  )
+    ? {
+        message: "has no such field on the item",
+        kind: "missing-field" as const,
+      }
+    : { message: "has no item that matches" };
+};
 
 /** A 1Password stand-in over `state` that accepts only `FAKE_TOKEN`. */
 export const fakeVendor = (
@@ -57,6 +66,8 @@ export const fakeVendor = (
   id: "1password",
   name: "Fake",
   reference: Schema.String,
+  itemFields: onePassword.itemFields!,
+  isVolatile: onePassword.isVolatile!,
   signIn: (token) =>
     Effect.suspend(() => {
       if (Redacted.value(token) !== FAKE_TOKEN)
@@ -103,7 +114,7 @@ export const fakeVendor = (
                           ? Result.fail(
                               new SecretUnreadable({
                                 reference,
-                                message: missingReason(state, reference),
+                                ...missing(state, reference),
                               }),
                             )
                           : Result.succeed(Redacted.make(value)),

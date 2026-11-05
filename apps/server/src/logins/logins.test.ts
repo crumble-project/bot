@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Context, Effect, Exit, Layer, Option, Redacted, Scope } from "effect";
 import type { CoreServices } from "../app/core-layer";
-import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
-import { secretsLayer } from "../password-managers/secrets";
+import { SecretRepository } from "../secrets/secret-repository";
+import { secretsLayer } from "../secrets/secrets";
 import { agentInput, loginSaveInput } from "../shared/domain";
 import { runnerOf } from "../shared/runner";
 import {
@@ -65,9 +65,7 @@ function open(values: Record<string, string> = {}) {
       Redacted.value(await run.runPromise(logins.value(agentId, name, field))),
     usedBy: () =>
       store.run(
-        PasswordManagerRepository.use((repository) =>
-          repository.usedBy("1password"),
-        ),
+        SecretRepository.use((repository) => repository.usedBy("1password")),
       ),
   };
 }

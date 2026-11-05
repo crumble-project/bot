@@ -155,21 +155,12 @@ export function registerGitHubAppRoutes(options: {
     const botIds = botIdsOf(githubBotsInput.parse(await c.req.json()).botIds);
 
     return c.json(
-      await github(
-        githubAccounts.assign(c.req.param("id"), botIds).pipe(
-          Effect.tap(({ changed }) => githubApps.sync(changed)),
-          Effect.map(({ account }) => account),
-        ),
-      ),
+      await github(githubApps.assignAccount(c.req.param("id"), botIds)),
       200,
     );
   });
   register(routes.deleteGithubAccount, async (c) => {
-    await github(
-      githubAccounts
-        .remove(c.req.param("id"))
-        .pipe(Effect.flatMap(githubApps.sync)),
-    );
+    await github(githubApps.removeAccount(c.req.param("id")));
 
     return c.body(null, 204);
   });

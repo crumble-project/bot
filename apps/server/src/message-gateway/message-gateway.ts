@@ -1,6 +1,5 @@
 import { gatewayRequest } from "../shared/request-ids";
 import type { JsonValue } from "@earendil-works/chord";
-import { createHash } from "node:crypto";
 import {
   Cause,
   Clock,
@@ -21,7 +20,7 @@ import {
   type GatewayConfig,
   type GatewayDescription,
 } from "../contract/message-gateway";
-import { Secrets, secretText } from "../password-managers/secrets";
+import { Secrets, secretText } from "../secrets/secrets";
 import { Plugins, pluginChatAdapters } from "../plugins/plugins";
 import { activeExecution, type Agent } from "../shared/domain";
 import { InvalidInput, NotFound, type AppError } from "../shared/errors";
@@ -33,10 +32,21 @@ import {
   type GatewayConnection,
   type GatewayMessage,
 } from "./adapter";
-import { GatewayRepository, type GatewayReceipt } from "./gateway-repository";
+import {
+  GATEWAY_RECEIPT_TTL_MS,
+  GatewayRepository,
+  type GatewayReceipt,
+} from "./gateway-repository";
 import { authorizedMessage, gatewayChunks, selectGatewayBot } from "./routing";
 import { MAX_MESSAGE_CHARS } from "../shared/limits";
-import type { ConnectionStatus } from "../shared/domain";
+import {
+  backoff,
+  connectionFailed,
+  credentialsChanged,
+  disconnected,
+  tokenOrFailure,
+  type Reconnecting,
+} from "../shared/reconnecting";
 
 const configKey = (id: string) => `message-gateway:${id}`;
 
@@ -74,20 +84,25 @@ const decodeConfig = (input: JsonValue | GatewayConfig) =>
         );
   });
 
-export const reconnectDelay = (attempt: number) =>
-  Math.min(60000 * 2 ** Math.min(attempt - 1, 20), 900000);
+const MAX_RECEIPT_ATTEMPTS = 10;
 
-const retryDelay = (attempt: number) =>
-  Math.min(5000 * 2 ** Math.min(attempt - 1, 20), 900000);
+const retryDelay = (attempt: number) => backoff(5000, attempt);
 
-type ConnectionState = {
+const receiptKey = (receipt: GatewayReceipt) =>
+  `${receipt.adapterId}:${receipt.messageId}`;
+
+const receiptMessage = (receipt: GatewayReceipt): GatewayMessage => ({
+  id: receipt.messageId,
+  channelId: receipt.channelId,
+  senderId: receipt.senderId,
+  text: receipt.text,
+  isDirectMessage: receipt.isDirectMessage,
+});
+
+type ConnectionState = Reconnecting & {
   connection?: GatewayConnection | undefined;
   token?: string | undefined;
-  status: ConnectionStatus;
-  error: string | null;
   generation: number;
-  retryAt: number;
-  failures: number;
   connectedAt: number | null;
   invalidated: boolean;
 };
@@ -140,11 +155,8 @@ export class MessageGateway extends Context.Service<
         adapters.map((adapter) => [
           adapter.id,
           {
-            status: "disconnected",
-            error: null,
+            ...disconnected(),
             generation: 0,
-            retryAt: 0,
-            failures: 0,
             connectedAt: null,
             invalidated: false,
           },
@@ -272,7 +284,7 @@ export class MessageGateway extends Context.Service<
           sent: [],
           state: "pending",
           createdAt: receivedAt,
-          expiresAt: receivedAt + 86400000,
+          expiresAt: receivedAt + GATEWAY_RECEIPT_TTL_MS,
         });
       });
 
@@ -295,18 +307,6 @@ export class MessageGateway extends Context.Service<
 
       const readSecret = secretText(secrets);
       const readToken = (adapter: ChatAdapter) => readSecret(adapter.secretKey);
-
-      // A password manager that can't read the token explains itself instead of the generic missing-token error.
-      const tokenOrError = (adapter: ChatAdapter) =>
-        readToken(adapter).pipe(
-          Effect.match({
-            onFailure: (failure) => ({
-              token: undefined,
-              error: failure.message,
-            }),
-            onSuccess: (token) => ({ token, error: undefined }),
-          }),
-        );
 
       const configureConnection = Effect.fnUntraced(function* (
         adapter: ChatAdapter,
@@ -333,8 +333,7 @@ export class MessageGateway extends Context.Service<
           yield* cancelWorkers(adapter.id);
           yield* stop(state);
           state.token = token;
-          state.failures = 0;
-          state.retryAt = 0;
+          credentialsChanged(state);
         }
 
         return true;
@@ -347,11 +346,11 @@ export class MessageGateway extends Context.Service<
       ) {
         yield* cancelWorkers(adapter.id);
         yield* stop(state);
-        state.failures++;
-        state.retryAt = now + reconnectDelay(state.failures);
-        state.status = "error";
-        state.error =
-          "The adapter connection was invalidated. Reconnecting automatically.";
+        connectionFailed(
+          state,
+          now,
+          "The adapter connection was invalidated. Reconnecting automatically.",
+        );
       });
 
       const connectAdapter = Effect.fnUntraced(function* (
@@ -379,12 +378,13 @@ export class MessageGateway extends Context.Service<
                         Effect.flatMap(Fiber.join),
                       ),
                     ),
-              onStatus: (status, error) => {
+              onStatus: (status) => {
                 if (closed || state.generation !== generation) return;
                 state.status = status;
-                state.error = error
-                  ? "The adapter reported an error. Check its token, intents, and permissions."
-                  : null;
+                state.error =
+                  status === "error"
+                    ? "The adapter reported an error. Check its token, intents, and permissions."
+                    : null;
               },
               onInvalidated: () => {
                 if (closed || state.generation !== generation) return;
@@ -428,11 +428,11 @@ export class MessageGateway extends Context.Service<
         if (reconfiguring.has(adapter.id)) return;
         const state = states.get(adapter.id)!;
         const current = yield* config(adapter.id);
-        const { token, error } = yield* tokenOrError(adapter);
+        const { token, failure } = yield* tokenOrFailure(readToken(adapter));
         const now = yield* Clock.currentTimeMillis;
 
         if (
-          !(yield* configureConnection(adapter, state, current, token, error))
+          !(yield* configureConnection(adapter, state, current, token, failure))
         )
           return;
 
@@ -459,16 +459,12 @@ export class MessageGateway extends Context.Service<
           yield* dispatchReceipts;
         } else {
           state.generation++;
-          state.failures++;
-          state.status = "error";
-          state.error =
-            "Gateway login failed. Check its token, intents, and connection; reconnecting automatically.";
-          state.retryAt =
-            now +
-            Math.max(
-              reconnectDelay(state.failures),
-              connected.failure.details.retryAfterMs ?? 0,
-            );
+          connectionFailed(
+            state,
+            now,
+            "Gateway login failed. Check its token, intents, and connection; reconnecting automatically.",
+            connected.failure.details.retryAfterMs ?? 0,
+          );
         }
       });
 
@@ -600,17 +596,12 @@ export class MessageGateway extends Context.Service<
         )
           return false;
 
-        const nonce = createHash("sha256")
-          .update(`${receipt.adapterId}:${receipt.messageId}:${index}`)
-          .digest("hex")
-          .slice(0, 24);
-
         const sent = yield* transport(() =>
           connection.send({
             channelId: receipt.channelId,
             replyTo: receipt.messageId,
             text: receipt.chunks![index]!,
-            nonce,
+            nonce: `${receiptKey(receipt)}:${index}`,
           }),
         );
 
@@ -621,17 +612,20 @@ export class MessageGateway extends Context.Service<
         return true;
       });
 
-      // Discord's indicator lasts 10 seconds; renewing at 8 keeps it steady while the bot works.
       const typingAt = new Map<string, number>();
 
       const showTyping = Effect.fnUntraced(function* (
         key: string,
         channelId: string,
+        adapter: ChatAdapter,
         connection: GatewayConnection,
       ) {
         const now = yield* Clock.currentTimeMillis;
 
-        if (!connection.typing || now - (typingAt.get(key) ?? -Infinity) < 8000)
+        if (
+          !connection.typing ||
+          now - (typingAt.get(key) ?? -Infinity) < adapter.typingRenewalMs
+        )
           return;
         typingAt.set(key, now);
         yield* transport(() => connection.typing!(channelId)).pipe(
@@ -653,21 +647,12 @@ export class MessageGateway extends Context.Service<
           if (!connectionCurrent(state, connection, generation)) return;
           const current = yield* config(adapter.id);
 
-          if (
-            !authorizedMessage(current, {
-              id: receipt.messageId,
-              channelId: receipt.channelId,
-              senderId: receipt.senderId,
-              text: receipt.text,
-              isDirectMessage: receipt.isDirectMessage,
-            })
-          )
-            return;
+          if (!authorizedMessage(current, receiptMessage(receipt))) return;
 
-          const key = `${receipt.adapterId}:${receipt.messageId}`;
+          const key = receiptKey(receipt);
 
           if (!prepared) {
-            yield* showTyping(key, receipt.channelId, connection);
+            yield* showTyping(key, receipt.channelId, adapter, connection);
 
             return;
           }
@@ -692,7 +677,12 @@ export class MessageGateway extends Context.Service<
         state: ConnectionState | undefined,
         now: number,
       ) {
-        if (!(receipt.expiresAt <= now || receipt.attemptCount >= 10))
+        if (
+          !(
+            receipt.expiresAt <= now ||
+            receipt.attemptCount >= MAX_RECEIPT_ATTEMPTS
+          )
+        )
           return false;
         receipt.state = "failed";
         receipt.failedAt = now;
@@ -727,16 +717,7 @@ export class MessageGateway extends Context.Service<
         if (token !== state.token) return false;
         const current = yield* config(adapter.id);
 
-        if (
-          !authorizedMessage(current, {
-            id: receipt.messageId,
-            channelId: receipt.channelId,
-            senderId: receipt.senderId,
-            text: receipt.text,
-            isDirectMessage: receipt.isDirectMessage,
-          })
-        )
-          return false;
+        if (!authorizedMessage(current, receiptMessage(receipt))) return false;
 
         return !(
           (yield* receipts.cooldown(adapter.id, receipt.channelId)) > now
@@ -803,7 +784,7 @@ export class MessageGateway extends Context.Service<
 
         if (
           error?.details.permanent ||
-          receipt.attemptCount >= 10 ||
+          receipt.attemptCount >= MAX_RECEIPT_ATTEMPTS ||
           receipt.expiresAt <= failedAt
         ) {
           receipt.state = "failed";
@@ -834,7 +815,7 @@ export class MessageGateway extends Context.Service<
           const now = yield* Clock.currentTimeMillis;
 
           for (const receipt of yield* receipts.pending) {
-            const key = `${receipt.adapterId}:${receipt.messageId}`;
+            const key = receiptKey(receipt);
             const state = states.get(receipt.adapterId);
 
             if (workers.has(key)) continue;

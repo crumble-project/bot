@@ -6,7 +6,7 @@ import { desktopControlAccess } from "../bot-desktop/desktop-control";
 import { HeldActions, heldActionsAccess } from "../bot-desktop/held-actions";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import { standaloneBots } from "../bots/bots";
-import { standaloneScheduler } from "../schedules/scheduler";
+import { standaloneScheduler } from "../automations/scheduler-test-support";
 import { createAPI, handleApiError, type ApiOptions } from "./api";
 import { heldActionNotices } from "./plugin-layers";
 import { contractApp } from "../contract/api-contract";
@@ -14,7 +14,7 @@ import type { secretInput } from "../shared/domain";
 import type { z } from "zod";
 import { registerMcpServerRoutes } from "../integrations/mcp-servers-api";
 import type { McpIntegrations } from "../integrations/integrations";
-import { secretStorage } from "../integrations/mcp-oauth";
+import { McpServers } from "../integrations/mcp-servers";
 import { registerPluginSettingRoutes } from "../plugins/plugin-settings-api";
 import { memoryResponse } from "../contract/api-responses";
 import { Context, Effect, Exit, Layer, Scope } from "effect";
@@ -24,14 +24,15 @@ import {
   fakeVendor,
   type FakePasswordManager,
 } from "../../test/support/fake-password-manager";
-import { SecretValues } from "../password-managers/secret-values";
-import { secretsLayer } from "../password-managers/secrets";
+import { SecretValues } from "../secrets/secret-values";
+import { secretsLayer } from "../secrets/secrets";
 import { standaloneSignIns } from "../providers/provider-auth";
 import { ProviderCredentials } from "../providers/provider-credentials";
 import type { CoreServices } from "./core-layer";
 import { runnerOf } from "../shared/runner";
-import { ScriptRuns } from "../schedules/script-runs";
-import { ScriptRunRepository } from "../schedules/script-run-repository";
+import { ScriptRuns } from "../automations/script-runs";
+import type { Workspaces } from "../workspaces/workspace";
+import { ScriptRunRepository } from "../automations/script-run-repository";
 import {
   scheduleInput,
   type ScheduleInput,
@@ -85,6 +86,10 @@ function setup(options: Parameters<typeof createAPI>[2] = {}) {
 
   const runtime: any = {
     openChat: async (agent: { id: string }) => `${agent.id}:${++sequence}`,
+    prepareInput: async (_agent: RuntimeAgent, text: string) => ({
+      modelContent: text,
+      data: { text },
+    }),
     submit: async (
       _a: RuntimeAgent,
       _c: string,
@@ -102,15 +107,20 @@ function setup(options: Parameters<typeof createAPI>[2] = {}) {
     abort: async () => {},
     deleteAgent: async () => {},
     history: async () => ({ messages: [] }),
-    desktopJobs: async () => [],
+    jobs: async () => [],
     close: async () => {},
   };
 
   const store = new Store(dir);
   const service = standaloneBots(store, runtime);
 
-  const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
-    service.dispatch(a, p, r, s),
+  const scheduler = standaloneScheduler(
+    store.runtime,
+    (a, p, r, s) => service.dispatch(a, p, r, s),
+    undefined,
+    undefined,
+    // SAFETY: script policy only checks that workspaces exist; no method is called.
+    options.coding ? ({} as Workspaces) : undefined,
   );
 
   return {
@@ -365,7 +375,7 @@ describe("HTTP API for bots, chats, and activity", () => {
       delegates: [],
     });
 
-    runtime.desktopJobs = async (owner: RuntimeAgent) => [
+    runtime.jobs = async (owner: RuntimeAgent) => [
       {
         name: "github-login",
         conversationId: `${owner.id}:desktop`,
@@ -397,6 +407,10 @@ describe("HTTP API for bots, chats, and activity", () => {
 
     const runtime: any = {
       openChat: async (agent: { id: string }) => `${agent.id}:${++sequence}`,
+      prepareInput: async (_agent: RuntimeAgent, text: string) => ({
+        modelContent: text,
+        data: { text },
+      }),
       submit: async () => "submission",
       wait: async () => ({ status: "done" }),
       snapshot: async (_a: RuntimeAgent, conversationId: string) => ({
@@ -1493,7 +1507,7 @@ describe("HTTP API for script tasks and schedules", () => {
       error: "This server has no workspaces",
     });
 
-    const existing = without.scheduler.create(
+    const existing = without.store.createSchedule(
       scheduleInput.parse({ ...draft, agentId: bot.id }),
     );
 
@@ -1507,10 +1521,10 @@ describe("HTTP API for script tasks and schedules", () => {
   });
 
   test("converting a script task requires a prompt and clears its command without workspaces", async () => {
-    const { app, store, scheduler } = setup();
+    const { app, store } = setup();
     const agent = store.createAgent(agentInput("Former coder"));
 
-    const script = scheduler.create(
+    const script = store.createSchedule(
       scheduleInput.parse({
         agentId: agent.id,
         name: "Check",
@@ -1558,7 +1572,7 @@ describe("HTTP API for script tasks and schedules", () => {
       tools: ["coding"],
     });
 
-    const schedule = scheduler.create(
+    const schedule = store.createSchedule(
       scheduleInput.parse({
         agentId: agent.id,
         name: "Check",
@@ -1606,14 +1620,14 @@ describe("HTTP API for script tasks and schedules", () => {
   });
 
   test("a script result notice reaches the bot with the script origin and task name", async () => {
-    const { store, service, scheduler, runtime } = setup();
+    const { store, service, runtime } = setup();
 
     const agent = store.createAgent({
       ...agentInput("Coder"),
       tools: ["coding"],
     });
 
-    const task = scheduler.create(
+    const task = store.createSchedule(
       scheduleInput.parse({
         agentId: agent.id,
         name: "Daily check",
@@ -2053,6 +2067,7 @@ describe("provider API keys from a password manager", () => {
 
     const providerAuth = standaloneSignIns(
       runnerOf(Context.merge(core, vault)),
+      [],
     );
 
     const app = createAPI(service, token, {
@@ -2185,9 +2200,7 @@ describe("MCP server tokens from a password manager", () => {
       register: (definition, handler) =>
         app.on(definition.method, definition.getRoutingPath(), handler),
       service,
-      run,
-      secrets: secretStorage(run),
-      integrations,
+      mcpServers: new McpServers({ run, integrations }),
     });
     registerPluginSettingRoutes({
       register: (definition, handler) =>
@@ -2221,6 +2234,7 @@ describe("MCP server tokens from a password manager", () => {
         }),
       patch: (id: string, body: ServerBody) =>
         send("PATCH", `/v1/mcp-servers/${id}`, body),
+      remove: (id: string) => send("DELETE", `/v1/mcp-servers/${id}`),
       list: async () => (await send("GET", "/v1/mcp-servers")).json(),
       setPluginToken: (body: z.input<typeof secretInput>) =>
         app.request("/v1/plugin-settings/chat/token", {
@@ -2253,6 +2267,15 @@ describe("MCP server tokens from a password manager", () => {
         token: { passwordManager: "1password", reference: REFERENCE },
       },
     ]);
+    api.close();
+  });
+
+  test("deleting a server closes its connection", async () => {
+    const api = mcpSetup(fakePasswordManager());
+    const created: { id: string } = await (await api.create({})).json();
+
+    expect((await api.remove(created.id)).status).toBe(204);
+    expect(api.disconnected).toEqual([created.id]);
     api.close();
   });
 

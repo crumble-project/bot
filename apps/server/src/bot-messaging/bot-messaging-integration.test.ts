@@ -10,13 +10,14 @@ import {
   type FauxResponseFactory,
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "../bots/runtime";
-import { codingPlugin, codingQuestions } from "../jobs/coding";
+import { codingPlugin } from "../jobs/coding";
 import { DirectoryWorkspaces } from "../jobs/jobs-test-support";
 import { conversationEnv, jobExtensions } from "../plugins/plugins";
 import { Store } from "../../test/support/store";
 import { standaloneBots } from "../bots/bots";
 import { coordinationExtension } from "./coordination";
 import { botMessagingAccess, standaloneMessaging } from "./bot-messaging";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 test("a real faux turn asks another bot and only exposes its answer", async () => {
   const dir = mkdtempSync(join(tmpdir(), "bot-messaging-e2e-"));
@@ -113,14 +114,19 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
     );
     let service!: ReturnType<typeof standaloneBots<Store>>;
 
-    const runtime = new AgentRuntime(dir, {
-      models,
-      listMemory: (id) =>
-        id === sourceId ? [{ id: "m", content: "private source memory" }] : [],
-      extensions: (agent) => [
-        coordinationExtension(agent, standaloneMessaging(service)),
-      ],
-    });
+    const runtime = new AgentRuntime(
+      dir,
+      runtimeCallbacks({
+        models,
+        listMemory: (id) =>
+          id === sourceId
+            ? [{ id: "m", content: "private source memory" }]
+            : [],
+        extensions: (agent) => [
+          coordinationExtension(agent, standaloneMessaging(service)),
+        ],
+      }),
+    );
 
     service = standaloneBots(store, runtime);
 
@@ -220,7 +226,7 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
       ),
     ).toHaveLength(2);
     await runtime.close();
-    const reopened = new AgentRuntime(dir, { models });
+    const reopened = new AgentRuntime(dir, runtimeCallbacks({ models }));
 
     try {
       const persisted = (await reopened.history(source)).messages.filter(
@@ -380,21 +386,24 @@ async function delegatedBuild(asking: Promise<void>) {
   const kinds = codingPlugin(new DirectoryWorkspaces(workspace)).jobKinds ?? [];
   let service!: ReturnType<typeof standaloneBots<Store>>;
 
-  const runtime = new AgentRuntime(dir, {
-    models,
-    extensions: (agent) => [
-      coordinationExtension(agent, standaloneMessaging(service)),
-      ...jobExtensions(kinds, agent).chat,
-    ],
-    taskExtensions: (agent) => jobExtensions(kinds, agent).job,
-    env: (agent, target, context) =>
-      conversationEnv(kinds, agent, target, context),
-  });
+  const runtime = new AgentRuntime(
+    dir,
+    runtimeCallbacks({
+      models,
+      extensions: (agent) => [
+        coordinationExtension(agent, standaloneMessaging(service)),
+        ...jobExtensions(kinds, agent).chat,
+      ],
+      taskExtensions: (agent) => jobExtensions(kinds, agent).job,
+      env: (agent, target, context) =>
+        conversationEnv(kinds, agent, target, context),
+    }),
+  );
 
   service = standaloneBots(store, runtime);
   const messaging = botMessagingAccess(standaloneMessaging(service));
 
-  const stopRelay = codingQuestions(async (asked) => {
+  const stopRelay = kinds[0]!.onQuestion!(async (asked) => {
     await messaging.relayQuestion(asked);
   });
 
@@ -510,7 +519,7 @@ test("a job's question goes to the bot that delegated its task, whose answer res
 
     // The reporter's answer closed the question; the owner's comes too late.
     await expect(
-      service.answerCodingJob(CODER, {
+      service.answerJob(CODER, "coding", {
         name: "builder",
         questionId: card!.jobQuestion!.id,
         text: "red",
@@ -544,7 +553,7 @@ test("a job's question stays with the owner once the delegating bot may no longe
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(store.listExecutions(MAGNUM)).toHaveLength(1);
 
-    await service.answerCodingJob(CODER, {
+    await service.answerJob(CODER, "coding", {
       name: "builder",
       questionId: (await card())!.jobQuestion!.id,
       text: "red",

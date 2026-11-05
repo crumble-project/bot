@@ -15,17 +15,18 @@ import {
   Scheduler,
   schedulerAccess,
   type SchedulerAccess,
-} from "../schedules/scheduler";
-import { BotSchedules, scheduleTools } from "../schedules/bot-schedules";
-import { TaskDispatch } from "../schedules/task-dispatch";
-import { ScriptRuns } from "../schedules/script-runs";
+} from "../automations/scheduler";
+import { BotSchedules, scheduleTools } from "../automations/bot-schedules";
+import { Automations } from "../automations/automations";
+import { TaskDispatch } from "../automations/task-dispatch";
+import { ScriptRuns } from "../automations/script-runs";
 import { createAPI } from "./api";
 import { GroupChats, GroupTranscriptStore } from "../group-chats/group-chats";
 import { groupLookupTools } from "../group-chats/group-lookup";
 import { GroupTranscripts } from "../group-chats/group-transcripts";
 import { historyTools } from "../history/history-tools";
 import { BotSkills } from "../skills/skills";
-import { LearningReview, learningReviews } from "../skills/learning-review";
+import { LearningReview, learningReviews } from "../learning/learning-review";
 import { SkillCurator, skillCuration } from "../skills/skill-curator";
 import { skillUpdateChecks } from "../skills/skill-installer";
 import { CommonSkills } from "../skills/common-skills";
@@ -39,7 +40,7 @@ import { displayTools } from "../display/display";
 import { desktopControlAccess } from "../bot-desktop/desktop-control";
 import { heldActionsAccess } from "../bot-desktop/held-actions";
 import { chosenJudge } from "../bot-desktop/judge-settings";
-import { accountJudge } from "../jobs/desktop-intent";
+import { accountJudge } from "../bot-desktop/desktop-intent";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import type { Workspaces } from "../workspaces/workspace";
 import {
@@ -47,7 +48,7 @@ import {
   type WorkspaceSize,
 } from "../workspaces/machine-workspaces";
 import { Push, PushDelivery } from "../push/push";
-import { ProviderModels } from "../providers/providers";
+import { ProviderModels, accountModels } from "../providers/providers";
 import { ProviderSignIns } from "../providers/provider-auth";
 import { credentialsAccess } from "../credentials/credentials";
 import { loginsAccess } from "../logins/logins";
@@ -74,18 +75,23 @@ import {
   assertVendorIds,
 } from "../plugins/plugins";
 import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
-import { BotWorkspaces } from "../workspaces/workspace";
+import {
+  BotWorkspaces,
+  GUEST_CA_PATH,
+  GUEST_SIGN_PATH,
+  signingHelper,
+} from "../workspaces/workspace";
 import { GitHubAccounts } from "../github-apps/github-accounts";
 import { desktopKeepAwake } from "../bot-desktop/keep-awake";
 import { desktopScreenshotTools } from "../bot-desktop/desktop-screenshot";
 import { AgentRepository } from "../bots/agent-repository";
 import { BotRequests, botRequestTools } from "../bot-requests/bot-requests";
-import { Secrets, secretText } from "../password-managers/secrets";
+import { Secrets, secretText } from "../secrets/secrets";
 import { MessageGateway } from "../message-gateway/message-gateway";
 import { EventRelay } from "../event-sources/event-relay";
 import { EventSources } from "../event-sources/event-sources";
-import { EventDispatcher } from "../event-sources/event-dispatcher";
-import { eventPayloadTools } from "../event-sources/event-tools";
+import { EventDispatcher } from "../automations/event-dispatcher";
+import { eventPayloadTools } from "../automations/event-tools";
 import { BOT_TOOL } from "../contract/tools";
 
 export type TenantOptions = {
@@ -169,7 +175,21 @@ function accountLayer(
           Effect.runSync(agents.get(agentId))?.tools.includes(
             BOT_TOOL.desktop,
           ) === true,
-        caCertificate: (agentId: string) => authorities.certificate(agentId),
+        guest: async (agentId: string) => ({
+          files: [
+            { path: GUEST_SIGN_PATH, content: signingHelper(), mode: 0o755 },
+            {
+              path: GUEST_CA_PATH,
+              content: await authorities.certificate(agentId),
+            },
+          ],
+          commands: [
+            {
+              step: "Installing the credential authority",
+              command: "update-ca-certificates >/dev/null",
+            },
+          ],
+        }),
         ...(settings && {
           size: settings,
           baseImage: () => settings().baseImage,
@@ -239,9 +259,7 @@ function accountLayer(
   const models = Layer.unwrap(
     Plugins.use((installed) =>
       Effect.succeed(
-        ProviderModels.layer(pluginProviders(installed), {
-          allowAmbientEnv: false,
-        }),
+        ProviderModels.layer(accountModels, pluginProviders(installed)),
       ),
     ),
   );
@@ -282,7 +300,9 @@ function accountLayer(
     Bots.use((service) => Effect.succeed(service.dispatch)),
   );
 
-  const scheduler = Scheduler.layer().pipe(Layer.provide(dispatch));
+  const automations = Automations.layer.pipe(Layer.provide(dispatch));
+
+  const scheduler = Scheduler.layer().pipe(Layer.provide(automations));
 
   const groups = GroupChats.layer.pipe(
     Layer.provide(
@@ -317,7 +337,7 @@ function accountLayer(
     push,
     MessageGateway.layer,
     EventSources.layer.pipe(Layer.provideMerge(EventRelay.layer)),
-    EventDispatcher.layer.pipe(Layer.provide(dispatch)),
+    EventDispatcher.layer.pipe(Layer.provide(automations)),
   );
 
   const conversations = Layer.mergeAll(scheduler, groups, activity);

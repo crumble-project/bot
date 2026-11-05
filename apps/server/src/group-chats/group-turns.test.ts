@@ -14,11 +14,15 @@ import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
 import { Plugins } from "../plugins/plugins";
 import { BotExtensions } from "../bots/bot-extensions";
-import { webSearchTools } from "../web-search/web-search-tools";
+import { configuredWebSearchTools } from "../web-search/web-search-tools";
+import { AgentRepository } from "../bots/agent-repository";
+import { SettingsRepository } from "../shared/settings-repository";
 import type { Agent } from "../shared/domain";
 import { defaultAvatarDefinition } from "../contract/avatar";
 import { reactionExtension } from "../bots/reaction";
 import { AgentRuntime } from "../bots/runtime";
+import { turnOutcome } from "./group-turn-outcome";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -108,10 +112,13 @@ function open(
   const models = createModels();
   models.setProvider(faux.provider);
 
-  const runtime = new AgentRuntime(dir, {
-    models,
-    extensions: extensions ?? (() => [coordination, reactionExtension()]),
-  });
+  const runtime = new AgentRuntime(
+    dir,
+    runtimeCallbacks({
+      models,
+      extensions: extensions ?? (() => [coordination, reactionExtension()]),
+    }),
+  );
 
   cleanups.push(() => runtime.close());
 
@@ -122,7 +129,7 @@ async function turn(runtime: AgentRuntime, conversation: string, text: string) {
   const submission = await runtime.submit(agent, conversation, text, text);
   await runtime.wait(submission, agent);
 
-  return runtime.turnOutcome(agent, conversation, submission);
+  return turnOutcome(runtime, agent, conversation, submission);
 }
 
 test("a group conversation offers pass and react but no delegation", async () => {
@@ -131,15 +138,22 @@ test("a group conversation offers pass and react but no delegation", async () =>
   const group = await runtime.openGroupConversation(agent, "group-1");
 
   await turn(runtime, group, "hello");
-  expect(offered.at(-1)).toEqual(["memory", "react", "pass"]);
+  expect(offered.at(-1)).toEqual(["memory", "skill_manage", "react", "pass"]);
 
   await turn(runtime, chat, "hi");
-  expect(offered.at(-1)).toEqual(["memory", "delegate", "react"]);
+  expect(offered.at(-1)).toEqual([
+    "memory",
+    "skill_manage",
+    "delegate",
+    "react",
+  ]);
 });
 
 test("web tools are offered in bot chat and group turns", async () => {
-  const layers = webSearchTools.pipe(
+  const layers = configuredWebSearchTools.pipe(
     Layer.provideMerge(BotExtensions.layer),
+    Layer.provide(Layer.mock(AgentRepository)({})),
+    Layer.provide(Layer.mock(SettingsRepository)({})),
     Layer.provide(
       Layer.succeed(Plugins, [
         {
@@ -173,7 +187,12 @@ test("web tools are offered in bot chat and group turns", async () => {
 
           await runtime.wait(submission, enabled);
         });
-        expect(offered.at(-1)).toEqual(["memory", "web_search", "web_extract"]);
+        expect(offered.at(-1)).toEqual([
+          "memory",
+          "skill_manage",
+          "web_search",
+          "web_extract",
+        ]);
 
         yield* Effect.promise(async () => {
           const submission = await runtime.submit(
@@ -187,6 +206,7 @@ test("web tools are offered in bot chat and group turns", async () => {
         });
         expect(offered.at(-1)).toEqual([
           "memory",
+          "skill_manage",
           "web_search",
           "web_extract",
           "pass",

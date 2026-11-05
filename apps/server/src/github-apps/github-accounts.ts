@@ -1,15 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { Context, Effect, Layer, Redacted } from "effect";
-import { z } from "zod";
-import type { SecretUnavailable } from "../password-managers/secret-values";
-import { Secrets, secretKey } from "../password-managers/secrets";
+import { secretKey } from "../secrets/secret-key";
+import type { SecretUnavailable } from "../secrets/secret-values";
+import { Secrets } from "../secrets/secrets";
+import { ServerSecrets } from "../secrets/server-secrets";
 import type { SecretInput, SecretStatus } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { Conflict, InvalidInput, NotFound } from "../shared/errors";
-import { SecretRepository } from "../credentials/secret-repository";
-import { GitHubUnavailable, assignmentChange, github } from "./github-api";
+import {
+  GitHubUnavailable,
+  assignmentChange,
+  github,
+  githubUser,
+} from "./github-api";
 import { githubAccountBots, githubAccounts } from "./schema";
 import { newSigningKey, sshPublicKey, sshSign } from "./ssh-signing";
 
@@ -29,7 +34,10 @@ export type GitHubAccount = {
 export type GitHubAccountOfBot = {
   login: string;
   userId: number;
-  token: Effect.Effect<Redacted.Redacted, SecretUnavailable>;
+  token: Effect.Effect<
+    Redacted.Redacted,
+    SecretUnavailable | GitHubUnavailable
+  >;
   signingKey: string;
   /** Signs a commit or tag with the account's key, as `ssh-keygen -Y sign -n git` would. */
   sign: (data: Uint8Array) => string;
@@ -40,11 +48,9 @@ const tokenKey = (id: string) => secretKey("github-account", id);
 // Made by the server, never entered by the owner, so it stays in Crumble's own encrypted store.
 const signingKeyKey = (id: string) => secretKey("github-account-signing", id);
 
-const user = z.object({ login: z.string().min(1), id: z.number().int() });
-
 /** The GitHub user a token signs in as; a token GitHub refuses is the owner's input to fix. */
 const userOf = (token: Redacted.Redacted) =>
-  github("/user", user, { token: Redacted.value(token) }).pipe(
+  github("/user", githubUser, { token: Redacted.value(token) }).pipe(
     Effect.catchIf(
       (error) => error.status === 401,
       () =>
@@ -57,6 +63,9 @@ const userOf = (token: Redacted.Redacted) =>
   );
 
 type AccountRow = typeof githubAccounts.$inferSelect;
+
+const publicSigningKey = (privateKey: string, login: string) =>
+  sshPublicKey(privateKey, `${login}@crumble`);
 
 /**
  * GitHub users the owner made for bots, added with a personal access token. A bot acts as its machine account
@@ -101,20 +110,16 @@ export class GitHubAccounts extends Context.Service<
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
       const secrets = yield* Secrets;
-      const stored = yield* SecretRepository;
+      const serverSecrets = yield* ServerSecrets;
 
-      // Accounts added before commit signing get their key on first use.
       const privateKey = Effect.fn("GitHubAccounts.privateKey")(function* (
         id: string,
       ) {
-        const existing = yield* stored.get(signingKeyKey(id));
+        const key = yield* serverSecrets.get(signingKeyKey(id));
 
-        if (existing) return existing;
-        const created = newSigningKey();
+        if (!key) return yield* Effect.die(`Account ${id} has no signing key`);
 
-        yield* stored.set(signingKeyKey(id), created);
-
-        return created;
+        return key;
       });
 
       const row = Effect.fn("GitHubAccounts.row")(function* (id: string) {
@@ -147,9 +152,9 @@ export class GitHubAccounts extends Context.Service<
           htmlUrl: `https://github.com/${found.login}`,
           botIds: yield* botIdsOf(found.id),
           token: yield* secrets.status(tokenKey(found.id)),
-          signingKey: sshPublicKey(
+          signingKey: publicSigningKey(
             yield* privateKey(found.id),
-            `${found.login}@crumble`,
+            found.login,
           ),
           createdAt: found.createdAt,
         } satisfies GitHubAccount;
@@ -198,6 +203,8 @@ export class GitHubAccounts extends Context.Service<
         const found = yield* secrets.save(tokenKey(id), token, (value) =>
           userOf(value).pipe(Effect.tap(notAdded)),
         );
+
+        yield* serverSecrets.set(signingKeyKey(id), newSigningKey());
 
         yield* db
           .insert(githubAccounts)
@@ -312,7 +319,7 @@ export class GitHubAccounts extends Context.Service<
           return yield* new NotFound({ message: "Machine account not found" });
 
         yield* secrets.delete(tokenKey(id));
-        yield* stored.delete(signingKeyKey(id));
+        yield* serverSecrets.delete(signingKeyKey(id));
 
         return botIds;
       });
@@ -336,11 +343,19 @@ export class GitHubAccounts extends Context.Service<
         return {
           login: found.account.login,
           userId: found.account.userId,
-          signingKey: sshPublicKey(key, `${found.account.login}@crumble`),
+          signingKey: publicSigningKey(key, found.account.login),
           sign: (data: Uint8Array) => sshSign(key, data, "git"),
-          token: secrets
-            .read(tokenKey(found.account.id))
-            .pipe(Effect.map((token) => token ?? Redacted.make(""))),
+          token: Effect.flatMap(
+            secrets.read(tokenKey(found.account.id)),
+            (token) =>
+              token
+                ? Effect.succeed(token)
+                : Effect.fail(
+                    new GitHubUnavailable({
+                      message: `the machine account ${found.account.login} has no token`,
+                    }),
+                  ),
+          ),
         };
       });
 

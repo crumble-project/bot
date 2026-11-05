@@ -6,7 +6,7 @@ import { RfbProtocolError, rfbFilter } from "./rfb-filter";
 import type { DesktopStream } from "../workspaces/workspace";
 
 /** How long an issued viewer link stays valid before its WebSocket connects. */
-export const VIEWER_TICKET_MS = 60_000;
+const VIEWER_TICKET_MS = 60_000;
 
 /** The URL prefix of viewer pages, their WebSockets, and the noVNC files; outside `/v1` and its bearer auth. */
 export const VIEWER_PREFIX = "/desktop-viewer";

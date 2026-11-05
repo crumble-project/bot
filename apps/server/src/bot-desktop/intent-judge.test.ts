@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { providerModels } from "../providers/providers";
+import { accountModels } from "../providers/providers";
 import { decide } from "./intent-check";
 import { decidesEnter, inIntentBar, judgeUsage } from "./intent-judge";
 
-const catalog = providerModels(undefined, [], { allowAmbientEnv: false });
+const catalog = accountModels(undefined, []);
 
 const classifier = (provider: string, id: string) => {
   const model = catalog.getModelOfType("classifier", provider, id);

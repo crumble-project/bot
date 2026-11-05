@@ -56,7 +56,6 @@ export class ExecutionRepository extends Context.Service<
       executionId: string,
       patch: Partial<Execution>,
     ) => Effect.Effect<Execution | null>;
-    readonly delete: (executionId: string) => Effect.Effect<boolean>;
     /** Uploads waiting for admission; cleared once Pi holds them, so they are not stored twice. */
     readonly attachments: (
       executionId: string,
@@ -189,17 +188,6 @@ export class ExecutionRepository extends Context.Service<
         return yield* get(executionId);
       }, Effect.orDie);
 
-      const remove = Effect.fn("ExecutionRepository.delete")(function* (
-        executionId: string,
-      ) {
-        const deleted = yield* db
-          .delete(executions)
-          .where(eq(executions.id, executionId))
-          .returning({ id: executions.id });
-
-        return deleted.length > 0;
-      }, Effect.orDie);
-
       const attachments = Effect.fn("ExecutionRepository.attachments")(
         function* (executionId: string) {
           const [row] = yield* db
@@ -232,7 +220,6 @@ export class ExecutionRepository extends Context.Service<
         findBySubmission,
         create,
         update,
-        delete: remove,
         attachments,
         clearAttachments,
       });

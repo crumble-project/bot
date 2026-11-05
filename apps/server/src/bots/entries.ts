@@ -10,6 +10,12 @@ export const MESSAGE_ENTRY = "crumble.message";
 /** A message between two bots, shown in a chat without starting a turn. */
 export const BOT_MESSAGE_ENTRY = "crumble.bot-message";
 export const GROUP_MESSAGE_ENTRY = "crumble.group-message";
+
+/** The bot chat entry that shows a job's question to the owner, without a turn of the bot. */
+export const JOB_QUESTION_ENTRY = "crumble.job-question";
+
+/** The bot chat entry that shows a desktop job's held action to the owner. */
+export const HELD_ACTION_ENTRY = "crumble.held-action";
 export const ASSISTANT_ENTRY = "pi.assistant";
 export const USER_ENTRY = "pi.user";
 
@@ -104,6 +110,24 @@ export const inputMetadata = z.object({
   requestId: z.string().optional().catch(undefined),
   replyPreview: z.string().optional().catch(undefined),
 });
+
+const jobCard = z.object({ name: z.string().min(1) });
+
+/** The job a start of `toolName` shows as a card; other actions and failed calls show none. */
+export const jobCardName = (
+  toolName: string,
+  message: {
+    role: string;
+    toolName?: string | undefined;
+    isError?: boolean | undefined;
+    toolDetails?: unknown;
+  },
+) =>
+  message.role === "toolResult" &&
+  message.toolName === toolName &&
+  !message.isError
+    ? jobCard.safeParse(message.toolDetails).data?.name
+    : undefined;
 
 /** The text blocks of model content, one per line. */
 export function contentText(content: ModelContent | undefined): string {

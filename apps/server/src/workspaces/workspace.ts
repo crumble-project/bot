@@ -6,16 +6,13 @@ import type {
   WorkspaceSyncFailed,
 } from "./workspace-errors";
 
-/** The guest path where a bot's workspace lives; the bot's shell and its coding jobs start here. */
-export const WORKSPACE_PATH = "/workspace";
-
-/** Where the guest keeps the bot's credential proxy authority, which `update-ca-certificates` adds to the bundle. */
 /** The git signing helper the server writes into every guest at boot; it asks the credential proxy to sign. */
 export const GUEST_SIGN_PATH = "/usr/local/bin/crumble-ssh-sign";
 
 /** The host the signing helper posts to; the credential proxy answers it itself and never resolves it. */
 export const SIGNING_HOST = "signing.crumble.internal";
 
+/** Where the guest keeps the bot's credential proxy authority, which `update-ca-certificates` adds to the bundle. */
 export const GUEST_CA_PATH =
   "/usr/local/share/ca-certificates/crumble-credentials.crt";
 
@@ -28,20 +25,6 @@ export type DesktopStream = {
   output: AsyncIterable<Uint8Array>;
   close(): Promise<void>;
 };
-
-/** An outbound connection from a bot's workspace, named by its TLS server name or HTTP `Host`. */
-export type WorkspaceRequest = { agentId: string; host: string; port: number };
-
-/**
- * Decides a workspace's outbound connections before they leave the machine. A connection waits while the policy does,
- * so an owner-approval flow can replace the default.
- */
-export type WorkspaceNetworkPolicy = (
-  request: WorkspaceRequest,
-) => boolean | Promise<boolean>;
-
-/** Trusts every request to the internet. */
-export const allowAllRequests: WorkspaceNetworkPolicy = () => true;
 
 /**
  * Each bot's persistent coding workspace: a disk only that bot and its jobs can reach. The machine behind it starts
@@ -77,6 +60,11 @@ export interface Workspaces {
   /** Makes completed writes in the bot's workspace durable. A stopped workspace has nothing to flush. */
   sync(agentId: string): Effect.Effect<void, WorkspaceSyncFailed>;
 }
+
+/** Workspaces from a backend, which whoever made them stops. */
+export type ClosableWorkspaces = Workspaces & {
+  close(): Effect.Effect<void, WorkspaceStopFailed>;
+};
 
 /** The account's bot workspaces, or none when the server has no workspace backend. */
 export class BotWorkspaces extends Context.Service<

@@ -21,9 +21,9 @@ import {
 } from "../../test/support/fake-password-manager";
 import type { CoreServices } from "../app/core-layer";
 import { runnerOf } from "../shared/runner";
-import { SecretValues } from "../password-managers/secret-values";
-import { secretsLayer } from "../password-managers/secrets";
-import { SecretRepository } from "../credentials/secret-repository";
+import { SecretValues } from "../secrets/secret-values";
+import { secretsLayer } from "../secrets/secrets";
+import { SecretRepository } from "../secrets/secret-repository";
 import type { McpTransport } from "@earendil-works/pi-mcp";
 
 const agent = (id: string, mcpServers: string[]): Agent => ({
@@ -513,6 +513,48 @@ describe("MCP integrations", () => {
     );
     await close();
     vault.close();
+    store.close();
+  });
+
+  test("a failed listing closes the transport with the client", async () => {
+    const dir = (await tempDir()).trim();
+    const store = new Store(dir);
+
+    const server = store.createMCPServer({
+      name: "Linear",
+      url: "https://mcp.example.test",
+      enabled: true,
+    });
+
+    const closed: string[] = [];
+
+    const { integrations, close } = standaloneIntegrations(store.runtime, {
+      clientFactory: () => ({
+        // SAFETY: The fake client only requires the transport close method.
+        transport: {
+          close: async () => {
+            closed.push("transport");
+          },
+        } as McpTransport,
+        client: {
+          async connect() {},
+          async close() {
+            closed.push("client");
+          },
+          async listTools() {
+            throw new Error("listing failed");
+          },
+          async callTool() {
+            return { content: [] };
+          },
+        },
+      }),
+    });
+
+    await integrations.extensionsForAgent(agent("a1", [server.id]));
+
+    expect(closed).toEqual(["client", "transport"]);
+    await close();
     store.close();
   });
 

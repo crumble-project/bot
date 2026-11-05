@@ -1,19 +1,18 @@
+import { randomBytes } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import { z } from "zod";
+import { parseHosts } from "../bot-secrets/schema";
 import { lastUseError } from "../bot-secrets/bot-secret-uses";
 import type { AgentCredential, CredentialGrant } from "../shared/domain";
-import { secretKey } from "../password-managers/secrets";
+import { botSecretKey } from "../secrets/secret-key";
 import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
 import { nowIso } from "../shared/time";
 import { agentCredentials, credentialAuthorities } from "./schema";
 
-const hostList = z.array(z.string());
-
-/** The secret holding a credential's value; under the bot's prefix, so deleting the bot deletes it. */
+/** The secret holding a credential's value. */
 export const credentialSecretKey = (agentId: string, name: string) =>
-  secretKey("bot", agentId, "credential", name);
+  botSecretKey(agentId, "credential", name);
 
 /** A credential without where its value comes from, which the credential's secret knows. */
 export type CredentialRecord = Omit<AgentCredential, "secret">;
@@ -28,7 +27,7 @@ const credentialOf = (row: {
   github: boolean;
 }): CredentialRecord => ({
   ...row,
-  hosts: hostList.parse(JSON.parse(row.hosts)),
+  hosts: parseHosts(row.hosts),
 });
 
 export type CredentialAuthority = { certificate: string; key: string };
@@ -53,11 +52,11 @@ export class AgentCredentialRepository extends Context.Service<
       agentId: string,
       name: string,
     ) => Effect.Effect<CredentialRecord | undefined>;
-    /** Creates or updates a credential; the placeholder never changes. Its value is a secret of its own. */
+    /** Creates or updates a credential; the placeholder is made once and never changes. Its value is a secret of its own. */
     readonly save: (
       agentId: string,
       name: string,
-      input: { hosts: string[]; placeholder: string; github: boolean },
+      input: { hosts: string[]; github: boolean },
     ) => Effect.Effect<CredentialRecord>;
     readonly delete: (agentId: string, name: string) => Effect.Effect<boolean>;
     /** Each credential's placeholder by name, for the bot's job environments. */
@@ -122,7 +121,7 @@ export class AgentCredentialRepository extends Context.Service<
       const save = Effect.fn("AgentCredentialRepository.save")(function* (
         agentId: string,
         name: string,
-        input: { hosts: string[]; placeholder: string; github: boolean },
+        input: { hosts: string[]; github: boolean },
       ) {
         const at = yield* nowIso;
         const hosts = JSON.stringify(input.hosts);
@@ -138,7 +137,7 @@ export class AgentCredentialRepository extends Context.Service<
             name,
             hosts,
             github: input.github,
-            placeholder: input.placeholder,
+            placeholder: `crumble-credential-${randomBytes(24).toString("hex")}`,
             createdAt: at,
             updatedAt: at,
           });
@@ -192,7 +191,7 @@ export class AgentCredentialRepository extends Context.Service<
 
         return rows.map((row): CredentialGrant => ({
           name: row.name,
-          hosts: hostList.parse(JSON.parse(row.hosts)),
+          hosts: parseHosts(row.hosts),
           placeholder: row.placeholder,
         }));
       }, Effect.orDie);

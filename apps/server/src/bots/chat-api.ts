@@ -14,13 +14,11 @@ import type {
 } from "../contract/api-responses";
 import type { Register } from "../contract/route";
 import { snapshotSender, streamEvents } from "../shared/event-stream";
-import type { AgentRuntime } from "./runtime";
 import type { BotsAccess } from "./bots";
 
 type ChatRoutesOptions = {
   register: Register;
   service: BotsAccess;
-  runtime: AgentRuntime;
 };
 
 /** The bot chat's transcript pages, its coding and desktop jobs, and one job's history. */
@@ -43,13 +41,13 @@ const registerChatReadRoutes = (options: ChatRoutesOptions) => {
   });
   register(routes.codingJobs, async (c) => {
     const jobs: z.output<typeof codingJobsResponse> = {
-      jobs: await service.codingJobs(c.req.param("id")),
+      jobs: await service.jobs(c.req.param("id"), "coding"),
     };
 
     return c.json(jobs, 200);
   });
   register(routes.answerCodingJob, async (c) => {
-    await service.answerCodingJob(c.req.param("id"), {
+    await service.answerJob(c.req.param("id"), "coding", {
       name: c.req.param("name"),
       ...jobAnswerInput.parse(await c.req.json()),
     });
@@ -58,8 +56,9 @@ const registerChatReadRoutes = (options: ChatRoutesOptions) => {
   });
   register(routes.codingJobHistory, async (c) =>
     c.json(
-      await service.codingJobHistory(
+      await service.jobHistory(
         c.req.param("id"),
+        "coding",
         c.req.param("name"),
         historyInput.parse(c.req.query()),
       ),
@@ -68,15 +67,16 @@ const registerChatReadRoutes = (options: ChatRoutesOptions) => {
   );
   register(routes.desktopJobs, async (c) => {
     const jobs: z.output<typeof desktopJobsResponse> = {
-      jobs: await service.desktopJobs(c.req.param("id")),
+      jobs: await service.jobs(c.req.param("id"), "desktop"),
     };
 
     return c.json(jobs, 200);
   });
   register(routes.desktopJobHistory, async (c) =>
     c.json(
-      await service.desktopJobHistory(
+      await service.jobHistory(
         c.req.param("id"),
+        "desktop",
         c.req.param("name"),
         historyInput.parse(c.req.query()),
       ),
@@ -87,7 +87,7 @@ const registerChatReadRoutes = (options: ChatRoutesOptions) => {
 
 /** Sending a message, reading an attachment a reply refers to, and stopping or compacting a bot's turn. */
 const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
-  const { register, service, runtime } = options;
+  const { register, service } = options;
 
   register(routes.sendMessage, async (c) => {
     const input = messageInput.parse(await c.req.json());
@@ -107,8 +107,8 @@ const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
   register(routes.attachment, async (c) => {
     const index = attachmentIndex.parse(c.req.param("index"));
 
-    const image = await runtime.attachment(
-      service.agent(c.req.param("id")),
+    const image = await service.attachment(
+      c.req.param("id"),
       c.req.param("entryId"),
       index,
     );
@@ -130,7 +130,7 @@ const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
 
 /** One bot chat's events, from a snapshot and then as each entry settles. */
 const registerChatEventRoutes = (options: ChatRoutesOptions) => {
-  const { register, service, runtime } = options;
+  const { register, service } = options;
 
   register(routes.chatEvents, async (c) => {
     const snapshot = snapshotInput.parse(c.req.query());
@@ -147,7 +147,7 @@ const registerChatEventRoutes = (options: ChatRoutesOptions) => {
           void sendSnapshot().catch(close);
         }),
       );
-      onClose(await runtime.watch(agent, chat.id, sendSnapshot, snapshot));
+      onClose(await service.watch(agent.id, chat.id, sendSnapshot, snapshot));
     });
   });
 };

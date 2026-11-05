@@ -12,9 +12,11 @@ import {
 import { Effect, Exit } from "effect";
 import type { Agent } from "../shared/domain";
 import { assertOwnMemoryInGroup, memorySourceOf } from "./memory-sources";
-import { AgentRuntime, type MemoryContext } from "../bots/runtime";
+import { AgentRuntime } from "../bots/runtime";
+import type { MemoryContext } from "./memory-tool";
 import { Store } from "../../test/support/store";
 import { defaultAvatarDefinition } from "../contract/avatar";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -198,14 +200,17 @@ test("the memory tool reports where it runs", async () => {
   models.setProvider(faux.provider);
   const contexts: MemoryContext[] = [];
 
-  const runtime = new AgentRuntime(temp(), {
-    models,
-    createMemory: (_agentId, content, _shared, context) => {
-      contexts.push(context);
+  const runtime = new AgentRuntime(
+    temp(),
+    runtimeCallbacks({
+      models,
+      createMemory: (_agentId, content, _shared, context) => {
+        contexts.push(context);
 
-      return { id: "m", content };
-    },
-  });
+        return { id: "m", content };
+      },
+    }),
+  );
 
   cleanups.push(() => runtime.close());
   const chat = await runtime.openChat(agent);

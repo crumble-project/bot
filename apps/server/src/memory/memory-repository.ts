@@ -9,7 +9,7 @@ import {
 } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
-import { LearnedChangeRepository } from "../skills/learned-change-repository";
+import { LearnedChangeRepository } from "../learning/learned-change-repository";
 import { memories } from "./schema";
 
 export type NewMemory = {

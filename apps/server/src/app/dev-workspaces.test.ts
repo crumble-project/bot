@@ -7,6 +7,7 @@ test("development enables coding and desktop workspaces by default", () => {
   configureDevWorkspaces(env);
 
   const workspaces = microsandboxWorkspacesFromEnv(env, {
+    namePrefix: "crumble",
     wantsDesktop: () => true,
   });
 

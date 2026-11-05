@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { Context, Effect, Layer } from "effect";
 import { skillDocumentInput, type SkillDocument } from "../shared/domain";
-import { MAX_SKILL_DOCUMENTS } from "../shared/limits";
+import { MAX_SKILL_DOCUMENTS, MAX_SKILL_FILE_BYTES } from "../shared/limits";
 
 export type CommonSkill = {
   id: string;
@@ -15,7 +15,6 @@ export type CommonSkill = {
 };
 
 const MAX_SKILLS = 100;
-const MAX_FILE_BYTES = 512 * 1024;
 
 function loadDocuments(skillDir: string): SkillDocument[] {
   const directory = join(skillDir, "references");
@@ -117,7 +116,7 @@ function parseSkill(
 ): CommonSkill {
   const source = readFileSync(file, "utf8");
 
-  if (Buffer.byteLength(source, "utf8") > MAX_FILE_BYTES)
+  if (Buffer.byteLength(source, "utf8") > MAX_SKILL_FILE_BYTES)
     throw new Error(`Common skill is too large: ${file}`);
 
   const parsed = parseSkillMarkdown(source);

@@ -24,6 +24,11 @@ export type GroupPost = Omit<GroupMessageData, "requestId" | "timestamp">;
 /** A group message with its place in the transcript. */
 export type GroupEntry = GroupMessageData & { entry: number; entryId: string };
 
+/** How a turn and a bot's lookup name who wrote a message. */
+export const senderLabel = (
+  sender: { kind: string; name?: string | undefined } | undefined,
+) => (sender?.kind === "owner" ? "Owner" : (sender?.name ?? "A bot"));
+
 /** Each group chat's shared transcript: a Pi store of data entries that never calls a model. */
 export class GroupTranscripts {
   private readonly harnesses = new Map<string, Promise<Harness>>();

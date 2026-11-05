@@ -13,22 +13,12 @@ import {
   NotFound,
   Unavailable,
 } from "../shared/errors";
-import type { Runner } from "../shared/runner";
 import { loginMethods, type ProviderSignInsAccess } from "./provider-auth";
-import { ProviderCredentialRepository } from "./provider-credential-repository";
-import { providerApiKeyKey } from "./provider-credentials";
-import { Secrets } from "../password-managers/secrets";
 import { secretInput } from "../shared/domain";
-
-type Services = ProviderCredentialRepository | Secrets;
-
-type Exec = Runner<Services>["runSync"];
 
 type ProviderRoutesOptions = {
   register: Register;
   providerAuth: ProviderSignInsAccess;
-  /** Runs the repository effects the provider routes read. */
-  run: Runner<Services>;
   /** Providers whose sign-in happens outside Crumble, by provider ID. */
   externalAuth?: ReadonlyMap<string, () => Promise<ExternalAuth>> | undefined;
 };
@@ -56,19 +46,11 @@ const availableModels = async (models: Models, name: string | undefined) => {
 /** Each provider's sign-in state, and the models its credentials can reach. */
 const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
   const { register, providerAuth } = options;
-  const exec: Exec = (effect) => options.run.runSync(effect);
   const models = providerAuth.models;
   const provider = providerSchema(models);
 
-  register(routes.providers, async (c) => {
-    const saved = new Map(
-      exec(ProviderCredentialRepository.use((r) => r.list)).map((info) => [
-        info.providerId,
-        info,
-      ]),
-    );
-
-    return c.json(
+  register(routes.providers, async (c) =>
+    c.json(
       await Promise.all(
         models.getProviders().map(async (item) => ({
           provider: item.id,
@@ -77,17 +59,14 @@ const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
             await models.checkAuth(item.id).catch(() => undefined),
           ),
           authMethods: loginMethods(item),
-          credentialType: saved.get(item.id)?.type ?? null,
-          apiKey: exec(
-            Secrets.use((s) => s.status(providerApiKeyKey(item.id))),
-          ),
+          ...providerAuth.status(item.id),
           activeLoginId: providerAuth.activeLoginId(item.id),
           externalAuth: (await options.externalAuth?.get(item.id)?.()) ?? null,
         })),
       ),
       200,
-    );
-  });
+    ),
+  );
   register(routes.models, async (c) => {
     const name = c.req.query("provider");
 

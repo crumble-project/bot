@@ -1,5 +1,4 @@
 import { pi } from "../shared/app-errors";
-import { Conflict } from "../shared/errors";
 import { Effect } from "effect";
 import type { Execution } from "../shared/domain";
 import type { BotsContext } from "./bots-context";
@@ -7,12 +6,9 @@ import type { botsLookup } from "./bots-lookup";
 import { DELETED_SOURCE } from "../event-sources/event-repository";
 import { askingBot, parseRequestId } from "../shared/request-ids";
 import type { MessageOrigin } from "./entries";
-import { latestMessagePreview } from "./transcript";
-
-type PageOptions = {
-  before?: string | undefined;
-  limit?: number | undefined;
-};
+import type { RuntimeWatch } from "./runtime";
+import { latestMessagePreview, type PageOptions } from "./transcript";
+import type { JobKindName } from "../jobs/job-kinds";
 
 /** Where a turn came from, as its transcript shows it: the owner, a group, a task, a credential, or another bot. */
 export const botsOrigin = (context: BotsContext) => {
@@ -141,77 +137,39 @@ export const botsAgentPreviews = (context: BotsContext) => {
   return { agentPreviews };
 };
 
-/** The runtime's own reads: a chat's history and the jobs a bot started from it. */
+/** The runtime's own reads: a chat's history, the jobs a bot started from it, and an attachment. */
 export const botsRuntimeReads = (
   context: BotsContext,
   lookup: ReturnType<typeof botsLookup>,
 ) => {
   const { runtime } = context;
-  const { agent } = lookup;
-
-  const history = (agentId: string, options: PageOptions) =>
-    agent(agentId).pipe(
-      Effect.flatMap((owner) => pi(() => runtime.history(owner, options))),
-    );
-
-  const codingJobs = (agentId: string) =>
-    agent(agentId).pipe(
-      Effect.flatMap((owner) => pi(() => runtime.codingJobs(owner))),
-    );
-
-  const codingJobHistory = (
-    agentId: string,
-    name: string,
-    options: PageOptions,
-  ) =>
-    agent(agentId).pipe(
-      Effect.flatMap((owner) =>
-        pi(() => runtime.codingJobHistory(owner, name, options)),
-      ),
-    );
-
-  const answerCodingJob = (
-    agentId: string,
-    answer: { name: string; questionId: string; text: string; by?: string },
-  ) =>
-    agent(agentId).pipe(
-      Effect.flatMap((owner) =>
-        pi(() => runtime.answerCodingJob(owner, answer)),
-      ),
-      Effect.flatMap((answered) =>
-        answered
-          ? Effect.void
-          : Effect.fail(
-              new Conflict({
-                message: "The job no longer waits on this question",
-              }),
-            ),
-      ),
-    );
-
-  const desktopJobs = (agentId: string) =>
-    agent(agentId).pipe(
-      Effect.flatMap((owner) => pi(() => runtime.desktopJobs(owner))),
-    );
-
-  const desktopJobHistory = (
-    agentId: string,
-    name: string,
-    options: PageOptions,
-  ) =>
-    agent(agentId).pipe(
-      Effect.flatMap((owner) =>
-        pi(() => runtime.desktopJobHistory(owner, name, options)),
-      ),
-    );
+  const { withAgent } = lookup;
 
   return {
-    history,
-    codingJobs,
-    codingJobHistory,
-    answerCodingJob,
-    desktopJobs,
-    desktopJobHistory,
+    history: (agentId: string, options: PageOptions) =>
+      withAgent(agentId, (owner) => runtime.history(owner, options)),
+    jobs: (agentId: string, kind: JobKindName) =>
+      withAgent(agentId, (owner) => runtime.jobs(owner, kind)),
+    jobHistory: (
+      agentId: string,
+      kind: JobKindName,
+      name: string,
+      options: PageOptions,
+    ) =>
+      withAgent(agentId, (owner) =>
+        runtime.jobHistory(owner, kind, name, options),
+      ),
+    attachment: (agentId: string, entryId: string, index: number) =>
+      withAgent(agentId, (owner) => runtime.attachment(owner, entryId, index)),
+    watch: (
+      agentId: string,
+      conversationId: string,
+      callback: RuntimeWatch,
+      options: { limit?: number | undefined },
+    ) =>
+      withAgent(agentId, (owner) =>
+        runtime.watch(owner, conversationId, callback, options),
+      ),
   };
 };
 

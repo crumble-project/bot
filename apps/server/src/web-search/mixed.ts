@@ -99,15 +99,15 @@ export const mixedProvider = (): WebSearchProvider => {
     query: WebSearchQuery,
     bot: string,
   ) {
-    const start = cursor;
-
-    cursor = (cursor + 1) % 3;
-
     const vendors = [
       () => exaSearch(query),
       () => searchParallel(query, bot),
       () => tavilySearch(query),
     ];
+
+    const start = cursor;
+
+    cursor = (cursor + 1) % vendors.length;
 
     for (let i = 0; i < vendors.length; i++) {
       const vendor = vendors[(start + i) % vendors.length];

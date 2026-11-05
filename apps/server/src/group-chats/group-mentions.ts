@@ -1,4 +1,4 @@
-const normalize = (text: string) => text.normalize("NFKC").toLowerCase();
+export const normalize = (text: string) => text.normalize("NFKC").toLowerCase();
 
 const wordCharacter = /[\p{L}\p{N}_]/u;
 

@@ -11,12 +11,13 @@ import {
   groupMessageReceiptResponse,
   historyResponse,
 } from "../contract/api-responses";
-import { standaloneGroupChats } from "./group-chats";
+import { standaloneGroupChats } from "./group-chats-test-support";
 import { GroupTranscripts } from "./group-transcripts";
 import { AgentRuntime } from "../bots/runtime";
-import { standaloneScheduler } from "../schedules/scheduler";
+import { standaloneScheduler } from "../automations/scheduler-test-support";
 import { standaloneBots } from "../bots/bots";
 import { Store } from "../../test/support/store";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 // Plain header records, so they spread into the defaults.
 type TestRequestInit = Omit<RequestInit, "headers"> & {
@@ -35,7 +36,10 @@ function setup() {
   dirs.push(dir);
   const store = new Store(dir);
 
-  const service = standaloneBots(store, new AgentRuntime(join(dir, "agents")));
+  const service = standaloneBots(
+    store,
+    new AgentRuntime(join(dir, "agents"), runtimeCallbacks()),
+  );
 
   const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
     service.dispatch(a, p, r, s),

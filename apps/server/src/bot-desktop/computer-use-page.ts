@@ -1,14 +1,17 @@
 import { sleep } from "../shared/time";
 import type { Context } from "@earendil-works/chord";
 import { z } from "zod";
-import type { ComputerUseArgs, ComputerUseResult } from "./computer-use";
+import type { ComputerUseArgs } from "./computer-use-args";
+import type { ComputerUseResult } from "./computer-use";
 import type { Acted, Invalid } from "./computer-use-actions";
 import { MAX_TREE_CHARS } from "./computer-use-capture";
 import {
+  SCROLL_DEFAULTS,
   codeOf,
   driverCall,
   isChromium,
   listWindows,
+  loose,
   messageOf,
   refusalOf,
   targetWindow,
@@ -17,13 +20,12 @@ import {
   type Window,
 } from "./computer-use-driver";
 import {
+  forgetScreen,
+  refOf,
   scrubText,
   textResult,
   type ComputerUseState,
 } from "./computer-use-state";
-
-const loose = <T extends z.ZodType>(schema: T) =>
-  schema.optional().catch(undefined);
 
 const tabSchema = z.object({
   tab_id: z.string(),
@@ -125,8 +127,7 @@ async function attach(
 
   if (refusalOf(reply)) return { refused: refusalText(reply) };
 
-  state.snapshots.clear();
-  state.lastRead = undefined;
+  forgetScreen(state);
 
   return undefined;
 }
@@ -155,7 +156,7 @@ function boundTab(
  * Binds the job's cua-driver session to the window's active tab, for `open` and `read`. Binding supersedes the refs of
  * earlier reads. A session is attached to Chromium once, on its first page action.
  */
-export async function bindPage(
+async function bindPage(
   state: ComputerUseState,
   target: Window,
   context: Context,
@@ -210,7 +211,7 @@ const refLine = (ref: PageRef) => {
 };
 
 /** A snapshot as the job reads it: the page, its outline, then one line per element it can act on. Scrubbed before the cut. */
-export function pageText(state: ComputerUseState, read: SemanticSnapshot) {
+function pageText(state: ComputerUseState, read: SemanticSnapshot) {
   const text = scrubText(
     state,
     [
@@ -349,7 +350,7 @@ export async function openPage(
 const SELECTS = new Set(["combobox", "listbox"]);
 
 const scrollDelta = (args: ComputerUseArgs) => {
-  const pixels = (args.amount ?? 3) * 100;
+  const pixels = (args.amount ?? SCROLL_DEFAULTS.amount) * 100;
 
   switch (args.direction) {
     case "up":
@@ -365,7 +366,7 @@ const scrollDelta = (args: ComputerUseArgs) => {
 
 type RefCall = { tool: string; args: DriverArgs } | Invalid;
 
-type RefCallBuilder = (
+export type RefCallBuilder = (
   state: ComputerUseState,
   ids: DriverArgs,
   args: ComputerUseArgs,
@@ -385,9 +386,7 @@ const pointerCall =
 const valueCall: RefCallBuilder = (state, ids, args) => {
   if (args.value === undefined) return { invalid: "set_value needs value" };
 
-  const role = state.lastRead?.read.refs.find(
-    (each) => each.ref === args.ref,
-  )?.role;
+  const role = refOf(state, args.ref)?.role;
 
   return role && SELECTS.has(role)
     ? { tool: "browser_select", args: { ...ids, label: args.value } }
@@ -397,55 +396,29 @@ const valueCall: RefCallBuilder = (state, ids, args) => {
       };
 };
 
-const REF_CALLS = new Map<string, RefCallBuilder>([
-  [
-    "click",
-    (_state, ids) => ({
-      tool: "browser_click",
-      args: { ...ids, ...FOREGROUND },
-    }),
-  ],
-  ["double_click", pointerCall("double_click")],
-  ["right_click", pointerCall("right_click")],
-  [
-    "scroll",
-    (_state, ids, args) => ({
-      tool: "browser_pointer",
-      args: { ...ids, ...FOREGROUND, action: "scroll", ...scrollDelta(args) },
-    }),
-  ],
-  [
-    "type",
-    (_state, ids, args) =>
-      args.text === undefined
-        ? { invalid: "type needs text" }
-        : { tool: "browser_type", args: { ...ids, text: args.text } },
-  ],
-  ["set_value", valueCall],
-]);
+/** Each page action in the form cua-driver takes for a ref. */
+export const REF_CALLS = {
+  click: (_state, ids) => ({
+    tool: "browser_click",
+    args: { ...ids, ...FOREGROUND },
+  }),
+  double_click: pointerCall("double_click"),
+  right_click: pointerCall("right_click"),
+  scroll: (_state, ids, args) => ({
+    tool: "browser_pointer",
+    args: { ...ids, ...FOREGROUND, action: "scroll", ...scrollDelta(args) },
+  }),
+  type: (_state, ids, args) =>
+    args.text === undefined
+      ? { invalid: "type needs text" }
+      : { tool: "browser_type", args: { ...ids, text: args.text } },
+  set_value: valueCall,
+} satisfies Record<string, RefCallBuilder>;
 
-/** The actions that take a page ref instead of an element. */
-export const REF_ACTIONS = new Set(REF_CALLS.keys());
-
-function refCall(
-  state: ComputerUseState,
-  page: PageBinding,
-  args: ComputerUseArgs & { ref: string },
-): RefCall {
-  const build = REF_CALLS.get(args.action);
-
-  if (!build) return { invalid: `${args.action} takes no ref` };
-
-  return build(
-    state,
-    { target_id: page.target_id, tab_id: page.tab_id, ref: args.ref },
-    args,
-  );
-}
-
-/** Acts on a page ref in the tab of the latest read, the tab the ref came from. */
+/** Acts on a page ref in the tab of the latest read, the tab the ref came from. `build` is the action's form for refs. */
 export async function actOnRef(
   state: ComputerUseState,
+  build: RefCallBuilder | undefined,
   args: ComputerUseArgs & { ref: string },
   context: Context,
 ): Promise<Acted | Invalid> {
@@ -454,7 +427,13 @@ export async function actOnRef(
   if (!page)
     return { invalid: "read the page first, then act on a ref from it" };
 
-  const call = refCall(state, page, args);
+  if (!build) return { invalid: `${args.action} takes no ref` };
+
+  const call = build(
+    state,
+    { target_id: page.target_id, tab_id: page.tab_id, ref: args.ref },
+    args,
+  );
 
   if ("invalid" in call) return call;
 

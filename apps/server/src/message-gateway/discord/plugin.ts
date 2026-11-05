@@ -1,8 +1,8 @@
 import type { CrumblePlugin } from "../../plugins/plugins";
-import { discordAdapter } from "./adapter";
+import { DISCORD_PLUGIN_ID, discordAdapter } from "./adapter";
 
 export const discordPlugin = (): CrumblePlugin => ({
-  id: "discord",
+  id: DISCORD_PLUGIN_ID,
   settings: [
     {
       key: "token",

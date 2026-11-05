@@ -16,7 +16,7 @@ import {
   inIntentBar,
   judgeUsage,
 } from "../src/bot-desktop/intent-judge";
-import { providerModels } from "../src/providers/providers";
+import { hostModels } from "../src/providers/providers";
 import { z } from "zod";
 import { INTENT_CASES, type IntentCase } from "./intent-eval-cases";
 
@@ -43,7 +43,7 @@ const refs = args.filter(
   (arg, index) => !arg.startsWith("--") && index !== outAt + 1,
 );
 
-const models = providerModels();
+const models = hostModels(undefined, []);
 
 async function classifier(ref: string) {
   const [provider = "", ...rest] = ref.split("/");

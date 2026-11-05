@@ -21,7 +21,7 @@ import { childEnv, claudeCodeStatus } from "./setup";
 import { pluginProviders } from "../../plugins/plugins";
 import { standaloneSignIns } from "../provider-auth";
 import type { AgentRuntime } from "../../bots/runtime";
-import { standaloneScheduler } from "../../schedules/scheduler";
+import { standaloneScheduler } from "../../automations/scheduler-test-support";
 import { standaloneBots } from "../../bots/bots";
 import { Store } from "../../../test/support/store";
 

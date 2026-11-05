@@ -3,10 +3,6 @@ import net from "node:net";
 import { isPublicAddress } from "../shared/public-address";
 import { readHttpHost, readSni, validPort } from "./workspace-proxy-protocol";
 
-export { readHttpHost, readSni } from "./workspace-proxy-protocol";
-
-export type ProxyRequest = { host: string; port: number };
-
 /** Takes over TLS connections to some hosts instead of tunneling them, such as the credential proxy. */
 export type WorkspaceInterceptor = {
   wants(host: string): boolean;
@@ -17,7 +13,6 @@ export type WorkspaceInterceptor = {
 };
 
 export type WorkspaceProxyOptions = {
-  decide: (request: ProxyRequest) => boolean | Promise<boolean>;
   lookup?: (host: string) => Promise<string[]>;
   isPublicAddress?: (address: string) => boolean;
   firstByteTimeoutMs?: number;
@@ -93,8 +88,7 @@ export async function startWorkspaceProxy(
 
     const address = (await lookup(host)).find(isPublic);
 
-    if (!address || !(await options.decide({ host, port })) || client.destroyed)
-      return void client.destroy();
+    if (!address || client.destroyed) return void client.destroy();
 
     if (first[0] === 22 && options.intercept?.wants(host)) {
       client.unshift(first);

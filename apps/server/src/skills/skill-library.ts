@@ -3,9 +3,13 @@ import { defineTool, LiveDoc } from "@earendil-works/pi-durable";
 import type { ToolExecutionApi } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord/context";
 import { Schema } from "effect";
-import type { SkillDocument } from "../shared/domain";
-import { GroupConversation } from "../group-chats/group-turns";
-import { ReviewConversation } from "./review-conversation";
+import { skillNameKey, type SkillDocument } from "../shared/domain";
+import {
+  MAX_SKILL_DOCUMENT_PATH_CHARS,
+  MAX_SKILL_NAME_CHARS,
+} from "../shared/limits";
+import { groupOf } from "../group-chats/group-conversation";
+import { ReviewConversation } from "../learning/review-conversation";
 import { SKILL_TOOL_NAME } from "../contract/tools";
 
 /** A skill a bot can load: a default from the repository, one from the shared library, or its own. */
@@ -32,14 +36,14 @@ export async function skillToolContext(
   api: ToolExecutionApi,
   callContext: Context,
 ): Promise<SkillToolContext> {
-  const [live, group, review] = await Promise.all([
+  const [live, groupId, review] = await Promise.all([
     api.snapshot(LiveDoc, api.conversationId, callContext),
-    api.snapshot(GroupConversation, api.conversationId, callContext),
+    groupOf(api, api.conversationId, callContext),
     api.snapshot(ReviewConversation, api.conversationId, callContext),
   ]);
 
   return {
-    groupId: group?.groupId ?? null,
+    groupId,
     reviewOf: review?.executionId ?? null,
     submissionIds: (live?.run?.inputs ?? []).map(String),
     // The run's task changes with every tool round; its inputs stay the same for the whole turn.
@@ -93,12 +97,12 @@ export const SKILL_WRITING_GUIDANCE =
 
 /** A bot's own skill shadows a shared one of the same name, which shadows a default. */
 export function resolveSkill(skills: AvailableSkill[], name: string) {
-  const wanted = name.trim().toLowerCase();
+  const wanted = skillNameKey(name.trim());
 
   return (
     [...skills]
       .sort((a, b) => SCOPE_RANK[a.scope] - SCOPE_RANK[b.scope])
-      .find((skill) => skill.name.toLowerCase() === wanted) ?? null
+      .find((skill) => skillNameKey(skill.name) === wanted) ?? null
   );
 }
 
@@ -128,7 +132,7 @@ export function skillIndex(skills: AvailableSkill[]) {
   const lines = [...skills]
     .sort((a, b) => SCOPE_RANK[a.scope] - SCOPE_RANK[b.scope])
     .flatMap((skill) => {
-      const key = skill.name.toLowerCase();
+      const key = skillNameKey(skill.name);
 
       if (seen.has(key)) return [];
       seen.add(key);
@@ -153,8 +157,15 @@ export function skillTool(callbacks: SkillToolCallbacks) {
       "List the skills available to you, or load one. `view` with a name returns the skill's instructions and the paths of its reference documents; add `path` to read one document. Load a skill before acting on a task it covers.",
     parameters: Type.Object({
       action: Type.Union([Type.Literal("list"), Type.Literal("view")]),
-      name: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
-      path: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+      name: Type.Optional(
+        Type.String({ minLength: 1, maxLength: MAX_SKILL_NAME_CHARS }),
+      ),
+      path: Type.Optional(
+        Type.String({
+          minLength: 1,
+          maxLength: MAX_SKILL_DOCUMENT_PATH_CHARS,
+        }),
+      ),
     }),
     callers: ["model"],
     replay: "safe",

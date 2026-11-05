@@ -23,7 +23,8 @@ import type { DesktopStream } from "../workspaces/workspace";
 import type { DesktopOpenError } from "../workspaces/workspace-errors";
 import { Conflict } from "../shared/errors";
 import type { Runner } from "../shared/runner";
-import { BOT_TOOL } from "../contract/tools";
+import type { Agent } from "../shared/domain";
+import { usesDesktop } from "./desktop-vocabulary";
 
 const HEARTBEAT_MS = 15_000;
 
@@ -86,10 +87,13 @@ export function registerDesktopRoutes(options: {
   // The viewer of each connection, from its redeemed ticket to its WebSocket.
   const viewers = new WeakMap<Request, Viewer>();
 
+  const hasBotDesktop = (agent: Pick<Agent, "tools">) =>
+    options.desktop && usesDesktop(agent);
+
   const desktopAgent = (id: string) => {
     const agent = service.agent(id);
 
-    if (!options.desktop || !agent.tools.includes(BOT_TOOL.desktop))
+    if (!hasBotDesktop(agent))
       throw new Conflict({ message: "This bot has no bot desktop" });
 
     return agent;
@@ -147,9 +151,7 @@ export function registerDesktopRoutes(options: {
     return c.json(
       {
         running:
-          options.desktop &&
-          agent.tools.includes(BOT_TOOL.desktop) &&
-          options.desktopRunning?.(agent.id) === true,
+          hasBotDesktop(agent) && options.desktopRunning?.(agent.id) === true,
       },
       200,
     );

@@ -1,15 +1,15 @@
 import type { Context } from "@earendil-works/chord";
 import { z } from "zod";
-import type {
-  ComputerUseArgs,
-  ComputerUseResult,
-  StepArgs,
-} from "./computer-use";
+import type { ComputerUseArgs, StepArgs } from "./computer-use-args";
+import type { ComputerUseResult } from "./computer-use";
 import type { Invalid } from "./computer-use-actions";
 import { windowText } from "./computer-use-capture";
 import {
+  SCROLL_DEFAULTS,
+  comboKeys,
   driverCall,
   driverReply,
+  loose,
   messageOf,
   ourNames,
   refusalOf,
@@ -17,9 +17,6 @@ import {
   type Window,
 } from "./computer-use-driver";
 import { textResult, type ComputerUseState } from "./computer-use-state";
-
-const loose = <T extends z.ZodType>(schema: T) =>
-  schema.optional().catch(undefined);
 
 /** A `run_steps` result: the fields this tool reads, each dropped when its shape is unexpected. */
 const stepsReply = z.object({
@@ -62,14 +59,15 @@ const pointer =
       : { invalid: `${tool} needs role or name` };
 
 const keyStep = (keys: string): DriverArgs => {
-  const pressed = keys.split("+").map((key) => key.trim().toLowerCase());
+  const pressed = comboKeys(keys);
 
   return pressed.length > 1
     ? { hotkey: { keys: pressed } }
     : { press_key: { key: pressed[0] ?? "" } };
 };
 
-const BUILDERS = new Map<string, StepBuilder>([
+/** The actions a `steps` call takes, each in `run_steps` form; each is an action of `ACTIONS` too. */
+const STEP_FORMS = new Map<string, StepBuilder>([
   ["click", pointer("click")],
   ["double_click", pointer("double_click")],
   ["right_click", pointer("right_click")],
@@ -98,17 +96,19 @@ const BUILDERS = new Map<string, StepBuilder>([
       step: {
         scroll: {
           ...target,
-          direction: step.direction ?? "down",
-          amount: step.amount ?? 3,
+          direction: step.direction ?? SCROLL_DEFAULTS.direction,
+          amount: step.amount ?? SCROLL_DEFAULTS.amount,
         },
       },
     }),
   ],
 ]);
 
+export const STEP_ACTION_NAMES: string[] = [...STEP_FORMS.keys()];
+
 /** One step in `run_steps` form, with its checks, or why it can't run. */
 function stepCall(step: StepArgs): Built {
-  const build = BUILDERS.get(step.action);
+  const build = STEP_FORMS.get(step.action);
 
   if (!build) return { invalid: `unknown step action ${step.action}` };
 

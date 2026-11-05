@@ -5,10 +5,6 @@ import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { conversations } from "./schema";
 
-export type ConversationPatch = Partial<
-  Omit<Conversation, "id" | "createdAt" | "updatedAt">
->;
-
 const conversationOf = (
   row: typeof conversations.$inferSelect,
 ): Conversation => ({
@@ -32,19 +28,16 @@ export class ConversationRepository extends Context.Service<
     readonly get: (
       conversationId: string,
     ) => Effect.Effect<Conversation | null>;
+    /** The bot's one continuous chat, once it has one. */
+    readonly chatOf: (agentId: string) => Effect.Effect<Conversation | null>;
     readonly create: (
-      input: { agentId: string; title: string },
+      input: { agentId: string; title: string; chat?: boolean },
       conversationId?: string,
     ) => Effect.Effect<Conversation>;
-    readonly update: (
-      conversationId: string,
-      patch: ConversationPatch,
-    ) => Effect.Effect<Conversation | null>;
     readonly setArchived: (
       conversationId: string,
       archived: boolean,
     ) => Effect.Effect<Conversation | null>;
-    readonly delete: (conversationId: string) => Effect.Effect<boolean>;
   }
 >()("crumble/bots/ConversationRepository") {
   static readonly layer = Layer.effect(
@@ -81,8 +74,24 @@ export class ConversationRepository extends Context.Service<
         return row ? conversationOf(row) : null;
       }, Effect.orDie);
 
+      const chatOf = Effect.fn("ConversationRepository.chatOf")(function* (
+        agentId: string,
+      ) {
+        const [row] = yield* db
+          .select()
+          .from(conversations)
+          .where(
+            and(
+              eq(conversations.agentId, agentId),
+              eq(conversations.chat, true),
+            ),
+          );
+
+        return row ? conversationOf(row) : null;
+      }, Effect.orDie);
+
       const create = Effect.fn("ConversationRepository.create")(function* (
-        input: { agentId: string; title: string },
+        input: { agentId: string; title: string; chat?: boolean },
         conversationId: string = crypto.randomUUID(),
       ) {
         const at = yield* nowIso;
@@ -92,31 +101,12 @@ export class ConversationRepository extends Context.Service<
           agentId: input.agentId,
           title: input.title,
           archived: false,
+          chat: input.chat ?? false,
           createdAt: at,
           updatedAt: at,
         });
 
         return (yield* get(conversationId))!;
-      }, Effect.orDie);
-
-      const update = Effect.fn("ConversationRepository.update")(function* (
-        conversationId: string,
-        patch: ConversationPatch,
-      ) {
-        const conversation = yield* get(conversationId);
-
-        if (!conversation) return null;
-
-        yield* db
-          .update(conversations)
-          .set({
-            title: patch.title ?? conversation.title,
-            archived: patch.archived ?? conversation.archived ?? false,
-            updatedAt: yield* nowIso,
-          })
-          .where(eq(conversations.id, conversationId));
-
-        return yield* get(conversationId);
       }, Effect.orDie);
 
       const setArchived = Effect.fn("ConversationRepository.setArchived")(
@@ -133,25 +123,13 @@ export class ConversationRepository extends Context.Service<
         Effect.orDie,
       );
 
-      const remove = Effect.fn("ConversationRepository.delete")(function* (
-        conversationId: string,
-      ) {
-        const deleted = yield* db
-          .delete(conversations)
-          .where(eq(conversations.id, conversationId))
-          .returning({ id: conversations.id });
-
-        return deleted.length > 0;
-      }, Effect.orDie);
-
       return ConversationRepository.of({
         list: (agentId, includeArchived = false) =>
           list(agentId, includeArchived),
         get,
+        chatOf,
         create,
-        update,
         setArchived,
-        delete: remove,
       });
     }),
   );

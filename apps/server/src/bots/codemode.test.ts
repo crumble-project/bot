@@ -18,16 +18,15 @@ import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 import { AgentRuntime } from "./runtime";
 import { standaloneBots } from "./bots";
 import { Store } from "../../test/support/store";
-import {
-  scheduleExtension,
-  standaloneBotSchedules,
-} from "../schedules/bot-schedules";
+import { scheduleExtension } from "../automations/bot-schedules";
+import { standaloneBotSchedules } from "../automations/scheduler-test-support";
 import { coordinationExtension } from "../bot-messaging/coordination";
 import {
   credentialExtension,
   credentialsAccess,
 } from "../credentials/credentials";
 import { standaloneMessaging } from "../bot-messaging/bot-messaging";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -87,13 +86,16 @@ test("code mode offers one tool whose scripts call the agent's other tools", asy
 
   const service = standaloneBots(
     store,
-    new AgentRuntime(dir, {
-      models,
-      extensions: () => [
-        defineExtension({ name: "echo", tools: [echo] }),
-        createCodemodeExtension({ sandbox }),
-      ],
-    }),
+    new AgentRuntime(
+      dir,
+      runtimeCallbacks({
+        models,
+        extensions: () => [
+          defineExtension({ name: "echo", tools: [echo] }),
+          createCodemodeExtension({ sandbox }),
+        ],
+      }),
+    ),
   );
 
   cleanups.push(() => service.close());
@@ -132,7 +134,7 @@ test("code mode offers one tool whose scripts call the agent's other tools", asy
   }
 
   expect(reply).toBe("The tool said hi.");
-  expect(offered[0]).toEqual(["codemode"]);
+  expect(offered[0]).toEqual(["skill_manage", "codemode"]);
   expect(echoed).toEqual(["hi"]);
   expect(toolResult?.content.at(-1)).toEqual({
     type: "text",
@@ -165,13 +167,16 @@ test("code mode keeps request_credential a direct tool, so the chat can offer it
 
   const service = standaloneBots(
     store,
-    new AgentRuntime(dir, {
-      models,
-      extensions: (agent): Extension[] => [
-        credentialExtension(agent.id, credentials),
-        createCodemodeExtension({ sandbox }),
-      ],
-    }),
+    new AgentRuntime(
+      dir,
+      runtimeCallbacks({
+        models,
+        extensions: (agent): Extension[] => [
+          credentialExtension(agent.id, credentials),
+          createCodemodeExtension({ sandbox }),
+        ],
+      }),
+    ),
   );
 
   cleanups.push(() => service.close());
@@ -197,7 +202,7 @@ test("code mode keeps request_credential a direct tool, so the chat can offer it
 
   for (let i = 0; i < 500 && !offered.length; i++)
     await new Promise((resolve) => setTimeout(resolve, 20));
-  expect(offered).toEqual(["request_credential", "codemode"]);
+  expect(offered).toEqual(["skill_manage", "request_credential", "codemode"]);
 });
 
 test("code mode receives structured schedule and coordination results", async () => {
@@ -247,14 +252,17 @@ test("code mode receives structured schedule and coordination results", async ()
 
   const service = standaloneBots(
     store,
-    new AgentRuntime(dir, {
-      models,
-      extensions: (agent): Extension[] => [
-        scheduleExtension(agent, schedules.service),
-        coordinationExtension(agent, standaloneMessaging(service)),
-        createCodemodeExtension({ sandbox }),
-      ],
-    }),
+    new AgentRuntime(
+      dir,
+      runtimeCallbacks({
+        models,
+        extensions: (agent): Extension[] => [
+          scheduleExtension(agent, schedules.service),
+          coordinationExtension(agent, standaloneMessaging(service)),
+          createCodemodeExtension({ sandbox }),
+        ],
+      }),
+    ),
   );
 
   cleanups.push(() => service.close());

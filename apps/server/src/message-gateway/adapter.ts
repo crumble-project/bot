@@ -16,6 +16,7 @@ export type GatewayConnection = {
     channelId: string;
     replyTo?: string;
     text: string;
+    /** The same for every retry of one chunk; the adapter fits it to its platform's format. */
     nonce: string;
   }): Promise<string>;
   /** Shows that a bot is writing in the channel, for a few seconds; best effort. */
@@ -28,11 +29,13 @@ export type ChatAdapter = {
   label: string;
   secretKey: string;
   maxMessageLength: number;
+  /** How often to repeat `typing` while a bot works. */
+  typingRenewalMs: number;
   connect(host: {
     token: string;
     onMessage(message: GatewayMessage): Promise<void>;
-    onInvalidated(error?: string): void;
-    onStatus(status: ConnectionStatus, error?: string): void;
+    onInvalidated(): void;
+    onStatus(status: ConnectionStatus): void;
   }): Promise<GatewayConnection>;
 };
 
@@ -42,7 +45,6 @@ export class GatewayTransportError extends Error {
     readonly details: {
       permanent: boolean;
       retryAfterMs?: number;
-      status?: number;
       rateLimit?: {
         scope: "adapter" | "channel";
       };

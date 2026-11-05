@@ -16,9 +16,9 @@ type LifecycleDeps = {
 
 /** Stops a chat's running executions, and everything a bot's chat was running. */
 const botsCancellation = (context: BotsContext, deps: LifecycleDeps) => {
-  const { executions, runtime } = context;
+  const { conversations, executions, runtime } = context;
   const { conversation } = deps.lookup;
-  const { changed, settled } = deps.notifications;
+  const { changed, record, settled } = deps.notifications;
 
   const abort = Effect.fn("Bots.abort")(function* (conversationId: string) {
     const { agent: owner } = yield* conversation(conversationId);
@@ -31,8 +31,7 @@ const botsCancellation = (context: BotsContext, deps: LifecycleDeps) => {
 
     // Cancelled before the runtime stops, so the aborted wait doesn't record the runs as failed first.
     for (const execution of running)
-      if ((yield* executions.get(execution.id))?.status !== "done")
-        yield* executions.update(execution.id, { status: "cancelled" });
+      yield* record(execution, { status: "cancelled" });
 
     yield* pi(() => runtime.abort(owner, conversationId));
     yield* changed(conversationId);
@@ -40,8 +39,15 @@ const botsCancellation = (context: BotsContext, deps: LifecycleDeps) => {
     for (const execution of running) yield* settled(execution.id);
   });
 
+  /** Stops everything the bot runs, in its chat and in its other conversations. */
+  const stopAgent = Effect.fn("Bots.stopAgent")(function* (agentId: string) {
+    for (const each of yield* conversations.list(agentId))
+      yield* abort(each.id);
+  });
+
   return {
     abort,
+    stopAgent,
     abortChat: (agentId: string) =>
       deps.chat(agentId).pipe(Effect.flatMap((opened) => abort(opened.id))),
   };
@@ -51,10 +57,10 @@ const botsCancellation = (context: BotsContext, deps: LifecycleDeps) => {
 const botsMaintenance = (
   context: BotsContext,
   deps: LifecycleDeps & {
-    abort: ReturnType<typeof botsCancellation>["abort"];
+    stopAgent: ReturnType<typeof botsCancellation>["stopAgent"];
   },
 ) => {
-  const { agents, conversations, executions, runtime } = context;
+  const { agents, executions, runtime } = context;
   const { agent } = deps.lookup;
   const chat = deps.chat;
   const { changed } = deps.notifications;
@@ -78,9 +84,7 @@ const botsMaintenance = (
 
   const deleteAgent = Effect.fn("Bots.deleteAgent")(function* (id: string) {
     yield* agent(id);
-
-    for (const each of yield* conversations.list(id))
-      yield* deps.abort(each.id);
+    yield* deps.stopAgent(id);
     yield* pi(() => runtime.deleteAgent(id));
     yield* agents.delete(id);
   });
@@ -94,6 +98,6 @@ export const botsLifecycle = (context: BotsContext, deps: LifecycleDeps) => {
 
   return {
     ...stop,
-    ...botsMaintenance(context, { ...deps, abort: stop.abort }),
+    ...botsMaintenance(context, { ...deps, stopAgent: stop.stopAgent }),
   };
 };

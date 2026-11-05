@@ -12,10 +12,18 @@ import type { botsChat } from "./bots-chat";
 import type { botsLookup } from "./bots-lookup";
 import { OWNER_TIMEZONE } from "./runtime";
 
-type SendOptions = {
+export type SendOptions = {
   scheduleId?: string;
   replyTo?: string | undefined;
   attachments?: AttachmentInput[] | undefined;
+};
+
+/** An answer to a job's question; `by` names who answered when it is not the owner. */
+export type JobAnswerInput = {
+  name: string;
+  questionId: string;
+  text: string;
+  by?: string;
 };
 
 type SendDeps = {
@@ -119,8 +127,9 @@ type TurnDeps = SendDeps & {
 
 /** The other ways a turn starts in a bot's chat: a notice, an owner's message with its timezone, and a dispatch. */
 const botsTurns = (context: BotsContext, deps: TurnDeps) => {
-  const { executions, settings } = context;
+  const { executions, runtime, settings } = context;
   const { chat, send } = deps;
+  const { withAgent } = deps.lookup;
   const { admit } = deps;
 
   const notice = Effect.fn("Bots.notice")(function* (
@@ -167,7 +176,16 @@ const botsTurns = (context: BotsContext, deps: TurnDeps) => {
     });
   });
 
-  return { notice, sendChat, dispatch };
+  const answerJob = (agentId: string, kind: string, answer: JobAnswerInput) =>
+    withAgent(agentId, (owner) => runtime.answerJob(owner, kind, answer)).pipe(
+      Effect.flatMap((answered) =>
+        answered
+          ? Effect.void
+          : conflict("The job no longer waits on this question"),
+      ),
+    );
+
+  return { notice, sendChat, dispatch, answerJob };
 };
 
 type SubmissionDeps = SendDeps & { chat: ReturnType<typeof botsChat>["chat"] };

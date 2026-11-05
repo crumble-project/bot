@@ -14,10 +14,7 @@ export const agents = sqliteTable("agents", {
   }),
   enabled: integer("enabled", { mode: "boolean" }).notNull(),
   tools: text("tools").notNull(),
-  // Inline skills moved to the skill library; the column stays `[]` for databases that predate it.
-  skills: text("skills").notNull(),
   mcpServers: text("mcp_servers").notNull(),
-  delegates: text("delegates").notNull().default("[]"),
   inference: text("inference").notNull().default("{}"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
@@ -25,9 +22,6 @@ export const agents = sqliteTable("agents", {
   desktopModel: text("desktop_model"),
   reviewModel: text("review_model"),
   review: text("review"),
-  sharedMemory: integer("shared_memory", { mode: "boolean" })
-    .notNull()
-    .default(false),
 });
 
 export const conversations = sqliteTable("conversations", {
@@ -37,6 +31,8 @@ export const conversations = sqliteTable("conversations", {
     .references(() => agents.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  /** The bot's one continuous chat, as opposed to its working conversations. */
+  chat: integer("chat", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

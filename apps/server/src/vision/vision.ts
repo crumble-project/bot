@@ -87,6 +87,12 @@ export const VisionDescriptions = defineDoc<{
 export const readsImages = (model: { input?: readonly string[] } | undefined) =>
   !model?.input || model.input.includes("image");
 
+/** Whether the vision model stands in for `model`: one is set and `model` can't read images itself. */
+export const describesImages = (
+  vision: VisionModelRef | undefined,
+  model: { input?: readonly string[] } | undefined,
+) => vision !== undefined && !readsImages(model);
+
 /** The SHA-256 of an image's base64 data: its key in the description cache. */
 export const imageHash = (data: string) =>
   createHash("sha256").update(data).digest("hex");
@@ -221,12 +227,12 @@ const imagesOf = (message: Message): ImageContent[] =>
       )
     : [];
 
-/** Whether the model of the conversation's next request reads images itself. */
-async function botReadsImages(api: HookApi, context: Context) {
+/** The model of the conversation's next request, which alone decides what a request may carry. */
+async function requestModel(api: HookApi, context: Context) {
   const ref = (await api.snapshot(AgentDoc, api.conversationId, context))
     ?.model;
 
-  return !ref || readsImages(api.models.getModel(ref.provider, ref.modelId));
+  return ref && api.models.getModel(ref.provider, ref.modelId);
 }
 
 const describedText = (hash: string, description: string) =>
@@ -381,7 +387,8 @@ function describeHook(options: VisionOptions) {
       if (!chosen || !messages.some((message) => imagesOf(message).length))
         return undefined;
 
-      if (await botReadsImages(api, context)) return undefined;
+      if (!describesImages(chosen, await requestModel(api, context)))
+        return undefined;
 
       const hashes = new Map(
         messages

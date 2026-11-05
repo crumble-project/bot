@@ -11,15 +11,17 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import type { JsonValue } from "@earendil-works/chord";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { AgentRuntime } from "./runtime";
-import { providerModels } from "../providers/providers";
+import { AgentRuntime, type RuntimeCallbacks } from "./runtime";
+import { hostModels } from "../providers/providers";
 import { ProviderCredentials } from "../providers/provider-credentials";
 import { Store } from "../../test/support/store";
 import { loadCommonSkills } from "../skills/common-skills";
 import { agentInput, type Agent } from "../shared/domain";
 import { defaultAvatarDefinition } from "../contract/avatar";
 import type { AvailableSkill } from "../skills/skill-library";
-import { standaloneSkills, type BotSkills } from "../skills/skills";
+import type { BotSkills } from "../skills/skills";
+import { standaloneSkills } from "../skills/skills-test-support";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const directories: string[] = [];
 const runtimes: AgentRuntime[] = [];
@@ -62,10 +64,7 @@ function fakeLibrary(
   };
 }
 
-function setup(
-  options: ConstructorParameters<typeof AgentRuntime>[1] = {},
-  slow = false,
-) {
+function setup(options: Partial<RuntimeCallbacks> = {}, slow = false) {
   const directory = mkdtempSync(join(tmpdir(), "crumble-runtime-"));
   directories.push(directory);
 
@@ -85,7 +84,12 @@ function setup(
 
   const models = createModels();
   models.setProvider(faux.provider);
-  const runtime = new AgentRuntime(directory, { ...options, models });
+
+  const runtime = new AgentRuntime(
+    directory,
+    runtimeCallbacks({ ...options, models }),
+  );
+
   runtimes.push(runtime);
 
   return { runtime, faux };
@@ -99,7 +103,7 @@ test("saved credentials rotate without opening a new runtime", async () => {
     ProviderCredentials.use(Effect.succeed),
   );
 
-  const models = providerModels(credentials);
+  const models = hostModels(credentials, []);
 
   for (const key of ["first-test-key", "second-test-key"]) {
     await credentials.modify("openai", async () => ({ type: "api_key", key }));
@@ -110,7 +114,7 @@ test("saved credentials rotate without opening a new runtime", async () => {
 test("each chat turn receives a fresh server clock and timezone", async () => {
   const { runtime, faux } = setup();
   const agent = makeAgent();
-  const conversation = await runtime.createConversation(agent);
+  const conversation = await runtime.openChat(agent);
   const requests: string[] = [];
 
   const capture = (context: { messages: unknown[] }) => {
@@ -179,8 +183,8 @@ test("profile edits, skills and memory reach the next request without leaking be
 
   faux.setResponses([response, response, response]);
 
-  const ca = await runtime.createConversation(a),
-    cb = await runtime.createConversation(b);
+  const ca = await runtime.openChat(a),
+    cb = await runtime.openChat(b);
 
   await runtime.wait(await runtime.submit(a, ca, "first", "one"), a);
   await runtime.wait(
@@ -282,7 +286,7 @@ test("lists skills by name in the prompt and loads their content and documents o
     },
     fauxAssistantMessage("ok"),
   ]);
-  const conversation = await runtime.createConversation(agent);
+  const conversation = await runtime.openChat(agent);
   await runtime.wait(
     await runtime.submit(agent, conversation, "go", "one"),
     agent,
@@ -395,7 +399,7 @@ test("a bot writes its own skills atomically, after reading them, and every chan
       return fauxAssistantMessage("done");
     },
   ]);
-  const conversation = await runtime.createConversation(agent);
+  const conversation = await runtime.openChat(agent);
   await runtime.wait(
     await runtime.submit(agent, conversation, "learn", "one"),
     agent,
@@ -463,7 +467,7 @@ test("a bot without skills gets no skill tool", async () => {
       return fauxAssistantMessage("ok");
     },
   ]);
-  const conversation = await runtime.createConversation(agent);
+  const conversation = await runtime.openChat(agent);
   await runtime.wait(
     await runtime.submit(agent, conversation, "go", "one"),
     agent,
@@ -494,7 +498,7 @@ test("registered extension tools are offered, executed, recorded and revoked", a
   });
 
   const a = makeAgent();
-  const conversation = await runtime.createConversation(a);
+  const conversation = await runtime.openChat(a);
   let removed: unknown[] = [];
   faux.setResponses([
     (context) => {
@@ -546,7 +550,7 @@ test("registered extension tools are offered, executed, recorded and revoked", a
 test("hides in-flight assistant text and cancellation settles the submission", async () => {
   const { runtime, faux } = setup({}, true);
   const a = makeAgent();
-  const conversation = await runtime.createConversation(a);
+  const conversation = await runtime.openChat(a);
   faux.setResponses([
     fauxAssistantMessage(
       "A deliberately long response that can be cancelled before it finishes.",
@@ -584,7 +588,7 @@ test("hides in-flight assistant text and cancellation settles the submission", a
 test("publishes the complete assistant entry only after the run ends", async () => {
   const { runtime, faux } = setup({}, true);
   const a = makeAgent();
-  const conversation = await runtime.createConversation(a);
+  const conversation = await runtime.openChat(a);
   const answer = "The complete answer arrives at the turn boundary.";
   faux.setResponses([fauxAssistantMessage(answer)]);
   const snapshots: Awaited<ReturnType<typeof runtime.snapshot>>[] = [];
@@ -631,7 +635,7 @@ test("hides text from an assistant tool round until the whole turn completes", a
   });
 
   const a = makeAgent();
-  const conversation = await runtime.createConversation(a);
+  const conversation = await runtime.openChat(a);
   const intermediate = "I need to check that tool first.";
   faux.setResponses([
     fauxAssistantMessage(
@@ -740,7 +744,7 @@ test("inference overrides reach provider options and deleting an agent removes i
       return fauxAssistantMessage("configured");
     },
   ]);
-  const conversation = await runtime.createConversation(agent);
+  const conversation = await runtime.openChat(agent);
   expect(
     (
       await runtime.wait(

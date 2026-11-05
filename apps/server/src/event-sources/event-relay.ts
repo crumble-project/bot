@@ -7,10 +7,15 @@ import {
 import { Clock, Context, DateTime, Effect, Layer } from "effect";
 import { z } from "zod";
 import type { ConnectionStatus } from "../shared/domain";
-import { reconnectDelay } from "../message-gateway/message-gateway";
-import { Secrets, secretText } from "../password-managers/secrets";
+import { Secrets, secretText } from "../secrets/secrets";
 import { pluginSettingKey } from "../plugins/plugins";
 import { InvalidInput } from "../shared/errors";
+import {
+  connectionFailed,
+  credentialsChanged,
+  disconnected,
+  tokenOrFailure,
+} from "../shared/reconnecting";
 import { SettingsRepository } from "../shared/settings-repository";
 import { startTicking } from "../shared/ticker";
 import { connectUrl, type RelayAccess } from "./doorstep-client";
@@ -50,7 +55,6 @@ const RelaySocket = WebSocket as unknown as new (
 
 type Connection = {
   socket: WebSocket;
-  generation: number;
   greeted: boolean;
 };
 
@@ -87,12 +91,8 @@ export class EventRelay extends Context.Service<
       const scope = yield* Effect.scope;
       const run = Effect.runPromiseWith(yield* Effect.context<never>());
 
-      let status: ConnectionStatus = "disconnected";
-      let error: string | null = null;
+      const state = disconnected();
       let connection: Connection | undefined;
-      let generation = 0;
-      let failures = 0;
-      let retryAt = 0;
       let configured: string | undefined;
       // Set by a protocol mismatch; only a settings change clears it.
       let blocked = false;
@@ -106,7 +106,6 @@ export class EventRelay extends Context.Service<
       const disconnect = () => {
         const current = connection;
         connection = undefined;
-        generation++;
         current?.socket.close();
       };
 
@@ -119,12 +118,13 @@ export class EventRelay extends Context.Service<
           connection = undefined;
 
           if (blocked) return;
-          failures++;
-          retryAt = (yield* Clock.currentTimeMillis) + reconnectDelay(failures);
-          status = "error";
-          error = current.greeted
-            ? "Lost the connection to the event relay. Reconnecting automatically."
-            : "Can't connect to the event relay. Check its URL and token; reconnecting automatically.";
+          connectionFailed(
+            state,
+            yield* Clock.currentTimeMillis,
+            current.greeted
+              ? "Lost the connection to the event relay. Reconnecting automatically."
+              : "Can't connect to the event relay. Check its URL and token; reconnecting automatically.",
+          );
         });
 
       const receive = (current: Connection, data: string) =>
@@ -142,8 +142,8 @@ export class EventRelay extends Context.Service<
 
             if (hello.success) {
               blocked = true;
-              status = "error";
-              error = `The relay speaks protocol ${hello.data.protocol}; this server needs ${PROTOCOL_VERSION}.`;
+              state.status = "error";
+              state.error = `The relay speaks protocol ${hello.data.protocol}; this server needs ${PROTOCOL_VERSION}.`;
               disconnect();
             }
 
@@ -152,9 +152,9 @@ export class EventRelay extends Context.Service<
 
           if (message.data.type === "hello") {
             current.greeted = true;
-            failures = 0;
-            status = "connected";
-            error = null;
+            state.failures = 0;
+            state.status = "connected";
+            state.error = null;
 
             return;
           }
@@ -164,7 +164,7 @@ export class EventRelay extends Context.Service<
           yield* events.storeEvent(eventOf(message.data)).pipe(
             Effect.matchCause({
               onFailure: () => {
-                error =
+                state.error =
                   "An event could not be stored. Check server storage; the relay sends it again.";
               },
               onSuccess: () => {
@@ -180,15 +180,11 @@ export class EventRelay extends Context.Service<
           headers: { Authorization: `Bearer ${access.token}` },
         });
 
-        const current: Connection = {
-          socket,
-          generation: ++generation,
-          greeted: false,
-        };
+        const current: Connection = { socket, greeted: false };
 
         connection = current;
-        status = "connecting";
-        error = null;
+        state.status = "connecting";
+        state.error = null;
         socket.addEventListener("message", (message) => {
           const text = textFrame.safeParse(message.data);
 
@@ -199,15 +195,7 @@ export class EventRelay extends Context.Service<
         });
       };
 
-      const tokenOrError = readSecret(RELAY_TOKEN_KEY).pipe(
-        Effect.match({
-          onFailure: (failure) => ({
-            token: undefined,
-            failure: failure.message,
-          }),
-          onSuccess: (token) => ({ token, failure: undefined }),
-        }),
-      );
+      const token = tokenOrFailure(readSecret(RELAY_TOKEN_KEY));
 
       const unconfigured = (
         url: string | null,
@@ -215,8 +203,8 @@ export class EventRelay extends Context.Service<
       ) => {
         disconnect();
         configured = undefined;
-        status = url ? "error" : "disconnected";
-        error = url
+        state.status = url ? "error" : "disconnected";
+        state.error = url
           ? (failure ?? "Configure the Doorstep account token.")
           : null;
       };
@@ -227,21 +215,20 @@ export class EventRelay extends Context.Service<
         disconnect();
         configured = key;
         blocked = false;
-        failures = 0;
-        retryAt = 0;
+        credentialsChanged(state);
       };
 
       const reconcile = Effect.gen(function* () {
         const url = yield* relayUrl;
-        const { token, failure } = yield* tokenOrError;
+        const read = yield* token;
 
-        if (!url || !token) return unconfigured(url, failure);
-        reconfigure(`${url}\n${token}`);
+        if (!url || !read.token) return unconfigured(url, read.failure);
+        reconfigure(`${url}\n${read.token}`);
 
         if (blocked || connection) return;
 
-        if (retryAt > (yield* Clock.currentTimeMillis)) return;
-        connect({ url, token });
+        if (state.retryAt > (yield* Clock.currentTimeMillis)) return;
+        connect({ url, token: read.token });
       });
 
       const prune = Effect.gen(function* () {
@@ -261,38 +248,39 @@ export class EventRelay extends Context.Service<
       }).pipe(
         Effect.catchCause(() =>
           Effect.sync(() => {
-            error =
+            state.error =
               "The event relay settings could not be loaded. Check server storage.";
           }),
         ),
       );
 
       const describe = Effect.gen(function* () {
-        const token = yield* secrets.status(RELAY_TOKEN_KEY);
+        const stored = yield* secrets.status(RELAY_TOKEN_KEY);
 
         return {
           url: yield* relayUrl,
-          tokenConfigured: token.configured,
-          status,
-          error,
+          tokenConfigured: stored.configured,
+          status: state.status,
+          error: state.error,
         };
       });
 
       const access = Effect.gen(function* () {
         const url = yield* relayUrl;
-        const { token, failure } = yield* tokenOrError;
+        const read = yield* token;
 
         if (!url)
           return yield* new InvalidInput({
             message: "Set the event relay URL first.",
           });
 
-        if (!token)
+        if (!read.token)
           return yield* new InvalidInput({
-            message: failure ?? "Configure the Doorstep account token first.",
+            message:
+              read.failure ?? "Configure the Doorstep account token first.",
           });
 
-        return { url, token };
+        return { url, token: read.token };
       });
 
       const start = startTicking(tick, scope);

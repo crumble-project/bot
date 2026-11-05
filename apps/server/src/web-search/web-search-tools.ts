@@ -7,13 +7,15 @@ import { Plugins, pluginWebSearchProviders } from "../plugins/plugins";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import { isPublicAddress } from "../shared/public-address";
 import {
+  MAX_PAGE_CHARS,
   WebExtractionError,
   WebSearchError,
-  type WebSearchProvider,
+  type WebExtract,
+  type WebSearch,
 } from "./provider";
 import { AgentRepository } from "../bots/agent-repository";
 import { SettingsRepository } from "../shared/settings-repository";
-import { DEFAULT_PROVIDER } from "./settings";
+import { defaultProvider } from "./settings";
 import {
   BOT_TOOL,
   WEB_EXTRACT_TOOL_NAME,
@@ -22,8 +24,14 @@ import {
 import type { WebPage } from "../contract/web-search";
 
 const refused = "Crumble does not read private or local addresses.";
+
+const unavailable =
+  "The selected web search provider is unavailable or its API key is missing.";
+
 const date = Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" }));
 
+// Every address must be public: the provider resolves the name itself, so unlike the credential proxy, Crumble can't
+// connect to only the public ones.
 const publicUrl = Effect.fnUntraced(function* (value: string) {
   let url: URL;
 
@@ -53,7 +61,7 @@ const publicUrl = Effect.fnUntraced(function* (value: string) {
 
 const extractPage = Effect.fnUntraced(function* (
   url: string,
-  extract: NonNullable<WebSearchProvider["extract"]>,
+  extract: WebExtract,
 ) {
   if (!(yield* publicUrl(url)))
     return { url, error: refused } satisfies WebPage;
@@ -64,18 +72,15 @@ const extractPage = Effect.fnUntraced(function* (
     ),
   );
 
-  if ("error" in page || page.text.length <= 20000) return page;
+  if ("error" in page || page.text.length <= MAX_PAGE_CHARS) return page;
 
   return {
     ...page,
-    text: `${page.text.slice(0, 20000)}\n\n[Text truncated at 20,000 characters.]`,
+    text: `${page.text.slice(0, MAX_PAGE_CHARS)}\n\n[Text truncated at ${MAX_PAGE_CHARS.toLocaleString("en-US")} characters.]`,
   };
 });
 
-const searchTool = (
-  search: NonNullable<WebSearchProvider["search"]>,
-  bot: string,
-) =>
+const searchTool = (search: WebSearch, bot: string) =>
   defineTool({
     name: WEB_SEARCH_TOOL_NAME,
     description:
@@ -118,7 +123,7 @@ const searchTool = (
     },
   });
 
-const extractTool = (extract: NonNullable<WebSearchProvider["extract"]>) =>
+const extractTool = (extract: WebExtract) =>
   defineTool({
     name: WEB_EXTRACT_TOOL_NAME,
     description:
@@ -159,27 +164,14 @@ const extractTool = (extract: NonNullable<WebSearchProvider["extract"]>) =>
     },
   });
 
-export function webSearchExtension(
-  providers: WebSearchProvider[],
-  bot: string,
-) {
-  const search = providers.find((provider) => provider.search)?.search;
-  const extract = providers.find((provider) => provider.extract)?.extract;
-  const tools = [];
-
-  if (search) tools.push(searchTool(search, bot));
-
-  if (extract) tools.push(extractTool(extract));
-
-  return defineExtension({ name: "web-search", tools });
-}
-
+/** The bot's web tools; both follow the bot's provider, read at each call, so changing it never changes the tools. */
 export const configuredWebSearchTools = Layer.effectDiscard(
   Effect.gen(function* () {
     const providers = pluginWebSearchProviders(yield* Plugins);
     const agents = yield* AgentRepository;
     const settings = yield* SettingsRepository;
     const extensions = yield* BotExtensions;
+
     yield* extensions.register(ExtensionPosition.webSearch, (agent) => {
       if (!agent.tools.includes(BOT_TOOL.web)) return [];
 
@@ -187,55 +179,35 @@ export const configuredWebSearchTools = Layer.effectDiscard(
         const current = yield* agents.get(agent.id);
 
         const id =
-          current?.webSearchProvider ??
-          (yield* settings.get(DEFAULT_PROVIDER)) ??
-          "mixed";
+          current?.webSearchProvider ?? (yield* defaultProvider(settings));
 
         return providers.find((provider) => provider.id === id);
       });
 
-      const dynamic: WebSearchProvider = {
-        id: "selected",
-        search: (query, bot) =>
-          resolve().pipe(
-            Effect.flatMap((provider) =>
-              provider?.search
-                ? provider.search(query, bot)
-                : Effect.fail(
-                    new WebSearchError(
-                      "The selected web search provider is unavailable or its API key is missing.",
-                    ),
-                  ),
-            ),
+      const search: WebSearch = (query, bot) =>
+        resolve().pipe(
+          Effect.flatMap((provider) =>
+            provider?.search
+              ? provider.search(query, bot)
+              : Effect.fail(new WebSearchError(unavailable)),
           ),
-        extract: (url) =>
-          resolve().pipe(
-            Effect.flatMap((provider) =>
-              provider?.extract
-                ? provider.extract(url)
-                : Effect.fail(
-                    new WebExtractionError(
-                      "The selected web search provider is unavailable or its API key is missing.",
-                    ),
-                  ),
-            ),
-          ),
-      };
+        );
 
-      return [webSearchExtension([dynamic], agent.id)];
+      const extract: WebExtract = (url) =>
+        resolve().pipe(
+          Effect.flatMap((provider) =>
+            provider?.extract
+              ? provider.extract(url)
+              : Effect.fail(new WebExtractionError(unavailable)),
+          ),
+        );
+
+      return [
+        defineExtension({
+          name: "web-search",
+          tools: [searchTool(search, agent.id), extractTool(extract)],
+        }),
+      ];
     });
-  }),
-);
-
-export const webSearchTools = Layer.effectDiscard(
-  Effect.gen(function* () {
-    const providers = pluginWebSearchProviders(yield* Plugins);
-    yield* (yield* BotExtensions).register(
-      ExtensionPosition.webSearch,
-      (agent) =>
-        agent.tools.includes(BOT_TOOL.web)
-          ? [webSearchExtension(providers, agent.id)]
-          : [],
-    );
   }),
 );

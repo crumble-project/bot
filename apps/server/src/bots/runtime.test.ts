@@ -7,6 +7,7 @@ import {
 import { AgentRuntime } from "./runtime";
 import type { Agent } from "../shared/domain";
 import { defaultAvatarDefinition } from "../contract/avatar";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const agent = (id: string, model = "test-model"): Agent => ({
   id,
@@ -39,13 +40,13 @@ describe("AgentRuntime", () => {
     const models = createModels();
     models.setProvider(faux.provider);
     const a = agent("00000000-0000-4000-8000-000000000001");
-    const rt = new AgentRuntime(dir.trim(), { models });
-    const conversation = await rt.createConversation(a);
+    const rt = new AgentRuntime(dir.trim(), runtimeCallbacks({ models }));
+    const conversation = await rt.openChat(a);
     const submission = await rt.submit(a, conversation, "hi", "request-1");
     const settled = await rt.wait(submission, a);
     expect(settled.status).toBe("done");
     await rt.close();
-    const reopened = new AgentRuntime(dir.trim(), { models });
+    const reopened = new AgentRuntime(dir.trim(), runtimeCallbacks({ models }));
     const duplicate = await reopened.submit(a, conversation, "hi", "request-1");
     expect(duplicate).toBe(submission);
     const snapshot = await reopened.snapshot(a, conversation);
@@ -84,14 +85,17 @@ describe("AgentRuntime", () => {
     );
     models.setProvider(faux.provider);
 
-    const rt = new AgentRuntime(dir.trim(), {
-      models,
-      listMemory: async (id) => [{ id: "m", content: `memory of ${id}` }],
-    });
+    const rt = new AgentRuntime(
+      dir.trim(),
+      runtimeCallbacks({
+        models,
+        listMemory: async (id) => [{ id: "m", content: `memory of ${id}` }],
+      }),
+    );
 
     for (const id of ids) {
       const bot = agent(id);
-      const conversation = await rt.createConversation(bot);
+      const conversation = await rt.openChat(bot);
       await rt.wait(await rt.submit(bot, conversation, "hi", `r-${id}`), bot);
     }
 

@@ -26,8 +26,8 @@ import type { Context as PiContext } from "@earendil-works/chord/context";
 import type { Agent, MCPServer } from "../shared/domain";
 import { Context, Effect, Layer, ManagedRuntime } from "effect";
 import { AgentRepository } from "../bots/agent-repository";
-import { SecretRepository } from "../credentials/secret-repository";
-import { Secrets, secretText } from "../password-managers/secrets";
+import { Secrets, secretText } from "../secrets/secrets";
+import { ServerSecrets } from "../secrets/server-secrets";
 import { runnerOf, type Runner } from "../shared/runner";
 import { McpServerRepository } from "./mcp-server-repository";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
@@ -145,34 +145,13 @@ function throwAuthFailure(
   throw cause;
 }
 
-type CredentialHeaders = { readonly [header: string]: string };
-
-const credentialPayload = z.object({
-  headers: z.record(z.string(), z.string()).optional(),
-  token: z.string().optional(),
-});
-
-function credentials(raw: string | undefined) {
-  if (!raw) return {};
-
-  try {
-    const parsed = credentialPayload.safeParse(JSON.parse(raw));
-
-    if (parsed.success) {
-      if (parsed.data.headers)
-        return { ...parsed.data.headers } satisfies CredentialHeaders;
-
-      if (parsed.data.token)
-        return {
-          Authorization: `Bearer ${parsed.data.token}`,
-        } satisfies CredentialHeaders;
-    }
-  } catch {
-    /* Treat a legacy credential as a bearer token. */
-  }
-
-  return { Authorization: `Bearer ${raw}` } satisfies CredentialHeaders;
-}
+const closeConnection = async (connection: {
+  client: MCPClient;
+  transport: McpTransport;
+}) => {
+  await connection.client.close().catch(() => undefined);
+  await connection.transport.close().catch(() => undefined);
+};
 
 /** What connections read from the account: the servers a bot may use, its bots, and their secrets. */
 type IntegrationData = {
@@ -186,7 +165,7 @@ type IntegrationData = {
 type IntegrationServices =
   | McpServerRepository
   | AgentRepository
-  | SecretRepository
+  | ServerSecrets
   | Secrets;
 
 const tokenOf = (serverId: string) =>
@@ -319,7 +298,11 @@ class McpConnections {
     // A signed-in server authenticates through OAuth, which refreshes its own access token.
     const oauth = hasOAuthTokens(this.data.secrets, server.id);
 
-    const headers = oauth ? {} : credentials(await this.token(server.id));
+    const token = oauth ? undefined : await this.token(server.id);
+
+    const headers: Record<string, string> = token
+      ? { Authorization: `Bearer ${token}` }
+      : {};
 
     const hadCredentials = oauth || Object.keys(headers).length > 0;
     const fingerprint = digest({ url: server.url, headers, oauth });
@@ -328,8 +311,7 @@ class McpConnections {
     if (existing?.fingerprint === fingerprint) return existing;
 
     if (existing) {
-      await existing.client.close().catch(() => undefined);
-      await existing.transport.close().catch(() => undefined);
+      await closeConnection(existing);
       this.connections.delete(server.id);
     }
 
@@ -344,15 +326,13 @@ class McpConnections {
     try {
       await this.withTimeout(value.client.connect(value.transport));
     } catch (error) {
-      await value.client.close().catch(() => undefined);
-      await value.transport.close().catch(() => undefined);
+      await closeConnection(value);
       throwAuthFailure(server, error, hadCredentials);
     }
 
     // A disconnect while this one opened means its credentials may be stale.
     if (this.generation(server.id) !== generation) {
-      await value.client.close().catch(() => undefined);
-      await value.transport.close().catch(() => undefined);
+      await closeConnection(value);
       throw new Error("MCP server credentials changed; retry this task");
     }
 
@@ -380,7 +360,7 @@ class McpConnections {
         connection.client.listTools({ timeoutMs: this.timeout }),
       ).catch(async (error) => {
         this.connections.delete(server.id);
-        await connection.client.close().catch(() => undefined);
+        await closeConnection(connection);
         throwAuthFailure(server, error, true);
       });
 
@@ -520,20 +500,16 @@ class McpConnections {
     const existing = this.connections.get(serverId);
     this.connections.delete(serverId);
     this.failures.delete(serverId);
-    await existing?.client.close().catch(() => undefined);
-    await existing?.transport.close().catch(() => undefined);
+
+    if (existing) await closeConnection(existing);
   }
 
   async close() {
     this.closes++;
     const values = [...this.connections.values()];
     this.connections.clear();
-    await Promise.all(
-      values.map(async ({ client, transport }) => {
-        await client.close().catch(() => undefined);
-        await transport.close().catch(() => undefined);
-      }),
-    );
+
+    await Promise.all(values.map(closeConnection));
   }
 }
 

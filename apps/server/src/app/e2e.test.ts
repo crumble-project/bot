@@ -10,8 +10,9 @@ import {
 import { AgentRuntime } from "../bots/runtime";
 import { Store } from "../../test/support/store";
 import { standaloneBots } from "../bots/bots";
-import { standaloneScheduler } from "../schedules/scheduler";
+import { standaloneScheduler } from "../automations/scheduler-test-support";
 import { createAPI } from "./api";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const token = "e".repeat(40);
 const requestId = "00000000-0000-4000-8000-000000000202";
@@ -56,7 +57,7 @@ describe("HTTP/runtime persistence", () => {
         delegates: [],
       });
 
-      const runtime = new AgentRuntime(dir, { models });
+      const runtime = new AgentRuntime(dir, runtimeCallbacks({ models }));
       const app = makeApp(store, runtime);
 
       const headers = {
@@ -82,7 +83,12 @@ describe("HTTP/runtime persistence", () => {
       store.close();
 
       const reopenedStore = new Store(dir);
-      const reopenedRuntime = new AgentRuntime(dir, { models });
+
+      const reopenedRuntime = new AgentRuntime(
+        dir,
+        runtimeCallbacks({ models }),
+      );
+
       const reopenedApp = makeApp(reopenedStore, reopenedRuntime);
 
       const snapshotResponse = await reopenedApp.request(

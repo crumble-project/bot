@@ -4,14 +4,14 @@ import { HeldActions } from "../bot-desktop/held-actions";
 import { BotNotices } from "../bots/bot-notices";
 import { CredentialAuthorities } from "../credentials/credential-authority";
 import { Credentials } from "../credentials/credentials";
+import { MintedCredentials } from "../credentials/minted-credentials";
 import { GitHubAccounts } from "../github-apps/github-accounts";
 import { GitHubAppUsers } from "../github-apps/github-app-users";
-import { GitHubApps } from "../github-apps/github-apps";
+import { GitHubApps, githubCredentialSource } from "../github-apps/github-apps";
 import { Logins } from "../logins/logins";
 import { ProviderCredentials } from "../providers/provider-credentials";
-import { McpOAuth } from "../integrations/mcp-oauth";
 import { BotMemory } from "../memory/bot-memory";
-import { secretsLayer } from "../password-managers/secrets";
+import { secretsLayer } from "../secrets/secrets";
 import { BotSecretRequests } from "../bot-secrets/bot-secret-requests";
 import { BotSecretUses } from "../bot-secrets/bot-secret-uses";
 import { assertVendorIds, pluginPasswordManagers } from "../plugins/plugins";
@@ -36,16 +36,17 @@ export const coreLayer = (dataDir: string) =>
     Logins.layer,
     CredentialAuthorities.layer,
     ProviderCredentials.layer,
-    McpOAuth.layer,
     BotMemory.layer,
   ).pipe(
+    Layer.provideMerge(githubCredentialSource),
+    Layer.provideMerge(GitHubApps.layer),
+    Layer.provideMerge(GitHubAppUsers.layer),
+    Layer.provideMerge(GitHubAccounts.layer),
+    Layer.provideMerge(MintedCredentials.layer),
     Layer.provideMerge(
       Layer.mergeAll(BotSecretRequests.layer, BotSecretUses.layer),
     ),
     Layer.provideMerge(BotNotices.layer),
-    Layer.provideMerge(GitHubApps.layer),
-    Layer.provideMerge(GitHubAppUsers.layer),
-    Layer.provideMerge(GitHubAccounts.layer),
     Layer.provideMerge(secretsLayer(passwordManagers)),
     Layer.provideMerge(productLayer(dataDir)),
   );

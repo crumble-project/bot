@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { AgentRuntime } from "./runtime";
 import { standaloneBots } from "./bots";
 import { Store } from "../../test/support/store";
+import type { Agent } from "../shared/domain";
 
 const dirs: string[] = [];
 
@@ -57,6 +58,10 @@ describe("scheduled admission recovery", () => {
 
     const runtimeFixture = {
       openChat: async () => conversationId,
+      prepareInput: async (_agent: Agent, text: string) => ({
+        modelContent: text,
+        data: { text },
+      }),
       submit: async () => {
         submissions += 1;
 

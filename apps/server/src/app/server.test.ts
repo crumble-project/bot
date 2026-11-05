@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { Store } from "../../test/support/store";
 import { agentInput, scheduleInput } from "../shared/domain";
-import { ScriptRunRepository } from "../schedules/script-run-repository";
+import { ScriptRunRepository } from "../automations/script-run-repository";
 import { createTenant } from "./tenant";
 import { ownerRecord } from "./data-lock";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";

@@ -3,6 +3,7 @@ import { Cause, Effect, FiberMap } from "effect";
 import type { Agent, Execution } from "../shared/domain";
 import { errorText } from "../shared/errors";
 import { parseRequestId } from "../shared/request-ids";
+import { frameInput } from "./input-framing";
 import type { botsActivity } from "./bots-activity";
 import { type BotsContext } from "./bots-context";
 import type { botsLookup } from "./bots-lookup";
@@ -30,7 +31,7 @@ const botsSubmissionSteps = (context: BotsContext, deps: AdmissionDeps) => {
     return (yield* events.eventWithSource(request.eventId)) ?? undefined;
   });
 
-  const { changed, settled } = deps.notifications;
+  const { settle } = deps.notifications;
 
   const submit = Effect.fnUntraced(function* (
     execution: Execution,
@@ -44,6 +45,21 @@ const botsSubmissionSteps = (context: BotsContext, deps: AdmissionDeps) => {
     const event =
       from.kind === "event" ? yield* eventInput(execution) : undefined;
 
+    const prepared = yield* pi(() =>
+      runtime.prepareInput(
+        owner,
+        execution.prompt,
+        execution.replyTo ?? undefined,
+      ),
+    );
+
+    const modelContent = frameInput(
+      prepared.modelContent,
+      from,
+      execution.requestId,
+      event,
+    );
+
     return yield* pi(() =>
       runtime.submit(
         owner,
@@ -51,10 +67,9 @@ const botsSubmissionSteps = (context: BotsContext, deps: AdmissionDeps) => {
         execution.prompt,
         execution.requestId,
         {
-          replyTo: execution.replyTo ?? undefined,
+          input: { ...prepared, modelContent },
           origin: from,
           attachments,
-          event,
         },
       ),
     );
@@ -65,34 +80,22 @@ const botsSubmissionSteps = (context: BotsContext, deps: AdmissionDeps) => {
     owner: Agent,
   ) {
     yield* pi(() => runtime.abort(owner, execution.conversationId));
-    yield* executions.update(execution.id, { status: "cancelled" });
-    yield* changed(execution.conversationId);
-    yield* settled(execution.id);
+    yield* settle(execution, { status: "cancelled" });
   });
 
   return { submit, cancelled };
 };
 
 /** Records an execution whose admission failed with anything but an interrupt. */
-const botsAdmissionFailure = (
-  context: BotsContext,
-  notifications: ReturnType<typeof botsActivity>,
-) => {
-  const { executions } = context;
-  const { changed, settled } = notifications;
-
-  return (execution: Execution, cause: Cause.Cause<unknown>) =>
+const admissionFailure =
+  (notifications: ReturnType<typeof botsActivity>) =>
+  (execution: Execution, cause: Cause.Cause<unknown>) =>
     Cause.hasInterruptsOnly(cause)
       ? Effect.void
-      : Effect.gen(function* () {
-          yield* executions.update(execution.id, {
-            status: "failed",
-            error: errorText(Cause.squash(cause)),
-          });
-          yield* changed(execution.conversationId);
-          yield* settled(execution.id);
+      : notifications.settle(execution, {
+          status: "failed",
+          error: errorText(Cause.squash(cause)),
         });
-};
 
 /** Stores the submission, then watches it with the monitor the bots keep per execution. */
 const botsSubmissionRun = (
@@ -101,7 +104,7 @@ const botsSubmissionRun = (
   submit: ReturnType<typeof botsSubmissionSteps>["submit"],
 ) => {
   const { executions, monitors } = context;
-  const admissionFailure = botsAdmissionFailure(context, deps.notifications);
+  const failed = admissionFailure(deps.notifications);
 
   const run = (execution: Execution, owner: Agent) =>
     Effect.gen(function* () {
@@ -118,7 +121,7 @@ const botsSubmissionRun = (
         deps.monitor(execution, submissionId, owner),
         { onlyIfMissing: true },
       );
-    }).pipe(Effect.onError((cause) => admissionFailure(execution, cause)));
+    }).pipe(Effect.onError((cause) => failed(execution, cause)));
 
   return { run };
 };

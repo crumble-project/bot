@@ -8,17 +8,12 @@ import {
   type McpOAuthStateStore,
 } from "@earendil-works/pi-mcp/oauth";
 import { type MCPServer } from "../shared/domain";
-import { Context, Effect, Layer } from "effect";
-import { SecretRepository } from "../credentials/secret-repository";
-import { Secrets, secretKey, secretText } from "../password-managers/secrets";
-import { appErrors } from "../shared/app-errors";
-import { runnerOf, type Runner } from "../shared/runner";
-import {
-  InvalidInput,
-  isAppError,
-  type AppError,
-  errorText,
-} from "../shared/errors";
+import { Effect } from "effect";
+import { secretKey } from "../secrets/secret-key";
+import { Secrets, secretText } from "../secrets/secrets";
+import { ServerSecrets } from "../secrets/server-secrets";
+import type { Runner } from "../shared/runner";
+import { InvalidInput, isAppError, errorText } from "../shared/errors";
 
 /**
  * A server's OAuth state as pi-mcp keeps it (client registration, tokens, PKCE verifier, state),
@@ -28,10 +23,10 @@ type SavedOAuth = {
   redirectUrl: string;
   state: McpOAuthState;
   /** The owner's OAuth app the state belongs to; null when Crumble registered or used its document. */
-  clientId?: string | null;
+  clientId: string | null;
 };
 
-const credentialKey = (serverId: string) => `mcp-oauth:${serverId}`;
+const credentialKey = (serverId: string) => secretKey("mcp-oauth", serverId);
 
 /** The secret holding an MCP server's bearer token. */
 export const mcpTokenKey = (serverId: string) => secretKey("mcp", serverId);
@@ -110,7 +105,7 @@ export type SecretStorage = {
 };
 
 export const secretStorage = (
-  run: Runner<SecretRepository | Secrets>,
+  run: Runner<ServerSecrets | Secrets>,
 ): SecretStorage => ({
   clientSecret: (serverId) =>
     run.runPromise(
@@ -123,12 +118,11 @@ export const secretStorage = (
         ),
       ),
     ),
-  get: (key) =>
-    run.runSync(SecretRepository.use((secrets) => secrets.get(key))),
+  get: (key) => run.runSync(ServerSecrets.use((secrets) => secrets.get(key))),
   set: (key, value) =>
-    run.runSync(SecretRepository.use((secrets) => secrets.set(key, value))),
+    run.runSync(ServerSecrets.use((secrets) => secrets.set(key, value))),
   delete: (key) =>
-    run.runSync(SecretRepository.use((secrets) => secrets.delete(key))),
+    run.runSync(ServerSecrets.use((secrets) => secrets.delete(key))),
 });
 
 function read(
@@ -273,7 +267,7 @@ function restartIfChanged(
   if (
     saved?.redirectUrl === redirectUrl &&
     saved.state.serverUrl === server.url &&
-    (saved.clientId ?? null) === server.oauthClientId
+    saved.clientId === server.oauthClientId
   )
     return;
 
@@ -285,36 +279,15 @@ function restartIfChanged(
 }
 
 /**
- * The callback to send: the one asked for, or the `/ui/oauth/callback` an owner's app was signed in with
- * before the web app left `/ui`. Owners registered that URL with their provider, and `/ui` still redirects.
- */
-function registeredRedirect(
-  storage: SecretStorage,
-  server: MCPServer,
-  requested: string,
-) {
-  const saved = read(storage, server.id);
-  const legacy = requested.replace(/\/oauth\/callback$/, "/ui/oauth/callback");
-
-  return server.oauthClientId &&
-    saved?.clientId === server.oauthClientId &&
-    saved.redirectUrl === legacy
-    ? legacy
-    : requested;
-}
-
-/**
  * Discovers the server's authorization server, registers Crumble for `redirectUrl`, and returns the
  * URL the owner signs in at, or `authorized` when the saved tokens still work.
  */
 export async function startAuthorization(
   storage: SecretStorage,
   server: MCPServer,
-  requested: string,
+  redirectUrl: string,
   document?: ClientDocument,
 ): Promise<{ authorizationUrl: string } | { authorized: true }> {
-  const redirectUrl = registeredRedirect(storage, server, requested);
-
   restartIfChanged(storage, server, redirectUrl);
   let authorizationUrl: URL | undefined;
 
@@ -402,62 +375,4 @@ export async function finishAuthorization(
   const done = read(storage, server.id)!;
   const { oauthState: _state, codeVerifier: _verifier, ...rest } = done.state;
   write(storage, server.id, { ...done, state: rest });
-}
-
-/** OAuth sign-in to MCP servers, with tokens and registrations encrypted among the account's secrets. */
-export class McpOAuth extends Context.Service<
-  McpOAuth,
-  {
-    readonly hasTokens: (serverId: string) => Effect.Effect<boolean>;
-    readonly signOut: (serverId: string) => Effect.Effect<void>;
-    /** The auth a live connection uses, when the server has saved tokens. */
-    readonly connectionAuth: (
-      server: MCPServer,
-      document?: ClientDocument,
-    ) => Effect.Effect<AuthProvider | undefined>;
-    readonly start: (
-      server: MCPServer,
-      redirectUrl: string,
-      document?: ClientDocument,
-    ) => Effect.Effect<
-      { authorizationUrl: string } | { authorized: true },
-      AppError
-    >;
-    readonly finish: (
-      server: MCPServer,
-      code: string,
-      state: string,
-      iss?: string,
-      document?: ClientDocument,
-    ) => Effect.Effect<void, AppError>;
-  }
->()("crumble/integrations/McpOAuth") {
-  static readonly layer = Layer.effect(
-    McpOAuth,
-    Effect.gen(function* () {
-      const storage = secretStorage(
-        runnerOf(yield* Effect.context<SecretRepository | Secrets>()),
-      );
-
-      return McpOAuth.of({
-        hasTokens: (serverId) =>
-          Effect.sync(() => hasOAuthTokens(storage, serverId)),
-        signOut: (serverId) => Effect.sync(() => signOut(storage, serverId)),
-        connectionAuth: (server, document) =>
-          Effect.promise(() => connectionAuth(storage, server, document)),
-        start: (server, redirectUrl, document) =>
-          appErrors(
-            Effect.tryPromise(() =>
-              startAuthorization(storage, server, redirectUrl, document),
-            ),
-          ),
-        finish: (server, code, state, iss, document) =>
-          appErrors(
-            Effect.tryPromise(() =>
-              finishAuthorization(storage, server, code, state, iss, document),
-            ),
-          ),
-      });
-    }),
-  );
 }

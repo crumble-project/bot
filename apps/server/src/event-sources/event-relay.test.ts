@@ -7,12 +7,12 @@ import { Effect, Exit, Layer, ManagedRuntime } from "effect";
 import { TestClock } from "effect/testing";
 import { productLayer } from "../app/product-layer";
 import { AgentRepository } from "../bots/agent-repository";
-import { SecretRepository } from "../credentials/secret-repository";
-import { secretsLayer } from "../password-managers/secrets";
-import { ScheduleRepository } from "../schedules/schedule-repository";
+import { SecretRepository } from "../secrets/secret-repository";
+import { secretsLayer } from "../secrets/secrets";
+import { ScheduleRepository } from "../automations/schedule-repository";
 import { agentInput, scheduleInput } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
-import { schedules } from "../schedules/schema";
+import { schedules } from "../automations/schema";
 import { EventRepository } from "./event-repository";
 import { EventRelay, RELAY_TOKEN_KEY } from "./event-relay";
 import { EventSources } from "./event-sources";
@@ -314,6 +314,7 @@ test("event sources are created and deleted on the relay, and kept while an auto
           prompt: "Triage the issue",
           cron: "0 9 * * *",
         }),
+        null,
       );
 
       yield* ProductDatabase.use((db) =>

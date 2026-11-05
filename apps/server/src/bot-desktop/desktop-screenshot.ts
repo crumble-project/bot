@@ -9,7 +9,6 @@ import {
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
-import type { Agent } from "../shared/domain";
 import { BotWorkspaces, type Workspaces } from "../workspaces/workspace";
 import type { DesktopShell } from "./computer-use";
 import {
@@ -24,10 +23,11 @@ import {
   desktopFillsAccess,
 } from "./desktop-fill-repository";
 import { runnerOf } from "../shared/runner";
-import { BOT_TOOL, DESKTOP_SCREENSHOT_TOOL_NAME } from "../contract/tools";
-
-/** The extension's name; group turns leave it out, since a group's transcript can't show the image. */
-export const DESKTOP_SCREENSHOT_EXTENSION = "desktop-screenshot";
+import { DESKTOP_SCREENSHOT_TOOL_NAME } from "../contract/tools";
+import {
+  DESKTOP_SCREENSHOT_EXTENSION,
+  usesDesktop,
+} from "./desktop-vocabulary";
 
 const MIME_TYPE = "image/jpeg";
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -39,7 +39,7 @@ export type DesktopScreenshotDetails = { mimeType: string; size: number };
 export type ScreenshotWorkspaces = Pick<
   Workspaces,
   "desktop" | "desktopRunning" | "keepAwake"
-> & { shell(agentId: string): DesktopShell };
+> & { env(agentId: string): DesktopShell };
 
 export type ScreenshotResult =
   | { image: string; size: number }
@@ -78,11 +78,10 @@ async function passwordCheck(
 async function grab(shell: DesktopShell, context: Context) {
   // Unique per call: a file left by another capture can never stand in for this one.
   const jpg = `/tmp/desktop-screenshot-${randomUUID()}.jpg`;
-  const state = computerUseState(shell);
 
   try {
     const output = await sh(
-      state,
+      shell,
       `import -window root -quality 75 ${jpg} 2>&1 && echo ok`,
       context,
     );
@@ -124,7 +123,7 @@ export async function captureDesktop(
     if (!workspaces.desktopRunning(agentId))
       return { error: DESKTOP_NOT_RUNNING };
 
-    const shell = workspaces.shell(agentId);
+    const shell = workspaces.env(agentId);
 
     if (await passwordCheck(shell, fills, context))
       return { error: PASSWORD_MAY_SHOW };
@@ -181,30 +180,16 @@ export function desktopScreenshotExtension(
   });
 }
 
-const screenshotWorkspaces = (
-  workspaces: Workspaces | undefined,
-): ScreenshotWorkspaces | undefined =>
-  workspaces && {
-    get desktop() {
-      return workspaces.desktop;
-    },
-    desktopRunning: (agentId) => workspaces.desktopRunning(agentId),
-    keepAwake: (agentId) => workspaces.keepAwake(agentId),
-    shell: (agentId) => workspaces.env(agentId),
-  };
-
-const hasDesktop = (agent: Agent) => agent.tools.includes(BOT_TOOL.desktop);
-
 /** Offers `desktop_screenshot` to bots with the `desktop` tool. */
 export const desktopScreenshotTools = Layer.effectDiscard(
   Effect.gen(function* () {
-    const workspaces = screenshotWorkspaces(yield* BotWorkspaces);
+    const workspaces = yield* BotWorkspaces;
     const run = runnerOf(yield* Effect.context<DesktopFillRepository>());
 
     yield* (yield* BotExtensions).register(
       ExtensionPosition.desktopScreenshot,
       (agent) =>
-        hasDesktop(agent)
+        usesDesktop(agent)
           ? [
               desktopScreenshotExtension(
                 agent.id,

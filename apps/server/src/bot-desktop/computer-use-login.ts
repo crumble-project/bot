@@ -4,7 +4,8 @@ import {
   loginFieldInput,
   type LoginField,
 } from "../shared/domain";
-import type { ComputerUseArgs, ComputerUseResult } from "./computer-use";
+import type { ComputerUseArgs } from "./computer-use-args";
+import type { ComputerUseResult } from "./computer-use";
 import {
   codeOf,
   driverCall,
@@ -16,6 +17,8 @@ import {
   sh,
 } from "./computer-use-driver";
 import {
+  currentPage,
+  refOf,
   scrubText,
   textResult,
   type ComputerUseState,
@@ -83,13 +86,14 @@ function pageOf(
   | { latest: NonNullable<ComputerUseState["lastRead"]>; url: string }
   | Refusal {
   const latest = state.lastRead;
+  const url = currentPage(state);
 
-  if (!latest)
+  if (!latest || url === undefined)
     return {
       refused: "read the sign-in page, then fill_login with a ref from it",
     };
 
-  const element = latest.read.refs.find((each) => each.ref === ref);
+  const element = refOf(state, ref);
 
   if (!element)
     return { refused: `${ref} is not in the latest read; read the page again` };
@@ -103,7 +107,7 @@ function pageOf(
   if (element.role !== "textbox")
     return { refused: `${ref} is not a text field` };
 
-  return { latest, url: latest.read.page?.url ?? latest.page.url };
+  return { latest, url };
 }
 
 function hostOf(url: string): { host: string } | Refusal {
@@ -217,7 +221,7 @@ async function chromiumInstance(state: ComputerUseState, context: Context) {
   if (!browser) return undefined;
 
   const started = (
-    await sh(state, `ps -o lstart= -p ${browser.pid}`, context)
+    await sh(state.shell, `ps -o lstart= -p ${browser.pid}`, context)
   ).trim();
 
   return started ? `${browser.pid} ${started}` : UNKNOWN_CHROMIUM;

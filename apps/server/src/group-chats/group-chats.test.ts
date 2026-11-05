@@ -15,12 +15,14 @@ import {
   type FauxResponseFactory,
 } from "@earendil-works/pi-ai/providers/faux";
 import { GROUP_TURN_BUDGET } from "../shared/domain";
-import { standaloneGroupChats, type GroupChatsAccess } from "./group-chats";
+import type { GroupChatsAccess } from "./group-chats";
+import { standaloneGroupChats } from "./group-chats-test-support";
 import { GroupTranscripts } from "./group-transcripts";
 import { reactionExtension } from "../bots/reaction";
 import { AgentRuntime } from "../bots/runtime";
 import { standaloneBots } from "../bots/bots";
 import { Store } from "../../test/support/store";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -132,13 +134,16 @@ function open(dir: string, bots: Record<string, Bot>, vision?: VisionAnswers) {
 
   const service = standaloneBots(
     store,
-    new AgentRuntime(join(dir, "agents"), {
-      models,
-      extensions: () => [reactionExtension()],
-      ...(vision && {
-        visionModel: () => ({ provider: "eye", model: "vision" }),
+    new AgentRuntime(
+      join(dir, "agents"),
+      runtimeCallbacks({
+        models,
+        extensions: () => [reactionExtension()],
+        ...(vision && {
+          visionModel: () => ({ provider: "eye", model: "vision" }),
+        }),
       }),
-    }),
+    ),
   );
 
   const groups = standaloneGroupChats(

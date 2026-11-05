@@ -1,11 +1,14 @@
-import { randomBytes } from "node:crypto";
 import { Type } from "@earendil-works/pi-ai";
-import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { Context, Effect, Layer, Predicate, Redacted } from "effect";
-import { z } from "zod";
+import { defineExtension } from "@earendil-works/pi-durable";
+import { Context, Effect, Layer, Redacted } from "effect";
 import type { Runner } from "../shared/runner";
-import { BotSecretRequests } from "../bot-secrets/bot-secret-requests";
-import { BotSecretUses } from "../bot-secrets/bot-secret-uses";
+import {
+  hostLines,
+  hostsText,
+  requestParameters,
+  secretRequestTool,
+  useFailure,
+} from "../bot-secrets/bot-secret-lifecycle";
 import {
   credentialName,
   credentialRequestInput,
@@ -17,63 +20,37 @@ import {
   type CredentialTarget,
   type CredentialUse,
 } from "../shared/domain";
-import type { SecretUnavailable } from "../password-managers/secret-values";
-import { Secrets } from "../password-managers/secrets";
+import type { SecretUnavailable } from "../secrets/secret-values";
+import { Secrets } from "../secrets/secrets";
 import {
   AgentCredentialRepository,
   credentialSecretKey,
   type CredentialRecord,
 } from "./agent-credential-repository";
-import { GitHubApps } from "../github-apps/github-apps";
-import type {
-  GitHubIdentity,
-  GitHubUnavailable,
-} from "../github-apps/github-api";
+import {
+  CredentialSource,
+  credentialLifecycle,
+  type CredentialUnminted,
+} from "./minted-credentials";
+import { guestTrustEnv } from "../shared/guest-env";
 import { GUEST_CA_BUNDLE, GUEST_CA_PATH } from "../workspaces/workspace";
 import {
+  Conflict,
   InvalidInput,
   NotFound,
-  Conflict,
   type AppError,
 } from "../shared/errors";
-import { toolOutput } from "../shared/tool-output";
 import { REQUEST_CREDENTIAL_TOOL_NAME } from "../contract/tools";
-import {
-  MAX_CREDENTIAL_HOST_CHARS,
-  MAX_CREDENTIAL_HOSTS,
-  MAX_CREDENTIAL_NAME_CHARS,
-  MAX_REQUEST_REASON_CHARS,
-} from "../shared/limits";
 
-const hostsText = (hosts: readonly string[]) => hosts.join(", ");
-
-/** What a credential's use records beyond its host: the request it was swapped into. */
-const useDetail = z.object({
-  method: z.string(),
-  path: z.string(),
-  status: z.number().nullable(),
-});
-
-/** The hosts a save covers: the input's, else the saved credential's, else the pending request's. */
-const savedHosts = (
-  input: CredentialSaveInput,
-  existing: CredentialRecord | undefined,
-  pending: CredentialRequest | undefined,
-) => {
-  const hosts = input.hosts ?? existing?.hosts ?? pending?.hosts;
-
-  if (!hosts)
-    return Effect.fail(new InvalidInput({ message: "Name at least one host" }));
-
-  if (!existing && !input.secret)
-    return Effect.fail(
-      new InvalidInput({
-        message: "A new credential needs a value or a reference",
-      }),
-    );
-
-  return Effect.succeed(hosts);
-};
+/** A minted credential's value and hosts are its source's, so the owner's save or delete would break its tokens. */
+const refuseMinted = (record: CredentialRecord | undefined) =>
+  record?.github
+    ? Effect.fail(
+        new Conflict({
+          message: `${record.name} comes from the bot's GitHub App or machine account; change it there`,
+        }),
+      )
+    : Effect.void;
 
 /**
  * Credentials the owner gives a bot for named hosts. Jobs see only a placeholder per credential; the credential proxy
@@ -113,10 +90,10 @@ export class Credentials extends Context.Service<
     ) => Effect.Effect<CredentialUse[], AppError>;
     /** The variables every command of the bot's coding jobs sees: placeholders, and where to find the bot's authority. */
     readonly env: (agentId: string) => Effect.Effect<Record<string, string>>;
-    /** How the bot commits in each GitHub account its Apps work in, and elsewhere as its machine account, default first. */
-    readonly githubIdentities: (
+    /** What the bot and its coding jobs read about its credentials; undefined when there is nothing to say. */
+    readonly workspaceSection: (
       agentId: string,
-    ) => Effect.Effect<GitHubIdentity[]>;
+    ) => Effect.Effect<string | undefined>;
     /** The placeholders the credential proxy may swap, without their values. */
     readonly grants: (agentId: string) => Effect.Effect<CredentialGrant[]>;
     /** The value the credential proxy swaps in, read only for a request that uses its placeholder. */
@@ -126,7 +103,7 @@ export class Credentials extends Context.Service<
       target: CredentialTarget,
     ) => Effect.Effect<
       Redacted.Redacted,
-      SecretUnavailable | GitHubUnavailable | NotFound
+      SecretUnavailable | CredentialUnminted | NotFound
     >;
     readonly recordUse: (
       agentId: string,
@@ -139,10 +116,9 @@ export class Credentials extends Context.Service<
     Credentials,
     Effect.gen(function* () {
       const repository = yield* AgentCredentialRepository;
-      const requests = yield* BotSecretRequests;
-      const useLog = yield* BotSecretUses;
+      const lifecycle = yield* credentialLifecycle;
       const secrets = yield* Secrets;
-      const githubApps = yield* GitHubApps;
+      const source = yield* CredentialSource;
 
       const withSecret = Effect.fnUntraced(function* (
         agentId: string,
@@ -163,7 +139,7 @@ export class Credentials extends Context.Service<
       ) {
         const found = yield* repository.get(agentId, name);
 
-        if (found?.github) return yield* githubApps.token(agentId, target);
+        if (found?.github) return yield* source.value(agentId, target);
 
         const secret =
           found && (yield* secrets.read(credentialSecretKey(agentId, name)));
@@ -180,7 +156,7 @@ export class Credentials extends Context.Service<
             yield* repository.list(agentId),
             (record) => withSecret(agentId, record),
           ),
-          requests: (yield* requests.list(agentId, "credential")).map(
+          requests: (yield* lifecycle.requests(agentId)).map(
             ({ name, hosts, reason, requestedAt }) => ({
               name,
               hosts,
@@ -195,19 +171,10 @@ export class Credentials extends Context.Service<
         agentId: string,
         input: CredentialRequestInput,
       ) {
-        const existing = yield* repository.get(agentId, input.name);
-
-        if (
-          existing &&
-          input.hosts.every((host) => existing.hosts.includes(host))
-        )
-          return yield* Effect.fail(
-            new Conflict({
-              message: `${input.name} is already yours for ${hostsText(existing.hosts)}`,
-            }),
-          );
-
-        return yield* requests.ask(agentId, "credential", input);
+        return yield* lifecycle.ask(agentId, input, {
+          alreadyYours: (existing) =>
+            `${input.name} is already yours for ${hostsText(existing.hosts)}`,
+        });
       });
 
       const save = Effect.fn("Credentials.save")(function* (
@@ -220,108 +187,49 @@ export class Credentials extends Context.Service<
           catch: (cause) => cause,
         }).pipe(Effect.orDie);
 
-        const savedHostsNow = Effect.gen(function* () {
-          const pending = yield* requests.get(
-            agentId,
-            "credential",
-            checkedName,
-          );
-
-          return yield* savedHosts(
-            input,
-            yield* repository.get(agentId, checkedName),
-            pending,
-          );
+        const credential = yield* lifecycle.save(agentId, checkedName, {
+          hosts: input.hosts,
+          check: (existing) =>
+            !existing && !input.secret
+              ? Effect.fail(
+                  new InvalidInput({
+                    message: "A new credential needs a value or a reference",
+                  }),
+                )
+              : refuseMinted(existing),
+          store: input.secret
+            ? secrets.save(
+                credentialSecretKey(agentId, checkedName),
+                input.secret,
+              )
+            : Effect.void,
+          write: (hosts) =>
+            repository.save(agentId, checkedName, { hosts, github: false }),
+          notice: (saved) =>
+            `The owner saved credential ${checkedName} for ${hostsText(saved.hosts)}. Coding jobs see it as $${checkedName}.`,
         });
 
-        // Checked first, then read again after the secret's slow save, so a save made meanwhile isn't overwritten.
-        yield* savedHostsNow;
-
-        if (input.secret)
-          yield* secrets.save(
-            credentialSecretKey(agentId, checkedName),
-            input.secret,
-          );
-
-        const hosts = yield* savedHostsNow;
-
-        const credential = yield* repository
-          .save(agentId, checkedName, {
-            hosts,
-            github: false,
-            placeholder: `crumble-credential-${randomBytes(24).toString("hex")}`,
-          })
-          .pipe(Effect.flatMap((record) => withSecret(agentId, record)));
-
-        yield* requests.answer(
-          agentId,
-          "credential",
-          checkedName,
-          `The owner saved credential ${checkedName} for ${hostsText(credential.hosts)}. Coding jobs see it as $${checkedName}.`,
-        );
-
-        return credential;
+        return yield* withSecret(agentId, credential);
       });
 
       const remove = Effect.fn("Credentials.delete")(function* (
         agentId: string,
         name: string,
       ) {
-        if (yield* repository.delete(agentId, name)) {
-          yield* secrets.delete(credentialSecretKey(agentId, name));
-
-          return yield* useLog.forget(agentId, "credential", name);
-        }
-
-        if (!(yield* requests.decline(agentId, "credential", name)))
-          return yield* new NotFound({ message: "Credential not found" });
-      });
-
-      const decline = Effect.fn("Credentials.decline")(function* (
-        agentId: string,
-        name: string,
-      ) {
-        if (!(yield* requests.decline(agentId, "credential", name)))
-          return yield* new Conflict({
-            message: "Credential request has already been answered",
-          });
-      });
-
-      const uses = Effect.fn("Credentials.uses")(function* (
-        agentId: string,
-        name: string,
-        options: { limit: number; before?: string | undefined },
-      ) {
-        if (!(yield* repository.get(agentId, name)))
-          return yield* Effect.fail(
-            new NotFound({ message: "Credential not found" }),
-          );
-
-        const listed = yield* useLog.list(agentId, "credential", name, options);
-
-        return listed.map(({ detail, ...use }): CredentialUse => ({
-          ...use,
-          ...useDetail.parse(detail),
-        }));
+        yield* refuseMinted(yield* repository.get(agentId, name));
+        yield* lifecycle.remove(agentId, name);
       });
 
       const env = Effect.fn("Credentials.env")(function* (agentId: string) {
         const placeholders = yield* repository.placeholders(agentId);
-        const git = yield* githubApps.gitEnv(agentId);
+        const git = yield* source.env(agentId);
 
         if (!Object.keys(placeholders).length) return git;
 
         return {
           ...git,
           ...placeholders,
-          SSL_CERT_FILE: GUEST_CA_BUNDLE,
-          // Debian's git uses GnuTLS, which ignores SSL_CERT_FILE.
-          GIT_SSL_CAINFO: GUEST_CA_BUNDLE,
-          REQUESTS_CA_BUNDLE: GUEST_CA_BUNDLE,
-          CURL_CA_BUNDLE: GUEST_CA_BUNDLE,
-          NODE_EXTRA_CA_CERTS: GUEST_CA_PATH,
-          // Node's own fetch ignores the proxy variables without it.
-          NODE_USE_ENV_PROXY: "1",
+          ...guestTrustEnv(GUEST_CA_BUNDLE, GUEST_CA_PATH),
         };
       });
 
@@ -330,19 +238,22 @@ export class Credentials extends Context.Service<
         request,
         save,
         delete: remove,
-        decline,
-        uses,
+        decline: lifecycle.decline,
+        uses: lifecycle.uses,
         env,
-        githubIdentities: githubApps.identities,
+        workspaceSection: Effect.fn("Credentials.workspaceSection")(
+          function* (agentId) {
+            const { credentials } = yield* list(agentId);
+
+            return workspaceCredentialSection(
+              credentials,
+              yield* source.lines(agentId),
+            );
+          },
+        ),
         grants: repository.grants,
         value,
-        recordUse: (agentId, name, { method, path, status, ...use }) =>
-          useLog
-            .record(agentId, "credential", name, {
-              ...use,
-              detail: { method, path, status },
-            })
-            .pipe(Effect.andThen(repository.touch(agentId, name, use.at))),
+        recordUse: lifecycle.recordUse,
       });
     }),
   );
@@ -368,7 +279,7 @@ export type CredentialsAccess = {
     options: { limit: number; before?: string | undefined },
   ): CredentialUse[];
   env(agentId: string): Record<string, string>;
-  githubIdentities(agentId: string): GitHubIdentity[];
+  workspaceSection(agentId: string): string | undefined;
   grants(agentId: string): CredentialGrant[];
   /** Rejects with the message the credential proxy answers with. */
   value(
@@ -401,21 +312,14 @@ export function credentialsAccess(
     uses: (agentId, name, options) =>
       runtime.runSync(credentials.uses(agentId, name, options)),
     env: (agentId) => runtime.runSync(credentials.env(agentId)),
-    githubIdentities: (agentId) =>
-      runtime.runSync(credentials.githubIdentities(agentId)),
+    workspaceSection: (agentId) =>
+      runtime.runSync(credentials.workspaceSection(agentId)),
     grants: (agentId) => runtime.runSync(credentials.grants(agentId)),
     value: (agentId, name, target) =>
       runtime.runPromise(
         credentials.value(agentId, name, target).pipe(
           Effect.map(Redacted.value),
-          Effect.mapError(
-            (error) =>
-              new Error(
-                Predicate.isTagged(error, "SecretUnavailable")
-                  ? `${name} could not be read: ${error.message}`
-                  : error.message,
-              ),
-          ),
+          Effect.mapError((error) => new Error(useFailure(name, error))),
         ),
       ),
     recordUse: (agentId, name, use) =>
@@ -423,59 +327,22 @@ export function credentialsAccess(
   };
 }
 
-const credentialLines = (credentials: readonly AgentCredential[]) =>
-  credentials.map(
-    (credential) => `- ${credential.name}: ${hostsText(credential.hosts)}`,
-  );
-
-const githubLines = (identities: readonly GitHubIdentity[]) => {
-  const [fallback, ...others] = identities;
-
-  if (!fallback) return [];
-
-  const reach = identities.map((each) =>
-    each.account === null
-      ? `every other repository ${each.name} can reach`
-      : each.account,
-  );
-
-  return [
-    `On GitHub you are ${fallback.name}: commits default to that author, and GH_TOKEN signs git and gh in for ${reach.join(", ")}.`,
-    ...others.map(
-      (each) =>
-        `In a repository owned by ${each.account}, first run: git config user.name '${each.name}' && git config user.email '${each.email}'`,
-    ),
-    ...(others.length
-      ? [
-          `gh pr and other GraphQL commands use ${fallback.name}'s token; in ${others.map((each) => `${each.account}'s`).join(", ")} repositories use REST, such as gh api repos/OWNER/REPO/pulls -f title=... -f head=... -f base=...`,
-        ]
-      : []),
-    ...identities.flatMap((each) =>
-      each.trailer
-        ? [
-            `${each.name} is the owner's own account, which you act as in ${each.account}'s repositories: keep ${each.name} as the commit author, even if a task names an App's [bot] user, and mark your work instead: every commit there ends with the trailer "${each.trailer}". Repositories you clone add it on their own unless they set core.hooksPath; there, and in older clones, pass git commit --trailer '${each.trailer}'.`,
-          ]
-        : [],
-    ),
-  ];
-};
-
-/** What the bot and its coding jobs read about the bot's credentials and GitHub identity; undefined without either. */
-export function workspaceCredentialSection(
+/** The credentials, then `sourceLines`, as the bot and its coding jobs read them; undefined without either. */
+function workspaceCredentialSection(
   credentials: readonly AgentCredential[],
-  identities: readonly GitHubIdentity[] = [],
+  sourceLines: readonly string[],
 ) {
-  if (!credentials.length && !identities.length) return undefined;
+  if (!credentials.length && !sourceLines.length) return undefined;
 
   return [
     ...(credentials.length
       ? [
           "Credentials the owner gave this bot, as environment variables in every command, with the hosts each works for:",
-          ...credentialLines(credentials),
+          ...hostLines(credentials),
           "Each variable holds a placeholder. The workspace's HTTPS proxy replaces it with the real value in request headers, only on requests to its hosts; a placeholder in the URL or body is sent as it is. Use the variable as if it held the value, and never print it or write it into files. A client that ignores HTTPS_PROXY sends the placeholder and gets an authentication error: route it through the proxy instead.",
         ]
       : []),
-    ...githubLines(identities),
+    ...sourceLines,
   ].join("\n");
 }
 
@@ -483,47 +350,22 @@ const pendingLines = (requests: readonly CredentialRequest[]) =>
   requests.length
     ? [
         "Credentials you asked for that the owner has not answered:",
-        ...requests.map(
-          (pending) => `- ${pending.name}: ${hostsText(pending.hosts)}`,
-        ),
+        ...hostLines(requests),
       ]
     : [];
-
-/** What a bot names, for which hosts, and why, when it asks the owner for a secret. */
-export const requestParameters = {
-  name: Type.String({ minLength: 1, maxLength: MAX_CREDENTIAL_NAME_CHARS }),
-  hosts: Type.Array(
-    Type.String({ minLength: 1, maxLength: MAX_CREDENTIAL_HOST_CHARS }),
-    {
-      minItems: 1,
-      maxItems: MAX_CREDENTIAL_HOSTS,
-    },
-  ),
-  reason: Type.String({ minLength: 1, maxLength: MAX_REQUEST_REASON_CHARS }),
-};
 
 /** The bot's `request_credential` tool and the requests the owner has not answered, for bots with coding. */
 export function credentialExtension(
   agentId: string,
   credentials: CredentialsAccess,
 ) {
-  const request = defineTool({
+  const request = secretRequestTool({
     name: REQUEST_CREDENTIAL_TOOL_NAME,
     description:
       "Ask the owner for a credential your shell commands or coding jobs need, such as an API token for a service without an MCP server. Name it like an environment variable (ACME_TOKEN), list the hosts it is for (api.acme.com, *.acme.com), and say why. The owner enters the value outside the chat; you never see it. Your commands and coding jobs then get the variable with a placeholder that works only on requests to those hosts. After calling, tell the owner what you asked for and why, then end your turn: a message arrives when the owner answers.",
     parameters: Type.Object(requestParameters),
-    // The chat offers the owner the form from this call's own result, so code mode keeps it a direct model tool.
-    callers: ["model"],
-    replay: "unsafe",
-    execute: async (args) => {
-      const request = credentials.request(
-        agentId,
-        credentialRequestInput.parse(args),
-      );
-
-      // Clients read the request from the details to offer the owner its form.
-      return { ...toolOutput({ request }), details: request };
-    },
+    request: (args) =>
+      credentials.request(agentId, credentialRequestInput.parse(args)),
   });
 
   return defineExtension({

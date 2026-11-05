@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { avatarDefinitionSchema } from "./avatar-definition";
 import {
+  DEFAULT_REVIEW_THRESHOLD,
   DEFAULT_SCHEDULE_TIMEOUT_SECONDS,
+  DEFAULT_SCHEDULE_TIMEZONE,
   MAX_BOT_DESCRIPTION_CHARS,
   MAX_BOT_MCP_SERVERS,
   MAX_BOT_NAME_CHARS,
@@ -30,6 +32,7 @@ import {
   MAX_TOOL_ID_CHARS,
   MIN_GROUP_MEMBERS,
 } from "./limits";
+import { guestTrustEnv } from "./guest-env";
 import { PASSWORD_MANAGER_IDS, WEB_SEARCH_PROVIDER_IDS } from "./vendors";
 
 export const THINKING_LEVELS = [
@@ -115,8 +118,18 @@ export const agentInput = z.object({
   review: z
     .object({
       enabled: z.boolean().default(true),
-      skillThreshold: z.number().int().min(1).max(1000).default(10),
-      memoryThreshold: z.number().int().min(1).max(1000).default(10),
+      skillThreshold: z
+        .number()
+        .int()
+        .min(1)
+        .max(1000)
+        .default(DEFAULT_REVIEW_THRESHOLD),
+      memoryThreshold: z
+        .number()
+        .int()
+        .min(1)
+        .max(1000)
+        .default(DEFAULT_REVIEW_THRESHOLD),
       /** Caps the turn digest a review reads; unset, 75% of the review model's context window, at most 600000. */
       maxInputTokens: z.number().int().min(1000).max(2000000).optional(),
     })
@@ -232,6 +245,9 @@ export type ScriptRun = {
   finishedAt: string | null;
 };
 
+export const SCHEDULE_TRIGGER_MESSAGE =
+  "Choose a recurring cron, a one-time date, or an event source";
+
 export const scheduleInput = z
   .object({
     agentId: z.uuid(),
@@ -251,7 +267,10 @@ export const scheduleInput = z
       .default(DEFAULT_SCHEDULE_TIMEOUT_SECONDS),
     notify: z.boolean().default(true),
     cron: z.string().max(MAX_CRON_CHARS).nullable().default(null),
-    timezone: z.string().max(MAX_TIMEZONE_CHARS).default("UTC"),
+    timezone: z
+      .string()
+      .max(MAX_TIMEZONE_CHARS)
+      .default(DEFAULT_SCHEDULE_TIMEZONE),
     runAt: z.iso
       .datetime({ offset: true })
       .transform((value) => new Date(value).toISOString())
@@ -268,7 +287,7 @@ export const scheduleInput = z
   })
   .refine(
     (v) => [v.cron, v.runAt, v.eventSourceId].filter(Boolean).length === 1,
-    "Choose a recurring cron, a one-time date, or an event source",
+    SCHEDULE_TRIGGER_MESSAGE,
   )
   .refine(
     (v) =>
@@ -342,6 +361,7 @@ export type MCPServer = {
 
 // Names the workspace, its shell, or the credential proxy itself depend on.
 const RESERVED_CREDENTIAL_NAMES = new Set([
+  ...Object.keys(guestTrustEnv("", "")),
   "PATH",
   "HOME",
   "USER",
@@ -355,14 +375,8 @@ const RESERVED_CREDENTIAL_NAMES = new Set([
   "HTTPS_PROXY",
   "ALL_PROXY",
   "NO_PROXY",
-  "NODE_USE_ENV_PROXY",
   "NODE_OPTIONS",
-  "NODE_EXTRA_CA_CERTS",
-  "SSL_CERT_FILE",
   "SSL_CERT_DIR",
-  "REQUESTS_CA_BUNDLE",
-  "CURL_CA_BUNDLE",
-  "GIT_SSL_CAINFO",
   "LD_PRELOAD",
   "LD_LIBRARY_PATH",
 ]);
@@ -375,7 +389,9 @@ export const credentialName = z
   )
   .refine(
     (name) =>
-      !RESERVED_CREDENTIAL_NAMES.has(name) && !name.startsWith("CRUMBLE_"),
+      !RESERVED_CREDENTIAL_NAMES.has(name) &&
+      !name.startsWith("CRUMBLE_") &&
+      !name.startsWith("GIT_CONFIG_"),
     "This name is reserved for the workspace",
   );
 
@@ -525,6 +541,9 @@ export const loginFieldInput = z.enum([
 
 export type LoginField = z.infer<typeof loginFieldInput>;
 
+/** The grammar of a 1Password item reference; a field reference continues it with `/<field>`. */
+export const ONE_PASSWORD_ITEM = "op:\\/\\/[^/]+\\/[^/]+";
+
 /** A 1Password item, `op://<vault>/<item>`, that fills every field of a login. */
 const loginItemInput = z.object({
   passwordManager: z.literal("1password"),
@@ -532,7 +551,7 @@ const loginItemInput = z.object({
     .string()
     .trim()
     .regex(
-      /^op:\/\/[^/]+\/[^/]+$/,
+      new RegExp(`^${ONE_PASSWORD_ITEM}$`),
       "An item reference looks like op://vault/item",
     ),
 });
@@ -629,6 +648,9 @@ export const skillInput = z.object({
 });
 
 export type SkillInput = z.infer<typeof skillInput>;
+
+/** Skill names are the same name whatever their case. */
+export const skillNameKey = (name: string) => name.toLowerCase();
 
 export const SKILL_STATES = ["active", "stale", "archived"] as const;
 

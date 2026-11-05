@@ -38,9 +38,6 @@ const REPOSITORY = /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/;
 
 const MAX_DOCUMENT_BYTES = MAX_SKILL_DOCUMENT_CHARS;
 
-/** Same limit as common skills; larger files aren't skill instructions. */
-export const MAX_SKILL_FILE_BYTES = 512 * 1024;
-
 const GITHUB_HOSTS = new Set(["github.com", "www.github.com"]);
 
 /** The path segments of a github.com URL, or null for any other address. */

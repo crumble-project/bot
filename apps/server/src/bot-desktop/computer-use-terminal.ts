@@ -4,7 +4,7 @@ import { sh, type Window } from "./computer-use-driver";
 import { textResult, type ComputerUseState } from "./computer-use-state";
 
 /** Terminal emulators: Enter runs a shell command in the bot's own workspace, and the tree holds none of their text. */
-export const TERMINAL_APP = /terminal|xterm|konsole|alacritty|kitty/i;
+const TERMINAL_APP = /terminal|xterm|konsole|alacritty|kitty/i;
 
 export const isTerminal = (window: Window | undefined) =>
   TERMINAL_APP.test(window?.app_name ?? "");
@@ -22,7 +22,7 @@ export async function terminalText(
   context: Context,
 ) {
   const text = await sh(
-    state,
+    state.shell,
     `xdotool windowactivate --sync ${window.window_id} key --clearmodifiers ctrl+shift+a ctrl+shift+c && sleep 0.3 && xclip -o -selection clipboard | tail -c ${TAIL_CHARS}`,
     context,
   );

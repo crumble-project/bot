@@ -19,8 +19,9 @@ import { Store } from "../../test/support/store";
 import { Effect } from "effect";
 import { EventRepository } from "../event-sources/event-repository";
 import { eventRequest } from "../shared/request-ids";
-import { ScheduleRepository } from "../schedules/schedule-repository";
+import { ScheduleRepository } from "../automations/schedule-repository";
 import { scheduleInput } from "../shared/domain";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const dirs: string[] = [];
 
@@ -69,12 +70,15 @@ function open(
 
   const service = standaloneBots(
     store,
-    new AgentRuntime(dir, {
-      models,
-      ...(vision && {
-        visionModel: () => ({ provider: "eye", model: "vision" }),
+    new AgentRuntime(
+      dir,
+      runtimeCallbacks({
+        models,
+        ...(vision && {
+          visionModel: () => ({ provider: "eye", model: "vision" }),
+        }),
       }),
-    }),
+    ),
   );
 
   return { store, service };
@@ -441,6 +445,7 @@ describe("event automations", () => {
             prompt: "Triage the issue",
             eventSourceId: "source-1",
           }),
+          null,
         );
       }),
     );

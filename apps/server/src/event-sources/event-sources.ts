@@ -3,7 +3,11 @@ import { Conflict, NotFound, type AppError } from "../shared/errors";
 import { SettingsRepository } from "../shared/settings-repository";
 import { nowIso } from "../shared/time";
 import { createSource, deleteSource } from "./doorstep-client";
-import { EventRepository, type EventSource } from "./event-repository";
+import {
+  EventConsumers,
+  EventRepository,
+  type EventSource,
+} from "./event-repository";
 import { EventRelay, RELAY_URL_SETTING, type RelayStatus } from "./event-relay";
 
 export type ListedEventSource = EventSource & { usedBy: number };
@@ -27,6 +31,7 @@ export class EventSources extends Context.Service<
     Effect.gen(function* () {
       const settings = yield* SettingsRepository;
       const events = yield* EventRepository;
+      const consumers = yield* EventConsumers;
       const relay = yield* EventRelay;
 
       const setRelayUrl = Effect.fn("EventSources.setRelayUrl")(function* (
@@ -41,7 +46,7 @@ export class EventSources extends Context.Service<
 
       const list = Effect.gen(function* () {
         return yield* Effect.forEach(yield* events.listSources, (source) =>
-          Effect.map(events.sourceUsage(source.id), (usedBy) => ({
+          Effect.map(consumers.usage(source.id), (usedBy) => ({
             ...source,
             usedBy,
           })),
@@ -59,7 +64,7 @@ export class EventSources extends Context.Service<
       const remove = Effect.fn("EventSources.remove")(function* (id: string) {
         if (!(yield* events.getSource(id)))
           return yield* new NotFound({ message: "Event source not found" });
-        const usedBy = yield* events.sourceUsage(id);
+        const usedBy = yield* consumers.usage(id);
 
         if (usedBy > 0)
           return yield* new Conflict({

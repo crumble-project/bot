@@ -2,6 +2,7 @@ import {
   AgentRepository,
   type AgentPatch,
 } from "../../src/bots/agent-repository";
+import { duplicateAgent } from "../../src/bots/agent-duplicate";
 import { ConversationRepository } from "../../src/bots/conversation-repository";
 import {
   ExecutionRepository,
@@ -9,10 +10,10 @@ import {
 } from "../../src/bots/execution-repository";
 import {
   GroupChatRepository,
-  type GroupActivity,
+  type GroupProgress,
   type GroupMemberChange,
 } from "../../src/group-chats/group-chat-repository";
-import { ScheduleRepository } from "../../src/schedules/schedule-repository";
+import { ScheduleRepository } from "../../src/automations/schedule-repository";
 import type { AttachmentInput } from "../../src/shared/attachment-rules";
 import type {
   Agent,
@@ -43,7 +44,7 @@ export const botStore = (run: StoreRun) => ({
     return run(AgentRepository.use((r) => r.delete(agentId)));
   },
   duplicateAgent: (agentId: string, name?: string) => {
-    return run(AgentRepository.use((r) => r.duplicate(agentId, name)));
+    return run(duplicateAgent(agentId, name));
   },
 
   listConversations: (
@@ -85,7 +86,10 @@ export const botStore = (run: StoreRun) => ({
   ): Schedule => {
     return run(
       ScheduleRepository.use((r) =>
-        r.create(input, scheduleId, createdByAgentId),
+        r.create(input, input.runAt, {
+          ...(scheduleId && { id: scheduleId }),
+          createdByAgentId: createdByAgentId ?? null,
+        }),
       ),
     );
   },
@@ -142,10 +146,10 @@ export const botStore = (run: StoreRun) => ({
   ) => {
     run(GroupChatRepository.use((r) => r.setMember(groupId, agentId, change)));
   },
-  groupActivity: (groupId: string): GroupActivity => {
+  groupActivity: (groupId: string): GroupProgress => {
     return run(GroupChatRepository.use((r) => r.activity(groupId)));
   },
-  setGroupActivity: (groupId: string, change: Partial<GroupActivity>) => {
+  setGroupActivity: (groupId: string, change: Partial<GroupProgress>) => {
     run(GroupChatRepository.use((r) => r.setActivity(groupId, change)));
   },
   createGroupTurn: (turn: Omit<GroupTurn, "createdAt">): GroupTurn => {

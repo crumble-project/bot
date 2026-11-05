@@ -2,8 +2,12 @@ import { createSign, randomBytes, randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNotNull, ne } from "drizzle-orm";
 import { Clock, Context, Effect, Layer, Redacted } from "effect";
 import { z } from "zod";
-import { SecretRepository } from "../credentials/secret-repository";
-import type { SecretUnavailable } from "../password-managers/secret-values";
+import {
+  CredentialSource,
+  CredentialUnminted,
+  MintedCredentials,
+} from "../credentials/minted-credentials";
+import type { SecretUnavailable } from "../secrets/secret-values";
 import type { CredentialTarget, SecretStatus } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
@@ -15,23 +19,17 @@ import {
   GitHubUnavailable,
   assignmentChange,
   type GitHubIdentity,
+  botLogin,
   github,
   noreplyEmail,
-  pendingState,
 } from "./github-api";
-import { GitHubAccounts } from "./github-accounts";
-import {
-  GitHubAppUsers,
-  authorizedPath,
-  githubAppClientSecretKey,
-} from "./github-app-users";
-import { Secrets } from "../password-managers/secrets";
+import { GitHubAccounts, type GitHubAccount } from "./github-accounts";
+import { githubIdentityLines } from "./github-identity";
+import { GitHubAppUsers, githubAppClientSecretKey } from "./github-app-users";
+import { Secrets } from "../secrets/secrets";
+import { PendingStates } from "../secrets/server-secrets";
 import { githubAppBots, githubApps } from "./schema";
-import {
-  AgentCredentialRepository,
-  credentialSecretKey,
-} from "../credentials/agent-credential-repository";
-import { agentCredentials } from "../credentials/schema";
+import { GITHUB_APP_WEB_PATHS } from "../contract/github-apps";
 import { GUEST_SIGN_PATH } from "../workspaces/workspace";
 
 // Read-only on CI and checks so jobs can follow their PRs; no `workflows`, so jobs can't change CI.
@@ -97,7 +95,7 @@ const accessToken = z.object({ token: z.string(), expires_at: z.string() });
 
 const manifestState = z.object({ createdAt: z.number() });
 
-const stateKey = (state: string) => `github-app-state:${state}`;
+const STATE_FLOW = "github-app-state";
 
 const base64url = (value: string | Buffer) =>
   Buffer.from(value).toString("base64url");
@@ -132,7 +130,7 @@ export const ownerOf = (target: CredentialTarget) => {
 type AppRow = typeof githubApps.$inferSelect;
 
 const identityOf = (row: AppRow) => {
-  const name = `${row.slug}[bot]`;
+  const name = botLogin(row.slug);
 
   return { name, email: noreplyEmail(row.botUserId, name) };
 };
@@ -188,8 +186,13 @@ export class GitHubApps extends Context.Service<
     ) => Effect.Effect<GitHubApp, NotFound | Conflict>;
     /** Forgets the App; it stays on GitHub until the owner deletes it there. */
     readonly remove: (id: string) => Effect.Effect<void, NotFound>;
-    /** Gives or takes `GH_TOKEN` after the bots' machine accounts changed. */
-    readonly sync: (agentIds: readonly string[]) => Effect.Effect<void>;
+    /** Replaces the bots that act as a machine account. */
+    readonly assignAccount: (
+      id: string,
+      botIds: readonly string[],
+    ) => Effect.Effect<GitHubAccount, NotFound | Conflict>;
+    /** Forgets a machine account. */
+    readonly removeAccount: (id: string) => Effect.Effect<void, NotFound>;
     readonly token: (
       agentId: string,
       target: CredentialTarget,
@@ -208,11 +211,11 @@ export class GitHubApps extends Context.Service<
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
       const box = yield* SecretBox;
-      const secrets = yield* SecretRepository;
+      const pendingStates = yield* PendingStates;
       const users = yield* GitHubAppUsers;
       const accounts = yield* GitHubAccounts;
-      const ownerSecrets = yield* Secrets;
-      const credentials = yield* AgentCredentialRepository;
+      const secrets = yield* Secrets;
+      const credentials = yield* MintedCredentials;
       const tokens = new Map<string, { token: string; expiresAt: number }>();
 
       const row = Effect.fn("GitHubApps.row")(function* (id: string) {
@@ -239,12 +242,12 @@ export class GitHubApps extends Context.Service<
           id: found.id,
           slug: found.slug,
           name: found.name,
-          login: `${found.slug}[bot]`,
+          login: botLogin(found.slug),
           htmlUrl: found.htmlUrl,
           installUrl: `https://github.com/apps/${found.slug}/installations/new`,
           account: found.account,
           installed: found.installationId !== null,
-          clientSecret: yield* ownerSecrets.status(
+          clientSecret: yield* secrets.status(
             githubAppClientSecretKey(found.id),
           ),
           user: (yield* users.of(found.id))?.login ?? null,
@@ -276,37 +279,22 @@ export class GitHubApps extends Context.Service<
         return rows.map((each) => each.app);
       }, Effect.orDie);
 
-      /** Gives a bot `GH_TOKEN` while it has an installed App or a machine account, and takes it away otherwise. */
+      /** Whether the bot can get a token: it has an installed App, or a machine account. */
+      const hasToken = Effect.fnUntraced(function* (agentId: string) {
+        return (
+          (yield* appsOfBot(agentId)).some(
+            (app) => app.installationId !== null,
+          ) || (yield* accounts.ofBot(agentId)) !== undefined
+        );
+      });
+
+      /** Gives a bot `GH_TOKEN` while it can get a token, and takes it away otherwise. */
       const syncCredential = Effect.fn("GitHubApps.syncCredential")(function* (
         agentId: string,
       ) {
-        const installed = (yield* appsOfBot(agentId)).some(
-          (app) => app.installationId !== null,
-        );
-
-        if (installed || (yield* accounts.ofBot(agentId))) {
-          // An existing GH_TOKEN keeps its placeholder; only its source changes to the Apps.
-          yield* credentials.save(agentId, GITHUB_TOKEN_CREDENTIAL, {
-            hosts: GITHUB_HOSTS,
-            github: true,
-            placeholder: `crumble-credential-${randomBytes(24).toString("hex")}`,
-          });
-          yield* ownerSecrets.delete(
-            credentialSecretKey(agentId, GITHUB_TOKEN_CREDENTIAL),
-          );
-
-          return;
-        }
-
-        yield* db
-          .delete(agentCredentials)
-          .where(
-            and(
-              eq(agentCredentials.agentId, agentId),
-              eq(agentCredentials.github, true),
-            ),
-          )
-          .pipe(Effect.orDie);
+        yield* (yield* hasToken(agentId))
+          ? credentials.grant(agentId, GITHUB_TOKEN_CREDENTIAL, GITHUB_HOSTS)
+          : credentials.revoke(agentId);
       });
 
       const jwtFor = (found: AppRow) =>
@@ -330,9 +318,8 @@ export class GitHubApps extends Context.Service<
         organization?: string | undefined;
       }) {
         const state = randomBytes(24).toString("hex");
-        const createdAt = yield* Clock.currentTimeMillis;
 
-        yield* secrets.set(stateKey(state), JSON.stringify({ createdAt }));
+        yield* pendingStates.put(STATE_FLOW, state, {});
 
         const base = input.organization
           ? `https://github.com/organizations/${encodeURIComponent(input.organization)}/settings/apps/new`
@@ -345,9 +332,11 @@ export class GitHubApps extends Context.Service<
             url: HOMEPAGE,
             description:
               "A Crumble bot's GitHub identity. Commits and pull requests from this App are a bot's work.",
-            redirect_url: `${input.origin}/github-app/callback`,
-            callback_urls: [`${input.origin}${authorizedPath}`],
-            setup_url: `${input.origin}/github-app/installed`,
+            redirect_url: `${input.origin}${GITHUB_APP_WEB_PATHS.created}`,
+            callback_urls: [
+              `${input.origin}${GITHUB_APP_WEB_PATHS.authorized}`,
+            ],
+            setup_url: `${input.origin}${GITHUB_APP_WEB_PATHS.installed}`,
             public: false,
             default_permissions: PERMISSIONS,
             default_events: [],
@@ -359,9 +348,9 @@ export class GitHubApps extends Context.Service<
         code: string;
         state: string;
       }) {
-        const pending = yield* pendingState(
-          secrets,
-          stateKey(input.state),
+        const pending = yield* pendingStates.read(
+          STATE_FLOW,
+          input.state,
           manifestState,
           STATE_TTL_MS,
         );
@@ -379,13 +368,13 @@ export class GitHubApps extends Context.Service<
         );
 
         const user = yield* github(
-          `/users/${encodeURIComponent(`${app.slug}[bot]`)}`,
+          `/users/${encodeURIComponent(botLogin(app.slug))}`,
           botUser,
         );
 
         const id = randomUUID();
 
-        yield* secrets.delete(stateKey(input.state));
+        yield* pendingStates.drop(STATE_FLOW, input.state);
         yield* db
           .insert(githubApps)
           .values({
@@ -403,7 +392,7 @@ export class GitHubApps extends Context.Service<
           .pipe(Effect.orDie);
 
         if (app.client_secret)
-          yield* ownerSecrets
+          yield* secrets
             .save(githubAppClientSecretKey(id), { value: app.client_secret })
             .pipe(Effect.orDie);
 
@@ -543,8 +532,25 @@ export class GitHubApps extends Context.Service<
           return yield* new NotFound({ message: "GitHub App not found" });
 
         tokens.delete(id);
-        yield* ownerSecrets.delete(githubAppClientSecretKey(id));
+        yield* secrets.delete(githubAppClientSecretKey(id));
         yield* Effect.forEach(botIds, syncCredential);
+      });
+
+      const assignAccount = Effect.fn("GitHubApps.assignAccount")(function* (
+        id: string,
+        botIds: readonly string[],
+      ) {
+        const { account, changed } = yield* accounts.assign(id, botIds);
+
+        yield* Effect.forEach(changed, syncCredential);
+
+        return account;
+      });
+
+      const removeAccount = Effect.fn("GitHubApps.removeAccount")(function* (
+        id: string,
+      ) {
+        yield* Effect.forEach(yield* accounts.remove(id), syncCredential);
       });
 
       const mint = Effect.fn("GitHubApps.mint")(function* (found: AppRow) {
@@ -663,10 +669,7 @@ export class GitHubApps extends Context.Service<
 
         entries.push(...(yield* signingConfig(agentId, fallback)));
 
-        if (
-          fallback?.account === null ||
-          apps.some((app) => app.installationId !== null)
-        )
+        if (yield* hasToken(agentId))
           // git sends the placeholder as the Basic password; the credential proxy swaps it for the token.
           entries.push([
             "credential.https://github.com.helper",
@@ -691,8 +694,8 @@ export class GitHubApps extends Context.Service<
         connect,
         assign,
         remove,
-        sync: (agentIds) =>
-          Effect.asVoid(Effect.forEach(agentIds, syncCredential)),
+        assignAccount,
+        removeAccount,
         token,
         identities,
         gitEnv,
@@ -700,3 +703,23 @@ export class GitHubApps extends Context.Service<
     }),
   );
 }
+
+/** The GitHub Apps and machine accounts as the source of the `github` credentials. */
+export const githubCredentialSource = Layer.effect(
+  CredentialSource,
+  Effect.map(GitHubApps, (apps) =>
+    CredentialSource.of({
+      value: (agentId, target) =>
+        apps
+          .token(agentId, target)
+          .pipe(
+            Effect.catchTag("GitHubUnavailable", (error) =>
+              Effect.fail(new CredentialUnminted({ message: error.message })),
+            ),
+          ),
+      env: apps.gitEnv,
+      lines: (agentId) =>
+        Effect.map(apps.identities(agentId), githubIdentityLines),
+    }),
+  ),
+);

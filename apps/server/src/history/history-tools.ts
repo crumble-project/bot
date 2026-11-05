@@ -12,7 +12,7 @@ import { AgentRepository } from "../bots/agent-repository";
 import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
 import { BotRuntime, type AgentRuntime } from "../bots/runtime";
 import { GroupChats } from "../group-chats/group-chats";
-import { GroupConversation } from "../group-chats/group-turns";
+import { groupOf } from "../group-chats/group-conversation";
 import {
   HistorySearch,
   type HistoryChat,
@@ -39,15 +39,10 @@ export function historyToolsExtension(
   const contextOf = async (
     api: DocumentReader & { conversationId: ConversationId },
     callContext: Context,
-  ): Promise<HistoryContext> => {
-    const group = await api.snapshot(
-      GroupConversation,
-      api.conversationId,
-      callContext,
-    );
-
-    return { agentId: agent.id, groupId: group?.groupId ?? null };
-  };
+  ): Promise<HistoryContext> => ({
+    agentId: agent.id,
+    groupId: await groupOf(api, api.conversationId, callContext),
+  });
 
   const search = defineTool({
     name: HISTORY_SEARCH_TOOL_NAME,

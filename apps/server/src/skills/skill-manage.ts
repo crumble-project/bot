@@ -6,6 +6,7 @@ import {
   type Agent,
   type Skill,
   type SkillInput,
+  skillNameKey,
 } from "../shared/domain";
 import { Effect } from "effect";
 import {
@@ -22,6 +23,7 @@ import {
   MAX_INSTRUCTIONS_CHARS,
   MAX_SKILL_DESCRIPTION_CHARS,
   MAX_SKILL_DOCUMENT_CHARS,
+  MAX_SKILL_DOCUMENT_PATH_CHARS,
   MAX_SKILL_DOCUMENTS,
   MAX_SKILL_NAME_CHARS,
 } from "../shared/limits";
@@ -77,7 +79,11 @@ export function lintSkill(skill: SkillInput): SkillFinding[] {
 }
 
 const name = Type.String({ minLength: 1, maxLength: MAX_SKILL_NAME_CHARS });
-const path = Type.String({ minLength: 1, maxLength: 200 });
+
+const path = Type.String({
+  minLength: 1,
+  maxLength: MAX_SKILL_DOCUMENT_PATH_CHARS,
+});
 
 const operation = Type.Union([
   Type.Object({
@@ -199,7 +205,7 @@ const ownSkill = (batch: Batch, name: string) =>
       Effect.map(
         (skills) =>
           skills.find(
-            (skill) => skill.name.toLowerCase() === name.toLowerCase(),
+            (skill) => skillNameKey(skill.name) === skillNameKey(name),
           ) ?? null,
       ),
     );

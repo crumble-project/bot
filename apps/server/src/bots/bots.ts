@@ -1,5 +1,6 @@
 import { Context, Effect, Layer, ManagedRuntime } from "effect";
 import type { JobAnswer } from "../jobs/jobs";
+import type { JobKindName } from "../jobs/job-kinds";
 import type { AttachmentInput } from "../shared/attachment-rules";
 import type {
   Agent,
@@ -11,16 +12,23 @@ import type { ReplyActivity } from "../contract/reply-event";
 import type { AppError } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import { SettingsRepository } from "../shared/settings-repository";
-import { ScheduleRepository } from "../schedules/schedule-repository";
+import { ScheduleRepository } from "../automations/schedule-repository";
+import { ProductDatabase } from "../shared/product-database";
 import { AgentRepository } from "./agent-repository";
 import { botsContext } from "./bots-context";
 import { botsService } from "./bots-service";
 import { BotNotices } from "./bot-notices";
 import { ConversationRepository } from "./conversation-repository";
 import { ExecutionRepository } from "./execution-repository";
-import { BotRuntime, type AgentRuntime, type RuntimeSnapshot } from "./runtime";
+import {
+  BotRuntime,
+  type AgentRuntime,
+  type RuntimeSnapshot,
+  type RuntimeWatch,
+} from "./runtime";
+import type { JobAnswerInput, SendOptions } from "./bots-submissions";
 import { EventRepository } from "../event-sources/event-repository";
-import type { BotMessageEvent } from "./transcript";
+import type { BotMessageEvent, PageOptions } from "./transcript";
 
 export type ChatPreviewActivity = {
   type: "chat-preview";
@@ -50,11 +58,6 @@ export type ChatSnapshot = RuntimeSnapshot & {
   agentId: string;
   conversation: Conversation;
   error: string | null;
-};
-
-type PageOptions = {
-  before?: string | undefined;
-  limit?: number | undefined;
 };
 
 type Page<K extends keyof AgentRuntime> = AgentRuntime[K] extends (
@@ -113,27 +116,35 @@ export class Bots extends Context.Service<
       agentId: string,
       options: PageOptions,
     ) => Effect.Effect<Page<"history">, AppError>;
-    readonly codingJobs: (
+    readonly jobs: (
       agentId: string,
-    ) => Effect.Effect<Page<"codingJobs">, AppError>;
-    readonly codingJobHistory: (
+      kind: JobKindName,
+    ) => Effect.Effect<Page<"jobs">, AppError>;
+    readonly jobHistory: (
       agentId: string,
+      kind: JobKindName,
       name: string,
       options: PageOptions,
-    ) => Effect.Effect<Page<"codingJobHistory">, AppError>;
-    /** `by` names who answered when it is not the owner, such as the bot that delegated the job's task. */
-    readonly answerCodingJob: (
+    ) => Effect.Effect<Page<"jobHistory">, AppError>;
+    /** Sends an answer to a job's open question, which resumes the job; fails once the job no longer waits on it. */
+    readonly answerJob: (
       agentId: string,
-      answer: { name: string; questionId: string; text: string; by?: string },
+      kind: string,
+      answer: JobAnswerInput,
     ) => Effect.Effect<void, AppError>;
-    readonly desktopJobs: (
+    /** The image at `index` of an entry's attachments. */
+    readonly attachment: (
       agentId: string,
-    ) => Effect.Effect<Page<"desktopJobs">, AppError>;
-    readonly desktopJobHistory: (
+      entryId: string,
+      index: number,
+    ) => Effect.Effect<Page<"attachment">, AppError>;
+    /** Calls `callback` with the chat's snapshot now and as it changes, until the returned function is called. */
+    readonly watch: (
       agentId: string,
-      name: string,
-      options: PageOptions,
-    ) => Effect.Effect<Page<"desktopJobHistory">, AppError>;
+      conversationId: string,
+      callback: RuntimeWatch,
+      options: { limit?: number | undefined },
+    ) => Effect.Effect<() => Promise<void>, AppError>;
     readonly sendChat: (
       agentId: string,
       content: string,
@@ -152,11 +163,7 @@ export class Bots extends Context.Service<
       conversationId: string,
       content: string,
       requestId: string,
-      options?: {
-        scheduleId?: string;
-        replyTo?: string | undefined;
-        attachments?: AttachmentInput[] | undefined;
-      },
+      options?: SendOptions,
     ) => Effect.Effect<Execution, AppError>;
     readonly dispatch: (
       agentId: string,
@@ -169,6 +176,8 @@ export class Bots extends Context.Service<
     readonly compact: (agentId: string) => Effect.Effect<string, AppError>;
     readonly abortChat: (agentId: string) => Effect.Effect<void, AppError>;
     readonly abort: (conversationId: string) => Effect.Effect<void, AppError>;
+    /** Stops everything the bot runs, as disabling or deleting it does. */
+    readonly stopAgent: (agentId: string) => Effect.Effect<void, AppError>;
     readonly deleteAgent: (id: string) => Effect.Effect<void, AppError>;
   }
 >()("crumble/bots/Bots") {
@@ -215,22 +224,29 @@ export type BotsAccess = {
     options?: { limit?: number | undefined },
   ): Promise<ChatSnapshot>;
   history(agentId: string, options: PageOptions): Promise<Page<"history">>;
-  codingJobs(agentId: string): Promise<Page<"codingJobs">>;
-  codingJobHistory(
+  jobs(agentId: string, kind: JobKindName): Promise<Page<"jobs">>;
+  jobHistory(
     agentId: string,
+    kind: JobKindName,
     name: string,
     options: PageOptions,
-  ): Promise<Page<"codingJobHistory">>;
-  answerCodingJob(
+  ): Promise<Page<"jobHistory">>;
+  answerJob(
     agentId: string,
-    answer: { name: string; questionId: string; text: string },
+    kind: string,
+    answer: JobAnswerInput,
   ): Promise<void>;
-  desktopJobs(agentId: string): Promise<Page<"desktopJobs">>;
-  desktopJobHistory(
+  attachment(
     agentId: string,
-    name: string,
-    options: PageOptions,
-  ): Promise<Page<"desktopJobHistory">>;
+    entryId: string,
+    index: number,
+  ): Promise<Page<"attachment">>;
+  watch(
+    agentId: string,
+    conversationId: string,
+    callback: RuntimeWatch,
+    options: { limit?: number | undefined },
+  ): Promise<() => Promise<void>>;
   sendChat(
     agentId: string,
     content: string,
@@ -248,11 +264,7 @@ export type BotsAccess = {
     conversationId: string,
     content: string,
     requestId: string,
-    options?: {
-      scheduleId?: string;
-      replyTo?: string | undefined;
-      attachments?: AttachmentInput[] | undefined;
-    },
+    options?: SendOptions,
   ): Promise<Execution>;
   dispatch(
     agentId: string,
@@ -264,6 +276,7 @@ export type BotsAccess = {
   compact(agentId: string): Promise<string>;
   abortChat(agentId: string): Promise<void>;
   abort(conversationId: string): Promise<void>;
+  stopAgent(agentId: string): Promise<void>;
   deleteAgent(id: string): Promise<void>;
 };
 
@@ -289,14 +302,15 @@ export function botsAccess(runner: Runner<Bots>): BotsAccess {
       runner.runPromise(bots.chatSnapshot(agentId, options)),
     history: (agentId, options) =>
       runner.runPromise(bots.history(agentId, options)),
-    codingJobs: (agentId) => runner.runPromise(bots.codingJobs(agentId)),
-    codingJobHistory: (agentId, name, options) =>
-      runner.runPromise(bots.codingJobHistory(agentId, name, options)),
-    answerCodingJob: (agentId, answer) =>
-      runner.runPromise(bots.answerCodingJob(agentId, answer)),
-    desktopJobs: (agentId) => runner.runPromise(bots.desktopJobs(agentId)),
-    desktopJobHistory: (agentId, name, options) =>
-      runner.runPromise(bots.desktopJobHistory(agentId, name, options)),
+    jobs: (agentId, kind) => runner.runPromise(bots.jobs(agentId, kind)),
+    jobHistory: (agentId, kind, name, options) =>
+      runner.runPromise(bots.jobHistory(agentId, kind, name, options)),
+    answerJob: (agentId, kind, answer) =>
+      runner.runPromise(bots.answerJob(agentId, kind, answer)),
+    attachment: (agentId, entryId, index) =>
+      runner.runPromise(bots.attachment(agentId, entryId, index)),
+    watch: (agentId, conversationId, callback, options) =>
+      runner.runPromise(bots.watch(agentId, conversationId, callback, options)),
     sendChat: (agentId, content, requestId, replyTo, attachments, timezone) =>
       runner.runPromise(
         bots.sendChat(
@@ -318,6 +332,7 @@ export function botsAccess(runner: Runner<Bots>): BotsAccess {
     compact: (agentId) => runner.runPromise(bots.compact(agentId)),
     abortChat: (agentId) => runner.runPromise(bots.abortChat(agentId)),
     abort: (conversationId) => runner.runPromise(bots.abort(conversationId)),
+    stopAgent: (agentId) => runner.runPromise(bots.stopAgent(agentId)),
     deleteAgent: (id) => runner.runPromise(bots.deleteAgent(id)),
   };
 }
@@ -335,7 +350,8 @@ type StandaloneServices =
   | SettingsRepository
   | ScheduleRepository
   | EventRepository
-  | BotNotices;
+  | BotNotices
+  | ProductDatabase;
 
 type StoreServices = Exclude<StandaloneServices, Bots | BotRuntime>;
 

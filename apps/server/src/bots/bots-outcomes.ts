@@ -24,45 +24,23 @@ const outcomeError = (result: SubmissionOutcome) =>
 
 /** Records what a submission's end did to its execution, and announces a finished reply. */
 export const botsOutcomes = (context: BotsContext, deps: OutcomeDeps) => {
-  const { executions, scope } = context;
-  const { changed, settled } = deps.notifications;
+  const { scope } = context;
+  const { settle } = deps.notifications;
   const { announceReply } = deps.announcements;
 
-  // A cancel already recorded and settled the execution; a deleted one has nothing to record.
-  const isOver = Effect.fnUntraced(function* (execution: Execution) {
-    const current = yield* executions.get(execution.id);
-
-    return !current || current.status === "cancelled";
-  });
-
-  const recordFailure = Effect.fnUntraced(function* (
-    execution: Execution,
-    cause: unknown,
-  ) {
-    if (yield* isOver(execution)) return;
-
-    yield* executions.update(execution.id, {
-      status: "failed",
-      error: errorText(cause),
-    });
-    yield* changed(execution.conversationId);
-    yield* settled(execution.id);
-  });
+  const recordFailure = (execution: Execution, cause: unknown) =>
+    settle(execution, { status: "failed", error: errorText(cause) });
 
   const recordOutcome = Effect.fnUntraced(function* (
     execution: Execution,
     result: SubmissionOutcome,
   ) {
-    if (yield* isOver(execution)) return;
-
-    yield* executions.update(execution.id, {
+    const recorded = yield* settle(execution, {
       status: result.status === "done" ? "done" : "failed",
       error: outcomeError(result),
     });
-    yield* changed(execution.conversationId);
-    yield* settled(execution.id);
 
-    if (result.status === "done" && !isGroupTurn(execution))
+    if (recorded && result.status === "done" && !isGroupTurn(execution))
       yield* announceReply(execution).pipe(
         background("Reply announcement failed", execution.id),
         Effect.forkIn(scope),

@@ -1,10 +1,9 @@
 import { and, asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import { z } from "zod";
 import { BotNotices, requestAnswers } from "../bots/bot-notices";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
-import { botSecretRequests, type BotSecretKind } from "./schema";
+import { botSecretRequests, parseHosts, type BotSecretKind } from "./schema";
 
 /** A bot's request for a credential or login, waiting for the owner. */
 export type BotSecretRequest = {
@@ -16,13 +15,11 @@ export type BotSecretRequest = {
   requestedAt: string;
 };
 
-const hostList = z.array(z.string());
-
 const requestOf = (
   row: typeof botSecretRequests.$inferSelect,
 ): BotSecretRequest => ({
   name: row.name,
-  hosts: hostList.parse(JSON.parse(row.hosts)),
+  hosts: parseHosts(row.hosts),
   reason: row.reason,
   oneTimeCode: row.oneTimeCode,
   requestedAt: row.requestedAt,

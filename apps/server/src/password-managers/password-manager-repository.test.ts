@@ -73,37 +73,6 @@ describe("PasswordManagerRepository", () => {
     expect(result.missing).toBeUndefined();
   });
 
-  test("refuses to disconnect while a secret reads from it", async () => {
-    const result = await withRepository((dir) =>
-      Effect.gen(function* () {
-        const repository = yield* PasswordManagerRepository;
-
-        yield* repository.save("1password", Redacted.make("ops_token"), "t1");
-        sql(
-          dir,
-          "INSERT INTO credentials (key, password_manager, reference) VALUES ('mcp:server', '1password', 'op://v/i/f')",
-        );
-
-        const refused = yield* Effect.flip(repository.delete("1password"));
-        const usedBy = yield* repository.usedBy("1password");
-
-        sql(dir, "DELETE FROM credentials WHERE key = 'mcp:server'");
-
-        return {
-          refused: refused.message,
-          usedBy,
-          deleted: yield* repository.delete("1password"),
-        };
-      }),
-    );
-
-    expect(result).toEqual({
-      refused: "1 secret still read from this password manager",
-      usedBy: ["mcp:server"],
-      deleted: true,
-    });
-  });
-
   test("the database allows exactly one source per secret", async () => {
     const rejects = await withRepository((dir) =>
       Effect.gen(function* () {

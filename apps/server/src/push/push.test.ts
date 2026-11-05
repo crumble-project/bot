@@ -21,8 +21,9 @@ import { BotActivity } from "../bots/bot-activity";
 import type { Activity } from "../bots/bots";
 import { Store } from "../../test/support/store";
 import { standaloneBots } from "../bots/bots";
-import { standaloneScheduler } from "../schedules/scheduler";
+import { standaloneScheduler } from "../automations/scheduler-test-support";
 import { createAPI } from "../app/api";
+import type { Agent } from "../shared/domain";
 
 // Plain header records, so they spread into the defaults.
 type TestRequestInit = Omit<RequestInit, "headers"> & {
@@ -126,6 +127,10 @@ describe("push registration and durable delivery", () => {
         status: "idle",
         live: null,
         updatedAt: 0,
+      }),
+      prepareInput: async (_agent: Agent, text: string) => ({
+        modelContent: text,
+        data: { text },
       }),
       submit: async () => "submission",
       wait: async () => ({ status: "done" }),
@@ -510,6 +515,10 @@ describe("push registration and durable delivery", () => {
 
     const runtime: any = {
       openChat: async () => "runtime-chat",
+      prepareInput: async (_agent: Agent, text: string) => ({
+        modelContent: text,
+        data: { text },
+      }),
       submit: async () => "submission",
       wait: async () => ({ status: "done" }),
       snapshot: async () => ({

@@ -3,7 +3,7 @@ import type { JobAnswer } from "../jobs/jobs";
 import { activeExecution, type Execution } from "../shared/domain";
 import { formatEntryId } from "../shared/entry-ids";
 import type { Activity } from "./bots";
-import { type BotsContext } from "./bots-context";
+import type { BotsContext } from "./bots-context";
 
 /** The callbacks code outside the bots registers to hear about a chat, an activity, or a settled execution. */
 export const botsSubscribers = (context: BotsContext) => {
@@ -68,7 +68,35 @@ export const botsNotifications = (context: BotsContext) => {
       );
   });
 
-  return { changed, emit, settled };
+  // A cancel or a finished answer is final; a deleted execution has nothing to record.
+  const record = Effect.fnUntraced(function* (
+    execution: Execution,
+    patch: Pick<Execution, "status"> & Partial<Pick<Execution, "error">>,
+  ) {
+    const current = yield* executions.get(execution.id);
+
+    if (!current || current.status === "cancelled" || current.status === "done")
+      return false;
+
+    yield* executions.update(execution.id, patch);
+
+    return true;
+  });
+
+  /** Ends an execution: records how, then tells its chat and the settled listeners. False when it was already over. */
+  const settle = Effect.fnUntraced(function* (
+    execution: Execution,
+    patch: Parameters<typeof record>[1],
+  ) {
+    if (!(yield* record(execution, patch))) return false;
+
+    yield* changed(execution.conversationId);
+    yield* settled(execution.id);
+
+    return true;
+  });
+
+  return { changed, emit, settled, record, settle };
 };
 
 /**
@@ -116,5 +144,7 @@ export const botsActivity = (context: BotsContext) => {
     changed: notifications.changed,
     emit: notifications.emit,
     settled: notifications.settled,
+    record: notifications.record,
+    settle: notifications.settle,
   };
 };

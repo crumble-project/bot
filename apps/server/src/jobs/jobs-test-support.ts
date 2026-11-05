@@ -14,11 +14,13 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { defineExtension } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
-import { defineJobKind, type JobKindOptions } from "./jobs";
+import { defineJobKind } from "./jobs";
+import type { JobKindFacts } from "./job-kinds";
 import { AgentRuntime } from "../bots/runtime";
 import { Store } from "../../test/support/store";
 import type { Workspaces } from "../workspaces/workspace";
 import { DesktopNotConfigured } from "../workspaces/workspace-errors";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -70,17 +72,17 @@ class DirectoryWorkspaces implements Workspaces {
   }
 }
 
-const kindOptions = (exclusive: boolean): JobKindOptions => ({
+const kindFacts = (exclusive: boolean): JobKindFacts => ({
   kind: exclusive ? "test-exclusive" : "test-parallel",
   toolName: "errand",
   label: "errand",
-  description: "Run errands.",
-  instructions: "You run one errand.",
+  extension: "errand-job",
+  inGroupTurns: false,
   exclusive,
 });
 
-const exclusiveKind = defineJobKind(kindOptions(true));
-const parallelKind = defineJobKind(kindOptions(false));
+const exclusiveKind = defineJobKind(kindFacts(true));
+const parallelKind = defineJobKind(kindFacts(false));
 
 const textOf = (message: Message) =>
   (Array.isArray(message.content)
@@ -176,15 +178,24 @@ async function open(kind: typeof exclusiveKind) {
 
   const workspaces = new DirectoryWorkspaces(dir);
   const job = defineExtension({ name: "errand-job" });
-  const extensions = kind.extensions({ agentId: agent.id, job });
 
-  const runtime = new AgentRuntime(dir, {
-    models,
-    extensions: () => extensions.chat,
-    taskExtensions: () => extensions.job,
-    env: (current, target, context) =>
-      kind.env(workspaces, current.id, target, context),
+  const extensions = kind.extensions({
+    agentId: agent.id,
+    job,
+    description: "Run errands.",
+    instructions: "You run one errand.",
   });
+
+  const runtime = new AgentRuntime(
+    dir,
+    runtimeCallbacks({
+      models,
+      extensions: () => extensions.chat,
+      taskExtensions: () => extensions.job,
+      env: (current, target, context) =>
+        kind.env(workspaces, current.id, target, context),
+    }),
+  );
 
   cleanups.push(() => runtime.close());
 
@@ -209,7 +220,9 @@ async function open(kind: typeof exclusiveKind) {
       (message) => message.toolName === "errand",
     )?.content;
 
-  return { gates, say, lastToolResult };
+  const messages = async () => (await runtime.snapshot(agent, chat)).messages;
+
+  return { gates, say, lastToolResult, messages };
 }
 
 async function until(check: () => boolean) {

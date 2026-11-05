@@ -24,6 +24,7 @@ import {
   type ScreenshotWorkspaces,
 } from "./desktop-screenshot";
 import { DESKTOP_SCREENSHOT_TOOL_NAME } from "../contract/tools";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xd9]).toString("base64");
 
@@ -53,7 +54,7 @@ function fakeWorkspaces(running = true, desktop = true) {
         holds.released += 1;
       };
     },
-    shell: () => guest.shell,
+    env: () => guest.shell,
   };
 
   return { workspaces, guest, holds };
@@ -150,7 +151,7 @@ test("refuses when it can't tell whether a password shows", async () => {
   });
 
   const { workspaces } = fakeWorkspaces();
-  workspaces.shell = () => guest.shell;
+  workspaces.env = () => guest.shell;
 
   const fills = fillsOf([
     { value: "hunter2", label: "[login github password]", browser: "7 old" },
@@ -215,12 +216,15 @@ function chat(workspaces: ScreenshotWorkspaces) {
   const models = createModels();
   models.setProvider(faux.provider);
 
-  const runtime = new AgentRuntime(directory, {
-    models,
-    extensions: (agent) => [
-      desktopScreenshotExtension(agent.id, workspaces, fillsOf()),
-    ],
-  });
+  const runtime = new AgentRuntime(
+    directory,
+    runtimeCallbacks({
+      models,
+      extensions: (agent) => [
+        desktopScreenshotExtension(agent.id, workspaces, fillsOf()),
+      ],
+    }),
+  );
 
   runtimes.push(runtime);
 
@@ -231,7 +235,7 @@ test("the owner gets the screenshot in the chat, and the turn ends with it", asy
   const { workspaces } = fakeWorkspaces();
   const { runtime, faux } = chat(workspaces);
   const agent = makeAgent();
-  const conversation = await runtime.createConversation(agent);
+  const conversation = await runtime.openChat(agent);
 
   faux.setResponses([
     fauxAssistantMessage(
@@ -269,7 +273,7 @@ test("a refused screenshot is an error the bot answers, with no image to read", 
   const { workspaces } = fakeWorkspaces(false);
   const { runtime, faux } = chat(workspaces);
   const agent = makeAgent();
-  const conversation = await runtime.createConversation(agent);
+  const conversation = await runtime.openChat(agent);
 
   faux.setResponses([
     fauxAssistantMessage([fauxToolCall(DESKTOP_SCREENSHOT_TOOL_NAME, {})], {

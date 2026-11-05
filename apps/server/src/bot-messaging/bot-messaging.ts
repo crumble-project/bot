@@ -3,7 +3,7 @@ import {
   withAbortSignal,
   type Context as PiContext,
 } from "@earendil-works/chord/context";
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect";
+import { Clock, Context, Effect, Layer, Option } from "effect";
 import { activeExecution, type Agent, type Execution } from "../shared/domain";
 import { appErrors, pi } from "../shared/app-errors";
 import {
@@ -11,7 +11,6 @@ import {
   jobQuestionRequest,
   parseRequestId,
 } from "../shared/request-ids";
-import { SettingsRepository } from "../shared/settings-repository";
 import { AgentRepository } from "../bots/agent-repository";
 import { Bots } from "../bots/bots";
 import type { JobAsked, TurnWork } from "../jobs/jobs";
@@ -26,7 +25,10 @@ import {
   type AppError,
 } from "../shared/errors";
 import { BOT_TOOL } from "../contract/tools";
+import { normalize } from "../group-chats/group-mentions";
 import { MAX_MESSAGE_CHARS } from "../shared/limits";
+import type { ProductDatabase } from "../shared/product-database";
+import { delegationStore } from "./delegation-store";
 
 type Receipt = {
   executionId: string;
@@ -42,26 +44,12 @@ type JobQuestionAnswered = { agentId: string; agent: string; job: string };
 
 const JOB_POLL_MS = 500;
 
-const normalize = (name: string) => name.normalize("NFKC").toLowerCase();
+/** What a recipient names, without the @ of a mention. */
+const addressed = (recipient: string) => recipient.trim().replace(/^@/, "");
 
 /** Throws the abort reason once the tool call is cancelled, as Pi tools do. */
 const checkAborted = (context: PiContext) =>
   Effect.sync(() => context.abortSignal?.throwIfAborted());
-
-/** Who sent a bot message to whom, saved under `delegation-receipt:<execution ID>`. */
-const savedReceipt = Schema.decodeUnknownOption(
-  Schema.Struct({ sourceAgentId: Schema.String, targetAgentId: Schema.String }),
-);
-
-/** A job question relayed to the bot that delegated the job's task, saved under `job-question:<question ID>`. */
-const savedQuestion = Schema.decodeUnknownOption(
-  Schema.Struct({
-    reporterAgentId: Schema.String,
-    assigneeAgentId: Schema.String,
-    kind: Schema.String,
-    job: Schema.String,
-  }),
-);
 
 /** What the delegating bot reads: whose job asks what, and how to answer or hand it to the owner. */
 const jobQuestionText = (asked: JobAsked, assignee: string) => {
@@ -99,15 +87,6 @@ const closingText = (
   (status === "done"
     ? "The bot returned no text answer."
     : "The bot exchange was cancelled.");
-
-/** A sent bot message's destination, reserved under `bot-message-request:<request ID>`. */
-const savedRequest = Schema.decodeUnknownOption(
-  Schema.Struct({
-    targetAgentId: Schema.String,
-    recipient: Schema.String,
-    message: Schema.String,
-  }),
-);
 
 /** Bot addressing and exchanges over the existing durable execution transport. */
 export class BotMessaging extends Context.Service<
@@ -148,7 +127,7 @@ export class BotMessaging extends Context.Service<
     const runtime = yield* BotRuntime;
     const agents = yield* AgentRepository;
     const executions = yield* ExecutionRepository;
-    const settings = yield* SettingsRepository;
+    const delegations = yield* delegationStore;
 
     const source = Effect.fnUntraced(function* (sourceId: string) {
       const found = yield* bots.agent(sourceId);
@@ -164,7 +143,7 @@ export class BotMessaging extends Context.Service<
     });
 
     const resolve = Effect.fnUntraced(function* (recipient: string) {
-      const reference = recipient.trim().replace(/^@/, "");
+      const reference = addressed(recipient);
       const byId = yield* agents.get(reference);
 
       if (byId) return byId;
@@ -211,13 +190,6 @@ export class BotMessaging extends Context.Service<
           new InvalidInput({ message: "Choose another enabled agent" }),
         );
 
-      if (!from.delegates.includes(target.id))
-        return Effect.fail(
-          new Forbidden({
-            message: "This agent has no permission to delegate to that agent",
-          }),
-        );
-
       return Effect.void;
     };
 
@@ -225,16 +197,10 @@ export class BotMessaging extends Context.Service<
       sourceId: string,
       executionId: string,
     ) {
-      const saved = savedReceipt(
-        yield* settings.get(`delegation-receipt:${executionId}`),
-      ).pipe(Option.getOrUndefined);
-
+      const saved = yield* delegations.receipt(executionId);
       const from = yield* source(sourceId);
 
-      if (
-        saved?.sourceAgentId !== from.id ||
-        !from.delegates.includes(saved.targetAgentId)
-      )
+      if (saved?.sourceAgentId !== from.id)
         return yield* Effect.fail(
           new NotFound({ message: "Delegation receipt not found" }),
         );
@@ -371,12 +337,7 @@ export class BotMessaging extends Context.Service<
         const from = yield* source(sourceId);
 
         return (yield* agents.list)
-          .filter(
-            (agent) =>
-              agent.id !== from.id &&
-              agent.enabled &&
-              from.delegates.includes(agent.id),
-          )
+          .filter((agent) => agent.id !== from.id && agent.enabled)
           .map(({ id, name, description }) => ({ id, name, description }));
       }),
       send: Effect.fn("BotMessaging.send")(function* (
@@ -402,13 +363,8 @@ export class BotMessaging extends Context.Service<
         yield* assertCanSend(from.id);
 
         const requestId = delegationRequest(from.id, input.requestId);
-        const key = `bot-message-request:${requestId}`;
-
-        const saved = savedRequest(yield* settings.get(key)).pipe(
-          Option.getOrUndefined,
-        );
-
-        const recipient = normalize(input.recipient.trim().replace(/^@/, ""));
+        const saved = yield* delegations.request(requestId);
+        const recipient = normalize(addressed(input.recipient));
 
         // An in-flight tool keeps its resolved destination if the bot is renamed.
         const target =
@@ -431,7 +387,9 @@ export class BotMessaging extends Context.Service<
         // Reserve the destination before awaiting chat admission. A replay cannot send
         // the same tool invocation to a second bot or change its message.
         if (!saved)
-          yield* settings.set(key, {
+          yield* delegations.reserve({
+            requestId,
+            sourceAgentId: from.id,
             targetAgentId: target.id,
             recipient,
             message,
@@ -455,7 +413,8 @@ export class BotMessaging extends Context.Service<
             }),
           );
         const execution = yield* bots.send(chat.id, message, requestId);
-        yield* settings.set(`delegation-receipt:${execution.id}`, {
+        yield* delegations.saveReceipt({
+          executionId: execution.id,
           sourceAgentId: from.id,
           targetAgentId: target.id,
         });
@@ -529,9 +488,7 @@ export class BotMessaging extends Context.Service<
 
         if (!delegation) return false;
 
-        const saved = savedReceipt(
-          yield* settings.get(`delegation-receipt:${delegation.id}`),
-        ).pipe(Option.getOrUndefined);
+        const saved = yield* delegations.receipt(delegation.id);
 
         if (saved?.targetAgentId !== asked.agentId) return false;
 
@@ -549,7 +506,8 @@ export class BotMessaging extends Context.Service<
         if (Option.isNone(permitted)) return false;
         const { reporter, assignee } = permitted.value;
 
-        yield* settings.set(`job-question:${asked.question.id}`, {
+        yield* delegations.saveQuestion({
+          questionId: asked.question.id,
           reporterAgentId: reporter.id,
           assigneeAgentId: assignee.id,
           kind: asked.kind,
@@ -571,25 +529,17 @@ export class BotMessaging extends Context.Service<
       ) {
         const from = yield* source(sourceId);
 
-        const saved = savedQuestion(
-          yield* settings.get(`job-question:${input.questionId}`),
-        ).pipe(Option.getOrUndefined);
+        const saved = yield* delegations.question(input.questionId);
 
         if (saved?.reporterAgentId !== from.id)
           return yield* Effect.fail(
             new NotFound({ message: "Job question not found" }),
           );
 
-        if (saved.kind !== "coding")
-          return yield* Effect.fail(
-            new InvalidInput({
-              message: "Only coding job questions can be answered here",
-            }),
-          );
         const assignee = yield* bots.agent(saved.assigneeAgentId);
         yield* authorize(from, assignee);
 
-        yield* bots.answerCodingJob(assignee.id, {
+        yield* bots.answerJob(assignee.id, saved.kind, {
           name: saved.job,
           questionId: input.questionId,
           text: input.answer,
@@ -629,10 +579,6 @@ export const botMessagingAccess = (messaging: BotMessaging["Service"]) => ({
 /** Bot messaging over standalone bots, for a test without an account. */
 export const standaloneMessaging = (bots: {
   effects: Runner<
-    | Bots
-    | BotRuntime
-    | AgentRepository
-    | ExecutionRepository
-    | SettingsRepository
+    Bots | BotRuntime | AgentRepository | ExecutionRepository | ProductDatabase
   >;
 }) => bots.effects.runSync(BotMessaging.make);

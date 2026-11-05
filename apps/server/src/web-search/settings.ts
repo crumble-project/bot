@@ -1,6 +1,7 @@
+import { Effect } from "effect";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import { Secrets } from "../password-managers/secrets";
+import { Secrets } from "../secrets/secrets";
 import type { Runner } from "../shared/runner";
 import { SettingsRepository } from "../shared/settings-repository";
 import { z } from "zod";
@@ -9,7 +10,13 @@ import { EXA_KEY } from "./exa";
 
 type Services = Secrets | SettingsRepository;
 
-export const DEFAULT_PROVIDER = "web-search:default-provider";
+const DEFAULT_PROVIDER = "web-search:default-provider";
+
+/** The account's default provider; a stored value this server doesn't know reads as Mixed. */
+export const defaultProvider = (settings: SettingsRepository["Service"]) =>
+  Effect.map(settings.get(DEFAULT_PROVIDER), (stored) =>
+    z.enum(WEB_SEARCH_PROVIDER_IDS).catch("mixed").parse(stored),
+  );
 
 export function registerWebSearchRoutes(options: {
   register: Register;
@@ -18,12 +25,7 @@ export function registerWebSearchRoutes(options: {
   const { register, run } = options;
 
   const status = () => ({
-    defaultProvider: z
-      .enum(WEB_SEARCH_PROVIDER_IDS)
-      .catch("mixed")
-      .parse(
-        run.runSync(SettingsRepository.use((r) => r.get(DEFAULT_PROVIDER))),
-      ),
+    defaultProvider: run.runSync(SettingsRepository.use(defaultProvider)),
     exaKeyConfigured: run.runSync(Secrets.use((s) => s.status(EXA_KEY)))
       .configured,
   });

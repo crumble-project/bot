@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, ManagedRuntime } from "effect";
+import { Context, Effect, Layer } from "effect";
 import { AgentRepository } from "../bots/agent-repository";
 import { Bots } from "../bots/bots";
 import { ConversationRepository } from "../bots/conversation-repository";
@@ -7,7 +7,6 @@ import { BotRuntime } from "../bots/runtime";
 import type { TranscriptPage } from "../bots/transcript";
 import type { AttachmentInput } from "../shared/attachment-rules";
 import type { GroupChat, GroupChatInput } from "../shared/domain";
-import type { Runner } from "../shared/runner";
 import {
   groupChatContext,
   groupChatState,
@@ -28,11 +27,7 @@ import type {
   PageOptions,
 } from "./group-chat-types";
 import type { GroupTranscripts } from "./group-transcripts";
-import {
-  groupTurnEngine,
-  keepTurnsSettled,
-  type GroupTurnDeps,
-} from "./group-turn-engine";
+import { groupTurnEngine, keepTurnsSettled } from "./group-turn-engine";
 import { groupTurnInput } from "./group-turn-input";
 
 export type {
@@ -79,17 +74,15 @@ export class GroupChats extends Context.Service<
       const context = groupChatContext(services, yield* groupChatState);
       const members = groupChatMembers(context);
 
-      const turns: GroupTurnDeps = {
+      const engine = groupTurnEngine({
         context,
         members,
         input: groupTurnInput(context),
-      };
+      });
 
-      yield* keepTurnsSettled(turns);
+      yield* keepTurnsSettled(context, engine);
 
-      return GroupChats.of(
-        groupChatsService(context, members, groupTurnEngine(turns)),
-      );
+      return GroupChats.of(groupChatsService(context, members, engine));
     }),
   );
 }
@@ -156,56 +149,3 @@ export const groupChatsAccess = (
   subscribe: chats.subscribe,
   recover: () => Effect.runPromise(chats.recover),
 });
-
-/**
- * Group chats over standalone bots and `transcripts`, for a test without an account. Closing them stops their
- * background work and closes the transcripts; the bots stay open.
- */
-export function standaloneGroupChats(
-  bots: {
-    effects: Runner<
-      | Bots
-      | BotRuntime
-      | AgentRepository
-      | ExecutionRepository
-      | ConversationRepository
-    >;
-    store: { runtime: Runner<GroupChatRepository> };
-  },
-  transcripts: GroupTranscripts,
-): GroupChatsAccess & {
-  service: GroupChats["Service"];
-  close(): Promise<void>;
-} {
-  const chats = ManagedRuntime.make(
-    GroupChats.layer.pipe(
-      Layer.provide(GroupTranscriptStore.layer(() => transcripts)),
-      Layer.provide(
-        Layer.succeedContext(
-          bots.effects.runSync(
-            Effect.context<
-              | Bots
-              | BotRuntime
-              | AgentRepository
-              | ExecutionRepository
-              | ConversationRepository
-            >(),
-          ),
-        ),
-      ),
-      Layer.provide(
-        Layer.succeedContext(
-          bots.store.runtime.runSync(Effect.context<GroupChatRepository>()),
-        ),
-      ),
-    ),
-  );
-
-  const service = chats.runSync(GroupChats.use(Effect.succeed));
-
-  return {
-    ...groupChatsAccess(service),
-    service,
-    close: () => chats.dispose(),
-  };
-}

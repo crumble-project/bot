@@ -14,7 +14,8 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
-import { codingJobOf, codingPlugin, codingQuestions } from "./coding";
+import { codingPlugin } from "./coding";
+import { jobCardName } from "../bots/entries";
 import type { JobAsked } from "./jobs";
 import {
   WORKSPACE_NOTES_FILE,
@@ -26,13 +27,14 @@ import type { Agent } from "../shared/domain";
 import { createAPI } from "../app/api";
 import { codingJobsResponse, historyResponse } from "../contract/api-responses";
 import { AgentRuntime, type RuntimeCallbacks } from "../bots/runtime";
-import { standaloneScheduler } from "../schedules/scheduler";
+import { standaloneScheduler } from "../automations/scheduler-test-support";
 import { standaloneBots } from "../bots/bots";
 import { Store } from "../../test/support/store";
 import type { AvailableSkill } from "../skills/skill-library";
 import type { BotSkills } from "../skills/skills";
 import type { Workspaces } from "../workspaces/workspace";
 import { DesktopNotConfigured } from "../workspaces/workspace-errors";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -226,23 +228,29 @@ function open(
   workspaces: Workspaces,
   steps: FauxResponseFactory,
   agent: Agent,
-  callbacks: Pick<RuntimeCallbacks, "listMemory" | "skillLibrary"> = {},
+  callbacks: Partial<
+    Pick<RuntimeCallbacks, "listMemory" | "skillLibrary">
+  > = {},
+  plugin = codingPlugin(workspaces),
 ) {
   const faux = fauxProvider({ provider: "faux", models: [{ id: "chat" }] });
   faux.setResponses(Array.from({ length: 40 }, () => steps));
   const models = createModels();
   models.setProvider(faux.provider);
 
-  const kinds = codingPlugin(workspaces).jobKinds ?? [];
+  const kinds = plugin.jobKinds ?? [];
 
-  const runtime = new AgentRuntime(dir, {
-    ...callbacks,
-    models,
-    extensions: (current) => jobExtensions(kinds, current).chat,
-    taskExtensions: (current) => jobExtensions(kinds, current).job,
-    env: (current, target, context) =>
-      conversationEnv(kinds, current, target, context),
-  });
+  const runtime = new AgentRuntime(
+    dir,
+    runtimeCallbacks({
+      ...callbacks,
+      models,
+      extensions: (current) => jobExtensions(kinds, current).chat,
+      taskExtensions: (current) => jobExtensions(kinds, current).job,
+      env: (current, target, context) =>
+        conversationEnv(kinds, current, target, context),
+    }),
+  );
 
   return { runtime, agent };
 }
@@ -315,6 +323,7 @@ test("a coding job works in the workspace and reports to the bot's chat once", a
 
   // The chat has the coding tools and the job tool. The job has the coding tools and no job tool, delegation, or memory.
   expect(offered.get("bot")).toEqual([
+    "skill_manage",
     "read",
     "write",
     "edit",
@@ -329,6 +338,15 @@ test("a coding job works in the workspace and reports to the bot's chat once", a
     "skill",
     "write",
   ]);
+});
+
+test("a bot's extensions are built once, so a later turn can still wake what a question held", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bot-coding-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const { agent } = setup(dir);
+  const [kind] = codingPlugin(new DirectoryWorkspaces(dir)).jobKinds ?? [];
+
+  expect(kind!.extensions(agent).job[0]).toBe(kind!.extensions(agent).job[0]!);
 });
 
 const releaseSkill: AvailableSkill = {
@@ -443,7 +461,7 @@ test("a coding job starts with its bot's memory, skills, and latest chat, and no
   expect(sections.get("bot")?.["bot_knowledge"] ?? null).toBeNull();
 
   // The job's transcript is its own work, not a copy of the chat.
-  const history = await runtime.codingJobHistory(agent, "builder");
+  const history = await runtime.jobHistory(agent, "coding", "builder");
 
   expect(history.messages.map((message) => message.content)).not.toContain(
     "We release from the staging branch.",
@@ -482,7 +500,7 @@ test("only starting a job shows its card in the chat", async () => {
   const { messages } = await runtime.snapshot(agent, chat);
   const results = messages.filter((message) => message.toolName === "coding");
 
-  expect(results.map((message) => codingJobOf(message))).toEqual([
+  expect(results.map((message) => jobCardName("coding", message))).toEqual([
     "builder",
     undefined,
     undefined,
@@ -517,7 +535,7 @@ test("a bot without the coding tool is offered none", async () => {
     ),
   );
 
-  expect(offered.get("bot")).toEqual([]);
+  expect(offered.get("bot")).toEqual(["skill_manage"]);
   // Not even an environment: nothing in the chat could reach the workspace.
   expect(workspaces.envs).toBe(0);
   expect(existsSync(join(dir, "workspace"))).toBe(false);
@@ -595,7 +613,14 @@ test("the bot works in its workspace itself, in its chat and group chats", async
 
   expect(readFileSync(join(workspace, "direct.txt"), "utf8")).toBe("direct");
   expect(workspaces.synced).toEqual([agent.id]);
-  expect(offered.at(-1)).toEqual(["read", "write", "edit", "bash", "coding"]);
+  expect(offered.at(-1)).toEqual([
+    "skill_manage",
+    "read",
+    "write",
+    "edit",
+    "bash",
+    "coding",
+  ]);
 
   rmSync(join(workspace, "direct.txt"));
   const group = await runtime.openGroupConversation(agent, "group-1");
@@ -604,7 +629,14 @@ test("the bot works in its workspace itself, in its chat and group chats", async
   // A group turn has the workspace too, though no coding jobs.
   expect(readFileSync(join(workspace, "direct.txt"), "utf8")).toBe("direct");
   expect(workspaces.synced).toEqual([agent.id, agent.id]);
-  expect(offered.at(-1)).toEqual(["read", "write", "edit", "bash", "pass"]);
+  expect(offered.at(-1)).toEqual([
+    "skill_manage",
+    "read",
+    "write",
+    "edit",
+    "bash",
+    "pass",
+  ]);
 });
 
 test("the chat's prompt never boots a stopped workspace, and shows its notes while it runs", async () => {
@@ -893,7 +925,7 @@ test("a job's question waits through a restart, and the owner's answer resumes t
 
   await until(
     async () =>
-      (await first.runtime.codingJobs(agent))[0]?.question !== undefined,
+      (await first.runtime.jobs(agent, "coding"))[0]?.question !== undefined,
   );
 
   const cards = (await first.runtime.snapshot(agent, chat)).messages.filter(
@@ -907,7 +939,7 @@ test("a job's question waits through a restart, and the owner's answer resumes t
   const second = open(dir, workspaces, askingScript(), agent);
   cleanups.push(() => second.runtime.close());
   await second.runtime.openChat(agent);
-  const [job] = await second.runtime.codingJobs(agent);
+  const [job] = await second.runtime.jobs(agent, "coding");
 
   expect(job?.question).toMatchObject({
     text: "Which color?",
@@ -932,7 +964,9 @@ test("a job's question waits through a restart, and the owner's answer resumes t
       (message) => message.content === "The job is finished.",
     ),
   );
-  expect((await second.runtime.codingJobs(agent))[0]?.question).toBeUndefined();
+  expect(
+    (await second.runtime.jobs(agent, "coding"))[0]?.question,
+  ).toBeUndefined();
   expect(
     (await reports(second.runtime, agent, chat)).map(
       (message) => message.content,
@@ -949,22 +983,28 @@ test("a job keeps the bot turn that sent its work through a restart, until its r
   const workspaces = new DirectoryWorkspaces(workspace);
   const asked: JobAsked[] = [];
 
-  cleanups.push(codingQuestions(async (question) => void asked.push(question)));
+  const plugin = codingPlugin(workspaces);
 
-  const first = open(dir, workspaces, askingScript(), agent);
+  cleanups.push(
+    plugin.jobKinds![0]!.onQuestion!(
+      async (question) => void asked.push(question),
+    ),
+  );
+
+  const first = open(dir, workspaces, askingScript(), agent, {}, plugin);
   const chat = await first.runtime.openChat(agent);
   const turn = await first.runtime.submit(agent, chat, "Build it", "req-1");
 
   await until(
     async () =>
-      (await first.runtime.codingJobs(agent))[0]?.question !== undefined,
+      (await first.runtime.jobs(agent, "coding"))[0]?.question !== undefined,
   );
   await until(async () => asked.length === 1);
   expect(asked[0]).toMatchObject({ agentId: agent.id, name: "builder" });
   expect(asked[0]?.turn).toEqual([turn]);
   await first.runtime.close();
 
-  const second = open(dir, workspaces, askingScript(), agent);
+  const second = open(dir, workspaces, askingScript(), agent, {}, plugin);
   cleanups.push(() => second.runtime.close());
   await second.runtime.openChat(agent);
 
@@ -973,10 +1013,10 @@ test("a job keeps the bot turn that sent its work through a restart, until its r
     open: true,
     reports: [],
   });
-  const [job] = await second.runtime.codingJobs(agent);
+  const [job] = await second.runtime.jobs(agent, "coding");
 
   expect(
-    await second.runtime.answerCodingJob(agent, {
+    await second.runtime.answerJob(agent, "coding", {
       name: "builder",
       questionId: job!.question!.id,
       text: "blue",

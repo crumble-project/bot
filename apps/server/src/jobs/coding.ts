@@ -3,9 +3,7 @@ import {
   ToolTask,
   defineExtension,
   hook,
-  type ConversationId,
   type EnvTarget,
-  type Harness,
   type PromptSection,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
@@ -13,15 +11,20 @@ import { createCodingTools } from "@earendil-works/pi-durable/tools";
 import { Effect } from "effect";
 import {
   credentialExtension,
-  workspaceCredentialSection,
   type CredentialsAccess,
 } from "../credentials/credentials";
 import type { Agent } from "../shared/domain";
-import { defineJobKind, type JobExtensions, type JobInfo } from "./jobs";
+import { defineJobKind, type JobExtensions, type JobKind } from "./jobs";
+import { JOB_KINDS } from "./job-kinds";
 import type { CrumblePlugin } from "../plugins/plugins";
-import { WORKSPACE_PATH, type Workspaces } from "../workspaces/workspace";
-import { chatWorkspaceSection, workspaceNotesSection } from "./workspace-notes";
-import { BOT_TOOL, CODING_TOOL_NAME } from "../contract/tools";
+import { WORKSPACE_PATH } from "../../workspace-image/guest";
+import type { Workspaces } from "../workspaces/workspace";
+import {
+  chatWorkspaceSection,
+  SETSID_COMMAND,
+  workspaceNotesSection,
+} from "./workspace-notes";
+import { BOT_TOOL } from "../contract/tools";
 
 /** The bot's own read, write, edit, and bash in its workspace; group turns keep it, unlike the job tool. */
 const WORKSPACE_EXTENSION = "workspace";
@@ -31,10 +34,7 @@ const DEFAULT_QUESTION_GRACE_MS = 15 * 60 * 1000;
 // Tools whose success may have changed the workspace's files. A failed bash can still have written files.
 const FILE_CHANGING_TOOLS = new Set(["write", "edit", "bash"]);
 
-const coding = defineJobKind({
-  kind: "coding",
-  toolName: CODING_TOOL_NAME,
-  label: "coding job",
+const CODING_JOBS = {
   description:
     `Run coding jobs: background agents with their own read, write, edit, and bash in your workspace (${WORKSPACE_PATH}). ` +
     "Do coding work yourself with those tools. Start a job only for work that runs beside you: several tasks at once, or a task that would block this chat for long. " +
@@ -44,42 +44,18 @@ const coding = defineJobKind({
     "A server you or a job start keeps running on localhost, for you and later jobs, desktop jobs included, until the workspace stops while idle; start it again with the command reported for it.",
   instructions: [
     `You are a coding job for another bot. Do the task you are given with your read, write, edit, and bash tools, working in ${WORKSPACE_PATH}, a persistent workspace that earlier jobs of this bot also used.`,
-    `To leave a server or other long-running program for later jobs, start it in its own session with its output in a log file: setsid <command> > ${WORKSPACE_PATH}/<name>.log 2>&1 < /dev/null &. Started any other way, it dies when your command ends or is stopped. Check that it answers before you report.`,
+    `To leave a server or other long-running program for later jobs, start it in its own session with its output in a log file: ${SETSID_COMMAND} Started any other way, it dies when your command ends or is stopped. Check that it answers before you report.`,
     "For browser tests, use the workspace's Chromium if `command -v chromium` finds one: install Playwright with PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 and launch chromium with executablePath set to that path.",
     "Before cloning a repository, check whether earlier jobs left a clone in the workspace: reuse it, fetch, and branch from the remote's default branch. Reinstall dependencies only when the lockfile changed since the last install.",
     "Change files with the edit tool, not with sed or a script that replaces strings. Don't print a file you already read in this job again unless it changed since.",
     "Work without asking: follow the task, the repository's own instructions, and your skills. Use ask_owner only when the answer changes what you build or a decision is the owner's to make, and keep working on anything that doesn't depend on it before you ask.",
     "Verify your work by running it. Finish with a short report: what you did, what you verified, and what is left. For a server you left running, include its URL and the command that starts it again.",
   ].join(" "),
-});
-
-/** The job a successful `coding` result shows as a card; a listing or a failed call shows none. */
-export const codingJobOf = coding.jobOf;
-
-/** Hears the bot's answer to each coding job report, for notifications. */
-export const codingAnswers = coding.onAnswer;
-
-/** Hears each coding job turn that reported back, for learning reviews. */
-export const codingJobsFinished = coding.onFinished;
-
-export type CodingJobInfo = JobInfo;
-
-export type CodingExtensions = JobExtensions;
-
-export const codingJobs = (harness: Harness, chatId: ConversationId) =>
-  coding.list(harness, chatId);
-
-/** Sends an answer to a coding job's open question; false when it has none with that ID. */
-export const answerCodingJob = coding.answer;
-
-/** Hears each coding job question about work a bot turn sent it, so a delegating bot can answer first. */
-export const codingQuestions = coding.onQuestion;
-
-/** What the coding jobs a bot turn started or messaged have done. */
-export const codingTurnWork = coding.turnWork;
+};
 
 /** A coding job's environment: the bot's workspace with its credentials. None for any other conversation. */
 async function codingEnv(
+  coding: JobKind,
   workspaces: Workspaces,
   agentId: string,
   target: EnvTarget,
@@ -114,10 +90,7 @@ const credentialSection = (
   key,
   render: async (input, context) =>
     (await applies(input, context))
-      ? workspaceCredentialSection(
-          credentials.list(agentId).credentials,
-          credentials.githubIdentities(agentId),
-        )
+      ? credentials.workspaceSection(agentId)
       : undefined,
 });
 
@@ -132,11 +105,12 @@ const syncAfter = (workspaces: Workspaces, agentId: string, name: string) =>
  * conversations with the same tools in the same workspace.
  */
 function codingExtensions(
+  coding: JobKind,
   agent: Pick<Agent, "id">,
   workspaces: Workspaces,
   credentials?: CredentialsAccess,
   questionGraceMs: () => number = () => DEFAULT_QUESTION_GRACE_MS,
-): CodingExtensions {
+): JobExtensions {
   // While the owner considers a question, the workspace stays up for the grace period, so servers the job started live.
   let awake:
     | { release: () => void; timer: ReturnType<typeof setTimeout> }
@@ -162,7 +136,7 @@ function codingExtensions(
 
   // The chat selects every installed extension, this one included, so its sections and hook check for a job.
   const job = defineExtension({
-    name: "coding-job",
+    name: JOB_KINDS.coding.extension,
     tools: [...tools, ask],
     sections: [
       workspaceNotesSection(coding.isJob, true),
@@ -215,7 +189,11 @@ function codingExtensions(
     ],
   });
 
-  const extensions = coding.extensions({ agentId: agent.id, job });
+  const extensions = coding.extensions({
+    agentId: agent.id,
+    job,
+    ...CODING_JOBS,
+  });
 
   return {
     ...extensions,
@@ -232,21 +210,48 @@ export const codingPlugin = (
   workspaces: Workspaces | undefined,
   credentials?: CredentialsAccess,
   questionGraceMs?: () => number,
-): CrumblePlugin => ({
-  id: "coding",
-  jobKinds: workspaces
-    ? [
-        {
-          kind: "coding",
-          enabled: (agent) => agent.tools.includes(BOT_TOOL.coding),
-          extensions: (agent) =>
-            codingExtensions(agent, workspaces, credentials, questionGraceMs),
-          env: (agentId, target, context) =>
-            codingEnv(workspaces, agentId, target, context, credentials),
-          botEnv: (agentId) => codingBotEnv(workspaces, agentId, credentials),
-          onAnswer: codingAnswers,
-          onQuestion: codingQuestions,
-        },
-      ]
-    : [],
-});
+): CrumblePlugin => {
+  const coding = defineJobKind(JOB_KINDS.coding);
+  // One build per bot: the grace period's hold lives in its closure, and a later build could not release it.
+  const built = new Map<string, JobExtensions>();
+
+  return {
+    id: "coding",
+    jobKinds: workspaces
+      ? [
+          {
+            kind: coding.kind,
+            enabled: (agent) => agent.tools.includes(BOT_TOOL.coding),
+            extensions: (agent) => {
+              const extensions =
+                built.get(agent.id) ??
+                codingExtensions(
+                  coding,
+                  agent,
+                  workspaces,
+                  credentials,
+                  questionGraceMs,
+                );
+
+              built.set(agent.id, extensions);
+
+              return extensions;
+            },
+            env: (agentId, target, context) =>
+              codingEnv(
+                coding,
+                workspaces,
+                agentId,
+                target,
+                context,
+                credentials,
+              ),
+            botEnv: (agentId) => codingBotEnv(workspaces, agentId, credentials),
+            onAnswer: coding.onAnswer,
+            onQuestion: coding.onQuestion,
+            onFinished: coding.onFinished,
+          },
+        ]
+      : [],
+  };
+};

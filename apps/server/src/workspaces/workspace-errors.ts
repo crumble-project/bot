@@ -1,6 +1,6 @@
 import { Predicate, Schema } from "effect";
 
-/** The server has no desktop workspace image (`CRUMBLE_WORKSPACE_DESKTOP_IMAGE`, or Railway's desktop template is off). */
+/** The server has no desktop workspace image: `CRUMBLE_WORKSPACE_DESKTOP_IMAGE` is unset. */
 export class DesktopNotConfigured extends Schema.TaggedError<DesktopNotConfigured>()(
   "DesktopNotConfigured",
   { message: Schema.String },

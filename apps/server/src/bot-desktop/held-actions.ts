@@ -2,7 +2,7 @@ import type { Context as PiContext } from "@earendil-works/chord";
 import { and, desc, eq } from "drizzle-orm";
 import { Context, Deferred, Effect, Layer } from "effect";
 import { z } from "zod";
-import type { OwnerMessage } from "../jobs/owner-request";
+import type { OwnerMessage } from "./desktop-vocabulary";
 import { Conflict, NotFound } from "../shared/errors";
 import { ProductDatabase } from "../shared/product-database";
 import type { Runner } from "../shared/runner";

@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { providerModels } from "../providers/providers";
+import { accountModels } from "../providers/providers";
 import { createTenant } from "./tenant";
 
 const original = process.env["OPENAI_API_KEY"];
@@ -22,7 +22,7 @@ afterEach(() => {
 test("tenant provider models do not resolve ambient host credentials", async () => {
   process.env["OPENAI_API_KEY"] = "host-secret";
 
-  const models = providerModels(undefined, [], { allowAmbientEnv: false });
+  const models = accountModels(undefined, []);
 
   expect(await models.getAuth("openai")).toBeUndefined();
 });

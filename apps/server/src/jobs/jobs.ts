@@ -1,4 +1,4 @@
-import { MESSAGE_ENTRY } from "../bots/entries";
+import { JOB_QUESTION_ENTRY, MESSAGE_ENTRY } from "../bots/entries";
 import { sleep } from "../shared/time";
 import { jobDeliveryRequest, jobReportRequest } from "../shared/request-ids";
 import type { Context } from "@earendil-works/chord";
@@ -37,18 +37,15 @@ import {
   type UsageState,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
-import { z } from "zod";
 import { formatEntryId } from "../shared/entry-ids";
 import { replyText } from "../shared/reply-text";
 import { defineAnchorTask } from "../shared/anchor-task";
-import { WORKSPACE_PATH, type Workspaces } from "../workspaces/workspace";
-import {
-  addToRequest,
-  ownerMessages,
-  type JobRequest,
-  type OwnerMessage,
-} from "./owner-request";
+import { WORKSPACE_PATH } from "../../workspace-image/guest";
+import type { Workspaces } from "../workspaces/workspace";
+import { addToRequest, ownerMessages, type JobRequest } from "./owner-request";
+import type { OwnerMessage } from "../bot-desktop/desktop-vocabulary";
 import { chatExcerpt } from "./chat-excerpt";
+import type { JobKindFacts } from "./job-kinds";
 import { ASK_OWNER_TOOL_NAME } from "../contract/tools";
 import { MAX_MESSAGE_CHARS, MESSAGE_PREVIEW_CHARS } from "../shared/limits";
 
@@ -58,21 +55,11 @@ import { MAX_MESSAGE_CHARS, MESSAGE_PREVIEW_CHARS } from "../shared/limits";
  */
 export const JOB_KNOWLEDGE_EXTENSION = "job-knowledge";
 
-export type JobKindOptions = {
-  /** Names the kind's documents, tasks, request IDs, and message origin. Stored data depends on it: never rename. */
-  kind: string;
-  toolName: string;
-  /** Lowercase noun for tool output and reports, such as "coding job". */
-  label: string;
-  /** The job tool's description for the bot's model. */
-  description: string;
-  /** The job's own instructions. */
-  instructions: string;
-  /** One job works at a time: a message to a job waits while another job of this kind works. */
-  exclusive?: boolean;
-  /** Start and send take `owner_messages`, and the job keeps the owner messages it concerns with its tasks. */
-  ownerRequest?: boolean;
-};
+/** A bot's or a choice's `{ provider, model }` as Pi Durable names a model. */
+export const modelRef = (source: { provider: string; model: string }) => ({
+  provider: source.provider,
+  modelId: source.model,
+});
 
 export type JobInfo = {
   name: string;
@@ -90,9 +77,6 @@ export type JobQuestion = {
   /** Whether the owner may pick several options. */
   multiple?: boolean;
 };
-
-/** The bot chat entry that shows a job's question to the owner, without a turn of the bot. */
-export const JOB_QUESTION_ENTRY = "crumble.job-question";
 
 /** A job's question, once its card is in the bot's chat, and the bot turn whose work the job was doing. */
 export type JobAsked = {
@@ -137,8 +121,8 @@ type Job = {
   conversationId: ConversationId;
   /** Answers already reported to the bot: several messages can end in one answer, reported once. */
   reported: EntryId[];
-  /** Times the job was stopped; a delivery created before the latest stop is dropped. Unset means zero. */
-  stops?: number;
+  /** Times the job was stopped; a delivery created before the latest stop is dropped. */
+  stops: number;
   /**
    * Deliveries not yet admitted to the job, by reporter task ID: waiting for their turn, or submitting right now. A job
    * with any counts as working, and stop waits for submitting ones so its abort covers their work.
@@ -186,24 +170,27 @@ export type JobFinished = {
 };
 
 type ReporterInput = {
-  /** The bot, for announcing its answer to the report. Unset in deliveries created before announcements existed. */
-  agentId?: string;
+  /** The bot, for announcing its answer to the report. */
+  agentId: string;
   name: string;
   conversationId: ConversationId;
   message: string;
   followUp: boolean;
-  /** The job's stop count when this delivery was created. Unset means zero. */
-  stops?: number;
-  /** The bot turn whose work this is, as `JobsState.turns` keys it. Unset before turns were tracked. */
+  /** The job's stop count when this delivery was created. */
+  stops: number;
+  /** The bot turn whose work this is, as `JobsState.turns` keys it; unset for a call outside a run. */
   turn?: string;
 };
+
+/** What the bot hears of a settled delivery: the frame only its model reads, then the job's own words. */
+type JobReport = { frame: string; text?: string };
 
 type ReporterState =
   | { phase: "wait" }
   | { phase: "deliver" }
   | {
       phase: "report";
-      report?: string | undefined;
+      report?: JobReport | undefined;
       /** Why the delivery failed or was stopped, for the turn's delegation. */
       error?: string;
       /** The question the job asked instead of answering. */
@@ -211,13 +198,16 @@ type ReporterState =
     }
   | { phase: "announce"; entryId: string; preview: string };
 
-const jobCard = z.object({ name: z.string().min(1) });
-
 const WAIT_MS = 1000;
 const STOP_POLL_MS = 50;
 // A delivery that crashed while submitting stays marked; stop aborts after this long anyway.
 
 const STOP_WAIT_MS = 10_000;
+
+const COMPLETED = {
+  status: "terminal",
+  outcome: { status: "completed", result: null },
+} as const;
 
 const releaseHolder = (state: JobsState, name: string) => {
   if (state.holder?.name !== name) return;
@@ -317,6 +307,8 @@ type StartOrSend = {
   ownerMessages: string[];
   /** The job's own extension: its tools and hooks. */
   job: Extension;
+  /** The job's own instructions. */
+  instructions: string;
   /** The job's model; unset, a job starts with the bot's model. */
   model: ModelRef | undefined;
   /** The bot's memory and skills, as the runtime installed them; unset without a runtime that does. */
@@ -378,6 +370,10 @@ type JobToolInput = {
   agentId: string;
   /** The job's own extension: its tools and hooks. */
   job: Extension;
+  /** The job tool's description for the bot's model. */
+  description: string;
+  /** The job's own instructions. */
+  instructions: string;
   /** The job's model; unset, a job starts with the bot's model. */
   model?: ModelRef;
 };
@@ -390,13 +386,6 @@ type JobToolArgs = {
   owner_messages?: string[];
 };
 
-type ToolResultMessage = {
-  role: string;
-  toolName?: string | undefined;
-  isError?: boolean | undefined;
-  toolDetails?: unknown;
-};
-
 /** Everything a job kind creates once: its documents, its anchor task, and its answer listeners. */
 /** A job's open question; once posted, the delivery that asked it and that delivery's turn, so its answer continues both. */
 type PendingQuestion = JobQuestion & {
@@ -407,13 +396,8 @@ type PendingQuestion = JobQuestion & {
 
 type QuestionDoc = ConversationDocToken<{ pending: PendingQuestion | null }>;
 
-type JobKindBase = {
-  options: JobKindOptions;
-  /** Names the kind's documents, tasks, request IDs, and message origin. Stored data depends on it: never rename. */
-  kind: string;
-  toolName: string;
-  label: string;
-  /** Shared by every job of every bot in this process. */
+type JobKindBase = JobKindFacts & {
+  /** Shared by every job of every bot that runs this definition of the kind. */
   answerListeners: Set<(answer: JobAnswer) => void>;
   finishedListeners: Set<(finished: JobFinished) => void>;
   questionListeners: Set<(asked: JobAsked) => Promise<void>>;
@@ -483,11 +467,11 @@ const deliveryTarget = async (
   chatId: ConversationId,
   reporter: ReporterTask<"wait" | "deliver">,
 ) => {
-  const { name, stops = 0 } = reporter.input;
+  const { name, stops } = reporter.input;
   const state = await tx.doc(Jobs, chatId);
   const job = state.jobs[name];
 
-  if (job && (job.stops ?? 0) === stops)
+  if (job && job.stops === stops)
     return { state, job, stopped: false as const };
 
   settleDelivery(job, reporter.id);
@@ -525,13 +509,10 @@ const jobReporterWait =
             stoppedError(kindState, name),
           );
 
-          return {
-            status: "terminal",
-            outcome: { status: "completed", result: null },
-          };
+          return COMPLETED;
         }
 
-        if (kindState.options.exclusive) {
+        if (kindState.exclusive) {
           if (state.holder && state.holder.name !== name) {
             waiting = true;
 
@@ -600,12 +581,12 @@ const deliveryReport = async (
   state: JobsState,
   name: string,
   settled: SettledSubmissionRecord,
-): Promise<string | undefined> => {
+): Promise<JobReport | undefined> => {
   // Aborted means stopped or withdrawn: nothing to report.
   if (settled.status === "unanswered")
     return settled.reason === "aborted"
       ? undefined
-      : `[${kindState.label} ${name} failed: ${settled.reason}]`;
+      : { frame: `[${kindState.label} ${name} failed: ${settled.reason}]` };
 
   if (settled.type !== "input") return undefined;
   const job = state.jobs[name];
@@ -615,7 +596,10 @@ const deliveryReport = async (
 
   const answer = (await tx.entry(AssistantEntry, settled.answer))?.model?.[0];
 
-  return `[${kindState.label} ${name} finished] ${answer?.role === "assistant" ? replyText(answer) : ""}`;
+  return {
+    frame: `[${kindState.label} ${name} finished]`,
+    text: answer?.role === "assistant" ? replyText(answer) : "",
+  };
 };
 
 /** Submits the admitted message to the job, then commits the report its settlement became. */
@@ -683,7 +667,7 @@ const submitAndReport = async (
   const { agentId } = reporter.input;
 
   // After the commit, so a review never reads a turn that a crash would deliver again.
-  if (reported && agentId)
+  if (reported)
     for (const listener of kindState.finishedListeners)
       listener({
         agentId,
@@ -707,6 +691,21 @@ const deliveryError = (
     : `${kindState.label} ${name} failed: ${settled.reason}`;
 };
 
+/** A question as the owner and listeners see it, without what its delivery keeps. */
+const askedQuestion = ({
+  id,
+  text,
+  askedAt,
+  options,
+  multiple,
+}: PendingQuestion): JobQuestion => ({
+  id,
+  text,
+  askedAt,
+  ...(options && { options }),
+  ...(multiple && { multiple: true }),
+});
+
 /** Posts the job's new question to the bot chat as a card, in place of a report; undefined when it asked none. */
 const postQuestion = async (
   kindState: JobKindBase,
@@ -727,28 +726,19 @@ const postQuestion = async (
   await tx.appendEntry(chatId, {
     kind: JOB_QUESTION_ENTRY,
     data: {
-      id: pending.id,
+      ...askedQuestion(pending),
       kind: kindState.kind,
       job: name,
-      text: pending.text,
       timestamp: pending.askedAt,
-      ...(pending.options && { options: pending.options }),
-      ...(pending.multiple && { multiple: true }),
     },
   });
 
   return {
-    agentId: agentId ?? "",
+    agentId,
     kind: kindState.kind,
     label: kindState.label,
     name,
-    question: {
-      id: pending.id,
-      text: pending.text,
-      askedAt: pending.askedAt,
-      ...(pending.options && { options: pending.options }),
-      ...(pending.multiple && { multiple: true }),
-    },
+    question: askedQuestion(pending),
     turn: turn?.split(",") ?? [],
   };
 };
@@ -771,19 +761,15 @@ const announceCheckpoint = async (
   tx: Tx,
   settled: SettledSubmissionRecord,
 ): Promise<NextTaskState<ReporterState, null>> => {
-  const done = {
-    status: "terminal",
-    outcome: { status: "completed", result: null },
-  } as const;
-
-  if (settled.status === "unanswered" || settled.type !== "input") return done;
+  if (settled.status === "unanswered" || settled.type !== "input")
+    return COMPLETED;
 
   const answer = (await tx.entry(AssistantEntry, settled.answer))?.model?.[0];
 
   const preview = answer?.role === "assistant" ? replyText(answer).trim() : "";
 
   // A reaction or a tool call alone is no answer worth a notification.
-  if (!preview) return done;
+  if (!preview) return COMPLETED;
 
   return {
     status: "running",
@@ -807,7 +793,7 @@ const jobReporterReport =
     const id = String(reporter.id);
 
     // A rerun after a restart asks again; listeners recognize the question by its ID.
-    if (asked && asked.agentId && asked.turn.length)
+    if (asked?.turn.length)
       await Promise.allSettled(
         [...kindState.questionListeners].map((listener) => listener(asked)),
       );
@@ -823,10 +809,7 @@ const jobReporterReport =
             error,
           );
 
-        return {
-          status: "terminal",
-          outcome: { status: "completed", result: null },
-        };
+        return COMPLETED;
       }, taskContext);
 
     const chat = (await runtime.conversation(
@@ -834,19 +817,19 @@ const jobReporterReport =
       taskContext,
     ))!;
 
-    // The model reads the framed report; the owner sees the job's words, labelled with their origin.
-    const text = report.replace(/^\[[^\]]*\] ?/, "");
-
     const submission = await chat.submit(
       {
         type: "input",
-        content: report,
+        content:
+          report.text === undefined
+            ? report.frame
+            : `${report.frame} ${report.text}`,
         whenBusy: "followUp",
         requestId: jobReportRequest(kindState.kind, reporter.id),
         entry: {
           kind: MESSAGE_ENTRY,
           data: {
-            text,
+            text: report.text ?? "",
             origin: { kind: kindState.kind, name: reporter.input.name },
           },
         },
@@ -888,24 +871,17 @@ const jobReporterAnnounce =
     const { entryId, preview } = reporter.state.checkpoint;
     const { agentId, name } = reporter.input;
 
-    if (agentId)
-      for (const listener of kindState.answerListeners)
-        listener({
-          agentId,
-          kind: kindState.kind,
-          name,
-          entryId,
-          preview,
-          eventId: jobReportRequest(kindState.kind, reporter.id),
-        });
+    for (const listener of kindState.answerListeners)
+      listener({
+        agentId,
+        kind: kindState.kind,
+        name,
+        entryId,
+        preview,
+        eventId: jobReportRequest(kindState.kind, reporter.id),
+      });
 
-    await runtime.commit(
-      () => ({
-        status: "terminal",
-        outcome: { status: "completed", result: null },
-      }),
-      taskContext,
-    );
+    await runtime.commit(() => COMPLETED, taskContext);
   };
 
 const jobReporterAbort =
@@ -962,7 +938,7 @@ const startJob = async (
   state: JobsState,
   chat: string,
 ) => {
-  const { name, job, model, knowledge } = request;
+  const { name, job, instructions, model, knowledge } = request;
 
   if (Object.hasOwn(state.jobs, name)) return false;
 
@@ -979,12 +955,12 @@ const startJob = async (
     extensions: knowledge ? [job, knowledge] : [job],
     tools: null,
     modelTools: null,
-    instructions: jobInstructions(kindState.options.instructions, chat),
+    instructions: jobInstructions(instructions, chat),
     cwd: WORKSPACE_PATH,
     ...(model && { model }),
   });
   (await tx.doc(kindState.Marker, child.id)).job = true;
-  state.jobs[name] = { conversationId: child.id, reported: [] };
+  state.jobs[name] = { conversationId: child.id, reported: [], stops: 0 };
 
   return true;
 };
@@ -1015,7 +991,7 @@ const stopJob = async (
   await api.commit(async (tx) => {
     const job = (await tx.doc(kindState.Jobs, api.conversationId)).jobs[name];
 
-    if (job) job.stops = (job.stops ?? 0) + 1;
+    if (job) job.stops += 1;
   }, context);
 
   // A delivery admitted before the stop count changed finishes submitting first, so the abort covers it.
@@ -1090,7 +1066,7 @@ const startOrSend = async (
     const state = await tx.doc(kindState.Jobs, api.conversationId);
     let attached: OwnerMessage[] = [];
 
-    if (kindState.options.ownerRequest) {
+    if (kindState.ownerRequest) {
       const cited = await ownerMessages(
         tx,
         api.conversationId,
@@ -1119,7 +1095,7 @@ const startOrSend = async (
     const record = state.jobs[request.name]!;
     const conversationId = record.conversationId;
 
-    if (kindState.options.ownerRequest)
+    if (kindState.ownerRequest)
       addToRequest(
         await tx.doc(kindState.Request, conversationId),
         { name: request.name, chatId: api.conversationId },
@@ -1139,7 +1115,7 @@ const startOrSend = async (
       conversationId,
       message: request.message,
       followUp: request.action === "send" && request.followUp,
-      stops: record.stops ?? 0,
+      stops: record.stops,
       ...(request.turn !== undefined && { turn: request.turn }),
     });
 
@@ -1194,17 +1170,6 @@ const statusReply = async (
     : `No ${kindState.label}s.`;
 
   return reply(text);
-};
-
-const jobCardName = (toolName: string, message: ToolResultMessage) => {
-  if (
-    message.role !== "toolResult" ||
-    message.toolName !== toolName ||
-    message.isError
-  )
-    return undefined;
-
-  return jobCard.safeParse(message.toolDetails).data?.name;
 };
 
 /** The jobs of a bot's chat, oldest first: conversation IDs only grow, whereas record keys reorder numeric names. */
@@ -1266,15 +1231,7 @@ const openQuestion = async (
     await reader.snapshot(kindState.Question, conversationId, context)
   )?.pending;
 
-  return pending?.posted
-    ? {
-        id: pending.id,
-        text: pending.text,
-        askedAt: pending.askedAt,
-        ...(pending.options && { options: pending.options }),
-        ...(pending.multiple && { multiple: true }),
-      }
-    : undefined;
+  return pending?.posted ? askedQuestion(pending) : undefined;
 };
 
 const isJobConversation = async (
@@ -1335,8 +1292,8 @@ const ownerRequestParameters = Type.Object({
 const jobTool = (kindState: JobKindState, input: JobToolInput) =>
   defineTool({
     name: kindState.toolName,
-    description: kindState.options.description,
-    parameters: kindState.options.ownerRequest
+    description: input.description,
+    parameters: kindState.ownerRequest
       ? ownerRequestParameters
       : Type.Object(jobParameters),
     callers: ["model"],
@@ -1387,6 +1344,7 @@ const runJobTool = async (
     followUp: args.followUp === true,
     ownerMessages: args.owner_messages ?? [],
     job: input.job,
+    instructions: input.instructions,
     model: input.model,
     knowledge: api.registry.extension(JOB_KNOWLEDGE_EXTENSION),
     turn: await turnOf(api, callContext),
@@ -1416,28 +1374,22 @@ const jobExtensions = (
 
 /** The job kind's public surface: its answers, its jobs, and the extensions a bot runs it with. */
 const jobKindApi = (state: JobKindState) => {
-  const { toolName } = state;
-
   return {
-    toolName,
+    kind: state.kind,
 
-    /** Hears the bot's answer to each report of a job of this kind, from every bot in this process. */
+    /** Hears the bot's answer to each report of a job of this definition, from all its bots. */
     onAnswer: (listener: (answer: JobAnswer) => void) => {
       state.answerListeners.add(listener);
 
       return () => void state.answerListeners.delete(listener);
     },
 
-    /** Hears each finished turn of a job of this kind that reported back, from every bot in this process. */
+    /** Hears each finished turn of a job of this definition that reported back, from all its bots. */
     onFinished: (listener: (finished: JobFinished) => void) => {
       state.finishedListeners.add(listener);
 
       return () => void state.finishedListeners.delete(listener);
     },
-
-    /** The job a start shows as a card; other actions and failed calls show none. */
-    jobOf: (message: ToolResultMessage): string | undefined =>
-      jobCardName(toolName, message),
 
     /** The jobs of a bot's chat, oldest first: conversation IDs only grow, whereas record keys reorder numeric names. */
     list: (harness: Harness, chatId: ConversationId) =>
@@ -1490,7 +1442,7 @@ const jobKindApi = (state: JobKindState) => {
 
     /**
      * Hears each question a job asks about work a bot turn sent it, once its card is in the chat; it may hear one again
-     * after a restart. From every bot in this process.
+     * after a restart. From all the bots of this definition.
      */
     onQuestion: (listener: (asked: JobAsked) => Promise<void>) => {
       state.questionListeners.add(listener);
@@ -1594,7 +1546,7 @@ const answerQuestion = (
         conversationId: record.conversationId,
         message: `${answer.by ?? "The owner"} answered your question: ${answer.text}`,
         followUp: false,
-        stops: record.stops ?? 0,
+        stops: record.stops,
         ...(pending.turn !== undefined && { turn: pending.turn }),
       },
       { chatId, replaces: pending.reporter },
@@ -1636,14 +1588,11 @@ const turnWork = async (
 };
 
 /** Creates the kind's documents, anchor task, and answer listeners once. */
-const jobKindBase = (options: JobKindOptions): JobKindBase => {
-  const { kind, toolName, label } = options;
+const jobKindBase = (facts: JobKindFacts): JobKindBase => {
+  const { kind } = facts;
 
   return {
-    options,
-    kind,
-    toolName,
-    label,
+    ...facts,
     answerListeners: new Set<(answer: JobAnswer) => void>(),
     finishedListeners: new Set<(finished: JobFinished) => void>(),
     questionListeners: new Set<(asked: JobAsked) => Promise<void>>(),
@@ -1653,15 +1602,19 @@ const jobKindBase = (options: JobKindOptions): JobKindBase => {
   };
 };
 
-const jobKindState = (options: JobKindOptions): JobKindState => {
-  const base = jobKindBase(options);
+const jobKindState = (facts: JobKindFacts): JobKindState => {
+  const base = jobKindBase(facts);
 
   return { ...base, Reporter: defineJobReporter(base) };
 };
 
 export type JobKind = ReturnType<typeof defineJobKind>;
 
-/** Background jobs a bot hands work to: child conversations of its chat, built on Pi Durable's background subagent pattern. */
-export function defineJobKind(options: JobKindOptions) {
-  return jobKindApi(jobKindState(options));
+/**
+ * Background jobs a bot hands work to: child conversations of its chat, built on Pi Durable's background subagent
+ * pattern. Documents and tasks are named by the facts alone, so any definition reads a kind's jobs, while listeners
+ * hear only the jobs of the definition whose extensions run them.
+ */
+export function defineJobKind(facts: JobKindFacts) {
+  return jobKindApi(jobKindState(facts));
 }

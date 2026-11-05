@@ -8,6 +8,7 @@ import {
   text,
   type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
+import { z } from "zod";
 import { agents } from "../bots/schema";
 
 /** The secrets a bot can be given for named hosts: credentials and logins. */
@@ -22,6 +23,23 @@ const agentId = () =>
   text("agent_id")
     .notNull()
     .references(() => agents.id, { onDelete: "cascade" });
+
+/** The columns of an agent's named secret that only goes to `hosts`, a JSON list: a credential, or a login. */
+export const hostBoundSecret = () => ({
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  hosts: text("hosts").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  lastUsedAt: text("last_used_at"),
+});
+
+const hostList = z.array(z.string());
+
+/** The hosts of a `hosts` column. */
+export const parseHosts = (hosts: string) => hostList.parse(JSON.parse(hosts));
 
 const kindCheck = (name: string, column: AnySQLiteColumn) =>
   check(name, sql`${column} IN ('credential', 'login')`);

@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -13,13 +14,15 @@ import {
   Redacted,
   Scope,
 } from "effect";
-import { agentInput } from "../shared/domain";
+import { GitHubAccounts } from "../github-apps/github-accounts";
+import { GitHubApps } from "../github-apps/github-apps";
+import { agentInput, credentialName } from "../shared/domain";
 import type { CoreServices } from "../app/core-layer";
 import { runnerOf } from "../shared/runner";
 import { type PasswordManagerVendor } from "../password-managers/password-manager";
-import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
-import { SecretValues } from "../password-managers/secret-values";
-import { secretsLayer } from "../password-managers/secrets";
+import { SecretRepository } from "../secrets/secret-repository";
+import { SecretValues } from "../secrets/secret-values";
+import { secretsLayer } from "../secrets/secrets";
 import {
   connectFakePasswordManager,
   fakePasswordManager,
@@ -42,7 +45,31 @@ function open() {
   const store = new Store(dir);
   const agentId = store.createAgent(agentInput.parse({ name: "Bot" })).id;
 
-  return { store, agentId };
+  return { store, agentId, dir };
+}
+
+/** Assigns the bot a machine account added with `ghp_token`, against a GitHub that signs every token in. */
+async function withMachineAccount(store: Store, agentId: string) {
+  const realFetch = globalThis.fetch;
+
+  globalThis.fetch = Object.assign(
+    async () => Response.json({ login: "scout", id: 7 }),
+    { preconnect: realFetch.preconnect },
+  );
+
+  try {
+    const account = await store.runtime.runPromise(
+      GitHubAccounts.use((accounts) => accounts.add({ value: "ghp_token" })),
+    );
+
+    await store.runtime.runPromise(
+      GitHubApps.use((apps) => apps.assignAccount(account.id, [agentId])),
+    );
+
+    return account.id;
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 }
 
 const credentials = (store: Store) =>
@@ -166,9 +193,7 @@ function withPasswordManager(
       ),
     usedBy: () =>
       store.run(
-        PasswordManagerRepository.use((repository) =>
-          repository.usedBy("1password"),
-        ),
+        SecretRepository.use((repository) => repository.usedBy("1password")),
       ),
     close: () => {
       Effect.runSync(Scope.close(scope, Exit.void));
@@ -412,4 +437,111 @@ test("a credential shows the read error of its newest use", async () => {
   use("2026-10-29T10:01:00.000Z", null);
   expect(lastError()).toBeNull();
   store.close();
+});
+
+const TARGET = { host: "api.github.com", path: "/repos/acme/app" };
+
+test("an owner's save or delete leaves the bot's GitHub token working", async () => {
+  const { store, agentId } = open();
+  const service = credentials(store);
+
+  await withMachineAccount(store, agentId);
+
+  const refused = await store.runtime.runPromise(
+    Effect.flip(
+      service.save(agentId, "GH_TOKEN", {
+        secret: { value: "typed-over" },
+      }),
+    ),
+  );
+
+  expect(refused._tag).toBe("Conflict");
+
+  const hostsOnly = await store.runtime.runPromise(
+    Effect.flip(service.save(agentId, "GH_TOKEN", { hosts: ["acme.com"] })),
+  );
+
+  expect(hostsOnly._tag).toBe("Conflict");
+
+  const undeleted = await store.runtime.runPromise(
+    Effect.flip(service.delete(agentId, "GH_TOKEN")),
+  );
+
+  expect(undeleted._tag).toBe("Conflict");
+
+  const token = await store.runtime.runPromise(
+    service.value(agentId, "GH_TOKEN", TARGET),
+  );
+
+  expect(Redacted.value(token)).toBe("ghp_token");
+
+  const { credentials: listed } = await store.runtime.runPromise(
+    service.list(agentId),
+  );
+
+  expect(listed.map(({ name, github }) => ({ name, github }))).toEqual([
+    { name: "GH_TOKEN", github: true },
+  ]);
+});
+
+test("losing the machine account forgets GH_TOKEN's uses", async () => {
+  const { store, agentId } = open();
+  const service = credentials(store);
+  const accountId = await withMachineAccount(store, agentId);
+
+  await store.runtime.runPromise(
+    service.recordUse(agentId, "GH_TOKEN", {
+      at: new Date().toISOString(),
+      method: "GET",
+      host: "api.github.com",
+      path: "/user",
+      status: 200,
+      error: null,
+    }),
+  );
+
+  const assign = (botIds: string[]) =>
+    store.runtime.runPromise(
+      GitHubApps.use((apps) => apps.assignAccount(accountId, botIds)),
+    );
+
+  await assign([]);
+  await assign([agentId]);
+
+  expect(
+    await store.runtime.runPromise(
+      service.uses(agentId, "GH_TOKEN", { limit: 10 }),
+    ),
+  ).toEqual([]);
+});
+
+test("a credential can't take over git's configuration variables", () => {
+  for (const name of [
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_KEY_0",
+    "GIT_CONFIG_VALUE_0",
+  ])
+    expect(credentialName.safeParse(name).success).toBe(false);
+});
+
+test("listing credentials decrypts nothing", async () => {
+  const { store, agentId, dir } = open();
+  const service = credentials(store);
+
+  await store.runtime.runPromise(
+    service.save(agentId, "ACME_TOKEN", {
+      hosts: ["api.acme.com"],
+      secret: { value: "acme-token" },
+    }),
+  );
+
+  const db = new Database(join(dir, "store.sqlite"));
+  db.run("UPDATE credentials SET value = 'not ciphertext'");
+  db.close();
+
+  const { credentials: listed } = await store.runtime.runPromise(
+    service.list(agentId),
+  );
+
+  expect(listed[0]?.secret?.configured).toBe(true);
 });

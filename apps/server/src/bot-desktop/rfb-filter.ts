@@ -78,10 +78,8 @@ function concat(parts: Uint8Array[]) {
 export function rfbFilter(allowInput: () => boolean) {
   let handshake = HANDSHAKE_BYTES;
   let buffer: Uint8Array = new Uint8Array();
-  const stats = { passed: 0, dropped: 0 };
 
   return {
-    stats,
     push(chunk: Uint8Array): Uint8Array {
       buffer = buffer.length ? concat([buffer, chunk]) : chunk;
 
@@ -104,13 +102,8 @@ export function rfbFilter(allowInput: () => boolean) {
 
         buffer = buffer.subarray(length);
 
-        if (INPUT.has(message[0] ?? -1) && !allowInput()) {
-          stats.dropped += 1;
+        if (INPUT.has(message[0] ?? -1) && !allowInput()) continue;
 
-          continue;
-        }
-
-        stats.passed += 1;
         out.push(message);
       }
 

@@ -5,20 +5,14 @@ import type {
   Tx,
 } from "@earendil-works/pi-durable";
 import { z } from "zod";
+import type { OwnerMessage } from "../bot-desktop/desktop-vocabulary";
 import { MESSAGE_ENTRY } from "../bots/entries";
-
-/** An owner message a job acts for, verbatim; a job started by an automation counts the automation's text as one. */
-export type OwnerMessage = {
-  requestId: string;
-  text: string;
-  from: "owner" | "automation";
-};
 
 /** What a job was asked: the owner's messages it concerns, and each message the bot sent it. */
 export type JobRequest = {
   ownerMessages: OwnerMessage[];
   tasks: string[];
-  /** The job's name and the bot chat it reports to; unset before its first start or send. */
+  /** The job's name and the bot chat it reports to; every start and send sets it, before the job can act. */
   job?: { name: string; chatId: ConversationId };
 };
 

@@ -4,23 +4,22 @@ import type { EnvTarget } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { Agent } from "../shared/domain";
 import { Context } from "effect";
+import type { z } from "zod";
+import type { externalAuthResponse } from "../contract/api-responses";
 import type { ChatAdapter } from "../message-gateway/adapter";
-import type { JobAnswer, JobAsked, JobExtensions } from "../jobs/jobs";
+import type {
+  JobAnswer,
+  JobAsked,
+  JobExtensions,
+  JobFinished,
+} from "../jobs/jobs";
 import type { WebSearchProvider } from "../web-search/provider";
 import type { PasswordManagerVendor } from "../password-managers/password-manager";
-import type {
-  MachineWorkspaces,
-  WorkspaceBackendOptions,
-} from "../workspaces/machine-workspaces";
+import type { WorkspaceBackendOptions } from "../workspaces/machine-workspaces";
+import type { ClosableWorkspaces } from "../workspaces/workspace";
 
 /** How a provider that signs in outside Crumble stands, shown to the owner instead of sign-in methods. */
-export type ExternalAuth = {
-  status: "signed_in" | "signed_out" | "cli_missing" | "error";
-  cliVersion: string | null;
-  signInCommand: string | null;
-  signOutCommand: string | null;
-  message: string | null;
-};
+export type ExternalAuth = z.output<typeof externalAuthResponse>;
 
 /** A Pi AI provider; its `api` streams are the adapter. */
 export type ProviderContribution = {
@@ -47,14 +46,16 @@ export type JobKindContribution = {
   /** Hears the bot's answer to each job report, for notifications. */
   onAnswer: (listener: (answer: JobAnswer) => void) => () => void;
   /** Hears each job question about work a bot turn sent the job, so a delegating bot can answer it first. */
-  onQuestion: (listener: (asked: JobAsked) => Promise<void>) => () => void;
+  onQuestion?: (listener: (asked: JobAsked) => Promise<void>) => () => void;
+  /** Hears each job turn that reported back, for a kind whose work a learning review reads. */
+  onFinished?: (listener: (finished: JobFinished) => void) => () => void;
 };
 
 /** A machine backend: its workspaces when the server's environment configures it, otherwise undefined. */
 export type WorkspaceBackend = (
   env: Record<string, string | undefined>,
   options: WorkspaceBackendOptions,
-) => MachineWorkspaces | undefined;
+) => ClosableWorkspaces | undefined;
 
 /**
  * A plugin's fixed part: vendors that need nothing from the account, so they exist before the account's services, which

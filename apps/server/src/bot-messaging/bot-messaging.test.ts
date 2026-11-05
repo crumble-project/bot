@@ -50,6 +50,10 @@ function setup(
 
   const runtime: any = {
     openChat: async (agent: Agent) => `${agent.id}:${++conversation}`,
+    prepareInput: async (_agent: Agent, text: string) => ({
+      modelContent: text,
+      data: { text },
+    }),
     submit: async (
       _agent: Agent,
       _conversation: string,

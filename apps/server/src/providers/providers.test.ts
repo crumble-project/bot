@@ -5,7 +5,7 @@ import type {
   ModelsPublication,
   RefreshModelsContext,
 } from "@earendil-works/pi-ai";
-import { meliousProvider } from "./providers";
+import { meliousProvider } from "./melious";
 
 const API_KEY: Credential = { type: "api_key", key: "melious-key" };
 

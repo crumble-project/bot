@@ -1,17 +1,14 @@
 import { asc, eq, ne } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import { OWNER } from "../shared/change-by";
 import type { Agent, AgentInput } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
-import { McpServerRepository } from "../integrations/mcp-server-repository";
 import { SkillRepository } from "../skills/skill-repository";
 import { agents } from "./schema";
 import {
   avatarDefinitionSchema,
   defaultAvatarDefinition,
 } from "../contract/avatar";
-import { migrateAvatars } from "./avatar-migration";
 import { BOT_TOOL, STANDARD_TOOLS } from "../contract/tools";
 
 export type AgentPatch = Partial<
@@ -34,20 +31,13 @@ export class AgentRepository extends Context.Service<
       patch: AgentPatch,
     ) => Effect.Effect<Agent | null>;
     readonly delete: (agentId: string) => Effect.Effect<boolean>;
-    /** A copy with the same settings and skill packages; archived skills and the original's own servers stay behind. */
-    readonly duplicate: (
-      agentId: string,
-      name?: string,
-    ) => Effect.Effect<Agent | null>;
   }
 >()("crumble/bots/AgentRepository") {
   static readonly layer = Layer.effect(
     AgentRepository,
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
-      yield* migrateAvatars(db).pipe(Effect.orDie);
       const skillLibrary = yield* SkillRepository;
-      const servers = yield* McpServerRepository;
 
       const agentOf = Effect.fnUntraced(function* (
         row: typeof agents.$inferSelect,
@@ -123,11 +113,8 @@ export class AgentRepository extends Context.Service<
         webSearchProvider: input.webSearchProvider ?? null,
         enabled: input.enabled,
         tools: JSON.stringify(input.tools),
-        skills: "[]",
         sharedSkills: JSON.stringify(input.sharedSkills ?? []),
-        sharedMemory: input.sharedMemory ?? false,
         mcpServers: JSON.stringify(input.mcpServers),
-        delegates: JSON.stringify(input.delegates ?? []),
         inference: JSON.stringify(input.inference ?? {}),
         desktopModel: input.desktopModel
           ? JSON.stringify(input.desktopModel)
@@ -196,53 +183,12 @@ export class AgentRepository extends Context.Service<
         return deleted.length > 0;
       }, Effect.orDie);
 
-      const duplicate = Effect.fn("AgentRepository.duplicate")(function* (
-        agentId: string,
-        name?: string,
-      ) {
-        const original = yield* get(agentId);
-
-        if (!original) return null;
-
-        // Personal servers keep belonging to the original bot.
-        const mcpServers: string[] = [];
-
-        for (const serverId of original.mcpServers)
-          if (!(yield* servers.get(serverId))?.agentId)
-            mcpServers.push(serverId);
-
-        const copy = yield* create({
-          ...original,
-          mcpServers,
-          skills: [],
-          name: name ?? `${original.name} Copy`,
-        });
-
-        // Skill packages are copied whole; archived ones stay behind, and the copy's skills were not learned from an execution.
-        for (const skill of yield* skillLibrary.list(original.id))
-          if (skill.state !== "archived")
-            yield* skillLibrary.create(
-              {
-                ...skill,
-                agentId: copy.id,
-                sourceExecutionId: null,
-                state: skill.state,
-                pinned: skill.pinned,
-              },
-              undefined,
-              OWNER,
-            );
-
-        return yield* get(copy.id);
-      });
-
       return AgentRepository.of({
         list,
         get,
         create,
         update,
         delete: remove,
-        duplicate,
       });
     }),
   );

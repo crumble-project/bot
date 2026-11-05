@@ -1,9 +1,10 @@
 // Ported from Hermes' claude-subscription-directsdk tests/test_admission_*.py (MIT, see THIRD_PARTY_NOTICES.md).
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { z } from "zod";
+import { Admission } from "./relay";
+import { Capture } from "./relay-capture";
+import { GzipFallback } from "./relay-gzip";
 import {
-  Admission,
-  Capture,
   dropMessageBreakpoints,
   pinMessageBreakpoint,
   QueriedTurnMismatch,
@@ -11,7 +12,7 @@ import {
   stableRequestContext,
   streamToolInput,
   type Block,
-} from "./relay";
+} from "./relay-request";
 
 type Mark = NonNullable<Block["cache_control"]>;
 
@@ -69,9 +70,6 @@ const sortedJson = <T>(value: T) =>
       : entry,
   );
 
-const UNRESTORED =
-  "Native request does not uniquely match the queried tool results";
-
 const ok = () => new Response(null, { status: 200 });
 let received: string[] = [];
 let respond: () => Response = ok;
@@ -87,6 +85,7 @@ const peer = Bun.serve({
 });
 
 const UPSTREAM = `http://127.0.0.1:${peer.port}`;
+const ADMITTED = { env: {}, gzip: new GzipFallback() };
 
 afterEach(() => {
   received = [];
@@ -109,7 +108,7 @@ const post = (
 
 /** Send one native request through a fresh admission relay. */
 async function relay(payload: string, queried: Block[] | undefined) {
-  const gate = new Admission(UPSTREAM, 5000, queried);
+  const gate = new Admission(UPSTREAM, 5000, { ...ADMITTED, queried });
 
   try {
     const response = await post(gate, payload);
@@ -747,7 +746,6 @@ describe("message breakpoint (test_admission_breakpoint.py)", () => {
     const payload = wire([ASSISTANT, { role: "user", content: [changed] }]);
     const { gate } = await relay(payload, [RESULT]);
 
-    expect(gate.unrestored).toBe(UNRESTORED);
     expect(gate.failure).toBeUndefined();
     expect(received).toEqual([payload]);
   });
@@ -1080,7 +1078,6 @@ describe("two native marks (test_admission_two_marks.py)", () => {
     const { gate, status } = await relay(JSON.stringify(nativeBody), queried);
 
     expect(status).toBe(200);
-    expect(gate.unrestored).toBeUndefined();
     expect(gate.failure).toBeUndefined();
     expect(received).toHaveLength(1);
 
@@ -1721,7 +1718,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
     const { gate, status } = await relay(JSON.stringify(raw), queried);
 
     expect(status).toBe(200);
-    expect(gate.unrestored).toBeUndefined();
     expect(gate.failure).toBeUndefined();
 
     const sent = parse(received[0] ?? "");
@@ -2113,7 +2109,7 @@ describe("restoration (test_admission_restoration.py)", () => {
   ])(
     "unprovable restoration forwards the native payload unchanged %#",
     async (queried: Block[], payload: string) => {
-      const gate = new Admission(UPSTREAM, 5000, queried);
+      const gate = new Admission(UPSTREAM, 5000, { ...ADMITTED, queried });
 
       try {
         const response = await post(gate, payload).catch(() => undefined);
@@ -2123,7 +2119,6 @@ describe("restoration (test_admission_restoration.py)", () => {
         await gate.close();
       }
 
-      expect(gate.unrestored).toBe(UNRESTORED);
       expect(gate.failure).toBeUndefined();
       // Nothing is dropped or rewritten: native's own frame goes upstream (only a marker may move).
       expect(received).toHaveLength(1);
@@ -2421,7 +2416,7 @@ describe("admission", () => {
   });
 
   test("forwards exactly one request and denies the rest", async () => {
-    const gate = new Admission(UPSTREAM, 5000);
+    const gate = new Admission(UPSTREAM, 5000, ADMITTED);
 
     try {
       const first = await post(gate, ASK);
@@ -2538,7 +2533,6 @@ describe("admission", () => {
     expect(status).toBe(400);
     expect(text).toBe(error);
     expect(gate.status).toBe(400);
-    expect(gate.requestId).toBe("req_1");
     expect(gate.errorText()).toBe("prompt is too long");
     expect(gate.capture.message).toBeUndefined();
   });
@@ -2549,7 +2543,7 @@ describe("admission", () => {
   ])(
     "answers %s with 404 and keeps the admission unused",
     async (_, headers: Record<string, string>, path: string) => {
-      const gate = new Admission(UPSTREAM, 5000);
+      const gate = new Admission(UPSTREAM, 5000, ADMITTED);
 
       try {
         const response = await post(gate, ASK, headers, path);

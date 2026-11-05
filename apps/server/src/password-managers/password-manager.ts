@@ -9,7 +9,7 @@ import {
   Schema,
   type Scope,
 } from "effect";
-import type { PasswordManagerId } from "../shared/domain";
+import type { LoginField, PasswordManagerId } from "../shared/domain";
 import { InvalidInput } from "../shared/errors";
 
 /** How long a sign-in or read may take; the 1Password SDK otherwise waits minutes when the network is gone. */
@@ -38,7 +38,12 @@ export class PasswordManagerUnsupported extends Schema.TaggedError<PasswordManag
 /** One reference can't be read: its item or field is gone, or the token may not read it. Its value must not be used. */
 export class SecretUnreadable extends Schema.TaggedError<SecretUnreadable>()(
   "SecretUnreadable",
-  { reference: Schema.String, message: Schema.String },
+  {
+    reference: Schema.String,
+    message: Schema.String,
+    /** The item exists and lacks the field, which is an answer rather than a failure. */
+    kind: Schema.optional(Schema.Literal("missing-field")),
+  },
 ) {}
 
 /** The client's scope closed, such as when the owner disconnected the password manager. */
@@ -79,6 +84,10 @@ export interface PasswordManagerVendor {
   readonly name: string;
   /** The references owners paste, such as `op://vault/item/field`. */
   readonly reference: Schema.Decoder<string>;
+  /** The references of a login's fields in one of its items, for a vendor that stores logins as items. */
+  readonly itemFields?: (item: string) => Record<LoginField, string>;
+  /** Whether the value changes by the second, such as a computed one-time code, so it must never be cached. */
+  readonly isVolatile?: (reference: string) => boolean;
   /** Signs in with the owner's token, which also checks it. `PasswordManagers.connect` owns the client's lifetime. */
   signIn(
     token: Redacted.Redacted,
@@ -156,6 +165,12 @@ export class PasswordManagers extends Context.Service<
       id: PasswordManagerId,
       reference: string,
     ) => Effect.Effect<void, InvalidInput>;
+    /** The references of a login's fields in one of the password manager's items. */
+    readonly itemFields: (
+      id: PasswordManagerId,
+      item: string,
+    ) => Record<LoginField, string>;
+    readonly isVolatile: (id: PasswordManagerId, reference: string) => boolean;
     /** A client that reads until the scope closes. */
     readonly connect: (
       id: PasswordManagerId,
@@ -192,6 +207,16 @@ export class PasswordManagers extends Context.Service<
             ),
           );
         },
+        itemFields: (id, item) => {
+          const vendor = vendorOf(id);
+
+          if (!vendor.itemFields)
+            throw new Error(`${vendor.name} has no login items`);
+
+          return vendor.itemFields(item);
+        },
+        isVolatile: (id, reference) =>
+          vendorOf(id).isVolatile?.(reference) === true,
         connect: (id, token) => connected(vendorOf(id), token),
       }),
     );

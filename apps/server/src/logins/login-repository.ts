@@ -1,25 +1,23 @@
 import { and, asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import { z } from "zod";
-import { secretKey, secretKeyPrefix } from "../password-managers/secrets";
+import { parseHosts } from "../bot-secrets/schema";
+import { botSecretKey, botSecretsPrefix } from "../secrets/secret-key";
 import { lastUseError } from "../bot-secrets/bot-secret-uses";
 import type { Login, LoginField } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { logins } from "./schema";
 
-const hostList = z.array(z.string());
-
-/** The secret holding one field of a login; under the bot's prefix, so deleting the bot deletes it. */
+/** The secret holding one field of a login. */
 export const loginFieldKey = (
   agentId: string,
   name: string,
   field: LoginField,
-) => secretKey("bot", agentId, "login", name, field);
+) => botSecretKey(agentId, "login", name, field);
 
 /** The prefix of every field of a login. */
 export const loginFieldsPrefix = (agentId: string, name: string) =>
-  secretKeyPrefix("bot", agentId, "login", name);
+  botSecretsPrefix(agentId, "login", name);
 
 /** A login without its fields, which are secrets of their own. */
 export type LoginRecord = Omit<Login, "fields">;
@@ -35,7 +33,7 @@ const metadata = {
 
 const loginOf = (
   row: Omit<LoginRecord, "hosts"> & { hosts: string },
-): LoginRecord => ({ ...row, hosts: hostList.parse(JSON.parse(row.hosts)) });
+): LoginRecord => ({ ...row, hosts: parseHosts(row.hosts) });
 
 /** The logins the owner gave each bot. */
 export class LoginRepository extends Context.Service<

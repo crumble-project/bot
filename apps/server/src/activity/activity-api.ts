@@ -9,7 +9,7 @@ import type { BotsAccess } from "../bots/bots";
 import { ConversationRepository } from "../bots/conversation-repository";
 import { InvalidInput } from "../shared/errors";
 import type { Runner } from "../shared/runner";
-import { LearnedChangeRepository } from "../skills/learned-change-repository";
+import { LearnedChangeRepository } from "../learning/learned-change-repository";
 
 type Services =
   | AgentRepository

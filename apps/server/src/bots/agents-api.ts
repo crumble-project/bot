@@ -1,27 +1,21 @@
-import { Effect } from "effect";
 import { patchInput, routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import type { McpIntegrations } from "../integrations/integrations";
-import {
-  clientSecretKey,
-  mcpTokenKey,
-  signOut,
-  type SecretStorage,
-} from "../integrations/mcp-oauth";
-import { McpServerRepository } from "../integrations/mcp-server-repository";
-import { Secrets, secretKeyPrefix } from "../password-managers/secrets";
-import { agentInput, type AgentInput } from "../shared/domain";
-import { InvalidInput } from "../shared/errors";
+import type { McpServerRepository } from "../integrations/mcp-server-repository";
+import type { McpServers } from "../integrations/mcp-servers";
+import type { SkillRepository } from "../skills/skill-repository";
+import { botSecretsPrefix } from "../secrets/secret-key";
+import { Secrets } from "../secrets/secrets";
+import { agentInput } from "../shared/domain";
 import type { Runner } from "../shared/runner";
 import { AgentRepository } from "./agent-repository";
+import { duplicateAgent } from "./agent-duplicate";
 import type { BotsAccess } from "./bots";
-import { ConversationRepository } from "./conversation-repository";
-import { BOT_TOOL } from "../contract/tools";
+import { usesDesktop } from "../bot-desktop/desktop-vocabulary";
 
 type Services =
   | AgentRepository
-  | ConversationRepository
   | McpServerRepository
+  | SkillRepository
   | Secrets;
 
 type Exec = Runner<Services>["runSync"];
@@ -33,45 +27,9 @@ type AgentRoutesOptions = {
   run: Runner<Services>;
   /** Accepts a provider ID only if this server can serve it. */
   provider: { parse(value: string): string };
-  secrets: SecretStorage;
-  integrations?: McpIntegrations["Service"] | undefined;
+  mcpServers: McpServers;
   /** Stops a bot's workspace machine, so its next use boots the image its tools need now. */
   restartWorkspace?: ((agentId: string) => Promise<void>) | undefined;
-};
-
-/** A bot may use shared servers and its own, never another bot's. */
-export const checkServers = (
-  exec: Exec,
-  agentId: string | null,
-  serverIds: string[],
-  requireExisting = false,
-) => {
-  for (const serverId of serverIds) {
-    const server = exec(McpServerRepository.use((r) => r.get(serverId)));
-
-    if (!server && requireExisting)
-      throw new InvalidInput({ message: "That MCP server does not exist" });
-
-    if (!server) continue;
-
-    const owner = server.agentId;
-
-    if (owner && owner !== agentId)
-      throw new InvalidInput({
-        message: "That MCP server belongs to another bot",
-      });
-  }
-};
-
-export const validateAgentProposal = (
-  exec: Exec,
-  provider: { parse(value: string): string },
-  input: AgentInput,
-) => {
-  provider.parse(input.provider);
-  checkServers(exec, null, input.mcpServers, true);
-
-  return input;
 };
 
 /** The owner's view of every bot, and the editing of a bot's own configuration. */
@@ -88,11 +46,10 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
     ),
   );
   register(routes.createAgent, async (c) => {
-    const input = validateAgentProposal(
-      exec,
-      options.provider,
-      agentInput.parse(await c.req.json()),
-    );
+    const input = agentInput.parse(await c.req.json());
+
+    options.provider.parse(input.provider);
+    options.mcpServers.check(null, input.mcpServers, true);
 
     return c.json(exec(AgentRepository.use((r) => r.create(input))), 201);
   });
@@ -111,13 +68,9 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
     });
 
     options.provider.parse(input.provider);
-    checkServers(exec, old.id, input.mcpServers);
+    options.mcpServers.check(old.id, input.mcpServers);
 
-    if (!input.enabled && old.enabled)
-      for (const conversation of exec(
-        ConversationRepository.use((r) => r.list(old.id)),
-      ))
-        await service.abort(conversation.id);
+    if (!input.enabled && old.enabled) await service.stopAgent(old.id);
 
     const updated = exec(
       AgentRepository.use((r) =>
@@ -126,10 +79,7 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
     );
 
     // The desktop tool picks the workspace image; a bot that gains or loses it needs a fresh boot.
-    if (
-      old.tools.includes(BOT_TOOL.desktop) !==
-      input.tools.includes(BOT_TOOL.desktop)
-    )
+    if (usesDesktop(old) !== usesDesktop(input))
       await options.restartWorkspace?.(old.id);
 
     return c.json(updated, 200);
@@ -138,37 +88,19 @@ const registerAgentDefinitionRoutes = (options: AgentRoutesOptions) => {
 
 /** Copying a bot, and deleting one along with the secrets of the MCP servers it owned. */
 const registerAgentLifecycleRoutes = (options: AgentRoutesOptions) => {
-  const { register, service, secrets, integrations } = options;
+  const { register, service, mcpServers } = options;
   const exec: Exec = (effect) => options.run.runSync(effect);
 
   register(routes.duplicateAgent, (c) => {
     service.agent(c.req.param("id"));
 
-    return c.json(
-      exec(AgentRepository.use((r) => r.duplicate(c.req.param("id")))),
-      201,
-    );
+    return c.json(exec(duplicateAgent(c.req.param("id"))), 201);
   });
   register(routes.deleteAgent, async (c) => {
     const id = c.req.param("id");
 
-    const personal = exec(McpServerRepository.use((r) => r.list)).filter(
-      (server) => server.agentId === id,
-    );
-
-    await service.deleteAgent(id);
-
-    exec(Secrets.use((s) => s.deleteAll(secretKeyPrefix("bot", id))));
-
-    // The bot's personal servers went with it; their secrets and connections go too.
-    for (const server of personal) {
-      exec(Secrets.use((s) => s.delete(mcpTokenKey(server.id))));
-      exec(Secrets.use((s) => s.delete(clientSecretKey(server.id))));
-      signOut(secrets, server.id);
-
-      if (integrations)
-        await Effect.runPromise(integrations.disconnect(server.id));
-    }
+    await mcpServers.forgetBot(id, () => service.deleteAgent(id));
+    exec(Secrets.use((s) => s.deleteAll(botSecretsPrefix(id))));
 
     return c.body(null, 204);
   });

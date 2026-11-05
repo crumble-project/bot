@@ -18,9 +18,12 @@ import {
   type GatewayConnection,
   type GatewayMessage,
 } from "../adapter";
+import { pluginSettingKey } from "../../plugins/plugins";
 import type { ConnectionStatus } from "../../shared/domain";
 
-export const DISCORD_SECRET_KEY = "discord:token";
+export const DISCORD_PLUGIN_ID = "discord";
+
+const DISCORD_SECRET_KEY = pluginSettingKey(DISCORD_PLUGIN_ID, "token");
 const SEND_TIMEOUT_MS = 10_000;
 const sentMessageSchema = z.object({ id: z.string().min(1) });
 
@@ -36,7 +39,6 @@ type DeliveryErrorDetails = ConstructorParameters<
 function rateLimitDetails(failure: RateLimitError): DeliveryErrorDetails {
   return {
     permanent: false,
-    status: 429,
     retryAfterMs: Math.max(
       0,
       ...[
@@ -70,8 +72,6 @@ function httpErrorDetails(failure: Error): DeliveryErrorDetails {
   const details: DeliveryErrorDetails = {
     permanent: isPermanentStatus(status),
   };
-
-  if (status !== undefined) details.status = status;
 
   if (status === 429 && failure instanceof DiscordAPIError) {
     const parsed = rateLimitResponseSchema.safeParse(failure.rawError);
@@ -177,55 +177,40 @@ export function discordAdapter(
   };
 
   return {
-    id: "discord",
+    id: DISCORD_PLUGIN_ID,
     label: "Discord",
     secretKey: DISCORD_SECRET_KEY,
     maxMessageLength: 2_000,
+    // The indicator lasts 10 seconds; renewing at 8 keeps it steady while the bot works.
+    typingRenewalMs: 8_000,
     async connect(host) {
       const client = clientFactory(options);
       const pending = new Set<AbortController>();
       let closed = false;
       let invalidated = false;
 
-      const errorMessage = (error: Error) => {
-        const message = error.message;
-
-        return host.token
-          ? message.replaceAll(host.token, "[redacted]")
-          : message;
+      const status = (value: ConnectionStatus) => {
+        if (!closed) host.onStatus(value);
       };
 
-      const status = (value: ConnectionStatus, error?: string) => {
-        if (!closed) host.onStatus(value, error);
-      };
+      const reportError = () => status("error");
 
-      const reportError = (error: Error) =>
-        status("error", errorMessage(error));
-
-      const deliveryError = (failure: Error) => {
-        if (failure instanceof RateLimitError)
-          return new GatewayTransportError(
-            "Discord message delivery rate limited.",
-            rateLimitDetails(failure),
-          );
-
-        return new GatewayTransportError(
-          errorMessage(failure),
-          httpErrorDetails(failure),
-        );
-      };
+      const deliveryError = (failure: Error) =>
+        failure instanceof RateLimitError
+          ? new GatewayTransportError(
+              "Discord message delivery rate limited.",
+              rateLimitDetails(failure),
+            )
+          : new GatewayTransportError(
+              "Discord message delivery failed.",
+              httpErrorDetails(failure),
+            );
 
       client.on("messageCreate", (message) => {
         if (closed) return;
         const normalized = normalizeDiscordMessage(message, client.user?.id);
 
-        if (normalized)
-          void host.onMessage(normalized).catch((error) => {
-            const failure =
-              error instanceof Error ? error : new Error(String(error));
-
-            reportError(failure);
-          });
+        if (normalized) void host.onMessage(normalized).catch(reportError);
       });
       client.on("clientReady", () => status("connected"));
       client.on("shardResume", () => status("connected"));
@@ -234,9 +219,8 @@ export function discordAdapter(
       client.on("invalidated", () => {
         if (closed || invalidated) return;
         invalidated = true;
-        const error = "Discord session invalidated. Reconnect the gateway.";
-        status("error", error);
-        host.onInvalidated(error);
+        status("error");
+        host.onInvalidated();
       });
       client.on("error", reportError);
       client.on("shardError", reportError);
@@ -245,11 +229,8 @@ export function discordAdapter(
 
       try {
         await client.login(host.token);
-      } catch (error) {
-        const failure =
-          error instanceof Error ? error : new Error(String(error));
-
-        reportError(failure);
+      } catch {
+        reportError();
         closed = true;
 
         try {
@@ -260,7 +241,7 @@ export function discordAdapter(
           client.removeAllListeners();
         }
 
-        throw new Error(errorMessage(failure));
+        throw new Error("Discord login failed.");
       }
 
       const connection: GatewayConnection = {

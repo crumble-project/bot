@@ -5,7 +5,7 @@ import { Sandbox as MicrosandboxSandbox } from "microsandbox";
 import { Sandbox as RailwaySandbox } from "railway";
 import type { MachineWorkspaces } from "../../src/workspaces/machine-workspaces";
 import { MicrosandboxWorkspaces } from "../../src/workspaces/microsandbox-workspaces";
-import { RailwayWorkspaces } from "../../src/workspaces/railway-workspaces";
+import { RailwayWorkspaces } from "../../src/workspaces/railway/railway-workspaces";
 
 export type BackendWorkspacesOptions = {
   namePrefix: string;
