@@ -25,6 +25,7 @@ import { standaloneBots } from "../bots/bots-test-support";
 import { standaloneScheduler } from "../automations/scheduler-test-support";
 import { testAPI } from "../../test/support/api";
 import type { Agent } from "../contract/agents";
+import { until } from "../../test/support/until";
 
 type TestRequestInit = Omit<RequestInit, "headers"> & {
   headers?: Record<string, string>;
@@ -578,8 +579,11 @@ describe("push registration and durable delivery", () => {
 
     const chat = await service.chat(agent.id);
     const execution = await service.send(chat.id, "question", id());
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    await push.runPromise(Push.use((p) => p.drain));
+    await until(async () => {
+      await push.runPromise(Push.use((p) => p.drain));
+
+      return delivered !== undefined;
+    });
     expect(delivered).toMatchObject({
       eventId: execution.id,
       agentId: agent.id,

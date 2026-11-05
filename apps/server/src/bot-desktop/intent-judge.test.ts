@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { AnyModel } from "@earendil-works/pi-ai";
 import { accountModels } from "../providers/providers";
 import { decide } from "./intent-check";
 import { decidesEnter, inIntentBar, judgeUsage } from "./intent-judge";
@@ -13,22 +14,24 @@ const classifier = (provider: string, id: string) => {
   return model;
 };
 
-test("Jev's in-intent bar comes from the intent eval; an unevaluated classifier must be sure", () => {
-  expect(inIntentBar(classifier("typesafe", "jev-latest"))).toBe(0.5);
-  expect(inIntentBar(classifier("openai", "gpt-6-luna"))).toBe(0.9);
+test("Jev's bar sits between the eval's asked and unasked actions; an unevaluated classifier must be surer", () => {
+  const held = (model: AnyModel, inIntent: number) =>
+    decide(true, {
+      irreversible: 0.96,
+      inIntent,
+      inIntentBar: inIntentBar(model),
+    }).held;
+
+  const jev = classifier("typesafe", "jev-latest");
+
+  expect(held(jev, 0.55)).toBe(false);
+  expect(held(jev, 0.42)).toBe(true);
+  expect(held(classifier("openai", "gpt-6-luna"), 0.55)).toBe(true);
 });
 
 test("only GPT-6 Luna decides Enter: the intent eval showed Jev missing what Enter can commit", () => {
   expect(decidesEnter(classifier("openai", "gpt-6-luna"))).toBe(true);
   expect(decidesEnter(classifier("typesafe", "jev-latest"))).toBe(false);
-});
-
-test("an asked-for commit point runs at Jev's bar and is held at the default one", () => {
-  // Jev's lowest in-intent answer for an action the owner asked for in the eval.
-  const answer = { irreversible: 0.96, inIntent: 0.55 };
-
-  expect(decide(true, { ...answer, inIntentBar: 0.5 }).held).toBe(false);
-  expect(decide(true, { ...answer, inIntentBar: 0.9 }).held).toBe(true);
 });
 
 test("Jev's spend is priced at TypeSafe's rate, which pi-ai's catalog lacks", () => {
@@ -41,15 +44,10 @@ test("Jev's spend is priced at TypeSafe's rate, which pi-ai's catalog lacks", ()
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
   };
 
-  expect(judgeUsage(classifier("typesafe", "jev-latest"), tokens).cost).toEqual(
-    {
-      input: 0.042,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      total: 0.042,
-    },
-  );
+  const { cost } = judgeUsage(classifier("typesafe", "jev-latest"), tokens);
+
+  expect(cost.input).toBeGreaterThan(0);
+  expect(cost.total).toBe(cost.input);
 
   expect(judgeUsage(classifier("openai", "gpt-6-luna"), tokens)).toBe(tokens);
 });

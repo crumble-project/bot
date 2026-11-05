@@ -20,6 +20,7 @@ import { coordinationExtension } from "./coordination";
 import { standaloneMessaging } from "./bot-messaging-test-support";
 import { accessOf, noServices } from "../shared/runner";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
+import { until } from "../../test/support/until";
 
 test("a real faux turn asks another bot and only exposes its answer", async () => {
   const dir = mkdtempSync(join(tmpdir(), "bot-messaging-e2e-"));
@@ -439,13 +440,6 @@ async function delegatedBuild(asking: Promise<void>) {
   };
 }
 
-async function until(check: () => Promise<boolean>) {
-  for (let i = 0; i < 500 && !(await check()); i++)
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-  expect(await check()).toBe(true);
-}
-
 test("a delegation whose bot started a job stays pending until the job's report is answered", async () => {
   let ask!: () => void;
   const world = await delegatedBuild(new Promise((resolve) => (ask = resolve)));
@@ -453,7 +447,9 @@ test("a delegation whose bot started a job stays pending until the job's report 
   try {
     const { messaging, delegation } = world;
 
-    expect(world.store.getExecution(delegation.id)?.status).toBe("done");
+    await until(
+      () => world.store.getExecution(delegation.id)?.status === "done",
+    );
 
     expect(
       await messaging.result(MAGNUM, delegation.id, { waitMs: 200 }),

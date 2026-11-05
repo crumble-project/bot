@@ -10,9 +10,8 @@ import {
   fauxText,
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
-import { Effect, Exit } from "effect";
 import type { Agent } from "../contract/agents";
-import { assertOwnMemoryInGroup, memorySourceOf } from "./memory-sources";
+import { BotMemory } from "./bot-memory";
 import { AgentRuntime } from "../bots/runtime";
 import type { MemoryContext } from "./memory-tool";
 import { Store } from "../../test/support/store";
@@ -45,7 +44,7 @@ const input = (name: string) => ({
   delegates: [],
 });
 
-describe("memorySourceOf", () => {
+describe("a memory's source", () => {
   function setup() {
     const store = new Store(temp());
     cleanups.push(() => store.close());
@@ -69,30 +68,40 @@ describe("memorySourceOf", () => {
         error: null,
       });
 
-    return { store, agent, other, execution };
+    const sourceOf = async (context: Partial<MemoryContext>) =>
+      (
+        await store.runtime.runPromise(
+          BotMemory.use((memory) =>
+            memory.create(agent.id, "fact", false, {
+              groupId: null,
+              submissionIds: [],
+              reviewOf: null,
+              ...context,
+            }),
+          ),
+        )
+      ).source;
+
+    return { store, agent, other, execution, sourceOf };
   }
 
-  test("names the group of a group turn", () => {
-    const { store, agent, other } = setup();
+  test("names the group of a group turn", async () => {
+    const { store, agent, other, sourceOf } = setup();
 
     const group = store.createGroupChat({
       name: "Trip",
       memberIds: [agent.id, other.id],
     });
 
-    expect(
-      store.runtime.runSync(
-        memorySourceOf(agent.id, {
-          groupId: group.id,
-          submissionIds: [],
-          reviewOf: null,
-        }),
-      ),
-    ).toEqual({ kind: "group", groupId: group.id, name: "Trip" });
+    expect(await sourceOf({ groupId: group.id })).toEqual({
+      kind: "group",
+      groupId: group.id,
+      name: "Trip",
+    });
   });
 
-  test("takes the newest input of a chat run", () => {
-    const { store, agent, other, execution } = setup();
+  test("takes the newest input of a chat run", async () => {
+    const { store, agent, other, execution, sourceOf } = setup();
 
     const schedule = store.createSchedule({
       agentId: agent.id,
@@ -113,65 +122,33 @@ describe("memorySourceOf", () => {
     execution("task-1", schedule.id);
     execution(`delegate:${other.id}:t-1`);
 
-    const source = (submissionIds: string[]) =>
-      store.runtime.runSync(
-        memorySourceOf(agent.id, {
-          groupId: null,
-          submissionIds,
-          reviewOf: null,
-        }),
-      );
+    const source = (submissionIds: string[]) => sourceOf({ submissionIds });
 
-    expect(source(["owner-1"])).toEqual({ kind: "chat" });
-    expect(source(["owner-1", "task-1"])).toEqual({
+    expect(await source(["owner-1"])).toEqual({ kind: "chat" });
+    expect(await source(["owner-1", "task-1"])).toEqual({
       kind: "task",
       scheduleId: schedule.id,
       name: "Morning brief",
     });
-    expect(source([`delegate:${other.id}:t-1`])).toEqual({
+    expect(await source([`delegate:${other.id}:t-1`])).toEqual({
       kind: "bot",
       agentId: other.id,
       name: "Grace",
     });
-    expect(source(["unknown"])).toEqual({ kind: "chat" });
+    expect(await source(["unknown"])).toEqual({ kind: "chat" });
   });
 
-  test("a job question relayed to a bot comes from the bot whose job asks", () => {
-    const { store, agent, other, execution } = setup();
+  test("a job question relayed to a bot comes from the bot whose job asks", async () => {
+    const { other, execution, sourceOf } = setup();
     const requestId = `job-question:${other.id}:question-1`;
 
     execution(requestId);
 
-    expect(
-      store.runtime.runSync(
-        memorySourceOf(agent.id, {
-          groupId: null,
-          submissionIds: [requestId],
-          reviewOf: null,
-        }),
-      ),
-    ).toEqual({ kind: "bot", agentId: other.id, name: "Grace" });
-  });
-
-  test("keeps group turns out of shared memory", () => {
-    const group: MemoryContext = {
-      groupId: "group-1",
-      submissionIds: [],
-      reviewOf: null,
-    };
-
-    const chat: MemoryContext = {
-      groupId: null,
-      submissionIds: [],
-      reviewOf: null,
-    };
-
-    const check = (context: MemoryContext, shared: boolean) =>
-      Effect.runSyncExit(assertOwnMemoryInGroup(context, shared));
-
-    expect(String(check(group, true))).toContain("save to your own memory");
-    expect(check(group, false)).toEqual(Exit.void);
-    expect(check(chat, true)).toEqual(Exit.void);
+    expect(await sourceOf({ submissionIds: [requestId] })).toEqual({
+      kind: "bot",
+      agentId: other.id,
+      name: "Grace",
+    });
   });
 });
 

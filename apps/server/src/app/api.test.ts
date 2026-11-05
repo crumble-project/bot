@@ -1,4 +1,4 @@
-import { describe, expect, test, afterEach } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import {
   inertControl,
   inertCredentials,
@@ -51,6 +51,10 @@ import { scheduleInput, type ScheduleInput } from "../contract/schedules";
 import type { ScriptRun } from "../automations/script-run-repository";
 import type { MessageOrigin } from "../transcript/entries";
 import { defaultAvatarDefinition } from "../contract/avatar";
+import { until } from "../../test/support/until";
+
+// Real runtimes and migrations can pass the default 5 seconds on a loaded machine.
+setDefaultTimeout(30_000);
 
 type TestRequestInit = Omit<RequestInit, "headers"> & {
   headers?: Record<string, string>;
@@ -1872,7 +1876,7 @@ describe("bot desktop control and viewer", () => {
     });
 
     await req(app, url, { method: "POST" });
-    await Bun.sleep(0);
+    await until(() => booted.length > 0);
 
     expect(booted).toEqual([agent.id]);
   });

@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { Effect } from "effect";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { Store } from "../../test/support/store";
@@ -37,6 +37,9 @@ import {
   WorkspacesClosed,
   type DesktopOpenError,
 } from "../workspaces/workspace-errors";
+
+// Password hashing alone can pass the default 5 seconds on a loaded machine.
+setDefaultTimeout(30_000);
 
 type Running = Awaited<ReturnType<typeof startServer>>;
 
@@ -105,18 +108,17 @@ test.serial(
   "server owns its data directory exclusively and releases it after graceful shutdown",
   async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-"));
-    const port = 18000 + Math.floor(Math.random() * 1000);
 
     try {
-      const running = await startServer({ dataDir, port });
+      const running = await startServer({ dataDir, port: 0 });
       expect((await fetch(new URL("/health", running.server.url))).status).toBe(
         200,
       );
-      await expect(startServer({ dataDir, port })).rejects.toThrow(
+      await expect(startServer({ dataDir, port: 0 })).rejects.toThrow(
         "Another Crumble server",
       );
       await running.close();
-      const reopened = await startServer({ dataDir, port });
+      const reopened = await startServer({ dataDir, port: 0 });
       await reopened.close();
     } finally {
       rmSync(dataDir, { recursive: true, force: true });
@@ -128,12 +130,11 @@ test.serial(
   "the OAuth client document tells authorization servers to cache it",
   async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-"));
-    const port = 18000 + Math.floor(Math.random() * 1000);
 
     try {
       const running = await startServer({
         dataDir,
-        port,
+        port: 0,
         publicUrl: "https://crumble.example",
       });
 
@@ -159,14 +160,13 @@ test.serial(
   "server takes over a data directory whose recorded owner has exited",
   async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-"));
-    const port = 18000 + Math.floor(Math.random() * 1000);
     const exited = Bun.spawn(["true"]);
 
     await exited.exited;
     writeFileSync(join(dataDir, "server.pid"), ownerRecord(exited.pid));
 
     try {
-      const running = await startServer({ dataDir, port });
+      const running = await startServer({ dataDir, port: 0 });
 
       await running.close();
     } finally {
@@ -179,8 +179,7 @@ test.serial(
   "server restarts at once over an account a killed process had open",
   async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-killed-"));
-    const port = 17000 + Math.floor(Math.random() * 1000);
-    const first = await startServer({ dataDir, port });
+    const first = await startServer({ dataDir, port: 0 });
 
     // SAFETY: Better Auth returns a token on successful bearer sign-up.
     const { token } = (await (
@@ -206,7 +205,7 @@ test.serial(
     mkdirSync(join(dataDir, "users", `${account}.lock`));
 
     try {
-      const running = await startServer({ dataDir, port });
+      const running = await startServer({ dataDir, port: 0 });
 
       await running.close();
     } finally {
@@ -217,10 +216,9 @@ test.serial(
 
 test.serial("accepts requests from the localhost origin", async () => {
   const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-origin-"));
-  const port = 19000 + Math.floor(Math.random() * 1000);
 
   try {
-    const running = await startServer({ dataDir, port });
+    const running = await startServer({ dataDir, port: 0 });
 
     const signUpFrom = (origin: string) =>
       fetch(new URL("/api/auth/sign-up/email", running.server.url), {
@@ -233,8 +231,12 @@ test.serial("accepts requests from the localhost origin", async () => {
         }),
       });
 
-    expect((await signUpFrom(`http://localhost:${port}`)).status).toBe(200);
-    expect((await signUpFrom(`http://127.0.0.1:${port}`)).status).toBe(200);
+    expect(
+      (await signUpFrom(`http://localhost:${running.server.port}`)).status,
+    ).toBe(200);
+    expect(
+      (await signUpFrom(`http://127.0.0.1:${running.server.port}`)).status,
+    ).toBe(200);
     expect((await signUpFrom("https://evil.example")).status).toBe(403);
     await running.close();
   } finally {
@@ -244,10 +246,9 @@ test.serial("accepts requests from the localhost origin", async () => {
 
 test.serial("offers passkey registration on localhost", async () => {
   const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-passkey-"));
-  const port = 19000 + Math.floor(Math.random() * 1000);
 
   try {
-    const running = await startServer({ dataDir, port });
+    const running = await startServer({ dataDir, port: 0 });
     const headers = await signUp(running);
 
     const response = await fetch(
@@ -270,10 +271,9 @@ test.serial("offers passkey registration on localhost", async () => {
 
 test.serial("loads the workspace skills directory by default", async () => {
   const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-skills-"));
-  const port = 19000 + Math.floor(Math.random() * 1000);
 
   try {
-    const running = await startServer({ dataDir, port });
+    const running = await startServer({ dataDir, port: 0 });
     const headers = await signUp(running);
 
     const response = await fetch(new URL("/v1/skills", running.server.url), {
@@ -329,10 +329,9 @@ test.serial(
 
 test.serial("serves group chats and keeps them across restarts", async () => {
   const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-groups-"));
-  const port = 20000 + Math.floor(Math.random() * 1000);
 
   try {
-    const running = await startServer({ dataDir, port });
+    const running = await startServer({ dataDir, port: 0 });
     const headers = await signUp(running);
     const memberIds: string[] = [];
 
@@ -373,7 +372,7 @@ test.serial("serves group chats and keeps them across restarts", async () => {
 
     expect(message.status).toBe(201);
     await running.close();
-    const reopened = await startServer({ dataDir, port });
+    const reopened = await startServer({ dataDir, port: 0 });
 
     const history = await fetch(
       new URL(`/v1/group-chats/${group.id}/history`, reopened.server.url),
@@ -393,7 +392,6 @@ test.serial(
   "a desktop viewer link opens without the owner's session",
   async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-viewer-"));
-    const port = 20000 + Math.floor(Math.random() * 1000);
 
     const workspaces = desktopWorkspaces(() =>
       Effect.succeed({
@@ -409,7 +407,7 @@ test.serial(
     try {
       const running = await startServer({
         dataDir,
-        port,
+        port: 0,
         workspaces: () => Effect.succeed(workspaces),
       });
 

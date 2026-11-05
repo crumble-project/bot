@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createComputerUse } from "./computer-use";
-import { ACTIONS, ACTION_NAMES, effectOf } from "./computer-use-actions";
-import { normalize } from "./computer-use-args";
+import { ACTION_NAMES } from "./computer-use-actions";
+import { normalize, type ComputerUseArgs } from "./computer-use-args";
 import { STEP_ACTION_NAMES } from "./computer-use-steps";
 import type { ControlState } from "./desktop-control";
 import { scriptedGuest } from "../../test/fixtures/scripted-guest";
@@ -793,37 +793,90 @@ test("list_apps names each app once, running if any of its processes is", async 
   ).toBe("Chromium (running)\nMousepad");
 });
 
-test("each action's effect sets who checks it, and an action the table lacks counts as acting", () => {
-  const withEffect = (effect: string) =>
-    [...ACTIONS].flatMap(([name, entry]) =>
-      entry.effect === effect ? [name] : [],
-    );
+const ACTS: ComputerUseArgs[] = [
+  { action: "click", element: 2 },
+  { action: "double_click", element: 2 },
+  { action: "right_click", element: 2 },
+  { action: "drag", coordinate: [1, 1], to_coordinate: [2, 2] },
+  { action: "type", text: "Ada" },
+  { action: "key", keys: "Tab" },
+  { action: "set_value", element: 2, value: "Ada" },
+  { action: "steps", steps: [{ action: "key", keys: "Tab" }] },
+];
 
-  expect(withEffect("observe")).toEqual([
-    "capture",
-    "wait",
-    "list_windows",
-    "list_apps",
-    "read",
-  ]);
-  expect(withEffect("act")).toEqual([
-    "click",
-    "double_click",
-    "right_click",
-    "drag",
-    "type",
-    "key",
-    "set_value",
-    "steps",
-  ]);
-  expect(withEffect("unchecked")).toEqual([
-    "scroll",
-    "focus_window",
-    "launch",
-    "open",
-    "fill_login",
-  ]);
-  expect(effectOf("hover")).toBeUndefined();
+const OBSERVES: ComputerUseArgs[] = [
+  { action: "capture" },
+  { action: "wait", seconds: 0.01 },
+  { action: "list_windows" },
+  { action: "list_apps" },
+  { action: "read" },
+];
+
+const UNCHECKED: ComputerUseArgs[] = [
+  { action: "scroll", direction: "down" },
+  { action: "focus_window", window_id: 101 },
+  { action: "launch", app: "no-such-app" },
+  { action: "open", url: "https://example.com" },
+  { action: "fill_login", login: "github", field: "password", ref: "e1" },
+];
+
+test("the intent check hears acting calls and no others", async () => {
+  const asked = async (args: ComputerUseArgs) => {
+    let heard = false;
+
+    const { shell } = scriptedGuest({
+      list_windows: [windows, windows, windows],
+      get_window_state: [
+        { snapshot_id: "s1", tree_markdown: '- [2] entry "Name"' },
+      ],
+    });
+
+    const tool = createComputerUse(shell);
+
+    await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+    await tool.run(args, BACKGROUND_CONTEXT, async () => {
+      heard = true;
+
+      return { refusal: "REFUSED" };
+    });
+
+    return heard;
+  };
+
+  for (const args of ACTS)
+    expect([args, await asked(args)]).toEqual([args, true]);
+
+  for (const args of [...OBSERVES, ...UNCHECKED])
+    expect([args, await asked(args)]).toEqual([args, false]);
+});
+
+test("after a change of control only observing calls go ahead, and an action the table lacks counts as acting", async () => {
+  const stale = async (args: ComputerUseArgs) => {
+    const gate = new FakeGate();
+
+    const { shell } = scriptedGuest({
+      list_windows: [windows, windows, windows],
+      get_window_state: [
+        { snapshot_id: "s1", tree_markdown: '- [2] entry "Name"' },
+      ],
+    });
+
+    const tool = createComputerUse(shell, { gate });
+
+    await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+    gate.set("owner");
+    gate.set("bot");
+
+    return text(await tool.run(args, BACKGROUND_CONTEXT)).startsWith(
+      "Control changed hands",
+    );
+  };
+
+  for (const args of OBSERVES)
+    expect([args, await stale(args)]).toEqual([args, false]);
+
+  for (const args of [...ACTS, ...UNCHECKED, { action: "hover" }])
+    expect([args, await stale(args)]).toEqual([args, true]);
 });
 
 test("the schema lists actions and steps in their published order, and every step is an action", () => {

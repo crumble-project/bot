@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
+import { QueryObserver } from "@tanstack/react-query";
 import { refreshCredentials } from "@/features/credentials/api";
 import { refreshLogins } from "@/features/logins/api";
 import { queryClient } from "@/lib/api";
@@ -10,12 +11,27 @@ test.each([
 ])(
   "refreshing %s refreshes what password managers are used by",
   async (_, refresh) => {
-    const { queryKey } = passwordManagersQuery;
+    const fetch = spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({ passwordManagers: [] }),
+    );
 
-    queryClient.setQueryData(queryKey, []);
-    await refresh("bot");
+    queryClient.setQueryData(passwordManagersQuery.queryKey, []);
 
-    expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(true);
-    queryClient.clear();
+    const stopObserving = new QueryObserver(
+      queryClient,
+      passwordManagersQuery,
+    ).subscribe(() => {});
+
+    try {
+      await refresh("bot");
+
+      expect(fetch.mock.calls.map(([path]) => path)).toEqual([
+        "/v1/password-managers",
+      ]);
+    } finally {
+      stopObserving();
+      fetch.mockRestore();
+      queryClient.clear();
+    }
   },
 );

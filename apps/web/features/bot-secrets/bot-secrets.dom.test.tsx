@@ -11,6 +11,7 @@ import { act } from "react";
 import type { Credentials } from "@/features/credentials/api";
 import type { Logins } from "@/features/logins/api";
 import { queryClient } from "@/lib/api";
+import { waitFor, waitForIdle } from "@/test/wait-for";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 import { credentialSaveInput } from "@crumble/server/contract/secrets";
 
@@ -32,11 +33,6 @@ const GLOBALS = [
 ];
 
 const bodies: unknown[] = [];
-
-const settle = () =>
-  act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 30));
-  });
 
 const github = {
   name: "github",
@@ -85,7 +81,7 @@ async function render(
     "/v1/agents/bot/credentials"?: Credentials;
   },
   ui: () => Promise<ReactNode>,
-  check: (container: HTMLElement) => Promise<void>,
+  check: (container: HTMLElement, sent: string[]) => Promise<void>,
 ) {
   const window = new Window({ url: "http://localhost" });
   const globals = Object.getOwnPropertyDescriptors(globalThis);
@@ -135,9 +131,8 @@ async function render(
         const method = init?.method ?? "GET";
 
         if (method !== "GET") {
-          sent.push(`${method} ${path}`);
-
           if (init?.body) bodies.push(await new Response(init.body).json());
+          sent.push(`${method} ${path}`);
 
           return new Response(null, { status: 204 });
         }
@@ -179,9 +174,8 @@ async function render(
         </QueryClientProvider>,
       );
     });
-    await settle();
-    await settle();
-    await check(container);
+    await check(container, sent);
+    await waitForIdle(queryClient);
   } finally {
     await act(async () => root.unmount());
     queryClient.clear();
@@ -199,14 +193,23 @@ async function render(
   return sent;
 }
 
-async function declineFirstRequest(container: HTMLElement) {
-  const row = [...container.querySelectorAll("span")].find((span) =>
-    span.textContent?.includes("asks for"),
-  )?.parentElement?.parentElement?.parentElement;
+const shows = (container: HTMLElement, text: string) => () =>
+  container.textContent?.includes(text) === true;
+
+async function declineFirstRequest(container: HTMLElement, sent: string[]) {
+  await waitFor(shows(container, "asks for"));
+
+  let row: Element | null | undefined = [
+    ...container.querySelectorAll("span"),
+  ].find((span) => span.textContent === "asks for");
+
+  while (row && !row.querySelector('[title="More"]')) row = row.parentElement;
 
   if (!row) throw new Error("Expected a waiting request row");
+  const requestRow = row;
+
   await act(async () => {
-    row
+    requestRow
       .querySelector<HTMLButtonElement>('[title="More"]')!
       .dispatchEvent(
         new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
@@ -221,7 +224,7 @@ async function declineFirstRequest(container: HTMLElement) {
   await act(async () => {
     decline.click();
   });
-  await settle();
+  await waitFor(() => sent.length > 0, "the decline request");
 }
 
 const page = async (load: () => Promise<ReactNode>) => {
@@ -287,7 +290,7 @@ test("a request newer than the cached logins offers its answers", async () => {
     { "/v1/agents/bot/logins": { logins: [github], requests: [moreHosts] } },
     () => requestCard("request_login", moreHosts),
     async (container) => {
-      expect(container.textContent).toContain("Add login");
+      await waitFor(shows(container, "Add login"));
       expect(container.textContent).not.toContain("Saved");
     },
   );
@@ -330,7 +333,10 @@ test("a request newer than the cached credentials offers its answers", async () 
     },
     () => requestCard("request_credential", moreAcmeHosts),
     async (container) => {
-      expect(buttonNamed("Add credential", container)).toBeDefined();
+      await waitFor(
+        () => buttonNamed("Add credential", container) !== undefined,
+        "Add credential",
+      );
       expect(container.textContent).not.toContain("Saved");
     },
   );
@@ -358,9 +364,16 @@ const typeInto = (input: HTMLInputElement, value: string) =>
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 
+const credentialValue = () =>
+  document.querySelector<HTMLInputElement>("#credential-value");
+
 const addRequestedCredential = async (container: HTMLElement) => {
+  await waitFor(
+    () => buttonNamed("Add credential", container) !== undefined,
+    "Add credential",
+  );
   await act(async () => buttonNamed("Add credential", container)!.click());
-  await settle();
+  await waitFor(() => credentialValue() !== null, "the credential sheet");
 };
 
 test("saving a requested credential from chat sends its value as the secret", async () => {
@@ -372,14 +385,11 @@ test("saving a requested credential from chat sends its value as the secret", as
       },
     },
     () => requestCard("request_credential", moreAcmeHosts),
-    async (container) => {
+    async (container, sent) => {
       await addRequestedCredential(container);
-      await typeInto(
-        document.querySelector<HTMLInputElement>("#credential-value")!,
-        "s3cret",
-      );
+      await typeInto(credentialValue()!, "s3cret");
       await act(async () => buttonNamed("Add", document)!.click());
-      await settle();
+      await waitFor(() => sent.length > 0, "the save request");
     },
   );
 
@@ -401,24 +411,23 @@ test("a requested credential from chat can be read from a password manager", asy
       },
     },
     () => requestCard("request_credential", moreAcmeHosts),
-    async (container) => {
+    async (container, sent) => {
       await addRequestedCredential(container);
 
-      const tab = [
-        ...document.querySelectorAll<HTMLElement>('[role="tab"]'),
-      ].find((each) => each.textContent === "1Password")!;
+      const tab = () =>
+        [...document.querySelectorAll<HTMLElement>('[role="tab"]')].find(
+          (each) => each.textContent === "1Password",
+        );
 
+      await waitFor(() => tab() !== undefined, "the 1Password tab");
       await act(async () => {
-        tab.dispatchEvent(
+        tab()!.dispatchEvent(
           new window.MouseEvent("click", { bubbles: true, cancelable: true }),
         );
       });
-      await typeInto(
-        document.querySelector<HTMLInputElement>("#credential-value")!,
-        "op://vault/acme/token",
-      );
+      await typeInto(credentialValue()!, "op://vault/acme/token");
       await act(async () => buttonNamed("Add", document)!.click());
-      await settle();
+      await waitFor(() => sent.length > 0, "the save request");
     },
   );
 
@@ -447,11 +456,13 @@ test("a GitHub credential offers its uses but neither Edit nor Delete", async ()
     { "/v1/agents/bot/credentials": { credentials: [token], requests: [] } },
     credentialsPage,
     async (container) => {
-      const name = [...container.querySelectorAll("span")].find(
-        (span) => span.textContent === "GH_TOKEN",
-      )!;
+      const name = () =>
+        [...container.querySelectorAll("span")].find(
+          (span) => span.textContent === "GH_TOKEN",
+        );
 
-      expect(name.closest("button")).toBeNull();
+      await waitFor(() => name() !== undefined, "the credential");
+      expect(name()!.closest("button")).toBeNull();
 
       await act(async () => {
         container

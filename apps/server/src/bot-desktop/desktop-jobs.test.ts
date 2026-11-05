@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import {
   inertControl,
   inertIntent,
@@ -46,6 +46,9 @@ import {
   type GuestCall,
 } from "../../test/fixtures/scripted-guest";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
+
+// Real runtimes and migrations can pass the default 5 seconds on a loaded machine.
+setDefaultTimeout(30_000);
 
 const cleanups: (() => void | Promise<void>)[] = [];
 

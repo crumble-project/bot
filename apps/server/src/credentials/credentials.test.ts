@@ -38,6 +38,7 @@ import {
 import { takeNotices } from "../../test/support/notices";
 import { Store } from "../../test/support/store";
 import { Credentials } from "./credentials";
+import { until } from "../../test/support/until";
 
 const dirs: string[] = [];
 
@@ -485,18 +486,21 @@ test("uses past their retention go without anyone reading them", async () => {
       }),
     );
 
+  const uses = () =>
+    store.runtime.runPromise(
+      service.uses(agentId, "ACME_TOKEN", { limit: 20 }),
+    );
+
   await store.runtime.runPromise(
     Layer.build(botSecretUseRetention).pipe(
-      Effect.andThen(Effect.sleep("50 millis")),
+      Effect.andThen(
+        Effect.promise(() => until(async () => (await uses()).length < 2)),
+      ),
       Effect.scoped,
     ),
   );
 
-  expect(
-    await store.runtime.runPromise(
-      service.uses(agentId, "ACME_TOKEN", { limit: 20 }),
-    ),
-  ).toHaveLength(1);
+  expect(await uses()).toHaveLength(1);
   store.close();
 });
 

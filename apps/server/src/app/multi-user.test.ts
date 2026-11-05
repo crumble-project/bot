@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import { Effect } from "effect";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,6 +6,9 @@ import { join } from "node:path";
 import { error } from "../contract/route";
 import { startServer } from "./server";
 import type { Workspaces } from "../workspaces/workspace";
+
+// Password hashing alone can pass the default 5 seconds on a loaded machine.
+setDefaultTimeout(30_000);
 
 type Running = Awaited<ReturnType<typeof startServer>>;
 
@@ -350,19 +353,10 @@ test.serial(
 
       socket = new WebSocketWithHeaders(wsUrl.toString(), { headers: owner });
       await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(
-          () => reject(new Error("viewer websocket timeout")),
-          2000,
+        socket!.addEventListener("open", () => resolve());
+        socket!.addEventListener("error", () =>
+          reject(new Error("viewer websocket error")),
         );
-
-        socket!.addEventListener("open", () => {
-          clearTimeout(timer);
-          resolve();
-        });
-        socket!.addEventListener("error", () => {
-          clearTimeout(timer);
-          reject(new Error("viewer websocket error"));
-        });
       });
     } finally {
       socket?.close();

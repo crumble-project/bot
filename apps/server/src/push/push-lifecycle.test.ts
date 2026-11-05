@@ -12,6 +12,7 @@ import { PushRepository } from "./push-repository";
 import { PushTransports, type PushTransport } from "./push-transports";
 import { BotActivity } from "../bots/bot-activity";
 import type { Activity } from "../bots/bots";
+import { until } from "../../test/support/until";
 
 const dirs: string[] = [];
 
@@ -150,7 +151,7 @@ describe("push lifecycle", () => {
 
     await runtime.runPromise(enqueueReply);
     const draining = runtime.runPromise(Push.use((push) => push.drain));
-    await Bun.sleep(20);
+    await until(() => order.length > 0);
 
     const closing = runtime.dispose().then(() => {
       order.push(`closed with ${probe.closes} store close`);
@@ -174,9 +175,13 @@ describe("push lifecycle", () => {
     const release = Promise.withResolvers<void>();
     const sent: string[] = [];
 
+    let sending = false;
+
     const { runtime, source } = await setup({
       send: (_device, event) =>
         Effect.promise(async () => {
+          sending = true;
+
           if (sent.length === 0) await release.promise;
           sent.push(event.eventId);
 
@@ -187,9 +192,16 @@ describe("push lifecycle", () => {
     const first = reply();
     const second = reply();
     source.emit(first);
-    await Bun.sleep(20);
+    await until(() => sending);
     source.emit(second);
-    await Bun.sleep(20);
+    await until(
+      async () =>
+        (
+          await runtime.runPromise(
+            PushRepository.use((repository) => repository.pending()),
+          )
+        ).length === 2,
+    );
 
     const closing = runtime.dispose();
     await Bun.sleep(20);
@@ -232,11 +244,11 @@ describe("push lifecycle", () => {
       probe.failPending = 1;
 
       source.emit(reply());
-      await Bun.sleep(50);
+      await until(() => probe.failPending === 0);
       expect(count.sends).toBe(0);
 
       await runtime.runPromise(TestClock.adjust("1 second"));
-      await Bun.sleep(50);
+      await until(() => count.sends > 0);
       expect(count.sends).toBe(1);
       expect(unhandled).toBe(0);
     } finally {

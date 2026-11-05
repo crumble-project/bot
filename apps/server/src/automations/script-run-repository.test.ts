@@ -207,21 +207,6 @@ describe("ScriptRunRepository", () => {
     expect(store.getSchedule(schedule.id)).toEqual(schedule);
   });
 
-  test("converting a script to a prompt clears its command", () => {
-    const { store, schedule } = setup();
-
-    const updated = schedulerOver(store).update(schedule.id, {
-      kind: "prompt",
-      prompt: "Check results",
-    });
-
-    expect(updated).toMatchObject({
-      kind: "prompt",
-      prompt: "Check results",
-      command: null,
-    });
-  });
-
   test("schedule input validates kinds and timeout bounds", () => {
     const base = {
       agentId: crypto.randomUUID(),

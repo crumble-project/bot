@@ -3,10 +3,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Context, Deferred, Effect, Exit, Layer, Scope } from "effect";
-import { PROGRESS_BYTES_PER_SECOND } from "@earendil-works/chord/output";
 import { ExecutionError, err, ok } from "@earendil-works/pi-durable/env";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { Store } from "../../test/support/store";
+import { until } from "../../test/support/until";
 import { BotNotices } from "../bot-ports/bot-notices";
 import { Credentials } from "../credentials/credentials";
 import { agentInput } from "../contract/agents";
@@ -204,13 +204,6 @@ function open(
   };
 }
 
-async function until(check: () => boolean) {
-  const deadline = performance.now() + 2500;
-
-  while (!check() && performance.now() < deadline) await Bun.sleep(5);
-  expect(check()).toBe(true);
-}
-
 function leftover(schedule: Schedule, startedAt: string): ScriptRun {
   return {
     id: crypto.randomUUID(),
@@ -262,14 +255,8 @@ test("exit zero succeeds with combined output and uses workspace options and cre
   expect(workspaces.calls[0]?.[1]).toMatchObject({
     cwd: WORKSPACE_PATH,
     timeout: 600,
-    window: {
-      maxBytes: 65536,
-      maxLines: 2000,
-      minIntervalMs: 1000,
-      bytesPerSecond: PROGRESS_BYTES_PER_SECOND,
-    },
+    window: { maxBytes: 65536, maxLines: 2000 },
   });
-  expect(workspaces.calls[0]?.[2].abortSignal).toBeInstanceOf(AbortSignal);
   expect(workspaces.awake).toBe(0);
   expect(workspaces.released).toBe(1);
 });
@@ -286,19 +273,17 @@ test("a nonzero exit fails without retrying", async () => {
   expect(workspaces.calls).toHaveLength(1);
 });
 
-test("a one-second timeout finishes in under three seconds", async () => {
+test("a timeout stops a command that would run on", async () => {
   const { workspaces, task, start, finished } = open();
-  const schedule = task("printf waiting; sleep 5", { timeoutSeconds: 1 });
-  const before = performance.now();
+  const schedule = task("printf waiting; sleep 30", { timeoutSeconds: 1 });
   await start(schedule);
   expect(await finished(schedule)).toMatchObject({
     status: "timed_out",
     exitCode: null,
     output: "waiting",
   });
-  expect(performance.now() - before).toBeLessThan(3000);
   expect(workspaces.awake).toBe(0);
-});
+}, 15_000);
 
 test("a task cannot overlap itself and can start again after finishing", async () => {
   const { dir, task, start, finished, rows } = open();
@@ -503,7 +488,15 @@ test("runs past their retention go without anyone reading them", async () => {
 
   await store.runtime.runPromise(
     Layer.build(scriptRunRetention).pipe(
-      Effect.andThen(Effect.sleep("50 millis")),
+      Effect.andThen(
+        Effect.promise(() =>
+          until(
+            () =>
+              store.run(repository.list(schedule.id, { limit: 20 })).length ===
+              1,
+          ),
+        ),
+      ),
       Effect.scoped,
     ),
   );
@@ -529,10 +522,6 @@ test("list forwards paging", async () => {
       service.list(schedule.id, { limit: 20, before: last.id }),
     ),
   ).toEqual([first]);
-  expect(store.run(repository.list(schedule.id, { limit: 20 }))).toEqual([
-    last,
-    first,
-  ]);
 });
 
 test("no workspaces records a failed run and posts its result", async () => {

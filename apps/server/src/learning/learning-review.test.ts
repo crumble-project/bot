@@ -21,6 +21,7 @@ import { standaloneSkills } from "../skills/skills-test-support";
 import { BotMemory } from "../memory/bot-memory";
 import { Store } from "../../test/support/store";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
+import { until } from "../../test/support/until";
 
 const dirs: string[] = [];
 const services: ReturnType<typeof standaloneBots<Store>>[] = [];
@@ -88,20 +89,10 @@ async function settle(
   service: ReturnType<typeof standaloneBots<Store>>,
   executionId: string,
 ) {
-  for (let i = 0; i < 300; i++) {
-    const status = service.store.getExecution(executionId)?.status;
+  const status = () => service.store.getExecution(executionId)?.status;
+  await until(() => status() !== "pending" && status() !== "running");
 
-    if (status !== "pending" && status !== "running") return status;
-    await Bun.sleep(10);
-  }
-
-  throw new Error("Execution did not settle");
-}
-
-async function until(condition: () => boolean) {
-  for (let i = 0; i < 300 && !condition(); i++) await Bun.sleep(10);
-
-  expect(condition()).toBe(true);
+  return status();
 }
 
 const agentInput = {
@@ -288,9 +279,9 @@ test("only the rounds after a turn's last skill write count towards the next rev
 
   const execution = await service.sendChat(agent.id, "Learn", uuid(1));
   expect(await settle(service, execution.id)).toBe("done");
-  await Bun.sleep(100);
+  await until(() => store.reviewCounters(agent.id).memory === 4);
+  expect(store.reviewCounters(agent.id).skill).toBe(1);
   expect(learned).toEqual([]);
-  expect(store.reviewCounters(agent.id)).toEqual({ skill: 1, memory: 4 });
 });
 
 test("turns below the threshold are not reviewed, scheduled runs count like chat turns, and a restart drops a pending review", async () => {
@@ -335,9 +326,9 @@ test("turns below the threshold are not reviewed, scheduled runs count like chat
 
   const task = await service.dispatch(agent.id, "do it", uuid(2), schedule.id);
   expect(await settle(service, task.id)).toBe("done");
-  await Bun.sleep(50);
+  await until(() => store.reviewCounters(agent.id).memory === 2);
+  expect(store.reviewCounters(agent.id).skill).toBe(0);
   expect(learned).toEqual([]);
-  expect(store.reviewCounters(agent.id)).toEqual({ skill: 0, memory: 2 });
 
   const conversation = await openReviewConversation(
     runtime,

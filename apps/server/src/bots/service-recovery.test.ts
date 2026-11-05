@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { AgentRuntime } from "./runtime";
 import { standaloneBots } from "./bots-test-support";
 import { Store } from "../../test/support/store";
+import { until } from "../../test/support/until";
 import type { Agent } from "../contract/agents";
 
 const dirs: string[] = [];
@@ -101,8 +102,7 @@ describe("scheduled admission recovery", () => {
     expect(submissions).toBe(2);
     expect(store.listExecutions(agent.id)).toHaveLength(1);
     expect(store.listExecutions(agent.id)[0]?.submissionId).toBe("1");
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(store.listExecutions(agent.id)[0]?.status).toBe("done");
+    await until(() => store.listExecutions(agent.id)[0]?.status === "done");
     await second.close();
     await first.close();
   });

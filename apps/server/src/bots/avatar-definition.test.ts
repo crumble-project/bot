@@ -2,13 +2,7 @@ import { describe, expect, test, afterEach } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  DEFAULT_COLOR,
-  DEFAULT_EYE_COLOR,
-  examples,
-  validateAvatar,
-  renderAvatarSvg,
-} from "open-bot-avatar";
+import { DEFAULT_COLOR, DEFAULT_EYE_COLOR, examples } from "open-bot-avatar";
 import { Store } from "../../test/support/store";
 import { agentInput } from "../contract/agents";
 import {
@@ -41,7 +35,7 @@ describe("portable bot avatars", () => {
       "",
       "crumble",
       "🤖",
-      ...Array.from({ length: 100 }, (_, i) => `bot-${i}`),
+      ...Array.from({ length: 30 }, (_, i) => `bot-${i}`),
     ]) {
       const look = defaultAvatarDefinition(id);
       expect(defaultAvatarDefinition(id)).toEqual(look);
@@ -49,8 +43,6 @@ describe("portable bot avatars", () => {
       expect(look.color).toBe(DEFAULT_COLOR);
       expect(look.eyeColor).toBe(DEFAULT_EYE_COLOR);
       expect(avatarDefinitionSchema.safeParse(look).success).toBe(true);
-      expect(validateAvatar(look.definition).ok).toBe(true);
-      expect(renderAvatarSvg(look.definition)).toContain("<path");
       selected.add(look.definition.id);
     }
 

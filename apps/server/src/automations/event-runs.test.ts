@@ -2,23 +2,19 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { eq } from "drizzle-orm";
 import { Effect, Exit, Layer, ManagedRuntime } from "effect";
 import { productLayer } from "../app/product-layer";
 import { AgentRepository } from "../bot-store/agent-repository";
-import { agents } from "../bot-store/schema";
 import { ScheduleRepository } from "./schedule-repository";
-import { schedules } from "../bot-store/schema.schedules";
 import { agentInput } from "../contract/agents";
 import { scheduleInput } from "../contract/schedules";
-import { ProductDatabase } from "../shared/product-database";
+import type { ProductDatabase } from "../shared/product-database";
 import {
   EventConsumers,
   EventRepository,
   type RelayEvent,
 } from "../event-sources/event-repository";
 import { EventRunRepository } from "./event-run-repository";
-import { eventRuns } from "./schema.event-runs";
 
 const ada = "00000000-0000-4000-8000-000000000001";
 const grace = "00000000-0000-4000-8000-000000000002";
@@ -66,42 +62,28 @@ async function fixture() {
     options: { sourceId?: string; enabled?: boolean } = {},
   ) =>
     run(
-      Effect.gen(function* () {
-        const schedule = yield* (yield* ScheduleRepository).create(
+      ScheduleRepository.use((schedules) =>
+        schedules.create(
           scheduleInput.parse({
             agentId,
             name,
             prompt: name,
-            cron: "0 9 * * *",
+            eventSourceId: options.sourceId ?? "source-1",
             enabled: options.enabled ?? true,
           }),
           null,
-        );
-
-        yield* ProductDatabase.use((db) =>
-          db
-            .update(schedules)
-            .set({ eventSourceId: options.sourceId ?? "source-1" })
-            .where(eq(schedules.id, schedule.id))
-            .pipe(Effect.orDie),
-        );
-
-        return schedule.id;
-      }),
-    );
+        ),
+      ),
+    ).then((schedule) => schedule.id);
 
   await run(
     Effect.gen(function* () {
       const repository = yield* AgentRepository;
 
       yield* repository.create(agentInput.parse({ name: "Ada" }), ada);
-      yield* repository.create(agentInput.parse({ name: "Grace" }), grace);
-      yield* ProductDatabase.use((db) =>
-        db
-          .update(agents)
-          .set({ enabled: false })
-          .where(eq(agents.id, grace))
-          .pipe(Effect.orDie),
+      yield* repository.create(
+        agentInput.parse({ name: "Grace", enabled: false }),
+        grace,
       );
     }),
   );
@@ -215,10 +197,11 @@ test("hasRunForAgent is true only for the bot whose automation ran", async () =>
 });
 
 test("prune deletes events older than the cutoff with their runs", async () => {
-  const { automation, events, run } = await fixture();
+  const { automation, events, runs } = await fixture();
 
   await automation(ada, "Triage");
   const repository = await events();
+  const eventRunRepository = await runs();
 
   await Effect.runPromise(repository.storeEvent(event("01A")));
 
@@ -231,10 +214,6 @@ test("prune deletes events older than the cutoff with their runs", async () => {
   ).toBe(1);
   expect(await Effect.runPromise(repository.getEvent("01A"))).toBeNull();
   expect(
-    await run(
-      ProductDatabase.use((db) =>
-        db.select().from(eventRuns).pipe(Effect.orDie),
-      ),
-    ),
-  ).toEqual([]);
+    await Effect.runPromise(eventRunRepository.hasRunForAgent("01A", ada)),
+  ).toBeFalse();
 });

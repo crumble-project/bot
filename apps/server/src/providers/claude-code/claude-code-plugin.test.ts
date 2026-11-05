@@ -1,4 +1,11 @@
-import { afterEach, beforeAll, describe, expect, test } from "bun:test";
+import {
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  setDefaultTimeout,
+  test,
+} from "bun:test";
 import {
   chmodSync,
   mkdirSync,
@@ -24,6 +31,9 @@ import type { AgentRuntime } from "../../bots/runtime";
 import { standaloneScheduler } from "../../automations/scheduler-test-support";
 import { standaloneBots } from "../../bots/bots-test-support";
 import { Store } from "../../../test/support/store";
+
+// Spawned CLIs can pass the default 5 seconds on a loaded machine.
+setDefaultTimeout(30_000);
 
 const FAKE = join(import.meta.dir, "../../../test/fixtures/fake-claude.ts");
 

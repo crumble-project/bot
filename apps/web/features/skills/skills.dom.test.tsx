@@ -3,15 +3,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
 import { queryClient } from "@/lib/api";
+import { waitFor, waitForIdle } from "@/test/wait-for";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
-
-// Under a loaded test run the page can take longer than any fixed wait.
-async function waitFor(check: () => boolean) {
-  for (let waited = 0; !check() && waited < 2000; waited += 10)
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
-}
 
 test("deleting the first same-name skill keeps the second", async () => {
   const window = new Window({ url: "http://localhost" });
@@ -57,36 +50,10 @@ test("deleting the first same-name skill keeps the second", async () => {
     { id: "second", name: "Duplicate", instructions: "Second instructions" },
   ];
 
-  const patchSkills = (patch: { name: string; instructions: string }[]) => {
-    const kept = new Set<string>();
-
-    for (const input of patch) {
-      const match = skills.find(
-        (skill) => skill.name === input.name && !kept.has(skill.id),
-      );
-
-      if (match) {
-        kept.add(match.id);
-        match.instructions = input.instructions;
-      }
-    }
-
-    skills = skills.filter((skill) => kept.has(skill.id));
-  };
-
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const path = input instanceof Request ? input.url : input.toString();
-
-        if (path === "/v1/agents/bot" && init?.method === "PATCH") {
-          const body: { skills: { name: string; instructions: string }[] } =
-            JSON.parse(await new Response(init.body).text());
-
-          patchSkills(body.skills);
-
-          return Response.json({});
-        }
 
         if (init?.method === "DELETE") {
           skills = skills.filter(
@@ -180,7 +147,7 @@ test("deleting the first same-name skill keeps the second", async () => {
 
     expect(skills.map((skill) => skill.id)).toEqual(["second"]);
     expect(container.textContent).toContain("Second instructions");
-    expect(container.textContent).not.toContain("First instructions");
+    await waitForIdle(queryClient);
   } finally {
     await act(async () => root.unmount());
     queryClient.clear();

@@ -59,15 +59,34 @@ describe("BotMemory", () => {
     });
   });
 
-  test("refuses empty memories, and shared ones in a group", async () => {
+  test("refuses empty memories, and any change to shared ones in a group", async () => {
+    const group = { ...chat, groupId: "g" };
+
     await expect(
       run((memory) => memory.create(solo.id, "  ", false, chat)),
     ).rejects.toThrow("Memory must contain");
     await expect(
-      run((memory) =>
-        memory.create(sharing.id, "x", true, { ...chat, groupId: "g" }),
-      ),
+      run((memory) => memory.create(sharing.id, "x", true, group)),
     ).rejects.toThrow("save to your own memory");
+
+    const shared = await run((memory) =>
+      memory.create(sharing.id, "for all", true, chat),
+    );
+
+    await expect(
+      run((memory) => memory.update(sharing.id, shared.id, "y", group)),
+    ).rejects.toThrow("save to your own memory");
+    await expect(
+      run((memory) => memory.delete(sharing.id, shared.id, group)),
+    ).rejects.toThrow("save to your own memory");
+
+    const own = await run((memory) =>
+      memory.create(sharing.id, "mine", false, group),
+    );
+
+    expect(own.content).toBe("mine");
+    await run((memory) => memory.delete(sharing.id, own.id, group));
+    await run((memory) => memory.delete(sharing.id, shared.id, chat));
   });
 
   test("another bot's memory is not found, and a review's change names the review", async () => {

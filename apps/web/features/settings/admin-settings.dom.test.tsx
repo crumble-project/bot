@@ -3,11 +3,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
 import { queryClient } from "@/lib/api";
-
-const settle = () =>
-  act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 30));
-  });
+import { waitFor, waitForIdle } from "@/test/wait-for";
 
 test("closing the invite sheet leaves the shown invite the only one minted", async () => {
   const window = new Window({ url: "http://localhost" });
@@ -30,6 +26,7 @@ test("closing the invite sheet leaves the shown invite the only one minted", asy
   for (const [key, value] of Object.entries(values))
     Object.defineProperty(globalThis, key, { configurable: true, value });
 
+  const removedListeners = spyOn(window, "removeEventListener");
   let minted = 0;
 
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
@@ -74,7 +71,7 @@ test("closing the invite sheet leaves the shown invite the only one minted", asy
   const button = (label: string) =>
     [...document.querySelectorAll("button")].find(
       (each) => each.textContent?.trim() === label,
-    )!;
+    );
 
   try {
     await act(async () =>
@@ -86,16 +83,21 @@ test("closing the invite sheet leaves the shown invite the only one minted", asy
         </QueryClientProvider>,
       ),
     );
-    await settle();
-    await settle();
-    await act(async () => button("Invite").click());
-    await settle();
+    await waitFor(() => button("Invite")?.disabled === false, "Invite");
+    await act(async () => button("Invite")?.click());
+    await waitFor(() => button("Done") !== undefined, "the minted invite");
     expect(minted).toBe(1);
-    await act(async () => button("Done").click());
-    await settle();
+    await act(async () => button("Done")?.click());
+    await waitFor(() => button("Done") === undefined, "the sheet to close");
+    await waitForIdle(queryClient);
     expect(minted).toBe(1);
   } finally {
     await act(async () => root.unmount());
+    // The auth client stops a second after its last consumer, and needs the window to.
+    await waitFor(
+      () => removedListeners.mock.calls.some(([type]) => type === "storage"),
+      "the session store to stop",
+    );
     queryClient.clear();
     fetch.mockRestore();
 

@@ -11,7 +11,6 @@ import { GatewayTransportError, type GatewayMessage } from "../adapter";
 import type { ConnectionStatus } from "../../shared/domain";
 import {
   discordAdapter,
-  normalizeDiscordMessage,
   type DiscordClient,
   type DiscordMessage,
 } from "./adapter";
@@ -75,14 +74,24 @@ function fixture(deadline?: (milliseconds: number) => AbortSignal) {
   };
 }
 
-describe("Discord message normalization", () => {
-  test("preserves original text, references, and attachment presence", () => {
+describe("Discord messages", () => {
+  const received = async (input: DiscordMessage) => {
+    const { adapter, host, client, onMessage } = fixture();
+    const connection = await adapter.connect(host);
+
+    client.emit("messageCreate", input);
+    await connection.close();
+
+    return onMessage.mock.calls[0]?.[0];
+  };
+
+  test("preserves original text, references, and attachment presence", async () => {
     const input = message({
       attachments: { size: 1 },
       reference: { messageId: "previous-answer" },
     });
 
-    expect(normalizeDiscordMessage(input)).toEqual({
+    expect(await received(input)).toEqual({
       id: "inbound",
       channelId: "channel",
       senderId: "sender",
@@ -93,9 +102,9 @@ describe("Discord message normalization", () => {
     });
   });
 
-  test("accepts direct messages and attachment-only messages", () => {
+  test("accepts direct messages and attachment-only messages", async () => {
     expect(
-      normalizeDiscordMessage(
+      await received(
         message({
           content: "",
           attachments: { size: 1 },
@@ -109,13 +118,11 @@ describe("Discord message normalization", () => {
     });
   });
 
-  test("ignores bot and webhook messages", () => {
+  test("ignores bot and webhook messages", async () => {
     expect(
-      normalizeDiscordMessage(message({ author: { id: "bot", bot: true } })),
+      await received(message({ author: { id: "bot", bot: true } })),
     ).toBeUndefined();
-    expect(
-      normalizeDiscordMessage(message({ webhookId: "webhook" })),
-    ).toBeUndefined();
+    expect(await received(message({ webhookId: "webhook" }))).toBeUndefined();
   });
 });
 

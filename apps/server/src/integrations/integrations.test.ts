@@ -24,6 +24,7 @@ import { SecretValues } from "../secrets/secret-values";
 import { secretsLayer } from "../secrets/secrets";
 import { SecretRepository } from "../secrets/secret-repository";
 import type { McpTransport } from "@earendil-works/pi-mcp";
+import { until } from "../../test/support/until";
 
 const agent = (id: string, mcpServers: string[]): Agent => ({
   id,
@@ -445,8 +446,7 @@ describe("MCP integrations", () => {
       context,
     );
 
-    for (let i = 0; i < 50 && called === 0; i++)
-      await new Promise((resolve) => setTimeout(resolve, 1));
+    await until(() => called > 0);
     const reason = new Error("caller cancelled while pending");
     controller.abort(reason);
     await expect(pending).rejects.toBe(reason);

@@ -24,6 +24,7 @@ import {
   type AdapterOptions,
 } from "./adapter";
 import type { ClaudeCodeStatus } from "./setup";
+import { until } from "../../../test/support/until";
 
 const FAKE = join(import.meta.dir, "../../../test/fixtures/fake-claude.ts");
 
@@ -542,27 +543,14 @@ describe("Claude Code adapter", () => {
     const controller = new AbortController();
     const done = collect(options, [user("go")], { signal: controller.signal });
 
-    for (let tries = 0; tries < 100; tries++) {
-      const lines = readFileSync(pids, { encoding: "utf8", flag: "a+" })
+    const started = () =>
+      readFileSync(pids, { encoding: "utf8", flag: "a+" })
         .trim()
         .split("\n")
         .filter(Boolean);
 
-      if (lines.length >= 2) break;
-      await Bun.sleep(20);
-    }
-
-    expect(readFileSync(pids, "utf8").trim().split("\n")).toHaveLength(2);
-    controller.abort();
-    const { message } = await done;
-
-    expect(message.stopReason).toBe("aborted");
-    await Bun.sleep(200);
-
-    const alive = readFileSync(pids, "utf8")
-      .trim()
-      .split("\n")
-      .filter((pid) => {
+    const alive = () =>
+      started().filter((pid) => {
         try {
           process.kill(Number(pid), 0);
 
@@ -572,6 +560,12 @@ describe("Claude Code adapter", () => {
         }
       });
 
-    expect(alive).toEqual([]);
+    await until(() => started().length >= 2);
+    expect(started()).toHaveLength(2);
+    controller.abort();
+    const { message } = await done;
+
+    expect(message.stopReason).toBe("aborted");
+    await until(() => alive().length === 0);
   });
 });

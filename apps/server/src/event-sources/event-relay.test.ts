@@ -20,6 +20,7 @@ import { EventSources } from "./event-sources";
 import { relayEvents } from "./schema";
 import { eq } from "drizzle-orm";
 import { consumerMessage, type EventMessage } from "@doorstep/protocol";
+import { until } from "../../test/support/until";
 
 const TOKEN = "account-token";
 const ada = "00000000-0000-4000-8000-000000000001";
@@ -115,15 +116,6 @@ function fakeRelay(protocol = 1) {
     },
     connections: () => sockets.size,
   };
-}
-
-async function until(condition: () => boolean | Promise<boolean>) {
-  const deadline = Date.now() + 3000;
-
-  while (!(await condition())) {
-    if (Date.now() > deadline) throw new Error("Timed out waiting");
-    await Bun.sleep(5);
-  }
 }
 
 async function fixture() {

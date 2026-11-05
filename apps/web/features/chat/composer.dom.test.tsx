@@ -1,6 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import { Window } from "happy-dom";
 import { act } from "react";
+import { waitFor } from "@/test/wait-for";
 import { Composer } from "./composer";
 
 async function withComposer(
@@ -73,6 +74,9 @@ function event(type: string) {
   return new Event(type, { bubbles: true, cancelable: true });
 }
 
+const shows = (container: HTMLElement, text: string) => () =>
+  container.textContent?.includes(text) === true;
+
 function typeMessage(container: HTMLElement, window: Window, value: string) {
   const field = container.querySelector("textarea")!;
   Object.getOwnPropertyDescriptor(
@@ -113,12 +117,15 @@ test("failed send preserves pending and new text and attachments, and blocks ove
           Array.from({ length: 8 }, (_, i) => `old${i}.txt`),
         ),
       );
+      await waitFor(shows(container, "old7.txt"));
       await act(async () =>
         container.querySelector("form")!.dispatchEvent(event("submit")),
       );
       await act(async () => typeMessage(container, window, "second"));
       await act(async () => attach(container, ["new.txt"]));
+      await waitFor(shows(container, "new.txt"));
       await act(async () => finish(false));
+      await waitFor(shows(container, "old7.txt"));
       expect(container.querySelector("textarea")!.value).toBe("first\nsecond");
 
       for (let i = 0; i < 8; i++)
@@ -162,6 +169,7 @@ test("attachment processing finishing after recovery preserves the new file", as
           Array.from({ length: 8 }, (_, i) => `old${i}.txt`),
         ),
       );
+      await waitFor(shows(container, "old7.txt"));
       await act(async () =>
         container.querySelector("form")!.dispatchEvent(event("submit")),
       );
@@ -180,8 +188,8 @@ test("attachment processing finishing after recovery preserves the new file", as
       });
       await act(async () => finishSend(false));
       await act(async () => finishFile(new TextEncoder().encode("new").buffer));
+      await waitFor(shows(container, "new.txt"));
       expect(container.textContent).toContain("old0.txt");
-      expect(container.textContent).toContain("new.txt");
       expect(container.textContent).toContain("Remove 1 to send");
       expect(
         container.querySelector<HTMLButtonElement>('[title="Send"]')!.disabled,
@@ -233,8 +241,8 @@ test("concurrent attachment additions retain both files", async () => {
         picker.dispatchEvent(event("change"));
       });
       await act(async () => finish(new TextEncoder().encode("one").buffer));
-      expect(container.textContent).toContain("one.txt");
-      expect(container.textContent).toContain("two.txt");
+      await waitFor(shows(container, "one.txt"));
+      await waitFor(shows(container, "two.txt"));
     },
   );
 });
@@ -254,6 +262,34 @@ test("a draft survives leaving the chat and is cleared once sent", async () => {
       await remount();
 
       expect(container.querySelector("textarea")!.value).toBe("");
+    },
+  );
+});
+
+test("attachment chips keep their elements after an earlier removal", async () => {
+  await withComposer(
+    async () => true,
+    async (container) => {
+      const removeButtons = () => [
+        ...container.querySelectorAll<HTMLButtonElement>(
+          '[title="Remove same.txt"]',
+        ),
+      ];
+
+      await act(async () =>
+        attach(container, ["same.txt", "same.txt", "same.txt"]),
+      );
+      await waitFor(() => removeButtons().length === 3, "three chips");
+
+      const [first, ...rest] = removeButtons();
+
+      await act(async () => first!.click());
+
+      const remaining = removeButtons();
+
+      expect(remaining).toHaveLength(2);
+      expect(remaining[0] === rest[0]).toBe(true);
+      expect(remaining[1] === rest[1]).toBe(true);
     },
   );
 });
@@ -296,8 +332,7 @@ test("attachments work where crypto.randomUUID is missing, as on plain http", as
       async () => true,
       async (container) => {
         await act(async () => attach(container, ["notes.txt"]));
-        await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
-        expect(container.textContent).toContain("notes.txt");
+        await waitFor(shows(container, "notes.txt"));
       },
     );
   } finally {

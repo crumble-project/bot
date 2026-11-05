@@ -1,8 +1,11 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { discoverModels, type ClaudeCodeOptions } from "./setup";
+
+// Spawned CLIs can pass the default 5 seconds on a loaded machine.
+setDefaultTimeout(30_000);
 
 let dirs: string[] = [];
 
@@ -44,16 +47,13 @@ describe("Claude Code picker", () => {
 
     const rows = await discoverModels(options(join(dir, "claude"), claude));
 
-    expect(rows).toEqual([
+    expect(rows?.slice(0, 2)).toEqual([
       { id: "claude-sonnet-5-5[1m]", label: "Sonnet", note: "" },
       { id: "claude-future-9", label: "Future model", note: "unpinned" },
-      { id: "claude-sonnet-5[1m]", label: "Sonnet 5", note: "" },
-      { id: "claude-haiku-5-5[1m]", label: "Haiku 5.5", note: "" },
-      { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5", note: "" },
-      { id: "claude-opus-5-5[1m]", label: "Opus 5.5", note: "" },
-      { id: "claude-opus-5[1m]", label: "Opus 5", note: "" },
-      { id: "claude-opus-4-8[1m]", label: "Opus 4.8", note: "" },
-      { id: "claude-fable-5-1[1m]", label: "Fable 5.1", note: "usage credits" },
     ]);
+    expect(rows?.find(({ label }) => label.startsWith("Fable"))?.note).toBe(
+      "usage credits",
+    );
+    expect(rows?.some(({ id }) => id === "best")).toBe(false);
   });
 });

@@ -6,6 +6,7 @@ import { agentInput, type Agent } from "../contract/agents";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import type { CoreServices } from "../app/core-layer";
 import { Store } from "../../test/support/store";
+import { until } from "../../test/support/until";
 import { standaloneBots } from "./bots-test-support";
 import { Bots } from "./bots";
 import { AgentRuntime, BotRuntime } from "./runtime";
@@ -175,7 +176,6 @@ test("closing stops waiting for outcomes, and the next start finishes them", asy
 
   await second.recover();
   answered.resolve({ status: "done" });
-  await Bun.sleep(10);
-  expect(reopened.getExecution(execution.id)?.status).toBe("done");
+  await until(() => reopened.getExecution(execution.id)?.status === "done");
   await second.close();
 });

@@ -1,9 +1,10 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, spyOn, test } from "bun:test";
+import { QueryClientProvider, QueryObserver } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
 import { queryClient } from "@/lib/api";
-import { botSkillsKey } from "@/features/skills/api";
+import { botSkillsQuery } from "@/features/skills/api";
+import { waitFor, waitForIdle } from "@/test/wait-for";
 import type { Change } from "./api";
 
 const change: Change = {
@@ -49,9 +50,13 @@ test("reverting a change to a bot's own skill refreshes that bot's skills", asyn
     }),
   );
 
-  const key = [...botSkillsKey, "bot-1"];
+  const skills = botSkillsQuery("bot-1");
 
-  queryClient.setQueryData(key, []);
+  queryClient.setQueryData(skills.queryKey, []);
+
+  const stopObserving = new QueryObserver(queryClient, skills).subscribe(
+    () => {},
+  );
 
   const { createRoot } = await import("react-dom/client");
   const { RevertChange } = await import("./changes");
@@ -79,10 +84,14 @@ test("reverting a change to a bot's own skill refreshes that bot's skills", asyn
 
       [...buttons].find((button) => button.textContent === "Revert")!.click();
     });
-    await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
-
-    expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true);
+    await waitFor(
+      () =>
+        fetch.mock.calls.some(([path]) => path === "/v1/agents/bot-1/skills"),
+      "the bot's skills to refetch",
+    );
+    await waitForIdle(queryClient);
   } finally {
+    stopObserving();
     await act(async () => root.unmount());
     fetch.mockRestore();
 

@@ -13,6 +13,7 @@ import { standaloneBots } from "../bots/bots-test-support";
 import { standaloneScheduler } from "../automations/scheduler-test-support";
 import { testAPI } from "../../test/support/api";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
+import { until } from "../../test/support/until";
 
 const token = "e".repeat(40);
 const requestId = "00000000-0000-4000-8000-000000000202";
@@ -72,7 +73,13 @@ describe("HTTP/runtime persistence", () => {
       });
 
       expect(response.status).toBe(202);
-      await new Promise((resolve) => setTimeout(resolve, 30));
+      await until(async () => {
+        const chat = await app.request(`/v1/agents/${agent.id}/chat`, {
+          headers,
+        });
+
+        return (await chat.text()).includes("persisted hello");
+      });
       expect(await response.json()).toMatchObject({
         agentId: agent.id,
         requestId,

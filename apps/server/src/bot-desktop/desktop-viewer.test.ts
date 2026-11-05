@@ -5,6 +5,7 @@ import {
   ViewerTickets,
   viewerPage,
 } from "./desktop-viewer";
+import { until } from "../../test/support/until";
 
 test("a ticket is redeemed once, and not after it expires", () => {
   let now = 0;
@@ -73,7 +74,7 @@ test("the bridge filters the viewer's input and forwards the desktop's output", 
   bridge.receive(new Uint8Array([5, 0, 0, 1, 0, 1]));
   allowed = true;
   bridge.receive(new Uint8Array([5, 0, 0, 2, 0, 2]));
-  await Bun.sleep(10);
+  await until(() => toViewer.length > 0 && toDesktop.length === 2);
 
   expect(new TextDecoder().decode(toViewer[0])).toBe("RFB 003.008\n");
   expect(toDesktop.map((d) => d[0])).toEqual([82, 5]); // handshake ("R..."), then only the allowed pointer event

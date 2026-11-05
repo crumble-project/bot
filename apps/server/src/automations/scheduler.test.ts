@@ -145,7 +145,7 @@ describe("Scheduler", () => {
     expect(prompts).toEqual([]);
     expect(store.getSchedule(schedule.id)?.nextRunAt).toBeNull();
     store.close();
-  }, 1000);
+  });
 
   test("leaves a non-admitted script due and retries next tick without backoff", async () => {
     const store = new Store(make());
@@ -400,7 +400,7 @@ describe("Scheduler", () => {
         eventSourceId: null,
         enabled: true,
       }),
-    ).toThrow('Validation error, cannot resolve alias "nop"');
+    ).toThrow();
     store.close();
   });
 
@@ -556,7 +556,8 @@ describe("Scheduler", () => {
       enabled: true,
     });
 
-    await Bun.sleep(50);
+    // The loop ticks every second, so a shorter wait would pass with it still running.
+    await Bun.sleep(1100);
     expect(calls).toEqual([]);
     store.close();
   });

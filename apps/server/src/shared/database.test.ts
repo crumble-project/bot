@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import {
   cpSync,
@@ -11,6 +11,9 @@ import { join } from "node:path";
 import { Effect, Match } from "effect";
 import { z } from "zod";
 import { migrateFile, migrationsFolder } from "./database";
+
+// Real runtimes and migrations can pass the default 5 seconds on a loaded machine.
+setDefaultTimeout(30_000);
 
 const dirs: string[] = [];
 

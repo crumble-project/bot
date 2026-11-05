@@ -64,6 +64,29 @@ function fakeLibrary(
   };
 }
 
+function heldTool() {
+  const started = Promise.withResolvers<void>();
+  const held = Promise.withResolvers<void>();
+
+  const tool = defineTool({
+    name: "blocked",
+    description: "Wait for the test",
+    parameters: Type.Object({}),
+    execute: async () => {
+      started.resolve();
+      await held.promise;
+
+      return { output: [{ type: "text", text: "tool finished" }] };
+    },
+  });
+
+  return {
+    extension: defineExtension({ name: "blocked", tools: [tool] }),
+    started: started.promise,
+    release: held.resolve,
+  };
+}
+
 function setup(options: Partial<RuntimeCallbacks> = {}, slow = false) {
   const directory = mkdtempSync(join(tmpdir(), "crumble-runtime-"));
   directories.push(directory);
@@ -551,7 +574,9 @@ test("hides in-flight assistant text and cancellation settles the submission", a
   const conversation = await runtime.openChat(a);
   faux.setResponses([
     fauxAssistantMessage(
-      "A deliberately long response that can be cancelled before it finishes.",
+      "A deliberately long response that can be cancelled before it finishes. ".repeat(
+        100,
+      ),
     ),
   ]);
   const snapshots: Awaited<ReturnType<typeof runtime.snapshot>>[] = [];
@@ -614,23 +639,8 @@ test("publishes the complete assistant entry only after the run ends", async () 
 });
 
 test("hides text from an assistant tool round until the whole turn completes", async () => {
-  let release!: () => void;
-  const toolDone = new Promise<void>((resolve) => (release = resolve));
-
-  const tool = defineTool({
-    name: "blocked",
-    description: "Wait for the test",
-    parameters: Type.Object({}),
-    execute: async () => {
-      await toolDone;
-
-      return { output: [{ type: "text", text: "tool finished" }] };
-    },
-  });
-
-  const { runtime, faux } = setup({
-    extensions: () => [defineExtension({ name: "blocked", tools: [tool] })],
-  });
+  const { extension, started, release } = heldTool();
+  const { runtime, faux } = setup({ extensions: () => [extension] });
 
   const a = makeAgent();
   const conversation = await runtime.openChat(a);
@@ -643,15 +653,8 @@ test("hides text from an assistant tool round until the whole turn completes", a
     fauxAssistantMessage("The complete answer after the tool."),
   ]);
   const submission = await runtime.submit(a, conversation, "go", "tool-round");
-  let running = await runtime.snapshot(a, conversation);
-
-  for (let attempt = 0; attempt < 20 && !running.live; attempt++) {
-    await Bun.sleep(10);
-    running = await runtime.snapshot(a, conversation);
-  }
-
-  await Bun.sleep(80);
-  running = await runtime.snapshot(a, conversation);
+  await started;
+  const running = await runtime.snapshot(a, conversation);
   expect(running.status).toBe("running");
   expect(
     running.messages.some((message) => message.content.includes(intermediate)),
@@ -680,23 +683,8 @@ test("hides text from an assistant tool round until the whole turn completes", a
 });
 
 test("a turn running in another conversation leaves the chat's answers in its history", async () => {
-  let release!: () => void;
-  const toolDone = new Promise<void>((resolve) => (release = resolve));
-
-  const tool = defineTool({
-    name: "blocked",
-    description: "Wait for the test",
-    parameters: Type.Object({}),
-    execute: async () => {
-      await toolDone;
-
-      return { output: [{ type: "text", text: "tool finished" }] };
-    },
-  });
-
-  const { runtime, faux } = setup({
-    extensions: () => [defineExtension({ name: "blocked", tools: [tool] })],
-  });
+  const { extension, started, release } = heldTool();
+  const { runtime, faux } = setup({ extensions: () => [extension] });
 
   const a = makeAgent();
   const chat = await runtime.openChat(a);
@@ -709,12 +697,7 @@ test("a turn running in another conversation leaves the chat's answers in its hi
     fauxAssistantMessage("The group turn's answer."),
   ]);
   const turn = await runtime.submit(a, group, "group turn", "group-input");
-  let running = await runtime.snapshot(a, group);
-
-  for (let attempt = 0; attempt < 50 && !running.live; attempt++) {
-    await Bun.sleep(10);
-    running = await runtime.snapshot(a, group);
-  }
+  await started;
 
   const asked = await runtime.submit(a, chat, "chat turn", "chat-input");
   expect((await runtime.wait(asked, a)).status).toBe("done");

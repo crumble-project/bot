@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { openGroupConversation } from "./group-turns";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -19,6 +19,9 @@ import { AgentRuntime } from "../bots/runtime";
 import { standaloneBots } from "../bots/bots-test-support";
 import { Store } from "../../test/support/store";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
+
+// Each test posts 35 messages through the real group chat first.
+setDefaultTimeout(15_000);
 
 const cleanups: (() => void | Promise<void>)[] = [];
 

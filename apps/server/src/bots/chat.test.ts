@@ -24,6 +24,7 @@ import { eventRequest } from "../shared/request-ids";
 import { ScheduleRepository } from "../automations/schedule-repository";
 import { scheduleInput } from "../contract/schedules";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
+import { until } from "../../test/support/until";
 
 const dirs: string[] = [];
 
@@ -114,14 +115,10 @@ async function settle(
   service: ReturnType<typeof standaloneBots<Store>>,
   executionId: string,
 ) {
-  for (let i = 0; i < 200; i++) {
-    const status = service.store.getExecution(executionId)?.status;
+  const status = () => service.store.getExecution(executionId)?.status;
+  await until(() => status() !== "pending" && status() !== "running");
 
-    if (status !== "pending" && status !== "running") return status;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-
-  throw new Error("Execution did not settle");
+  return status();
 }
 
 describe("continuous bot chat", () => {
@@ -143,12 +140,11 @@ describe("continuous bot chat", () => {
     await service.compact(agent.id);
     let transcript = (await service.chatSnapshot(agent.id)).messages;
 
-    for (let i = 0; i < 200 && transcript.at(-1)?.kind !== "compaction"; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
+    await until(async () => {
       transcript = (await service.chatSnapshot(agent.id)).messages;
-    }
 
-    expect(transcript.at(-1)?.kind).toBe("compaction");
+      return transcript.at(-1)?.kind === "compaction";
+    });
     expect(transcript.map((message) => message.content)).toEqual([
       "first question",
       "first answer",
@@ -290,12 +286,7 @@ describe("activity", () => {
     const execution = await service.sendChat(agent.id, "check", uuid(1));
     await settle(service, execution.id);
 
-    for (
-      let i = 0;
-      i < 100 && !events.some((event) => event.type === "reply");
-      i++
-    )
-      await new Promise((resolve) => setTimeout(resolve, 10));
+    await until(() => events.some((event) => event.type === "reply"));
 
     const preview = (lastMessage: string) => ({
       type: "chat-preview" as const,
@@ -347,8 +338,7 @@ describe("group turns", () => {
 
     expect(await settle(service, execution.id)).toBe("done");
 
-    for (let i = 0; i < 100 && !settled.length; i++)
-      await new Promise((resolve) => setTimeout(resolve, 10));
+    await until(() => settled.length > 0);
     expect(settled).toEqual(["done"]);
     expect(events).toEqual([]);
     await service.close();

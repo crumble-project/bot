@@ -46,23 +46,26 @@ test("a handler's exception rejects instead of reading as a dropped connection",
     () => new Response("event: snapshot\ndata: {}\n\n"),
   );
 
+  const controller = new AbortController();
   const statuses: string[] = [];
 
   try {
-    const followed = follow(
-      events.path,
-      {
-        onStatus: (status) => statuses.push(status),
-        onEvent: () => {
-          throw new Error("handler failed");
-        },
-      },
-      new AbortController().signal,
-    );
+    await expect(
+      follow(
+        events.path,
+        {
+          onStatus: (status) => {
+            statuses.push(status);
 
-    expect(followed).rejects.toThrow("handler failed");
-    await Bun.sleep(0);
-    await followed.catch(() => undefined);
+            if (status === "reconnecting") controller.abort();
+          },
+          onEvent: () => {
+            throw new Error("handler failed");
+          },
+        },
+        controller.signal,
+      ),
+    ).rejects.toThrow("handler failed");
     expect(statuses).toEqual(["connected"]);
     expect(events.requests()).toBe(1);
   } finally {

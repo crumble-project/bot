@@ -2,10 +2,13 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import { createAuth, passkeyOriginFor } from "./auth";
 import { DEFAULT_SERVER_SETTINGS } from "./server-settings";
 import { INVITE_HEADER } from "./invites";
+
+// Password hashing alone can pass the default 5 seconds on a loaded machine.
+setDefaultTimeout(30_000);
 
 test("binds passkeys to localhost for a loopback origin", () => {
   expect(passkeyOriginFor("http://127.0.0.1:7337")).toBe(

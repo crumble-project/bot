@@ -4,6 +4,7 @@ import { Window } from "happy-dom";
 import { act } from "react";
 import { type MessageGateway, messageGatewaysQuery } from "./api";
 import { queryClient } from "@/lib/api";
+import { settle, waitFor, waitForIdle } from "@/test/wait-for";
 
 test("owner validation, refresh, and failed disable preserve edits after its default bot is deleted", async () => {
   const window = new Window({ url: "http://localhost" });
@@ -84,11 +85,6 @@ test("owner validation, refresh, and failed disable preserve edits after its def
 
   const root = createRoot(container);
 
-  const settle = () =>
-    act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    });
-
   try {
     await act(async () =>
       root.render(
@@ -99,8 +95,10 @@ test("owner validation, refresh, and failed disable preserve edits after its def
         </QueryClientProvider>,
       ),
     );
-    await settle();
-    await settle();
+    await waitFor(
+      () => container.querySelector("#gateway-discord-owner") !== null,
+      "the gateway form",
+    );
 
     expect(container.querySelector("#gateway-discord-senders")).toBeNull();
     expect(
@@ -140,13 +138,17 @@ test("owner validation, refresh, and failed disable preserve edits after its def
     for (const value of ["owner-a,owner-b", "owner-a owner-b"]) {
       await enterOwner(value);
       await submit();
+      await waitFor(
+        () =>
+          owner.getAttribute("aria-invalid") === "true" &&
+          container.textContent?.includes(
+            "Enter one user ID, without spaces or commas.",
+          ) === true,
+        "the validation error",
+      );
       await settle();
 
       expect(bodies).toHaveLength(0);
-      expect(owner.getAttribute("aria-invalid")).toBe("true");
-      expect(container.textContent).toContain(
-        "Enter one user ID, without spaces or commas.",
-      );
       expect(owner.value).toBe(value);
     }
 
@@ -157,15 +159,20 @@ test("owner validation, refresh, and failed disable preserve edits after its def
       ]),
     );
 
-    await settle();
+    await waitFor(
+      () => container.textContent?.includes("Token missing") === true,
+      "the refreshed status",
+    );
 
     expect(owner.value).toBe("owner-a");
-    expect(container.textContent).toContain("Token missing");
     expect(container.textContent).toContain("2 failed");
     expect(container.textContent).toContain("Unsaved changes");
 
     await submit();
-    await settle();
+    await waitFor(
+      () => container.textContent?.includes("Could not save gateway") === true,
+      "the save error",
+    );
 
     expect(bodies).toHaveLength(1);
     expect(JSON.parse(bodies[0]!)).toStrictEqual({
@@ -176,8 +183,8 @@ test("owner validation, refresh, and failed disable preserve edits after its def
       allowDirectMessages: false,
       aliases: [],
     });
-    expect(container.textContent).toContain("Could not save gateway");
     expect(owner.value).toBe("owner-a");
+    await waitForIdle(queryClient);
   } finally {
     await act(async () => root.unmount());
     queryClient.clear();
@@ -280,10 +287,11 @@ test("a gateway with channels and aliases renders where crypto.randomUUID is mis
       ),
     );
 
-    for (let i = 0; i < 2; i++)
-      await act(() => new Promise((resolve) => setTimeout(resolve, 30)));
-
-    expect(container.querySelector("#gateway-discord-owner")).not.toBeNull();
+    await waitFor(
+      () => container.querySelector("#gateway-discord-owner") !== null,
+      "the gateway form",
+    );
+    await waitForIdle(queryClient);
   } finally {
     await act(async () => root.unmount());
     queryClient.clear();

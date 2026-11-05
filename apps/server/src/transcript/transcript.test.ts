@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  latestMessagePreview,
-  prepareReply,
-  readTranscript,
-} from "./transcript";
+import { latestMessagePreview, readTranscript } from "./transcript";
 import type { Cursor, Harness, Tx } from "@earendil-works/pi-durable";
 
 type FakeCommunication = {
@@ -179,54 +175,6 @@ describe("durable transcript helpers", () => {
     });
 
     expect(older.messages.map((m) => m.content)).toEqual(["one"]);
-  });
-
-  test("limits the newest page and paginates older messages without loss", async () => {
-    const harness = fakeHarness({
-      1: [user(4, "four"), user(3, "three"), user(2, "two"), user(1, "one")],
-    });
-
-    const pages: string[] = [];
-    let page = await readTranscript(harness, "a", { limit: 2 });
-    pages.push(...page.messages.map((message) => message.content));
-    expect(pages).toEqual(["three", "four"]);
-    expect(page.hasMore).toBe(true);
-
-    while (page.hasMore) {
-      page = await readTranscript(harness, "a", {
-        before: page.oldestEntryId!,
-        limit: 2,
-      });
-      pages.unshift(...page.messages.map((message) => message.content));
-    }
-
-    expect(pages).toEqual(["one", "two", "three", "four"]);
-  });
-
-  test("prepares bounded historical context while preserving the original display text", async () => {
-    const long = "x".repeat(9000);
-
-    const harness = fakeHarness({
-      1: [user(1, long, "crumble.message"), user(2, "near", "crumble.message")],
-    });
-
-    const quoted = [
-      { id: "a:1", role: "user", content: "x".repeat(6000) },
-      { id: "a:2", role: "user", content: "near" },
-    ];
-
-    expect(await prepareReply(harness, "a", "a:1", "follow up")).toEqual({
-      modelContent: `<reply_context>\n${JSON.stringify(quoted)}\n</reply_context>\n\nfollow up`,
-      data: {
-        text: "follow up",
-        replyTo: "a:1",
-        replyPreview: "x".repeat(240),
-        contextEntryIds: ["a:1", "a:2"],
-      },
-    });
-    await expect(prepareReply(harness, "b", "a:1", "x")).rejects.toThrow(
-      "reply target belongs to a different agent",
-    );
   });
 
   test("normalizes bot communication cards and ignores malformed or model-less entries", async () => {

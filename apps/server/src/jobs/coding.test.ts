@@ -37,6 +37,7 @@ import type { BotSkills } from "../skills/skills";
 import type { Workspaces } from "../workspaces/workspace";
 import { DesktopNotConfigured } from "../workspaces/workspace-errors";
 import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
+import { until } from "../../test/support/until";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -247,13 +248,6 @@ function open(
   );
 
   return { runtime, agent };
-}
-
-async function until(check: () => boolean | Promise<boolean>) {
-  for (let i = 0; i < 500 && !(await check()); i++)
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-  expect(await check()).toBe(true);
 }
 
 const reports = async (runtime: AgentRuntime, agent: Agent, chat: string) =>

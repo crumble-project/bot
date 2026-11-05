@@ -11,6 +11,7 @@ import {
 } from "@tanstack/react-router";
 import { type ReactNode, act } from "react";
 import { queryClient } from "@/lib/api";
+import { settle, waitFor, waitForIdle } from "@/test/wait-for";
 import type { ChatSnapshot } from "./api";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 
@@ -34,11 +35,6 @@ const GLOBALS = [
   "scrollTo",
   "Path2D",
 ];
-
-const settle = () =>
-  act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  });
 
 const bot = {
   id: "bot",
@@ -180,8 +176,6 @@ async function render(
         </QueryClientProvider>,
       );
     });
-    await settle();
-    await settle();
     await check(container, {
       pathname: () => router.state.location.pathname,
       leave: () =>
@@ -189,6 +183,7 @@ async function render(
           await router.navigate({ to: "/" });
         }),
     });
+    await waitForIdle(queryClient);
   } finally {
     await act(async () => root.unmount());
     queryClient.clear();
@@ -202,6 +197,9 @@ async function render(
     window.close();
   }
 }
+
+const shows = (container: HTMLElement, text: string) => () =>
+  container.textContent?.includes(text) === true;
 
 const loadGroup = async () => {
   const { GroupChatView } = await import("@/features/group-chats/groups");
@@ -226,6 +224,7 @@ test("a group reply being sent shows what it answers", async () => {
     async (container) => {
       const { deliver } = await import("./delivery");
 
+      await waitFor(shows(container, "The original"));
       await act(async () => {
         await deliver("group:g", "/v1/group-chats/g/messages", {
           requestId: "request",
@@ -236,9 +235,8 @@ test("a group reply being sent shows what it answers", async () => {
       });
 
       expect(container.textContent).toContain("My answer");
-      expect(container.querySelector(".line-clamp-2")?.textContent).toBe(
-        "The original",
-      );
+      // Once as its own message and once quoted above the reply.
+      expect(container.textContent?.split("The original")).toHaveLength(3);
     },
   );
 });
@@ -261,8 +259,7 @@ test("a deleted bot's open chat leaves for the home page", async () => {
     ]),
     loadChat,
     async (container, { pathname }) => {
-      await settle();
-      expect(pathname()).toBe("/");
+      await waitFor(() => pathname() === "/", "the home page");
       expect(container.textContent).toContain("Home");
     },
   );
@@ -294,9 +291,11 @@ test("a bot left while it works stays followed until it finishes", async () => {
       ["/v1/agents/bot/events", recordingStream(signals)],
     ]),
     loadChat,
-    async (_container, { leave }) => {
+    async (container, { leave }) => {
       const { chatQuery } = await import("./api");
 
+      await waitFor(shows(container, "The original"));
+      await waitFor(() => signals.length > 0, "the event stream");
       await leave();
       expect(signals[0]?.aborted).toBe(false);
 
@@ -307,7 +306,7 @@ test("a bot left while it works stays followed until it finishes", async () => {
           chatSnapshot("idle") as ChatSnapshot,
         );
       });
-      expect(signals[0]?.aborted).toBe(true);
+      await waitFor(() => signals[0]?.aborted === true, "the stream to stop");
     },
   );
 });
@@ -324,9 +323,10 @@ test("a group chat stops following once left", async () => {
     ]),
     loadGroup,
     async (_container, { leave }) => {
+      await waitFor(() => signals.length > 0, "the event stream");
       expect(signals[0]?.aborted).toBe(false);
       await leave();
-      expect(signals[0]?.aborted).toBe(true);
+      await waitFor(() => signals[0]?.aborted === true, "the stream to stop");
     },
   );
 });
@@ -374,11 +374,11 @@ test("job messages refetch the job list, and a card reads its own kind's job", a
     loadChat,
     async (container) => {
       const { chatQuery } = await import("./api");
-      const before = reads;
 
-      expect(before).toBeGreaterThan(0);
-      expect(container.textContent).toContain("Coding jobWorking");
-      expect(container.textContent).toContain("Desktop jobIdle");
+      await waitFor(shows(container, "Coding jobWorking"));
+      await waitFor(shows(container, "Desktop jobIdle"));
+
+      const before = reads;
 
       await act(async () => {
         queryClient.setQueryData(
@@ -391,6 +391,7 @@ test("job messages refetch the job list, and a card reads its own kind's job", a
           ]) as ChatSnapshot,
         );
       });
+      await waitFor(() => reads > before, "the job list to refetch");
       await settle();
 
       expect(reads).toBe(before + 1);

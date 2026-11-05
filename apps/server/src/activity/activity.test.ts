@@ -193,7 +193,7 @@ describe("operational activity", () => {
     });
   });
 
-  test("sorts newest first and preserves stable identities", () => {
+  test("names each tool call by its message and block", () => {
     const events = operationalActivity({ id: "a", name: "A" }, [
       {
         id: "a:1:0",

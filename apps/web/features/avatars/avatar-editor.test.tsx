@@ -39,7 +39,7 @@ test("gallery, import validation, colors and description-inclusive generation pr
   for (const [key, value] of Object.entries(values))
     Object.defineProperty(globalThis, key, { configurable: true, value });
   const { createRoot } = await import("react-dom/client");
-  const { AvatarEditor, importDefinition } = await import("./avatar-editor");
+  const { AvatarEditor } = await import("./avatar-editor");
 
   const original = defaultAvatarDefinition("studio");
 
@@ -110,9 +110,6 @@ test("gallery, import validation, colors and description-inclusive generation pr
     expect(copied).toContain(
       "## User description\n\nA watering can for my garden",
     );
-    expect(container.textContent).toContain(
-      "Nothing is generated or sent from this page",
-    );
     await click("Import");
     const before = current;
     await type("textarea", "not JSON");
@@ -131,18 +128,19 @@ test("gallery, import validation, colors and description-inclusive generation pr
       "eyes must sit inside the body",
     );
     expect(current).toBe(before);
+    await type(
+      "textarea",
+      JSON.stringify({ ...original.definition, body: { path: "" } }),
+    );
+    await click("Validate and import");
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(current).toBe(before);
     await type("textarea", JSON.stringify(original.definition));
     await click("Validate and import");
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(current.definition.id).toBe(original.definition.id);
     expect(current.color).toBe("#123456");
     expect(current.eyeColor).toBe("#fedcba");
-    expect(() =>
-      importDefinition(
-        JSON.stringify({ ...original.definition, body: { path: "" } }),
-        original,
-      ),
-    ).toThrow();
   } finally {
     await act(async () => root.unmount());
 

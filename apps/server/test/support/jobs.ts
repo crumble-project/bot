@@ -1,5 +1,4 @@
-import { sleep } from "../../src/shared/time";
-import { afterEach, expect } from "bun:test";
+import { afterEach } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -21,6 +20,7 @@ import { Store } from "./store";
 import type { Workspaces } from "../../src/workspaces/workspace";
 import { DesktopNotConfigured } from "../../src/workspaces/workspace-errors";
 import { runtimeCallbacks } from "./runtime-callbacks";
+import { until } from "./until";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -218,12 +218,6 @@ async function open(kind: typeof exclusiveKind) {
   const messages = async () => (await runtime.snapshot(agent, chat)).messages;
 
   return { gates, say, lastToolResult, messages };
-}
-
-async function until(check: () => boolean) {
-  for (let i = 0; i < 500 && !check(); i++) await sleep(20);
-
-  expect(check()).toBe(true);
 }
 
 const SETTLE_MS = 1500;
