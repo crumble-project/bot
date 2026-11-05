@@ -1,7 +1,7 @@
 import { Effect } from "effect";
-import type { AgentRepository } from "../bots/agent-repository";
+import type { AgentRepository } from "../bot-store/agent-repository";
 import type { Bots } from "../bots/bots";
-import type { ExecutionRepository } from "../bots/execution-repository";
+import type { ExecutionRepository } from "../bot-store/execution-repository";
 import type { BotRuntime } from "../bots/runtime";
 import type { ProductDatabase } from "../shared/product-database";
 import type { Runner } from "../shared/runner";

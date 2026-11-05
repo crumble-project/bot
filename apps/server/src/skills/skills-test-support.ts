@@ -1,6 +1,6 @@
 import { Effect, Layer, ManagedRuntime } from "effect";
-import type { AgentRepository } from "../bots/agent-repository";
-import type { ExecutionRepository } from "../bots/execution-repository";
+import type { AgentRepository } from "../bot-store/agent-repository";
+import type { ExecutionRepository } from "../bot-store/execution-repository";
 import type { ProductDatabase } from "../shared/product-database";
 import type { Runner } from "../shared/runner";
 import { DefaultSkills, type DefaultSkill } from "./default-skills";

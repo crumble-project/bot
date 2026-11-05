@@ -1,4 +1,4 @@
-import { sleep } from "../shared/time";
+import { sleep } from "../../src/shared/time";
 import { afterEach, expect } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -14,13 +14,13 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { defineExtension } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
-import { defineJobKind } from "./jobs";
-import type { JobKindFacts } from "../shared/job-kinds";
-import { AgentRuntime } from "../bots/runtime";
-import { Store } from "../../test/support/store";
-import type { Workspaces } from "../workspaces/workspace";
-import { DesktopNotConfigured } from "../workspaces/workspace-errors";
-import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
+import { defineJobKind } from "../../src/jobs/jobs";
+import type { JobKindFacts } from "../../src/shared/job-kinds";
+import { AgentRuntime } from "../../src/bots/runtime";
+import { Store } from "./store";
+import type { Workspaces } from "../../src/workspaces/workspace";
+import { DesktopNotConfigured } from "../../src/workspaces/workspace-errors";
+import { runtimeCallbacks } from "./runtime-callbacks";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 

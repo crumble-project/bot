@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { TestClock } from "effect/testing";
 import { productLayer } from "../app/product-layer";
-import { AgentRepository } from "../bots/agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import { ScheduleRepository } from "./schedule-repository";
 import { AutomationDispatch } from "./automation-dispatch";
 import { ScriptRuns } from "./script-runs";

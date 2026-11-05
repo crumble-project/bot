@@ -4,12 +4,12 @@ import type { ScheduleRepository } from "../automations/schedule-repository";
 import type { ProductDatabase } from "../shared/product-database";
 import type { Runner } from "../shared/runner";
 import type { SettingsRepository } from "../shared/settings-repository";
-import type { AgentRepository } from "./agent-repository";
+import type { AgentRepository } from "../bot-store/agent-repository";
 import { Bots, botsAccess, type BotsAccess } from "./bots";
-import type { BotDeletion } from "./bot-deletion";
-import type { BotNotices } from "./bot-notices";
-import type { ConversationRepository } from "./conversation-repository";
-import type { ExecutionRepository } from "./execution-repository";
+import type { BotDeletion } from "../bot-ports/bot-deletion";
+import type { BotNotices } from "../bot-ports/bot-notices";
+import type { ConversationRepository } from "../bot-store/conversation-repository";
+import type { ExecutionRepository } from "../bot-store/execution-repository";
 import { BotRuntime, type AgentRuntime } from "./runtime";
 
 type StandaloneServices =

@@ -2,9 +2,9 @@ import { Layer } from "effect";
 import { DesktopControlRepository } from "../bot-desktop/desktop-control-repository";
 import { DesktopFillRepository } from "../bot-desktop/desktop-fill-repository";
 import { desktopFills } from "../bot-desktop/schema";
-import { AgentRepository } from "../bots/agent-repository";
-import { ConversationRepository } from "../bots/conversation-repository";
-import { ExecutionRepository } from "../bots/execution-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
+import { ConversationRepository } from "../bot-store/conversation-repository";
+import { ExecutionRepository } from "../bot-store/execution-repository";
 import { AgentCredentialRepository } from "../credentials/agent-credential-repository";
 import { SecretRepository } from "../secrets/secret-repository";
 import { GroupChatRepository } from "../group-chats/group-chat-repository";
@@ -19,9 +19,9 @@ import {
 import { ScheduleRepository } from "../automations/schedule-repository";
 import { ScriptRunRepository } from "../automations/script-run-repository";
 import { ChangeReverter } from "../learning/change-reverter";
-import { LearnedChangeRepository } from "../learning/learned-change-repository";
+import { LearnedChangeRepository } from "../learned-changes/learned-change-repository";
 import { ReviewRepository } from "../learning/review-repository";
-import { SkillRepository } from "../skills/skill-repository";
+import { agentSkillsLayer, SkillRepository } from "../skills/skill-repository";
 import { GitHubSkillReader } from "../skills/github-skills";
 import { SkillInstaller } from "../skills/skill-installer";
 import { credentialAuthorities } from "../credentials/schema";
@@ -84,7 +84,7 @@ export const productLayer = (dataDir: string) => {
     ProviderCredentialRepository.layer,
     ChangeReverter.layer,
     SkillInstaller.layer.pipe(Layer.provide(GitHubSkillReader.layer)),
-    AgentRepository.layer,
+    AgentRepository.layer.pipe(Layer.provide(agentSkillsLayer)),
   ).pipe(Layer.provideMerge(onChanges));
 };
 

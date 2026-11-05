@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import { routes, type memoryInput } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import type { BotsAccess } from "../bots/bots";
+import type { BotLookup } from "../bot-ports/bot-lookup";
 import { NotFound } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import { MemoryRepository } from "./memory-repository";
@@ -12,7 +12,7 @@ type Exec = Runner<Services>["runSync"];
 
 type MemoryRoutesOptions = {
   register: Register;
-  service: BotsAccess;
+  service: BotLookup;
   /** Runs the repository effects the memory routes read and write. */
   run: Runner<Services>;
 };

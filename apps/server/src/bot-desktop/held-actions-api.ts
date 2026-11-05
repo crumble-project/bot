@@ -1,11 +1,11 @@
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import type { BotsAccess } from "../bots/bots";
+import type { BotLookup } from "../bot-ports/bot-lookup";
 import type { HeldActionsAccess } from "./held-actions";
 
 type HeldActionRoutesOptions = {
   register: Register;
-  service: Pick<BotsAccess, "agent">;
+  service: BotLookup;
   held: HeldActionsAccess;
 };
 

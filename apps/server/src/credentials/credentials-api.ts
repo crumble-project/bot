@@ -1,12 +1,12 @@
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import type { BotsAccess } from "../bots/bots";
+import type { BotLookup } from "../bot-ports/bot-lookup";
 import type { Runner } from "../shared/runner";
 import { Credentials } from "./credentials";
 
 type CredentialRoutesOptions = {
   register: Register;
-  service: BotsAccess;
+  service: BotLookup;
   run: Runner<Credentials>;
 };
 

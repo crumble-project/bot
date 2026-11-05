@@ -1,5 +1,5 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import { agents } from "../bots/schema";
+import { agents } from "./schema";
 import type { SCHEDULE_KINDS } from "../contract/schedules";
 import { DEFAULT_SCHEDULE_TIMEOUT_SECONDS } from "../shared/limits";
 

@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { ExecutionRepository } from "../bots/execution-repository";
+import { ExecutionRepository } from "../bot-store/execution-repository";
 import type { ChangeSource } from "../shared/domain";
 
 /** The newest of a run's inputs that Crumble admitted as an execution. */

@@ -1,6 +1,6 @@
 import { Context, Effect, Layer, ManagedRuntime, Scope } from "effect";
-import type { AgentRepository } from "../bots/agent-repository";
-import type { BotDeletion } from "../bots/bot-deletion";
+import type { AgentRepository } from "../bot-store/agent-repository";
+import type { BotDeletion } from "../bot-ports/bot-deletion";
 import type { Secrets } from "../secrets/secrets";
 import type { ServerSecrets } from "../secrets/server-secrets";
 import type { Runner } from "../shared/runner";

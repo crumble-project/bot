@@ -1,6 +1,6 @@
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { SCRIPT_RUN_STATUSES } from "../shared/domain";
-import { schedules } from "./schema";
+import { schedules } from "../bot-store/schema.schedules";
 
 export const scriptRuns = sqliteTable(
   "script_runs",

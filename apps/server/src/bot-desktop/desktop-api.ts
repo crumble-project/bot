@@ -11,7 +11,7 @@ import {
   type Viewer,
   type ViewerTickets,
 } from "./desktop-viewer";
-import type { BotsAccess } from "../bots/bots";
+import type { BotLookup } from "../bot-ports/bot-lookup";
 import type { DesktopStream, Workspaces } from "../workspaces/workspace";
 import type { DesktopOpenError } from "../workspaces/workspace-errors";
 import { Conflict } from "../shared/errors";
@@ -58,7 +58,7 @@ const bytesOf = async (data: WSMessageReceive) => {
 export function registerDesktopRoutes(options: {
   app: ReturnType<typeof contractApp>;
   register: Register;
-  service: Pick<BotsAccess, "agent">;
+  service: BotLookup;
   run: Runner<never>;
   workspaces: Workspaces | undefined;
   control: DesktopControlAccess;

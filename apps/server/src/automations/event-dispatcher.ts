@@ -1,6 +1,6 @@
 import { errorText } from "../shared/errors";
 import { Cause, Clock, Context, Effect, Layer } from "effect";
-import { AgentRepository } from "../bots/agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import { startTicking } from "../shared/ticker";
 import { Automations, automationOn, retryLedger } from "./automations";
 import { EventRunRepository, type EventRun } from "./event-run-repository";

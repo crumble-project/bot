@@ -1,13 +1,13 @@
 import { Effect } from "effect";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import type { BotsAccess } from "../bots/bots";
+import type { BotLookup } from "../bot-ports/bot-lookup";
 import type { Runner } from "../shared/runner";
 import { Logins } from "./logins";
 
 type LoginRoutesOptions = {
   register: Register;
-  service: Pick<BotsAccess, "agent">;
+  service: BotLookup;
   run: Runner<Logins>;
 };
 

@@ -1,7 +1,7 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
-import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
 import type { Agent } from "../contract/agents";
 import { NotFound } from "../shared/errors";
 import { toolOutput } from "../shared/tool-output";

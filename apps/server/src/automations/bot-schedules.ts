@@ -9,11 +9,11 @@ import {
   type ScheduleInput,
 } from "../contract/schedules";
 import { type Agent } from "../contract/agents";
-import { AgentRepository } from "../bots/agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import { EventRepository } from "../event-sources/event-repository";
 import { ScheduleRepository } from "./schedule-repository";
 import { Scheduler } from "./scheduler";
-import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
 import {
   InvalidInput,
   Forbidden,

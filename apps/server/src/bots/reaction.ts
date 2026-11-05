@@ -1,7 +1,7 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Layer } from "effect";
-import { BotExtensions, ExtensionPosition } from "./bot-extensions";
+import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
 import { REACTION_TOOL_NAME } from "../contract/tools";
 import { EMOJI } from "../transcript/tool-results";
 

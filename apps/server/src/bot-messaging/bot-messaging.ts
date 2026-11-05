@@ -13,10 +13,10 @@ import {
   jobQuestionRequest,
   parseRequestId,
 } from "../shared/request-ids";
-import { AgentRepository } from "../bots/agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import { Bots } from "../bots/bots";
 import type { JobAsked, TurnWork } from "../jobs/jobs";
-import { ExecutionRepository } from "../bots/execution-repository";
+import { ExecutionRepository } from "../bot-store/execution-repository";
 import { BotRuntime } from "../bots/runtime";
 import {
   InvalidInput,

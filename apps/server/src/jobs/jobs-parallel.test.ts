@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parallelKind, open, until } from "./jobs-test-support";
+import { parallelKind, open, until } from "../../test/support/jobs";
 
 test("jobs of other kinds run side by side", async () => {
   const { gates, say } = await open(parallelKind);

@@ -1,7 +1,7 @@
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import type { Runner } from "../shared/runner";
-import { ExecutionRepository } from "./execution-repository";
+import { ExecutionRepository } from "../bot-store/execution-repository";
 
 /** Every turn the account's bots ran, newest state first, optionally for one bot. */
 export function registerExecutionRoutes(options: {

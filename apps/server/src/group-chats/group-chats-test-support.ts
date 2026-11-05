@@ -1,8 +1,8 @@
 import { Effect, Layer, ManagedRuntime } from "effect";
-import type { AgentRepository } from "../bots/agent-repository";
+import type { AgentRepository } from "../bot-store/agent-repository";
 import type { Bots } from "../bots/bots";
-import type { ConversationRepository } from "../bots/conversation-repository";
-import type { ExecutionRepository } from "../bots/execution-repository";
+import type { ConversationRepository } from "../bot-store/conversation-repository";
+import type { ExecutionRepository } from "../bot-store/execution-repository";
 import type { BotRuntime } from "../bots/runtime";
 import type { Runner } from "../shared/runner";
 import type { GroupChatRepository } from "./group-chat-repository";

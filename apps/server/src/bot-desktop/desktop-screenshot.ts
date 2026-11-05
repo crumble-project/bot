@@ -8,7 +8,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
-import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
 import { chatOnly } from "../shared/chat-only";
 import { BotWorkspaces, type Workspaces } from "../workspaces/workspace";
 import type { DesktopShell } from "./computer-use";

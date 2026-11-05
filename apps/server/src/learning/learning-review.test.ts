@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { openGroupConversation } from "../group-chats/group-turns";
-import { openReviewConversation } from "./review-conversation";
+import { openReviewConversation } from "./review-kind";
 import type { Effect } from "effect";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

@@ -19,8 +19,8 @@ import {
   Scope,
   Semaphore,
 } from "effect";
-import { AgentRepository } from "../bots/agent-repository";
-import { BotNotices } from "../bots/bot-notices";
+import { AgentRepository } from "../bot-store/agent-repository";
+import { BotNotices } from "../bot-ports/bot-notices";
 import { Credentials } from "../credentials/credentials";
 import type { Schedule } from "../contract/schedules";
 import type { ScriptRun } from "./script-run-repository";

@@ -22,7 +22,7 @@ export class BotExtensions extends Context.Service<
     /** Every registered feature's extensions for `agent`, in position order. */
     readonly forAgent: (agent: Agent) => Promise<Extension[]>;
   }
->()("crumble/bots/BotExtensions") {
+>()("crumble/bot-ports/BotExtensions") {
   static readonly layer = Layer.effect(
     BotExtensions,
     Effect.gen(function* () {

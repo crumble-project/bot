@@ -1,5 +1,5 @@
 import { Effect, Exit, Scope } from "effect";
-import { BotNotices } from "../../src/bots/bot-notices";
+import { BotNotices } from "../../src/bot-ports/bot-notices";
 import type { Store } from "./store";
 
 export type Notice = { agentId: string; text: string; requestId: string };

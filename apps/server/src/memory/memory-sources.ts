@@ -1,8 +1,8 @@
 import { Effect } from "effect";
 import type { MemorySource } from "../shared/domain";
 import type { MemoryContext } from "./memory-tool";
-import { AgentRepository } from "../bots/agent-repository";
-import { newestExecution } from "../learning/change-source";
+import { AgentRepository } from "../bot-store/agent-repository";
+import { newestExecution } from "../learned-changes/change-source";
 import { GroupChatRepository } from "../group-chats/group-chat-repository";
 import { ScheduleRepository } from "../automations/schedule-repository";
 import { InvalidInput, type AppError } from "../shared/errors";

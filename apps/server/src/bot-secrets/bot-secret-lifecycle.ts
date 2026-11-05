@@ -3,7 +3,7 @@ import { defineTool } from "@earendil-works/pi-durable";
 import type { JsonValue } from "@earendil-works/chord";
 import { Effect, Layer, Predicate } from "effect";
 import { z } from "zod";
-import { BotDeletion } from "../bots/bot-deletion";
+import { BotDeletion } from "../bot-ports/bot-deletion";
 import { botSecretsPrefix } from "../secrets/secret-key";
 import { Secrets } from "../secrets/secrets";
 import { Conflict, InvalidInput, NotFound } from "../shared/errors";

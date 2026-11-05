@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Exit, ManagedRuntime } from "effect";
 import { productLayer } from "../app/product-layer";
-import { AgentRepository } from "../bots/agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import { ScheduleRepository } from "./schedule-repository";
 import { agentInput } from "../contract/agents";
 import { scheduleInput } from "../contract/schedules";

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { Store } from "../../test/support/store";
-import { ConversationRepository } from "../bots/conversation-repository";
+import { ConversationRepository } from "../bot-store/conversation-repository";
 import { SettingsRepository } from "./settings-repository";
 
 const dirs: string[] = [];

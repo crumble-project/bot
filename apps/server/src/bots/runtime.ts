@@ -43,14 +43,14 @@ import { ProviderModels } from "../providers/providers";
 import { BotMemory } from "../memory/bot-memory";
 import { memoryExtension, type MemoryStore } from "../memory/memory-tool";
 import { SettingsRepository } from "../shared/settings-repository";
-import { AgentRepository } from "./agent-repository";
-import { BotExtensions } from "./bot-extensions";
+import { AgentRepository } from "../bot-store/agent-repository";
+import { BotExtensions } from "../bot-ports/bot-extensions";
 import {
   CHAT_STYLE,
   type BotTool,
   type ConversationKind,
   type ConversationStyle,
-} from "./conversation-kind";
+} from "../bot-ports/conversation-kind";
 import {
   clockInstructions,
   conversationInstructions,

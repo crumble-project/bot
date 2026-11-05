@@ -11,7 +11,7 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect } from "effect";
-import { AgentRepository } from "../bots/agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import { standaloneGroupChats } from "../group-chats/group-chats-test-support";
 import { GroupTranscripts } from "../group-chats/group-transcripts";
 import { HistorySearch } from "./history-search";

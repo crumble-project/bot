@@ -1,12 +1,12 @@
 import { routes, mcpInput } from "../contract/api-contract";
 import { mergedBody, type Register } from "../contract/route";
-import type { BotsAccess } from "../bots/bots";
+import type { BotLookup } from "../bot-ports/bot-lookup";
 import type { Runner } from "../shared/runner";
 import { McpServers } from "./mcp-servers";
 
 type McpServerRoutesOptions = {
   register: Register;
-  service: BotsAccess;
+  service: BotLookup;
   run: Runner<McpServers>;
 };
 

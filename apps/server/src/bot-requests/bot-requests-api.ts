@@ -2,7 +2,7 @@ import { botRequestApproval, routes } from "../contract/api-contract";
 import type { Effect } from "effect";
 import { pi } from "../shared/app-errors";
 import type { Register } from "../contract/route";
-import type { BotsAccess } from "../bots/bots";
+import type { BotLookup } from "../bot-ports/bot-lookup";
 import { checkBotChoices } from "../bots/bot-choices";
 import type { McpServers } from "../integrations/mcp-servers";
 import type { Runner } from "../shared/runner";
@@ -10,7 +10,7 @@ import { BotRequests } from "./bot-requests";
 
 type Options = {
   register: Register;
-  service: BotsAccess;
+  service: BotLookup;
   botRequests: BotRequests["Service"];
   run: Runner<McpServers>;
   provider: { parse(value: string): string };

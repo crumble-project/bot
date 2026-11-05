@@ -36,6 +36,10 @@
       { "name": "shared", "patterns": ["apps/server/src/shared/**"] },
       { "name": "contract", "patterns": ["apps/server/src/contract/**"] },
       { "name": "workspaces", "patterns": ["apps/server/src/workspaces/**"] },
+      // Below features: the store and the ports let features reach bots without importing the runtime above them.
+      { "name": "bot-store", "patterns": ["apps/server/src/bot-store/**"] },
+      { "name": "bot-ports", "patterns": ["apps/server/src/bot-ports/**"] },
+      { "name": "learned-changes", "patterns": ["apps/server/src/learned-changes/**"] },
       { "name": "features", "patterns": ["apps/server/src/**"] },
       // Web, leaf first: a feature's api.ts is importable by every feature, the chat kernel by features, and the bot chat assembles features.
       { "name": "web-base", "patterns": ["apps/web/lib/**", "apps/web/components/**", "apps/web/hooks/**"] },
@@ -49,7 +53,10 @@
       { "from": "shared", "allow": [] },
       { "from": "contract", "allow": ["shared"] },
       { "from": "workspaces", "allow": ["shared"] },
-      { "from": "features", "allow": ["shared", "contract", "workspaces"] },
+      { "from": "bot-store", "allow": ["shared", "contract"] },
+      { "from": "bot-ports", "allow": ["shared", "contract"] },
+      { "from": "learned-changes", "allow": ["shared", "contract", "bot-store"] },
+      { "from": "features", "allow": ["shared", "contract", "workspaces", "bot-store", "bot-ports", "learned-changes"] },
       { "from": "web-base", "allow": ["contract"] },
       { "from": "web-api", "allow": ["web-base", "contract"] },
       { "from": "web-chat", "allow": ["web-api", "web-base", "contract"] },

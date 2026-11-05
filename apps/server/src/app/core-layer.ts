@@ -1,8 +1,8 @@
 import { Layer } from "effect";
 import { DesktopControl } from "../bot-desktop/desktop-control";
 import { HeldActions } from "../bot-desktop/held-actions";
-import { BotDeletion } from "../bots/bot-deletion";
-import { BotNotices } from "../bots/bot-notices";
+import { BotDeletion } from "../bot-ports/bot-deletion";
+import { BotNotices } from "../bot-ports/bot-notices";
 import { CredentialAuthorities } from "../credentials/credential-authority";
 import { Credentials } from "../credentials/credentials";
 import { MintedCredentials } from "../credentials/minted-credentials";

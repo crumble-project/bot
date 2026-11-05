@@ -2,7 +2,7 @@ import type { AvailableSkill } from "../skills/skill-library";
 import { SKILL_WRITING_GUIDANCE, skillIndex } from "../skills/skill-library";
 import type { MemoryRecord } from "../memory/memory-tool";
 import type { Agent } from "../contract/agents";
-import type { ConversationPrompt } from "./conversation-kind";
+import type { ConversationPrompt } from "../bot-ports/conversation-kind";
 
 // Adapted from Hermes Agent's DEFAULT_AGENT_IDENTITY: a behavior spec, not a trait list.
 // Reply style lives in VOICE_GUIDANCE; keep here only what it does not say.

@@ -12,7 +12,8 @@ import {
 import { type ChangeBy } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
-import { LearnedChangeRepository } from "../learning/learned-change-repository";
+import { LearnedChangeRepository } from "../learned-changes/learned-change-repository";
+import { AgentSkills } from "../bot-store/agent-skills";
 import { skillDocuments, skills } from "./schema";
 
 export type SkillDocument = z.infer<typeof skillDocumentInput>;
@@ -357,3 +358,19 @@ export class SkillRepository extends Context.Service<
     }),
   );
 }
+
+/** The skill library behind a bot's `skills` field, which keeps only the two fields the bot's row shows. */
+export const agentSkillsLayer = Layer.effect(
+  AgentSkills,
+  Effect.gen(function* () {
+    const library = yield* SkillRepository;
+
+    return AgentSkills.of({
+      list: (agentId) =>
+        Effect.map(library.list(agentId), (skills) =>
+          skills.map(({ name, instructions }) => ({ name, instructions })),
+        ),
+      replace: library.replaceAgentSkills,
+    });
+  }),
+);

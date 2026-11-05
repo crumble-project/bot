@@ -1,9 +1,9 @@
 import { and, asc, count, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import { agents } from "../bots/schema";
+import { agents } from "../bot-store/schema";
 import { EventConsumers } from "../event-sources/event-repository";
 import { ProductDatabase } from "../shared/product-database";
-import { schedules } from "./schema";
+import { schedules } from "../bot-store/schema.schedules";
 import { eventRuns } from "./schema.event-runs";
 
 export type EventRun = typeof eventRuns.$inferSelect;

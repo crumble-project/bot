@@ -1,7 +1,10 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { inGroupTurns } from "../shared/chat-only";
-import { chatTools, type ConversationKind } from "../bots/conversation-kind";
+import {
+  chatTools,
+  type ConversationKind,
+} from "../bot-ports/conversation-kind";
 import type { AgentRuntime } from "../bots/runtime";
 import { defineAnchorTask } from "../shared/anchor-task";
 import type { Agent } from "../contract/agents";

@@ -68,7 +68,7 @@ export class ExecutionRepository extends Context.Service<
     ) => Effect.Effect<AttachmentInput[]>;
     readonly clearAttachments: (executionId: string) => Effect.Effect<void>;
   }
->()("crumble/bots/ExecutionRepository") {
+>()("crumble/bot-store/ExecutionRepository") {
   static readonly layer = Layer.effect(
     ExecutionRepository,
     Effect.gen(function* () {

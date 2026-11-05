@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { McpServerRepository } from "../integrations/mcp-server-repository";
 import { OWNER } from "../shared/change-by";
 import { SkillRepository } from "../skills/skill-repository";
-import { AgentRepository } from "./agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 
 /** A copy with the same settings and skill packages; archived skills and the original's own servers stay behind. */
 export const duplicateAgent = Effect.fn("duplicateAgent")(function* (

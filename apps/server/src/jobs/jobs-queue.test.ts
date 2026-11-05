@@ -5,7 +5,7 @@ import {
   until,
   SETTLE_MS,
   SETTLING_TEST_MS,
-} from "./jobs-test-support";
+} from "../../test/support/jobs";
 
 test(
   "waiting jobs start one at a time when the screen frees up",

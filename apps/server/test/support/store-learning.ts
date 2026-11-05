@@ -3,7 +3,7 @@ import {
   type NewMemory,
 } from "../../src/memory/memory-repository";
 import { ChangeReverter } from "../../src/learning/change-reverter";
-import { LearnedChangeRepository } from "../../src/learning/learned-change-repository";
+import { LearnedChangeRepository } from "../../src/learned-changes/learned-change-repository";
 import { ReviewRepository } from "../../src/learning/review-repository";
 import {
   SkillRepository,

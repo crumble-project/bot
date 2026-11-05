@@ -1,5 +1,5 @@
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import { agents } from "../bots/schema";
+import { agents } from "../bot-store/schema";
 
 export const desktopControl = sqliteTable("desktop_control", {
   agentId: text("agent_id")

@@ -24,7 +24,7 @@ import type { secretInput } from "../contract/secrets";
 import type { z } from "zod";
 import { registerMcpServerRoutes } from "../integrations/mcp-servers-api";
 import type { McpIntegrations } from "../integrations/integrations";
-import { BotDeletion } from "../bots/bot-deletion";
+import { BotDeletion } from "../bot-ports/bot-deletion";
 import { Secrets } from "../secrets/secrets";
 import { mcpServersOver } from "../integrations/integrations-test-support";
 import { McpServers } from "../integrations/mcp-servers";

@@ -25,13 +25,13 @@ import {
 import type { Agent } from "../contract/agents";
 import type { MCPServer } from "./mcp-server-repository";
 import { Context, Duration, Effect, Layer } from "effect";
-import { AgentRepository } from "../bots/agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import { Secrets, secretText } from "../secrets/secrets";
 import type { ServerSecrets } from "../secrets/server-secrets";
 import { mcpToolPrefix } from "../contract/tools";
 import { runnerOf } from "../shared/runner";
 import { McpServerRepository } from "./mcp-server-repository";
-import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
 import {
   type ClientDocument,
   connectionAuth,

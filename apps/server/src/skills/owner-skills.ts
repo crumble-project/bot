@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect";
 import type { z } from "zod";
-import { AgentRepository } from "../bots/agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import type { Agent } from "../contract/agents";
 import type { listedSkillResponse } from "../contract/api-responses";
 import type {

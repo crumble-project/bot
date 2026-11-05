@@ -3,7 +3,7 @@ import { Context, Effect, Layer } from "effect";
 import type { Schedule, ScheduleInput } from "../contract/schedules";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
-import { schedules } from "./schema";
+import { schedules } from "../bot-store/schema.schedules";
 
 type ScheduleColumns = Omit<
   typeof schedules.$inferInsert,

@@ -1,13 +1,13 @@
 import {
   AgentRepository,
   type AgentPatch,
-} from "../../src/bots/agent-repository";
+} from "../../src/bot-store/agent-repository";
 import { duplicateAgent } from "../../src/bots/agent-duplicate";
-import { ConversationRepository } from "../../src/bots/conversation-repository";
+import { ConversationRepository } from "../../src/bot-store/conversation-repository";
 import {
   ExecutionRepository,
   type NewExecution,
-} from "../../src/bots/execution-repository";
+} from "../../src/bot-store/execution-repository";
 import {
   GroupChatRepository,
   type GroupProgress,
@@ -18,7 +18,7 @@ import type { AttachmentInput } from "../../src/shared/attachment-rules";
 import type { Agent, AgentInput } from "../../src/contract/agents";
 import type { Execution } from "../../src/shared/domain";
 import type { Schedule, ScheduleInput } from "../../src/contract/schedules";
-import type { Conversation } from "../../src/bots/conversation-repository";
+import type { Conversation } from "../../src/bot-store/conversation-repository";
 import type {
   GroupChat,
   GroupChatInput,

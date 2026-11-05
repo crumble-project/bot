@@ -5,7 +5,7 @@ import { Type, type Static } from "@earendil-works/pi-ai";
 import type { JsonValue } from "@earendil-works/chord";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
-import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
 import { DISPLAY_TOOL_NAME } from "../contract/tools";
 import { ChartCompiler, DEFAULT_CHART_HEIGHT } from "./charts";
 

@@ -5,7 +5,7 @@ import type { AttachmentInput } from "../shared/attachment-rules";
 import type { Agent } from "../contract/agents";
 import type { Execution } from "../shared/domain";
 import type { LearnedChange } from "../contract/skills";
-import type { Conversation } from "./conversation-repository";
+import type { Conversation } from "../bot-store/conversation-repository";
 import type { ReplyActivity } from "../contract/reply-event";
 import type { AppError } from "../shared/errors";
 import { accessOf, type Access, type Runner } from "../shared/runner";

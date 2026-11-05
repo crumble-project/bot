@@ -1,6 +1,6 @@
 import { routes } from "../contract/api-contract";
-import { mergedBody } from "../contract/route";
-import { registerLearningRoutes } from "../learning/learning-api";
+import { mergedBody, type Register } from "../contract/route";
+import type { BotLookup } from "../bot-ports/bot-lookup";
 import { skillInput, skillLifecycleInput } from "../contract/skills";
 import type { Runner } from "../shared/runner";
 import { OwnerSkills } from "./owner-skills";
@@ -9,13 +9,15 @@ import { SkillRepository } from "./skill-repository";
 
 type Services = OwnerSkills | SkillInstaller | SkillRepository;
 
-type SkillRoutesOptions = Parameters<typeof registerLearningRoutes>[0] & {
+type SkillRoutesOptions = {
+  register: Register;
+  service: BotLookup;
   /** Runs the skill routes' effects. */
   run: Runner<Services>;
 };
 
 /** The skills one bot owns. */
-const registerBotSkillRoutes = (options: SkillRoutesOptions) => {
+export const registerBotSkillRoutes = (options: SkillRoutesOptions) => {
   const { register, service, run } = options;
 
   register(routes.assignSkillBot, async (c) => {
@@ -181,10 +183,8 @@ const registerSkillInstallRoutes = (options: SkillRoutesOptions) => {
   );
 };
 
-/** The skill routes, in the order the contract document lists them; the learning routes sit among them. */
+/** The shared skills and their installs; `app/api.ts` registers the learning routes before them, as the contract lists them. */
 export function registerSkillRoutes(options: SkillRoutesOptions) {
-  registerBotSkillRoutes(options);
-  registerLearningRoutes(options);
   registerSharedSkillRoutes(options);
   registerSkillInstallRoutes(options);
 }

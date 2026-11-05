@@ -3,7 +3,7 @@ import type { ChangeBy, Memory } from "../shared/domain";
 import type { LearnedChange, Skill } from "../contract/skills";
 import { ProductDatabase } from "../shared/product-database";
 import { MemoryRepository } from "../memory/memory-repository";
-import { LearnedChangeRepository } from "./learned-change-repository";
+import { LearnedChangeRepository } from "../learned-changes/learned-change-repository";
 import { SkillRepository } from "../skills/skill-repository";
 
 /** Undoes recorded skill and memory changes. */

@@ -12,7 +12,7 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "../bots/runtime";
 import { codingPlugin } from "../jobs/coding";
-import { DirectoryWorkspaces } from "../jobs/jobs-test-support";
+import { DirectoryWorkspaces } from "../../test/support/jobs";
 import { conversationEnv, jobExtensions } from "../plugins/plugins";
 import { Store } from "../../test/support/store";
 import { standaloneBots } from "../bots/bots-test-support";

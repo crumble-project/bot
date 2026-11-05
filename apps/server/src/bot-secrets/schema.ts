@@ -9,7 +9,7 @@ import {
   type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
 import { z } from "zod";
-import { agents } from "../bots/schema";
+import { agents } from "../bot-store/schema";
 
 /** The secrets a bot can be given for named hosts: credentials and logins. */
 export const BOT_SECRET_KINDS = ["credential", "login"] as const;

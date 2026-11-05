@@ -4,7 +4,7 @@ import {
   sqliteTable,
   text,
 } from "drizzle-orm/sqlite-core";
-import { agents } from "../bots/schema";
+import { agents } from "../bot-store/schema";
 
 export const skills = sqliteTable("skills", {
   id: text("id").primaryKey(),

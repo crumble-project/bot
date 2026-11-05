@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { exclusiveKind, open, until } from "./jobs-test-support";
+import { exclusiveKind, open, until } from "../../test/support/jobs";
 
 test("a job waiting for the screen reports as working", async () => {
   const { gates, say, lastToolResult } = await open(exclusiveKind);

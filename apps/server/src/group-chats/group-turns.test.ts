@@ -14,10 +14,10 @@ import {
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
 import { Plugins } from "../plugins/plugins";
-import { BotExtensions } from "../bots/bot-extensions";
+import { BotExtensions } from "../bot-ports/bot-extensions";
 import { chatOnly } from "../shared/chat-only";
 import { configuredWebSearchTools } from "../web-search/web-search-tools";
-import { AgentRepository } from "../bots/agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import { SettingsRepository } from "../shared/settings-repository";
 import type { Agent } from "../contract/agents";
 import { defaultAvatarDefinition } from "../contract/avatar";

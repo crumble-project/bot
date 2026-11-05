@@ -41,7 +41,11 @@ import type { CoreServices } from "./core-layer";
 import type { OwnerSkills } from "../skills/owner-skills";
 import type { Runner } from "../shared/runner";
 import { registerActivityRoutes } from "../activity/activity-api";
-import { registerSkillRoutes } from "../skills/skills-api";
+import { registerLearningRoutes } from "../learning/learning-api";
+import {
+  registerBotSkillRoutes,
+  registerSkillRoutes,
+} from "../skills/skills-api";
 import { pluginJobKinds, pluginProviders, Plugins } from "../plugins/plugins";
 import { BotWorkspaces } from "../workspaces/workspace";
 import { registerWebSearchRoutes } from "../web-search/web-search-api";
@@ -157,6 +161,8 @@ const featureRoutes: ReadonlyArray<(api: ApiContext) => void> = [
   registerHeldActionRoutes,
   registerBotRequestRoutes,
   registerMemoryRoutes,
+  registerBotSkillRoutes,
+  registerLearningRoutes,
   registerSkillRoutes,
   registerScheduleRoutes,
   registerExecutionRoutes,

@@ -1,5 +1,5 @@
 import { sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
-import { schedules } from "../automations/schema";
+import { schedules } from "./schema.schedules";
 import { agents, conversations } from "./schema";
 import { EXECUTION_STATUSES } from "../shared/domain";
 

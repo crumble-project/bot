@@ -1,6 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import { BotNotices, requestAnswers } from "../bots/bot-notices";
+import { BotNotices, requestAnswers } from "../bot-ports/bot-notices";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { botSecretRequests, parseHosts, type BotSecretKind } from "./schema";

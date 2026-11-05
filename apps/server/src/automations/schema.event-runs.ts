@@ -6,7 +6,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import { relayEvents } from "../event-sources/schema";
-import { schedules } from "./schema";
+import { schedules } from "../bot-store/schema.schedules";
 
 export type EventRunStatus = "pending" | "dispatched" | "failed";
 

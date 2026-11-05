@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect";
-import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
 import { Bots } from "../bots/bots";
 import { BotMessaging } from "../bot-messaging/bot-messaging";
 import { jobExtensions, pluginJobKinds, Plugins } from "../plugins/plugins";

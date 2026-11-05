@@ -1,6 +1,6 @@
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
-import { agents } from "../bots/schema";
-import { executions } from "../bots/schema.executions";
+import { agents } from "../bot-store/schema";
+import { executions } from "../bot-store/schema.executions";
 
 /** A sent bot message's destination, reserved before admission so a replay cannot reach a second bot. */
 export const botMessageRequests = sqliteTable("bot_message_requests", {

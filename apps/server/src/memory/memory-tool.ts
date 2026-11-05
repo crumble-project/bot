@@ -12,7 +12,7 @@ import {
 import { groupOf } from "../group-chats/group-conversation";
 import type { Agent } from "../contract/agents";
 import { MAX_MEMORY_CHARS } from "../shared/limits";
-import { reviewOf } from "../learning/review-conversation";
+import { reviewOf } from "../learned-changes/review-conversation";
 
 export type MemoryRecord = {
   id: string;

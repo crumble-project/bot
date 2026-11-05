@@ -5,12 +5,12 @@ import { keyedListeners, keyedLocks } from "../shared/keyed";
 import { SettingsRepository } from "../shared/settings-repository";
 import { ScheduleRepository } from "../automations/schedule-repository";
 import { EventRepository } from "../event-sources/event-repository";
-import { AgentRepository } from "./agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import type { Activity } from "./bots";
-import { BotDeletion } from "./bot-deletion";
-import { BotNotices } from "./bot-notices";
-import { ConversationRepository } from "./conversation-repository";
-import { ExecutionRepository } from "./execution-repository";
+import { BotDeletion } from "../bot-ports/bot-deletion";
+import { BotNotices } from "../bot-ports/bot-notices";
+import { ConversationRepository } from "../bot-store/conversation-repository";
+import { ExecutionRepository } from "../bot-store/execution-repository";
 import { BotRuntime } from "./runtime";
 
 /** Group turns run as executions too, but their output belongs to the group, not the bot chat. */

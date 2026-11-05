@@ -4,7 +4,7 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
 import { Plugins, pluginWebSearchProviders } from "../plugins/plugins";
-import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
 import { isPublicAddress } from "../shared/public-address";
 import {
   defaultProvider,
@@ -14,7 +14,7 @@ import {
   type WebExtract,
   type WebSearch,
 } from "./provider";
-import { AgentRepository } from "../bots/agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import { SettingsRepository } from "../shared/settings-repository";
 import {
   BOT_TOOL,

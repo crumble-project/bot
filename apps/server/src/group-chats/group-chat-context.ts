@@ -1,9 +1,9 @@
 import { Effect, FiberSet, Semaphore, type Fiber, type Scope } from "effect";
 import { keyedListeners, keyedLocks } from "../shared/keyed";
-import type { AgentRepository } from "../bots/agent-repository";
+import type { AgentRepository } from "../bot-store/agent-repository";
 import type { Bots } from "../bots/bots";
-import type { ConversationRepository } from "../bots/conversation-repository";
-import type { ExecutionRepository } from "../bots/execution-repository";
+import type { ConversationRepository } from "../bot-store/conversation-repository";
+import type { ExecutionRepository } from "../bot-store/execution-repository";
 import type { BotRuntime } from "../bots/runtime";
 import type { GroupChat } from "./group-chat-repository";
 import { InvalidInput, NotFound, type AppError } from "../shared/errors";

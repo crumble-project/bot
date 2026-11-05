@@ -3,7 +3,7 @@ import { Context, Effect, Layer } from "effect";
 import type { Agent, AgentInput } from "../contract/agents";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
-import { SkillRepository } from "../skills/skill-repository";
+import { AgentSkills } from "./agent-skills";
 import { agents } from "./schema";
 import {
   avatarDefinitionSchema,
@@ -32,12 +32,12 @@ export class AgentRepository extends Context.Service<
     ) => Effect.Effect<Agent | null>;
     readonly delete: (agentId: string) => Effect.Effect<boolean>;
   }
->()("crumble/bots/AgentRepository") {
+>()("crumble/bot-store/AgentRepository") {
   static readonly layer = Layer.effect(
     AgentRepository,
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
-      const skillLibrary = yield* SkillRepository;
+      const skillLibrary = yield* AgentSkills;
 
       const agentOf = Effect.fnUntraced(function* (
         row: typeof agents.$inferSelect,
@@ -65,10 +65,7 @@ export class AgentRepository extends Context.Service<
           webSearchProvider: row.webSearchProvider,
           enabled: row.enabled,
           tools,
-          skills: skills.map(({ name, instructions }) => ({
-            name,
-            instructions,
-          })),
+          skills,
           sharedSkills: JSON.parse(row.sharedSkills),
           sharedMemory: tools.includes(BOT_TOOL.memory),
           mcpServers: JSON.parse(row.mcpServers),
@@ -142,7 +139,7 @@ export class AgentRepository extends Context.Service<
           createdAt: at,
           updatedAt: at,
         });
-        yield* skillLibrary.replaceAgentSkills(agentId, input.skills);
+        yield* skillLibrary.replace(agentId, input.skills);
 
         return (yield* get(agentId))!;
       }, Effect.orDie);
@@ -166,8 +163,7 @@ export class AgentRepository extends Context.Service<
           })
           .where(eq(agents.id, agentId));
 
-        if (patch.skills)
-          yield* skillLibrary.replaceAgentSkills(agentId, patch.skills);
+        if (patch.skills) yield* skillLibrary.replace(agentId, patch.skills);
 
         return yield* get(agentId);
       }, Effect.orDie);

@@ -1,9 +1,9 @@
 import { Context, Effect, Layer } from "effect";
 import { accessOf, noServices, type Access } from "../shared/runner";
-import { AgentRepository } from "../bots/agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import { Bots } from "../bots/bots";
-import { ConversationRepository } from "../bots/conversation-repository";
-import { ExecutionRepository } from "../bots/execution-repository";
+import { ConversationRepository } from "../bot-store/conversation-repository";
+import { ExecutionRepository } from "../bot-store/execution-repository";
 import { BotRuntime } from "../bots/runtime";
 import {
   groupChatContext,

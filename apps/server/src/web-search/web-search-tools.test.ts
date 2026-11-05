@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Effect, Layer } from "effect";
 import { Store } from "../../test/support/store";
 import type { CoreServices } from "../app/core-layer";
-import { BotExtensions } from "../bots/bot-extensions";
+import { BotExtensions } from "../bot-ports/bot-extensions";
 import { WEB_SEARCH_TOOL_NAME } from "../contract/tools";
 import { Plugins } from "../plugins/plugins";
 import { agentInput } from "../contract/agents";

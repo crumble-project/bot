@@ -1,6 +1,6 @@
 import { gatewayRequest } from "../shared/request-ids";
 import { Clock, Context, Effect, Layer, Result } from "effect";
-import { AgentRepository } from "../bots/agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import type {
   GatewayConfig,
   GatewayDescription,

@@ -3,8 +3,8 @@ import type { Agent } from "../contract/agents";
 import type { ChangeBy } from "../shared/domain";
 import type { Skill, SkillInput } from "../contract/skills";
 import { atomic, ProductDatabase } from "../shared/product-database";
-import { changeSourceOf } from "../learning/change-source";
-import { ExecutionRepository } from "../bots/execution-repository";
+import { changeSourceOf } from "../learned-changes/change-source";
+import { ExecutionRepository } from "../bot-store/execution-repository";
 import { DefaultSkills } from "./default-skills";
 import {
   SkillToolError,

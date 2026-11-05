@@ -6,7 +6,7 @@ import type { McpServers } from "../integrations/mcp-servers";
 import type { SkillRepository } from "../skills/skill-repository";
 import { agentInput } from "../contract/agents";
 import type { Runner } from "../shared/runner";
-import { AgentRepository } from "./agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import { checkBotChoices } from "./bot-choices";
 import { duplicateAgent } from "./agent-duplicate";
 import type { BotsAccess } from "./bots";

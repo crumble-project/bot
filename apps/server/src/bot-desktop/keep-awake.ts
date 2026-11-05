@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect";
-import { AgentRepository } from "../bots/agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import { BotWorkspaces } from "../workspaces/workspace";
 import { DesktopControl, type ControlState } from "./desktop-control";
 

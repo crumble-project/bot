@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import type { BotsAccess } from "../bots/bots";
+import type { BotLookup } from "../bot-ports/bot-lookup";
 import type { Runner } from "../shared/runner";
 import { Unavailable } from "../shared/errors";
 import { GitHubUnavailable } from "./github-api";
@@ -13,7 +13,7 @@ import { GitHubApps } from "./github-apps";
  * removing them. */
 export function registerGitHubAppRoutes(options: {
   register: Register;
-  service: BotsAccess;
+  service: BotLookup;
   run: Runner<GitHubApps | GitHubAppUsers | GitHubAccounts>;
 }) {
   const { register, service, run } = options;

@@ -47,7 +47,7 @@ export class ConversationRepository extends Context.Service<
       archived: boolean,
     ) => Effect.Effect<Conversation | null>;
   }
->()("crumble/bots/ConversationRepository") {
+>()("crumble/bot-store/ConversationRepository") {
   static readonly layer = Layer.effect(
     ConversationRepository,
     Effect.gen(function* () {

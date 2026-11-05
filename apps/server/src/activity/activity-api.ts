@@ -3,13 +3,13 @@ import { routes } from "../contract/api-contract";
 import type { activityFeedResponse } from "../contract/api-responses";
 import type { Register } from "../contract/route";
 import { decodeCursor, activityPage } from "./activity";
-import { AgentRepository } from "../bots/agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import type { AgentRuntime } from "../bots/runtime";
-import type { BotsAccess } from "../bots/bots";
-import { ConversationRepository } from "../bots/conversation-repository";
+import type { BotLookup } from "../bot-ports/bot-lookup";
+import { ConversationRepository } from "../bot-store/conversation-repository";
 import { InvalidInput } from "../shared/errors";
 import type { Runner } from "../shared/runner";
-import { LearnedChangeRepository } from "../learning/learned-change-repository";
+import { LearnedChangeRepository } from "../learned-changes/learned-change-repository";
 
 type Services =
   | AgentRepository
@@ -21,7 +21,7 @@ type Exec = Runner<Services>["runSync"];
 /** The account-wide activity feed, oldest pages first, from the bots' chat history and learned changes. */
 export function registerActivityRoutes(options: {
   register: Register;
-  service: BotsAccess;
+  service: BotLookup;
   runtime: AgentRuntime;
   run: Runner<Services>;
 }) {

@@ -1,10 +1,10 @@
 import { Effect, Layer, ManagedRuntime } from "effect";
-import type { AgentRepository } from "../bots/agent-repository";
+import type { AgentRepository } from "../bot-store/agent-repository";
 import type { Bots } from "../bots/bots";
 import type { BotRuntime } from "../bots/runtime";
 import type { Execution } from "../shared/domain";
 import type { Runner } from "../shared/runner";
-import type { LearnedChangeRepository } from "./learned-change-repository";
+import type { LearnedChangeRepository } from "../learned-changes/learned-change-repository";
 import { LearningReview } from "./learning-review";
 import type { ReviewRepository } from "./review-repository";
 

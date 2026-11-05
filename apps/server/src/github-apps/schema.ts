@@ -4,7 +4,7 @@ import {
   sqliteTable,
   text,
 } from "drizzle-orm/sqlite-core";
-import { agents } from "../bots/schema";
+import { agents } from "../bot-store/schema";
 
 /**
  * The account's GitHub Apps, each created from a manifest and private to one GitHub account. The client secret, which

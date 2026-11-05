@@ -66,7 +66,7 @@ export class LearnedChangeRepository extends Context.Service<
       limit?: number,
     ) => Effect.Effect<ReviewResult[]>;
   }
->()("crumble/learning/LearnedChangeRepository") {
+>()("crumble/learned-changes/LearnedChangeRepository") {
   static readonly layer = Layer.effect(
     LearnedChangeRepository,
     Effect.gen(function* () {

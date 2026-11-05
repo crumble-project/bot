@@ -1,15 +1,15 @@
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import type { BotsAccess } from "../bots/bots";
+import type { BotLookup } from "../bot-ports/bot-lookup";
 import { NotFound } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import { ChangeReverter } from "./change-reverter";
-import { LearnedChangeRepository } from "./learned-change-repository";
+import { LearnedChangeRepository } from "../learned-changes/learned-change-repository";
 
 /** The learned changes the bot's reviews produced, and the owner reverting one. */
 export function registerLearningRoutes(options: {
   register: Register;
-  service: BotsAccess;
+  service: BotLookup;
   run: Runner<ChangeReverter | LearnedChangeRepository>;
 }) {
   const { register, service, run } = options;

@@ -7,7 +7,7 @@ import { PROGRESS_BYTES_PER_SECOND } from "@earendil-works/chord/output";
 import { ExecutionError, err, ok } from "@earendil-works/pi-durable/env";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { Store } from "../../test/support/store";
-import { BotNotices } from "../bots/bot-notices";
+import { BotNotices } from "../bot-ports/bot-notices";
 import { Credentials } from "../credentials/credentials";
 import { agentInput } from "../contract/agents";
 import { scheduleInput, type Schedule } from "../contract/schedules";

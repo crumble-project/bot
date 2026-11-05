@@ -23,7 +23,7 @@ export class BotNotices extends Context.Service<
       handler: NoticeHandler,
     ) => Effect.Effect<void, never, Scope.Scope>;
   }
->()("crumble/bots/BotNotices") {
+>()("crumble/bot-ports/BotNotices") {
   static readonly layer = Layer.effect(
     BotNotices,
     Effect.gen(function* () {

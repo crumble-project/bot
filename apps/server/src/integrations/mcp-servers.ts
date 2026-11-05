@@ -7,8 +7,8 @@ import type {
 } from "../contract/api-responses";
 import type { mcpCreateInput, mcpInput } from "../contract/api-contract";
 import type { SecretInput } from "../contract/secrets";
-import { AgentRepository } from "../bots/agent-repository";
-import { BotDeletion } from "../bots/bot-deletion";
+import { AgentRepository } from "../bot-store/agent-repository";
+import { BotDeletion } from "../bot-ports/bot-deletion";
 import { Secrets } from "../secrets/secrets";
 import type { ServerSecrets } from "../secrets/server-secrets";
 import { pi } from "../shared/app-errors";

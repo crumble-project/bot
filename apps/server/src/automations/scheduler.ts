@@ -11,7 +11,7 @@ import {
   type Schedule,
   type ScheduleInput,
 } from "../contract/schedules";
-import { AgentRepository } from "../bots/agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import { EventRepository } from "../event-sources/event-repository";
 import { accessOf, type Access, type Runner } from "../shared/runner";
 import { startTicking } from "../shared/ticker";

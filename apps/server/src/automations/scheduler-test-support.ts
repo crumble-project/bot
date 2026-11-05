@@ -1,5 +1,5 @@
 import { Effect, Layer, ManagedRuntime } from "effect";
-import type { AgentRepository } from "../bots/agent-repository";
+import type { AgentRepository } from "../bot-store/agent-repository";
 import type { EventRepository } from "../event-sources/event-repository";
 import type { Execution } from "../shared/domain";
 import type { Runner } from "../shared/runner";

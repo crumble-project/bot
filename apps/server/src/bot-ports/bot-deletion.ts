@@ -19,7 +19,7 @@ export class BotDeletion extends Context.Service<
     /** Asks every feature what it will clear for the bot; run the answer after the delete. */
     readonly prepare: (agentId: string) => Effect.Effect<Effect.Effect<void>>;
   }
->()("crumble/bots/BotDeletion") {
+>()("crumble/bot-ports/BotDeletion") {
   static readonly layer = Layer.effect(
     BotDeletion,
     Effect.gen(function* () {
