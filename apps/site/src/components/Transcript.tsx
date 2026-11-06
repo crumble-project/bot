@@ -791,7 +791,7 @@ function RenewalResult({
 
 function useCursorPoint(
   pageRef: RefObject<HTMLDivElement | null>,
-  target: RefObject<HTMLSpanElement | null> | null,
+  target: { current: HTMLSpanElement | null } | null,
   verdict: Verdict,
 ) {
   const [point, setPoint] = useState<CSSProperties>({
