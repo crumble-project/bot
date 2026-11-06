@@ -7,7 +7,7 @@ import {
   agentPath,
   botsQuery,
   type BotInput,
-  refreshBots,
+  invalidateBots,
 } from "@/features/bots/api";
 import { send } from "@/lib/api";
 import { BotAvatar, type BotState } from "@/components/bot-avatar";
@@ -24,7 +24,7 @@ export function AvatarsPage() {
       send<"updateAgent">(agentPath(selected), "PATCH", {
         avatar: value,
       } satisfies Partial<BotInput>),
-    onSuccess: refreshBots,
+    onSuccess: invalidateBots,
   });
 
   return (

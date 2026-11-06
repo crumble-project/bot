@@ -53,7 +53,7 @@ import { cn } from "@/lib/utils";
 import {
   type Schedule,
   executionsQuery,
-  refreshSchedules,
+  invalidateSchedules,
   schedulePath,
   schedulesQuery,
   scriptRunsQuery,
@@ -311,7 +311,7 @@ function useAutomationActions(schedule: Schedule) {
 
   const remove = useMutation({
     mutationFn: () => send<"deleteSchedule">(path, "DELETE"),
-    onSettled: refreshSchedules,
+    onSettled: invalidateSchedules,
   });
 
   return { toggle, run, remove };

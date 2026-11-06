@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useQueries } from "@tanstack/react-query";
 import type { Message } from "@/features/chat/api";
 import { JOB_KIND_NAMES, isJobKind } from "@crumble/server/contract/tools";
-import { type JobRef, jobsQuery, refreshJobs } from "./api";
+import { type JobRef, jobsQuery, invalidateJobs } from "./api";
 import { jobOf } from "./job-card";
 
 export function useChatJobs(botId: string, messages: Message[]) {
@@ -26,7 +26,7 @@ export function useChatJobs(botId: string, messages: Message[]) {
     if (counted.current === jobMessages) return;
     counted.current = jobMessages;
 
-    for (const kind of JOB_KIND_NAMES) void refreshJobs(botId, kind);
+    for (const kind of JOB_KIND_NAMES) void invalidateJobs(botId, kind);
   }, [botId, jobMessages]);
 
   return ({ kind, name }: JobRef) =>

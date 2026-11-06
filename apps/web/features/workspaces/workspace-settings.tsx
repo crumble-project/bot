@@ -18,7 +18,7 @@ import { send } from "@/lib/api";
 import { useIsAdmin } from "@/lib/auth-client";
 import {
   type ServerSettings,
-  refreshAdmin,
+  invalidateAdmin,
   serverSettingsQuery,
 } from "@/features/settings/api";
 
@@ -75,7 +75,7 @@ function SettingsSheet({
     mutationFn: (patch: Partial<ServerSettings>) =>
       send<"updateServerSettings">("/v1/admin/settings", "PATCH", patch),
     onSuccess: async () => {
-      await refreshAdmin();
+      await invalidateAdmin();
       onClose();
     },
   });

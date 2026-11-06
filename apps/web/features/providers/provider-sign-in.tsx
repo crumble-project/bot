@@ -21,7 +21,7 @@ import {
   signInQuery,
   providerSignInPath,
   providerPath,
-  refreshProviders,
+  invalidateProviders,
 } from "./api";
 
 function useProviderLogin(provider: Provider, onClose: () => void) {
@@ -33,7 +33,7 @@ function useProviderLogin(provider: Provider, onClose: () => void) {
       call<"startProviderLogin">(path, "POST", { method: "oauth" }),
     onSuccess: async (session) => {
       setSessionId(session.id);
-      await refreshProviders();
+      await invalidateProviders();
     },
   });
 
@@ -46,7 +46,7 @@ function useProviderLogin(provider: Provider, onClose: () => void) {
     mutationFn: (id: string) =>
       send<"cancelProviderLogin">(providerSignInPath(id), "DELETE"),
     onSettled: async () => {
-      await refreshProviders();
+      await invalidateProviders();
       onClose();
     },
   });
@@ -54,7 +54,7 @@ function useProviderLogin(provider: Provider, onClose: () => void) {
   const status = session.data?.status;
 
   useEffect(() => {
-    if (status && status !== "pending") void refreshProviders();
+    if (status && status !== "pending") void invalidateProviders();
   }, [status]);
 
   const gone =

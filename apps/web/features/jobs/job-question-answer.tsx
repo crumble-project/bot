@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { send } from "@/lib/api";
-import { type Job, jobPath, refreshJobs } from "./api";
+import { type Job, jobPath, invalidateJobs } from "./api";
 
 export type Question = NonNullable<Job["question"]>;
 
@@ -88,7 +88,7 @@ export function JobQuestionAnswer({
         "POST",
         { questionId: question.id, text: sent },
       ),
-    onSettled: () => refreshJobs(botId, "coding"),
+    onSettled: () => invalidateJobs(botId, "coding"),
   });
 
   const submit = () => {

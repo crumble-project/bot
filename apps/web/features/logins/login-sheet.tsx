@@ -17,7 +17,12 @@ import {
   useSecretDraft,
 } from "@/features/password-managers/secret-source-field";
 import type { Bot } from "@/features/bots/api";
-import { type Login, type LoginRequest, loginPath, refreshLogins } from "./api";
+import {
+  type Login,
+  type LoginRequest,
+  loginPath,
+  invalidateLogins,
+} from "./api";
 import { call, type RequestBody } from "@/lib/api";
 
 const validName = (name: string) => loginName.safeParse(name).success;
@@ -119,7 +124,7 @@ function useSaveLogin(
         loginBody(draft, existing, secrets),
       ),
     onSuccess: async () => {
-      await refreshLogins(botId);
+      await invalidateLogins(botId);
       onClose();
     },
   });

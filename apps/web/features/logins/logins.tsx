@@ -5,7 +5,7 @@ import {
   type Logins,
   loginPath,
   loginsQuery,
-  refreshLogins,
+  invalidateLogins,
 } from "./api";
 import {
   LastUse,
@@ -125,7 +125,7 @@ export function LoginsSettings({
       initialBot={initialBot}
       queryOf={loginsQuery}
       pathOf={loginPath}
-      refresh={refreshLogins}
+      refresh={invalidateLogins}
       itemsOf={loginsOf}
       requestsOf={requestsOf}
       Row={LoginRow}

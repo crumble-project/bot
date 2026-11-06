@@ -27,7 +27,7 @@ import {
   type PasswordManager,
   passwordManagerPath,
   passwordManagersQuery,
-  refreshSecrets,
+  invalidateSecrets,
 } from "./api";
 import { send } from "@/lib/api";
 
@@ -56,7 +56,7 @@ function TokenSheet({
         token: token.trim(),
       }),
     onSuccess: async () => {
-      await refreshSecrets();
+      await invalidateSecrets();
       onClose();
     },
   });
@@ -107,7 +107,7 @@ function PasswordManagerRow({ manager }: { manager: PasswordManager }) {
         passwordManagerPath(manager.id),
         "DELETE",
       ),
-    onSuccess: refreshSecrets,
+    onSuccess: invalidateSecrets,
   });
 
   return (

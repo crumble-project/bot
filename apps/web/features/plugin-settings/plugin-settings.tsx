@@ -19,7 +19,7 @@ import {
 } from "./api";
 import {
   passwordManagersQuery,
-  refreshSecrets,
+  invalidateSecrets,
 } from "@/features/password-managers/api";
 import { queryClient, send } from "@/lib/api";
 
@@ -90,7 +90,7 @@ function SecretSetting({
         queryClient.invalidateQueries({
           queryKey: pluginSettingsQuery.queryKey,
         }),
-        refreshSecrets(),
+        invalidateSecrets(),
         onChange?.(),
       ]);
       // Drop the submitted value from the mutation state.

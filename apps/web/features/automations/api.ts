@@ -21,7 +21,7 @@ export const schedulesQuery = queryOptions({
   queryFn: ({ signal }) => api<"schedules">("/v1/schedules", { signal }),
 });
 
-export const refreshSchedules = () =>
+export const invalidateSchedules = () =>
   queryClient.invalidateQueries({ queryKey: schedulesQuery.queryKey });
 
 export const toggleScheduleOptions = (id: string) =>
@@ -40,7 +40,7 @@ export const toggleScheduleOptions = (id: string) =>
     },
     onError: (_error, _enabled, previous) =>
       queryClient.setQueryData(schedulesQuery.queryKey, previous),
-    onSettled: () => refreshSchedules(),
+    onSettled: () => invalidateSchedules(),
   });
 
 export const executionsQuery = queryOptions({

@@ -5,7 +5,7 @@ import {
   type CredentialUse,
   credentialPath,
   credentialsQuery,
-  refreshCredentials,
+  invalidateCredentials,
 } from "./api";
 import { CredentialSheet } from "./credential-sheet";
 import { api } from "@/lib/api";
@@ -123,7 +123,7 @@ export function CredentialsSettings({
       initialBot={initialBot}
       queryOf={credentialsQuery}
       pathOf={credentialPath}
-      refresh={refreshCredentials}
+      refresh={invalidateCredentials}
       itemsOf={credentialsOf}
       requestsOf={requestsOf}
       Row={CredentialRow}

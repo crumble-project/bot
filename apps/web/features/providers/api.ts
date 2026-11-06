@@ -36,7 +36,7 @@ export const providersQuery = queryOptions({
   queryFn: ({ signal }) => api<"providers">("/v1/providers", { signal }),
 });
 
-export async function refreshProviders() {
+export async function invalidateProviders() {
   await queryClient.invalidateQueries({ queryKey: providersQuery.queryKey });
   await queryClient.invalidateQueries({ queryKey: modelsKey });
 }

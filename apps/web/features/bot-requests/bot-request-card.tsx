@@ -17,7 +17,7 @@ import {
   type Bot,
   type BotInput,
   botsQuery,
-  refreshBots,
+  invalidateBots,
 } from "@/features/bots/api";
 import { BotAvatar } from "@/components/bot-avatar";
 import { BotFields, useBotFields } from "@/features/bots/bot-fields";
@@ -121,7 +121,7 @@ function useBotRequestMutations(
           : [...bots, agent],
       );
       void refresh();
-      void refreshBots();
+      void invalidateBots();
     },
     onError: refresh,
   });

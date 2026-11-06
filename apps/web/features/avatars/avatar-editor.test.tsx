@@ -44,9 +44,12 @@ test("gallery, import validation, colors and description-inclusive generation pr
   const original = defaultAvatarDefinition("studio");
 
   let current: BotAvatarDefinition = original;
+  let replace: (next: BotAvatarDefinition) => void = () => {};
 
   function Editor() {
     const [value, setValue] = useState(original);
+
+    replace = setValue;
 
     return (
       <AvatarEditor
@@ -103,6 +106,10 @@ test("gallery, import validation, colors and description-inclusive generation pr
     await type('input[id$="-eyes"]', "#fedcba");
     expect(current.color).toBe("#123456");
     expect(current.eyeColor).toBe("#fedcba");
+    await act(async () => replace({ ...current, color: "#654321" }));
+    expect(
+      container.querySelector<HTMLInputElement>('input[id$="-body"]')!.value,
+    ).toBe("#654321");
     await click("Generate");
     await type("textarea", "A watering can for my garden");
     await click("Copy generation prompt");
@@ -139,7 +146,7 @@ test("gallery, import validation, colors and description-inclusive generation pr
     await click("Validate and import");
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(current.definition.id).toBe(original.definition.id);
-    expect(current.color).toBe("#123456");
+    expect(current.color).toBe("#654321");
     expect(current.eyeColor).toBe("#fedcba");
   } finally {
     await act(async () => root.unmount());

@@ -37,7 +37,7 @@ import {
   githubAccountsQuery,
   githubAppPath,
   githubAppsQuery,
-  refreshGithub,
+  invalidateGithub,
 } from "./api";
 import { call, send } from "@/lib/api";
 import {
@@ -90,7 +90,7 @@ function InstallButton({ app }: { app: GitHubApp }) {
 function AppRow({ app, onEdit }: { app: GitHubApp; onEdit: () => void }) {
   const remove = useMutation({
     mutationFn: () => send<"deleteGithubApp">(githubAppPath(app.id), "DELETE"),
-    onSuccess: refreshGithub,
+    onSuccess: invalidateGithub,
   });
 
   return (
@@ -232,7 +232,7 @@ function InstallationField({ app }: { app: GitHubApp }) {
   const connect = useMutation({
     mutationFn: () =>
       send<"connectGithubApp">(`${githubAppPath(app.id)}/connect`, "POST"),
-    onSuccess: refreshGithub,
+    onSuccess: invalidateGithub,
   });
 
   return (
@@ -286,7 +286,7 @@ function ClientSecretForm({ app }: { app: GitHubApp }) {
         "PUT",
         body,
       ),
-    onSuccess: refreshGithub,
+    onSuccess: invalidateGithub,
   });
 
   return (
@@ -345,7 +345,7 @@ function SignOutButton({ app }: { app: GitHubApp }) {
   const signOut = useMutation({
     mutationFn: () =>
       send<"signOutGithubApp">(`${githubAppPath(app.id)}/user`, "DELETE"),
-    onSuccess: refreshGithub,
+    onSuccess: invalidateGithub,
   });
 
   return (
@@ -404,7 +404,7 @@ function AppSheet({ app, onClose }: { app: GitHubApp; onClose: () => void }) {
         botIds,
       }),
     onSuccess: async () => {
-      await refreshGithub();
+      await invalidateGithub();
       onClose();
     },
   });
@@ -480,7 +480,7 @@ function AccountRow({
   const remove = useMutation({
     mutationFn: () =>
       send<"deleteGithubAccount">(githubAccountPath(account.id), "DELETE"),
-    onSuccess: refreshGithub,
+    onSuccess: invalidateGithub,
   });
 
   return (
@@ -554,7 +554,7 @@ function AddAccountSheet({ onClose }: { onClose: () => void }) {
     mutationFn: (body: SecretInput) =>
       call<"addGithubAccount">("/v1/github-accounts", "POST", body),
     onSuccess: async () => {
-      await refreshGithub();
+      await invalidateGithub();
       onClose();
     },
   });
@@ -600,7 +600,7 @@ function AccountSheet({
       );
     },
     onSuccess: async () => {
-      await refreshGithub();
+      await invalidateGithub();
       onClose();
     },
   });
@@ -723,7 +723,7 @@ function finishGitHubApp(
 
   return finish.then(async () => {
     sessionStorage.removeItem(INSTALLING_KEY);
-    await refreshGithub();
+    await invalidateGithub();
     await navigate({ to: "/settings/coding", replace: true });
   });
 }

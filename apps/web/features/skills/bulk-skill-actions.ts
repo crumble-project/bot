@@ -153,8 +153,10 @@ export async function applyBulkAction(
         ? deleteSkill
         : assigner;
 
+  // Skills run in order, so two operations never race on one bot's assignments.
   for (const skill of picked) {
     try {
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop
       if (await apply(skill)) failed.add(skill.id);
     } catch (error) {
       failed.add(skill.id);

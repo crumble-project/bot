@@ -21,7 +21,7 @@ export const botsQuery = queryOptions({
   queryFn: ({ signal }) => api<"listAgents">("/v1/agents", { signal }),
 });
 
-export const refreshBots = () =>
+export const invalidateBots = () =>
   queryClient.invalidateQueries({ queryKey: botsQuery.queryKey });
 
 export const capabilitiesQuery = queryOptions({

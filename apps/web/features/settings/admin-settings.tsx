@@ -26,7 +26,7 @@ import {
 } from "@/components/page";
 import { api, call, send } from "@/lib/api";
 import { useIsAdmin, useSession } from "@/lib/auth-client";
-import { refreshAdmin, serverSettingsQuery } from "./api";
+import { invalidateAdmin, serverSettingsQuery } from "./api";
 
 type AdminUser = z.infer<typeof adminUser>;
 
@@ -54,7 +54,7 @@ function UserRow({ user, self }: { user: AdminUser; self: boolean }) {
       action === "remove"
         ? send<"removeUser">(userPath(user.id), "DELETE")
         : send<"setUserRole">(userPath(user.id), "PATCH", { role: action }),
-    onSettled: refreshAdmin,
+    onSettled: invalidateAdmin,
   });
 
   const shown = user.name || user.email;
@@ -108,7 +108,7 @@ function UserRow({ user, self }: { user: AdminUser; self: boolean }) {
 function InviteRow({ invite }: { invite: Invite }) {
   const revoke = useMutation({
     mutationFn: () => send<"revokeInvite">(invitePath(invite.id), "DELETE"),
-    onSettled: refreshAdmin,
+    onSettled: invalidateAdmin,
   });
 
   return (
@@ -135,7 +135,7 @@ function InviteRow({ invite }: { invite: Invite }) {
 /** Shows a new invite link once: the server keeps only its hash. */
 function NewInviteSheet({ onClose }: { onClose: () => void }) {
   const create = useQuery({
-    // Outside ["admin"]: `refreshAdmin` would POST again and mint an invite nobody sees.
+    // Outside ["admin"]: `invalidateAdmin` would POST again and mint an invite nobody sees.
     queryKey: ["new-invite"],
     queryFn: () => call<"createInvite">("/v1/admin/invites", "POST"),
     staleTime: Infinity,
@@ -198,7 +198,7 @@ function Users() {
         <NewInviteSheet
           onClose={() => {
             setInviting(false);
-            void refreshAdmin();
+            void invalidateAdmin();
           }}
         />
       )}
@@ -214,7 +214,7 @@ function SignUp() {
       send<"updateServerSettings">("/v1/admin/settings", "PATCH", {
         signUpOpen,
       }),
-    onSettled: refreshAdmin,
+    onSettled: invalidateAdmin,
   });
 
   return (

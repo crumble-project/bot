@@ -37,13 +37,13 @@ import {
 import { send } from "@/lib/api";
 import {
   type PasswordManager,
-  refreshSecrets,
+  invalidateSecrets,
 } from "@/features/password-managers/api";
 import {
   type Provider,
   providersQuery,
   providerPath,
-  refreshProviders,
+  invalidateProviders,
 } from "./api";
 import { SignInDialog } from "./provider-sign-in";
 import { providerLogo } from "./provider-logos";
@@ -83,7 +83,7 @@ function useProviderCredential(provider: Provider) {
   const [editing, setEditing] = useState(false);
   const path = providerPath(provider.provider);
 
-  // `refreshProviders` invalidates the provider and model queries.
+  // `invalidateProviders` invalidates the provider and model queries.
   // react-doctor-disable-next-line query-mutation-missing-invalidation
   const save = useMutation({
     mutationFn: (body: SecretInput | null) =>
@@ -92,7 +92,7 @@ function useProviderCredential(provider: Provider) {
         : send<"putProvider">(path, "PUT", body),
     onSuccess: async () => {
       setEditing(false);
-      await Promise.all([refreshProviders(), refreshSecrets()]);
+      await Promise.all([invalidateProviders(), invalidateSecrets()]);
       // Drop the submitted key from the mutation state.
       save.reset();
     },

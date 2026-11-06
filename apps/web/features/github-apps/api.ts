@@ -5,8 +5,8 @@ import type {
   githubAppManifestResponse,
   githubAppResponse,
 } from "@crumble/server/contract/github-apps";
-import { refreshAllCredentials } from "@/features/credentials/api";
-import { refreshSecrets } from "@/features/password-managers/api";
+import { invalidateAllCredentials } from "@/features/credentials/api";
+import { invalidateSecrets } from "@/features/password-managers/api";
 import { api, queryClient } from "@/lib/api";
 
 export type GitHubApp = z.infer<typeof githubAppResponse>;
@@ -34,10 +34,10 @@ export const githubAccountsQuery = queryOptions({
 });
 
 /** A bot's GH_TOKEN appears or goes with its Apps and machine account, so credentials refresh too. */
-export const refreshGithub = () =>
+export const invalidateGithub = () =>
   Promise.all([
     queryClient.invalidateQueries({ queryKey: githubAppsQuery.queryKey }),
     queryClient.invalidateQueries({ queryKey: githubAccountsQuery.queryKey }),
-    refreshAllCredentials(),
-    refreshSecrets(),
+    invalidateAllCredentials(),
+    invalidateSecrets(),
   ]).then(() => undefined);

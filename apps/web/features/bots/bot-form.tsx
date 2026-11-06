@@ -4,18 +4,18 @@ import { IconCopy } from "@tabler/icons-react";
 import { AlertDialog, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
-import { type Bot, type BotInput, agentPath, refreshBots } from "./api";
+import { type Bot, type BotInput, agentPath, invalidateBots } from "./api";
 import { BotFields, useBotFields } from "./bot-fields";
 import { call, queryClient, send } from "@/lib/api";
 import { ConfirmDeleteContent, Page } from "@/components/page";
 import { chatQuery } from "@/features/chat/api";
-import { refreshSchedules } from "@/features/automations/api";
+import { invalidateSchedules } from "@/features/automations/api";
 
 function useBotMutations(bot: Bot | undefined) {
   const navigate = useNavigate();
 
   const after = async (saved: { id: string } | null) => {
-    await refreshBots();
+    await invalidateBots();
 
     if (saved)
       await navigate({ to: "/bots/$botId", params: { botId: saved.id } });
@@ -36,7 +36,7 @@ function useBotMutations(bot: Bot | undefined) {
     mutationFn: (id: string) =>
       call<"duplicateAgent">(`${agentPath(id)}/duplicate`, "POST"),
     onSuccess: async (copy) => {
-      await refreshBots();
+      await invalidateBots();
 
       if (copy)
         await navigate({ to: "/bots/$botId/edit", params: { botId: copy.id } });
@@ -47,8 +47,8 @@ function useBotMutations(bot: Bot | undefined) {
     mutationFn: (id: string) => send<"deleteAgent">(agentPath(id), "DELETE"),
     onSuccess: async (_, id) => {
       queryClient.removeQueries({ queryKey: chatQuery(id).queryKey });
-      await refreshBots();
-      await refreshSchedules();
+      await invalidateBots();
+      await invalidateSchedules();
       await navigate({ to: "/" });
     },
   });

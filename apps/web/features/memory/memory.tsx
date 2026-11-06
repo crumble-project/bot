@@ -29,7 +29,7 @@ import {
   type Memory,
   botMemoriesQuery,
   sharedMemoriesQuery,
-  refreshMemories,
+  invalidateMemories,
 } from "./api";
 import { send } from "@/lib/api";
 import {
@@ -372,7 +372,7 @@ function useDeleteMemory() {
         memoryPath(memory.agentId ?? SHARED, memory.id),
         "DELETE",
       ),
-    onSettled: refreshMemories,
+    onSettled: invalidateMemories,
   });
 }
 
@@ -387,7 +387,7 @@ export function MemoryPage() {
     <Page
       title="Memory"
       refreshing={refreshing}
-      onRefresh={() => void refreshMemories()}
+      onRefresh={() => void invalidateMemories()}
     >
       <div className="flex flex-col gap-3">
         <PageToolbar
@@ -461,7 +461,7 @@ function MemoryDialog({
             { content },
           ),
     onSuccess: async () => {
-      await refreshMemories();
+      await invalidateMemories();
       onClose();
     },
   });

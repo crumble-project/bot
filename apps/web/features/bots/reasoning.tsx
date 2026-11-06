@@ -13,7 +13,7 @@ import {
   agentPath,
   botsQuery,
   type BotInput,
-  refreshBots,
+  invalidateBots,
 } from "./api";
 import { type Model, modelsQuery } from "@/features/providers/api";
 import { queryClient, send } from "@/lib/api";
@@ -128,7 +128,7 @@ export function BotReasoning({ bot }: { bot: Bot }) {
             : each,
         ),
       ),
-    onSettled: () => refreshBots(),
+    onSettled: () => invalidateBots(),
   });
 
   if (levels.length < 2) return null;

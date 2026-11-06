@@ -19,7 +19,7 @@ import {
   type Credential,
   type CredentialRequest,
   credentialPath,
-  refreshCredentials,
+  invalidateCredentials,
 } from "./api";
 
 const validName = (name: string) => credentialName.safeParse(name).success;
@@ -39,7 +39,7 @@ function useSaveCredential(
           draft.secret.input && { secret: draft.secret.input }),
       }),
     onSuccess: async () => {
-      await refreshCredentials(botId);
+      await invalidateCredentials(botId);
       onClose();
     },
   });
@@ -76,7 +76,7 @@ export function CredentialSheet({
   const source = existing ?? request;
   const [owner, setOwner] = useState(() => defaultOwner(botId, bots));
   const [name, setName] = useState(source?.name ?? "");
-  const [hosts, setHosts] = useState((source?.hosts ?? []).join(", "));
+  const [hosts, setHosts] = useState(() => (source?.hosts ?? []).join(", "));
   const secret = useSecretDraft(existing?.secret ?? undefined);
 
   const save = useSaveCredential(owner, { name, hosts, secret }, onClose);

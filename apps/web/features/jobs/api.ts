@@ -31,7 +31,7 @@ export const jobsQuery = (id: string, kind: JobKind) =>
 export const useJobs = (id: string, kind: JobKind) =>
   useQuery(jobsQuery(id, kind));
 
-export const refreshJobs = (id: string, kind: JobKind) =>
+export const invalidateJobs = (id: string, kind: JobKind) =>
   queryClient.invalidateQueries({ queryKey: jobsQuery(id, kind).queryKey });
 
 export const jobPath = <K extends JobKind>(id: string, kind: K, name: string) =>

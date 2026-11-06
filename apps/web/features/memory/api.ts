@@ -20,5 +20,5 @@ export const sharedMemoriesQuery = queryOptions({
   queryFn: ({ signal }) => api<"memories">("/v1/memories", { signal }),
 });
 
-export const refreshMemories = () =>
+export const invalidateMemories = () =>
   queryClient.invalidateQueries({ queryKey: memoriesKey });

@@ -10,5 +10,5 @@ export const serverSettingsQuery = queryOptions({
   queryFn: () => api<"serverSettings">("/v1/admin/settings"),
 });
 
-export const refreshAdmin = () =>
+export const invalidateAdmin = () =>
   queryClient.invalidateQueries({ queryKey: ["admin"] });

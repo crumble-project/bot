@@ -5,7 +5,7 @@ import {
   type Credentials,
   credentialPath,
   credentialsQuery,
-  refreshCredentials,
+  invalidateCredentials,
 } from "./api";
 import { CredentialSheet } from "./credential-sheet";
 
@@ -16,7 +16,7 @@ export const credentialRequestResult = secretRequestResult({
   requestsOf: (data: Credentials) => data.requests,
   savedOf: (data: Credentials) => data.credentials,
   pathOf: credentialPath,
-  refresh: refreshCredentials,
+  refresh: invalidateCredentials,
   addLabel: "Add credential",
   Sheet: CredentialSheet,
 });

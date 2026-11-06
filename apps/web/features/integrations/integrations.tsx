@@ -33,7 +33,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import { type Bot, botsQuery, refreshBots } from "@/features/bots/api";
+import { type Bot, botsQuery, invalidateBots } from "@/features/bots/api";
 import { type McpServer, mcpServersQuery, mcpServerPath } from "./api";
 import { call, queryClient, send } from "@/lib/api";
 import {
@@ -48,7 +48,7 @@ import {
 } from "@/components/page";
 import { BotAvatar } from "@/components/bot-avatar";
 import { SHARED, ownerItems } from "@/features/bots/queries";
-import { refreshSecrets } from "@/features/password-managers/api";
+import { invalidateSecrets } from "@/features/password-managers/api";
 import { MAX_MCP_SERVER_NAME_CHARS } from "@crumble/server/contract/limits";
 import { MCP_OAUTH_WEB_PATH } from "@crumble/server/contract/mcp-oauth";
 
@@ -57,8 +57,8 @@ const OAUTH_SERVER_KEY = "crumble.oauth.server";
 async function refresh() {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: mcpServersQuery.queryKey }),
-    refreshBots(),
-    refreshSecrets(),
+    invalidateBots(),
+    invalidateSecrets(),
   ]);
 }
 

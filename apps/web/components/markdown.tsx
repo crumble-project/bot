@@ -14,6 +14,8 @@ import { type Sources, splitSources } from "@/lib/sources";
 
 const PELE = `${PELE_PREFIX}/lazy.js`;
 
+// The server hosts this module at run time, so the bundler must not resolve it.
+// react-doctor-disable-next-line react-doctor/no-dynamic-import-path
 const loadPele = (): Promise<typeof Pele> => import(PELE);
 
 function Diagram({ source }: { source: string }) {

@@ -3,7 +3,7 @@ import { Page } from "@/components/page";
 import {
   githubAccountsQuery,
   githubAppsQuery,
-  refreshGithub,
+  invalidateGithub,
 } from "@/features/github-apps/api";
 import {
   AccountsSection,
@@ -18,7 +18,7 @@ export function CodingPage() {
   return (
     <Page
       title="Coding"
-      onRefresh={() => void refreshGithub()}
+      onRefresh={() => void invalidateGithub()}
       refreshing={apps.isFetching || accounts.isFetching}
     >
       <WorkspaceSettings />

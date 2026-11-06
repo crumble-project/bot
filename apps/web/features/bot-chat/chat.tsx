@@ -8,7 +8,7 @@ import {
   type Bot,
   agentPath,
   botsQuery,
-  refreshBots,
+  invalidateBots,
 } from "@/features/bots/api";
 import {
   type ChatSnapshot,
@@ -90,7 +90,7 @@ const botConversation = (id: string): ConversationTarget<ChatSnapshot> => {
     }),
     stop: () => send<"abort">(`${path}/abort`, "POST"),
     followsAfterView: (snapshot) => snapshot.status === "running",
-    refreshList: refreshBots,
+    refreshList: invalidateBots,
   };
 };
 

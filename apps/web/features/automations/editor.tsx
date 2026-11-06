@@ -39,7 +39,7 @@ import {
   MAX_SCHEDULE_NAME_CHARS,
   MAX_SCHEDULE_TIMEOUT_SECONDS,
 } from "@crumble/server/contract/limits";
-import { type Schedule, schedulePath, refreshSchedules } from "./api";
+import { type Schedule, schedulePath, invalidateSchedules } from "./api";
 import {
   type Recurrence,
   type When,
@@ -242,7 +242,7 @@ function useSaveAutomation(schedule: Schedule | null, onClose: () => void) {
         ? send<"updateSchedule">(schedulePath(schedule.id), "PATCH", body)
         : send<"createSchedule">("/v1/schedules", "POST", body),
     onSuccess: async () => {
-      await refreshSchedules();
+      await invalidateSchedules();
       onClose();
     },
   });

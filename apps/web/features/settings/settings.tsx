@@ -165,7 +165,7 @@ type Passkey = NonNullable<
   Awaited<ReturnType<typeof passkeysQuery.queryFn>>
 >[number];
 
-const refreshPasskeys = () =>
+const invalidatePasskeys = () =>
   queryClient.invalidateQueries({ queryKey: passkeysQuery.queryKey });
 
 function RenamePasskey({
@@ -188,7 +188,7 @@ function RenamePasskey({
       if (result.error) throw new Error(result.error.message);
     },
     onSuccess: async () => {
-      await refreshPasskeys();
+      await invalidatePasskeys();
       onDone();
     },
   });
@@ -327,7 +327,7 @@ function Passkeys() {
     mutationFn: async () => {
       passkeyDone(await authClient.passkey.addPasskey());
     },
-    onSettled: refreshPasskeys,
+    onSettled: invalidatePasskeys,
   });
 
   const remove = useMutation({
@@ -336,7 +336,7 @@ function Passkeys() {
 
       if (result.error) throw new Error(result.error.message);
     },
-    onSettled: refreshPasskeys,
+    onSettled: invalidatePasskeys,
   });
 
   const error = add.error ?? remove.error ?? passkeys.error;
@@ -374,6 +374,8 @@ function Account() {
   const session = useSession();
   const user = session.data?.user;
 
+  // `signedOut` resets the session, which clears the whole query cache.
+  // react-doctor-disable-next-line react-doctor/query-mutation-missing-invalidation
   const signOut = useMutation({
     mutationFn: () => authClient.signOut(),
     onSettled: signedOut,

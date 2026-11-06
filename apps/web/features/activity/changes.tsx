@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import type { Change } from "./api";
 import { queryClient, send } from "@/lib/api";
 import { activityKey } from "./api";
-import { refreshMemories } from "@/features/memory/api";
+import { invalidateMemories } from "@/features/memory/api";
 import { invalidateSkills } from "@/features/skills/skill-cache";
 
 const VERBS: Record<Change["action"], string> = {
@@ -72,7 +72,7 @@ export function RevertChange({ change }: { change: Change }) {
     onSettled: () =>
       Promise.all([
         queryClient.invalidateQueries({ queryKey: activityKey }),
-        refreshMemories(),
+        invalidateMemories(),
         invalidateSkills(),
       ]),
   });

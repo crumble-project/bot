@@ -6,7 +6,7 @@ import type {
 } from "@crumble/server/contract/api-responses";
 import { agentPath } from "@/features/bots/api";
 import { api, queryClient } from "@/lib/api";
-import { refreshSecrets } from "@/features/password-managers/api";
+import { invalidateSecrets } from "@/features/password-managers/api";
 
 export type Logins = z.infer<typeof loginsResponse>;
 
@@ -26,9 +26,9 @@ export const loginsQuery = (id: string) =>
 export const loginPath = (id: string, name: string) =>
   `${agentPath(id)}/logins/${encodeURIComponent(name)}` as const;
 
-export async function refreshLogins(id: string) {
+export async function invalidateLogins(id: string) {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: loginsQuery(id).queryKey }),
-    refreshSecrets(),
+    invalidateSecrets(),
   ]);
 }

@@ -38,8 +38,10 @@ export function AvatarEditor({
   const [description, setDescription] = useState("");
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
-  const [colorDraft, setColorDraft] = useState(value.color);
-  const [eyeDraft, setEyeDraft] = useState(value.eyeColor);
+  const [colorEdit, setColorEdit] = useState<string>();
+  const [eyeEdit, setEyeEdit] = useState<string>();
+  const colorDraft = colorEdit ?? value.color;
+  const eyeDraft = eyeEdit ?? value.eyeColor;
 
   const importJson = () => {
     try {
@@ -61,6 +63,8 @@ export function AvatarEditor({
 
     if (parsed.success) {
       onChange(parsed.data);
+      setColorEdit(undefined);
+      setEyeEdit(undefined);
       setError("");
     } else setError("Colors must be #rgb or #rrggbb.");
   };
@@ -96,7 +100,7 @@ export function AvatarEditor({
               maxLength={7}
               className="w-28"
               onChange={(e) => {
-                setColorDraft(e.target.value);
+                setColorEdit(e.target.value);
                 colors(e.target.value, eyeDraft);
               }}
             />
@@ -109,7 +113,7 @@ export function AvatarEditor({
               maxLength={7}
               className="w-28"
               onChange={(e) => {
-                setEyeDraft(e.target.value);
+                setEyeEdit(e.target.value);
                 colors(colorDraft, e.target.value);
               }}
             />
