@@ -238,14 +238,21 @@ function timestamp(message: TranscriptMessage): number | null {
     : null;
 }
 
+function senderName(chat: HistoryChat, message: TranscriptMessage): string {
+  const origin = message.origin;
+
+  return (
+    origin?.name ||
+    (message.role === "user" ? "Owner" : origin?.agentId || chat.name)
+  );
+}
+
 function sender(chat: HistoryChat, message: TranscriptMessage): HistorySender {
   const origin = message.origin;
 
   const result: HistorySender = {
     role: message.role,
-    name:
-      origin?.name ||
-      (message.role === "user" ? "Owner" : origin?.agentId || chat.name),
+    name: senderName(chat, message),
   };
 
   if (origin?.agentId) result.agentId = origin.agentId;

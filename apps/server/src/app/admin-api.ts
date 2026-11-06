@@ -5,6 +5,7 @@ import { ADMIN_ROLE, adminCount } from "./auth";
 import { handleApiError } from "./api-errors";
 import { limitBodies, pathRegister } from "./api-requests";
 import { routes } from "../contract/api-contract";
+import type { Register } from "../contract/route";
 
 type Accounts = Awaited<ReturnType<typeof createAuth>>;
 
@@ -24,29 +25,19 @@ const userOf = (user: StoredUser) => ({
   createdAt: user.createdAt.toISOString(),
 });
 
-export function adminAPI(options: {
+type AdminEnv = { Variables: { adminId: string } };
+
+type AdminRegister = Register<AdminEnv>;
+
+type AdminOptions = {
   accounts: Accounts;
   origin: () => string;
   removeAccount: (userId: string) => Promise<void>;
   outdatedWorkspaces: () => Promise<{ userId: string; agentId: string }[]>;
-}) {
-  const { accounts } = options;
-  const { adapter, auth, settings, invites } = accounts;
-  const app = new OpenAPIHono<{ Variables: { adminId: string } }>();
-  const register = pathRegister(app);
+};
 
-  limitBodies(app);
-  app.use("/v1/admin/*", async (c, next) => {
-    const session = await auth.api.getSession({ headers: c.req.raw.headers });
-
-    if (!session) return c.json({ error: "Sign in required" }, 401);
-
-    if (!(await accounts.isAdmin(session.user.id)))
-      return c.json({ error: "Only admins can do this" }, 403);
-    c.set("adminId", session.user.id);
-
-    return next();
-  });
+function registerUserRoutes(register: AdminRegister, options: AdminOptions) {
+  const { adapter, auth } = options.accounts;
 
   const findUser = async (id: string) => {
     const user = await adapter.findOne<StoredUser>({
@@ -101,6 +92,10 @@ export function adminAPI(options: {
 
     return c.body(null, 204);
   });
+}
+
+function registerInviteRoutes(register: AdminRegister, options: AdminOptions) {
+  const { invites } = options.accounts;
 
   register(routes.invites, async (c) => {
     const pending = await invites.pending();
@@ -134,6 +129,10 @@ export function adminAPI(options: {
 
     return c.body(null, 204);
   });
+}
+
+function registerServerRoutes(register: AdminRegister, options: AdminOptions) {
+  const { settings } = options.accounts;
 
   register(routes.outdatedWorkspaces, async (c) =>
     c.json({ workspaces: await options.outdatedWorkspaces() }, 200),
@@ -144,6 +143,31 @@ export function adminAPI(options: {
   register(routes.updateServerSettings, async (c) =>
     c.json(await settings.update(c.req.valid("json")), 200),
   );
+}
+
+export function adminAPI(options: AdminOptions) {
+  const { accounts } = options;
+  const app = new OpenAPIHono<AdminEnv>();
+  const register = pathRegister(app);
+
+  limitBodies(app);
+  app.use("/v1/admin/*", async (c, next) => {
+    const session = await accounts.auth.api.getSession({
+      headers: c.req.raw.headers,
+    });
+
+    if (!session) return c.json({ error: "Sign in required" }, 401);
+
+    if (!(await accounts.isAdmin(session.user.id)))
+      return c.json({ error: "Only admins can do this" }, 403);
+    c.set("adminId", session.user.id);
+
+    return next();
+  });
+
+  registerUserRoutes(register, options);
+  registerInviteRoutes(register, options);
+  registerServerRoutes(register, options);
 
   app.onError(handleApiError);
 

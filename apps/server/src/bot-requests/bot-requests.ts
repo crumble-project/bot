@@ -296,38 +296,37 @@ export class BotRequests extends Context.Service<
   );
 }
 
-export function botRequestExtension(
-  agent: Agent,
-  service: BotRequests["Service"],
-) {
-  const request = defineTool({
+const requestBotParameters = Type.Object({
+  name: Type.String({ minLength: 1, maxLength: MAX_BOT_NAME_CHARS }),
+  description: Type.String({ maxLength: MAX_BOT_DESCRIPTION_CHARS }),
+  instructions: Type.String({ maxLength: MAX_INSTRUCTIONS_CHARS }),
+  tools: Type.Array(
+    Type.String({ minLength: 1, maxLength: MAX_TOOL_ID_CHARS }),
+    {
+      maxItems: MAX_BOT_TOOLS,
+    },
+  ),
+  mcpServers: Type.Array(Type.String({ minLength: 1, maxLength: 36 }), {
+    maxItems: MAX_BOT_MCP_SERVERS,
+  }),
+  reason: Type.String({
+    minLength: 1,
+    maxLength: MAX_REQUEST_REASON_CHARS,
+  }),
+  provider: Type.Optional(
+    Type.String({ minLength: 1, maxLength: MAX_PROVIDER_ID_CHARS }),
+  ),
+  model: Type.Optional(
+    Type.String({ minLength: 1, maxLength: MAX_MODEL_ID_CHARS }),
+  ),
+});
+
+const requestBotTool = (agent: Agent, service: BotRequests["Service"]) =>
+  defineTool({
     name: REQUEST_BOT_TOOL_NAME,
     description:
       "Ask the owner to create a new bot. The owner approves, edits, or declines your proposal in this chat. The new bot is independent of you, and credentials are never shared: it must request its own credentials. Only one request can be pending at a time. After calling, tell the owner what you proposed and why, then end your turn: a message arrives when the owner answers.",
-    parameters: Type.Object({
-      name: Type.String({ minLength: 1, maxLength: MAX_BOT_NAME_CHARS }),
-      description: Type.String({ maxLength: MAX_BOT_DESCRIPTION_CHARS }),
-      instructions: Type.String({ maxLength: MAX_INSTRUCTIONS_CHARS }),
-      tools: Type.Array(
-        Type.String({ minLength: 1, maxLength: MAX_TOOL_ID_CHARS }),
-        {
-          maxItems: MAX_BOT_TOOLS,
-        },
-      ),
-      mcpServers: Type.Array(Type.String({ minLength: 1, maxLength: 36 }), {
-        maxItems: MAX_BOT_MCP_SERVERS,
-      }),
-      reason: Type.String({
-        minLength: 1,
-        maxLength: MAX_REQUEST_REASON_CHARS,
-      }),
-      provider: Type.Optional(
-        Type.String({ minLength: 1, maxLength: MAX_PROVIDER_ID_CHARS }),
-      ),
-      model: Type.Optional(
-        Type.String({ minLength: 1, maxLength: MAX_MODEL_ID_CHARS }),
-      ),
-    }),
+    parameters: requestBotParameters,
     callers: ["model"],
     replay: "unsafe",
     execute: async (args) => {
@@ -356,28 +355,33 @@ export function botRequestExtension(
     },
   });
 
+const pendingRequestsSection = (
+  agent: Agent,
+  service: BotRequests["Service"],
+) => ({
+  key: "bot_requests",
+  render: () => {
+    const pending = Effect.runSync(service.list(agent.id)).filter(
+      (item) => item.status === "pending",
+    );
+
+    return pending.length
+      ? [
+          "Bot requests awaiting the owner's answer:",
+          ...pending.map((item) => `- ${item.proposal.name}: ${item.reason}`),
+        ].join("\n")
+      : undefined;
+  },
+});
+
+export function botRequestExtension(
+  agent: Agent,
+  service: BotRequests["Service"],
+) {
   return defineExtension({
     name: "bot_requests",
-    tools: [request],
-    sections: [
-      {
-        key: "bot_requests",
-        render: () => {
-          const pending = Effect.runSync(service.list(agent.id)).filter(
-            (item) => item.status === "pending",
-          );
-
-          return pending.length
-            ? [
-                "Bot requests awaiting the owner's answer:",
-                ...pending.map(
-                  (item) => `- ${item.proposal.name}: ${item.reason}`,
-                ),
-              ].join("\n")
-            : undefined;
-        },
-      },
-    ],
+    tools: [requestBotTool(agent, service)],
+    sections: [pendingRequestsSection(agent, service)],
   });
 }
 

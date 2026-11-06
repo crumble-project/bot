@@ -181,6 +181,26 @@ function SourceRow({ source }: { source: EventSource }) {
   );
 }
 
+function SourceAddressField({ address }: { address: string }) {
+  return (
+    <Field>
+      <FieldLabel htmlFor="event-source-address">Webhook address</FieldLabel>
+      <div className="flex items-center gap-1">
+        <Input
+          id="event-source-address"
+          readOnly
+          value={address}
+          onFocus={(event) => event.target.select()}
+        />
+        <CopyButton text={address} />
+      </div>
+      <FieldDescription>
+        Shown once. Paste it into the provider's webhook settings.
+      </FieldDescription>
+    </Field>
+  );
+}
+
 function AddSourceSheet({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
 
@@ -201,23 +221,7 @@ function AddSourceSheet({ onClose }: { onClose: () => void }) {
         onSubmit={onClose}
         onClose={onClose}
       >
-        <Field>
-          <FieldLabel htmlFor="event-source-address">
-            Webhook address
-          </FieldLabel>
-          <div className="flex items-center gap-1">
-            <Input
-              id="event-source-address"
-              readOnly
-              value={created.address}
-              onFocus={(event) => event.target.select()}
-            />
-            <CopyButton text={created.address} />
-          </div>
-          <FieldDescription>
-            Shown once. Paste it into the provider's webhook settings.
-          </FieldDescription>
-        </Field>
+        <SourceAddressField address={created.address} />
       </EditorSheet>
     );
 

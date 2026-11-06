@@ -257,7 +257,17 @@ export const groupTurnEngine = ({ context, members, input }: GroupTurnDeps) => {
         unseen,
       );
 
-      const prompt = `${summary ? `Summary of the conversation before you joined:\n\n${summary}\n\n` : ""}${yield* input.turnInput(group, agent.name, unseen)}${omitted.length ? `\n\nYour model cannot read images, so these were left out: ${omitted.join(", ")}.` : ""}`;
+      const summaryPrefix = summary
+        ? `Summary of the conversation before you joined:\n\n${summary}\n\n`
+        : "";
+
+      const turnInput = yield* input.turnInput(group, agent.name, unseen);
+
+      const omittedSuffix = omitted.length
+        ? `\n\nYour model cannot read images, so these were left out: ${omitted.join(", ")}.`
+        : "";
+
+      const prompt = `${summaryPrefix}${turnInput}${omittedSuffix}`;
 
       const execution =
         (yield* context.executions.getByRequest(

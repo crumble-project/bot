@@ -8,17 +8,20 @@ import { ScriptRuns } from "./script-runs";
 
 type Services = ScheduleRepository | Scheduler | ScriptRuns;
 
-export function registerScheduleRoutes(options: {
+type ScheduleRoutesOptions = {
   register: Register;
   run: Runner<Services>;
-}) {
-  const { register, run } = options;
+};
 
-  const assertSchedule = (id: string) => {
-    if (!run.runSync(ScheduleRepository.use((r) => r.get(id))))
-      throw new NotFound({ message: "Schedule not found" });
-  };
+const assertSchedule = (run: Runner<Services>, id: string) => {
+  if (!run.runSync(ScheduleRepository.use((r) => r.get(id))))
+    throw new NotFound({ message: "Schedule not found" });
+};
 
+const registerScheduleEditRoutes = ({
+  register,
+  run,
+}: ScheduleRoutesOptions) => {
   register(routes.schedules, (c) =>
     c.json(
       run.runSync(
@@ -38,7 +41,7 @@ export function registerScheduleRoutes(options: {
     async (c) => {
       const id = c.req.param("id");
 
-      assertSchedule(id);
+      assertSchedule(run, id);
 
       const input = await c.req.json();
 
@@ -57,6 +60,12 @@ export function registerScheduleRoutes(options: {
 
     return c.body(null, 204);
   });
+};
+
+const registerScheduleRunRoutes = ({
+  register,
+  run,
+}: ScheduleRoutesOptions) => {
   register(routes.runSchedule, async (c) => {
     return c.json(
       await run.runPromise(Scheduler.use((s) => s.runNow(c.req.param("id")))),
@@ -66,7 +75,7 @@ export function registerScheduleRoutes(options: {
   register(routes.listScriptRuns, async (c) => {
     const id = c.req.param("id");
 
-    assertSchedule(id);
+    assertSchedule(run, id);
 
     return c.json(
       await run.runPromise(
@@ -75,4 +84,9 @@ export function registerScheduleRoutes(options: {
       200,
     );
   });
+};
+
+export function registerScheduleRoutes(options: ScheduleRoutesOptions) {
+  registerScheduleEditRoutes(options);
+  registerScheduleRunRoutes(options);
 }

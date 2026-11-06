@@ -211,6 +211,53 @@ function RunRow({
   );
 }
 
+function NoRuns() {
+  return (
+    <Empty className="rounded-xl border">
+      <EmptyHeader>
+        <EmptyTitle className="font-heading text-lg">No runs yet</EmptyTitle>
+        <EmptyDescription>
+          Each time an automation runs, it shows up here.
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  );
+}
+
+function RunsHeader() {
+  return (
+    <TableHeader>
+      <TableRow className="border-0 hover:bg-transparent">
+        <Heading>Automation</Heading>
+        <Heading className="hidden sm:table-cell">Started</Heading>
+        <Heading className="hidden md:table-cell">Duration</Heading>
+        <Heading>Status</Heading>
+      </TableRow>
+    </TableHeader>
+  );
+}
+
+function RunOutputDialog({
+  title,
+  run,
+  onClose,
+}: {
+  title: string;
+  run: ScriptRun;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <RunDetails run={run} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function RunsBody({
   bots,
   schedules,
@@ -234,29 +281,12 @@ export function RunsBody({
       </Alert>
     );
 
-  if (!entries.length)
-    return (
-      <Empty className="rounded-xl border">
-        <EmptyHeader>
-          <EmptyTitle className="font-heading text-lg">No runs yet</EmptyTitle>
-          <EmptyDescription>
-            Each time an automation runs, it shows up here.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
+  if (!entries.length) return <NoRuns />;
 
   return (
     <>
       <TableFrame>
-        <TableHeader>
-          <TableRow className="border-0 hover:bg-transparent">
-            <Heading>Automation</Heading>
-            <Heading className="hidden sm:table-cell">Started</Heading>
-            <Heading className="hidden md:table-cell">Duration</Heading>
-            <Heading>Status</Heading>
-          </TableRow>
-        </TableHeader>
+        <RunsHeader />
         <TableBody>
           {entries.map((entry) => (
             <RunRow
@@ -276,16 +306,11 @@ export function RunsBody({
         </TableBody>
       </TableFrame>
       {output?.script && (
-        <Dialog open onOpenChange={(open) => !open && setOutput(null)}>
-          <DialogContent className="sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>
-                {output.schedule?.name ?? "Deleted automation"}
-              </DialogTitle>
-            </DialogHeader>
-            <RunDetails run={output.script} />
-          </DialogContent>
-        </Dialog>
+        <RunOutputDialog
+          title={output.schedule?.name ?? "Deleted automation"}
+          run={output.script}
+          onClose={() => setOutput(null)}
+        />
       )}
     </>
   );

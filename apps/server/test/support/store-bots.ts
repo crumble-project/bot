@@ -28,7 +28,7 @@ import type {
 } from "../../src/group-chats/group-chat-repository";
 import type { StoreRun } from "./store";
 
-export const botStore = (run: StoreRun) => ({
+const agentStore = (run: StoreRun) => ({
   getAgent: (agentId: string) => {
     return run(AgentRepository.use((r) => r.get(agentId)));
   },
@@ -44,7 +44,9 @@ export const botStore = (run: StoreRun) => ({
   duplicateAgent: (agentId: string, name?: string) => {
     return run(duplicateAgent(agentId, name));
   },
+});
 
+const conversationStore = (run: StoreRun) => ({
   listConversations: (
     agentId?: string,
     includeArchived = false,
@@ -74,6 +76,9 @@ export const botStore = (run: StoreRun) => ({
       ConversationRepository.use((r) => r.setArchived(conversationId, false)),
     );
   },
+});
+
+const scheduleStore = (run: StoreRun) => ({
   getSchedule: (scheduleId: string) => {
     return run(ScheduleRepository.use((r) => r.get(scheduleId)));
   },
@@ -96,7 +101,9 @@ export const botStore = (run: StoreRun) => ({
       ScheduleRepository.use((r) => r.updateNextRunAt(scheduleId, nextRunAt)),
     );
   },
+});
 
+const executionStore = (run: StoreRun) => ({
   listExecutions: (agentId?: string): Execution[] => {
     return run(ExecutionRepository.use((r) => r.list(agentId)));
   },
@@ -117,6 +124,9 @@ export const botStore = (run: StoreRun) => ({
   updateExecution: (executionId: string, patch: Partial<Execution>) => {
     return run(ExecutionRepository.use((r) => r.update(executionId, patch)));
   },
+});
+
+const groupChatStore = (run: StoreRun) => ({
   listGroupChats: (): GroupChat[] => {
     return run(GroupChatRepository.use((r) => r.list));
   },
@@ -168,4 +178,12 @@ export const botStore = (run: StoreRun) => ({
   ): GroupTurn[] => {
     return run(GroupChatRepository.use((r) => r.listTurns(filter)));
   },
+});
+
+export const botStore = (run: StoreRun) => ({
+  ...agentStore(run),
+  ...conversationStore(run),
+  ...scheduleStore(run),
+  ...executionStore(run),
+  ...groupChatStore(run),
 });

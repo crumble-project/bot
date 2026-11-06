@@ -44,29 +44,69 @@ type SecretPageText = {
 
 type Editing<I, R> = Pick<SheetProps<I, R>, "botId" | "existing" | "request">;
 
+type SecretPageProps<D, I, R> = {
+  text: SecretPageText;
+  initialBot: string | undefined;
+  queryOf: (botId: string) => UseQueryOptions<D, Error, D, string[]>;
+  pathOf: Parameters<typeof useSecretActions>[0];
+  refresh: (botId: string) => Promise<void>;
+  itemsOf: (data: D) => I[];
+  requestsOf: (data: D) => R[];
+  Row: ComponentType<SecretRowProps<I>>;
+  Uses: ComponentType<{ target: Target<I>; onClose: () => void }>;
+  Sheet: ComponentType<SheetProps<I, R>>;
+};
+
+function useSecretPage<D, I extends Named, R extends SecretRequest>(
+  initialBot: string | undefined,
+  queryOf: SecretPageProps<D, I, R>["queryOf"],
+  pathOf: SecretPageProps<D, I, R>["pathOf"],
+  refresh: SecretPageProps<D, I, R>["refresh"],
+) {
+  const { bots, entries, refreshing } = useBotQueries(queryOf);
+  const [scope, setScope] = useState(initialBot ?? ALL);
+  const [search, setSearch] = useState("");
+  const actions = useSecretActions<I>(pathOf, refresh);
+  const [editing, setEditing] = useState<Editing<I, R> | null>(null);
+
+  const startNew = () =>
+    setEditing({
+      botId: scope === ALL ? null : scope,
+      existing: null,
+      request: undefined,
+    });
+
+  return {
+    bots,
+    entries,
+    refreshing,
+    scope,
+    setScope,
+    search,
+    setSearch,
+    actions,
+    editing,
+    setEditing,
+    startNew,
+  };
+}
+
+type SecretPageState<D, I extends Named, R extends SecretRequest> = ReturnType<
+  typeof useSecretPage<D, I, R>
+>;
+
 function SecretList<D, I extends Named, R extends SecretRequest>({
-  entries,
-  scope,
-  search,
+  page: { entries, scope, search, actions, setEditing: onEdit },
   itemsOf,
   requestsOf,
   text,
-  actions,
   Row,
-  onEdit,
 }: {
-  entries: BotEntry<D>[];
-  scope: string;
-  search: string;
+  page: SecretPageState<D, I, R>;
   itemsOf: (data: D) => I[];
   requestsOf: (data: D) => R[];
   text: SecretPageText;
-  actions: Pick<
-    ReturnType<typeof useSecretActions<I>>,
-    "decline" | "setUses" | "setDeleting"
-  >;
   Row: ComponentType<SecretRowProps<I>>;
-  onEdit: (editing: Editing<I, R>) => void;
 }) {
   return (
     <SecretGroups
@@ -95,25 +135,13 @@ function SecretList<D, I extends Named, R extends SecretRequest>({
   );
 }
 
-function SecretControls<D>({
+function SecretControls<D, I extends Named, R extends SecretRequest>({
+  page: { bots, entries, scope, setScope, search, setSearch, startNew },
   text,
-  search,
-  onSearch,
-  canAdd,
-  onNew,
-  entries,
-  scope,
-  onScope,
   countOf,
 }: {
+  page: SecretPageState<D, I, R>;
   text: SecretPageText;
-  search: string;
-  onSearch: (search: string) => void;
-  canAdd: boolean;
-  onNew: () => void;
-  entries: BotEntry<D>[];
-  scope: string;
-  onScope: (scope: string) => void;
   countOf: (entry: BotEntry<D>) => number;
 }) {
   return (
@@ -121,15 +149,19 @@ function SecretControls<D>({
       <PageToolbar
         search={search}
         searchLabel={text.searchLabel}
-        onSearch={onSearch}
+        onSearch={setSearch}
       >
-        <NewButton label={text.newLabel} disabled={!canAdd} onClick={onNew} />
+        <NewButton
+          label={text.newLabel}
+          disabled={!bots.data?.length}
+          onClick={startNew}
+        />
       </PageToolbar>
       <BotPills
         label={text.pillsLabel}
         entries={entries}
         scope={scope}
-        onScope={onScope}
+        onScope={setScope}
         countOf={countOf}
       />
     </div>
@@ -175,30 +207,9 @@ export function SecretPage<D, I extends Named, R extends SecretRequest>({
   Row,
   Uses,
   Sheet,
-}: {
-  text: SecretPageText;
-  initialBot: string | undefined;
-  queryOf: (botId: string) => UseQueryOptions<D, Error, D, string[]>;
-  pathOf: Parameters<typeof useSecretActions>[0];
-  refresh: (botId: string) => Promise<void>;
-  itemsOf: (data: D) => I[];
-  requestsOf: (data: D) => R[];
-  Row: ComponentType<SecretRowProps<I>>;
-  Uses: ComponentType<{ target: Target<I>; onClose: () => void }>;
-  Sheet: ComponentType<SheetProps<I, R>>;
-}) {
-  const { bots, entries, refreshing } = useBotQueries(queryOf);
-  const [scope, setScope] = useState(initialBot ?? ALL);
-  const [search, setSearch] = useState("");
-  const actions = useSecretActions<I>(pathOf, refresh);
-  const [editing, setEditing] = useState<Editing<I, R> | null>(null);
-
-  const startNew = () =>
-    setEditing({
-      botId: scope === ALL ? null : scope,
-      existing: null,
-      request: undefined,
-    });
+}: SecretPageProps<D, I, R>) {
+  const page = useSecretPage<D, I, R>(initialBot, queryOf, pathOf, refresh);
+  const { bots, entries, refreshing, editing, actions } = page;
 
   const countOf = ({ query }: BotEntry<D>) =>
     query.data ? itemsOf(query.data).length + requestsOf(query.data).length : 0;
@@ -211,37 +222,23 @@ export function SecretPage<D, I extends Named, R extends SecretRequest>({
         void Promise.all(entries.map((entry) => refresh(entry.bot.id)))
       }
     >
-      <SecretControls
-        text={text}
-        search={search}
-        onSearch={setSearch}
-        canAdd={Boolean(bots.data?.length)}
-        onNew={startNew}
-        entries={entries}
-        scope={scope}
-        onScope={setScope}
-        countOf={countOf}
-      />
+      <SecretControls page={page} text={text} countOf={countOf} />
       <ActionFailure actions={actions} />
       {bots.isPending ? (
         <Skeleton className="h-40 rounded-xl" />
       ) : (
         <SecretList
-          entries={entries}
-          scope={scope}
-          search={search}
+          page={page}
           itemsOf={itemsOf}
           requestsOf={requestsOf}
           text={text}
-          actions={actions}
           Row={Row}
-          onEdit={setEditing}
         />
       )}
       <SecretOverlays
         bots={bots.data ?? []}
         editing={editing}
-        onCloseEditor={() => setEditing(null)}
+        onCloseEditor={() => page.setEditing(null)}
         actions={actions}
         deleteDescription={text.deleteDescription}
         Uses={Uses}

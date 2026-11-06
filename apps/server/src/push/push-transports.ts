@@ -412,59 +412,64 @@ export const fcmErrorCode = (
         Effect.orElseSucceed(() => undefined),
       );
 
-function fcmTransport(account: ServiceAccount): PushTransport {
-  const accessToken = Effect.gen(function* () {
-    const seconds = Math.floor((yield* Clock.currentTimeMillis) / 1000);
-    const head = b64(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+function fcmAssertion(account: ServiceAccount, seconds: number) {
+  const head = b64(JSON.stringify({ alg: "RS256", typ: "JWT" }));
 
-    const claims = b64(
-      JSON.stringify({
-        iss: account.client_email,
-        scope: "https://www.googleapis.com/auth/firebase.messaging",
-        aud: "https://oauth2.googleapis.com/token",
-        iat: seconds,
-        exp: seconds + 3600,
-      }),
-    );
+  const claims = b64(
+    JSON.stringify({
+      iss: account.client_email,
+      scope: "https://www.googleapis.com/auth/firebase.messaging",
+      aud: "https://oauth2.googleapis.com/token",
+      iat: seconds,
+      exp: seconds + 3600,
+    }),
+  );
 
-    const signer = createSign("RSA-SHA256");
-    signer.update(`${head}.${claims}`);
-    signer.end();
-    const assertion = `${head}.${claims}.${b64(signer.sign(account.private_key))}`;
+  const signer = createSign("RSA-SHA256");
+  signer.update(`${head}.${claims}`);
+  signer.end();
 
-    const response = yield* Effect.tryPromise({
-      try: () =>
-        fetch("https://oauth2.googleapis.com/token", {
-          method: "POST",
-          headers: { "content-type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            assertion,
-          }),
-          signal: AbortSignal.timeout(15_000),
+  return `${head}.${claims}.${b64(signer.sign(account.private_key))}`;
+}
+
+const fcmAccessToken = Effect.fnUntraced(function* (account: ServiceAccount) {
+  const seconds = Math.floor((yield* Clock.currentTimeMillis) / 1000);
+  const assertion = fcmAssertion(account, seconds);
+
+  const response = yield* Effect.tryPromise({
+    try: () =>
+      fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+          assertion,
         }),
-      catch: temporaryFailure,
-    });
-
-    if (!response.ok)
-      return yield* new TemporaryFailure({
-        message: `FCM OAuth failure ${response.status}`,
-      });
-
-    const body = yield* Effect.tryPromise({
-      try: () => response.json(),
-      catch: temporaryFailure,
-    });
-
-    return (yield* Schema.decodeUnknownEffect(FcmToken)(body).pipe(
-      Effect.mapError(temporaryFailure),
-    )).access_token;
+        signal: AbortSignal.timeout(15_000),
+      }),
+    catch: temporaryFailure,
   });
 
+  if (!response.ok)
+    return yield* new TemporaryFailure({
+      message: `FCM OAuth failure ${response.status}`,
+    });
+
+  const body = yield* Effect.tryPromise({
+    try: () => response.json(),
+    catch: temporaryFailure,
+  });
+
+  return (yield* Schema.decodeUnknownEffect(FcmToken)(body).pipe(
+    Effect.mapError(temporaryFailure),
+  )).access_token;
+});
+
+function fcmTransport(account: ServiceAccount): PushTransport {
   return {
     canSend: () => true,
     send: Effect.fn("FCM.send")(function* (device, event) {
-      const token = yield* accessToken;
+      const token = yield* fcmAccessToken(account);
 
       const response = yield* Effect.tryPromise({
         try: () =>

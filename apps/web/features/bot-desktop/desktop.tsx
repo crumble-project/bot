@@ -192,6 +192,57 @@ function ViewerFrame({
   );
 }
 
+function SleepingPreview({ onWake }: { onWake: () => void }) {
+  return (
+    <button
+      type="button"
+      title="Wake the bot desktop"
+      className="flex aspect-video w-full cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border bg-black text-white/60 transition-colors hover:text-white/85 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+      onClick={onWake}
+    >
+      <IconZzz />
+      <span className="text-sm">Sleeping</span>
+      <span className="text-xs text-white/40">Click to wake</span>
+    </button>
+  );
+}
+
+function LivePreview({
+  botId,
+  viewer,
+}: {
+  botId: string;
+  viewer: UseMutationResult<DesktopViewer, Error, void>;
+}) {
+  return (
+    <Link
+      to="/bots/$botId/desktop"
+      params={{ botId }}
+      title="Open the bot desktop"
+      className="relative block aspect-video overflow-hidden rounded-lg border bg-black"
+    >
+      {viewer.isPending && (
+        <span className="absolute inset-0 flex items-center justify-center">
+          <Spinner className="text-white/70" />
+        </span>
+      )}
+      {viewer.isError && (
+        <span className="absolute inset-0 flex items-center justify-center p-3 text-center text-xs text-white/60">
+          {viewer.error.message}
+        </span>
+      )}
+      {viewer.data && (
+        <ViewerFrame
+          path={viewer.data.path}
+          title="Bot desktop preview"
+          tabIndex={-1}
+          className="pointer-events-none"
+        />
+      )}
+    </Link>
+  );
+}
+
 export function DesktopPreview({ botId }: { botId: string }) {
   const path = agentPath(botId);
   const [asked, setAsked] = useState(false);
@@ -222,47 +273,9 @@ export function DesktopPreview({ botId }: { botId: string }) {
     else reset();
   }, [live, connect, reset]);
 
-  if (!live)
-    return (
-      <button
-        type="button"
-        title="Wake the bot desktop"
-        className="flex aspect-video w-full cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border bg-black text-white/60 transition-colors hover:text-white/85 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-        onClick={() => setAsked(true)}
-      >
-        <IconZzz />
-        <span className="text-sm">Sleeping</span>
-        <span className="text-xs text-white/40">Click to wake</span>
-      </button>
-    );
+  if (!live) return <SleepingPreview onWake={() => setAsked(true)} />;
 
-  return (
-    <Link
-      to="/bots/$botId/desktop"
-      params={{ botId }}
-      title="Open the bot desktop"
-      className="relative block aspect-video overflow-hidden rounded-lg border bg-black"
-    >
-      {viewer.isPending && (
-        <span className="absolute inset-0 flex items-center justify-center">
-          <Spinner className="text-white/70" />
-        </span>
-      )}
-      {viewer.isError && (
-        <span className="absolute inset-0 flex items-center justify-center p-3 text-center text-xs text-white/60">
-          {viewer.error.message}
-        </span>
-      )}
-      {viewer.data && (
-        <ViewerFrame
-          path={viewer.data.path}
-          title="Bot desktop preview"
-          tabIndex={-1}
-          className="pointer-events-none"
-        />
-      )}
-    </Link>
-  );
+  return <LivePreview botId={botId} viewer={viewer} />;
 }
 
 const controlLabel = (owner: boolean) =>

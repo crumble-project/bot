@@ -366,7 +366,47 @@ export function SecretSheet({
   );
 }
 
-export function UsesDialog<U extends { id: string; at: string }>({
+type SecretUse = { id: string; at: string };
+
+function useSecretUses<U extends SecretUse>(
+  queryKey: readonly unknown[],
+  load: (query: string, signal: AbortSignal) => Promise<U[]>,
+) {
+  return useInfiniteQuery({
+    queryKey,
+    initialPageParam: "",
+    queryFn: ({ pageParam, signal }) =>
+      load(
+        `limit=${USES_PAGE}${pageParam && `&before=${encodeURIComponent(pageParam)}`}`,
+        signal,
+      ),
+    getNextPageParam: (page) =>
+      page.length === USES_PAGE ? page.at(-1)?.id : undefined,
+  });
+}
+
+function UseRows<U extends SecretUse>({
+  rows,
+  children,
+}: {
+  rows: U[];
+  children: (use: U) => ReactNode;
+}) {
+  return (
+    <div className="flex flex-col divide-y rounded-lg border text-sm">
+      {rows.map((use) => (
+        <div key={use.id} className="flex items-baseline gap-3 p-2">
+          <span className="w-36 shrink-0 text-xs text-muted-foreground">
+            {when(use.at)}
+          </span>
+          {children(use)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function UsesDialog<U extends SecretUse>({
   title,
   description,
   empty,
@@ -383,17 +423,7 @@ export function UsesDialog<U extends { id: string; at: string }>({
   children: (use: U) => ReactNode;
   onClose: () => void;
 }) {
-  const uses = useInfiniteQuery({
-    queryKey,
-    initialPageParam: "",
-    queryFn: ({ pageParam, signal }) =>
-      load(
-        `limit=${USES_PAGE}${pageParam && `&before=${encodeURIComponent(pageParam)}`}`,
-        signal,
-      ),
-    getNextPageParam: (page) =>
-      page.length === USES_PAGE ? page.at(-1)?.id : undefined,
-  });
+  const uses = useSecretUses(queryKey, load);
 
   const rows = uses.data?.pages.flat() ?? [];
 
@@ -413,16 +443,7 @@ export function UsesDialog<U extends { id: string; at: string }>({
         ) : rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">{empty}</p>
         ) : (
-          <div className="flex flex-col divide-y rounded-lg border text-sm">
-            {rows.map((use) => (
-              <div key={use.id} className="flex items-baseline gap-3 p-2">
-                <span className="w-36 shrink-0 text-xs text-muted-foreground">
-                  {when(use.at)}
-                </span>
-                {children(use)}
-              </div>
-            ))}
-          </div>
+          <UseRows rows={rows}>{children}</UseRows>
         )}
         {uses.hasNextPage && (
           <Button

@@ -59,6 +59,45 @@ function HeldActionCard({
   return <HeldActionPending action={action} botId={botId} />;
 }
 
+function useDecideHeldAction(botId: string, actionId: string, reason: string) {
+  return useMutation({
+    mutationFn: (decision: "approve" | "decline") =>
+      decision === "decline"
+        ? send<"declineAgentHeldAction">(
+            `${heldActionPath(botId, actionId)}/decline`,
+            "POST",
+            { reason: reason.trim() || undefined },
+          )
+        : send<"approveAgentHeldAction">(
+            `${heldActionPath(botId, actionId)}/approve`,
+            "POST",
+          ),
+    onSettled: () =>
+      queryClient.invalidateQueries({
+        queryKey: heldActionsQuery(botId).queryKey,
+      }),
+  });
+}
+
+function HeldActionSummary({ action }: { action: HeldAction }) {
+  return (
+    <div className="flex items-start gap-3">
+      <IconHandStop className="mt-0.5 size-4 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
+        <div className="text-xs text-muted-foreground">
+          {action.job} is waiting for your approval
+        </div>
+        <div className="text-sm font-medium">{action.action}</div>
+        {action.page && (
+          <div className="truncate text-xs text-muted-foreground">
+            {action.page}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function HeldActionPending({
   action,
   botId,
@@ -69,40 +108,11 @@ function HeldActionPending({
   const [declining, setDeclining] = useState(false);
   const [reason, setReason] = useState("");
 
-  const decide = useMutation({
-    mutationFn: (decision: "approve" | "decline") =>
-      decision === "decline"
-        ? send<"declineAgentHeldAction">(
-            `${heldActionPath(botId, action.id)}/decline`,
-            "POST",
-            { reason: reason.trim() || undefined },
-          )
-        : send<"approveAgentHeldAction">(
-            `${heldActionPath(botId, action.id)}/approve`,
-            "POST",
-          ),
-    onSettled: () =>
-      queryClient.invalidateQueries({
-        queryKey: heldActionsQuery(botId).queryKey,
-      }),
-  });
+  const decide = useDecideHeldAction(botId, action.id, reason);
 
   return (
     <div className="flex w-full max-w-sm flex-col gap-3 rounded-xl border p-4">
-      <div className="flex items-start gap-3">
-        <IconHandStop className="mt-0.5 size-4 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <div className="text-xs text-muted-foreground">
-            {action.job} is waiting for your approval
-          </div>
-          <div className="text-sm font-medium">{action.action}</div>
-          {action.page && (
-            <div className="truncate text-xs text-muted-foreground">
-              {action.page}
-            </div>
-          )}
-        </div>
-      </div>
+      <HeldActionSummary action={action} />
       <CheckedAgainst action={action} />
       {decide.isError && (
         <p className="text-xs text-destructive">{decide.error.message}</p>

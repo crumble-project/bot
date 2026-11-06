@@ -331,6 +331,30 @@ const workspaceCleanup = Layer.effectDiscard(
   }),
 );
 
+const removeAccountWorkspaces = Effect.fnUntraced(function* (
+  workspaces: Workspaces | undefined,
+) {
+  if (!workspaces) return;
+
+  const bots = yield* (yield* AgentRepository).list;
+
+  yield* Effect.forEach(bots, (bot) => removeWorkspace(workspaces, bot.id), {
+    concurrency: "unbounded",
+    discard: true,
+  });
+}, logged("Removing an account's workspaces failed"));
+
+// After the API: what recovery and start deliver may reach it. Work a layer's scope owns is already running.
+const resumeAccount = Effect.fnUntraced(function* (scheduler: SchedulerAccess) {
+  yield* (yield* Bots).recover;
+  yield* (yield* ScriptRuns).recover;
+  yield* (yield* GroupChats).recover;
+  yield* (yield* MessageGateway).start;
+  yield* (yield* EventRelay).start;
+  yield* (yield* EventDispatcher).start;
+  scheduler.start();
+});
+
 export async function createTenant(
   options: TenantOptions,
 ): Promise<TenantRuntime> {
@@ -343,12 +367,10 @@ export async function createTenant(
   try {
     return await account.runPromise(
       Effect.gen(function* () {
-        const bots = yield* Bots;
         const service = botsAccess(runnerOf(yield* Effect.context<Bots>()));
 
         const run = runnerOf(yield* Effect.context<ApiServices>());
         const scheduler = schedulerAccess(run);
-        const chats = yield* GroupChats;
         const token = randomBytes(32).toString("hex");
 
         const app = createAPI(
@@ -359,14 +381,7 @@ export async function createTenant(
           },
         );
 
-        // After the API: what recovery and start deliver may reach it. Work a layer's scope owns is already running.
-        yield* bots.recover;
-        yield* (yield* ScriptRuns).recover;
-        yield* chats.recover;
-        yield* (yield* MessageGateway).start;
-        yield* (yield* EventRelay).start;
-        yield* (yield* EventDispatcher).start;
-        scheduler.start();
+        yield* resumeAccount(scheduler);
 
         const workspaces = yield* BotWorkspaces;
 
@@ -377,19 +392,7 @@ export async function createTenant(
           scheduler,
           workspaces,
           removeWorkspaces: () =>
-            account.runPromise(
-              Effect.gen(function* () {
-                if (!workspaces) return;
-
-                const bots = yield* (yield* AgentRepository).list;
-
-                yield* Effect.forEach(
-                  bots,
-                  (bot) => removeWorkspace(workspaces, bot.id),
-                  { concurrency: "unbounded", discard: true },
-                );
-              }).pipe(logged("Removing an account's workspaces failed")),
-            ),
+            account.runPromise(removeAccountWorkspaces(workspaces)),
           close: () => account.dispose(),
         };
       }),

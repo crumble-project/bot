@@ -204,6 +204,7 @@ export class GroupChatRepository extends Context.Service<
         if (!current) return null;
         const at = yield* nowIso;
         const kept = new Set(input.memberIds);
+        const currentMembers = new Set(current.memberIds);
 
         yield* db.transaction(() =>
           Effect.gen(function* () {
@@ -225,9 +226,7 @@ export class GroupChatRepository extends Context.Service<
 
             yield* insertMembers(
               groupId,
-              input.memberIds.filter(
-                (agentId) => !current.memberIds.includes(agentId),
-              ),
+              input.memberIds.filter((agentId) => !currentMembers.has(agentId)),
               at,
             );
           }),

@@ -537,6 +537,39 @@ function IntegrationsSection({
   );
 }
 
+function ProviderField({
+  providers,
+  selection: { provider, setProvider, setModel },
+}: {
+  providers: Provider[];
+  selection: ReturnType<typeof useBotModel>;
+}) {
+  return (
+    <Field>
+      <FieldLabel htmlFor="provider">Provider</FieldLabel>
+      <ProviderSelect
+        id="provider"
+        providers={providers}
+        value={provider}
+        placeholder="Choose a provider"
+        onChange={(next) => {
+          setProvider(next);
+          setModel("");
+        }}
+      />
+      {!providers.some((each) => each.configured) && (
+        <FieldDescription>
+          No provider is set up yet.{" "}
+          <Link to="/settings/providers" className="underline">
+            Add one in Settings
+          </Link>
+          .
+        </FieldDescription>
+      )}
+    </Field>
+  );
+}
+
 function ModelSettings({
   providers,
   selection,
@@ -544,15 +577,8 @@ function ModelSettings({
   providers: Provider[];
   selection: ReturnType<typeof useBotModel>;
 }) {
-  const {
-    provider,
-    setProvider,
-    model,
-    setModel,
-    levels,
-    level,
-    setThinkingLevel,
-  } = selection;
+  const { provider, model, setModel, levels, level, setThinkingLevel } =
+    selection;
 
   return (
     <FieldSet>
@@ -563,28 +589,7 @@ function ModelSettings({
           levels.length > 1 ? "sm:grid-cols-[1fr_1fr_9rem]" : "sm:grid-cols-2",
         )}
       >
-        <Field>
-          <FieldLabel htmlFor="provider">Provider</FieldLabel>
-          <ProviderSelect
-            id="provider"
-            providers={providers}
-            value={provider}
-            placeholder="Choose a provider"
-            onChange={(next) => {
-              setProvider(next);
-              setModel("");
-            }}
-          />
-          {!providers.some((each) => each.configured) && (
-            <FieldDescription>
-              No provider is set up yet.{" "}
-              <Link to="/settings/providers" className="underline">
-                Add one in Settings
-              </Link>
-              .
-            </FieldDescription>
-          )}
-        </Field>
+        <ProviderField providers={providers} selection={selection} />
         <Field>
           <FieldLabel htmlFor="model">Model</FieldLabel>
           <ModelField
@@ -741,6 +746,62 @@ function BotEnabledField({
   );
 }
 
+function InstructionsField({
+  formId,
+  details,
+}: {
+  formId: string;
+  details: ReturnType<typeof useBotDetails>;
+}) {
+  return (
+    <Field>
+      <FieldLabel htmlFor={`${formId}-instructions`}>Instructions</FieldLabel>
+      <Textarea
+        id={`${formId}-instructions`}
+        className="min-h-32"
+        maxLength={MAX_INSTRUCTIONS_CHARS}
+        value={details.instructions}
+        onChange={(event) =>
+          details.change({ instructions: event.target.value })
+        }
+      />
+    </Field>
+  );
+}
+
+function WebSearchProviderField({
+  formId,
+  access,
+}: {
+  formId: string;
+  access: ReturnType<typeof useBotAccess>;
+}) {
+  return (
+    <Field className="p-3">
+      <FieldLabel htmlFor={`${formId}-web-provider`}>
+        Web search provider
+      </FieldLabel>
+      <Select
+        items={webProviderItems}
+        value={access.webSearchProvider ?? "default"}
+        onValueChange={(value) =>
+          access.setWebSearchProvider(
+            value && isWebSearchProviderId(value) ? value : null,
+          )
+        }
+      >
+        <SelectTrigger id={`${formId}-web-provider`} className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectOptions items={webProviderItems} />
+      </Select>
+      <FieldDescription>
+        Manage the default and Exa key in Settings → Web search.
+      </FieldDescription>
+    </Field>
+  );
+}
+
 function BotFieldSections({
   initial,
   botId,
@@ -770,18 +831,7 @@ function BotFieldSections({
     <>
       <BotIdentityFields botId={botId} details={details} failed={failed} />
       <ModelSettings providers={providers} selection={selection} />
-      <Field>
-        <FieldLabel htmlFor={`${formId}-instructions`}>Instructions</FieldLabel>
-        <Textarea
-          id={`${formId}-instructions`}
-          className="min-h-32"
-          maxLength={MAX_INSTRUCTIONS_CHARS}
-          value={details.instructions}
-          onChange={(event) =>
-            details.change({ instructions: event.target.value })
-          }
-        />
-      </Field>
+      <InstructionsField formId={formId} details={details} />
       <div className="flex flex-col divide-y rounded-lg border">
         <CapabilitiesSection
           initial={initial}
@@ -790,28 +840,7 @@ function BotFieldSections({
           access={access}
         />
         {access.tools.includes(BOT_TOOL.web) && (
-          <Field className="p-3">
-            <FieldLabel htmlFor={`${formId}-web-provider`}>
-              Web search provider
-            </FieldLabel>
-            <Select
-              items={webProviderItems}
-              value={access.webSearchProvider ?? "default"}
-              onValueChange={(value) =>
-                access.setWebSearchProvider(
-                  value && isWebSearchProviderId(value) ? value : null,
-                )
-              }
-            >
-              <SelectTrigger id={`${formId}-web-provider`} className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectOptions items={webProviderItems} />
-            </Select>
-            <FieldDescription>
-              Manage the default and Exa key in Settings → Web search.
-            </FieldDescription>
-          </Field>
+          <WebSearchProviderField formId={formId} access={access} />
         )}
         <IntegrationsSection
           botId={botId}

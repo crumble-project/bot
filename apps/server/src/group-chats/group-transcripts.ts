@@ -31,6 +31,18 @@ export const senderLabel = (
   sender: { kind: string; name?: string | undefined } | undefined,
 ) => (isOwnerOrigin(sender) ? "Owner" : (sender?.name ?? "A bot"));
 
+function samePost(written: GroupMessageData, message: GroupPost): boolean {
+  return (
+    written.text === message.text &&
+    written.sender.kind === message.sender.kind &&
+    written.sender.agentId === message.sender.agentId &&
+    written.replyTo === message.replyTo &&
+    written.reaction === message.reaction &&
+    attachmentDigest(written.attachments ?? []) ===
+      attachmentDigest(message.attachments ?? [])
+  );
+}
+
 export class GroupTranscripts {
   private readonly files: HarnessFiles<{ harness: Harness }>;
 
@@ -83,16 +95,7 @@ export class GroupTranscripts {
       (await entryAt(root, Number(settled.entry)))?.data,
     );
 
-    if (
-      !written.success ||
-      written.data.text !== message.text ||
-      written.data.sender.kind !== message.sender.kind ||
-      written.data.sender.agentId !== message.sender.agentId ||
-      written.data.replyTo !== message.replyTo ||
-      written.data.reaction !== message.reaction ||
-      attachmentDigest(written.data.attachments ?? []) !==
-        attachmentDigest(message.attachments ?? [])
-    )
+    if (!written.success || !samePost(written.data, message))
       throw new Conflict({ message: REQUEST_ID_REUSED });
 
     return {

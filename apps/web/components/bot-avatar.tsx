@@ -17,6 +17,30 @@ export function botStyle(color: string) {
   return { "--bot": color } as CSSProperties;
 }
 
+function useLiveAvatar(
+  still: boolean,
+  look: BotAvatarDefinition,
+  mood: "thinking" | "idle",
+) {
+  const host = useRef<HTMLSpanElement>(null);
+
+  useLayoutEffect(() => {
+    if (still || !host.current) return;
+
+    const avatar = mountAvatar(host.current, {
+      ...look,
+      mood,
+      reducedMotion: "system",
+      followPointer: true,
+      label: "",
+    });
+
+    return () => avatar.destroy();
+  }, [still, look, mood]);
+
+  return host;
+}
+
 /** Static thumbnails use one SVG; live faces share the library's animation clock and reduced-motion listener. */
 export function BotAvatar({
   bot,
@@ -33,23 +57,9 @@ export function BotAvatar({
 }) {
   const look = bot.avatar;
 
-  const host = useRef<HTMLSpanElement>(null);
   const still = !live || state === "sleeping";
   const mood = state === "working" ? "thinking" : "idle";
-
-  useLayoutEffect(() => {
-    if (still || !host.current) return;
-
-    const avatar = mountAvatar(host.current, {
-      ...look,
-      mood,
-      reducedMotion: "system",
-      followPointer: true,
-      label: "",
-    });
-
-    return () => avatar.destroy();
-  }, [still, look, mood]);
+  const host = useLiveAvatar(still, look, mood);
 
   const svg = useMemo(
     () =>

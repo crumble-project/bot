@@ -302,6 +302,19 @@ function historyContent(
   return [toolResultHistoryBlock(message)];
 }
 
+function assistantFields(
+  message: AssistantMessage,
+  model: Model<Api>,
+  index: number,
+): AssistantFields {
+  return {
+    id: message.responseId ?? `msg_replayed_${index}`,
+    type: "message",
+    model: message.responseModel ?? nativeModel(model.id),
+    stop_reason: nativeStop(message.stopReason),
+  };
+}
+
 function prepareHistory(
   context: TranscriptContext,
   model: Model<Api>,
@@ -333,12 +346,11 @@ function prepareHistory(
     if (content.length === 0) continue;
 
     if (message.role === "assistant")
-      append("assistant", content, {
-        id: message.responseId ?? `msg_replayed_${frames.length}`,
-        type: "message",
-        model: message.responseModel ?? nativeModel(model.id),
-        stop_reason: nativeStop(message.stopReason),
-      });
+      append(
+        "assistant",
+        content,
+        assistantFields(message, model, frames.length),
+      );
     else append("user", content);
   }
 
@@ -366,26 +378,34 @@ function requestBody(
 
   const reasoning = level === "off" ? undefined : level;
 
-  let effort: Effort | undefined;
-
-  if (reasoning === undefined) {
-    if (acceptsThinkingDisable(model.id)) {
-      body["thinking"] = { type: "disabled" };
-      // Clear-thinking context edits are invalid when thinking is disabled.
-      body["context_management"] = { edits: [] };
-    } else effort = "low";
-  } else {
-    // Routes without adaptive thinking 400 on the block; their default thinking plus the effort stand in.
-    if (supportsAdaptiveThinking(model.id))
-      body["thinking"] = { type: "adaptive", display: "summarized" };
-    effort = reasoning === "minimal" ? "low" : reasoning;
-  }
+  const effort = configureThinking(body, model.id, reasoning);
 
   if (effort) body["output_config"] = { effort };
 
   if (options?.maxTokens !== undefined) body["max_tokens"] = options.maxTokens;
 
   return { body, effort };
+}
+
+function configureThinking(
+  body: JsonObject,
+  modelId: string,
+  reasoning: Exclude<ReturnType<typeof clampThinkingLevel>, "off"> | undefined,
+): Effort | undefined {
+  if (reasoning === undefined) {
+    if (!acceptsThinkingDisable(modelId)) return "low";
+    body["thinking"] = { type: "disabled" };
+    // Clear-thinking context edits are invalid when thinking is disabled.
+    body["context_management"] = { edits: [] };
+
+    return undefined;
+  }
+
+  // Routes without adaptive thinking 400 on the block; their default thinking plus the effort stand in.
+  if (supportsAdaptiveThinking(modelId))
+    body["thinking"] = { type: "adaptive", display: "summarized" };
+
+  return reasoning === "minimal" ? "low" : reasoning;
 }
 
 type StreamJson = z.infer<typeof streamJson>;
@@ -506,11 +526,12 @@ const exited = (child: ChildProcessWithoutNullStreams) =>
       );
 
 function piUsage(usage: CapturedMessage["usage"] | undefined): Usage {
-  const input = usage?.input_tokens ?? 0;
-  const output = usage?.output_tokens ?? 0;
-  const cacheRead = usage?.cache_read_input_tokens ?? 0;
-  const cacheWrite = usage?.cache_creation_input_tokens ?? 0;
-  const oneHour = usage?.cache_creation?.ephemeral_1h_input_tokens;
+  const source = usage ?? {};
+  const input = source.input_tokens ?? 0;
+  const output = source.output_tokens ?? 0;
+  const cacheRead = source.cache_read_input_tokens ?? 0;
+  const cacheWrite = source.cache_creation_input_tokens ?? 0;
+  const oneHour = source.cache_creation?.ephemeral_1h_input_tokens;
 
   const result: Usage = {
     input,
@@ -620,15 +641,8 @@ function prepareRequest(
 
 type PreparedRequest = ReturnType<typeof prepareRequest>;
 
-function prepareCli(
-  adapter: AdapterOptions,
-  model: Model<Api>,
-  options: SimpleStreamOptions | undefined,
-  request: PreparedRequest,
-  scratch: string,
-  admission: Admission,
-) {
-  const { manifest, body, system, frames, effort } = request;
+function writeCliFiles(request: PreparedRequest, scratch: string) {
+  const { manifest, body, system } = request;
   writeFileSync(join(scratch, "tools.json"), JSON.stringify(manifest));
   // Settings apply env inside the process, avoiding the per-argument limit for large schemas.
   writeFileSync(
@@ -636,22 +650,10 @@ function prepareCli(
     JSON.stringify({ env: { CLAUDE_CODE_EXTRA_BODY: JSON.stringify(body) } }),
   );
   writeFileSync(join(scratch, "system.md"), system);
-  mkdirSync(adapter.workDir, { recursive: true, mode: 0o700 });
+}
 
-  const env = childEnv(adapter);
-
-  Object.assign(env, adapter.fixtureEnv, {
-    ENABLE_TOOL_SEARCH: "false",
-    CLAUDE_CODE_MAX_RETRIES: "0",
-    DISABLE_AUTO_COMPACT: "1",
-    DISABLE_COMPACT: "1",
-    // Crumble owns budgets; the replayed reminder invalidates cached history.
-    CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off",
-    ANTHROPIC_BASE_URL: admission.url,
-  });
-
-  if (options?.maxTokens !== undefined)
-    env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = String(options.maxTokens);
+function cliArgs(model: Model<Api>, request: PreparedRequest, scratch: string) {
+  const { system, frames, effort } = request;
 
   const mcp = {
     mcpServers: {
@@ -662,7 +664,7 @@ function prepareCli(
     },
   };
 
-  const args = [
+  return [
     ...baseCliArgs(nativeModel(model.id)),
     "--include-partial-messages",
     "--system-prompt-file",
@@ -682,8 +684,35 @@ function prepareCli(
     "--session-id",
     conversationSessionId(system, frames),
   ];
+}
 
-  return { env, args };
+function prepareCli(
+  adapter: AdapterOptions,
+  model: Model<Api>,
+  options: SimpleStreamOptions | undefined,
+  request: PreparedRequest,
+  scratch: string,
+  admission: Admission,
+) {
+  writeCliFiles(request, scratch);
+  mkdirSync(adapter.workDir, { recursive: true, mode: 0o700 });
+
+  const env = childEnv(adapter);
+
+  Object.assign(env, adapter.fixtureEnv, {
+    ENABLE_TOOL_SEARCH: "false",
+    CLAUDE_CODE_MAX_RETRIES: "0",
+    DISABLE_AUTO_COMPACT: "1",
+    DISABLE_COMPACT: "1",
+    // Crumble owns budgets; the replayed reminder invalidates cached history.
+    CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off",
+    ANTHROPIC_BASE_URL: admission.url,
+  });
+
+  if (options?.maxTokens !== undefined)
+    env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = String(options.maxTokens);
+
+  return { env, args: cliArgs(model, request, scratch) };
 }
 
 type Receive = () => Promise<StreamJson | null>;
@@ -1106,6 +1135,45 @@ function doneReason(
     : "stop";
 }
 
+function finishedMessage(
+  partial: AssistantMessage,
+  content: AssistantMessage["content"],
+  captured: CapturedMessage,
+) {
+  const message: AssistantMessage = {
+    ...partial,
+    content,
+    usage: piUsage(captured.usage),
+    stopReason: "stop",
+  };
+
+  if (captured.id) message.responseId = captured.id;
+
+  if (captured.model) message.responseModel = captured.model;
+
+  if (captured.stop_reason) message.rawStopReason = captured.stop_reason;
+
+  return message;
+}
+
+function pushToolCalls(
+  stream: AssistantMessageEventStream,
+  message: AssistantMessage,
+  calls: ToolCall[],
+) {
+  for (const call of calls) {
+    const contentIndex = message.content.indexOf(call);
+
+    stream.push({ type: "toolcall_start", contentIndex, partial: message });
+    stream.push({
+      type: "toolcall_end",
+      contentIndex,
+      toolCall: call,
+      partial: message,
+    });
+  }
+}
+
 function finishResponse(
   captured: CapturedMessage,
   crumble: Map<string, string>,
@@ -1128,30 +1196,9 @@ function finishResponse(
 
   const calls = content.filter((item) => item.type === "toolCall");
 
-  const message: AssistantMessage = {
-    ...partial,
-    content,
-    usage: piUsage(captured.usage),
-    stopReason: "stop",
-  };
+  const message = finishedMessage(partial, content, captured);
 
-  if (captured.id) message.responseId = captured.id;
-
-  if (captured.model) message.responseModel = captured.model;
-
-  if (captured.stop_reason) message.rawStopReason = captured.stop_reason;
-
-  for (const call of calls) {
-    const contentIndex = message.content.indexOf(call);
-
-    stream.push({ type: "toolcall_start", contentIndex, partial: message });
-    stream.push({
-      type: "toolcall_end",
-      contentIndex,
-      toolCall: call,
-      partial: message,
-    });
-  }
+  pushToolCalls(stream, message, calls);
 
   if (refused) {
     // A refusal is terminal: Pi AI's Anthropic adapter reports it as an error with the explanation.
@@ -1228,6 +1275,124 @@ async function release(
   await admission.close();
 }
 
+function cliReceiver(
+  cli: ChildProcessWithoutNullStreams,
+  stderr: (chunk: string) => void,
+  timeoutMs: number,
+  signal: AbortSignal,
+): Receive {
+  cli.stderr.setEncoding("utf8").on("data", stderr);
+
+  const spawnError = new Promise<never>((_, reject) =>
+    cli.once("error", reject),
+  );
+
+  const lines = new Lines(cli);
+
+  return () => Promise.race([lines.next(timeoutMs, signal), spawnError]);
+}
+
+type NativeRequest = {
+  adapter: AdapterOptions;
+  model: Model<Api>;
+  options: SimpleStreamOptions | undefined;
+  request: PreparedRequest;
+  admission: Admission;
+  signal: AbortSignal;
+  scratch: string;
+  timeoutMs: number;
+  stream: AssistantMessageEventStream;
+  partial: AssistantMessage;
+  collected: ReturnType<typeof stderrCollector>;
+};
+
+/** What the abort listener and the cleanup in `run` must see as soon as `driveCli` changes it. */
+type CliHold = {
+  child: ChildProcessWithoutNullStreams | undefined;
+  handedOff: boolean;
+};
+
+async function replayAndReceive(
+  cli: ChildProcessWithoutNullStreams,
+  native: NativeRequest,
+) {
+  const { request, admission, signal, timeoutMs, stream, partial } = native;
+  const { stderr, stderrTail } = native.collected;
+  const receive = cliReceiver(cli, stderr, timeoutMs, signal);
+
+  await replayHistory(
+    request.frames,
+    stdinWriter(cli, signal),
+    receive,
+    cli,
+    signal,
+    stderrTail,
+  );
+
+  cli.stdin.end();
+
+  const incremental = new IncrementalResponse(stream, partial);
+  const response = await receiveResponse(receive, admission, incremental);
+
+  return { incremental, response };
+}
+
+async function driveCli(command: string, native: NativeRequest, hold: CliHold) {
+  const { adapter, model, options, request, admission } = native;
+  const { signal, scratch, stream, partial } = native;
+  const { stderrTail } = native.collected;
+
+  const { env, args } = prepareCli(
+    adapter,
+    model,
+    options,
+    request,
+    scratch,
+    admission,
+  );
+
+  if (signal.aborted) throw new Error("Claude request cancelled");
+
+  const cli = spawn(command, args, {
+    env,
+    cwd: adapter.workDir,
+    detached: true,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  hold.child = cli;
+
+  const { incremental, response } = await replayAndReceive(cli, native);
+  const { fast } = response;
+
+  let exitCode: number | null = null;
+
+  if (fast) {
+    hold.handedOff = true;
+    handOff(cli, admission);
+  } else {
+    exitCode = await exited(cli);
+  }
+
+  if (signal.aborted) throw new Error("Claude request cancelled");
+
+  const captured = validateResponse(
+    adapter,
+    admission,
+    response,
+    exitCode,
+    stderrTail,
+  );
+
+  finishResponse(
+    captured,
+    request.crumble,
+    incremental.streamed,
+    stream,
+    partial,
+  );
+}
+
 async function run(
   adapter: AdapterOptions,
   model: Model<Api>,
@@ -1239,92 +1404,44 @@ async function run(
   stream.push({ type: "start", partial });
   const command = await requireClaudeCommand(adapter);
   const request = prepareRequest(model, context, options);
-  const { frames, manifest, crumble } = request;
+  const { frames, manifest } = request;
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const admission = openAdmission(adapter, frames, manifest, timeoutMs);
   const signal = options?.signal ?? new AbortController().signal;
   const scratch = mkdtempSync(join(tmpdir(), "crumble-claude-"));
-  let child: ChildProcessWithoutNullStreams | undefined;
-  let handedOff = false;
-  const { stderr, stderrTail } = stderrCollector();
+  const hold: CliHold = { child: undefined, handedOff: false };
+  const collected = stderrCollector();
 
   const cancel = () => {
     admission.abort();
 
-    if (child) killTree(child);
+    if (hold.child) killTree(hold.child);
   };
 
   signal.addEventListener("abort", cancel, { once: true });
 
   try {
-    const { env, args } = prepareCli(
-      adapter,
-      model,
-      options,
-      request,
-      scratch,
-      admission,
+    await driveCli(
+      command,
+      {
+        adapter,
+        model,
+        options,
+        request,
+        admission,
+        signal,
+        scratch,
+        timeoutMs,
+        stream,
+        partial,
+        collected,
+      },
+      hold,
     );
-
-    if (signal.aborted) throw new Error("Claude request cancelled");
-    child = spawn(command, args, {
-      env,
-      cwd: adapter.workDir,
-      detached: true,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    const cli = child;
-
-    cli.stderr.setEncoding("utf8").on("data", stderr);
-
-    const spawnError = new Promise<never>((_, reject) =>
-      cli.once("error", reject),
-    );
-
-    const lines = new Lines(cli);
-
-    const receive = () =>
-      Promise.race([lines.next(timeoutMs, signal), spawnError]);
-
-    await replayHistory(
-      frames,
-      stdinWriter(cli, signal),
-      receive,
-      cli,
-      signal,
-      stderrTail,
-    );
-
-    cli.stdin.end();
-
-    const incremental = new IncrementalResponse(stream, partial);
-    const response = await receiveResponse(receive, admission, incremental);
-    const { fast } = response;
-
-    let exitCode: number | null = null;
-
-    if (fast) {
-      handedOff = true;
-      handOff(cli, admission);
-    } else {
-      exitCode = await exited(cli);
-    }
-
-    if (signal.aborted) throw new Error("Claude request cancelled");
-
-    const captured = validateResponse(
-      adapter,
-      admission,
-      response,
-      exitCode,
-      stderrTail,
-    );
-
-    finishResponse(captured, crumble, incremental.streamed, stream, partial);
   } finally {
     signal.removeEventListener("abort", cancel);
 
-    if (!handedOff) await release(child, admission);
+    if (!hold.handedOff) await release(hold.child, admission);
 
     rmSync(scratch, { recursive: true, force: true });
   }

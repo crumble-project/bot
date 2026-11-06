@@ -83,6 +83,160 @@ export function trustedOriginsFor(baseURL: string) {
   return [...new Set([new URL(baseURL).origin, passkeyOriginFor(baseURL)])];
 }
 
+function signUpGate() {
+  // Set once Better Auth is up; hooks only run on requests, after that.
+  let settings: ServerSettingsStore;
+  let inviteStore: Invites;
+
+  const isFirstUser = async <O extends BetterAuthOptions>(
+    adapter: DBTransactionAdapter<O>,
+  ) => (await adapter.count({ model: "user" })) === 0;
+
+  const mayJoin = async <O extends BetterAuthOptions>(
+    adapter: DBTransactionAdapter<O>,
+    invite: string | null | undefined,
+    accepts: (invite: string) => Promise<boolean>,
+  ) =>
+    (await isFirstUser(adapter)) ||
+    settings.get().signUpOpen ||
+    (!!invite && (await accepts(invite)));
+
+  return {
+    connect(store: ServerSettingsStore, invites: Invites) {
+      settings = store;
+      inviteStore = invites;
+    },
+    isFirstUser,
+    mayJoin,
+    consumeInvite: (invite: string) => inviteStore.consume(invite),
+    inviteOpen: (invite: string) => inviteStore.isOpen(invite),
+    attribute: (invite: string, userId: string) =>
+      inviteStore.attribute(invite, userId),
+  };
+}
+
+type SignUpGate = ReturnType<typeof signUpGate>;
+
+const userDatabaseHooks = (gate: SignUpGate) =>
+  ({
+    user: {
+      create: {
+        // Every way to create a user passes here: the gate for closed sign-up and the first admin.
+        async before(user, context) {
+          if (!context) throw signUpClosed();
+          const adapter = await getCurrentAdapter(context.context.adapter);
+
+          if (await gate.isFirstUser(adapter))
+            return { data: { ...user, role: ADMIN_ROLE } };
+
+          switch (context.path) {
+            case "/admin/create-user":
+            case "/passkey/verify-registration":
+              return;
+            case "/sign-up/email": {
+              const invite = context.headers?.get(INVITE_HEADER);
+
+              if (await gate.mayJoin(adapter, invite, gate.consumeInvite))
+                return;
+              throw signUpClosed();
+            }
+
+            default:
+              throw signUpClosed();
+          }
+        },
+        async after(user, context) {
+          const invite = context?.headers?.get(INVITE_HEADER);
+
+          if (invite) await gate.attribute(invite, user.id);
+        },
+      },
+    },
+  }) satisfies BetterAuthOptions["databaseHooks"];
+
+const passkeyRegistration = (gate: SignUpGate) =>
+  ({
+    // A signed-in owner adds passkeys as before; without a session, a passkey alone signs up.
+    requireSession: false,
+    async resolveUser({ ctx, context }) {
+      const signUp = Schema.decodeUnknownOption(PasskeySignUp)(context);
+
+      if (Option.isNone(signUp))
+        throw new APIError("BAD_REQUEST", {
+          message: "A passkey sign-up needs an email and a name",
+        });
+      const { email, name, invite } = signUp.value;
+
+      if (await ctx.context.internalAdapter.findUserByEmail(email))
+        throw new APIError("BAD_REQUEST", {
+          message: "An account with this email already exists",
+        });
+
+      if (!(await gate.mayJoin(ctx.context.adapter, invite, gate.inviteOpen)))
+        throw signUpClosed();
+
+      return { id: randomUUID(), name: email, displayName: name };
+    },
+    async afterVerification({ ctx, user, context }) {
+      if (await getSessionFromCtx(ctx)) return;
+
+      const { email, name, invite } =
+        Schema.decodeUnknownSync(PasskeySignUp)(context);
+
+      const adapter = await getCurrentAdapter(ctx.context.adapter);
+
+      if (!(await gate.mayJoin(adapter, invite, gate.consumeInvite)))
+        throw signUpClosed();
+
+      const created = await ctx.context.internalAdapter.createUser(
+        {
+          id: user.id,
+          email,
+          name,
+          emailVerified: false,
+        },
+        { method: "passkey" },
+      );
+
+      if (invite) await gate.attribute(invite, created.id);
+
+      return { userId: created.id };
+    },
+  }) satisfies NonNullable<Parameters<typeof passkey>[0]>["registration"];
+
+function authOptions(
+  database: Database,
+  baseURL: string,
+  secretPath: string,
+  gate: SignUpGate,
+) {
+  const passkeyOrigin = passkeyOriginFor(baseURL);
+
+  return {
+    appName: "Crumble",
+    baseURL,
+    secret: readFileSync(secretPath, "utf8").trim(),
+    database,
+    trustedOrigins: trustedOriginsFor(baseURL),
+    emailAndPassword: { enabled: true },
+    session: { cookieCache: { enabled: false } },
+    rateLimit: { enabled: true, storage: "database" },
+    user: { additionalFields: userPreferenceFields },
+    databaseHooks: userDatabaseHooks(gate),
+    plugins: [
+      bearer(),
+      admin(),
+      serverTables(),
+      passkey({
+        rpID: new URL(passkeyOrigin).hostname,
+        rpName: "Crumble",
+        origin: passkeyOrigin,
+        registration: passkeyRegistration(gate),
+      }),
+    ],
+  } satisfies BetterAuthOptions;
+}
+
 export async function createAuth(dataDir: string, baseURL: string) {
   const secretPath = join(dataDir, ".auth-secret");
 
@@ -94,130 +248,8 @@ export async function createAuth(dataDir: string, baseURL: string) {
   chmodSync(secretPath, 0o600);
   const database = new Database(join(dataDir, "auth.sqlite"));
   database.run("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
-  const passkeyOrigin = passkeyOriginFor(baseURL);
-  // Set once Better Auth is up; hooks only run on requests, after that.
-  let settings: ServerSettingsStore;
-  let inviteStore: Invites;
-
-  const isFirstUser = async <O extends BetterAuthOptions>(
-    adapter: DBTransactionAdapter<O>,
-  ) => (await adapter.count({ model: "user" })) === 0;
-
-  const consumeInvite = (invite: string) => inviteStore.consume(invite);
-  const inviteOpen = (invite: string) => inviteStore.isOpen(invite);
-
-  const mayJoin = async <O extends BetterAuthOptions>(
-    adapter: DBTransactionAdapter<O>,
-    invite: string | null | undefined,
-    accepts: (invite: string) => Promise<boolean>,
-  ) =>
-    (await isFirstUser(adapter)) ||
-    settings.get().signUpOpen ||
-    (!!invite && (await accepts(invite)));
-
-  const options = {
-    appName: "Crumble",
-    baseURL,
-    secret: readFileSync(secretPath, "utf8").trim(),
-    database,
-    trustedOrigins: trustedOriginsFor(baseURL),
-    emailAndPassword: { enabled: true },
-    session: { cookieCache: { enabled: false } },
-    rateLimit: { enabled: true, storage: "database" },
-    user: { additionalFields: userPreferenceFields },
-    databaseHooks: {
-      user: {
-        create: {
-          // Every way to create a user passes here: the gate for closed sign-up and the first admin.
-          async before(user, context) {
-            if (!context) throw signUpClosed();
-            const adapter = await getCurrentAdapter(context.context.adapter);
-
-            if (await isFirstUser(adapter))
-              return { data: { ...user, role: ADMIN_ROLE } };
-
-            switch (context.path) {
-              case "/admin/create-user":
-              case "/passkey/verify-registration":
-                return;
-              case "/sign-up/email": {
-                const invite = context.headers?.get(INVITE_HEADER);
-
-                if (await mayJoin(adapter, invite, consumeInvite)) return;
-                throw signUpClosed();
-              }
-
-              default:
-                throw signUpClosed();
-            }
-          },
-          async after(user, context) {
-            const invite = context?.headers?.get(INVITE_HEADER);
-
-            if (invite) await inviteStore.attribute(invite, user.id);
-          },
-        },
-      },
-    },
-    plugins: [
-      bearer(),
-      admin(),
-      serverTables(),
-      passkey({
-        rpID: new URL(passkeyOrigin).hostname,
-        rpName: "Crumble",
-        origin: passkeyOrigin,
-        registration: {
-          // A signed-in owner adds passkeys as before; without a session, a passkey alone signs up.
-          requireSession: false,
-          async resolveUser({ ctx, context }) {
-            const signUp = Schema.decodeUnknownOption(PasskeySignUp)(context);
-
-            if (Option.isNone(signUp))
-              throw new APIError("BAD_REQUEST", {
-                message: "A passkey sign-up needs an email and a name",
-              });
-            const { email, name, invite } = signUp.value;
-
-            if (await ctx.context.internalAdapter.findUserByEmail(email))
-              throw new APIError("BAD_REQUEST", {
-                message: "An account with this email already exists",
-              });
-
-            if (!(await mayJoin(ctx.context.adapter, invite, inviteOpen)))
-              throw signUpClosed();
-
-            return { id: randomUUID(), name: email, displayName: name };
-          },
-          async afterVerification({ ctx, user, context }) {
-            if (await getSessionFromCtx(ctx)) return;
-
-            const { email, name, invite } =
-              Schema.decodeUnknownSync(PasskeySignUp)(context);
-
-            const adapter = await getCurrentAdapter(ctx.context.adapter);
-
-            if (!(await mayJoin(adapter, invite, consumeInvite)))
-              throw signUpClosed();
-
-            const created = await ctx.context.internalAdapter.createUser(
-              {
-                id: user.id,
-                email,
-                name,
-                emailVerified: false,
-              },
-              { method: "passkey" },
-            );
-
-            if (invite) await inviteStore.attribute(invite, created.id);
-
-            return { userId: created.id };
-          },
-        },
-      }),
-    ],
-  } satisfies BetterAuthOptions;
+  const gate = signUpGate();
+  const options = authOptions(database, baseURL, secretPath, gate);
 
   try {
     const { runMigrations } = await getMigrations(options);
@@ -226,8 +258,10 @@ export async function createAuth(dataDir: string, baseURL: string) {
     const users = drizzle({ client: database });
     const { adapter } = await auth.$context;
 
-    settings = await serverSettingsStore(adapter);
-    inviteStore = invites(adapter);
+    const settings = await serverSettingsStore(adapter);
+    const inviteStore = invites(adapter);
+
+    gate.connect(settings, inviteStore);
     await ensureAdmin(adapter);
 
     return {

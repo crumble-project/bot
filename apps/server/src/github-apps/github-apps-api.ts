@@ -9,17 +9,11 @@ import { GitHubAccounts } from "./github-accounts";
 import { GitHubAppUsers } from "./github-app-users";
 import { GitHubApps } from "./github-apps";
 
-export function registerGitHubAppRoutes(options: {
-  register: Register;
-  service: BotLookup;
-  run: Runner<GitHubApps | GitHubAppUsers | GitHubAccounts>;
-}) {
-  const { register, service, run } = options;
-  const githubApps = run.runSync(GitHubApps.use(Effect.succeed));
-  const githubAppUsers = run.runSync(GitHubAppUsers.use(Effect.succeed));
-  const githubAccounts = run.runSync(GitHubAccounts.use(Effect.succeed));
+type GitHubRoutesRunner = Runner<GitHubApps | GitHubAppUsers | GitHubAccounts>;
 
-  const github = <A, E>(effect: Effect.Effect<A, E>) =>
+const githubRunner =
+  (run: GitHubRoutesRunner) =>
+  <A, E>(effect: Effect.Effect<A, E>) =>
     run.runPromise(
       effect.pipe(
         Effect.mapError((error) =>
@@ -30,11 +24,17 @@ export function registerGitHubAppRoutes(options: {
       ),
     );
 
-  const botIdsOf = (botIds: readonly string[]) => {
-    for (const botId of botIds) service.agent(botId);
+type GitHubRoutes = {
+  register: Register;
+  github: ReturnType<typeof githubRunner>;
+  botIdsOf: (botIds: readonly string[]) => string[];
+  githubApps: GitHubApps["Service"];
+  githubAppUsers: GitHubAppUsers["Service"];
+  githubAccounts: GitHubAccounts["Service"];
+};
 
-    return [...new Set(botIds)];
-  };
+function registerAppRoutes(routeSet: GitHubRoutes) {
+  const { register, github, botIdsOf, githubApps } = routeSet;
 
   register(routes.githubApps, async (c) =>
     c.json({ apps: await github(githubApps.list) }, 200),
@@ -74,6 +74,10 @@ export function registerGitHubAppRoutes(options: {
 
     return c.body(null, 204);
   });
+}
+
+function registerAppSignInRoutes(routeSet: GitHubRoutes) {
+  const { register, github, githubApps, githubAppUsers } = routeSet;
 
   register(routes.signInGithubApp, async (c) =>
     c.json(
@@ -120,6 +124,10 @@ export function registerGitHubAppRoutes(options: {
       200,
     );
   });
+}
+
+function registerAccountRoutes(routeSet: GitHubRoutes) {
+  const { register, github, botIdsOf, githubApps, githubAccounts } = routeSet;
 
   register(routes.githubAccounts, async (c) =>
     c.json({ accounts: await github(githubAccounts.list) }, 200),
@@ -150,4 +158,31 @@ export function registerGitHubAppRoutes(options: {
 
     return c.body(null, 204);
   });
+}
+
+export function registerGitHubAppRoutes(options: {
+  register: Register;
+  service: BotLookup;
+  run: GitHubRoutesRunner;
+}) {
+  const { register, service, run } = options;
+
+  const botIdsOf = (botIds: readonly string[]) => {
+    for (const botId of botIds) service.agent(botId);
+
+    return [...new Set(botIds)];
+  };
+
+  const routeSet: GitHubRoutes = {
+    register,
+    github: githubRunner(run),
+    botIdsOf,
+    githubApps: run.runSync(GitHubApps.use(Effect.succeed)),
+    githubAppUsers: run.runSync(GitHubAppUsers.use(Effect.succeed)),
+    githubAccounts: run.runSync(GitHubAccounts.use(Effect.succeed)),
+  };
+
+  registerAppRoutes(routeSet);
+  registerAppSignInRoutes(routeSet);
+  registerAccountRoutes(routeSet);
 }

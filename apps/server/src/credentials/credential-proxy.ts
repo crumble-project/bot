@@ -208,6 +208,27 @@ export async function answerOverTls(
   http.createServer(answer).emit("connection", secure);
 }
 
+const swappingPlaceholders =
+  (values: readonly SwappedValue[]) => (text: string) =>
+    values.reduce(
+      (current, { grant, value }) =>
+        current.replaceAll(grant.placeholder, value),
+      text,
+    );
+
+const scrubPairs = (values: readonly SwappedValue[]) =>
+  values.flatMap(({ grant, value }) =>
+    value.length >= MIN_SCRUBBED_LENGTH
+      ? [[latin1(value), latin1(grant.placeholder)] as const]
+      : [],
+  );
+
+function answerUpstreamError(response: http.ServerResponse, error: Error) {
+  if (response.headersSent) return void response.destroy();
+  response.writeHead(502, { "content-type": "text/plain" });
+  response.end(`Crumble credential proxy: ${error.message}\n`);
+}
+
 /**
  * Swaps a bot's credential placeholders for their values on requests to the credentials' hosts, and the values back
  * in responses. It sees only TLS connections the workspace proxy hands it, so a placeholder sent anywhere else, or from
@@ -263,25 +284,17 @@ export function credentialProxy(
     values: readonly SwappedValue[],
     record: (path: string, status: number | null) => void,
   ) => {
-    const swap = (text: string) =>
-      values.reduce(
-        (current, { grant, value }) =>
-          current.replaceAll(grant.placeholder, value),
-        text,
-      );
-
-    const headers = requestHeaders(request.rawHeaders, swap);
+    const headers = requestHeaders(
+      request.rawHeaders,
+      swappingPlaceholders(values),
+    );
 
     // Uncompressed responses, so the value can be scrubbed from them.
     headers["accept-encoding"] = ["identity"];
     // Never in the URL: services log, store, and echo URLs, which would let a job read the value back.
     const path = request.url ?? "/";
 
-    const scrub = values.flatMap(({ grant, value }) =>
-      value.length >= MIN_SCRUBBED_LENGTH
-        ? [[latin1(value), latin1(grant.placeholder)] as const]
-        : [],
-    );
+    const scrub = scrubPairs(values);
 
     const scrubText = (text: string) =>
       scrub.reduce((current, [from, to]) => current.replaceAll(from, to), text);
@@ -316,9 +329,7 @@ export function credentialProxy(
     upstream.on("error", (error) => {
       record(path, null);
 
-      if (response.headersSent) return void response.destroy();
-      response.writeHead(502, { "content-type": "text/plain" });
-      response.end(`Crumble credential proxy: ${error.message}\n`);
+      answerUpstreamError(response, error);
     });
     request.pipe(upstream);
   };

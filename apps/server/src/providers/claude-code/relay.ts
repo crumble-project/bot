@@ -78,6 +78,27 @@ export type AdmissionOptions = {
   gzip: GzipFallback;
 };
 
+function rewrittenPayload(
+  native: string,
+  { queried, oneShot }: AdmissionOptions,
+) {
+  let payload = native;
+
+  if (oneShot) payload = dropMessageBreakpoints(payload);
+
+  try {
+    payload = restoreQueriedTurn(payload, queried);
+  } catch (error) {
+    // Restoration is hygiene, not a gate: a frame it cannot prove lossless forwards as native built it.
+    if (!(error instanceof QueriedTurnMismatch)) throw error;
+  }
+
+  payload = stableRequestContext(payload, queried);
+  payload = pinMessageBreakpoint(payload, queried);
+
+  return streamToolInput(payload);
+}
+
 class UpstreamIdle extends Error {
   constructor(seconds: number) {
     super(`no upstream bytes for ${seconds} s`);
@@ -195,21 +216,8 @@ export class Admission {
   }
 
   private async forward(request: Request, path: URL) {
-    const { queried, oneShot, gzip } = this.options;
-    let payload = await request.text();
-
-    if (oneShot) payload = dropMessageBreakpoints(payload);
-
-    try {
-      payload = restoreQueriedTurn(payload, queried);
-    } catch (error) {
-      // Restoration is hygiene, not a gate: a frame it cannot prove lossless forwards as native built it.
-      if (!(error instanceof QueriedTurnMismatch)) throw error;
-    }
-
-    payload = stableRequestContext(payload, queried);
-    payload = pinMessageBreakpoint(payload, queried);
-    payload = streamToolInput(payload);
+    const { gzip } = this.options;
+    const payload = rewrittenPayload(await request.text(), this.options);
     const headers = forwardedRequestHeaders(request);
     const route = `${this.upstream.origin}${this.upstream.pathname.replace(/\/$/, "")}/v1/messages${path.search}`;
     const compressed = this.compresses(payload, request.headers);
@@ -255,6 +263,10 @@ export class Admission {
 
     this.status = response.status;
 
+    return this.relayed(response, prefix);
+  }
+
+  private relayed(response: Response, prefix: Uint8Array | undefined) {
     const { readable, writable } = new TransformStream<
       Uint8Array,
       Uint8Array

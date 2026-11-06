@@ -70,13 +70,13 @@ const syncAfter = (workspaces: Workspaces, agentId: string, name: string) =>
     ? Effect.runPromise(workspaces.sync(agentId))
     : Promise.resolve();
 
-function codingExtensions(
+// Holds the workspace awake for the grace period after a job asks; wake ends the hold early.
+const questionHold = (
   coding: JobKind,
-  agent: Pick<Agent, "id">,
+  agentId: string,
   workspaces: Workspaces,
   questionGraceMs: () => number,
-  credentials: CredentialsAccess,
-): JobExtensions {
+) => {
   let awake:
     | { release: () => void; timer: ReturnType<typeof setTimeout> }
     | undefined;
@@ -90,24 +90,39 @@ function codingExtensions(
 
   const ask = coding.questionTool(() => {
     wake();
-    const release = workspaces.keepAwake(agent.id);
+    const release = workspaces.keepAwake(agentId);
     const timer = setTimeout(wake, questionGraceMs());
 
     timer.unref();
     awake = { release, timer };
   });
 
-  const tools = createCodingTools().tools ?? [];
+  return { ask, wake };
+};
 
-  // The chat selects every installed extension, this one included, so its sections and hook check for a job.
-  const job = defineExtension({
+type CodingTools = NonNullable<ReturnType<typeof createCodingTools>["tools"]>;
+
+type CodingBuild = {
+  coding: JobKind;
+  agentId: string;
+  workspaces: Workspaces;
+  credentials: CredentialsAccess;
+};
+
+// The chat selects every installed extension, this one included, so its sections and hook check for a job.
+const jobExtension = (
+  { coding, agentId, workspaces, credentials }: CodingBuild,
+  tools: CodingTools,
+  { ask, wake }: ReturnType<typeof questionHold>,
+) =>
+  defineExtension({
     name: JOB_KINDS.coding.extension,
     tools: [...tools, ask],
     sections: [
       workspaceNotesSection(coding.isJob, true),
       credentialSection(
         "workspace_credentials",
-        agent.id,
+        agentId,
         credentials,
         (input, context) =>
           coding.isJob(input.read, input.conversationId, context),
@@ -120,7 +135,7 @@ function codingExtensions(
             return undefined;
 
           wake();
-          await syncAfter(workspaces, agent.id, call.name);
+          await syncAfter(workspaces, agentId, call.name);
 
           return undefined;
         },
@@ -128,23 +143,41 @@ function codingExtensions(
     ],
   });
 
-  const own = defineExtension({
+const workspaceExtension = (
+  { agentId, workspaces, credentials }: CodingBuild,
+  tools: CodingTools,
+) =>
+  defineExtension({
     name: WORKSPACE_EXTENSION,
     tools,
     sections: [
-      chatWorkspaceSection(() => workspaces.running(agent.id)),
-      credentialSection("shell_credentials", agent.id, credentials),
+      chatWorkspaceSection(() => workspaces.running(agentId)),
+      credentialSection("shell_credentials", agentId, credentials),
     ],
     hooks: [
       hook(ToolTask, {
         afterTool: async (call) => {
-          await syncAfter(workspaces, agent.id, call.name);
+          await syncAfter(workspaces, agentId, call.name);
 
           return undefined;
         },
       }),
     ],
   });
+
+function codingExtensions(
+  coding: JobKind,
+  agent: Pick<Agent, "id">,
+  workspaces: Workspaces,
+  questionGraceMs: () => number,
+  credentials: CredentialsAccess,
+): JobExtensions {
+  const build = { coding, agentId: agent.id, workspaces, credentials };
+
+  const hold = questionHold(coding, agent.id, workspaces, questionGraceMs);
+  const tools = createCodingTools().tools ?? [];
+  const job = jobExtension(build, tools, hold);
+  const own = workspaceExtension(build, tools);
 
   const extensions = coding.extensions({
     agentId: agent.id,

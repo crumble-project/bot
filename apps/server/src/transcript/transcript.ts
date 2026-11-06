@@ -713,6 +713,17 @@ const entriesBetween = (
 export const entryAt = async (conversation: Conversation, id: number) =>
   (await entriesBetween(conversation, id, id, 1)).items[0];
 
+const trimQuoted = <Quote extends { content: string }>(quoted: Quote[]) => {
+  while (JSON.stringify(quoted).length > 12000) {
+    const longest = quoted.reduce((a, b) =>
+      b.content.length > a.content.length ? b : a,
+    );
+
+    if (longest.content.length <= 80) break;
+    longest.content = longest.content.slice(0, longest.content.length - 200);
+  }
+};
+
 /** Bounds the target and its neighbours before admission so retries and restarts reuse one durable input. */
 export async function prepareReply(
   harness: Harness,
@@ -759,14 +770,7 @@ export async function prepareReply(
     ),
   }));
 
-  while (JSON.stringify(quoted).length > 12000) {
-    const longest = quoted.reduce((a, b) =>
-      b.content.length > a.content.length ? b : a,
-    );
-
-    if (longest.content.length <= 80) break;
-    longest.content = longest.content.slice(0, longest.content.length - 200);
-  }
+  trimQuoted(quoted);
 
   return {
     modelContent: `<reply_context>\n${JSON.stringify(quoted)}\n</reply_context>\n\n${content}`,

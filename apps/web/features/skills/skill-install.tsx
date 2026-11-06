@@ -390,17 +390,11 @@ const fullSkillQuery = (skillId: string) => ({
     api<"getSkill">(skillPath(skillId), { signal }),
 });
 
-export function InstalledSkillSheet({
-  skill,
-  bots,
-  onUpdate,
-  onClose,
-}: {
-  skill: SharedSkill;
-  bots: Bot[];
-  onUpdate: () => void;
-  onClose: () => void;
-}) {
+function useInstalledSkill(
+  skill: SharedSkill,
+  bots: Bot[],
+  onClose: () => void,
+) {
   const [usedBy, setUsedBy] = useState(() => botsUsing(bots, skill.id));
   const full = useQuery(fullSkillQuery(skill.id));
 
@@ -418,6 +412,26 @@ export function InstalledSkillSheet({
     mutationFn: () => assignSharedSkill(skill.id, bots, usedBy),
     onSuccess: done,
   });
+
+  return { usedBy, setUsedBy, full, copy, save };
+}
+
+export function InstalledSkillSheet({
+  skill,
+  bots,
+  onUpdate,
+  onClose,
+}: {
+  skill: SharedSkill;
+  bots: Bot[];
+  onUpdate: () => void;
+  onClose: () => void;
+}) {
+  const { usedBy, setUsedBy, full, copy, save } = useInstalledSkill(
+    skill,
+    bots,
+    onClose,
+  );
 
   return (
     <EditorSheet

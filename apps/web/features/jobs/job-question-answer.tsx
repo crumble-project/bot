@@ -62,15 +62,7 @@ function OptionRow({
   );
 }
 
-export function JobQuestionAnswer({
-  botId,
-  job,
-  question,
-}: {
-  botId: string;
-  job: string;
-  question: Question;
-}) {
+function useJobAnswer(botId: string, job: string, question: Question) {
   const [text, setText] = useState("");
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const multiple = question.multiple === true;
@@ -95,6 +87,105 @@ export function JobQuestionAnswer({
     if (reply && !answer.isPending) answer.mutate(reply);
   };
 
+  return { text, setText, picked, setPicked, multiple, reply, answer, submit };
+}
+
+type JobAnswer = ReturnType<typeof useJobAnswer>;
+
+function QuestionOptions({
+  options,
+  draft: { picked, setPicked, multiple, answer },
+}: {
+  options: string[];
+  draft: JobAnswer;
+}) {
+  return (
+    <div className="-mx-1.5 flex flex-col">
+      {options.map((option) => {
+        const on = picked.has(option);
+
+        return (
+          <OptionRow
+            key={option}
+            option={option}
+            multiple={multiple}
+            picked={on || (!multiple && answer.variables === option)}
+            sending={
+              !multiple && answer.isPending && answer.variables === option
+            }
+            disabled={answer.isPending}
+            onPick={() =>
+              multiple
+                ? setPicked((current) => {
+                    const next = new Set(current);
+
+                    if (on) next.delete(option);
+                    else next.add(option);
+
+                    return next;
+                  })
+                : answer.mutate(option)
+            }
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function AnswerBox({
+  hasOptions,
+  draft: { text, setText, multiple, reply, answer, submit },
+}: {
+  hasOptions: boolean;
+  draft: JobAnswer;
+}) {
+  return (
+    <div className="flex items-end gap-2">
+      <Textarea
+        aria-label="Answer"
+        rows={1}
+        className="min-h-8 resize-none py-1.5"
+        placeholder={hasOptions ? "Something else…" : "Your answer…"}
+        value={text}
+        disabled={answer.isPending}
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
+            submit();
+          }
+        }}
+      />
+      <Button
+        type="submit"
+        size="icon"
+        aria-label="Answer"
+        title="Answer (⌘↵)"
+        disabled={!reply || answer.isPending}
+      >
+        {answer.isPending && (multiple || !hasOptions) ? (
+          <Spinner />
+        ) : (
+          <IconArrowUp />
+        )}
+      </Button>
+    </div>
+  );
+}
+
+export function JobQuestionAnswer({
+  botId,
+  job,
+  question,
+}: {
+  botId: string;
+  job: string;
+  question: Question;
+}) {
+  const draft = useJobAnswer(botId, job, question);
+  const { multiple, answer, submit } = draft;
+
   return (
     <form
       className="flex w-full max-w-sm flex-col gap-3 rounded-xl border p-3"
@@ -115,67 +206,9 @@ export function JobQuestionAnswer({
         </div>
       </div>
       {question.options && (
-        <div className="-mx-1.5 flex flex-col">
-          {question.options.map((option) => {
-            const on = picked.has(option);
-
-            return (
-              <OptionRow
-                key={option}
-                option={option}
-                multiple={multiple}
-                picked={on || (!multiple && answer.variables === option)}
-                sending={
-                  !multiple && answer.isPending && answer.variables === option
-                }
-                disabled={answer.isPending}
-                onPick={() =>
-                  multiple
-                    ? setPicked((current) => {
-                        const next = new Set(current);
-
-                        if (on) next.delete(option);
-                        else next.add(option);
-
-                        return next;
-                      })
-                    : answer.mutate(option)
-                }
-              />
-            );
-          })}
-        </div>
+        <QuestionOptions options={question.options} draft={draft} />
       )}
-      <div className="flex items-end gap-2">
-        <Textarea
-          aria-label="Answer"
-          rows={1}
-          className="min-h-8 resize-none py-1.5"
-          placeholder={question.options ? "Something else…" : "Your answer…"}
-          value={text}
-          disabled={answer.isPending}
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-              event.preventDefault();
-              submit();
-            }
-          }}
-        />
-        <Button
-          type="submit"
-          size="icon"
-          aria-label="Answer"
-          title="Answer (⌘↵)"
-          disabled={!reply || answer.isPending}
-        >
-          {answer.isPending && (multiple || !question.options) ? (
-            <Spinner />
-          ) : (
-            <IconArrowUp />
-          )}
-        </Button>
-      </div>
+      <AnswerBox hasOptions={Boolean(question.options)} draft={draft} />
       {answer.isError && (
         <p className="text-xs text-destructive">{answer.error.message}</p>
       )}

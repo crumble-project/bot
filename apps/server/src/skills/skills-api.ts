@@ -15,6 +15,45 @@ type SkillRoutesOptions = {
   run: Runner<Services>;
 };
 
+const registerOwnSkillEditRoutes = ({
+  register,
+  service,
+  run,
+}: SkillRoutesOptions) => {
+  register(
+    routes.updateAgentSkill,
+    async (c) => {
+      const agentId = service.agent(c.req.param("id")).id;
+
+      const old = await run.runPromise(
+        OwnerSkills.use((s) => s.own(agentId, c.req.param("skillId"))),
+      );
+
+      const lifecycle = skillLifecycleInput.parse(await c.req.json());
+      const input = await mergedBody(c, old, skillInput);
+
+      return c.json(
+        await run.runPromise(
+          OwnerSkills.use((s) => s.updateOwn(old.id, input, lifecycle)),
+        ),
+        200,
+      );
+    },
+    { parsesBody: true },
+  );
+  register(routes.deleteAgentSkill, async (c) => {
+    const agentId = service.agent(c.req.param("id")).id;
+
+    const skill = await run.runPromise(
+      OwnerSkills.use((s) => s.own(agentId, c.req.param("skillId"))),
+    );
+
+    run.runSync(SkillRepository.use((r) => r.delete(skill.id)));
+
+    return c.body(null, 204);
+  });
+};
+
 export const registerBotSkillRoutes = (options: SkillRoutesOptions) => {
   const { register, service, run } = options;
 
@@ -51,38 +90,7 @@ export const registerBotSkillRoutes = (options: SkillRoutesOptions) => {
       201,
     );
   });
-  register(
-    routes.updateAgentSkill,
-    async (c) => {
-      const agentId = service.agent(c.req.param("id")).id;
-
-      const old = await run.runPromise(
-        OwnerSkills.use((s) => s.own(agentId, c.req.param("skillId"))),
-      );
-
-      const lifecycle = skillLifecycleInput.parse(await c.req.json());
-      const input = await mergedBody(c, old, skillInput);
-
-      return c.json(
-        await run.runPromise(
-          OwnerSkills.use((s) => s.updateOwn(old.id, input, lifecycle)),
-        ),
-        200,
-      );
-    },
-    { parsesBody: true },
-  );
-  register(routes.deleteAgentSkill, async (c) => {
-    const agentId = service.agent(c.req.param("id")).id;
-
-    const skill = await run.runPromise(
-      OwnerSkills.use((s) => s.own(agentId, c.req.param("skillId"))),
-    );
-
-    run.runSync(SkillRepository.use((r) => r.delete(skill.id)));
-
-    return c.body(null, 204);
-  });
+  registerOwnSkillEditRoutes(options);
 };
 
 const registerSharedSkillRoutes = ({ register, run }: SkillRoutesOptions) => {

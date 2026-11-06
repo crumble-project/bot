@@ -28,7 +28,7 @@ import type { AppError } from "../shared/errors";
 import { pruneHourly, startTicking } from "../shared/ticker";
 import { nowIso } from "../shared/time";
 import { WORKSPACE_PATH } from "../../workspace-image/guest";
-import { BotWorkspaces } from "../workspaces/workspace";
+import { BotWorkspaces, type Workspaces } from "../workspaces/workspace";
 import { ScriptRunRepository } from "./script-run-repository";
 import { scriptEvent, type ScriptEvent } from "../event-sources/event-payload";
 import { BOT_TOOL } from "../contract/tools";
@@ -61,6 +61,99 @@ const noticeText = (schedule: Schedule, result: Outcome, output: string) => {
     ...(tail ? [`\`\`\`\n${tail}\n\`\`\``] : []),
   ].join("\n\n");
 };
+
+const scriptNotStarted = (error: string): Outcome => ({
+  status: "failed",
+  exitCode: null,
+  error,
+});
+
+const exitOutcome = (exit: Exit.Exit<Outcome>): Outcome => {
+  if (Exit.isSuccess(exit)) return exit.value;
+
+  const error = Cause.pretty(exit.cause);
+
+  return {
+    status: Exit.hasInterrupts(exit) ? "interrupted" : "failed",
+    exitCode: null,
+    error: Exit.hasInterrupts(exit) ? null : error,
+  };
+};
+
+type ScriptShellRun = {
+  workspaces: Workspaces;
+  schedule: Schedule;
+  command: string;
+  env: Record<string, string>;
+  payload: ReturnType<typeof scriptEvent> | undefined;
+  output: OutputBuffer;
+};
+
+const runInShell = async (
+  { workspaces, schedule, command, env, payload, output }: ScriptShellRun,
+  signal: AbortSignal,
+) => {
+  const shell = workspaces.env(schedule.agentId, env);
+  const context = withAbortSignal(signal, BACKGROUND_CONTEXT);
+
+  if (payload) {
+    const written = await shell.writeFile(
+      payload.file,
+      payload.content,
+      context,
+    );
+
+    if (!written.ok) throw new ExecutionError("unknown", written.error.message);
+  }
+
+  return shell.exec(
+    command,
+    {
+      cwd: WORKSPACE_PATH,
+      timeout: schedule.timeoutSeconds,
+      onOutput: (chunk, _context, info) => {
+        output.push(chunk, info.skipped);
+      },
+      window: {
+        maxBytes: OUTPUT_LIMITS.maxBytes,
+        maxLines: OUTPUT_LIMITS.maxLines,
+        minIntervalMs: 1000,
+        bytesPerSecond: PROGRESS_BYTES_PER_SECOND,
+      },
+    },
+    context,
+  );
+};
+
+const shellOutcome = (shellRun: ScriptShellRun) =>
+  Effect.tryPromise({
+    try: (signal) => runInShell(shellRun, signal),
+    catch: (error) =>
+      error instanceof ExecutionError
+        ? error
+        : new ExecutionError("unknown", toError(error).message),
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.succeed({
+        ok: false as const,
+        error,
+      }),
+    ),
+    Effect.map((result): Outcome => {
+      if (result.ok)
+        return {
+          status: result.value.exitCode === 0 ? "succeeded" : "failed",
+          exitCode: result.value.exitCode,
+          error: null,
+        };
+
+      return {
+        status: result.error.code === "timeout" ? "timed_out" : "failed",
+        exitCode: null,
+        error: result.error.message,
+      };
+    }),
+  );
 
 export class ScriptRuns extends Context.Service<
   ScriptRuns,
@@ -139,21 +232,12 @@ export class ScriptRuns extends Context.Service<
         const output = new OutputBuffer(OUTPUT_LIMITS);
 
         const command = Effect.gen(function* (): Effect.fn.Return<Outcome> {
-          if (!workspaces)
-            return {
-              status: "failed",
-              exitCode: null,
-              error: "workspace unavailable",
-            };
+          if (!workspaces) return scriptNotStarted("workspace unavailable");
 
           const agent = yield* agents.get(schedule.agentId);
 
           if (!agent?.tools.includes(BOT_TOOL.coding))
-            return {
-              status: "failed",
-              exitCode: null,
-              error: "coding is turned off for this bot",
-            };
+            return scriptNotStarted("coding is turned off for this bot");
 
           const release = workspaces.keepAwake(schedule.agentId);
 
@@ -166,65 +250,14 @@ export class ScriptRuns extends Context.Service<
               ...payload?.env,
             };
 
-            const result = yield* Effect.tryPromise({
-              try: async (signal) => {
-                const shell = workspaces.env(schedule.agentId, env);
-                const context = withAbortSignal(signal, BACKGROUND_CONTEXT);
-
-                if (payload) {
-                  const written = await shell.writeFile(
-                    payload.file,
-                    payload.content,
-                    context,
-                  );
-
-                  if (!written.ok)
-                    throw new ExecutionError("unknown", written.error.message);
-                }
-
-                return shell.exec(
-                  run.command,
-                  {
-                    cwd: WORKSPACE_PATH,
-                    timeout: schedule.timeoutSeconds,
-                    onOutput: (chunk, _context, info) => {
-                      output.push(chunk, info.skipped);
-                    },
-                    window: {
-                      maxBytes: OUTPUT_LIMITS.maxBytes,
-                      maxLines: OUTPUT_LIMITS.maxLines,
-                      minIntervalMs: 1000,
-                      bytesPerSecond: PROGRESS_BYTES_PER_SECOND,
-                    },
-                  },
-                  context,
-                );
-              },
-              catch: (error) =>
-                error instanceof ExecutionError
-                  ? error
-                  : new ExecutionError("unknown", toError(error).message),
-            }).pipe(
-              Effect.catch((error) =>
-                Effect.succeed({
-                  ok: false as const,
-                  error,
-                }),
-              ),
-            );
-
-            if (result.ok)
-              return {
-                status: result.value.exitCode === 0 ? "succeeded" : "failed",
-                exitCode: result.value.exitCode,
-                error: null,
-              };
-
-            return {
-              status: result.error.code === "timeout" ? "timed_out" : "failed",
-              exitCode: null,
-              error: result.error.message,
-            };
+            return yield* shellOutcome({
+              workspaces,
+              schedule,
+              command: run.command,
+              env,
+              payload,
+              output,
+            });
           }).pipe(Effect.ensuring(Effect.sync(release)));
         });
 
@@ -233,22 +266,11 @@ export class ScriptRuns extends Context.Service<
             Effect.gen(function* () {
               output.end();
               const tail = output.snapshot();
-              let result: Outcome;
-
-              if (Exit.isSuccess(exit)) result = exit.value;
-              else {
-                const error = Cause.pretty(exit.cause);
-                result = {
-                  status: Exit.hasInterrupts(exit) ? "interrupted" : "failed",
-                  exitCode: null,
-                  error: Exit.hasInterrupts(exit) ? null : error,
-                };
-              }
 
               yield* finish(
                 schedule,
                 run,
-                result,
+                exitOutcome(exit),
                 tail.text,
                 tail.droppedBytes,
               );

@@ -139,6 +139,44 @@ function useBotRequestMutations(
   return { approve, decline };
 }
 
+function BotRequestEditSheet({
+  open,
+  setOpen,
+  requestId,
+  proposal,
+  error,
+  pending,
+  onSubmit,
+}: {
+  open: boolean;
+  setOpen: (open: boolean) => void;
+  requestId: string;
+  proposal: BotRequest["proposal"];
+  error: string;
+  pending: boolean;
+  onSubmit: (proposal?: BotInput) => void;
+}) {
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetContent className="overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle>Edit bot proposal</SheetTitle>
+          <SheetDescription>
+            Review the proposed bot before approving it.
+          </SheetDescription>
+        </SheetHeader>
+        <BotRequestEditor
+          requestId={requestId}
+          proposal={proposal}
+          error={error}
+          pending={pending}
+          onSubmit={onSubmit}
+        />
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 function BotPendingCard({
   live,
   requestId,
@@ -162,12 +200,6 @@ function BotPendingCard({
   approveError: string;
   declineError: string;
 }) {
-  const servers = useQuery(mcpServersQuery);
-
-  const serverNames = new Map(
-    (servers.data ?? []).map((server) => [server.id, server.name]),
-  );
-
   return (
     <div className="flex w-full max-w-sm flex-col gap-3 rounded-xl border p-4">
       <BotRequestHeader
@@ -178,7 +210,7 @@ function BotPendingCard({
       <p className="text-sm text-muted-foreground">
         {live.proposal.description}
       </p>
-      <BotRequestBadges proposal={live.proposal} serverNames={serverNames} />
+      <BotRequestBadges proposal={live.proposal} />
       {(approveError || declineError) && (
         <p className="text-xs text-destructive">
           {approveError || declineError}
@@ -189,23 +221,15 @@ function BotPendingCard({
         onApprove={() => onApprove()}
         busy={approvePending || declinePending}
       />
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent className="overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>Edit bot proposal</SheetTitle>
-            <SheetDescription>
-              Review the proposed bot before approving it.
-            </SheetDescription>
-          </SheetHeader>
-          <BotRequestEditor
-            requestId={requestId}
-            proposal={live.proposal}
-            error={approveError}
-            pending={approvePending}
-            onSubmit={onApprove}
-          />
-        </SheetContent>
-      </Sheet>
+      <BotRequestEditSheet
+        open={open}
+        setOpen={setOpen}
+        requestId={requestId}
+        proposal={live.proposal}
+        error={approveError}
+        pending={approvePending}
+        onSubmit={onApprove}
+      />
     </div>
   );
 }
@@ -241,13 +265,13 @@ function BotRequestHeader({
   );
 }
 
-function BotRequestBadges({
-  proposal,
-  serverNames,
-}: {
-  proposal: BotRequest["proposal"];
-  serverNames: Map<string, string>;
-}) {
+function BotRequestBadges({ proposal }: { proposal: BotRequest["proposal"] }) {
+  const servers = useQuery(mcpServersQuery);
+
+  const serverNames = new Map(
+    (servers.data ?? []).map((server) => [server.id, server.name]),
+  );
+
   return (
     <div className="flex flex-wrap gap-1">
       {proposal.tools.map((tool) => (

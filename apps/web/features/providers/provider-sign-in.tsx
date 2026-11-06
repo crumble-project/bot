@@ -178,118 +178,156 @@ function SignInSteps({ session }: { session: ProviderSignIn }) {
   );
 }
 
-function LoginEvent({
+type SignInEvent = ProviderSignIn["events"][number];
+
+function AuthUrlEvent({
   event,
-  last,
 }: {
-  event: ProviderSignIn["events"][number];
-  last: boolean;
+  event: Extract<SignInEvent, { type: "auth_url" }>;
 }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {event.instructions && <p className="text-sm">{event.instructions}</p>}
+      <Button
+        render={
+          // Button renders its children into this anchor.
+          // react-doctor-disable-next-line anchor-has-content
+          <a href={event.url} target="_blank" rel="noopener noreferrer" />
+        }
+        nativeButton={false}
+      >
+        Open sign-in page
+        <IconExternalLink data-icon="inline-end" />
+      </Button>
+    </div>
+  );
+}
+
+function DeviceCodeEvent({
+  event,
+}: {
+  event: Extract<SignInEvent, { type: "device_code" }>;
+}) {
+  return (
+    <div className="flex flex-col gap-2 text-sm">
+      <p>
+        Enter this code at{" "}
+        <a
+          className="underline underline-offset-2"
+          href={event.verificationUri}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {event.verificationUri}
+        </a>
+        :
+      </p>
+      <code className="self-start rounded-md bg-muted px-3 py-2 font-mono text-lg tracking-widest">
+        {event.userCode}
+      </code>
+    </div>
+  );
+}
+
+function InfoEvent({
+  event,
+}: {
+  event: Extract<SignInEvent, { type: "info" }>;
+}) {
+  return (
+    <p className="text-sm text-muted-foreground">
+      {event.message}{" "}
+      {event.links?.map((link) => (
+        <a
+          key={link.url}
+          className="underline underline-offset-2"
+          href={link.url}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {link.label ?? link.url}
+        </a>
+      ))}
+    </p>
+  );
+}
+
+function LoginEvent({ event, last }: { event: SignInEvent; last: boolean }) {
   switch (event.type) {
     case "auth_url":
-      return (
-        <div className="flex flex-col gap-2">
-          {event.instructions && (
-            <p className="text-sm">{event.instructions}</p>
-          )}
-          <Button
-            render={
-              // Button renders its children into this anchor.
-              // react-doctor-disable-next-line anchor-has-content
-              <a href={event.url} target="_blank" rel="noopener noreferrer" />
-            }
-            nativeButton={false}
-          >
-            Open sign-in page
-            <IconExternalLink data-icon="inline-end" />
-          </Button>
-        </div>
-      );
+      return <AuthUrlEvent event={event} />;
     case "device_code":
-      return (
-        <div className="flex flex-col gap-2 text-sm">
-          <p>
-            Enter this code at{" "}
-            <a
-              className="underline underline-offset-2"
-              href={event.verificationUri}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {event.verificationUri}
-            </a>
-            :
-          </p>
-          <code className="self-start rounded-md bg-muted px-3 py-2 font-mono text-lg tracking-widest">
-            {event.userCode}
-          </code>
-        </div>
-      );
+      return <DeviceCodeEvent event={event} />;
     case "info":
-      return (
-        <p className="text-sm text-muted-foreground">
-          {event.message}{" "}
-          {event.links?.map((link) => (
-            <a
-              key={link.url}
-              className="underline underline-offset-2"
-              href={link.url}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {link.label ?? link.url}
-            </a>
-          ))}
-        </p>
-      );
+      return <InfoEvent event={event} />;
     case "progress":
       return last ? <p className="shimmer text-sm">{event.message}</p> : null;
   }
 }
 
-function PromptForm({ session }: { session: ProviderSignIn }) {
-  const prompt = session.prompt!;
-  const [value, setValue] = useState("");
+type LoginPrompt = NonNullable<ProviderSignIn["prompt"]>;
 
+function usePromptAnswer(sessionId: string, promptId: LoginPrompt["id"]) {
   const answer = useMutation({
     mutationFn: (answer: string) =>
       call<"answerProviderLogin">(
-        `${providerSignInPath(session.id)}/responses`,
+        `${providerSignInPath(sessionId)}/responses`,
         "POST",
-        { promptId: prompt.id, value: answer },
+        { promptId, value: answer },
       ),
     onSuccess: (next) => {
-      queryClient.setQueryData(signInQuery(session.id).queryKey, next);
+      queryClient.setQueryData(signInQuery(sessionId).queryKey, next);
       // Answers can be secrets; keep them out of the mutation state.
       answer.reset();
     },
   });
 
-  if (prompt.type === "select")
-    return (
-      <FieldGroup>
-        <p className="text-sm">{prompt.message}</p>
-        {prompt.options?.map((option) => (
-          <Button
-            key={option.id}
-            variant="outline"
-            className="h-auto flex-col items-start py-2"
-            disabled={answer.isPending}
-            onClick={() => answer.mutate(option.id)}
-          >
-            {option.label}
-            {option.description && (
-              <span className="text-xs font-normal text-muted-foreground">
-                {option.description}
-              </span>
-            )}
-          </Button>
-        ))}
-        {answer.isError && (
-          <p className="text-sm text-destructive">{answer.error.message}</p>
-        )}
-      </FieldGroup>
-    );
+  return answer;
+}
+
+type PromptAnswer = ReturnType<typeof usePromptAnswer>;
+
+function SelectPrompt({
+  prompt,
+  answer,
+}: {
+  prompt: LoginPrompt;
+  answer: PromptAnswer;
+}) {
+  return (
+    <FieldGroup>
+      <p className="text-sm">{prompt.message}</p>
+      {prompt.options?.map((option) => (
+        <Button
+          key={option.id}
+          variant="outline"
+          className="h-auto flex-col items-start py-2"
+          disabled={answer.isPending}
+          onClick={() => answer.mutate(option.id)}
+        >
+          {option.label}
+          {option.description && (
+            <span className="text-xs font-normal text-muted-foreground">
+              {option.description}
+            </span>
+          )}
+        </Button>
+      ))}
+      {answer.isError && (
+        <p className="text-sm text-destructive">{answer.error.message}</p>
+      )}
+    </FieldGroup>
+  );
+}
+
+function TextPrompt({
+  prompt,
+  answer,
+}: {
+  prompt: LoginPrompt;
+  answer: PromptAnswer;
+}) {
+  const [value, setValue] = useState("");
 
   return (
     <form
@@ -320,5 +358,16 @@ function PromptForm({ session }: { session: ProviderSignIn }) {
         </Button>
       </FieldGroup>
     </form>
+  );
+}
+
+function PromptForm({ session }: { session: ProviderSignIn }) {
+  const prompt = session.prompt!;
+  const answer = usePromptAnswer(session.id, prompt.id);
+
+  return prompt.type === "select" ? (
+    <SelectPrompt prompt={prompt} answer={answer} />
+  ) : (
+    <TextPrompt prompt={prompt} answer={answer} />
   );
 }

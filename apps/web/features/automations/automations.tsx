@@ -201,11 +201,45 @@ function AutomationsBody({
   return <AutomationTable schedules={shown} byId={byId} onEdit={onEdit} />;
 }
 
+type AutomationsView = "automations" | "runs";
+
+function AutomationsToolbar({
+  view,
+  onView,
+  canCreate,
+  onCreate,
+}: {
+  view: AutomationsView;
+  onView: (view: AutomationsView) => void;
+  canCreate: boolean;
+  onCreate: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <Tabs
+        value={view}
+        onValueChange={(value) =>
+          onView(value === "runs" ? "runs" : "automations")
+        }
+      >
+        <TabsList>
+          <TabsTrigger value="automations">Automations</TabsTrigger>
+          <TabsTrigger value="runs">Runs</TabsTrigger>
+        </TabsList>
+      </Tabs>
+      <Button disabled={!canCreate} onClick={onCreate}>
+        <IconPlus data-icon="inline-start" />
+        New automation
+      </Button>
+    </div>
+  );
+}
+
 export function AutomationsPage() {
   const bots = useQuery(botsQuery);
   const schedules = useQuery(schedulesQuery);
   const executions = useQuery(executionsQuery);
-  const [view, setView] = useState<"automations" | "runs">("automations");
+  const [view, setView] = useState<AutomationsView>("automations");
   const [editing, setEditing] = useState<Editing | null>(null);
   const firstBot = bots.data?.[0];
 
@@ -225,23 +259,12 @@ export function AutomationsPage() {
       }}
     >
       <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-2">
-          <Tabs
-            value={view}
-            onValueChange={(value) =>
-              setView(value === "runs" ? "runs" : "automations")
-            }
-          >
-            <TabsList>
-              <TabsTrigger value="automations">Automations</TabsTrigger>
-              <TabsTrigger value="runs">Runs</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <Button disabled={!firstBot} onClick={create}>
-            <IconPlus data-icon="inline-start" />
-            New automation
-          </Button>
-        </div>
+        <AutomationsToolbar
+          view={view}
+          onView={setView}
+          canCreate={Boolean(firstBot)}
+          onCreate={create}
+        />
         {view === "automations" ? (
           <AutomationsBody
             bots={bots}

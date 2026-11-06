@@ -62,30 +62,18 @@ function SecretSettingSheet({
   );
 }
 
-function SecretSetting({
-  pluginId,
-  setting,
-  onChange,
-}: {
-  pluginId: string;
-  setting: Setting;
-  onChange: (() => Promise<void>) | undefined;
-}) {
-  const [editing, setEditing] = useState(false);
-  const path = pluginSettingPath(pluginId, setting.key);
-  const managers = useQuery(passwordManagersQuery).data ?? [];
-
-  const manager = managers.find(
-    (item) => item.id === setting.secret.passwordManager,
-  );
-
+function useSaveSecretSetting(
+  path: ReturnType<typeof pluginSettingPath>,
+  onSaved: () => void,
+  onChange: (() => Promise<void>) | undefined,
+) {
   const save = useMutation({
     mutationFn: (input: SecretInput | null) =>
       input === null
         ? send<"deletePluginSetting">(path, "DELETE")
         : send<"setPluginSetting">(path, "PUT", input),
     onSuccess: async () => {
-      setEditing(false);
+      onSaved();
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: pluginSettingsQuery.queryKey,
@@ -98,6 +86,77 @@ function SecretSetting({
     },
   });
 
+  return save;
+}
+
+function SecretSettingTitle({ setting }: { setting: Setting }) {
+  const managers = useQuery(passwordManagersQuery).data ?? [];
+
+  const manager = managers.find(
+    (item) => item.id === setting.secret.passwordManager,
+  );
+
+  return (
+    <>
+      {setting.label}
+      {manager && (
+        <span className="font-normal text-muted-foreground">
+          ({manager.name})
+        </span>
+      )}
+    </>
+  );
+}
+
+function SecretSettingActions({
+  configured,
+  pending,
+  onEdit,
+  onRemove,
+}: {
+  configured: boolean;
+  pending: boolean;
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  if (!configured)
+    return (
+      <Button variant="outline" size="sm" onClick={onEdit}>
+        Add
+      </Button>
+    );
+
+  return (
+    <RowMenu>
+      <DropdownMenuItem onClick={onEdit}>
+        <IconPencil />
+        Edit
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        variant="destructive"
+        disabled={pending}
+        onClick={onRemove}
+      >
+        <IconTrash />
+        Remove
+      </DropdownMenuItem>
+    </RowMenu>
+  );
+}
+
+function SecretSetting({
+  pluginId,
+  setting,
+  onChange,
+}: {
+  pluginId: string;
+  setting: Setting;
+  onChange: (() => Promise<void>) | undefined;
+}) {
+  const [editing, setEditing] = useState(false);
+  const path = pluginSettingPath(pluginId, setting.key);
+  const save = useSaveSecretSetting(path, () => setEditing(false), onChange);
+
   return (
     <>
       <SettingRow
@@ -106,41 +165,18 @@ function SecretSetting({
             <IconKey />
           </RowTile>
         }
-        title={
-          <>
-            {setting.label}
-            {manager && (
-              <span className="font-normal text-muted-foreground">
-                ({manager.name})
-              </span>
-            )}
-          </>
-        }
+        title={<SecretSettingTitle setting={setting} />}
         description={
           !editing &&
           save.isError && <FieldError>{save.error.message}</FieldError>
         }
       >
-        {setting.secret.configured ? (
-          <RowMenu>
-            <DropdownMenuItem onClick={() => setEditing(true)}>
-              <IconPencil />
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              variant="destructive"
-              disabled={save.isPending}
-              onClick={() => save.mutate(null)}
-            >
-              <IconTrash />
-              Remove
-            </DropdownMenuItem>
-          </RowMenu>
-        ) : (
-          <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-            Add
-          </Button>
-        )}
+        <SecretSettingActions
+          configured={setting.secret.configured}
+          pending={save.isPending}
+          onEdit={() => setEditing(true)}
+          onRemove={() => save.mutate(null)}
+        />
       </SettingRow>
       {editing && (
         <SecretSettingSheet

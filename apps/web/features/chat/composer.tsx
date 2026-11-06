@@ -631,18 +631,7 @@ function useMessageField(draftKey: string) {
   return { draft, setDraft, field, expanded, measure };
 }
 
-export function Composer({
-  draftKey,
-  placeholder,
-  disabled,
-  running,
-  replyingTo,
-  onCancelReply,
-  mentionable = [],
-  actions,
-  onSend,
-  onStop,
-}: {
+type ComposerProps = {
   draftKey: string;
   placeholder: string;
   disabled?: boolean;
@@ -653,7 +642,14 @@ export function Composer({
   actions?: ReactNode;
   onSend: (content: string, uploads: Upload[]) => Promise<boolean>;
   onStop: () => void;
-}) {
+};
+
+function useComposer(
+  draftKey: string,
+  disabled: boolean | undefined,
+  mentionable: Mentionable[],
+  onSend: ComposerProps["onSend"],
+) {
   const { draft, setDraft, field, expanded, measure } =
     useMessageField(draftKey);
 
@@ -687,6 +683,99 @@ export function Composer({
     restore(pending);
   };
 
+  const removeUpload = (index: number) =>
+    setUploads((current) => current.filter((_, other) => other !== index));
+
+  return {
+    draft,
+    setDraft,
+    field,
+    expanded,
+    measure,
+    uploads,
+    removeUpload,
+    errors,
+    add,
+    mentions,
+    drop,
+    canSend,
+    submit,
+  };
+}
+
+function ComposerCard({
+  state,
+  placeholder,
+  disabled,
+  actions,
+  running,
+  onStop,
+}: {
+  state: ReturnType<typeof useComposer>;
+  placeholder: string;
+  disabled: boolean | undefined;
+  actions: ReactNode;
+  running: boolean;
+  onStop: () => void;
+}) {
+  const { uploads, add, mentions, submit } = state;
+
+  return (
+    <div className="composer-card flex flex-col gap-1 rounded-[25px] p-2 has-disabled:opacity-50">
+      <UploadChips uploads={uploads} onRemove={state.removeUpload} />
+      <div
+        data-expanded={state.expanded || undefined}
+        className="grid grid-cols-[auto_1fr_auto] items-center gap-x-1 gap-y-1 [grid-template-areas:'attach_text_send'] data-expanded:[grid-template-areas:'text_text_text'_'attach_._send']"
+      >
+        <MessageField
+          field={state.field}
+          expanded={state.expanded}
+          placeholder={placeholder}
+          disabled={disabled}
+          value={state.draft}
+          onChange={(event) => {
+            state.setDraft(event.target.value);
+            state.measure(event.target);
+            mentions.reset();
+          }}
+          onPaste={(event) => pasteFiles(event, (files) => void add(files))}
+          onKeyDown={submitOnEnter(mentions.navigate, submit)}
+        />
+        <div className="[grid-area:attach]">
+          <AttachControl
+            disabled={disabled}
+            full={uploads.length >= MAX_ATTACHMENTS}
+            onFiles={(files) => void add(files)}
+          />
+        </div>
+        <div className="flex items-center gap-1.5 [grid-area:send]">
+          {actions}
+          <SendControls
+            running={running}
+            canSend={state.canSend}
+            onStop={onStop}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function Composer({
+  draftKey,
+  placeholder,
+  disabled,
+  running,
+  replyingTo,
+  onCancelReply,
+  mentionable = [],
+  actions,
+  onSend,
+  onStop,
+}: ComposerProps) {
+  const state = useComposer(draftKey, disabled, mentionable, onSend);
+  const { uploads, errors, mentions, drop, submit } = state;
+
   return (
     <form
       className={cn(
@@ -708,46 +797,14 @@ export function Composer({
         suggestion={mentions.suggestion}
         onPick={mentions.pick}
       />
-      <div className="composer-card flex flex-col gap-1 rounded-[25px] p-2 has-disabled:opacity-50">
-        <UploadChips
-          uploads={uploads}
-          onRemove={(index) =>
-            setUploads((current) =>
-              current.filter((_, other) => other !== index),
-            )
-          }
-        />
-        <div
-          data-expanded={expanded || undefined}
-          className="grid grid-cols-[auto_1fr_auto] items-center gap-x-1 gap-y-1 [grid-template-areas:'attach_text_send'] data-expanded:[grid-template-areas:'text_text_text'_'attach_._send']"
-        >
-          <MessageField
-            field={field}
-            expanded={expanded}
-            placeholder={placeholder}
-            disabled={disabled}
-            value={draft}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              measure(event.target);
-              mentions.reset();
-            }}
-            onPaste={(event) => pasteFiles(event, (files) => void add(files))}
-            onKeyDown={submitOnEnter(mentions.navigate, submit)}
-          />
-          <div className="[grid-area:attach]">
-            <AttachControl
-              disabled={disabled}
-              full={uploads.length >= MAX_ATTACHMENTS}
-              onFiles={(files) => void add(files)}
-            />
-          </div>
-          <div className="flex items-center gap-1.5 [grid-area:send]">
-            {actions}
-            <SendControls running={running} canSend={canSend} onStop={onStop} />
-          </div>
-        </div>
-      </div>
+      <ComposerCard
+        state={state}
+        placeholder={placeholder}
+        disabled={disabled}
+        actions={actions}
+        running={running}
+        onStop={onStop}
+      />
     </form>
   );
 }

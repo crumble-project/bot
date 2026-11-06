@@ -19,6 +19,34 @@ const main = css({
   "& a": { _hover: { color: "mark" } },
 });
 
+function Screenshot() {
+  const scheme = useColorScheme();
+
+  return (
+    <figure>
+      <SmoothCorners
+        key={scheme}
+        asChild
+        corners={{ radius: 14, smoothing: 0.6 }}
+      >
+        <img
+          className={css({
+            display: "block",
+            w: "full",
+            h: "auto",
+            border: "1px solid",
+            borderColor: "border",
+          })}
+          src="/screenshot.webp"
+          width={2000}
+          height={1096}
+          alt="The Crumble web app with a chat open to a bot named Otis"
+        />
+      </SmoothCorners>
+    </figure>
+  );
+}
+
 function Home() {
   const scheme = useColorScheme();
 
@@ -33,27 +61,7 @@ function Home() {
         .
       </p>
 
-      <figure>
-        <SmoothCorners
-          key={scheme}
-          asChild
-          corners={{ radius: 14, smoothing: 0.6 }}
-        >
-          <img
-            className={css({
-              display: "block",
-              w: "full",
-              h: "auto",
-              border: "1px solid",
-              borderColor: "border",
-            })}
-            src="/screenshot.webp"
-            width={2000}
-            height={1096}
-            alt="The Crumble web app with a chat open to a bot named Otis"
-          />
-        </SmoothCorners>
-      </figure>
+      <Screenshot />
 
       <p>
         Each <a href={`${docs}/concepts`}>bot</a> has a name, instructions,

@@ -38,42 +38,45 @@ const STAGGER_MS = 40;
 const ENTER =
   "animate-in fill-mode-both fade-in slide-in-from-bottom-2 duration-300 ease-out";
 
+function Household({ bots }: { bots: Bot[] }) {
+  return (
+    <div className="m-auto flex w-full max-w-4xl flex-col items-center gap-10 px-6 py-12">
+      <div className="flex animate-in flex-col items-center gap-2 text-center duration-300 ease-out fade-in slide-in-from-bottom-1">
+        <CrumbleMark className="mb-2 size-9" />
+        <h1 className="font-heading text-4xl font-semibold tracking-tight">
+          {greeting(new Date().getHours())}
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          {TODAY.format(new Date())}
+        </p>
+      </div>
+      <ul className="flex flex-wrap justify-center gap-3">
+        {bots.map((bot, index) => (
+          <HouseholdBot key={bot.id} bot={bot} index={index} />
+        ))}
+        <li
+          className={cn(ENTER, "w-40")}
+          style={{ animationDelay: `${bots.length * STAGGER_MS}ms` }}
+        >
+          <Link
+            to="/bots/new"
+            className="flex h-full flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed p-5 text-sm text-muted-foreground transition-colors duration-150 hover:border-foreground/30 hover:bg-muted hover:text-foreground"
+          >
+            <span className="flex size-12 items-center justify-center rounded-full bg-muted">
+              <IconPlus className="size-5" />
+            </span>
+            New bot
+          </Link>
+        </li>
+      </ul>
+    </div>
+  );
+}
+
 export function Home() {
   const bots = useQuery(botsQuery);
 
-  if (bots.data?.length)
-    return (
-      <div className="m-auto flex w-full max-w-4xl flex-col items-center gap-10 px-6 py-12">
-        <div className="flex animate-in flex-col items-center gap-2 text-center duration-300 ease-out fade-in slide-in-from-bottom-1">
-          <CrumbleMark className="mb-2 size-9" />
-          <h1 className="font-heading text-4xl font-semibold tracking-tight">
-            {greeting(new Date().getHours())}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {TODAY.format(new Date())}
-          </p>
-        </div>
-        <ul className="flex flex-wrap justify-center gap-3">
-          {bots.data.map((bot, index) => (
-            <HouseholdBot key={bot.id} bot={bot} index={index} />
-          ))}
-          <li
-            className={cn(ENTER, "w-40")}
-            style={{ animationDelay: `${bots.data.length * STAGGER_MS}ms` }}
-          >
-            <Link
-              to="/bots/new"
-              className="flex h-full flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed p-5 text-sm text-muted-foreground transition-colors duration-150 hover:border-foreground/30 hover:bg-muted hover:text-foreground"
-            >
-              <span className="flex size-12 items-center justify-center rounded-full bg-muted">
-                <IconPlus className="size-5" />
-              </span>
-              New bot
-            </Link>
-          </li>
-        </ul>
-      </div>
-    );
+  if (bots.data?.length) return <Household bots={bots.data} />;
 
   return (
     <Empty>

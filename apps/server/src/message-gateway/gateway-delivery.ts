@@ -350,6 +350,38 @@ export const receiptDelivery = Effect.fnUntraced(function* (
     yield* receipts.save(receipt);
   });
 
+  const startWorker = Effect.fnUntraced(function* (
+    receipt: GatewayReceipt,
+    adapter: ChatAdapter,
+    connection: GatewayConnection,
+    generation: number,
+    key: string,
+  ) {
+    const worker = processReceipt(
+      receipt,
+      adapter,
+      connection,
+      generation,
+    ).pipe(
+      Effect.catchCause((cause) => failReceipt(receipt, adapter, cause)),
+      Effect.ensuring(
+        Effect.sync(() => {
+          workers.delete(key);
+        }),
+      ),
+    );
+
+    const fiber = yield* worker.pipe(
+      Effect.forkIn(scope, { startImmediately: false }),
+    );
+
+    workers.set(key, {
+      adapterId: receipt.adapterId,
+      channelId: receipt.channelId,
+      fiber,
+    });
+  });
+
   const dispatchReceipts = Semaphore.withPermit(
     processing,
     Effect.gen(function* () {
@@ -369,29 +401,7 @@ export const receiptDelivery = Effect.fnUntraced(function* (
         if (!target) continue;
         const { adapter, connection, generation } = target;
 
-        const worker = processReceipt(
-          receipt,
-          adapter,
-          connection,
-          generation,
-        ).pipe(
-          Effect.catchCause((cause) => failReceipt(receipt, adapter, cause)),
-          Effect.ensuring(
-            Effect.sync(() => {
-              workers.delete(key);
-            }),
-          ),
-        );
-
-        const fiber = yield* worker.pipe(
-          Effect.forkIn(scope, { startImmediately: false }),
-        );
-
-        workers.set(key, {
-          adapterId: receipt.adapterId,
-          channelId: receipt.channelId,
-          fiber,
-        });
+        yield* startWorker(receipt, adapter, connection, generation, key);
       }
     }),
   );

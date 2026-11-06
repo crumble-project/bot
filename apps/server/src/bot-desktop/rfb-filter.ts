@@ -71,19 +71,21 @@ export function rfbFilter(allowInput: () => boolean) {
   let handshake = HANDSHAKE_BYTES;
   let buffer: Uint8Array = new Uint8Array();
 
+  function passHandshake(out: Uint8Array[]) {
+    if (handshake <= 0) return;
+    const n = Math.min(handshake, buffer.length);
+
+    out.push(buffer.subarray(0, n));
+    buffer = buffer.subarray(n);
+    handshake -= n;
+  }
+
   return {
     push(chunk: Uint8Array): Uint8Array {
       buffer = buffer.length ? concat([buffer, chunk]) : chunk;
 
       const out: Uint8Array[] = [];
-
-      if (handshake > 0) {
-        const n = Math.min(handshake, buffer.length);
-
-        out.push(buffer.subarray(0, n));
-        buffer = buffer.subarray(n);
-        handshake -= n;
-      }
+      passHandshake(out);
 
       while (handshake === 0 && buffer.length) {
         const length = messageLength(buffer);

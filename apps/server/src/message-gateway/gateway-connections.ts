@@ -191,6 +191,44 @@ export const gatewayConnections = Effect.fnUntraced(function* (
     );
   });
 
+  const connectionOptions = (
+    adapter: ChatAdapter,
+    state: ConnectionState,
+    token: string,
+    generation: number,
+  ): Parameters<ChatAdapter["connect"]>[0] => {
+    return {
+      token,
+      onMessage: (message) =>
+        closed || state.generation !== generation
+          ? Promise.resolve()
+          : run(
+              hooks.receive(adapter.id, message).pipe(
+                Effect.catchCause(() =>
+                  Effect.sync(() => {
+                    state.error =
+                      "Incoming message persistence failed. Check server storage and resend the message.";
+                  }),
+                ),
+                Effect.forkIn(scope),
+                Effect.flatMap(Fiber.join),
+              ),
+            ),
+      onStatus: (status) => {
+        if (closed || state.generation !== generation) return;
+        reported(
+          state,
+          status,
+          "The adapter reported an error. Check its token, intents, and permissions.",
+        );
+      },
+      onInvalidated: () => {
+        if (closed || state.generation !== generation) return;
+        state.invalidated = true;
+      },
+    };
+  };
+
   const connectAdapter = Effect.fnUntraced(function* (
     adapter: ChatAdapter,
     state: ConnectionState,
@@ -199,36 +237,7 @@ export const gatewayConnections = Effect.fnUntraced(function* (
   ) {
     return yield* transport(() =>
       adapter
-        .connect({
-          token,
-          onMessage: (message) =>
-            closed || state.generation !== generation
-              ? Promise.resolve()
-              : run(
-                  hooks.receive(adapter.id, message).pipe(
-                    Effect.catchCause(() =>
-                      Effect.sync(() => {
-                        state.error =
-                          "Incoming message persistence failed. Check server storage and resend the message.";
-                      }),
-                    ),
-                    Effect.forkIn(scope),
-                    Effect.flatMap(Fiber.join),
-                  ),
-                ),
-          onStatus: (status) => {
-            if (closed || state.generation !== generation) return;
-            reported(
-              state,
-              status,
-              "The adapter reported an error. Check its token, intents, and permissions.",
-            );
-          },
-          onInvalidated: () => {
-            if (closed || state.generation !== generation) return;
-            state.invalidated = true;
-          },
-        })
+        .connect(connectionOptions(adapter, state, token, generation))
         .then(async (connection) => {
           if (closed || state.generation !== generation) {
             await connection.close();

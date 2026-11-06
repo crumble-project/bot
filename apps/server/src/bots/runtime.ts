@@ -395,12 +395,7 @@ export class AgentRuntime {
     return { next, installed };
   }
 
-  private async openRecord(
-    agent: Agent,
-    storage: Parameters<typeof Harness.open>[0],
-  ): Promise<HarnessRecord> {
-    const { models } = this.callbacks;
-
+  private toolExtensions(agent: Agent) {
     const { tool: memory, extension: memoryTools } = memoryExtension(
       agent,
       this.callbacks,
@@ -419,21 +414,21 @@ export class AgentRuntime {
     registry.install(memoryTools);
     registry.install(skillExtension);
 
-    // Hooks and tools run only once the harness is open; until then nothing calls them.
-    let opened: Harness | undefined;
+    return {
+      memory,
+      skill,
+      skillManage,
+      memoryExtension: memoryTools,
+      skillExtension,
+      registry,
+    };
+  }
 
-    const vision = visionExtension({
-      harness: () => opened,
-      visionModel: () => this.callbacks.visionModel(),
-    });
-
-    registry.install(vision.extension);
-    const kinds = this.callbacks.conversationKinds();
-
-    for (const kind of kinds) registry.install(kind.extension);
-    const choices = { agent };
-
-    const jobKnowledgeExtension = defineExtension({
+  private jobKnowledgeExtensionOf(
+    skill: BotTool,
+    choices: HarnessRecord["choices"],
+  ) {
+    return defineExtension({
       name: JOB_KNOWLEDGE_EXTENSION,
       tools: [skill],
       sections: [
@@ -451,16 +446,16 @@ export class AgentRuntime {
         },
       ],
     });
+  }
 
-    registry.install(jobKnowledgeExtension);
+  private openHarness(
+    storage: Parameters<typeof Harness.open>[0],
+    parts: Pick<HarnessRecord, "registry" | "kinds" | "choices">,
+  ) {
+    const { registry, kinds, choices } = parts;
+    const configuredModels = inferenceModels(this.callbacks.models, choices);
 
-    const { installed: extensions } = await this.extensionsOf(agent);
-
-    for (const extension of extensions) registry.install(extension);
-
-    const configuredModels = inferenceModels(models, choices);
-
-    const harness = await Harness.open(
+    return Harness.open(
       storage,
       {
         models: configuredModels,
@@ -473,25 +468,60 @@ export class AgentRuntime {
       },
       BACKGROUND_CONTEXT,
     );
+  }
+
+  private async openRecord(
+    agent: Agent,
+    storage: Parameters<typeof Harness.open>[0],
+  ): Promise<HarnessRecord> {
+    const { models } = this.callbacks;
+    const tools = this.toolExtensions(agent);
+    const { registry } = tools;
+
+    // Hooks and tools run only once the harness is open; until then nothing calls them.
+    let opened: Harness | undefined;
+
+    const vision = visionExtension({
+      harness: () => opened,
+      visionModel: () => this.callbacks.visionModel(),
+    });
+
+    registry.install(vision.extension);
+    const kinds = this.callbacks.conversationKinds();
+
+    for (const kind of kinds) registry.install(kind.extension);
+    const choices = { agent };
+
+    const jobKnowledgeExtension = this.jobKnowledgeExtensionOf(
+      tools.skill,
+      choices,
+    );
+
+    registry.install(jobKnowledgeExtension);
+
+    const { installed: extensions } = await this.extensionsOf(agent);
+
+    for (const extension of extensions) registry.install(extension);
+
+    const harness = await this.openHarness(storage, {
+      registry,
+      kinds,
+      choices,
+    });
 
     opened = harness;
 
     if (agent.enabled) harness.resume();
 
     return {
+      ...tools,
       harness,
       models,
       choices,
-      memory,
-      skill,
-      skillManage,
-      memoryExtension: memoryTools,
-      skillExtension,
       visionExtension: vision.extension,
       askAboutImage: vision.ask,
       jobKnowledgeExtension,
       kinds,
-      registry,
       extensions,
     };
   }
@@ -513,6 +543,45 @@ export class AgentRuntime {
     return Effect.runPromise(this.callbacks.skillLibrary.available(agent));
   }
 
+  private conversationParts(
+    record: HarnessRecord,
+    agent: Agent,
+    skillCount: number,
+    offered: Extension[],
+  ) {
+    return {
+      memory: agent.tools.includes(BOT_TOOL.memory) ? [record.memory] : [],
+      skill: skillCount > 0 ? [record.skill] : [],
+      skillManage: record.skillManage,
+      vision: this.describesImagesFor(record, agent)
+        ? [record.askAboutImage]
+        : [],
+      memoryExtension: record.memoryExtension,
+      skillExtension: record.skillExtension,
+      visionExtension: record.visionExtension,
+      offered,
+    };
+  }
+
+  private async styleFor(
+    record: HarnessRecord,
+    agent: Agent,
+    localId: ConversationId,
+  ) {
+    const style = await styleOf(
+      record.kinds,
+      record.harness,
+      localId,
+      BACKGROUND_CONTEXT,
+    );
+
+    const model = style.model?.(agent);
+
+    if (model) await ensureModel(record.models, model);
+
+    return { style, model };
+  }
+
   private async configure(
     record: HarnessRecord,
     agent: Agent,
@@ -524,31 +593,10 @@ export class AgentRuntime {
     const offered = await this.installExtensions(record, agent);
 
     const localId = localConversationId(agent.id, conversationId);
-
-    const style = await styleOf(
-      record.kinds,
-      record.harness,
-      localId,
-      BACKGROUND_CONTEXT,
-    );
-
-    const model = style.model?.(agent);
-
-    if (model) await ensureModel(record.models, model);
+    const { style, model } = await this.styleFor(record, agent, localId);
     const skills = await this.availableSkills(agent);
 
-    const parts = {
-      memory: agent.tools.includes(BOT_TOOL.memory) ? [record.memory] : [],
-      skill: skills.length > 0 ? [record.skill] : [],
-      skillManage: record.skillManage,
-      vision: this.describesImagesFor(record, agent)
-        ? [record.askAboutImage]
-        : [],
-      memoryExtension: record.memoryExtension,
-      skillExtension: record.skillExtension,
-      visionExtension: record.visionExtension,
-      offered,
-    };
+    const parts = this.conversationParts(record, agent, skills.length, offered);
 
     const tools = style.tools(parts);
 

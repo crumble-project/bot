@@ -109,6 +109,35 @@ async function projectEvents(directory: string, destination: string) {
   );
 }
 
+async function hasBreakingChanges(
+  tool: string,
+  reports: string,
+  name: string,
+  base: string,
+  revision: string,
+) {
+  run([tool, "validate", base, "--allow-external-refs=false"]);
+  run([tool, "validate", revision, "--allow-external-refs=false"]);
+
+  const report = run([
+    tool,
+    "breaking",
+    base,
+    revision,
+    "--format",
+    "json",
+    "--allow-external-refs=false",
+  ]);
+
+  await Bun.write(join(reports, `${name}-breaking.json`), report);
+
+  const findings = z
+    .array(z.looseObject({ id: z.string() }))
+    .parse(JSON.parse(report));
+
+  return findings.length > 0;
+}
+
 export async function compareContracts(
   baseline: string,
   current: string,
@@ -140,26 +169,8 @@ export async function compareContracts(
       join(reports, "events-current.json"),
     ],
   ]) {
-    run([tool, "validate", base!, "--allow-external-refs=false"]);
-    run([tool, "validate", revision!, "--allow-external-refs=false"]);
-
-    const report = run([
-      tool,
-      "breaking",
-      base!,
-      revision!,
-      "--format",
-      "json",
-      "--allow-external-refs=false",
-    ]);
-
-    await Bun.write(join(reports, `${name}-breaking.json`), report);
-
-    const findings = z
-      .array(z.looseObject({ id: z.string() }))
-      .parse(JSON.parse(report));
-
-    if (findings.length > 0) breaking = true;
+    if (await hasBreakingChanges(tool, reports, name!, base!, revision!))
+      breaking = true;
   }
 
   const baseNames = await eventSchemaNames(baseline);

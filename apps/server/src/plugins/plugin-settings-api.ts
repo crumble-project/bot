@@ -11,6 +11,22 @@ import {
   type PluginSetting,
 } from "./plugins";
 
+const findSetting = (
+  plugins: readonly CrumblePlugin[],
+  pluginId: string,
+  key: string,
+) => {
+  const plugin = plugins.find((candidate) => candidate.id === pluginId);
+  const setting = plugin?.settings?.find((candidate) => candidate.key === key);
+
+  if (!plugin || !setting)
+    throw new NotFound({
+      message: `${pluginId} has no setting ${key} on this server`,
+    });
+
+  return { plugin, setting, stored: pluginSettingKey(plugin.id, key) };
+};
+
 export function registerPluginSettingRoutes(options: {
   register: Register;
   run: Runner<Secrets>;
@@ -30,21 +46,6 @@ export function registerPluginSettingRoutes(options: {
     ),
   });
 
-  const find = (pluginId: string, key: string) => {
-    const plugin = plugins.find((candidate) => candidate.id === pluginId);
-
-    const setting = plugin?.settings?.find(
-      (candidate) => candidate.key === key,
-    );
-
-    if (!plugin || !setting)
-      throw new NotFound({
-        message: `${pluginId} has no setting ${key} on this server`,
-      });
-
-    return { plugin, setting, stored: pluginSettingKey(plugin.id, key) };
-  };
-
   register(routes.pluginSettings, (c) =>
     c.json(
       {
@@ -60,7 +61,8 @@ export function registerPluginSettingRoutes(options: {
     ),
   );
   register(routes.setPluginSetting, async (c) => {
-    const { plugin, setting, stored } = find(
+    const { plugin, setting, stored } = findSetting(
+      plugins,
       c.req.param("pluginId"),
       c.req.param("key"),
     );
@@ -70,7 +72,8 @@ export function registerPluginSettingRoutes(options: {
     return c.json(describe(plugin, setting), 200);
   });
   register(routes.deletePluginSetting, (c) => {
-    const { plugin, setting, stored } = find(
+    const { plugin, setting, stored } = findSetting(
+      plugins,
       c.req.param("pluginId"),
       c.req.param("key"),
     );

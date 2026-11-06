@@ -23,11 +23,10 @@ const resultSchema = Type.Object({
   response: Type.Array(Type.String()),
 });
 
-export function coordinationExtension(
-  agent: Agent,
-  messaging: BotMessaging["Service"],
-) {
-  const delegate = defineTool({
+type Messaging = BotMessaging["Service"];
+
+const delegateTool = (agent: Agent, messaging: Messaging) =>
+  defineTool({
     name: "delegate",
     description:
       "Start a bounded task with a permitted bot by ID. Returns a receipt immediately. For a question whose answer you need in this turn, use ask_bot instead. If the bot starts or messages a coding or desktop job for the task, the task stays pending until the job reports and the bot answers the report. A question the job asks may come to you first: answer it with answer_job_question from your brief, or tell the owner when only they can decide.",
@@ -53,7 +52,8 @@ export function coordinationExtension(
       ),
   });
 
-  const status = defineTool({
+const delegationStatusTool = (agent: Agent, messaging: Messaging) =>
+  defineTool({
     name: "delegation_status",
     description: `Read the status and completed answer of a bot message or task you sent. Other chat turns and private memory stay inaccessible. A task stays pending while jobs the bot started for it work, which can take long; its answer then includes the bot's reply to each job report, and a failed or stopped job fails the task. Optionally wait up to ${MAX_WAIT_SECONDS} seconds for the answer; if still pending, report that honestly instead of repeatedly checking.`,
     parameters: Type.Object({
@@ -75,7 +75,8 @@ export function coordinationExtension(
       ),
   });
 
-  const list = defineTool({
+const listBotsTool = (agent: Agent, messaging: Messaging) =>
+  defineTool({
     name: "list_bots",
     description:
       "List the enabled bots you may message, with their names, IDs, and descriptions. Use this to identify a bot named or @mentioned by the owner.",
@@ -92,7 +93,8 @@ export function coordinationExtension(
       toolOutput(Effect.runSync(messaging.recipients(agent.id))),
   });
 
-  const ask = defineTool({
+const askBotTool = (agent: Agent, messaging: Messaging) =>
+  defineTool({
     name: "ask_bot",
     description: `Ask another permitted bot a question and wait up to ${MAX_WAIT_SECONDS} seconds for its answer, then relay it to the owner. recipient accepts a bot ID, exact name, or @Name (case insensitive). Send only the question and necessary context. If pending, keep its executionId for delegation_status; never invent an answer.`,
     parameters: Type.Object({
@@ -127,7 +129,8 @@ export function coordinationExtension(
     },
   });
 
-  const answer = defineTool({
+const answerJobQuestionTool = (agent: Agent, messaging: Messaging) =>
+  defineTool({
     name: "answer_job_question",
     description:
       "Answer a question that a job asked about a task you delegated; the job resumes with your answer. Answer only what your brief or knowledge settles; when the decision is the owner's, tell the owner instead. Fails when the owner already answered.",
@@ -153,12 +156,19 @@ export function coordinationExtension(
       ),
   });
 
+export function coordinationExtension(agent: Agent, messaging: Messaging) {
+  const tools = [
+    delegateTool(agent, messaging),
+    delegationStatusTool(agent, messaging),
+    listBotsTool(agent, messaging),
+    askBotTool(agent, messaging),
+    answerJobQuestionTool(agent, messaging),
+  ];
+
   return chatOnly(
     defineExtension({
       name: "coordination",
-      tools: agent.tools.includes(BOT_TOOL.delegate)
-        ? [delegate, status, list, ask, answer]
-        : [],
+      tools: agent.tools.includes(BOT_TOOL.delegate) ? tools : [],
     }),
   );
 }

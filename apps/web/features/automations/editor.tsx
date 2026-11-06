@@ -651,6 +651,81 @@ function ScheduleFields({
   );
 }
 
+function AutomationKindTabs({
+  kind,
+  canScript,
+  patch,
+}: {
+  kind: AutomationDraft["kind"];
+  canScript: boolean;
+  patch: (change: Partial<AutomationDraft>) => void;
+}) {
+  return (
+    <Tabs
+      value={kind}
+      onValueChange={(value) =>
+        patch({ kind: value === "script" ? "script" : "prompt" })
+      }
+    >
+      <TabsList aria-label="Automation kind" className="w-full">
+        <TabsTrigger value="prompt">
+          <IconMessage data-icon="inline-start" />
+          Prompt
+        </TabsTrigger>
+        <TabsTrigger value="script" disabled={!canScript}>
+          <IconTerminal2 data-icon="inline-start" />
+          Script
+        </TabsTrigger>
+      </TabsList>
+    </Tabs>
+  );
+}
+
+function PromptField({
+  draft,
+  patch,
+}: {
+  draft: AutomationDraft;
+  patch: (change: Partial<AutomationDraft>) => void;
+}) {
+  return (
+    <Field>
+      <FieldLabel htmlFor="automation-prompt">Prompt</FieldLabel>
+      <Textarea
+        id="automation-prompt"
+        className="min-h-28"
+        placeholder="Summarize my unread email and flag anything urgent."
+        maxLength={MAX_MESSAGE_CHARS}
+        value={draft.prompt}
+        onChange={(event) => patch({ prompt: event.target.value })}
+      />
+    </Field>
+  );
+}
+
+function EnabledSection({
+  draft,
+  patch,
+}: {
+  draft: AutomationDraft;
+  patch: (change: Partial<AutomationDraft>) => void;
+}) {
+  return (
+    <EditorSection>
+      <Field orientation="horizontal">
+        <FieldContent>
+          <FieldLabel htmlFor="automation-enabled">Enabled</FieldLabel>
+        </FieldContent>
+        <Switch
+          id="automation-enabled"
+          checked={draft.enabled}
+          onCheckedChange={(enabled) => patch({ enabled })}
+        />
+      </Field>
+    </EditorSection>
+  );
+}
+
 function AutomationFields({
   bots,
   draft,
@@ -685,55 +760,22 @@ function AutomationFields({
         </Field>
         <BotPicker bots={bots} draft={draft} patch={patch} canCode={canCode} />
         {(canScript || editingScript) && (
-          <Tabs
-            value={draft.kind}
-            onValueChange={(value) =>
-              patch({ kind: value === "script" ? "script" : "prompt" })
-            }
-          >
-            <TabsList aria-label="Automation kind" className="w-full">
-              <TabsTrigger value="prompt">
-                <IconMessage data-icon="inline-start" />
-                Prompt
-              </TabsTrigger>
-              <TabsTrigger value="script" disabled={!canScript}>
-                <IconTerminal2 data-icon="inline-start" />
-                Script
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <AutomationKindTabs
+            kind={draft.kind}
+            canScript={canScript}
+            patch={patch}
+          />
         )}
         {draft.kind === "script" ? (
           <ScriptFields draft={draft} patch={patch} />
         ) : (
-          <Field>
-            <FieldLabel htmlFor="automation-prompt">Prompt</FieldLabel>
-            <Textarea
-              id="automation-prompt"
-              className="min-h-28"
-              placeholder="Summarize my unread email and flag anything urgent."
-              maxLength={MAX_MESSAGE_CHARS}
-              value={draft.prompt}
-              onChange={(event) => patch({ prompt: event.target.value })}
-            />
-          </Field>
+          <PromptField draft={draft} patch={patch} />
         )}
       </EditorSection>
       <EditorSection title="When">
         <ScheduleFields draft={draft} patch={patch} />
       </EditorSection>
-      <EditorSection>
-        <Field orientation="horizontal">
-          <FieldContent>
-            <FieldLabel htmlFor="automation-enabled">Enabled</FieldLabel>
-          </FieldContent>
-          <Switch
-            id="automation-enabled"
-            checked={draft.enabled}
-            onCheckedChange={(enabled) => patch({ enabled })}
-          />
-        </Field>
-      </EditorSection>
+      <EnabledSection draft={draft} patch={patch} />
     </>
   );
 }

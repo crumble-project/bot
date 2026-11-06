@@ -22,6 +22,29 @@ const frame = (kind: number, connection: number, payload?: Uint8Array) => {
   return payload ? Buffer.concat([header, payload]) : header;
 };
 
+async function readFrames(
+  output: AsyncIterable<Uint8Array>,
+  receive: (kind: number, connection: number, payload: Buffer) => void,
+) {
+  let pending = Buffer.alloc(0);
+
+  for await (const chunk of output) {
+    pending = Buffer.concat([pending, chunk]);
+
+    while (pending.length >= HEADER_BYTES) {
+      const length = pending.readUInt32BE(5);
+
+      if (pending.length < HEADER_BYTES + length) break;
+      receive(
+        pending.readUInt8(0),
+        pending.readUInt32BE(1),
+        pending.subarray(HEADER_BYTES, HEADER_BYTES + length),
+      );
+      pending = pending.subarray(HEADER_BYTES + length);
+    }
+  }
+}
+
 export function serveTunnel(stream: MachineStream, connect: () => net.Socket) {
   const sockets = new Map<number, net.Socket>();
   // Writes to the guest are async; chaining keeps frames whole and in order.
@@ -60,25 +83,7 @@ export function serveTunnel(stream: MachineStream, connect: () => net.Socket) {
     else if (kind === END) socket?.end();
   };
 
-  const done = (async () => {
-    let pending = Buffer.alloc(0);
-
-    for await (const chunk of stream.output) {
-      pending = Buffer.concat([pending, chunk]);
-
-      while (pending.length >= HEADER_BYTES) {
-        const length = pending.readUInt32BE(5);
-
-        if (pending.length < HEADER_BYTES + length) break;
-        receive(
-          pending.readUInt8(0),
-          pending.readUInt32BE(1),
-          pending.subarray(HEADER_BYTES, HEADER_BYTES + length),
-        );
-        pending = pending.subarray(HEADER_BYTES + length);
-      }
-    }
-  })()
+  const done = readFrames(stream.output, receive)
     .catch(() => undefined)
     .finally(() => {
       for (const socket of sockets.values()) socket.destroy();

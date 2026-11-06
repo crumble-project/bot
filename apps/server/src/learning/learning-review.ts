@@ -34,6 +34,17 @@ const nameOf = (change: LearnedChange) => {
   return "name" in state ? state.name : state.content.slice(0, 80);
 };
 
+const reviewScope = (
+  agent: Agent,
+  settings: typeof DEFAULTS,
+  counters: { skill: number; memory: number },
+): ReviewScope => ({
+  skills: counters.skill >= settings.skillThreshold,
+  memory:
+    counters.memory >= settings.memoryThreshold &&
+    agent.tools.includes(BOT_TOOL.memory),
+});
+
 export class LearningReview extends Context.Service<
   LearningReview,
   {
@@ -52,6 +63,79 @@ export class LearningReview extends Context.Service<
       const runtime = yield* BotRuntime;
       const bots = yield* Bots;
       const running = new Set<string>();
+
+      const updateCounters = Effect.fnUntraced(function* (
+        agent: Agent,
+        report: Awaited<ReturnType<typeof turnReport>>,
+      ) {
+        if (report.roundsSinceSkillWrite !== null)
+          yield* reviews.setCounter(
+            agent.id,
+            "skill",
+            report.roundsSinceSkillWrite,
+          );
+
+        if (report.roundsSinceMemoryWrite !== null)
+          yield* reviews.setCounter(
+            agent.id,
+            "memory",
+            report.roundsSinceMemoryWrite,
+          );
+
+        return yield* reviews.addRounds(
+          agent.id,
+          report.roundsSinceSkillWrite === null ? report.rounds : 0,
+          report.roundsSinceMemoryWrite === null ? report.rounds : 0,
+        );
+      });
+
+      const runReview = Effect.fnUntraced(function* (
+        turnId: string,
+        agent: Agent,
+        conversation: Awaited<ReturnType<typeof openReviewConversation>>,
+        digest: string,
+      ) {
+        const submission = yield* pi(() =>
+          runtime.submit(
+            agent,
+            conversation,
+            digest || "(The turn left no readable digest.)",
+            reviewRequest(turnId),
+            { origin: { kind: "review" } },
+          ),
+        );
+
+        yield* pi(() => runtime.wait(submission, agent));
+      });
+
+      const announceLearned = Effect.fnUntraced(function* (
+        turnId: string,
+        agent: Agent,
+      ) {
+        const made = yield* changes.listOfExecution(turnId, "review");
+
+        if (!made.length) return;
+
+        yield* changes.addReviewResult(
+          turnId,
+          agent.id,
+          made.map((change) => change.id),
+        );
+
+        yield* bots.announce({
+          type: "learned",
+          agentId: agent.id,
+          agentName: agent.name,
+          executionId: turnId,
+          changes: made.map((change) => ({
+            changeId: change.id,
+            target: change.target,
+            action: change.action,
+            name: nameOf(change),
+          })),
+          createdAt: yield* nowIso,
+        });
+      });
 
       const review = Effect.fnUntraced(function* (
         turn: { id: string; conversationId: string },
@@ -74,32 +158,9 @@ export class LearningReview extends Context.Service<
           ),
         );
 
-        if (report.roundsSinceSkillWrite !== null)
-          yield* reviews.setCounter(
-            agent.id,
-            "skill",
-            report.roundsSinceSkillWrite,
-          );
+        const counters = yield* updateCounters(agent, report);
 
-        if (report.roundsSinceMemoryWrite !== null)
-          yield* reviews.setCounter(
-            agent.id,
-            "memory",
-            report.roundsSinceMemoryWrite,
-          );
-
-        const counters = yield* reviews.addRounds(
-          agent.id,
-          report.roundsSinceSkillWrite === null ? report.rounds : 0,
-          report.roundsSinceMemoryWrite === null ? report.rounds : 0,
-        );
-
-        const scope: ReviewScope = {
-          skills: counters.skill >= settings.skillThreshold,
-          memory:
-            counters.memory >= settings.memoryThreshold &&
-            agent.tools.includes(BOT_TOOL.memory),
-        };
+        const scope = reviewScope(agent, settings, counters);
 
         if (!scope.skills && !scope.memory) return;
 
@@ -113,43 +174,11 @@ export class LearningReview extends Context.Service<
 
         yield* reviews.addPending(turn.id, agent.id, conversation);
 
-        yield* Effect.gen(function* () {
-          const submission = yield* pi(() =>
-            runtime.submit(
-              agent,
-              conversation,
-              report.digest || "(The turn left no readable digest.)",
-              reviewRequest(turn.id),
-              { origin: { kind: "review" } },
-            ),
-          );
-
-          yield* pi(() => runtime.wait(submission, agent));
-        }).pipe(Effect.ensuring(reviews.removePending(turn.id)));
-
-        const made = yield* changes.listOfExecution(turn.id, "review");
-
-        if (!made.length) return;
-
-        yield* changes.addReviewResult(
-          turn.id,
-          agent.id,
-          made.map((change) => change.id),
+        yield* runReview(turn.id, agent, conversation, report.digest).pipe(
+          Effect.ensuring(reviews.removePending(turn.id)),
         );
 
-        yield* bots.announce({
-          type: "learned",
-          agentId: agent.id,
-          agentName: agent.name,
-          executionId: turn.id,
-          changes: made.map((change) => ({
-            changeId: change.id,
-            target: change.target,
-            action: change.action,
-            name: nameOf(change),
-          })),
-          createdAt: yield* nowIso,
-        });
+        yield* announceLearned(turn.id, agent);
       });
 
       const reviewOnce = Effect.fnUntraced(function* (

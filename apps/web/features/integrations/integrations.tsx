@@ -220,6 +220,41 @@ function useServerActions(server: McpServer) {
   return { signIn, signOut, remove };
 }
 
+function ServerMenu({
+  server,
+  signOut,
+  onEdit,
+  onDelete,
+}: {
+  server: McpServer;
+  signOut: ReturnType<typeof useServerActions>["signOut"];
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <RowMenu>
+      <DropdownMenuItem onClick={onEdit}>
+        <IconPencil />
+        Edit
+      </DropdownMenuItem>
+      {server.auth === "oauth" && (
+        <DropdownMenuItem
+          disabled={signOut.isPending}
+          onClick={() => signOut.mutate()}
+        >
+          <IconLogout />
+          Sign out
+        </DropdownMenuItem>
+      )}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem variant="destructive" onClick={onDelete}>
+        <IconTrash />
+        Delete
+      </DropdownMenuItem>
+    </RowMenu>
+  );
+}
+
 function ServerRow({
   server,
   onEdit,
@@ -253,29 +288,12 @@ function ServerRow({
           Sign in
         </Button>
       )}
-      <RowMenu>
-        <DropdownMenuItem onClick={onEdit}>
-          <IconPencil />
-          Edit
-        </DropdownMenuItem>
-        {server.auth === "oauth" && (
-          <DropdownMenuItem
-            disabled={signOut.isPending}
-            onClick={() => signOut.mutate()}
-          >
-            <IconLogout />
-            Sign out
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          variant="destructive"
-          onClick={() => setDeleting(true)}
-        >
-          <IconTrash />
-          Delete
-        </DropdownMenuItem>
-      </RowMenu>
+      <ServerMenu
+        server={server}
+        signOut={signOut}
+        onEdit={onEdit}
+        onDelete={() => setDeleting(true)}
+      />
       <AlertDialog open={deleting} onOpenChange={setDeleting}>
         <ConfirmDeleteContent
           title={`Delete ${server.name}?`}

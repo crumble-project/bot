@@ -151,6 +151,31 @@ function GroupHeader({
   );
 }
 
+function WorkingRow({
+  working,
+  byId,
+}: {
+  working: GroupChatSnapshot["activity"]["members"];
+  byId: Map<string, Bot>;
+}) {
+  return (
+    <MessageScrollerItem messageId="working" className={ARRIVAL}>
+      <div className="flex items-center gap-2">
+        <div className="flex -space-x-1.5">
+          {working.flatMap((member) => {
+            const bot = byId.get(member.agentId);
+
+            return bot
+              ? [<BotAvatar key={bot.id} bot={bot} size={22} state="working" />]
+              : [];
+          })}
+        </div>
+        <TypingDots />
+      </div>
+    </MessageScrollerItem>
+  );
+}
+
 function GroupActivityRows({
   activity,
   byId,
@@ -166,29 +191,7 @@ function GroupActivityRows({
 
   return (
     <>
-      {working.length > 0 && (
-        <MessageScrollerItem messageId="working" className={ARRIVAL}>
-          <div className="flex items-center gap-2">
-            <div className="flex -space-x-1.5">
-              {working.flatMap((member) => {
-                const bot = byId.get(member.agentId);
-
-                return bot
-                  ? [
-                      <BotAvatar
-                        key={bot.id}
-                        bot={bot}
-                        size={22}
-                        state="working"
-                      />,
-                    ]
-                  : [];
-              })}
-            </div>
-            <TypingDots />
-          </div>
-        </MessageScrollerItem>
-      )}
+      {working.length > 0 && <WorkingRow working={working} byId={byId} />}
       {failures.map((member) => (
         <MessageScrollerItem
           key={`failure-${member.agentId}`}
@@ -244,6 +247,14 @@ function GroupSender({
   );
 }
 
+function GroupConversationEmpty() {
+  return (
+    <ConversationEmpty title="Start the conversation">
+      Everyone here reads every message. Mention a bot with @ to ask only it.
+    </ConversationEmpty>
+  );
+}
+
 export function GroupChatView({ groupId }: { groupId: string }) {
   const target = useMemo(() => groupConversation(groupId), [groupId]);
   const { snapshot, ...conversation } = useConversation(target);
@@ -272,12 +283,7 @@ export function GroupChatView({ groupId }: { groupId: string }) {
       <ConversationScroller>
         <ConversationMessages
           conversation={conversation}
-          empty={
-            <ConversationEmpty title="Start the conversation">
-              Everyone here reads every message. Mention a bot with @ to ask
-              only it.
-            </ConversationEmpty>
-          }
+          empty={<GroupConversationEmpty />}
           renderMessage={(message) => (
             <BotMessage
               message={message}
@@ -384,14 +390,10 @@ function isValidGroup(name: string, memberIds: string[]) {
   );
 }
 
-export function GroupForm({ group }: { group?: GroupChat }) {
+function useGroupForm(group: GroupChat | undefined) {
   const navigate = useNavigate();
-  const bots = useQuery(botsQuery).data ?? [];
   const [name, setName] = useState(group?.name ?? "");
   const [memberIds, setMemberIds] = useState<string[]>(group?.memberIds ?? []);
-
-  const valid = isValidGroup(name, memberIds);
-  const selected = new Set(memberIds);
 
   const save = useMutation({
     mutationFn: () => {
@@ -419,10 +421,55 @@ export function GroupForm({ group }: { group?: GroupChat }) {
     },
   });
 
+  return { name, setName, memberIds, setMemberIds, save, remove };
+}
+
+function GroupMembersFields({
+  memberIds,
+  onChange,
+}: {
+  memberIds: string[];
+  onChange: (memberIds: string[]) => void;
+}) {
+  const bots = useQuery(botsQuery).data ?? [];
+  const selected = new Set(memberIds);
+
   const toggle = (bot: Bot, on: boolean) =>
-    setMemberIds(
+    onChange(
       on ? [...memberIds, bot.id] : memberIds.filter((id) => id !== bot.id),
     );
+
+  return (
+    <FieldSet>
+      <FieldLegend variant="label">Members</FieldLegend>
+      <FieldDescription>
+        {`Choose ${numberWord(MIN_GROUP_MEMBERS)} to ${numberWord(MAX_GROUP_MEMBERS)} bots. A bot added later gets a summary of the conversation so far.`}
+      </FieldDescription>
+      <FieldGroup>
+        {bots.map((bot) => (
+          <BotSwitchField
+            key={bot.id}
+            id={`member-${bot.id}`}
+            bot={bot}
+            checked={selected.has(bot.id)}
+            disabled={
+              !selected.has(bot.id) && memberIds.length >= MAX_GROUP_MEMBERS
+            }
+            onCheckedChange={(next) => toggle(bot, next)}
+          >
+            {!bot.enabled && <Badge variant="outline">Disabled</Badge>}
+          </BotSwitchField>
+        ))}
+      </FieldGroup>
+    </FieldSet>
+  );
+}
+
+export function GroupForm({ group }: { group?: GroupChat }) {
+  const { name, setName, memberIds, setMemberIds, save, remove } =
+    useGroupForm(group);
+
+  const valid = isValidGroup(name, memberIds);
 
   return (
     <ScrollArea className="min-h-0 flex-1">
@@ -451,28 +498,7 @@ export function GroupForm({ group }: { group?: GroupChat }) {
             </Field>
           </FieldGroup>
         </FieldSet>
-        <FieldSet>
-          <FieldLegend variant="label">Members</FieldLegend>
-          <FieldDescription>
-            {`Choose ${numberWord(MIN_GROUP_MEMBERS)} to ${numberWord(MAX_GROUP_MEMBERS)} bots. A bot added later gets a summary of the conversation so far.`}
-          </FieldDescription>
-          <FieldGroup>
-            {bots.map((bot) => (
-              <BotSwitchField
-                key={bot.id}
-                id={`member-${bot.id}`}
-                bot={bot}
-                checked={selected.has(bot.id)}
-                disabled={
-                  !selected.has(bot.id) && memberIds.length >= MAX_GROUP_MEMBERS
-                }
-                onCheckedChange={(next) => toggle(bot, next)}
-              >
-                {!bot.enabled && <Badge variant="outline">Disabled</Badge>}
-              </BotSwitchField>
-            ))}
-          </FieldGroup>
-        </FieldSet>
+        <GroupMembersFields memberIds={memberIds} onChange={setMemberIds} />
         {save.isError && <FieldError>{save.error.message}</FieldError>}
         <div className="flex items-center gap-2">
           {group && (

@@ -53,15 +53,7 @@ function NumberField({
   );
 }
 
-function SettingsSheet({
-  editing,
-  settings,
-  onClose,
-}: {
-  editing: Exclude<Editing, undefined>;
-  settings: ServerSettings;
-  onClose: () => void;
-}) {
+function useSettingsDraft(settings: ServerSettings) {
   const [cpus, setCpus] = useState(String(settings.workspaceCpus));
 
   const [memory, setMemory] = useState(
@@ -71,44 +63,39 @@ function SettingsSheet({
   const [image, setImage] = useState(settings.codingImage ?? "");
   const [grace, setGrace] = useState(String(settings.questionGraceMinutes));
 
-  const save = useMutation({
-    mutationFn: (patch: Partial<ServerSettings>) =>
-      send<"updateServerSettings">("/v1/admin/settings", "PATCH", patch),
-    onSuccess: async () => {
-      await invalidateAdmin();
-      onClose();
-    },
-  });
+  return { cpus, setCpus, memory, setMemory, image, setImage, grace, setGrace };
+}
 
-  const patch = (): Partial<ServerSettings> => {
-    switch (editing) {
-      case "size":
-        return {
-          workspaceCpus: Number(cpus),
-          workspaceMemoryMib: Math.round(Number(memory) * MIB_PER_GB),
-        };
-      case "image":
-        return { codingImage: image.trim() || null };
-      case "grace":
-        return { questionGraceMinutes: Number(grace) };
-    }
-  };
+type SettingsDraft = ReturnType<typeof useSettingsDraft>;
 
-  const titles = {
-    size: "Workspace size",
-    image: "Coding image",
-    grace: "Question grace period",
-  };
+type EditedSetting = Exclude<Editing, undefined>;
 
+function settingsPatch(
+  editing: EditedSetting,
+  { cpus, memory, image, grace }: SettingsDraft,
+): Partial<ServerSettings> {
+  switch (editing) {
+    case "size":
+      return {
+        workspaceCpus: Number(cpus),
+        workspaceMemoryMib: Math.round(Number(memory) * MIB_PER_GB),
+      };
+    case "image":
+      return { codingImage: image.trim() || null };
+    case "grace":
+      return { questionGraceMinutes: Number(grace) };
+  }
+}
+
+function SettingsSheetFields({
+  editing,
+  draft: { cpus, setCpus, memory, setMemory, image, setImage, grace, setGrace },
+}: {
+  editing: EditedSetting;
+  draft: SettingsDraft;
+}) {
   return (
-    <EditorSheet
-      title={titles[editing]}
-      error={save.error?.message}
-      submitLabel="Save"
-      submitDisabled={save.isPending}
-      onSubmit={() => save.mutate(patch())}
-      onClose={onClose}
-    >
+    <>
       {editing === "size" && (
         <>
           <NumberField id="cpus" label="CPUs" value={cpus} onChange={setCpus} />
@@ -140,6 +127,46 @@ function SettingsSheet({
           onChange={setGrace}
         />
       )}
+    </>
+  );
+}
+
+const SHEET_TITLES = {
+  size: "Workspace size",
+  image: "Coding image",
+  grace: "Question grace period",
+};
+
+function SettingsSheet({
+  editing,
+  settings,
+  onClose,
+}: {
+  editing: EditedSetting;
+  settings: ServerSettings;
+  onClose: () => void;
+}) {
+  const draft = useSettingsDraft(settings);
+
+  const save = useMutation({
+    mutationFn: (patch: Partial<ServerSettings>) =>
+      send<"updateServerSettings">("/v1/admin/settings", "PATCH", patch),
+    onSuccess: async () => {
+      await invalidateAdmin();
+      onClose();
+    },
+  });
+
+  return (
+    <EditorSheet
+      title={SHEET_TITLES[editing]}
+      error={save.error?.message}
+      submitLabel="Save"
+      submitDisabled={save.isPending}
+      onSubmit={() => save.mutate(settingsPatch(editing, draft))}
+      onClose={onClose}
+    >
+      <SettingsSheetFields editing={editing} draft={draft} />
     </EditorSheet>
   );
 }
@@ -148,6 +175,26 @@ const HELP = {
   coding: "Coding jobs need CRUMBLE_WORKSPACE_IMAGE on the server.",
   desktop: "Desktop jobs need CRUMBLE_WORKSPACE_DESKTOP_IMAGE on the server.",
 };
+
+function settingRows(data: ServerSettings) {
+  return [
+    {
+      key: "size" as const,
+      icon: IconCpu,
+      title: `Workspace size (${data.workspaceCpus} CPUs, ${gigabytes(data.workspaceMemoryMib)} GB)`,
+    },
+    {
+      key: "image" as const,
+      icon: IconPackage,
+      title: `Coding image (${data.codingImage ?? "server default"})`,
+    },
+    {
+      key: "grace" as const,
+      icon: IconClock,
+      title: `Question grace period (${data.questionGraceMinutes} min)`,
+    },
+  ];
+}
 
 export function WorkspaceSettings() {
   const admin = useIsAdmin();
@@ -164,25 +211,7 @@ export function WorkspaceSettings() {
   if (!admin && !missing.length) return null;
   const data = settings.data;
 
-  const rows = data
-    ? [
-        {
-          key: "size" as const,
-          icon: IconCpu,
-          title: `Workspace size (${data.workspaceCpus} CPUs, ${gigabytes(data.workspaceMemoryMib)} GB)`,
-        },
-        {
-          key: "image" as const,
-          icon: IconPackage,
-          title: `Coding image (${data.codingImage ?? "server default"})`,
-        },
-        {
-          key: "grace" as const,
-          icon: IconClock,
-          title: `Question grace period (${data.questionGraceMinutes} min)`,
-        },
-      ]
-    : [];
+  const rows = data ? settingRows(data) : [];
 
   return (
     <Section title="Workspaces">

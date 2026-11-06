@@ -24,6 +24,17 @@ export type CuratorAction = {
   to: Skill["state"];
 };
 
+function idleDays(skill: Skill, now: Date): number {
+  // An active skill's edits and restoration count as activity; a stale one's
+  // transition updated it, so measure that state from its last use instead.
+  const lastActivity = Math.max(
+    Date.parse(skill.lastUsedAt ?? skill.createdAt),
+    skill.state === "active" ? Date.parse(skill.updatedAt) : 0,
+  );
+
+  return (now.getTime() - lastActivity) / DAY;
+}
+
 export class SkillCurator extends Context.Service<
   SkillCurator,
   {
@@ -57,21 +68,14 @@ export class SkillCurator extends Context.Service<
           for (const skill of yield* skills.listBotCreated) {
             if (skill.pinned || skill.state === "archived") continue;
 
-            // An active skill's edits and its restoration count as activity; a stale one is measured from its last
-            // use, since the curator's own transition updated it.
-            const lastActivity = Math.max(
-              Date.parse(skill.lastUsedAt ?? skill.createdAt),
-              skill.state === "active" ? Date.parse(skill.updatedAt) : 0,
-            );
+            const days = idleDays(skill, now);
 
-            const idleDays = (now.getTime() - lastActivity) / DAY;
-
-            if (idleDays < STALE_AFTER_DAYS) continue;
+            if (days < STALE_AFTER_DAYS) continue;
 
             if (yield* namedByTask(skill)) continue;
 
             const to: Skill["state"] =
-              idleDays >= ARCHIVE_AFTER_DAYS ? "archived" : "stale";
+              days >= ARCHIVE_AFTER_DAYS ? "archived" : "stale";
 
             if (to === skill.state) continue;
             yield* skills.update(skill.id, { state: to }, { actor: "curator" });

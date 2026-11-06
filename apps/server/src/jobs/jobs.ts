@@ -543,34 +543,14 @@ const deliveryReport = async (
   };
 };
 
-const submitAndReport = async (
+const checkpointReport = async (
   kindState: JobKindBase,
   reporter: ReporterTask<"deliver">,
   runtime: ReporterRuntime,
+  settled: SettledSubmissionRecord,
   taskContext: Context,
-): Promise<void> => {
-  const { name, conversationId, message, followUp } = reporter.input;
-
-  const job = (await runtime.conversation(conversationId, taskContext))!;
-
-  const submission = await job.submit(
-    {
-      type: "input",
-      content: message,
-      whenBusy: followUp ? "followUp" : "steer",
-      requestId: jobDeliveryRequest(kindState.kind, reporter.id),
-    },
-    taskContext,
-  );
-
-  await runtime.commit(async (tx) => {
-    settleDelivery(
-      (await tx.doc(kindState.Jobs, runtime.conversationId)).jobs[name],
-      reporter.id,
-    );
-  }, taskContext);
-
-  const settled = await submission.wait(taskContext);
+): Promise<boolean> => {
+  const { name } = reporter.input;
   let reported = false;
 
   await runtime.commit(async (tx) => {
@@ -602,6 +582,46 @@ const submitAndReport = async (
       },
     };
   }, taskContext);
+
+  return reported;
+};
+
+const submitAndReport = async (
+  kindState: JobKindBase,
+  reporter: ReporterTask<"deliver">,
+  runtime: ReporterRuntime,
+  taskContext: Context,
+): Promise<void> => {
+  const { name, conversationId, message, followUp } = reporter.input;
+
+  const job = (await runtime.conversation(conversationId, taskContext))!;
+
+  const submission = await job.submit(
+    {
+      type: "input",
+      content: message,
+      whenBusy: followUp ? "followUp" : "steer",
+      requestId: jobDeliveryRequest(kindState.kind, reporter.id),
+    },
+    taskContext,
+  );
+
+  await runtime.commit(async (tx) => {
+    settleDelivery(
+      (await tx.doc(kindState.Jobs, runtime.conversationId)).jobs[name],
+      reporter.id,
+    );
+  }, taskContext);
+
+  const settled = await submission.wait(taskContext);
+
+  const reported = await checkpointReport(
+    kindState,
+    reporter,
+    runtime,
+    settled,
+    taskContext,
+  );
 
   const { agentId } = reporter.input;
 
@@ -715,6 +735,40 @@ const announceCheckpoint = async (
   };
 };
 
+const submitReport = async (
+  kindState: JobKindBase,
+  reporter: ReporterTask<"report">,
+  runtime: ReporterRuntime,
+  report: JobReport,
+  taskContext: Context,
+) => {
+  const chat = (await runtime.conversation(
+    runtime.conversationId,
+    taskContext,
+  ))!;
+
+  return chat.submit(
+    {
+      type: "input",
+      content:
+        report.text === undefined
+          ? report.frame
+          : `${report.frame} ${report.text}`,
+      whenBusy: "followUp",
+      requestId: jobReportRequest(kindState.kind, reporter.id),
+      entry: {
+        kind: MESSAGE_ENTRY,
+        data: {
+          text: report.failure ?? report.text ?? "",
+          ...(report.failure && { jobFailed: true }),
+          origin: { kind: kindState.kind, name: reporter.input.name },
+        },
+      },
+    },
+    taskContext,
+  );
+};
+
 const jobReporterReport =
   (kindState: JobKindBase) =>
   async (
@@ -745,29 +799,11 @@ const jobReporterReport =
         return COMPLETED;
       }, taskContext);
 
-    const chat = (await runtime.conversation(
-      runtime.conversationId,
-      taskContext,
-    ))!;
-
-    const submission = await chat.submit(
-      {
-        type: "input",
-        content:
-          report.text === undefined
-            ? report.frame
-            : `${report.frame} ${report.text}`,
-        whenBusy: "followUp",
-        requestId: jobReportRequest(kindState.kind, reporter.id),
-        entry: {
-          kind: MESSAGE_ENTRY,
-          data: {
-            text: report.failure ?? report.text ?? "",
-            ...(report.failure && { jobFailed: true }),
-            origin: { kind: kindState.kind, name: reporter.input.name },
-          },
-        },
-      },
+    const submission = await submitReport(
+      kindState,
+      reporter,
+      runtime,
+      report,
       taskContext,
     );
 
@@ -979,31 +1015,87 @@ const startExcerpt = (
     ? chatExcerpt(tx, chatId)
     : Promise.resolve("");
 
+const citedOwnerMessages = async (
+  kindState: JobKindBase,
+  tx: Tx,
+  chatId: ConversationId,
+  request: StartOrSend,
+) => {
+  if (!kindState.ownerRequest) return { messages: [] };
+
+  return ownerMessages(tx, chatId, request.ownerMessages);
+};
+
+const clearPendingQuestion = async (
+  kindState: JobKindBase,
+  tx: Tx,
+  state: JobsState,
+  conversationId: ConversationId,
+) => {
+  const question = await tx.doc(kindState.Question, conversationId);
+
+  if (question.pending?.reporter)
+    closeTurnWork(state, question.pending.turn, question.pending.reporter);
+
+  question.pending = null;
+};
+
+const deliverToJob = async (
+  kindState: JobKindState,
+  call: JobToolCall,
+  request: StartOrSend,
+  tx: Tx,
+  state: JobsState,
+  attached: OwnerMessage[],
+) => {
+  const { agentId, api } = call;
+  const record = state.jobs[request.name]!;
+  const conversationId = record.conversationId;
+
+  if (kindState.ownerRequest)
+    addToRequest(
+      await tx.doc(kindState.Request, conversationId),
+      { name: request.name, chatId: api.conversationId },
+      attached,
+      request.message,
+    );
+
+  await clearPendingQuestion(kindState, tx, state, conversationId);
+  await queueDelivery(kindState, tx, state, record, {
+    agentId,
+    name: request.name,
+    conversationId,
+    message: request.message,
+    followUp: request.action === "send" && request.followUp,
+    stops: record.stops,
+    ...(request.turn !== undefined && { turn: request.turn }),
+  });
+
+  return conversationId;
+};
+
 const startOrSend = async (
   kindState: JobKindState,
   call: JobToolCall,
   request: StartOrSend,
 ): Promise<Started> => {
-  const { agentId, api, context } = call;
+  const { api, context } = call;
 
   return api.commit(async (tx): Promise<Started> => {
     const state = await tx.doc(kindState.Jobs, api.conversationId);
-    let attached: OwnerMessage[] = [];
 
-    if (kindState.ownerRequest) {
-      const cited = await ownerMessages(
-        tx,
-        api.conversationId,
-        request.ownerMessages,
-      );
+    const cited = await citedOwnerMessages(
+      kindState,
+      tx,
+      api.conversationId,
+      request,
+    );
 
-      if ("unknown" in cited)
-        return {
-          text: `Not owner messages of this chat: ${cited.unknown.join(", ")}. Cite the request IDs shown as [message ID].`,
-          found: undefined,
-        };
-      attached = cited.messages;
-    }
+    if ("unknown" in cited)
+      return {
+        text: `Not owner messages of this chat: ${cited.unknown.join(", ")}. Cite the request IDs shown as [message ID].`,
+        found: undefined,
+      };
 
     const chat = await startExcerpt(tx, api.conversationId, request, state);
 
@@ -1016,31 +1108,14 @@ const startOrSend = async (
         found: undefined,
       };
 
-    const record = state.jobs[request.name]!;
-    const conversationId = record.conversationId;
-
-    if (kindState.ownerRequest)
-      addToRequest(
-        await tx.doc(kindState.Request, conversationId),
-        { name: request.name, chatId: api.conversationId },
-        attached,
-        request.message,
-      );
-
-    const question = await tx.doc(kindState.Question, conversationId);
-
-    if (question.pending?.reporter)
-      closeTurnWork(state, question.pending.turn, question.pending.reporter);
-    question.pending = null;
-    await queueDelivery(kindState, tx, state, record, {
-      agentId,
-      name: request.name,
-      conversationId,
-      message: request.message,
-      followUp: request.action === "send" && request.followUp,
-      stops: record.stops,
-      ...(request.turn !== undefined && { turn: request.turn }),
-    });
+    const conversationId = await deliverToJob(
+      kindState,
+      call,
+      request,
+      tx,
+      state,
+      cited.messages,
+    );
 
     return {
       text:
@@ -1220,6 +1295,27 @@ const jobTool = (kindState: JobKindState, input: JobToolInput) =>
       runJobTool(kindState, input, args, api, callContext),
   });
 
+const jobToolCall = async (
+  kindState: JobKindState,
+  input: JobToolInput,
+  api: ToolExecutionApi,
+  callContext: Context,
+): Promise<JobToolCall> => {
+  const snapshot = await api.snapshot(
+    kindState.Jobs,
+    api.conversationId,
+    callContext,
+  );
+
+  return {
+    agentId: input.agentId,
+    api,
+    context: callContext,
+    jobs: snapshot?.jobs ?? {},
+    reply: (text, found) => jobReply(input.agentId, text, found),
+  };
+};
+
 const runJobTool = async (
   kindState: JobKindState,
   input: JobToolInput,
@@ -1228,18 +1324,8 @@ const runJobTool = async (
   callContext: Context,
 ): Promise<ToolExecutionResult<JobDetails>> => {
   const { action, name, message } = args;
-
-  const jobs =
-    (await api.snapshot(kindState.Jobs, api.conversationId, callContext))
-      ?.jobs ?? {};
-
-  const call: JobToolCall = {
-    agentId: input.agentId,
-    api,
-    context: callContext,
-    jobs,
-    reply: (text, found) => jobReply(input.agentId, text, found),
-  };
+  const call = await jobToolCall(kindState, input, api, callContext);
+  const { jobs } = call;
 
   if (action === "status") return statusReply(kindState, call, name);
 
@@ -1252,6 +1338,20 @@ const runJobTool = async (
   if (action === "stop") return stopJob(kindState, call, existing!, name);
 
   if (message === undefined) return call.reply(`${action} needs a message.`);
+
+  return sendJobTool(kindState, input, args, call, action, name, message);
+};
+
+const sendJobTool = async (
+  kindState: JobKindState,
+  input: JobToolInput,
+  args: JobToolArgs,
+  call: JobToolCall,
+  action: "start" | "send",
+  name: string,
+  message: string,
+) => {
+  const { api, context: callContext } = call;
 
   const result = await startOrSend(kindState, call, {
     action,
@@ -1290,41 +1390,46 @@ const jobExtensions = (
   };
 };
 
+const subscribe =
+  <Listener>(listeners: Set<Listener>) =>
+  (listener: Listener) => {
+    listeners.add(listener);
+
+    return () => void listeners.delete(listener);
+  };
+
+const jobKindReads = (state: JobKindState) => ({
+  /** The jobs of a bot's chat, oldest first: conversation IDs only grow, whereas record keys reorder numeric names. */
+  list: (harness: Harness, chatId: ConversationId) =>
+    listedJobs(state, harness, chatId),
+
+  request: async (
+    reader: DocumentReader,
+    conversationId: ConversationId,
+    context: Context,
+  ): Promise<JobRequest> =>
+    (await reader.snapshot(state.Request, conversationId, context)) ?? {
+      ownerMessages: [],
+      tasks: [],
+    },
+
+  isJob: (
+    reader: DocumentReader,
+    conversationId: ConversationId,
+    context: Context,
+  ) => isJobConversation(state, reader, conversationId, context),
+
+  turnWork: (harness: Harness, chatId: ConversationId, submissionId: string) =>
+    turnWork(state, harness, chatId, submissionId),
+});
+
 const jobKindApi = (state: JobKindState) => {
   return {
     kind: state.kind,
+    onAnswer: subscribe(state.answerListeners),
+    onFinished: subscribe(state.finishedListeners),
 
-    onAnswer: (listener: (answer: JobAnswer) => void) => {
-      state.answerListeners.add(listener);
-
-      return () => void state.answerListeners.delete(listener);
-    },
-
-    onFinished: (listener: (finished: JobFinished) => void) => {
-      state.finishedListeners.add(listener);
-
-      return () => void state.finishedListeners.delete(listener);
-    },
-
-    /** The jobs of a bot's chat, oldest first: conversation IDs only grow, whereas record keys reorder numeric names. */
-    list: (harness: Harness, chatId: ConversationId) =>
-      listedJobs(state, harness, chatId),
-
-    request: async (
-      reader: DocumentReader,
-      conversationId: ConversationId,
-      context: Context,
-    ): Promise<JobRequest> =>
-      (await reader.snapshot(state.Request, conversationId, context)) ?? {
-        ownerMessages: [],
-        tasks: [],
-      },
-
-    isJob: (
-      reader: DocumentReader,
-      conversationId: ConversationId,
-      context: Context,
-    ) => isJobConversation(state, reader, conversationId, context),
+    ...jobKindReads(state),
 
     env: (
       workspaces: Workspaces,
@@ -1355,17 +1460,7 @@ const jobKindApi = (state: JobKindState) => {
      * Hears each question a job asks about work a bot turn sent it, once its card is in the chat; it may hear one again
      * after a restart. From all the bots of this definition.
      */
-    onQuestion: (listener: (asked: JobAsked) => Promise<void>) => {
-      state.questionListeners.add(listener);
-
-      return () => void state.questionListeners.delete(listener);
-    },
-
-    turnWork: (
-      harness: Harness,
-      chatId: ConversationId,
-      submissionId: string,
-    ) => turnWork(state, harness, chatId, submissionId),
+    onQuestion: subscribe(state.questionListeners),
   };
 };
 

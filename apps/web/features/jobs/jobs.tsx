@@ -425,6 +425,46 @@ function DownloadButton({ botId, job }: { botId: string; job: JobRef }) {
   );
 }
 
+function JobPanelHeader({
+  botId,
+  job,
+  current,
+  working,
+  onClose,
+}: {
+  botId: string;
+  job: JobRef;
+  current: Job | undefined;
+  working: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <header className="flex h-14 shrink-0 items-center gap-2.5 border-b px-4">
+      <JobTitle job={job} current={current} />
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        <span className="mr-1">
+          <JobStatus working={working} />
+        </span>
+        {JOB_KINDS[job.kind].onDesktop && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            title="Bot desktop"
+            render={<Link to="/bots/$botId/desktop" params={{ botId }} />}
+            nativeButton={false}
+          >
+            <IconDeviceDesktop />
+          </Button>
+        )}
+        <DownloadButton botId={botId} job={job} />
+        <Button variant="ghost" size="icon-sm" title="Close" onClick={onClose}>
+          <IconX />
+        </Button>
+      </div>
+    </header>
+  );
+}
+
 export function JobPanel({
   botId,
   job,
@@ -444,34 +484,13 @@ export function JobPanel({
       aria-label={job.name}
       className="flex min-h-0 flex-col border-l bg-background max-lg:fixed max-lg:inset-0 max-lg:z-40 lg:w-[min(42rem,50%)] lg:shrink-0"
     >
-      <header className="flex h-14 shrink-0 items-center gap-2.5 border-b px-4">
-        <JobTitle job={job} current={current} />
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          <span className="mr-1">
-            <JobStatus working={working} />
-          </span>
-          {JOB_KINDS[job.kind].onDesktop && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              title="Bot desktop"
-              render={<Link to="/bots/$botId/desktop" params={{ botId }} />}
-              nativeButton={false}
-            >
-              <IconDeviceDesktop />
-            </Button>
-          )}
-          <DownloadButton botId={botId} job={job} />
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            title="Close"
-            onClick={onClose}
-          >
-            <IconX />
-          </Button>
-        </div>
-      </header>
+      <JobPanelHeader
+        botId={botId}
+        job={job}
+        current={current}
+        working={working}
+        onClose={onClose}
+      />
       {job.kind === "coding" && current?.question && (
         <div className="shrink-0 border-b p-4">
           <JobQuestionAnswer

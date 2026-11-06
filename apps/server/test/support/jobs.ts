@@ -16,6 +16,7 @@ import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { defineJobKind } from "../../src/jobs/jobs";
 import type { JobKindFacts } from "../../src/shared/job-kinds";
 import { AgentRuntime } from "../../src/bots/runtime";
+import type { Agent } from "../../src/contract/agents";
 import { Store } from "./store";
 import type { Workspaces } from "../../src/workspaces/workspace";
 import { DesktopNotConfigured } from "../../src/workspaces/workspace-errors";
@@ -152,13 +153,8 @@ function script(gates: Gates): FauxResponseFactory {
   };
 }
 
-async function open(kind: typeof exclusiveKind) {
-  const dir = mkdtempSync(join(tmpdir(), "bot-jobs-"));
-  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
-  const store = new Store(dir);
-  cleanups.push(() => store.close());
-
-  const agent = store.createAgent({
+const createRunner = (store: Store) =>
+  store.createAgent({
     name: "Runner",
     description: "",
     instructions: "",
@@ -171,6 +167,41 @@ async function open(kind: typeof exclusiveKind) {
     delegates: [],
   });
 
+function chatControls(
+  runtime: AgentRuntime,
+  agent: Agent,
+  chat: Awaited<ReturnType<AgentRuntime["openChat"]>>,
+) {
+  let requests = 0;
+
+  const say = async (text: string) => {
+    const submission = await runtime.submit(
+      agent,
+      chat,
+      text,
+      `req-${++requests}`,
+    );
+
+    await runtime.wait(submission, agent);
+  };
+
+  const lastToolResult = async () =>
+    (await runtime.snapshot(agent, chat)).messages.findLast(
+      (message) => message.toolName === "errand",
+    )?.content;
+
+  const messages = async () => (await runtime.snapshot(agent, chat)).messages;
+
+  return { say, lastToolResult, messages };
+}
+
+async function open(kind: typeof exclusiveKind) {
+  const dir = mkdtempSync(join(tmpdir(), "bot-jobs-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const store = new Store(dir);
+  cleanups.push(() => store.close());
+
+  const agent = createRunner(store);
   const gates = new Gates();
   const faux = fauxProvider({ provider: "faux", models: [{ id: "chat" }] });
   faux.setResponses(Array.from({ length: 60 }, () => script(gates)));
@@ -201,27 +232,8 @@ async function open(kind: typeof exclusiveKind) {
   cleanups.push(() => runtime.close());
 
   const chat = await runtime.openChat(agent);
-  let requests = 0;
 
-  const say = async (text: string) => {
-    const submission = await runtime.submit(
-      agent,
-      chat,
-      text,
-      `req-${++requests}`,
-    );
-
-    await runtime.wait(submission, agent);
-  };
-
-  const lastToolResult = async () =>
-    (await runtime.snapshot(agent, chat)).messages.findLast(
-      (message) => message.toolName === "errand",
-    )?.content;
-
-  const messages = async () => (await runtime.snapshot(agent, chat)).messages;
-
-  return { gates, say, lastToolResult, messages };
+  return { gates, ...chatControls(runtime, agent, chat) };
 }
 
 const SETTLE_MS = 1500;

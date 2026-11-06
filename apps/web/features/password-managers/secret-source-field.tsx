@@ -91,6 +91,122 @@ export const keepPlaceholder = (saved: SecretStatus | null | undefined) =>
     ? "Keep the saved value"
     : undefined;
 
+type SecretSourceFieldProps = {
+  id: string;
+  label: string;
+  value: SecretSourceDraft;
+  onChange: (next: SecretSourceDraft) => void;
+  connected: PasswordManager[];
+  valuePlaceholder?: string | undefined;
+  valueDescription?: ReactNode;
+  concealed?: boolean;
+  disabled?: boolean | undefined;
+};
+
+function SourceTabs({
+  label,
+  value,
+  onChange,
+  connected,
+}: Pick<SecretSourceFieldProps, "label" | "value" | "onChange" | "connected">) {
+  const source = value.kind === "value" ? "crumble" : value.passwordManager;
+
+  return (
+    <Tabs
+      value={source}
+      onValueChange={(next) => {
+        const picked = connected.find((item) => item.id === next);
+
+        onChange(
+          picked
+            ? {
+                kind: "reference",
+                passwordManager: picked.id,
+                reference: "",
+              }
+            : EMPTY_SOURCE,
+        );
+      }}
+    >
+      <TabsList aria-label={`Where ${label.toLowerCase()} comes from`}>
+        <TabsTrigger value="crumble">Crumble</TabsTrigger>
+        {connected.map((item) => (
+          <TabsTrigger key={item.id} value={item.id}>
+            {item.name}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
+  );
+}
+
+function SourceInput({
+  id,
+  value,
+  onChange,
+  valuePlaceholder,
+  concealed,
+  disabled,
+}: Pick<
+  SecretSourceFieldProps,
+  "id" | "value" | "onChange" | "valuePlaceholder" | "concealed" | "disabled"
+>) {
+  return value.kind === "value" ? (
+    <Input
+      id={id}
+      type={concealed ? "password" : "text"}
+      autoComplete="off"
+      disabled={disabled}
+      placeholder={valuePlaceholder}
+      value={value.value}
+      onChange={(event) =>
+        onChange({ kind: "value", value: event.target.value })
+      }
+    />
+  ) : (
+    <Input
+      id={id}
+      autoComplete="off"
+      disabled={disabled}
+      spellCheck={false}
+      className="font-mono"
+      placeholder={REFERENCE_PLACEHOLDERS[value.passwordManager]}
+      value={value.reference}
+      onChange={(event) =>
+        onChange({ ...value, reference: event.target.value })
+      }
+    />
+  );
+}
+
+function SourceDescription({
+  value,
+  connected,
+  valueDescription,
+}: Pick<SecretSourceFieldProps, "value" | "connected" | "valueDescription">) {
+  const manager = connected.find(
+    (item) => value.kind === "reference" && item.id === value.passwordManager,
+  );
+
+  return (
+    <FieldDescription>
+      {value.kind === "reference" ? (
+        `Read from ${manager?.name ?? "the password manager"} when it's used. Crumble checks it can read it when you save.`
+      ) : connected.length > 0 ? (
+        valueDescription
+      ) : (
+        <>
+          {valueDescription}{" "}
+          <Link to="/settings/password-managers" className="underline">
+            Connect a password manager
+          </Link>{" "}
+          to read it from there instead.
+        </>
+      )}
+    </FieldDescription>
+  );
+}
+
 export function SecretSourceField({
   id,
   label,
@@ -101,94 +217,31 @@ export function SecretSourceField({
   valueDescription = STORED_NOTE,
   concealed = true,
   disabled,
-}: {
-  id: string;
-  label: string;
-  value: SecretSourceDraft;
-  onChange: (next: SecretSourceDraft) => void;
-  connected: PasswordManager[];
-  valuePlaceholder?: string | undefined;
-  valueDescription?: ReactNode;
-  concealed?: boolean;
-  disabled?: boolean;
-}) {
-  const source = value.kind === "value" ? "crumble" : value.passwordManager;
-
-  const manager = connected.find(
-    (item) => value.kind === "reference" && item.id === value.passwordManager,
-  );
-
+}: SecretSourceFieldProps) {
   return (
     <Field>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
       {connected.length > 0 && (
-        <Tabs
-          value={source}
-          onValueChange={(next) => {
-            const picked = connected.find((item) => item.id === next);
-
-            onChange(
-              picked
-                ? {
-                    kind: "reference",
-                    passwordManager: picked.id,
-                    reference: "",
-                  }
-                : EMPTY_SOURCE,
-            );
-          }}
-        >
-          <TabsList aria-label={`Where ${label.toLowerCase()} comes from`}>
-            <TabsTrigger value="crumble">Crumble</TabsTrigger>
-            {connected.map((item) => (
-              <TabsTrigger key={item.id} value={item.id}>
-                {item.name}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-      )}
-      {value.kind === "value" ? (
-        <Input
-          id={id}
-          type={concealed ? "password" : "text"}
-          autoComplete="off"
-          disabled={disabled}
-          placeholder={valuePlaceholder}
-          value={value.value}
-          onChange={(event) =>
-            onChange({ kind: "value", value: event.target.value })
-          }
-        />
-      ) : (
-        <Input
-          id={id}
-          autoComplete="off"
-          disabled={disabled}
-          spellCheck={false}
-          className="font-mono"
-          placeholder={REFERENCE_PLACEHOLDERS[value.passwordManager]}
-          value={value.reference}
-          onChange={(event) =>
-            onChange({ ...value, reference: event.target.value })
-          }
+        <SourceTabs
+          label={label}
+          value={value}
+          onChange={onChange}
+          connected={connected}
         />
       )}
-      <FieldDescription>
-        {value.kind === "reference" ? (
-          `Read from ${manager?.name ?? "the password manager"} when it's used. Crumble checks it can read it when you save.`
-        ) : connected.length > 0 ? (
-          valueDescription
-        ) : (
-          <>
-            {valueDescription}{" "}
-            <Link to="/settings/password-managers" className="underline">
-              Connect a password manager
-            </Link>{" "}
-            to read it from there instead.
-          </>
-        )}
-      </FieldDescription>
+      <SourceInput
+        id={id}
+        value={value}
+        onChange={onChange}
+        valuePlaceholder={valuePlaceholder}
+        concealed={concealed}
+        disabled={disabled}
+      />
+      <SourceDescription
+        value={value}
+        connected={connected}
+        valueDescription={valueDescription}
+      />
     </Field>
   );
 }

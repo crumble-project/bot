@@ -57,6 +57,42 @@ function SecretRequestCard<D, R extends AskedRequest>({
   );
 }
 
+function SecretRequestHeading({
+  icon: Icon,
+  request,
+}: {
+  icon: TablerIcon;
+  request: Named;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const more = request.hosts.length - 1;
+
+  return (
+    <div className="flex items-start gap-3">
+      <Icon className="mt-0.5 size-4 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium">{request.name}</div>
+        <div className="flex flex-wrap gap-x-1 text-xs text-muted-foreground">
+          {(expanded ? request.hosts : request.hosts.slice(0, 1)).map(
+            (host) => (
+              <span key={host}>{host}</span>
+            ),
+          )}
+          {more > 0 && (
+            <button
+              type="button"
+              className="underline"
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? "Show less" : `${more} more`}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SecretRequestPending({
   icon: Icon,
   request,
@@ -75,34 +111,11 @@ function SecretRequestPending({
   children: (onClose: () => void) => ReactNode;
 }) {
   const [adding, setAdding] = useState(false);
-  const [expanded, setExpanded] = useState(false);
   const { decline } = useSecretActions(pathOf, refresh);
-  const more = request.hosts.length - 1;
 
   return (
     <div className="flex w-full max-w-sm flex-col gap-3 rounded-xl border p-4">
-      <div className="flex items-start gap-3">
-        <Icon className="mt-0.5 size-4 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium">{request.name}</div>
-          <div className="flex flex-wrap gap-x-1 text-xs text-muted-foreground">
-            {(expanded ? request.hosts : request.hosts.slice(0, 1)).map(
-              (host) => (
-                <span key={host}>{host}</span>
-              ),
-            )}
-            {more > 0 && (
-              <button
-                type="button"
-                className="underline"
-                onClick={() => setExpanded(!expanded)}
-              >
-                {expanded ? "Show less" : `${more} more`}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+      <SecretRequestHeading icon={Icon} request={request} />
       {decline.isError && (
         <p className="text-xs text-destructive">{decline.error.message}</p>
       )}

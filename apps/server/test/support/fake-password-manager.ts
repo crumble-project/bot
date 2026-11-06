@@ -4,6 +4,7 @@ import {
   PasswordManagerTokenRejected,
   PasswordManagerUnreachable,
   SecretUnreadable,
+  type PasswordManagerClient,
   type PasswordManagerVendor,
 } from "../../src/password-managers/password-manager";
 import { onePassword } from "../../src/password-managers/one-password";
@@ -54,6 +55,58 @@ const missing = (state: FakePasswordManager, reference: string) => {
     : { message: "has no item that matches" };
 };
 
+const heldValue = (
+  state: FakePasswordManager,
+  references: ReadonlyArray<string>,
+) =>
+  new Map(
+    references.map((reference) => {
+      const value = state.values.get(reference);
+
+      return [
+        reference,
+        value === undefined || state.unreadable.has(reference)
+          ? Result.fail(
+              new SecretUnreadable({
+                reference,
+                ...missing(state, reference),
+              }),
+            )
+          : Result.succeed(Redacted.make(value)),
+      ];
+    }),
+  );
+
+const fakeRead =
+  (state: FakePasswordManager): PasswordManagerClient["read"] =>
+  (references) =>
+    Effect.suspend(() => {
+      state.reads++;
+
+      if (state.mode === "hang")
+        return Effect.never.pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              state.interrupted++;
+            }),
+          ),
+        );
+
+      if (state.mode === "unreachable")
+        return Effect.fail(
+          new PasswordManagerUnreachable({
+            message: "could not be reached",
+            cause: undefined,
+          }),
+        );
+
+      const held = state.held;
+
+      return Effect.promise(() => held ?? Promise.resolve()).pipe(
+        Effect.map(() => heldValue(state, references)),
+      );
+    });
+
 export const fakeVendor = (
   state: FakePasswordManager,
 ): PasswordManagerVendor => ({
@@ -71,53 +124,6 @@ export const fakeVendor = (
 
       state.signIns++;
 
-      return Effect.succeed({
-        read: (references: ReadonlyArray<string>) =>
-          Effect.suspend(() => {
-            state.reads++;
-
-            if (state.mode === "hang")
-              return Effect.never.pipe(
-                Effect.onInterrupt(() =>
-                  Effect.sync(() => {
-                    state.interrupted++;
-                  }),
-                ),
-              );
-
-            if (state.mode === "unreachable")
-              return Effect.fail(
-                new PasswordManagerUnreachable({
-                  message: "could not be reached",
-                  cause: undefined,
-                }),
-              );
-
-            const held = state.held;
-
-            return Effect.promise(() => held ?? Promise.resolve()).pipe(
-              Effect.map(
-                () =>
-                  new Map(
-                    references.map((reference) => {
-                      const value = state.values.get(reference);
-
-                      return [
-                        reference,
-                        value === undefined || state.unreadable.has(reference)
-                          ? Result.fail(
-                              new SecretUnreadable({
-                                reference,
-                                ...missing(state, reference),
-                              }),
-                            )
-                          : Result.succeed(Redacted.make(value)),
-                      ];
-                    }),
-                  ),
-              ),
-            );
-          }),
-      });
+      return Effect.succeed({ read: fakeRead(state) });
     }),
 });

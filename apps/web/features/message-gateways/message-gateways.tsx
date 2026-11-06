@@ -265,7 +265,102 @@ function ConnectionSection({
   );
 }
 
-function BotsSection({ prefix, draft, bots, errors, patch }: FieldsProps) {
+function AddRowButton({
+  label,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <IconPlus data-icon="inline-start" />
+      {label}
+    </Button>
+  );
+}
+
+function RemoveRowButton({
+  title,
+  onClick,
+}: {
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      title={title}
+      onClick={onClick}
+    >
+      <IconTrash />
+    </Button>
+  );
+}
+
+function AliasRow({
+  alias,
+  index,
+  bots,
+  invalid,
+  onChange,
+  onRemove,
+}: {
+  alias: Draft["aliases"][number];
+  index: number;
+  bots: Bot[];
+  invalid: boolean;
+  onChange: (next: Partial<Draft["aliases"][number]>) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <SettingRow
+      tile={
+        <RowTile>
+          <IconAt />
+        </RowTile>
+      }
+      title={
+        <Input
+          aria-label={`Alias ${index + 1}`}
+          placeholder="research"
+          value={alias.handle}
+          maxLength={MAX_GATEWAY_ALIAS_CHARS}
+          autoComplete="off"
+          className="h-8 max-w-48"
+          aria-invalid={invalid || undefined}
+          onChange={(event) => onChange({ handle: event.target.value })}
+        />
+      }
+    >
+      <BotSelect
+        label={`Bot for alias ${index + 1}`}
+        bots={bots}
+        value={alias.botId || null}
+        invalid={invalid}
+        onChange={(botId) => onChange({ botId: botId ?? "" })}
+      />
+      <RemoveRowButton title="Remove alias" onClick={onRemove} />
+    </SettingRow>
+  );
+}
+
+function AliasRows({
+  draft,
+  bots,
+  errors,
+  patch,
+}: Omit<FieldsProps, "prefix">) {
   const setAlias = (id: string, next: Partial<Draft["aliases"][number]>) =>
     patch({
       aliases: draft.aliases.map((alias) =>
@@ -274,14 +369,37 @@ function BotsSection({ prefix, draft, bots, errors, patch }: FieldsProps) {
     });
 
   return (
+    <>
+      {draft.aliases.map((alias, index) => (
+        <AliasRow
+          key={alias.id}
+          alias={alias}
+          index={index}
+          bots={bots}
+          invalid={Boolean(errors["aliases"])}
+          onChange={(next) => setAlias(alias.id, next)}
+          onRemove={() =>
+            patch({
+              aliases: draft.aliases.filter((item) => item.id !== alias.id),
+            })
+          }
+        />
+      ))}
+      {errors["aliases"] && (
+        <div className="px-3 py-2">{fieldError(errors["aliases"])}</div>
+      )}
+    </>
+  );
+}
+
+function BotsSection({ prefix, draft, bots, errors, patch }: FieldsProps) {
+  return (
     <Section
       title="Bots"
       description="Start a message with @alias to pick a bot."
       action={
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
+        <AddRowButton
+          label="Alias"
           disabled={!bots.length}
           onClick={() =>
             patch({
@@ -291,10 +409,7 @@ function BotsSection({ prefix, draft, bots, errors, patch }: FieldsProps) {
               ],
             })
           }
-        >
-          <IconPlus data-icon="inline-start" />
-          Alias
-        </Button>
+        />
       }
     >
       <SettingRow
@@ -316,55 +431,112 @@ function BotsSection({ prefix, draft, bots, errors, patch }: FieldsProps) {
           onChange={(defaultBotId) => patch({ defaultBotId })}
         />
       </SettingRow>
-      {draft.aliases.map((alias, index) => (
-        <SettingRow
-          key={alias.id}
-          tile={
-            <RowTile>
-              <IconAt />
-            </RowTile>
-          }
-          title={
-            <Input
-              aria-label={`Alias ${index + 1}`}
-              placeholder="research"
-              value={alias.handle}
-              maxLength={MAX_GATEWAY_ALIAS_CHARS}
-              autoComplete="off"
-              className="h-8 max-w-48"
-              aria-invalid={Boolean(errors["aliases"]) || undefined}
-              onChange={(event) =>
-                setAlias(alias.id, { handle: event.target.value })
-              }
-            />
-          }
-        >
-          <BotSelect
-            label={`Bot for alias ${index + 1}`}
-            bots={bots}
-            value={alias.botId || null}
-            invalid={Boolean(errors["aliases"])}
-            onChange={(botId) => setAlias(alias.id, { botId: botId ?? "" })}
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            title="Remove alias"
-            onClick={() =>
-              patch({
-                aliases: draft.aliases.filter((item) => item.id !== alias.id),
-              })
-            }
-          >
-            <IconTrash />
-          </Button>
-        </SettingRow>
-      ))}
-      {errors["aliases"] && (
-        <div className="px-3 py-2">{fieldError(errors["aliases"])}</div>
-      )}
+      <AliasRows draft={draft} bots={bots} errors={errors} patch={patch} />
     </Section>
+  );
+}
+
+function ChannelRow({
+  channel,
+  index,
+  onChange,
+  onRemove,
+}: {
+  channel: Draft["allowedChannelIds"][number];
+  index: number;
+  onChange: (value: string) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <SettingRow
+      tile={
+        <RowTile>
+          <IconHash />
+        </RowTile>
+      }
+      title={
+        <Input
+          aria-label={`Channel ID ${index + 1}`}
+          placeholder="Channel ID"
+          value={channel.value}
+          maxLength={MAX_GATEWAY_ID_CHARS}
+          autoComplete="off"
+          spellCheck={false}
+          className="h-8 max-w-48 font-mono"
+          onChange={(event) => onChange(event.target.value)}
+        />
+      }
+    >
+      <RemoveRowButton title="Remove channel" onClick={onRemove} />
+    </SettingRow>
+  );
+}
+
+function ChannelRows({
+  draft,
+  errors,
+  patch,
+}: Pick<FieldsProps, "draft" | "errors" | "patch">) {
+  return (
+    <>
+      {draft.allowedChannelIds.map((channel, index) => (
+        <ChannelRow
+          key={channel.id}
+          channel={channel}
+          index={index}
+          onChange={(value) =>
+            patch({
+              allowedChannelIds: draft.allowedChannelIds.map((item) =>
+                item.id === channel.id ? { ...item, value } : item,
+              ),
+            })
+          }
+          onRemove={() =>
+            patch({
+              allowedChannelIds: draft.allowedChannelIds.filter(
+                (item) => item.id !== channel.id,
+              ),
+            })
+          }
+        />
+      ))}
+      {errors["allowedChannelIds"] && (
+        <div className="px-3 py-2">
+          {fieldError(errors["allowedChannelIds"])}
+        </div>
+      )}
+    </>
+  );
+}
+
+function OwnerIdRow({
+  prefix,
+  draft,
+  errors,
+  patch,
+  label,
+}: Omit<FieldsProps, "bots"> & { label: string }) {
+  return (
+    <SettingRow
+      tile={
+        <RowTile>
+          <IconUser />
+        </RowTile>
+      }
+      title={<label htmlFor={`${prefix}-owner`}>Owner {label} user ID</label>}
+      description={fieldError(errors["ownerId"])}
+    >
+      <Input
+        id={`${prefix}-owner`}
+        value={draft.ownerId}
+        onChange={(event) => patch({ ownerId: event.target.value })}
+        maxLength={MAX_GATEWAY_ID_CHARS}
+        autoComplete="off"
+        spellCheck={false}
+        className="h-8 w-48 font-mono"
+        aria-invalid={Boolean(errors["ownerId"]) || undefined}
+      />
+    </SettingRow>
   );
 }
 
@@ -379,10 +551,8 @@ function AccessSection({
     <Section
       title="Access"
       action={
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
+        <AddRowButton
+          label="Channel"
           onClick={() =>
             patch({
               allowedChannelIds: [
@@ -391,32 +561,16 @@ function AccessSection({
               ],
             })
           }
-        >
-          <IconPlus data-icon="inline-start" />
-          Channel
-        </Button>
+        />
       }
     >
-      <SettingRow
-        tile={
-          <RowTile>
-            <IconUser />
-          </RowTile>
-        }
-        title={<label htmlFor={`${prefix}-owner`}>Owner {label} user ID</label>}
-        description={fieldError(errors["ownerId"])}
-      >
-        <Input
-          id={`${prefix}-owner`}
-          value={draft.ownerId}
-          onChange={(event) => patch({ ownerId: event.target.value })}
-          maxLength={MAX_GATEWAY_ID_CHARS}
-          autoComplete="off"
-          spellCheck={false}
-          className="h-8 w-48 font-mono"
-          aria-invalid={Boolean(errors["ownerId"]) || undefined}
-        />
-      </SettingRow>
+      <OwnerIdRow
+        prefix={prefix}
+        draft={draft}
+        errors={errors}
+        patch={patch}
+        label={label}
+      />
       <SettingRow
         tile={
           <RowTile>
@@ -433,57 +587,7 @@ function AccessSection({
           }
         />
       </SettingRow>
-      {draft.allowedChannelIds.map((channel, index) => (
-        <SettingRow
-          key={channel.id}
-          tile={
-            <RowTile>
-              <IconHash />
-            </RowTile>
-          }
-          title={
-            <Input
-              aria-label={`Channel ID ${index + 1}`}
-              placeholder="Channel ID"
-              value={channel.value}
-              maxLength={MAX_GATEWAY_ID_CHARS}
-              autoComplete="off"
-              spellCheck={false}
-              className="h-8 max-w-48 font-mono"
-              onChange={(event) =>
-                patch({
-                  allowedChannelIds: draft.allowedChannelIds.map((item) =>
-                    item.id === channel.id
-                      ? { ...item, value: event.target.value }
-                      : item,
-                  ),
-                })
-              }
-            />
-          }
-        >
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            title="Remove channel"
-            onClick={() =>
-              patch({
-                allowedChannelIds: draft.allowedChannelIds.filter(
-                  (item) => item.id !== channel.id,
-                ),
-              })
-            }
-          >
-            <IconTrash />
-          </Button>
-        </SettingRow>
-      ))}
-      {errors["allowedChannelIds"] && (
-        <div className="px-3 py-2">
-          {fieldError(errors["allowedChannelIds"])}
-        </div>
-      )}
+      <ChannelRows draft={draft} errors={errors} patch={patch} />
     </Section>
   );
 }
@@ -535,13 +639,7 @@ function SaveBar({
   );
 }
 
-function GatewayEditor({
-  gateway,
-  bots,
-}: {
-  gateway: MessageGateway;
-  bots: Bot[];
-}) {
+function useGatewayEditor(gateway: MessageGateway, bots: Bot[]) {
   const [draft, setDraft] = useState(() => draftOf(gateway.config));
   const [attempted, setAttempted] = useState(false);
   const config = configOf(draft);
@@ -573,6 +671,33 @@ function GatewayEditor({
       setDraft((current) => ({ ...current, ...next })),
   };
 
+  const submit = () => {
+    setAttempted(true);
+
+    if (!Object.keys(errors).length && parsed.success) save.mutate(parsed.data);
+  };
+
+  const reset = () => {
+    setDraft(draftOf(gateway.config));
+    setAttempted(false);
+    save.reset();
+  };
+
+  return { fields, save, dirty, submit, reset };
+}
+
+function GatewayEditor({
+  gateway,
+  bots,
+}: {
+  gateway: MessageGateway;
+  bots: Bot[];
+}) {
+  const { fields, save, dirty, submit, reset } = useGatewayEditor(
+    gateway,
+    bots,
+  );
+
   return (
     <>
       {/* Outside the form: the token sheet's submit would bubble into it through the portal. */}
@@ -582,23 +707,12 @@ function GatewayEditor({
         aria-busy={save.isPending}
         onSubmit={(event) => {
           event.preventDefault();
-          setAttempted(true);
-
-          if (!Object.keys(errors).length && parsed.success)
-            save.mutate(parsed.data);
+          submit();
         }}
       >
         <BotsSection {...fields} />
         <AccessSection {...fields} label={gateway.label} />
-        <SaveBar
-          dirty={dirty}
-          save={save}
-          onReset={() => {
-            setDraft(draftOf(gateway.config));
-            setAttempted(false);
-            save.reset();
-          }}
-        />
+        <SaveBar dirty={dirty} save={save} onReset={reset} />
       </form>
     </>
   );

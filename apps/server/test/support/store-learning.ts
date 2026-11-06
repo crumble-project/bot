@@ -14,13 +14,16 @@ import type { ChangeBy } from "../../src/shared/domain";
 import type { LearnedChange, Skill } from "../../src/contract/skills";
 import type { StoreRun } from "./store";
 
-export const learningStore = (run: StoreRun) => ({
+const memoryStore = (run: StoreRun) => ({
   getMemory: (memoryId: string) => {
     return run(MemoryRepository.use((r) => r.get(memoryId)));
   },
   createMemory: (input: NewMemory, memoryId?: string, by?: ChangeBy | null) => {
     return run(MemoryRepository.use((r) => r.create(input, memoryId, by)));
   },
+});
+
+const skillStore = (run: StoreRun) => ({
   listSkills: (agentId: string | null = null): Skill[] => {
     return run(SkillRepository.use((r) => r.list(agentId)));
   },
@@ -43,7 +46,9 @@ export const learningStore = (run: StoreRun) => ({
   deleteSkill: (skillId: string, by?: ChangeBy | null) => {
     return run(SkillRepository.use((r) => r.delete(skillId, by)));
   },
+});
 
+const reviewStore = (run: StoreRun) => ({
   reviewCounters: (agentId: string) => {
     return run(ReviewRepository.use((r) => r.counters(agentId)));
   },
@@ -61,6 +66,9 @@ export const learningStore = (run: StoreRun) => ({
       ),
     );
   },
+});
+
+const learnedChangeStore = (run: StoreRun) => ({
   listChanges: (
     agentId: string | null | undefined,
     options: { limit?: number | undefined; before?: string | undefined } = {},
@@ -86,4 +94,11 @@ export const learningStore = (run: StoreRun) => ({
   revertChange: (changeId: string, by: ChangeBy): LearnedChange | null => {
     return run(ChangeReverter.use((r) => r.revert(changeId, by)));
   },
+});
+
+export const learningStore = (run: StoreRun) => ({
+  ...memoryStore(run),
+  ...skillStore(run),
+  ...reviewStore(run),
+  ...learnedChangeStore(run),
 });

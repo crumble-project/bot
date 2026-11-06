@@ -106,15 +106,9 @@ function frameFirst(messages: Message[], queried: readonly Block[]) {
   const content = listContent(first);
 
   if (!first || !content || content.length <= queried.length) return false;
-  const starts = [];
+  const start = uniqueFrameStart(content, queried);
 
-  for (let start = 0; start <= content.length - queried.length; start++)
-    if (sameBlocks(content.slice(start, start + queried.length), queried))
-      starts.push(start);
-
-  const start = starts[0];
-
-  if (starts.length !== 1 || start === undefined || start === 0) return false;
+  if (start === undefined || start === 0) return false;
 
   if (!content.slice(0, start).every((entry) => entry.type === "text"))
     return false;

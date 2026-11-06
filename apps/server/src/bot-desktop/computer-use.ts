@@ -48,6 +48,17 @@ export function createComputerUse(
   };
 }
 
+const COMPUTER_USE_DESCRIPTION =
+  "Operate the bot desktop (XFCE with Chromium, the Thunar file manager, a terminal, other X11 apps) through its accessibility tree, mouse, and keyboard. " +
+  "Workflow: action='capture' returns the focused window's accessibility tree; every actionable element is tagged [N]. " +
+  "Act on elements by index (element=N), which is more reliable than coordinates. Later captures of the same window list only what changed " +
+  "(+ added, ~ changed, - removed) and keep earlier [N] unless a 'reindexed' line says otherwise. Use mode='vision' for a screenshot when the " +
+  "tree is missing something; coordinates are pixels of that screenshot. Narrow a large capture with query. " +
+  "Web pages in Chromium: action='open' loads a URL and action='read' returns the page with its elements tagged [pN:M]; act on them with ref " +
+  "instead of element. Refs last until the page navigates or is read again. " +
+  "When you know several steps ahead, action='steps' runs them in one call, naming each element by role and name, with expect checks. " +
+  "Each result carries a verdict: never repeat confirmed input; capture or read to check an unverified one before retrying.";
+
 export function computerUseTool({
   gateFor,
   logins,
@@ -63,16 +74,7 @@ export function computerUseTool({
 
   return defineTool({
     name: COMPUTER_USE_TOOL_NAME,
-    description:
-      "Operate the bot desktop (XFCE with Chromium, the Thunar file manager, a terminal, other X11 apps) through its accessibility tree, mouse, and keyboard. " +
-      "Workflow: action='capture' returns the focused window's accessibility tree; every actionable element is tagged [N]. " +
-      "Act on elements by index (element=N), which is more reliable than coordinates. Later captures of the same window list only what changed " +
-      "(+ added, ~ changed, - removed) and keep earlier [N] unless a 'reindexed' line says otherwise. Use mode='vision' for a screenshot when the " +
-      "tree is missing something; coordinates are pixels of that screenshot. Narrow a large capture with query. " +
-      "Web pages in Chromium: action='open' loads a URL and action='read' returns the page with its elements tagged [pN:M]; act on them with ref " +
-      "instead of element. Refs last until the page navigates or is read again. " +
-      "When you know several steps ahead, action='steps' runs them in one call, naming each element by role and name, with expect checks. " +
-      "Each result carries a verdict: never repeat confirmed input; capture or read to check an unverified one before retrying.",
+    description: COMPUTER_USE_DESCRIPTION,
     parameters: computerUseParameters,
     callers: ["model"],
     // Input already sent cannot be taken back; after a crash the job captures and decides.

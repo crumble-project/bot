@@ -500,27 +500,30 @@ type AdmissionCase = {
   peer: PeerState;
 };
 
-async function admissionCase(mode: string): Promise<Row> {
-  const home = mkdtempSync(join(tmpdir(), "crumble-qualify-"));
-  let requests = 0;
+function admissionPeer(mode: string) {
   const bodies: Wire[] = [];
-  const peerState: PeerState = { mode, closed: false };
+  const state: PeerState = { mode, closed: false };
   let entered: () => void = () => {};
 
-  const enteredPromise = new Promise<void>((resolve) => {
+  const firstRequest = new Promise<void>((resolve) => {
     entered = resolve;
   });
 
   const peer = fixturePeer((wire) => {
     bodies.push(wire);
-    requests++;
     entered();
 
-    return admissionResponse(peerState.mode, () => {
-      peerState.closed = true;
+    return admissionResponse(state.mode, () => {
+      state.closed = true;
     });
   });
 
+  return { peer, bodies, state, firstRequest };
+}
+
+async function admissionCase(mode: string): Promise<Row> {
+  const home = mkdtempSync(join(tmpdir(), "crumble-qualify-"));
+  const { peer, bodies, state, firstRequest } = admissionPeer(mode);
   const options = adapter(`http://127.0.0.1:${peer.port}`, home);
   const row: Row = { mode };
 
@@ -538,7 +541,7 @@ async function admissionCase(mode: string): Promise<Row> {
     let started = 0;
 
     if (mode === "cancel") {
-      await enteredPromise;
+      await firstRequest;
       started = performance.now();
       controller.abort();
     }
@@ -553,8 +556,10 @@ async function admissionCase(mode: string): Promise<Row> {
       options,
       bodies,
       started,
-      peer: peerState,
+      peer: state,
     });
+
+    const requests = bodies.length;
 
     row.upstream_requests = requests;
     check(

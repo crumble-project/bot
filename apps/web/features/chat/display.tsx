@@ -267,11 +267,9 @@ function ChartNode({ node, id }: { node: Node; id: string }) {
   );
 }
 
-function Chart({ layouts }: { layouts: ChartLayout[] }) {
+function useContainerWidth() {
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
-  const [hover, setHover] = useState<Point | null>(null);
-  const clipPrefix = `clip${useId().replace(/\W/g, "")}`;
 
   useLayoutEffect(() => {
     const element = box.current;
@@ -286,6 +284,60 @@ function Chart({ layouts }: { layouts: ChartLayout[] }) {
 
     return () => observer.disconnect();
   }, []);
+
+  return { box, width };
+}
+
+function nearestPoint(points: Point[], x: number, y: number, reach: number) {
+  let best: Point | null = null;
+  let distance = reach;
+
+  for (const point of points) {
+    const d = Math.hypot(point.x - x, point.y - y);
+
+    if (d < distance) {
+      best = point;
+      distance = d;
+    }
+  }
+
+  return best;
+}
+
+function ChartTooltip({
+  hover,
+  layout,
+}: {
+  hover: Point;
+  layout: ChartLayout;
+}) {
+  return (
+    <div
+      className="pointer-events-none absolute z-10 rounded-md border bg-popover px-2 py-1 text-xs shadow-md"
+      style={{
+        left: `${(hover.x / layout.width) * 100}%`,
+        top: `${(hover.y / layout.height) * 100}%`,
+        transform: "translate(-50%, calc(-100% - 10px))",
+      }}
+    >
+      {"title" in hover && hover.title && (
+        <div className="font-medium">{hover.title}</div>
+      )}
+      {"text" in hover && <div>{hover.text}</div>}
+      {hover.rows.map((row) => (
+        <div key={row.label} className="flex justify-between gap-3">
+          <span className="text-muted-foreground">{row.label}</span>
+          <span className="tabular-nums">{row.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Chart({ layouts }: { layouts: ChartLayout[] }) {
+  const { box, width } = useContainerWidth();
+  const [hover, setHover] = useState<Point | null>(null);
+  const clipPrefix = `clip${useId().replace(/\W/g, "")}`;
 
   const sorted = [...layouts].sort((a, b) => a.width - b.width);
 
@@ -306,19 +358,8 @@ function Chart({ layouts }: { layouts: ChartLayout[] }) {
           const scale = layout.width / rect.width;
           const x = (event.clientX - rect.left) * scale;
           const y = (event.clientY - rect.top) * scale;
-          let best: Point | null = null;
-          let distance = 32 * scale;
 
-          for (const point of layout.points) {
-            const d = Math.hypot(point.x - x, point.y - y);
-
-            if (d < distance) {
-              best = point;
-              distance = d;
-            }
-          }
-
-          setHover(best);
+          setHover(nearestPoint(layout.points, x, y, 32 * scale));
         }}
       >
         {layout.nodes.map((node, index) => (
@@ -337,27 +378,7 @@ function Chart({ layouts }: { layouts: ChartLayout[] }) {
           />
         )}
       </svg>
-      {hover && (
-        <div
-          className="pointer-events-none absolute z-10 rounded-md border bg-popover px-2 py-1 text-xs shadow-md"
-          style={{
-            left: `${(hover.x / layout.width) * 100}%`,
-            top: `${(hover.y / layout.height) * 100}%`,
-            transform: "translate(-50%, calc(-100% - 10px))",
-          }}
-        >
-          {"title" in hover && hover.title && (
-            <div className="font-medium">{hover.title}</div>
-          )}
-          {"text" in hover && <div>{hover.text}</div>}
-          {hover.rows.map((row) => (
-            <div key={row.label} className="flex justify-between gap-3">
-              <span className="text-muted-foreground">{row.label}</span>
-              <span className="tabular-nums">{row.value}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {hover && <ChartTooltip hover={hover} layout={layout} />}
     </div>
   );
 }

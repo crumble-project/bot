@@ -168,17 +168,8 @@ type Passkey = NonNullable<
 const invalidatePasskeys = () =>
   queryClient.invalidateQueries({ queryKey: passkeysQuery.queryKey });
 
-function RenamePasskey({
-  passkey,
-  onDone,
-}: {
-  passkey: Passkey;
-  onDone: () => void;
-}) {
-  const [name, setName] = useState(passkey.name ?? "");
-  const id = `passkey-${passkey.id}`;
-
-  const rename = useMutation({
+function useRenamePasskey(passkey: Passkey, onDone: () => void) {
+  return useMutation({
     mutationFn: async (next: string) => {
       const result = await authClient.passkey.updatePasskey({
         id: passkey.id,
@@ -192,6 +183,18 @@ function RenamePasskey({
       onDone();
     },
   });
+}
+
+function RenamePasskey({
+  passkey,
+  onDone,
+}: {
+  passkey: Passkey;
+  onDone: () => void;
+}) {
+  const [name, setName] = useState(passkey.name ?? "");
+  const id = `passkey-${passkey.id}`;
+  const rename = useRenamePasskey(passkey, onDone);
 
   return (
     <form

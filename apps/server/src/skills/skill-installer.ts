@@ -176,6 +176,40 @@ export class SkillInstaller extends Context.Service<
         : { status: "new", problem: null, skillId: null };
     };
 
+    const candidateOf = (
+      library: Skill[],
+      repository: string,
+      folder: string,
+      found: Effect.Success<ReturnType<typeof fetchSkill>>,
+    ): SkillCandidate => {
+      const skipped = found.files.skipped;
+
+      if ("problem" in found)
+        return {
+          path: folder,
+          name: nameOf(repository, folder),
+          description: "",
+          status: "invalid",
+          problem: found.problem,
+          skipped,
+          skillId: null,
+        };
+
+      return {
+        path: folder,
+        name: found.skill.name,
+        description: found.skill.description,
+        skipped,
+        ...statusOf(
+          library,
+          repository,
+          folder,
+          found.skill.name,
+          found.digest,
+        ),
+      };
+    };
+
     const browse = Effect.fn("SkillInstaller.browse")(function* (
       input: string,
     ) {
@@ -203,34 +237,9 @@ export class SkillInstaller extends Context.Service<
         folders.slice(0, MAX_LISTED),
         (folder) =>
           fetchSkill(repository, commit, tree, folder, false).pipe(
-            Effect.map((found): SkillCandidate => {
-              const skipped = found.files.skipped;
-
-              if ("problem" in found)
-                return {
-                  path: folder,
-                  name: nameOf(repository, folder),
-                  description: "",
-                  status: "invalid",
-                  problem: found.problem,
-                  skipped,
-                  skillId: null,
-                };
-
-              return {
-                path: folder,
-                name: found.skill.name,
-                description: found.skill.description,
-                skipped,
-                ...statusOf(
-                  library,
-                  repository,
-                  folder,
-                  found.skill.name,
-                  found.digest,
-                ),
-              };
-            }),
+            Effect.map((found) =>
+              candidateOf(library, repository, folder, found),
+            ),
           ),
         { concurrency: 8 },
       ).pipe(Effect.mapError(fromGitHub(repository)));

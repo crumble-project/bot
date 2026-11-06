@@ -34,6 +34,53 @@ const MAX_BACKOFF_MS = 300_000;
 const decodeEvent = (json: string) =>
   Effect.try(() => replyEvent.parse(JSON.parse(json)));
 
+type PushDeliveries = PushRepository["Service"];
+
+const settleRejectedDelivery = Effect.fnUntraced(function* (
+  repository: PushDeliveries,
+  row: PendingDelivery,
+  device: PushDevice,
+) {
+  const current = yield* repository.getDevice(device.installationId);
+
+  if (Option.isNone(current))
+    return yield* repository.removeDelivery(
+      row.outboxId,
+      device.installationId,
+    );
+
+  // A token that rotated since the send gets the delivery again; the old one is disabled.
+  if (current.value.token !== device.token)
+    return yield* repository.requeueDelivery(
+      row.outboxId,
+      device.installationId,
+    );
+
+  yield* repository.disableIfToken(device.installationId, device.token);
+  yield* repository.removeDelivery(row.outboxId, device.installationId);
+});
+
+const retryDelivery = Effect.fnUntraced(function* (
+  repository: PushDeliveries,
+  row: PendingDelivery,
+  device: PushDevice,
+) {
+  const now = yield* Clock.currentTimeMillis;
+
+  if (row.attempts >= MAX_ATTEMPTS || row.expiresAt <= now)
+    return yield* repository.removeDelivery(
+      row.outboxId,
+      device.installationId,
+    );
+
+  yield* repository.markRetry(
+    row.outboxId,
+    device.installationId,
+    row.attempts + 1,
+    now + Math.min(MAX_BACKOFF_MS, 1000 * 2 ** row.attempts),
+  );
+});
+
 export class Push extends Context.Service<
   Push,
   {
@@ -84,51 +131,9 @@ export class Push extends Context.Service<
           ),
           Effect.catchTags({
             PermanentRejection: () =>
-              Effect.gen(function* () {
-                const current = yield* repository.getDevice(
-                  device.installationId,
-                );
-
-                if (Option.isNone(current))
-                  return yield* repository.removeDelivery(
-                    row.outboxId,
-                    device.installationId,
-                  );
-
-                // A token that rotated since the send gets the delivery again; the old one is disabled.
-                if (current.value.token !== device.token)
-                  return yield* repository.requeueDelivery(
-                    row.outboxId,
-                    device.installationId,
-                  );
-
-                yield* repository.disableIfToken(
-                  device.installationId,
-                  device.token,
-                );
-                yield* repository.removeDelivery(
-                  row.outboxId,
-                  device.installationId,
-                );
-              }),
+              settleRejectedDelivery(repository, row, device),
             TerminalResponse: () => terminal,
-            TemporaryFailure: () =>
-              Effect.gen(function* () {
-                const now = yield* Clock.currentTimeMillis;
-
-                if (row.attempts >= MAX_ATTEMPTS || row.expiresAt <= now)
-                  return yield* repository.removeDelivery(
-                    row.outboxId,
-                    device.installationId,
-                  );
-
-                yield* repository.markRetry(
-                  row.outboxId,
-                  device.installationId,
-                  row.attempts + 1,
-                  now + Math.min(MAX_BACKOFF_MS, 1000 * 2 ** row.attempts),
-                );
-              }),
+            TemporaryFailure: () => retryDelivery(repository, row, device),
           }),
         );
       });

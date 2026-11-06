@@ -89,6 +89,38 @@ export function historyToolsExtension(
   });
 }
 
+async function reachableChats(
+  context: HistoryContext,
+  memberOf: (
+    agentId: string,
+  ) => Promise<readonly { id: string; name: string }[]>,
+  agentOf: (agentId: string) => Agent | null,
+): Promise<HistoryChat[]> {
+  if (context.groupId) {
+    const group = (await memberOf(context.agentId)).find(
+      (candidate) => candidate.id === context.groupId,
+    );
+
+    return group ? [{ id: group.id, kind: "group", name: group.name }] : [];
+  }
+
+  const agent = agentOf(context.agentId);
+
+  const chats: HistoryChat[] = agent
+    ? [{ id: agent.id, kind: "bot", name: agent.name }]
+    : [];
+
+  chats.push(
+    ...(await memberOf(context.agentId)).map((group) => ({
+      id: group.id,
+      kind: "group" as const,
+      name: group.name,
+    })),
+  );
+
+  return chats;
+}
+
 export function historySource(
   runtime: AgentRuntime,
   agents: AgentRepository["Service"],
@@ -100,31 +132,7 @@ export function historySource(
   const agentOf = (agentId: string) => Effect.runSync(agents.get(agentId));
 
   return {
-    async chats(context): Promise<HistoryChat[]> {
-      if (context.groupId) {
-        const group = (await memberOf(context.agentId)).find(
-          (candidate) => candidate.id === context.groupId,
-        );
-
-        return group ? [{ id: group.id, kind: "group", name: group.name }] : [];
-      }
-
-      const agent = agentOf(context.agentId);
-
-      const chats: HistoryChat[] = agent
-        ? [{ id: agent.id, kind: "bot", name: agent.name }]
-        : [];
-
-      chats.push(
-        ...(await memberOf(context.agentId)).map((group) => ({
-          id: group.id,
-          kind: "group" as const,
-          name: group.name,
-        })),
-      );
-
-      return chats;
-    },
+    chats: (context) => reachableChats(context, memberOf, agentOf),
 
     async page(context, chat, before) {
       if (chat.kind === "group") {

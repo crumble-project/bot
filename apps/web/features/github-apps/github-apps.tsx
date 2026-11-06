@@ -574,6 +574,35 @@ function AddAccountSheet({ onClose }: { onClose: () => void }) {
   );
 }
 
+function SigningKeyField({ account }: { account: GitHubAccount }) {
+  return (
+    <Field>
+      <FieldLabel htmlFor="github-account-signing-key">Signing key</FieldLabel>
+      <div className="flex items-center gap-2">
+        <Input
+          id="github-account-signing-key"
+          readOnly
+          className="font-mono"
+          value={account.signingKey}
+        />
+        <CopyButton text={account.signingKey} />
+      </div>
+      <FieldDescription>
+        Commits its bots make are signed with this key. Add it to{" "}
+        {account.login} on GitHub as a signing key so they show as verified.{" "}
+        <a
+          className="underline underline-offset-2"
+          href="https://github.com/settings/ssh/new"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Add key
+        </a>
+      </FieldDescription>
+    </Field>
+  );
+}
+
 function AccountSheet({
   account,
   onClose,
@@ -624,32 +653,7 @@ function AccountSheet({
         token={token}
         label={account.token.passwordManager ? "Token" : "Replace token"}
       />
-      <Field>
-        <FieldLabel htmlFor="github-account-signing-key">
-          Signing key
-        </FieldLabel>
-        <div className="flex items-center gap-2">
-          <Input
-            id="github-account-signing-key"
-            readOnly
-            className="font-mono"
-            value={account.signingKey}
-          />
-          <CopyButton text={account.signingKey} />
-        </div>
-        <FieldDescription>
-          Commits its bots make are signed with this key. Add it to{" "}
-          {account.login} on GitHub as a signing key so they show as verified.{" "}
-          <a
-            className="underline underline-offset-2"
-            href="https://github.com/settings/ssh/new"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Add key
-          </a>
-        </FieldDescription>
-      </Field>
+      <SigningKeyField account={account} />
     </EditorSheet>
   );
 }

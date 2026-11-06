@@ -88,10 +88,7 @@ const chartTopics = new Map<string, string>([
 for (const topic of chartTopics.keys())
   if (UNBUNDLED.test(topic)) chartTopics.delete(topic);
 
-export function displayExtension(charts: ChartCompiler) {
-  const show = defineTool({
-    name: DISPLAY_TOOL_NAME,
-    description: `Show the owner a visual inline in your reply. Use it when a visual reads faster than prose, not for one or two plain facts. Your turn ends once it is shown, so call it last and write any text before the call. Do not restate the shown data in that text; add only interpretation the visual lacks, or nothing.
+const SHOW_DESCRIPTION = `Show the owner a visual inline in your reply. Use it when a visual reads faster than prose, not for one or two plain facts. Your turn ends once it is shown, so call it last and write any text before the call. Do not restate the shown data in that text; add only interpretation the visual lacks, or nothing.
 - "stats": one to six headline numbers. Give values formatted for display (e.g. "€1.2M", "+4.3%").
 - "table": rows to compare.
 - "chart": TanStack Charts code, TypeScript allowed, the same module form as its docs: import from "@tanstack/charts", "@tanstack/charts/polar", "@tanstack/charts/hierarchy/treemap", "@tanstack/charts/hierarchy/sunburst", "@tanstack/charts/network/sankey", "@tanstack/charts/scales/{linear,band,point,ordinal}", or "d3-scale" (scaleUtc, scaleTime, scaleLog, scaleSqrt), and "export default defineChart({...})". Nothing else is importable and there is no I/O: put the data inline. Omit colors and sizes so the chart follows the app theme; set a tooltip "format" for non-Cartesian charts. Example:
@@ -103,7 +100,12 @@ export default defineChart({ marks: [barY(rows, { x: "country", y: "people" })],
 Sankey links are straight unless you pass a curve. Bend them with a bump curve, keep them translucent, and label nodes beside their bars:
 const bumpX = { line: ([[x0, y0], [x1, y1]]) => "M" + x0 + "," + y0 + "C" + (x0 + x1) / 2 + "," + y0 + " " + (x0 + x1) / 2 + "," + y1 + " " + x1 + "," + y1, area: () => "" }
 link(layoutLinks, { x1: "x1", y1: "y1", x2: "x2", y2: "y2", key: "key", curve: bumpX, strokeWidth: (flow) => Math.max(1, flow.width), strokeOpacity: 0.4, lineCap: "butt" }) and text(layoutNodes, { x: "x1", y: "y", dx: 6, anchor: "start", ... }).
-Read chart_docs before using a mark or chart family you are unsure of.`,
+Read chart_docs before using a mark or chart family you are unsure of.`;
+
+function showTool(charts: ChartCompiler) {
+  return defineTool({
+    name: DISPLAY_TOOL_NAME,
+    description: SHOW_DESCRIPTION,
     parameters: Type.Object({ component }),
     // Scripts cannot render to the owner, so code mode keeps this as a direct model tool.
     callers: ["model"],
@@ -142,8 +144,10 @@ Read chart_docs before using a mark or chart family you are unsure of.`,
       };
     },
   });
+}
 
-  const docs = defineTool({
+function chartDocsTool() {
+  return defineTool({
     name: "chart_docs",
     description: `Read TanStack Charts documentation for the show tool's "chart" code: runnable examples and mark references. Topics: ${[...chartTopics.keys()].join(", ")}.`,
     parameters: Type.Object({
@@ -161,8 +165,13 @@ Read chart_docs before using a mark or chart family you are unsure of.`,
       ],
     }),
   });
+}
 
-  return defineExtension({ name: "display", tools: [show, docs] });
+export function displayExtension(charts: ChartCompiler) {
+  return defineExtension({
+    name: "display",
+    tools: [showTool(charts), chartDocsTool()],
+  });
 }
 
 export const displayTools = Layer.effectDiscard(

@@ -26,33 +26,35 @@ export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
   const scheduleName = (scheduleId: string) =>
     Effect.map(schedules.get(scheduleId), (schedule) => schedule?.name);
 
+  const eventOrigin = Effect.fnUntraced(function* (
+    source: Extract<ReturnType<typeof turnSource>, { kind: "event" }>,
+  ) {
+    const event = yield* events.eventWithSource(source.eventId);
+
+    return {
+      kind: "event" as const,
+      name: (yield* scheduleName(source.scheduleId)) ?? "Automation",
+      source: event?.sourceName ?? DELETED_SOURCE,
+    };
+  });
+
   const origin = (execution: Execution): Effect.Effect<InputOrigin> =>
     Effect.gen(function* () {
       const source = turnSource(execution);
 
       switch (source.kind) {
-        case "event": {
-          const event = yield* events.eventWithSource(source.eventId);
-
-          return {
-            kind: "event",
-            name: (yield* scheduleName(source.scheduleId)) ?? "Automation",
-            source: event?.sourceName ?? DELETED_SOURCE,
-          };
-        }
+        case "event":
+          return yield* eventOrigin(source);
 
         case "task":
-          return {
-            kind: "task",
-            name:
-              (yield* scheduleName(source.scheduleId)) ?? UNKNOWN_SCHEDULE_NAME,
-          };
         case "script":
           return {
-            kind: "script",
+            kind: source.kind,
             name:
               (yield* scheduleName(source.scheduleId)) ??
-              "Deleted script automation",
+              (source.kind === "task"
+                ? UNKNOWN_SCHEDULE_NAME
+                : "Deleted script automation"),
           };
         case "bot": {
           const bot = yield* agents.get(source.agentId);

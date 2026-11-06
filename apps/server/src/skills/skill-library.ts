@@ -140,23 +140,36 @@ export type SkillToolCallbacks = {
   used?: (skill: AvailableSkill, runKey: string | null) => void | Promise<void>;
 };
 
+const skillToolParameters = Type.Object({
+  action: Type.Union([Type.Literal("list"), Type.Literal("view")]),
+  name: Type.Optional(
+    Type.String({ minLength: 1, maxLength: MAX_SKILL_NAME_CHARS }),
+  ),
+  path: Type.Optional(
+    Type.String({
+      minLength: 1,
+      maxLength: MAX_SKILL_DOCUMENT_PATH_CHARS,
+    }),
+  ),
+});
+
+const skillDocument = (skill: AvailableSkill, path: string) => {
+  const document = skill.documents.find((candidate) => candidate.path === path);
+
+  if (!document)
+    throw new Error(
+      `Skill ${skill.name} has no document ${path}; it has: ${skill.documents.map((each) => each.path).join(", ") || "none"}`,
+    );
+
+  return document;
+};
+
 export function skillTool(callbacks: SkillToolCallbacks) {
   return defineTool({
     name: SKILL_TOOL_NAME,
     description:
       "List the skills available to you, or load one. `view` with a name returns the skill's instructions and the paths of its reference documents; add `path` to read one document. Load a skill before acting on a task it covers.",
-    parameters: Type.Object({
-      action: Type.Union([Type.Literal("list"), Type.Literal("view")]),
-      name: Type.Optional(
-        Type.String({ minLength: 1, maxLength: MAX_SKILL_NAME_CHARS }),
-      ),
-      path: Type.Optional(
-        Type.String({
-          minLength: 1,
-          maxLength: MAX_SKILL_DOCUMENT_PATH_CHARS,
-        }),
-      ),
-    }),
+    parameters: skillToolParameters,
     callers: ["model"],
     replay: "safe",
     execute: async (args, api, callContext) => {
@@ -179,14 +192,8 @@ export function skillTool(callbacks: SkillToolCallbacks) {
       if (!skill) throw new Error(`Unknown skill: ${args.name}`);
 
       if (args.path) {
-        const document = skill.documents.find(
-          (candidate) => candidate.path === args.path,
-        );
+        const document = skillDocument(skill, args.path);
 
-        if (!document)
-          throw new Error(
-            `Skill ${skill.name} has no document ${args.path}; it has: ${skill.documents.map((each) => each.path).join(", ") || "none"}`,
-          );
         await callbacks.used?.(skill, runKey);
 
         return text({
