@@ -1,4 +1,4 @@
-import { Context, Effect, Predicate, type Fiber } from "effect";
+import { Context, Effect, Layer, Predicate, type Fiber } from "effect";
 
 export type Runner<R> = {
   runSync<A, E>(effect: Effect.Effect<A, E, R>): A;
@@ -14,6 +14,10 @@ export const runnerOf = <R>(context: Context.Context<R>): Runner<R> => ({
   runPromise: Effect.runPromiseWith(context),
   runFork: Effect.runForkWith(context),
 });
+
+/** The services a runner holds, as a layer for a runtime built on top of it. */
+export const layerOfRunner = <R>(runner: Runner<R>) =>
+  Layer.succeedContext(runner.runSync(Effect.context<R>()));
 
 export const noServices = runnerOf(Context.empty());
 

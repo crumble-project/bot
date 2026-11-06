@@ -1,7 +1,9 @@
+import type { Effect } from "effect";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import type { BotLookup } from "../bot-ports/bot-lookup";
 import type { Runner } from "../shared/runner";
+import { secretRoutes } from "../bot-secrets/bot-secret-api";
 import { Credentials } from "./credentials";
 
 type CredentialRoutesOptions = {
@@ -21,44 +23,30 @@ export function registerCredentialRoutes(options: CredentialRoutesOptions) {
       200,
     );
   });
-  register(routes.saveAgentCredential, async (c) => {
-    service.agent(c.req.param("id"));
+  const { secret, done } = secretRoutes(service);
 
-    return c.json(
-      await run.runPromise(
-        Credentials.use((s) =>
-          s.save(c.req.param("id"), c.req.param("name"), c.req.valid("json")),
-        ),
-      ),
-      200,
-    );
-  });
-  register(routes.deleteAgentCredential, async (c) => {
-    service.agent(c.req.param("id"));
-    await run.runPromise(
-      Credentials.use((s) => s.delete(c.req.param("id"), c.req.param("name"))),
-    );
+  const call: <A, E>(
+    use: (service: Credentials["Service"]) => Effect.Effect<A, E>,
+  ) => Promise<A> = (use) => run.runPromise(Credentials.use(use));
 
-    return c.body(null, 204);
-  });
-  register(routes.declineAgentCredential, async (c) => {
-    service.agent(c.req.param("id"));
-    await run.runPromise(
-      Credentials.use((s) => s.decline(c.req.param("id"), c.req.param("name"))),
-    );
-
-    return c.body(null, 204);
-  });
-  register(routes.agentCredentialUses, async (c) => {
-    service.agent(c.req.param("id"));
-
-    return c.json(
-      await run.runPromise(
-        Credentials.use((s) =>
-          s.uses(c.req.param("id"), c.req.param("name"), c.req.valid("query")),
-        ),
-      ),
-      200,
-    );
-  });
+  register(
+    routes.saveAgentCredential,
+    secret(async (id, name, c) =>
+      c.json(await call((s) => s.save(id, name, c.req.valid("json"))), 200),
+    ),
+  );
+  register(
+    routes.deleteAgentCredential,
+    done((id, name) => call((s) => s.delete(id, name))),
+  );
+  register(
+    routes.declineAgentCredential,
+    done((id, name) => call((s) => s.decline(id, name))),
+  );
+  register(
+    routes.agentCredentialUses,
+    secret(async (id, name, c) =>
+      c.json(await call((s) => s.uses(id, name, c.req.valid("query"))), 200),
+    ),
+  );
 }

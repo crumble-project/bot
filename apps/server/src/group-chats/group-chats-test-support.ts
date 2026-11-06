@@ -4,7 +4,7 @@ import type { Bots } from "../bots/bots";
 import type { ConversationRepository } from "../bot-store/conversation-repository";
 import type { ExecutionRepository } from "../bot-store/execution-repository";
 import type { BotRuntime } from "../bots/runtime";
-import type { Runner } from "../shared/runner";
+import { layerOfRunner, type Runner } from "../shared/runner";
 import type { GroupChatRepository } from "./group-chat-repository";
 import {
   GroupChats,
@@ -33,24 +33,8 @@ export function standaloneGroupChats(
   const chats = ManagedRuntime.make(
     GroupChats.layer.pipe(
       Layer.provide(GroupTranscriptStore.layer(() => transcripts)),
-      Layer.provide(
-        Layer.succeedContext(
-          bots.effects.runSync(
-            Effect.context<
-              | Bots
-              | BotRuntime
-              | AgentRepository
-              | ExecutionRepository
-              | ConversationRepository
-            >(),
-          ),
-        ),
-      ),
-      Layer.provide(
-        Layer.succeedContext(
-          bots.store.runtime.runSync(Effect.context<GroupChatRepository>()),
-        ),
-      ),
+      Layer.provide(layerOfRunner(bots.effects)),
+      Layer.provide(layerOfRunner(bots.store.runtime)),
     ),
   );
 
