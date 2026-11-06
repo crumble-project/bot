@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0
+
 - Live bot avatars draw on a canvas with `open-bot-avatar` 0.2.0.
 - The avatar editor's color fields follow the avatar when it changes from outside, instead of keeping the last typed color.
 - Deleting a bot deletes its workspace for good: the Microsandbox volume or Railway checkpoints, with its files, repository clones, and the bot desktop's browser sessions. Removing an account does this for each of its bots. A failure is logged and doesn't stop the delete.
