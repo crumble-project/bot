@@ -1,5 +1,3 @@
-// fallow-ignore-file css-broken-reference
-// The keyframes live in panda.config.ts, which Fallow does not read.
 import { SmoothCorners } from "@lisse/react";
 import {
   type CSSProperties,
