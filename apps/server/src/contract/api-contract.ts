@@ -1,23 +1,30 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
 import {
-  agentInput,
+  ACTIVITY_KINDS,
+  CONTROL_HOLDERS,
+  SIGN_IN_METHODS,
+} from "../shared/domain";
+import { agentInput, judgeModelInput, visionModelInput } from "./agents";
+import {
   credentialSaveInput,
-  groupChatInput,
-  heldActionDeclineInput,
-  judgeModelInput,
   loginSaveInput,
   passwordManagerIdInput,
-  scheduleInput,
   secretInput,
-  skillInput,
-  skillLifecycleInput,
-  visionModelInput,
-} from "../shared/domain";
-import { attachmentInput, MAX_ATTACHMENTS } from "../shared/attachments";
+} from "./secrets";
+import { groupChatInput } from "./group-chats";
+import { scheduleInput } from "./schedules";
+import { skillInput, skillLifecycleInput } from "./skills";
+import { attachmentInput, MAX_ATTACHMENTS } from "../shared/attachment-rules";
+import {
+  MAX_MEMORY_CHARS,
+  MAX_MESSAGE_CHARS,
+  MAX_SECRET_CHARS,
+} from "../shared/limits";
+import { MAX_MCP_SERVER_NAME_CHARS } from "./limits";
 import * as response from "./api-responses";
 import { body, define, empty, error, json } from "./route";
-import { pushRoutes } from "../push/push-contract";
+import { pushRoutes } from "./push";
 import { adminRoutes } from "./admin";
 import {
   gatewayConfigInput,
@@ -56,11 +63,11 @@ export type BotInput = z.input<typeof agentInput>;
 
 export const jobAnswerInput = z.object({
   questionId: z.string().min(1),
-  text: z.string().trim().min(1).max(32000),
+  text: z.string().trim().min(1).max(MAX_MESSAGE_CHARS),
 });
 
 export const memoryInput = z.object({
-  content: z.string().trim().min(1).max(32000),
+  content: z.string().trim().min(1).max(MAX_MEMORY_CHARS),
 });
 
 export const snapshotInput = z.object({
@@ -71,8 +78,12 @@ export const historyInput = snapshotInput.extend({
   before: z.string().min(1).max(200).optional(),
 });
 
+export const heldActionDeclineInput = z.object({
+  reason: z.string().trim().max(2000).optional(),
+});
+
 export const desktopControlInput = z.object({
-  holder: z.enum(["bot", "owner"]),
+  holder: z.enum(CONTROL_HOLDERS),
 });
 
 export const desktopViewerInput = z.object({
@@ -80,7 +91,7 @@ export const desktopViewerInput = z.object({
 });
 
 const messageFields = z.object({
-  content: z.string().trim().max(32000),
+  content: z.string().trim().max(MAX_MESSAGE_CHARS),
   requestId: z.uuid(),
   replyTo: z.string().min(1).max(200).optional(),
   attachments: z.array(attachmentInput).max(MAX_ATTACHMENTS).default([]),
@@ -125,16 +136,13 @@ export const activityInput = z.object({
   agentId: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(100),
   /** Only this kind of item; pass the same kind with every page's cursor. */
-  kind: z
-    .enum(["tool-call", "tool-result", "mcp-call", "bot-message", "change"])
-    .optional(),
-  /** The previous page's `nextCursor`. */
+  kind: z.enum([...ACTIVITY_KINDS, "change"]).optional(),
   cursor: z.string().min(1).max(8000).optional(),
 });
 
 /** Write-only: the token never appears in a response. */
 export const passwordManagerTokenInput = z.object({
-  token: z.string().trim().min(1).max(16000),
+  token: z.string().trim().min(1).max(MAX_SECRET_CHARS),
 });
 
 const passwordManagerParams = z.object({ id: passwordManagerIdInput });
@@ -148,7 +156,7 @@ const pluginSettingParams = z.object({
 const MAX_LOGIN_VALUE = 16384;
 
 export const providerLoginInput = z.object({
-  method: z.enum(["api_key", "oauth"]),
+  method: z.enum(SIGN_IN_METHODS),
 });
 
 export const providerLoginAnswerInput = z.object({
@@ -174,7 +182,7 @@ export const oauthCallbackInput = z.object({
 });
 
 export const mcpInput = z.object({
-  name: z.string().trim().min(1).max(100),
+  name: z.string().trim().min(1).max(MAX_MCP_SERVER_NAME_CHARS),
   url: z
     .url()
     .refine(
@@ -217,6 +225,9 @@ export function patchInput(schema: z.ZodObject) {
 
   return z.object(fields);
 }
+
+/** Replaces the bot's proposal with the owner's edit of it; an approval may have no body at all. */
+export const botRequestApproval = z.object({ proposal: agentInput.optional() });
 
 const gone = json(error, "Login session ended or was lost on restart");
 
@@ -866,7 +877,7 @@ export const routes = {
         required: false,
         content: {
           "application/json": {
-            schema: z.object({ proposal: agentInput.optional() }),
+            schema: botRequestApproval,
           },
         },
       },
@@ -1471,11 +1482,9 @@ export function contractApp() {
     description:
       "Better Auth session cookie. HTTPS deployments use the __Secure- prefix. Cookie-authenticated writes require the configured Origin.",
   });
-  app.openAPIRegistry.register("ReplyEvent", response.replyEvent);
-  app.openAPIRegistry.register("ChatPreviewEvent", response.chatPreviewEvent);
-  app.openAPIRegistry.register("HeartbeatEvent", response.heartbeatEvent);
-  app.openAPIRegistry.register("ActivityEvent", response.activityEvent);
-  app.openAPIRegistry.register("LearnedEvent", response.learnedEvent);
+
+  for (const { component, schema } of response.eventSchemas)
+    if (component) app.openAPIRegistry.register(component, schema);
 
   return app;
 }

@@ -1,13 +1,7 @@
 import { expect, test } from "bun:test";
 import { z } from "zod";
 import type { RelayEvent } from "./event-repository";
-import {
-  EVENT_BODY_LIMIT,
-  eventRelayText,
-  eventRequest,
-  eventRequestId,
-  payloadPage,
-} from "./event-payload";
+import { EVENT_BODY_LIMIT, eventRelayText, payloadPage } from "./event-payload";
 
 const event = (body: Uint8Array): RelayEvent => ({
   id: "01A",
@@ -82,14 +76,6 @@ test("a body that isn't UTF-8 is left out with a note", () => {
   expect(
     text.endsWith("\n\nThe body isn't UTF-8 text; read it with event_payload."),
   ).toBe(true);
-});
-
-test("an event run's request ID round-trips", () => {
-  expect(eventRequest(eventRequestId("01A", "s-1"))).toEqual({
-    eventId: "01A",
-    scheduleId: "s-1",
-  });
-  expect(eventRequest("schedule:s-1:2026")).toBeUndefined();
 });
 
 test("a page keeps a byte order mark at its start", () => {

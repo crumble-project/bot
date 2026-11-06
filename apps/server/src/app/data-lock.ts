@@ -2,7 +2,6 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, resolve } from "node:path";
 
-/** Data directories this process holds, so a second server in the same process is refused. */
 const held = new Set<string>();
 
 export class DataDirLocked extends Error {
@@ -47,11 +46,6 @@ function othersAlive(owner: { pid: number; host: string | undefined }) {
   }
 }
 
-/**
- * Takes the data directory for this server by recording its pid in `server.pid`, and returns
- * how to release it. A file naming a live process on this host fails at once; any other, such
- * as one left by a crash or a watch restart, is taken over.
- */
 export async function lockDataDir(dataDir: string) {
   const path = resolve(dataDir);
 

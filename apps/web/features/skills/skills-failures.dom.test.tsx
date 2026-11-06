@@ -3,10 +3,12 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act } from "react";
 import { queryClient } from "@/lib/api";
+import { waitFor, waitForIdle } from "@/test/wait-for";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
+import { botSkillsQuery } from "./api";
 
 for (const scenario of ["failure", "refresh"] as const) {
-  test(`personal skills ${scenario} preserves the rest of the page`, async () => {
+  test(`bot skills ${scenario} preserves the rest of the page`, async () => {
     const window = new Window({ url: "http://localhost" });
     const globals = Object.getOwnPropertyDescriptors(globalThis);
 
@@ -116,11 +118,8 @@ for (const scenario of ["failure", "refresh"] as const) {
     document.body.append(container);
     const root = createRoot(container);
 
-    const settle = async () => {
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      });
-    };
+    const refreshDisabled = () =>
+      container.querySelector<HTMLButtonElement>('[title="Refresh"]')?.disabled;
 
     try {
       await act(async () => {
@@ -132,17 +131,15 @@ for (const scenario of ["failure", "refresh"] as const) {
           </QueryClientProvider>,
         );
       });
-      await settle();
-      await settle();
 
       if (scenario === "failure") {
+        const error = "Could not load Bad Bot's skills: unavailable";
+
+        await waitFor(() => container.textContent?.includes(error) === true);
         expect(container.textContent).toContain("Shared skill");
         expect(container.textContent).toContain("Default skill");
         expect(container.textContent).toContain("Own skill");
         expect(container.textContent).toContain("Bad Bot");
-        expect(container.textContent).toContain(
-          "Could not load Bad Bot's skills: unavailable",
-        );
 
         const badPill = [...container.querySelectorAll("button")].find(
           (button) => button.textContent?.includes("Bad Bot"),
@@ -156,26 +153,21 @@ for (const scenario of ["failure", "refresh"] as const) {
           "No skills of its own yet.",
         );
       } else {
+        await waitFor(() => refreshDisabled() === false, "the page to load");
         await act(async () => {
           void queryClient.invalidateQueries({
-            queryKey: ["personal-skills", "bad"],
+            queryKey: botSkillsQuery("bad").queryKey,
           });
         });
-        await settle();
-        expect(requests).toBe(2);
-        expect(
-          container.querySelector<HTMLButtonElement>('[title="Refresh"]')
-            ?.disabled,
-        ).toBe(true);
+        await waitFor(() => release !== undefined, "the second request");
+        await waitFor(() => refreshDisabled() === true, "Refresh to lock");
         await act(async () => {
           release?.(Response.json([]));
         });
-        await settle();
-        expect(
-          container.querySelector<HTMLButtonElement>('[title="Refresh"]')
-            ?.disabled,
-        ).toBe(false);
+        await waitFor(() => refreshDisabled() === false, "Refresh to unlock");
       }
+
+      await waitForIdle(queryClient);
     } finally {
       release?.(Response.json([]));
       await act(async () => root.unmount());

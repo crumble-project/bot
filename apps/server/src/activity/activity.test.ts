@@ -10,18 +10,14 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { AgentRuntime } from "../bots/runtime";
-import { standaloneBots } from "../bots/bots";
-import { standaloneScheduler } from "../schedules/scheduler";
+import { standaloneBots } from "../bots/bots-test-support";
+import { standaloneScheduler } from "../automations/scheduler-test-support";
 import { Store } from "../../test/support/store";
-import { createAPI } from "../app/api";
-import {
-  activityPage,
-  decodeCursor,
-  operationalActivity,
-  sortActivity,
-} from "./activity";
-import type { LearnedChange } from "../shared/domain";
-import type { TranscriptMessage } from "../bots/transcript";
+import { testAPI } from "../../test/support/api";
+import { activityPage, decodeCursor, operationalActivity } from "./activity";
+import type { LearnedChange } from "../contract/skills";
+import type { TranscriptMessage } from "../transcript/transcript";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const dirs: string[] = [];
 
@@ -56,12 +52,15 @@ describe("operational activity", () => {
 
     const service = standaloneBots(
       store,
-      new AgentRuntime(dir, {
-        models,
-        extensions: () => [
-          defineExtension({ name: "lookup", tools: [lookup] }),
-        ],
-      }),
+      new AgentRuntime(
+        dir,
+        runtimeCallbacks({
+          models,
+          extensions: () => [
+            defineExtension({ name: "lookup", tools: [lookup] }),
+          ],
+        }),
+      ),
     );
 
     const scheduler = standaloneScheduler(
@@ -71,7 +70,7 @@ describe("operational activity", () => {
     );
 
     const token = "t".repeat(40);
-    const app = createAPI(service, token, { scheduler });
+    const app = testAPI(service, token, { scheduler });
 
     const agent = store.createAgent({
       name: "Helper",
@@ -194,7 +193,7 @@ describe("operational activity", () => {
     });
   });
 
-  test("sorts newest first and preserves stable identities", () => {
+  test("names each tool call by its message and block", () => {
     const events = operationalActivity({ id: "a", name: "A" }, [
       {
         id: "a:1:0",
@@ -214,9 +213,10 @@ describe("operational activity", () => {
       },
     ]);
 
-    const sorted = sortActivity(events);
-    expect(sorted.map((event) => event.entryId)).toEqual(["a:2", "a:1"]);
-    expect(sorted[1]?.id).toBe("a:a:1:0:block-0");
+    expect(events.map((event) => event.id)).toEqual([
+      "a:a:1:0:block-0",
+      "a:a:2:0:block-0",
+    ]);
   });
 
   test("exposes nested codemode calls, including MCP calls", () => {
@@ -263,7 +263,6 @@ describe("operational activity", () => {
   });
 
   test("pages bots and changes newest first without gaps or repeats", async () => {
-    // Text messages make some pages empty of activity; timestamps interleave the bots.
     const transcript = (agentId: string, offset: number) =>
       Array.from({ length: 45 }, (_, entry): TranscriptMessage => {
         const base = {
@@ -302,7 +301,6 @@ describe("operational activity", () => {
         { id: "a", name: "A" },
         { id: "b", name: "B" },
       ],
-      // Two entries per page, so the five-page budget runs out mid-transcript.
       history: async (agent: { id: string }, before: string | undefined) => {
         const messages = transcripts.get(agent.id)!;
         const end = before ? Number(before.split(":")[1]) : messages.length;
@@ -325,10 +323,10 @@ describe("operational activity", () => {
     };
 
     const all = [
-      ...sortActivity([
+      ...[
         ...operationalActivity({ id: "a", name: "A" }, transcripts.get("a")!),
         ...operationalActivity({ id: "b", name: "B" }, transcripts.get("b")!),
-      ]).map((item) => ({ id: item.id, kind: item.kind, t: item.timestamp! })),
+      ].map((item) => ({ id: item.id, kind: item.kind, t: item.timestamp! })),
       ...changes.map((c) => ({
         id: c.id,
         kind: "change" as const,

@@ -14,7 +14,6 @@ export const skillInstallInput = z
     branch: z.string().min(1).max(255),
     commit: z.string().regex(/^[0-9a-f]{40}$/, "A full commit SHA"),
     paths: z.array(z.string().max(1000)).min(1).max(100),
-    /** Bots that start using the installed skills. */
     botIds: z.array(z.string().min(1)).max(200).default([]),
   })
   .strict();
@@ -77,7 +76,6 @@ export const skillCheckResponse = z
   })
   .openapi("SkillCheck");
 
-/** One independent bot assignment, suitable for retrying partial bulk actions. */
 export const skillAssignmentInput = z
   .object({ botId: z.uuid(), assigned: z.boolean() })
   .strict();

@@ -1,22 +1,25 @@
 import { isModelType, type AnyModel, type Models } from "@earendil-works/pi-ai";
 import { Effect } from "effect";
-import { z } from "zod";
 import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import { judgeModelInput } from "../shared/domain";
+import { judgeModelInput } from "../contract/agents";
 import { InvalidInput } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import { SettingsRepository } from "../shared/settings-repository";
-import { judgeChoices, judgeModel, type JudgeModelRef } from "./intent-judge";
+import {
+  judgeChoices,
+  judgeModel,
+  sameRef,
+  type JudgeModelRef,
+} from "./intent-judge";
 
-export const JUDGE_MODEL = "desktop:judge-model";
+const JUDGE_MODEL = "desktop:judge-model";
 
-const stored = z
-  .object({ provider: z.string(), model: z.string() })
+const stored = judgeModelInput.shape.judgeModel
+  .unwrap()
   .optional()
   .catch(undefined);
 
-/** The judge model the owner chose; undefined means the default. */
 export const chosenJudge = SettingsRepository.use((r) =>
   r.get(JUDGE_MODEL),
 ).pipe(Effect.map((value): JudgeModelRef | undefined => stored.parse(value)));
@@ -30,14 +33,12 @@ const choiceOf = (model: AnyModel) => ({
     : ("chat" as const),
 });
 
-/** The account's judge model: the owner's choice, the model judging now, and every model that could. */
 export function registerJudgeModelRoutes(options: {
   register: Register;
   run: Runner<SettingsRepository>;
-  providerAuth: { readonly models: Models };
+  models: Models;
 }) {
-  const { register, run } = options;
-  const models = options.providerAuth.models;
+  const { register, run, models } = options;
 
   const status = async () => {
     await models.refresh();
@@ -53,14 +54,11 @@ export function registerJudgeModelRoutes(options: {
 
   register(routes.getJudgeModel, async (c) => c.json(await status(), 200));
   register(routes.updateJudgeModel, async (c) => {
-    const { judgeModel: chosen } = judgeModelInput.parse(await c.req.json());
+    const { judgeModel: chosen } = c.req.valid("json");
 
     if (
       chosen &&
-      !(await judgeChoices(models)).some(
-        (model) =>
-          model.provider === chosen.provider && model.id === chosen.model,
-      )
+      !(await judgeChoices(models)).some((model) => sameRef(model, chosen))
     )
       throw new InvalidInput({
         message: `${chosen.provider}/${chosen.model} is not a classifier model your provider keys reach`,

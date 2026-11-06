@@ -1,176 +1,45 @@
-import { QueryClient, queryOptions } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import type { z } from "@hono/zod-openapi";
-import type {
-  activityEvent,
-  activityFeedResponse,
-  agentPreviewResponse,
-  capabilitiesResponse,
-  chatSnapshotResponse,
-  codingJobsResponse,
-  credentialUseResponse,
-  credentialsResponse,
-  describedMcpServerResponse,
-  executionResponse,
-  desktopControlResponse,
-  desktopJobsResponse,
-  desktopStatusResponse,
-  desktopViewerResponse,
-  botRequestResponse,
-  groupChatResponse,
-  groupChatSnapshotResponse,
-  heldActionResponse,
-  judgeModelResponse,
-  visionModelResponse,
-  loginUseResponse,
-  loginsResponse,
-  historyResponse,
-  learnedChangeResponse,
-  listedSkillResponse,
-  loginSessionResponse,
-  memoryResponse,
-  modelResponse,
-  passwordManagersResponse,
-  secretStatusResponse,
-  pluginSettingsResponse,
-  providerResponse,
-  scheduleResponse,
-  scriptRunResponse,
-  skillPackageResponse,
-  ChartLayout,
-} from "@crumble/server/contract/api-responses";
-import type { BotInput } from "@crumble/server/contract/api-contract";
-import type {
-  gatewayConfigInput,
-  gatewayResponse,
-  gatewaysResponse,
-} from "@crumble/server/contract/message-gateway";
-import type {
-  createdEventSourceResponse,
-  eventSourceResponse,
-  eventSourcesResponse,
-  relayStatusResponse,
-} from "@crumble/server/contract/event-sources";
-import type {
-  githubAccountResponse,
-  githubAppManifestResponse,
-  githubAppResponse,
-} from "@crumble/server/contract/github-apps";
-import type {
-  pendingSkillUpdateResponse,
-  skillCheckResponse,
-  skillListingResponse,
-} from "@crumble/server/contract/skill-install";
-import { clearDrafts } from "@/lib/drafts";
+import type { routes } from "@crumble/server/contract/api-contract";
+import { onSessionReset, signedOut } from "@/lib/session";
 
-export type GatewayConfig = z.infer<typeof gatewayConfigInput>;
+type Routes = typeof routes;
 
-export type MessageGateway = z.infer<typeof gatewayResponse>;
+type RouteName = keyof Routes;
 
-export type RelayStatus = z.infer<typeof relayStatusResponse>;
+type JsonSchema<T> = T extends {
+  content: { "application/json": { schema: infer S extends z.ZodType } };
+}
+  ? S
+  : never;
 
-export type EventSource = z.infer<typeof eventSourceResponse>;
+type RequestOf<R> = R extends { request: { body: infer B } }
+  ? z.input<JsonSchema<B>>
+  : never;
 
-export type CreatedEventSource = z.infer<typeof createdEventSourceResponse>;
+type ResponseOf<R> = R extends { responses: infer S }
+  ? z.output<JsonSchema<S[Extract<keyof S, 200 | 201 | 202>]>>
+  : never;
 
-export type Bot = z.infer<typeof agentPreviewResponse>;
+export type RequestBody<N extends RouteName> = RequestOf<Routes[N]>;
 
-export type { BotInput };
+export type ResponseBody<N extends RouteName> = ResponseOf<Routes[N]>;
 
-export type Model = z.infer<typeof modelResponse>;
+type FilledPath<P extends string> = P extends `${infer A}{${string}}${infer B}`
+  ? `${A}${string}${FilledPath<B>}`
+  : P;
 
-export type LoginSession = z.infer<typeof loginSessionResponse>;
+export type RoutePath<N extends RouteName> =
+  | FilledPath<Routes[N]["path"]>
+  | `${FilledPath<Routes[N]["path"]>}?${string}`;
 
-export type Capabilities = z.infer<typeof capabilitiesResponse>;
+type Method<N extends RouteName> = Uppercase<Routes[N]["method"]>;
 
-export type ChatSnapshot = z.infer<typeof chatSnapshotResponse>;
-
-export type HistoryPage = z.infer<typeof historyResponse>;
-
-export type Message = HistoryPage["messages"][number];
-
-export type Provider = z.infer<typeof providerResponse>;
-
-export type Memory = z.infer<typeof memoryResponse>;
-
-export type PasswordManager = z.infer<
-  typeof passwordManagersResponse
->["passwordManagers"][number];
-
-export type PasswordManagerId = PasswordManager["id"];
-
-export type SecretStatus = z.infer<typeof secretStatusResponse>;
-
-export type GitHubApp = z.infer<typeof githubAppResponse>;
-
-export type GitHubAccount = z.infer<typeof githubAccountResponse>;
-
-export type GitHubAppManifest = z.infer<typeof githubAppManifestResponse>;
-
-export type Credentials = z.infer<typeof credentialsResponse>;
-
-export type Credential = Credentials["credentials"][number];
-
-export type CredentialRequest = Credentials["requests"][number];
-
-export type CredentialUse = z.infer<typeof credentialUseResponse>;
-
-export type Logins = z.infer<typeof loginsResponse>;
-
-export type Login = Logins["logins"][number];
-
-export type LoginRequest = Logins["requests"][number];
-
-export type LoginUse = z.infer<typeof loginUseResponse>;
-
-export type BotRequest = z.infer<typeof botRequestResponse>;
-
-export type HeldAction = z.infer<typeof heldActionResponse>;
-
-export type JudgeModel = z.infer<typeof judgeModelResponse>;
-
-export type VisionModel = z.infer<typeof visionModelResponse>;
-
-export type PluginSettings = z.infer<typeof pluginSettingsResponse>;
-
-export type Change = z.infer<typeof learnedChangeResponse>;
-
-export type ListedSkill = z.infer<typeof listedSkillResponse>;
-
-export type SkillPackage = z.infer<typeof skillPackageResponse>;
-
-export type SkillListing = z.infer<typeof skillListingResponse>;
-
-export type PendingSkillUpdate = z.infer<typeof pendingSkillUpdateResponse>;
-
-export type SkillCheck = z.infer<typeof skillCheckResponse>;
-
-export type Schedule = z.infer<typeof scheduleResponse>;
-
-export type ScriptRun = z.infer<typeof scriptRunResponse>;
-
-export type Execution = z.infer<typeof executionResponse>;
-
-export type McpServer = z.infer<typeof describedMcpServerResponse>;
-
-export type GroupChat = z.infer<typeof groupChatResponse>;
-
-export type GroupChatSnapshot = z.infer<typeof groupChatSnapshotResponse>;
-
-export type CodingJob = z.infer<typeof codingJobsResponse>["jobs"][number];
-
-export type DesktopJob = z.infer<typeof desktopJobsResponse>["jobs"][number];
-
-export type DesktopControl = z.infer<typeof desktopControlResponse>;
-
-export type DesktopViewer = z.infer<typeof desktopViewerResponse>;
-
-export type DesktopStatus = z.infer<typeof desktopStatusResponse>;
-
-export type ActivityFeed = z.infer<typeof activityFeedResponse>;
-
-export type ActivityEvent = z.infer<typeof activityEvent>;
-
-export type { ChartLayout };
+type BodyArgument<N extends RouteName> = [RequestBody<N>] extends [never]
+  ? []
+  : Routes[N] extends { request: { body: { required: false } } }
+    ? [body?: RequestBody<N>]
+    : [body: RequestBody<N>];
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -181,12 +50,10 @@ export const queryClient = new QueryClient({
   },
 });
 
-/** Drop all cached user data when the authenticated account changes. */
-export function clearUserData() {
+onSessionReset(() => {
   void queryClient.cancelQueries();
   queryClient.clear();
-  clearDrafts();
-}
+});
 
 export class HttpError extends Error {
   constructor(
@@ -220,12 +87,7 @@ async function request(path: string, init: RequestInit = {}) {
     headers,
   });
 
-  if (response.status === 401) {
-    clearUserData();
-
-    if (!location.pathname.endsWith("/connect"))
-      window.location.assign("/connect");
-  }
+  if (response.status === 401) signedOut();
 
   if (!response.ok)
     throw new HttpError(response.status, await errorMessage(response));
@@ -233,303 +95,47 @@ async function request(path: string, init: RequestInit = {}) {
   return response;
 }
 
-export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+export async function api<N extends RouteName>(
+  path: RoutePath<N>,
+  init?: RequestInit,
+): Promise<ResponseBody<N>> {
   return (await request(path, init)).json();
 }
 
-/** Sends a JSON body with `method` and returns the parsed response. */
-export async function call<T, Body = undefined>(
-  path: string,
-  method: string,
-  body?: Body,
-): Promise<T> {
-  return api<T>(path, {
+function withBody<Body>(method: string, body: Body): RequestInit {
+  return {
     method,
     ...(body !== undefined && { body: JSON.stringify(body) }),
-  });
+  };
 }
 
-/** Sends a mutation whose response body the UI does not need. */
-export async function send<Body>(path: string, method: string, body?: Body) {
-  await request(path, {
-    method,
-    ...(body !== undefined && { body: JSON.stringify(body) }),
-  });
+export async function call<N extends RouteName>(
+  path: RoutePath<N>,
+  method: Method<N>,
+  ...[body]: BodyArgument<N>
+): Promise<ResponseBody<N>> {
+  return (await request(path, withBody(method, body))).json();
 }
 
-/** Fetches an authenticated binary, such as an attachment image. */
+export async function send<N extends RouteName>(
+  path: RoutePath<N>,
+  method: Method<N>,
+  ...[body]: BodyArgument<N>
+) {
+  await request(path, withBody(method, body));
+}
+
 export async function apiBlob(path: string, signal?: AbortSignal) {
   const response = await request(path, { signal: signal ?? null });
 
   return response.blob();
 }
 
-export const agentPath = (id: string) => `/v1/agents/${encodeURIComponent(id)}`;
-
-export const groupPath = (id: string) =>
-  `/v1/group-chats/${encodeURIComponent(id)}`;
-
-export const botsQuery = queryOptions({
-  queryKey: ["bots"],
-  queryFn: ({ signal }) => api<Bot[]>("/v1/agents", { signal }),
-});
-
-export const chatQuery = (id: string) =>
-  queryOptions({
-    queryKey: ["chat", id],
-    queryFn: ({ signal }) =>
-      api<ChatSnapshot>(`${agentPath(id)}/chat`, { signal }),
-  });
-
-export const groupsQuery = queryOptions({
-  queryKey: ["groups"],
-  queryFn: ({ signal }) => api<GroupChat[]>("/v1/group-chats", { signal }),
-});
-
-export const groupChatQuery = (id: string) =>
-  queryOptions({
-    queryKey: ["group-chat", id],
-    queryFn: ({ signal }) =>
-      api<GroupChatSnapshot>(`${groupPath(id)}/chat`, { signal }),
-  });
-
-export const modelsQuery = (provider: string) =>
-  queryOptions({
-    queryKey: ["models", provider],
-    queryFn: ({ signal }) =>
-      api<Model[]>(`/v1/models?provider=${encodeURIComponent(provider)}`, {
-        signal,
-      }),
-    staleTime: 5 * 60_000,
-  });
-
-export const providersQuery = queryOptions({
-  queryKey: ["providers"],
-  queryFn: ({ signal }) => api<Provider[]>("/v1/providers", { signal }),
-});
-
-export const passwordManagersQuery = queryOptions({
-  queryKey: ["password-managers"],
-  queryFn: async ({ signal }) =>
-    (
-      await api<z.infer<typeof passwordManagersResponse>>(
-        "/v1/password-managers",
-        { signal },
-      )
-    ).passwordManagers,
-});
-
-export const passwordManagerPath = (id: PasswordManagerId) =>
-  `/v1/password-managers/${encodeURIComponent(id)}`;
-
-export const loginQuery = (id: string) =>
-  queryOptions({
-    queryKey: ["login", id],
-    queryFn: ({ signal }) =>
-      api<LoginSession>(`/v1/provider-logins/${encodeURIComponent(id)}`, {
-        signal,
-      }),
-    // Sign-ins advance on the server, so poll until they end.
-    refetchInterval: (query) =>
-      query.state.data?.status === "pending" ? 1000 : false,
-  });
-
-export const capabilitiesQuery = queryOptions({
-  queryKey: ["capabilities"],
-  queryFn: ({ signal }) => api<Capabilities>("/v1/capabilities", { signal }),
-  staleTime: Infinity,
-});
-
-export const schedulesQuery = queryOptions({
-  queryKey: ["schedules"],
-  queryFn: ({ signal }) => api<Schedule[]>("/v1/schedules", { signal }),
-});
-
-export const executionsQuery = queryOptions({
-  queryKey: ["executions"],
-  queryFn: ({ signal }) => api<Execution[]>("/v1/executions", { signal }),
-});
-
-export const scriptRunsQuery = (id: string) =>
-  queryOptions({
-    queryKey: ["script-runs", id],
-    queryFn: ({ signal }) =>
-      api<ScriptRun[]>(
-        `/v1/schedules/${encodeURIComponent(id)}/runs?limit=20`,
-        {
-          signal,
-        },
-      ),
-  });
-
-export const desktopStatusQuery = (id: string) =>
-  queryOptions({
-    queryKey: ["desktop-status", id],
-    queryFn: ({ signal }) =>
-      api<DesktopStatus>(`${agentPath(id)}/desktop/status`, { signal }),
-  });
-
-export const botMemoriesQuery = (id: string) =>
-  queryOptions({
-    queryKey: ["memories", id],
-    queryFn: ({ signal }) =>
-      api<Memory[]>(`${agentPath(id)}/memories`, { signal }),
-  });
-
-export const credentialsQuery = (id: string) =>
-  queryOptions({
-    queryKey: ["credentials", id],
-    queryFn: ({ signal }) =>
-      api<Credentials>(`${agentPath(id)}/credentials`, { signal }),
-  });
-
-export const loginsQuery = (id: string) =>
-  queryOptions({
-    queryKey: ["logins", id],
-    queryFn: ({ signal }) => api<Logins>(`${agentPath(id)}/logins`, { signal }),
-  });
-
-export const heldActionsQuery = (id: string) =>
-  queryOptions({
-    queryKey: ["held-actions", id],
-    queryFn: ({ signal }) =>
-      api<HeldAction[]>(`${agentPath(id)}/held-actions`, { signal }),
-  });
-
-export const heldActionPath = (id: string, actionId: string) =>
-  `${agentPath(id)}/held-actions/${encodeURIComponent(actionId)}`;
-
-export const judgeModelQuery = queryOptions({
-  queryKey: ["judge-model"],
-  queryFn: ({ signal }) => api<JudgeModel>("/v1/judge-model", { signal }),
-});
-
-export const visionModelQuery = queryOptions({
-  queryKey: ["vision-model"],
-  queryFn: ({ signal }) => api<VisionModel>("/v1/vision-model", { signal }),
-});
-
-export const pluginSettingsQuery = queryOptions({
-  queryKey: ["plugin-settings"],
-  queryFn: ({ signal }) =>
-    api<PluginSettings>("/v1/plugin-settings", { signal }),
-});
-
-export const pluginSettingPath = (pluginId: string, key: string) =>
-  `/v1/plugin-settings/${encodeURIComponent(pluginId)}/${encodeURIComponent(key)}`;
-
-export const messageGatewaysQuery = queryOptions({
-  queryKey: ["message-gateways"],
-  queryFn: async ({ signal }) =>
-    (
-      await api<z.infer<typeof gatewaysResponse>>("/v1/message-gateways", {
-        signal,
-      })
-    ).gateways,
-  refetchInterval: 5000,
-});
-
-export const eventRelayQuery = queryOptions({
-  queryKey: ["event-relay"],
-  queryFn: ({ signal }) => api<RelayStatus>("/v1/event-relay", { signal }),
-  // The connection advances on the server, so poll while it connects.
-  refetchInterval: (query) =>
-    query.state.data?.status === "connecting" ? 1000 : false,
-});
-
-export const eventSourcesQuery = queryOptions({
-  queryKey: ["event-sources"],
-  queryFn: async ({ signal }) =>
-    (
-      await api<z.infer<typeof eventSourcesResponse>>("/v1/event-sources", {
-        signal,
-      })
-    ).sources,
-});
-
-export const eventSourcePath = (id: string) =>
-  `/v1/event-sources/${encodeURIComponent(id)}`;
-
-export const messageGatewayPath = (id: string) =>
-  `/v1/message-gateways/${encodeURIComponent(id)}`;
-
-export const botRequestsQuery = (id: string) =>
-  queryOptions({
-    queryKey: ["bot-requests", id],
-    queryFn: ({ signal }) =>
-      api<BotRequest[]>(`${agentPath(id)}/bot-requests`, { signal }),
-  });
-
-export const botRequestPath = (id: string, requestId: string) =>
-  `${agentPath(id)}/bot-requests/${encodeURIComponent(requestId)}`;
-
-export const githubAppPath = (id: string) =>
-  `/v1/github-apps/${encodeURIComponent(id)}`;
-
-export const githubAppsQuery = queryOptions({
-  queryKey: ["github-apps"],
-  queryFn: ({ signal }) =>
-    api<{ apps: GitHubApp[] }>("/v1/github-apps", { signal }).then(
-      (data) => data.apps,
-    ),
-});
-
-export const githubAccountPath = (id: string) =>
-  `/v1/github-accounts/${encodeURIComponent(id)}`;
-
-export const githubAccountsQuery = queryOptions({
-  queryKey: ["github-accounts"],
-  queryFn: ({ signal }) =>
-    api<{ accounts: GitHubAccount[] }>("/v1/github-accounts", { signal }).then(
-      (data) => data.accounts,
-    ),
-});
-
-export const credentialPath = (id: string, name: string) =>
-  `${agentPath(id)}/credentials/${encodeURIComponent(name)}`;
-
-export const loginPath = (id: string, name: string) =>
-  `${agentPath(id)}/logins/${encodeURIComponent(name)}`;
-
-export const sharedMemoriesQuery = queryOptions({
-  queryKey: ["memories", "shared"],
-  queryFn: ({ signal }) => api<Memory[]>("/v1/memories", { signal }),
-});
-
-export const skillsQuery = queryOptions({
-  queryKey: ["skills"],
-  queryFn: ({ signal }) => api<ListedSkill[]>("/v1/skills", { signal }),
-});
-
-export const mcpServersQuery = queryOptions({
-  queryKey: ["mcp-servers"],
-  queryFn: ({ signal }) => api<McpServer[]>("/v1/mcp-servers", { signal }),
-});
-
-/** `version` refetches when the chat's job messages change. */
-export const jobsQuery = (
-  id: string,
-  kind: "coding" | "desktop",
-  version = 0,
-) =>
-  queryOptions({
-    queryKey: ["jobs", id, kind, version],
-    queryFn: async ({ signal }) =>
-      // Coding and desktop jobs share one response shape.
-      (
-        await api<{ jobs: CodingJob[] }>(`${agentPath(id)}/${kind}-jobs`, {
-          signal,
-        })
-      ).jobs,
-  });
-
 type StreamHandlers = {
-  /** Each named event with its raw data; heartbeats are skipped. */
   onEvent: (event: string, data: string) => void;
   /** After every (re)connection, since streams have no replay. */
   onOpen?: () => void;
   onStatus?: (status: "connected" | "reconnecting") => void;
-  /** The resource is gone (404); the stream stops. */
   onGone?: () => void;
 };
 
@@ -553,6 +159,17 @@ function dispatchStreamFrame(frame: string, handlers: StreamHandlers) {
   handlers.onEvent(event, data);
 }
 
+// A read that fails is a dropped connection, like one that ends; handlers run outside this catch.
+async function nextChunk(reader: ReadableStreamDefaultReader<string>) {
+  try {
+    const { value, done } = await reader.read();
+
+    return done ? null : value;
+  } catch {
+    return null;
+  }
+}
+
 async function readEventStream(response: Response, handlers: StreamHandlers) {
   const reader = response
     .body!.pipeThrough(new TextDecoderStream())
@@ -561,10 +178,10 @@ async function readEventStream(response: Response, handlers: StreamHandlers) {
   let buffer = "";
 
   for (;;) {
-    const { value, done } = await reader.read();
+    const chunk = await nextChunk(reader);
 
-    if (done) break;
-    buffer += value;
+    if (chunk === null) break;
+    buffer += chunk;
     const frames = buffer.split("\n\n");
     buffer = frames.pop() ?? "";
 
@@ -578,7 +195,22 @@ function endsStream(error: HttpError, handlers: StreamHandlers) {
   return error.status === 401 || error.status === 404;
 }
 
-/** Follows a server-sent event stream with the session cookie, reconnecting with backoff until `signal` aborts. */
+async function connect(
+  path: string,
+  handlers: StreamHandlers,
+  signal: AbortSignal,
+) {
+  try {
+    return await request(path, { signal });
+  } catch (error) {
+    if (signal.aborted) return "ended";
+
+    return error instanceof HttpError && endsStream(error, handlers)
+      ? "ended"
+      : null;
+  }
+}
+
 export async function follow(
   path: string,
   handlers: StreamHandlers,
@@ -587,37 +219,22 @@ export async function follow(
   let delay = 500;
 
   while (!signal.aborted) {
-    try {
-      const response = await request(path, { signal });
+    const response = await connect(path, handlers, signal);
+
+    if (response === "ended") return;
+
+    if (response) {
       handlers.onStatus?.("connected");
       handlers.onOpen?.();
       delay = 500;
 
       await readEventStream(response, handlers);
-    } catch (error) {
-      if (signal.aborted) return;
 
-      if (error instanceof HttpError && endsStream(error, handlers)) return;
+      if (signal.aborted) return;
     }
 
     handlers.onStatus?.("reconnecting");
     await new Promise((resolve) => setTimeout(resolve, delay));
     delay = Math.min(delay * 2, 8000);
   }
-}
-
-/** Keeps a bot's chat query current from its event stream until `signal` aborts. */
-export function followChat(id: string, signal: AbortSignal) {
-  return follow(
-    `${agentPath(id)}/events`,
-    {
-      onOpen: () =>
-        void queryClient.invalidateQueries({ queryKey: ["chat", id] }),
-      onEvent: (event, data) => {
-        if (event === "snapshot" || event === "message")
-          queryClient.setQueryData(chatQuery(id).queryKey, JSON.parse(data));
-      },
-    },
-    signal,
-  );
 }

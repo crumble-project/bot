@@ -1,12 +1,6 @@
-/**
- * A minimal RFB 3.8 viewer over a WebSocket, sending the same messages noVNC sends: the extended clipboard's negative
- * length, QEMU extended key events, pointer events, and framebuffer update requests.
- */
-export async function connectRfb(url: string) {
-  const ws = new WebSocket(url);
+type RfbRead = (n: number) => Promise<Uint8Array>;
 
-  ws.binaryType = "arraybuffer";
-
+function rfbInbox(ws: WebSocket) {
   let buffer = new Uint8Array();
   let wake: (() => void) | undefined;
   let closed = false;
@@ -30,7 +24,7 @@ export async function connectRfb(url: string) {
     }),
   );
 
-  const read = async (n: number) => {
+  const read: RfbRead = async (n) => {
     while (buffer.length < n) {
       if (closed) throw new Error("The viewer connection closed");
 
@@ -44,11 +38,10 @@ export async function connectRfb(url: string) {
     return out;
   };
 
-  await new Promise<void>((resolve, reject) => {
-    ws.addEventListener("open", () => resolve());
-    ws.addEventListener("error", () => reject(new Error("WebSocket error")));
-  });
+  return { ended, read };
+}
 
+async function rfbHandshake(ws: WebSocket, read: RfbRead) {
   const version = new TextDecoder().decode(await read(12));
 
   ws.send(new TextEncoder().encode("RFB 003.008\n"));
@@ -68,16 +61,15 @@ export async function connectRfb(url: string) {
   const width = view.getUint16(0);
   const height = view.getUint16(2);
 
-  // Raw encoding only, so updates are easy to skip.
   ws.send(new Uint8Array([2, 0, 0, 1, 0, 0, 0, 0]));
 
+  return { version, width, height };
+}
+
+function rfbMessages(ws: WebSocket, read: RfbRead) {
   const send = (bytes: number[] | Uint8Array) => ws.send(new Uint8Array(bytes));
 
   return {
-    version,
-    width,
-    height,
-    ended,
     pointer(x: number, y: number, mask = 0) {
       send([5, mask, x >> 8, x & 255, y >> 8, y & 255]);
     },
@@ -109,7 +101,6 @@ export async function connectRfb(url: string) {
       fields.setUint32(12, 1024);
       send(message);
     },
-    /** Requests a 10x10 update and reads it; false when none arrives within 5 s. */
     async smallUpdate() {
       send([3, 0, 0, 0, 0, 0, 0, 10, 0, 10]);
 
@@ -134,4 +125,25 @@ export async function connectRfb(url: string) {
       ws.close();
     },
   };
+}
+
+/**
+ * A minimal RFB 3.8 viewer over a WebSocket, sending the same messages noVNC sends: the extended clipboard's negative
+ * length, QEMU extended key events, pointer events, and framebuffer update requests.
+ */
+export async function connectRfb(url: string) {
+  const ws = new WebSocket(url);
+
+  ws.binaryType = "arraybuffer";
+
+  const { ended, read } = rfbInbox(ws);
+
+  await new Promise<void>((resolve, reject) => {
+    ws.addEventListener("open", () => resolve());
+    ws.addEventListener("error", () => reject(new Error("WebSocket error")));
+  });
+
+  const { version, width, height } = await rfbHandshake(ws, read);
+
+  return { version, width, height, ended, ...rfbMessages(ws, read) };
 }

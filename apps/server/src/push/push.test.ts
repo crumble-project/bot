@@ -1,3 +1,4 @@
+import { PUSH_TTL_SECONDS } from "../shared/push-devices";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -6,10 +7,10 @@ import { TestClock } from "effect/testing";
 import { Push, PushDelivery } from "./push";
 import {
   canonicalReplyEvent,
-  notificationTitle,
-  type PushDeviceInput,
-  type ReplyPushEvent,
-} from "./push-model";
+  type ReplyActivity,
+  type ReplyEvent,
+} from "../contract/reply-event";
+import { notificationTitle, type PushDeviceInput } from "./push-model";
 import { PushRepository } from "./push-repository";
 import {
   PermanentRejection,
@@ -18,13 +19,14 @@ import {
   type PushTransport,
 } from "./push-transports";
 import { BotActivity } from "../bots/bot-activity";
-import type { Activity, ReplyActivity } from "../bots/bots";
+import type { Activity } from "../bots/bots";
 import { Store } from "../../test/support/store";
-import { standaloneBots } from "../bots/bots";
-import { standaloneScheduler } from "../schedules/scheduler";
-import { createAPI } from "../app/api";
+import { standaloneBots } from "../bots/bots-test-support";
+import { standaloneScheduler } from "../automations/scheduler-test-support";
+import { testAPI } from "../../test/support/api";
+import type { Agent } from "../contract/agents";
+import { until } from "../../test/support/until";
 
-// Plain header records, so they spread into the defaults.
 type TestRequestInit = Omit<RequestInit, "headers"> & {
   headers?: Record<string, string>;
 };
@@ -52,10 +54,12 @@ const android = (token: string): PushDeviceInput => ({
   enabled: true,
 });
 
-const fcmOnly = (fcm: PushTransport) =>
-  Layer.succeed(PushTransports, { apns: undefined, fcm });
+const fcmOnly = (fcm: Omit<PushTransport, "canSend">) =>
+  Layer.succeed(PushTransports, {
+    apns: undefined,
+    fcm: { canSend: () => true, ...fcm },
+  });
 
-/** Push and its repository on a test clock that starts at `startAt`. */
 async function pushRuntime(
   dir: string,
   transports: Layer.Layer<PushTransports, never, PushRepository>,
@@ -127,6 +131,10 @@ describe("push registration and durable delivery", () => {
         live: null,
         updatedAt: 0,
       }),
+      prepareInput: async (_agent: Agent, text: string) => ({
+        modelContent: text,
+        data: { text },
+      }),
       submit: async () => "submission",
       wait: async () => ({ status: "done" }),
       abort: async () => {},
@@ -141,7 +149,7 @@ describe("push registration and durable delivery", () => {
       fcmOnly({ send: () => Effect.succeed("delivered") }),
     );
 
-    const app = createAPI(service, token, { scheduler, push });
+    const app = testAPI(service, token, { scheduler, push });
     const installationId = id();
 
     const request = (path: string, init: TestRequestInit = {}) =>
@@ -261,7 +269,7 @@ describe("push registration and durable delivery", () => {
     const now = 1_000_000;
     const installationId = id();
     const agentId = id();
-    const sent: ReplyPushEvent[] = [];
+    const sent: ReplyEvent[] = [];
 
     const push = await pushRuntime(
       dir,
@@ -355,7 +363,6 @@ describe("push registration and durable delivery", () => {
         yield* service.drain;
         expect(sent).toEqual([]);
 
-        // A different installation with no active presence receives the next event.
         yield* store.upsertDevice(id(), android("token-2"));
         yield* store.enqueue(canonicalReplyEvent(shown, service.serverId));
       }),
@@ -390,9 +397,8 @@ describe("push registration and durable delivery", () => {
         });
         yield* store.enqueue(
           canonicalReplyEvent(reply(agentId, now), service.serverId),
-          100,
         );
-        yield* TestClock.adjust(200);
+        yield* TestClock.adjust(PUSH_TTL_SECONDS * 1000 + 100);
         yield* service.drain;
         expect(
           Option.getOrThrow(yield* store.getDevice(installationId)).enabled,
@@ -404,7 +410,6 @@ describe("push registration and durable delivery", () => {
     let rotationAttempts = 0;
     let deliveredToken = "";
 
-    // The device registers a new token while the send with its old one is in flight.
     const rotatingTransports = Layer.effect(
       PushTransports,
       Effect.gen(function* () {
@@ -413,6 +418,7 @@ describe("push registration and durable delivery", () => {
         return {
           apns: undefined,
           fcm: {
+            canSend: () => true,
             send: (device) =>
               Effect.gen(function* () {
                 rotationAttempts++;
@@ -429,7 +435,11 @@ describe("push registration and durable delivery", () => {
       }),
     );
 
-    const rotating = await pushRuntime(dir, rotatingTransports, now + 200);
+    const rotating = await pushRuntime(
+      dir,
+      rotatingTransports,
+      now + PUSH_TTL_SECONDS * 1000 + 200,
+    );
 
     await rotating.runPromise(
       Effect.gen(function* () {
@@ -510,6 +520,10 @@ describe("push registration and durable delivery", () => {
 
     const runtime: any = {
       openChat: async () => "runtime-chat",
+      prepareInput: async (_agent: Agent, text: string) => ({
+        modelContent: text,
+        data: { text },
+      }),
       submit: async () => "submission",
       wait: async () => ({ status: "done" }),
       snapshot: async () => ({
@@ -528,7 +542,7 @@ describe("push registration and durable delivery", () => {
 
     const service = standaloneBots(store, runtime);
     const installationId = id();
-    let delivered: ReplyPushEvent | undefined;
+    let delivered: ReplyEvent | undefined;
 
     const push = ManagedRuntime.make(
       PushDelivery.pipe(
@@ -565,8 +579,11 @@ describe("push registration and durable delivery", () => {
 
     const chat = await service.chat(agent.id);
     const execution = await service.send(chat.id, "question", id());
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    await push.runPromise(Push.use((p) => p.drain));
+    await until(async () => {
+      await push.runPromise(Push.use((p) => p.drain));
+
+      return delivered !== undefined;
+    });
     expect(delivered).toMatchObject({
       eventId: execution.id,
       agentId: agent.id,

@@ -1,10 +1,14 @@
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import { Effect } from "effect";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { error } from "../contract/route";
 import { startServer } from "./server";
 import type { Workspaces } from "../workspaces/workspace";
+
+// Password hashing alone can pass the default 5 seconds on a loaded machine.
+setDefaultTimeout(30_000);
 
 type Running = Awaited<ReturnType<typeof startServer>>;
 
@@ -261,6 +265,81 @@ test.serial(
   },
 );
 
+test.serial("deleting a bot or an account removes the workspaces", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "crumble-workspace-removal-"));
+  const removed: string[] = [];
+  let running: Awaited<ReturnType<typeof startServer>> | undefined;
+
+  const workspaces = {
+    desktop: false,
+    env: () => {
+      throw new Error("unused");
+    },
+    restart: () => Effect.void,
+    remove: (agentId: string) =>
+      Effect.sync(() => {
+        removed.push(agentId);
+      }),
+    sync: () => Effect.void,
+    keepAwake: () => () => {},
+    outdated: () => [],
+    running: () => false,
+    desktopRunning: () => false,
+    startDesktop: () => Effect.void,
+    openDesktop: () => Effect.die("unused"),
+  } satisfies Workspaces;
+
+  try {
+    running = await startServer({
+      dataDir,
+      port: 0,
+      workspaces: () => Effect.succeed(workspaces),
+    });
+
+    const admin = await signUp(running, `admin-${crypto.randomUUID()}`);
+    const user = await signUp(running, `user-${crypto.randomUUID()}`);
+    const url = (path: string) => new URL(path, running!.server.url);
+
+    const create = async (name: string) => {
+      const created = await fetch(url("/v1/agents"), {
+        method: "POST",
+        headers: json(user),
+        body: JSON.stringify({ name }),
+      });
+
+      // SAFETY: The agent route returns the documented agent object.
+      return ((await created.json()) as { id: string }).id;
+    };
+
+    const deleted = await create("Deleted");
+    const kept = await create("Kept");
+
+    const gone = await fetch(url(`/v1/agents/${deleted}`), {
+      method: "DELETE",
+      headers: user,
+    });
+
+    expect(gone.status).toBe(204);
+    expect(removed).toEqual([deleted]);
+
+    // SAFETY: The admin route returns the documented user list.
+    const { users } = (await (
+      await fetch(url("/v1/admin/users"), { headers: admin })
+    ).json()) as { users: { id: string }[] };
+
+    const account = await fetch(url(`/v1/admin/users/${users[1]!.id}`), {
+      method: "DELETE",
+      headers: admin,
+    });
+
+    expect(account.status).toBe(204);
+    expect(removed).toEqual([deleted, kept]);
+  } finally {
+    await running?.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
 test.serial(
   "desktop viewer tickets upgrade an authenticated WebSocket",
   async () => {
@@ -275,6 +354,7 @@ test.serial(
           throw new Error("unused in viewer test");
         },
         restart: () => Effect.void,
+        remove: () => Effect.void,
         sync: () => Effect.void,
         keepAwake: () => () => {},
         outdated: () => [],
@@ -349,19 +429,10 @@ test.serial(
 
       socket = new WebSocketWithHeaders(wsUrl.toString(), { headers: owner });
       await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(
-          () => reject(new Error("viewer websocket timeout")),
-          2000,
+        socket!.addEventListener("open", () => resolve());
+        socket!.addEventListener("error", () =>
+          reject(new Error("viewer websocket error")),
         );
-
-        socket!.addEventListener("open", () => {
-          clearTimeout(timer);
-          resolve();
-        });
-        socket!.addEventListener("error", () => {
-          clearTimeout(timer);
-          reject(new Error("viewer websocket error"));
-        });
       });
     } finally {
       socket?.close();
@@ -545,6 +616,48 @@ test.serial(
           })
         ).status,
       ).toBe(401);
+    } finally {
+      await running?.close();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.serial(
+  "admin routes answer a bad request with the contract's error and cap body size",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-admin-errors-"));
+    let running: Awaited<ReturnType<typeof startServer>> | undefined;
+
+    try {
+      running = await startServer({ dataDir, port: 0 });
+      const admin = await signUp(running, `admin-${crypto.randomUUID()}`);
+
+      const patch = (body: string) =>
+        fetch(new URL("/v1/admin/settings", running!.server.url), {
+          method: "PATCH",
+          headers: json(admin),
+          body,
+        });
+
+      const invalid = await patch(JSON.stringify({ workspaceCpus: 0 }));
+
+      expect(invalid.status).toBe(400);
+      expect(error.parse(await invalid.json())).toMatchObject({
+        error: "Invalid request",
+        details: [expect.objectContaining({ path: ["workspaceCpus"] })],
+      });
+
+      const malformed = await patch("{");
+
+      expect(malformed.status).toBe(400);
+      expect(await malformed.json()).toEqual({ error: "Invalid JSON" });
+
+      const oversized = await patch(
+        JSON.stringify({ codingImage: "a".repeat(1024 * 1024) }),
+      );
+
+      expect(oversized.status).toBe(413);
     } finally {
       await running?.close();
       rmSync(dataDir, { recursive: true, force: true });

@@ -1,6 +1,5 @@
 import { defineTask } from "@earendil-works/pi-durable";
 
-/** A background task that only owns a conversation, so the conversation outlives the turns of the chat it came from. */
 export const defineAnchorTask = (name: string) =>
   defineTask<null, { phase: "done" }, null>({
     name,

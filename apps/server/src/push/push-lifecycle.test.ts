@@ -4,11 +4,15 @@ import { join } from "node:path";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { TestClock } from "effect/testing";
 import { Push, PushDelivery } from "./push";
-import { canonicalReplyEvent } from "./push-model";
+import {
+  canonicalReplyEvent,
+  type ReplyActivity,
+} from "../contract/reply-event";
 import { PushRepository } from "./push-repository";
 import { PushTransports, type PushTransport } from "./push-transports";
 import { BotActivity } from "../bots/bot-activity";
-import type { Activity, ReplyActivity } from "../bots/bots";
+import type { Activity } from "../bots/bots";
+import { until } from "../../test/support/until";
 
 const dirs: string[] = [];
 
@@ -18,10 +22,8 @@ afterEach(() => {
 
 const id = () => crypto.randomUUID();
 
-/** What the test observes of the store: how often it closed, and outbox reads it should fail. */
 type StoreProbe = { closes: number; failPending: number };
 
-/** The real repository, counting its closes and failing outbox reads on demand. */
 const observedRepository = (dir: string, probe: StoreProbe) =>
   Layer.effect(
     PushRepository,
@@ -36,9 +38,9 @@ const observedRepository = (dir: string, probe: StoreProbe) =>
 
       return PushRepository.of({
         ...repository,
-        pending: (limit) =>
+        pending: () =>
           Effect.suspend(() => {
-            if (probe.failPending <= 0) return repository.pending(limit);
+            if (probe.failPending <= 0) return repository.pending();
             probe.failPending--;
 
             return Effect.die(new Error("outbox unreadable"));
@@ -47,7 +49,6 @@ const observedRepository = (dir: string, probe: StoreProbe) =>
     }),
   ).pipe(Layer.provide(PushRepository.layer(dir)));
 
-/** A source of activity the test fires, recording unsubscribes. */
 function activitySource() {
   let listener: ((event: Activity) => void) | undefined;
   let unsubscribes = 0;
@@ -68,8 +69,9 @@ function activitySource() {
   };
 }
 
-/** Push with delivery attached, over one device registered for `fcm`. */
-async function setup(fcm: PushTransport) {
+async function setup(transport: Omit<PushTransport, "canSend">) {
+  const fcm = { canSend: () => true, ...transport };
+
   const dir = mkdtempSync(join("/tmp", "crumble-push-lifecycle-"));
   dirs.push(dir);
   const probe: StoreProbe = { closes: 0, failPending: 0 };
@@ -122,7 +124,7 @@ const enqueueReply = Push.use((push) =>
   ),
 );
 
-const delivering = (count: { sends: number }): PushTransport => ({
+const delivering = (count: { sends: number }) => ({
   send: () =>
     Effect.sync(() => {
       count.sends++;
@@ -149,7 +151,7 @@ describe("push lifecycle", () => {
 
     await runtime.runPromise(enqueueReply);
     const draining = runtime.runPromise(Push.use((push) => push.drain));
-    await Bun.sleep(20);
+    await until(() => order.length > 0);
 
     const closing = runtime.dispose().then(() => {
       order.push(`closed with ${probe.closes} store close`);
@@ -160,7 +162,6 @@ describe("push lifecycle", () => {
     expect(probe.closes).toBe(0);
 
     release.resolve();
-    // Disposing interrupts the caller waiting on the pass; the pass itself finishes before the store closes.
     await Promise.allSettled([draining]);
     await closing;
     expect(order).toEqual([
@@ -174,9 +175,13 @@ describe("push lifecycle", () => {
     const release = Promise.withResolvers<void>();
     const sent: string[] = [];
 
+    let sending = false;
+
     const { runtime, source } = await setup({
       send: (_device, event) =>
         Effect.promise(async () => {
+          sending = true;
+
           if (sent.length === 0) await release.promise;
           sent.push(event.eventId);
 
@@ -187,9 +192,16 @@ describe("push lifecycle", () => {
     const first = reply();
     const second = reply();
     source.emit(first);
-    await Bun.sleep(20);
+    await until(() => sending);
     source.emit(second);
-    await Bun.sleep(20);
+    await until(
+      async () =>
+        (
+          await runtime.runPromise(
+            PushRepository.use((repository) => repository.pending()),
+          )
+        ).length === 2,
+    );
 
     const closing = runtime.dispose();
     await Bun.sleep(20);
@@ -231,13 +243,12 @@ describe("push lifecycle", () => {
     try {
       probe.failPending = 1;
 
-      // The reply's immediate pass fails; the next poll, a second later, delivers it.
       source.emit(reply());
-      await Bun.sleep(50);
+      await until(() => probe.failPending === 0);
       expect(count.sends).toBe(0);
 
       await runtime.runPromise(TestClock.adjust("1 second"));
-      await Bun.sleep(50);
+      await until(() => count.sends > 0);
       expect(count.sends).toBe(1);
       expect(unhandled).toBe(0);
     } finally {

@@ -17,10 +17,13 @@ import {
   type ChatAdapter,
   type GatewayConnection,
   type GatewayMessage,
-  type GatewayStatus,
 } from "../adapter";
+import { pluginSettingKey } from "../../shared/vendors";
+import type { ConnectionStatus } from "../../shared/domain";
 
-export const DISCORD_SECRET_KEY = "discord:token";
+export const DISCORD_PLUGIN_ID = "discord";
+
+const DISCORD_SECRET_KEY = pluginSettingKey(DISCORD_PLUGIN_ID, "token");
 const SEND_TIMEOUT_MS = 10_000;
 const sentMessageSchema = z.object({ id: z.string().min(1) });
 
@@ -36,7 +39,6 @@ type DeliveryErrorDetails = ConstructorParameters<
 function rateLimitDetails(failure: RateLimitError): DeliveryErrorDetails {
   return {
     permanent: false,
-    status: 429,
     retryAfterMs: Math.max(
       0,
       ...[
@@ -70,8 +72,6 @@ function httpErrorDetails(failure: Error): DeliveryErrorDetails {
   const details: DeliveryErrorDetails = {
     permanent: isPermanentStatus(status),
   };
-
-  if (status !== undefined) details.status = status;
 
   if (status === 429 && failure instanceof DiscordAPIError) {
     const parsed = rateLimitResponseSchema.safeParse(failure.rawError);
@@ -155,6 +155,174 @@ export function normalizeDiscordMessage(
 const createClient = (options: ClientOptions): DiscordClient =>
   new Client(options);
 
+type GatewayHost = Parameters<ChatAdapter["connect"]>[0];
+
+type OutgoingMessage = Parameters<GatewayConnection["send"]>[0];
+
+type ConnectionState = { closed: boolean };
+
+function deliveryError(failure: Error) {
+  return failure instanceof RateLimitError
+    ? new GatewayTransportError(
+        "Discord message delivery rate limited.",
+        rateLimitDetails(failure),
+      )
+    : new GatewayTransportError(
+        "Discord message delivery failed.",
+        httpErrorDetails(failure),
+      );
+}
+
+function outgoingMessageBody(
+  input: OutgoingMessage,
+): RESTPostAPIChannelMessageJSONBody {
+  const body: RESTPostAPIChannelMessageJSONBody = {
+    content: input.text,
+    allowed_mentions: { parse: [], replied_user: false },
+    nonce: createHash("sha256").update(input.nonce).digest("hex").slice(0, 24),
+    enforce_nonce: true,
+  };
+
+  if (input.replyTo)
+    body.message_reference = {
+      message_id: input.replyTo,
+      fail_if_not_exists: false,
+    };
+
+  return body;
+}
+
+function watchClient(
+  client: DiscordClient,
+  host: GatewayHost,
+  state: ConnectionState,
+  status: (value: ConnectionStatus) => void,
+) {
+  let invalidated = false;
+  const reportError = () => status("error");
+
+  client.on("messageCreate", (message) => {
+    if (state.closed) return;
+    const normalized = normalizeDiscordMessage(message, client.user?.id);
+
+    if (normalized) void host.onMessage(normalized).catch(reportError);
+  });
+  client.on("clientReady", () => status("connected"));
+  client.on("shardResume", () => status("connected"));
+  client.on("shardReconnecting", () => status("connecting"));
+  client.on("shardDisconnect", () => status("disconnected"));
+  client.on("invalidated", () => {
+    if (state.closed || invalidated) return;
+    invalidated = true;
+    status("error");
+    host.onInvalidated();
+  });
+  client.on("error", reportError);
+  client.on("shardError", reportError);
+}
+
+async function login(
+  client: DiscordClient,
+  host: GatewayHost,
+  state: ConnectionState,
+  status: (value: ConnectionStatus) => void,
+) {
+  try {
+    await client.login(host.token);
+  } catch {
+    status("error");
+    state.closed = true;
+
+    try {
+      await client.destroy();
+    } catch {
+      // Preserve the login failure when cleanup also fails.
+    } finally {
+      client.removeAllListeners();
+    }
+
+    throw new Error("Discord login failed.");
+  }
+}
+
+async function sendMessage(
+  client: DiscordClient,
+  input: OutgoingMessage,
+  state: ConnectionState,
+  pending: Set<AbortController>,
+  deadline: (milliseconds: number) => AbortSignal,
+) {
+  if (state.closed) throw new Error("Discord connection is closed.");
+  const controller = new AbortController();
+
+  const signal = AbortSignal.any([
+    controller.signal,
+    deadline(SEND_TIMEOUT_MS),
+  ]);
+
+  pending.add(controller);
+
+  try {
+    const response = await client.rest.post(
+      Routes.channelMessages(input.channelId),
+      { body: outgoingMessageBody(input), signal },
+    );
+
+    const parsed = sentMessageSchema.safeParse(response);
+
+    if (!parsed.success)
+      throw new Error("Discord returned an invalid message response.");
+
+    return parsed.data.id;
+  } catch (error) {
+    if (signal.aborted)
+      throw new Error(
+        state.closed
+          ? "Discord connection is closed."
+          : "Discord message delivery timed out.",
+      );
+
+    const failure = error instanceof Error ? error : new Error(String(error));
+
+    throw deliveryError(failure);
+  } finally {
+    pending.delete(controller);
+  }
+}
+
+function openConnection(
+  client: DiscordClient,
+  host: GatewayHost,
+  state: ConnectionState,
+  deadline: (milliseconds: number) => AbortSignal,
+): GatewayConnection {
+  const pending = new Set<AbortController>();
+
+  return {
+    async typing(channelId) {
+      if (state.closed) return;
+      await client.rest.post(Routes.channelTyping(channelId), {
+        signal: deadline(SEND_TIMEOUT_MS),
+      });
+    },
+    send: (input) => sendMessage(client, input, state, pending, deadline),
+    async close() {
+      if (state.closed) return;
+      state.closed = true;
+
+      for (const controller of pending) controller.abort();
+      pending.clear();
+
+      try {
+        await client.destroy();
+      } finally {
+        client.removeAllListeners();
+        host.onStatus("disconnected");
+      }
+    },
+  };
+}
+
 export function discordAdapter(
   clientFactory: (options: ClientOptions) => DiscordClient = createClient,
   deadline: (milliseconds: number) => AbortSignal = (milliseconds) =>
@@ -177,171 +345,25 @@ export function discordAdapter(
   };
 
   return {
-    id: "discord",
+    id: DISCORD_PLUGIN_ID,
     label: "Discord",
     secretKey: DISCORD_SECRET_KEY,
     maxMessageLength: 2_000,
+    // The indicator lasts 10 seconds; renewing at 8 keeps it steady while the bot works.
+    typingRenewalMs: 8_000,
     async connect(host) {
       const client = clientFactory(options);
-      const pending = new Set<AbortController>();
-      let closed = false;
-      let invalidated = false;
+      const state: ConnectionState = { closed: false };
 
-      const errorMessage = (error: Error) => {
-        const message = error.message;
-
-        return host.token
-          ? message.replaceAll(host.token, "[redacted]")
-          : message;
+      const status = (value: ConnectionStatus) => {
+        if (!state.closed) host.onStatus(value);
       };
 
-      const status = (value: GatewayStatus, error?: string) => {
-        if (!closed) host.onStatus(value, error);
-      };
-
-      const reportError = (error: Error) =>
-        status("error", errorMessage(error));
-
-      const deliveryError = (failure: Error) => {
-        if (failure instanceof RateLimitError)
-          return new GatewayTransportError(
-            "Discord message delivery rate limited.",
-            rateLimitDetails(failure),
-          );
-
-        return new GatewayTransportError(
-          errorMessage(failure),
-          httpErrorDetails(failure),
-        );
-      };
-
-      client.on("messageCreate", (message) => {
-        if (closed) return;
-        const normalized = normalizeDiscordMessage(message, client.user?.id);
-
-        if (normalized)
-          void host.onMessage(normalized).catch((error) => {
-            const failure =
-              error instanceof Error ? error : new Error(String(error));
-
-            reportError(failure);
-          });
-      });
-      client.on("clientReady", () => status("connected"));
-      client.on("shardResume", () => status("connected"));
-      client.on("shardReconnecting", () => status("connecting"));
-      client.on("shardDisconnect", () => status("disconnected"));
-      client.on("invalidated", () => {
-        if (closed || invalidated) return;
-        invalidated = true;
-        const error = "Discord session invalidated. Reconnect the gateway.";
-        status("error", error);
-        host.onInvalidated(error);
-      });
-      client.on("error", reportError);
-      client.on("shardError", reportError);
-
+      watchClient(client, host, state, status);
       status("connecting");
+      await login(client, host, state, status);
 
-      try {
-        await client.login(host.token);
-      } catch (error) {
-        const failure =
-          error instanceof Error ? error : new Error(String(error));
-
-        reportError(failure);
-        closed = true;
-
-        try {
-          await client.destroy();
-        } catch {
-          // Preserve the login failure when cleanup also fails.
-        } finally {
-          client.removeAllListeners();
-        }
-
-        throw new Error(errorMessage(failure));
-      }
-
-      const connection: GatewayConnection = {
-        async typing(channelId) {
-          if (closed) return;
-          await client.rest.post(Routes.channelTyping(channelId), {
-            signal: deadline(SEND_TIMEOUT_MS),
-          });
-        },
-        async send(input) {
-          if (closed) throw new Error("Discord connection is closed.");
-          const controller = new AbortController();
-
-          const signal = AbortSignal.any([
-            controller.signal,
-            deadline(SEND_TIMEOUT_MS),
-          ]);
-
-          pending.add(controller);
-
-          try {
-            const body: RESTPostAPIChannelMessageJSONBody = {
-              content: input.text,
-              allowed_mentions: { parse: [], replied_user: false },
-              nonce: createHash("sha256")
-                .update(input.nonce)
-                .digest("hex")
-                .slice(0, 24),
-              enforce_nonce: true,
-            };
-
-            if (input.replyTo)
-              body.message_reference = {
-                message_id: input.replyTo,
-                fail_if_not_exists: false,
-              };
-
-            const response = await client.rest.post(
-              Routes.channelMessages(input.channelId),
-              { body, signal },
-            );
-
-            const parsed = sentMessageSchema.safeParse(response);
-
-            if (!parsed.success)
-              throw new Error("Discord returned an invalid message response.");
-
-            return parsed.data.id;
-          } catch (error) {
-            if (signal.aborted)
-              throw new Error(
-                closed
-                  ? "Discord connection is closed."
-                  : "Discord message delivery timed out.",
-              );
-
-            const failure =
-              error instanceof Error ? error : new Error(String(error));
-
-            throw deliveryError(failure);
-          } finally {
-            pending.delete(controller);
-          }
-        },
-        async close() {
-          if (closed) return;
-          closed = true;
-
-          for (const controller of pending) controller.abort();
-          pending.clear();
-
-          try {
-            await client.destroy();
-          } finally {
-            client.removeAllListeners();
-            host.onStatus("disconnected");
-          }
-        },
-      };
-
-      return connection;
+      return openConnection(client, host, state, deadline);
     },
   };
 }

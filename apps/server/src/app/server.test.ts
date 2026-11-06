@@ -1,12 +1,21 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { Effect } from "effect";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { Store } from "../../test/support/store";
-import { agentInput, scheduleInput } from "../shared/domain";
-import { ScriptRunRepository } from "../schedules/script-run-repository";
+import { agentInput } from "../contract/agents";
+import { scheduleInput } from "../contract/schedules";
+import { ScriptRunRepository } from "../automations/script-run-repository";
+import { DEFAULT_SERVER_SETTINGS } from "./server-settings";
 import { createTenant } from "./tenant";
+import { CLIENT_DOCUMENT_PATH } from "../integrations/mcp-oauth";
 import { ownerRecord } from "./data-lock";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -28,6 +37,9 @@ import {
   WorkspacesClosed,
   type DesktopOpenError,
 } from "../workspaces/workspace-errors";
+
+// Password hashing alone can pass the default 5 seconds on a loaded machine.
+setDefaultTimeout(30_000);
 
 type Running = Awaited<ReturnType<typeof startServer>>;
 
@@ -71,7 +83,6 @@ async function signIn(running: Running, email: string) {
   return { authorization: `Bearer ${body.token}` };
 }
 
-/** Workspaces with only a bot desktop, which `openDesktop` opens. */
 function desktopWorkspaces(openDesktop: Workspaces["openDesktop"]): Workspaces {
   return {
     desktop: true,
@@ -79,6 +90,7 @@ function desktopWorkspaces(openDesktop: Workspaces["openDesktop"]): Workspaces {
       throw new Error("No environment in this test");
     },
     restart: () => Effect.void,
+    remove: () => Effect.void,
     openDesktop,
     keepAwake: () => () => {},
     outdated: () => [],
@@ -97,19 +109,48 @@ test.serial(
   "server owns its data directory exclusively and releases it after graceful shutdown",
   async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-"));
-    const port = 18000 + Math.floor(Math.random() * 1000);
 
     try {
-      const running = await startServer({ dataDir, port });
+      const running = await startServer({ dataDir, port: 0 });
       expect((await fetch(new URL("/health", running.server.url))).status).toBe(
         200,
       );
-      await expect(startServer({ dataDir, port })).rejects.toThrow(
+      await expect(startServer({ dataDir, port: 0 })).rejects.toThrow(
         "Another Crumble server",
       );
       await running.close();
-      const reopened = await startServer({ dataDir, port });
+      const reopened = await startServer({ dataDir, port: 0 });
       await reopened.close();
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.serial(
+  "the OAuth client document tells authorization servers to cache it",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-"));
+
+    try {
+      const running = await startServer({
+        dataDir,
+        port: 0,
+        publicUrl: "https://crumble.example",
+      });
+
+      try {
+        const response = await fetch(
+          new URL(CLIENT_DOCUMENT_PATH, running.server.url),
+        );
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("cache-control")).toBe(
+          "public, max-age=3600",
+        );
+      } finally {
+        await running.close();
+      }
     } finally {
       rmSync(dataDir, { recursive: true, force: true });
     }
@@ -120,14 +161,52 @@ test.serial(
   "server takes over a data directory whose recorded owner has exited",
   async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-"));
-    const port = 18000 + Math.floor(Math.random() * 1000);
     const exited = Bun.spawn(["true"]);
 
     await exited.exited;
     writeFileSync(join(dataDir, "server.pid"), ownerRecord(exited.pid));
 
     try {
-      const running = await startServer({ dataDir, port });
+      const running = await startServer({ dataDir, port: 0 });
+
+      await running.close();
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.serial(
+  "server restarts at once over an account a killed process had open",
+  async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-killed-"));
+    const first = await startServer({ dataDir, port: 0 });
+
+    // SAFETY: Better Auth returns a token on successful bearer sign-up.
+    const { token } = (await (
+      await fetch(new URL("/api/auth/sign-up/email", first.server.url), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: "Test",
+          email: "killed@example.test",
+          password: "correct horse battery staple",
+        }),
+      })
+    ).json()) as { token: string };
+
+    await fetch(new URL("/v1/agents", first.server.url), {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    await first.close();
+
+    const account = readdirSync(join(dataDir, "users"))[0]!;
+
+    writeFileSync(join(dataDir, "server.pid"), ownerRecord(1 << 22));
+    mkdirSync(join(dataDir, "users", `${account}.lock`));
+
+    try {
+      const running = await startServer({ dataDir, port: 0 });
 
       await running.close();
     } finally {
@@ -138,10 +217,9 @@ test.serial(
 
 test.serial("accepts requests from the localhost origin", async () => {
   const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-origin-"));
-  const port = 19000 + Math.floor(Math.random() * 1000);
 
   try {
-    const running = await startServer({ dataDir, port });
+    const running = await startServer({ dataDir, port: 0 });
 
     const signUpFrom = (origin: string) =>
       fetch(new URL("/api/auth/sign-up/email", running.server.url), {
@@ -154,8 +232,12 @@ test.serial("accepts requests from the localhost origin", async () => {
         }),
       });
 
-    expect((await signUpFrom(`http://localhost:${port}`)).status).toBe(200);
-    expect((await signUpFrom(`http://127.0.0.1:${port}`)).status).toBe(200);
+    expect(
+      (await signUpFrom(`http://localhost:${running.server.port}`)).status,
+    ).toBe(200);
+    expect(
+      (await signUpFrom(`http://127.0.0.1:${running.server.port}`)).status,
+    ).toBe(200);
     expect((await signUpFrom("https://evil.example")).status).toBe(403);
     await running.close();
   } finally {
@@ -165,10 +247,9 @@ test.serial("accepts requests from the localhost origin", async () => {
 
 test.serial("offers passkey registration on localhost", async () => {
   const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-passkey-"));
-  const port = 19000 + Math.floor(Math.random() * 1000);
 
   try {
-    const running = await startServer({ dataDir, port });
+    const running = await startServer({ dataDir, port: 0 });
     const headers = await signUp(running);
 
     const response = await fetch(
@@ -191,10 +272,9 @@ test.serial("offers passkey registration on localhost", async () => {
 
 test.serial("loads the workspace skills directory by default", async () => {
   const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-skills-"));
-  const port = 19000 + Math.floor(Math.random() * 1000);
 
   try {
-    const running = await startServer({ dataDir, port });
+    const running = await startServer({ dataDir, port: 0 });
     const headers = await signUp(running);
 
     const response = await fetch(new URL("/v1/skills", running.server.url), {
@@ -250,10 +330,9 @@ test.serial(
 
 test.serial("serves group chats and keeps them across restarts", async () => {
   const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-groups-"));
-  const port = 20000 + Math.floor(Math.random() * 1000);
 
   try {
-    const running = await startServer({ dataDir, port });
+    const running = await startServer({ dataDir, port: 0 });
     const headers = await signUp(running);
     const memberIds: string[] = [];
 
@@ -294,7 +373,7 @@ test.serial("serves group chats and keeps them across restarts", async () => {
 
     expect(message.status).toBe(201);
     await running.close();
-    const reopened = await startServer({ dataDir, port });
+    const reopened = await startServer({ dataDir, port: 0 });
 
     const history = await fetch(
       new URL(`/v1/group-chats/${group.id}/history`, reopened.server.url),
@@ -314,9 +393,7 @@ test.serial(
   "a desktop viewer link opens without the owner's session",
   async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "crumble-server-viewer-"));
-    const port = 20000 + Math.floor(Math.random() * 1000);
 
-    // A bot desktop that greets like a VNC server and then waits.
     const workspaces = desktopWorkspaces(() =>
       Effect.succeed({
         write: async () => {},
@@ -331,7 +408,7 @@ test.serial(
     try {
       const running = await startServer({
         dataDir,
-        port,
+        port: 0,
         workspaces: () => Effect.succeed(workspaces),
       });
 
@@ -366,7 +443,6 @@ test.serial(
         ).status,
       ).toBe(200);
 
-      // The account in a ticket only routes it; the secret must be one that account issued.
       expect(
         (
           await fetch(
@@ -409,7 +485,6 @@ test.serial(
   },
 );
 
-// Each failure's message and cause carry a secret, as guest output might: only the log may show them.
 const SECRET = "token=secret-123";
 
 const failure = (tag: string) => ({
@@ -499,7 +574,6 @@ test.serial(
         ).json(),
       );
 
-      // Each viewer link opens one connection; the server boots the bot desktop when it issues one.
       const close = async () => {
         const viewer = await fetch(
           new URL(`/v1/agents/${agent.id}/desktop/viewer`, running.server.url),
@@ -537,7 +611,6 @@ test.serial(
         expect(log).toContain(error.message);
       }
 
-      // A defect has no name for the owner, but the log still has it.
       opening = Effect.die(new Error(`The relay crashed (${SECRET})`));
       logged.length = 0;
 
@@ -621,6 +694,8 @@ test.serial(
       tenant = await createTenant({
         dataDir,
         tenantId: "script-test",
+        serverSettings: () => DEFAULT_SERVER_SETTINGS,
+        workspaceEnv: process.env,
         workspaces: Effect.succeed(workspaces),
       });
       const headers = { authorization: `Bearer ${tenant.token}` };

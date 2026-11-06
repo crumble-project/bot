@@ -24,10 +24,10 @@ Railway is a second backend behind `Workspaces`, chosen with `CRUMBLE_WORKSPACE_
   its streams, which do not end by themselves.
 - **Images are template recipes** named by their hash. A bot whose checkpoint has another image gets a new sandbox
   from the current template, with `/workspace` copied over as a tarball through Railway's file transfer.
-- **Exec output is text,** so a guest helper (`src/railway-stream.py`) sends a program's stdout as base64 lines.
-- **No network policy.** Railway has no egress hook, so `WorkspaceNetworkPolicy` does not apply. Sandboxes are
-  `ISOLATED`: internet only, not the Railway environment's private network. The owner accepted losing network-level
-  approval on 2026-10-23; approvals for push or PR belong in the tool layer.
+- **Exec output is text,** so a guest helper (`src/workspaces/railway/railway-stream.py`) sends a program's stdout as base64 lines.
+- **No network policy.** Railway has no egress hook, so connections are not filtered. Sandboxes are `ISOLATED`:
+  internet only, not the Railway environment's private network. The owner accepted losing network-level approval on
+  2026-10-23; approvals for push or PR belong in the tool layer.
 - **Bot desktops run in a second template** with the Dockerfile's desktop packages, cua-driver, and a pinned
   Chromium snapshot build: Ubuntu ships Chromium only as a snap, which a sandbox cannot run, and Playwright's browser
   is now Chrome for Testing. The desktop scripts upload at every boot. VNC goes over the same exec stream as pi-env,

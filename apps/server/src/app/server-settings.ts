@@ -19,9 +19,13 @@ export const DEFAULT_SERVER_SETTINGS: ServerSettings = {
   questionGraceMinutes: 15,
 };
 
+const UNREADABLE_SETTINGS: ServerSettings = {
+  ...DEFAULT_SERVER_SETTINGS,
+  signUpOpen: false,
+};
+
 const MODEL = "serverSetting";
 
-/** Adds the host's own tables to `auth.sqlite`, so Better Auth migrates them with its own. */
 export const serverTables = () =>
   ({
     id: "crumble-server",
@@ -49,13 +53,40 @@ const storedSettings = Schema.Array(
   Schema.Struct({ key: Schema.String, value: Schema.String }),
 );
 
+/** One decode per key: a value stored by an older or newer server can't reset the settings beside it. */
+function decodeSettings(rows: typeof storedSettings.Type): ServerSettings {
+  const stored = new Map(rows.map((row) => [row.key, row.value]));
+
+  const setting = <K extends keyof ServerSettings>(key: K) => {
+    const raw = stored.get(key);
+
+    if (raw === undefined) return DEFAULT_SERVER_SETTINGS[key];
+
+    try {
+      // SAFETY: the schema of the setting named `key` parses it.
+      return serverSettingsSchema.shape[key].parse(
+        JSON.parse(raw),
+      ) as ServerSettings[K];
+    } catch {
+      return UNREADABLE_SETTINGS[key];
+    }
+  };
+
+  return {
+    signUpOpen: setting("signUpOpen"),
+    workspaceCpus: setting("workspaceCpus"),
+    workspaceMemoryMib: setting("workspaceMemoryMib"),
+    codingImage: setting("codingImage"),
+    questionGraceMinutes: setting("questionGraceMinutes"),
+  };
+}
+
 export type ServerSettingsStore = {
   get(): ServerSettings;
   update(patch: ServerSettingsPatch): Promise<ServerSettings>;
   subscribe(listener: (settings: ServerSettings) => void): () => void;
 };
 
-/** The server's settings, cached in memory: workspaces read them synchronously at every boot. */
 export async function serverSettingsStore<O extends BetterAuthOptions>(
   adapter: DBAdapter<O>,
 ): Promise<ServerSettingsStore> {
@@ -63,15 +94,7 @@ export async function serverSettingsStore<O extends BetterAuthOptions>(
     await adapter.findMany({ model: MODEL }),
   );
 
-  const stored = Object.fromEntries(
-    rows.map((row) => [row.key, JSON.parse(row.value)]),
-  );
-
-  // A setting stored by an older or newer server that no longer decodes falls back to its default.
-  // A stored value that no longer validates falls back to all defaults rather than failing the server's start.
-  let current = serverSettingsSchema
-    .catch(DEFAULT_SERVER_SETTINGS)
-    .parse({ ...DEFAULT_SERVER_SETTINGS, ...stored });
+  let current = decodeSettings(rows);
 
   const listeners = new Set<(settings: ServerSettings) => void>();
 

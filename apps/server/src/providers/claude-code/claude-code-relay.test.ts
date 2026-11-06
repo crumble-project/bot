@@ -1,9 +1,10 @@
 // Ported from Hermes' claude-subscription-directsdk tests/test_admission_*.py (MIT, see THIRD_PARTY_NOTICES.md).
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { z } from "zod";
+import { Admission } from "./relay";
+import { Capture } from "./relay-capture";
+import { GzipFallback } from "./relay-gzip";
 import {
-  Admission,
-  Capture,
   dropMessageBreakpoints,
   pinMessageBreakpoint,
   QueriedTurnMismatch,
@@ -11,7 +12,7 @@ import {
   stableRequestContext,
   streamToolInput,
   type Block,
-} from "./relay";
+} from "./relay-request";
 
 type Mark = NonNullable<Block["cache_control"]>;
 
@@ -45,19 +46,16 @@ const list = (content: string | Block[] | undefined) => {
 
 const blocksOf = (message: Message | undefined) => list(message?.content);
 
-/** A deep copy without any `cache_control`, at every depth. */
 const strip = <T>(value: T): T =>
   JSON.parse(JSON.stringify(value), (key, entry) =>
     key === "cache_control" ? undefined : entry,
   );
 
-/** A block without its own `cache_control`; nested ones stay. */
 const unmarkedBlock = (entry: Block) =>
   Object.fromEntries(
     Object.entries(entry).filter(([key]) => key !== "cache_control"),
   );
 
-/** JSON with object keys sorted, as Python's `json.dumps(sort_keys=True)`. */
 const sortedJson = <T>(value: T) =>
   JSON.stringify(value, (_, entry) =>
     entry instanceof Object && !Array.isArray(entry)
@@ -68,9 +66,6 @@ const sortedJson = <T>(value: T) =>
         )
       : entry,
   );
-
-const UNRESTORED =
-  "Native request does not uniquely match the queried tool results";
 
 const ok = () => new Response(null, { status: 200 });
 let received: string[] = [];
@@ -87,6 +82,7 @@ const peer = Bun.serve({
 });
 
 const UPSTREAM = `http://127.0.0.1:${peer.port}`;
+const ADMITTED = { env: {}, gzip: new GzipFallback() };
 
 afterEach(() => {
   received = [];
@@ -107,9 +103,8 @@ const post = (
     headers: { "content-type": "application/json", ...headers },
   });
 
-/** Send one native request through a fresh admission relay. */
 async function relay(payload: string, queried: Block[] | undefined) {
-  const gate = new Admission(UPSTREAM, 5000, queried);
+  const gate = new Admission(UPSTREAM, 5000, { ...ADMITTED, queried });
 
   try {
     const response = await post(gate, payload);
@@ -548,7 +543,6 @@ describe("message breakpoint (test_admission_breakpoint.py)", () => {
       const out = pinMessageBreakpoint(raw, queried);
 
       expect(marks(out)).toEqual([expected]);
-      // only the directive moves, never content
       expect(unmarked(out)).toEqual(unmarked(raw));
     },
   );
@@ -747,7 +741,6 @@ describe("message breakpoint (test_admission_breakpoint.py)", () => {
     const payload = wire([ASSISTANT, { role: "user", content: [changed] }]);
     const { gate } = await relay(payload, [RESULT]);
 
-    expect(gate.unrestored).toBe(UNRESTORED);
     expect(gate.failure).toBeUndefined();
     expect(received).toEqual([payload]);
   });
@@ -862,9 +855,7 @@ describe("first turn (test_admission_first_turn.py)", () => {
 
     const prefix = cachedPrefix(first);
 
-    // the cached span of call #1 is the host's first turn, the part that was being re-written
     expect(prefix).toEqual([["user", sortedJson(FRAME)]]);
-    // and it recurs, block for block, at the head of call #2
     expect(replayed(second).slice(0, 1)).toEqual([["user", sortedJson(FRAME)]]);
   });
 
@@ -872,7 +863,6 @@ describe("first turn (test_admission_first_turn.py)", () => {
     const out = parse(pinMessageBreakpoint(wire(call1()), [FRAME]));
     const firstTurn = blocksOf(out.messages[0]);
 
-    // native's context still reaches the model, now after the host frame as on every later turn
     expect(firstTurn.map(unmarkedBlock)).toEqual([FRAME, REMINDER]);
     expect(firstTurn[0]?.cache_control).toEqual(MARKER);
 
@@ -1054,10 +1044,6 @@ describe("two native marks (test_admission_two_marks.py)", () => {
       (entry) => "cache_control" in entry,
     ).length + messageMarks(body).length;
 
-  /**
-   * The request through block `at`, in the order the cache reads them (tools, system, messages). Markers are
-   * left out: they move between requests and are not prompt content.
-   */
   const prefix = (body: Body, [i, j]: At) => {
     const item = body.messages[i];
 
@@ -1073,14 +1059,12 @@ describe("two native marks (test_admission_two_marks.py)", () => {
     );
   };
 
-  /** Send one native request through a real admission relay; return the body that went upstream. */
   const forward = async (nativeBody: Body, queried: Block[]) => {
     received = [];
 
     const { gate, status } = await relay(JSON.stringify(nativeBody), queried);
 
     expect(status).toBe(200);
-    expect(gate.unrestored).toBeUndefined();
     expect(gate.failure).toBeUndefined();
     expect(received).toHaveLength(1);
 
@@ -1094,8 +1078,6 @@ describe("two native marks (test_admission_two_marks.py)", () => {
       const sentN = await forward(nativeN, results(0));
       const sentN1 = await forward(nativeRequest(2, reminder), results(1));
 
-      // Native's mark on the last tool_use recurs and stays; the trailing system message's mark moves onto the
-      // last tool result (which, restored to the host frame, recurs).
       expect(messageMarks(nativeN)).toEqual([
         [1, 4],
         [3, 0],
@@ -1110,15 +1092,12 @@ describe("two native marks (test_admission_two_marks.py)", () => {
         [3, 4],
         [4, 3],
       ]);
-      // Only a marker moved: same content, same system/tools marks, never more than native's four.
       expect(sentN.system).toEqual(nativeN.system);
       expect(toolsAsNative(sentN)).toEqual(nativeN.tools ?? []);
       expect(strip(sentN.messages[3])).toEqual(strip(nativeN.messages[3]));
       expect(markCount(sentN)).toBe(4);
       expect(markCount(nativeN)).toBe(4);
 
-      // Request N+1 replays request N's prefix through its last breakpoint byte for byte, so the entry N wrote
-      // is read instead of the round being written again.
       const last = messageMarks(sentN).at(-1);
 
       if (!last) throw new Error("request N kept a mark");
@@ -1147,7 +1126,6 @@ describe("two native marks (test_admission_two_marks.py)", () => {
   test("marks inside the recurring span are left alone", () => {
     const native = nativeRequest(1, false);
 
-    // no trailing context message
     native.messages.pop();
 
     const lastResult = blocksOf(native.messages[2]).at(-1);
@@ -1239,10 +1217,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
     ],
   });
 
-  /**
-   * The host's messages for one turn: its opening, `rounds` tool rounds and the answer. Round n's assistant
-   * message thinks when `think(n)`; a /steer row rides in the results of round `steer`.
-   */
   const turn = (
     opening: Block,
     rounds: number,
@@ -1318,7 +1292,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
     };
   };
 
-  /** The body the relay forwards for the request that queries the last message of `messages`. */
   const pinned = (messages: Message[], layout: Layout) =>
     parse(
       pinMessageBreakpoint(
@@ -1333,7 +1306,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
 
   type Entry = { where: Where; item: Item; key: string };
 
-  /** A user message carrying anything but tool results: a turn opens here. */
   const opensTurn = (item: Message) =>
     item.role === "user" &&
     Array.isArray(item.content) &&
@@ -1344,7 +1316,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
       ? item.content
       : [{ type: "text", text: item.content }];
 
-  /** A run of consecutive tool_use or tool_result blocks counts once toward the lookback. */
   const sameToolKind = (
     kind: string | undefined,
     previous: string | undefined,
@@ -1358,7 +1329,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
   class Cache {
     private readonly entries = new Set<string>();
 
-    /** Where this request's read ends: a message block, "system" or undefined. */
     send(body: Body): Where | undefined {
       const flat = this.flatten(body);
 
@@ -1376,7 +1346,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
       return read < 0 ? undefined : flat[read]?.where;
     }
 
-    /** Every tool, system and message block in hash order; thinking renders closed once a later turn opens. */
     private flatten(body: Body): Entry[] {
       const opens = body.messages.map(opensTurn);
       const flat: Entry[] = [];
@@ -1406,7 +1375,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
       return flat;
     }
 
-    /** How far back one breakpoint reads: the index of the entry it finds, or -1 when the lookback misses. */
     private lookup(flat: Entry[], mark: number) {
       let k = mark;
       let seen = 1;
@@ -1433,7 +1401,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
         : [],
     );
 
-  /** Every breakpoint the API counts toward its four: nested markers and a top-level one included. */
   const markCount = (value: Body | Message) => {
     let count = 0;
 
@@ -1446,10 +1413,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
     return count;
   };
 
-  /**
-   * Send every request of the conversation in order; return (forwarded body, read) per request. Only markers ever
-   * change, and never past four or more than one over native's own count.
-   */
   const replay = (messages: Message[], layout: Layout) => {
     const cache = new Cache();
     const out: [Body, Where | undefined][] = [];
@@ -1488,16 +1451,13 @@ describe("turn start (test_admission_turn_start.py)", () => {
         ];
 
         const sent = replay(messages, layout);
-        // Host index of the frame before the first thinking: the opening, or round first-1's results.
         const anchor: At = [nativeIndex(2 * first), 0];
         const [body, read] = sent.at(-1) ?? [];
 
         if (!body) throw new Error("replay sent requests");
         expect(messageMarks(body)).toContainEqual(anchor);
-        // not "system": only the finished loop from its first thinking is written again
         expect(read).toEqual(anchor);
 
-        // Within the loop each request still reads the previous one's recurring breakpoint.
         for (const [k, [before]] of sent.slice(0, -2).entries())
           expect(sent[k + 1]?.[1]).toEqual(messageMarks(before).at(-1));
       },
@@ -1517,7 +1477,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
         expect(messageMarks(body)).toHaveLength(
           1 + Number(assistantMark && body.messages.length > 4),
         );
-      // the recurring breakpoint's own lookback still reaches the opening
       expect(lastRead(sent)).toEqual([0, 0]);
     });
 
@@ -1538,7 +1497,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
       if (!body) throw new Error("a request carried the steer row");
       expect(read).toEqual([0, 0]);
       expect(messageMarks(body)).toContainEqual([0, 0]);
-      // After the steer the open turn starts at the steer row; the next request reads the steer request's entry.
       expect(sent[steer + 1]?.[1]).toEqual(messageMarks(body).at(-1));
     });
 
@@ -1593,7 +1551,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
   });
 
   test("a later turn keeps everything before the finished turn", () => {
-    // Turn 2 runs the long loop: turn 3's first call reads all of turn 1 and turn 2's opening.
     const first = turn(OPENING, 1, () => true);
     const second = turn(FOLLOW_UP, 14, () => true, 1, undefined, 1);
 
@@ -1625,7 +1582,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
     const previous = sent.at(-2)?.[0];
 
     if (!previous) throw new Error("replay sent requests");
-    // nothing closes: the whole loop is read
     expect(lastRead(sent)).toEqual(messageMarks(previous).at(-1));
   });
 
@@ -1702,8 +1658,6 @@ describe("turn start (test_admission_turn_start.py)", () => {
   });
 
   test("relay forwards the turn mark with the steer frame restored", async () => {
-    // Through the real relay: native's reminder on the last tool result is restored away, the steer frame recurs,
-    // and the turn mark is on the opening frame.
     const messages = turn(OPENING, 14, () => true, 1, 11);
 
     const end =
@@ -1721,12 +1675,10 @@ describe("turn start (test_admission_turn_start.py)", () => {
     const { gate, status } = await relay(JSON.stringify(raw), queried);
 
     expect(status).toBe(200);
-    expect(gate.unrestored).toBeUndefined();
     expect(gate.failure).toBeUndefined();
 
     const sent = parse(received[0] ?? "");
 
-    // The relay returns native's trailing date message to its env message, so the steer frame is last.
     expect(sent.messages.at(-1)?.role).toBe("user");
 
     expect(sent.messages[1]).toEqual({
@@ -1767,7 +1719,6 @@ describe("restoration (test_admission_restoration.py)", () => {
       messages: [...before, { role: "user", content }, ...after],
     });
 
-  /** RESULT with an `is_error` the Block type cannot hold, appended last as Python's `{**RESULT, ...}`. */
   const withErrorFlag = (flag: string) => {
     const plain = wire([RESULT]);
 
@@ -2113,7 +2064,7 @@ describe("restoration (test_admission_restoration.py)", () => {
   ])(
     "unprovable restoration forwards the native payload unchanged %#",
     async (queried: Block[], payload: string) => {
-      const gate = new Admission(UPSTREAM, 5000, queried);
+      const gate = new Admission(UPSTREAM, 5000, { ...ADMITTED, queried });
 
       try {
         const response = await post(gate, payload).catch(() => undefined);
@@ -2123,16 +2074,13 @@ describe("restoration (test_admission_restoration.py)", () => {
         await gate.close();
       }
 
-      expect(gate.unrestored).toBe(UNRESTORED);
       expect(gate.failure).toBeUndefined();
-      // Nothing is dropped or rewritten: native's own frame goes upstream (only a marker may move).
       expect(received).toHaveLength(1);
       expect(strip(parse(received[0] ?? ""))).toEqual(strip(parse(payload)));
     },
   );
 
   test("wire continuity across parallel rounds and admission recreation", async () => {
-    // Fake native client: prove replay stability, not vendor cache savings.
     const history: Message[] = [
       { role: "user", content: "earlier prompt" },
       {
@@ -2421,7 +2369,7 @@ describe("admission", () => {
   });
 
   test("forwards exactly one request and denies the rest", async () => {
-    const gate = new Admission(UPSTREAM, 5000);
+    const gate = new Admission(UPSTREAM, 5000, ADMITTED);
 
     try {
       const first = await post(gate, ASK);
@@ -2538,7 +2486,6 @@ describe("admission", () => {
     expect(status).toBe(400);
     expect(text).toBe(error);
     expect(gate.status).toBe(400);
-    expect(gate.requestId).toBe("req_1");
     expect(gate.errorText()).toBe("prompt is too long");
     expect(gate.capture.message).toBeUndefined();
   });
@@ -2549,7 +2496,7 @@ describe("admission", () => {
   ])(
     "answers %s with 404 and keeps the admission unused",
     async (_, headers: Record<string, string>, path: string) => {
-      const gate = new Admission(UPSTREAM, 5000);
+      const gate = new Admission(UPSTREAM, 5000, ADMITTED);
 
       try {
         const response = await post(gate, ASK, headers, path);

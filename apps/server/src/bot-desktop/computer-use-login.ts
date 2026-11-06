@@ -1,10 +1,9 @@
 import type { Context } from "@earendil-works/chord";
-import {
-  hostMatches,
-  loginFieldInput,
-  type LoginField,
-} from "../shared/domain";
-import type { ComputerUseArgs, ComputerUseResult } from "./computer-use";
+import { hostMatches } from "../shared/domain";
+import { loginFieldInput, type LoginField } from "../contract/secrets";
+import type { LoginFill, LoginSummary } from "../logins/login-fill";
+import type { ComputerUseArgs } from "./computer-use-args";
+import type { ComputerUseResult } from "./computer-use";
 import {
   codeOf,
   driverCall,
@@ -16,44 +15,20 @@ import {
   sh,
 } from "./computer-use-driver";
 import {
+  currentPage,
+  pageHost,
+  refOf,
   scrubText,
   textResult,
   type ComputerUseState,
 } from "./computer-use-state";
 
-/** What `fill_login` may know about a login: its name, hosts, and which fields it has; never a value. */
-export type LoginSummary = {
-  name: string;
-  hosts: string[];
-  fields: LoginField[];
-};
-
-/** A field's value for one fill, or why it can't be read. */
-export type LoginRead =
-  | { value: string }
-  /** The login or field doesn't exist; nothing was read. */
-  | { missing: string }
-  /** Reading failed, such as an unreachable password manager. */
-  | { unreadable: string };
-
-/** The bot's logins, as the computer_use tool reaches them; values only through `read`. */
-export type LoginFill = {
-  list(): Promise<LoginSummary[]>;
-  read(name: string, field: LoginField): Promise<LoginRead>;
-  recordUse(
-    name: string,
-    use: { at: string; host: string; field: LoginField; error: string | null },
-  ): Promise<void>;
-};
-
-/** A password typed on the desktop, the label that replaces it in results, and the Chromium it was typed into. */
 export type DesktopFill = {
   value: string;
   label: string;
   browser: string;
 };
 
-/** The passwords typed on one bot desktop, kept for the desktop's life. */
 export type DesktopFills = {
   list(): Promise<DesktopFill[]>;
   add(fill: DesktopFill): Promise<void>;
@@ -83,13 +58,14 @@ function pageOf(
   | { latest: NonNullable<ComputerUseState["lastRead"]>; url: string }
   | Refusal {
   const latest = state.lastRead;
+  const url = currentPage(state);
 
-  if (!latest)
+  if (!latest || url === undefined)
     return {
       refused: "read the sign-in page, then fill_login with a ref from it",
     };
 
-  const element = latest.read.refs.find((each) => each.ref === ref);
+  const element = refOf(state, ref);
 
   if (!element)
     return { refused: `${ref} is not in the latest read; read the page again` };
@@ -103,18 +79,19 @@ function pageOf(
   if (element.role !== "textbox")
     return { refused: `${ref} is not a text field` };
 
-  return { latest, url: latest.read.page?.url ?? latest.page.url };
+  return { latest, url };
 }
 
 function hostOf(url: string): { host: string } | Refusal {
-  const parsed = URL.canParse(url) ? new URL(url) : undefined;
+  const host = pageHost(url);
+  const secure = URL.canParse(url) && new URL(url).protocol === "https:";
 
-  if (parsed?.protocol !== "https:")
+  if (!secure || !host)
     return {
       refused: `fill_login fills https pages only, and this page is ${url}`,
     };
 
-  return { host: parsed.hostname };
+  return { host };
 }
 
 function loginFor(
@@ -138,7 +115,6 @@ function loginFor(
   };
 }
 
-/** Everything `fill_login` checks before reading a value; a refusal means nothing was read or typed. */
 async function targetOf(
   state: ComputerUseState,
   logins: LoginFill,
@@ -178,7 +154,6 @@ async function targetOf(
 
 const label = (name: string, field: LoginField) => `[login ${name} ${field}]`;
 
-/** Reads the value and records the fill; a missing field is a refusal, not a use. */
 async function readValue(logins: LoginFill, target: Target) {
   const read = await logins.read(target.login.name, target.field);
 
@@ -210,20 +185,18 @@ async function remember(state: ComputerUseState, fill: DesktopFill) {
 
 const UNKNOWN_CHROMIUM = "unknown";
 
-/** The running Chromium, by pid and start time; undefined when none runs. A new one shows none of the old one's pages. */
 async function chromiumInstance(state: ComputerUseState, context: Context) {
   const browser = (await listWindows(state, context)).find(isChromium);
 
   if (!browser) return undefined;
 
   const started = (
-    await sh(state, `ps -o lstart= -p ${browser.pid}`, context)
+    await sh(state.shell, `ps -o lstart= -p ${browser.pid}`, context)
   ).trim();
 
   return started ? `${browser.pid} ${started}` : UNKNOWN_CHROMIUM;
 }
 
-/** Whether a screenshot may show a password: one was typed into the Chromium running now, or into one we can't tell. */
 export async function passwordMayShow(
   state: ComputerUseState,
   context: Context,
@@ -240,10 +213,6 @@ export async function passwordMayShow(
   );
 }
 
-/**
- * Types a login field into the ref's page after checking the page's host against the login's. The value never appears
- * in the result, and a password is replaced in every later result on this desktop (see `scrubFilled`).
- */
 export async function fillLogin(
   state: ComputerUseState,
   args: ComputerUseArgs,
@@ -288,7 +257,6 @@ export async function fillLogin(
   );
 }
 
-/** A result with typed passwords replaced; captures leave out screenshots that may show one (see `passwordMayShow`). */
 export function scrubFilled(
   state: ComputerUseState,
   result: ComputerUseResult,

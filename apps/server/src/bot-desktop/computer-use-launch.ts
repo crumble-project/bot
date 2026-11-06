@@ -1,16 +1,21 @@
+import { sleep } from "../shared/time";
+import { shellQuote } from "../shared/shell";
 import type { Context } from "@earendil-works/chord";
 import { z } from "zod";
-import type { ComputerUseArgs, ComputerUseResult } from "./computer-use";
+import {
+  FILES_PROGRAM,
+  TERMINAL_PROGRAM,
+  WORKSPACE_PATH,
+} from "../../workspace-image/guest";
+import type { ComputerUseArgs } from "./computer-use-args";
+import type { ComputerUseResult } from "./computer-use";
 import { driverCall, listWindows, sh } from "./computer-use-driver";
 import { textResult, type ComputerUseState } from "./computer-use-state";
 
-const quote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
-
-/** Apps whose command takes the folder in its own way; any other app gets the path as its last argument. */
 const FOLDER_APPS = {
-  files: (path: string) => `thunar ${quote(path)}`,
+  files: (path: string) => `${FILES_PROGRAM} ${shellQuote(path)}`,
   terminal: (path: string) =>
-    `xfce4-terminal --working-directory=${quote(path)}`,
+    `${TERMINAL_PROGRAM} --working-directory=${shellQuote(path)}`,
 } satisfies Record<string, (path: string) => string>;
 
 const isFolderApp = (name: string): name is keyof typeof FOLDER_APPS =>
@@ -29,7 +34,6 @@ const installedApps = z.object({
     .default([]),
 });
 
-/** The desktop's installed apps: XDG launcher entries, as `cua-driver` lists them. */
 async function desktopApps(state: ComputerUseState, context: Context) {
   const { reply } = await driverCall(state, "list_apps", {}, context);
 
@@ -62,7 +66,7 @@ async function commandFor(
 ) {
   const key = app.toLowerCase();
 
-  if (isFolderApp(key)) return FOLDER_APPS[key](path ?? "/workspace");
+  if (isFolderApp(key)) return FOLDER_APPS[key](path ?? WORKSPACE_PATH);
 
   const entry = (await desktopApps(state, context)).find(
     (each) => each.name.toLowerCase() === key,
@@ -70,7 +74,7 @@ async function commandFor(
 
   if (!entry?.launch_path) return undefined;
 
-  return path ? `${entry.launch_path} ${quote(path)}` : entry.launch_path;
+  return path ? `${entry.launch_path} ${shellQuote(path)}` : entry.launch_path;
 }
 
 const WINDOW_WAIT_MS = 8000;
@@ -108,7 +112,11 @@ export async function launchApp(
   );
 
   // setsid and closed streams let the app outlive this command.
-  await sh(state, `setsid ${command} >/dev/null 2>&1 </dev/null &`, context);
+  await sh(
+    state.shell,
+    `setsid ${command} >/dev/null 2>&1 </dev/null &`,
+    context,
+  );
 
   for (let waited = 0; waited < WINDOW_WAIT_MS; waited += POLL_MS) {
     const opened = (await listWindows(state, context)).find(
@@ -120,7 +128,7 @@ export async function launchApp(
         `opened ${args.app}${args.path ? ` at ${args.path}` : ""}: window ${opened.window_id} ${opened.app_name} "${opened.title}". Capture it to act in it.`,
       );
 
-    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+    await sleep(POLL_MS);
   }
 
   return textResult(

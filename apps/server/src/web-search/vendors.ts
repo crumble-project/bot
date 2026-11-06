@@ -1,9 +1,14 @@
+import { errorText } from "../shared/errors";
 import { McpClient, StreamableHttpTransport } from "@earendil-works/pi-mcp";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { z } from "zod";
-import type { WebSearchQuery, WebSearchResult } from "./provider";
+import type { WebSearchResult } from "../contract/web-search";
+import { VENDOR_TIMEOUT, type WebSearchQuery } from "./provider";
 
-export class VendorUnavailable extends Error {}
+export class VendorUnavailable extends Schema.TaggedError<VendorUnavailable>()(
+  "VendorUnavailable",
+  { message: Schema.String },
+) {}
 
 const parallelResponse = z.object({
   session_id: z.string().optional(),
@@ -40,16 +45,14 @@ const jinaResponse = z.object({
 const unavailable = (name: string, cause: unknown) =>
   cause instanceof VendorUnavailable
     ? cause
-    : new VendorUnavailable(
-        `${name}: ${cause instanceof Error ? cause.message : String(cause)}`,
-        { cause },
-      );
+    : new VendorUnavailable({ message: `${name}: ${errorText(cause)}` });
 
 const timed = <A>(name: string, effect: Effect.Effect<A, VendorUnavailable>) =>
   effect.pipe(
     Effect.timeoutOrElse({
-      duration: "30 seconds",
-      orElse: () => Effect.fail(new VendorUnavailable(`${name}: timeout`)),
+      duration: VENDOR_TIMEOUT,
+      orElse: () =>
+        Effect.fail(new VendorUnavailable({ message: `${name}: timeout` })),
     }),
   );
 
@@ -88,9 +91,9 @@ const mcpCall = (
                 });
 
                 if (!response.ok)
-                  throw new VendorUnavailable(
-                    `${name}: HTTP ${response.status}`,
-                  );
+                  throw new VendorUnavailable({
+                    message: `${name}: HTTP ${response.status}`,
+                  });
 
                 return response;
               },
@@ -106,7 +109,7 @@ const mcpCall = (
 
       if (result.isError)
         return yield* Effect.fail(
-          new VendorUnavailable(`${name}: MCP tool error`),
+          new VendorUnavailable({ message: `${name}: MCP tool error` }),
         );
 
       return result;
@@ -225,7 +228,9 @@ const fetchJson = (name: string, url: string, init: RequestInit) =>
 
       if (!response.ok)
         return yield* Effect.fail(
-          new VendorUnavailable(`${name}: HTTP ${response.status}`),
+          new VendorUnavailable({
+            message: `${name}: HTTP ${response.status}`,
+          }),
         );
 
       return yield* Effect.tryPromise({
@@ -293,7 +298,7 @@ export const jinaExtract = (url: string) =>
 
       if (data.httpStatus && data.httpStatus >= 400)
         return yield* Effect.fail(
-          new VendorUnavailable(`Jina: HTTP ${data.httpStatus}`),
+          new VendorUnavailable({ message: `Jina: HTTP ${data.httpStatus}` }),
         );
 
       return { url: data.url, title: data.title, text: data.content };

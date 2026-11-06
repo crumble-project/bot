@@ -9,9 +9,11 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "../bots/runtime";
 import { Store } from "../../test/support/store";
-import { standaloneBots } from "../bots/bots";
-import { standaloneScheduler } from "../schedules/scheduler";
-import { createAPI } from "./api";
+import { standaloneBots } from "../bots/bots-test-support";
+import { standaloneScheduler } from "../automations/scheduler-test-support";
+import { testAPI } from "../../test/support/api";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
+import { until } from "../../test/support/until";
 
 const token = "e".repeat(40);
 const requestId = "00000000-0000-4000-8000-000000000202";
@@ -36,7 +38,7 @@ describe("HTTP/runtime persistence", () => {
         service.dispatch(a, p, r, s),
       );
 
-      return createAPI(service, token, { scheduler });
+      return testAPI(service, token, { scheduler });
     };
 
     try {
@@ -56,7 +58,7 @@ describe("HTTP/runtime persistence", () => {
         delegates: [],
       });
 
-      const runtime = new AgentRuntime(dir, { models });
+      const runtime = new AgentRuntime(dir, runtimeCallbacks({ models }));
       const app = makeApp(store, runtime);
 
       const headers = {
@@ -71,7 +73,13 @@ describe("HTTP/runtime persistence", () => {
       });
 
       expect(response.status).toBe(202);
-      await new Promise((resolve) => setTimeout(resolve, 30));
+      await until(async () => {
+        const chat = await app.request(`/v1/agents/${agent.id}/chat`, {
+          headers,
+        });
+
+        return (await chat.text()).includes("persisted hello");
+      });
       expect(await response.json()).toMatchObject({
         agentId: agent.id,
         requestId,
@@ -82,7 +90,12 @@ describe("HTTP/runtime persistence", () => {
       store.close();
 
       const reopenedStore = new Store(dir);
-      const reopenedRuntime = new AgentRuntime(dir, { models });
+
+      const reopenedRuntime = new AgentRuntime(
+        dir,
+        runtimeCallbacks({ models }),
+      );
+
       const reopenedApp = makeApp(reopenedStore, reopenedRuntime);
 
       const snapshotResponse = await reopenedApp.request(

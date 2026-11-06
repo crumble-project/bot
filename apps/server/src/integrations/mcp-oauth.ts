@@ -7,31 +7,29 @@ import {
   type McpOAuthState,
   type McpOAuthStateStore,
 } from "@earendil-works/pi-mcp/oauth";
-import { type MCPServer } from "../shared/domain";
-import { Context, Effect, Layer } from "effect";
-import { SecretRepository } from "../credentials/secret-repository";
-import { Secrets, secretKey, secretText } from "../password-managers/secrets";
-import { appErrors } from "../shared/app-errors";
-import { runnerOf, type Runner } from "../shared/runner";
-import { InvalidInput, isAppError, type AppError } from "../shared/errors";
+import type { MCPServer } from "./mcp-server-repository";
+import { Effect } from "effect";
+import { MCP_OAUTH_WEB_PATH } from "../contract/mcp-oauth";
+import { secretKey } from "../secrets/secret-key";
+import { Secrets, secretText } from "../secrets/secrets";
+import { ServerSecrets } from "../secrets/server-secrets";
+import type { Runner } from "../shared/runner";
+import { InvalidInput, isAppError, errorText } from "../shared/errors";
 
 /**
  * A server's OAuth state as pi-mcp keeps it (client registration, tokens, PKCE verifier, state),
- * plus the redirect URL it was registered for. Stored with the encrypted credentials.
+ * plus the redirect URL it was registered for. Stored encrypted, as a server secret.
  */
 type SavedOAuth = {
   redirectUrl: string;
   state: McpOAuthState;
-  /** The owner's OAuth app the state belongs to; null when Crumble registered or used its document. */
-  clientId?: string | null;
+  clientId: string | null;
 };
 
-const credentialKey = (serverId: string) => `mcp-oauth:${serverId}`;
+const oauthStateKey = (serverId: string) => secretKey("mcp-oauth", serverId);
 
-/** The secret holding an MCP server's bearer token. */
 export const mcpTokenKey = (serverId: string) => secretKey("mcp", serverId);
 
-/** The secret holding the client secret of the owner's OAuth app for an MCP server. */
 export const clientSecretKey = (serverId: string) =>
   secretKey("mcp-oauth-client", serverId);
 
@@ -63,7 +61,6 @@ const CLIENT_METADATA = {
   token_endpoint_auth_method: "none",
 };
 
-/** Where a server with a public address serves its OAuth Client ID Metadata Document. */
 export const CLIENT_DOCUMENT_PATH = "/oauth/client-metadata.json";
 
 /** The native apps' sign-in callbacks; their system sign-in sheets watch these schemes. */
@@ -84,7 +81,7 @@ export function clientDocument(publicUrl: URL): ClientDocument {
 
   return {
     url: `${base}${CLIENT_DOCUMENT_PATH}`,
-    redirectUris: [`${base}/oauth/callback`, ...NATIVE_REDIRECTS],
+    redirectUris: [`${base}${MCP_OAUTH_WEB_PATH}`, ...NATIVE_REDIRECTS],
   };
 }
 
@@ -100,12 +97,11 @@ export type SecretStorage = {
   get(key: string): string | undefined;
   set(key: string, value: string): void;
   delete(key: string): void;
-  /** Read on use, possibly from a password manager. */
   clientSecret(serverId: string): Promise<string | undefined>;
 };
 
 export const secretStorage = (
-  run: Runner<SecretRepository | Secrets>,
+  run: Runner<ServerSecrets | Secrets>,
 ): SecretStorage => ({
   clientSecret: (serverId) =>
     run.runPromise(
@@ -118,24 +114,23 @@ export const secretStorage = (
         ),
       ),
     ),
-  get: (key) =>
-    run.runSync(SecretRepository.use((secrets) => secrets.get(key))),
+  get: (key) => run.runSync(ServerSecrets.use((secrets) => secrets.get(key))),
   set: (key, value) =>
-    run.runSync(SecretRepository.use((secrets) => secrets.set(key, value))),
+    run.runSync(ServerSecrets.use((secrets) => secrets.set(key, value))),
   delete: (key) =>
-    run.runSync(SecretRepository.use((secrets) => secrets.delete(key))),
+    run.runSync(ServerSecrets.use((secrets) => secrets.delete(key))),
 });
 
 function read(
   storage: SecretStorage,
   serverId: string,
 ): SavedOAuth | undefined {
-  const raw = storage.get(credentialKey(serverId));
+  const raw = storage.get(oauthStateKey(serverId));
 
   if (!raw) return undefined;
 
   try {
-    // SAFETY: write() serializes SavedOAuth under this private credential key;
+    // SAFETY: write() serializes SavedOAuth under this private key;
     // only this module writes that key, and malformed JSON is rejected below.
     return JSON.parse(raw) as SavedOAuth;
   } catch {
@@ -144,7 +139,7 @@ function read(
 }
 
 function write(storage: SecretStorage, serverId: string, saved: SavedOAuth) {
-  storage.set(credentialKey(serverId), JSON.stringify(saved));
+  storage.set(oauthStateKey(serverId), JSON.stringify(saved));
 }
 
 export function hasOAuthTokens(storage: SecretStorage, serverId: string) {
@@ -152,7 +147,7 @@ export function hasOAuthTokens(storage: SecretStorage, serverId: string) {
 }
 
 export function signOut(storage: SecretStorage, serverId: string) {
-  storage.delete(credentialKey(serverId));
+  storage.delete(oauthStateKey(serverId));
 }
 
 function provider(
@@ -228,13 +223,12 @@ function unavailable(
   step: "start" | "finish" = "start",
 ): never {
   if (isAppError(cause)) throw cause;
-  const reason = cause instanceof Error ? cause.message : String(cause);
+  const reason = errorText(cause);
   throw new InvalidInput({
     message: `${server.name} could not ${step} OAuth sign-in: ${reason}`,
   });
 }
 
-/** What to do when an authorization server registers no clients: CIMD needs a public address, or a token instead. */
 function registrationHint(
   document: ClientDocument | undefined,
   redirectUrl: string,
@@ -251,7 +245,6 @@ function registrationHint(
   return `Sign in from ${web}, or from the Mac or iOS app, if it supports client metadata documents; otherwise add the server with a token`;
 }
 
-/** The client secret of the owner's OAuth app, when the server uses one. */
 const ownerSecret = (storage: SecretStorage, server: MCPServer) =>
   server.oauthClientId
     ? storage.clientSecret(server.id)
@@ -268,7 +261,7 @@ function restartIfChanged(
   if (
     saved?.redirectUrl === redirectUrl &&
     saved.state.serverUrl === server.url &&
-    (saved.clientId ?? null) === server.oauthClientId
+    saved.clientId === server.oauthClientId
   )
     return;
 
@@ -279,37 +272,12 @@ function restartIfChanged(
   });
 }
 
-/**
- * The callback to send: the one asked for, or the `/ui/oauth/callback` an owner's app was signed in with
- * before the web app left `/ui`. Owners registered that URL with their provider, and `/ui` still redirects.
- */
-function registeredRedirect(
-  storage: SecretStorage,
-  server: MCPServer,
-  requested: string,
-) {
-  const saved = read(storage, server.id);
-  const legacy = requested.replace(/\/oauth\/callback$/, "/ui/oauth/callback");
-
-  return server.oauthClientId &&
-    saved?.clientId === server.oauthClientId &&
-    saved.redirectUrl === legacy
-    ? legacy
-    : requested;
-}
-
-/**
- * Discovers the server's authorization server, registers Crumble for `redirectUrl`, and returns the
- * URL the owner signs in at, or `authorized` when the saved tokens still work.
- */
 export async function startAuthorization(
   storage: SecretStorage,
   server: MCPServer,
-  requested: string,
+  redirectUrl: string,
   document?: ClientDocument,
 ): Promise<{ authorizationUrl: string } | { authorized: true }> {
-  const redirectUrl = registeredRedirect(storage, server, requested);
-
   restartIfChanged(storage, server, redirectUrl);
   let authorizationUrl: URL | undefined;
 
@@ -397,62 +365,4 @@ export async function finishAuthorization(
   const done = read(storage, server.id)!;
   const { oauthState: _state, codeVerifier: _verifier, ...rest } = done.state;
   write(storage, server.id, { ...done, state: rest });
-}
-
-/** OAuth sign-in to MCP servers, with tokens and registrations encrypted among the account's secrets. */
-export class McpOAuth extends Context.Service<
-  McpOAuth,
-  {
-    readonly hasTokens: (serverId: string) => Effect.Effect<boolean>;
-    readonly signOut: (serverId: string) => Effect.Effect<void>;
-    /** The auth a live connection uses, when the server has saved tokens. */
-    readonly connectionAuth: (
-      server: MCPServer,
-      document?: ClientDocument,
-    ) => Effect.Effect<AuthProvider | undefined>;
-    readonly start: (
-      server: MCPServer,
-      redirectUrl: string,
-      document?: ClientDocument,
-    ) => Effect.Effect<
-      { authorizationUrl: string } | { authorized: true },
-      AppError
-    >;
-    readonly finish: (
-      server: MCPServer,
-      code: string,
-      state: string,
-      iss?: string,
-      document?: ClientDocument,
-    ) => Effect.Effect<void, AppError>;
-  }
->()("crumble/integrations/McpOAuth") {
-  static readonly layer = Layer.effect(
-    McpOAuth,
-    Effect.gen(function* () {
-      const storage = secretStorage(
-        runnerOf(yield* Effect.context<SecretRepository | Secrets>()),
-      );
-
-      return McpOAuth.of({
-        hasTokens: (serverId) =>
-          Effect.sync(() => hasOAuthTokens(storage, serverId)),
-        signOut: (serverId) => Effect.sync(() => signOut(storage, serverId)),
-        connectionAuth: (server, document) =>
-          Effect.promise(() => connectionAuth(storage, server, document)),
-        start: (server, redirectUrl, document) =>
-          appErrors(
-            Effect.tryPromise(() =>
-              startAuthorization(storage, server, redirectUrl, document),
-            ),
-          ),
-        finish: (server, code, state, iss, document) =>
-          appErrors(
-            Effect.tryPromise(() =>
-              finishAuthorization(storage, server, code, state, iss, document),
-            ),
-          ),
-      });
-    }),
-  );
 }

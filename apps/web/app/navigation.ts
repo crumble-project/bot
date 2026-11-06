@@ -7,7 +7,7 @@ import {
   IconSun,
 } from "@tabler/icons-react";
 
-export const WORKSPACE = [
+export const PAGES = [
   { to: "/memory", label: "Memory", icon: IconBrain },
   { to: "/automations", label: "Automations", icon: IconCalendarRepeat },
   { to: "/activity", label: "Activity", icon: IconActivity },

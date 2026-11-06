@@ -2,9 +2,10 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { botMessagingAccess, standaloneMessaging } from "./bot-messaging";
-import { standaloneBots } from "../bots/bots";
-import type { Agent } from "../shared/domain";
+import { standaloneMessaging } from "./bot-messaging-test-support";
+import { accessOf, noServices } from "../shared/runner";
+import { standaloneBots } from "../bots/bots-test-support";
+import type { Agent } from "../contract/agents";
 import { Store } from "../../test/support/store";
 import {
   awaitWithContext,
@@ -50,6 +51,10 @@ function setup(
 
   const runtime: any = {
     openChat: async (agent: Agent) => `${agent.id}:${++conversation}`,
+    prepareInput: async (_agent: Agent, text: string) => ({
+      modelContent: text,
+      data: { text },
+    }),
     submit: async (
       _agent: Agent,
       _conversation: string,
@@ -84,7 +89,9 @@ function setup(
     service,
     source,
     target,
-    messaging: botMessagingAccess(standaloneMessaging(service)),
+    messaging: accessOf(standaloneMessaging(service), noServices, [
+      "recipients",
+    ]),
   };
 }
 

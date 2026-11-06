@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { openGroupConversation } from "./group-turns";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -13,12 +14,18 @@ import {
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
 import { Plugins } from "../plugins/plugins";
-import { BotExtensions } from "../bots/bot-extensions";
-import { webSearchTools } from "../web-search/web-search-tools";
-import type { Agent } from "../shared/domain";
+import { BotExtensions } from "../bot-ports/bot-extensions";
+import { chatOnly } from "../shared/chat-only";
+import { configuredWebSearchTools } from "../web-search/web-search-tools";
+import { AgentRepository } from "../bot-store/agent-repository";
+import { SettingsRepository } from "../shared/settings-repository";
+import type { Agent } from "../contract/agents";
 import { defaultAvatarDefinition } from "../contract/avatar";
 import { reactionExtension } from "../bots/reaction";
 import { AgentRuntime } from "../bots/runtime";
+import { turnOutcome } from "./group-turn-outcome";
+import { turnReport } from "../learning/turn-report";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -51,7 +58,6 @@ const textOf = (message: Message) =>
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("");
 
-/** Answers by the last input's text, and records the tools each request offered. */
 function script(offered: string[][]): FauxResponseFactory {
   return async (context) => {
     offered.push(
@@ -83,19 +89,20 @@ function script(offered: string[][]): FauxResponseFactory {
   };
 }
 
-// Stands in for bot messaging: a group turn must not be offered it.
-const coordination = defineExtension({
-  name: "coordination",
-  tools: [
-    defineTool({
-      name: "delegate",
-      description: "Message another bot.",
-      parameters: Type.Object({}),
-      callers: ["model"],
-      execute: async () => ({ output: [{ type: "text", text: "Sent." }] }),
-    }),
-  ],
-});
+const coordination = chatOnly(
+  defineExtension({
+    name: "coordination",
+    tools: [
+      defineTool({
+        name: "delegate",
+        description: "Message another bot.",
+        parameters: Type.Object({}),
+        callers: ["model"],
+        execute: async () => ({ output: [{ type: "text", text: "Sent." }] }),
+      }),
+    ],
+  }),
+);
 
 function open(
   extensions?: (agent: Agent) => Promise<ReturnType<typeof defineExtension>[]>,
@@ -108,10 +115,13 @@ function open(
   const models = createModels();
   models.setProvider(faux.provider);
 
-  const runtime = new AgentRuntime(dir, {
-    models,
-    extensions: extensions ?? (() => [coordination, reactionExtension()]),
-  });
+  const runtime = new AgentRuntime(
+    dir,
+    runtimeCallbacks({
+      models,
+      extensions: extensions ?? (() => [coordination, reactionExtension()]),
+    }),
+  );
 
   cleanups.push(() => runtime.close());
 
@@ -122,24 +132,89 @@ async function turn(runtime: AgentRuntime, conversation: string, text: string) {
   const submission = await runtime.submit(agent, conversation, text, text);
   await runtime.wait(submission, agent);
 
-  return runtime.turnOutcome(agent, conversation, submission);
+  return turnOutcome(runtime, agent, conversation, submission);
 }
 
 test("a group conversation offers pass and react but no delegation", async () => {
   const { runtime, offered } = open();
   const chat = await runtime.openChat(agent);
-  const group = await runtime.openGroupConversation(agent, "group-1");
+  const group = await openGroupConversation(runtime, agent, "group-1");
 
   await turn(runtime, group, "hello");
-  expect(offered.at(-1)).toEqual(["memory", "react", "pass"]);
+  expect(offered.at(-1)).toEqual(["memory", "skill_manage", "react", "pass"]);
 
   await turn(runtime, chat, "hi");
-  expect(offered.at(-1)).toEqual(["memory", "delegate", "react"]);
+  expect(offered.at(-1)).toEqual([
+    "memory",
+    "skill_manage",
+    "delegate",
+    "react",
+  ]);
+});
+
+test("a turn longer than one entry page is read to its end", async () => {
+  const rounds = 110;
+  const faux = fauxProvider({ provider: "faux", models: [{ id: "chat" }] });
+
+  faux.setResponses([
+    ...Array.from({ length: rounds }, () =>
+      fauxAssistantMessage(fauxToolCall("ping", {}), { stopReason: "toolUse" }),
+    ),
+    fauxAssistantMessage([fauxText("The final answer")]),
+    fauxAssistantMessage([fauxText("The next turn")]),
+  ]);
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const dir = mkdtempSync(join(tmpdir(), "bot-long-turn-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+
+  const ping = defineExtension({
+    name: "ping",
+    tools: [
+      defineTool({
+        name: "ping",
+        description: "Ping.",
+        parameters: Type.Object({}),
+        replay: "safe",
+        execute: async () => ({ output: [{ type: "text", text: "pong" }] }),
+      }),
+    ],
+  });
+
+  const runtime = new AgentRuntime(
+    dir,
+    runtimeCallbacks({ models, extensions: () => [ping] }),
+  );
+
+  cleanups.push(() => runtime.close());
+  await runtime.openChat(agent);
+  const group = await openGroupConversation(runtime, agent, "group-1");
+  const long = await runtime.submit(agent, group, "work", "long");
+  await runtime.wait(long, agent);
+  const next = await runtime.submit(agent, group, "again", "next");
+  await runtime.wait(next, agent);
+
+  expect(await turnOutcome(runtime, agent, group, long)).toEqual({
+    kind: "message",
+    text: "The final answer",
+    sources: [],
+  });
+  expect(await runtime.response(agent, group, long)).toEqual([
+    "The final answer",
+  ]);
+
+  const report = await turnReport(runtime, agent, group, long, 100_000);
+
+  expect(report.rounds).toBe(rounds);
+  expect(report.digest).toContain("The final answer");
+  expect(report.digest).not.toContain("The next turn");
 });
 
 test("web tools are offered in bot chat and group turns", async () => {
-  const layers = webSearchTools.pipe(
+  const layers = configuredWebSearchTools.pipe(
     Layer.provideMerge(BotExtensions.layer),
+    Layer.provide(Layer.mock(AgentRepository)({})),
+    Layer.provide(Layer.mock(SettingsRepository)({})),
     Layer.provide(
       Layer.succeed(Plugins, [
         {
@@ -165,7 +240,7 @@ test("web tools are offered in bot chat and group turns", async () => {
         const chat = yield* Effect.promise(() => runtime.openChat(enabled));
 
         const group = yield* Effect.promise(() =>
-          runtime.openGroupConversation(enabled, "group-1"),
+          openGroupConversation(runtime, enabled, "group-1"),
         );
 
         yield* Effect.promise(async () => {
@@ -173,7 +248,12 @@ test("web tools are offered in bot chat and group turns", async () => {
 
           await runtime.wait(submission, enabled);
         });
-        expect(offered.at(-1)).toEqual(["memory", "web_search", "web_extract"]);
+        expect(offered.at(-1)).toEqual([
+          "memory",
+          "skill_manage",
+          "web_search",
+          "web_extract",
+        ]);
 
         yield* Effect.promise(async () => {
           const submission = await runtime.submit(
@@ -187,6 +267,7 @@ test("web tools are offered in bot chat and group turns", async () => {
         });
         expect(offered.at(-1)).toEqual([
           "memory",
+          "skill_manage",
           "web_search",
           "web_extract",
           "pass",
@@ -199,7 +280,7 @@ test("web tools are offered in bot chat and group turns", async () => {
 test("a group conversation stays out of the bot chat", async () => {
   const { runtime } = open();
   const chat = await runtime.openChat(agent);
-  const group = await runtime.openGroupConversation(agent, "group-1");
+  const group = await openGroupConversation(runtime, agent, "group-1");
 
   expect(await turn(runtime, group, "secret plan")).toEqual({
     kind: "message",
@@ -212,7 +293,7 @@ test("a group conversation stays out of the bot chat", async () => {
 
 test("a turn's outcome is its answer, a reaction, or a pass", async () => {
   const { runtime } = open();
-  const group = await runtime.openGroupConversation(agent, "group-1");
+  const group = await openGroupConversation(runtime, agent, "group-1");
 
   expect(await turn(runtime, group, "plans")).toEqual({
     kind: "message",

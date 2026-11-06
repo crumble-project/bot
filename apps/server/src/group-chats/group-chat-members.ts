@@ -1,130 +1,73 @@
+import { activeExecution } from "../shared/domain";
+import { pi } from "../shared/app-errors";
 import { Effect } from "effect";
-import type { GroupChat } from "../shared/domain";
-import type { AppError } from "../shared/errors";
-import { active, pi, type GroupChatContext } from "./group-chat-context";
+import type { GroupChat } from "./group-chat-repository";
+import { type GroupChatContext } from "./group-chat-context";
 import { mentionedMembers } from "./group-mentions";
+import { openGroupConversation } from "./group-turns";
 import type { GroupEntry } from "./group-transcripts";
 
-/** How a group reaches its members: who a message wakes, who waits, who joins, and who is stopped. */
-export type GroupChatMembers = {
-  /** Members a message wakes: its mentions and, for a reply, the bot it answers. */
-  readonly mentions: (
+export const groupChatMembers = (context: GroupChatContext) => {
+  const { agents, bots, conversations, executions, groups, runtime } = context;
+
+  const mentions = Effect.fnUntraced(function* (
     group: GroupChat,
     text: string,
     senderId: string | undefined,
     replyTarget?: GroupEntry,
-  ) => Effect.Effect<string[]>;
-  readonly queueMember: (
-    groupId: string,
-    agentId: string,
-    botStarted: boolean,
-  ) => Effect.Effect<void>;
-  readonly openConversation: (
+  ) {
+    const members = (yield* Effect.forEach(group.memberIds, (agentId) =>
+      agents.get(agentId),
+    )).flatMap((agent) => (agent ? [{ id: agent.id, name: agent.name }] : []));
+
+    const found = mentionedMembers(text, members, senderId);
+    const repliedTo = replyTarget?.sender.agentId;
+
+    if (
+      repliedTo &&
+      repliedTo !== senderId &&
+      group.memberIds.includes(repliedTo) &&
+      !found.includes(repliedTo)
+    )
+      found.unshift(repliedTo);
+
+    return found;
+  });
+
+  const openConversation = Effect.fnUntraced(function* (
     group: GroupChat,
     agentId: string,
-  ) => Effect.Effect<string, AppError>;
-  /** Stops the member's turn and drops its queued one; a stopped turn posts nothing. Reports whether there was any. */
-  readonly abortTurn: (
+  ) {
+    const agent = yield* bots.agent(agentId);
+
+    const conversationId = yield* pi(() =>
+      openGroupConversation(runtime, agent, group.id),
+    );
+
+    yield* conversations.create({ agentId, title: group.name }, conversationId);
+    yield* groups.setMember(group.id, agentId, { conversationId });
+
+    return conversationId;
+  });
+
+  const abortTurn = Effect.fnUntraced(function* (
     groupId: string,
     agentId: string,
-  ) => Effect.Effect<boolean, AppError>;
+  ) {
+    const member = yield* groups.member(groupId, agentId);
+    const queued = member?.pending === true;
+
+    if (queued) yield* groups.setMember(groupId, agentId, { pending: false });
+    const turn = yield* groups.activeTurn(groupId, agentId);
+    const execution = turn ? yield* executions.get(turn.executionId) : null;
+
+    if (!execution || !activeExecution(execution)) return queued;
+    yield* bots.abort(execution.conversationId);
+
+    return true;
+  });
+
+  return { mentions, openConversation, abortTurn };
 };
 
-const mentions = Effect.fnUntraced(function* (
-  context: GroupChatContext,
-  group: GroupChat,
-  text: string,
-  senderId: string | undefined,
-  replyTarget?: GroupEntry,
-) {
-  const members = (yield* Effect.forEach(group.memberIds, (agentId) =>
-    context.agents.get(agentId),
-  )).flatMap((agent) => (agent ? [{ id: agent.id, name: agent.name }] : []));
-
-  const found = mentionedMembers(text, members, senderId);
-  const repliedTo = replyTarget?.sender.agentId;
-
-  if (
-    repliedTo &&
-    repliedTo !== senderId &&
-    group.memberIds.includes(repliedTo) &&
-    !found.includes(repliedTo)
-  )
-    found.unshift(repliedTo);
-
-  return found;
-});
-
-const queueMember = Effect.fnUntraced(function* (
-  context: GroupChatContext,
-  groupId: string,
-  agentId: string,
-  botStarted: boolean,
-) {
-  const member = yield* context.groups.member(groupId, agentId);
-
-  if (!member) return;
-  context.state.pendingVersions.set(`${groupId}:${agentId}`, Symbol());
-  yield* context.groups.setMember(groupId, agentId, {
-    pending: true,
-    pendingBotStarted: member.pending
-      ? member.pendingBotStarted && botStarted
-      : botStarted,
-  });
-});
-
-const openConversation = Effect.fnUntraced(function* (
-  context: GroupChatContext,
-  group: GroupChat,
-  agentId: string,
-) {
-  const agent = yield* context.bots.agent(agentId);
-  // Opening the bot chat first keeps an upgraded bot's chat from adopting the group conversation as its session.
-  yield* context.bots.chat(agentId);
-
-  const conversationId = yield* pi(() =>
-    context.runtime.openGroupConversation(agent, group.id),
-  );
-
-  yield* context.conversations.create(
-    { agentId, title: group.name },
-    conversationId,
-  );
-  yield* context.groups.setMember(group.id, agentId, { conversationId });
-
-  return conversationId;
-});
-
-const abortTurn = Effect.fnUntraced(function* (
-  context: GroupChatContext,
-  groupId: string,
-  agentId: string,
-) {
-  const member = yield* context.groups.member(groupId, agentId);
-  const queued = member?.pending === true;
-
-  if (queued)
-    yield* context.groups.setMember(groupId, agentId, { pending: false });
-  const turn = yield* context.groups.activeTurn(groupId, agentId);
-
-  const execution = turn
-    ? yield* context.executions.get(turn.executionId)
-    : null;
-
-  if (!execution || !active(execution)) return queued;
-  yield* context.bots.abort(execution.conversationId);
-
-  return true;
-});
-
-export const groupChatMembers = (
-  context: GroupChatContext,
-): GroupChatMembers => ({
-  mentions: (group, text, senderId, replyTarget) =>
-    mentions(context, group, text, senderId, replyTarget),
-  queueMember: (groupId, agentId, botStarted) =>
-    queueMember(context, groupId, agentId, botStarted),
-  openConversation: (group, agentId) =>
-    openConversation(context, group, agentId),
-  abortTurn: (groupId, agentId) => abortTurn(context, groupId, agentId),
-});
+export type GroupChatMembers = ReturnType<typeof groupChatMembers>;

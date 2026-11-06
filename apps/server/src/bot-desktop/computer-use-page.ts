@@ -1,13 +1,17 @@
+import { sleep } from "../shared/time";
 import type { Context } from "@earendil-works/chord";
 import { z } from "zod";
-import type { ComputerUseArgs, ComputerUseResult } from "./computer-use";
+import type { ComputerUseArgs } from "./computer-use-args";
+import type { ComputerUseResult } from "./computer-use";
 import type { Acted, Invalid } from "./computer-use-actions";
 import { MAX_TREE_CHARS } from "./computer-use-capture";
 import {
+  SCROLL_DEFAULTS,
   codeOf,
   driverCall,
   isChromium,
   listWindows,
+  loose,
   messageOf,
   refusalOf,
   targetWindow,
@@ -16,13 +20,12 @@ import {
   type Window,
 } from "./computer-use-driver";
 import {
+  forgetScreen,
+  refOf,
   scrubText,
   textResult,
   type ComputerUseState,
 } from "./computer-use-state";
-
-const loose = <T extends z.ZodType>(schema: T) =>
-  schema.optional().catch(undefined);
 
 const tabSchema = z.object({
   tab_id: z.string(),
@@ -47,7 +50,6 @@ const refSchema = z.object({
 
 export type PageRef = z.infer<typeof refSchema>;
 
-/** A `get_browser_state` snapshot in `semantic_v2`: the fields this tool reads, each dropped when its shape is unexpected. */
 const semanticSnapshot = z.object({
   page: loose(z.object({ title: loose(z.string()), url: loose(z.string()) })),
   outline: loose(z.string()),
@@ -59,7 +61,6 @@ const semanticSnapshot = z.object({
 
 export type SemanticSnapshot = z.infer<typeof semanticSnapshot>;
 
-/** The tab a page action acts on, bound for this call. */
 export type PageBinding = {
   target_id: string;
   tab_id: string;
@@ -74,7 +75,6 @@ const ATTACHED =
 
 type Refused = { refused: string };
 
-/** The window page actions act on: the named one, else the focused one when it is Chromium, else the first Chromium. */
 export async function chromiumWindow(
   state: ComputerUseState,
   windowId: number | undefined,
@@ -124,13 +124,11 @@ async function attach(
 
   if (refusalOf(reply)) return { refused: refusalText(reply) };
 
-  state.snapshots.clear();
-  state.lastRead = undefined;
+  forgetScreen(state);
 
   return undefined;
 }
 
-/** The active tab of a bind reply, or why there is none. */
 function boundTab(
   reply: DriverReply,
   attachedNow: boolean,
@@ -154,7 +152,7 @@ function boundTab(
  * Binds the job's cua-driver session to the window's active tab, for `open` and `read`. Binding supersedes the refs of
  * earlier reads. A session is attached to Chromium once, on its first page action.
  */
-export async function bindPage(
+async function bindPage(
   state: ComputerUseState,
   target: Window,
   context: Context,
@@ -208,8 +206,7 @@ const refLine = (ref: PageRef) => {
   return `[${ref.ref}] ${ref.role ?? "element"} ${JSON.stringify(ref.name ?? "")}${value}${words.length ? ` (${words.join(", ")})` : ""}`;
 };
 
-/** A snapshot as the job reads it: the page, its outline, then one line per element it can act on. Scrubbed before the cut. */
-export function pageText(state: ComputerUseState, read: SemanticSnapshot) {
+function pageText(state: ComputerUseState, read: SemanticSnapshot) {
   const text = scrubText(
     state,
     [
@@ -271,13 +268,10 @@ export async function readPage(
   return readBound(state, page, args, context);
 }
 
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 // A tab shows the new URL as soon as navigation starts; a URL that holds this long without a new title has loaded.
 // Reloading the open URL changes neither, so reaching the requested URL counts as moving too.
 const SETTLE_MS = 1000;
 
-/** Polls the tab until it shows the new page; false when it is still loading at the limit. */
 async function waitForLoad(
   state: ComputerUseState,
   target: Window,
@@ -289,7 +283,7 @@ async function waitForLoad(
   let movedAt: number | undefined;
 
   while (Date.now() < deadline) {
-    await pause(state.pageLoad.pollMs);
+    await sleep(state.pageLoad.pollMs);
 
     const now = await bindPage(state, target, context);
 
@@ -350,7 +344,7 @@ export async function openPage(
 const SELECTS = new Set(["combobox", "listbox"]);
 
 const scrollDelta = (args: ComputerUseArgs) => {
-  const pixels = (args.amount ?? 3) * 100;
+  const pixels = (args.amount ?? SCROLL_DEFAULTS.amount) * 100;
 
   switch (args.direction) {
     case "up":
@@ -366,7 +360,7 @@ const scrollDelta = (args: ComputerUseArgs) => {
 
 type RefCall = { tool: string; args: DriverArgs } | Invalid;
 
-type RefCallBuilder = (
+export type RefCallBuilder = (
   state: ComputerUseState,
   ids: DriverArgs,
   args: ComputerUseArgs,
@@ -382,13 +376,10 @@ const pointerCall =
     args: { ...ids, ...FOREGROUND, action },
   });
 
-/** A select takes the option's label; other fields take the value as replacement text. */
 const valueCall: RefCallBuilder = (state, ids, args) => {
   if (args.value === undefined) return { invalid: "set_value needs value" };
 
-  const role = state.lastRead?.read.refs.find(
-    (each) => each.ref === args.ref,
-  )?.role;
+  const role = refOf(state, args.ref)?.role;
 
   return role && SELECTS.has(role)
     ? { tool: "browser_select", args: { ...ids, label: args.value } }
@@ -398,55 +389,27 @@ const valueCall: RefCallBuilder = (state, ids, args) => {
       };
 };
 
-const REF_CALLS = new Map<string, RefCallBuilder>([
-  [
-    "click",
-    (_state, ids) => ({
-      tool: "browser_click",
-      args: { ...ids, ...FOREGROUND },
-    }),
-  ],
-  ["double_click", pointerCall("double_click")],
-  ["right_click", pointerCall("right_click")],
-  [
-    "scroll",
-    (_state, ids, args) => ({
-      tool: "browser_pointer",
-      args: { ...ids, ...FOREGROUND, action: "scroll", ...scrollDelta(args) },
-    }),
-  ],
-  [
-    "type",
-    (_state, ids, args) =>
-      args.text === undefined
-        ? { invalid: "type needs text" }
-        : { tool: "browser_type", args: { ...ids, text: args.text } },
-  ],
-  ["set_value", valueCall],
-]);
+export const REF_CALLS = {
+  click: (_state, ids) => ({
+    tool: "browser_click",
+    args: { ...ids, ...FOREGROUND },
+  }),
+  double_click: pointerCall("double_click"),
+  right_click: pointerCall("right_click"),
+  scroll: (_state, ids, args) => ({
+    tool: "browser_pointer",
+    args: { ...ids, ...FOREGROUND, action: "scroll", ...scrollDelta(args) },
+  }),
+  type: (_state, ids, args) =>
+    args.text === undefined
+      ? { invalid: "type needs text" }
+      : { tool: "browser_type", args: { ...ids, text: args.text } },
+  set_value: valueCall,
+} satisfies Record<string, RefCallBuilder>;
 
-/** The actions that take a page ref instead of an element. */
-export const REF_ACTIONS = new Set(REF_CALLS.keys());
-
-function refCall(
-  state: ComputerUseState,
-  page: PageBinding,
-  args: ComputerUseArgs & { ref: string },
-): RefCall {
-  const build = REF_CALLS.get(args.action);
-
-  if (!build) return { invalid: `${args.action} takes no ref` };
-
-  return build(
-    state,
-    { target_id: page.target_id, tab_id: page.tab_id, ref: args.ref },
-    args,
-  );
-}
-
-/** Acts on a page ref in the tab of the latest read, the tab the ref came from. */
 export async function actOnRef(
   state: ComputerUseState,
+  build: RefCallBuilder | undefined,
   args: ComputerUseArgs & { ref: string },
   context: Context,
 ): Promise<Acted | Invalid> {
@@ -455,7 +418,13 @@ export async function actOnRef(
   if (!page)
     return { invalid: "read the page first, then act on a ref from it" };
 
-  const call = refCall(state, page, args);
+  if (!build) return { invalid: `${args.action} takes no ref` };
+
+  const call = build(
+    state,
+    { target_id: page.target_id, tab_id: page.tab_id, ref: args.ref },
+    args,
+  );
 
   if ("invalid" in call) return call;
 

@@ -1,23 +1,22 @@
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { Clock, Context, Effect, Layer } from "effect";
+import { BOT_SECRET_USE_RETENTION_DAYS } from "../contract/limits";
 import { ProductDatabase } from "../shared/product-database";
+import { pruneHourly, startTicking } from "../shared/ticker";
 import { botSecretUses, type BotSecretKind } from "./schema";
 
-/** How long the owner can look back at a credential's or login's uses. */
-export const BOT_SECRET_USE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+export const BOT_SECRET_USE_RETENTION_MS =
+  BOT_SECRET_USE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
-/** One use of a credential or login; `detail` is what its kind records, such as a request's method and path. */
 export type BotSecretUse = {
   id: string;
   at: string;
   host: string;
-  /** Why the value couldn't be read, so nothing was sent or typed. */
   error: string | null;
   detail: unknown;
 };
 
-/** The newest use's error, as a column of a query over a kind's table of credentials or logins. */
 export const lastUseError = (
   kind: BotSecretKind,
   owner: { agentId: AnySQLiteColumn; name: AnySQLiteColumn },
@@ -26,7 +25,6 @@ export const lastUseError = (
     string | null
   >`(SELECT ${botSecretUses.error} FROM ${botSecretUses} WHERE ${botSecretUses.agentId} = ${owner.agentId} AND ${botSecretUses.kind} = ${kind} AND ${botSecretUses.name} = ${owner.name} ORDER BY ${botSecretUses.id} DESC LIMIT 1)`;
 
-/** Each use of a credential or login, kept for `BOT_SECRET_USE_RETENTION_MS`. */
 export class BotSecretUses extends Context.Service<
   BotSecretUses,
   {
@@ -36,14 +34,13 @@ export class BotSecretUses extends Context.Service<
       name: string,
       use: Omit<BotSecretUse, "id">,
     ) => Effect.Effect<void>;
-    /** Newest first; page with `before` set to the last use's ID. Drops expired uses first. */
+    /** Newest first; page with `before` set to the last use's ID. */
     readonly list: (
       agentId: string,
       kind: BotSecretKind,
       name: string,
       options: { limit: number; before?: string | undefined },
     ) => Effect.Effect<BotSecretUse[]>;
-    /** Forgets a deleted credential's or login's uses. */
     readonly forget: (
       agentId: string,
       kind: BotSecretKind,
@@ -62,15 +59,6 @@ export class BotSecretUses extends Context.Service<
           eq(botSecretUses.kind, kind),
           eq(botSecretUses.name, name),
         );
-
-      const prune = Effect.gen(function* () {
-        const now = yield* Clock.currentTimeMillis;
-        const cutoff = new Date(now - BOT_SECRET_USE_RETENTION_MS);
-
-        yield* db
-          .delete(botSecretUses)
-          .where(lt(botSecretUses.at, cutoff.toISOString()));
-      }).pipe(Effect.orDie);
 
       return BotSecretUses.of({
         record: Effect.fn("BotSecretUses.record")(function* (
@@ -91,8 +79,6 @@ export class BotSecretUses extends Context.Service<
         }, Effect.orDie),
         list: Effect.fn("BotSecretUses.list")(
           function* (agentId, kind, name, options) {
-            yield* prune;
-
             const cursor = Number(options.before);
 
             const rows = yield* db
@@ -133,3 +119,20 @@ export class BotSecretUses extends Context.Service<
     }),
   );
 }
+
+export const botSecretUseRetention = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const db = yield* ProductDatabase;
+
+    const prune = Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis;
+      const cutoff = new Date(now - BOT_SECRET_USE_RETENTION_MS);
+
+      yield* db
+        .delete(botSecretUses)
+        .where(lt(botSecretUses.at, cutoff.toISOString()));
+    }).pipe(Effect.orDie);
+
+    yield* startTicking(pruneHourly(prune), yield* Effect.scope);
+  }),
+);

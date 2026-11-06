@@ -3,9 +3,11 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { Agent, MCPServer } from "../shared/domain";
+import type { Agent } from "../contract/agents";
+import type { MCPServer } from "./mcp-server-repository";
 import type { McpTransport } from "@earendil-works/pi-mcp";
-import { standaloneIntegrations, type MCPClient } from "./integrations";
+import type { MCPClient } from "./integrations";
+import { standaloneIntegrations } from "./integrations-test-support";
 import {
   finishAuthorization,
   hasOAuthTokens,
@@ -29,13 +31,11 @@ afterEach(() => {
   while (cleanups.length) cleanups.pop()!();
 });
 
-/** One endpoint of the fake server: when it answers a request, and with what. */
 type Route = {
   matches: (url: URL, request: Request) => boolean;
   respond: (url: URL, request: Request) => Response | Promise<Response>;
 };
 
-/** An MCP server's OAuth side: resource metadata, authorization server metadata, registration and tokens. */
 function fakeAuthorizationServer({ issParameter = false } = {}) {
   const tokenRequests: URLSearchParams[] = [];
   let refreshRefused = false;
@@ -84,7 +84,6 @@ function fakeAuthorizationServer({ issParameter = false } = {}) {
     });
   };
 
-  // The MCP endpoint refuses every token, as it would once a sign-in has lapsed.
   const unauthorized = (url: URL) =>
     new Response("unauthorized", {
       status: 401,
@@ -200,43 +199,12 @@ describe("MCP OAuth", () => {
         .update(exchange.get("code_verifier") ?? "")
         .digest("base64url"),
     ).toBe(url.searchParams.get("code_challenge")!);
-    // The state answers one attempt only.
     await expect(
       finishAuthorization(secrets(store), server, "code-1", state),
     ).rejects.toThrow("expired");
 
     signOut(secrets(store), server.id);
     expect(hasOAuthTokens(secrets(store), server.id)).toBe(false);
-  });
-
-  test("an owner's app signed in under /ui keeps its registered callback", async () => {
-    const { store, server: created } = setup();
-    const server = { ...created, oauthClientId: "owner-app" };
-    const legacy = "http://127.0.0.1:7337/ui/oauth/callback";
-    const current = "http://127.0.0.1:7337/oauth/callback";
-
-    const redirectOf = (
-      started: { authorizationUrl: string } | { authorized: true },
-    ) =>
-      "authorizationUrl" in started
-        ? new URL(started.authorizationUrl).searchParams.get("redirect_uri")
-        : null;
-
-    await startAuthorization(secrets(store), server, legacy);
-
-    expect(
-      redirectOf(await startAuthorization(secrets(store), server, current)),
-    ).toBe(legacy);
-    // Crumble's own registrations follow the new callback.
-    expect(
-      redirectOf(
-        await startAuthorization(
-          secrets(store),
-          { ...server, oauthClientId: null },
-          current,
-        ),
-      ),
-    ).toBe(current);
   });
 
   test("checks the issuer a server returns with the code (RFC 9207)", async () => {

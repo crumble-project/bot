@@ -1,9 +1,8 @@
 import { Effect, Layer } from "effect";
-import { AgentRepository } from "../bots/agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import { BotWorkspaces } from "../workspaces/workspace";
 import { DesktopControl, type ControlState } from "./desktop-control";
 
-/** Keeps a bot's desktop machine awake while the owner holds control of it. */
 export const desktopKeepAwake = Layer.effectDiscard(
   Effect.gen(function* () {
     const machines = yield* BotWorkspaces;

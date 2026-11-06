@@ -9,7 +9,7 @@ import {
 } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
-import { LearnedChangeRepository } from "../skills/learned-change-repository";
+import { LearnedChangeRepository } from "../learned-changes/learned-change-repository";
 import { memories } from "./schema";
 
 export type NewMemory = {
@@ -29,7 +29,6 @@ const memoryOf = (row: typeof memories.$inferSelect): Memory => ({
   updatedAt: row.updatedAt,
 });
 
-/** Memories: each bot's own, and the shared ones every bot with memory reads. */
 export class MemoryRepository extends Context.Service<
   MemoryRepository,
   {

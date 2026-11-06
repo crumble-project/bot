@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { BotSecretRequests } from "../../src/bot-secrets/bot-secret-requests";
 import { AgentCredentialRepository } from "../../src/credentials/agent-credential-repository";
 import { Credentials } from "../../src/credentials/credentials";
-import { SecretRepository } from "../../src/credentials/secret-repository";
+import { SecretRepository } from "../../src/secrets/secret-repository";
 import {
   McpServerRepository,
   type NewMCPServer,
@@ -11,8 +11,8 @@ import {
 import type {
   CredentialRequest,
   CredentialUse,
-  MCPServer,
-} from "../../src/shared/domain";
+} from "../../src/credentials/agent-credential-repository";
+import type { MCPServer } from "../../src/integrations/mcp-server-repository";
 import { SettingsRepository } from "../../src/shared/settings-repository";
 import type { StoreRun } from "./store";
 
@@ -33,17 +33,12 @@ export const configurationStore = (run: StoreRun) => ({
     return run(SecretRepository.use((r) => r.get(key)));
   },
 
-  /** Metadata only: listing never decrypts a value. */
-  /** Creating needs a value; updating keeps the stored one when `value` is omitted. The placeholder never changes. */
-  /** Each credential's placeholder by name, for the bot's job environments. */
   agentCredentialPlaceholders: (agentId: string): Record<string, string> => {
     return run(AgentCredentialRepository.use((r) => r.placeholders(agentId)));
   },
-  /** Every credential with its placeholder and decrypted value, for the credential proxy only. */
   listCredentialRequests: (agentId: string): CredentialRequest[] => {
     return run(BotSecretRequests.use((r) => r.list(agentId, "credential")));
   },
-  /** Newest first; page with `before` set to the last use's ID. */
   listCredentialUses: (
     agentId: string,
     name: string,
@@ -53,13 +48,9 @@ export const configurationStore = (run: StoreRun) => ({
       Credentials.use((c) => c.uses(agentId, name, options)).pipe(Effect.orDie),
     );
   },
-  /** Metadata only: listing never decrypts a credential. */
-  /** Moves API keys saved before typed credentials into the provider table; MCP keys never match a provider ID. */
-  /** A server the bot may use: enabled, and shared or its own. */
   createMCPServer: (input: NewMCPServer, serverId?: string): MCPServer => {
     return run(McpServerRepository.use((r) => r.create(input, serverId)));
   },
-  /** Changes a server's settings; which bot it belongs to is fixed at creation. */
   updateMCPServer: (
     serverId: string,
     patch: Partial<Omit<MCPServer, "id" | "agentId">>,

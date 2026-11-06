@@ -1,12 +1,12 @@
 import type { Context as PiContext } from "@earendil-works/chord";
 import { Context, Deferred, Effect, Layer } from "effect";
-import type { Runner } from "../shared/runner";
+import type { CONTROL_HOLDERS } from "../shared/domain";
+import { accessOf, type Access, type Runner } from "../shared/runner";
 import { nowIso } from "../shared/time";
 import { DesktopControlRepository } from "./desktop-control-repository";
 
-export type ControlHolder = "bot" | "owner";
+export type ControlHolder = (typeof CONTROL_HOLDERS)[number];
 
-/** Who operates a bot desktop. `changes` counts every change of holder, so a plan from before one can be recognized. */
 export type ControlState = {
   holder: ControlHolder;
   changes: number;
@@ -21,7 +21,6 @@ const UNCHANGED: ControlState = {
   updatedAt: new Date(0).toISOString(),
 };
 
-/** The control lease of each bot desktop: durable in the database, with listeners for live updates. */
 export class DesktopControl extends Context.Service<
   DesktopControl,
   {
@@ -31,7 +30,6 @@ export class DesktopControl extends Context.Service<
       holder: ControlHolder,
     ) => Effect.Effect<ControlState>;
     readonly subscribe: (agentId: string, listener: Listener) => () => void;
-    /** Hears every bot's changes, such as to keep a bot desktop awake while the owner holds it. */
     readonly subscribeAll: (
       listener: (agentId: string, state: ControlState) => void,
     ) => () => void;
@@ -122,14 +120,12 @@ export class DesktopControl extends Context.Service<
   );
 }
 
-/** Desktop control for code outside Effect: HTTP handlers, the VNC input filter, and Pi Durable tools. */
-export type DesktopControlAccess = {
-  get(agentId: string): ControlState;
-  set(agentId: string, holder: ControlHolder): ControlState;
-  subscribe(agentId: string, listener: Listener): () => void;
-  subscribeAll(
-    listener: (agentId: string, state: ControlState) => void,
-  ): () => void;
+const SYNC_DESKTOP_CONTROL = ["get", "set"] as const;
+
+export type DesktopControlAccess = Omit<
+  Access<DesktopControl["Service"], (typeof SYNC_DESKTOP_CONTROL)[number]>,
+  "untilBot"
+> & {
   /** Resolves once the bot holds control; cancelling `context` stops the wait. */
   untilBot(agentId: string, context: PiContext): Promise<ControlState>;
 };
@@ -140,10 +136,7 @@ export function desktopControlAccess(
   const control = runtime.runSync(DesktopControl.use(Effect.succeed));
 
   return {
-    get: (agentId) => runtime.runSync(control.get(agentId)),
-    set: (agentId, holder) => runtime.runSync(control.set(agentId, holder)),
-    subscribe: control.subscribe,
-    subscribeAll: control.subscribeAll,
+    ...accessOf(control, runtime, SYNC_DESKTOP_CONTROL),
     untilBot: (agentId, context) =>
       runtime.runPromise(control.untilBot(agentId), {
         signal: context.abortSignal,

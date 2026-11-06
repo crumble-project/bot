@@ -1,7 +1,11 @@
 import { z } from "zod";
+import { CONNECTION_STATUSES } from "../shared/domain";
 
 export const normalizeGatewayHandle = (handle: string) =>
   handle.normalize("NFKC").toLowerCase();
+
+export const MAX_GATEWAY_ID_CHARS = 200;
+export const MAX_GATEWAY_ALIAS_CHARS = 100;
 
 export const gatewayConfigInput = z
   .object({
@@ -11,10 +15,12 @@ export const gatewayConfigInput = z
       .string()
       .trim()
       .min(1)
-      .max(200)
+      .max(MAX_GATEWAY_ID_CHARS)
       .regex(/^[^\s,]+$/u)
       .nullable(),
-    allowedChannelIds: z.array(z.string().trim().min(1).max(200)).max(1000),
+    allowedChannelIds: z
+      .array(z.string().trim().min(1).max(MAX_GATEWAY_ID_CHARS))
+      .max(1000),
     allowDirectMessages: z.boolean(),
     aliases: z
       .array(
@@ -23,7 +29,7 @@ export const gatewayConfigInput = z
             .string()
             .trim()
             .min(1)
-            .max(100)
+            .max(MAX_GATEWAY_ALIAS_CHARS)
             .regex(/^[\p{L}\p{N}_-]+$/u),
           botId: z.uuid(),
         }),
@@ -48,7 +54,7 @@ export const gatewayResponse = z.object({
   secretKey: z.string(),
   tokenConfigured: z.boolean(),
   config: gatewayConfigInput,
-  status: z.enum(["disconnected", "connecting", "connected", "error"]),
+  status: z.enum(CONNECTION_STATUSES),
   error: z.string().nullable(),
   pendingCount: z.number().int().nonnegative(),
   failedCount: z.number().int().nonnegative(),

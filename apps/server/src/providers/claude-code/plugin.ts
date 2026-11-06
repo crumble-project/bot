@@ -6,9 +6,12 @@ import { CLAUDE_CODE_API, claudeCodeStreams } from "./adapter";
 import {
   catalogLabel,
   contextWindow,
+  pinnedRouteSet,
   pinnedRoutes,
+  routeModel,
   thinkingLevelMap,
 } from "./catalog";
+import { isOff } from "./native";
 import {
   claudeCodeStatus,
   discoverModels,
@@ -23,9 +26,7 @@ import {
 export const CLAUDE_CODE_PROVIDER = "claude-code";
 
 const STATUS_TTL_MS = 30_000;
-const OFF = ["0", "false", "no", "off"];
 
-/** Where Claude Code runs from and keeps its login, from `CRUMBLE_CLAUDE_*` and the data directory. */
 export function claudeCodeOptions(
   dataDir: string,
   env: NodeJS.ProcessEnv,
@@ -34,9 +35,7 @@ export function claudeCodeOptions(
     configDir: join(dataDir, "claude"),
     workDir: join(dataDir, "claude-work"),
     // Feature flags unlock models in Claude Code's picker; off keeps it quiet with fewer models.
-    telemetry: !OFF.includes(
-      (env["CRUMBLE_CLAUDE_TELEMETRY"] ?? "").trim().toLowerCase(),
-    ),
+    telemetry: !isOff((env["CRUMBLE_CLAUDE_TELEMETRY"] ?? "").trim()),
     env,
   };
 
@@ -49,7 +48,7 @@ export function claudeCodeOptions(
 
 // Model ids drop the `[1m]` the adapter adds back for pinned routes; unpinned ids keep what the CLI announced.
 const modelId = (route: string, pinned: boolean) =>
-  pinned ? route.replace(/\[1m\]$/, "") : route;
+  pinned ? routeModel(route) : route;
 
 function chatModel(id: string, name: string): Model<typeof CLAUDE_CODE_API> {
   return {
@@ -73,7 +72,7 @@ const pinnedModels = () =>
   );
 
 function discovered(rows: DiscoveredModel[]) {
-  const pinned = new Set(pinnedRoutes().map((entry) => entry.route));
+  const pinned = pinnedRouteSet();
 
   return rows.map((row) =>
     chatModel(
@@ -129,7 +128,6 @@ export function claudeCodePlugin(
     auth: {
       apiKey: {
         name: "Claude Code sign-in",
-        // Usable only when the CLI is installed and signed in; a turn otherwise fails with the reason.
         check: async () =>
           (await status()).status === "signed_in"
             ? { type: "api_key", source: "Claude Code" }
@@ -150,7 +148,7 @@ export function claudeCodePlugin(
   });
 
   return {
-    id: "claude-code",
+    id: CLAUDE_CODE_PROVIDER,
     providers: [
       {
         provider,

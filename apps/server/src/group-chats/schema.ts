@@ -4,8 +4,8 @@ import {
   sqliteTable,
   text,
 } from "drizzle-orm/sqlite-core";
-import { executions } from "../bots/schema.executions";
-import { agents } from "../bots/schema";
+import { executions } from "../bot-store/schema.executions";
+import { agents } from "../bot-store/schema";
 
 export const groupChats = sqliteTable("group_chats", {
   id: text("id").primaryKey(),

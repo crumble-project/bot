@@ -68,7 +68,6 @@ describe("the rule floor", () => {
     const terminal = { steps: [enter], terminal: true, command: "$ ls" };
 
     expect(isCommitPoint(terminal, {})).toBe(false);
-    // Without a judge, or without the command it runs, the Enter still counts.
     expect(isCommitPoint(terminal)).toBe(true);
     expect(isCommitPoint({ steps: [enter], terminal: true }, {})).toBe(true);
     expect(
@@ -86,7 +85,6 @@ describe("the rule floor", () => {
     expect(isCommitPoint(enter, cleared)).toBe(false);
     expect(isCommitPoint(enter, {})).toBe(true);
     expect(isCommitPoint(enter)).toBe(true);
-    // A named button stays a commit point, and an unread terminal stays unread.
     expect(
       isCommitPoint(
         { steps: [...enter.steps, click("button", "Delete")] },
@@ -109,7 +107,6 @@ describe("the rule floor", () => {
         )
       ).held;
 
-    // Browsing the owner didn't literally ask for runs; an unasked commit doesn't.
     expect(await held(0, 0.01)).toBe(false);
     expect(await held(0.98, 0)).toBe(true);
     expect(await held(0.98, 0.95)).toBe(false);
@@ -119,7 +116,6 @@ describe("the rule floor", () => {
     };
 
     expect((await checkIntent(failing, enter, undefined)).held).toBe(true);
-    // Every other judge still has to be confident the owner asked.
     expect(
       (
         await checkIntent(

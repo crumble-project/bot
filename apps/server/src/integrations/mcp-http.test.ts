@@ -4,9 +4,9 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
-import type { Agent } from "../shared/domain";
+import type { Agent } from "../contract/agents";
 import { defaultAvatarDefinition } from "../contract/avatar";
-import { standaloneIntegrations } from "./integrations";
+import { standaloneIntegrations } from "./integrations-test-support";
 import { Store } from "../../test/support/store";
 
 const agent = (id: string, mcpServers: string[]): Agent => ({

@@ -1,19 +1,17 @@
+import { logged, pi } from "../shared/app-errors";
 import { Effect } from "effect";
-import { appErrors } from "../shared/app-errors";
-import {
-  prepareAttachments,
-  type AttachmentInfo,
-  type AttachmentInput,
-} from "../shared/attachments";
+import type {
+  AttachmentInfo,
+  AttachmentInput,
+} from "../shared/attachment-rules";
+import { validAttachments } from "../shared/attachments";
 import { InvalidInput, type AppError } from "../shared/errors";
-import { logged, pi, type GroupChatContext } from "./group-chat-context";
+import type { GroupChatContext } from "./group-chat-context";
 import type { GroupChatMembers } from "./group-chat-members";
 import type { GroupMessageReceipt } from "./group-chat-types";
 import type { GroupEntry } from "./group-transcripts";
 import type { GroupTurnEngine } from "./group-turn-engine";
-
-/** Owner messages a group remembers as awaiting their first answer; older ones stop notifying. */
-const AWAITING_ANSWERS = 50;
+import { MESSAGE_PREVIEW_CHARS } from "../shared/limits";
 
 export type GroupChatPostOptions = {
   replyTo?: string | undefined;
@@ -33,172 +31,92 @@ export type GroupChatPostDeps = {
   readonly turns: GroupTurnEngine;
 };
 
-type OwnerMessage = {
+type OwnerPost = {
   content: string;
   attachments: AttachmentInput[];
   info: AttachmentInfo[];
   target: GroupEntry | undefined;
 };
 
-/** Remembers this message as awaiting its first answer, forgetting the oldest ones, and re-arms bot turns. */
-const rememberAwaitingAnswers = Effect.fnUntraced(function* (
-  context: GroupChatContext,
-  groupId: string,
-  entryId: string,
-  woken: string[],
-) {
-  const { awaitingAnswers } = yield* context.groups.activity(groupId);
+export const groupChatPost = ({
+  context,
+  members,
+  turns,
+}: GroupChatPostDeps): GroupChatPost => {
+  const writeOwnerMessage = Effect.fnUntraced(function* (
+    groupId: string,
+    requestId: string,
+    message: OwnerPost,
+  ) {
+    const { content, attachments, info, target } = message;
 
-  const entries = Object.keys(awaitingAnswers)
-    .map(Number)
-    .sort((a, b) => a - b);
-
-  for (const entry of entries.slice(
-    0,
-    Math.max(0, entries.length - AWAITING_ANSWERS + 1),
-  ))
-    delete awaitingAnswers[entry];
-
-  awaitingAnswers[entryId.slice(groupId.length + 1)] = yield* Effect.filter(
-    woken,
-    context.enabled,
-  );
-  yield* context.groups.setActivity(groupId, {
-    botTurns: 0,
-    paused: false,
-    awaitingAnswers,
+    return yield* pi(() =>
+      context.transcripts.write(
+        groupId,
+        {
+          text: content,
+          sender: { kind: "owner" },
+          ...(attachments.length && { attachments, files: info }),
+          ...(target && {
+            replyTo: target.entryId,
+            replyPreview: target.text.slice(0, MESSAGE_PREVIEW_CHARS),
+          }),
+        },
+        requestId,
+      ),
+    );
   });
-});
 
-/** Queues a turn for every woken member that has messages left and is not already running one. */
-const queueWoken = Effect.fnUntraced(function* (
-  context: GroupChatContext,
-  members: GroupChatMembers,
-  groupId: string,
-  woken: string[],
-  through: number,
-  created: boolean,
-) {
-  for (const agentId of woken) {
-    const member = yield* context.groups.member(groupId, agentId);
-    const turn = yield* context.groups.activeTurn(groupId, agentId);
+  return Effect.fn("GroupChats.post")(function* (
+    groupId: string,
+    content: string,
+    requestId: string,
+    options: GroupChatPostOptions = {},
+  ) {
+    yield* context.get(groupId);
+    const attachments = options.attachments ?? [];
 
-    if (
-      member &&
-      (yield* context.enabled(agentId)) &&
-      member.cursor < through &&
-      (created || !member.pending) &&
-      (!turn || turn.through < through)
-    )
-      yield* members.queueMember(groupId, agentId, false);
-  }
-});
+    const { info } = yield* validAttachments(attachments);
 
-const startQueued = (
-  deps: GroupChatPostDeps,
-  groupId: string,
-  woken: string[],
-) =>
-  Effect.gen(function* () {
-    const { context, turns } = deps;
+    const replyTo = options.replyTo;
 
-    for (const agentId of woken) {
-      const member = yield* context.groups.member(groupId, agentId);
+    const target = replyTo
+      ? yield* pi(() => context.transcripts.message(groupId, replyTo))
+      : undefined;
 
-      if (
-        member?.pending &&
-        !(yield* context.groups.activeTurn(groupId, agentId))
-      )
-        yield* turns.wake(groupId, agentId, member.pendingBotStarted);
-    }
-
-    yield* context.changed(groupId);
-  }).pipe(logged("Group turns could not start", groupId));
-
-const writeOwnerMessage = Effect.fnUntraced(function* (
-  context: GroupChatContext,
-  groupId: string,
-  requestId: string,
-  message: OwnerMessage,
-) {
-  const { content, attachments, info, target } = message;
-
-  return yield* pi(() =>
-    context.transcripts.write(
-      groupId,
-      {
-        text: content,
-        sender: { kind: "owner" },
-        ...(attachments.length && { attachments, files: info }),
-        ...(target && {
-          replyTo: target.entryId,
-          replyPreview: target.text.slice(0, 240),
+    if (replyTo && !target)
+      return yield* Effect.fail(
+        new InvalidInput({
+          message: "Reply to a message in this group chat",
         }),
-      },
+      );
+
+    const { entry, entryId, created } = yield* writeOwnerMessage(
+      groupId,
       requestId,
-    ),
-  );
-});
-
-const post = Effect.fn("GroupChats.post")(function* (
-  deps: GroupChatPostDeps,
-  groupId: string,
-  content: string,
-  requestId: string,
-  options: GroupChatPostOptions = {},
-) {
-  const { context, members } = deps;
-  yield* context.get(groupId);
-  const attachments = options.attachments ?? [];
-
-  // Validate before anything is written, so a bad file never leaves a message behind.
-  const { info } = yield* appErrors(
-    Effect.try({
-      try: () => prepareAttachments(attachments),
-      catch: (error) => error,
-    }),
-  );
-
-  const replyTo = options.replyTo;
-
-  const target = replyTo
-    ? yield* pi(() => context.transcripts.message(groupId, replyTo))
-    : undefined;
-
-  if (replyTo && !target)
-    return yield* Effect.fail(
-      new InvalidInput({
-        message: "Reply to a message in this group chat",
-      }),
+      { content, attachments, info, target },
     );
 
-  const { entryId, created } = yield* writeOwnerMessage(
-    context,
-    groupId,
-    requestId,
-    { content, attachments, info, target },
-  );
+    const group = yield* context.get(groupId);
 
-  const group = yield* context.get(groupId);
-  const mentioned = yield* members.mentions(group, content, undefined, target);
-  const woken = mentioned.length ? mentioned : group.memberIds;
+    const mentioned = yield* members.mentions(
+      group,
+      content,
+      undefined,
+      target,
+    );
 
-  // A retried post routes again, but neither resumes the bots nor re-arms its notification.
-  if (created) yield* rememberAwaitingAnswers(context, groupId, entryId, woken);
+    const woken = mentioned.length ? mentioned : group.memberIds;
 
-  const through = Number(entryId.slice(groupId.length + 1));
+    yield* turns.queue(groupId, { entry, woken, created });
+    yield* context.changed(groupId);
 
-  yield* queueWoken(context, members, groupId, woken, through, created);
-  yield* context.changed(groupId);
+    context.state.fork(
+      turns
+        .startQueued(groupId, woken)
+        .pipe(logged("Group turns could not start", groupId)),
+    );
 
-  context.state.fork(
-    context.serial(groupId, startQueued(deps, groupId, woken)),
-  );
-
-  return { requestId, entryId };
-});
-
-export const groupChatPost =
-  (deps: GroupChatPostDeps): GroupChatPost =>
-  (groupId, content, requestId, options) =>
-    post(deps, groupId, content, requestId, options);
+    return { requestId, entryId };
+  });
+};

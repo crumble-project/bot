@@ -2,15 +2,14 @@ import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
-import type { Agent } from "../shared/domain";
-import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import type { Agent } from "../contract/agents";
+import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
+import { chatOnly } from "../shared/chat-only";
 import { GroupChats } from "./group-chats";
-
-export const GROUP_LOOKUP_EXTENSION = "group-lookup";
+import { senderLabel } from "./group-transcripts";
 
 const READ_LIMIT = 30;
 
-/** Lets a bot answer questions about its group chats from its bot chat; group messages never enter that chat on their own. */
 export function groupLookupExtension(
   agent: Pick<Agent, "id">,
   groups: GroupChats["Service"],
@@ -48,10 +47,7 @@ export function groupLookupExtension(
       return text({
         messages: page.messages.map((message) => ({
           entryId: message.entryId,
-          sender:
-            message.origin?.kind === "owner"
-              ? "Owner"
-              : (message.origin?.name ?? "A bot"),
+          sender: senderLabel(message.origin),
           text: message.content,
           ...(message.timestamp && {
             at: new Date(message.timestamp).toISOString(),
@@ -62,10 +58,9 @@ export function groupLookupExtension(
     },
   });
 
-  return defineExtension({ name: GROUP_LOOKUP_EXTENSION, tools: [tool] });
+  return chatOnly(defineExtension({ name: "group-lookup", tools: [tool] }));
 }
 
-/** Offers every bot the lookup of its group chats. */
 export const groupLookupTools = Layer.effectDiscard(
   Effect.gen(function* () {
     const groups = yield* GroupChats;

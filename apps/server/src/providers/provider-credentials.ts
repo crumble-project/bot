@@ -5,20 +5,20 @@ import type {
   CredentialStore,
 } from "@earendil-works/pi-ai";
 import { Context, Effect, Layer, Redacted } from "effect";
-import { Secrets, secretKey } from "../password-managers/secrets";
-import type { SecretInput } from "../shared/domain";
+import { secretKey } from "../secrets/secret-key";
+import { Secrets } from "../secrets/secrets";
+import type { SecretInput } from "../contract/secrets";
 import { runnerOf, type Runner } from "../shared/runner";
 import { ProviderCredentialRepository } from "./provider-credential-repository";
 
-/** The secret holding a provider's API key. */
 export const providerApiKeyKey = (providerId: string) =>
   secretKey("provider", providerId);
 
-/** Pi AI's credential store, with what sign-in flows need beyond it. */
 export type ProviderCredentialStore = CredentialStore & {
   commitLogin: QueuedCredentialStore["commitLogin"];
   setApiKey: QueuedCredentialStore["setApiKey"];
   idle: QueuedCredentialStore["idle"];
+  status: QueuedCredentialStore["status"];
 };
 
 type Services = ProviderCredentialRepository | Secrets;
@@ -35,24 +35,6 @@ export class ProviderCredentials extends Context.Service<
   static readonly layer = Layer.effect(
     ProviderCredentials,
     Effect.gen(function* () {
-      const repository = yield* ProviderCredentialRepository;
-      const secrets = yield* Secrets;
-
-      // API keys saved inside the credential before they were secrets move out once.
-      for (const { providerId, type } of yield* repository.list) {
-        const credential =
-          type === "api_key" && (yield* repository.get(providerId));
-
-        if (credential && credential.type === "api_key" && credential.key) {
-          const { key, ...rest } = credential;
-
-          yield* secrets
-            .save(providerApiKeyKey(providerId), { value: key })
-            .pipe(Effect.orDie);
-          yield* repository.set(providerId, rest);
-        }
-      }
-
       return new QueuedCredentialStore(
         runnerOf(yield* Effect.context<Services>()),
       );
@@ -73,7 +55,6 @@ class QueuedCredentialStore implements CredentialStore {
     return this.run.runSync(ProviderCredentialRepository.use(use));
   }
 
-  /** Saves a credential synchronously, an API key's `key` as its secret. */
   private write(providerId: string, credential: Credential) {
     const apiKey = providerApiKeyKey(providerId);
 
@@ -91,12 +72,10 @@ class QueuedCredentialStore implements CredentialStore {
     }
   }
 
-  /** The saved credential, without an API key's `key`. */
   private stored(providerId: string) {
     return this.repository((r) => r.get(providerId));
   }
 
-  /** The provider's credential, its API key read from the secret, possibly a password manager. */
   private async resolve(providerId: string): Promise<Credential | undefined> {
     const credential = this.stored(providerId);
 
@@ -113,6 +92,18 @@ class QueuedCredentialStore implements CredentialStore {
     );
 
     return key ? { ...credential, key: Redacted.value(key) } : credential;
+  }
+
+  status(providerId: string) {
+    return {
+      credentialType:
+        this.repository((r) => r.list).find(
+          (info) => info.providerId === providerId,
+        )?.type ?? null,
+      apiKey: this.run.runSync(
+        Secrets.use((s) => s.status(providerApiKeyKey(providerId))),
+      ),
+    };
   }
 
   async read(providerId: string, options?: AuthOperationOptions) {
@@ -139,7 +130,6 @@ class QueuedCredentialStore implements CredentialStore {
     return this.enqueue(
       providerId,
       async () => {
-        // Only OAuth refresh reads the current credential, so modify reads no API key.
         const next = await update(this.stored(providerId));
 
         // A started refresh persists even if its caller went away, so a rotated token is never lost.
@@ -183,7 +173,6 @@ class QueuedCredentialStore implements CredentialStore {
     });
   }
 
-  /** Replaces the credential with an API key, stored or read from a password manager; fails on an unreadable reference. */
   setApiKey(providerId: string, key: SecretInput) {
     return this.enqueue(providerId, async () => {
       await this.run.runPromise(
@@ -193,7 +182,6 @@ class QueuedCredentialStore implements CredentialStore {
     });
   }
 
-  /** Resolves once every queued mutation has settled. */
   async idle() {
     await Promise.all(this.queues.values());
   }

@@ -1,11 +1,7 @@
-const normalize = (text: string) => text.normalize("NFKC").toLowerCase();
+export const normalize = (text: string) => text.normalize("NFKC").toLowerCase();
 
 const wordCharacter = /[\p{L}\p{N}_]/u;
 
-/**
- * The members a group message mentions with `@Name`, in first-mention order. Longer names win, so `@Ada Lovelace`
- * mentions that member rather than `Ada`, and a name must end at a word boundary, so `@Adam` does not mention `Ada`.
- */
 export function mentionedMembers(
   text: string,
   members: Array<{ id: string; name: string }>,
@@ -46,7 +42,6 @@ export function mentionedMembers(
 
 const ownerMention = /(?<![\p{L}\p{N}_])@owner(?![\p{L}\p{N}_])/iu;
 
-/** Whether a bot's group message mentions the owner, which notifies the owner and wakes no bot. */
 export function mentionsOwner(text: string) {
   return ownerMention.test(text.normalize("NFKC"));
 }

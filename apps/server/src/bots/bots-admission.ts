@@ -1,36 +1,38 @@
+import { pi } from "../shared/app-errors";
 import { Cause, Effect, FiberMap } from "effect";
-import type { Agent, Execution } from "../shared/domain";
-import { eventRequest } from "../event-sources/event-payload";
-import type { botsActivity } from "./bots-activity";
-import { pi, type BotsContext } from "./bots-context";
-import type { botsLookup } from "./bots-lookup";
-import type { botsMonitor } from "./bots-outcomes";
-import type { botsReads } from "./bots-reads";
+import type { Agent } from "../contract/agents";
+import type { Execution } from "../shared/domain";
+import { errorText } from "../shared/errors";
+import { parseRequestId } from "../shared/request-ids";
+import type { InputOrigin } from "../transcript/origins";
+import { frameInput } from "./input-framing";
+import type { BotsContext } from "./bots-context";
+import type { BotsLookup } from "./bots-lookup";
+import type { BotsNotifications } from "./bots-notifications";
 
 type AdmissionDeps = {
-  lookup: ReturnType<typeof botsLookup>;
-  reads: ReturnType<typeof botsReads>;
-  notifications: ReturnType<typeof botsActivity>;
-  monitor: ReturnType<typeof botsMonitor>["monitor"];
+  lookup: BotsLookup;
+  origin: (execution: Execution) => Effect.Effect<InputOrigin>;
+  notifications: BotsNotifications;
+  monitor: (
+    execution: Execution,
+    submissionId: string,
+    owner: Agent,
+  ) => Effect.Effect<void>;
 };
 
-/** Submits one admitted execution to the runtime, or cancels it when its bot is disabled. */
-const botsSubmissionSteps = (context: BotsContext, deps: AdmissionDeps) => {
-  const { executions, runtime, events } = context;
-  const { origin } = deps.reads;
+export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
+  const { events, executions, monitors, runtime } = context;
+  const { agent } = deps.lookup;
+  const { settle } = deps.notifications;
 
-  // A pruned event leaves the automation's prompt alone.
   const eventInput = Effect.fnUntraced(function* (execution: Execution) {
-    const run = eventRequest(execution.requestId);
-    const record = run && (yield* events.getEvent(run.eventId));
+    const request = parseRequestId(execution.requestId);
 
-    if (!record) return undefined;
-    const source = yield* events.getSource(record.sourceId);
+    if (request.kind !== "event") return undefined;
 
-    return { record, sourceName: source?.name ?? "Deleted source" };
+    return (yield* events.eventWithSource(request.eventId)) ?? undefined;
   });
-
-  const { changed, settled } = deps.notifications;
 
   const submit = Effect.fnUntraced(function* (
     execution: Execution,
@@ -38,11 +40,24 @@ const botsSubmissionSteps = (context: BotsContext, deps: AdmissionDeps) => {
   ) {
     if (execution.submissionId) return execution.submissionId;
 
-    const from = yield* origin(execution);
+    const origin = yield* deps.origin(execution);
     const attachments = yield* executions.attachments(execution.id);
+    const event = yield* eventInput(execution);
 
-    const event =
-      from.kind === "event" ? yield* eventInput(execution) : undefined;
+    const prepared = yield* pi(() =>
+      runtime.prepareInput(
+        owner,
+        execution.prompt,
+        execution.replyTo ?? undefined,
+      ),
+    );
+
+    const modelContent = frameInput(
+      prepared.modelContent,
+      origin,
+      execution.requestId,
+      event,
+    );
 
     return yield* pi(() =>
       runtime.submit(
@@ -50,12 +65,7 @@ const botsSubmissionSteps = (context: BotsContext, deps: AdmissionDeps) => {
         execution.conversationId,
         execution.prompt,
         execution.requestId,
-        {
-          replyTo: execution.replyTo ?? undefined,
-          origin: from,
-          attachments,
-          event,
-        },
+        { input: { ...prepared, modelContent }, origin, attachments },
       ),
     );
   });
@@ -65,45 +75,16 @@ const botsSubmissionSteps = (context: BotsContext, deps: AdmissionDeps) => {
     owner: Agent,
   ) {
     yield* pi(() => runtime.abort(owner, execution.conversationId));
-    yield* executions.update(execution.id, { status: "cancelled" });
-    yield* changed(execution.conversationId);
-    yield* settled(execution.id);
+    yield* settle(execution, { status: "cancelled" });
   });
 
-  return { submit, cancelled };
-};
-
-/** Records an execution whose admission failed with anything but an interrupt. */
-const botsAdmissionFailure = (
-  context: BotsContext,
-  notifications: ReturnType<typeof botsActivity>,
-) => {
-  const { executions } = context;
-  const { changed, settled } = notifications;
-
-  return (execution: Execution, cause: Cause.Cause<unknown>) =>
+  const failed = (execution: Execution, cause: Cause.Cause<unknown>) =>
     Cause.hasInterruptsOnly(cause)
       ? Effect.void
-      : Effect.gen(function* () {
-          const error = Cause.squash(cause);
-
-          yield* executions.update(execution.id, {
-            status: "failed",
-            error: String(error instanceof Error ? error.message : error),
-          });
-          yield* changed(execution.conversationId);
-          yield* settled(execution.id);
+      : settle(execution, {
+          status: "failed",
+          error: errorText(Cause.squash(cause)),
         });
-};
-
-/** Stores the submission, then watches it with the monitor the bots keep per execution. */
-const botsSubmissionRun = (
-  context: BotsContext,
-  deps: AdmissionDeps,
-  submit: ReturnType<typeof botsSubmissionSteps>["submit"],
-) => {
-  const { executions, monitors } = context;
-  const admissionFailure = botsAdmissionFailure(context, deps.notifications);
 
   const run = (execution: Execution, owner: Agent) =>
     Effect.gen(function* () {
@@ -120,16 +101,7 @@ const botsSubmissionRun = (
         deps.monitor(execution, submissionId, owner),
         { onlyIfMissing: true },
       );
-    }).pipe(Effect.onError((cause) => admissionFailure(execution, cause)));
-
-  return { run };
-};
-
-/** Admits one execution: starts it once, or recovers it under its durable request ID. */
-export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
-  const { agent } = deps.lookup;
-  const steps = botsSubmissionSteps(context, deps);
-  const { run } = botsSubmissionRun(context, deps, steps.submit);
+    }).pipe(Effect.onError((cause) => failed(execution, cause)));
 
   const admit = Effect.fnUntraced(function* (execution: Execution) {
     if (execution.status === "done" || execution.status === "cancelled") return;
@@ -139,7 +111,7 @@ export const botsAdmission = (context: BotsContext, deps: AdmissionDeps) => {
     if (execution.status === "failed" && execution.submissionId) return;
     const owner = yield* agent(execution.agentId);
 
-    if (!owner.enabled) return yield* steps.cancelled(execution, owner);
+    if (!owner.enabled) return yield* cancelled(execution, owner);
 
     yield* run(execution, owner);
   });

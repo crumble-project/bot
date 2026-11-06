@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   IconChevronDown,
@@ -7,7 +7,6 @@ import {
   IconDeviceDesktop,
   IconDownload,
   IconFileText,
-  IconHammer,
   IconPencil,
   IconPointer,
   IconTerminal2,
@@ -27,38 +26,28 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { Spinner } from "@/components/ui/spinner";
+import { type Job, jobPath, useJobs } from "./api";
+import { JobStatus } from "./job-card";
 import {
-  type CodingJob,
   type HistoryPage,
   type Message,
-  agentPath,
-  api,
-  jobsQuery,
-} from "@/lib/api";
+  historyPage,
+} from "@/features/chat/api";
+import { api } from "@/lib/api";
+import { JOB_KINDS } from "./kinds";
+import { type JobRef } from "./api";
 import { Reply } from "@/components/markdown";
-
-export type JobRef = { kind: "coding" | "desktop"; name: string };
-
-const kindLabel = (job: JobRef) =>
-  job.kind === "coding" ? "Coding job" : "Desktop job";
-
-type Block = {
-  type?: string;
-  text?: string;
-  id?: string;
-  name?: string;
-  arguments?: { command?: string; path?: string };
-};
-
-type UsageModels = {
-  models?: Record<string, { cost?: { total?: number } }>;
-};
+import {
+  type ContentBlock,
+  usageDocument,
+} from "@crumble/server/contract/tool-details";
+import { COMPUTER_USE_TOOL_NAME } from "@crumble/server/contract/tools";
+import { blocksOf } from "@/features/chat/tool-details";
 
 /** A job's cost over its models. Subscription providers such as Claude Code report zero, which says nothing. */
-export function costLine(usage: CodingJob["usage"]) {
-  // SAFETY: Pi Durable usage documents keep per-model cost under `models`.
+export function costLine(usage: Job["usage"]) {
   const models = Object.values(
-    (usage as UsageModels | undefined)?.models ?? {},
+    usageDocument.safeParse(usage).data?.models ?? {},
   );
 
   const cost = models.reduce((sum, model) => sum + (model.cost?.total ?? 0), 0);
@@ -71,7 +60,7 @@ const STEPS = new Map([
   ["read", { verb: "Read", icon: IconFileText }],
   ["write", { verb: "Wrote", icon: IconPencil }],
   ["edit", { verb: "Edited", icon: IconPencil }],
-  ["computer_use", { verb: "Used the bot desktop", icon: IconPointer }],
+  [COMPUTER_USE_TOOL_NAME, { verb: "Used the bot desktop", icon: IconPointer }],
 ]);
 
 type Item =
@@ -85,14 +74,9 @@ type Item =
       result?: Message;
     };
 
-function blocksOf(message: Message): Block[] {
-  // SAFETY: Provider content blocks are objects with a `type`.
-  return Array.isArray(message.blocks) ? (message.blocks as Block[]) : [];
-}
-
 type StepItem = Extract<Item, { kind: "step" }>;
 
-function stepOf(message: Message, block: Block, index: number) {
+function stepOf(message: Message, block: ContentBlock, index: number) {
   return {
     kind: "step" as const,
     id: block.id ?? `${message.id}:${index}`,
@@ -243,16 +227,15 @@ function JobHistoryError({
 
 const STEP_REFRESH_MS = 3_000;
 
+type JobHistoryRoute = "codingJobHistory" | "desktopJobHistory";
+
 function useJobHistory(botId: string, job: JobRef, status?: string) {
-  const base = `${agentPath(botId)}/${job.kind}-jobs/${encodeURIComponent(job.name)}/history`;
+  const base = `${jobPath(botId, job.kind, job.name)}/history` as const;
 
   const history = useInfiniteQuery({
     queryKey: ["job-history", botId, job.kind, job.name, status],
     queryFn: ({ pageParam, signal }) =>
-      api<HistoryPage>(
-        `${base}?limit=100${pageParam ? `&before=${encodeURIComponent(pageParam)}` : ""}`,
-        { signal },
-      ),
+      api<JobHistoryRoute>(historyPage(base, 100, pageParam), { signal }),
     initialPageParam: "",
     getNextPageParam: (page) =>
       page.hasMore && page.oldestEntryId ? page.oldestEntryId : undefined,
@@ -357,15 +340,15 @@ function messageMarkdown(message: Message) {
   });
 }
 
-/** Every page of a job's transcript, oldest message first. */
 async function fullHistory(botId: string, job: JobRef) {
-  const base = `${agentPath(botId)}/${job.kind}-jobs/${encodeURIComponent(job.name)}/history?limit=200`;
+  const base = `${jobPath(botId, job.kind, job.name)}/history` as const;
+
   const pages: HistoryPage[] = [];
   let before: string | null = null;
 
   do {
-    const page: HistoryPage = await api<HistoryPage>(
-      before ? `${base}&before=${encodeURIComponent(before)}` : base,
+    const page: HistoryPage = await api<JobHistoryRoute>(
+      historyPage(base, 200, before),
     );
 
     pages.push(page);
@@ -377,9 +360,12 @@ async function fullHistory(botId: string, job: JobRef) {
 
 async function downloadTranscript(botId: string, job: JobRef) {
   const messages = await fullHistory(botId, job);
-  const kind = kindLabel(job);
 
-  const markdown = [`# ${job.name}`, kind, ...messages.flatMap(messageMarkdown)]
+  const markdown = [
+    `# ${job.name}`,
+    JOB_KINDS[job.kind].label,
+    ...messages.flatMap(messageMarkdown),
+  ]
     .join("\n\n")
     .concat("\n");
 
@@ -395,44 +381,8 @@ async function downloadTranscript(botId: string, job: JobRef) {
   URL.revokeObjectURL(url);
 }
 
-/** Whether a job works, as its card and panel show it. */
-export function JobStatus({ working }: { working: boolean }) {
-  return working ? (
-    <span className="flex items-center gap-1 text-xs text-muted-foreground">
-      <Spinner className="size-3" />
-      Working
-    </span>
-  ) : (
-    <span className="text-xs text-muted-foreground">Idle</span>
-  );
-}
-
-const JOB_REFRESH_MS = 3_000;
-const IDLE_JOB_REFRESH_MS = 15_000;
-
-function useLiveJob(botId: string, job: JobRef) {
-  const jobs = useQuery({
-    ...jobsQuery(botId, job.kind),
-    // The chat refreshes its job list only when job messages arrive, which misses a job's own progress.
-    refetchInterval: (query) =>
-      query.state.data?.some(
-        (each) => each.name === job.name && each.status === "working",
-      )
-        ? JOB_REFRESH_MS
-        : IDLE_JOB_REFRESH_MS,
-  });
-
-  return jobs.data?.find((each) => each.name === job.name);
-}
-
-function JobTitle({
-  job,
-  current,
-}: {
-  job: JobRef;
-  current: CodingJob | undefined;
-}) {
-  const Icon = job.kind === "coding" ? IconHammer : IconDeviceDesktop;
+function JobTitle({ job, current }: { job: JobRef; current: Job | undefined }) {
+  const { icon: Icon } = JOB_KINDS[job.kind];
 
   const subtitle = [current?.model?.model, costLine(current?.usage)];
 
@@ -475,7 +425,46 @@ function DownloadButton({ botId, job }: { botId: string; job: JobRef }) {
   );
 }
 
-/** A job's task, replies and tool steps, read-only, in a pane beside the chat. */
+function JobPanelHeader({
+  botId,
+  job,
+  current,
+  working,
+  onClose,
+}: {
+  botId: string;
+  job: JobRef;
+  current: Job | undefined;
+  working: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <header className="flex h-14 shrink-0 items-center gap-2.5 border-b px-4">
+      <JobTitle job={job} current={current} />
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        <span className="mr-1">
+          <JobStatus working={working} />
+        </span>
+        {JOB_KINDS[job.kind].onDesktop && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            title="Bot desktop"
+            render={<Link to="/bots/$botId/desktop" params={{ botId }} />}
+            nativeButton={false}
+          >
+            <IconDeviceDesktop />
+          </Button>
+        )}
+        <DownloadButton botId={botId} job={job} />
+        <Button variant="ghost" size="icon-sm" title="Close" onClick={onClose}>
+          <IconX />
+        </Button>
+      </div>
+    </header>
+  );
+}
+
 export function JobPanel({
   botId,
   job,
@@ -485,7 +474,8 @@ export function JobPanel({
   job: JobRef;
   onClose: () => void;
 }) {
-  const current = useLiveJob(botId, job);
+  const jobs = useJobs(botId, job.kind);
+  const current = jobs.data?.find((each) => each.name === job.name);
   const working = current?.status === "working";
   const { history, items } = useJobHistory(botId, job, current?.status);
 
@@ -494,35 +484,14 @@ export function JobPanel({
       aria-label={job.name}
       className="flex min-h-0 flex-col border-l bg-background max-lg:fixed max-lg:inset-0 max-lg:z-40 lg:w-[min(42rem,50%)] lg:shrink-0"
     >
-      <header className="flex h-14 shrink-0 items-center gap-2.5 border-b px-4">
-        <JobTitle job={job} current={current} />
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          <span className="mr-1">
-            <JobStatus working={working} />
-          </span>
-          {job.kind === "desktop" && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              title="Bot desktop"
-              render={<Link to="/bots/$botId/desktop" params={{ botId }} />}
-              nativeButton={false}
-            >
-              <IconDeviceDesktop />
-            </Button>
-          )}
-          <DownloadButton botId={botId} job={job} />
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            title="Close"
-            onClick={onClose}
-          >
-            <IconX />
-          </Button>
-        </div>
-      </header>
-      {current?.question && (
+      <JobPanelHeader
+        botId={botId}
+        job={job}
+        current={current}
+        working={working}
+        onClose={onClose}
+      />
+      {job.kind === "coding" && current?.question && (
         <div className="shrink-0 border-b p-4">
           <JobQuestionAnswer
             botId={botId}
@@ -534,7 +503,7 @@ export function JobPanel({
       <JobHistoryBody
         history={history}
         items={items}
-        label={kindLabel(job).toLowerCase()}
+        label={JOB_KINDS[job.kind].label.toLowerCase()}
         working={working}
       />
     </aside>

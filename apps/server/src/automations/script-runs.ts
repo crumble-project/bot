@@ -1,0 +1,356 @@
+import { scriptRequest } from "../shared/request-ids";
+import {
+  BACKGROUND_CONTEXT,
+  withAbortSignal,
+} from "@earendil-works/chord/context";
+import {
+  boundOutput,
+  OutputBuffer,
+  PROGRESS_BYTES_PER_SECOND,
+} from "@earendil-works/chord/output";
+import { ExecutionError, toError } from "@earendil-works/pi-durable/env";
+import {
+  Cause,
+  Clock,
+  Context,
+  Effect,
+  Exit,
+  Layer,
+  Scope,
+  Semaphore,
+} from "effect";
+import { AgentRepository } from "../bot-store/agent-repository";
+import { BotNotices } from "../bot-ports/bot-notices";
+import { Credentials } from "../credentials/credentials";
+import type { Schedule } from "../contract/schedules";
+import type { ScriptRun } from "./script-run-repository";
+import type { AppError } from "../shared/errors";
+import { pruneHourly, startTicking } from "../shared/ticker";
+import { nowIso } from "../shared/time";
+import { WORKSPACE_PATH } from "../../workspace-image/guest";
+import { BotWorkspaces, type Workspaces } from "../workspaces/workspace";
+import { ScriptRunRepository } from "./script-run-repository";
+import { scriptEvent, type ScriptEvent } from "../event-sources/event-payload";
+import { BOT_TOOL } from "../contract/tools";
+
+type Outcome = {
+  status: Exclude<ScriptRun["status"], "running">;
+  exitCode: number | null;
+  error: string | null;
+};
+
+export const SCRIPT_RUN_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+
+const OUTPUT_LIMITS = {
+  maxBytes: 65536,
+  maxLines: 2000,
+  retain: "tail",
+} as const;
+
+const noticeText = (schedule: Schedule, result: Outcome, output: string) => {
+  const tail = boundOutput(output, {
+    ...OUTPUT_LIMITS,
+    maxBytes: 8192,
+  }).text.trimEnd();
+
+  return [
+    schedule.name,
+    `Status: ${result.status}`,
+    `Exit code: ${result.exitCode ?? "none"}`,
+    ...(result.error ? [`Error: ${result.error}`] : []),
+    ...(tail ? [`\`\`\`\n${tail}\n\`\`\``] : []),
+  ].join("\n\n");
+};
+
+const scriptNotStarted = (error: string): Outcome => ({
+  status: "failed",
+  exitCode: null,
+  error,
+});
+
+const exitOutcome = (exit: Exit.Exit<Outcome>): Outcome => {
+  if (Exit.isSuccess(exit)) return exit.value;
+
+  const error = Cause.pretty(exit.cause);
+
+  return {
+    status: Exit.hasInterrupts(exit) ? "interrupted" : "failed",
+    exitCode: null,
+    error: Exit.hasInterrupts(exit) ? null : error,
+  };
+};
+
+type ScriptShellRun = {
+  workspaces: Workspaces;
+  schedule: Schedule;
+  command: string;
+  env: Record<string, string>;
+  payload: ReturnType<typeof scriptEvent> | undefined;
+  output: OutputBuffer;
+};
+
+const runInShell = async (
+  { workspaces, schedule, command, env, payload, output }: ScriptShellRun,
+  signal: AbortSignal,
+) => {
+  const shell = workspaces.env(schedule.agentId, env);
+  const context = withAbortSignal(signal, BACKGROUND_CONTEXT);
+
+  if (payload) {
+    const written = await shell.writeFile(
+      payload.file,
+      payload.content,
+      context,
+    );
+
+    if (!written.ok) throw new ExecutionError("unknown", written.error.message);
+  }
+
+  return shell.exec(
+    command,
+    {
+      cwd: WORKSPACE_PATH,
+      timeout: schedule.timeoutSeconds,
+      onOutput: (chunk, _context, info) => {
+        output.push(chunk, info.skipped);
+      },
+      window: {
+        maxBytes: OUTPUT_LIMITS.maxBytes,
+        maxLines: OUTPUT_LIMITS.maxLines,
+        minIntervalMs: 1000,
+        bytesPerSecond: PROGRESS_BYTES_PER_SECOND,
+      },
+    },
+    context,
+  );
+};
+
+const shellOutcome = (shellRun: ScriptShellRun) =>
+  Effect.tryPromise({
+    try: (signal) => runInShell(shellRun, signal),
+    catch: (error) =>
+      error instanceof ExecutionError
+        ? error
+        : new ExecutionError("unknown", toError(error).message),
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.succeed({
+        ok: false as const,
+        error,
+      }),
+    ),
+    Effect.map((result): Outcome => {
+      if (result.ok)
+        return {
+          status: result.value.exitCode === 0 ? "succeeded" : "failed",
+          exitCode: result.value.exitCode,
+          error: null,
+        };
+
+      return {
+        status: result.error.code === "timeout" ? "timed_out" : "failed",
+        exitCode: null,
+        error: result.error.message,
+      };
+    }),
+  );
+
+export class ScriptRuns extends Context.Service<
+  ScriptRuns,
+  {
+    /** With `event`, the command reads the event from the file `CRUMBLE_EVENT_FILE` names. */
+    readonly start: (
+      schedule: Schedule,
+      event?: ScriptEvent,
+    ) => Effect.Effect<{ admitted: boolean; run?: ScriptRun }, AppError>;
+    readonly recover: Effect.Effect<void>;
+    readonly list: (
+      scheduleId: string,
+      options: { limit: number; before?: string | undefined },
+    ) => Effect.Effect<ScriptRun[]>;
+  }
+>()("crumble/automations/ScriptRuns") {
+  static readonly layer = Layer.effect(
+    ScriptRuns,
+    Effect.gen(function* () {
+      const repository = yield* ScriptRunRepository;
+      const workspaces = yield* BotWorkspaces;
+      const credentials = yield* Credentials;
+      const notices = yield* BotNotices;
+      const agents = yield* AgentRepository;
+      const scope = yield* Scope.make();
+      const admission = yield* Semaphore.make(1);
+      const semaphore = yield* Semaphore.make(4);
+      const inFlight = new Set<string>();
+      let closing = false;
+
+      // Keep the execution scope open until pending admissions finish recording their rows.
+      yield* Effect.addFinalizer(() =>
+        Effect.gen(function* () {
+          closing = true;
+          yield* admission.withPermit(Scope.close(scope, Exit.void));
+        }),
+      );
+
+      const finish = Effect.fnUntraced(function* (
+        schedule: Schedule,
+        run: ScriptRun,
+        result: Outcome,
+        output = "",
+        droppedBytes = 0,
+      ) {
+        yield* repository.finish(run.id, {
+          ...result,
+          output,
+          droppedBytes,
+          finishedAt: yield* nowIso,
+        });
+
+        if (schedule.notify)
+          yield* notices
+            .notice(
+              schedule.agentId,
+              noticeText(schedule, result, output),
+              scriptRequest(schedule.id, run.id),
+            )
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.logError(
+                  "Script automation notice failed",
+                  run.id,
+                  cause,
+                ),
+              ),
+            );
+      });
+
+      const execute = (
+        schedule: Schedule,
+        run: ScriptRun,
+        event: ScriptEvent | undefined,
+      ) => {
+        const output = new OutputBuffer(OUTPUT_LIMITS);
+
+        const command = Effect.gen(function* (): Effect.fn.Return<Outcome> {
+          if (!workspaces) return scriptNotStarted("workspace unavailable");
+
+          const agent = yield* agents.get(schedule.agentId);
+
+          if (!agent?.tools.includes(BOT_TOOL.coding))
+            return scriptNotStarted("coding is turned off for this bot");
+
+          const release = workspaces.keepAwake(schedule.agentId);
+
+          return yield* Effect.gen(function* (): Effect.fn.Return<Outcome> {
+            const payload =
+              event && scriptEvent(event.record, event.sourceName);
+
+            const env = {
+              ...(yield* credentials.env(schedule.agentId)),
+              ...payload?.env,
+            };
+
+            return yield* shellOutcome({
+              workspaces,
+              schedule,
+              command: run.command,
+              env,
+              payload,
+              output,
+            });
+          }).pipe(Effect.ensuring(Effect.sync(release)));
+        });
+
+        return semaphore.withPermit(command).pipe(
+          Effect.onExit((exit) =>
+            Effect.gen(function* () {
+              output.end();
+              const tail = output.snapshot();
+
+              yield* finish(
+                schedule,
+                run,
+                exitOutcome(exit),
+                tail.text,
+                tail.droppedBytes,
+              );
+            }).pipe(
+              Effect.ensuring(Effect.sync(() => inFlight.delete(schedule.id))),
+            ),
+          ),
+        );
+      };
+
+      const start = Effect.fn("ScriptRuns.start")(
+        function* (schedule: Schedule, event?: ScriptEvent) {
+          if (closing || inFlight.has(schedule.id)) return { admitted: false };
+          inFlight.add(schedule.id);
+
+          const run: ScriptRun = {
+            id: crypto.randomUUID(),
+            scheduleId: schedule.id,
+            agentId: schedule.agentId,
+            command: schedule.command ?? "",
+            status: "running",
+            exitCode: null,
+            output: "",
+            droppedBytes: 0,
+            error: null,
+            startedAt: yield* nowIso,
+            finishedAt: null,
+          };
+
+          yield* repository
+            .create(run)
+            .pipe(
+              Effect.onExit((exit) =>
+                Exit.isFailure(exit)
+                  ? Effect.sync(() => inFlight.delete(schedule.id))
+                  : Effect.void,
+              ),
+            );
+
+          if (closing) {
+            yield* finish(schedule, run, {
+              status: "interrupted",
+              exitCode: null,
+              error: null,
+            }).pipe(
+              Effect.ensuring(Effect.sync(() => inFlight.delete(schedule.id))),
+            );
+
+            return { admitted: false };
+          }
+
+          yield* execute(schedule, run, event).pipe(
+            Effect.forkIn(scope, { startImmediately: true }),
+          );
+
+          return { admitted: true, run };
+        },
+        (effect) => admission.withPermit(effect),
+        Effect.uninterruptible,
+      );
+
+      const recover = Effect.flatMap(nowIso, repository.interruptRunning);
+
+      return ScriptRuns.of({ start, recover, list: repository.list });
+    }),
+  );
+}
+
+export const scriptRunRetention = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const repository = yield* ScriptRunRepository;
+
+    const prune = Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis;
+
+      yield* repository.prune(
+        new Date(now - SCRIPT_RUN_RETENTION_MS).toISOString(),
+      );
+    });
+
+    yield* startTicking(pruneHourly(prune), yield* Effect.scope);
+  }),
+);

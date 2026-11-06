@@ -36,7 +36,7 @@ type JobKindContribution = {
 };
 ```
 
-- **Providers stay Pi AI providers.** `createProvider` with a custom `ProviderStreams` is already the adapter seam. Availability that depends on something outside Pi AI, such as an installed executable, goes through the provider's own `auth.apiKey.check`, so `configured` and the model list follow it without new plumbing. `providerModels(credentials, contributions)` registers every contribution with `models.setProvider`. Melious moved into a plugin unchanged.
+- **Providers stay Pi AI providers.** `createProvider` with a custom `ProviderStreams` is already the adapter seam. Availability that depends on something outside Pi AI, such as an installed executable, goes through the provider's own `auth.apiKey.check`, so `configured` and the model list follow it without new plumbing. `accountModels(credentials, contributions)` and `hostModels(credentials, contributions)` register every contribution with `models.setProvider`. Melious moved into a plugin unchanged.
 - **External sign-in is data.** `ExternalAuth` names the state, the installed and qualified versions, and the sign-in and sign-out commands, mirroring Hermes' `external_dependencies` and setup status. The API returns it as `Provider.externalAuth` and refuses to delete a credential Crumble does not hold; nothing installs or signs in for the owner.
 - **Job kinds wrap `defineJobKind`.** Coding and desktop are contributions offered only while their workspaces exist. The server builds chat and job extensions, job environments, and answer notifications by iterating them, so `taskExtensions` no longer names kinds.
 - **Narrow host interfaces.** Plugin factories take only what they need (the data directory and environment, workspaces, desktop control), never `CrumbleService` or `Store`. That surface is what a loadable plugin would later be versioned against.
@@ -69,4 +69,4 @@ Loading plugins from outside the codebase. That needs a manifest (ID, version, r
 - The job API keeps its kind-specific routes (`/coding-jobs`, `/desktop-jobs`) within contract 1.x; only the wiring behind them becomes generic.
 - `JobKindOptions.kind` and plugin IDs become persistent identifiers, like they already are for stored job data.
 - A contribution that throws while building is a startup error, not a skipped plugin, until a loader with isolation exists.
-- Catalog-only callers without a server (`providerModels()` with no contributions) get only the providers that need no server configuration; Claude Code needs the data directory.
+- Catalog-only callers without a server (`hostModels(undefined, [])`) get only the providers that need no server configuration; Claude Code needs the data directory.

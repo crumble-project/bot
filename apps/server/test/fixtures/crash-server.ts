@@ -2,7 +2,8 @@ import { createModels, type AssistantMessage } from "@earendil-works/pi-ai";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import { Store } from "../support/store";
 import { AgentRuntime } from "../../src/bots/runtime";
-import { standaloneBots } from "../../src/bots/bots";
+import { standaloneBots } from "../../src/bots/bots-test-support";
+import { runtimeCallbacks } from "../support/runtime-callbacks";
 
 const dir = process.env["BOT_CRASH_DIR"];
 
@@ -13,7 +14,6 @@ const faux = fauxProvider({
   models: [{ id: "crash-model" }],
 });
 
-// Never answers, so the parent always kills this process mid-turn.
 faux.setResponses([() => new Promise<AssistantMessage>(() => {})]);
 
 const models = createModels();
@@ -39,7 +39,7 @@ const agent = store.createAgent(
   "00000000-0000-4000-8000-000000000301",
 );
 
-const runtime = new AgentRuntime(dir, { models });
+const runtime = new AgentRuntime(dir, runtimeCallbacks({ models }));
 const service = standaloneBots(store, runtime);
 const conversation = await service.chat(agent.id);
 

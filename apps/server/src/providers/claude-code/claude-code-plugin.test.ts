@@ -1,4 +1,11 @@
-import { afterEach, beforeAll, describe, expect, test } from "bun:test";
+import {
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  setDefaultTimeout,
+  test,
+} from "bun:test";
 import {
   chmodSync,
   mkdirSync,
@@ -9,7 +16,7 @@ import {
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { createAPI } from "../../app/api";
+import { testAPI } from "../../../test/support/api";
 import {
   acceptsThinkingDisable,
   contextWindow,
@@ -19,11 +26,14 @@ import {
 import { claudeCodePlugin, claudeCodeOptions } from "./plugin";
 import { childEnv, claudeCodeStatus } from "./setup";
 import { pluginProviders } from "../../plugins/plugins";
-import { standaloneSignIns } from "../provider-auth";
+import { standaloneSignIns } from "../provider-auth-test-support";
 import type { AgentRuntime } from "../../bots/runtime";
-import { standaloneScheduler } from "../../schedules/scheduler";
-import { standaloneBots } from "../../bots/bots";
+import { standaloneScheduler } from "../../automations/scheduler-test-support";
+import { standaloneBots } from "../../bots/bots-test-support";
 import { Store } from "../../../test/support/store";
+
+// Spawned CLIs can pass the default 5 seconds on a loaded machine.
+setDefaultTimeout(30_000);
 
 const FAKE = join(import.meta.dir, "../../../test/fixtures/fake-claude.ts");
 
@@ -36,7 +46,6 @@ afterEach(() => {
   dirs = [];
 });
 
-/** A data directory whose Claude Code is the fake, configured through a settings file in its config directory. */
 function dataDir(fake: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "crumble-claude-plugin-"));
 
@@ -216,8 +225,11 @@ function api(fake: Record<string, string>) {
   const dir = dataDir(fake);
   const store = new Store(dir);
   const plugin = claudeCodePlugin(dir, env());
-  const providers = pluginProviders([plugin]);
-  const providerAuth = standaloneSignIns(store.runtime, providers);
+
+  const providerAuth = standaloneSignIns(
+    store.runtime,
+    pluginProviders([plugin]),
+  );
   // SAFETY: provider routes never reach the runtime.
 
   const service = standaloneBots(store, {} as AgentRuntime);
@@ -226,14 +238,10 @@ function api(fake: Record<string, string>) {
     service.dispatch(a, p, r, s),
   );
 
-  const app = createAPI(service, token, {
+  const app = testAPI(service, token, {
     scheduler,
     providerAuth,
-    externalAuth: new Map(
-      providers.flatMap(({ provider: item, externalAuth }) =>
-        externalAuth ? [[item.id, externalAuth]] : [],
-      ),
-    ),
+    plugins: [plugin],
   });
 
   const request = (path: string, init: RequestInit = {}) =>

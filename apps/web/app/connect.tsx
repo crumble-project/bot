@@ -9,7 +9,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { clearUserData } from "@/lib/api";
+import { resetSession } from "@/lib/session";
 import {
   authClient,
   INVITE_HEADER,
@@ -18,6 +18,8 @@ import {
 } from "@/lib/auth-client";
 
 type Mode = "sign-in" | "sign-up";
+
+type Credentials = { email: string; password: string; name: string };
 
 const MODE_COPY = {
   "sign-in": {
@@ -36,17 +38,15 @@ const MODE_COPY = {
   },
 } as const;
 
-/** The invite token of an invite link, which opens the page on sign-up. */
 // The server validates the token at sign-up, and it grants no role of its own.
 // react-doctor-disable-next-line url-prefilled-privileged-action
 const invite = new URLSearchParams(location.search).get("invite") ?? undefined;
 
 function enter() {
-  clearUserData();
+  resetSession();
   window.location.assign("/");
 }
 
-/** Signs in with a passkey: from the button, or from the browser's autofill on the email field. */
 function usePasskeySignIn(mode: Mode) {
   // Bumped after a manual attempt that didn't sign in, which aborted the autofill request.
   const [attempt, setAttempt] = useState(0);
@@ -84,10 +84,7 @@ function usePasskeySignIn(mode: Mode) {
   return signIn;
 }
 
-function useConnect(
-  mode: Mode,
-  credentials: { email: string; password: string; name: string },
-) {
+function useConnect(mode: Mode, credentials: Credentials) {
   const { email, password, name } = credentials;
 
   return useMutation({
@@ -130,16 +127,12 @@ function usePasskeySignUp(credentials: { email: string; name: string }) {
   });
 }
 
-function canConnect(
-  mode: Mode,
-  { email, password, name }: { email: string; password: string; name: string },
-) {
+function canConnect(mode: Mode, { email, password, name }: Credentials) {
   return Boolean(
     email.trim() && password && (mode !== "sign-up" || name.trim()),
   );
 }
 
-/** The passkey button for the mode: sign in with one, or create the account with one alone. */
 function PasskeyAction({
   mode,
   credentials,
@@ -179,17 +172,74 @@ function PasskeyAction({
   );
 }
 
+function CredentialFields({
+  mode,
+  credentials: { email, password, name },
+  onChange,
+  error,
+}: {
+  mode: Mode;
+  credentials: Credentials;
+  onChange: (change: Partial<Credentials>) => void;
+  error: Error | null;
+}) {
+  const copy = MODE_COPY[mode];
+  const invalid = error ? true : undefined;
+
+  return (
+    <>
+      {mode === "sign-up" && (
+        <Field>
+          <FieldLabel htmlFor="name">Name</FieldLabel>
+          <Input
+            id="name"
+            autoComplete="name"
+            value={name}
+            onChange={(event) => onChange({ name: event.target.value })}
+          />
+        </Field>
+      )}
+      <Field data-invalid={invalid}>
+        <FieldLabel htmlFor="email">Email</FieldLabel>
+        <Input
+          id="email"
+          type="email"
+          autoFocus
+          autoComplete={copy.emailAutoComplete}
+          aria-invalid={invalid}
+          value={email}
+          onChange={(event) => onChange({ email: event.target.value })}
+        />
+      </Field>
+      <Field data-invalid={invalid}>
+        <FieldLabel htmlFor="password">Password</FieldLabel>
+        <Input
+          id="password"
+          type="password"
+          autoComplete={copy.autoComplete}
+          aria-invalid={invalid}
+          value={password}
+          onChange={(event) => onChange({ password: event.target.value })}
+        />
+        {error && <FieldError>{error.message}</FieldError>}
+      </Field>
+    </>
+  );
+}
+
 export function Connect() {
   const [mode, setMode] = useState<Mode>(invite ? "sign-up" : "sign-in");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const credentials = { email, password, name };
+
+  const [credentials, setCredentials] = useState({
+    email: "",
+    password: "",
+    name: "",
+  });
+
   const copy = MODE_COPY[mode];
 
   const connect = useConnect(mode, credentials);
   const error = connect.error;
-  const invalid = connect.isError || undefined;
 
   return (
     <form
@@ -201,41 +251,14 @@ export function Connect() {
     >
       <FieldGroup>
         <h1 className="font-heading text-xl font-semibold">Crumble</h1>
-        {mode === "sign-up" && (
-          <Field>
-            <FieldLabel htmlFor="name">Name</FieldLabel>
-            <Input
-              id="name"
-              autoComplete="name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </Field>
-        )}
-        <Field data-invalid={invalid}>
-          <FieldLabel htmlFor="email">Email</FieldLabel>
-          <Input
-            id="email"
-            type="email"
-            autoFocus
-            autoComplete={copy.emailAutoComplete}
-            aria-invalid={invalid}
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-        </Field>
-        <Field data-invalid={invalid}>
-          <FieldLabel htmlFor="password">Password</FieldLabel>
-          <Input
-            id="password"
-            type="password"
-            autoComplete={copy.autoComplete}
-            aria-invalid={invalid}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-          {error && <FieldError>{error.message}</FieldError>}
-        </Field>
+        <CredentialFields
+          mode={mode}
+          credentials={credentials}
+          onChange={(change) =>
+            setCredentials((current) => ({ ...current, ...change }))
+          }
+          error={error}
+        />
         <Button
           type="submit"
           disabled={!canConnect(mode, credentials) || connect.isPending}

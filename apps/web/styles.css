@@ -146,7 +146,6 @@
   }
 }
 
-/* A bot's own color, set as --bot on its chat, row, or message, carries its identity. */
 @utility bg-bot-soft {
   background-color: oklch(from var(--bot) 0.965 min(c, 0.025) h);
 
@@ -169,7 +168,6 @@
   border-color: oklch(from var(--bot) 0.7 min(c, 0.12) h);
 }
 
-/* A raised panel for grouped rows: lifted by a shadow in light mode, by a lighter fill in dark. */
 @utility surface {
   border-width: 1px;
   background-color: var(--card);
@@ -182,7 +180,6 @@
   }
 }
 
-/* The message composer: a floating card that glows in the bot's color while you type. */
 @utility composer-card {
   border: 1px solid var(--border);
   background-color: var(--card);
@@ -214,7 +211,6 @@
   }
 }
 
-/* The app's checkbox on a native input, which keeps keyboard use and the mixed state accessible. */
 @utility checkbox {
   appearance: none;
   flex-shrink: 0;
@@ -263,7 +259,6 @@
   }
 }
 
-/* Route changes cross-fade instead of cutting; the sidebar stays put. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation-duration: 150ms;
@@ -352,7 +347,6 @@
     @apply border px-2 py-1;
   }
 
-  /* Pele diagrams take the app's theme, light and dark, without re-rendering. */
   .markdown .diagram {
     --pele-bg: transparent;
     --pele-fg: var(--foreground);

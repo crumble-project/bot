@@ -53,7 +53,6 @@ for (const backend of WORKSPACE_BACKENDS) {
           .match(/\[(\d+)\]/)![1],
       );
 
-    // A local web server for page actions, which open only http, https, and about: URLs.
     const serveTask = async () => {
       await env().writeFile("/workspace/task.html", page, BACKGROUND_CONTEXT);
       await env().exec(
@@ -387,7 +386,6 @@ for (const backend of WORKSPACE_BACKENDS) {
         BACKGROUND_CONTEXT,
       );
       expect(out).toContain("kept");
-      // Chromium's profile, with its cookies and logins, lives in the workspace.
       expect(out).toContain("profile");
     }, 120_000);
 
@@ -576,7 +574,6 @@ for (const backend of WORKSPACE_BACKENDS) {
         await Bun.sleep(500);
         expect(await pointerAt()).toEqual([10, 10]);
 
-        // The link is spent: a second connection is refused.
         await expect(
           connectRfb(`ws://127.0.0.1:${port}${link}/websockify`),
         ).rejects.toThrow();
@@ -594,7 +591,6 @@ for (const backend of WORKSPACE_BACKENDS) {
         await Bun.sleep(500);
         expect(await pointerAt()).toEqual([300, 300]);
 
-        // A focused GTK entry receives the owner's keys: "x", then Return closes the dialog with it.
         await guest(
           "rm -f /tmp/owner.out; (setsid zenity --entry --title Owner --text Key > /tmp/owner.out 2>/dev/null &); for i in $(seq 60); do xdotool search --name '^Owner$' >/dev/null && break; sleep 0.25; done; xdotool search --name '^Owner$' windowactivate --sync",
         );

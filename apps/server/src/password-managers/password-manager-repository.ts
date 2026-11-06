@@ -1,10 +1,8 @@
 import { asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer, Redacted } from "effect";
-import { secrets } from "../credentials/schema";
-import { Conflict } from "../shared/errors";
 import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
-import type { PasswordManagerId } from "../shared/domain";
+import type { PasswordManagerId } from "../contract/secrets";
 import { passwordManagers } from "./schema";
 
 export type PasswordManagerConnection = {
@@ -12,7 +10,6 @@ export type PasswordManagerConnection = {
   connectedAt: string;
 };
 
-/** The account's password manager connections, with their tokens encrypted at rest. */
 export class PasswordManagerRepository extends Context.Service<
   PasswordManagerRepository,
   {
@@ -21,18 +18,13 @@ export class PasswordManagerRepository extends Context.Service<
     readonly token: (
       id: PasswordManagerId,
     ) => Effect.Effect<Redacted.Redacted | undefined>;
-    /** Connects the password manager, or replaces its token. */
     readonly save: (
       id: PasswordManagerId,
       token: Redacted.Redacted,
       connectedAt: string,
     ) => Effect.Effect<void>;
-    /** The keys of the secrets that read their value from it. */
-    readonly usedBy: (id: PasswordManagerId) => Effect.Effect<string[]>;
-    /** Fails with `Conflict` while any secret still reads from the password manager. */
-    readonly delete: (
-      id: PasswordManagerId,
-    ) => Effect.Effect<boolean, Conflict>;
+    /** The foreign key from `secrets` refuses this while a secret reads from it; check `SecretRepository.usedBy` first. */
+    readonly delete: (id: PasswordManagerId) => Effect.Effect<boolean>;
   }
 >()("crumble/password-managers/PasswordManagerRepository") {
   static readonly layer = Layer.effect(
@@ -77,42 +69,21 @@ export class PasswordManagerRepository extends Context.Service<
           });
       }, Effect.orDie);
 
-      const usedBy = Effect.fn("PasswordManagerRepository.usedBy")(function* (
-        id: PasswordManagerId,
-      ) {
-        const rows = yield* db
-          .select({ key: secrets.key })
-          .from(secrets)
-          .where(eq(secrets.passwordManager, id))
-          .orderBy(asc(secrets.key));
-
-        return rows.map((row) => row.key);
-      }, Effect.orDie);
-
       const remove = Effect.fn("PasswordManagerRepository.delete")(function* (
         id: PasswordManagerId,
       ) {
-        const using = yield* usedBy(id);
-
-        if (using.length > 0)
-          return yield* new Conflict({
-            message: `${using.length} secret${using.length === 1 ? "" : "s"} still read from this password manager`,
-          });
-
         const deleted = yield* db
           .delete(passwordManagers)
           .where(eq(passwordManagers.id, id))
-          .returning({ id: passwordManagers.id })
-          .pipe(Effect.orDie);
+          .returning({ id: passwordManagers.id });
 
         return deleted.length > 0;
-      });
+      }, Effect.orDie);
 
       return PasswordManagerRepository.of({
         list,
         token,
         save,
-        usedBy,
         delete: remove,
       });
     }),

@@ -3,7 +3,8 @@ import { createPublicKey, generateKeyPairSync, verify } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
-import type { PushDevice, ReplyPushEvent } from "./push-model";
+import type { ReplyEvent } from "../contract/reply-event";
+import type { PushDevice } from "./push-model";
 import {
   apnsHeaders,
   apnsHost,
@@ -72,7 +73,7 @@ const device = (overrides: Partial<PushDevice> = {}): PushDevice => ({
   ...overrides,
 });
 
-const event = (overrides: Partial<ReplyPushEvent> = {}): ReplyPushEvent => ({
+const event = (overrides: Partial<ReplyEvent> = {}): ReplyEvent => ({
   type: "reply",
   eventId: "event",
   serverId: "server",
@@ -85,7 +86,6 @@ const event = (overrides: Partial<ReplyPushEvent> = {}): ReplyPushEvent => ({
   ...overrides,
 });
 
-/** The message of the configuration error loading `env` fails with. */
 const configFailure = (env: Record<string, string>) =>
   Effect.runPromise(
     loadPushTransports(env).pipe(
@@ -318,42 +318,50 @@ describe("APNs requests", () => {
     expect(payload.aps.alert.title).toBe("Bot");
     expect(payload).toHaveProperty("jobName", "github-login");
   });
+
+  test("the payload says what the reply waits for", () => {
+    expect(apnsPayload(event({ waitingFor: "approval" }))).toHaveProperty(
+      "waitingFor",
+      "approval",
+    );
+    expect(apnsPayload(event())).not.toHaveProperty("waitingFor");
+  });
 });
 
 describe("APNs response classification", () => {
   test("a token the provider no longer accepts is permanent", () => {
-    expect(classifyApnsResponse(410, undefined)).toEqual(
-      new PermanentRejection({ message: "APNs rejected token" }),
+    expect(classifyApnsResponse(410, undefined)).toBeInstanceOf(
+      PermanentRejection,
     );
-    expect(classifyApnsResponse(400, "BadDeviceToken")).toEqual(
-      new PermanentRejection({ message: "APNs rejected token" }),
+    expect(classifyApnsResponse(400, "BadDeviceToken")).toBeInstanceOf(
+      PermanentRejection,
     );
-    expect(classifyApnsResponse(400, "Unregistered")).toEqual(
-      new PermanentRejection({ message: "APNs rejected token" }),
+    expect(classifyApnsResponse(400, "Unregistered")).toBeInstanceOf(
+      PermanentRejection,
     );
-    expect(classifyApnsResponse(400, "DeviceTokenNotForTopic")).toEqual(
-      new PermanentRejection({ message: "APNs rejected token" }),
+    expect(classifyApnsResponse(400, "DeviceTokenNotForTopic")).toBeInstanceOf(
+      PermanentRejection,
     );
   });
 
   test("throttling and provider failures are temporary", () => {
-    expect(classifyApnsResponse(429, undefined)).toEqual(
-      new TemporaryFailure({ message: "APNs temporary failure 429" }),
+    expect(classifyApnsResponse(429, undefined)).toBeInstanceOf(
+      TemporaryFailure,
     );
-    expect(classifyApnsResponse(500, undefined)).toEqual(
-      new TemporaryFailure({ message: "APNs temporary failure 500" }),
+    expect(classifyApnsResponse(500, undefined)).toBeInstanceOf(
+      TemporaryFailure,
     );
-    expect(classifyApnsResponse(503, "ServiceUnavailable")).toEqual(
-      new TemporaryFailure({ message: "APNs temporary failure 503" }),
+    expect(classifyApnsResponse(503, "ServiceUnavailable")).toBeInstanceOf(
+      TemporaryFailure,
     );
   });
 
   test("a refused notification is terminal but rejected credentials are not retried blindly", () => {
-    expect(classifyApnsResponse(400, "PayloadTooLarge")).toEqual(
-      new TerminalResponse({ message: "APNs terminal response 400" }),
+    expect(classifyApnsResponse(400, "PayloadTooLarge")).toBeInstanceOf(
+      TerminalResponse,
     );
-    expect(classifyApnsResponse(404, undefined)).toEqual(
-      new TerminalResponse({ message: "APNs terminal response 404" }),
+    expect(classifyApnsResponse(404, undefined)).toBeInstanceOf(
+      TerminalResponse,
     );
     expect(classifyApnsResponse(401, "BadCertificate")).toBeUndefined();
     expect(classifyApnsResponse(403, "BadCertificate")).toBeUndefined();
@@ -396,6 +404,14 @@ describe("FCM requests", () => {
       groupName: "",
       jobName: "github-login",
     });
+  });
+
+  test("data says what the reply waits for", () => {
+    expect(fcmData(event({ waitingFor: "login" }))).toHaveProperty(
+      "waitingFor",
+      "login",
+    );
+    expect(fcmData(event())).not.toHaveProperty("waitingFor");
   });
 
   test("the message targets one device with high priority", () => {
@@ -441,29 +457,29 @@ describe("FCM requests", () => {
 
 describe("FCM response classification", () => {
   test("a token the provider no longer accepts is permanent", () => {
-    expect(classifyFcmResponse(404, "UNREGISTERED")).toEqual(
-      new PermanentRejection({ message: "FCM rejected token" }),
+    expect(classifyFcmResponse(404, "UNREGISTERED")).toBeInstanceOf(
+      PermanentRejection,
     );
-    expect(classifyFcmResponse(403, "SENDER_ID_MISMATCH")).toEqual(
-      new PermanentRejection({ message: "FCM rejected token" }),
+    expect(classifyFcmResponse(403, "SENDER_ID_MISMATCH")).toBeInstanceOf(
+      PermanentRejection,
     );
   });
 
   test("throttling and provider failures are temporary", () => {
-    expect(classifyFcmResponse(429, undefined)).toEqual(
-      new TemporaryFailure({ message: "FCM temporary failure 429" }),
+    expect(classifyFcmResponse(429, undefined)).toBeInstanceOf(
+      TemporaryFailure,
     );
-    expect(classifyFcmResponse(500, undefined)).toEqual(
-      new TemporaryFailure({ message: "FCM temporary failure 500" }),
+    expect(classifyFcmResponse(500, undefined)).toBeInstanceOf(
+      TemporaryFailure,
     );
-    expect(classifyFcmResponse(503, "UNAVAILABLE")).toEqual(
-      new TemporaryFailure({ message: "FCM temporary failure 503" }),
+    expect(classifyFcmResponse(503, "UNAVAILABLE")).toBeInstanceOf(
+      TemporaryFailure,
     );
   });
 
   test("a refused notification is terminal but rejected credentials are not retried blindly", () => {
-    expect(classifyFcmResponse(400, "INVALID_ARGUMENT")).toEqual(
-      new TerminalResponse({ message: "FCM terminal response 400" }),
+    expect(classifyFcmResponse(400, "INVALID_ARGUMENT")).toBeInstanceOf(
+      TerminalResponse,
     );
     expect(classifyFcmResponse(401, undefined)).toBeUndefined();
     expect(classifyFcmResponse(403, "PERMISSION_DENIED")).toBeUndefined();

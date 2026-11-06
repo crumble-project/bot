@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { desktopControlAccess } from "./desktop-control";
 import { DesktopControlRepository } from "./desktop-control-repository";
-import { agentInput } from "../shared/domain";
+import { agentInput } from "../contract/agents";
 import { Store } from "../../test/support/store";
 
 const dirs: string[] = [];
@@ -36,7 +36,6 @@ test("the bot holds control until the owner takes it, and every change counts", 
     changes: 1,
   });
 
-  // Setting the current holder again changes nothing.
   expect(control.set(agentId, "owner")).toMatchObject({
     holder: "owner",
     changes: 1,

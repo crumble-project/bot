@@ -1,16 +1,13 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import webUI from "@crumble/web/index.html";
-
-/** Where the browser loads Pele's ES modules from; `apps/web/components/markdown.tsx` imports this path at runtime. */
-export const PELE_PREFIX = "/ui-modules/pele";
+import { PELE_PREFIX } from "../contract/ui-modules";
 
 const PELE = path.join(
   path.dirname(fileURLToPath(import.meta.resolve("pele/package.json"))),
   "dist/esm",
 );
 
-/** A Pele module under its ESM build, or undefined for any other path. */
 function peleFile(requested: string) {
   const relative = path.posix.normalize(decodeURIComponent(requested));
 

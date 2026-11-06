@@ -5,21 +5,21 @@ import type { LookupFunction } from "node:net";
 import type net from "node:net";
 import { Transform } from "node:stream";
 import tls from "node:tls";
-import {
-  hostMatches,
-  type CredentialGrant,
-  type CredentialTarget,
-  type CredentialUse,
-} from "../shared/domain";
-import { isPublicAddress } from "../workspaces/public-address";
+import { hostMatches, type CredentialTarget } from "../shared/domain";
+import type {
+  CredentialGrant,
+  CredentialUse,
+} from "./agent-credential-repository";
+import { isPublicAddress } from "../shared/public-address";
 import type { WorkspaceInterceptor } from "../workspaces/workspace-proxy";
-import { SIGNING_HOST } from "../workspaces/workspace";
+
+export type TlsAuthorities = {
+  context(agentId: string, host: string): Promise<tls.SecureContext>;
+};
 
 export type CredentialProxyOptions = {
   agentId: string;
-  authorities: {
-    context(agentId: string, host: string): Promise<tls.SecureContext>;
-  };
+  authorities: TlsAuthorities;
   /** Read for every request, so a changed or deleted credential applies at once. */
   grants: () => CredentialGrant[];
   /** Reads a used credential's value; rejects with the reason the request can't be sent. */
@@ -29,8 +29,6 @@ export type CredentialProxyOptions = {
   isPublicAddress?: (address: string) => boolean;
   /** Extra certificate authorities upstream servers may use, in PEM; the system's are always trusted. */
   upstreamCa?: string;
-  /** Signs a commit for the bot's machine account; undefined when it has none. Answered at `SIGNING_HOST`. */
-  sign?: (data: Buffer) => Promise<string | undefined>;
 };
 
 // Shorter values would match ordinary bytes in responses; a reflected one that short is not worth corrupting bodies.
@@ -51,7 +49,6 @@ const HOP_BY_HOP = new Set([
 
 const latin1 = (text: string) => Buffer.from(text, "utf8").toString("latin1");
 
-/** Replaces each `from` with its `to` in a byte stream, also across chunk boundaries. */
 function replacing(pairs: ReadonlyArray<readonly [string, string]>) {
   const keep = Math.max(...pairs.map(([from]) => from.length)) - 1;
   let pending = "";
@@ -86,7 +83,6 @@ const swappedHeaderValue = (
   return `Basic ${Buffer.from(swap(decoded)).toString("base64")}`;
 };
 
-/** The headers towards the upstream server, with credentials swapped in and hop-by-hop headers dropped. */
 export const requestHeaders = (
   rawHeaders: string[],
   swap: (text: string) => string,
@@ -110,7 +106,6 @@ export const requestHeaders = (
 const forwardable = (key: string, scrubbing: boolean) =>
   !HOP_BY_HOP.has(key) && !(scrubbing && key === "content-length");
 
-/** The headers towards the workspace, with credential values scrubbed and hop-by-hop headers dropped. */
 export const responseHeaders = (
   rawHeaders: string[],
   scrubbing: boolean,
@@ -128,12 +123,10 @@ export const responseHeaders = (
   return headers;
 };
 
-/** A used credential with the value read for it. */
 type SwappedValue = { grant: CredentialGrant; value: string };
 
 type ReadFailure = { name: string; message: string };
 
-/** The credentials whose placeholder the request carries in its headers: the only ones it reads. */
 const usedGrants = (
   grants: readonly CredentialGrant[],
   request: http.IncomingMessage,
@@ -152,7 +145,6 @@ const usedGrants = (
   return [...used.values()];
 };
 
-/** Reads every used credential's value; any failure keeps the request from being sent. */
 const readValues = async (
   used: readonly CredentialGrant[],
   read: (name: string) => Promise<string>,
@@ -179,48 +171,6 @@ const readValues = async (
   return { values, failures };
 };
 
-// A commit object is far smaller; a larger body is not a commit.
-const MAX_SIGNED_BYTES = 1024 * 1024;
-
-/** Signs the posted commit with the bot's machine account key; 403 for a bot without one. */
-async function answerSigning(
-  sign: (data: Buffer) => Promise<string | undefined>,
-  request: http.IncomingMessage,
-  response: http.ServerResponse,
-) {
-  const chunks: Buffer[] = [];
-  let size = 0;
-
-  for await (const chunk of request) {
-    size += chunk.length;
-
-    if (size > MAX_SIGNED_BYTES) {
-      response.writeHead(413, { "content-type": "text/plain" });
-
-      return void response.end("Crumble signing: too large to be a commit\n");
-    }
-
-    chunks.push(chunk);
-  }
-
-  const signature =
-    request.method === "POST" && request.url === "/sign"
-      ? await sign(Buffer.concat(chunks))
-      : undefined;
-
-  if (signature === undefined) {
-    response.writeHead(403, { "content-type": "text/plain" });
-
-    return void response.end(
-      "Crumble signing: this bot has no machine account to sign as\n",
-    );
-  }
-
-  response.writeHead(200, { "content-type": "text/plain" });
-  response.end(signature);
-}
-
-/** Answers 502 without sending the request, naming each credential that couldn't be read. */
 const refuse = (
   request: http.IncomingMessage,
   response: http.ServerResponse,
@@ -234,6 +184,50 @@ const refuse = (
       .join(""),
   );
 };
+
+export async function answerOverTls(
+  client: net.Socket,
+  host: string,
+  options: { agentId: string; authorities: TlsAuthorities },
+  answer: http.RequestListener,
+) {
+  const secureContext = await options.authorities.context(
+    options.agentId,
+    host,
+  );
+
+  const secure = new tls.TLSSocket(client, {
+    isServer: true,
+    secureContext,
+    // HTTP/2 would need its own relay; clients fall back to HTTP/1.1.
+    ALPNProtocols: ["http/1.1"],
+  });
+
+  secure.on("error", () => secure.destroy());
+  // The TLS socket takes over reading the client; resuming the client as well stalls the handshake in Bun.
+  http.createServer(answer).emit("connection", secure);
+}
+
+const swappingPlaceholders =
+  (values: readonly SwappedValue[]) => (text: string) =>
+    values.reduce(
+      (current, { grant, value }) =>
+        current.replaceAll(grant.placeholder, value),
+      text,
+    );
+
+const scrubPairs = (values: readonly SwappedValue[]) =>
+  values.flatMap(({ grant, value }) =>
+    value.length >= MIN_SCRUBBED_LENGTH
+      ? [[latin1(value), latin1(grant.placeholder)] as const]
+      : [],
+  );
+
+function answerUpstreamError(response: http.ServerResponse, error: Error) {
+  if (response.headersSent) return void response.destroy();
+  response.writeHead(502, { "content-type": "text/plain" });
+  response.end(`Crumble credential proxy: ${error.message}\n`);
+}
 
 /**
  * Swaps a bot's credential placeholders for their values on requests to the credentials' hosts, and the values back
@@ -290,25 +284,17 @@ export function credentialProxy(
     values: readonly SwappedValue[],
     record: (path: string, status: number | null) => void,
   ) => {
-    const swap = (text: string) =>
-      values.reduce(
-        (current, { grant, value }) =>
-          current.replaceAll(grant.placeholder, value),
-        text,
-      );
-
-    const headers = requestHeaders(request.rawHeaders, swap);
+    const headers = requestHeaders(
+      request.rawHeaders,
+      swappingPlaceholders(values),
+    );
 
     // Uncompressed responses, so the value can be scrubbed from them.
     headers["accept-encoding"] = ["identity"];
     // Never in the URL: services log, store, and echo URLs, which would let a job read the value back.
     const path = request.url ?? "/";
 
-    const scrub = values.flatMap(({ grant, value }) =>
-      value.length >= MIN_SCRUBBED_LENGTH
-        ? [[latin1(value), latin1(grant.placeholder)] as const]
-        : [],
-    );
+    const scrub = scrubPairs(values);
 
     const scrubText = (text: string) =>
       scrub.reduce((current, [from, to]) => current.replaceAll(from, to), text);
@@ -343,9 +329,7 @@ export function credentialProxy(
     upstream.on("error", (error) => {
       record(path, null);
 
-      if (response.headersSent) return void response.destroy();
-      response.writeHead(502, { "content-type": "text/plain" });
-      response.end(`Crumble credential proxy: ${error.message}\n`);
+      answerUpstreamError(response, error);
     });
     request.pipe(upstream);
   };
@@ -394,33 +378,12 @@ export function credentialProxy(
   const forward =
     (host: string, port: number) =>
     (request: http.IncomingMessage, response: http.ServerResponse) => {
-      (host === SIGNING_HOST && options.sign
-        ? answerSigning(options.sign, request, response)
-        : send(host, port, request, response)
-      ).catch(() => response.destroy());
+      send(host, port, request, response).catch(() => response.destroy());
     };
 
   return {
-    wants: (host) =>
-      (host === SIGNING_HOST && options.sign !== undefined) ||
-      relevant(host).length > 0,
-    answers: (host) => host === SIGNING_HOST && options.sign !== undefined,
-    async handle(client: net.Socket, host: string, port: number) {
-      const secureContext = await options.authorities.context(
-        options.agentId,
-        host,
-      );
-
-      const secure = new tls.TLSSocket(client, {
-        isServer: true,
-        secureContext,
-        // HTTP/2 would need its own relay; clients fall back to HTTP/1.1.
-        ALPNProtocols: ["http/1.1"],
-      });
-
-      secure.on("error", () => secure.destroy());
-      // The TLS socket takes over reading the client; resuming the client as well stalls the handshake in Bun.
-      http.createServer(forward(host, port)).emit("connection", secure);
-    },
+    wants: (host) => relevant(host).length > 0,
+    handle: (client, host, port) =>
+      answerOverTls(client, host, options, forward(host, port)),
   };
 }

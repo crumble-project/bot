@@ -22,20 +22,17 @@ const sshBytes = (bytes: Uint8Array) => {
 
 const sshString = (text: string) => sshBytes(Buffer.from(text));
 
-/** The key's 32 raw public bytes, from its SPKI DER encoding. */
 const rawPublicKey = (key: KeyObject) =>
   createPublicKey(key).export({ format: "der", type: "spki" }).subarray(-32);
 
 const publicKeyBlob = (key: KeyObject) =>
   Buffer.concat([sshString(KEY_TYPE), sshBytes(rawPublicKey(key))]);
 
-/** A new Ed25519 private key in PKCS #8 PEM, to store as a secret. */
 export const newSigningKey = () =>
   generateKeyPairSync("ed25519")
     .privateKey.export({ format: "pem", type: "pkcs8" })
     .toString();
 
-/** The key's public half as an OpenSSH line, which the owner adds to GitHub as a signing key. */
 export const sshPublicKey = (privateKeyPem: string, comment: string) =>
   `${KEY_TYPE} ${publicKeyBlob(createPrivateKey(privateKeyPem)).toString("base64")} ${comment}`;
 

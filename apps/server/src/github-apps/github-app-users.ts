@@ -2,27 +2,29 @@ import { createHash, randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { Clock, Context, Effect, Layer, Redacted, Semaphore } from "effect";
 import { z } from "zod";
-import { SecretRepository } from "../credentials/secret-repository";
-import { Secrets, secretKey } from "../password-managers/secrets";
-import type { SecretInput } from "../shared/domain";
+import { secretKey } from "../secrets/secret-key";
+import { Secrets } from "../secrets/secrets";
+import { PendingStates } from "../secrets/server-secrets";
+import type { SecretInput } from "../contract/secrets";
 import { ProductDatabase } from "../shared/product-database";
 import { SecretBox } from "../shared/secret-box";
 import { Conflict, InvalidInput, NotFound } from "../shared/errors";
-import { GitHubUnavailable, github, pendingState } from "./github-api";
+import {
+  GitHubUnavailable,
+  github,
+  githubOAuth,
+  githubUser,
+  revokeGitHubGrant,
+} from "./github-api";
 import { githubAppUsers, githubApps } from "./schema";
-
-/** Where GitHub sends the owner back after signing in through an App; each App lists it as its callback URL. */
-export const authorizedPath = "/github-app/authorized";
 
 /** A token is refreshed once less than this is left of its eight hours. */
 const TOKEN_MARGIN_MS = 5 * 60 * 1000;
 
-/** The owner has this long to finish signing in on GitHub. */
 const STATE_TTL_MS = 10 * 60 * 1000;
 
-const stateKey = (state: string) => `github-app-user-state:${state}`;
+const STATE_FLOW = "github-app-user-state";
 
-/** The secret holding a GitHub App's client secret, which signing the owner in needs. */
 export const githubAppClientSecretKey = (appId: string) =>
   secretKey("github-app-client", appId);
 
@@ -43,38 +45,12 @@ const tokenAnswer = z.union([
   z.object({ error: z.string(), error_description: z.string().optional() }),
 ]);
 
-const user = z.object({ login: z.string().min(1), id: z.number().int() });
+type GitHubAppClient = Pick<
+  typeof githubApps.$inferSelect,
+  "id" | "name" | "clientId"
+>;
 
-type AppRow = typeof githubApps.$inferSelect;
-
-/** The owner as an App's bots act on GitHub. */
 export type GitHubAppUser = { login: string; userId: number };
-
-/** Exchanges a code or refresh token at GitHub's OAuth endpoint, on github.com rather than the REST API. */
-const exchange = (params: Record<string, string>) =>
-  Effect.tryPromise({
-    try: async (signal) => {
-      const response = await fetch(
-        "https://github.com/login/oauth/access_token",
-        {
-          method: "POST",
-          signal,
-          headers: { Accept: "application/json" },
-          body: new URLSearchParams(params),
-        },
-      );
-
-      return tokenAnswer.parse(await response.json());
-    },
-    catch: () =>
-      new GitHubUnavailable({ message: "GitHub's sign-in didn't answer" }),
-  }).pipe(
-    Effect.timeoutOrElse({
-      duration: "15 seconds",
-      orElse: () =>
-        Effect.fail(new GitHubUnavailable({ message: "GitHub timed out" })),
-    }),
-  );
 
 /**
  * The owner signing in to GitHub through an App, so bots assigned to it act as the owner instead of as `slug[bot]`.
@@ -85,24 +61,20 @@ export class GitHubAppUsers extends Context.Service<
   GitHubAppUsers,
   {
     readonly of: (appId: string) => Effect.Effect<GitHubAppUser | undefined>;
-    /** GitHub's sign-in page for the App; it sends the owner back to the App's callback URL. */
     readonly authorize: (
       appId: string,
     ) => Effect.Effect<string, NotFound | Conflict>;
-    /** Exchanges the code GitHub sent the owner back with, and returns the App's ID. */
     readonly complete: (input: {
       code: string;
       state: string;
     }) => Effect.Effect<string, InvalidInput | GitHubUnavailable>;
-    /** Forgets the owner's tokens after revoking them on GitHub, when GitHub answers. */
     readonly signOut: (appId: string) => Effect.Effect<void>;
     readonly setClientSecret: (
       appId: string,
       clientSecret: SecretInput,
     ) => Effect.Effect<void, NotFound | InvalidInput>;
-    /** The owner's current token for the App, refreshed when it's about to expire. */
     readonly token: (
-      app: AppRow,
+      app: GitHubAppClient,
     ) => Effect.Effect<Redacted.Redacted, GitHubUnavailable>;
   }
 >()("crumble/github-apps/GitHubAppUsers") {
@@ -111,8 +83,8 @@ export class GitHubAppUsers extends Context.Service<
     Effect.gen(function* () {
       const db = yield* ProductDatabase;
       const box = yield* SecretBox;
-      const secrets = yield* SecretRepository;
-      const ownerSecrets = yield* Secrets;
+      const pendingStates = yield* PendingStates;
+      const secrets = yield* Secrets;
       const refreshing = yield* Semaphore.make(1);
 
       const row = Effect.fn("GitHubAppUsers.row")(function* (appId: string) {
@@ -168,7 +140,7 @@ export class GitHubAppUsers extends Context.Service<
       });
 
       const clientSecretOf = (appId: string) =>
-        ownerSecrets.read(githubAppClientSecretKey(appId)).pipe(
+        secrets.read(githubAppClientSecretKey(appId)).pipe(
           Effect.mapError(
             (error) =>
               new GitHubUnavailable({
@@ -186,8 +158,7 @@ export class GitHubAppUsers extends Context.Service<
           return yield* new NotFound({ message: "GitHub App not found" });
 
         if (
-          !(yield* ownerSecrets.status(githubAppClientSecretKey(appId)))
-            .configured
+          !(yield* secrets.status(githubAppClientSecretKey(appId))).configured
         )
           return yield* new Conflict({
             message: `Add ${found.name}'s client secret first`,
@@ -195,14 +166,7 @@ export class GitHubAppUsers extends Context.Service<
 
         const state = randomBytes(24).toString("hex");
         const verifier = randomBytes(32).toString("base64url");
-        yield* secrets.set(
-          stateKey(state),
-          JSON.stringify({
-            appId,
-            verifier,
-            createdAt: yield* Clock.currentTimeMillis,
-          }),
-        );
+        yield* pendingStates.put(STATE_FLOW, state, { appId, verifier });
 
         return `https://github.com/login/oauth/authorize?${new URLSearchParams({
           // No redirect_uri: GitHub uses the App's callback URL, which older Apps registered under /ui/.
@@ -221,14 +185,14 @@ export class GitHubAppUsers extends Context.Service<
         code: string;
         state: string;
       }) {
-        const pending = yield* pendingState(
-          secrets,
-          stateKey(input.state),
+        const pending = yield* pendingStates.read(
+          STATE_FLOW,
+          input.state,
           signInState,
           STATE_TTL_MS,
         );
 
-        yield* secrets.delete(stateKey(input.state));
+        yield* pendingStates.drop(STATE_FLOW, input.state);
 
         if (!pending)
           return yield* new InvalidInput({
@@ -244,19 +208,22 @@ export class GitHubAppUsers extends Context.Service<
             message: "The GitHub App was removed or lost its client secret",
           });
 
-        const answer = yield* exchange({
-          client_id: found.clientId,
-          client_secret: Redacted.value(secret),
-          code: input.code,
-          code_verifier: pending.verifier,
-        });
+        const answer = yield* githubOAuth(
+          {
+            client_id: found.clientId,
+            client_secret: Redacted.value(secret),
+            code: input.code,
+            code_verifier: pending.verifier,
+          },
+          tokenAnswer,
+        );
 
         if ("error" in answer)
           return yield* new InvalidInput({
             message: `GitHub refused the sign-in: ${answer.error_description ?? answer.error}`,
           });
 
-        const owner = yield* github("/user", user, {
+        const owner = yield* github("/user", githubUser, {
           token: answer.access_token,
         });
 
@@ -278,29 +245,15 @@ export class GitHubAppUsers extends Context.Service<
             Effect.orElseSucceed(() => undefined),
           ));
 
-        if (found && secret) {
-          const basic = Buffer.from(
-            `${found.clientId}:${Redacted.value(secret)}`,
-          ).toString("base64");
-
-          // Revoking the grant also ends the refresh token, which would otherwise stay valid for months.
-          yield* Effect.tryPromise((signal) =>
-            fetch(
-              `https://api.github.com/applications/${found.clientId}/grant`,
-              {
-                method: "DELETE",
-                signal,
-                headers: {
-                  Accept: "application/vnd.github+json",
-                  Authorization: `Basic ${basic}`,
-                },
-                body: JSON.stringify({
-                  access_token: box.decrypt(signedIn.token),
-                }),
-              },
-            ),
-          ).pipe(Effect.timeout("15 seconds"), Effect.ignore);
-        }
+        // Revoking the grant also ends the refresh token, which would otherwise stay valid for months.
+        if (found && secret)
+          yield* revokeGitHubGrant(
+            {
+              clientId: found.clientId,
+              clientSecret: Redacted.value(secret),
+            },
+            box.decrypt(signedIn.token),
+          );
 
         yield* db
           .delete(githubAppUsers)
@@ -313,15 +266,12 @@ export class GitHubAppUsers extends Context.Service<
           if (!(yield* app(appId)))
             return yield* new NotFound({ message: "GitHub App not found" });
 
-          yield* ownerSecrets.save(
-            githubAppClientSecretKey(appId),
-            clientSecret,
-          );
+          yield* secrets.save(githubAppClientSecretKey(appId), clientSecret);
         },
       );
 
       const refresh = Effect.fn("GitHubAppUsers.refresh")(function* (
-        found: AppRow,
+        found: GitHubAppClient,
       ) {
         // Another request may have refreshed while this one waited for the lock.
         const signedIn = yield* row(found.id);
@@ -342,12 +292,15 @@ export class GitHubAppUsers extends Context.Service<
             message: `sign in to GitHub through ${found.name} again`,
           });
 
-        const answer = yield* exchange({
-          client_id: found.clientId,
-          client_secret: Redacted.value(secret),
-          grant_type: "refresh_token",
-          refresh_token: box.decrypt(signedIn.refreshToken),
-        });
+        const answer = yield* githubOAuth(
+          {
+            client_id: found.clientId,
+            client_secret: Redacted.value(secret),
+            grant_type: "refresh_token",
+            refresh_token: box.decrypt(signedIn.refreshToken),
+          },
+          tokenAnswer,
+        );
 
         if ("error" in answer)
           return yield* new GitHubUnavailable({
@@ -360,7 +313,7 @@ export class GitHubAppUsers extends Context.Service<
       });
 
       const token = Effect.fn("GitHubAppUsers.token")(function* (
-        found: AppRow,
+        found: GitHubAppClient,
       ) {
         const signedIn = yield* row(found.id);
         const now = yield* Clock.currentTimeMillis;

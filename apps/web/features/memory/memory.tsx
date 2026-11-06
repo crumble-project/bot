@@ -2,7 +2,6 @@ import { type ReactNode, useState } from "react";
 import {
   type UseQueryResult,
   useMutation,
-  useQueries,
   useQuery,
 } from "@tanstack/react-query";
 import {
@@ -25,37 +24,40 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { type Bot, agentPath } from "@/features/bots/api";
 import {
-  type Bot,
   type Memory,
-  agentPath,
   botMemoriesQuery,
-  botsQuery,
-  queryClient,
-  send,
   sharedMemoriesQuery,
-} from "@/lib/api";
-import { BotAvatar } from "@/features/bots/avatar";
+  invalidateMemories,
+} from "./api";
+import { send } from "@/lib/api";
+import {
+  ALL,
+  SHARED,
+  ownerItems,
+  useBotQueries,
+} from "@/features/bots/queries";
+import { agoInLargestUnit } from "@/lib/time";
+import { BotAvatar } from "@/components/bot-avatar";
 import {
   ConfirmDelete,
   FilterPills,
   NewButton,
   PageToolbar,
   SectionEmpty,
-  WorkspacePage,
-} from "@/components/workspace";
-
-const SHARED = "shared";
-const ALL = "all";
+  Page,
+} from "@/components/page";
+import { MAX_MEMORY_CHARS } from "@crumble/server/contract/limits";
+import { allPill, botPill, sharedPill } from "@/features/bots/bot-pills";
 
 type Editing = { memory: Memory | null; owner: string };
 
-function memoryPath(owner: string, id?: string) {
-  const base =
-    owner === SHARED ? "/v1/memories" : `${agentPath(owner)}/memories`;
+const memoriesPath = (owner: string) =>
+  owner === SHARED ? "/v1/memories" : (`${agentPath(owner)}/memories` as const);
 
-  return id ? `${base}/${encodeURIComponent(id)}` : base;
-}
+const memoryPath = (owner: string, id: string) =>
+  `${memoriesPath(owner)}/${encodeURIComponent(id)}` as const;
 
 const SOURCE_LABELS: Record<
   NonNullable<Memory["source"]>["kind"],
@@ -82,35 +84,6 @@ const SOURCE_ICONS = {
   group: IconUsersGroup,
 } satisfies Record<NonNullable<Memory["source"]>["kind"], TablerIcon>;
 
-const relative = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-
-const STEPS: [Intl.RelativeTimeFormatUnit, number][] = [
-  ["minute", 60],
-  ["hour", 60],
-  ["day", 24],
-  ["week", 7],
-  ["month", 4.35],
-  ["year", 12],
-];
-
-/** "3 days ago", in the largest unit that is at least one. */
-function ago(iso: string, now: number) {
-  let value = (Date.parse(iso) - now) / 1000;
-  let unit: Intl.RelativeTimeFormatUnit = "second";
-
-  for (const [next, size] of STEPS) {
-    if (Math.abs(value) < size) break;
-
-    value /= size;
-    unit = next;
-  }
-
-  return unit === "second"
-    ? relative.format(0, "minute")
-    : relative.format(Math.round(value), unit);
-}
-
-/** The text with every case-insensitive occurrence of `needle` marked. */
 function Highlighted({ text, needle }: { text: string; needle: string }) {
   if (!needle) return text;
 
@@ -167,17 +140,12 @@ function OwnerPills({
       value={scope}
       onChange={onScope}
       pills={[
-        { value: ALL, label: "All", count: total },
-        ...owners.map((owner) => ({
-          value: owner.id,
-          label: owner.name,
-          count: owner.memories.data?.length ?? 0,
-          icon: owner.bot ? (
-            <BotAvatar bot={owner.bot} size={18} />
-          ) : (
-            <IconUsersGroup />
-          ),
-        })),
+        allPill(total),
+        ...owners.map(({ bot, memories }) => {
+          const count = memories.data?.length ?? 0;
+
+          return bot ? botPill(bot, count) : sharedPill(count);
+        }),
       ]}
     />
   );
@@ -238,7 +206,7 @@ function MemoryRow({
         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
           {SourceIcon && <SourceIcon className="size-3.5 shrink-0" />}
           <span className="truncate">
-            {[sourceLabel(memory), ago(memory.updatedAt, now)]
+            {[sourceLabel(memory), agoInLargestUnit(memory.updatedAt, now)]
               .filter(Boolean)
               .join(" · ")}
           </span>
@@ -323,7 +291,6 @@ function OwnerGroup({
   );
 }
 
-/** Whether a group earns its frame: the one picked, shared, or a bot with matching memories. */
 function groupShown(owner: Owner, scope: string, needle: string) {
   if (scope !== ALL) return scope === owner.id;
 
@@ -377,33 +344,35 @@ function MemoryGroups({
 }
 
 function useMemoryData() {
-  const bots = useQuery(botsQuery);
+  const { bots, entries, refreshing } = useBotQueries(botMemoriesQuery);
   const shared = useQuery(sharedMemoriesQuery);
-
-  const perBot = useQueries({
-    queries: (bots.data ?? []).map((bot) => botMemoriesQuery(bot.id)),
-  });
 
   const owners: Owner[] = [
     { id: SHARED, name: "Shared", memories: shared },
-    ...(bots.data ?? []).flatMap((bot, index) => {
-      const memories = perBot[index];
-
-      return memories ? [{ id: bot.id, name: bot.name, bot, memories }] : [];
-    }),
+    ...entries.map(({ bot, query }) => ({
+      id: bot.id,
+      name: bot.name,
+      bot,
+      memories: query,
+    })),
   ];
 
-  const refreshing =
-    bots.isFetching || shared.isFetching || perBot.some((q) => q.isFetching);
-
-  return { bots, shared, owners, refreshing };
+  return {
+    bots,
+    shared,
+    owners,
+    refreshing: refreshing || shared.isFetching,
+  };
 }
 
 function useDeleteMemory() {
   return useMutation({
     mutationFn: (memory: Memory) =>
-      send(memoryPath(memory.agentId ?? SHARED, memory.id), "DELETE"),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["memories"] }),
+      send<"deleteMemory" | "deleteAgentMemory">(
+        memoryPath(memory.agentId ?? SHARED, memory.id),
+        "DELETE",
+      ),
+    onSettled: invalidateMemories,
   });
 }
 
@@ -415,12 +384,10 @@ export function MemoryPage() {
   const remove = useDeleteMemory();
 
   return (
-    <WorkspacePage
+    <Page
       title="Memory"
       refreshing={refreshing}
-      onRefresh={() =>
-        void queryClient.invalidateQueries({ queryKey: ["memories"] })
-      }
+      onRefresh={() => void invalidateMemories()}
     >
       <div className="flex flex-col gap-3">
         <PageToolbar
@@ -464,7 +431,7 @@ export function MemoryPage() {
           onClose={() => setEditing(null)}
         />
       )}
-    </WorkspacePage>
+    </Page>
   );
 }
 
@@ -480,18 +447,21 @@ function MemoryDialog({
   const [owner, setOwner] = useState(editing.owner);
   const [content, setContent] = useState(editing.memory?.content ?? "");
 
-  const owners = [
-    { label: "Shared", value: SHARED },
-    ...bots.map((bot) => ({ label: bot.name, value: bot.id })),
-  ];
-
   const save = useMutation({
     mutationFn: () =>
       editing.memory
-        ? send(memoryPath(owner, editing.memory.id), "PATCH", { content })
-        : send(memoryPath(owner), "POST", { content }),
+        ? send<"updateMemory" | "updateAgentMemory">(
+            memoryPath(owner, editing.memory.id),
+            "PATCH",
+            { content },
+          )
+        : send<"createMemory" | "createAgentMemory">(
+            memoriesPath(owner),
+            "POST",
+            { content },
+          ),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["memories"] });
+      await invalidateMemories();
       onClose();
     },
   });
@@ -507,7 +477,7 @@ function MemoryDialog({
     >
       <OwnerSelectField
         label="Remembered by"
-        owners={owners}
+        owners={ownerItems("Shared", bots)}
         value={owner}
         disabled={editing.memory !== null}
         onValueChange={(value) => setOwner(value ?? SHARED)}
@@ -517,7 +487,7 @@ function MemoryDialog({
         <Textarea
           id="memory-content"
           className="min-h-32"
-          maxLength={32000}
+          maxLength={MAX_MEMORY_CHARS}
           value={content}
           onChange={(event) => setContent(event.target.value)}
         />

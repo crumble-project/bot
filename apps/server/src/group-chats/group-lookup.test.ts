@@ -1,4 +1,5 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
+import { openGroupConversation } from "./group-turns";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -11,12 +12,16 @@ import {
   type FauxResponseFactory,
 } from "@earendil-works/pi-ai/providers/faux";
 import { z } from "zod";
-import { standaloneGroupChats } from "./group-chats";
+import { standaloneGroupChats } from "./group-chats-test-support";
 import { groupLookupExtension } from "./group-lookup";
 import { GroupTranscripts } from "./group-transcripts";
 import { AgentRuntime } from "../bots/runtime";
-import { standaloneBots } from "../bots/bots";
+import { standaloneBots } from "../bots/bots-test-support";
 import { Store } from "../../test/support/store";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
+
+// Each test posts 35 messages through the real group chat first.
+setDefaultTimeout(15_000);
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -32,7 +37,6 @@ const textOf = (message: Message) =>
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("");
 
-/** The owner's message is the tool call's arguments as JSON; a tool result ends the turn. */
 function script(offered: string[][]): FauxResponseFactory {
   return async (context) => {
     offered.push(
@@ -63,7 +67,6 @@ const bot = (name: string) => ({
   instructions: "",
   provider: "faux",
   model: "chat",
-  // Disabled, so posting starts no group turns; the runtime is driven directly.
   enabled: false,
   tools: [],
   skills: [],
@@ -92,10 +95,13 @@ async function setup() {
   const store = new Store(dir);
   let groups!: ReturnType<typeof standaloneGroupChats>;
 
-  const runtime = new AgentRuntime(join(dir, "agents"), {
-    models,
-    extensions: (agent) => [groupLookupExtension(agent, groups.service)],
-  });
+  const runtime = new AgentRuntime(
+    join(dir, "agents"),
+    runtimeCallbacks({
+      models,
+      extensions: (agent) => [groupLookupExtension(agent, groups.service)],
+    }),
+  );
 
   const service = standaloneBots(store, runtime);
   groups = standaloneGroupChats(
@@ -121,7 +127,6 @@ async function setup() {
   const agent = { ...ada!, enabled: true };
   const chat = await runtime.openChat(agent);
 
-  /** Runs one bot chat turn that calls the tool and returns its parsed result. */
   const call = async (args: Record<string, string>) => {
     const submission = await runtime.submit(agent, chat, JSON.stringify(args));
     await runtime.wait(submission, agent);
@@ -184,7 +189,7 @@ test("is offered in the bot chat but not in a group turn", async () => {
   await call({ action: "list" });
   expect(offered.at(-1)).toContain("group_chats");
 
-  const group = await runtime.openGroupConversation(agent, "group-1");
+  const group = await openGroupConversation(runtime, agent, "group-1");
 
   const submission = await runtime.submit(
     agent,

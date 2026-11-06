@@ -1,10 +1,15 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { type BunWebSocketData, websocket } from "@hono/bun";
 import { createAuth, trustedOriginsFor } from "./auth";
+import { accountDir, accountsDir } from "./data-dir";
 import { DataDirLocked, lockDataDir } from "./data-lock";
 import { adminAPI } from "./admin-api";
-import { novncResponse, ticketOwner } from "../bot-desktop/desktop-viewer";
+import {
+  novncResponse,
+  VIEWER_PREFIX,
+  viewerPathOwner,
+} from "../bot-desktop/desktop-viewer";
 import { createTenant } from "./tenant";
 import { webUIRoutes } from "./web-ui";
 import {
@@ -15,10 +20,11 @@ import {
 } from "../integrations/mcp-oauth";
 import type { Effect, Scope } from "effect";
 import type { Workspaces } from "../workspaces/workspace";
-import { configureDevWorkspaces } from "./dev-workspaces";
+import { devWorkspaceEnv } from "./dev-workspaces";
 import { MASTER_KEY_VARIABLE } from "../shared/secret-box";
+import type { ServerSettings } from "./server-settings";
 
-const TENANT_PREFIXES = ["/v1/", "/desktop-viewer/", "/api/auth/"];
+const TENANT_PREFIXES = ["/v1/", `${VIEWER_PREFIX}/`, "/api/auth/"];
 
 const SERVER_PATHS = [
   ...TENANT_PREFIXES.map((prefix) => `${prefix}*`),
@@ -26,7 +32,6 @@ const SERVER_PATHS = [
   CLIENT_DOCUMENT_PATH,
 ];
 
-/** The paths the host answers itself, before any account sees the request. */
 function hostedResponse(
   path: string,
   oauthClient: ClientDocument | undefined,
@@ -35,13 +40,14 @@ function hostedResponse(
 
   if (path === CLIENT_DOCUMENT_PATH)
     return oauthClient
-      ? Response.json(clientDocumentBody(oauthClient))
+      ? Response.json(clientDocumentBody(oauthClient), {
+          headers: { "Cache-Control": "public, max-age=3600" },
+        })
       : new Response("Not found", { status: 404 });
 
   return undefined;
 }
 
-/** A request from another site, whether by its origin header or the browser's own mark. */
 function untrustedOrigin(
   request: Request,
   requestOrigin: string | null,
@@ -61,17 +67,10 @@ function needsOriginForWrite(request: Request, requestOrigin: string | null) {
   );
 }
 
-// A viewer link is its own credential: a web view cannot send the owner's session, so without one the link
-// goes to the account it names. A session keeps it within the session's account.
-function ticketOwnerOf(path: string) {
-  return ticketOwner(
-    /^\/desktop-viewer\/([^/]+)(?:\/websockify)?$/.exec(path)?.[1] ?? "",
-  );
-}
+const closing = () => new Response("Server is closing", { status: 503 });
 
 type Tenant = Awaited<ReturnType<typeof createTenant>>;
 
-/** The origin `publicUrl` names; it must be https, without a path, query, or fragment. */
 function publicOrigin(publicUrl: string) {
   const url = new URL(publicUrl);
 
@@ -110,13 +109,12 @@ type ServerOptions = {
   port?: number;
   publicUrl?: string;
   skillsDir?: string;
-  /** Each account's workspaces instead of those from the environment, owned by the account's scope. */
+  workspaceEnv?: Record<string, string | undefined>;
   workspaces?: (
     userId: string,
   ) => Effect.Effect<Workspaces | undefined, never, Scope.Scope>;
 };
 
-/** Where the server listens and keeps its data: `options`, else the environment, else the defaults. */
 function listenSettings(options: ServerOptions) {
   return {
     dataDir: resolve(
@@ -128,46 +126,64 @@ function listenSettings(options: ServerOptions) {
   };
 }
 
-export async function startServer(options: ServerOptions = {}) {
-  const { dataDir, publicUrl, hostname, port } = listenSettings(options);
+type Accounts = Awaited<ReturnType<typeof createAuth>>;
 
-  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  chmodSync(dataDir, 0o700);
+type ServerState = {
+  identity?: Accounts;
+  admin?: ReturnType<typeof adminAPI>;
+  closed: boolean;
+  trustedOrigins: string[];
+  ready?: Promise<void>;
+};
 
-  const release = await lockDataDir(dataDir);
+async function restoreTenants(
+  dataDir: string,
+  accounts: Accounts,
+  tenant: (userId: string) => Promise<Tenant>,
+) {
+  const usersDir = accountsDir(dataDir);
 
+  if (!existsSync(usersDir)) return;
+
+  for (const entry of readdirSync(usersDir, { withFileTypes: true })) {
+    if (entry.isDirectory() && accounts.hasUser(entry.name))
+      await tenant(entry.name);
+  }
+}
+
+const outdatedWorkspaces = async (tenants: Map<string, Promise<Tenant>>) =>
+  (
+    await Promise.all(
+      [...tenants].map(async ([userId, pending]) =>
+        (
+          (await pending.catch(() => undefined))?.workspaces?.outdated() ?? []
+        ).map((agentId) => ({ userId, agentId })),
+      ),
+    )
+  ).flat();
+
+function tenantPool(pool: {
+  dataDir: string;
+  oauthClient: ClientDocument | undefined;
+  options: ServerOptions;
+  serverSettings: () => ServerSettings;
+}) {
+  const { dataDir, oauthClient, options, serverSettings } = pool;
   const tenants = new Map<string, Promise<Tenant>>();
 
-  let identity: Awaited<ReturnType<typeof createAuth>> | undefined;
-  let admin: ReturnType<typeof adminAPI> | undefined;
-  let server: ReturnType<typeof Bun.serve> | undefined;
-  let closed = false;
-  let origin = "";
-  let trustedOrigins: string[] = [];
-  let ready: Promise<void>;
-
   const tenant = (userId: string) => {
-    if (!/^[A-Za-z0-9_-]{1,128}$/.test(userId))
-      throw new Error("Invalid account ID");
+    const userDir = accountDir(dataDir, userId);
     let pending = tenants.get(userId);
 
     if (!pending) {
       pending = createTenant({
-        dataDir: join(dataDir, "users", userId),
+        dataDir: userDir,
         tenantId: userId,
         skillsDir: options.skillsDir ?? process.env["CRUMBLE_SKILLS_DIR"],
-        publicUrl,
+        oauthClient,
+        workspaceEnv: options.workspaceEnv ?? process.env,
         workspaces: options.workspaces?.(userId),
-        workspaceSettings: () => {
-          const settings = identity!.settings.get();
-
-          return {
-            cpus: settings.workspaceCpus,
-            memoryMib: settings.workspaceMemoryMib,
-            baseImage: settings.codingImage,
-            questionGraceMs: settings.questionGraceMinutes * 60_000,
-          };
-        },
+        serverSettings,
       });
       tenants.set(userId, pending);
       void pending.catch(() => tenants.delete(userId));
@@ -176,176 +192,210 @@ export async function startServer(options: ServerOptions = {}) {
     return pending;
   };
 
-  const removeAccount = async (userId: string) => {
-    const pending = tenants.get(userId);
+  return {
+    tenant,
+    removeAccount: async (userId: string) => {
+      const pending = tenants.get(userId);
 
-    tenants.delete(userId);
-    await pending?.then((context) => context.close()).catch(() => undefined);
-    rmSync(join(dataDir, "users", userId), { recursive: true, force: true });
+      tenants.delete(userId);
+      await pending
+        ?.then(async (context) => {
+          await context.removeWorkspaces();
+          await context.close();
+        })
+        .catch(() => undefined);
+      rmSync(accountDir(dataDir, userId), { recursive: true, force: true });
+    },
+    restore: (accounts: Accounts) => restoreTenants(dataDir, accounts, tenant),
+    outdatedWorkspaces: () => outdatedWorkspaces(tenants),
+    close: () => closeTenants(tenants.values()),
+  };
+}
+
+type TenantPool = ReturnType<typeof tenantPool>;
+
+// Bun upgrades require the original incoming Request instance.
+async function forward(
+  pool: TenantPool,
+  request: Request,
+  bunServer: Bun.Server<unknown>,
+  userId: string,
+) {
+  const context = await pool.tenant(userId);
+
+  request.headers.set("authorization", `Bearer ${context.token}`);
+
+  return context.app.fetch(request, bunServer);
+}
+
+async function accountResponse(
+  state: ServerState,
+  pool: TenantPool,
+  request: Request,
+  bunServer: Bun.Server<unknown>,
+  path: string,
+) {
+  const session = await state.identity!.auth.api.getSession({
+    headers: request.headers,
+  });
+
+  // A viewer link is its own credential: a web view cannot send the owner's session, so without one the link
+  // goes to the account it names. A session keeps it within the session's account.
+  const owner = session ? undefined : viewerPathOwner(path);
+
+  if (owner && state.identity!.hasUser(owner) && !state.closed)
+    return forward(pool, request, bunServer, owner);
+
+  if (!session)
+    return Response.json({ error: "Sign in required" }, { status: 401 });
+
+  if (state.closed) return closing();
+  const response = await forward(pool, request, bunServer, session.user.id);
+
+  if (response) response.headers.set("Cache-Control", "no-store");
+
+  return response;
+}
+
+async function adminResponse(state: ServerState, request: Request) {
+  if (state.closed) return closing();
+  const response = await state.admin!.fetch(request);
+
+  response.headers.set("Cache-Control", "no-store");
+
+  return response;
+}
+
+const requestHandler =
+  (
+    state: ServerState,
+    pool: TenantPool,
+    oauthClient: ClientDocument | undefined,
+  ) =>
+  async (request: Request, bunServer: Bun.Server<BunWebSocketData>) => {
+    await state.ready;
+    const path = new URL(request.url).pathname;
+    const hosted = hostedResponse(path, oauthClient);
+
+    if (hosted) return hosted;
+
+    if (!TENANT_PREFIXES.some((prefix) => path.startsWith(prefix)))
+      return new Response("Not found", { status: 404 });
+    const requestOrigin = request.headers.get("origin");
+
+    if (untrustedOrigin(request, requestOrigin, state.trustedOrigins))
+      return Response.json({ error: "Untrusted origin" }, { status: 403 });
+
+    // Admins act through /v1/admin/; the plugin's own routes would also let them impersonate users.
+    if (path.startsWith("/api/auth/admin/"))
+      return new Response("Not found", { status: 404 });
+
+    if (path.startsWith("/api/auth/"))
+      return state.identity!.auth.handler(request);
+
+    const novnc = await novncResponse(path);
+
+    if (novnc) return novnc;
+
+    if (needsOriginForWrite(request, requestOrigin))
+      return Response.json(
+        { error: "Origin is required for cookie-authenticated writes" },
+        { status: 403 },
+      );
+
+    if (path.startsWith("/v1/admin/")) return adminResponse(state, request);
+
+    return accountResponse(state, pool, request, bunServer, path);
   };
 
+const serve = (
+  handle: ReturnType<typeof requestHandler>,
+  hostname: string,
+  port: number,
+) =>
+  Bun.serve({
+    // The UI answers every other path, so the server's own paths are routes too, ahead of its wildcard.
+    routes: {
+      ...webUIRoutes,
+      ...Object.fromEntries(SERVER_PATHS.map((path) => [path, handle])),
+    },
+    development: process.env.NODE_ENV !== "production" && { hmr: false },
+    websocket,
+    hostname,
+    port,
+    idleTimeout: 60,
+    fetch: handle,
+  });
+
+async function connectAccounts(
+  state: ServerState,
+  pool: TenantPool,
+  dataDir: string,
+  origin: string,
+) {
+  state.identity = await createAuth(dataDir, origin);
+  state.admin = adminAPI({
+    accounts: state.identity,
+    origin: () => origin,
+    removeAccount: pool.removeAccount,
+    outdatedWorkspaces: pool.outdatedWorkspaces,
+  });
+  await pool.restore(state.identity);
+}
+
+export async function startServer(options: ServerOptions = {}) {
+  const { dataDir, publicUrl, hostname, port } = listenSettings(options);
+
+  const oauthClient = publicUrl
+    ? clientDocument(publicOrigin(publicUrl))
+    : undefined;
+
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  chmodSync(dataDir, 0o700);
+
+  const release = await lockDataDir(dataDir);
+  const state: ServerState = { closed: false, trustedOrigins: [] };
+
+  const pool = tenantPool({
+    dataDir,
+    oauthClient,
+    options,
+    serverSettings: () => state.identity!.settings.get(),
+  });
+
+  let server: ReturnType<typeof Bun.serve> | undefined;
+
   const close = async () => {
-    if (closed) return;
-    closed = true;
+    if (state.closed) return;
+    state.closed = true;
 
     try {
       await server?.stop(true);
-      await closeTenants(tenants.values());
+      await pool.close();
     } finally {
-      identity?.close();
+      state.identity?.close();
       await release();
     }
   };
 
-  // Bun upgrades require the original incoming Request instance.
-  const forward = async (
-    request: Request,
-    bunServer: Bun.Server<unknown>,
-    userId: string,
-  ) => {
-    const context = await tenant(userId);
-
-    request.headers.set("authorization", `Bearer ${context.token}`);
-
-    return context.app.fetch(request, bunServer);
-  };
-
-  const accountResponse = async (
-    request: Request,
-    bunServer: Bun.Server<unknown>,
-    path: string,
-  ) => {
-    const session = await identity!.auth.api.getSession({
-      headers: request.headers,
-    });
-
-    const owner = session ? undefined : ticketOwnerOf(path);
-
-    if (owner && identity!.hasUser(owner) && !closed)
-      return forward(request, bunServer, owner);
-
-    if (!session)
-      return Response.json({ error: "Sign in required" }, { status: 401 });
-
-    if (closed) return new Response("Server is closing", { status: 503 });
-    const response = await forward(request, bunServer, session.user.id);
-
-    if (response) response.headers.set("Cache-Control", "no-store");
-
-    return response;
-  };
-
-  const adminResponse = async (request: Request) => {
-    if (closed) return new Response("Server is closing", { status: 503 });
-    const response = await admin!.fetch(request);
-
-    response.headers.set("Cache-Control", "no-store");
-
-    return response;
-  };
-
-  const restoreTenants = async (accounts: NonNullable<typeof identity>) => {
-    const usersDir = join(dataDir, "users");
-
-    if (!existsSync(usersDir)) return;
-
-    for (const entry of readdirSync(usersDir, { withFileTypes: true })) {
-      if (entry.isDirectory() && accounts.hasUser(entry.name))
-        await tenant(entry.name);
-    }
-  };
-
   try {
-    const oauthClient = publicUrl
-      ? clientDocument(publicOrigin(publicUrl))
-      : undefined;
+    server = serve(requestHandler(state, pool, oauthClient), hostname, port);
 
-    const handle = async (
-      request: Request,
-      bunServer: Bun.Server<BunWebSocketData>,
-    ) => {
-      await ready;
-      const path = new URL(request.url).pathname;
-      const hosted = hostedResponse(path, oauthClient);
-
-      if (hosted) return hosted;
-
-      if (!TENANT_PREFIXES.some((prefix) => path.startsWith(prefix)))
-        return new Response("Not found", { status: 404 });
-      const requestOrigin = request.headers.get("origin");
-
-      if (untrustedOrigin(request, requestOrigin, trustedOrigins))
-        return Response.json({ error: "Untrusted origin" }, { status: 403 });
-
-      // Admins act through /v1/admin/; the plugin's own routes would also let them impersonate users.
-      if (path.startsWith("/api/auth/admin/"))
-        return new Response("Not found", { status: 404 });
-
-      if (path.startsWith("/api/auth/")) return identity!.auth.handler(request);
-
-      const novnc = await novncResponse(path);
-
-      if (novnc) return novnc;
-
-      if (needsOriginForWrite(request, requestOrigin))
-        return Response.json(
-          { error: "Origin is required for cookie-authenticated writes" },
-          { status: 403 },
-        );
-
-      if (path.startsWith("/v1/admin/")) return adminResponse(request);
-
-      return accountResponse(request, bunServer, path);
-    };
-
-    server = Bun.serve({
-      // The UI answers every other path, so the server's own paths are routes too, ahead of its wildcard.
-      routes: {
-        ...webUIRoutes,
-        ...Object.fromEntries(SERVER_PATHS.map((path) => [path, handle])),
-      },
-      development: process.env.NODE_ENV !== "production" && { hmr: false },
-      websocket,
-      hostname,
-      port,
-      idleTimeout: 60,
-      fetch: handle,
-    });
-    origin = new URL(
+    const origin = new URL(
       publicUrl ?? process.env["BETTER_AUTH_URL"] ?? server.url.origin,
     ).origin;
-    trustedOrigins = trustedOriginsFor(origin);
-    ready = (async () => {
-      identity = await createAuth(dataDir, origin);
-      admin = adminAPI({
-        accounts: identity,
-        origin: () => origin,
-        removeAccount,
-        outdatedWorkspaces: async () =>
-          (
-            await Promise.all(
-              [...tenants].map(async ([userId, pending]) =>
-                (
-                  (
-                    await pending.catch(() => undefined)
-                  )?.workspaces?.outdated() ?? []
-                ).map((agentId) => ({ userId, agentId })),
-              ),
-            )
-          ).flat(),
-      });
-      await restoreTenants(identity);
-    })();
-    await ready;
 
-    return { server, auth: identity!.auth, close };
+    state.trustedOrigins = trustedOriginsFor(origin);
+    state.ready = connectAccounts(state, pool, dataDir, origin);
+    await state.ready;
+
+    return { server, auth: state.identity!.auth, close };
   } catch (error) {
     await close();
     throw error;
   }
 }
 
-/** Ends the process with a one-line message when another server holds the data directory. */
 function exitIfLocked(error: Error): never {
   if (error instanceof DataDirLocked) {
     console.error(error.message);
@@ -356,10 +406,11 @@ function exitIfLocked(error: Error): never {
 }
 
 if (import.meta.main) {
-  if (process.argv.includes("--dev-workspaces"))
-    configureDevWorkspaces(process.env);
-
-  const running = await startServer().catch(exitIfLocked);
+  const running = await startServer(
+    process.argv.includes("--dev-workspaces")
+      ? { workspaceEnv: devWorkspaceEnv(process.env) }
+      : {},
+  ).catch(exitIfLocked);
 
   console.log(`Crumble server listening on ${running.server.url}`);
   console.log("Open it to create an account or sign in.");

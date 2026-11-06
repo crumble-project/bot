@@ -58,7 +58,6 @@ export const createSource = Effect.fnUntraced(function* (access: RelayAccess) {
   return body.data;
 });
 
-/** Deletes a source on the relay; one the relay no longer knows counts as deleted. */
 export const deleteSource = Effect.fnUntraced(function* (
   access: RelayAccess,
   id: string,
@@ -73,7 +72,6 @@ export const deleteSource = Effect.fnUntraced(function* (
     return yield* unexpected(response);
 });
 
-/** The relay's consumer WebSocket address. */
 export const connectUrl = (relayUrl: string) => {
   const url = endpoint(relayUrl, "v1/connect");
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";

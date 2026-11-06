@@ -3,3 +3,8 @@
 export const WEB_SEARCH_PROVIDER_IDS = ["mixed", "exa"] as const;
 
 export const PASSWORD_MANAGER_IDS = ["1password", "bitwarden"] as const;
+
+export const DOORSTEP_PLUGIN_ID = "doorstep";
+
+export const pluginSettingKey = (pluginId: string, key: string) =>
+  `${pluginId}:${key}`;

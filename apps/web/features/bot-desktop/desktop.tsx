@@ -9,18 +9,17 @@ import { IconArrowLeft, IconRefresh, IconZzz } from "@tabler/icons-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { MobileSidebarTrigger } from "@/components/workspace";
+import { MobileSidebarTrigger } from "@/components/page";
 import {
   type DesktopControl,
   type DesktopViewer,
-  agentPath,
-  botsQuery,
-  call,
   desktopStatusQuery,
-  follow,
-} from "@/lib/api";
+} from "./api";
+import { agentPath, botsQuery } from "@/features/bots/api";
+import { call, follow, send } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
-function useDesktopControl(path: string) {
+function useDesktopControl(path: ReturnType<typeof agentPath>) {
   const [control, setControl] = useState<DesktopControl | null>(null);
   const holder = useRef<DesktopControl["holder"]>("bot");
 
@@ -52,7 +51,9 @@ function useDesktopControl(path: string) {
 
       // Leaving the desktop hands control back, so the bot's job can continue.
       if (holder.current === "owner")
-        void call(`${path}/desktop/control`, "PUT", { holder: "bot" });
+        void send<"putDesktopControl">(`${path}/desktop/control`, "PUT", {
+          holder: "bot",
+        });
     };
   }, [path]);
 
@@ -60,11 +61,9 @@ function useDesktopControl(path: string) {
   // react-doctor-disable-next-line query-mutation-missing-invalidation
   const take = useMutation({
     mutationFn: (next: DesktopControl["holder"]) =>
-      call<DesktopControl, { holder: DesktopControl["holder"] }>(
-        `${path}/desktop/control`,
-        "PUT",
-        { holder: next },
-      ),
+      call<"putDesktopControl">(`${path}/desktop/control`, "PUT", {
+        holder: next,
+      }),
     onSuccess: apply,
   });
 
@@ -108,7 +107,6 @@ function DesktopControls({
   );
 }
 
-/** Watch a bot's desktop, and take control from its desktop job or hand it back. */
 export function BotDesktop({ botId }: { botId: string }) {
   const bot = useQuery(botsQuery).data?.find((each) => each.id === botId);
   const path = agentPath(botId);
@@ -117,7 +115,8 @@ export function BotDesktop({ botId }: { botId: string }) {
   // The viewer link works once, so every connection needs a fresh one.
   // react-doctor-disable-next-line query-mutation-missing-invalidation
   const viewer = useMutation({
-    mutationFn: () => call<DesktopViewer>(`${path}/desktop/viewer`, "POST"),
+    mutationFn: () =>
+      call<"createDesktopViewer">(`${path}/desktop/viewer`, "POST"),
   });
 
   const { mutate: connect } = viewer;
@@ -168,49 +167,53 @@ export function BotDesktop({ botId }: { botId: string }) {
   );
 }
 
-/** A small live view of a bot's desktop that opens the full desktop. */
-export function DesktopPreview({ botId }: { botId: string }) {
-  const path = agentPath(botId);
-  const [asked, setAsked] = useState(false);
+function ViewerFrame({
+  path,
+  title,
+  tabIndex,
+  className,
+}: {
+  path: string;
+  title: string;
+  tabIndex?: number;
+  className?: string;
+}) {
+  return (
+    <iframe
+      key={path}
+      title={title}
+      src={path}
+      // The viewer is our own noVNC page; its module imports need the real origin.
+      // react-doctor-disable-next-line iframe-missing-sandbox
+      sandbox="allow-scripts allow-same-origin"
+      {...(tabIndex !== undefined && { tabIndex })}
+      className={cn("size-full border-0", className)}
+    />
+  );
+}
 
-  // Machine state has no live event, so poll it.
-  const status = useQuery({
-    ...desktopStatusQuery(botId),
-    refetchInterval: 10_000,
-  });
+function SleepingPreview({ onWake }: { onWake: () => void }) {
+  return (
+    <button
+      type="button"
+      title="Wake the bot desktop"
+      className="flex aspect-video w-full cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border bg-black text-white/60 transition-colors hover:text-white/85 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+      onClick={onWake}
+    >
+      <IconZzz />
+      <span className="text-sm">Sleeping</span>
+      <span className="text-xs text-white/40">Click to wake</span>
+    </button>
+  );
+}
 
-  const live = asked || status.data?.running === true;
-
-  // Until asked, the link only watches: it neither boots the machine nor keeps it awake.
-  const viewer = useMutation({
-    mutationFn: () =>
-      call<DesktopViewer>(
-        `${path}/desktop/viewer${asked ? "" : "?passive=true"}`,
-        "POST",
-      ),
-  });
-
-  const { mutate: connect, reset } = viewer;
-
-  useEffect(() => {
-    if (live) connect();
-    else reset();
-  }, [live, connect, reset]);
-
-  if (!live)
-    return (
-      <button
-        type="button"
-        title="Wake the bot desktop"
-        className="flex aspect-video w-full cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border bg-black text-white/60 transition-colors hover:text-white/85 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-        onClick={() => setAsked(true)}
-      >
-        <IconZzz />
-        <span className="text-sm">Sleeping</span>
-        <span className="text-xs text-white/40">Click to wake</span>
-      </button>
-    );
-
+function LivePreview({
+  botId,
+  viewer,
+}: {
+  botId: string;
+  viewer: UseMutationResult<DesktopViewer, Error, void>;
+}) {
   return (
     <Link
       to="/bots/$botId/desktop"
@@ -229,19 +232,50 @@ export function DesktopPreview({ botId }: { botId: string }) {
         </span>
       )}
       {viewer.data && (
-        <iframe
-          key={viewer.data.path}
+        <ViewerFrame
+          path={viewer.data.path}
           title="Bot desktop preview"
-          src={viewer.data.path}
-          // The viewer is our own noVNC page; its module imports need the real origin.
-          // react-doctor-disable-next-line iframe-missing-sandbox
-          sandbox="allow-scripts allow-same-origin"
           tabIndex={-1}
-          className="pointer-events-none size-full border-0"
+          className="pointer-events-none"
         />
       )}
     </Link>
   );
+}
+
+export function DesktopPreview({ botId }: { botId: string }) {
+  const path = agentPath(botId);
+  const [asked, setAsked] = useState(false);
+
+  // Machine state has no live event, so poll it.
+  const status = useQuery({
+    ...desktopStatusQuery(botId),
+    refetchInterval: 10_000,
+  });
+
+  const live = asked || status.data?.running === true;
+
+  // Until asked, the link only watches: it neither boots the machine nor keeps it awake.
+  const viewer = useMutation({
+    mutationFn: () =>
+      call<"createDesktopViewer">(
+        asked
+          ? `${path}/desktop/viewer`
+          : `${path}/desktop/viewer?passive=true`,
+        "POST",
+      ),
+  });
+
+  const { mutate: connect, reset } = viewer;
+
+  useEffect(() => {
+    if (live) connect();
+    else reset();
+  }, [live, connect, reset]);
+
+  if (!live) return <SleepingPreview onWake={() => setAsked(true)} />;
+
+  return <LivePreview botId={botId} viewer={viewer} />;
 }
 
 const controlLabel = (owner: boolean) =>
@@ -267,15 +301,7 @@ function ViewerPane({
         </Alert>
       )}
       {viewer.data && (
-        <iframe
-          key={viewer.data.path}
-          title="Bot desktop"
-          src={viewer.data.path}
-          // The viewer is our own noVNC page; its module imports need the real origin.
-          // react-doctor-disable-next-line iframe-missing-sandbox
-          sandbox="allow-scripts allow-same-origin"
-          className="size-full border-0"
-        />
+        <ViewerFrame path={viewer.data.path} title="Bot desktop" />
       )}
     </div>
   );

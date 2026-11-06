@@ -1,9 +1,9 @@
+import { GROUP_MESSAGE_ENTRY } from "../transcript/entries";
 import { expect, test } from "bun:test";
 import {
-  GROUP_MESSAGE_KIND,
   type TranscriptMessage,
   type TranscriptPage,
-} from "../bots/transcript";
+} from "../transcript/transcript";
 import {
   HistorySearch,
   type HistoryChat,
@@ -146,14 +146,14 @@ test("search reads owner and bot messages in a group and skips other kinds", asy
         name: "Team",
         messages: [
           message("group-x", 1, 0, {
-            kind: GROUP_MESSAGE_KIND,
+            kind: GROUP_MESSAGE_ENTRY,
             role: "user",
             content: "needle owner",
             origin: { kind: "owner" },
             timestamp: 10,
           }),
           message("group-x", 2, 0, {
-            kind: GROUP_MESSAGE_KIND,
+            kind: GROUP_MESSAGE_ENTRY,
             role: "assistant",
             content: "needle bot",
             origin: { kind: "bot", name: "Bea", agentId: "bot-b" },

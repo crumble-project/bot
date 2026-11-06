@@ -21,7 +21,6 @@ function validHelloEnvelope(data: Buffer): number | null {
   return end;
 }
 
-/** Offset of the extensions block, or null when the cipher list is invalid. */
 function extensionsStart(data: Buffer): number | null {
   let at = 43;
   at += 1 + data.readUInt8(at);
@@ -77,7 +76,6 @@ function readExtensions(data: Buffer, from: number, end: number) {
   return host;
 }
 
-/** The server name of a complete TLS ClientHello, or null. */
 export function readSni(data: Buffer): string | null {
   try {
     const end = validHelloEnvelope(data);
@@ -104,7 +102,6 @@ function readHostHeader(value: string): string | null {
 
 const HEADER_LINE = /^([!#$%&'*+.^_`|~\w-]+):[ \t]*([^\r\n]*)$/;
 
-/** The one Host header's host, null when a header is malformed or Host repeats or is invalid. */
 function hostOfHeaders(headers: string[]): string | null {
   let host: string | null = null;
 
@@ -124,7 +121,6 @@ function hostOfHeaders(headers: string[]): string | null {
   return host;
 }
 
-/** The host of a complete HTTP/1 request header, without its port. */
 export function readHttpHost(data: Buffer): string | null {
   const end = data.indexOf("\r\n\r\n");
 

@@ -1,11 +1,33 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { z } from "zod";
 import {
-  GROUP_MESSAGE_KIND,
+  ASSISTANT_ENTRY,
+  GROUP_MESSAGE_ENTRY,
   type MessageOrigin,
+} from "../transcript/entries";
+import { isBotOrigin, isOwnerOrigin } from "../transcript/origins";
+import {
+  isConversational,
+  isOwnerInput,
+  textOf,
+  toolCalls,
   type TranscriptMessage,
   type TranscriptPage,
-} from "../bots/transcript";
+} from "../transcript/transcript";
+import {
+  formatEntryId,
+  parseEntryId,
+  parseMessageIndex,
+} from "../shared/entry-ids";
+
+const WINDOW_MESSAGES = 30;
+const WINDOW_CHARACTERS = 20000;
+const OLDER_MESSAGES = 14;
+const OLDER_CHARACTERS = 10000;
+
+const RESULT_MATCHES = 20;
+const EXCERPT_POINTS = 500;
+const MAX_QUERY_POINTS = 500;
 
 export type HistoryContext = { agentId: string; groupId: string | null };
 
@@ -114,9 +136,6 @@ const tokenSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
-const textBlockSchema = z.object({ type: z.literal("text"), text: z.string() });
-const toolCallSchema = z.object({ type: z.literal("toolCall") });
-
 type Snapshot = z.infer<typeof snapshotSchema>;
 
 type Position = z.infer<typeof positionSchema>;
@@ -152,134 +171,64 @@ function ordinal(a: string, b: string): number {
 }
 
 function entryNumber(chat: HistoryChat, entryId: string): number {
-  const prefix = `${chat.id}:`;
-  const suffix = entryId.slice(prefix.length);
-  const entry = Number(suffix);
+  const entry = parseEntryId(entryId, chat.id);
 
-  if (
-    !entryId.startsWith(prefix) ||
-    !/^[1-9][0-9]*$/.test(suffix) ||
-    !Number.isSafeInteger(entry)
-  )
+  if (entry === "foreign" || entry === "malformed")
     throw new Error("History source returned an invalid entry identifier");
 
   return entry;
 }
 
 function messageIndex(entryId: string, messageId: string): number {
-  const prefix = `${entryId}:`;
-  const suffix = messageId.slice(prefix.length);
-  const index = Number(suffix);
+  const index = parseMessageIndex(entryId, messageId);
 
-  if (
-    !messageId.startsWith(prefix) ||
-    !/^(0|[1-9][0-9]*)$/.test(suffix) ||
-    !Number.isSafeInteger(index)
-  )
+  if (index === undefined)
     throw new Error("History source returned an invalid message identifier");
 
   return index;
 }
 
-function blockList(message: TranscriptMessage): unknown[] | null {
-  const blocks = z.array(z.unknown()).safeParse(message.blocks);
-
-  return blocks.success ? blocks.data : null;
-}
-
-function hasToolCall(blocks: unknown[] | null): boolean {
-  return (
-    blocks?.some((block) => toolCallSchema.safeParse(block).success) ?? false
-  );
-}
-
 function toolActivityOf(
   chat: HistoryChat,
   message: TranscriptMessage,
-  blocks: unknown[] | null,
 ): boolean {
   if (chat.kind !== "bot") return false;
 
   if (message.role === "toolResult") return true;
 
-  return message.kind === "pi.assistant" && hasToolCall(blocks);
+  return message.kind === ASSISTANT_ENTRY && toolCalls(message).length > 0;
 }
 
 function groupBody(message: TranscriptMessage): string | null {
-  if (message.kind !== GROUP_MESSAGE_KIND) return null;
+  if (message.kind !== GROUP_MESSAGE_ENTRY) return null;
 
   if (message.role !== "user" && message.role !== "assistant") return null;
 
-  if (message.origin?.kind !== "owner" && message.origin?.kind !== "bot")
+  if (!isOwnerOrigin(message.origin) && !isBotOrigin(message.origin))
     return null;
 
   return message.content;
 }
 
-function isOwnerMessage(message: TranscriptMessage): boolean {
-  if (message.kind !== "crumble.message" || message.role !== "user")
-    return false;
-
-  return message.origin?.kind !== "bot";
-}
-
-function isConversational(message: TranscriptMessage): boolean {
-  if (message.kind === "pi.assistant" && message.role === "assistant")
-    return true;
-
-  return (
-    message.kind === "pi.user" &&
-    message.role === "user" &&
-    message.origin?.kind !== "bot"
-  );
-}
-
-function textBody(
-  message: TranscriptMessage,
-  blocks: unknown[] | null,
-): string | null {
-  if (blocks)
-    return blocks
-      .flatMap((block) => {
-        const parsed = textBlockSchema.safeParse(block);
-
-        return parsed.success ? [parsed.data.text] : [];
-      })
-      .join("\n");
-
-  if (message.role !== "user") return null;
-
-  const text = z.string().safeParse(message.blocks);
-
-  return text.success ? text.data : null;
-}
-
-function bodyOf(
-  chat: HistoryChat,
-  message: TranscriptMessage,
-  blocks: unknown[] | null,
-): string | null {
+function bodyOf(chat: HistoryChat, message: TranscriptMessage): string | null {
   if (chat.kind === "group") return groupBody(message);
 
   // Reply context lives in blocks; normalize preserves the owner's metadata text in content.
-  if (isOwnerMessage(message)) return message.content;
+  if (isOwnerInput(message)) return message.content;
 
-  if (!isConversational(message)) return null;
-
-  return textBody(message, blocks);
+  return isConversational(message) ? textOf(message) : null;
 }
 
 function rowOf(chat: HistoryChat, message: TranscriptMessage): Row {
   const entry = entryNumber(chat, message.entryId);
   const index = messageIndex(message.entryId, message.id);
-  const blocks = blockList(message);
 
   return {
     original: message,
     entry,
     index,
-    body: bodyOf(chat, message, blocks),
-    toolActivity: toolActivityOf(chat, message, blocks),
+    body: bodyOf(chat, message),
+    toolActivity: toolActivityOf(chat, message),
   };
 }
 
@@ -289,14 +238,21 @@ function timestamp(message: TranscriptMessage): number | null {
     : null;
 }
 
+function senderName(chat: HistoryChat, message: TranscriptMessage): string {
+  const origin = message.origin;
+
+  return (
+    origin?.name ||
+    (message.role === "user" ? "Owner" : origin?.agentId || chat.name)
+  );
+}
+
 function sender(chat: HistoryChat, message: TranscriptMessage): HistorySender {
   const origin = message.origin;
 
   const result: HistorySender = {
     role: message.role,
-    name:
-      origin?.name ||
-      (message.role === "user" ? "Owner" : origin?.agentId || chat.name),
+    name: senderName(chat, message),
   };
 
   if (origin?.agentId) result.agentId = origin.agentId;
@@ -318,7 +274,6 @@ function keyOf(chat: HistoryChat, row: Row): MatchKey {
   };
 }
 
-// Undated originals remain undated; they sort after dated messages.
 function compareTimestamps(a: MatchKey, b: MatchKey): number {
   if (a.timestamp === b.timestamp) return 0;
 
@@ -353,8 +308,8 @@ function excerpt(body: string, query: string) {
   const start = Math.max(0, offset - (lowered > match ? 1 : 0));
 
   return {
-    excerpt: points.slice(start, start + 500).join(""),
-    truncated: start > 0 || start + 500 < points.length,
+    excerpt: points.slice(start, start + EXCERPT_POINTS).join(""),
+    truncated: start > 0 || start + EXCERPT_POINTS < points.length,
   };
 }
 
@@ -389,9 +344,13 @@ function positionIndex(rows: Row[], position: Position): number {
 }
 
 function validQuery(query: string | undefined): string {
-  if (query === undefined || !query.trim() || Array.from(query).length > 500)
+  if (
+    query === undefined ||
+    !query.trim() ||
+    Array.from(query).length > MAX_QUERY_POINTS
+  )
     throw new Error(
-      "History query must contain non-whitespace text and at most 500 Unicode code points",
+      `History query must contain non-whitespace text and at most ${MAX_QUERY_POINTS} Unicode code points`,
     );
 
   return query;
@@ -490,7 +449,6 @@ function addPageRows(
   seen: Set<string>,
   rows: Row[],
 ): void {
-  // Every message is validated before any overlap check, so a malformed page reports its invalid identifier.
   const pageRows = page.messages.map((message) => rowOf(chat, message));
 
   for (const row of pageRows) {
@@ -519,7 +477,6 @@ function nextCursor(
   return oldestEntryId ?? undefined;
 }
 
-/** Visits rows from `position`, one `step` at a time, with the offset to read from, until `visit` returns false. */
 function walkRows(
   rows: Row[],
   position: Position,
@@ -618,8 +575,8 @@ function readWindow(
     rows,
     token.position,
     direction ?? token.direction,
-    30,
-    20000,
+    WINDOW_MESSAGES,
+    WINDOW_CHARACTERS,
   );
 }
 
@@ -628,7 +585,14 @@ function aroundWindow(
   rows: Row[],
   position: Position,
 ): Window {
-  const older = windowFrom(chat, rows, position, "before", 14, 10000);
+  const older = windowFrom(
+    chat,
+    rows,
+    position,
+    "before",
+    OLDER_MESSAGES,
+    OLDER_CHARACTERS,
+  );
 
   const used = older.messages.reduce(
     (sum, message) => sum + Array.from(message.text).length,
@@ -640,8 +604,8 @@ function aroundWindow(
     rows,
     position,
     "after",
-    30 - older.messages.length,
-    20000 - used,
+    WINDOW_MESSAGES - older.messages.length,
+    WINDOW_CHARACTERS - used,
   );
 
   return {
@@ -671,7 +635,14 @@ function matchWindow(
   if (direction === "after")
     position.offset = Array.from(anchor.body ?? "").length;
 
-  return windowFrom(chat, rows, position, direction, 30, 20000);
+  return windowFrom(
+    chat,
+    rows,
+    position,
+    direction,
+    WINDOW_MESSAGES,
+    WINDOW_CHARACTERS,
+  );
 }
 
 function atBeginning(index: number, position: Position): boolean {
@@ -799,7 +770,9 @@ export class HistorySearch {
     if (cutoff === 0) return { snapshot: { chat, cutoff }, rows };
 
     let before =
-      cutoff < Number.MAX_SAFE_INTEGER ? `${chat.id}:${cutoff + 1}` : undefined;
+      cutoff < Number.MAX_SAFE_INTEGER
+        ? formatEntryId(chat.id, cutoff + 1)
+        : undefined;
 
     for (;;) {
       const page = await this.source.page(context, chat, before);
@@ -968,7 +941,7 @@ export class HistorySearch {
     );
 
     candidates.sort((a, b) => compareKeys(a.key, b.key));
-    const selected = candidates.slice(0, 20);
+    const selected = candidates.slice(0, RESULT_MATCHES);
     const tail = selected.at(-1);
 
     return {
@@ -976,7 +949,7 @@ export class HistorySearch {
         this.matchOf(context, candidate, query),
       ),
       cursor:
-        candidates.length > 20 && tail
+        candidates.length > RESULT_MATCHES && tail
           ? this.token({
               ...context,
               type: "search",

@@ -1,5 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { CHART_WIDTHS, ChartCompiler, chartColor } from "./charts";
+import { chartColor } from "../contract/chart";
+import { CHART_MODULES } from "./chart-modules";
+import { CHART_WIDTHS, ChartCompiler } from "./charts";
+import { displayExtension } from "./display";
 
 const compiler = new ChartCompiler();
 
@@ -25,6 +28,26 @@ export default defineChart({
   },
 })
 `;
+
+test("the bundled module list, the sandbox's imports, and the show tool agree", async () => {
+  const runtime = await Bun.file(
+    new URL("./chart-runtime.ts", import.meta.url),
+  ).text();
+
+  const imported = new Bun.Transpiler({ loader: "ts" })
+    .scanImports(runtime)
+    .map(({ path }) => path)
+    .filter((path) => path.startsWith("@tanstack/") || path === "d3-scale");
+
+  expect(imported.toSorted()).toEqual([...CHART_MODULES].toSorted());
+
+  const description = displayExtension(compiler).tools?.[0]?.description;
+
+  for (const module of CHART_MODULES.filter(
+    (name) => !name.includes("tooltip"),
+  ))
+    expect(description).toContain(module.split("/").at(-1)!);
+});
 
 describe("ChartCompiler", () => {
   test("compiles documented TypeScript into themed layouts at every width", async () => {

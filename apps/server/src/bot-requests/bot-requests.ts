@@ -1,31 +1,41 @@
+import { botRequestRequest } from "../shared/request-ids";
 import { and, desc, eq } from "drizzle-orm";
 import type { JsonValue } from "@earendil-works/chord";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Context, Effect, Layer } from "effect";
-import {
-  agentInput,
-  type Agent,
-  type AgentInput,
-  type BotRequest,
-} from "../shared/domain";
+import { agentInput, type Agent, type AgentInput } from "../contract/agents";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
-import { AgentRepository } from "../bots/agent-repository";
-import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
-import { BotNotices } from "../bots/bot-notices";
+import { AgentRepository } from "../bot-store/agent-repository";
+import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
+import { BotNotices, loggedNotices } from "../bot-ports/bot-notices";
 import { Conflict, NotFound, type AppError } from "../shared/errors";
-import { botRequests } from "./schema";
+import { BOT_REQUEST_STATUSES, botRequests } from "./schema";
 import { toolOutput } from "../shared/tool-output";
 import { defaultAvatarDefinition } from "../contract/avatar";
+import { BOT_TOOL, REQUEST_BOT_TOOL_NAME } from "../contract/tools";
+import {
+  MAX_BOT_DESCRIPTION_CHARS,
+  MAX_BOT_MCP_SERVERS,
+  MAX_BOT_NAME_CHARS,
+  MAX_BOT_TOOLS,
+  MAX_INSTRUCTIONS_CHARS,
+  MAX_MODEL_ID_CHARS,
+  MAX_PROVIDER_ID_CHARS,
+  MAX_REQUEST_REASON_CHARS,
+  MAX_TOOL_ID_CHARS,
+} from "../shared/limits";
 
-export const REQUEST_BOT_TOOL = "request_bot";
-export const CREATE_BOTS_CAPABILITY = "create_bots";
-
-const statusOf = (value: string): BotRequest["status"] => {
-  if (value === "approved" || value === "declined") return value;
-
-  return "pending";
+export type BotRequest = {
+  id: string;
+  agentId: string;
+  proposal: AgentInput;
+  reason: string;
+  status: (typeof BOT_REQUEST_STATUSES)[number];
+  createdAgentId: string | null;
+  requestedAt: string;
+  decidedAt: string | null;
 };
 
 const requestOf = (row: typeof botRequests.$inferSelect): BotRequest => ({
@@ -33,7 +43,7 @@ const requestOf = (row: typeof botRequests.$inferSelect): BotRequest => ({
   agentId: row.agentId,
   proposal: agentInput.parse(JSON.parse(row.proposal)),
   reason: row.reason,
-  status: statusOf(row.status),
+  status: row.status,
   createdAgentId: row.createdAgentId,
   requestedAt: row.requestedAt,
   decidedAt: row.decidedAt,
@@ -47,10 +57,11 @@ export class BotRequests extends Context.Service<
       input: { proposal: AgentInput; reason: string },
     ) => Effect.Effect<BotRequest, AppError>;
     readonly list: (agentId: string) => Effect.Effect<BotRequest[]>;
+    /** `decide` runs only on a pending request: what the owner approves, given what the bot proposed. */
     readonly approve: (
       agentId: string,
       requestId: string,
-      proposal?: AgentInput,
+      decide?: (proposal: AgentInput) => Effect.Effect<AgentInput, AppError>,
     ) => Effect.Effect<{ request: BotRequest; agent: Agent }, AppError>;
     readonly decline: (
       agentId: string,
@@ -65,14 +76,7 @@ export class BotRequests extends Context.Service<
       const agents = yield* AgentRepository;
       const notices = yield* BotNotices;
 
-      const notify = (agentId: string, text: string, requestId: string) =>
-        notices
-          .notice(agentId, text, requestId)
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.logError("Bot request notice failed", agentId, cause),
-            ),
-          );
+      const notify = loggedNotices(notices, "Bot request notice failed");
 
       const getRow = Effect.fnUntraced(function* (
         agentId: string,
@@ -92,20 +96,35 @@ export class BotRequests extends Context.Service<
         return row;
       });
 
-      const alreadyDecided = Effect.fnUntraced(function* (
+      const pendingRow = Effect.fnUntraced(function* (
         agentId: string,
         requestId: string,
       ) {
-        const current = yield* getRow(agentId, requestId);
+        const row = yield* getRow(agentId, requestId);
 
-        return yield* current
-          ? Effect.fail(
+        if (!row)
+          return yield* Effect.fail(
+            new NotFound({ message: "Bot request not found" }),
+          );
+
+        if (row.status !== "pending")
+          return yield* Effect.fail(
+            new Conflict({ message: "Bot request has already been decided" }),
+          );
+
+        return row;
+      });
+
+      const alreadyDecided = (agentId: string, requestId: string) =>
+        pendingRow(agentId, requestId).pipe(
+          Effect.flatMap(() =>
+            Effect.fail(
               new Conflict({
                 message: "Bot request has already been decided",
               }),
-            )
-          : Effect.fail(new NotFound({ message: "Bot request not found" }));
-      });
+            ),
+          ),
+        );
 
       const claim = Effect.fnUntraced(function* (
         agentId: string,
@@ -127,25 +146,6 @@ export class BotRequests extends Context.Service<
           .pipe(Effect.orDie);
 
         return changed.length > 0;
-      });
-
-      const pendingRow = Effect.fnUntraced(function* (
-        agentId: string,
-        requestId: string,
-      ) {
-        const row = yield* getRow(agentId, requestId);
-
-        if (!row)
-          return yield* Effect.fail(
-            new NotFound({ message: "Bot request not found" }),
-          );
-
-        if (row.status !== "pending")
-          return yield* Effect.fail(
-            new Conflict({ message: "Bot request has already been decided" }),
-          );
-
-        return row;
       });
 
       const request = Effect.fn("BotRequests.request")(function* (
@@ -222,12 +222,13 @@ export class BotRequests extends Context.Service<
       const approve = Effect.fn("BotRequests.approve")(function* (
         agentId: string,
         requestId: string,
-        proposal?: AgentInput,
+        decide: (
+          proposal: AgentInput,
+        ) => Effect.Effect<AgentInput, AppError> = Effect.succeed,
       ) {
         const row = yield* pendingRow(agentId, requestId);
-
+        const nextProposal = yield* decide(requestOf(row).proposal);
         const at = yield* nowIso;
-        const nextProposal = proposal ?? requestOf(row).proposal;
 
         const { agent, updated } = yield* db
           .transaction(() =>
@@ -259,7 +260,7 @@ export class BotRequests extends Context.Service<
         yield* notify(
           agentId,
           `The owner approved your request for bot ${agent.name}.`,
-          `bot-request:${requestId}`,
+          botRequestRequest(requestId),
         );
 
         return { request: requestOf(updated), agent };
@@ -284,7 +285,7 @@ export class BotRequests extends Context.Service<
         yield* notify(
           agentId,
           `The owner declined your request for bot ${requestOf(row).proposal.name}.`,
-          `bot-request:${requestId}`,
+          botRequestRequest(requestId),
         );
 
         return requestOf(updated);
@@ -295,28 +296,37 @@ export class BotRequests extends Context.Service<
   );
 }
 
-export function botRequestExtension(
-  agent: Agent,
-  service: BotRequests["Service"],
-) {
-  const request = defineTool({
-    name: REQUEST_BOT_TOOL,
+const requestBotParameters = Type.Object({
+  name: Type.String({ minLength: 1, maxLength: MAX_BOT_NAME_CHARS }),
+  description: Type.String({ maxLength: MAX_BOT_DESCRIPTION_CHARS }),
+  instructions: Type.String({ maxLength: MAX_INSTRUCTIONS_CHARS }),
+  tools: Type.Array(
+    Type.String({ minLength: 1, maxLength: MAX_TOOL_ID_CHARS }),
+    {
+      maxItems: MAX_BOT_TOOLS,
+    },
+  ),
+  mcpServers: Type.Array(Type.String({ minLength: 1, maxLength: 36 }), {
+    maxItems: MAX_BOT_MCP_SERVERS,
+  }),
+  reason: Type.String({
+    minLength: 1,
+    maxLength: MAX_REQUEST_REASON_CHARS,
+  }),
+  provider: Type.Optional(
+    Type.String({ minLength: 1, maxLength: MAX_PROVIDER_ID_CHARS }),
+  ),
+  model: Type.Optional(
+    Type.String({ minLength: 1, maxLength: MAX_MODEL_ID_CHARS }),
+  ),
+});
+
+const requestBotTool = (agent: Agent, service: BotRequests["Service"]) =>
+  defineTool({
+    name: REQUEST_BOT_TOOL_NAME,
     description:
       "Ask the owner to create a new bot. The owner approves, edits, or declines your proposal in this chat. The new bot is independent of you, and credentials are never shared: it must request its own credentials. Only one request can be pending at a time. After calling, tell the owner what you proposed and why, then end your turn: a message arrives when the owner answers.",
-    parameters: Type.Object({
-      name: Type.String({ minLength: 1, maxLength: 80 }),
-      description: Type.String({ maxLength: 1000 }),
-      instructions: Type.String({ maxLength: 32000 }),
-      tools: Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
-        maxItems: 100,
-      }),
-      mcpServers: Type.Array(Type.String({ minLength: 1, maxLength: 36 }), {
-        maxItems: 30,
-      }),
-      reason: Type.String({ minLength: 1, maxLength: 1000 }),
-      provider: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
-      model: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
-    }),
+    parameters: requestBotParameters,
     callers: ["model"],
     replay: "unsafe",
     execute: async (args) => {
@@ -331,8 +341,6 @@ export function botRequestExtension(
         mcpServers: args.mcpServers,
         skills: [],
         sharedSkills: [],
-        sharedMemory: false,
-        delegates: [],
         inference: agent.inference,
       });
 
@@ -347,28 +355,33 @@ export function botRequestExtension(
     },
   });
 
+const pendingRequestsSection = (
+  agent: Agent,
+  service: BotRequests["Service"],
+) => ({
+  key: "bot_requests",
+  render: () => {
+    const pending = Effect.runSync(service.list(agent.id)).filter(
+      (item) => item.status === "pending",
+    );
+
+    return pending.length
+      ? [
+          "Bot requests awaiting the owner's answer:",
+          ...pending.map((item) => `- ${item.proposal.name}: ${item.reason}`),
+        ].join("\n")
+      : undefined;
+  },
+});
+
+export function botRequestExtension(
+  agent: Agent,
+  service: BotRequests["Service"],
+) {
   return defineExtension({
     name: "bot_requests",
-    tools: [request],
-    sections: [
-      {
-        key: "bot_requests",
-        render: () => {
-          const pending = Effect.runSync(service.list(agent.id)).filter(
-            (item) => item.status === "pending",
-          );
-
-          return pending.length
-            ? [
-                "Bot requests awaiting the owner's answer:",
-                ...pending.map(
-                  (item) => `- ${item.proposal.name}: ${item.reason}`,
-                ),
-              ].join("\n")
-            : undefined;
-        },
-      },
-    ],
+    tools: [requestBotTool(agent, service)],
+    sections: [pendingRequestsSection(agent, service)],
   });
 }
 
@@ -378,7 +391,7 @@ export const botRequestTools = Layer.effectDiscard(
     yield* (yield* BotExtensions).register(
       ExtensionPosition.botRequests,
       (agent) =>
-        agent.tools.includes(CREATE_BOTS_CAPABILITY)
+        agent.tools.includes(BOT_TOOL.createBots)
           ? [botRequestExtension(agent, service)]
           : [],
     );

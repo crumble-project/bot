@@ -9,7 +9,9 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { Store } from "../../test/support/store";
 import { AgentRuntime } from "./runtime";
-import { standaloneBots } from "./bots";
+import { standaloneBots } from "./bots-test-support";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
+import { until } from "../../test/support/until";
 
 const agentId = "00000000-0000-4000-8000-000000000301";
 
@@ -58,16 +60,13 @@ describe("crash recovery", () => {
       const models = createModels();
       models.setProvider(faux.provider);
       const store = new Store(dir);
-      const runtime = new AgentRuntime(dir, { models });
+      const runtime = new AgentRuntime(dir, runtimeCallbacks({ models }));
       const service = standaloneBots(store, runtime);
       await service.recover();
 
-      for (let i = 0; i < 20; i++) {
-        if (store.getExecution(metadata.executionId)?.status === "done") break;
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-
-      expect(store.getExecution(metadata.executionId)?.status).toBe("done");
+      await until(
+        () => store.getExecution(metadata.executionId)?.status === "done",
+      );
 
       const snapshot = await runtime.snapshot(
         store.getAgent(agentId)!,
@@ -98,11 +97,11 @@ describe("crash recovery", () => {
         "00000000-0000-4000-8000-000000000303",
       );
 
-      const firstConversation = await runtime.createConversation(
+      const firstConversation = await runtime.openChat(
         store.getAgent(agentId)!,
       );
 
-      const secondConversation = await runtime.createConversation(second);
+      const secondConversation = await runtime.openChat(second);
       expect(firstConversation).not.toBe(secondConversation);
       await runtime.close();
       store.close();
@@ -110,5 +109,5 @@ describe("crash recovery", () => {
       if (!child.killed) child.kill(9);
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

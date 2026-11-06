@@ -5,7 +5,7 @@ import {
   until,
   SETTLE_MS,
   SETTLING_TEST_MS,
-} from "./jobs-test-support";
+} from "../../test/support/jobs";
 
 test(
   "an exclusive job waits while another job of its kind works",

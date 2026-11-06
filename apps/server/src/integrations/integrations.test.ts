@@ -6,13 +6,12 @@ import {
   BACKGROUND_CONTEXT,
   withAbortSignal,
 } from "@earendil-works/chord/context";
-import type { Agent, MCPServer } from "../shared/domain";
+import type { Agent } from "../contract/agents";
+import type { MCPServer } from "./mcp-server-repository";
 import { defaultAvatarDefinition } from "../contract/avatar";
-import {
-  mcpToolPrefix,
-  standaloneIntegrations,
-  type MCPClient,
-} from "./integrations";
+import { mcpToolPrefix } from "../contract/tools";
+import type { MCPClient } from "./integrations";
+import { standaloneIntegrations } from "./integrations-test-support";
 import { Store } from "../../test/support/store";
 import {
   connectFakePasswordManager,
@@ -21,10 +20,11 @@ import {
 } from "../../test/support/fake-password-manager";
 import type { CoreServices } from "../app/core-layer";
 import { runnerOf } from "../shared/runner";
-import { SecretValues } from "../password-managers/secret-values";
-import { secretsLayer } from "../password-managers/secrets";
-import { SecretRepository } from "../credentials/secret-repository";
+import { SecretValues } from "../secrets/secret-values";
+import { secretsLayer } from "../secrets/secrets";
+import { SecretRepository } from "../secrets/secret-repository";
 import type { McpTransport } from "@earendil-works/pi-mcp";
+import { until } from "../../test/support/until";
 
 const agent = (id: string, mcpServers: string[]): Agent => ({
   id,
@@ -43,7 +43,6 @@ const agent = (id: string, mcpServers: string[]): Agent => ({
   updatedAt: new Date().toISOString(),
 });
 
-/** The fake clients never use their transport. */
 // SAFETY: The fake clients only require the transport close method.
 const unusedTransport = { close: async () => {} } as McpTransport;
 
@@ -53,7 +52,6 @@ function tempDir() {
 
 const REFERENCE = "op://Vault/Linear/token";
 
-/** The store's services with a fake 1Password holding `values`, and the server's token pointing at `REFERENCE`. */
 function withVaultToken(
   store: Store,
   dir: string,
@@ -88,7 +86,6 @@ function withVaultToken(
   };
 }
 
-/** A server with one `echo` tool that records the headers of every connection. */
 function recordingServer(sent: Record<string, string>[]) {
   return (_server: MCPServer, headers: Record<string, string>) => {
     sent.push(headers);
@@ -449,8 +446,7 @@ describe("MCP integrations", () => {
       context,
     );
 
-    for (let i = 0; i < 50 && called === 0; i++)
-      await new Promise((resolve) => setTimeout(resolve, 1));
+    await until(() => called > 0);
     const reason = new Error("caller cancelled while pending");
     controller.abort(reason);
     await expect(pending).rejects.toBe(reason);
@@ -513,6 +509,48 @@ describe("MCP integrations", () => {
     );
     await close();
     vault.close();
+    store.close();
+  });
+
+  test("a failed listing closes the transport with the client", async () => {
+    const dir = (await tempDir()).trim();
+    const store = new Store(dir);
+
+    const server = store.createMCPServer({
+      name: "Linear",
+      url: "https://mcp.example.test",
+      enabled: true,
+    });
+
+    const closed: string[] = [];
+
+    const { integrations, close } = standaloneIntegrations(store.runtime, {
+      clientFactory: () => ({
+        // SAFETY: The fake client only requires the transport close method.
+        transport: {
+          close: async () => {
+            closed.push("transport");
+          },
+        } as McpTransport,
+        client: {
+          async connect() {},
+          async close() {
+            closed.push("client");
+          },
+          async listTools() {
+            throw new Error("listing failed");
+          },
+          async callTool() {
+            return { content: [] };
+          },
+        },
+      }),
+    });
+
+    await integrations.extensionsForAgent(agent("a1", [server.id]));
+
+    expect(closed).toEqual(["client", "transport"]);
+    await close();
     store.close();
   });
 

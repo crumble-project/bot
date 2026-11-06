@@ -1,18 +1,24 @@
+import type { z } from "zod";
 import { asc, eq, isNull, sql } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { OWNER } from "../shared/change-by";
 import {
-  skillStates,
-  type ChangeBy,
+  SKILL_STATES,
   type Skill,
-  type SkillDocument,
   type SkillInput,
   type SkillOrigin,
-} from "../shared/domain";
+  type skillDocumentInput,
+} from "../contract/skills";
+import { type ChangeBy } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
-import { LearnedChangeRepository } from "./learned-change-repository";
+import { LearnedChangeRepository } from "../learned-changes/learned-change-repository";
+import { AgentSkills } from "../bot-store/agent-skills";
 import { skillDocuments, skills } from "./schema";
+
+export type SkillDocument = z.infer<typeof skillDocumentInput>;
+
+export const skillNameKey = (name: string) => name.toLowerCase();
 
 export type NewSkill = SkillInput & {
   agentId?: string | null;
@@ -35,9 +41,21 @@ export type SkillPatch = Partial<
 const originOf = (json: string) => JSON.parse(json) as SkillOrigin;
 
 const isSkillState = (state: string): state is Skill["state"] =>
-  skillStates.some((known) => known === state);
+  SKILL_STATES.some((known) => known === state);
 
-/** The skill library: shared skills, each bot's own, and their reference documents. */
+const contentColumns = (skill: Skill) => ({
+  name: skill.name,
+  description: skill.description,
+  instructions: skill.instructions,
+  createdBy: skill.createdBy,
+  sourceExecutionId: skill.sourceExecutionId,
+  useCount: skill.useCount,
+  lastUsedAt: skill.lastUsedAt,
+  state: skill.state,
+  pinned: skill.pinned,
+  origin: skill.origin ? JSON.stringify(skill.origin) : null,
+});
+
 export class SkillRepository extends Context.Service<
   SkillRepository,
   {
@@ -64,7 +82,6 @@ export class SkillRepository extends Context.Service<
     readonly discard: (skillId: string) => Effect.Effect<void>;
     /** Loading a skill counts as using it, and brings a stale skill back to active. */
     readonly recordUse: (skillId: string) => Effect.Effect<void>;
-    /** Bot-created skills across every bot, for the curator. */
     readonly listBotCreated: Effect.Effect<Skill[]>;
     /** A bot's inline `skills` write: matched by name, so a kept skill keeps its documents, provenance, and usage. */
     readonly replaceAgentSkills: (
@@ -208,19 +225,7 @@ export class SkillRepository extends Context.Service<
           Effect.gen(function* () {
             yield* db
               .update(skills)
-              .set({
-                name: next.name,
-                description: next.description,
-                instructions: next.instructions,
-                createdBy: next.createdBy,
-                sourceExecutionId: next.sourceExecutionId,
-                useCount: next.useCount,
-                lastUsedAt: next.lastUsedAt,
-                state: next.state,
-                pinned: next.pinned,
-                origin: next.origin ? JSON.stringify(next.origin) : null,
-                updatedAt: at,
-              })
+              .set({ ...contentColumns(next), updatedAt: at })
               .where(eq(skills.id, skillId));
 
             if (patch.documents)
@@ -262,16 +267,7 @@ export class SkillRepository extends Context.Service<
               id: skill.id,
               agentId: skill.agentId,
               copiedFromSkillId: skill.copiedFromSkillId ?? null,
-              name: skill.name,
-              description: skill.description,
-              instructions: skill.instructions,
-              createdBy: skill.createdBy,
-              sourceExecutionId: skill.sourceExecutionId,
-              useCount: skill.useCount,
-              lastUsedAt: skill.lastUsedAt,
-              state: skill.state,
-              pinned: skill.pinned,
-              origin: skill.origin ? JSON.stringify(skill.origin) : null,
+              ...contentColumns(skill),
               createdAt: skill.createdAt,
               updatedAt: skill.updatedAt,
             });
@@ -358,3 +354,18 @@ export class SkillRepository extends Context.Service<
     }),
   );
 }
+
+export const agentSkillsLayer = Layer.effect(
+  AgentSkills,
+  Effect.gen(function* () {
+    const library = yield* SkillRepository;
+
+    return AgentSkills.of({
+      list: (agentId) =>
+        Effect.map(library.list(agentId), (skills) =>
+          skills.map(({ name, instructions }) => ({ name, instructions })),
+        ),
+      replace: library.replaceAgentSkills,
+    });
+  }),
+);

@@ -1,69 +1,64 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { randomBytes } from "node:crypto";
-import lockfile from "proper-lockfile";
 import { Effect, Layer, ManagedRuntime, type Scope } from "effect";
 import { BotRuntime } from "../bots/runtime";
 import { Bots, botsAccess, type BotsAccess } from "../bots/bots";
 import { BotMessaging } from "../bot-messaging/bot-messaging";
 import { BotActivity } from "../bots/bot-activity";
-import { BotExtensions } from "../bots/bot-extensions";
+import { groupConversations } from "../group-chats/group-turns";
+import { reviewConversations } from "../learning/review-kind";
+import { BotExtensions } from "../bot-ports/bot-extensions";
 import { reactionTools } from "../bots/reaction";
-import { codemodeTools } from "../bots/codemode";
+import { codemodeTools } from "../integrations/codemode";
 import { configuredWebSearchTools } from "../web-search/web-search-tools";
 import {
   Scheduler,
   schedulerAccess,
   type SchedulerAccess,
-} from "../schedules/scheduler";
-import { BotSchedules, scheduleTools } from "../schedules/bot-schedules";
-import { TaskDispatch } from "../schedules/task-dispatch";
-import { ScriptRuns } from "../schedules/script-runs";
-import { createAPI } from "./api";
+} from "../automations/scheduler";
+import { BotSchedules, scheduleTools } from "../automations/bot-schedules";
+import { Automations } from "../automations/automations";
+import { AutomationDispatch } from "../automations/automation-dispatch";
+import { ScriptRuns, scriptRunRetention } from "../automations/script-runs";
+import { createAPI, type ApiServices } from "./api";
 import { GroupChats, GroupTranscriptStore } from "../group-chats/group-chats";
 import { groupLookupTools } from "../group-chats/group-lookup";
 import { GroupTranscripts } from "../group-chats/group-transcripts";
 import { historyTools } from "../history/history-tools";
 import { BotSkills } from "../skills/skills";
-import { LearningReview, learningReviews } from "../skills/learning-review";
+import { LearningReview, learningReviews } from "../learning/learning-review";
 import { SkillCurator, skillCuration } from "../skills/skill-curator";
 import { skillUpdateChecks } from "../skills/skill-installer";
-import { CommonSkills } from "../skills/common-skills";
+import { DefaultSkills } from "../skills/default-skills";
+import { OwnerSkills } from "../skills/owner-skills";
 import {
   integrationTools,
   McpIntegrations,
 } from "../integrations/integrations";
-import { clientDocument, type ClientDocument } from "../integrations/mcp-oauth";
+import { McpServers } from "../integrations/mcp-servers";
+import type { ClientDocument } from "../integrations/mcp-oauth";
 import { coordinationTools } from "../bot-messaging/coordination";
 import { displayTools } from "../display/display";
-import { DESKTOP_TOOL_NAME } from "../jobs/desktop";
 import { desktopControlAccess } from "../bot-desktop/desktop-control";
 import { heldActionsAccess } from "../bot-desktop/held-actions";
 import { chosenJudge } from "../bot-desktop/judge-settings";
-import { accountJudge } from "../jobs/desktop-intent";
+import { accountJudge } from "../bot-desktop/desktop-intent";
 import { ViewerTickets } from "../bot-desktop/desktop-viewer";
 import type { Workspaces } from "../workspaces/workspace";
-import {
-  acquireWorkspaces,
-  type WorkspaceSize,
-} from "../workspaces/machine-workspaces";
+import { acquireWorkspaces } from "../workspaces/machine-workspaces";
 import { Push, PushDelivery } from "../push/push";
-import { ProviderModels } from "../providers/providers";
+import { ProviderModels, accountModels } from "../providers/providers";
 import { ProviderSignIns } from "../providers/provider-auth";
 import { credentialsAccess } from "../credentials/credentials";
 import { loginsAccess } from "../logins/logins";
 import { desktopFillsAccess } from "../bot-desktop/desktop-fill-repository";
-import { credentialAuthoritiesAccess } from "../credentials/credential-authority";
-import { credentialProxy } from "../credentials/credential-proxy";
+import { credentialInterception } from "../credentials/credential-interception";
 import { coreLayer, type CoreServices } from "./core-layer";
 import { runnerOf } from "../shared/runner";
 import { builtinPlugins, builtinVendors } from "./builtin-plugins";
-import {
-  heldActionNotices,
-  jobAnswers,
-  jobQuestions,
-  jobTools,
-} from "./plugin-layers";
+import { heldActionNotices } from "../bot-desktop/held-action-notices";
+import { jobAnswers, jobQuestions, jobTools } from "./job-wiring";
 import {
   conversationEnv,
   jobExtensions,
@@ -75,125 +70,90 @@ import {
   assertVendorIds,
 } from "../plugins/plugins";
 import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
+import { BotDeletion } from "../bot-ports/bot-deletion";
+import { logged } from "../shared/app-errors";
 import { BotWorkspaces } from "../workspaces/workspace";
-import { GitHubAccounts } from "../github-apps/github-accounts";
 import { desktopKeepAwake } from "../bot-desktop/keep-awake";
 import { desktopScreenshotTools } from "../bot-desktop/desktop-screenshot";
-import { AgentRepository } from "../bots/agent-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
 import { BotRequests, botRequestTools } from "../bot-requests/bot-requests";
-import { Secrets, secretText } from "../password-managers/secrets";
+import { botSecretUseRetention } from "../bot-secrets/bot-secret-uses";
+import { Secrets, secretText } from "../secrets/secrets";
 import { MessageGateway } from "../message-gateway/message-gateway";
 import { EventRelay } from "../event-sources/event-relay";
 import { EventSources } from "../event-sources/event-sources";
-import { EventDispatcher } from "../event-sources/event-dispatcher";
-import { eventPayloadTools } from "../event-sources/event-tools";
+import { EventDispatcher } from "../automations/event-dispatcher";
+import { eventPayloadTools } from "../automations/event-tools";
+import { usesDesktop } from "../contract/tools";
+import type { ServerSettings } from "./server-settings";
 
 export type TenantOptions = {
   dataDir: string;
   skillsDir?: string | undefined;
-  publicUrl?: string | undefined;
-  /** Replaces the workspaces from the environment; the account's scope owns what it acquires. */
+  oauthClient?: ClientDocument | undefined;
+  workspaceEnv: Record<string, string | undefined>;
   workspaces?:
     | Effect.Effect<Workspaces | undefined, never, Scope.Scope>
     | undefined;
-  /** The server's workspace settings, read at each boot; set by the host from its admin settings. */
-  workspaceSettings?: (() => WorkspaceSettings) | undefined;
+  serverSettings: () => ServerSettings;
   tenantId: string;
-};
-
-export type WorkspaceSettings = WorkspaceSize & {
-  baseImage: string | null;
-  questionGraceMs: number;
 };
 
 export type TenantRuntime = {
   app: ReturnType<typeof createAPI>;
-  /** Internal API bearer used by the host auth router when dispatching requests. */
   token: string;
   service: BotsAccess;
   scheduler: SchedulerAccess;
   workspaces: Workspaces | undefined;
+  /** Deletes every bot's workspace, for an account being removed. A failure is logged, so it never rejects. */
+  removeWorkspaces: () => Promise<void>;
   close: () => Promise<void>;
 };
 
-function isHttpsOrigin(url: URL) {
-  return url.protocol === "https:" && !url.search && !url.hash;
-}
-
-function httpsUrl(value: string) {
-  const url = URL.canParse(value) ? new URL(value) : undefined;
-
-  if (!url || !isHttpsOrigin(url))
-    throw new Error(
-      `publicUrl must be an https address without a query: ${value}`,
-    );
-
-  return url;
-}
-
-/** Every part of one account, in dependency order; closing the account releases them in reverse. */
-function accountLayer(
-  options: TenantOptions,
-  dataDir: string,
-  oauthClient: ClientDocument | undefined,
-) {
-  const explicitSkillsDir =
-    options.skillsDir ?? process.env["CRUMBLE_SKILLS_DIR"];
-
+function accountLayer(options: TenantOptions, dataDir: string) {
   const skillsDir = resolve(
-    explicitSkillsDir ?? resolve(import.meta.dir, "../../skills"),
+    options.skillsDir ?? resolve(import.meta.dir, "../../skills"),
   );
 
-  const commonSkills = CommonSkills.layer(
+  const defaultSkills = DefaultSkills.layer(
     skillsDir,
-    explicitSkillsDir !== undefined,
+    options.skillsDir !== undefined,
   );
 
-  const base = Layer.mergeAll(commonSkills, BotExtensions.layer).pipe(
+  const base = Layer.mergeAll(defaultSkills, BotExtensions.layer).pipe(
     Layer.provideMerge(coreLayer(dataDir)),
   );
 
   const workspaces = Layer.unwrap(
     Effect.gen(function* () {
-      const run = runnerOf(yield* Effect.context<CoreServices>());
       const agents = yield* AgentRepository;
-      const credentials = credentialsAccess(run);
-      const authorities = credentialAuthoritiesAccess(run);
-
-      const settings = options.workspaceSettings;
+      const { serverSettings } = options;
+      const run = runnerOf(yield* Effect.context<CoreServices>());
 
       const machineOptions = {
         dataDir,
         namePrefix: `crumble-${options.tenantId.replace(/[^A-Za-z0-9_-]/g, "-")}`,
-        wantsDesktop: (agentId: string) =>
-          Effect.runSync(agents.get(agentId))?.tools.includes(
-            DESKTOP_TOOL_NAME,
-          ) === true,
-        caCertificate: (agentId: string) => authorities.certificate(agentId),
-        ...(settings && {
-          size: settings,
-          baseImage: () => settings().baseImage,
+        wantsDesktop: (agentId: string) => {
+          const agent = Effect.runSync(agents.get(agentId));
+
+          return agent !== null && usesDesktop(agent);
+        },
+        size: () => ({
+          cpus: serverSettings().workspaceCpus,
+          memoryMib: serverSettings().workspaceMemoryMib,
         }),
-        intercept: (agentId: string) =>
-          credentialProxy({
-            agentId,
-            authorities,
-            grants: () => credentials.grants(agentId),
-            value: (name, target) => credentials.value(agentId, name, target),
-            recordUse: (name, use) => credentials.recordUse(agentId, name, use),
-            sign: async (data) =>
-              (
-                await run.runPromise(
-                  GitHubAccounts.use((accounts) => accounts.ofBot(agentId)),
-                )
-              )?.sign(data),
-          }),
+        baseImage: () => serverSettings().codingImage,
+        ...credentialInterception(run),
       };
 
       return BotWorkspaces.layer(
         options.workspaces ??
           acquireWorkspaces(() =>
-            pluginWorkspaces(builtinVendors, process.env, machineOptions),
+            pluginWorkspaces(
+              builtinVendors,
+              options.workspaceEnv,
+              machineOptions,
+            ),
           ),
       );
     }),
@@ -204,16 +164,13 @@ function accountLayer(
     Effect.gen(function* () {
       const run = runnerOf(yield* Effect.context<CoreServices>());
 
-      const workspaceSettings = options.workspaceSettings;
-
       const installed = builtinPlugins({
         dataDir,
         secret: secretText(yield* Secrets),
         env: process.env,
         workspaces: yield* BotWorkspaces,
-        ...(workspaceSettings && {
-          questionGraceMs: () => workspaceSettings().questionGraceMs,
-        }),
+        questionGraceMs: () =>
+          options.serverSettings().questionGraceMinutes * 60_000,
         desktopControl: desktopControlAccess(run),
         credentials: credentialsAccess(run),
         logins: {
@@ -239,21 +196,24 @@ function accountLayer(
   const models = Layer.unwrap(
     Plugins.use((installed) =>
       Effect.succeed(
-        ProviderModels.layer(pluginProviders(installed), {
-          allowAmbientEnv: false,
-        }),
+        ProviderModels.layer(accountModels, pluginProviders(installed)),
       ),
     ),
   );
 
-  const integrations = McpIntegrations.layer({ oauthClient });
+  const integrations = McpServers.layer.pipe(
+    Layer.provideMerge(
+      McpIntegrations.layer({ oauthClient: options.oauthClient }),
+    ),
+  );
 
   const runtime = Layer.unwrap(
     Effect.gen(function* () {
       const jobKinds = pluginJobKinds(yield* Plugins);
 
       return BotRuntime.layer(join(dataDir, "agents"), {
-        taskExtensions: (agent) => jobExtensions(jobKinds, agent).job,
+        jobExtensions: (agent) => jobExtensions(jobKinds, agent).job,
+        conversationKinds: () => [groupConversations(), reviewConversations()],
         env: (agent, target, context) =>
           conversationEnv(jobKinds, agent, target, context),
       });
@@ -278,11 +238,13 @@ function accountLayer(
   const curation = skillCuration.pipe(Layer.provide(SkillCurator.layer));
 
   const dispatch = Layer.effect(
-    TaskDispatch,
+    AutomationDispatch,
     Bots.use((service) => Effect.succeed(service.dispatch)),
   );
 
-  const scheduler = Scheduler.layer().pipe(Layer.provide(dispatch));
+  const automations = Automations.layer.pipe(Layer.provide(dispatch));
+
+  const scheduler = Scheduler.layer.pipe(Layer.provide(automations));
 
   const groups = GroupChats.layer.pipe(
     Layer.provide(
@@ -297,7 +259,6 @@ function accountLayer(
 
   const push = PushDelivery.pipe(Layer.provideMerge(Push.layer(dataDir)));
 
-  /** Background work and the bots' tool registrations: no other layer needs them. */
   const leaves = Layer.mergeAll(
     reviews,
     curation,
@@ -317,7 +278,9 @@ function accountLayer(
     push,
     MessageGateway.layer,
     EventSources.layer.pipe(Layer.provideMerge(EventRelay.layer)),
-    EventDispatcher.layer.pipe(Layer.provide(dispatch)),
+    EventDispatcher.layer.pipe(Layer.provide(automations)),
+    scriptRunRetention,
+    botSecretUseRetention,
   );
 
   const conversations = Layer.mergeAll(scheduler, groups, activity);
@@ -339,9 +302,10 @@ function accountLayer(
     Layer.provideMerge(botRequests),
     Layer.provideMerge(conversations),
     Layer.provideMerge(ScriptRuns.layer),
+    Layer.provideMerge(workspaceCleanup),
     Layer.provideMerge(bots),
     Layer.provideMerge(runtime),
-    Layer.provideMerge(BotSkills.layer),
+    Layer.provideMerge(Layer.mergeAll(BotSkills.layer, OwnerSkills.layer)),
     Layer.provideMerge(sandboxedTools),
     Layer.provideMerge(signIns),
     Layer.provideMerge(models),
@@ -351,7 +315,46 @@ function accountLayer(
   );
 }
 
-/** Builds one fully isolated Crumble runtime. No listener is created here. */
+const removeWorkspace = (workspaces: Workspaces, agentId: string) =>
+  workspaces
+    .remove(agentId)
+    .pipe(logged("Removing a deleted bot's workspace failed", agentId));
+
+const workspaceCleanup = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const workspaces = yield* BotWorkspaces;
+
+    if (workspaces)
+      yield* (yield* BotDeletion).register((agentId) =>
+        Effect.succeed(removeWorkspace(workspaces, agentId)),
+      );
+  }),
+);
+
+const removeAccountWorkspaces = Effect.fnUntraced(function* (
+  workspaces: Workspaces | undefined,
+) {
+  if (!workspaces) return;
+
+  const bots = yield* (yield* AgentRepository).list;
+
+  yield* Effect.forEach(bots, (bot) => removeWorkspace(workspaces, bot.id), {
+    concurrency: "unbounded",
+    discard: true,
+  });
+}, logged("Removing an account's workspaces failed"));
+
+// After the API: what recovery and start deliver may reach it. Work a layer's scope owns is already running.
+const resumeAccount = Effect.fnUntraced(function* (scheduler: SchedulerAccess) {
+  yield* (yield* Bots).recover;
+  yield* (yield* ScriptRuns).recover;
+  yield* (yield* GroupChats).recover;
+  yield* (yield* MessageGateway).start;
+  yield* (yield* EventRelay).start;
+  yield* (yield* EventDispatcher).start;
+  scheduler.start();
+});
+
 export async function createTenant(
   options: TenantOptions,
 ): Promise<TenantRuntime> {
@@ -359,71 +362,42 @@ export async function createTenant(
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   chmodSync(dataDir, 0o700);
 
-  const oauthClient = options.publicUrl
-    ? clientDocument(httpsUrl(options.publicUrl))
-    : undefined;
-
-  // The data directory's lock is taken before anything opens it and released after everything closed it.
-  const locked = Layer.unwrap(
-    Effect.gen(function* () {
-      yield* Effect.acquireRelease(
-        Effect.promise(() =>
-          lockfile.lock(dataDir, { stale: 30000, update: 10000, retries: 0 }),
-        ),
-        (release) => Effect.promise(() => release()),
-      );
-
-      return accountLayer(options, dataDir, oauthClient);
-    }),
-  );
-
-  const account = ManagedRuntime.make(locked);
+  const account = ManagedRuntime.make(accountLayer(options, dataDir));
 
   try {
     return await account.runPromise(
       Effect.gen(function* () {
-        const bots = yield* Bots;
         const service = botsAccess(runnerOf(yield* Effect.context<Bots>()));
 
-        const scheduler = schedulerAccess(
-          runnerOf(yield* Effect.context<Scheduler>()),
-        );
-
-        const chats = yield* GroupChats;
-        // Typed as the core, but its context holds every account service, which createAPI reads.
-        const run = runnerOf(yield* Effect.context<CoreServices>());
+        const run = runnerOf(yield* Effect.context<ApiServices>());
+        const scheduler = schedulerAccess(run);
         const token = randomBytes(32).toString("hex");
 
         const app = createAPI(
           { ...service, core: run, runtime: yield* BotRuntime },
           token,
           {
-            scheduler,
             viewerTickets: new ViewerTickets(Date.now, options.tenantId),
-            oauthClient,
           },
         );
 
-        yield* bots.recover;
-        yield* (yield* ScriptRuns).recover;
-        yield* chats.recover;
-        yield* (yield* MessageGateway).start;
-        yield* (yield* EventRelay).start;
-        yield* (yield* EventDispatcher).start;
-        scheduler.start();
+        yield* resumeAccount(scheduler);
+
+        const workspaces = yield* BotWorkspaces;
 
         return {
           app,
           token,
           service,
           scheduler,
-          workspaces: yield* BotWorkspaces,
+          workspaces,
+          removeWorkspaces: () =>
+            account.runPromise(removeAccountWorkspaces(workspaces)),
           close: () => account.dispose(),
         };
       }),
     );
   } catch (error) {
-    // A failed startup releases what it acquired; the error is the startup's, not the cleanup's.
     await account.dispose().catch(() => {});
     throw error;
   }

@@ -6,7 +6,6 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { z } from "zod";
 import {
   IconBrain,
   IconChevronRight,
@@ -37,21 +36,16 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import {
-  type ActivityFeed,
-  type Bot,
-  api,
-  botsQuery,
-  queryClient,
-} from "@/lib/api";
-import { BotAvatar } from "@/features/bots/avatar";
-import {
-  ChangeDiff,
-  RevertChange,
-  changeSummary,
-  changeTitle,
-} from "./changes";
-import { FilterPills, WorkspacePage } from "@/components/workspace";
+import type { ActivityFeed } from "./api";
+import { type Bot, botsQuery } from "@/features/bots/api";
+import { api, queryClient } from "@/lib/api";
+import { BotAvatar } from "@/components/bot-avatar";
+import { StateDiff } from "@/components/state-diff";
+import { RevertChange, changeSummary, changeTitle } from "./changes";
+import { FilterPills, Page } from "@/components/page";
+import { activityKey } from "./api";
+import { ALL } from "@/features/bots/queries";
+import { activityDetails } from "@crumble/server/contract/activity-details";
 
 type Activity = ActivityFeed["activities"][number];
 
@@ -59,30 +53,10 @@ type Operational = Exclude<Activity, { kind: "change" }>;
 
 const PREVIEW_CHARS = 240;
 
-// Anything a call sent or a result returned, as text: strings as they are, other values as JSON.
-const asText = z.union([
-  z.string(),
-  z.unknown().transform((value) => JSON.stringify(value) ?? ""),
-]);
-
-const detailsInput = z.object({
-  toolName: z.string().optional(),
-  name: z.string().optional(),
-  content: asText.optional(),
-  arguments: asText.optional(),
-  args: z.string().optional(),
-  isError: z.boolean().optional(),
-  error: z.string().optional(),
-  communication: z
-    .object({ fromName: z.string().optional(), toName: z.string().optional() })
-    .optional(),
-});
-
 const details = (activity: Operational) =>
-  detailsInput.safeParse(activity.details).data ?? {};
+  activityDetails.parse(activity.details);
 
 const PAGE_SIZE = 50;
-const ALL = "all";
 
 const KINDS = {
   "tool-call": { label: "Tool calls", icon: IconTool },
@@ -100,11 +74,9 @@ const KIND_ORDER = [
   "change",
 ] satisfies Activity["kind"][];
 
-/** A one-line glimpse of what a call sent or a result returned. */
 const previewOf = (text = "") =>
   text.replace(/\s+/g, " ").slice(0, PREVIEW_CHARS);
 
-/** What the bot did, as the verb and object of a sentence that starts with its name. */
 function toolLabel(toolName: string | undefined, name: string | undefined) {
   return toolName ?? name ?? "a tool";
 }
@@ -150,7 +122,7 @@ function detailText(activity: Operational) {
 
 function useActivityFeed(kind: string, agentId: string) {
   return useInfiniteQuery({
-    queryKey: ["activity", kind, agentId],
+    queryKey: [...activityKey, kind, agentId],
     initialPageParam: "",
     queryFn: ({ pageParam, signal }) => {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
@@ -161,7 +133,7 @@ function useActivityFeed(kind: string, agentId: string) {
 
       if (pageParam) params.set("cursor", pageParam);
 
-      return api<ActivityFeed>(`/v1/activity/feed?${params}`, { signal });
+      return api<"activity">(`/v1/activity/feed?${params}`, { signal });
     },
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
@@ -197,7 +169,6 @@ function dayLabel(timestamp: number | undefined, now: Date) {
   });
 }
 
-/** Activities by the day they happened, newest day first, in feed order. */
 function byDay(activities: Activity[], now: Date) {
   const days = new Map<string, { label: string; items: Activity[] }>();
 
@@ -224,12 +195,10 @@ export function ActivityPage() {
   const botsById = new Map((bots.data ?? []).map((bot) => [bot.id, bot]));
 
   return (
-    <WorkspacePage
+    <Page
       title="Activity"
       refreshing={feed.isFetching}
-      onRefresh={() =>
-        void queryClient.resetQueries({ queryKey: ["activity"] })
-      }
+      onRefresh={() => void queryClient.resetQueries({ queryKey: activityKey })}
     >
       <div className="flex items-center justify-between gap-2">
         <KindPills kind={kind} onChange={setKind} />
@@ -240,7 +209,7 @@ export function ActivityPage() {
         />
       </div>
       <ActivityBody feed={feed} kind={kind} botsById={botsById} />
-    </WorkspacePage>
+    </Page>
   );
 }
 
@@ -401,7 +370,6 @@ function ActivityBody({
   );
 }
 
-/** The bot's avatar with a small badge for the kind of activity. */
 function ActivityMark({
   activity,
   bot,
@@ -543,7 +511,10 @@ function ActivityDetails({ activity }: { activity: Activity }) {
   return (
     <div className="flex flex-col gap-2 px-3 pb-3 pl-[3.375rem]">
       {activity.kind === "change" ? (
-        <ChangeDiff change={activity.change} />
+        <StateDiff
+          before={activity.change.before}
+          after={activity.change.after}
+        />
       ) : (
         <pre className="max-h-96 overflow-auto rounded-lg border bg-muted/50 p-3 font-mono text-xs whitespace-pre-wrap break-all">
           {detailText(activity)}

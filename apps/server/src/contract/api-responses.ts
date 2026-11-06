@@ -3,11 +3,26 @@ import {
   PASSWORD_MANAGER_IDS,
   WEB_SEARCH_PROVIDER_IDS,
 } from "../shared/vendors";
-import { botCommunication } from "../bots/transcript";
-import { agentInput } from "../shared/domain";
+import { ATTACHMENT_KINDS } from "../shared/attachment-rules";
+import {
+  ACTIVITY_KINDS,
+  CHANGE_ACTIONS,
+  CHANGE_ACTORS,
+  CHANGE_TARGETS,
+  CONTROL_HOLDERS,
+  EXECUTION_STATUSES,
+  HELD_ACTION_STATUSES,
+  MEMORY_SOURCE_KINDS,
+  OWNER_MESSAGE_SOURCES,
+  SCRIPT_RUN_STATUSES,
+  SIGN_IN_METHODS,
+} from "../shared/domain";
+import { agentInput, THINKING_LEVELS } from "./agents";
+import { loginFieldInput } from "./secrets";
+import { SCHEDULE_KINDS } from "./schedules";
+import { SKILL_STATES } from "./skills";
 import { avatarDefinitionSchema } from "./avatar";
-import type * as charts from "../display/charts";
-import type * as webSearch from "../web-search/provider";
+import { replyEvent } from "./reply-event";
 
 export const secretStatusResponse = z
   .object({
@@ -24,23 +39,9 @@ export const secretStatusResponse = z
     description: "A secret the owner entered; its value is never returned.",
   });
 
-export type ChartLayout = charts.ChartLayout;
-
-export type WebPage = webSearch.WebPage;
-
-export type WebSearchResult = webSearch.WebSearchResult;
-
 const strings = z.array(z.string());
 
-const thinkingLevel = z.enum([
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-]);
+const thinkingLevel = z.enum(THINKING_LEVELS);
 
 const inference = z.object({
   thinkingLevel: thinkingLevel.optional(),
@@ -163,17 +164,25 @@ const origin = z
   })
   .openapi("MessageOrigin");
 
-// Rebuilt with the OpenAPI-extended `z`: a schema made before the extension loads has no `.openapi`.
-const communication = z
-  .object(botCommunication.shape)
+export const botCommunication = z
+  .object({
+    executionId: z.string(),
+    fromAgentId: z.string(),
+    fromName: z.string(),
+    toAgentId: z.string(),
+    toName: z.string(),
+    status: z.enum(["sent", "done", "failed", "cancelled"]),
+  })
   .openapi("BotCommunication");
+
+export type BotCommunication = z.infer<typeof botCommunication>;
 
 const attachment = z
   .object({
     name: z.string(),
     mimeType: z.string(),
     size: z.number(),
-    kind: z.enum(["image", "text"]),
+    kind: z.enum(ATTACHMENT_KINDS),
   })
   .openapi("AttachmentInfo");
 
@@ -193,7 +202,7 @@ const message = z
     replyTo: z.string().optional(),
     replyPreview: z.string().optional(),
     origin: origin.optional(),
-    communication: communication.optional(),
+    communication: botCommunication.optional(),
     jobQuestion: z
       .object({
         id: z.string(),
@@ -293,7 +302,7 @@ export const desktopJobsResponse = jobsResponse("Desktop");
 
 export const desktopControlResponse = z
   .object({
-    holder: z.enum(["bot", "owner"]).openapi({
+    holder: z.enum(CONTROL_HOLDERS).openapi({
       description:
         "Who operates the bot desktop. While the owner holds control, the bot's desktop job pauses and only the owner's viewer input reaches the bot desktop.",
     }),
@@ -402,7 +411,7 @@ export const executionResponse = z
     prompt: z.string(),
     replyTo: z.string().nullable().optional(),
     attachmentsDigest: z.string().nullable().optional(),
-    status: z.enum(["pending", "running", "done", "failed", "cancelled"]),
+    status: z.enum(EXECUTION_STATUSES),
     error: z.string().nullable(),
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -415,13 +424,7 @@ export const scriptRunResponse = z
     scheduleId: z.string(),
     agentId: z.string(),
     command: z.string(),
-    status: z.enum([
-      "running",
-      "succeeded",
-      "failed",
-      "timed_out",
-      "interrupted",
-    ]),
+    status: z.enum(SCRIPT_RUN_STATUSES),
     exitCode: z.number().int().nullable(),
     output: z.string().openapi({
       description: "The last 64 KiB and 2000 lines of combined output.",
@@ -453,7 +456,7 @@ export const scheduleRunResponse = z
 // One object with optional fields rather than a union, so client generators keep it.
 const memorySourceResponse = z
   .object({
-    kind: z.enum(["chat", "owner", "task", "bot", "group"]),
+    kind: z.enum(MEMORY_SOURCE_KINDS),
     name: z.string().optional().openapi({
       description:
         "The task, bot, or group chat, as named when the memory was saved.",
@@ -570,7 +573,7 @@ export const heldActionResponse = z
         z.object({
           requestId: z.string(),
           text: z.string(),
-          from: z.enum(["owner", "automation"]),
+          from: z.enum(OWNER_MESSAGE_SOURCES),
         }),
       )
       .openapi({
@@ -579,7 +582,7 @@ export const heldActionResponse = z
     reason: z
       .string()
       .openapi({ description: "Why the intent check held it." }),
-    status: z.enum(["pending", "approved", "declined", "expired"]),
+    status: z.enum(HELD_ACTION_STATUSES),
     declineReason: z.string().nullable(),
     heldAt: z.string(),
     decidedAt: z.string().nullable(),
@@ -646,7 +649,7 @@ export const loginUseResponse = z
     id: z.string(),
     at: z.string(),
     host: z.string(),
-    field: z.enum(["username", "password", "one_time_code"]),
+    field: loginFieldInput,
     error: z
       .string()
       .nullable()
@@ -740,7 +743,7 @@ export const skillPackageResponse = z
     sourceExecutionId: z.string().nullable(),
     useCount: z.number().int(),
     lastUsedAt: z.string().nullable(),
-    state: z.enum(["active", "stale", "archived"]),
+    state: z.enum(SKILL_STATES),
     pinned: z.boolean(),
     copiedFromSkillId: z.uuid().nullable().optional(),
     origin: skillOriginResponse.nullable().optional(),
@@ -779,10 +782,10 @@ export const learnedChangeResponse = z
     id: z.string(),
     // The bot whose skill or memory changed; null for a shared one.
     agentId: z.string().nullable(),
-    actor: z.enum(["owner", "bot", "review", "curator"]),
-    target: z.enum(["skill", "memory"]),
+    actor: z.enum(CHANGE_ACTORS),
+    target: z.enum(CHANGE_TARGETS),
     targetId: z.string(),
-    action: z.enum(["create", "update", "delete", "revert"]),
+    action: z.enum(CHANGE_ACTIONS),
     before: z.union([skillPackageResponse, memoryResponse, z.null()]),
     after: z.union([skillPackageResponse, memoryResponse, z.null()]),
     source: z.union([changeSourceResponse, z.null()]),
@@ -806,7 +809,7 @@ export const scheduleResponse = z
     agentId: z.string(),
     name: z.string(),
     prompt: z.string(),
-    kind: z.enum(["prompt", "script"]),
+    kind: z.enum(SCHEDULE_KINDS),
     command: z.string().nullable(),
     timeoutSeconds: z.number().int(),
     notify: z.boolean(),
@@ -831,7 +834,7 @@ const operationalActivity = z
     agentName: z.string(),
     entryId: z.string(),
     timestamp: z.number().optional(),
-    kind: z.enum(["tool-call", "tool-result", "mcp-call", "bot-message"]),
+    kind: z.enum(ACTIVITY_KINDS),
     details: z.record(z.string(), z.unknown()),
   })
   .openapi("OperationalActivity");
@@ -856,7 +859,7 @@ export const activityFeedResponse = z
   })
   .openapi("ActivityFeed");
 
-const authType = z.enum(["api_key", "oauth"]);
+const authType = z.enum(SIGN_IN_METHODS);
 
 export const loginMethod = z
   .object({
@@ -866,13 +869,10 @@ export const loginMethod = z
   })
   .openapi("ProviderLoginMethod");
 
-/** How a provider that signs in outside Crumble stands, such as Claude Code. */
 export const externalAuthResponse = z
   .object({
     status: z.enum(["signed_in", "signed_out", "cli_missing", "error"]),
-    /** The installed command-line tool's version, when it reported one. */
     cliVersion: z.string().nullable(),
-    /** The command the owner runs on the server to sign in. */
     signInCommand: z.string().nullable(),
     signOutCommand: z.string().nullable(),
     message: z.string().nullable(),
@@ -883,7 +883,6 @@ export const providerResponse = z
   .object({
     provider: z.string(),
     name: z.string(),
-    /** Saved or ambient credentials make the provider usable. */
     configured: z.boolean(),
     authMethods: z.array(loginMethod),
     /** The provider's saved credential; ambient credentials have none. */
@@ -1072,37 +1071,6 @@ export const compactResponse = z
   .object({ taskId: z.string() })
   .openapi("Compaction");
 
-export const replyEvent = z
-  .object({
-    type: z.literal("reply"),
-    eventId: z.string(),
-    serverId: z.string(),
-    agentId: z.string(),
-    agentName: z.string(),
-    entryId: z.string().nullable(),
-    origin: z.string().openapi({
-      description:
-        "What the bot answered: owner (a message from the owner), task (a scheduled task), script (a script task's result), bot (another bot's request), group (a group chat turn), or coding or desktop (a job's report; jobName names the job). Clients may receive other values later.",
-    }),
-    preview: z.string(),
-    createdAt: z.string(),
-    executionId: z.string().optional(),
-    jobName: z.string().optional().openapi({
-      description:
-        "The job whose report the bot answered, for origin coding or desktop. A desktop job's report often asks for the owner; clients may open the bot desktop.",
-    }),
-    groupId: z.string().optional().openapi({
-      description:
-        "Set when a bot answered in a group chat; open the group rather than the bot chat.",
-    }),
-    groupName: z.string().optional(),
-    waitingFor: z.enum(["approval", "credential", "login"]).optional().openapi({
-      description:
-        "Set when the bot waits for the owner's answer: approval (a desktop job action held by an intent check), credential, or login (a request the owner saves or declines). Clients may receive other values later.",
-    }),
-  })
-  .openapi("ReplyEvent");
-
 export const chatPreviewEvent = z
   .object({
     type: z.literal("chat-preview"),
@@ -1117,13 +1085,12 @@ export const learnedEvent = z
     type: z.literal("learned"),
     agentId: z.string(),
     agentName: z.string(),
-    // The execution the bot reviewed; the changes name what it learned from it.
     executionId: z.string(),
     changes: z.array(
       z.object({
         changeId: z.string(),
-        target: z.enum(["skill", "memory"]),
-        action: z.enum(["create", "update", "delete", "revert"]),
+        target: z.enum(CHANGE_TARGETS),
+        action: z.enum(CHANGE_ACTIONS),
         name: z.string(),
       }),
     ),
@@ -1141,3 +1108,33 @@ export const activityEvent = z
   .openapi("ActivityEvent");
 
 export const heartbeatEvent = z.object({}).openapi("HeartbeatEvent");
+
+export const eventSchemas: {
+  schema: z.ZodType;
+  component?: string;
+  artifact?: string;
+}[] = [
+  { schema: replyEvent, component: "ReplyEvent" },
+  { schema: chatPreviewEvent, component: "ChatPreviewEvent" },
+  {
+    schema: heartbeatEvent,
+    component: "HeartbeatEvent",
+    artifact: "heartbeat.schema.json",
+  },
+  {
+    schema: activityEvent,
+    component: "ActivityEvent",
+    artifact: "activity-event.schema.json",
+  },
+  {
+    schema: learnedEvent,
+    component: "LearnedEvent",
+    artifact: "learned-event.schema.json",
+  },
+  { schema: chatSnapshotResponse, artifact: "chat-snapshot.schema.json" },
+  {
+    schema: groupChatSnapshotResponse,
+    artifact: "group-chat-snapshot.schema.json",
+  },
+  { schema: desktopControlResponse, artifact: "desktop-control.schema.json" },
+];

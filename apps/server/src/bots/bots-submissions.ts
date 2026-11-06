@@ -1,40 +1,38 @@
 import { Effect } from "effect";
-import type { AttachmentInput } from "../shared/attachments";
-import { attachmentDigest, prepareAttachments } from "../shared/attachments";
-import { appErrors } from "../shared/app-errors";
+import type { AttachmentInput } from "../shared/attachment-rules";
+import { attachmentDigest, validAttachments } from "../shared/attachments";
+import { validTimezone } from "../contract/cron";
 import type { Execution } from "../shared/domain";
-import { Conflict } from "../shared/errors";
-import type { botsActivity } from "./bots-activity";
-import type { botsAdmission } from "./bots-admission";
-import type { botsAnnouncements } from "./bots-announcements";
+import { Conflict, REQUEST_ID_REUSED, type AppError } from "../shared/errors";
+import type { BotsAnnouncements } from "./bots-announcements";
+import type { BotsChat } from "./bots-chat";
 import { isGroupTurn, type BotsContext } from "./bots-context";
-import type { botsChat } from "./bots-chat";
-import type { botsLookup } from "./bots-lookup";
+import type { BotsLookup } from "./bots-lookup";
+import type { BotsNotifications } from "./bots-notifications";
 import { OWNER_TIMEZONE } from "./runtime";
 
-type SendOptions = {
+export type SendOptions = {
   scheduleId?: string;
   replyTo?: string | undefined;
   attachments?: AttachmentInput[] | undefined;
 };
 
-type SendDeps = {
-  lookup: ReturnType<typeof botsLookup>;
-  notifications: ReturnType<typeof botsActivity>;
-  announcements: ReturnType<typeof botsAnnouncements>;
-  admit: ReturnType<typeof botsAdmission>["admit"];
+export type JobAnswerInput = {
+  name: string;
+  questionId: string;
+  text: string;
+  by?: string;
+};
+
+type SubmissionDeps = {
+  lookup: BotsLookup;
+  chat: BotsChat["chat"];
+  notifications: BotsNotifications;
+  announcements: BotsAnnouncements;
+  admit: (execution: Execution) => Effect.Effect<void, AppError>;
 };
 
 const conflict = (message: string) => Effect.fail(new Conflict({ message }));
-
-/** Validates attachments before anything is stored, so a bad file never leaves a failed execution behind. */
-const validated = (attachments: AttachmentInput[]) =>
-  appErrors(
-    Effect.try({
-      try: () => prepareAttachments(attachments),
-      catch: (error) => error,
-    }),
-  );
 
 const differsFrom = (
   existing: Execution,
@@ -46,19 +44,18 @@ const differsFrom = (
   (existing.replyTo ?? null) !== replyTo ||
   (existing.attachmentsDigest ?? null) !== attachmentsDigest;
 
-/** Admits one message to a chat, or returns the execution its request ID already names. */
-const botsSend = (context: BotsContext, deps: SendDeps) => {
-  const { executions } = context;
-  const { conversation } = deps.lookup;
+export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
+  const { executions, runtime, settings } = context;
+  const { conversation, withAgent } = deps.lookup;
   const { changed } = deps.notifications;
   const { forkPreview } = deps.announcements;
-  const { admit } = deps;
+  const { admit, chat } = deps;
 
   const send = Effect.fn("Bots.send")(function* (
     conversationId: string,
     content: string,
     requestId: string,
-    options: SendOptions,
+    options: SendOptions = {},
   ) {
     const { agent: owner } = yield* conversation(conversationId);
 
@@ -66,13 +63,13 @@ const botsSend = (context: BotsContext, deps: SendDeps) => {
       return yield* conflict("Enable this agent before starting work");
     const replyTo = options.replyTo ?? null;
     const attachments = options.attachments ?? [];
-    yield* validated(attachments);
+    yield* validAttachments(attachments);
     const attachmentsDigest = attachmentDigest(attachments);
 
     const existing = yield* executions.getByRequest(conversationId, requestId);
 
     if (existing && differsFrom(existing, content, replyTo, attachmentsDigest))
-      return yield* conflict("Request ID already used for a different message");
+      return yield* conflict(REQUEST_ID_REUSED);
 
     const execution =
       existing ??
@@ -99,36 +96,12 @@ const botsSend = (context: BotsContext, deps: SendDeps) => {
     return (yield* executions.get(execution.id))!;
   });
 
-  return { send };
-};
-
-const isTimezone = (timezone: string) => {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
-
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-type TurnDeps = SendDeps & {
-  chat: ReturnType<typeof botsChat>["chat"];
-  send: ReturnType<typeof botsSend>["send"];
-};
-
-/** The other ways a turn starts in a bot's chat: a notice, an owner's message with its timezone, and a dispatch. */
-const botsTurns = (context: BotsContext, deps: TurnDeps) => {
-  const { executions, settings } = context;
-  const { chat, send } = deps;
-  const { admit } = deps;
-
   const notice = Effect.fn("Bots.notice")(function* (
     agentId: string,
     content: string,
     requestId: string,
   ) {
-    return yield* send((yield* chat(agentId)).id, content, requestId, {});
+    return yield* send((yield* chat(agentId)).id, content, requestId);
   });
 
   const sendChat = Effect.fn("Bots.sendChat")(function* (
@@ -139,7 +112,7 @@ const botsTurns = (context: BotsContext, deps: TurnDeps) => {
     attachments: AttachmentInput[] = [],
     timezone?: string,
   ) {
-    if (timezone && isTimezone(timezone))
+    if (timezone && validTimezone(timezone))
       yield* settings.set(OWNER_TIMEZONE, timezone);
 
     return yield* send((yield* chat(agentId)).id, content, requestId, {
@@ -154,9 +127,7 @@ const botsTurns = (context: BotsContext, deps: TurnDeps) => {
     requestId: string,
     scheduleId: string,
   ) {
-    const existing = (yield* executions.list(agentId)).find(
-      (execution) => execution.requestId === requestId,
-    );
+    const existing = yield* executions.findByRequest(agentId, requestId);
 
     if (existing) {
       yield* admit(existing);
@@ -169,22 +140,14 @@ const botsTurns = (context: BotsContext, deps: TurnDeps) => {
     });
   });
 
-  return { notice, sendChat, dispatch };
-};
+  const answerJob = (agentId: string, kind: string, answer: JobAnswerInput) =>
+    withAgent(agentId, (owner) => runtime.answerJob(owner, kind, answer)).pipe(
+      Effect.flatMap((answered) =>
+        answered
+          ? Effect.void
+          : conflict("The job no longer waits on this question"),
+      ),
+    );
 
-type SubmissionDeps = SendDeps & { chat: ReturnType<typeof botsChat>["chat"] };
-
-/** Everything that writes into a bot's chat, from an owner's message to a scheduled dispatch. */
-export const botsSubmissions = (context: BotsContext, deps: SubmissionDeps) => {
-  const { send } = botsSend(context, deps);
-
-  return {
-    send: (
-      conversationId: string,
-      content: string,
-      requestId: string,
-      options: SendOptions = {},
-    ) => send(conversationId, content, requestId, options),
-    ...botsTurns(context, { ...deps, send }),
-  };
+  return { send, notice, sendChat, dispatch, answerJob };
 };

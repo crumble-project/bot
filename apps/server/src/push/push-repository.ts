@@ -1,7 +1,9 @@
 import { and, asc, eq, lte } from "drizzle-orm";
 import { Clock, Context, DateTime, Effect, Layer, Option } from "effect";
 import { PushDatabase } from "./push-database";
-import type { PushDevice, PushDeviceInput, ReplyPushEvent } from "./push-model";
+import type { ReplyEvent } from "../contract/reply-event";
+import { PUSH_TTL_SECONDS } from "../shared/push-devices";
+import type { PushDevice, PushDeviceInput } from "./push-model";
 import {
   pushDelivery,
   pushDevices,
@@ -10,7 +12,6 @@ import {
   pushSettings,
 } from "./schema";
 
-/** A delivery due now: one event for one device. */
 export type PendingDelivery = {
   readonly outboxId: string;
   readonly installationId: string;
@@ -22,7 +23,7 @@ export type PendingDelivery = {
 // A presence report counts for two minutes; clients refresh it while a chat is visible.
 const PRESENCE_TTL_MS = 120_000;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const PUSH_TTL_MS = PUSH_TTL_SECONDS * 1000;
 
 const deviceOf = (row: typeof pushDevices.$inferSelect): PushDevice => {
   const device: PushDevice = {
@@ -40,7 +41,6 @@ const deviceOf = (row: typeof pushDevices.$inferSelect): PushDevice => {
   return device;
 };
 
-/** Devices, presence, and the delivery outbox of an account's push database. */
 export class PushRepository extends Context.Service<
   PushRepository,
   {
@@ -54,7 +54,6 @@ export class PushRepository extends Context.Service<
       installationId: string,
     ) => Effect.Effect<Option.Option<PushDevice>>;
     readonly deleteDevice: (installationId: string) => Effect.Effect<void>;
-    /** False when the device is not registered. */
     readonly setPresence: (
       installationId: string,
       active: boolean,
@@ -65,13 +64,8 @@ export class PushRepository extends Context.Service<
       installationId: string,
       agentId: string,
     ) => Effect.Effect<boolean>;
-    readonly enqueue: (
-      event: ReplyPushEvent,
-      ttlMs?: number,
-    ) => Effect.Effect<void>;
-    readonly pending: (
-      limit?: number,
-    ) => Effect.Effect<ReadonlyArray<PendingDelivery>>;
+    readonly enqueue: (event: ReplyEvent) => Effect.Effect<void>;
+    readonly pending: () => Effect.Effect<ReadonlyArray<PendingDelivery>>;
     readonly markDelivered: (
       outboxId: string,
       installationId: string,
@@ -86,7 +80,6 @@ export class PushRepository extends Context.Service<
       outboxId: string,
       installationId: string,
     ) => Effect.Effect<void>;
-    /** Starts the delivery over, with fresh attempts, for a device whose token changed. */
     readonly requeueDelivery: (
       outboxId: string,
       installationId: string,
@@ -95,7 +88,6 @@ export class PushRepository extends Context.Service<
       installationId: string,
       token: string,
     ) => Effect.Effect<void>;
-    /** Drops expired events and, with them, their deliveries. */
     readonly cleanup: Effect.Effect<void>;
   }
 >()("crumble/push/PushRepository") {
@@ -153,7 +145,6 @@ export class PushRepository extends Context.Service<
             set: values,
           });
 
-        // Registration never resets a lease; first registration starts inactive.
         yield* db
           .insert(pushPresence)
           .values({
@@ -216,8 +207,7 @@ export class PushRepository extends Context.Service<
       }, Effect.orDie);
 
       const enqueue = Effect.fn("PushRepository.enqueue")(function* (
-        event: ReplyPushEvent,
-        ttlMs: number = DAY_MS,
+        event: ReplyEvent,
       ) {
         const now = yield* Clock.currentTimeMillis;
         const createdAt = DateTime.formatIso(yield* DateTime.now);
@@ -231,11 +221,10 @@ export class PushRepository extends Context.Service<
                 eventId: event.eventId,
                 eventJson: JSON.stringify(event),
                 createdAt,
-                expiresAt: now + ttlMs,
+                expiresAt: now + PUSH_TTL_MS,
               })
               .onConflictDoNothing();
 
-            // An event enqueued twice keeps its first outbox row.
             const [outbox] = yield* tx
               .select({ id: pushOutbox.id })
               .from(pushOutbox)
@@ -262,9 +251,7 @@ export class PushRepository extends Context.Service<
         );
       }, Effect.orDie);
 
-      const pending = Effect.fn("PushRepository.pending")(function* (
-        limit: number = 100,
-      ) {
+      const pending = Effect.fn("PushRepository.pending")(function* () {
         return yield* db
           .select({
             outboxId: pushDelivery.outboxId,
@@ -287,7 +274,7 @@ export class PushRepository extends Context.Service<
             ),
           )
           .orderBy(asc(pushDelivery.nextAttemptAt))
-          .limit(limit);
+          .limit(100);
       }, Effect.orDie);
 
       const delivery = (outboxId: string, installationId: string) =>

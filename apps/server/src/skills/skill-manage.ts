@@ -1,13 +1,13 @@
 import { Type, type Static } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-durable";
 import {
-  MAX_SKILL_DOCUMENTS,
   skillDocumentInput,
   skillInput,
-  type Agent,
   type Skill,
   type SkillInput,
-} from "../shared/domain";
+} from "../contract/skills";
+import { type Agent } from "../contract/agents";
+import { skillNameKey } from "./skill-repository";
 import { Effect } from "effect";
 import {
   resolveSkill,
@@ -18,15 +18,21 @@ import {
   type SkillToolContext,
 } from "./skill-library";
 import type { BotSkills } from "./skills";
+import { SKILL_MANAGE_TOOL_NAME } from "../contract/tools";
+import {
+  MAX_INSTRUCTIONS_CHARS,
+  MAX_SKILL_DESCRIPTION_CHARS,
+  MAX_SKILL_DOCUMENT_CHARS,
+  MAX_SKILL_DOCUMENT_PATH_CHARS,
+  MAX_SKILL_DOCUMENTS,
+  MAX_SKILL_NAME_CHARS,
+} from "../shared/limits";
 
 const refuse = (message: string) =>
   Effect.fail(new SkillToolError({ message }));
 
-export const SKILL_MANAGE_TOOL_NAME = "skill_manage";
-
 const MAX_OPERATIONS = 10;
 
-/** Advisory findings about the shape of a skill; they never block a write. */
 export type SkillFinding = { skill: string; rule: string; message: string };
 
 const OVERSIZED_BODY = 12000;
@@ -71,20 +77,32 @@ export function lintSkill(skill: SkillInput): SkillFinding[] {
   return findings;
 }
 
-const name = Type.String({ minLength: 1, maxLength: 100 });
-const path = Type.String({ minLength: 1, maxLength: 200 });
+const name = Type.String({ minLength: 1, maxLength: MAX_SKILL_NAME_CHARS });
+
+const path = Type.String({
+  minLength: 1,
+  maxLength: MAX_SKILL_DOCUMENT_PATH_CHARS,
+});
 
 const operation = Type.Union([
   Type.Object({
     action: Type.Literal("create"),
     name,
-    description: Type.Optional(Type.String({ maxLength: 300 })),
-    instructions: Type.String({ minLength: 1, maxLength: 32000 }),
+    description: Type.Optional(
+      Type.String({ maxLength: MAX_SKILL_DESCRIPTION_CHARS }),
+    ),
+    instructions: Type.String({
+      minLength: 1,
+      maxLength: MAX_INSTRUCTIONS_CHARS,
+    }),
     documents: Type.Optional(
       Type.Array(
         Type.Object({
           path,
-          content: Type.String({ minLength: 1, maxLength: 64000 }),
+          content: Type.String({
+            minLength: 1,
+            maxLength: MAX_SKILL_DOCUMENT_CHARS,
+          }),
         }),
         { maxItems: MAX_SKILL_DOCUMENTS },
       ),
@@ -101,14 +119,19 @@ const operation = Type.Union([
   Type.Object({
     action: Type.Literal("rewrite"),
     name,
-    instructions: Type.String({ minLength: 1, maxLength: 32000 }),
-    description: Type.Optional(Type.String({ maxLength: 300 })),
+    instructions: Type.String({
+      minLength: 1,
+      maxLength: MAX_INSTRUCTIONS_CHARS,
+    }),
+    description: Type.Optional(
+      Type.String({ maxLength: MAX_SKILL_DESCRIPTION_CHARS }),
+    ),
   }),
   Type.Object({
     action: Type.Literal("write_document"),
     name,
     path,
-    content: Type.String({ minLength: 1, maxLength: 64000 }),
+    content: Type.String({ minLength: 1, maxLength: MAX_SKILL_DOCUMENT_CHARS }),
   }),
   Type.Object({
     action: Type.Literal("remove_document"),
@@ -136,7 +159,6 @@ export type SkillManageCallbacks = {
 
 type Applied = { action: Operation["action"]; name: string; path?: string };
 
-/** Replaces `oldString` in `source` once, or everywhere with `replaceAll`; an ambiguous or missing match is an error. */
 export function applyPatch(
   source: string,
   oldString: string,
@@ -163,7 +185,6 @@ export function applyPatch(
   );
 }
 
-/** The batch being applied: the library, the turn's reads, and what the batch has written so far. */
 type Batch = {
   library: BotSkills["Service"];
   reads: SkillReads;
@@ -181,7 +202,7 @@ const ownSkill = (batch: Batch, name: string) =>
       Effect.map(
         (skills) =>
           skills.find(
-            (skill) => skill.name.toLowerCase() === name.toLowerCase(),
+            (skill) => skillNameKey(skill.name) === skillNameKey(name),
           ) ?? null,
       ),
     );
@@ -410,7 +431,6 @@ const applyOperation = Effect.fnUntraced(function* (
   }
 });
 
-/** The model tool a bot edits its own skills with: an ordered batch, applied atomically. */
 export function skillManageTool(callbacks: SkillManageCallbacks) {
   return defineTool({
     name: SKILL_MANAGE_TOOL_NAME,

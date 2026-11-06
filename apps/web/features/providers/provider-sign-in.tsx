@@ -1,0 +1,373 @@
+import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { IconExternalLink } from "@tabler/icons-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
+import { HttpError, queryClient, send, call } from "@/lib/api";
+import {
+  type ProviderSignIn,
+  type Provider,
+  signInQuery,
+  providerSignInPath,
+  providerPath,
+  invalidateProviders,
+} from "./api";
+
+function useProviderLogin(provider: Provider, onClose: () => void) {
+  const [sessionId, setSessionId] = useState(provider.activeLoginId);
+  const path = `${providerPath(provider.provider)}/login` as const;
+
+  const start = useMutation({
+    mutationFn: () =>
+      call<"startProviderLogin">(path, "POST", { method: "oauth" }),
+    onSuccess: async (session) => {
+      setSessionId(session.id);
+      await invalidateProviders();
+    },
+  });
+
+  const session = useQuery({
+    ...signInQuery(sessionId ?? ""),
+    enabled: sessionId !== null,
+  });
+
+  const cancel = useMutation({
+    mutationFn: (id: string) =>
+      send<"cancelProviderLogin">(providerSignInPath(id), "DELETE"),
+    onSettled: async () => {
+      await invalidateProviders();
+      onClose();
+    },
+  });
+
+  const status = session.data?.status;
+
+  useEffect(() => {
+    if (status && status !== "pending") void invalidateProviders();
+  }, [status]);
+
+  const gone =
+    session.error instanceof HttpError && session.error.status === 410;
+
+  const failure = start.error ?? (gone ? null : session.error);
+
+  return { sessionId, start, session, cancel, status, gone, failure };
+}
+
+type ProviderLogin = ReturnType<typeof useProviderLogin>;
+
+function LoginBody({
+  sessionId,
+  start,
+  session,
+  gone,
+}: Pick<ProviderLogin, "sessionId" | "start" | "session" | "gone">) {
+  if (sessionId === null)
+    return (
+      <Button disabled={start.isPending} onClick={() => start.mutate()}>
+        {start.isPending && <Spinner data-icon="inline-start" />}
+        Start sign-in
+      </Button>
+    );
+
+  if (gone)
+    return (
+      <Alert>
+        <AlertDescription>
+          This sign-in ended or was lost on restart. Close this and start again.
+        </AlertDescription>
+      </Alert>
+    );
+
+  return session.data ? <SignInSteps session={session.data} /> : <Spinner />;
+}
+
+/** Runs a provider's account sign-in; closing keeps it going on the server so it can be continued. */
+export function SignInDialog({
+  provider,
+  onClose,
+}: {
+  provider: Provider;
+  onClose: () => void;
+}) {
+  const login = useProviderLogin(provider, onClose);
+  const { sessionId, cancel, status, failure } = login;
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Sign in to {provider.name}</DialogTitle>
+          <DialogDescription>
+            The server keeps this sign-in. Bots that use {provider.name} share
+            it.
+          </DialogDescription>
+        </DialogHeader>
+        <LoginBody {...login} />
+        {failure && (
+          <Alert variant="destructive">
+            <AlertDescription>{failure.message}</AlertDescription>
+          </Alert>
+        )}
+        <DialogFooter>
+          {sessionId !== null && status === "pending" && (
+            <Button
+              variant="ghost"
+              disabled={cancel.isPending}
+              onClick={() => cancel.mutate(sessionId)}
+            >
+              Cancel sign-in
+            </Button>
+          )}
+          <Button variant="outline" onClick={onClose}>
+            {status === "pending" ? "Hide" : "Close"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SignInSteps({ session }: { session: ProviderSignIn }) {
+  if (session.status === "succeeded")
+    return (
+      <Alert>
+        <AlertDescription>Signed in.</AlertDescription>
+      </Alert>
+    );
+
+  if (session.status !== "pending")
+    return (
+      <Alert variant="destructive">
+        <AlertDescription>
+          {session.failure?.message ?? `Sign-in ${session.status}.`}
+        </AlertDescription>
+      </Alert>
+    );
+
+  return (
+    <div className="flex flex-col gap-4">
+      {session.events.map((event, index) => (
+        // The event log only grows, so an event's index is its identity.
+        // react-doctor-disable-next-line no-array-index-as-key
+        <LoginEvent
+          key={index}
+          event={event}
+          last={index === session.events.length - 1}
+        />
+      ))}
+      {session.prompt ? (
+        <PromptForm key={session.prompt.id} session={session} />
+      ) : (
+        session.events.at(-1)?.type !== "progress" && (
+          <p className="shimmer text-sm">Waiting for the provider…</p>
+        )
+      )}
+    </div>
+  );
+}
+
+type SignInEvent = ProviderSignIn["events"][number];
+
+function AuthUrlEvent({
+  event,
+}: {
+  event: Extract<SignInEvent, { type: "auth_url" }>;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      {event.instructions && <p className="text-sm">{event.instructions}</p>}
+      <Button
+        render={
+          // Button renders its children into this anchor.
+          // react-doctor-disable-next-line anchor-has-content
+          <a href={event.url} target="_blank" rel="noopener noreferrer" />
+        }
+        nativeButton={false}
+      >
+        Open sign-in page
+        <IconExternalLink data-icon="inline-end" />
+      </Button>
+    </div>
+  );
+}
+
+function DeviceCodeEvent({
+  event,
+}: {
+  event: Extract<SignInEvent, { type: "device_code" }>;
+}) {
+  return (
+    <div className="flex flex-col gap-2 text-sm">
+      <p>
+        Enter this code at{" "}
+        <a
+          className="underline underline-offset-2"
+          href={event.verificationUri}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {event.verificationUri}
+        </a>
+        :
+      </p>
+      <code className="self-start rounded-md bg-muted px-3 py-2 font-mono text-lg tracking-widest">
+        {event.userCode}
+      </code>
+    </div>
+  );
+}
+
+function InfoEvent({
+  event,
+}: {
+  event: Extract<SignInEvent, { type: "info" }>;
+}) {
+  return (
+    <p className="text-sm text-muted-foreground">
+      {event.message}{" "}
+      {event.links?.map((link) => (
+        <a
+          key={link.url}
+          className="underline underline-offset-2"
+          href={link.url}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {link.label ?? link.url}
+        </a>
+      ))}
+    </p>
+  );
+}
+
+function LoginEvent({ event, last }: { event: SignInEvent; last: boolean }) {
+  switch (event.type) {
+    case "auth_url":
+      return <AuthUrlEvent event={event} />;
+    case "device_code":
+      return <DeviceCodeEvent event={event} />;
+    case "info":
+      return <InfoEvent event={event} />;
+    case "progress":
+      return last ? <p className="shimmer text-sm">{event.message}</p> : null;
+  }
+}
+
+type LoginPrompt = NonNullable<ProviderSignIn["prompt"]>;
+
+function usePromptAnswer(sessionId: string, promptId: LoginPrompt["id"]) {
+  const answer = useMutation({
+    mutationFn: (answer: string) =>
+      call<"answerProviderLogin">(
+        `${providerSignInPath(sessionId)}/responses`,
+        "POST",
+        { promptId, value: answer },
+      ),
+    onSuccess: (next) => {
+      queryClient.setQueryData(signInQuery(sessionId).queryKey, next);
+      // Answers can be secrets; keep them out of the mutation state.
+      answer.reset();
+    },
+  });
+
+  return answer;
+}
+
+type PromptAnswer = ReturnType<typeof usePromptAnswer>;
+
+function SelectPrompt({
+  prompt,
+  answer,
+}: {
+  prompt: LoginPrompt;
+  answer: PromptAnswer;
+}) {
+  return (
+    <FieldGroup>
+      <p className="text-sm">{prompt.message}</p>
+      {prompt.options?.map((option) => (
+        <Button
+          key={option.id}
+          variant="outline"
+          className="h-auto flex-col items-start py-2"
+          disabled={answer.isPending}
+          onClick={() => answer.mutate(option.id)}
+        >
+          {option.label}
+          {option.description && (
+            <span className="text-xs font-normal text-muted-foreground">
+              {option.description}
+            </span>
+          )}
+        </Button>
+      ))}
+      {answer.isError && (
+        <p className="text-sm text-destructive">{answer.error.message}</p>
+      )}
+    </FieldGroup>
+  );
+}
+
+function TextPrompt({
+  prompt,
+  answer,
+}: {
+  prompt: LoginPrompt;
+  answer: PromptAnswer;
+}) {
+  const [value, setValue] = useState("");
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+
+        if (value.trim()) answer.mutate(value.trim());
+      }}
+    >
+      <FieldGroup>
+        <Field data-invalid={answer.isError || undefined}>
+          <FieldLabel htmlFor="login-answer">{prompt.message}</FieldLabel>
+          <Input
+            id="login-answer"
+            type={prompt.type === "secret" ? "password" : "text"}
+            autoComplete="off"
+            placeholder={prompt.placeholder}
+            aria-invalid={answer.isError || undefined}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+          />
+          {answer.isError && (
+            <p className="text-sm text-destructive">{answer.error.message}</p>
+          )}
+        </Field>
+        <Button type="submit" disabled={!value.trim() || answer.isPending}>
+          Continue
+        </Button>
+      </FieldGroup>
+    </form>
+  );
+}
+
+function PromptForm({ session }: { session: ProviderSignIn }) {
+  const prompt = session.prompt!;
+  const answer = usePromptAnswer(session.id, prompt.id);
+
+  return prompt.type === "select" ? (
+    <SelectPrompt prompt={prompt} answer={answer} />
+  ) : (
+    <TextPrompt prompt={prompt} answer={answer} />
+  );
+}

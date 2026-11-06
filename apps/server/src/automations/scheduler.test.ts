@@ -1,0 +1,633 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Effect } from "effect";
+import { standaloneScheduler } from "./scheduler-test-support";
+import { ScriptRuns } from "./script-runs";
+import type { Schedule } from "../contract/schedules";
+import type { ScriptRun } from "./script-run-repository";
+import { Conflict } from "../shared/errors";
+import { Store } from "../../test/support/store";
+import { EventRepository } from "../event-sources/event-repository";
+
+const dirs: string[] = [];
+
+const make = () => {
+  const d = mkdtempSync(join(tmpdir(), "bot-scheduler-"));
+  dirs.push(d);
+
+  return d;
+};
+
+afterEach(() => {
+  while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
+});
+
+const agentInput = {
+  name: "A",
+  description: "",
+  instructions: "",
+  provider: "openai" as const,
+  model: "gpt-4.1",
+  enabled: true,
+  tools: [],
+  skills: [],
+  mcpServers: [],
+  delegates: [],
+};
+
+const recordingScriptRuns = () => {
+  const calls: Schedule[] = [];
+  const runs: ScriptRun[] = [];
+  let admitted = true;
+  let fail = false;
+
+  const service = ScriptRuns.of({
+    start: (schedule) =>
+      Effect.gen(function* () {
+        calls.push(schedule);
+
+        if (fail) return yield* new Conflict({ message: "temporary" });
+
+        if (!admitted) return { admitted: false };
+
+        const run: ScriptRun = {
+          id: `run-${runs.length}`,
+          scheduleId: schedule.id,
+          agentId: schedule.agentId,
+          command: schedule.command!,
+          status: "running",
+          exitCode: null,
+          output: "",
+          droppedBytes: 0,
+          error: null,
+          startedAt: "2026-10-17T00:00:00.000Z",
+          finishedAt: null,
+        };
+
+        runs.push(run);
+
+        return { admitted: true, run };
+      }),
+    recover: Effect.void,
+    list: () => Effect.succeed(runs),
+  });
+
+  return {
+    calls,
+    runs,
+    service,
+    admit: (value: boolean) => {
+      admitted = value;
+    },
+    fail: (value: boolean) => {
+      fail = value;
+    },
+  };
+};
+
+const scriptInput = (agentId: string) => ({
+  agentId,
+  name: "script",
+  kind: "script" as const,
+  command: "sleep 100",
+  timeoutSeconds: 600,
+  notify: true,
+  prompt: "",
+  cron: null,
+  timezone: "UTC",
+  runAt: "2026-10-17T00:00:00.000Z",
+  eventSourceId: null,
+  enabled: true,
+});
+
+describe("Scheduler", () => {
+  test("converting a script requires a prompt and clears the old command", () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const scheduler = standaloneScheduler(store.runtime, async () => undefined);
+    const script = store.createSchedule(scriptInput(agent.id));
+    expect(() => scheduler.update(script.id, { kind: "prompt" })).toThrow(
+      "Prompt tasks need a prompt and no command",
+    );
+    expect(store.getSchedule(script.id)?.kind).toBe("script");
+    expect(
+      scheduler.update(script.id, { kind: "prompt", prompt: "Check" }),
+    ).toMatchObject({
+      kind: "prompt",
+      prompt: "Check",
+      command: null,
+    });
+    store.close();
+  });
+
+  test("admits a due script without prompt dispatch or waiting for its run to finish", async () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const scripts = recordingScriptRuns();
+    const prompts: string[] = [];
+
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async (_agent, prompt) => {
+        prompts.push(prompt);
+      },
+      scripts.service,
+    );
+
+    const schedule = store.createSchedule(scriptInput(agent.id));
+
+    await scheduler.tick(new Date(schedule.runAt!));
+    await scheduler.tick(new Date(schedule.runAt!));
+
+    expect(scripts.calls.map(({ id }) => id)).toEqual([schedule.id]);
+    expect(prompts).toEqual([]);
+    expect(store.getSchedule(schedule.id)?.nextRunAt).toBeNull();
+    store.close();
+  });
+
+  test("leaves a non-admitted script due and retries next tick without backoff", async () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const scripts = recordingScriptRuns();
+    scripts.admit(false);
+
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async () => undefined,
+      scripts.service,
+    );
+
+    const schedule = store.createSchedule(scriptInput(agent.id));
+    const due = new Date(schedule.runAt!);
+
+    await scheduler.tick(due);
+    expect(store.getSchedule(schedule.id)?.nextRunAt).toBe(schedule.runAt);
+    await scheduler.tick(new Date(due.valueOf() + 1000));
+    expect(scripts.calls).toHaveLength(2);
+    scripts.admit(true);
+    await scheduler.tick(new Date(due.valueOf() + 2000));
+    expect(scripts.calls).toHaveLength(3);
+    expect(store.getSchedule(schedule.id)?.nextRunAt).toBeNull();
+    store.close();
+  });
+
+  test("retries a script admission failure after the existing backoff", async () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const scripts = recordingScriptRuns();
+    scripts.fail(true);
+
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async () => undefined,
+      scripts.service,
+    );
+
+    const schedule = store.createSchedule(scriptInput(agent.id));
+    const due = new Date(schedule.runAt!);
+
+    await scheduler.tick(due);
+    expect(store.getSchedule(schedule.id)?.nextRunAt).toBe(schedule.runAt);
+    scripts.fail(false);
+    await scheduler.tick(new Date(due.valueOf() + 10_000));
+    expect(scripts.calls).toHaveLength(1);
+    await scheduler.tick(new Date(due.valueOf() + 30_000));
+    expect(scripts.calls).toHaveLength(2);
+    expect(store.getSchedule(schedule.id)?.nextRunAt).toBeNull();
+    store.close();
+  });
+
+  test("runNow returns the script run admission without advancing its schedule", async () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const scripts = recordingScriptRuns();
+    const prompts: string[] = [];
+
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async (_agent, prompt) => {
+        prompts.push(prompt);
+      },
+      scripts.service,
+    );
+
+    const schedule = store.createSchedule(scriptInput(agent.id));
+
+    expect(await scheduler.runNow(schedule.id)).toEqual({
+      admitted: true,
+      result: { id: "run-0", status: "running" },
+    });
+    scripts.admit(false);
+    expect(await scheduler.runNow(schedule.id)).toEqual({ admitted: false });
+    expect(scripts.calls).toHaveLength(2);
+    expect(prompts).toEqual([]);
+    expect(store.getSchedule(schedule.id)?.nextRunAt).toBe(schedule.runAt);
+    store.close();
+  });
+
+  test("standalone script tasks are not admitted without ScriptRuns", async () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+
+    const scheduler = standaloneScheduler(store.runtime, async () => {
+      throw new Error("unexpected prompt dispatch");
+    });
+
+    const schedule = store.createSchedule(scriptInput(agent.id));
+
+    await scheduler.tick(new Date(schedule.runAt!));
+    expect(await scheduler.runNow(schedule.id)).toEqual({ admitted: false });
+    expect(store.getSchedule(schedule.id)?.nextRunAt).toBe(schedule.runAt);
+    store.close();
+  });
+  test("dispatches a due one-time schedule exactly once and persists completion", async () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const calls: string[] = [];
+
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async (_a, _p, requestId) => {
+        calls.push(requestId);
+      },
+    );
+
+    const due = new Date(Date.now() - 1_000).toISOString();
+
+    const schedule = scheduler.create({
+      agentId: agent.id,
+      name: "once",
+      kind: "prompt",
+      command: null,
+      timeoutSeconds: 600,
+      notify: true,
+      prompt: "hello",
+      cron: null,
+      timezone: "UTC",
+      runAt: due,
+      eventSourceId: null,
+      enabled: true,
+    });
+
+    await scheduler.tick(new Date());
+    await scheduler.tick(new Date());
+    expect(calls).toEqual([`schedule:${schedule.id}:${due}`]);
+    expect(store.getSchedule(schedule.id)?.nextRunAt).toBeNull();
+    store.close();
+  });
+
+  test("editing a finished one-time schedule does not run it again", async () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const calls: string[] = [];
+
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async (_a, _p, requestId) => {
+        calls.push(requestId);
+      },
+    );
+
+    const due = new Date("2026-10-17T00:00:00.000Z");
+
+    const schedule = scheduler.create({
+      agentId: agent.id,
+      name: "once",
+      kind: "prompt",
+      command: null,
+      timeoutSeconds: 600,
+      notify: true,
+      prompt: "hello",
+      cron: null,
+      timezone: "UTC",
+      runAt: due.toISOString(),
+      eventSourceId: null,
+      enabled: true,
+    });
+
+    await scheduler.tick(due);
+    expect(calls).toHaveLength(1);
+
+    expect(
+      scheduler.update(schedule.id, { name: "renamed" })?.nextRunAt,
+    ).toBeNull();
+    scheduler.update(schedule.id, { enabled: false });
+    scheduler.update(schedule.id, { enabled: true });
+    await scheduler.tick(new Date(due.valueOf() + 1000));
+    expect(calls).toHaveLength(1);
+
+    const moved = new Date(due.valueOf() + 60_000).toISOString();
+
+    expect(scheduler.update(schedule.id, { runAt: moved })?.nextRunAt).toBe(
+      moved,
+    );
+    store.close();
+  });
+
+  test("coalesces missed recurring occurrences and skips disabled agents", async () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const calls: string[] = [];
+
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async (_a, _p, requestId) => {
+        calls.push(requestId);
+      },
+    );
+
+    const schedule = scheduler.create({
+      agentId: agent.id,
+      name: "cron",
+      kind: "prompt",
+      command: null,
+      timeoutSeconds: 600,
+      notify: true,
+      prompt: "hello",
+      cron: "* * * * *",
+      timezone: "UTC",
+      runAt: null,
+      eventSourceId: null,
+      enabled: true,
+    });
+
+    store.updateNextRunAt(schedule.id, "2026-10-17T00:00:00.000Z");
+    await scheduler.tick(new Date("2026-10-17T00:03:30.000Z"));
+    expect(calls).toEqual([`schedule:${schedule.id}:2026-10-17T00:00:00.000Z`]);
+    expect(store.getSchedule(schedule.id)?.nextRunAt).toBe(
+      "2026-10-17T00:04:00.000Z",
+    );
+    store.updateAgent(agent.id, { enabled: false });
+    await scheduler.tick(new Date("2026-10-17T00:06:00.000Z"));
+    expect(calls).toEqual([`schedule:${schedule.id}:2026-10-17T00:00:00.000Z`]);
+    store.close();
+  });
+
+  test("rejects invalid timezone and cron expressions", () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const scheduler = standaloneScheduler(store.runtime, async () => undefined);
+    expect(() =>
+      scheduler.create({
+        agentId: agent.id,
+        name: "bad",
+        kind: "prompt",
+        command: null,
+        timeoutSeconds: 600,
+        notify: true,
+        prompt: "x",
+        cron: "* * * * *",
+        timezone: "No/Such_Zone",
+        runAt: null,
+        eventSourceId: null,
+        enabled: true,
+      }),
+    ).toThrow("Invalid timezone: No/Such_Zone");
+    expect(() =>
+      scheduler.create({
+        agentId: agent.id,
+        name: "bad",
+        kind: "prompt",
+        command: null,
+        timeoutSeconds: 600,
+        notify: true,
+        prompt: "x",
+        cron: "nope",
+        timezone: "UTC",
+        runAt: null,
+        eventSourceId: null,
+        enabled: true,
+      }),
+    ).toThrow();
+    store.close();
+  });
+
+  test("rejects weekday steps without a range", () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const scheduler = standaloneScheduler(store.runtime, async () => undefined);
+
+    const create = (cron: string) =>
+      scheduler.create({
+        agentId: agent.id,
+        name: "steps",
+        kind: "prompt",
+        command: null,
+        timeoutSeconds: 600,
+        notify: true,
+        prompt: "x",
+        cron,
+        timezone: "UTC",
+        runAt: null,
+        eventSourceId: null,
+        enabled: true,
+      });
+
+    expect(() => create("0 9 * * 7/2")).toThrow(
+      "Weekday steps need * or a range, like 1-5/2: 0 9 * * 7/2",
+    );
+    expect(() => create("0 9 * * 1,3/2")).toThrow(
+      "Weekday steps need * or a range, like 1-5/2: 0 9 * * 1,3/2",
+    );
+    expect(() => create("0 0 9 * * 1/2")).toThrow(
+      "Weekday steps need * or a range, like 1-5/2: 0 0 9 * * 1/2",
+    );
+    expect(create("0 9 * * */2").cron).toBe("0 9 * * */2");
+    expect(create("0 9 * * 1-5/2").cron).toBe("0 9 * * 1-5/2");
+    store.close();
+  });
+
+  test("retries a failed dispatch with the same occurrence key after backoff", async () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const calls: string[] = [];
+    let attempts = 0;
+
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async (_a, _p, requestId) => {
+        calls.push(requestId);
+
+        if (++attempts === 1) throw new Error("temporary");
+      },
+    );
+
+    const due = new Date("2026-10-17T00:00:00.000Z");
+
+    const schedule = scheduler.create({
+      agentId: agent.id,
+      name: "retry",
+      kind: "prompt",
+      command: null,
+      timeoutSeconds: 600,
+      notify: true,
+      prompt: "hello",
+      cron: null,
+      timezone: "UTC",
+      runAt: due.toISOString(),
+      eventSourceId: null,
+      enabled: true,
+    });
+
+    await scheduler.tick(due);
+    await scheduler.tick(new Date(due.valueOf() + 10_000));
+    await scheduler.tick(new Date(due.valueOf() + 31_000));
+    expect(calls).toEqual([
+      `schedule:${schedule.id}:${due.toISOString()}`,
+      `schedule:${schedule.id}:${due.toISOString()}`,
+    ]);
+    expect(store.getSchedule(schedule.id)?.nextRunAt).toBeNull();
+    store.close();
+  });
+
+  test("stopping waits for a dispatch in progress and records it", async () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const release = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+
+    const scheduler = standaloneScheduler(store.runtime, async () => {
+      started.resolve();
+      await release.promise;
+    });
+
+    const schedule = scheduler.create({
+      agentId: agent.id,
+      name: "once",
+      kind: "prompt",
+      command: null,
+      timeoutSeconds: 600,
+      notify: true,
+      prompt: "hello",
+      cron: null,
+      timezone: "UTC",
+      runAt: new Date(Date.now() - 1_000).toISOString(),
+      eventSourceId: null,
+      enabled: true,
+    });
+
+    scheduler.start();
+    await started.promise;
+
+    let stopped = false;
+
+    const stopping = scheduler.stop().then(() => {
+      stopped = true;
+    });
+
+    await Bun.sleep(30);
+    expect(stopped).toBe(false);
+
+    release.resolve();
+    await stopping;
+    expect(store.getSchedule(schedule.id)?.nextRunAt).toBeNull();
+    store.close();
+  });
+
+  test("nothing is dispatched once stopped", async () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const calls: string[] = [];
+
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async (_a, _p, requestId) => {
+        calls.push(requestId);
+      },
+    );
+
+    scheduler.start();
+    await scheduler.stop();
+
+    store.createSchedule({
+      agentId: agent.id,
+      name: "once",
+      kind: "prompt",
+      command: null,
+      timeoutSeconds: 600,
+      notify: true,
+      prompt: "hello",
+      cron: null,
+      timezone: "UTC",
+      runAt: new Date(Date.now() - 1_000).toISOString(),
+      eventSourceId: null,
+      enabled: true,
+    });
+
+    // The loop ticks every second, so a shorter wait would pass with it still running.
+    await Bun.sleep(1100);
+    expect(calls).toEqual([]);
+    store.close();
+  });
+});
+
+describe("event automations", () => {
+  const eventAutomation = (agentId: string, eventSourceId: string) => ({
+    agentId,
+    name: "Triage",
+    kind: "prompt" as const,
+    command: null,
+    timeoutSeconds: 600,
+    notify: true,
+    prompt: "Triage the issue",
+    cron: null,
+    timezone: "UTC",
+    runAt: null,
+    eventSourceId,
+    enabled: true,
+  });
+
+  test("an event automation never comes due", async () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const calls: string[] = [];
+
+    store.runtime.runSync(
+      EventRepository.use((events) =>
+        events.addSource({
+          id: "source-1",
+          name: "GitHub",
+          createdAt: "2026-11-01T00:00:00.000Z",
+        }),
+      ),
+    );
+
+    const scheduler = standaloneScheduler(
+      store.runtime,
+      async (_a, _p, requestId) => {
+        calls.push(requestId);
+      },
+    );
+
+    const schedule = scheduler.create(eventAutomation(agent.id, "source-1"));
+
+    expect(schedule).toMatchObject({
+      eventSourceId: "source-1",
+      cron: null,
+      runAt: null,
+      nextRunAt: null,
+    });
+    await scheduler.tick(new Date("2999-01-01T00:00:00.000Z"));
+    expect(calls).toEqual([]);
+    store.close();
+  });
+
+  test("creating an event automation on an unknown source fails", () => {
+    const store = new Store(make());
+    const agent = store.createAgent(agentInput);
+    const scheduler = standaloneScheduler(store.runtime, async () => undefined);
+
+    expect(() =>
+      scheduler.create(eventAutomation(agent.id, "missing")),
+    ).toThrow("Event source not found");
+    expect(() =>
+      scheduler.create({
+        ...eventAutomation(agent.id, "missing"),
+        cron: "0 9 * * *",
+      }),
+    ).toThrow("Choose a recurring cron, a one-time date, or an event source");
+    store.close();
+  });
+});

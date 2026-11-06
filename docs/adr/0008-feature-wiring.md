@@ -12,10 +12,10 @@ A feature's code lives in its folder, but adding one still meant editing the acc
 
 ## Decision
 
-- **The API reads the account's services itself.** `createAPI(service, token, options)` looks up each service its routes need in the Context of `service.core` with `Effect.serviceOption`, which adds no type requirement (`accountOptions` in `api.ts`). The tenant passes a runner over the whole account and only the values that are not services: the scheduler access, viewer tickets, and the OAuth client document. A service the Context lacks gives `undefined`, so its routes answer 503 as before.
-- **`ApiOptions` overrides; it does not plumb.** Any value in `options` replaces the one read from the account. Tests keep passing the same fakes as before, now as `createAPI(service, token, { scheduler, groupChats })`: one line per call site, no test layers. A new feature that reads its service from the account adds a lookup in `accountOptions` and no line in `createTenant`.
+- **The API reads the account's services itself.** `createAPI(service, token, options)` reads every service its routes need from the Context of `service.core`, typed `Runner<ApiServices>`, so a layer the tenant forgets is a compile error. `options` holds only what is not a service: viewer tickets and the OAuth client document. A new feature that reads its service from the account adds it to `ApiServices` and a lookup in `apiContext`, and no line in `createTenant`.
+- **Fixtures supply services.** `testAPI` in `test/support/api.ts` builds the same Context with real or test services, one line per call site, so no route has a test-only answer.
 - **Routes register from a typed list.** `featureRoutes` in `api.ts` holds every feature's register function, called in order with one context (`apiContext`). TypeScript checks each entry against that context, so a register function declares the part it needs as its own options type. A new feature adds one entry.
-- **Schema files are found by name.** The store config collects every `schema.ts` and `schema.<part>.ts` under `src/`, except `push/`, which has its own database. The two files that broke the pattern became `bots/schema.executions.ts` and `schedules/schema.script-runs.ts`; they stay separate from their folder's `schema.ts` because merging would make `bots/schema.ts` and `schedules/schema.ts` import each other. Files named `auth-schema.ts` or `legacy-schema.ts` hold no store tables and do not match. Encrypted tables stay a list in `productLayer`: an encrypted column must be a visible decision.
+- **Schema files are found by name.** The store config collects every `schema.ts` and `schema.<part>.ts` under `src/`, except `push/`, which has its own database. The two files that broke the pattern became `bot-store/schema.executions.ts` and `automations/schema.script-runs.ts`; `schedules` lives in `bot-store/schema.schedules.ts` because `executions` references it and the store imports no feature. A file named `auth-schema.ts` holds no store tables and does not match. Encrypted tables stay a list in `product-layer.ts`: an encrypted column must be a visible decision, and a test fails when a repository encrypts into an unlisted table.
 - **Layers stay explicit, in named tiers.** `accountLayer` names its groups (`leaves`, `conversations`, `sandboxedTools`, `signIns`) and chains the tiers top to bottom; each may use every tier below it, and the account closes them top first. Tiers stay written out, never one list of feature layers, because Effect checks layer requirements only on concrete types: a list widened to `Layer<any, ...>` would turn a missing dependency from a type error into a startup failure.
 
 ## Considered options
@@ -27,7 +27,7 @@ A feature's code lives in its folder, but adding one still meant editing the acc
 
 ## Consequences
 
-- `accountOptions` is the one place that knows which services the API reads. A feature whose routes need a new service adds it there.
-- A route registered without its service in an API-only fixture behaves as if the server lacked the feature, which is what the optional fields did before.
+- `apiContext` is the one place that knows which services the API reads. A feature whose routes need a new service adds it there and to `ApiServices`.
+- A fixture must supply what its routes reach; `testAPI`'s defaults answer as an empty account.
 - The tier order is still central and needs care when a feature depends on another; the names make it readable, not automatic.
 - Renaming the two schema files changed no table; drizzle-kit generates no migration.

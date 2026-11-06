@@ -1,25 +1,16 @@
 import dns from "node:dns/promises";
 import net from "node:net";
-import { isPublicAddress } from "./public-address";
+import { isPublicAddress } from "../shared/public-address";
 import { readHttpHost, readSni, validPort } from "./workspace-proxy-protocol";
 
-export { isPublicAddress } from "./public-address";
-
-export { readHttpHost, readSni } from "./workspace-proxy-protocol";
-
-export type ProxyRequest = { host: string; port: number };
-
-/** Takes over TLS connections to some hosts instead of tunneling them, such as the credential proxy. */
 export type WorkspaceInterceptor = {
   wants(host: string): boolean;
-  /** A host the interceptor answers itself, such as the signing host: it has no address to resolve or dial. */
   answers?(host: string): boolean;
   /** The client socket is positioned at the start of its TLS ClientHello. */
   handle(client: net.Socket, host: string, port: number): Promise<void>;
 };
 
 export type WorkspaceProxyOptions = {
-  decide: (request: ProxyRequest) => boolean | Promise<boolean>;
   lookup?: (host: string) => Promise<string[]>;
   isPublicAddress?: (address: string) => boolean;
   firstByteTimeoutMs?: number;
@@ -42,6 +33,66 @@ export async function startWorkspaceProxy(
   const lookup = options.lookup ?? lookupAll;
   const isPublic = options.isPublicAddress ?? isPublicAddress;
   const timeout = options.firstByteTimeoutMs ?? 2_000;
+  const { sockets, track } = socketTracker();
+
+  async function tunnel(client: net.Socket) {
+    const port = await acceptConnect(client, timeout);
+
+    if (port === undefined) return;
+
+    const request = await readFirstRequest(client, timeout);
+
+    if (!request) return void client.destroy();
+
+    return route(client, request.first, request.host, port);
+  }
+
+  async function route(
+    client: net.Socket,
+    first: Buffer,
+    host: string,
+    port: number,
+  ) {
+    const tls = first[0] === 22;
+
+    const handOff = () => {
+      client.unshift(first);
+
+      return options.intercept?.handle(client, host, port);
+    };
+
+    if (tls && options.intercept?.answers?.(host)) return handOff();
+
+    const address = (await lookup(host)).find(isPublic);
+
+    if (!address || client.destroyed) return void client.destroy();
+
+    if (tls && options.intercept?.wants(host)) return handOff();
+
+    forward(client, first, port, address, track);
+  }
+
+  const server = net.createServer((client) => {
+    track(client);
+    tunnel(client).catch(() => client.destroy());
+  });
+
+  const port = await listenOnLoopback(server, options.port ?? 0);
+
+  return {
+    address: `127.0.0.1:${port}`,
+    close: () => closeProxy(server, sockets),
+  };
+}
+
+async function closeProxy(server: net.Server, sockets: Set<net.Socket>) {
+  for (const socket of sockets) socket.destroy();
+  await new Promise<void>((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
+}
+
+function socketTracker() {
   const sockets = new Set<net.Socket>();
 
   const track = (socket: net.Socket) => {
@@ -52,90 +103,77 @@ export async function startWorkspaceProxy(
     return socket;
   };
 
-  async function tunnel(client: net.Socket) {
-    const head = await readUntil(
-      client,
-      (data) => data.includes("\r\n\r\n"),
-      timeout,
-    );
+  return { sockets, track };
+}
 
-    const match =
-      head &&
-      /^CONNECT \S+:(\d+) HTTP\/1\.[01]\r\n/.exec(head.toString("latin1"));
-
-    const port = Number(match?.[1]);
-
-    if (!head || !validPort(port))
-      return void client.end("HTTP/1.1 400 Bad Request\r\n\r\n");
-    const rest = head.subarray(head.indexOf("\r\n\r\n") + 4);
-
-    if (rest.length) client.unshift(rest);
-    client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
-
-    const first = await readUntil(
-      client,
-      (data) => {
-        if (data[0] === 22)
-          return data.length >= 5 && data.length >= 5 + data.readUInt16BE(3);
-
-        return data.includes("\r\n\r\n");
-      },
-      timeout,
-    );
-
-    const host = first && (readSni(first) ?? readHttpHost(first));
-
-    if (!first || !host) return void client.destroy();
-
-    if (first[0] === 22 && options.intercept?.answers?.(host)) {
-      client.unshift(first);
-
-      return options.intercept.handle(client, host, port);
-    }
-
-    const address = (await lookup(host)).find(isPublic);
-
-    if (!address || !(await options.decide({ host, port })) || client.destroyed)
-      return void client.destroy();
-
-    if (first[0] === 22 && options.intercept?.wants(host)) {
-      client.unshift(first);
-
-      return options.intercept.handle(client, host, port);
-    }
-
-    const upstream = track(net.connect(port, address));
-    upstream.setTimeout(10_000, () => upstream.destroy());
-    upstream.on("close", () => client.destroy());
-    client.on("close", () => upstream.destroy());
-    upstream.once("connect", () => {
-      upstream.setTimeout(0);
-      upstream.write(first);
-      client.pipe(upstream).pipe(client);
-    });
-  }
-
-  const server = net.createServer((client) => {
-    track(client);
-    tunnel(client).catch(() => client.destroy());
-  });
-
+async function listenOnLoopback(server: net.Server, port: number) {
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(options.port ?? 0, "127.0.0.1", resolve);
+    server.listen(port, "127.0.0.1", resolve);
   });
   // SAFETY: listen completed on a TCP port, not a Unix socket.
   const address = server.address() as net.AddressInfo;
 
-  return {
-    address: `127.0.0.1:${address.port}`,
-    async close() {
-      for (const socket of sockets) socket.destroy();
-      await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      );
-    },
-  };
+  return address.port;
+}
+
+function forward(
+  client: net.Socket,
+  first: Buffer,
+  port: number,
+  address: string,
+  track: (socket: net.Socket) => net.Socket,
+) {
+  const upstream = track(net.connect(port, address));
+  upstream.setTimeout(10_000, () => upstream.destroy());
+  upstream.on("close", () => client.destroy());
+  client.on("close", () => upstream.destroy());
+  upstream.once("connect", () => {
+    upstream.setTimeout(0);
+    upstream.write(first);
+    client.pipe(upstream).pipe(client);
+  });
+}
+
+async function acceptConnect(client: net.Socket, timeout: number) {
+  const head = await readUntil(
+    client,
+    (data) => data.includes("\r\n\r\n"),
+    timeout,
+  );
+
+  const match =
+    head &&
+    /^CONNECT \S+:(\d+) HTTP\/1\.[01]\r\n/.exec(head.toString("latin1"));
+
+  const port = Number(match?.[1]);
+
+  if (!head || !validPort(port)) {
+    client.end("HTTP/1.1 400 Bad Request\r\n\r\n");
+
+    return undefined;
+  }
+
+  const rest = head.subarray(head.indexOf("\r\n\r\n") + 4);
+
+  if (rest.length) client.unshift(rest);
+  client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+
+  return port;
+}
+
+async function readFirstRequest(client: net.Socket, timeout: number) {
+  const first = await readUntil(client, completeFirstRequest, timeout);
+  const host = first && (readSni(first) ?? readHttpHost(first));
+
+  return first && host ? { first, host } : undefined;
+}
+
+function completeFirstRequest(data: Buffer) {
+  if (data[0] === 22)
+    return data.length >= 5 && data.length >= 5 + data.readUInt16BE(3);
+
+  return data.includes("\r\n\r\n");
 }
 
 function readUntil(

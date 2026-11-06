@@ -4,6 +4,11 @@ import {
   sqliteTable,
   text,
 } from "drizzle-orm/sqlite-core";
+import {
+  PUSH_ENVIRONMENTS,
+  PUSH_PLATFORMS,
+  PUSH_TRANSPORTS,
+} from "../shared/push-devices";
 
 export const pushSettings = sqliteTable("push_settings", {
   key: text("key").primaryKey(),
@@ -12,12 +17,10 @@ export const pushSettings = sqliteTable("push_settings", {
 
 export const pushDevices = sqliteTable("push_devices", {
   installationId: text("installation_id").primaryKey(),
-  platform: text("platform", { enum: ["macos", "ios", "android"] }).notNull(),
-  transport: text("transport", { enum: ["apns", "fcm"] }).notNull(),
+  platform: text("platform", { enum: PUSH_PLATFORMS }).notNull(),
+  transport: text("transport", { enum: PUSH_TRANSPORTS }).notNull(),
   token: text("token").notNull(),
-  environment: text("environment", {
-    enum: ["development", "production"],
-  }).notNull(),
+  environment: text("environment", { enum: PUSH_ENVIRONMENTS }).notNull(),
   bundleId: text("bundle_id"),
   enabled: integer("enabled", { mode: "boolean" }).notNull(),
   updatedAt: text("updated_at").notNull(),

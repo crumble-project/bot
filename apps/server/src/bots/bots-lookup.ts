@@ -1,8 +1,11 @@
 import { Effect } from "effect";
+import { pi } from "../shared/app-errors";
+import type { Agent } from "../contract/agents";
 import { NotFound } from "../shared/errors";
 import type { BotsContext } from "./bots-context";
 
-/** The bot or the chat an operation names, failing with `NotFound` when it is archived or gone. */
+export type BotsLookup = ReturnType<typeof botsLookup>;
+
 export const botsLookup = (context: BotsContext) => {
   const { agents, conversations } = context;
 
@@ -26,5 +29,8 @@ export const botsLookup = (context: BotsContext) => {
     return { conversation: found, agent: yield* agent(found.agentId) };
   });
 
-  return { agent, conversation };
+  const withAgent = <A>(agentId: string, run: (owner: Agent) => Promise<A>) =>
+    agent(agentId).pipe(Effect.flatMap((owner) => pi(() => run(owner))));
+
+  return { agent, conversation, withAgent };
 };

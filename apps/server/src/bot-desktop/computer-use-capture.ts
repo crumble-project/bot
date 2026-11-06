@@ -1,5 +1,6 @@
 import type { Context } from "@earendil-works/chord";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
+import { z } from "zod";
 import {
   codeOf,
   compactTree,
@@ -7,10 +8,12 @@ import {
   listWindows,
   messageOf,
   refusalOf,
+  replyTree,
+  windowLine,
   type DriverReply,
   type Window,
 } from "./computer-use-driver";
-import { recordElements } from "./computer-use-intent";
+import type { IntentTarget } from "./intent-check";
 import { passwordMayShow } from "./computer-use-login";
 import { scrubText, type ComputerUseState } from "./computer-use-state";
 
@@ -18,9 +21,7 @@ export const MAX_TREE_CHARS = 12_000;
 
 const otherWindows = (target: Window, list: Window[]) =>
   list.flatMap((each) =>
-    each.window_id === target.window_id
-      ? []
-      : [`${each.window_id} ${each.app_name} "${each.title}"`],
+    each.window_id === target.window_id ? [] : [windowLine(each)],
   );
 
 function headerOf(
@@ -31,7 +32,7 @@ function headerOf(
   others: string[],
 ) {
   return [
-    `window ${target.window_id} ${target.app_name} "${target.title}" (snapshot ${reply.snapshot_id ?? "none"}${since ? `, changes since ${since}` : ""}${query ? `, elements matching "${query}"` : ""})`,
+    `window ${windowLine(target)} (snapshot ${reply.snapshot_id ?? "none"}${since ? `, changes since ${since}` : ""}${query ? `, elements matching "${query}"` : ""})`,
     others.length ? `other windows: ${others.join("; ")}` : undefined,
     reply.degraded ? `degraded: ${reply.degraded_reason ?? ""}` : undefined,
     reply.truncated
@@ -60,10 +61,7 @@ const NO_SCREENSHOT: TextContent = {
 
 /** The window's tree, compacted, scrubbed, and cut to fit this tool's result; scrubbed first, so no cut splits a value. */
 function treeOf(state: ComputerUseState, reply: DriverReply) {
-  const tree = scrubText(
-    state,
-    compactTree(reply.tree_diff ?? reply.tree_markdown ?? ""),
-  );
+  const tree = scrubText(state, compactTree(replyTree(reply)));
 
   return tree.length > MAX_TREE_CHARS
     ? `${tree.slice(0, MAX_TREE_CHARS)}\n[tree cut at ${MAX_TREE_CHARS} characters; scroll or capture a smaller window]`
@@ -83,7 +81,65 @@ export const elementToken = (
   return `${snapshot}:${element}`;
 };
 
-/** A window read as the job sees it; its snapshot becomes the window's latest, for element tokens and the next diff. */
+// `- [3] push button "Pay now" [actions=...]` in a full tree; a diff marks lines `+`, `~`, or `-` (removed). The role
+// runs up to the name's quote or the first `[`, so it keeps every word.
+const ELEMENT_LINE =
+  /^\s*([-+~])?\s*\[(\d+)\]\s+([^"[\n]*)(?:"((?:[^"\\]|\\.)*)")?/;
+
+const unquote = (name: string) => {
+  try {
+    return z
+      .string()
+      .catch(name)
+      .parse(JSON.parse(`"${name}"`));
+  } catch {
+    return name;
+  }
+};
+
+type ElementLine = { index: number; removed: boolean; target: IntentTarget };
+
+function elementLine(
+  state: ComputerUseState,
+  line: string,
+  diff: boolean,
+): ElementLine | undefined {
+  const match = ELEMENT_LINE.exec(line);
+
+  if (!match) return undefined;
+
+  const [, mark, index, role = "", name] = match;
+  const target: IntentTarget = {};
+
+  if (role.trim()) target.role = scrubText(state, role.trim());
+
+  if (name !== undefined) target.name = scrubText(state, unquote(name));
+
+  // Only a diff marks removals; a full tree's `-` is a list bullet.
+  return { index: Number(index), removed: diff && mark === "-", target };
+}
+
+function recordElements(
+  state: ComputerUseState,
+  windowId: number,
+  snapshot: string,
+  reply: DriverReply,
+) {
+  const diff = reply.tree_diff !== undefined;
+  const previous = state.snapshots.get(windowId);
+  const known = new Map(diff ? state.elements.get(previous ?? "") : undefined);
+
+  for (const line of replyTree(reply).split("\n")) {
+    const element = elementLine(state, line, diff);
+
+    if (element?.removed) known.delete(element.index);
+    else if (element) known.set(element.index, element.target);
+  }
+
+  if (previous) state.elements.delete(previous);
+  state.elements.set(snapshot, known);
+}
+
 export function windowText(
   state: ComputerUseState,
   target: Window,
@@ -103,7 +159,6 @@ export function windowText(
   return `${headerOf(target, reply, since, query, others)}\n${treeOf(state, reply)}`;
 }
 
-/** The snapshot a capture diffs against: none for vision, full, or query reads, or after a query read. */
 const diffBase = (
   state: ComputerUseState,
   target: Window,

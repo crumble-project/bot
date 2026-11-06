@@ -7,17 +7,17 @@ import {
   useState,
 } from "react";
 import { Markdown, type MarkdownComponents } from "@tanstack/markdown/react";
+import { PELE_PREFIX } from "@crumble/server/contract/ui-modules";
 import type * as Pele from "pele/lazy";
-import { streamingMarkdownExtension } from "@tanstack/markdown/extensions/streaming";
 import type { MarkdownExtension } from "@tanstack/markdown";
-import { type Sources, splitSources } from "@/features/chat/sources";
+import { type Sources, splitSources } from "@/lib/sources";
 
-// Served unbundled by src/web-ui.ts (PELE_PREFIX), so each diagram type loads only when shown.
-const PELE = "/ui-modules/pele/lazy.js";
+const PELE = `${PELE_PREFIX}/lazy.js`;
 
+// The server hosts this module at run time, so the bundler must not resolve it.
+// react-doctor-disable-next-line react-doctor/no-dynamic-import-path
 const loadPele = (): Promise<typeof Pele> => import(PELE);
 
-/** Renders Mermaid with Pele, loaded with each diagram type on first use; bad diagrams stay code. */
 function Diagram({ source }: { source: string }) {
   const box = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
@@ -75,21 +75,18 @@ const link = (props: ComponentProps<"a">) => (
 
 const siteOf = (href: string) => new URL(href).hostname.replace(/^www\./, "");
 
-/** Finished replies draw Mermaid blocks; a streaming one keeps them as code until it completes. */
 const components = {
   a: link,
   pre: (props: ComponentProps<"pre"> & { "data-lang"?: string }) => {
     if (props["data-lang"] !== "mermaid" || !isValidElement(props.children))
       return <pre {...props} />;
 
-    // SAFETY: Outside streaming, TanStack Markdown passes a code block's text as one string child of `code`.
+    // SAFETY: TanStack Markdown passes a code block's text as one string child of `code`.
     const code = props.children.props as { children?: string };
 
     return <Diagram source={code.children ?? ""} />;
   },
 } satisfies MarkdownComponents;
-
-const streamingComponents = { a: link } satisfies MarkdownComponents;
 
 const BARE_URL = /^https?:\/\/[^\s<>"]+/;
 const ANGLE_URL = /^<(https?:\/\/[^\s<>"]+)>/;
@@ -132,7 +129,6 @@ const autolinks: MarkdownExtension = {
           length: angle[0].length,
         };
 
-      // A URL starts a word, so "xhttps://" stays text.
       if (index > 0 && /[\p{L}\p{N}]/u.test(source[index - 1]!))
         return undefined;
 
@@ -153,19 +149,13 @@ const autolinks: MarkdownExtension = {
   },
 };
 
-const finished = [autolinks];
+const extensions = [autolinks];
 
-const streaming = [streamingMarkdownExtension(), autolinks];
-
-/** Renders a bot's Markdown; `streaming` hides the unfinished tail of a reply in progress. */
 export function Reply({
   source,
-  streaming: partial = false,
   sources,
 }: {
   source: string;
-  streaming?: boolean;
-  /** Pages the reply's turn searched or read; links to them show as source chips after the reply. */
   sources?: Sources | undefined;
 }) {
   const { text, chips } = useMemo(
@@ -176,10 +166,7 @@ export function Reply({
 
   return (
     <div className="markdown">
-      <Markdown
-        components={partial ? streamingComponents : components}
-        extensions={partial ? streaming : finished}
-      >
+      <Markdown components={components} extensions={extensions}>
         {text}
       </Markdown>
       {chips.length > 0 && (

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import {
   cpSync,
@@ -11,7 +11,9 @@ import { join } from "node:path";
 import { Effect, Match } from "effect";
 import { z } from "zod";
 import { migrateFile, migrationsFolder } from "./database";
-import { upgradeLegacyStore } from "./legacy-schema";
+
+// Real runtimes and migrations can pass the default 5 seconds on a loaded machine.
+setDefaultTimeout(30_000);
 
 const dirs: string[] = [];
 
@@ -36,10 +38,8 @@ function databaseFile(schema?: string) {
   return file;
 }
 
-const legacyStore = { table: "agents", upgrade: upgradeLegacyStore };
-
 const migrateStore = (file: string) =>
-  Effect.runSync(migrateFile(file, migrationsFolder("store"), legacyStore));
+  Effect.runSync(migrateFile(file, migrationsFolder("store")));
 
 const migratePush = (file: string) =>
   Effect.runSync(migrateFile(file, migrationsFolder("push")));
@@ -76,7 +76,6 @@ const normalizedDefault = (value: string | null) =>
     Match.orElse(() => value),
   );
 
-/** Every user table as SQLite reports it, independent of column order, constraint names, and DDL text. */
 function schemaOf(file: string) {
   const db = new Database(file, { readonly: true });
 
@@ -240,35 +239,6 @@ describe("product database migrations", () => {
       },
     ]);
     reopened.close();
-  });
-
-  test("the oldest database shape upgrades to the newest schema and keeps its rows", () => {
-    const oldest = databaseFile(fixture("oldest-store-schema.sql"));
-    const db = new Database(oldest);
-    db.run(`INSERT INTO agents (id,name,avatar,description,instructions,provider,model,enabled,tools,skills,mcp_servers,folder,created_at,updated_at) VALUES ('a','A','','','','p','m',1,'[]','[]','[]','old','t','t');
-      INSERT INTO memories (id,agent_id,content,created_at,updated_at) VALUES ('m','a','Remember','t','t');
-      INSERT INTO group_chats (id,name,created_at,updated_at) VALUES ('g','Trip','t','t');
-      INSERT INTO group_members (group_id,agent_id,joined_at) VALUES ('g','a','t');`);
-    db.close();
-
-    migrateStore(oldest);
-    const fresh = databaseFile();
-    migrateStore(fresh);
-
-    expect(schemaOf(oldest)).toEqual(schemaOf(fresh));
-
-    const upgraded = new Database(oldest, { readonly: true });
-    expect(
-      upgraded
-        .query("SELECT id, agent_id, content, source FROM memories")
-        .all(),
-    ).toEqual([{ id: "m", agent_id: "a", content: "Remember", source: null }]);
-    expect(
-      upgraded
-        .query("SELECT cursor, pending, summary FROM group_members")
-        .all(),
-    ).toEqual([{ cursor: 0, pending: 0, summary: null }]);
-    upgraded.close();
   });
 
   test("later migrations keep credentials, their values, and their use log", () => {

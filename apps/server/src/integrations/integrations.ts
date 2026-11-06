@@ -1,3 +1,4 @@
+import { errorText } from "../shared/errors";
 import { createHash } from "node:crypto";
 import {
   McpAuthRequiredError,
@@ -21,26 +22,25 @@ import {
   type Extension,
   type ToolRegistration,
 } from "@earendil-works/pi-durable";
-import type { Context as PiContext } from "@earendil-works/chord/context";
-import type { Agent, MCPServer } from "../shared/domain";
-import { Context, Effect, Layer, ManagedRuntime } from "effect";
-import { AgentRepository } from "../bots/agent-repository";
-import { SecretRepository } from "../credentials/secret-repository";
-import { Secrets, secretText } from "../password-managers/secrets";
-import { runnerOf, type Runner } from "../shared/runner";
+import type { Agent } from "../contract/agents";
+import type { MCPServer } from "./mcp-server-repository";
+import { Context, Duration, Effect, Layer } from "effect";
+import { AgentRepository } from "../bot-store/agent-repository";
+import { Secrets, secretText } from "../secrets/secrets";
+import type { ServerSecrets } from "../secrets/server-secrets";
+import { mcpToolPrefix } from "../contract/tools";
+import { runnerOf } from "../shared/runner";
 import { McpServerRepository } from "./mcp-server-repository";
-import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
 import {
   type ClientDocument,
   connectionAuth,
   mcpTokenKey,
   hasOAuthTokens,
   secretStorage,
-  type SecretStorage,
 } from "./mcp-oauth";
 import type { CodemodeNamespace } from "@earendil-works/pi-durable/codemode";
 
-/** The part of pi-mcp's `McpClient` Crumble uses, so tests can stand in for a server. */
 export type MCPClient = {
   connect(transport: McpTransport): Promise<InitializeResult | void>;
   listTools(options?: McpRequestOptions): Promise<Tool[]>;
@@ -63,13 +63,8 @@ export type MCPClientFactory = (
 export type IntegrationsOptions = {
   requestTimeoutMs?: number;
   clientFactory?: MCPClientFactory;
-  /** The server's OAuth client metadata document, when it has a public address. */
   oauthClient?: ClientDocument | undefined;
 };
-
-/** Every tool of one MCP server starts with this, which also groups them in code mode. */
-export const mcpToolPrefix = (serverId: string) =>
-  `mcp_${serverId.replaceAll("-", "").slice(0, 8)}_`;
 
 const stable = (value: JsonValue): string => {
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
@@ -120,438 +115,58 @@ function defaultClientFactory(
   };
 }
 
-/** Turns an authentication failure into what the owner should do about it. */
-function throwAuthFailure(
+const authFailure = (
   server: MCPServer,
   cause: unknown,
-  hadCredentials: boolean,
-): never {
+  authenticated: boolean,
+) => {
   if (cause instanceof McpOAuthAuthorizationRequiredError)
-    throw new Error(
+    return new Error(
       `Sign in to ${server.name} again under Integrations to use its tools`,
     );
 
   if (cause instanceof McpAuthRequiredError)
-    throw new Error(
-      hadCredentials
+    return new Error(
+      authenticated
         ? `${server.name} rejected Crumble's credentials. Check its token, or sign in under Integrations`
         : `${server.name} needs a sign-in or token. Add one under Integrations to use its tools`,
     );
 
-  throw cause;
-}
-
-type CredentialHeaders = { readonly [header: string]: string };
-
-const credentialPayload = z.object({
-  headers: z.record(z.string(), z.string()).optional(),
-  token: z.string().optional(),
-});
-
-function credentials(raw: string | undefined) {
-  if (!raw) return {};
-
-  try {
-    const parsed = credentialPayload.safeParse(JSON.parse(raw));
-
-    if (parsed.success) {
-      if (parsed.data.headers)
-        return { ...parsed.data.headers } satisfies CredentialHeaders;
-
-      if (parsed.data.token)
-        return {
-          Authorization: `Bearer ${parsed.data.token}`,
-        } satisfies CredentialHeaders;
-    }
-  } catch {
-    /* Treat a legacy credential as a bearer token. */
-  }
-
-  return { Authorization: `Bearer ${raw}` } satisfies CredentialHeaders;
-}
-
-/** What connections read from the account: the servers a bot may use, its bots, and their secrets. */
-type IntegrationData = {
-  usableServer(agentId: string, serverId: string): MCPServer | null;
-  agent(agentId: string): Agent | null;
-  secrets: SecretStorage;
-  /** The server's token, read from its password manager when it is a reference. */
-  token(serverId: string): Promise<string | undefined>;
+  return cause;
 };
 
-type IntegrationServices =
-  | McpServerRepository
-  | AgentRepository
-  | SecretRepository
-  | Secrets;
+type OpenClient = { client: MCPClient; transport: McpTransport };
 
-const tokenOf = (serverId: string) =>
-  Secrets.use((secrets) => secretText(secrets)(mcpTokenKey(serverId))).pipe(
-    // Shown as the server's failure under Integrations, after its name.
-    Effect.mapError(
-      (error) => new Error(`Token could not be read: ${error.message}`),
-    ),
-  );
+const closeConnection = (connection: OpenClient) =>
+  Effect.promise(async () => {
+    await connection.client.close().catch(() => undefined);
+    await connection.transport.close().catch(() => undefined);
+  });
 
-class McpConnections {
-  private readonly failures = new Map<string, string>();
-  private readonly disconnects = new Map<string, number>();
-  private closes = 0;
-  private readonly connections = new Map<
-    string,
-    {
-      fingerprint: string;
-      client: MCPClient;
-      transport: McpTransport;
-    }
-  >();
-  private readonly timeout: number;
-  private readonly factory: MCPClientFactory;
-  constructor(
-    private readonly data: IntegrationData,
-    options: IntegrationsOptions = {},
-  ) {
-    this.timeout = options.requestTimeoutMs ?? 30_000;
-    this.factory = options.clientFactory ?? defaultClientFactory;
-    this.oauthClient = options.oauthClient;
+const untilAborted = async <A>(
+  call: Effect.Effect<A, unknown>,
+  signal: AbortSignal | undefined,
+) => {
+  signal?.throwIfAborted();
+
+  try {
+    return await Effect.runPromise(call, signal ? { signal } : undefined);
+  } catch (error) {
+    signal?.throwIfAborted();
+
+    throw error;
   }
+};
 
-  private readonly oauthClient: ClientDocument | undefined;
-
-  private async withTimeout<T>(
-    promise: Promise<T>,
-    ms = this.timeout,
-  ): Promise<T> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    try {
-      return await Promise.race([
-        promise,
-        new Promise<T>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error(`MCP request timed out after ${ms}ms`)),
-            ms,
-          );
-        }),
-      ]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  }
-
-  /**
-   * Bound the whole MCP call, including clients that ignore timeoutMs. The durable
-   * tool is unsafe to replay, so a deadline only aborts and reports the one call;
-   * it must never transparently retry it.
-   */
-  private async callToolWithTimeout(
-    client: MCPClient,
-    name: string,
-    args: McpArguments,
-    parent: AbortSignal | undefined,
-  ): Promise<CallToolResult> {
-    const controller = new AbortController();
-
-    const parentReason = () =>
-      parent?.reason ?? new Error("MCP request aborted");
-
-    let parentAbortReject: ((cause: unknown) => void) | undefined;
-
-    const parentAborted = new Promise<CallToolResult>((_, reject) => {
-      parentAbortReject = reject;
-    });
-
-    const abortFromParent = () => {
-      const reason = parentReason();
-      controller.abort(reason);
-      parentAbortReject?.(reason);
-    };
-
-    if (parent?.aborted) {
-      parent.throwIfAborted();
-    } else parent?.addEventListener("abort", abortFromParent, { once: true });
-
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let deadline: ((cause: unknown) => void) | undefined;
-
-    const deadlineReached = new Promise<CallToolResult>((_, reject) => {
-      deadline = (reason) => reject(reason);
-      timer = setTimeout(() => {
-        const error = new Error(
-          `MCP request timed out after ${this.timeout}ms`,
-        );
-
-        controller.abort(error);
-        deadline?.(error);
-      }, this.timeout);
-    });
-
-    try {
-      const call = client.callTool(name, args, {
-        signal: controller.signal,
-        timeoutMs: this.timeout,
-      });
-
-      return await Promise.race([call, deadlineReached, parentAborted]);
-    } finally {
-      if (timer) clearTimeout(timer);
-      parent?.removeEventListener("abort", abortFromParent);
-    }
-  }
-
-  // Kept as the server's failure even when a tool call reads it, since the token can become unreadable after listing.
-  private async token(serverId: string) {
-    try {
-      return await this.data.token(serverId);
-    } catch (error) {
-      this.failures.set(
-        serverId,
-        error instanceof Error ? error.message : String(error),
-      );
-
-      throw error;
-    }
-  }
-
-  private async connection(server: MCPServer) {
-    const generation = this.generation(server.id);
-    // A signed-in server authenticates through OAuth, which refreshes its own access token.
-    const oauth = hasOAuthTokens(this.data.secrets, server.id);
-
-    const headers = oauth ? {} : credentials(await this.token(server.id));
-
-    const hadCredentials = oauth || Object.keys(headers).length > 0;
-    const fingerprint = digest({ url: server.url, headers, oauth });
-    const existing = this.connections.get(server.id);
-
-    if (existing?.fingerprint === fingerprint) return existing;
-
-    if (existing) {
-      await existing.client.close().catch(() => undefined);
-      await existing.transport.close().catch(() => undefined);
-      this.connections.delete(server.id);
-    }
-
-    const value = this.factory(
-      server,
-      headers,
-      oauth
-        ? await connectionAuth(this.data.secrets, server, this.oauthClient)
-        : undefined,
-    );
-
-    try {
-      await this.withTimeout(value.client.connect(value.transport));
-    } catch (error) {
-      await value.client.close().catch(() => undefined);
-      await value.transport.close().catch(() => undefined);
-      throwAuthFailure(server, error, hadCredentials);
-    }
-
-    // A disconnect while this one opened means its credentials may be stale.
-    if (this.generation(server.id) !== generation) {
-      await value.client.close().catch(() => undefined);
-      await value.transport.close().catch(() => undefined);
-      throw new Error("MCP server credentials changed; retry this task");
-    }
-
-    const cached = { ...value, fingerprint };
-    this.connections.set(server.id, cached);
-
-    return cached;
-  }
-
-  private generation(serverId: string) {
-    return `${this.closes}:${this.disconnects.get(serverId) ?? 0}`;
-  }
-
-  /** Why a server's tools were left out of a bot's last turn, until it connects again. */
-  failure(serverId: string) {
-    return this.failures.get(serverId) ?? null;
-  }
-
-  /** Connects and lists a server's tools; a server that fails is skipped and its reason kept, so the bot still answers. */
-  private async listedTools(server: MCPServer) {
-    try {
-      const connection = await this.connection(server);
-
-      const listed = await this.withTimeout(
-        connection.client.listTools({ timeoutMs: this.timeout }),
-      ).catch(async (error) => {
-        this.connections.delete(server.id);
-        await connection.client.close().catch(() => undefined);
-        throwAuthFailure(server, error, true);
-      });
-
-      this.failures.delete(server.id);
-
-      return listed;
-    } catch (error) {
-      this.failures.set(
-        server.id,
-        error instanceof Error ? error.message : String(error),
-      );
-
-      return [];
-    }
-  }
-
-  async extensionsForAgent(agent: Agent) {
-    const tools: ToolRegistration[] = [];
-    const connected: string[] = [];
-    const leftOut: string[] = [];
-
-    for (const serverId of agent.mcpServers) {
-      const server = this.data.usableServer(agent.id, serverId);
-
-      if (!server) continue;
-      const listed = await this.listedTools(server);
-      const failure = this.failure(server.id);
-
-      if (failure) leftOut.push(`- ${server.name}: ${failure}`);
-      else
-        connected.push(
-          `- ${server.name}: ${listed.length} tools named ${mcpToolPrefix(server.id)}*`,
-        );
-
-      for (const remote of listed) {
-        const name = `${mcpToolPrefix(server.id)}${remote.name.replace(/[^a-zA-Z0-9_]/g, "_")}`;
-
-        const tool = defineTool({
-          name,
-          description:
-            remote.description ?? `MCP tool ${remote.name} (${server.name})`,
-          // Providers need an object schema, and some reject one without `properties`.
-          parameters: Type.Unsafe({
-            ...remote.inputSchema,
-            type: "object",
-            properties: remote.inputSchema["properties"] ?? {},
-          }),
-          replay: "unsafe",
-          execute: async (
-            args: McpArguments,
-            _api: any,
-            context: PiContext,
-          ) => {
-            const assertAllowed = () => {
-              const current = this.data.usableServer(agent.id, server.id);
-              const owner = this.data.agent(agent.id);
-
-              if (
-                !current ||
-                !owner?.enabled ||
-                !owner.mcpServers.includes(server.id)
-              )
-                throw new Error(
-                  `MCP server ${server.name} is no longer enabled for this agent`,
-                );
-
-              if (current.url !== server.url)
-                throw new Error("MCP server address changed; retry this task");
-
-              return current;
-            };
-
-            const currentServer = assertAllowed();
-            const activeConnection = await this.connection(currentServer);
-            assertAllowed();
-            const signal = context.abortSignal;
-
-            const result = await this.callToolWithTimeout(
-              activeConnection.client,
-              remote.name,
-              args,
-              signal,
-            ).catch((error) => {
-              throwAuthFailure(server, error, true);
-            });
-
-            const output = toLlmContent(result);
-
-            return result.isError === undefined
-              ? { output }
-              : { output, isError: result.isError };
-          },
-        });
-
-        tools.push(tool);
-      }
-    }
-
-    // Tool names carry a server ID, not its name, so the bot learns which integration each belongs to here.
-    const summary = [
-      connected.length
-        ? `MCP servers the owner connected, with their tools:\n${connected.join("\n")}`
-        : "",
-      leftOut.length
-        ? `MCP servers left out of this turn; tell the owner why if they ask for them:\n${leftOut.join("\n")}`
-        : "",
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-
-    return [
-      defineExtension({
-        name: `mcp:${agent.id}`,
-        tools,
-        sections: [{ key: "mcp_servers", render: () => summary || undefined }],
-      }),
-    ];
-  }
-
-  /** The agent's MCP servers as code mode namespaces, so scripts see each server's tools together. */
-  codemodeNamespaces(agent: Agent): CodemodeNamespace[] {
-    return agent.mcpServers.flatMap((serverId) => {
-      const server = this.data.usableServer(agent.id, serverId);
-
-      return server
-        ? [
-            {
-              name: server.name,
-              description: `Tools of the ${server.name} MCP server`,
-              prefix: mcpToolPrefix(server.id),
-            },
-          ]
-        : [];
-    });
-  }
-
-  /** Drops a server's open connection, so the next use picks up new credentials. */
-  async disconnect(serverId: string) {
-    this.disconnects.set(serverId, (this.disconnects.get(serverId) ?? 0) + 1);
-    const existing = this.connections.get(serverId);
-    this.connections.delete(serverId);
-    this.failures.delete(serverId);
-    await existing?.client.close().catch(() => undefined);
-    await existing?.transport.close().catch(() => undefined);
-  }
-
-  async close() {
-    this.closes++;
-    const values = [...this.connections.values()];
-    this.connections.clear();
-    await Promise.all(
-      values.map(async ({ client, transport }) => {
-        await client.close().catch(() => undefined);
-        await transport.close().catch(() => undefined);
-      }),
-    );
-  }
-}
-
-export type { Agent };
-
-/** The account's MCP servers as tools for bots: connections stay open and close with the account. */
 export class McpIntegrations extends Context.Service<
   McpIntegrations,
   {
+    readonly oauthClient: ClientDocument | undefined;
     /** Why a server's tools were left out of a bot's last turn, until it connects again. */
     readonly failure: (serverId: string) => string | null;
-    /** The bot's MCP tools, for Pi Durable at turn time. */
     readonly extensionsForAgent: (agent: Agent) => Promise<Extension[]>;
-    /** The agent's MCP servers as code mode namespaces, so scripts see each server's tools together. */
     readonly codemodeNamespaces: (agent: Agent) => CodemodeNamespace[];
-    /** Drops a server's open connection, so the next use picks up new credentials. */
+    /** Drops a server's open connection, so the next use picks up a new token or sign-in. */
     readonly disconnect: (serverId: string) => Effect.Effect<void>;
   }
 >()("crumble/integrations/McpIntegrations") {
@@ -559,66 +174,308 @@ export class McpIntegrations extends Context.Service<
     return Layer.effect(
       McpIntegrations,
       Effect.gen(function* () {
-        const run = runnerOf(yield* Effect.context<IntegrationServices>());
+        const servers = yield* McpServerRepository;
+        const agents = yield* AgentRepository;
+        const secrets = yield* Secrets;
 
-        const connections = yield* Effect.acquireRelease(
-          Effect.sync(
-            () =>
-              new McpConnections(
-                {
-                  usableServer: (agentId, serverId) =>
-                    run.runSync(
-                      McpServerRepository.use((servers) =>
-                        servers.usable(agentId, serverId),
-                      ),
-                    ),
-                  agent: (agentId) =>
-                    run.runSync(
-                      AgentRepository.use((agents) => agents.get(agentId)),
-                    ),
-                  secrets: secretStorage(run),
-                  token: (serverId) => run.runPromise(tokenOf(serverId)),
-                },
-                options,
+        const storage = secretStorage(
+          runnerOf(yield* Effect.context<ServerSecrets | Secrets>()),
+        );
+
+        const timeout = options.requestTimeoutMs ?? 30_000;
+        const factory = options.clientFactory ?? defaultClientFactory;
+        const failures = new Map<string, string>();
+        const disconnects = new Map<string, number>();
+
+        const connections = new Map<
+          string,
+          OpenClient & { fingerprint: string }
+        >();
+
+        let closes = 0;
+
+        const generation = (serverId: string) =>
+          `${closes}:${disconnects.get(serverId) ?? 0}`;
+
+        /** Bounds a call, including clients that ignore their signal and timeoutMs. */
+        const timed = <A>(call: (signal: AbortSignal) => PromiseLike<A>) =>
+          Effect.tryPromise({ try: call, catch: (cause) => cause }).pipe(
+            Effect.timeoutOrElse({
+              duration: Duration.millis(timeout),
+              orElse: () =>
+                Effect.fail(
+                  new Error(`MCP request timed out after ${timeout}ms`),
+                ),
+            }),
+          );
+
+        const token = (serverId: string) =>
+          secretText(secrets)(mcpTokenKey(serverId)).pipe(
+            Effect.mapError(
+              (error) => new Error(`Token could not be read: ${error.message}`),
+            ),
+            Effect.tapError((error) =>
+              Effect.sync(() => failures.set(serverId, errorText(error))),
+            ),
+          );
+
+        const authOf = Effect.fnUntraced(function* (server: MCPServer) {
+          // A signed-in server authenticates through OAuth, which refreshes its own access token.
+          const oauth = hasOAuthTokens(storage, server.id);
+          const bearer = oauth ? undefined : yield* token(server.id);
+
+          const headers: Record<string, string> = bearer
+            ? { Authorization: `Bearer ${bearer}` }
+            : {};
+
+          return { oauth, headers, authenticated: oauth || Boolean(bearer) };
+        });
+
+        const connection = Effect.fnUntraced(function* (server: MCPServer) {
+          const opening = generation(server.id);
+          const { oauth, headers, authenticated } = yield* authOf(server);
+          const fingerprint = digest({ url: server.url, headers, oauth });
+          const existing = connections.get(server.id);
+
+          if (existing?.fingerprint === fingerprint) return existing;
+
+          if (existing) {
+            yield* closeConnection(existing);
+            connections.delete(server.id);
+          }
+
+          const authProvider = oauth
+            ? yield* Effect.tryPromise({
+                try: () => connectionAuth(storage, server, options.oauthClient),
+                catch: (cause) => cause,
+              })
+            : undefined;
+
+          const value = yield* Effect.try({
+            try: () => factory(server, headers, authProvider),
+            catch: (cause) => cause,
+          });
+
+          yield* timed(() => value.client.connect(value.transport)).pipe(
+            Effect.onInterrupt(() => closeConnection(value)),
+            Effect.catch((error) =>
+              closeConnection(value).pipe(
+                Effect.andThen(
+                  Effect.fail(authFailure(server, error, authenticated)),
+                ),
               ),
-          ),
-          (open) => Effect.promise(() => open.close()),
+            ),
+          );
+
+          // A disconnect while this one opened means its sign-in may be stale.
+          if (generation(server.id) !== opening) {
+            yield* closeConnection(value);
+
+            return yield* Effect.fail(
+              new Error("MCP server credentials changed; retry this task"),
+            );
+          }
+
+          const cached = { ...value, fingerprint };
+
+          connections.set(server.id, cached);
+
+          return cached;
+        });
+
+        const failure = (serverId: string) => failures.get(serverId) ?? null;
+
+        const listedTools = (server: MCPServer) =>
+          Effect.gen(function* () {
+            const open = yield* connection(server);
+
+            const listed = yield* timed(() =>
+              open.client.listTools({ timeoutMs: timeout }),
+            ).pipe(
+              Effect.catch((error) =>
+                Effect.sync(() => connections.delete(server.id)).pipe(
+                  Effect.andThen(closeConnection(open)),
+                  Effect.andThen(Effect.fail(authFailure(server, error, true))),
+                ),
+              ),
+            );
+
+            failures.delete(server.id);
+
+            return listed;
+          }).pipe(
+            Effect.catch((error) =>
+              Effect.sync((): Tool[] => {
+                failures.set(server.id, errorText(error));
+
+                return [];
+              }),
+            ),
+          );
+
+        /** One call of a remote tool. The durable tool is unsafe to replay, so a deadline reports the call and never retries it. */
+        const callTool = (
+          agent: Agent,
+          server: MCPServer,
+          remote: Tool,
+          args: McpArguments,
+        ) =>
+          Effect.gen(function* () {
+            const allowed = Effect.gen(function* () {
+              const current = yield* servers.usable(agent.id, server.id);
+              const owner = yield* agents.get(agent.id);
+
+              if (
+                !current ||
+                !owner?.enabled ||
+                !owner.mcpServers.includes(server.id)
+              )
+                return yield* Effect.fail(
+                  new Error(
+                    `MCP server ${server.name} is no longer enabled for this agent`,
+                  ),
+                );
+
+              if (current.url !== server.url)
+                return yield* Effect.fail(
+                  new Error("MCP server address changed; retry this task"),
+                );
+
+              return current;
+            });
+
+            const open = yield* connection(yield* allowed);
+
+            yield* allowed;
+
+            const result = yield* timed((signal) =>
+              open.client.callTool(remote.name, args, {
+                signal,
+                timeoutMs: timeout,
+              }),
+            ).pipe(
+              Effect.mapError((error) => authFailure(server, error, true)),
+            );
+
+            const output = toLlmContent(result);
+
+            return result.isError === undefined
+              ? { output }
+              : { output, isError: result.isError };
+          });
+
+        const toolOf = (agent: Agent, server: MCPServer, remote: Tool) =>
+          defineTool({
+            name: `${mcpToolPrefix(server.id)}${remote.name.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+            description:
+              remote.description ?? `MCP tool ${remote.name} (${server.name})`,
+            // Providers need an object schema, and some reject one without `properties`.
+            parameters: Type.Unsafe<McpArguments>({
+              ...remote.inputSchema,
+              type: "object",
+              properties: remote.inputSchema["properties"] ?? {},
+            }),
+            replay: "unsafe",
+            execute: (args, _api, context) =>
+              untilAborted(
+                callTool(agent, server, remote, args),
+                context.abortSignal,
+              ),
+          });
+
+        const extensions = Effect.fnUntraced(function* (agent: Agent) {
+          const tools: ToolRegistration[] = [];
+          const connected: string[] = [];
+          const leftOut: string[] = [];
+
+          for (const serverId of agent.mcpServers) {
+            const server = yield* servers.usable(agent.id, serverId);
+
+            if (!server) continue;
+            const listed = yield* listedTools(server);
+            const reason = failure(server.id);
+
+            if (reason) leftOut.push(`- ${server.name}: ${reason}`);
+            else
+              connected.push(
+                `- ${server.name}: ${listed.length} tools named ${mcpToolPrefix(server.id)}*`,
+              );
+
+            for (const remote of listed)
+              tools.push(toolOf(agent, server, remote));
+          }
+
+          const summary = [
+            connected.length
+              ? `MCP servers the owner connected, with their tools:\n${connected.join("\n")}`
+              : "",
+            leftOut.length
+              ? `MCP servers left out of this turn; tell the owner why if they ask for them:\n${leftOut.join("\n")}`
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n\n");
+
+          return [
+            defineExtension({
+              name: `mcp:${agent.id}`,
+              tools,
+              sections: [
+                { key: "mcp_servers", render: () => summary || undefined },
+              ],
+            }),
+          ];
+        });
+
+        const disconnect = (serverId: string) =>
+          Effect.gen(function* () {
+            disconnects.set(serverId, (disconnects.get(serverId) ?? 0) + 1);
+            const existing = connections.get(serverId);
+
+            connections.delete(serverId);
+            failures.delete(serverId);
+
+            if (existing) yield* closeConnection(existing);
+          });
+
+        yield* Effect.addFinalizer(() =>
+          Effect.gen(function* () {
+            closes++;
+            const open = [...connections.values()];
+
+            connections.clear();
+            yield* Effect.forEach(open, closeConnection, {
+              concurrency: "unbounded",
+              discard: true,
+            });
+          }),
         );
 
         return McpIntegrations.of({
-          failure: (serverId) => connections.failure(serverId),
-          extensionsForAgent: (agent) => connections.extensionsForAgent(agent),
-          codemodeNamespaces: (agent) => connections.codemodeNamespaces(agent),
-          disconnect: (serverId) =>
-            Effect.promise(() => connections.disconnect(serverId)),
+          oauthClient: options.oauthClient,
+          failure,
+          extensionsForAgent: (agent) => Effect.runPromise(extensions(agent)),
+          codemodeNamespaces: (agent) =>
+            agent.mcpServers.flatMap((serverId) => {
+              const server = Effect.runSync(servers.usable(agent.id, serverId));
+
+              return server
+                ? [
+                    {
+                      name: server.name,
+                      description: `Tools of the ${server.name} MCP server`,
+                      prefix: mcpToolPrefix(server.id),
+                    },
+                  ]
+                : [];
+            }),
+          disconnect,
         });
       }),
     );
   }
 }
 
-/** MCP integrations over the data `core` reaches, for an API or a test that runs without an account. */
-export function standaloneIntegrations(
-  core: Runner<IntegrationServices>,
-  options: IntegrationsOptions = {},
-) {
-  const runtime = ManagedRuntime.make(
-    McpIntegrations.layer(options).pipe(
-      Layer.provide(
-        Layer.succeedContext(
-          core.runSync(Effect.context<IntegrationServices>()),
-        ),
-      ),
-    ),
-  );
-
-  return {
-    integrations: runtime.runSync(McpIntegrations.use(Effect.succeed)),
-    close: () => runtime.dispose(),
-  };
-}
-
-/** Offers each bot the tools of the MCP servers it may use. */
 export const integrationTools = Layer.effectDiscard(
   Effect.gen(function* () {
     const integrations = yield* McpIntegrations;

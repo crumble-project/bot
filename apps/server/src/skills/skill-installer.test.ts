@@ -5,10 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { GitHubUnavailable } from "../github-apps/github-api";
-import { ChangeReverter } from "./change-reverter";
+import { ChangeReverter } from "../learning/change-reverter";
 import { GitHubSkillReader, parseSkillLocation } from "./github-skills";
 import { SkillInstaller } from "./skill-installer";
-import { standaloneSkills } from "./skills";
+import { standaloneSkills } from "./skills-test-support";
 import { Store } from "../../test/support/store";
 
 const dirs: string[] = [];
@@ -20,7 +20,6 @@ afterEach(() => {
 
 type Files = Record<string, string>;
 
-/** A public repository on a fake GitHub: `push` makes a new commit on `main`. */
 function fakeGitHub(files: Files) {
   const commits = new Map<string, Files>();
   let head = "";
@@ -249,7 +248,6 @@ test("finds upstream changes to imported files, applies them as a revertible cha
     }),
   );
 
-  // A changed script isn't imported, so it isn't an update.
   github.push({ ...github.files(), "skills/review/scripts/lint.sh": "echo 2" });
   await run(installer.check());
   expect((await run(installer.updates)).size).toBe(0);

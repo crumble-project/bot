@@ -3,7 +3,7 @@ import tls from "node:tls";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { Context, Effect, Layer } from "effect";
-import type { Runner } from "../shared/runner";
+import { accessOf, type Access, type Runner } from "../shared/runner";
 import { AgentCredentialRepository } from "./agent-credential-repository";
 
 const KEY_ALGORITHM = { name: "ECDSA", namedCurve: "P-256" } as const;
@@ -11,7 +11,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const AUTHORITY_DAYS = 3650;
 const HOST_DAYS = 7;
 
-// A host certificate this close to expiry is replaced before it is served.
 const RENEW_MS = DAY_MS;
 
 const COMMON_NAME = "2.5.4.3";
@@ -70,7 +69,6 @@ async function keyIdentifier(certificate: pkijs.Certificate) {
   );
 }
 
-/** A certificate serial from random `bytes`. */
 export function serialNumber(bytes: Uint8Array) {
   const serial = Uint8Array.from(bytes);
 
@@ -122,9 +120,7 @@ type HostContext = { context: tls.SecureContext; expires: number };
 export class CredentialAuthorities extends Context.Service<
   CredentialAuthorities,
   {
-    /** The bot's authority certificate in PEM, created on first use. */
     readonly certificate: (agentId: string) => Effect.Effect<string>;
-    /** The TLS context the credential proxy presents for `host` to the bot's workspace. */
     readonly context: (
       agentId: string,
       host: string,
@@ -143,7 +139,6 @@ export class CredentialAuthorities extends Context.Service<
       const authorities = new Map<string, Promise<Authority>>();
       const hosts = new Map<string, Promise<HostContext>>();
 
-      // One key for every host certificate of this process; certificates are cheap, keys need not be.
       const hostKeys = crypto.subtle.generateKey(KEY_ALGORITHM, true, [
         "sign",
         "verify",
@@ -314,23 +309,11 @@ async function newAuthority() {
   };
 }
 
-/** Certificate authorities for code outside Effect: workspace boots and the credential proxy. */
-export type CredentialAuthoritiesAccess = {
-  certificate(agentId: string): Promise<string>;
-  context(agentId: string, host: string): Promise<tls.SecureContext>;
-};
+export type CredentialAuthoritiesAccess = Access<
+  CredentialAuthorities["Service"]
+>;
 
-export function credentialAuthoritiesAccess(
+export const credentialAuthoritiesAccess = (
   runtime: Runner<CredentialAuthorities>,
-): CredentialAuthoritiesAccess {
-  const authorities = runtime.runSync(
-    CredentialAuthorities.use(Effect.succeed),
-  );
-
-  return {
-    certificate: (agentId) =>
-      runtime.runPromise(authorities.certificate(agentId)),
-    context: (agentId, host) =>
-      runtime.runPromise(authorities.context(agentId, host)),
-  };
-}
+): CredentialAuthoritiesAccess =>
+  accessOf(runtime.runSync(CredentialAuthorities.use(Effect.succeed)), runtime);

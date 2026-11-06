@@ -1,26 +1,25 @@
 import { Context, Effect, Layer } from "effect";
 import { type ChangeBy, type Memory } from "../shared/domain";
-import type { MemoryContext } from "../bots/runtime";
-import { AgentRepository } from "../bots/agent-repository";
-import { ExecutionRepository } from "../bots/execution-repository";
+import type { MemoryContext } from "./memory-tool";
+import { AgentRepository } from "../bot-store/agent-repository";
+import { ExecutionRepository } from "../bot-store/execution-repository";
 import { GroupChatRepository } from "../group-chats/group-chat-repository";
-import { ScheduleRepository } from "../schedules/schedule-repository";
+import { ScheduleRepository } from "../automations/schedule-repository";
+import { changeSourceOf } from "../learned-changes/change-source";
 import { MemoryRepository } from "./memory-repository";
-import {
-  assertOwnMemoryInGroup,
-  changeSourceOf,
-  memorySourceOf,
-} from "./memory-sources";
+import { assertOwnMemoryInGroup, memorySourceOf } from "./memory-sources";
 import { InvalidInput, NotFound, type AppError } from "../shared/errors";
+import { MAX_MEMORY_CHARS } from "../shared/limits";
 
 const validContent = (content: string): Effect.Effect<void, AppError> =>
-  !content.trim() || content.length > 32000
+  !content.trim() || content.length > MAX_MEMORY_CHARS
     ? Effect.fail(
-        new InvalidInput({ message: "Memory must contain 1–32000 characters" }),
+        new InvalidInput({
+          message: `Memory must contain 1–${MAX_MEMORY_CHARS} characters`,
+        }),
       )
     : Effect.void;
 
-/** What a bot's memory tool reads and changes: its own memories, and the shared ones when it uses shared memory. */
 export class BotMemory extends Context.Service<
   BotMemory,
   {
@@ -111,13 +110,6 @@ export class BotMemory extends Context.Service<
           function* (agentId, content, shared, context) {
             yield* validContent(content);
             yield* assertOwnMemoryInGroup(context, shared);
-
-            if (shared && !(yield* usesSharedMemory(agentId)))
-              return yield* Effect.fail(
-                new InvalidInput({
-                  message: "Shared memory is off for this agent",
-                }),
-              );
 
             const source = yield* memorySourceOf(agentId, context).pipe(
               Effect.provideContext(sources),

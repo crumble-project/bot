@@ -11,19 +11,20 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "../bots/runtime";
 import { defaultAvatarDefinition } from "../contract/avatar";
-import { latestMessagePreview } from "../bots/transcript";
-import { agentInput, type Agent } from "../shared/domain";
+import { latestMessagePreview } from "../transcript/transcript";
+import { agentInput, type Agent } from "../contract/agents";
 import { scriptedGuest } from "../../test/fixtures/scripted-guest";
 import type { DesktopFill, DesktopFills } from "./computer-use-login";
 import {
   captureDesktop,
   DESKTOP_NOT_RUNNING,
-  DESKTOP_SCREENSHOT_TOOL_NAME,
   desktopScreenshotExtension,
   NO_DESKTOP_IMAGE,
   PASSWORD_MAY_SHOW,
   type ScreenshotWorkspaces,
 } from "./desktop-screenshot";
+import { DESKTOP_SCREENSHOT_TOOL_NAME } from "../contract/tools";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xd9]).toString("base64");
 
@@ -31,7 +32,6 @@ const chromium = {
   windows: [{ pid: 7, window_id: 101, app_name: "Chromium", title: "Home" }],
 };
 
-/** The desktop's recorded password fills; the scripted Chromium is `7 <processStart>`. */
 const fillsOf = (record: DesktopFill[] = []): DesktopFills => ({
   list: async () => [...record],
   add: async (fill) => {
@@ -53,7 +53,7 @@ function fakeWorkspaces(running = true, desktop = true) {
         holds.released += 1;
       };
     },
-    shell: () => guest.shell,
+    env: () => guest.shell,
   };
 
   return { workspaces, guest, holds };
@@ -78,7 +78,6 @@ test("captures the whole running desktop and removes its file", async () => {
     ". /run/crumble-desktop.env; ",
   );
   expect([...guest.files.keys()]).toEqual([]);
-  // Without a password typed, the capture doesn't ask cua-driver anything.
   expect(guest.calls).toEqual([]);
   expect(holds).toEqual({ taken: 1, released: 1 });
 });
@@ -136,7 +135,6 @@ test("refuses while a password typed into the running Chromium may show", async 
   expect(captures(guest.commands)).toEqual([]);
   expect(holds).toEqual({ taken: 1, released: 1 });
 
-  // A restarted Chromium shows none of the old one's pages.
   guest.state.processStart = "Thu Oct 30 11:00:00 2026";
 
   expect(
@@ -150,7 +148,7 @@ test("refuses when it can't tell whether a password shows", async () => {
   });
 
   const { workspaces } = fakeWorkspaces();
-  workspaces.shell = () => guest.shell;
+  workspaces.env = () => guest.shell;
 
   const fills = fillsOf([
     { value: "hunter2", label: "[login github password]", browser: "7 old" },
@@ -215,12 +213,15 @@ function chat(workspaces: ScreenshotWorkspaces) {
   const models = createModels();
   models.setProvider(faux.provider);
 
-  const runtime = new AgentRuntime(directory, {
-    models,
-    extensions: (agent) => [
-      desktopScreenshotExtension(agent.id, workspaces, fillsOf()),
-    ],
-  });
+  const runtime = new AgentRuntime(
+    directory,
+    runtimeCallbacks({
+      models,
+      extensions: (agent) => [
+        desktopScreenshotExtension(agent.id, workspaces, fillsOf()),
+      ],
+    }),
+  );
 
   runtimes.push(runtime);
 
@@ -231,7 +232,7 @@ test("the owner gets the screenshot in the chat, and the turn ends with it", asy
   const { workspaces } = fakeWorkspaces();
   const { runtime, faux } = chat(workspaces);
   const agent = makeAgent();
-  const conversation = await runtime.createConversation(agent);
+  const conversation = await runtime.openChat(agent);
 
   faux.setResponses([
     fauxAssistantMessage(
@@ -252,7 +253,6 @@ test("the owner gets the screenshot in the chat, and the turn ends with it", asy
   expect(shown.toolName).toBe(DESKTOP_SCREENSHOT_TOOL_NAME);
   expect(shown.toolDetails).toEqual({ mimeType: "image/jpeg", size: 4 });
   expect(JSON.stringify(shown.blocks)).not.toContain(JPEG);
-  // The tool ended the turn: nothing follows its result.
   expect(messages.at(-1)).toBe(shown);
   expect(latestMessagePreview(messages)).toBe("Desktop screenshot");
 
@@ -269,7 +269,7 @@ test("a refused screenshot is an error the bot answers, with no image to read", 
   const { workspaces } = fakeWorkspaces(false);
   const { runtime, faux } = chat(workspaces);
   const agent = makeAgent();
-  const conversation = await runtime.createConversation(agent);
+  const conversation = await runtime.openChat(agent);
 
   faux.setResponses([
     fauxAssistantMessage([fauxToolCall(DESKTOP_SCREENSHOT_TOOL_NAME, {})], {

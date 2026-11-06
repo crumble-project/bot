@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { openGroupConversation } from "../group-chats/group-turns";
 import { afterEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,15 +12,17 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import type { JsonValue } from "@earendil-works/chord";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
-import { AgentRuntime } from "./runtime";
-import { providerModels } from "../providers/providers";
+import { AgentRuntime, type RuntimeCallbacks } from "./runtime";
+import { hostModels } from "../providers/providers";
 import { ProviderCredentials } from "../providers/provider-credentials";
 import { Store } from "../../test/support/store";
-import { loadCommonSkills } from "../skills/common-skills";
-import { agentInput, type Agent } from "../shared/domain";
+import { loadDefaultSkills } from "../skills/default-skills";
+import { agentInput, type Agent } from "../contract/agents";
 import { defaultAvatarDefinition } from "../contract/avatar";
 import type { AvailableSkill } from "../skills/skill-library";
-import { standaloneSkills, type BotSkills } from "../skills/skills";
+import type { BotSkills } from "../skills/skills";
+import { standaloneSkills } from "../skills/skills-test-support";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 const directories: string[] = [];
 const runtimes: AgentRuntime[] = [];
@@ -44,7 +47,6 @@ const makeAgent = (): Agent => ({
   updatedAt: "",
 });
 
-/** A read-only library for prompt tests; writes are exercised against the real one. */
 function fakeLibrary(
   available: (agent: Agent) => AvailableSkill[],
   used: (skill: AvailableSkill) => void = () => {},
@@ -53,7 +55,7 @@ function fakeLibrary(
 
   return {
     available: (agent) => Effect.sync(() => available(agent)),
-    used: (_agent, skill) => Effect.sync(() => used(skill)),
+    used: (skill) => Effect.sync(() => used(skill)),
     own: () => Effect.succeed([]),
     create: unsupported,
     update: unsupported,
@@ -62,10 +64,30 @@ function fakeLibrary(
   };
 }
 
-function setup(
-  options: ConstructorParameters<typeof AgentRuntime>[1] = {},
-  slow = false,
-) {
+function heldTool() {
+  const started = Promise.withResolvers<void>();
+  const held = Promise.withResolvers<void>();
+
+  const tool = defineTool({
+    name: "blocked",
+    description: "Wait for the test",
+    parameters: Type.Object({}),
+    execute: async () => {
+      started.resolve();
+      await held.promise;
+
+      return { output: [{ type: "text", text: "tool finished" }] };
+    },
+  });
+
+  return {
+    extension: defineExtension({ name: "blocked", tools: [tool] }),
+    started: started.promise,
+    release: held.resolve,
+  };
+}
+
+function setup(options: Partial<RuntimeCallbacks> = {}, slow = false) {
   const directory = mkdtempSync(join(tmpdir(), "crumble-runtime-"));
   directories.push(directory);
 
@@ -85,7 +107,12 @@ function setup(
 
   const models = createModels();
   models.setProvider(faux.provider);
-  const runtime = new AgentRuntime(directory, { ...options, models });
+
+  const runtime = new AgentRuntime(
+    directory,
+    runtimeCallbacks({ ...options, models }),
+  );
+
   runtimes.push(runtime);
 
   return { runtime, faux };
@@ -99,7 +126,7 @@ test("saved credentials rotate without opening a new runtime", async () => {
     ProviderCredentials.use(Effect.succeed),
   );
 
-  const models = providerModels(credentials);
+  const models = hostModels(credentials, []);
 
   for (const key of ["first-test-key", "second-test-key"]) {
     await credentials.modify("openai", async () => ({ type: "api_key", key }));
@@ -110,7 +137,7 @@ test("saved credentials rotate without opening a new runtime", async () => {
 test("each chat turn receives a fresh server clock and timezone", async () => {
   const { runtime, faux } = setup();
   const agent = makeAgent();
-  const conversation = await runtime.createConversation(agent);
+  const conversation = await runtime.openChat(agent);
   const requests: string[] = [];
 
   const capture = (context: { messages: unknown[] }) => {
@@ -142,7 +169,6 @@ test("each chat turn receives a fresh server clock and timezone", async () => {
       ...prompt.matchAll(/Current server time \(UTC\): ([\dT:.Z-]+)/g),
     ];
 
-    // Each turn appends its own clock; earlier turns keep theirs.
     expect(times).toHaveLength(index + 1);
     const timestamp = Date.parse(times.at(-1)![1]!);
     expect(timestamp).toBeGreaterThanOrEqual(boundaries[index]![0]);
@@ -179,8 +205,8 @@ test("profile edits, skills and memory reach the next request without leaking be
 
   faux.setResponses([response, response, response]);
 
-  const ca = await runtime.createConversation(a),
-    cb = await runtime.createConversation(b);
+  const ca = await runtime.openChat(a),
+    cb = await runtime.openChat(b);
 
   await runtime.wait(await runtime.submit(a, ca, "first", "one"), a);
   await runtime.wait(
@@ -217,7 +243,7 @@ test("lists skills by name in the prompt and loads their content and documents o
     "---\nname: Tasks\ndescription: Handle tasks\n---\nCommon task rules",
   );
   await Bun.write(join(taskDir, "references", "cron.md"), "Cron depth");
-  const common = loadCommonSkills(skillsRoot);
+  const common = loadDefaultSkills(skillsRoot);
   expect(common).toEqual([
     {
       id: "common:tasks/SKILL.md",
@@ -282,7 +308,7 @@ test("lists skills by name in the prompt and loads their content and documents o
     },
     fauxAssistantMessage("ok"),
   ]);
-  const conversation = await runtime.createConversation(agent);
+  const conversation = await runtime.openChat(agent);
   await runtime.wait(
     await runtime.submit(agent, conversation, "go", "one"),
     agent,
@@ -395,7 +421,7 @@ test("a bot writes its own skills atomically, after reading them, and every chan
       return fauxAssistantMessage("done");
     },
   ]);
-  const conversation = await runtime.createConversation(agent);
+  const conversation = await runtime.openChat(agent);
   await runtime.wait(
     await runtime.submit(agent, conversation, "learn", "one"),
     agent,
@@ -433,7 +459,6 @@ test("a bot writes its own skills atomically, after reading them, and every chan
     ],
     useCount: 1,
   });
-  // The failed batch rolled back the patch to Writing.
   expect(skills[1]).toMatchObject({
     instructions: "Short sentences",
     createdBy: "bot",
@@ -463,7 +488,7 @@ test("a bot without skills gets no skill tool", async () => {
       return fauxAssistantMessage("ok");
     },
   ]);
-  const conversation = await runtime.createConversation(agent);
+  const conversation = await runtime.openChat(agent);
   await runtime.wait(
     await runtime.submit(agent, conversation, "go", "one"),
     agent,
@@ -494,7 +519,7 @@ test("registered extension tools are offered, executed, recorded and revoked", a
   });
 
   const a = makeAgent();
-  const conversation = await runtime.createConversation(a);
+  const conversation = await runtime.openChat(a);
   let removed: unknown[] = [];
   faux.setResponses([
     (context) => {
@@ -546,10 +571,12 @@ test("registered extension tools are offered, executed, recorded and revoked", a
 test("hides in-flight assistant text and cancellation settles the submission", async () => {
   const { runtime, faux } = setup({}, true);
   const a = makeAgent();
-  const conversation = await runtime.createConversation(a);
+  const conversation = await runtime.openChat(a);
   faux.setResponses([
     fauxAssistantMessage(
-      "A deliberately long response that can be cancelled before it finishes.",
+      "A deliberately long response that can be cancelled before it finishes. ".repeat(
+        100,
+      ),
     ),
   ]);
   const snapshots: Awaited<ReturnType<typeof runtime.snapshot>>[] = [];
@@ -584,7 +611,7 @@ test("hides in-flight assistant text and cancellation settles the submission", a
 test("publishes the complete assistant entry only after the run ends", async () => {
   const { runtime, faux } = setup({}, true);
   const a = makeAgent();
-  const conversation = await runtime.createConversation(a);
+  const conversation = await runtime.openChat(a);
   const answer = "The complete answer arrives at the turn boundary.";
   faux.setResponses([fauxAssistantMessage(answer)]);
   const snapshots: Awaited<ReturnType<typeof runtime.snapshot>>[] = [];
@@ -612,26 +639,11 @@ test("publishes the complete assistant entry only after the run ends", async () 
 });
 
 test("hides text from an assistant tool round until the whole turn completes", async () => {
-  let release!: () => void;
-  const toolDone = new Promise<void>((resolve) => (release = resolve));
-
-  const tool = defineTool({
-    name: "blocked",
-    description: "Wait for the test",
-    parameters: Type.Object({}),
-    execute: async () => {
-      await toolDone;
-
-      return { output: [{ type: "text", text: "tool finished" }] };
-    },
-  });
-
-  const { runtime, faux } = setup({
-    extensions: () => [defineExtension({ name: "blocked", tools: [tool] })],
-  });
+  const { extension, started, release } = heldTool();
+  const { runtime, faux } = setup({ extensions: () => [extension] });
 
   const a = makeAgent();
-  const conversation = await runtime.createConversation(a);
+  const conversation = await runtime.openChat(a);
   const intermediate = "I need to check that tool first.";
   faux.setResponses([
     fauxAssistantMessage(
@@ -641,15 +653,8 @@ test("hides text from an assistant tool round until the whole turn completes", a
     fauxAssistantMessage("The complete answer after the tool."),
   ]);
   const submission = await runtime.submit(a, conversation, "go", "tool-round");
-  let running = await runtime.snapshot(a, conversation);
-
-  for (let attempt = 0; attempt < 20 && !running.live; attempt++) {
-    await Bun.sleep(10);
-    running = await runtime.snapshot(a, conversation);
-  }
-
-  await Bun.sleep(80);
-  running = await runtime.snapshot(a, conversation);
+  await started;
+  const running = await runtime.snapshot(a, conversation);
   expect(running.status).toBe("running");
   expect(
     running.messages.some((message) => message.content.includes(intermediate)),
@@ -677,6 +682,33 @@ test("hides text from an assistant tool round until the whole turn completes", a
   ]);
 });
 
+test("a turn running in another conversation leaves the chat's answers in its history", async () => {
+  const { extension, started, release } = heldTool();
+  const { runtime, faux } = setup({ extensions: () => [extension] });
+
+  const a = makeAgent();
+  const chat = await runtime.openChat(a);
+  const group = await openGroupConversation(runtime, a, "group-1");
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("blocked", {})], {
+      stopReason: "toolUse",
+    }),
+    fauxAssistantMessage("The chat's answer."),
+    fauxAssistantMessage("The group turn's answer."),
+  ]);
+  const turn = await runtime.submit(a, group, "group turn", "group-input");
+  await started;
+
+  const asked = await runtime.submit(a, chat, "chat turn", "chat-input");
+  expect((await runtime.wait(asked, a)).status).toBe("done");
+
+  expect((await runtime.history(a)).messages.map((m) => m.content)).toContain(
+    "The chat's answer.",
+  );
+  release();
+  expect((await runtime.wait(turn, a)).status).toBe("done");
+});
+
 test("inference overrides reach provider options and deleting an agent removes its durable files", async () => {
   const { runtime, faux } = setup();
   const agent = makeAgent();
@@ -693,7 +725,7 @@ test("inference overrides reach provider options and deleting an agent removes i
       return fauxAssistantMessage("configured");
     },
   ]);
-  const conversation = await runtime.createConversation(agent);
+  const conversation = await runtime.openChat(agent);
   expect(
     (
       await runtime.wait(

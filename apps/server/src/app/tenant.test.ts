@@ -9,7 +9,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { providerModels } from "../providers/providers";
+import { accountModels } from "../providers/providers";
+import { DEFAULT_SERVER_SETTINGS } from "./server-settings";
 import { createTenant } from "./tenant";
 
 const original = process.env["OPENAI_API_KEY"];
@@ -22,7 +23,7 @@ afterEach(() => {
 test("tenant provider models do not resolve ambient host credentials", async () => {
   process.env["OPENAI_API_KEY"] = "host-secret";
 
-  const models = providerModels(undefined, [], { allowAmbientEnv: false });
+  const models = accountModels(undefined, []);
 
   expect(await models.getAuth("openai")).toBeUndefined();
 });
@@ -39,7 +40,6 @@ type ClaudeProvider = {
   } | null;
 };
 
-/** The Claude Code state of one account, as the provider API describes it. */
 async function claudeProvider(tenant: Tenant) {
   const response = await tenant.app.request("/v1/providers", {
     headers: { authorization: `Bearer ${tenant.token}` },
@@ -61,7 +61,6 @@ function claudeState(configDir: string, loggedIn: string) {
   );
 }
 
-/** Two accounts with their own Claude Code state, and a shared config they must not adopt. */
 function claudeSetup(root: string) {
   const skillsDir = join(root, "skills");
   const sharedConfig = join(root, "shared-claude");
@@ -116,14 +115,17 @@ test.serial(
         dataDir: firstDir,
         tenantId: "first-user",
         skillsDir,
+        serverSettings: () => DEFAULT_SERVER_SETTINGS,
+        workspaceEnv: process.env,
       });
       second = await createTenant({
         dataDir: secondDir,
         tenantId: "second-user",
         skillsDir,
+        serverSettings: () => DEFAULT_SERVER_SETTINGS,
+        workspaceEnv: process.env,
       });
 
-      // Each account keeps its own Claude Code state, private to its owner.
       expect(statSync(join(firstDir, "claude")).mode & 0o777).toBe(0o700);
       expect(statSync(join(secondDir, "claude")).mode & 0o777).toBe(0o700);
 

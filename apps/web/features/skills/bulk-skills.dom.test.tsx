@@ -2,7 +2,9 @@ import { expect, spyOn, test } from "bun:test";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Window } from "happy-dom";
 import { act, type ReactNode } from "react";
-import { queryClient, type Bot } from "@/lib/api";
+import { queryClient } from "@/lib/api";
+import { waitFor, waitForIdle } from "@/test/wait-for";
+import type { Bot } from "@/features/bots/api";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 
 type Package = {
@@ -25,7 +27,6 @@ async function fixture(
     fail: Set<string>;
     render: (children: ReactNode) => Promise<void>;
     holdBotRefetch: () => { started: Promise<void>; release: () => void };
-    waitFor: (condition: () => boolean) => Promise<void>;
   }) => Promise<void>,
 ) {
   const window = new Window({ url: "http://localhost" });
@@ -221,42 +222,29 @@ async function fixture(
   document.body.append(container);
   const root = createRoot(container);
 
-  const flush = async () => {
-    await new Promise((resolve) => setTimeout(resolve, 40));
-  };
-
-  const waitFor = async (condition: () => boolean) => {
-    const deadline = Date.now() + 3000;
-
-    while (!condition()) {
-      if (Date.now() >= deadline)
-        throw new Error("Expected DOM state did not settle");
-      await act(flush);
-    }
-  };
-
-  const click = async (label: string) => {
-    const button = [
-      ...document.querySelectorAll<HTMLButtonElement>("button"),
-    ].find((node) => node.textContent?.trim() === label && !node.disabled);
-
-    if (!button) throw new Error(`Missing button: ${label}`);
-    await act(async () => {
-      button.click();
-      await flush();
-    });
-  };
-
-  const select = async (label: string) => {
-    const checkbox = document.querySelector<HTMLInputElement>(
-      `input[aria-label="${label}"]`,
+  const enabledButton = (label: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (node) => node.textContent?.trim() === label && !node.disabled,
     );
 
-    if (!checkbox) throw new Error(`Missing checkbox: ${label}`);
-    await act(async () => {
-      checkbox.click();
-      await flush();
-    });
+  const click = async (label: string) => {
+    await waitFor(() => enabledButton(label) !== undefined, `button: ${label}`);
+    await act(async () => enabledButton(label)?.click());
+  };
+
+  const enabledCheckbox = (label: string) =>
+    [
+      ...document.querySelectorAll<HTMLInputElement>(
+        `input[aria-label="${label}"]`,
+      ),
+    ].find((node) => !node.disabled);
+
+  const select = async (label: string) => {
+    await waitFor(
+      () => enabledCheckbox(label) !== undefined,
+      `checkbox: ${label}`,
+    );
+    await act(async () => enabledCheckbox(label)?.click());
   };
 
   const search = async (value: string) => {
@@ -271,7 +259,6 @@ async function fixture(
         "value",
       )!.set!.call(input, value);
       input.dispatchEvent(new Event("input", { bubbles: true }));
-      await flush();
     });
   };
 
@@ -282,15 +269,17 @@ async function fixture(
           <SidebarProvider>{children}</SidebarProvider>
         </QueryClientProvider>,
       );
-      await flush();
     });
-    await act(flush);
   };
 
   try {
     await render(<SkillsPage />);
-    // A fixed wait loses to the first fetch on a busy machine, and the list isn't there yet.
-    await waitFor(() => queryClient.isFetching() === 0);
+    // Sections replace a skeleton only once bots and every bot's skills have loaded.
+    await waitFor(
+      () =>
+        container.querySelector('[aria-label="Select Own (Alpha)"]') !== null,
+      "the skill sections",
+    );
     await run({
       window,
       container,
@@ -301,8 +290,8 @@ async function fixture(
       fail,
       render,
       holdBotRefetch,
-      waitFor,
     });
+    await waitForIdle(queryClient);
   } finally {
     botGate.resolve();
     await act(async () => root.unmount());
@@ -320,6 +309,21 @@ async function fixture(
   }
 }
 
+const confirmDelete = async () => {
+  const confirmation = () =>
+    [
+      ...document.querySelectorAll<HTMLButtonElement>(
+        '[role="alertdialog"] button',
+      ),
+    ].find((button) => button.textContent === "Delete");
+
+  await waitFor(() => confirmation() !== undefined, "the confirmation");
+  await act(async () => confirmation()?.click());
+};
+
+const shows = (container: HTMLElement, text: string) => () =>
+  container.textContent?.includes(text) === true;
+
 test("bulk selection spans sections and filters; delete confirms names and keeps only failures selected", async () => {
   await fixture(
     async ({ container, select, search, click, requests, fail }) => {
@@ -335,7 +339,7 @@ test("bulk selection spans sections and filters; delete confirms names and keeps
         container.querySelector('[aria-label="Select Shared (Shared)"]'),
       ).toBeNull();
       await select("Select all results");
-      expect(container.textContent).toContain("2 selected");
+      await waitFor(shows(container, "2 selected"));
       await search("");
       fail.add("/v1/agents/a/skills/own");
       await click("Delete");
@@ -343,24 +347,13 @@ test("bulk selection spans sections and filters; delete confirms names and keeps
         "Delete: Shared (Shared), Own (Alpha)",
       );
 
-      const confirmation = [
-        ...document.querySelectorAll<HTMLButtonElement>(
-          '[role="alertdialog"] button',
-        ),
-      ].find((button) => button.textContent === "Delete")!;
-
-      await act(async () => {
-        confirmation.click();
-        await new Promise((resolve) => setTimeout(resolve, 80));
-      });
+      await confirmDelete();
+      await waitFor(shows(container, "Failed Own (Alpha): Denied by test"));
       expect(requests).toEqual([
         "DELETE /v1/skills/shared",
         "DELETE /v1/agents/a/skills/own",
       ]);
       expect(container.textContent).toContain("1 selected");
-      expect(container.textContent).toContain(
-        "Failed Own (Alpha): Denied by test",
-      );
       expect(
         container.querySelector<HTMLInputElement>(
           '[aria-label="Select Own (Alpha)"]',
@@ -368,18 +361,8 @@ test("bulk selection spans sections and filters; delete confirms names and keeps
       ).toBe(true);
       fail.clear();
       await click("Delete");
-
-      const retry = [
-        ...document.querySelectorAll<HTMLButtonElement>(
-          '[role="alertdialog"] button',
-        ),
-      ].find((button) => button.textContent === "Delete")!;
-
-      await act(async () => {
-        retry.click();
-        await new Promise((resolve) => setTimeout(resolve, 80));
-      });
-      expect(container.textContent).not.toContain("1 selected");
+      await confirmDelete();
+      await waitFor(() => !shows(container, "1 selected")());
     },
   );
 });
@@ -392,13 +375,13 @@ test("bulk update applies selected GitHub skills, reports skipped skills, and cl
       "Update skips skills not installed from GitHub: Shared (Shared), Own (Alpha)",
     );
     await click("Update");
+    await waitFor(
+      shows(container, "Skipped Shared (Shared): not installed from GitHub"),
+    );
     expect(requests).toEqual([
       "POST /v1/skills/updates/check",
       "POST /v1/skills/github/update",
     ]);
-    expect(container.textContent).toContain(
-      "Skipped Shared (Shared): not installed from GitHub",
-    );
     expect(container.textContent).toContain(
       "Skipped Own (Alpha): not installed from GitHub",
     );
@@ -407,42 +390,34 @@ test("bulk update applies selected GitHub skills, reports skipped skills, and cl
 });
 
 test("bulk assign and remove pick several bots, refresh usage, and name per-bot failures", async () => {
-  await fixture(
-    async ({ container, select, click, requests, fail, waitFor }) => {
-      await select("Select Shared (Shared)");
-      await select("Select Own (Alpha)");
-      await click("Assign to bots");
-      await click("Alpha");
-      await click("Beta");
-      fail.add("/v1/skills/own/assignment");
-      await click("Assign");
-      await waitFor(
-        () => container.textContent?.includes("used by 2") === true,
-      );
-      expect(container.textContent).toContain("used by 2");
-      expect(container.textContent).toContain(
-        "Failed Own (Alpha) → Alpha: Denied by test",
-      );
-      expect(container.textContent).toContain(
-        "Failed Own (Alpha) → Beta: Denied by test",
-      );
-      expect(container.textContent).toContain("1 selected");
-      fail.clear();
-      await select("Select Shared (Shared)");
-      await click("Remove from bots");
-      await click("Alpha");
-      await click("Beta");
-      await click("Remove");
-      await waitFor(
-        () => container.textContent?.includes("used by 2") === false,
-      );
-      expect(container.textContent).not.toContain("used by 2");
-      expect(container.textContent).not.toContain("2 selected");
-      expect(
-        requests.filter((request) => request.endsWith("/assignment")),
-      ).toHaveLength(8);
-    },
-  );
+  await fixture(async ({ container, select, click, requests, fail }) => {
+    await select("Select Shared (Shared)");
+    await select("Select Own (Alpha)");
+    await click("Assign to bots");
+    await click("Alpha");
+    await click("Beta");
+    fail.add("/v1/skills/own/assignment");
+    await click("Assign");
+    await waitFor(shows(container, "used by 2"));
+    expect(container.textContent).toContain(
+      "Failed Own (Alpha) → Alpha: Denied by test",
+    );
+    expect(container.textContent).toContain(
+      "Failed Own (Alpha) → Beta: Denied by test",
+    );
+    expect(container.textContent).toContain("1 selected");
+    fail.clear();
+    await select("Select Shared (Shared)");
+    await click("Remove from bots");
+    await click("Alpha");
+    await click("Beta");
+    await click("Remove");
+    await waitFor(() => !shows(container, "used by 2")());
+    expect(container.textContent).not.toContain("2 selected");
+    expect(
+      requests.filter((request) => request.endsWith("/assignment")),
+    ).toHaveLength(8);
+  });
 });
 
 test("section select-all is mixed when partly selected; failed updates can be retried without touching unselected skills", async () => {
@@ -457,9 +432,7 @@ test("section select-all is mixed when partly selected; failed updates can be re
     expect(container.textContent).toContain("1 selected");
     fail.add("/v1/skills/github/update");
     await click("Update");
-    expect(container.textContent).toContain(
-      "Failed GitHub (Shared): Denied by test",
-    );
+    await waitFor(shows(container, "Failed GitHub (Shared): Denied by test"));
     expect(
       container.querySelector<HTMLInputElement>(
         '[aria-label="Select GitHub (Shared)"]',
@@ -467,11 +440,11 @@ test("section select-all is mixed when partly selected; failed updates can be re
     ).toBe(true);
     fail.clear();
     await click("Update");
-    expect(container.textContent).not.toContain("1 selected");
+    await waitFor(() => !shows(container, "1 selected")());
     await select("Select GitHub (Shared)");
     await click("Update");
-    expect(container.textContent).toContain(
-      "Skipped GitHub (Shared): already up to date",
+    await waitFor(
+      shows(container, "Skipped GitHub (Shared): already up to date"),
     );
     expect(requests.filter((request) => request.endsWith("/update"))).toEqual([
       "POST /v1/skills/github/update",
@@ -519,7 +492,7 @@ test("selection consumers do not render for unrelated provider changes, but stil
     let writes = 0;
     let indeterminate = checkbox.indeterminate;
     // SelectSkills' ref writes this native property on every consumer commit.
-    // Instrument the actual checkbox, not a mock of React or of the provider.
+    // A Profiler misses context-only commits, and nothing else in the DOM changes.
     Object.defineProperty(checkbox, "indeterminate", {
       configurable: true,
       get: () => indeterminate,
@@ -542,26 +515,16 @@ test("selection consumers do not render for unrelated provider changes, but stil
 });
 
 test("usage counts eventually refresh after a delayed bot refetch", async () => {
-  await fixture(
-    async ({ container, select, click, holdBotRefetch, waitFor }) => {
-      await select("Select Shared (Shared)");
-      await click("Assign to bots");
-      await click("Alpha");
-      await click("Beta");
-      const refetch = holdBotRefetch();
-      await click("Assign");
-      await refetch.started;
-
-      try {
-        expect(container.textContent).not.toContain("used by 2");
-        refetch.release();
-        await waitFor(
-          () => container.textContent?.includes("used by 2") === true,
-        );
-        expect(container.textContent).toContain("used by 2");
-      } finally {
-        refetch.release();
-      }
-    },
-  );
+  await fixture(async ({ container, select, click, holdBotRefetch }) => {
+    await select("Select Shared (Shared)");
+    await click("Assign to bots");
+    await click("Alpha");
+    await click("Beta");
+    const refetch = holdBotRefetch();
+    await click("Assign");
+    await act(() => refetch.started);
+    expect(container.textContent).not.toContain("used by 2");
+    refetch.release();
+    await waitFor(shows(container, "used by 2"));
+  });
 });

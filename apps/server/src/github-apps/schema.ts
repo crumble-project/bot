@@ -4,30 +4,23 @@ import {
   sqliteTable,
   text,
 } from "drizzle-orm/sqlite-core";
-import { agents } from "../bots/schema";
+import { agents } from "../bot-store/schema";
 
-/**
- * The account's GitHub Apps, each created from a manifest and private to one GitHub account. The client secret, which
- * signing the owner in needs, is a secret under `githubAppClientSecretKey`.
- */
 export const githubApps = sqliteTable("github_apps", {
   id: text("id").primaryKey(),
   appId: integer("app_id").notNull(),
   slug: text("slug").notNull(),
   name: text("name").notNull(),
   clientId: text("client_id").notNull(),
-  /** The App's private key in PEM, encrypted with the account's key. */
   privateKey: text("private_key").notNull(),
   /** The `slug[bot]` user's ID, which GitHub's noreply commit email needs. */
   botUserId: integer("bot_user_id").notNull(),
   htmlUrl: text("html_url").notNull(),
-  /** The GitHub user or organization whose repositories the App works on; null until known from an installation. */
   account: text("account"),
   installationId: integer("installation_id"),
   createdAt: text("created_at").notNull(),
 });
 
-/** Which bots act through which App; a bot uses at most one App per GitHub account. */
 export const githubAppBots = sqliteTable(
   "github_app_bots",
   {
@@ -42,7 +35,6 @@ export const githubAppBots = sqliteTable(
   (table) => [primaryKey({ columns: [table.appId, table.agentId] })],
 );
 
-/** The owner signed in through an App: its bots then act on GitHub as the owner, shown with the App's badge. */
 export const githubAppUsers = sqliteTable("github_app_users", {
   appId: text("app_id")
     .primaryKey()
@@ -56,10 +48,6 @@ export const githubAppUsers = sqliteTable("github_app_users", {
   refreshExpiresAt: integer("refresh_expires_at").notNull(),
 });
 
-/**
- * GitHub users the owner made for bots, each added with a personal access token; GitHub calls them machine users. The
- * token is a keyed secret, `githubAccountTokenKey`, so it can be read from a password manager.
- */
 export const githubAccounts = sqliteTable("github_accounts", {
   id: text("id").primaryKey(),
   login: text("login").notNull(),
@@ -67,7 +55,6 @@ export const githubAccounts = sqliteTable("github_accounts", {
   createdAt: text("created_at").notNull(),
 });
 
-/** Which bots act as which machine account: at most one per bot, wherever none of its Apps does. */
 export const githubAccountBots = sqliteTable("github_account_bots", {
   agentId: text("agent_id")
     .primaryKey()

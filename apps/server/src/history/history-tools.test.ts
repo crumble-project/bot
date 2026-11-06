@@ -11,14 +11,15 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Effect } from "effect";
-import { AgentRepository } from "../bots/agent-repository";
-import { standaloneGroupChats } from "../group-chats/group-chats";
+import { AgentRepository } from "../bot-store/agent-repository";
+import { standaloneGroupChats } from "../group-chats/group-chats-test-support";
 import { GroupTranscripts } from "../group-chats/group-transcripts";
 import { HistorySearch } from "./history-search";
 import { historySource } from "./history-tools";
 import { AgentRuntime } from "../bots/runtime";
-import { standaloneBots } from "../bots/bots";
+import { standaloneBots } from "../bots/bots-test-support";
 import { Store } from "../../test/support/store";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
 test("history search keeps committed assistant messages visible across turn completion", async () => {
   const dir = mkdtempSync(join(tmpdir(), "bot-history-active-"));
@@ -41,25 +42,28 @@ test("history search keeps committed assistant messages visible across turn comp
   models.setProvider(faux.provider);
   const store = new Store(dir);
 
-  const runtime = new AgentRuntime(join(dir, "agents"), {
-    models,
-    extensions: () => [
-      defineExtension({
-        name: "probe",
-        tools: [
-          defineTool({
-            name: "probe",
-            description: "Return a result.",
-            parameters: Type.Object({}),
-            replay: "safe",
-            execute: async () => ({
-              output: [{ type: "text" as const, text: "Done." }],
+  const runtime = new AgentRuntime(
+    join(dir, "agents"),
+    runtimeCallbacks({
+      models,
+      extensions: () => [
+        defineExtension({
+          name: "probe",
+          tools: [
+            defineTool({
+              name: "probe",
+              description: "Return a result.",
+              parameters: Type.Object({}),
+              replay: "safe",
+              execute: async () => ({
+                output: [{ type: "text" as const, text: "Done." }],
+              }),
             }),
-          }),
-        ],
-      }),
-    ],
-  });
+          ],
+        }),
+      ],
+    }),
+  );
 
   const service = standaloneBots(store, runtime);
 

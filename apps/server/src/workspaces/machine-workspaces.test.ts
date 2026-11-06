@@ -10,11 +10,10 @@ import { DesktopStartFailed, WorkspaceStreamFailed } from "./workspace-errors";
 const BASE = "base";
 const DESKTOP = "desktop";
 
-/** A backend whose machines do nothing; `fail` picks the step that fails. */
 function fakeMachines(fail?: "desktop" | "stream") {
   const booted: string[] = [];
+  const removed: string[] = [];
   const stopped: string[] = [];
-  // Completes at the first stop, so a test waits for an idle stop without guessing how long it takes.
   const stopping = Deferred.makeUnsafe<void>();
 
   const machine = (image: string): WorkspaceMachine => ({
@@ -54,9 +53,13 @@ function fakeMachines(fail?: "desktop" | "stream") {
 
         return machine(image);
       }),
+    remove: (agentId) =>
+      Effect.sync(() => {
+        removed.push(`${agentId} after ${stopped.length} stops`);
+      }),
   };
 
-  return { machines, booted, stopped, stopping };
+  return { machines, booted, stopped, stopping, removed };
 }
 
 const failureOf = <A, E extends { _tag: string }>(
@@ -68,6 +71,22 @@ const failureOf = <A, E extends { _tag: string }>(
       Effect.map((error) => error._tag),
     ),
   );
+
+test("removing a workspace stops its running machine, then deletes it, also when no machine ever ran", async () => {
+  const { machines, removed } = fakeMachines();
+
+  const workspaces = new MachineWorkspaces(machines, BASE, {
+    desktopImage: DESKTOP,
+    wantsDesktop: () => true,
+  });
+
+  await Effect.runPromise(workspaces.startDesktop("bot"));
+  await Effect.runPromise(workspaces.remove("bot"));
+  await Effect.runPromise(workspaces.remove("idle"));
+
+  expect(removed).toEqual(["bot after 1 stops", "idle after 1 stops"]);
+  await Effect.runPromise(workspaces.close());
+});
 
 test("a server without a desktop image names that, without booting", async () => {
   const { machines, booted } = fakeMachines();
@@ -121,7 +140,6 @@ test("a VNC stream that does not open releases the machine for its idle stop", a
   expect(await failureOf(workspaces.openDesktop("bot"))).toBe(
     "WorkspaceStreamFailed",
   );
-  // A hold the failed open kept would block the idle stop, and this would time out.
   await Effect.runPromise(Deferred.await(stopping));
   expect(stopped).toEqual([DESKTOP]);
   await Effect.runPromise(workspaces.close());
@@ -151,7 +169,6 @@ test("a passive viewer watches a running bot desktop without booting or holding 
   const stream = await Effect.runPromise(passive);
 
   release();
-  // A hold the passive stream kept would block the idle stop, and this would time out.
   await Effect.runPromise(Deferred.await(stopping));
   expect(stopped).toEqual([DESKTOP]);
   expect(booted).toEqual([DESKTOP]);

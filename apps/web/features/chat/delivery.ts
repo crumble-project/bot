@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from "react";
-import { send } from "@/lib/api";
+import { HttpError, type RoutePath, send } from "@/lib/api";
+import { onSessionReset } from "@/lib/session";
+import type { Message } from "./api";
 import type { Upload } from "./composer";
 
 export type Outgoing = {
@@ -8,8 +10,14 @@ export type Outgoing = {
   replyTo?: string;
   uploads: Upload[];
   state: "sending" | "failed";
-  createdAt: number;
 };
+
+export const outgoingMessage = (message: Outgoing): Message => ({
+  id: `local:${message.requestId}`,
+  entryId: "",
+  role: "user",
+  content: message.content,
+});
 
 const outgoing = new Map<string, Outgoing[]>();
 const listeners = new Set<() => void>();
@@ -21,7 +29,12 @@ function update(chat: string, change: (list: Outgoing[]) => Outgoing[]) {
   for (const listener of listeners) listener();
 }
 
-/** Messages sent to `chat` that its transcript does not show yet. */
+onSessionReset(() => {
+  outgoing.clear();
+
+  for (const listener of listeners) listener();
+});
+
 export function useOutgoing(chat: string) {
   return useSyncExternalStore(
     (listener) => {
@@ -33,7 +46,6 @@ export function useOutgoing(chat: string) {
   );
 }
 
-/** Drops messages the transcript now contains, matched by request ID. */
 export function confirm(chat: string, requestIds: Set<string>) {
   const list = outgoing.get(chat);
 
@@ -43,23 +55,29 @@ export function confirm(chat: string, requestIds: Set<string>) {
     );
 }
 
+/** Takes a message the server refused off the transcript, so it can go back to the composer. */
+export function discard(chat: string, requestId: string) {
+  update(chat, (list) => list.filter((each) => each.requestId !== requestId));
+}
+
 /**
  * Sends a message and shows it at once; it stays until a snapshot confirms it.
  * A retry reuses the request ID and files, so the server can tell it is the same message.
+ * `rejected` says the server answered and refused it; after any other failure it may still have arrived.
  */
 export async function deliver(
   chat: string,
-  path: string,
-  message: Omit<Outgoing, "state" | "createdAt">,
+  path: RoutePath<"sendMessage" | "sendGroupMessage">,
+  message: Omit<Outgoing, "state">,
   extra: { timezone?: string } = {},
 ) {
   update(chat, (list) => [
     ...list.filter((each) => each.requestId !== message.requestId),
-    { ...message, state: "sending", createdAt: Date.now() },
+    { ...message, state: "sending" },
   ]);
 
   try {
-    await send(path, "POST", {
+    await send<"sendMessage" | "sendGroupMessage">(path, "POST", {
       content: message.content,
       requestId: message.requestId,
       ...(message.replyTo && { replyTo: message.replyTo }),
@@ -83,6 +101,9 @@ export async function deliver(
       ),
     );
 
-    return error instanceof Error ? error.message : "Message was not sent";
+    return {
+      reason: error instanceof Error ? error.message : "Message was not sent",
+      rejected: error instanceof HttpError && error.status < 500,
+    };
   }
 }

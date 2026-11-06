@@ -1,10 +1,10 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { IconCheck, IconCopy } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -61,7 +61,6 @@ export function OwnerSelectField({
   );
 }
 
-/** The options of a plain select, one per item. */
 export function SelectOptions({
   items,
 }: {
@@ -80,7 +79,6 @@ export function SelectOptions({
   );
 }
 
-/** A titled, tinted group of fields inside an editor sheet. */
 export function EditorSection({
   title,
   children,
@@ -100,7 +98,6 @@ export function EditorSection({
   );
 }
 
-/** The side sheet every editor opens in: a scrolling form with its actions pinned below. */
 export function EditorSheet({
   title,
   description,
@@ -158,66 +155,46 @@ export function EditorSheet({
   );
 }
 
-/** A one-line form for an API key or other secret; the value is never shown again. */
-export function SecretForm({
-  label,
-  value,
-  pending,
-  onChange,
-  onSave,
-  onCancel,
+const ICON_SWAP =
+  "transition-[opacity,scale,filter] duration-200 ease-[cubic-bezier(0.2,0,0,1)]";
+
+export function CopyButton({
+  text,
+  size = "icon-sm",
 }: {
-  label: string;
-  value: string;
-  pending: boolean;
-  onChange: (value: string) => void;
-  onSave: () => void;
-  onCancel?: () => void;
+  text: string;
+  size?: "icon-sm" | "icon-xs";
 }) {
-  return (
-    <form
-      className="flex gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-
-        if (value.trim()) onSave();
-      }}
-    >
-      <Input
-        type="password"
-        aria-label={label}
-        autoFocus
-        autoComplete="off"
-        placeholder="API key"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-      <Button type="submit" disabled={!value.trim() || pending}>
-        Save
-      </Button>
-      {onCancel && (
-        <Button type="button" variant="ghost" onClick={onCancel}>
-          Cancel
-        </Button>
-      )}
-    </form>
-  );
-}
-
-/** Copies `text` and shows a check once it did. */
-export function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+
+    const timer = setTimeout(() => setCopied(false), 1500);
+
+    return () => clearTimeout(timer);
+  }, [copied]);
 
   return (
     <Button
       variant="ghost"
-      size="icon-sm"
+      size={size}
       title={copied ? "Copied" : "Copy"}
+      className="relative"
       onClick={() =>
         void navigator.clipboard.writeText(text).then(() => setCopied(true))
       }
     >
-      {copied ? <IconCheck /> : <IconCopy />}
+      <IconCopy
+        className={cn(ICON_SWAP, copied && "scale-25 opacity-0 blur-[4px]")}
+      />
+      <IconCheck
+        className={cn(
+          ICON_SWAP,
+          "absolute",
+          !copied && "scale-25 opacity-0 blur-[4px]",
+        )}
+      />
     </Button>
   );
 }

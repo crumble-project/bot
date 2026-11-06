@@ -1,5 +1,11 @@
 import { SmoothCorners } from "@lisse/react";
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { css, cx } from "styled-system/css";
 import { useColorScheme } from "~/color-scheme";
 
@@ -240,7 +246,6 @@ const header = css({
 
 const tabs = css({ display: "flex", flexWrap: "wrap", columnGap: "1.25rem" });
 
-// The active tab's underline fills as its scenario plays.
 const tab = css({
   position: "relative",
   pb: ".6rem",
@@ -291,7 +296,6 @@ const row = css({
   _motionReduce: { animation: "none" },
 });
 
-// A fixed-height pane that follows the newest line keeps the card small.
 const viewport = css({
   h: { base: "19rem", sm: "17rem" },
   mx: "-1.25rem",
@@ -305,7 +309,6 @@ const viewport = css({
 
 const list = css({ pt: "2.5rem", pb: ".25rem" });
 
-// A date change gets extra space, so months between messages read as a gap.
 const gap = css({ mt: "1.6em!" });
 
 const time = css({ color: "faint", fontVariantNumeric: "tabular-nums" });
@@ -645,7 +648,6 @@ function prefersReducedMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-// Steps through a scripted animation once started; reduced motion jumps to the end.
 function useTimeline(started: boolean, times: number[]) {
   const [step, setStep] = useState(0);
 
@@ -723,7 +725,6 @@ function Cursor({ style }: { style: CSSProperties }) {
 
 const password = "••••••••••";
 
-// Move to the field, type the password a dot at a time, then move to Pay.
 const desktopTimes = [
   300,
   ...Array.from(password, (_, index) => 1150 + index * 110),
@@ -788,30 +789,28 @@ function RenewalResult({
   return <div className={success}>✓ Renewed until Oct 24, 2027</div>;
 }
 
-function Desktop({ started, verdict }: { started: boolean; verdict: Verdict }) {
-  const step = useTimeline(started, desktopTimes);
-  const pageRef = useRef<HTMLDivElement>(null);
-  const fieldRef = useRef<HTMLSpanElement>(null);
-  const payRef = useRef<HTMLSpanElement>(null);
-
+function useCursorPoint(
+  pageRef: RefObject<HTMLDivElement | null>,
+  target: { current: HTMLSpanElement | null } | null,
+  verdict: Verdict,
+) {
   const [point, setPoint] = useState<CSSProperties>({
     left: "85%",
     top: "110%",
   });
-
-  const [pressed, setPressed] = useState(false);
-
-  const filled = Math.min(password.length, Math.max(0, step - 1));
-  const atPay = step >= desktopTimes.length;
-
-  const target = desktopTarget(verdict, atPay, step, payRef, fieldRef);
 
   useEffect(() => {
     const frame = pageRef.current;
 
     if (!frame) return;
     setPoint(cursorPosition(frame, target?.current, verdict));
-  }, [target, verdict]);
+  }, [pageRef, target, verdict]);
+
+  return point;
+}
+
+function usePayPress(verdict: Verdict) {
+  const [pressed, setPressed] = useState(false);
 
   useEffect(() => {
     if (verdict !== "approved") return;
@@ -821,6 +820,21 @@ function Desktop({ started, verdict }: { started: boolean; verdict: Verdict }) {
     return () => clearTimeout(timer);
   }, [verdict]);
 
+  return pressed;
+}
+
+function Desktop({ started, verdict }: { started: boolean; verdict: Verdict }) {
+  const step = useTimeline(started, desktopTimes);
+  const pageRef = useRef<HTMLDivElement>(null);
+  const fieldRef = useRef<HTMLSpanElement>(null);
+  const payRef = useRef<HTMLSpanElement>(null);
+
+  const filled = Math.min(password.length, Math.max(0, step - 1));
+  const atPay = step >= desktopTimes.length;
+
+  const target = desktopTarget(verdict, atPay, step, payRef, fieldRef);
+  const point = useCursorPoint(pageRef, target, verdict);
+  const pressed = usePayPress(verdict);
   const payState = desktopPayState(verdict, pressed, atPay);
 
   return (
@@ -912,6 +926,12 @@ function lineState(index: number, at: number, busy: boolean): State {
   return busy ? "busy" : "hidden";
 }
 
+function revealState(index: number, playback: Playback) {
+  return playback.inView
+    ? lineState(index, playback.at, playback.busy)
+    : "hidden";
+}
+
 function MessageBody({
   line,
   current,
@@ -989,29 +1009,8 @@ function playbackProgress(inView: boolean, at: number, total: number) {
   return inView ? Math.min(1, at / total) : 0;
 }
 
-export function Transcript() {
-  const scheme = useColorScheme();
-  const ref = useRef<HTMLElement>(null);
-  const paneRef = useRef<HTMLDivElement>(null);
+function useSeenOnScroll(ref: RefObject<HTMLElement | null>) {
   const [inView, setInView] = useState(false);
-  const [run, setRun] = useState(0);
-  const [active, setActive] = useState(0);
-  const [at, setAt] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const [picked, setPicked] = useState<number | null>(null);
-
-  const { intro, choice } = scenarios[active];
-
-  const outcome = scenarioOutcome(choice, picked);
-
-  const lines: (Line | Choice)[] = [...intro, choice, ...outcome];
-  const choiceIndex = intro.length;
-  const waiting = at > choiceIndex && picked === null;
-  const done = at >= lines.length;
-
-  const verdict = choiceVerdict(choice, picked);
-  const playing = shouldPlay(inView, done, waiting);
-  const jumpTo = picked === null ? choiceIndex + 1 : lines.length;
 
   useEffect(() => {
     const element = ref.current;
@@ -1031,8 +1030,28 @@ export function Transcript() {
     observer.observe(element);
 
     return () => observer.disconnect();
-  }, []);
+  }, [ref]);
 
+  return [inView, setInView] as const;
+}
+
+function useLineTimer({
+  playing,
+  lines,
+  at,
+  busy,
+  jumpTo,
+  setAt,
+  setBusy,
+}: {
+  playing: boolean;
+  lines: (Line | Choice)[];
+  at: number;
+  busy: boolean;
+  jumpTo: number;
+  setAt: (at: number) => void;
+  setBusy: (busy: boolean) => void;
+}) {
   useEffect(() => {
     if (!playing) return;
 
@@ -1057,6 +1076,15 @@ export function Transcript() {
 
     return () => clearTimeout(timer);
   });
+}
+
+function usePaneFollow(
+  at: number,
+  busy: boolean,
+  picked: number | null,
+  run: number,
+) {
+  const paneRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const pane = paneRef.current;
@@ -1068,6 +1096,39 @@ export function Transcript() {
     });
   }, [at, busy, picked, run]);
 
+  return paneRef;
+}
+
+function usePlayback() {
+  const ref = useRef<HTMLElement>(null);
+  const [inView, setInView] = useSeenOnScroll(ref);
+  const [run, setRun] = useState(0);
+  const [active, setActive] = useState(0);
+  const [at, setAt] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [picked, setPicked] = useState<number | null>(null);
+
+  const { intro, choice } = scenarios[active];
+
+  const outcome = scenarioOutcome(choice, picked);
+
+  const lines: (Line | Choice)[] = [...intro, choice, ...outcome];
+  const choiceIndex = intro.length;
+  const waiting = at > choiceIndex && picked === null;
+  const done = at >= lines.length;
+
+  useLineTimer({
+    playing: shouldPlay(inView, done, waiting),
+    lines,
+    at,
+    busy,
+    jumpTo: picked === null ? choiceIndex + 1 : lines.length,
+    setAt,
+    setBusy,
+  });
+
+  const paneRef = usePaneFollow(at, busy, picked, run);
+
   function play(index: number) {
     setActive(index);
     setRun((count) => count + 1);
@@ -1077,121 +1138,230 @@ export function Transcript() {
     setInView(true);
   }
 
-  function state(index: number): State {
-    if (!inView) return "hidden";
+  return {
+    ref,
+    paneRef,
+    inView,
+    run,
+    active,
+    at,
+    busy,
+    picked,
+    setPicked,
+    intro,
+    choice,
+    outcome,
+    lines,
+    choiceIndex,
+    waiting,
+    done,
+    play,
+  };
+}
 
-    return lineState(index, at, busy);
-  }
+type Playback = ReturnType<typeof usePlayback>;
 
-  function rowClass(index: number) {
-    return index > 0 && lines[index].date !== lines[index - 1].date
-      ? cx(row, gap)
-      : row;
-  }
-
-  function renderLine(line: Line, index: number, key: string) {
-    const current = state(index);
-    const started = current !== "hidden";
-    let body;
-
-    if (line.kind === "message") {
-      body = <MessageBody line={line} current={current} />;
-    } else if (line.kind === "desktop") {
-      body = <Desktop started={started} verdict={verdict} />;
-    } else if (line.kind === "terminal") {
-      body = <Terminal started={started} lines={line.lines} />;
-    } else {
-      body = (
-        <div className={cx(wide, inset)}>
-          <div className={label}>
-            Webhook from {line.source}
-            <span className={tag}>untrusted</span>
-          </div>
-          <span className={css({ color: "ink" })}>{line.text}</span>{" "}
-          <span className={injected} data-struck={at > index + 1}>
-            {line.injected}
-          </span>
-        </div>
-      );
-    }
-
-    return (
-      <li
-        key={key}
-        className={rowClass(index)}
-        data-state={current}
-        aria-hidden={current === "hidden"}
-      >
-        <time dateTime={line.date} className={time}>
-          {line.label}
-        </time>
-        {body}
-      </li>
-    );
-  }
-
-  function renderOptions(className: string) {
-    if (picked !== null) {
-      return <span className={stamp}>{choice.options[picked].result}</span>;
-    }
-
-    return (
-      <div className={className}>
-        {choice.options.map((option, index) => (
-          <button
-            key={option.label}
-            type="button"
-            className={option.primary ? primaryButton : button}
-            disabled={!waiting}
-            onClick={() => setPicked(index)}
-          >
-            {option.label}
-          </button>
-        ))}
+function WebhookBody({
+  line,
+  struck,
+}: {
+  line: Extract<Line, { kind: "webhook" }>;
+  struck: boolean;
+}) {
+  return (
+    <div className={cx(wide, inset)}>
+      <div className={label}>
+        Webhook from {line.source}
+        <span className={tag}>untrusted</span>
       </div>
-    );
+      <span className={css({ color: "ink" })}>{line.text}</span>{" "}
+      <span className={injected} data-struck={struck}>
+        {line.injected}
+      </span>
+    </div>
+  );
+}
+
+function LineBody({
+  line,
+  index,
+  playback,
+}: {
+  line: Line;
+  index: number;
+  playback: Playback;
+}) {
+  const current = revealState(index, playback);
+  const started = current !== "hidden";
+
+  if (line.kind === "message")
+    return <MessageBody line={line} current={current} />;
+
+  if (line.kind === "desktop") {
+    const verdict = choiceVerdict(playback.choice, playback.picked);
+
+    return <Desktop started={started} verdict={verdict} />;
   }
 
-  function renderChoice() {
-    const current = state(choiceIndex);
-    const shown = current === "shown";
+  if (line.kind === "terminal")
+    return <Terminal started={started} lines={line.lines} />;
 
-    const common = {
-      className: rowClass(choiceIndex),
-      "data-state": current,
-      "aria-hidden": !shown,
-    };
+  return <WebhookBody line={line} struck={playback.at > index + 1} />;
+}
 
-    if (choice.kind === "reply") {
-      return (
-        <li key={`${run}-choice`} {...common}>
-          <time dateTime={choice.date} className={time}>
-            {choice.label}
-          </time>
-          <b>You</b>
-          <span className={text}>
-            {picked === null
-              ? renderOptions(replyActions)
-              : choice.options[picked].result}
-          </span>
-        </li>
-      );
-    }
+function rowClass(lines: (Line | Choice)[], index: number) {
+  return index > 0 && lines[index].date !== lines[index - 1].date
+    ? cx(row, gap)
+    : row;
+}
 
+function LineRow({
+  line,
+  index,
+  playback,
+}: {
+  line: Line;
+  index: number;
+  playback: Playback;
+}) {
+  const current = revealState(index, playback);
+
+  return (
+    <li
+      className={rowClass(playback.lines, index)}
+      data-state={current}
+      aria-hidden={current === "hidden"}
+    >
+      <time dateTime={line.date} className={time}>
+        {line.label}
+      </time>
+      <LineBody line={line} index={index} playback={playback} />
+    </li>
+  );
+}
+
+function ChoiceOptions({
+  playback: { choice, picked, waiting, setPicked },
+  className,
+}: {
+  playback: Playback;
+  className: string;
+}) {
+  if (picked !== null) {
+    return <span className={stamp}>{choice.options[picked].result}</span>;
+  }
+
+  return (
+    <div className={className}>
+      {choice.options.map((option, index) => (
+        <button
+          key={option.label}
+          type="button"
+          className={option.primary ? primaryButton : button}
+          disabled={!waiting}
+          onClick={() => setPicked(index)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ChoiceRow({ playback }: { playback: Playback }) {
+  const { choice, choiceIndex, lines, picked } = playback;
+  const current = revealState(choiceIndex, playback);
+  const shown = current === "shown";
+
+  const common = {
+    className: rowClass(lines, choiceIndex),
+    "data-state": current,
+    "aria-hidden": !shown,
+  };
+
+  if (choice.kind === "reply") {
     return (
-      <li key={`${run}-choice`} {...common}>
+      <li {...common}>
         <time dateTime={choice.date} className={time}>
           {choice.label}
         </time>
-        <div className={cx(wide, inset, shown ? pop : undefined)}>
-          <ChoiceBody choice={choice} verdict={verdict} picked={picked} />
-          {renderOptions(actions)}
-        </div>
+        <b>You</b>
+        <span className={text}>
+          {picked === null ? (
+            <ChoiceOptions playback={playback} className={replyActions} />
+          ) : (
+            choice.options[picked].result
+          )}
+        </span>
       </li>
     );
   }
 
+  return (
+    <li {...common}>
+      <time dateTime={choice.date} className={time}>
+        {choice.label}
+      </time>
+      <div className={cx(wide, inset, shown ? pop : undefined)}>
+        <ChoiceBody
+          choice={choice}
+          verdict={choiceVerdict(choice, picked)}
+          picked={picked}
+        />
+        <ChoiceOptions playback={playback} className={actions} />
+      </div>
+    </li>
+  );
+}
+
+function TranscriptHeader({
+  playback: { inView, at, lines, active, done, play },
+}: {
+  playback: Playback;
+}) {
   const progress = playbackProgress(inView, at, lines.length);
+
+  return (
+    <div className={header}>
+      <div className={tabs}>
+        {scenarios.map((item, index) => (
+          <button
+            key={item.name}
+            type="button"
+            className={tab}
+            aria-pressed={index === active}
+            // SAFETY: CSSProperties has no index for custom properties.
+            style={
+              {
+                "--progress": index === active ? progress : 0,
+              } as CSSProperties
+            }
+            onClick={() => play(index)}
+          >
+            {item.name}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        className={replay}
+        data-hidden={!done}
+        tabIndex={done ? 0 : -1}
+        aria-label="Replay"
+        title="Replay"
+        onClick={() => play(active)}
+      >
+        <ReplayIcon />
+      </button>
+    </div>
+  );
+}
+
+export function Transcript() {
+  const scheme = useColorScheme();
+  const playback = usePlayback();
+  const { ref, paneRef, run, active, picked, intro, outcome } = playback;
+  const firstOutcome = playback.choiceIndex + 1;
 
   return (
     <SmoothCorners
@@ -1202,52 +1372,27 @@ export function Transcript() {
       className={figure}
       aria-label="Interactive example of a bot chat"
     >
-      <div className={header}>
-        <div className={tabs}>
-          {scenarios.map((item, index) => (
-            <button
-              key={item.name}
-              type="button"
-              className={tab}
-              aria-pressed={index === active}
-              // SAFETY: CSSProperties has no index for custom properties.
-              style={
-                {
-                  "--progress": index === active ? progress : 0,
-                } as CSSProperties
-              }
-              onClick={() => play(index)}
-            >
-              {item.name}
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          className={replay}
-          data-hidden={!done}
-          tabIndex={done ? 0 : -1}
-          aria-label="Replay"
-          title="Replay"
-          onClick={() => play(active)}
-        >
-          <ReplayIcon />
-        </button>
-      </div>
+      <TranscriptHeader playback={playback} />
 
       <div ref={paneRef} className={viewport}>
         <ol className={list} aria-live="polite">
-          {intro.map((line, index) =>
-            renderLine(line, index, `${run}-${active}-${index}`),
-          )}
-          {renderChoice()}
-          {outcome.map((line, index) =>
-            renderLine(
-              line,
-              choiceIndex + 1 + index,
-              `${run}-${active}-${picked}-${choiceIndex + 1 + index}`,
-            ),
-          )}
+          {intro.map((line, index) => (
+            <LineRow
+              key={`${run}-${active}-${index}`}
+              line={line}
+              index={index}
+              playback={playback}
+            />
+          ))}
+          <ChoiceRow key={`${run}-choice`} playback={playback} />
+          {outcome.map((line, index) => (
+            <LineRow
+              key={`${run}-${active}-${picked}-${firstOutcome + index}`}
+              line={line}
+              index={firstOutcome + index}
+              playback={playback}
+            />
+          ))}
         </ol>
       </div>
     </SmoothCorners>

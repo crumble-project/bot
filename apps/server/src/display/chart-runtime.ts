@@ -23,7 +23,8 @@ import type {
 } from "@tanstack/charts";
 import { scaleLog, scaleSqrt, scaleTime, scaleUtc } from "d3-scale";
 import svgpath from "svgpath";
-import type { ChartLayoutInput } from "./charts";
+import type { ChartLayoutInput } from "../contract/chart";
+import { CHART_SERIES_COLORS } from "../shared/limits";
 
 type Primitive = ChartLayoutInput["nodes"][number];
 
@@ -54,13 +55,15 @@ type Placement = {
   paint: Paint;
 };
 
-/** Theme tokens clients resolve per appearance. */
 const theme = {
   foreground: "currentColor",
   muted: "currentColor",
   grid: "currentColor",
   background: "transparent",
-  palette: Array.from({ length: 8 }, (_, index) => `series-${index + 1}`),
+  palette: Array.from(
+    { length: CHART_SERIES_COLORS },
+    (_, index) => `series-${index + 1}`,
+  ),
 };
 
 const charts = {
@@ -88,7 +91,6 @@ const tidy = (value: string) =>
     ? String(Math.round(Number(value) * 1000) / 1000)
     : value;
 
-/** A group's opacity composites with its children's instead of replacing it. */
 const compositeOpacity = (
   parent: Paint["opacity"],
   opacity: SceneStyle["opacity"],
@@ -194,7 +196,6 @@ function ring(
   return commands;
 }
 
-/** Corners as cubic quarter-circle approximations, in top-left, top-right, bottom-right, bottom-left order. */
 function roundedRect(
   x: number,
   y: number,
@@ -333,7 +334,6 @@ function circlePrimitive(
   };
 }
 
-/** Corner radii that differ, which a single rect radius cannot express. */
 const unevenCorners = (node: NodeOf<"rect">) =>
   node.cornerRadii && new Set(node.cornerRadii).size > 1
     ? node.cornerRadii
@@ -418,7 +418,6 @@ function primitive(node: SceneNode, place: Placement): Primitive | undefined {
   }
 }
 
-/** Groups dissolve into absolute positions, inherited paint, and a clip rectangle per primitive. */
 function flatten(node: SceneNode, place: Placement, out: Primitive[]) {
   if (node.kind !== "group") {
     const drawn = primitive(node, place);
@@ -463,7 +462,6 @@ function tooltipContent(
   };
 }
 
-/** Authored formatting from `tooltip: { use: tooltip, format }`; clients draw the tooltip itself. */
 function tooltipOptions(
   definition: ChartDefinition,
 ): ChartTooltipOptions | undefined {
@@ -526,7 +524,6 @@ function layout(
   };
 }
 
-/** Backs rewritten imports, naming a missing export instead of failing later as "not a function". */
 function importNames(names: string[]) {
   const missing = names.filter((name) => !(name in charts));
 

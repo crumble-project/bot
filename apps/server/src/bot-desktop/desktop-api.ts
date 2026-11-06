@@ -1,30 +1,24 @@
 import type { Register } from "../contract/route";
 import { Effect } from "effect";
 import { upgradeWebSocket } from "@hono/bun";
-import { streamSSE } from "hono/streaming";
-import type { WSContext, WSMessageReceive } from "hono/ws";
-import {
-  desktopControlInput,
-  desktopViewerInput,
-  routes,
-  type contractApp,
-} from "../contract/api-contract";
+import type { WSContext, WSEvents, WSMessageReceive } from "hono/ws";
+import { routes, type contractApp } from "../contract/api-contract";
 import type { ControlState, DesktopControlAccess } from "./desktop-control";
 import {
   bridgeDesktop,
-  novncResponse,
   VIEWER_PREFIX,
   viewerPage,
   type Viewer,
   type ViewerTickets,
 } from "./desktop-viewer";
-import type { BotsAccess } from "../bots/bots";
-import type { DesktopStream } from "../workspaces/workspace";
+import type { BotLookup } from "../bot-ports/bot-lookup";
+import type { DesktopStream, Workspaces } from "../workspaces/workspace";
 import type { DesktopOpenError } from "../workspaces/workspace-errors";
 import { Conflict } from "../shared/errors";
+import { streamEvents } from "../shared/event-stream";
 import type { Runner } from "../shared/runner";
-
-const HEARTBEAT_MS = 15_000;
+import type { Agent } from "../contract/agents";
+import { usesDesktop } from "../contract/tools";
 
 /**
  * WebSocket close reasons the viewer shows, at most 123 bytes each: they name what the owner can fix and carry no guest
@@ -56,87 +50,63 @@ const bytesOf = async (data: WSMessageReceive) => {
   return undefined;
 };
 
-/**
- * Routes for watching and taking control of a bot desktop. Control and viewer links are owner API; the viewer page,
- * its noVNC files, and its WebSocket live outside `/v1`, because a web view cannot send the bearer token there: the
- * single-use link is the credential.
- */
-export function registerDesktopRoutes(options: {
+type DesktopRouteOptions = {
   app: ReturnType<typeof contractApp>;
   register: Register;
-  service: BotsAccess;
+  service: BotLookup;
   run: Runner<never>;
-  /** Whether the server has a desktop workspace image. */
-  desktop: boolean;
+  workspaces: Workspaces | undefined;
   control: DesktopControlAccess;
   tickets: ViewerTickets;
-  openDesktop?:
-    | ((
-        agentId: string,
-        options: { passive: boolean },
-      ) => Effect.Effect<DesktopStream, DesktopOpenError>)
-    | undefined;
-  startDesktop?:
-    | ((agentId: string) => Effect.Effect<void, DesktopOpenError>)
-    | undefined;
-  desktopRunning?: ((agentId: string) => boolean) | undefined;
-}) {
-  const { app, register, service, run, control, tickets } = options;
-  // The viewer of each connection, from its redeemed ticket to its WebSocket.
-  const viewers = new WeakMap<Request, Viewer>();
+};
+
+function desktopAccess({ service, workspaces }: DesktopRouteOptions) {
+  const hasBotDesktop = (agent: Pick<Agent, "tools">) =>
+    workspaces?.desktop === true && usesDesktop(agent);
 
   const desktopAgent = (id: string) => {
     const agent = service.agent(id);
 
-    if (!options.desktop || !agent.tools.includes("desktop"))
+    if (!hasBotDesktop(agent))
       throw new Conflict({ message: "This bot has no bot desktop" });
 
     return agent;
   };
 
+  return { hasBotDesktop, desktopAgent };
+}
+
+type DesktopAccess = ReturnType<typeof desktopAccess>;
+
+function registerControlRoutes(
+  { register, service, workspaces, control }: DesktopRouteOptions,
+  { hasBotDesktop, desktopAgent }: DesktopAccess,
+) {
   register(routes.desktopControl, (c) =>
     c.json(control.get(service.agent(c.req.param("id")).id), 200),
   );
 
   register(routes.putDesktopControl, async (c) => {
     const agent = desktopAgent(c.req.param("id"));
-    const input = desktopControlInput.parse(await c.req.json());
 
-    return c.json(control.set(agent.id, input.holder), 200);
+    return c.json(control.set(agent.id, c.req.valid("json").holder), 200);
   });
 
   register(routes.desktopEvents, (c) => {
     const agent = service.agent(c.req.param("id"));
 
-    return streamSSE(c, async (stream) => {
-      let finish!: () => void;
-
-      const finished = new Promise<void>((resolve) => {
-        finish = resolve;
-      });
-
-      stream.onAbort(finish);
-
+    return streamEvents(c, async ({ stream, close, onClose }) => {
       const send = (state: ControlState) =>
         stream
           .writeSSE({ event: "control", data: JSON.stringify(state) })
-          .catch(finish);
+          .catch(close);
 
-      const unsubscribe = control.subscribe(agent.id, (state) => {
-        void send(state);
-      });
-
-      const timer = setInterval(() => {
-        stream.writeSSE({ event: "heartbeat", data: "{}" }).catch(finish);
-      }, HEARTBEAT_MS);
-
-      try {
-        await send(control.get(agent.id));
-        await finished;
-      } finally {
-        clearInterval(timer);
-        unsubscribe();
-      }
+      onClose(
+        control.subscribe(agent.id, (state) => {
+          void send(state);
+        }),
+      );
+      await send(control.get(agent.id));
     });
   });
 
@@ -146,23 +116,25 @@ export function registerDesktopRoutes(options: {
     return c.json(
       {
         running:
-          options.desktop &&
-          agent.tools.includes("desktop") &&
-          options.desktopRunning?.(agent.id) === true,
+          hasBotDesktop(agent) && workspaces?.desktopRunning(agent.id) === true,
       },
       200,
     );
   });
+}
 
+function registerViewerLinkRoute(
+  { register, run, workspaces, tickets }: DesktopRouteOptions,
+  { desktopAgent }: DesktopAccess,
+) {
   register(routes.createDesktopViewer, (c) => {
     const agent = desktopAgent(c.req.param("id"));
-    const { passive = false } = desktopViewerInput.parse(c.req.query());
+    const { passive = false } = c.req.valid("query");
     const { ticket, expiresAt } = tickets.issue(agent.id, passive);
 
-    // The machine boots while the client loads the page; the viewer's WebSocket reports any failure to the owner.
-    if (!passive && options.startDesktop)
+    if (!passive && workspaces)
       run.runFork(
-        options
+        workspaces
           .startDesktop(agent.id)
           .pipe(
             Effect.catchCause((cause) =>
@@ -177,11 +149,65 @@ export function registerDesktopRoutes(options: {
 
     return c.json({ path: `${VIEWER_PREFIX}/${ticket}`, expiresAt }, 201);
   });
+}
 
-  app.get(
-    `${VIEWER_PREFIX}/novnc/*`,
-    async (c) => (await novncResponse(c.req.path)) ?? c.notFound(),
-  );
+function viewerSocket(
+  { run, workspaces, control }: DesktopRouteOptions,
+  { agentId, passive }: Pick<Viewer, "agentId" | "passive">,
+): WSEvents {
+  const pending: Uint8Array[] = [];
+  let bridge: ReturnType<typeof bridgeDesktop> | undefined;
+  let closed = false;
+
+  return {
+    onOpen: (_event, ws: WSContext) => {
+      const attach = (stream: DesktopStream) => {
+        if (closed) return void stream.close();
+
+        bridge = bridgeDesktop({
+          stream,
+          // Watching never lets input through; only the owner holding control does.
+          allowInput: () => control.get(agentId).holder === "owner",
+          // A copy: the WebSocket takes only bytes backed by a plain ArrayBuffer.
+          send: (data) => ws.send(new Uint8Array(data)),
+          close: () => ws.close(),
+        });
+
+        for (const data of pending.splice(0)) bridge.receive(data);
+      };
+
+      const fail = (reason: string) =>
+        Effect.sync(() => ws.close(1011, reason));
+
+      run.runFork(
+        workspaces!.openDesktop(agentId, { passive }).pipe(
+          Effect.flatMap((stream) => Effect.sync(() => attach(stream))),
+          Effect.tapCause((cause) =>
+            Effect.logError("Opening a bot desktop failed", agentId, cause),
+          ),
+          Effect.catch((error) => fail(closeReason(error))),
+          Effect.catchDefect(() => fail(UNAVAILABLE)),
+        ),
+      );
+    },
+    onMessage: async (event) => {
+      const data = await bytesOf(event.data);
+
+      if (!data) return;
+
+      if (bridge) bridge.receive(data);
+      else pending.push(data);
+    },
+    onClose: () => {
+      closed = true;
+      void bridge?.close();
+    },
+  };
+}
+
+function registerViewerRoutes(options: DesktopRouteOptions) {
+  const { app, workspaces, tickets } = options;
+  const viewers = new WeakMap<Request, Viewer>();
 
   app.get(`${VIEWER_PREFIX}/:ticket`, (c) => {
     const ticket = c.req.param("ticket");
@@ -197,66 +223,30 @@ export function registerDesktopRoutes(options: {
       // Spent here, before the upgrade: a link opens one connection.
       const viewer = tickets.redeem(c.req.param("ticket"));
 
-      if (!viewer || !options.openDesktop) return c.notFound();
+      if (!viewer || !workspaces) return c.notFound();
 
       viewers.set(c.req.raw, viewer);
 
       return next();
     },
-    upgradeWebSocket((c) => {
-      const { agentId, passive } = viewers.get(c.req.raw) ?? {
-        agentId: "",
-        passive: true,
-      };
-
-      const pending: Uint8Array[] = [];
-      let bridge: ReturnType<typeof bridgeDesktop> | undefined;
-      let closed = false;
-
-      return {
-        onOpen: (_event, ws: WSContext) => {
-          const attach = (stream: DesktopStream) => {
-            if (closed) return void stream.close();
-
-            bridge = bridgeDesktop({
-              stream,
-              // Watching never lets input through; only the owner holding control does.
-              allowInput: () => control.get(agentId).holder === "owner",
-              // A copy: the WebSocket takes only bytes backed by a plain ArrayBuffer.
-              send: (data) => ws.send(new Uint8Array(data)),
-              close: () => ws.close(),
-            });
-
-            for (const data of pending.splice(0)) bridge.receive(data);
-          };
-
-          const fail = (reason: string) =>
-            Effect.sync(() => ws.close(1011, reason));
-
-          run.runFork(
-            options.openDesktop!(agentId, { passive }).pipe(
-              Effect.flatMap((stream) => Effect.sync(() => attach(stream))),
-              Effect.tapCause((cause) =>
-                Effect.logError("Opening a bot desktop failed", agentId, cause),
-              ),
-              Effect.catch((error) => fail(closeReason(error))),
-              Effect.catchDefect(() => fail(UNAVAILABLE)),
-            ),
-          );
-        },
-        onMessage: async (event) => {
-          const data = await bytesOf(event.data);
-
-          if (!data) return;
-
-          if (bridge) bridge.receive(data);
-          else pending.push(data);
-        },
-        onClose: () => {
-          closed = true;
-          void bridge?.close();
-        },
-      };
-    }),
+    upgradeWebSocket((c) =>
+      viewerSocket(
+        options,
+        viewers.get(c.req.raw) ?? { agentId: "", passive: true },
+      ),
+    ),
   );
+}
+
+/**
+ * Routes for watching and taking control of a bot desktop. Control and viewer links are owner API; the viewer page,
+ * its noVNC files, and its WebSocket live outside `/v1`, because a web view cannot send the bearer token there: the
+ * single-use link is the credential.
+ */
+export function registerDesktopRoutes(options: DesktopRouteOptions) {
+  const access = desktopAccess(options);
+
+  registerControlRoutes(options, access);
+  registerViewerLinkRoute(options, access);
+  registerViewerRoutes(options);
 }

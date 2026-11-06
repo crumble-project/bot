@@ -5,7 +5,7 @@ import {
   until,
   SETTLE_MS,
   SETTLING_TEST_MS,
-} from "./jobs-test-support";
+} from "../../test/support/jobs";
 
 test(
   "stopping a waiting job cancels its delivery",

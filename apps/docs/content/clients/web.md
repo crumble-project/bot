@@ -37,10 +37,10 @@ the proposed identity, model, capabilities, and integrations. Select **Edit**
 to change the proposal, then **Approve** or **Decline**. An approved bot is
 independent of the one that proposed it, and opens its own chat.
 
-A credential request card shows the hosts the credential is for. Enter the
-value in the password field and select **Save**, or select **Decline**. The
-value goes straight to the credentials service and never appears in the
-transcript.
+A credential request card shows the hosts the credential is for. Select
+**Add credential** to enter the value or a password manager reference, or select
+**Decline**. The value goes straight to the credentials service and never
+appears in the transcript.
 
 After you decide, a card collapses to show the outcome. Bot request decisions
 also appear as centered notices in the chat.

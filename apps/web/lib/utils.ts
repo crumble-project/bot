@@ -12,3 +12,16 @@ export function randomId(): string {
 
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
+
+const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six"];
+
+export const numberWord = (count: number) =>
+  NUMBER_WORDS[count] ?? String(count);
+
+export function plainMarkdown(markdown: string) {
+  return markdown
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/[*_`#>[\]()]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}

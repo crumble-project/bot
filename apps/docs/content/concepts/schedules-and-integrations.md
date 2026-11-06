@@ -27,6 +27,9 @@ to open the bot's chat, or a script run to see its output.
 A prompt automation sends its prompt to the bot's chat, and the bot answers
 there. A script automation runs a shell command instead.
 
+A one-time automation that already ran doesn't run again when you edit, pause,
+or resume it. To run it again, give it a new time or use **Run now**.
+
 ### Script Automations
 
 A script automation runs a shell command in its bot's

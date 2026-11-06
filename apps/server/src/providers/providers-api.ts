@@ -1,10 +1,6 @@
 import { z } from "zod";
 import { getSupportedThinkingLevels, type Models } from "@earendil-works/pi-ai";
-import {
-  routes,
-  providerLoginAnswerInput,
-  providerLoginInput,
-} from "../contract/api-contract";
+import { routes, providerLoginAnswerInput } from "../contract/api-contract";
 import type { Register } from "../contract/route";
 import type { ExternalAuth } from "../plugins/plugins";
 import {
@@ -13,24 +9,12 @@ import {
   NotFound,
   Unavailable,
 } from "../shared/errors";
-import type { Runner } from "../shared/runner";
 import { loginMethods, type ProviderSignInsAccess } from "./provider-auth";
-import { ProviderCredentialRepository } from "./provider-credential-repository";
-import { providerApiKeyKey } from "./provider-credentials";
-import { Secrets } from "../password-managers/secrets";
-import { secretInput } from "../shared/domain";
-
-type Services = ProviderCredentialRepository | Secrets;
-
-type Exec = Runner<Services>["runSync"];
 
 type ProviderRoutesOptions = {
   register: Register;
   providerAuth: ProviderSignInsAccess;
-  /** Runs the repository effects the provider routes read. */
-  run: Runner<Services>;
-  /** Providers whose sign-in happens outside Crumble, by provider ID. */
-  externalAuth?: ReadonlyMap<string, () => Promise<ExternalAuth>> | undefined;
+  externalAuth: ReadonlyMap<string, () => Promise<ExternalAuth>>;
 };
 
 /** The providers this server can serve; a saved credential may name a provider that has since been dropped. */
@@ -53,22 +37,13 @@ const availableModels = async (models: Models, name: string | undefined) => {
   }
 };
 
-/** Each provider's sign-in state, and the models its credentials can reach. */
 const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
   const { register, providerAuth } = options;
-  const exec: Exec = (effect) => options.run.runSync(effect);
   const models = providerAuth.models;
   const provider = providerSchema(models);
 
-  register(routes.providers, async (c) => {
-    const saved = new Map(
-      exec(ProviderCredentialRepository.use((r) => r.list)).map((info) => [
-        info.providerId,
-        info,
-      ]),
-    );
-
-    return c.json(
+  register(routes.providers, async (c) =>
+    c.json(
       await Promise.all(
         models.getProviders().map(async (item) => ({
           provider: item.id,
@@ -77,17 +52,14 @@ const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
             await models.checkAuth(item.id).catch(() => undefined),
           ),
           authMethods: loginMethods(item),
-          credentialType: saved.get(item.id)?.type ?? null,
-          apiKey: exec(
-            Secrets.use((s) => s.status(providerApiKeyKey(item.id))),
-          ),
+          ...providerAuth.status(item.id),
           activeLoginId: providerAuth.activeLoginId(item.id),
-          externalAuth: (await options.externalAuth?.get(item.id)?.()) ?? null,
+          externalAuth: (await options.externalAuth.get(item.id)?.()) ?? null,
         })),
       ),
       200,
-    );
-  });
+    ),
+  );
   register(routes.models, async (c) => {
     const name = c.req.query("provider");
 
@@ -107,7 +79,6 @@ const registerProviderStatusRoutes = (options: ProviderRoutesOptions) => {
   });
 };
 
-/** Storing and removing one provider's API key. */
 const registerProviderCredentialRoutes = (options: ProviderRoutesOptions) => {
   const { register, providerAuth } = options;
   const provider = providerSchema(providerAuth.models);
@@ -115,13 +86,13 @@ const registerProviderCredentialRoutes = (options: ProviderRoutesOptions) => {
   register(routes.putProvider, async (c) => {
     const name = provider.parse(c.req.param("provider"));
 
-    await providerAuth.setApiKey(name, secretInput.parse(await c.req.json()));
+    await providerAuth.setApiKey(name, c.req.valid("json"));
 
     return c.json({ provider: name, configured: true }, 200);
   });
   register(routes.deleteProvider, async (c) => {
     const name = provider.parse(c.req.param("provider"));
-    const external = await options.externalAuth?.get(name)?.();
+    const external = await options.externalAuth.get(name)?.();
 
     if (external)
       throw new Conflict({
@@ -134,7 +105,6 @@ const registerProviderCredentialRoutes = (options: ProviderRoutesOptions) => {
   });
 };
 
-/** The interactive sign-in flow: starting one, following it, answering its prompts, and cancelling it. */
 const registerProviderLoginRoutes = (options: ProviderRoutesOptions) => {
   const { register, providerAuth } = options;
   const models = providerAuth.models;
@@ -144,34 +114,36 @@ const registerProviderLoginRoutes = (options: ProviderRoutesOptions) => {
 
     if (!models.getProvider(name))
       throw new NotFound({ message: "Unknown provider" });
-    const input = providerLoginInput.parse(await c.req.json());
 
-    return c.json(providerAuth.start(name, input.method), 202);
+    return c.json(providerAuth.start(name, c.req.valid("json").method), 202);
   });
   register(routes.getProviderLogin, (c) =>
     c.json(providerAuth.get(c.req.param("id")), 200),
   );
-  register(routes.answerProviderLogin, async (c) => {
-    const input = providerLoginAnswerInput.safeParse(await c.req.json());
+  register(
+    routes.answerProviderLogin,
+    async (c) => {
+      const input = providerLoginAnswerInput.safeParse(await c.req.json());
 
-    // Answers can be secrets or callback URLs; never echo them in validation details.
-    if (!input.success) throw new InvalidInput({ message: "Invalid answer" });
+      // Answers can be secrets or callback URLs; never echo them in validation details.
+      if (!input.success) throw new InvalidInput({ message: "Invalid answer" });
 
-    return c.json(
-      providerAuth.answer(
-        c.req.param("id"),
-        input.data.promptId,
-        input.data.value,
-      ),
-      200,
-    );
-  });
+      return c.json(
+        providerAuth.answer(
+          c.req.param("id"),
+          input.data.promptId,
+          input.data.value,
+        ),
+        200,
+      );
+    },
+    { parsesBody: true },
+  );
   register(routes.cancelProviderLogin, (c) =>
     c.json(providerAuth.cancel(c.req.param("id")), 200),
   );
 };
 
-/** The provider routes, in the order the contract document lists them. */
 export function registerProviderRoutes(options: ProviderRoutesOptions) {
   registerProviderStatusRoutes(options);
   registerProviderCredentialRoutes(options);

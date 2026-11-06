@@ -1,15 +1,23 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import { z } from "zod";
-import { scrubText, type ComputerUseState } from "./computer-use-state";
+import {
+  DESKTOP_CHROME_APPS,
+  DESKTOP_ENV_FILE,
+} from "../../workspace-image/guest";
+import type { DesktopShell } from "./computer-use";
+import {
+  forgetScreen,
+  scrubText,
+  type ComputerUseState,
+} from "./computer-use-state";
 
-const ENV_FILE = "/run/crumble-desktop.env";
 export const DRIVER_ARGS = "CRUMBLE_DRIVER_ARGS";
 // cua-driver ends idle sessions; a call on an ended one is rejected with this message.
 
 const ENDED_SESSION = /session has ended/i;
 
-const loose = <T extends z.ZodType>(schema: T) =>
+export const loose = <T extends z.ZodType>(schema: T) =>
   schema.optional().catch(undefined);
 
 const windowSchema = z.object({
@@ -24,16 +32,18 @@ export type Window = z.infer<typeof windowSchema>;
 export const isChromium = (window: Window) =>
   window.app_name.startsWith("Chromium");
 
+export const windowName = (window: Window) =>
+  `${window.app_name} "${window.title}"`;
+
+export const windowLine = (window: Window) =>
+  `${window.window_id} ${windowName(window)}`;
+
 // cua-driver reports refusals in several shapes; an error is a message or an object with a code.
 const driverError = z.union([
   z.string().transform((message) => ({ code: undefined, message })),
   z.object({ code: loose(z.string()), message: loose(z.string()) }),
 ]);
 
-/**
- * A cua-driver tool result: the fields every action reads, each dropped when its shape is unexpected. Other fields pass
- * through for the tools that read them, such as the browser tools.
- */
 export const driverReply = z.looseObject({
   status: loose(z.string()),
   effect: loose(z.string()),
@@ -62,6 +72,14 @@ export const driverReply = z.looseObject({
 
 export type DriverReply = z.infer<typeof driverReply>;
 
+export const replyTree = (reply: DriverReply) =>
+  reply.tree_diff ?? reply.tree_markdown ?? "";
+
+export const SCROLL_DEFAULTS = { direction: "down", amount: 3 };
+
+export const comboKeys = (keys: string) =>
+  keys.split("+").map((key) => key.trim().toLowerCase());
+
 type DriverValue =
   | string
   | number
@@ -69,7 +87,6 @@ type DriverValue =
   | DriverValue[]
   | { [key: string]: DriverValue };
 
-/** Arguments for a cua-driver tool. */
 export type DriverArgs = Record<string, DriverValue>;
 
 // The reply stays as cua-driver sent it: URLs in it decide which host a login is for. Text is scrubbed when formatted.
@@ -135,15 +152,15 @@ export const messageOf = (reply: DriverReply) =>
   ].find(Boolean);
 
 export async function sh(
-  state: ComputerUseState,
+  shell: Pick<DesktopShell, "exec">,
   command: string,
   context: Context,
   env?: Record<string, string>,
 ) {
   let output = "";
 
-  const result = await state.shell.exec(
-    `. ${ENV_FILE}; ${command}`,
+  const result = await shell.exec(
+    `. ${DESKTOP_ENV_FILE}; ${command}`,
     { onOutput: (text) => (output += text), ...(env && { env }) },
     context,
   );
@@ -153,9 +170,6 @@ export async function sh(
   return output;
 }
 
-/**
- * One cua-driver call; an ended session is started again, its snapshots dropped, and the call retried once.
- */
 export async function driverCall(
   state: ComputerUseState,
   tool: string,
@@ -168,8 +182,7 @@ export async function driverCall(
   if (!ENDED_SESSION.test(messageOf(first.reply) ?? "")) return first;
 
   await callDriver(state, "start_session", {}, context, false);
-  state.snapshots.clear();
-  state.lastRead = undefined;
+  forgetScreen(state);
 
   return callDriver(state, tool, args, context, screenshot);
 }
@@ -192,7 +205,7 @@ async function callDriver(
   const reply = parseReply(
     state,
     await sh(
-      state,
+      state.shell,
       `printf '%s' "$${DRIVER_ARGS}" | cua-driver call ${tool}${shot}`,
       context,
       { [DRIVER_ARGS]: JSON.stringify({ session: state.session, ...args }) },
@@ -221,16 +234,14 @@ async function callDriver(
   }
 }
 
-const DESKTOP_CHROME = new Set(["xfce4-panel", "xfdesktop"]);
+const DESKTOP_CHROME = new Set(DESKTOP_CHROME_APPS);
 
 export async function listWindows(state: ComputerUseState, context: Context) {
   const { reply } = await driverCall(state, "list_windows", {}, context);
 
-  // A refused listing is not an empty desktop.
   if (!reply.windows && refusalOf(reply))
     throw new Error(messageOf(reply) ?? codeOf(reply) ?? "list_windows failed");
 
-  // The panel and the wallpaper are desktop chrome, not windows a job works in.
   return (reply.windows ?? []).filter(
     (each) => !DESKTOP_CHROME.has(each.app_name.toLowerCase()),
   );
@@ -252,7 +263,9 @@ export async function targetWindow(
   }
 
   const active = Number(
-    (await sh(state, "xdotool getactivewindow 2>/dev/null", context)).trim(),
+    (
+      await sh(state.shell, "xdotool getactivewindow 2>/dev/null", context)
+    ).trim(),
   );
 
   const found = list.find((each) => each.window_id === active) ?? list[0];

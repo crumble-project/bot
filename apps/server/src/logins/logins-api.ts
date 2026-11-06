@@ -1,58 +1,61 @@
-import { routes, credentialUsesInput } from "../contract/api-contract";
+import { Effect } from "effect";
+import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import type { BotsAccess } from "../bots/bots";
-import { loginSaveInput } from "../shared/domain";
-import type { LoginsAccess } from "./logins";
+import type { BotLookup } from "../bot-ports/bot-lookup";
+import type { Runner } from "../shared/runner";
+import { secretRoutes } from "../bot-secrets/bot-secret-api";
+import { Logins } from "./logins";
 
 type LoginRoutesOptions = {
   register: Register;
-  service: Pick<BotsAccess, "agent">;
-  logins: LoginsAccess;
+  service: BotLookup;
+  run: Runner<Logins>;
 };
 
-/** The logins one bot's desktop jobs may fill: listing them with the bot's requests, saving, deleting, declining, and the fill log. */
 export function registerLoginRoutes(options: LoginRoutesOptions) {
-  const { register, service, logins } = options;
+  const { register, service, run } = options;
 
-  register(routes.agentLogins, (c) => {
-    service.agent(c.req.param("id"));
+  register(routes.agentLogins, async (c) => {
+    const agentId = c.req.param("id");
+
+    service.agent(agentId);
 
     return c.json(
-      {
-        logins: logins.list(c.req.param("id")),
-        requests: logins.requests(c.req.param("id")),
-      },
+      await run.runPromise(
+        Logins.use((s) =>
+          Effect.all({
+            logins: s.list(agentId),
+            requests: s.requests(agentId),
+          }),
+        ),
+      ),
       200,
     );
   });
-  register(routes.saveAgentLogin, async (c) => {
-    service.agent(c.req.param("id"));
-    const input = loginSaveInput.parse(await c.req.json());
+  const { secret, done } = secretRoutes(service);
 
-    return c.json(
-      await logins.save(c.req.param("id"), c.req.param("name"), input),
-      200,
-    );
-  });
-  register(routes.deleteAgentLogin, async (c) => {
-    service.agent(c.req.param("id"));
-    await logins.delete(c.req.param("id"), c.req.param("name"));
+  const call: <A, E>(
+    use: (service: Logins["Service"]) => Effect.Effect<A, E>,
+  ) => Promise<A> = (use) => run.runPromise(Logins.use(use));
 
-    return c.body(null, 204);
-  });
-  register(routes.declineAgentLogin, async (c) => {
-    service.agent(c.req.param("id"));
-    await logins.decline(c.req.param("id"), c.req.param("name"));
-
-    return c.body(null, 204);
-  });
-  register(routes.agentLoginUses, (c) => {
-    service.agent(c.req.param("id"));
-    const query = credentialUsesInput.parse(c.req.query());
-
-    return c.json(
-      logins.uses(c.req.param("id"), c.req.param("name"), query),
-      200,
-    );
-  });
+  register(
+    routes.saveAgentLogin,
+    secret(async (id, name, c) =>
+      c.json(await call((s) => s.save(id, name, c.req.valid("json"))), 200),
+    ),
+  );
+  register(
+    routes.deleteAgentLogin,
+    done((id, name) => call((s) => s.delete(id, name))),
+  );
+  register(
+    routes.declineAgentLogin,
+    done((id, name) => call((s) => s.decline(id, name))),
+  );
+  register(
+    routes.agentLoginUses,
+    secret(async (id, name, c) =>
+      c.json(await call((s) => s.uses(id, name, c.req.valid("query"))), 200),
+    ),
+  );
 }

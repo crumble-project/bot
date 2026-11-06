@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { inertCredentials } from "../../test/support/job-wiring";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -10,13 +11,16 @@ import {
   type FauxResponseFactory,
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "../bots/runtime";
-import { codingPlugin, codingQuestions } from "../jobs/coding";
-import { DirectoryWorkspaces } from "../jobs/jobs-test-support";
+import { codingPlugin } from "../jobs/coding";
+import { DirectoryWorkspaces } from "../../test/support/jobs";
 import { conversationEnv, jobExtensions } from "../plugins/plugins";
 import { Store } from "../../test/support/store";
-import { standaloneBots } from "../bots/bots";
+import { standaloneBots } from "../bots/bots-test-support";
 import { coordinationExtension } from "./coordination";
-import { botMessagingAccess, standaloneMessaging } from "./bot-messaging";
+import { standaloneMessaging } from "./bot-messaging-test-support";
+import { accessOf, noServices } from "../shared/runner";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
+import { until } from "../../test/support/until";
 
 test("a real faux turn asks another bot and only exposes its answer", async () => {
   const dir = mkdtempSync(join(tmpdir(), "bot-messaging-e2e-"));
@@ -25,7 +29,7 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
 
   try {
     const sourceFaux = fauxProvider({
-      provider: "faux",
+      provider: "faux-source",
       models: [{ id: "test" }],
     });
 
@@ -51,7 +55,7 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
     ]);
 
     const targetFaux = fauxProvider({
-      provider: "faux",
+      provider: "faux-target",
       models: [{ id: "test" }],
     });
 
@@ -67,14 +71,9 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
       },
     ]);
 
-    const models = (agent: { id: string }) => {
-      const selected = createModels();
-      selected.setProvider(
-        agent.id === sourceId ? sourceFaux.provider : targetFaux.provider,
-      );
-
-      return selected;
-    };
+    const models = createModels();
+    models.setProvider(sourceFaux.provider);
+    models.setProvider(targetFaux.provider);
 
     const store = new Store(dir);
 
@@ -84,7 +83,7 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
         description: "",
         instructions: "Ask when needed",
         // SAFETY: The faux provider is registered in the test model registry.
-        provider: "faux" as any,
+        provider: "faux-source" as any,
         model: "test",
         enabled: true,
         tools: ["delegate"],
@@ -101,7 +100,7 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
         description: "",
         instructions: "Answer honestly",
         // SAFETY: The faux provider is registered in the test model registry.
-        provider: "faux" as any,
+        provider: "faux-target" as any,
         model: "test",
         enabled: true,
         tools: [],
@@ -113,14 +112,19 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
     );
     let service!: ReturnType<typeof standaloneBots<Store>>;
 
-    const runtime = new AgentRuntime(dir, {
-      models,
-      listMemory: (id) =>
-        id === sourceId ? [{ id: "m", content: "private source memory" }] : [],
-      extensions: (agent) => [
-        coordinationExtension(agent, standaloneMessaging(service)),
-      ],
-    });
+    const runtime = new AgentRuntime(
+      dir,
+      runtimeCallbacks({
+        models,
+        listMemory: (id) =>
+          id === sourceId
+            ? [{ id: "m", content: "private source memory" }]
+            : [],
+        extensions: (agent) => [
+          coordinationExtension(agent, standaloneMessaging(service)),
+        ],
+      }),
+    );
 
     service = standaloneBots(store, runtime);
 
@@ -164,7 +168,11 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
     expect(JSON.stringify(snapshot.messages)).toContain(
       "Bot2 says it feels fine.",
     );
-    const messaging = botMessagingAccess(standaloneMessaging(service));
+
+    const messaging = accessOf(standaloneMessaging(service), noServices, [
+      "recipients",
+    ]);
+
     const targetChat = await service.chat(targetId);
     let targetChanges = 0;
 
@@ -220,7 +228,7 @@ test("a real faux turn asks another bot and only exposes its answer", async () =
       ),
     ).toHaveLength(2);
     await runtime.close();
-    const reopened = new AgentRuntime(dir, { models });
+    const reopened = new AgentRuntime(dir, runtimeCallbacks({ models }));
 
     try {
       const persisted = (await reopened.history(source)).messages.filter(
@@ -281,7 +289,6 @@ const toolsOf = (context: { messages: Message[] }) =>
       : [],
   );
 
-/** Magnum delegates a build, and answers a job's question relayed to it. */
 const magnumScript: FauxResponseFactory = (context) => {
   const last = lastOf(context);
   const text = textOf(last);
@@ -295,7 +302,6 @@ const magnumScript: FauxResponseFactory = (context) => {
   return toolCall("delegate", { agentId: CODER, task: "Build the site" });
 };
 
-/** Coder starts a coding job for the delegated task; its job asks once, after `asking` resolves, then finishes. */
 const coderScript =
   (asking: Promise<void>): FauxResponseFactory =>
   async (context) => {
@@ -327,15 +333,14 @@ const coderScript =
     });
   };
 
-/** Magnum, allowed to delegate to Coder, and Coder, who runs coding jobs; Magnum's message has delegated the build. */
 async function delegatedBuild(asking: Promise<void>) {
   const dir = mkdtempSync(join(tmpdir(), "bot-messaging-jobs-"));
   const workspace = join(dir, "workspace");
   await Bun.write(join(workspace, ".keep"), "");
 
-  const faux = (steps: FauxResponseFactory) => {
+  const faux = (name: string, steps: FauxResponseFactory) => {
     const provider = fauxProvider({
-      provider: "faux",
+      provider: name,
       models: [{ id: "test" }],
     });
 
@@ -344,17 +349,9 @@ async function delegatedBuild(asking: Promise<void>) {
     return provider.provider;
   };
 
-  const providers = new Map([
-    [MAGNUM, faux(magnumScript)],
-    [CODER, faux(coderScript(asking))],
-  ]);
-
-  const models = (agent: { id: string }) => {
-    const selected = createModels();
-    selected.setProvider(providers.get(agent.id)!);
-
-    return selected;
-  };
+  const models = createModels();
+  models.setProvider(faux("faux-magnum", magnumScript));
+  models.setProvider(faux("faux-coder", coderScript(asking)));
 
   const store = new Store(dir);
 
@@ -362,7 +359,7 @@ async function delegatedBuild(asking: Promise<void>) {
     name,
     description: "",
     instructions: "",
-    provider: "faux",
+    provider: `faux-${name.toLowerCase()}`,
     model: "test",
     enabled: true,
     tools,
@@ -377,24 +374,37 @@ async function delegatedBuild(asking: Promise<void>) {
   );
 
   const coder = store.createAgent(bot("Coder", ["coding"], []), CODER);
-  const kinds = codingPlugin(new DirectoryWorkspaces(workspace)).jobKinds ?? [];
+
+  const kinds =
+    codingPlugin(
+      new DirectoryWorkspaces(workspace),
+      () => 900_000,
+      inertCredentials,
+    ).jobKinds ?? [];
+
   let service!: ReturnType<typeof standaloneBots<Store>>;
 
-  const runtime = new AgentRuntime(dir, {
-    models,
-    extensions: (agent) => [
-      coordinationExtension(agent, standaloneMessaging(service)),
-      ...jobExtensions(kinds, agent).chat,
-    ],
-    taskExtensions: (agent) => jobExtensions(kinds, agent).job,
-    env: (agent, target, context) =>
-      conversationEnv(kinds, agent, target, context),
-  });
+  const runtime = new AgentRuntime(
+    dir,
+    runtimeCallbacks({
+      models,
+      extensions: (agent) => [
+        coordinationExtension(agent, standaloneMessaging(service)),
+        ...jobExtensions(kinds, agent).chat,
+      ],
+      jobExtensions: (agent) => jobExtensions(kinds, agent).job,
+      env: (agent, target, context) =>
+        conversationEnv(kinds, agent, target, context),
+    }),
+  );
 
   service = standaloneBots(store, runtime);
-  const messaging = botMessagingAccess(standaloneMessaging(service));
 
-  const stopRelay = codingQuestions(async (asked) => {
+  const messaging = accessOf(standaloneMessaging(service), noServices, [
+    "recipients",
+  ]);
+
+  const stopRelay = kinds[0]!.onQuestion!(async (asked) => {
     await messaging.relayQuestion(asked);
   });
 
@@ -430,13 +440,6 @@ async function delegatedBuild(asking: Promise<void>) {
   };
 }
 
-async function until(check: () => Promise<boolean>) {
-  for (let i = 0; i < 500 && !(await check()); i++)
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-  expect(await check()).toBe(true);
-}
-
 test("a delegation whose bot started a job stays pending until the job's report is answered", async () => {
   let ask!: () => void;
   const world = await delegatedBuild(new Promise((resolve) => (ask = resolve)));
@@ -444,8 +447,9 @@ test("a delegation whose bot started a job stays pending until the job's report 
   try {
     const { messaging, delegation } = world;
 
-    // The assignee's turn is over, but the job it started still works.
-    expect(world.store.getExecution(delegation.id)?.status).toBe("done");
+    await until(
+      () => world.store.getExecution(delegation.id)?.status === "done",
+    );
 
     expect(
       await messaging.result(MAGNUM, delegation.id, { waitMs: 200 }),
@@ -492,7 +496,6 @@ test("a job's question goes to the bot that delegated its task, whose answer res
       name: "Coder",
     });
 
-    // The owner still sees the question in the assignee's chat.
     const card = (await world.coderMessages()).find(
       (message) => message.kind === "job-question",
     );
@@ -508,9 +511,8 @@ test("a job's question goes to the bot that delegated its task, whose answer res
       ),
     );
 
-    // The reporter's answer closed the question; the owner's comes too late.
     await expect(
-      service.answerCodingJob(CODER, {
+      service.answerJob(CODER, "coding", {
         name: "builder",
         questionId: card!.jobQuestion!.id,
         text: "red",
@@ -544,7 +546,7 @@ test("a job's question stays with the owner once the delegating bot may no longe
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(store.listExecutions(MAGNUM)).toHaveLength(1);
 
-    await service.answerCodingJob(CODER, {
+    await service.answerJob(CODER, "coding", {
       name: "builder",
       questionId: (await card())!.jobQuestion!.id,
       text: "red",

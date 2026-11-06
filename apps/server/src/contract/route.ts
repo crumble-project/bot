@@ -4,12 +4,23 @@ import {
   type RouteConfig,
   type RouteHandler,
 } from "@hono/zod-openapi";
+import type { Env } from "hono";
 
-/** Registers a contract route's handler on the API app. */
-export type Register = <R extends RouteConfig>(
+/**
+ * Registers a contract route's handler on the API app, behind the route's request schemas. `parsesBody` leaves the
+ * body to a handler that must read it first, such as a PATCH that merges it over the stored record.
+ */
+export type Register<E extends Env = Env> = <R extends RouteConfig>(
   definition: R & { getRoutingPath: () => string },
-  handler: RouteHandler<R>,
+  handler: RouteHandler<R, E>,
+  options?: { parsesBody: true },
 ) => void;
+
+export const mergedBody = async <S extends z.ZodType>(
+  c: { req: { json(): Promise<object> } },
+  stored: Partial<z.input<S>>,
+  schema: S,
+): Promise<z.output<S>> => schema.parse({ ...stored, ...(await c.req.json()) });
 
 export const json = <S extends z.ZodType>(
   schema: S,

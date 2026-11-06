@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createComputerUse } from "./computer-use";
+import { ACTION_NAMES } from "./computer-use-actions";
+import { normalize, type ComputerUseArgs } from "./computer-use-args";
+import { STEP_ACTION_NAMES } from "./computer-use-steps";
 import type { ControlState } from "./desktop-control";
 import { scriptedGuest } from "../../test/fixtures/scripted-guest";
 
@@ -150,7 +153,6 @@ test("placeholder arguments count as unset", async () => {
       keys: "",
       value: "",
       seconds: 0,
-      name: "",
     },
     BACKGROUND_CONTEXT,
   );
@@ -470,7 +472,6 @@ test("wait pauses for the given seconds and reports them", async () => {
   expect(text(result)).toBe("waited 0.01s");
 });
 
-/** A control lease the test hands between bot and owner. */
 class FakeGate {
   state: ControlState = { holder: "bot", changes: 0, updatedAt: "" };
   private readonly waiting: (() => void)[] = [];
@@ -528,7 +529,6 @@ test("actions wait while the owner holds control, and a plan from before is refu
   );
   expect(calls.some((c) => c.tool === "set_value")).toBe(false);
 
-  // The old snapshot is gone: the next capture is a full read, not a diff.
   const fresh = await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
 
   expect(fresh.isError).toBe(false);
@@ -693,7 +693,6 @@ test("launch opens Files and Terminal at a folder, and any installed app by its 
 
   expect(text(editor)).toContain("window 404 Mousepad");
 
-  // The path is quoted as one argument, so no part of it runs as a command.
   expect(commands.filter((command) => command.includes("setsid"))).toEqual([
     `. /run/crumble-desktop.env; setsid thunar '/workspace/it'\\''s demo' >/dev/null 2>&1 </dev/null &`,
     `. /run/crumble-desktop.env; setsid mousepad '/workspace/notes.txt' >/dev/null 2>&1 </dev/null &`,
@@ -792,4 +791,146 @@ test("list_apps names each app once, running if any of its processes is", async 
       ),
     ),
   ).toBe("Chromium (running)\nMousepad");
+});
+
+const ACTS: ComputerUseArgs[] = [
+  { action: "click", element: 2 },
+  { action: "double_click", element: 2 },
+  { action: "right_click", element: 2 },
+  { action: "drag", coordinate: [1, 1], to_coordinate: [2, 2] },
+  { action: "type", text: "Ada" },
+  { action: "key", keys: "Tab" },
+  { action: "set_value", element: 2, value: "Ada" },
+  { action: "steps", steps: [{ action: "key", keys: "Tab" }] },
+  { action: "launch", app: "no-such-app" },
+  { action: "open", url: "https://example.com" },
+  { action: "fill_login", login: "github", field: "password", ref: "e1" },
+];
+
+const OBSERVES: ComputerUseArgs[] = [
+  { action: "capture" },
+  { action: "wait", seconds: 0.01 },
+  { action: "list_windows" },
+  { action: "list_apps" },
+  { action: "read" },
+];
+
+const UNCHECKED: ComputerUseArgs[] = [
+  { action: "scroll", direction: "down" },
+  { action: "focus_window", window_id: 101 },
+];
+
+test("the intent check hears acting calls and no others", async () => {
+  const asked = async (args: ComputerUseArgs) => {
+    let heard = false;
+
+    const { shell } = scriptedGuest({
+      list_windows: [windows, windows, windows],
+      get_window_state: [
+        { snapshot_id: "s1", tree_markdown: '- [2] entry "Name"' },
+      ],
+    });
+
+    const tool = createComputerUse(shell);
+
+    await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+    await tool.run(args, BACKGROUND_CONTEXT, async () => {
+      heard = true;
+
+      return { refusal: "REFUSED" };
+    });
+
+    return heard;
+  };
+
+  for (const args of ACTS)
+    expect([args, await asked(args)]).toEqual([args, true]);
+
+  for (const args of [...OBSERVES, ...UNCHECKED])
+    expect([args, await asked(args)]).toEqual([args, false]);
+});
+
+test("after a change of control only observing calls go ahead, and an action the table lacks counts as acting", async () => {
+  const stale = async (args: ComputerUseArgs) => {
+    const gate = new FakeGate();
+
+    const { shell } = scriptedGuest({
+      list_windows: [windows, windows, windows],
+      get_window_state: [
+        { snapshot_id: "s1", tree_markdown: '- [2] entry "Name"' },
+      ],
+    });
+
+    const tool = createComputerUse(shell, { gate });
+
+    await tool.run({ action: "capture" }, BACKGROUND_CONTEXT);
+    gate.set("owner");
+    gate.set("bot");
+
+    return text(await tool.run(args, BACKGROUND_CONTEXT)).startsWith(
+      "Control changed hands",
+    );
+  };
+
+  for (const args of OBSERVES)
+    expect([args, await stale(args)]).toEqual([args, false]);
+
+  for (const args of [...ACTS, ...UNCHECKED, { action: "hover" }])
+    expect([args, await stale(args)]).toEqual([args, true]);
+});
+
+test("the schema lists actions and steps in their published order, and every step is an action", () => {
+  expect(ACTION_NAMES).toEqual([
+    "capture",
+    "click",
+    "double_click",
+    "right_click",
+    "drag",
+    "scroll",
+    "type",
+    "key",
+    "set_value",
+    "wait",
+    "list_windows",
+    "focus_window",
+    "launch",
+    "list_apps",
+    "open",
+    "read",
+    "steps",
+    "fill_login",
+  ]);
+  expect(STEP_ACTION_NAMES).toEqual([
+    "click",
+    "double_click",
+    "right_click",
+    "set_value",
+    "type",
+    "key",
+    "scroll",
+  ]);
+  expect(ACTION_NAMES).toEqual(expect.arrayContaining(STEP_ACTION_NAMES));
+});
+
+test("every optional argument a model fills with a placeholder counts as unset", () => {
+  expect(
+    normalize({
+      action: "scroll",
+      direction: "",
+      amount: 0,
+      coordinate: [0, 0],
+      query: "",
+      text: "",
+      value: "",
+      capture_after: false,
+    }),
+  ).toEqual({ action: "scroll", capture_after: false });
+  expect(normalize({ action: "set_value", value: "", text: "" })).toEqual({
+    action: "set_value",
+    value: "",
+  });
+  expect(normalize({ action: "type", text: "", value: "" })).toEqual({
+    action: "type",
+    text: "",
+  });
 });

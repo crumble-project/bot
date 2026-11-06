@@ -1,27 +1,17 @@
 import { Effect } from "effect";
-import { type ChangeSource, type MemorySource } from "../shared/domain";
-import type { MemoryContext } from "../bots/runtime";
-import { AgentRepository } from "../bots/agent-repository";
-import { ExecutionRepository } from "../bots/execution-repository";
+import type { MemorySource } from "../shared/domain";
+import type { MemoryContext } from "./memory-tool";
+import { AgentRepository } from "../bot-store/agent-repository";
+import { newestExecution } from "../learned-changes/change-source";
 import { GroupChatRepository } from "../group-chats/group-chat-repository";
-import { ScheduleRepository } from "../schedules/schedule-repository";
+import { ScheduleRepository } from "../automations/schedule-repository";
 import { InvalidInput, type AppError } from "../shared/errors";
+import {
+  turnSource,
+  UNKNOWN_BOT_NAME,
+  UNKNOWN_SCHEDULE_NAME,
+} from "../transcript/origins";
 
-/** The newest of a run's inputs that Crumble admitted as an execution. */
-const newestExecution = Effect.fnUntraced(function* (
-  agentId: string,
-  submissionIds: string[],
-) {
-  const executions = yield* ExecutionRepository;
-
-  const found = yield* Effect.forEach(submissionIds, (id) =>
-    executions.findBySubmission(agentId, id),
-  );
-
-  return found.findLast((each) => each !== null) ?? null;
-});
-
-/** Where the memory tool's call came from: a group turn, or the newest input its chat run is answering. */
 export const memorySourceOf = Effect.fnUntraced(function* (
   agentId: string,
   context: MemoryContext,
@@ -38,45 +28,29 @@ export const memorySourceOf = Effect.fnUntraced(function* (
 
   const execution = yield* newestExecution(agentId, context.submissionIds);
 
-  if (execution?.scheduleId) {
-    const schedule = yield* (yield* ScheduleRepository).get(
-      execution.scheduleId,
-    );
+  const source = execution && turnSource(execution);
+
+  if (source?.kind === "task" || source?.kind === "event") {
+    const schedule = yield* (yield* ScheduleRepository).get(source.scheduleId);
 
     return {
       kind: "task",
-      scheduleId: execution.scheduleId,
-      name: schedule?.name ?? "Scheduled task",
+      scheduleId: source.scheduleId,
+      name: schedule?.name ?? UNKNOWN_SCHEDULE_NAME,
     } satisfies MemorySource;
   }
 
-  const [prefix, sourceAgentId] = execution?.requestId.split(":") ?? [];
-
-  if (prefix === "delegate" && sourceAgentId) {
-    const agent = yield* (yield* AgentRepository).get(sourceAgentId);
+  if (source?.kind === "bot") {
+    const agent = yield* (yield* AgentRepository).get(source.agentId);
 
     return {
       kind: "bot",
-      agentId: sourceAgentId,
-      name: agent?.name ?? "Another bot",
+      agentId: source.agentId,
+      name: agent?.name ?? UNKNOWN_BOT_NAME,
     } satisfies MemorySource;
   }
 
   return { kind: "chat" } satisfies MemorySource;
-});
-
-/** The execution and conversation a tool call's run is answering, for the change record. */
-export const changeSourceOf = Effect.fnUntraced(function* (
-  agentId: string,
-  context: Pick<MemoryContext, "groupId" | "submissionIds">,
-) {
-  const execution = yield* newestExecution(agentId, context.submissionIds);
-
-  return {
-    executionId: execution?.id ?? null,
-    conversationId: execution?.conversationId ?? null,
-    groupId: context.groupId,
-  } satisfies ChangeSource;
 });
 
 /** A group turn writes only to the bot's own memory, so one conversation cannot change every bot's context. */

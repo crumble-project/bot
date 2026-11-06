@@ -5,39 +5,27 @@ import {
   IconArrowUp,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import type { ChartLayout, Message } from "@/lib/api";
+import {
+  type DisplayDetails,
+  displayDetails,
+} from "@crumble/server/contract/tool-details";
+import { DISPLAY_TOOL_NAME } from "@crumble/server/contract/tools";
+import { toolDetailsOf } from "./tool-details";
+import { messageCard } from "./message-card";
+import type { ChartLayout } from "@crumble/server/contract/chart";
+import { CHART_SERIES_COLORS } from "@crumble/server/contract/limits";
+import type { Message } from "./api";
 
-type Stat = {
-  label: string;
-  value: string;
-  change?: string;
-  trend?: "up" | "down" | "flat";
-  caption?: string;
-};
+type Stat = Extract<DisplayDetails, { kind: "stats" }>["items"][number];
 
-type Display =
-  | { kind: "stats"; title?: string; items: Stat[] }
-  | {
-      kind: "table";
-      title?: string;
-      columns: string[];
-      rows: (string | number)[][];
-    }
-  | { kind: "chart"; title?: string; layouts: ChartLayout[] };
+const displayOf = (message: Message) =>
+  toolDetailsOf(message, displayDetails, DISPLAY_TOOL_NAME);
 
-/** The `show` tool's component, from a successful tool result; unknown kinds are dropped. */
-export function displayOf(message: Message): Display | null {
-  if (message.toolName !== "show" || message.isError) return null;
+export const displayResult = messageCard(displayOf, ({ result }) => (
+  <DisplayCard display={result} />
+));
 
-  // SAFETY: The server validates `show` details against these three shapes before storing them.
-  const details = message.toolDetails as Display | undefined;
-
-  return details && ["stats", "table", "chart"].includes(details.kind)
-    ? details
-    : null;
-}
-
-export function DisplayCard({ display }: { display: Display }) {
+function DisplayCard({ display }: { display: DisplayDetails }) {
   return (
     <div className="flex max-w-full flex-col gap-2 rounded-xl border p-3">
       {display.title && (
@@ -157,13 +145,13 @@ type Node = ChartLayout["nodes"][number];
 
 type Point = ChartLayout["points"][number];
 
-const SERIES = [
-  "var(--chart-1)",
-  "var(--chart-2)",
-  "var(--chart-3)",
-  "var(--chart-4)",
-  "var(--chart-5)",
-];
+// `styles.css` defines these; a chart may name more series, which reuse them.
+const THEME_CHART_COLORS = 5;
+
+const SERIES = Array.from(
+  { length: CHART_SERIES_COLORS },
+  (_, index) => `var(--chart-${((index + 1) % THEME_CHART_COLORS) + 1})`,
+);
 
 function paint(color: string | undefined, fallback: string) {
   if (!color) return fallback;
@@ -174,7 +162,7 @@ function paint(color: string | undefined, fallback: string) {
 
   const series = /^series-(\d+)$/.exec(color);
 
-  return series ? SERIES[Number(series[1]) % SERIES.length]! : color;
+  return series ? SERIES[Number(series[1]) - 1]! : color;
 }
 
 function pathData(commands: Extract<Node, { kind: "path" }>["commands"]) {
@@ -279,12 +267,9 @@ function ChartNode({ node, id }: { node: Node; id: string }) {
   );
 }
 
-/** Draws the server-compiled chart, choosing the widest layout that fits. */
-function Chart({ layouts }: { layouts: ChartLayout[] }) {
+function useContainerWidth() {
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
-  const [hover, setHover] = useState<Point | null>(null);
-  const clipPrefix = `clip${useId().replace(/\W/g, "")}`;
 
   useLayoutEffect(() => {
     const element = box.current;
@@ -299,6 +284,60 @@ function Chart({ layouts }: { layouts: ChartLayout[] }) {
 
     return () => observer.disconnect();
   }, []);
+
+  return { box, width };
+}
+
+function nearestPoint(points: Point[], x: number, y: number, reach: number) {
+  let best: Point | null = null;
+  let distance = reach;
+
+  for (const point of points) {
+    const d = Math.hypot(point.x - x, point.y - y);
+
+    if (d < distance) {
+      best = point;
+      distance = d;
+    }
+  }
+
+  return best;
+}
+
+function ChartTooltip({
+  hover,
+  layout,
+}: {
+  hover: Point;
+  layout: ChartLayout;
+}) {
+  return (
+    <div
+      className="pointer-events-none absolute z-10 rounded-md border bg-popover px-2 py-1 text-xs shadow-md"
+      style={{
+        left: `${(hover.x / layout.width) * 100}%`,
+        top: `${(hover.y / layout.height) * 100}%`,
+        transform: "translate(-50%, calc(-100% - 10px))",
+      }}
+    >
+      {"title" in hover && hover.title && (
+        <div className="font-medium">{hover.title}</div>
+      )}
+      {"text" in hover && <div>{hover.text}</div>}
+      {hover.rows.map((row) => (
+        <div key={row.label} className="flex justify-between gap-3">
+          <span className="text-muted-foreground">{row.label}</span>
+          <span className="tabular-nums">{row.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Chart({ layouts }: { layouts: ChartLayout[] }) {
+  const { box, width } = useContainerWidth();
+  const [hover, setHover] = useState<Point | null>(null);
+  const clipPrefix = `clip${useId().replace(/\W/g, "")}`;
 
   const sorted = [...layouts].sort((a, b) => a.width - b.width);
 
@@ -319,19 +358,8 @@ function Chart({ layouts }: { layouts: ChartLayout[] }) {
           const scale = layout.width / rect.width;
           const x = (event.clientX - rect.left) * scale;
           const y = (event.clientY - rect.top) * scale;
-          let best: Point | null = null;
-          let distance = 32 * scale;
 
-          for (const point of layout.points) {
-            const d = Math.hypot(point.x - x, point.y - y);
-
-            if (d < distance) {
-              best = point;
-              distance = d;
-            }
-          }
-
-          setHover(best);
+          setHover(nearestPoint(layout.points, x, y, 32 * scale));
         }}
       >
         {layout.nodes.map((node, index) => (
@@ -350,27 +378,7 @@ function Chart({ layouts }: { layouts: ChartLayout[] }) {
           />
         )}
       </svg>
-      {hover && (
-        <div
-          className="pointer-events-none absolute z-10 rounded-md border bg-popover px-2 py-1 text-xs shadow-md"
-          style={{
-            left: `${(hover.x / layout.width) * 100}%`,
-            top: `${(hover.y / layout.height) * 100}%`,
-            transform: "translate(-50%, calc(-100% - 10px))",
-          }}
-        >
-          {"title" in hover && hover.title && (
-            <div className="font-medium">{hover.title}</div>
-          )}
-          {"text" in hover && <div>{hover.text}</div>}
-          {hover.rows.map((row) => (
-            <div key={row.label} className="flex justify-between gap-3">
-              <span className="text-muted-foreground">{row.label}</span>
-              <span className="tabular-nums">{row.value}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {hover && <ChartTooltip hover={hover} layout={layout} />}
     </div>
   );
 }

@@ -1,8 +1,17 @@
+import type { z } from "zod";
+import type {
+  pendingSkillUpdateResponse,
+  skillCandidateResponse,
+  skillCheckResponse,
+  skillListingResponse,
+} from "../contract/skill-install";
 import { posix } from "node:path";
 import { Cause, Clock, Context, Effect, Layer, Schedule } from "effect";
 import { GitHubUnavailable } from "../github-apps/github-api";
 import { OWNER } from "../shared/change-by";
-import type { Skill, SkillDocument, SkillInput } from "../shared/domain";
+import { type Skill, type SkillInput } from "../contract/skills";
+import { skillNameKey, type SkillDocument } from "./skill-repository";
+import { MAX_SKILL_FILE_BYTES } from "../shared/limits";
 import {
   Conflict,
   InvalidInput,
@@ -13,7 +22,6 @@ import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import {
   GitHubSkillReader,
-  MAX_SKILL_FILE_BYTES,
   parseSkillLocation,
   skillDigest,
   skillFiles,
@@ -28,30 +36,9 @@ const MAX_LISTED = 100;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CHECK_TICK_MS = 60 * 60 * 1000;
 
-/** One skill found in a repository, and whether it can be installed. */
-export type SkillCandidate = {
-  /** The skill's folder in the repository; empty for the root. */
-  path: string;
-  name: string;
-  description: string;
-  status: "new" | "installed" | "update" | "clash" | "invalid";
-  /** Why a `clash` or `invalid` skill can't be installed. */
-  problem: string | null;
-  /** Files in the folder that won't be imported. */
-  skipped: string[];
-  /** The installed skill, for `installed` and `update`. */
-  skillId: string | null;
-};
+export type SkillCandidate = z.infer<typeof skillCandidateResponse>;
 
-export type SkillListing = {
-  repository: string;
-  branch: string;
-  commit: string;
-  path: string;
-  skills: SkillCandidate[];
-  /** Skills beyond the first hundred, left out of `skills`. */
-  omitted: number;
-};
+export type SkillListing = z.infer<typeof skillListingResponse>;
 
 export type SkillInstall = {
   repository: string;
@@ -60,24 +47,16 @@ export type SkillInstall = {
   paths: string[];
 };
 
-/** What an installed skill would become: the upstream skill at `commit`. */
-export type PendingSkillUpdate = SkillInput & {
-  commit: string;
-  skipped: string[];
-};
+export type PendingSkillUpdate = z.infer<typeof pendingSkillUpdateResponse>;
 
-/** An installed skill's upstream moved on; `removed` when its folder is gone. */
 export type SkillUpdate = { commit: string; removed: boolean };
 
-export type SkillCheck = {
-  failed: { repository: string; branch: string; message: string }[];
-};
+export type SkillCheck = z.infer<typeof skillCheckResponse>;
 
 type Installed = Skill & { origin: NonNullable<Skill["origin"]> };
 
 const isInstalled = (skill: Skill): skill is Installed => skill.origin !== null;
 
-/** Turns GitHub's answers into errors the owner can act on. */
 const fromGitHub = (repository: string) => (error: GitHubUnavailable) =>
   error.status === 404
     ? new NotFound({
@@ -88,7 +67,6 @@ const fromGitHub = (repository: string) => (error: GitHubUnavailable) =>
 const nameOf = (repository: string, folder: string) =>
   posix.basename(folder || repository);
 
-/** Installs shared skills from public GitHub repositories and keeps track of their upstream changes. */
 export class SkillInstaller extends Context.Service<
   SkillInstaller,
   {
@@ -102,14 +80,12 @@ export class SkillInstaller extends Context.Service<
       Skill[],
       InvalidInput | NotFound | Conflict | Unavailable
     >;
-    /** Updates available for installed skills, by skill ID. */
     readonly updates: Effect.Effect<Map<string, SkillUpdate>>;
     /** Checks every installed skill, or only those not checked in the last day when `due`. */
     readonly check: (due?: boolean) => Effect.Effect<SkillCheck>;
     readonly pending: (
       skillId: string,
     ) => Effect.Effect<PendingSkillUpdate, NotFound | Unavailable>;
-    /** Replaces the installed skill with its upstream version, recorded as the owner's change. */
     readonly apply: (
       skillId: string,
     ) => Effect.Effect<Skill, NotFound | Conflict | Unavailable>;
@@ -122,7 +98,6 @@ export class SkillInstaller extends Context.Service<
 
     const shared = skills.list(null);
 
-    /** The skill in `folder` at `commit`, fetched with its documents. */
     const fetchSkill = Effect.fnUntraced(function* (
       repository: string,
       commit: string,
@@ -168,7 +143,6 @@ export class SkillInstaller extends Context.Service<
           } as const);
     });
 
-    /** Whether an installed skill or another shared skill already has this folder or name. */
     const statusOf = (
       library: Skill[],
       repository: string,
@@ -190,7 +164,7 @@ export class SkillInstaller extends Context.Service<
         };
 
       const named = library.find(
-        (skill) => skill.name.toLowerCase() === name.toLowerCase(),
+        (skill) => skillNameKey(skill.name) === skillNameKey(name),
       );
 
       return named
@@ -200,6 +174,40 @@ export class SkillInstaller extends Context.Service<
             skillId: null,
           }
         : { status: "new", problem: null, skillId: null };
+    };
+
+    const candidateOf = (
+      library: Skill[],
+      repository: string,
+      folder: string,
+      found: Effect.Success<ReturnType<typeof fetchSkill>>,
+    ): SkillCandidate => {
+      const skipped = found.files.skipped;
+
+      if ("problem" in found)
+        return {
+          path: folder,
+          name: nameOf(repository, folder),
+          description: "",
+          status: "invalid",
+          problem: found.problem,
+          skipped,
+          skillId: null,
+        };
+
+      return {
+        path: folder,
+        name: found.skill.name,
+        description: found.skill.description,
+        skipped,
+        ...statusOf(
+          library,
+          repository,
+          folder,
+          found.skill.name,
+          found.digest,
+        ),
+      };
     };
 
     const browse = Effect.fn("SkillInstaller.browse")(function* (
@@ -229,34 +237,9 @@ export class SkillInstaller extends Context.Service<
         folders.slice(0, MAX_LISTED),
         (folder) =>
           fetchSkill(repository, commit, tree, folder, false).pipe(
-            Effect.map((found): SkillCandidate => {
-              const skipped = found.files.skipped;
-
-              if ("problem" in found)
-                return {
-                  path: folder,
-                  name: nameOf(repository, folder),
-                  description: "",
-                  status: "invalid",
-                  problem: found.problem,
-                  skipped,
-                  skillId: null,
-                };
-
-              return {
-                path: folder,
-                name: found.skill.name,
-                description: found.skill.description,
-                skipped,
-                ...statusOf(
-                  library,
-                  repository,
-                  folder,
-                  found.skill.name,
-                  found.digest,
-                ),
-              };
-            }),
+            Effect.map((found) =>
+              candidateOf(library, repository, folder, found),
+            ),
           ),
         { concurrency: 8 },
       ).pipe(Effect.mapError(fromGitHub(repository)));
@@ -271,7 +254,6 @@ export class SkillInstaller extends Context.Service<
       };
     });
 
-    /** The fetched skills when each can be installed, all under distinct names. */
     const installable = Effect.fnUntraced(function* (
       repository: string,
       fetched: ReadonlyArray<{
@@ -290,7 +272,7 @@ export class SkillInstaller extends Context.Service<
           });
 
         const { skill, digest } = found;
-        const key = skill.name.toLowerCase();
+        const key = skillNameKey(skill.name);
 
         const status = statusOf(
           library,
@@ -397,7 +379,6 @@ export class SkillInstaller extends Context.Service<
         .pipe(Effect.orDie);
     });
 
-    /** Records the upstream state of every skill installed from one branch. */
     const checkBranch = Effect.fnUntraced(function* (group: Installed[]) {
       const { repository, branch } = group[0]!.origin;
       const head = yield* reader.head(repository, branch);
@@ -458,7 +439,6 @@ export class SkillInstaller extends Context.Service<
       return { failed };
     });
 
-    /** The installed skill and its upstream state, when that differs. */
     const upstreamOf = Effect.fnUntraced(function* (skillId: string) {
       const skill = yield* skills.get(skillId);
 
@@ -507,7 +487,7 @@ export class SkillInstaller extends Context.Service<
       const named = (yield* shared).find(
         (other) =>
           other.id !== skill.id &&
-          other.name.toLowerCase() === found.skill.name.toLowerCase(),
+          skillNameKey(other.name) === skillNameKey(found.skill.name),
       );
 
       if (named)
@@ -538,7 +518,6 @@ export class SkillInstaller extends Context.Service<
   static readonly layer = Layer.effect(SkillInstaller, SkillInstaller.make);
 }
 
-/** Checks installed skills hourly for any not checked in the last day, until the layer's scope closes. */
 export const skillUpdateChecks = Layer.effectDiscard(
   Effect.gen(function* () {
     const installer = yield* SkillInstaller;

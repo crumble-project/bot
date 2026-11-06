@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Effect } from "effect";
-import { agentInput } from "../shared/domain";
+import { agentInput } from "../contract/agents";
 import { Store } from "../../test/support/store";
-import type { MemoryContext } from "../bots/runtime";
+import type { MemoryContext } from "./memory-tool";
 import { BotMemory } from "./bot-memory";
 
 const dir = mkdtempSync(join(tmpdir(), "crumble-bot-memory-"));
@@ -30,7 +30,6 @@ const sharing = store.createAgent(
   agentInput.parse({ name: "Ada", tools: ["memory"] }),
 );
 
-// Shared memory comes with the memory tool.
 const solo = store.createAgent(agentInput.parse({ name: "Grace", tools: [] }));
 
 describe("BotMemory", () => {
@@ -60,18 +59,34 @@ describe("BotMemory", () => {
     });
   });
 
-  test("refuses empty memories, shared ones when sharing is off, and shared ones in a group", async () => {
+  test("refuses empty memories, and any change to shared ones in a group", async () => {
+    const group = { ...chat, groupId: "g" };
+
     await expect(
       run((memory) => memory.create(solo.id, "  ", false, chat)),
     ).rejects.toThrow("Memory must contain");
     await expect(
-      run((memory) => memory.create(solo.id, "x", true, chat)),
-    ).rejects.toThrow("Shared memory is off");
-    await expect(
-      run((memory) =>
-        memory.create(sharing.id, "x", true, { ...chat, groupId: "g" }),
-      ),
+      run((memory) => memory.create(sharing.id, "x", true, group)),
     ).rejects.toThrow("save to your own memory");
+
+    const shared = await run((memory) =>
+      memory.create(sharing.id, "for all", true, chat),
+    );
+
+    await expect(
+      run((memory) => memory.update(sharing.id, shared.id, "y", group)),
+    ).rejects.toThrow("save to your own memory");
+    await expect(
+      run((memory) => memory.delete(sharing.id, shared.id, group)),
+    ).rejects.toThrow("save to your own memory");
+
+    const own = await run((memory) =>
+      memory.create(sharing.id, "mine", false, group),
+    );
+
+    expect(own.content).toBe("mine");
+    await run((memory) => memory.delete(sharing.id, own.id, group));
+    await run((memory) => memory.delete(sharing.id, shared.id, chat));
   });
 
   test("another bot's memory is not found, and a review's change names the review", async () => {

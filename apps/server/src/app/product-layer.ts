@@ -2,26 +2,30 @@ import { Layer } from "effect";
 import { DesktopControlRepository } from "../bot-desktop/desktop-control-repository";
 import { DesktopFillRepository } from "../bot-desktop/desktop-fill-repository";
 import { desktopFills } from "../bot-desktop/schema";
-import { AgentRepository } from "../bots/agent-repository";
-import { ConversationRepository } from "../bots/conversation-repository";
-import { ExecutionRepository } from "../bots/execution-repository";
+import { AgentRepository } from "../bot-store/agent-repository";
+import { ConversationRepository } from "../bot-store/conversation-repository";
+import { ExecutionRepository } from "../bot-store/execution-repository";
 import { AgentCredentialRepository } from "../credentials/agent-credential-repository";
-import { SecretRepository } from "../credentials/secret-repository";
+import { SecretRepository } from "../secrets/secret-repository";
 import { GroupChatRepository } from "../group-chats/group-chat-repository";
 import { McpServerRepository } from "../integrations/mcp-server-repository";
 import { MemoryRepository } from "../memory/memory-repository";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
 import { ProviderCredentialRepository } from "../providers/provider-credential-repository";
-import { ScheduleRepository } from "../schedules/schedule-repository";
-import { ScriptRunRepository } from "../schedules/script-run-repository";
-import { ChangeReverter } from "../skills/change-reverter";
-import { InlineSkillsTransfer } from "../skills/inline-skills";
-import { LearnedChangeRepository } from "../skills/learned-change-repository";
-import { ReviewRepository } from "../skills/review-repository";
-import { SkillRepository } from "../skills/skill-repository";
+import {
+  automationEventConsumers,
+  EventRunRepository,
+} from "../automations/event-run-repository";
+import { ScheduleRepository } from "../automations/schedule-repository";
+import { ScriptRunRepository } from "../automations/script-run-repository";
+import { ChangeReverter } from "../learning/change-reverter";
+import { LearnedChangeRepository } from "../learned-changes/learned-change-repository";
+import { ReviewRepository } from "../learning/review-repository";
+import { agentSkillsLayer, SkillRepository } from "../skills/skill-repository";
 import { GitHubSkillReader } from "../skills/github-skills";
 import { SkillInstaller } from "../skills/skill-installer";
-import { credentialAuthorities, secrets } from "../credentials/schema";
+import { credentialAuthorities } from "../credentials/schema";
+import { secrets } from "../secrets/schema";
 import { LoginRepository } from "../logins/login-repository";
 import { passwordManagers } from "../password-managers/schema";
 import { providerCredentials } from "../providers/schema";
@@ -32,26 +36,30 @@ import { GatewayRepository } from "../message-gateway/gateway-repository";
 import { EventRepository } from "../event-sources/event-repository";
 import { githubAppUsers, githubApps } from "../github-apps/schema";
 
-/** Every repository of an account's product database, on one migrated connection. */
+export const encryptedTables = {
+  secrets,
+  providerCredentials,
+  credentialAuthorities,
+  passwordManagers,
+  desktopFills,
+  githubApps,
+  githubAppUsers,
+};
+
 export const productLayer = (dataDir: string) => {
   const database = ProductDatabase.layer(dataDir);
 
   const independent = Layer.mergeAll(
-    SecretBox.layer(dataDir, [
-      secrets,
-      providerCredentials,
-      credentialAuthorities,
-      passwordManagers,
-      desktopFills,
-      githubApps,
-      githubAppUsers,
-    ]),
+    SecretBox.layer(dataDir, Object.values(encryptedTables)),
     LearnedChangeRepository.layer,
     ReviewRepository.layer,
     McpServerRepository.layer,
     SettingsRepository.layer,
     GatewayRepository.layer,
-    EventRepository.layer,
+    EventRepository.layer.pipe(
+      Layer.provideMerge(automationEventConsumers),
+      Layer.provideMerge(EventRunRepository.layer),
+    ),
     ScheduleRepository.layer,
     ScriptRunRepository.layer,
     DesktopControlRepository.layer,
@@ -74,8 +82,7 @@ export const productLayer = (dataDir: string) => {
     ProviderCredentialRepository.layer,
     ChangeReverter.layer,
     SkillInstaller.layer.pipe(Layer.provide(GitHubSkillReader.layer)),
-    AgentRepository.layer,
-    InlineSkillsTransfer,
+    AgentRepository.layer.pipe(Layer.provide(agentSkillsLayer)),
   ).pipe(Layer.provideMerge(onChanges));
 };
 

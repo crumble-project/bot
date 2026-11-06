@@ -1,52 +1,52 @@
-import { routes, credentialUsesInput } from "../contract/api-contract";
+import type { Effect } from "effect";
+import { routes } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import type { CredentialsAccess } from "./credentials";
-import type { BotsAccess } from "../bots/bots";
-import { credentialSaveInput } from "../shared/domain";
+import type { BotLookup } from "../bot-ports/bot-lookup";
+import type { Runner } from "../shared/runner";
+import { secretRoutes } from "../bot-secrets/bot-secret-api";
+import { Credentials } from "./credentials";
 
 type CredentialRoutesOptions = {
   register: Register;
-  service: BotsAccess;
-  credentials: CredentialsAccess;
+  service: BotLookup;
+  run: Runner<Credentials>;
 };
 
-/** The credentials one bot may use: listing them, saving one, deleting one, and its use log. */
 export function registerCredentialRoutes(options: CredentialRoutesOptions) {
-  const { register, service, credentials } = options;
+  const { register, service, run } = options;
 
-  register(routes.agentCredentials, (c) => {
+  register(routes.agentCredentials, async (c) => {
     service.agent(c.req.param("id"));
-
-    return c.json(credentials.list(c.req.param("id")), 200);
-  });
-  register(routes.saveAgentCredential, async (c) => {
-    service.agent(c.req.param("id"));
-    const input = credentialSaveInput.parse(await c.req.json());
 
     return c.json(
-      await credentials.save(c.req.param("id"), c.req.param("name"), input),
+      await run.runPromise(Credentials.use((s) => s.list(c.req.param("id")))),
       200,
     );
   });
-  register(routes.deleteAgentCredential, async (c) => {
-    service.agent(c.req.param("id"));
-    await credentials.delete(c.req.param("id"), c.req.param("name"));
+  const { secret, done } = secretRoutes(service);
 
-    return c.body(null, 204);
-  });
-  register(routes.declineAgentCredential, async (c) => {
-    service.agent(c.req.param("id"));
-    await credentials.decline(c.req.param("id"), c.req.param("name"));
+  const call: <A, E>(
+    use: (service: Credentials["Service"]) => Effect.Effect<A, E>,
+  ) => Promise<A> = (use) => run.runPromise(Credentials.use(use));
 
-    return c.body(null, 204);
-  });
-  register(routes.agentCredentialUses, (c) => {
-    service.agent(c.req.param("id"));
-    const query = credentialUsesInput.parse(c.req.query());
-
-    return c.json(
-      credentials.uses(c.req.param("id"), c.req.param("name"), query),
-      200,
-    );
-  });
+  register(
+    routes.saveAgentCredential,
+    secret(async (id, name, c) =>
+      c.json(await call((s) => s.save(id, name, c.req.valid("json"))), 200),
+    ),
+  );
+  register(
+    routes.deleteAgentCredential,
+    done((id, name) => call((s) => s.delete(id, name))),
+  );
+  register(
+    routes.declineAgentCredential,
+    done((id, name) => call((s) => s.decline(id, name))),
+  );
+  register(
+    routes.agentCredentialUses,
+    secret(async (id, name, c) =>
+      c.json(await call((s) => s.uses(id, name, c.req.valid("query"))), 200),
+    ),
+  );
 }

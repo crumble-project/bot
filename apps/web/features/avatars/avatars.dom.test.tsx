@@ -5,6 +5,7 @@ import { act } from "react";
 import { defaultAvatarDefinition } from "@crumble/server/contract/avatar";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { queryClient } from "@/lib/api";
+import { waitFor, waitForIdle } from "@/test/wait-for";
 
 const GLOBALS = [
   "window",
@@ -25,11 +26,6 @@ const GLOBALS = [
 const disabled = (control: Element) =>
   control.matches(":disabled") ||
   control.closest("fieldset[disabled]") !== null;
-
-const settle = () =>
-  act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 30));
-  });
 
 test("editing is locked until a pending save answers", async () => {
   const window = new Window({ url: "http://localhost" });
@@ -92,7 +88,10 @@ test("editing is locked until a pending save answers", async () => {
         </QueryClientProvider>,
       );
     });
-    await settle();
+    await waitFor(
+      () => container.querySelector('select option[value="bot"]') !== null,
+      "the bot to load",
+    );
 
     const select = container.querySelector("select")!;
     await act(async () => {
@@ -105,7 +104,7 @@ test("editing is locked until a pending save answers", async () => {
     )!;
 
     await act(async () => saveButton.click());
-    await settle();
+    await waitFor(() => disabled(select), "the page to lock");
 
     const editable = [
       ...container.querySelectorAll(
@@ -121,9 +120,8 @@ test("editing is locked until a pending save answers", async () => {
     ).toEqual([]);
 
     await act(async () => answer.resolve(new Response(null, { status: 204 })));
-    await settle();
-
-    expect(disabled(select)).toBe(false);
+    await waitFor(() => !disabled(select), "the page to unlock");
+    await waitForIdle(queryClient);
   } finally {
     await act(async () => root.unmount());
     queryClient.clear();

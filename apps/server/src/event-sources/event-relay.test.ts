@@ -6,19 +6,21 @@ import type { ServerWebSocket } from "bun";
 import { Effect, Exit, Layer, ManagedRuntime } from "effect";
 import { TestClock } from "effect/testing";
 import { productLayer } from "../app/product-layer";
-import { AgentRepository } from "../bots/agent-repository";
-import { SecretRepository } from "../credentials/secret-repository";
-import { secretsLayer } from "../password-managers/secrets";
-import { ScheduleRepository } from "../schedules/schedule-repository";
-import { agentInput, scheduleInput } from "../shared/domain";
+import { AgentRepository } from "../bot-store/agent-repository";
+import { SecretRepository } from "../secrets/secret-repository";
+import { secretsLayer } from "../secrets/secrets";
+import { ScheduleRepository } from "../automations/schedule-repository";
+import { agentInput } from "../contract/agents";
+import { scheduleInput } from "../contract/schedules";
 import { ProductDatabase } from "../shared/product-database";
-import { schedules } from "../schedules/schema";
+import { schedules } from "../bot-store/schema.schedules";
 import { EventRepository } from "./event-repository";
 import { EventRelay, RELAY_TOKEN_KEY } from "./event-relay";
 import { EventSources } from "./event-sources";
 import { relayEvents } from "./schema";
 import { eq } from "drizzle-orm";
 import { consumerMessage, type EventMessage } from "@doorstep/protocol";
+import { until } from "../../test/support/until";
 
 const TOKEN = "account-token";
 const ada = "00000000-0000-4000-8000-000000000001";
@@ -40,7 +42,6 @@ const event = (id: string): EventMessage => ({
   body: Buffer.from('{"action":"opened"}').toString("base64"),
 });
 
-/** A Doorstep relay that greets with `protocol`, records acks, and serves the sources API. */
 function fakeRelay(protocol = 1) {
   const acks: string[] = [];
   const authorizations: (string | null)[] = [];
@@ -115,15 +116,6 @@ function fakeRelay(protocol = 1) {
     },
     connections: () => sockets.size,
   };
-}
-
-async function until(condition: () => boolean | Promise<boolean>) {
-  const deadline = Date.now() + 3000;
-
-  while (!(await condition())) {
-    if (Date.now() > deadline) throw new Error("Timed out waiting");
-    await Bun.sleep(5);
-  }
 }
 
 async function fixture() {
@@ -256,6 +248,40 @@ test("a dropped connection reconnects only after the reconnect delay", async () 
   await until(async () => (await status()).status === "connected");
 });
 
+test("a flapping relay backs off until a connection holds", async () => {
+  const relay = fakeRelay();
+  const { configure, status, tick, run } = await fixture();
+
+  const dropped = async () => {
+    relay.drop();
+    await until(async () => (await status()).status === "error");
+  };
+
+  await configure(relay.url);
+  await until(async () => (await status()).status === "connected");
+  await dropped();
+  await run(TestClock.adjust("61 seconds"));
+  await tick();
+  await until(async () => (await status()).status === "connected");
+  await dropped();
+
+  await run(TestClock.adjust("61 seconds"));
+  await tick();
+  await Bun.sleep(50);
+  expect(relay.connections()).toBe(0);
+
+  await run(TestClock.adjust("61 seconds"));
+  await tick();
+  await until(async () => (await status()).status === "connected");
+
+  await run(TestClock.adjust("5 minutes"));
+  await tick();
+  await dropped();
+  await run(TestClock.adjust("61 seconds"));
+  await tick();
+  await until(async () => (await status()).status === "connected");
+});
+
 test("the relay status explains a missing URL or token", async () => {
   const { configure, status } = await fixture();
 
@@ -314,6 +340,7 @@ test("event sources are created and deleted on the relay, and kept while an auto
           prompt: "Triage the issue",
           cron: "0 9 * * *",
         }),
+        null,
       );
 
       yield* ProductDatabase.use((db) =>

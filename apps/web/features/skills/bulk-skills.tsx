@@ -13,10 +13,10 @@ import { AlertDialog } from "@/components/ui/alert-dialog";
 import { IconX } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { EditorSheet } from "@/components/form-fields";
-import { ConfirmDeleteContent } from "@/components/workspace";
-import { type Bot } from "@/lib/api";
+import { ConfirmDeleteContent } from "@/components/page";
+import type { Bot } from "@/features/bots/api";
 import { cn } from "@/lib/utils";
-import { BotPills, toggled } from "./bot-pills";
+import { BotToggles, toggled } from "./skill-assignment";
 import { invalidateSkills } from "./skill-cache";
 import {
   applyBulkAction,
@@ -34,7 +34,6 @@ type Selection = {
 
 const SelectionContext = createContext<Selection | null>(null);
 
-/** Where a checkbox shows: a row's appears on hover, keyboard focus, touch screens, or while anything is selected. */
 const SHOWN = {
   row: "opacity-0 group-hover/row:opacity-100 group-data-selecting/skills:opacity-100 focus-visible:opacity-100 checked:opacity-100 [@media(hover:none)]:opacity-100",
   section:
@@ -99,6 +98,52 @@ const ACTIONS: { action: BulkAction; label: string }[] = [
   { action: "delete", label: "Delete" },
 ];
 
+function BulkActionRow({
+  count,
+  busy,
+  disabled,
+  onAction,
+  onClear,
+}: {
+  count: number;
+  busy: boolean;
+  disabled: Set<BulkAction>;
+  onAction: (action: BulkAction) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className="rounded-full"
+        title="Clear selection"
+        disabled={busy}
+        onClick={onClear}
+      >
+        <IconX />
+      </Button>
+      <p className="pr-2 text-sm font-medium tabular-nums">{count} selected</p>
+      {ACTIONS.map(({ action, label }) => (
+        <Button
+          key={action}
+          size="sm"
+          variant="ghost"
+          className={cn(
+            "rounded-full",
+            action === "delete" &&
+              "text-destructive hover:bg-destructive/10 hover:text-destructive",
+          )}
+          disabled={busy || disabled.has(action)}
+          onClick={() => onAction(action)}
+        >
+          {label}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 function BulkActionBar({
   picked,
   busy,
@@ -127,37 +172,13 @@ function BulkActionBar({
       className="sticky bottom-4 z-10 mx-auto flex max-w-full animate-in flex-col gap-1.5 rounded-[22px] border bg-popover/95 p-1.5 text-popover-foreground shadow-lg backdrop-blur duration-200 fade-in slide-in-from-bottom-2"
       aria-label="Selected skills"
     >
-      <div className="flex flex-wrap items-center gap-1">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="rounded-full"
-          title="Clear selection"
-          disabled={busy}
-          onClick={onClear}
-        >
-          <IconX />
-        </Button>
-        <p className="pr-2 text-sm font-medium tabular-nums">
-          {picked.length} selected
-        </p>
-        {ACTIONS.map(({ action, label }) => (
-          <Button
-            key={action}
-            size="sm"
-            variant="ghost"
-            className={cn(
-              "rounded-full",
-              action === "delete" &&
-                "text-destructive hover:bg-destructive/10 hover:text-destructive",
-            )}
-            disabled={busy || disabled.has(action)}
-            onClick={() => onAction(action)}
-          >
-            {label}
-          </Button>
-        ))}
-      </div>
+      <BulkActionRow
+        count={picked.length}
+        busy={busy}
+        disabled={disabled}
+        onAction={onAction}
+        onClear={onClear}
+      />
       {notInstalled.length > 0 && (
         <p className="px-3 pb-1 text-xs text-muted-foreground">
           Update skips skills not installed from GitHub:{" "}
@@ -173,7 +194,6 @@ function BulkActionBar({
   );
 }
 
-/** Picks the bots that the selected skills are assigned to or removed from. */
 function BotTargetsSheet({
   action,
   bots,
@@ -209,7 +229,7 @@ function BotTargetsSheet({
           : "Shared skills are disabled. Only linked bot-specific copies are deleted, including edited copies; same-name skills and the original are kept."}
       </p>
       <p className="text-sm">{picked.map(skillLabel).join(", ")}</p>
-      <BotPills
+      <BotToggles
         label="Choose bots"
         bots={bots}
         isOn={(bot) => targets.has(bot.id)}
@@ -219,19 +239,27 @@ function BotTargetsSheet({
   );
 }
 
-/** Bulk orchestration uses independent, retry-safe per-skill requests. No successful change is rolled back. */
-export function BulkSkills({
-  bots,
-  skills,
-  visibleIds,
-  children,
-}: {
-  bots: Bot[];
-  skills: SelectableSkill[];
-  visibleIds: string[];
-  children: ReactNode;
-}) {
+function useCheckedSkills() {
   const [selected, setSelected] = useState(new Set<string>());
+
+  const change = useCallback((ids: string[], on: boolean) => {
+    setSelected((old) => {
+      const next = new Set(old);
+
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
+
+      return next;
+    });
+  }, []);
+
+  return { selected, setSelected, change };
+}
+
+function useBulkSkills(bots: Bot[], skills: SelectableSkill[]) {
+  const { selected, setSelected, change } = useCheckedSkills();
   const [dialog, setDialog] = useState<BulkAction | null>(null);
   const [targets, setTargets] = useState(new Set<string>());
   const [report, setReport] = useState<BulkMessage[]>([]);
@@ -251,19 +279,6 @@ export function BulkSkills({
     },
   });
 
-  const change = useCallback((ids: string[], on: boolean) => {
-    setSelected((old) => {
-      const next = new Set(old);
-
-      for (const id of ids) {
-        if (on) next.add(id);
-        else next.delete(id);
-      }
-
-      return next;
-    });
-  }, []);
-
   const selection = useMemo<Selection>(
     () => ({ selected, busy: bulk.isPending, change }),
     [selected, bulk.isPending, change],
@@ -275,48 +290,54 @@ export function BulkSkills({
     bulk.mutate(action);
   };
 
+  const start = (action: BulkAction) => {
+    if (action === "update") run(action);
+    else {
+      setTargets(new Set());
+      setDialog(action);
+    }
+  };
+
+  return {
+    selection,
+    picked,
+    busy: bulk.isPending,
+    dialog,
+    setDialog,
+    targets,
+    setTargets,
+    report,
+    run,
+    start,
+    clear: () => setSelected(new Set()),
+  };
+}
+
+function BulkReport({ report }: { report: BulkMessage[] }) {
+  if (!report.length) return null;
+
   return (
-    <SelectionContext value={selection}>
-      {report.length > 0 && (
-        <Alert>
-          <AlertDescription>
-            <ul aria-label="Bulk action results">
-              {report.map((line) => (
-                <li key={line.id}>{line.text}</li>
-              ))}
-            </ul>
-          </AlertDescription>
-        </Alert>
-      )}
-      <div
-        data-selecting={picked.length > 0 || undefined}
-        className="group/skills flex flex-col gap-6"
-      >
-        {/* Lines up with the rows' checkboxes, like a column header. */}
-        <div className="-mb-3 px-3.25">
-          <SelectSkills
-            ids={visibleIds}
-            label="Select all results"
-            place="all"
-          />
-        </div>
-        {children}
-        {picked.length > 0 && (
-          <BulkActionBar
-            picked={picked}
-            busy={bulk.isPending}
-            hasBots={bots.length > 0}
-            onClear={() => setSelected(new Set())}
-            onAction={(action) => {
-              if (action === "update") run(action);
-              else {
-                setTargets(new Set());
-                setDialog(action);
-              }
-            }}
-          />
-        )}
-      </div>
+    <Alert>
+      <AlertDescription>
+        <ul aria-label="Bulk action results">
+          {report.map((line) => (
+            <li key={line.id}>{line.text}</li>
+          ))}
+        </ul>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function BulkDialogs({
+  bots,
+  bulk: { picked, busy, dialog, setDialog, targets, setTargets, run },
+}: {
+  bots: Bot[];
+  bulk: ReturnType<typeof useBulkSkills>;
+}) {
+  return (
+    <>
       <AlertDialog
         open={dialog === "delete"}
         onOpenChange={(open) => {
@@ -335,12 +356,56 @@ export function BulkSkills({
           bots={bots}
           picked={picked}
           targets={targets}
-          busy={bulk.isPending}
+          busy={busy}
           onTargets={setTargets}
           onSubmit={() => run(dialog)}
           onClose={() => setDialog(null)}
         />
       )}
+    </>
+  );
+}
+
+export function BulkSkills({
+  bots,
+  skills,
+  visibleIds,
+  children,
+}: {
+  bots: Bot[];
+  skills: SelectableSkill[];
+  visibleIds: string[];
+  children: ReactNode;
+}) {
+  const bulk = useBulkSkills(bots, skills);
+  const { selection, picked, busy } = bulk;
+
+  return (
+    <SelectionContext value={selection}>
+      <BulkReport report={bulk.report} />
+      <div
+        data-selecting={picked.length > 0 || undefined}
+        className="group/skills flex flex-col gap-6"
+      >
+        <div className="-mb-3 px-3.25">
+          <SelectSkills
+            ids={visibleIds}
+            label="Select all results"
+            place="all"
+          />
+        </div>
+        {children}
+        {picked.length > 0 && (
+          <BulkActionBar
+            picked={picked}
+            busy={busy}
+            hasBots={bots.length > 0}
+            onClear={bulk.clear}
+            onAction={bulk.start}
+          />
+        )}
+      </div>
+      <BulkDialogs bots={bots} bulk={bulk} />
     </SelectionContext>
   );
 }

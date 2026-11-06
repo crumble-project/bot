@@ -1,33 +1,25 @@
 // Ported from Hermes' claude-subscription-directsdk admission.py (MIT, see THIRD_PARTY_NOTICES.md).
-import { randomBytes, randomInt } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
-
-/** Request-scoped native HTTP admission: forwards Claude Code's first Messages request, refuses the rest. */
-
-const UNCACHEABLE = new Set(["thinking", "redacted_thinking"]);
-
-// Anthropic's cache lookup checks at most this many positions back from a breakpoint, the breakpoint itself
-// included, and allows this many breakpoints across tools, system and messages.
-const LOOKBACK = 20;
-const MAX_BREAKPOINTS = 4;
+import { Capture } from "./relay-capture";
+import {
+  gzipEligible,
+  gzipPayload,
+  rejectionKind,
+  type GzipFallback,
+} from "./relay-gzip";
+import {
+  QueriedTurnMismatch,
+  dropMessageBreakpoints,
+  pinMessageBreakpoint,
+  restoreQueriedTurn,
+  stableRequestContext,
+  streamToolInput,
+  type Block,
+} from "./relay-request";
 
 // Native's own byte-level watchdog against api.anthropic.com (180 s); behind the relay it widens to 300 s.
 const UPSTREAM_IDLE_MS = 180_000;
-const GZIP_HOSTS = new Set(["api.anthropic.com"]);
-
-const GZIP_CA_ENV = [
-  "SSL_CERT_FILE",
-  "SSL_CERT_DIR",
-  "REQUESTS_CA_BUNDLE",
-  "CURL_CA_BUNDLE",
-  "NODE_EXTRA_CA_CERTS",
-];
-
-const PROXY_ENV = ["https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"];
-
-// Claude Code 2.1.302's origin-400 test.
-const GO_BAD_JSON =
-  /^bad json: (?:invalid character |unexpected EOF$|unexpected end of JSON input$|EOF$)/;
 
 const DENIAL = JSON.stringify({
   type: "error",
@@ -36,955 +28,6 @@ const DENIAL = JSON.stringify({
     message: "CRUMBLE_MODEL_ADMISSION_CONSUMED",
   },
 });
-
-let gzipLatched: string | undefined;
-
-const cacheControl = z.looseObject({ type: z.string() });
-
-const block = z.looseObject({
-  type: z.string(),
-  text: z.string().optional(),
-  tool_use_id: z.string().optional(),
-  is_error: z.boolean().optional(),
-  cache_control: cacheControl.optional(),
-  get content() {
-    return z.union([z.string(), z.array(block)]).optional();
-  },
-});
-
-/** A content block of a Messages request, keeping fields this module does not read. */
-export type Block = z.infer<typeof block>;
-
-const message = z.looseObject({
-  role: z.enum(["system", "user", "assistant"]),
-  content: z.union([z.string(), z.array(block)]),
-});
-
-type Message = z.infer<typeof message>;
-
-const body = z.looseObject({
-  messages: z.array(message),
-  tools: z.array(z.looseObject({})).optional(),
-});
-
-type Body = z.infer<typeof body>;
-
-type Position = { message: number; index: number; block: Block };
-
-/** The native request, validated; the parsed object itself is returned so its key order survives re-encoding. */
-function decode(payload: string): Body | undefined {
-  let raw: Body;
-
-  try {
-    raw = JSON.parse(payload);
-  } catch {
-    return undefined;
-  }
-
-  // SAFETY: `raw` is JSON.parse output; the schema check below proves the shape before anything reads it.
-  return body.safeParse(raw).success ? raw : undefined;
-}
-
-const encode = (value: Body) => JSON.stringify(value);
-
-/** A block without the given keys, compared regardless of cache markers or the restored fields. */
-function without(entry: Block, ...keys: string[]) {
-  const copy = { ...entry };
-
-  for (const key of keys) delete copy[key];
-
-  return copy;
-}
-
-const plain = (entry: Block) => without(entry, "cache_control");
-
-const sameBlocks = (left: readonly Block[], right: readonly Block[]) =>
-  left.length === right.length &&
-  left.every((item, index) => {
-    const other = right[index];
-
-    return other !== undefined && Bun.deepEquals(plain(item), plain(other));
-  });
-
-/** Every `cache_control` in the request: nested ones (tool_result content) and top-level ones included. */
-const breakpoints = (value: Body) =>
-  encode(value).match(/[{,]"cache_control":/g)?.length ?? 0;
-
-const listContent = (item: Message | undefined) =>
-  Array.isArray(item?.content) ? item.content : undefined;
-
-function positions(messages: Message[]) {
-  return messages.flatMap((item, messageIndex) =>
-    (listContent(item) ?? []).map((entry, index): Position => ({
-      message: messageIndex,
-      index,
-      block: entry,
-    })),
-  );
-}
-
-const before = (
-  left: Position | { message: number; index: number },
-  right: Position,
-) =>
-  left.message < right.message ||
-  (left.message === right.message && left.index < right.index);
-
-/**
- * Put the host's first user turn ahead of the context native prepends to it, on the conversation's first request
- * only, so the frame becomes a prefix the next request replays unchanged.
- */
-function frameFirst(messages: Message[], queried: readonly Block[]) {
-  if (messages.some((item) => item.role === "assistant")) return false;
-  const first = messages.find((item) => item.role === "user");
-  const content = listContent(first);
-
-  if (!first || !content || content.length <= queried.length) return false;
-  const starts = [];
-
-  for (let start = 0; start <= content.length - queried.length; start++)
-    if (sameBlocks(content.slice(start, start + queried.length), queried))
-      starts.push(start);
-
-  const start = starts[0];
-
-  if (starts.length !== 1 || start === undefined || start === 0) return false;
-
-  if (!content.slice(0, start).every((entry) => entry.type === "text"))
-    return false;
-
-  first.content = [
-    ...content.slice(start, start + queried.length),
-    ...content.slice(0, start),
-    ...content.slice(start + queried.length),
-  ];
-
-  return true;
-}
-
-// The only trailing system text moved: native's date line, exactly as its opening request ends the environment.
-const DATE_LINE = /^Today's date is \d{4}-\d{2}-\d{2}\.$/;
-
-function singleBlock(content: Message["content"] | undefined) {
-  if (content === undefined) return undefined;
-
-  if (Array.isArray(content))
-    return content.length === 1 ? content[0] : undefined;
-
-  return { type: "text", text: content };
-}
-
-function dateTail(last: Message | undefined) {
-  const tail: Block | undefined = singleBlock(last?.content);
-
-  return last?.role === "system" &&
-    tail?.type === "text" &&
-    DATE_LINE.test(tail.text ?? "")
-    ? tail
-    : undefined;
-}
-
-function appendToEnvironment(environment: Message, line: string) {
-  const original = environment.content;
-
-  const target: Block | undefined = Array.isArray(original)
-    ? original.at(-1)
-    : { type: "text", text: original };
-
-  if (target?.type !== "text" || (target.text ?? "").endsWith(line))
-    return false;
-
-  if (Array.isArray(original)) target.text = `${target.text ?? ""}\n\n${line}`;
-  else environment.content = `${original}\n\n${line}`;
-
-  return true;
-}
-
-function carryMark(target: Block | undefined, mark: Block["cache_control"]) {
-  if (mark && target) target.cache_control ??= mark;
-}
-
-function relocateDate(messages: Message[]) {
-  const last = messages.at(-1);
-
-  const environment = messages
-    .slice(0, -1)
-    .find((item) => item.role === "system");
-
-  const tail = dateTail(last);
-
-  if (!last || !environment || !tail) return false;
-
-  const line = tail.text ?? "";
-
-  if (!appendToEnvironment(environment, line)) return false;
-  const mark = tail.cache_control ?? cacheControlOf(last);
-
-  messages.pop();
-  carryMark(listContent(messages.at(-1))?.at(-1), mark);
-
-  return true;
-}
-
-function uniqueFrameStart(blocks: Block[], queried: readonly Block[]) {
-  const hits = [];
-
-  for (let start = 0; start <= blocks.length - queried.length; start++)
-    if (sameBlocks(blocks.slice(start, start + queried.length), queried))
-      hits.push(start);
-
-  return hits.length === 1 ? hits[0] : undefined;
-}
-
-const contextText = (entry: Block) =>
-  entry.type === "text" &&
-  Object.keys(entry).every((key) =>
-    ["type", "text", "cache_control"].includes(key),
-  );
-
-function dropHistoricalContext(
-  messages: Message[],
-  queried: readonly Block[] | undefined,
-) {
-  const newest = messages.findLast((item) => item.role === "user");
-  const blocks = listContent(newest);
-
-  if (
-    !queried?.some((entry) => entry.type !== "tool_result") ||
-    !blocks ||
-    !messages.some((item) => item.role === "assistant")
-  )
-    return false;
-
-  const start = uniqueFrameStart(blocks, queried);
-
-  if (!start || !blocks.slice(0, start).every(contextText)) return false;
-
-  const mark = blocks
-    .slice(0, start)
-    .find((entry) => entry.cache_control)?.cache_control;
-
-  blocks.splice(0, start);
-  carryMark(blocks[0], mark);
-
-  return true;
-}
-
-/**
- * Keep native's per-request context in the prefix later requests replay: append the trailing date line to the
- * environment message, and drop plain text before the queried frame on later user turns. Anything unexpected
- * forwards unchanged.
- */
-export function stableRequestContext(
-  payload: string,
-  queried: readonly Block[] | undefined,
-) {
-  const value = decode(payload);
-
-  if (!value) return payload;
-  const relocated = relocateDate(value.messages);
-  const dropped = dropHistoricalContext(value.messages, queried);
-
-  return relocated || dropped ? encode(value) : payload;
-}
-
-// A top-level message mark, which the schema leaves among the unread fields.
-const cacheControlOf = (item: Message) => {
-  const parsed = cacheControl.safeParse(item["cache_control"]);
-
-  return parsed.success ? parsed.data : undefined;
-};
-
-/** A user message carrying anything but tool results: a new turn, or a steering message after them. */
-const opensTurn = (item: Message) =>
-  item.role === "user" &&
-  (!Array.isArray(item.content) ||
-    item.content.some((entry) => entry.type !== "tool_result"));
-
-/** The user message right before the open turn's first assistant message with thinking, or the turn's opening. */
-function turnFrameIndex(messages: Message[], last: number) {
-  const opening = messages.slice(0, last).findLastIndex(opensTurn);
-
-  if (opening < 0) return undefined;
-
-  const offset = messages
-    .slice(opening + 1, last + 1)
-    .findIndex(
-      (item) =>
-        item.role === "assistant" &&
-        listContent(item)?.some((entry) => UNCACHEABLE.has(entry.type)),
-    );
-
-  if (offset < 0) return undefined;
-  const thought = opening + 1 + offset;
-
-  const user = messages
-    .slice(opening + 1, thought)
-    .findLastIndex((item) => item.role === "user");
-
-  return user < 0 ? opening : opening + 1 + user;
-}
-
-const blockCount = (item: Message) =>
-  Array.isArray(item.content) ? item.content.length : 1;
-
-function moveTurnMark(
-  value: Body,
-  messages: Message[],
-  from: Position,
-  target: Position,
-) {
-  const later = positions(messages).filter(
-    (entry) => entry.block.cache_control && before(from, entry),
-  );
-
-  const next = later[0]?.block.cache_control;
-
-  if (!next) return false;
-
-  if (breakpoints(value) < MAX_BREAKPOINTS) {
-    from.block.cache_control = structuredClone(next);
-
-    return true;
-  }
-
-  const spare = later.find((entry) => before(entry, target));
-
-  if (!spare?.block.cache_control || !target.block.cache_control) return false;
-  from.block.cache_control = spare.block.cache_control;
-  delete spare.block.cache_control;
-
-  return true;
-}
-
-/**
- * Keep a breakpoint where the open turn's thinking starts, so the next turn still reads it: after a tool loop longer
- * than the cache lookback, the recurring breakpoint cannot reach that entry. The mark goes on the last cacheable
- * block of the user message right before the turn's first assistant message with thinking, only within the
- * breakpoint limit; at the limit a spare native mark moves there instead.
- */
-function keepTurnMark(
-  value: Body,
-  messages: Message[],
-  last: number,
-  target: Position,
-) {
-  const frame = turnFrameIndex(messages, last);
-
-  if (frame === undefined) return false;
-  const content = listContent(messages[frame]);
-
-  if (!content) return false;
-
-  const mark = content.findLastIndex((entry) => !UNCACHEABLE.has(entry.type));
-
-  const marked = content[mark];
-
-  if (!marked || marked.cache_control) return false;
-  const from = { message: frame, index: mark, block: marked };
-
-  if (!before(from, target)) return false;
-
-  const span = messages
-    .slice(frame, target.message)
-    .reduce((total, item) => total + blockCount(item), 0);
-
-  // The recurring breakpoint's own lookback still reaches it.
-  if (span - mark + target.index + 1 <= LOOKBACK) return false;
-
-  return moveTurnMark(value, messages, from, target);
-}
-
-function stableSpan(
-  messages: Message[],
-  last: number,
-  queried: readonly Block[],
-) {
-  const stable = positions(messages).filter((entry) => entry.message <= last);
-  const newest = messages[last + 1];
-
-  const newestContent =
-    newest?.role === "user" ? listContent(newest) : undefined;
-
-  if (!newestContent) return stable;
-  const prefix: Position[] = [];
-
-  for (const [index, sent] of newestContent.entries()) {
-    const host = queried[index];
-
-    if (!host || !Bun.deepEquals(plain(sent), plain(host))) break;
-    prefix.push({ message: last + 1, index, block: sent });
-  }
-
-  if (newestContent[prefix.length]?.type !== "tool_result")
-    stable.push(...prefix);
-
-  return stable;
-}
-
-function foldMarks(marked: readonly Position[], target: Position | undefined) {
-  const after = target ? marked.filter((entry) => before(target, entry)) : [];
-  const moved = after[0]?.block.cache_control;
-
-  if (target === undefined || moved === undefined) return false;
-
-  for (const entry of after) delete entry.block.cache_control;
-  target.block.cache_control ??= moved;
-
-  return true;
-}
-
-/**
- * Keep the recurring message `cache_control` on content the next request replays unchanged: everything through the
- * last assistant message, plus the leading blocks of the newest turn equal to the queried frame. Marks after that
- * span fold onto its last block; system and tools marks are never touched, and the count never grows past four.
- */
-export function pinMessageBreakpoint(
-  payload: string,
-  queried: readonly Block[] | undefined,
-) {
-  if (!queried?.length) return payload;
-  const value = decode(payload);
-
-  if (!value) return payload;
-  const { messages } = value;
-  const reordered = frameFirst(messages, queried);
-
-  const marked = positions(messages).filter(
-    (entry) => entry.block.cache_control,
-  );
-
-  if (marked.length === 0) return payload;
-  const last = messages.findLastIndex((item) => item.role === "assistant");
-
-  const target = stableSpan(messages, last, queried).findLast(
-    (entry) => !UNCACHEABLE.has(entry.block.type),
-  );
-
-  const folded = foldMarks(marked, target);
-
-  const turn =
-    target !== undefined && keepTurnMark(value, messages, last, target);
-
-  if (!(reordered || folded || turn)) return payload;
-
-  return encode(value);
-}
-
-/** Remove native's message marks from a tool-less one-shot that nothing replays; system and tools marks stay. */
-export function dropMessageBreakpoints(payload: string) {
-  const value = decode(payload);
-
-  if (!value) return payload;
-  let dropped = false;
-
-  for (const item of value.messages)
-    for (const entry of listContent(item) ?? [])
-      if (entry.cache_control) {
-        delete entry.cache_control;
-        dropped = true;
-      }
-
-  return dropped ? encode(value) : payload;
-}
-
-/**
- * Ask the API to stream tool arguments as the model writes them. Native turns this on only for a first-party base
- * URL, so behind the relay a large argument arrives only when complete. A value native already set wins.
- */
-export function streamToolInput(payload: string) {
-  const value = decode(payload);
-
-  const tools = (value?.tools ?? []).filter(
-    (tool) => !("eager_input_streaming" in tool),
-  );
-
-  if (!value || tools.length === 0) return payload;
-
-  for (const tool of tools) tool["eager_input_streaming"] = true;
-
-  return encode(value);
-}
-
-export class QueriedTurnMismatch extends Error {
-  constructor() {
-    super("Native request does not uniquely match the queried tool results");
-    this.name = "QueriedTurnMismatch";
-  }
-}
-
-const unmatched = (): never => {
-  throw new QueriedTurnMismatch();
-};
-
-const bareText = (entry: Block) =>
-  entry.type === "text" &&
-  entry.text !== undefined &&
-  Object.keys(entry).length === 2;
-
-const joinedText = (value: Block["content"]) => {
-  if (value === undefined) return undefined;
-
-  if (!Array.isArray(value)) return value;
-
-  return value.every(bareText)
-    ? value.map((entry) => entry.text ?? "").join("")
-    : undefined;
-};
-
-function restoreContent(sent: Block["content"], host: Block["content"]) {
-  // Scalar/list equivalence is allowed only for text with no metadata or markers.
-  if (!Array.isArray(host) || !Array.isArray(sent)) {
-    const left = joinedText(sent);
-    const right = joinedText(host);
-
-    if (left === undefined || right === undefined || !left.startsWith(right))
-      return unmatched();
-
-    return structuredClone(host);
-  }
-
-  return restoreSequence(sent, host);
-}
-
-function restoreToolResult(sent: Block, host: Block, restored: Block) {
-  // Missing means false.
-  if ((sent.is_error ?? false) !== (host.is_error ?? false)) return unmatched();
-
-  const ignored = ["content", "is_error", "cache_control"];
-
-  if (!Bun.deepEquals(without(sent, ...ignored), without(host, ...ignored)))
-    return unmatched();
-
-  if ("content" in sent !== "content" in host) return unmatched();
-
-  if ("content" in host)
-    restored.content = restoreContent(sent.content, host.content);
-}
-
-function restoreBlock(sent: Block, host: Block): Block {
-  const restored = structuredClone(host);
-
-  if (host.type === "tool_result") restoreToolResult(sent, host, restored);
-  else if (!Bun.deepEquals(plain(sent), plain(host))) return unmatched();
-
-  if (sent.cache_control) {
-    if (
-      host.cache_control &&
-      !Bun.deepEquals(sent.cache_control, host.cache_control)
-    )
-      return unmatched();
-    restored.cache_control = structuredClone(sent.cache_control);
-  }
-
-  return restored;
-}
-
-function bareTextRun(blocks: Block[], start: number) {
-  let end = start + 1;
-
-  while (end < blocks.length && bareText(blocks[end] ?? { type: "" })) end++;
-
-  const text = blocks
-    .slice(start, end)
-    .map((entry) => entry.text ?? "")
-    .join("");
-
-  return { end, text };
-}
-
-function restoreSequence(sent: Block[], host: Block[]): Block[] {
-  const restored: Block[] = [];
-  let hostIndex = 0;
-  let sentIndex = 0;
-
-  while (hostIndex < host.length) {
-    const hostBlock = host[hostIndex];
-    const sentBlock = sent[sentIndex];
-
-    if (!hostBlock || !sentBlock) return unmatched();
-
-    if (bareText(hostBlock) && bareText(sentBlock)) {
-      const original = bareTextRun(host, hostIndex);
-      const actual = bareTextRun(sent, sentIndex);
-
-      // Extensions before a protected host block are insertions, not suffixes.
-      if (
-        !(original.end === host.length
-          ? actual.text.startsWith(original.text)
-          : actual.text === original.text)
-      )
-        return unmatched();
-      restored.push(...structuredClone(host.slice(hostIndex, original.end)));
-      hostIndex = original.end;
-      sentIndex = actual.end;
-    } else {
-      restored.push(restoreBlock(sentBlock, hostBlock));
-      hostIndex++;
-      sentIndex++;
-    }
-  }
-
-  if (sent.slice(sentIndex).some((entry) => !bareText(entry)))
-    return unmatched();
-
-  return restored;
-}
-
-function newestToolTurn(messages: Message[]) {
-  const newest =
-    messages[messages.findLastIndex((item) => item.role === "assistant") + 1];
-
-  return newest?.role === "user" ? newest : undefined;
-}
-
-function queriedResultIds(queried: readonly Block[]) {
-  const ids = queried.flatMap((entry) =>
-    entry.type === "tool_result" ? [entry.tool_use_id ?? ""] : [],
-  );
-
-  if (ids.some((id) => !id) || new Set(ids).size !== ids.length)
-    return unmatched();
-
-  return ids;
-}
-
-/**
- * Restore the host's exact tool-result frame in the newest user message, anchored by its unique ordered result IDs.
- * Only trailing bare text native added is dropped; anything that cannot be proven lossless throws.
- */
-export function restoreQueriedTurn(
-  payload: string,
-  queried: readonly Block[] | undefined,
-) {
-  if (
-    !queried?.length ||
-    !queried.some((entry) => entry.type === "tool_result")
-  )
-    return payload;
-  const value = decode(payload);
-
-  if (!value) return unmatched();
-  const newest = newestToolTurn(value.messages);
-  const native = listContent(newest);
-
-  if (!newest || !native) return unmatched();
-
-  const nativeIds = native.flatMap((entry) =>
-    entry.type === "tool_result" ? [entry.tool_use_id] : [],
-  );
-
-  if (!Bun.deepEquals(queriedResultIds(queried), nativeIds)) return unmatched();
-  const restored = restoreSequence(native, [...queried]);
-
-  if (Bun.deepEquals(native, restored)) return payload;
-  newest.content = restored;
-
-  return encode(value);
-}
-
-const usage = z.looseObject({
-  input_tokens: z.number().optional(),
-  output_tokens: z.number().optional(),
-  cache_read_input_tokens: z.number().nullish(),
-  cache_creation_input_tokens: z.number().nullish(),
-  cache_creation: z
-    .looseObject({ ephemeral_1h_input_tokens: z.number().optional() })
-    .nullish(),
-});
-
-const capturedBlock = z.looseObject({
-  type: z.string(),
-  text: z.string().optional(),
-  thinking: z.string().optional(),
-  signature: z.string().optional(),
-  data: z.string().optional(),
-  id: z.string().optional(),
-  name: z.string().optional(),
-  input: z.json().optional(),
-  citations: z.array(z.json()).optional(),
-});
-
-type CapturedBlock = z.infer<typeof capturedBlock>;
-
-const capturedMessage = z.looseObject({
-  id: z.string().optional(),
-  model: z.string().optional(),
-  content: z.array(capturedBlock),
-  stop_reason: z.string().nullish(),
-  stop_details: z
-    .looseObject({
-      explanation: z.string().nullish(),
-      category: z.string().nullish(),
-    })
-    .nullish(),
-  usage,
-});
-
-/** The assistant message the relay captured from the upstream stream. */
-export type CapturedMessage = z.infer<typeof capturedMessage>;
-
-const streamEvent = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("message_start"), message: capturedMessage }),
-  z.object({
-    type: z.literal("content_block_start"),
-    index: z.number(),
-    content_block: capturedBlock,
-  }),
-  z.object({
-    type: z.literal("content_block_delta"),
-    index: z.number(),
-    delta: z.looseObject({
-      type: z.string(),
-      text: z.string().optional(),
-      thinking: z.string().optional(),
-      signature: z.string().optional(),
-      partial_json: z.string().optional(),
-      citation: z.json().optional(),
-    }),
-  }),
-  z.object({ type: z.literal("content_block_stop"), index: z.number() }),
-  z.object({
-    type: z.literal("message_delta"),
-    delta: z.looseObject({
-      stop_reason: z.string().nullish(),
-      stop_details: capturedMessage.shape.stop_details,
-    }),
-    usage: z.looseObject({}).optional(),
-  }),
-  z.object({ type: z.literal("message_stop") }),
-]);
-
-type ContentDelta = Extract<
-  z.infer<typeof streamEvent>,
-  { type: "content_block_delta" }
->;
-
-type MessageDelta = Extract<
-  z.infer<typeof streamEvent>,
-  { type: "message_delta" }
->;
-
-const knownEvents = new Set([
-  "message_start",
-  "content_block_start",
-  "content_block_delta",
-  "content_block_stop",
-  "message_delta",
-  "message_stop",
-]);
-
-const TEXT_DELTA_FIELDS = new Map<string, "text" | "thinking" | "signature">([
-  ["text_delta", "text"],
-  ["thinking_delta", "thinking"],
-  ["signature_delta", "signature"],
-]);
-
-const eventType = z.looseObject({ type: z.string() });
-
-/** Builds the upstream's assistant message from its server-sent events. */
-export class Capture {
-  message: CapturedMessage | undefined;
-  complete = false;
-  private pending = "";
-  private readonly decoder = new TextDecoder();
-  private readonly arguments = new Map<number, string>();
-  private readonly unparsed: number[] = [];
-
-  /** Tool calls whose streamed arguments were not complete JSON; they were removed from the message. */
-  get dropped() {
-    return this.unparsed.length;
-  }
-
-  feed(chunk: Uint8Array) {
-    this.pending += this.decoder.decode(chunk, { stream: true });
-    let match = /\r?\n\r?\n/.exec(this.pending);
-
-    while (match) {
-      const frame = this.pending.slice(0, match.index);
-
-      this.pending = this.pending.slice(match.index + match[0].length);
-
-      const data = frame
-        .split(/\r?\n/)
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trimStart())
-        .join("\n");
-
-      if (data) this.event(JSON.parse(data));
-      match = /\r?\n\r?\n/.exec(this.pending);
-    }
-  }
-
-  private event(raw: z.input<typeof eventType>) {
-    if (!knownEvents.has(eventType.parse(raw).type)) return;
-    const event = streamEvent.parse(raw);
-
-    switch (event.type) {
-      case "message_start":
-        this.message = structuredClone(event.message);
-        break;
-      case "content_block_start":
-        this.message?.content.push(structuredClone(event.content_block));
-        break;
-      case "content_block_delta":
-        this.applyDelta(event);
-        break;
-      case "content_block_stop":
-        this.finishArguments(event.index);
-        break;
-
-      case "message_delta":
-        this.applyMessageDelta(event);
-        break;
-      case "message_stop":
-        this.finishMessage();
-        break;
-    }
-  }
-
-  private applyMessageDelta({ delta, usage }: MessageDelta) {
-    if (!this.message) return;
-    Object.assign(this.message, delta);
-    Object.assign(this.message.usage, usage ?? {});
-  }
-
-  private applyDelta({ delta, index }: ContentDelta) {
-    const target = this.message?.content[index];
-
-    if (!target) throw new Error("Delta for an unknown content block");
-    const field = TEXT_DELTA_FIELDS.get(delta.type);
-
-    if (field) target[field] = (target[field] ?? "") + (delta[field] ?? "");
-    else this.applyStructuredDelta(target, index, delta);
-  }
-
-  private applyStructuredDelta(
-    target: CapturedBlock,
-    index: number,
-    delta: ContentDelta["delta"],
-  ) {
-    if (delta.type === "input_json_delta")
-      this.arguments.set(
-        index,
-        (this.arguments.get(index) ?? "") + (delta.partial_json ?? ""),
-      );
-    else if (delta.type === "citations_delta" && delta.citation !== undefined)
-      (target.citations ??= []).push(structuredClone(delta.citation));
-  }
-
-  private finishArguments(index: number) {
-    const raw = this.arguments.get(index);
-
-    if (raw === undefined) return;
-    this.arguments.delete(index);
-    const target = this.message?.content[index];
-
-    try {
-      // A no-argument tool call streams one empty partial_json.
-      const input = raw.trim() ? z.json().parse(JSON.parse(raw)) : {};
-
-      if (target) target.input = input;
-    } catch {
-      // Streamed tool input is not validated: a reply cut off at max_tokens ends mid-argument. The call is
-      // dropped at message_stop, never run with guessed arguments.
-      this.unparsed.push(index);
-    }
-  }
-
-  private finishMessage() {
-    for (const index of this.unparsed.toSorted((a, b) => b - a))
-      this.message?.content.splice(index, 1);
-    this.complete = Boolean(
-      this.message?.stop_reason && this.arguments.size === 0,
-    );
-  }
-}
-
-const goError = z.object({ reason: z.literal("bad_json"), error: z.string() });
-
-const anthropicError = z.object({
-  type: z.string().optional(),
-  error: z.looseObject({
-    type: z.string().optional(),
-    message: z.string().optional(),
-    details: z.looseObject({ error_code: z.string().optional() }).optional(),
-  }),
-});
-
-const INVALID_JSON_MESSAGES = [
-  "The request body is not valid JSON",
-  "Failed to parse request: could not parse request body as JSON",
-];
-
-// The message prefix counts only in a full Anthropic error envelope.
-const invalidJsonEnvelope = ({ type, error }: z.infer<typeof anthropicError>) =>
-  type === "error" &&
-  error.type !== undefined &&
-  INVALID_JSON_MESSAGES.some((prefix) => error.message?.startsWith(prefix));
-
-function originBadJson(raw: z.input<typeof anthropicError>) {
-  const go = goError.safeParse(raw);
-
-  if (go.success) return GO_BAD_JSON.test(go.data.error);
-  const parsed = anthropicError.safeParse(raw);
-
-  return parsed.success && invalidJsonEnvelope(parsed.data);
-}
-
-const encodingUnsupported = (raw: z.input<typeof anthropicError>) => {
-  const parsed = anthropicError.safeParse(raw);
-
-  return (
-    parsed.success &&
-    (parsed.data.error.details?.error_code ===
-      "request_body_encoding_unsupported" ||
-      parsed.data.error.message?.startsWith("Unsupported Content-Encoding") ===
-        true)
-  );
-};
-
-const fromAnthropic = (headers: Headers) =>
-  (headers.get("request-id") ?? "").startsWith("req_") ||
-  Boolean(headers.get("cf-ray"));
-
-function headerRejection(status: number, headers: Headers) {
-  if (!fromAnthropic(headers)) return "non_anthropic_rejection";
-
-  return status === 415 ? "unsupported_encoding" : undefined;
-}
-
-const badJsonText = (text: string) =>
-  GO_BAD_JSON.test(text.trimEnd()) ? "invalid_json_at_origin" : undefined;
-
-function originRejection(raw: z.input<typeof anthropicError>) {
-  if (!goError.safeParse(raw).success && encodingUnsupported(raw))
-    return "unsupported_encoding";
-
-  return originBadJson(raw) ? "invalid_json_at_origin" : undefined;
-}
-
-function bodyRejection(text: string) {
-  let raw: z.input<typeof anthropicError>;
-
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    return badJsonText(text);
-  }
-
-  return originRejection(raw);
-}
-
-/** Why the origin refused a gzip body, when it did; then the latch turns compression off for the process. */
-function rejectionKind(status: number, headers: Headers, text: string) {
-  if (![400, 403, 415].includes(status)) return undefined;
-
-  return (
-    headerRejection(status, headers) ??
-    (status === 400 ? bodyRejection(text) : undefined)
-  );
-}
 
 const FORWARDED_REQUEST_HEADERS_EXCLUDED = new Set([
   "host",
@@ -1027,22 +70,33 @@ function forwardedResponseHeaders(response: Response) {
   return forwarded;
 }
 
-function gzipPayload(payload: string) {
-  const padding = Array.from({ length: randomInt(257) }, () =>
-    randomInt(2) ? " " : "\t",
-  ).join("");
+export type AdmissionOptions = {
+  queried?: readonly Block[] | undefined;
+  oneShot?: boolean;
+  /** The environment the child runs in, whose proxy and certificate settings forbid compression. */
+  env: Record<string, string | undefined>;
+  gzip: GzipFallback;
+};
 
-  return Bun.gzipSync(Buffer.from(`${payload}\n${padding}`), { level: 3 });
-}
+function rewrittenPayload(
+  native: string,
+  { queried, oneShot }: AdmissionOptions,
+) {
+  let payload = native;
 
-function gzipAllowedByEnv(env: Record<string, string | undefined>) {
-  const opt = (env["CLAUDE_CODE_GZIP_REQUEST_BODIES"] ?? "").toLowerCase();
+  if (oneShot) payload = dropMessageBreakpoints(payload);
 
-  return (
-    !PROXY_ENV.some((name) => env[name]) &&
-    !GZIP_CA_ENV.some((name) => name in env) &&
-    !["0", "false", "no", "off"].includes(opt)
-  );
+  try {
+    payload = restoreQueriedTurn(payload, queried);
+  } catch (error) {
+    // Restoration is hygiene, not a gate: a frame it cannot prove lossless forwards as native built it.
+    if (!(error instanceof QueriedTurnMismatch)) throw error;
+  }
+
+  payload = stableRequestContext(payload, queried);
+  payload = pinMessageBreakpoint(payload, queried);
+
+  return streamToolInput(payload);
 }
 
 class UpstreamIdle extends Error {
@@ -1061,11 +115,7 @@ export class Admission {
   used = false;
   denied = 0;
   status: number | undefined;
-  requestId: string | undefined;
   failure: string | undefined;
-  unrestored: string | undefined;
-  /** A tool-less one-shot that nothing replays: its message marks are dropped instead of moved. */
-  oneShot = false;
   readonly capture = new Capture();
   private errorBody = "";
   private cancelled = false;
@@ -1073,16 +123,13 @@ export class Admission {
   private readonly prefix = `/admit/${randomBytes(32).toString("base64url")}`;
   private readonly controller = new AbortController();
   private readonly server: ReturnType<typeof Bun.serve>;
-  private readonly env: NodeJS.ProcessEnv;
 
   constructor(
     upstream: string,
     private readonly timeoutMs: number,
-    private readonly queried?: readonly Block[],
-    env: NodeJS.ProcessEnv = process.env,
+    private readonly options: AdmissionOptions,
   ) {
     this.upstream = new URL(upstream);
-    this.env = env;
     const host = this.upstream.hostname;
     const local = ["127.0.0.1", "localhost", "[::1]"].includes(host);
 
@@ -1108,7 +155,6 @@ export class Admission {
     this.url = `http://127.0.0.1:${this.server.port}${this.prefix}`;
   }
 
-  /** The upstream's own message for a non-200 answer, empty when none was captured. */
   errorText() {
     try {
       const parsed = z
@@ -1131,13 +177,10 @@ export class Admission {
     await this.server.stop(true);
   }
 
-  private gzipEligible(payload: string, headers: Headers) {
+  private compresses(payload: string, headers: Headers) {
     return (
-      GZIP_HOSTS.has(this.upstream.hostname) &&
-      this.upstream.port === "" &&
-      gzipAllowedByEnv(this.env) &&
+      gzipEligible(this.upstream, this.options.env, this.options.gzip) &&
       Buffer.byteLength(payload) >= 4096 &&
-      gzipLatched === undefined &&
       !headers.has("content-encoding")
     );
   }
@@ -1173,24 +216,11 @@ export class Admission {
   }
 
   private async forward(request: Request, path: URL) {
-    let payload = await request.text();
-
-    if (this.oneShot) payload = dropMessageBreakpoints(payload);
-
-    try {
-      payload = restoreQueriedTurn(payload, this.queried);
-    } catch (error) {
-      // Restoration is hygiene, not a gate: a frame it cannot prove lossless forwards as native built it.
-      if (!(error instanceof QueriedTurnMismatch)) throw error;
-      this.unrestored = error.message;
-    }
-
-    payload = stableRequestContext(payload, this.queried);
-    payload = pinMessageBreakpoint(payload, this.queried);
-    payload = streamToolInput(payload);
+    const { gzip } = this.options;
+    const payload = rewrittenPayload(await request.text(), this.options);
     const headers = forwardedRequestHeaders(request);
     const route = `${this.upstream.origin}${this.upstream.pathname.replace(/\/$/, "")}/v1/messages${path.search}`;
-    const compressed = this.gzipEligible(payload, request.headers);
+    const compressed = this.compresses(payload, request.headers);
 
     const send = (gzip: boolean) => {
       const sent = new Headers(headers);
@@ -1209,8 +239,6 @@ export class Admission {
     let prefix: Uint8Array | undefined;
 
     if (compressed && [400, 403, 415].includes(response.status)) {
-      // Recorded before the body read, so a failed read still reports this answer as an identity send would.
-      this.requestId = requestIdOf(response.headers);
       this.status = response.status;
       prefix = new Uint8Array(await response.arrayBuffer());
 
@@ -1221,9 +249,8 @@ export class Admission {
       );
 
       if (reason) {
-        this.requestId = undefined;
         this.status = undefined;
-        gzipLatched ??= reason;
+        gzip.disable(reason);
         console.warn(
           `request gzip disabled: ${reason} status=${response.status}`,
         );
@@ -1234,9 +261,12 @@ export class Admission {
       }
     }
 
-    this.requestId = requestIdOf(response.headers);
     this.status = response.status;
 
+    return this.relayed(response, prefix);
+  }
+
+  private relayed(response: Response, prefix: Uint8Array | undefined) {
     const { readable, writable } = new TransformStream<
       Uint8Array,
       Uint8Array
@@ -1260,7 +290,6 @@ export class Admission {
     const deliver = async (chunk: Uint8Array) => {
       if (response.status === 200) this.capture.feed(chunk);
       else if (this.errorBody.length < 65536)
-        // The rejection reason ("prompt is too long"), bounded.
         this.errorBody += new TextDecoder().decode(chunk);
       await writer.write(chunk);
     };
@@ -1296,6 +325,3 @@ export class Admission {
     }
   }
 }
-
-const requestIdOf = (headers: Headers) =>
-  headers.get("request-id") ?? headers.get("x-request-id") ?? undefined;

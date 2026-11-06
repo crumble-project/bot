@@ -1,8 +1,17 @@
 import { asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import type { MCPServer } from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { mcpServers } from "./schema";
+
+export type MCPServer = {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  agentId: string | null;
+  /** A client the owner registered with the server's authorization server, for servers that register none themselves. */
+  oauthClientId: string | null;
+};
 
 export type NewMCPServer = Omit<
   MCPServer,
@@ -21,13 +30,11 @@ const serverOf = (row: typeof mcpServers.$inferSelect): MCPServer => ({
   oauthClientId: row.oauthClientId ?? null,
 });
 
-/** MCP servers: shared ones, and each bot's own. */
 export class McpServerRepository extends Context.Service<
   McpServerRepository,
   {
     readonly list: Effect.Effect<MCPServer[]>;
     readonly get: (serverId: string) => Effect.Effect<MCPServer | null>;
-    /** A server the bot may use: enabled, and shared or its own. */
     readonly usable: (
       agentId: string,
       serverId: string,
@@ -36,7 +43,6 @@ export class McpServerRepository extends Context.Service<
       input: NewMCPServer,
       serverId?: string,
     ) => Effect.Effect<MCPServer>;
-    /** Changes a server's settings; which bot it belongs to is fixed at creation. */
     readonly update: (
       serverId: string,
       patch: Partial<Omit<MCPServer, "id" | "agentId">>,

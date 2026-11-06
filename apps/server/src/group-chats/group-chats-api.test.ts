@@ -3,7 +3,7 @@ import type { JsonValue } from "@earendil-works/chord";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAPI } from "../app/api";
+import { testAPI } from "../../test/support/api";
 import {
   activityEvent,
   groupChatResponse,
@@ -11,14 +11,14 @@ import {
   groupMessageReceiptResponse,
   historyResponse,
 } from "../contract/api-responses";
-import { standaloneGroupChats } from "./group-chats";
+import { standaloneGroupChats } from "./group-chats-test-support";
 import { GroupTranscripts } from "./group-transcripts";
 import { AgentRuntime } from "../bots/runtime";
-import { standaloneScheduler } from "../schedules/scheduler";
-import { standaloneBots } from "../bots/bots";
+import { standaloneScheduler } from "../automations/scheduler-test-support";
+import { standaloneBots } from "../bots/bots-test-support";
 import { Store } from "../../test/support/store";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
 
-// Plain header records, so they spread into the defaults.
 type TestRequestInit = Omit<RequestInit, "headers"> & {
   headers?: Record<string, string>;
 };
@@ -35,7 +35,10 @@ function setup() {
   dirs.push(dir);
   const store = new Store(dir);
 
-  const service = standaloneBots(store, new AgentRuntime(join(dir, "agents")));
+  const service = standaloneBots(
+    store,
+    new AgentRuntime(join(dir, "agents"), runtimeCallbacks()),
+  );
 
   const scheduler = standaloneScheduler(store.runtime, (a, p, r, s) =>
     service.dispatch(a, p, r, s),
@@ -45,7 +48,7 @@ function setup() {
 
   const groupChats = standaloneGroupChats(service, transcripts);
 
-  const app = createAPI(service, token, { scheduler, groupChats });
+  const app = testAPI(service, token, { scheduler, groupChats });
 
   const bots = ["Planner", "Researcher", "Critic"].map((name) =>
     store.createAgent({
@@ -54,7 +57,6 @@ function setup() {
       instructions: "Answer",
       provider: "openai",
       model: "gpt-4.1",
-      // These tests cover the API; turns have their own tests.
       enabled: false,
       tools: [],
       skills: [],
@@ -76,7 +78,7 @@ function setup() {
 }
 
 const req = (
-  app: ReturnType<typeof createAPI>,
+  app: ReturnType<typeof testAPI>,
   path: string,
   init: TestRequestInit = {},
 ) =>
@@ -90,7 +92,7 @@ const req = (
   });
 
 const post = (
-  app: ReturnType<typeof createAPI>,
+  app: ReturnType<typeof testAPI>,
   path: string,
   body: Record<string, JsonValue>,
 ) => req(app, path, { method: "POST", body: JSON.stringify(body) });
@@ -296,7 +298,6 @@ describe("group chat API", () => {
   test("accepts attachments and serves their bytes", async () => {
     const { app, ids, close } = setup();
 
-    // A 1×1 PNG.
     const png =
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
 
@@ -378,9 +379,11 @@ describe("group chat API", () => {
         .find((line) => line.startsWith("data: ") && line.includes("Booked."))
         ?.slice("data: ".length);
 
+      const { executionId, ...shown } = reply;
+
       expect(activityEvent.parse(JSON.parse(data!))).toEqual({
-        ...reply,
-        eventId: "execution-1",
+        ...shown,
+        eventId: executionId,
         serverId: "",
       });
     } finally {

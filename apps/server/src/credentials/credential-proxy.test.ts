@@ -1,3 +1,4 @@
+import { commitSigning, SIGNING_HOST } from "./commit-signing";
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -9,103 +10,15 @@ import { Redacted } from "effect";
 import { Store } from "../../test/support/store";
 import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
 import { credentialAuthoritiesAccess } from "./credential-authority";
-import {
-  credentialProxy,
-  requestHeaders,
-  responseHeaders,
-} from "./credential-proxy";
+import { credentialProxy } from "./credential-proxy";
 import { credentialsAccess } from "./credentials";
-import { SIGNING_HOST } from "../workspaces/workspace";
-
-const placeholder = "$ACME_TOKEN";
-const value = "s3cret-value";
-
-const swap = (text: string) => text.replaceAll(placeholder, value);
-const scrub = (text: string) => text.replaceAll(value, placeholder);
 
 const basic = (credentials: string) =>
   `Basic ${Buffer.from(credentials, "utf8").toString("base64")}`;
 
-describe("credential proxy request headers", () => {
-  test("swaps placeholders in values and drops hop-by-hop headers", () => {
-    expect(
-      requestHeaders(
-        [
-          "Connection",
-          "keep-alive",
-          "Accept-Encoding",
-          "gzip",
-          "X-Acme-Token",
-          placeholder,
-          "Accept",
-          "*/*",
-        ],
-        swap,
-      ),
-    ).toEqual({ "x-acme-token": [value], accept: ["*/*"] });
-  });
+const headerLines = (message: string) =>
+  message.slice(0, message.indexOf("\r\n\r\n")).split("\r\n").slice(1);
 
-  test("lowercases names and keeps repeated headers in order", () => {
-    expect(requestHeaders(["X-Tag", "one", "X-Tag", "two"], swap)).toEqual({
-      "x-tag": ["one", "two"],
-    });
-  });
-
-  test("swaps the credentials inside a Basic authorization, and re-encodes them", () => {
-    expect(
-      requestHeaders(["Authorization", basic(`bot:${placeholder}`)], swap),
-    ).toEqual({ authorization: [basic(`bot:${value}`)] });
-  });
-
-  test("swaps other authorization headers as they are", () => {
-    expect(
-      requestHeaders(["Authorization", `Bearer ${placeholder}`], swap),
-    ).toEqual({ authorization: [`Bearer ${value}`] });
-
-    // A Basic header holding more than one token is not a credential to decode, so it is swapped as text.
-    expect(
-      requestHeaders(["Authorization", `Basic ${placeholder} extra`], swap),
-    ).toEqual({ authorization: [`Basic ${value} extra`] });
-  });
-});
-
-describe("credential proxy response headers", () => {
-  test("scrubs values and lowercases names", () => {
-    expect(
-      responseHeaders(
-        ["Content-Type", "text/plain", "X-Echo", value],
-        false,
-        scrub,
-      ),
-    ).toEqual({ "content-type": ["text/plain"], "x-echo": [placeholder] });
-  });
-
-  test("drops content-length only when the body is scrubbed", () => {
-    expect(responseHeaders(["Content-Length", "9"], false, scrub)).toEqual({
-      "content-length": ["9"],
-    });
-    expect(responseHeaders(["Content-Length", "9"], true, scrub)).toEqual({});
-  });
-
-  test("drops hop-by-hop headers and keeps repeated ones in order", () => {
-    expect(
-      responseHeaders(
-        [
-          "Transfer-Encoding",
-          "chunked",
-          "Set-Cookie",
-          "a=1",
-          "Set-Cookie",
-          "b=2",
-        ],
-        false,
-        scrub,
-      ),
-    ).toEqual({ "set-cookie": ["a=1", "b=2"] });
-  });
-});
-
-/** The body of a raw HTTP/1.1 response, joining chunks when it is chunked. */
 const bodyOf = (response: string) => {
   const split = response.indexOf("\r\n\r\n");
   const head = response.slice(0, split);
@@ -128,7 +41,6 @@ const bodyOf = (response: string) => {
 describe("credentialProxy", () => {
   const value = "proxy-test-value-0123456789";
 
-  /** A bot with ECHO_TOKEN for example.com, an upstream that echoes the Authorization header, and the proxy between. */
   const setup = async () => {
     const dir = mkdtempSync(join(tmpdir(), "crumble-credential-proxy-"));
     const store = new Store(dir);
@@ -156,6 +68,8 @@ describe("credentialProxy", () => {
     const credentials = credentialsAccess(store.runtime);
     const seen: string[] = [];
     const paths: string[] = [];
+    const heads: string[] = [];
+    let cannedReply: string | undefined;
     let reads = 0;
 
     await credentials.save(bot.id, "ECHO_TOKEN", {
@@ -182,9 +96,11 @@ describe("credentialProxy", () => {
             /^authorization: (.*)$/im.exec(head)?.[1]?.trim() ?? "";
 
           seen.push(authorization);
+          heads.push(head);
           paths.push(/^\S+ (\S+)/.exec(head)?.[1] ?? "");
           socket.end(
-            `HTTP/1.1 200 OK\r\ncontent-length: ${authorization.length}\r\nconnection: close\r\n\r\n${authorization}`,
+            cannedReply ??
+              `HTTP/1.1 200 OK\r\ncontent-length: ${authorization.length}\r\nconnection: close\r\n\r\n${authorization}`,
           );
         });
       },
@@ -218,8 +134,7 @@ describe("credentialProxy", () => {
     const entryPort = (entry.address() as AddressInfo).port;
     const ca = await authorities.certificate(bot.id);
 
-    /** Sends a request with `authorization` from the bot's workspace and returns the raw response. */
-    const request = (authorization: string, path = "/check") =>
+    const send = (headers: string[], path = "/check") =>
       new Promise<string>((done, fail) => {
         const socket = tls.connect({
           host: "127.0.0.1",
@@ -232,7 +147,7 @@ describe("credentialProxy", () => {
 
         socket.on("secureConnect", () =>
           socket.write(
-            `GET ${path} HTTP/1.1\r\nhost: example.com\r\nauthorization: ${authorization}\r\nconnection: close\r\n\r\n`,
+            `GET ${path} HTTP/1.1\r\nhost: example.com\r\n${headers.join("\r\n")}\r\nconnection: close\r\n\r\n`,
           ),
         );
         socket.on("data", (data: Buffer) => {
@@ -241,6 +156,9 @@ describe("credentialProxy", () => {
         socket.on("end", () => done(response));
         socket.on("error", fail);
       });
+
+    const request = (authorization: string, path?: string) =>
+      send([`authorization: ${authorization}`], path);
 
     const placeholder = store.agentCredentialPlaceholders(bot.id)[
       "ECHO_TOKEN"
@@ -252,7 +170,12 @@ describe("credentialProxy", () => {
       bot,
       seen,
       paths,
+      heads,
       reads: () => reads,
+      replyWith: (reply: string) => {
+        cannedReply = reply;
+      },
+      send,
       request,
       placeholder,
       close: () => {
@@ -284,6 +207,116 @@ describe("credentialProxy", () => {
           limit: 10,
         }),
       ).toMatchObject([{ status: 200, error: null }]);
+    } finally {
+      proxy.close();
+    }
+  });
+
+  test("swaps placeholders in header values and drops hop-by-hop headers", async () => {
+    const proxy = await setup();
+
+    try {
+      await proxy.send([
+        `X-Acme-Token: ${proxy.placeholder}`,
+        "Accept: */*",
+        "Proxy-Authorization: Basic secret",
+      ]);
+
+      const lines = headerLines(proxy.heads[0]!);
+
+      expect(lines).toContain(`x-acme-token: ${value}`);
+      expect(lines).toContain("accept: */*");
+      expect(proxy.heads[0]).not.toMatch(/proxy-authorization/i);
+    } finally {
+      proxy.close();
+    }
+  });
+
+  test("keeps repeated request headers in order", async () => {
+    const proxy = await setup();
+
+    try {
+      await proxy.send(["X-Tag: one", "X-Tag: two"]);
+
+      expect(
+        headerLines(proxy.heads[0]!).filter((line) => line.startsWith("x-tag")),
+      ).toEqual(["x-tag: one", "x-tag: two"]);
+    } finally {
+      proxy.close();
+    }
+  });
+
+  test("swaps the credentials inside a Basic authorization, and re-encodes them", async () => {
+    const proxy = await setup();
+
+    try {
+      await proxy.request(basic(`bot:${proxy.placeholder}`));
+
+      expect(proxy.seen).toEqual([basic(`bot:${value}`)]);
+    } finally {
+      proxy.close();
+    }
+  });
+
+  test("swaps an authorization that isn't one Basic token as it is", async () => {
+    const proxy = await setup();
+
+    try {
+      await proxy.request(`Basic ${proxy.placeholder} extra`);
+
+      expect(proxy.seen).toEqual([`Basic ${value} extra`]);
+    } finally {
+      proxy.close();
+    }
+  });
+
+  test("scrubs the value from response headers", async () => {
+    const proxy = await setup();
+
+    try {
+      proxy.replyWith(
+        `HTTP/1.1 200 OK\r\nContent-Length: 0\r\nX-Echo: ${value}\r\nConnection: close\r\n\r\n`,
+      );
+
+      const response = await proxy.request(`Bearer ${proxy.placeholder}`);
+
+      expect(response).not.toContain(value);
+      expect(headerLines(response)).toContain(`x-echo: ${proxy.placeholder}`);
+    } finally {
+      proxy.close();
+    }
+  });
+
+  test("a reply without a scrubbed body keeps its content length", async () => {
+    const proxy = await setup();
+
+    try {
+      proxy.replyWith(
+        "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+      );
+
+      expect(headerLines(await proxy.request("Bearer none"))).toContain(
+        "content-length: 2",
+      );
+    } finally {
+      proxy.close();
+    }
+  });
+
+  test("frames a chunked reply anew and keeps repeated response headers in order", async () => {
+    const proxy = await setup();
+
+    try {
+      proxy.replyWith(
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\nConnection: close\r\n\r\n2\r\nok\r\n0\r\n\r\n",
+      );
+
+      const response = await proxy.request("Bearer none");
+
+      expect(bodyOf(response)).toBe("ok");
+      expect(
+        headerLines(response).filter((line) => line.startsWith("set-cookie")),
+      ).toEqual(["set-cookie: a=1", "set-cookie: b=2"]);
     } finally {
       proxy.close();
     }
@@ -365,17 +398,8 @@ test("the signing host is answered by the proxy, for a bot with a machine accoun
   const ca = await authorities.certificate(bot.id);
   const signed: string[] = [];
 
-  const serve = async (
-    sign?: (data: Buffer) => Promise<string | undefined>,
-  ) => {
-    const proxy = credentialProxy({
-      agentId: bot.id,
-      authorities,
-      grants: () => [],
-      value: async () => "",
-      recordUse: () => {},
-      ...(sign && { sign }),
-    });
+  const serve = async (sign: (data: Buffer) => Promise<string | undefined>) => {
+    const proxy = commitSigning({ agentId: bot.id, authorities, sign });
 
     const entry = net.createServer(
       (socket) => void proxy.handle(socket, SIGNING_HOST, 443),
@@ -415,11 +439,18 @@ test("the signing host is answered by the proxy, for a bot with a machine accoun
   });
 
   const without = await serve(async () => undefined);
-  const none = await serve();
+
+  const none = credentialProxy({
+    agentId: bot.id,
+    authorities,
+    grants: () => [],
+    value: async () => "",
+    recordUse: () => {},
+  });
 
   try {
     expect(withAccount.proxy.answers?.(SIGNING_HOST)).toBe(true);
-    expect(none.proxy.wants(SIGNING_HOST)).toBe(false);
+    expect(none.wants(SIGNING_HOST)).toBe(false);
 
     const answer = await post(withAccount.entry, "tree abc\n");
 
@@ -432,7 +463,6 @@ test("the signing host is answered by the proxy, for a bot with a machine accoun
   } finally {
     withAccount.entry.close();
     without.entry.close();
-    none.entry.close();
     store.close();
     rmSync(dir, { recursive: true, force: true });
   }

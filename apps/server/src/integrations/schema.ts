@@ -1,5 +1,5 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import { agents } from "../bots/schema";
+import { agents } from "../bot-store/schema";
 
 export const mcpServers = sqliteTable("mcp_servers", {
   id: text("id").primaryKey(),

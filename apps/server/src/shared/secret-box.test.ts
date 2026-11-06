@@ -29,7 +29,6 @@ afterEach(() => {
 
 const masterKey = () => randomBytes(32).toString("base64");
 
-/** Opens the account's box, runs `use` on it, and closes it. */
 const withBox = <A>(
   dir: string,
   key: string | undefined,
@@ -97,7 +96,6 @@ describe("SecretBox", () => {
     const fsync = fs.fsyncSync;
     let calls = 0;
 
-    // The first sync is the wrapped file; the second is its directory entry.
     const sync = spyOn(fs, "fsyncSync").mockImplementation((fd) => {
       if (++calls === 2) throw new Error("EIO: i/o error, fsync");
       fsync(fd);

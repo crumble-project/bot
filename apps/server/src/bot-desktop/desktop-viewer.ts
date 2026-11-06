@@ -2,13 +2,12 @@ import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { ACCOUNT_ID_PATTERN } from "../shared/account-id";
 import { RfbProtocolError, rfbFilter } from "./rfb-filter";
 import type { DesktopStream } from "../workspaces/workspace";
 
-/** How long an issued viewer link stays valid before its WebSocket connects. */
-export const VIEWER_TICKET_MS = 60_000;
+const VIEWER_TICKET_MS = 60_000;
 
-/** The URL prefix of viewer pages, their WebSockets, and the noVNC files; outside `/v1` and its bearer auth. */
 export const VIEWER_PREFIX = "/desktop-viewer";
 
 const NOVNC = path.dirname(
@@ -18,7 +17,6 @@ const NOVNC = path.dirname(
 // The viewer page imports only noVNC's core library and the zlib port it bundles.
 const SERVED = ["core/", "vendor/"];
 
-/** A noVNC file under the package's core or vendor directory, or undefined for any other path. */
 function novncFile(requested: string) {
   const relative = path.posix.normalize(decodeURIComponent(requested));
 
@@ -33,7 +31,6 @@ function novncFile(requested: string) {
   return file.startsWith(`${NOVNC}${path.sep}`) ? file : undefined;
 }
 
-/** The noVNC file a viewer page asks for at `requestPath`; public library code, so no sign-in is needed. */
 export async function novncResponse(requestPath: string) {
   const prefix = `${VIEWER_PREFIX}/novnc/`;
 
@@ -48,11 +45,15 @@ export async function novncResponse(requestPath: string) {
     : undefined;
 }
 
-/** The account a ticket was issued in, from its `<account>.<secret>` form; the server routes the link there. */
-export const ticketOwner = (ticket: string) =>
-  /^([A-Za-z0-9_-]{1,128})\.[A-Za-z0-9_-]+$/.exec(ticket)?.[1];
+const TICKET = new RegExp(`^(${ACCOUNT_ID_PATTERN})\\.[A-Za-z0-9_-]+$`);
 
-/** Whom a viewer link shows, and whether it only watches: no boot, no keeping the machine awake. */
+const VIEWER_PATH = new RegExp(`^${VIEWER_PREFIX}/([^/]+)(?:/websockify)?$`);
+
+export const ticketOwner = (ticket: string) => TICKET.exec(ticket)?.[1];
+
+export const viewerPathOwner = (path: string) =>
+  ticketOwner(VIEWER_PATH.exec(path)?.[1] ?? "");
+
 export type Viewer = { agentId: string; passive: boolean };
 
 /**
@@ -65,7 +66,6 @@ export class ViewerTickets {
     { viewer: Viewer; expires: number }
   >();
 
-  /** `owner` names the account in each ticket, so a link opens without the account's session. */
   constructor(
     private readonly now: () => number = Date.now,
     private readonly owner?: string,
@@ -83,14 +83,12 @@ export class ViewerTickets {
     return { ticket, expiresAt: new Date(expires).toISOString() };
   }
 
-  /** The viewer the ticket was issued for, if it is valid; the page may load it before the WebSocket redeems it. */
   peek(ticket: string) {
     const entry = this.tickets.get(ticket);
 
     return entry && entry.expires > this.now() ? entry.viewer : undefined;
   }
 
-  /** The viewer the ticket was issued for, once: the ticket is spent whether or not it was still valid. */
   redeem(ticket: string) {
     const viewer = this.peek(ticket);
 
@@ -107,10 +105,6 @@ export class ViewerTickets {
   }
 }
 
-/**
- * The viewer page: noVNC filling the window, connected to the ticket's stream, under a loading screen until the first
- * frame. The app draws its own controls.
- */
 export function viewerPage(ticket: string) {
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>Bot desktop</title>
@@ -151,10 +145,6 @@ export function viewerPage(ticket: string) {
 `;
 }
 
-/**
- * Bridges a viewer's WebSocket to the bot desktop's VNC server. The viewer's input passes only while `allowInput()`
- * holds; anything the filter cannot parse closes the connection.
- */
 export function bridgeDesktop(options: {
   stream: DesktopStream;
   allowInput: () => boolean;

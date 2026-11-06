@@ -4,9 +4,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Context, Effect, Exit, Layer, Option, Redacted, Scope } from "effect";
 import type { CoreServices } from "../app/core-layer";
-import { PasswordManagerRepository } from "../password-managers/password-manager-repository";
-import { secretsLayer } from "../password-managers/secrets";
-import { agentInput, loginSaveInput } from "../shared/domain";
+import { SecretRepository } from "../secrets/secret-repository";
+import { secretsLayer } from "../secrets/secrets";
+import { agentInput } from "../contract/agents";
+import { loginSaveInput } from "../contract/secrets";
 import { runnerOf } from "../shared/runner";
 import {
   connectFakePasswordManager,
@@ -27,7 +28,6 @@ afterEach(() => {
 
 const ITEM = "op://Vault/GitHub";
 
-/** A bot's logins over a fake 1Password holding `values`, connected with its token. */
 function open(values: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "crumble-logins-"));
   dirs.push(dir);
@@ -65,9 +65,7 @@ function open(values: Record<string, string> = {}) {
       Redacted.value(await run.runPromise(logins.value(agentId, name, field))),
     usedBy: () =>
       store.run(
-        PasswordManagerRepository.use((repository) =>
-          repository.usedBy("1password"),
-        ),
+        SecretRepository.use((repository) => repository.usedBy("1password")),
       ),
   };
 }
@@ -435,7 +433,6 @@ test("saving a requested login answers the request with one notice", async () =>
     oneTimeCode: true,
   });
 
-  // The request's hosts apply when the save names none.
   await bot.run(bot.logins.save(bot.agentId, "github", githubFields));
 
   expect(notices.map((notice) => notice.text)).toEqual([

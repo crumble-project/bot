@@ -4,6 +4,7 @@ import {
   Link,
   useMatchRoute,
   useNavigate,
+  useRouter,
   useRouterState,
   Outlet,
 } from "@tanstack/react-router";
@@ -35,38 +36,30 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CrumbleMark } from "@/components/crumble-mark";
-import { cn } from "@/lib/utils";
+import { cn, numberWord, plainMarkdown } from "@/lib/utils";
+import { type Bot, botsQuery } from "@/features/bots/api";
 import {
-  type Bot,
   type GroupChat,
-  botsQuery,
   groupsQuery,
-  clearUserData,
-} from "@/lib/api";
+  membersOf,
+} from "@/features/group-chats/api";
 import { authClient } from "@/lib/auth-client";
 import {
-  THEME_COLOR,
-  isDark,
   setTheme,
+  setThemeColor,
   useAccountTheme,
   useTheme,
 } from "@/lib/theme";
-import {
-  clearLiveStreams,
-  followActivity,
-  markSeen,
-  useConnectionStatus,
-  useUnreadCount,
-  useWorking,
-} from "@/lib/live";
-import {
-  BotAvatar,
-  LiveBotAvatar,
-  botColor,
-  botStyle,
-} from "@/features/bots/avatar";
+import { resetSession, signedOut } from "@/lib/session";
+import { botStatusLine, isBusy, useWorking } from "@/features/bot-chat/working";
+import { followActivity, useConnectionStatus } from "./activity-stream";
+import { markSeen, useUnreadCount } from "@/lib/notifications";
+import { BotAvatar, botColor, botStyle } from "@/components/bot-avatar";
+import { LiveBotAvatar } from "@/features/bot-chat/avatar";
 import { CommandPalette, PALETTE_SHORTCUT } from "./command-palette";
-import { THEME_OPTIONS, WORKSPACE } from "./navigation";
+import { THEME_OPTIONS, PAGES } from "./navigation";
+import { MIN_GROUP_MEMBERS } from "@crumble/server/contract/limits";
+import type { ReplyChat } from "@/lib/notifications";
 
 function useResetOnUserChange(userId: string | undefined) {
   const previousUserId = useRef(userId);
@@ -76,18 +69,26 @@ function useResetOnUserChange(userId: string | undefined) {
       previousUserId.current !== undefined &&
       previousUserId.current !== userId
     ) {
-      clearLiveStreams();
-      clearUserData();
-
-      if (!userId) window.location.assign("/connect");
+      if (!userId) signedOut();
+      else {
+        // Streams only start on page load, so a new account needs a fresh page.
+        resetSession();
+        window.location.assign("/");
+      }
     }
 
     previousUserId.current = userId;
   }, [userId]);
 }
 
+const chatLocation = ({ kind, id }: ReplyChat) =>
+  kind === "group"
+    ? ({ to: "/groups/$groupId", params: { groupId: id } } as const)
+    : ({ to: "/bots/$botId", params: { botId: id } } as const);
+
 function useFollowActivity() {
   const navigate = useNavigate();
+  const router = useRouter();
   const path = useRouterState({ select: (state) => state.location.pathname });
 
   useEffect(markSeen, [path]);
@@ -95,17 +96,18 @@ function useFollowActivity() {
   useEffect(() => {
     const controller = new AbortController();
 
-    followActivity(({ botId, groupId }) => {
-      if (groupId)
-        void navigate({ to: "/groups/$groupId", params: { groupId } });
-      else if (botId) void navigate({ to: "/bots/$botId", params: { botId } });
-    }, controller.signal);
+    followActivity(
+      {
+        open: (chat) => void navigate(chatLocation(chat)),
+        pathOf: (chat) => router.buildLocation(chatLocation(chat)).pathname,
+      },
+      controller.signal,
+    );
 
     return () => controller.abort();
-  }, [navigate]);
+  }, [navigate, router]);
 }
 
-/** Titles the tab with the unseen replies and the open chat, such as `(3) Atlas | Crumble`. */
 function useDocumentTitle(
   bots: Bot[] | undefined,
   groups: GroupChat[] | undefined,
@@ -143,19 +145,9 @@ function SidebarThemeColor() {
   useEffect(() => {
     if (!tinted) return;
 
-    const metas = [
-      ...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]'),
-    ];
+    setThemeColor(SIDEBAR_THEME_COLOR);
 
-    for (const meta of metas)
-      meta.content = isDark()
-        ? SIDEBAR_THEME_COLOR.dark
-        : SIDEBAR_THEME_COLOR.light;
-
-    return () => {
-      for (const meta of metas)
-        meta.content = isDark() ? THEME_COLOR.dark : THEME_COLOR.light;
-    };
+    return () => setThemeColor();
   }, [tinted, theme]);
 
   return null;
@@ -253,7 +245,7 @@ function GroupsSection({
   groups: GroupChat[] | undefined;
 }) {
   const byId = new Map(bots?.map((bot) => [bot.id, bot]));
-  const canGroup = (bots?.length ?? 0) >= 2;
+  const canGroup = (bots?.length ?? 0) >= MIN_GROUP_MEMBERS;
 
   return (
     <SidebarGroup>
@@ -273,18 +265,14 @@ function GroupsSection({
             <GroupRow
               key={group.id}
               group={group}
-              members={group.memberIds.flatMap((id) => {
-                const member = byId.get(id);
-
-                return member ? [member] : [];
-              })}
+              members={membersOf(group.memberIds, byId)}
             />
           ))}
           {groups?.length === 0 && (
             <p className="px-2 text-xs text-muted-foreground">
               {canGroup
                 ? "No group chats yet"
-                : "Create two bots to start a group chat"}
+                : `Create ${numberWord(MIN_GROUP_MEMBERS)} bots to start a group chat`}
             </p>
           )}
         </SidebarMenu>
@@ -333,7 +321,7 @@ function WorkspaceSection() {
       <SidebarGroupLabel>Workspace</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
-          {WORKSPACE.map((item) => (
+          {PAGES.map((item) => (
             <SidebarMenuItem key={item.to}>
               <SidebarMenuButton
                 isActive={Boolean(matchRoute({ to: item.to }))}
@@ -443,7 +431,7 @@ function ConnectionStatus() {
 }
 
 function BotRow({ bot, active }: { bot: Bot; active: boolean }) {
-  const working = useWorking(bot.id);
+  const working = isBusy(useWorking(bot.id));
 
   return (
     <SidebarMenuItem style={botStyle(botColor(bot))}>
@@ -464,13 +452,13 @@ function BotRow({ bot, active }: { bot: Bot; active: boolean }) {
             {bot.name}
           </span>
           <span className="truncate text-xs text-muted-foreground">
-            {working
-              ? "Working…"
-              : !bot.enabled
-                ? "Paused"
-                : bot.lastMessage
-                  ? bot.lastMessage.replace(/[*_`#>]/g, "").slice(0, 120)
-                  : bot.description || "No messages yet"}
+            {botStatusLine(
+              bot,
+              working,
+              bot.lastMessage
+                ? plainMarkdown(bot.lastMessage).slice(0, 120)
+                : bot.description || "No messages yet",
+            )}
           </span>
         </span>
       </SidebarMenuButton>

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { openGroupConversation } from "../group-chats/group-turns";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -12,14 +13,18 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { AgentRuntime } from "./runtime";
 import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
-import { ASK_ABOUT_IMAGE_TOOL_NAME, imageHash } from "../vision/vision";
-import { standaloneBots, type Activity } from "./bots";
+import { ASK_ABOUT_IMAGE_TOOL_NAME } from "../contract/tools";
+import { imageHash } from "../vision/vision";
+import { standaloneBots } from "./bots-test-support";
+import { type Activity } from "./bots";
 import { Store } from "../../test/support/store";
 import { Effect } from "effect";
 import { EventRepository } from "../event-sources/event-repository";
-import { eventRequestId } from "../event-sources/event-payload";
-import { ScheduleRepository } from "../schedules/schedule-repository";
-import { scheduleInput } from "../shared/domain";
+import { eventRequest } from "../shared/request-ids";
+import { ScheduleRepository } from "../automations/schedule-repository";
+import { scheduleInput } from "../contract/schedules";
+import { runtimeCallbacks } from "../../test/support/runtime-callbacks";
+import { until } from "../../test/support/until";
 
 const dirs: string[] = [];
 
@@ -30,7 +35,6 @@ afterEach(() => {
 const uuid = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
-/** The account's vision model: its own provider, so its answers queue apart from the bot's. */
 type Vision = { responses: FauxResponseStep[] };
 
 function open(
@@ -68,12 +72,15 @@ function open(
 
   const service = standaloneBots(
     store,
-    new AgentRuntime(dir, {
-      models,
-      ...(vision && {
-        visionModel: () => ({ provider: "eye", model: "vision" }),
+    new AgentRuntime(
+      dir,
+      runtimeCallbacks({
+        models,
+        ...(vision && {
+          visionModel: () => ({ provider: "eye", model: "vision" }),
+        }),
       }),
-    }),
+    ),
   );
 
   return { store, service };
@@ -108,14 +115,10 @@ async function settle(
   service: ReturnType<typeof standaloneBots<Store>>,
   executionId: string,
 ) {
-  for (let i = 0; i < 200; i++) {
-    const status = service.store.getExecution(executionId)?.status;
+  const status = () => service.store.getExecution(executionId)?.status;
+  await until(() => status() !== "pending" && status() !== "running");
 
-    if (status !== "pending" && status !== "running") return status;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-
-  throw new Error("Execution did not settle");
+  return status();
 }
 
 describe("continuous bot chat", () => {
@@ -137,12 +140,11 @@ describe("continuous bot chat", () => {
     await service.compact(agent.id);
     let transcript = (await service.chatSnapshot(agent.id)).messages;
 
-    for (let i = 0; i < 200 && transcript.at(-1)?.kind !== "compaction"; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
+    await until(async () => {
       transcript = (await service.chatSnapshot(agent.id)).messages;
-    }
 
-    expect(transcript.at(-1)?.kind).toBe("compaction");
+      return transcript.at(-1)?.kind === "compaction";
+    });
     expect(transcript.map((message) => message.content)).toEqual([
       "first question",
       "first answer",
@@ -268,7 +270,6 @@ describe("continuous bot chat", () => {
   });
 });
 
-// A 1×1 PNG.
 const png =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
 
@@ -285,12 +286,7 @@ describe("activity", () => {
     const execution = await service.sendChat(agent.id, "check", uuid(1));
     await settle(service, execution.id);
 
-    for (
-      let i = 0;
-      i < 100 && !events.some((event) => event.type === "reply");
-      i++
-    )
-      await new Promise((resolve) => setTimeout(resolve, 10));
+    await until(() => events.some((event) => event.type === "reply"));
 
     const preview = (lastMessage: string) => ({
       type: "chat-preview" as const,
@@ -324,7 +320,8 @@ describe("group turns", () => {
       fauxAssistantMessage("For the group."),
     ]);
 
-    const reference = await service.runtime.openGroupConversation(
+    const reference = await openGroupConversation(
+      service.runtime,
       agent,
       "group-1",
     );
@@ -341,8 +338,7 @@ describe("group turns", () => {
 
     expect(await settle(service, execution.id)).toBe("done");
 
-    for (let i = 0; i < 100 && !settled.length; i++)
-      await new Promise((resolve) => setTimeout(resolve, 10));
+    await until(() => settled.length > 0);
     expect(settled).toEqual(["done"]);
     expect(events).toEqual([]);
     await service.close();
@@ -351,7 +347,8 @@ describe("group turns", () => {
   test("report a cancelled execution as settled", async () => {
     const { service, store, agent } = setup([() => new Promise(() => {})]);
 
-    const reference = await service.runtime.openGroupConversation(
+    const reference = await openGroupConversation(
+      service.runtime,
       agent,
       "group-1",
     );
@@ -440,11 +437,12 @@ describe("event automations", () => {
             prompt: "Triage the issue",
             eventSourceId: "source-1",
           }),
+          null,
         );
       }),
     );
 
-    const requestId = eventRequestId(event.id, schedule.id);
+    const requestId = eventRequest(event.id, schedule.id);
 
     const execution = await service.dispatch(
       agent.id,
@@ -658,7 +656,6 @@ describe("vision model", () => {
     tools: Record<string, Usage>;
   };
 
-  /** What the bot's model was sent: the last user message's content, per request. */
   const botSees =
     (seen: unknown[]): FauxResponseFactory =>
     (context) => {
@@ -670,7 +667,6 @@ describe("vision model", () => {
       return fauxAssistantMessage("ok");
     };
 
-  /** The vision model's answer, after recording the images and prompts it was sent. */
   const visionSees = (
     asked: { images: string[]; prompt: string }[],
     answer: { text: string } | { error: string },

@@ -1,15 +1,15 @@
 import type { Context } from "@earendil-works/chord";
 import { z } from "zod";
-import type {
-  ComputerUseArgs,
-  ComputerUseResult,
-  StepArgs,
-} from "./computer-use";
+import type { ComputerUseArgs, StepArgs } from "./computer-use-args";
+import type { ComputerUseResult } from "./computer-use";
 import type { Invalid } from "./computer-use-actions";
 import { windowText } from "./computer-use-capture";
 import {
+  SCROLL_DEFAULTS,
+  comboKeys,
   driverCall,
   driverReply,
+  loose,
   messageOf,
   ourNames,
   refusalOf,
@@ -18,10 +18,6 @@ import {
 } from "./computer-use-driver";
 import { textResult, type ComputerUseState } from "./computer-use-state";
 
-const loose = <T extends z.ZodType>(schema: T) =>
-  schema.optional().catch(undefined);
-
-/** A `run_steps` result: the fields this tool reads, each dropped when its shape is unexpected. */
 const stepsReply = z.object({
   steps: z
     .array(
@@ -62,14 +58,14 @@ const pointer =
       : { invalid: `${tool} needs role or name` };
 
 const keyStep = (keys: string): DriverArgs => {
-  const pressed = keys.split("+").map((key) => key.trim().toLowerCase());
+  const pressed = comboKeys(keys);
 
   return pressed.length > 1
     ? { hotkey: { keys: pressed } }
     : { press_key: { key: pressed[0] ?? "" } };
 };
 
-const BUILDERS = new Map<string, StepBuilder>([
+const STEP_FORMS = new Map<string, StepBuilder>([
   ["click", pointer("click")],
   ["double_click", pointer("double_click")],
   ["right_click", pointer("right_click")],
@@ -98,17 +94,18 @@ const BUILDERS = new Map<string, StepBuilder>([
       step: {
         scroll: {
           ...target,
-          direction: step.direction ?? "down",
-          amount: step.amount ?? 3,
+          direction: step.direction ?? SCROLL_DEFAULTS.direction,
+          amount: step.amount ?? SCROLL_DEFAULTS.amount,
         },
       },
     }),
   ],
 ]);
 
-/** One step in `run_steps` form, with its checks, or why it can't run. */
+export const STEP_ACTION_NAMES: string[] = [...STEP_FORMS.keys()];
+
 function stepCall(step: StepArgs): Built {
-  const build = BUILDERS.get(step.action);
+  const build = STEP_FORMS.get(step.action);
 
   if (!build) return { invalid: `unknown step action ${step.action}` };
 
@@ -125,7 +122,6 @@ function stepCall(step: StepArgs): Built {
   };
 }
 
-/** Every step in `run_steps` form, or the first one that can't run. */
 function stepCalls(steps: StepArgs[]): { steps: DriverArgs[] } | Invalid {
   const calls: DriverArgs[] = [];
 
@@ -156,7 +152,6 @@ const stepLine = (step: StepsReply["steps"][number]) => {
 const stoppedLine = (failed: number, total: number) =>
   `stopped at step ${failed + 1} of ${total}; ${failed ? `steps 1-${failed} ran` : "no step ran"}`;
 
-/** What changed in the window after the batch; the observed read becomes the window's latest. */
 function observedText(
   state: ComputerUseState,
   result: StepsReply,
@@ -172,7 +167,6 @@ function observedText(
   return [windowText(state, target, observed, since, query, [])];
 }
 
-/** What the batch did, step by step, then what changed in the window. */
 function report(
   state: ComputerUseState,
   result: StepsReply,
@@ -195,7 +189,6 @@ function report(
   return textResult(lines.join("\n"), failed !== undefined);
 }
 
-/** Runs known steps in one `run_steps` call, then reports each step and what changed in the window. */
 export async function runSteps(
   state: ComputerUseState,
   args: ComputerUseArgs,

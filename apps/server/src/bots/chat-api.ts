@@ -1,96 +1,83 @@
 import type { z } from "zod";
-import {
-  routes,
-  attachmentIndex,
-  historyInput,
-  jobAnswerInput,
-  messageInput,
-  snapshotInput,
-} from "../contract/api-contract";
+import { routes } from "../contract/api-contract";
 import type {
   chatSnapshotResponse,
   codingJobsResponse,
   desktopJobsResponse,
 } from "../contract/api-responses";
 import type { Register } from "../contract/route";
+import { attachmentHeaders } from "../shared/attachments";
 import { snapshotSender, streamEvents } from "../shared/event-stream";
-import type { AgentRuntime } from "./runtime";
 import type { BotsAccess } from "./bots";
 
 type ChatRoutesOptions = {
   register: Register;
   service: BotsAccess;
-  runtime: AgentRuntime;
 };
 
-/** The bot chat's transcript pages, its coding and desktop jobs, and one job's history. */
 const registerChatReadRoutes = (options: ChatRoutesOptions) => {
   const { register, service } = options;
 
   register(routes.chat, async (c) => {
     const snapshot: z.output<typeof chatSnapshotResponse> =
-      await service.chatSnapshot(
-        c.req.param("id"),
-        snapshotInput.parse(c.req.query()),
-      );
+      await service.chatSnapshot(c.req.param("id"), c.req.valid("query"));
 
     return c.json(snapshot, 200);
   });
-  register(routes.history, async (c) => {
-    const input = historyInput.parse(c.req.query());
-
-    return c.json(await service.history(c.req.param("id"), input), 200);
-  });
+  register(routes.history, async (c) =>
+    c.json(await service.history(c.req.param("id"), c.req.valid("query")), 200),
+  );
   register(routes.codingJobs, async (c) => {
     const jobs: z.output<typeof codingJobsResponse> = {
-      jobs: await service.codingJobs(c.req.param("id")),
+      jobs: await service.jobs(c.req.param("id"), "coding"),
     };
 
     return c.json(jobs, 200);
   });
   register(routes.answerCodingJob, async (c) => {
-    await service.answerCodingJob(c.req.param("id"), {
+    await service.answerJob(c.req.param("id"), "coding", {
       name: c.req.param("name"),
-      ...jobAnswerInput.parse(await c.req.json()),
+      ...c.req.valid("json"),
     });
 
     return c.body(null, 204);
   });
   register(routes.codingJobHistory, async (c) =>
     c.json(
-      await service.codingJobHistory(
+      await service.jobHistory(
         c.req.param("id"),
+        "coding",
         c.req.param("name"),
-        historyInput.parse(c.req.query()),
+        c.req.valid("query"),
       ),
       200,
     ),
   );
   register(routes.desktopJobs, async (c) => {
     const jobs: z.output<typeof desktopJobsResponse> = {
-      jobs: await service.desktopJobs(c.req.param("id")),
+      jobs: await service.jobs(c.req.param("id"), "desktop"),
     };
 
     return c.json(jobs, 200);
   });
   register(routes.desktopJobHistory, async (c) =>
     c.json(
-      await service.desktopJobHistory(
+      await service.jobHistory(
         c.req.param("id"),
+        "desktop",
         c.req.param("name"),
-        historyInput.parse(c.req.query()),
+        c.req.valid("query"),
       ),
       200,
     ),
   );
 };
 
-/** Sending a message, reading an attachment a reply refers to, and stopping or compacting a bot's turn. */
 const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
-  const { register, service, runtime } = options;
+  const { register, service } = options;
 
   register(routes.sendMessage, async (c) => {
-    const input = messageInput.parse(await c.req.json());
+    const input = c.req.valid("json");
 
     return c.json(
       await service.sendChat(
@@ -105,18 +92,14 @@ const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
     );
   });
   register(routes.attachment, async (c) => {
-    const index = attachmentIndex.parse(c.req.param("index"));
+    const { id, entryId, index } = c.req.valid("param");
+    const image = await service.attachment(id, entryId, index);
 
-    const image = await runtime.attachment(
-      service.agent(c.req.param("id")),
-      c.req.param("entryId"),
-      index,
+    return c.body(
+      new Uint8Array(image.data),
+      200,
+      attachmentHeaders(image.mimeType),
     );
-
-    return c.body(new Uint8Array(image.data), 200, {
-      "Content-Type": image.mimeType,
-      "Cache-Control": "private, max-age=31536000, immutable",
-    });
   });
   register(routes.abort, async (c) => {
     await service.abortChat(c.req.param("id"));
@@ -128,12 +111,11 @@ const registerChatMessageRoutes = (options: ChatRoutesOptions) => {
   );
 };
 
-/** One bot chat's events, from a snapshot and then as each entry settles. */
 const registerChatEventRoutes = (options: ChatRoutesOptions) => {
-  const { register, service, runtime } = options;
+  const { register, service } = options;
 
   register(routes.chatEvents, async (c) => {
-    const snapshot = snapshotInput.parse(c.req.query());
+    const snapshot = c.req.valid("query");
     const agent = service.agent(c.req.param("id"));
     const chat = await service.chat(agent.id);
 
@@ -147,12 +129,11 @@ const registerChatEventRoutes = (options: ChatRoutesOptions) => {
           void sendSnapshot().catch(close);
         }),
       );
-      onClose(await runtime.watch(agent, chat.id, sendSnapshot, snapshot));
+      onClose(await service.watch(agent.id, chat.id, sendSnapshot, snapshot));
     });
   });
 };
 
-/** The bot chat routes, in the order the contract document lists them. */
 export function registerChatRoutes(options: ChatRoutesOptions) {
   registerChatReadRoutes(options);
   registerChatMessageRoutes(options);

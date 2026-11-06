@@ -1,22 +1,6 @@
 import { z } from "zod";
 import { openAPIDocument } from "./api-contract";
-import {
-  activityEvent,
-  chatSnapshotResponse,
-  desktopControlResponse,
-  groupChatSnapshotResponse,
-  heartbeatEvent,
-  learnedEvent,
-} from "./api-responses";
-
-export const eventSchemas = {
-  "chat-snapshot.schema.json": chatSnapshotResponse,
-  "group-chat-snapshot.schema.json": groupChatSnapshotResponse,
-  "activity-event.schema.json": activityEvent,
-  "learned-event.schema.json": learnedEvent,
-  "heartbeat.schema.json": heartbeatEvent,
-  "desktop-control.schema.json": desktopControlResponse,
-};
+import { eventSchemas } from "./api-responses";
 
 type ContractArtifacts = Record<string, string>;
 
@@ -24,7 +8,9 @@ export function contractArtifacts() {
   const artifacts: ContractArtifacts = {};
   artifacts["openapi.json"] = `${JSON.stringify(openAPIDocument(), null, 2)}\n`;
 
-  for (const [name, schema] of Object.entries(eventSchemas)) {
+  for (const { artifact, schema } of eventSchemas) {
+    if (!artifact) continue;
+
     const document = z.toJSONSchema(schema, {
       target: "draft-2020-12",
       io: "output",
@@ -37,7 +23,7 @@ export function contractArtifacts() {
       },
     });
 
-    artifacts[name] = `${JSON.stringify(document, null, 2)}\n`;
+    artifacts[artifact] = `${JSON.stringify(document, null, 2)}\n`;
   }
 
   return artifacts;

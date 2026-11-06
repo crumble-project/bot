@@ -1,18 +1,29 @@
-import type { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { z } from "zod";
+import type { WebPage, WebSearchResult } from "../contract/web-search";
+import type { SettingsRepository } from "../shared/settings-repository";
+import { WEB_SEARCH_PROVIDER_IDS } from "../shared/vendors";
 
-export const WEB_SEARCH_TOOL_NAME = "web_search";
+export class WebSearchError extends Schema.TaggedError<WebSearchError>()(
+  "WebSearchError",
+  { message: Schema.String },
+) {}
 
-export const WEB_EXTRACT_TOOL_NAME = "web_extract";
+export class WebExtractionError extends Schema.TaggedError<WebExtractionError>()(
+  "WebExtractionError",
+  { message: Schema.String },
+) {}
 
-/** A page a bot searched or read, which its reply may cite. */
-export const webSource = z.object({ url: z.string(), title: z.string() });
+export const DEFAULT_PROVIDER = "web-search:default-provider";
 
-export type WebSource = z.infer<typeof webSource>;
+export const defaultProvider = (settings: SettingsRepository["Service"]) =>
+  Effect.map(settings.get(DEFAULT_PROVIDER), (stored) =>
+    z.enum(WEB_SEARCH_PROVIDER_IDS).catch("mixed").parse(stored),
+  );
 
-export class WebSearchError extends Error {}
+export const MAX_PAGE_CHARS = 20000;
 
-export class WebExtractionError extends Error {}
+export const VENDOR_TIMEOUT = "30 seconds";
 
 export type WebSearchQuery = {
   query: string;
@@ -22,24 +33,19 @@ export type WebSearchQuery = {
   before?: string;
 };
 
-export type WebSearchResult = {
-  title: string;
-  url: string;
-  published?: string;
-  excerpt: string;
-};
+export type WebSearch = (
+  query: WebSearchQuery,
+  bot: string,
+) => Effect.Effect<WebSearchResult[], WebSearchError>;
 
-export type WebPage =
-  | { url: string; title: string; text: string }
-  | { url: string; error: string };
+export type WebExtract = (
+  url: string,
+) => Effect.Effect<WebPage, WebExtractionError>;
 
-/** A web search provider; see docs/adr/0007-web-search-providers.md. */
+/** A web search provider, which may support only one of the two; see docs/adr/0007-web-search-providers.md. */
 export type WebSearchProvider = {
   /** Settings key on it: never rename. */
   id: string;
-  search?: (
-    query: WebSearchQuery,
-    bot: string,
-  ) => Effect.Effect<WebSearchResult[], WebSearchError>;
-  extract?: (url: string) => Effect.Effect<WebPage, WebExtractionError>;
+  search?: WebSearch;
+  extract?: WebExtract;
 };

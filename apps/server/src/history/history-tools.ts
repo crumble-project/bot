@@ -7,18 +7,22 @@ import {
   type DocumentReader,
 } from "@earendil-works/pi-durable";
 import { Effect, Layer } from "effect";
-import type { Agent } from "../shared/domain";
-import { AgentRepository } from "../bots/agent-repository";
-import { BotExtensions, ExtensionPosition } from "../bots/bot-extensions";
+import type { Agent } from "../contract/agents";
+import { AgentRepository } from "../bot-store/agent-repository";
+import { BotExtensions, ExtensionPosition } from "../bot-ports/bot-extensions";
 import { BotRuntime, type AgentRuntime } from "../bots/runtime";
 import { GroupChats } from "../group-chats/group-chats";
-import { GroupConversation } from "../group-chats/group-turns";
+import { groupOf } from "../group-chats/group-conversation";
 import {
   HistorySearch,
   type HistoryChat,
   type HistoryContext,
   type HistorySource,
 } from "./history-search";
+import {
+  HISTORY_READ_TOOL_NAME,
+  HISTORY_SEARCH_TOOL_NAME,
+} from "../contract/tools";
 
 export const HISTORY_TOOLS_EXTENSION = "history-tools";
 
@@ -26,7 +30,6 @@ const textResult = (text: string) => ({
   output: [{ type: "text" as const, text }],
 });
 
-/** Model tools for searching and reading history, scoped to the calling conversation. */
 export function historyToolsExtension(
   agent: Pick<Agent, "id">,
   history: HistorySearch,
@@ -35,18 +38,13 @@ export function historyToolsExtension(
   const contextOf = async (
     api: DocumentReader & { conversationId: ConversationId },
     callContext: Context,
-  ): Promise<HistoryContext> => {
-    const group = await api.snapshot(
-      GroupConversation,
-      api.conversationId,
-      callContext,
-    );
-
-    return { agentId: agent.id, groupId: group?.groupId ?? null };
-  };
+  ): Promise<HistoryContext> => ({
+    agentId: agent.id,
+    groupId: await groupOf(api, api.conversationId, callContext),
+  });
 
   const search = defineTool({
-    name: "history_search",
+    name: HISTORY_SEARCH_TOOL_NAME,
     description:
       "Search original owner and bot messages in your own bot chat and current group chats. In a group turn, only that group's shared messages are available. Search is literal and case-insensitive; use the returned match token with history_read to read surrounding messages. Pass the cursor to continue a result page.",
     parameters: Type.Object({
@@ -65,7 +63,7 @@ export function historyToolsExtension(
   });
 
   const read = defineTool({
-    name: "history_read",
+    name: HISTORY_READ_TOOL_NAME,
     description:
       "Read original messages around a history_search match, or continue a read with its cursor. Use direction to continue before or after the selected messages. Access is checked again on every request.",
     parameters: Type.Object({
@@ -91,7 +89,38 @@ export function historyToolsExtension(
   });
 }
 
-/** Adapts the existing retained transcript readers to the history engine. */
+async function reachableChats(
+  context: HistoryContext,
+  memberOf: (
+    agentId: string,
+  ) => Promise<readonly { id: string; name: string }[]>,
+  agentOf: (agentId: string) => Agent | null,
+): Promise<HistoryChat[]> {
+  if (context.groupId) {
+    const group = (await memberOf(context.agentId)).find(
+      (candidate) => candidate.id === context.groupId,
+    );
+
+    return group ? [{ id: group.id, kind: "group", name: group.name }] : [];
+  }
+
+  const agent = agentOf(context.agentId);
+
+  const chats: HistoryChat[] = agent
+    ? [{ id: agent.id, kind: "bot", name: agent.name }]
+    : [];
+
+  chats.push(
+    ...(await memberOf(context.agentId)).map((group) => ({
+      id: group.id,
+      kind: "group" as const,
+      name: group.name,
+    })),
+  );
+
+  return chats;
+}
+
 export function historySource(
   runtime: AgentRuntime,
   agents: AgentRepository["Service"],
@@ -103,31 +132,7 @@ export function historySource(
   const agentOf = (agentId: string) => Effect.runSync(agents.get(agentId));
 
   return {
-    async chats(context): Promise<HistoryChat[]> {
-      if (context.groupId) {
-        const group = (await memberOf(context.agentId)).find(
-          (candidate) => candidate.id === context.groupId,
-        );
-
-        return group ? [{ id: group.id, kind: "group", name: group.name }] : [];
-      }
-
-      const agent = agentOf(context.agentId);
-
-      const chats: HistoryChat[] = agent
-        ? [{ id: agent.id, kind: "bot", name: agent.name }]
-        : [];
-
-      chats.push(
-        ...(await memberOf(context.agentId)).map((group) => ({
-          id: group.id,
-          kind: "group" as const,
-          name: group.name,
-        })),
-      );
-
-      return chats;
-    },
+    chats: (context) => reachableChats(context, memberOf, agentOf),
 
     async page(context, chat, before) {
       if (chat.kind === "group") {
@@ -156,7 +161,6 @@ export function historySource(
   };
 }
 
-/** Offers every bot history search over its bot chat and group chats. */
 export const historyTools = Layer.effectDiscard(
   Effect.gen(function* () {
     const history = new HistorySearch(

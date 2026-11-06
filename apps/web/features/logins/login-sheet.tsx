@@ -1,39 +1,35 @@
 import { useState } from "react";
+import { loginName, ONE_PASSWORD_ITEM } from "@crumble/server/contract/secrets";
 import { useMutation } from "@tanstack/react-query";
-import { SecretSheet, defaultOwner, hostList } from "@/components/bot-secrets";
+import {
+  SecretSheet,
+  defaultOwner,
+  hostList,
+} from "@/features/bot-secrets/bot-secrets";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   SecretSourceField,
-  type SecretInput,
+  keepPlaceholder,
   useConnectedPasswordManagers,
   useSecretDraft,
-} from "@/components/secret-source-field";
+} from "@/features/password-managers/secret-source-field";
+import type { Bot } from "@/features/bots/api";
 import {
-  type Bot,
   type Login,
   type LoginRequest,
-  call,
   loginPath,
-  loginsQuery,
-  queryClient,
-} from "@/lib/api";
+  invalidateLogins,
+} from "./api";
+import { call, type RequestBody } from "@/lib/api";
 
-const NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const validName = (name: string) => loginName.safeParse(name).success;
 
-const ITEM = /^op:\/\/[^/]+\/[^/]+$/;
+const ITEM = new RegExp(`^${ONE_PASSWORD_ITEM}$`);
 
-type LoginBody = {
-  hosts: string[];
-  item?: { passwordManager: "1password"; reference: string };
-  fields?: {
-    username?: SecretInput;
-    password?: SecretInput;
-    one_time_code?: SecretInput | null;
-  };
-};
+type LoginBody = RequestBody<"saveAgentLogin">;
 
 type Draft = {
   name: string;
@@ -47,9 +43,6 @@ type Secret = ReturnType<typeof useSecretDraft>;
 
 type Secrets = { username: Secret; password: Secret; code: Secret };
 
-type FieldSource = Login["fields"]["password"];
-
-/** A field's new secret, or undefined to keep the saved one. */
 const fieldBody = (secret: Secret) =>
   secret.changed && secret.input ? secret.input : undefined;
 
@@ -109,7 +102,7 @@ function fieldsReady(draft: Draft, existing: Login | null, secrets: Secrets) {
 }
 
 function loginReady(draft: Draft, existing: Login | null, secrets: Secrets) {
-  if (!NAME.test(draft.name) || !hostList(draft.hosts).length) return false;
+  if (!validName(draft.name) || !hostList(draft.hosts).length) return false;
 
   return draft.mode === "item"
     ? ITEM.test(draft.item.trim())
@@ -125,21 +118,18 @@ function useSaveLogin(
 ) {
   return useMutation({
     mutationFn: () =>
-      call<Login, LoginBody>(
+      call<"saveAgentLogin">(
         loginPath(botId, draft.name),
         "PUT",
         loginBody(draft, existing, secrets),
       ),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: loginsQuery(botId).queryKey,
-      });
+      await invalidateLogins(botId);
       onClose();
     },
   });
 }
 
-/** Creates or edits a login; values are written once and never shown again. */
 export function LoginSheet({
   bots,
   botId,
@@ -148,11 +138,9 @@ export function LoginSheet({
   onClose,
 }: {
   bots: Bot[];
-  /** Null for a new login from all bots: the sheet asks which bot it is for. */
   botId: string | null;
   existing: Login | null;
-  /** The bot's request this login answers; its name, hosts, and reason fill the sheet. */
-  request?: LoginRequest | undefined;
+  request: LoginRequest | undefined;
   onClose: () => void;
 }) {
   const [owner, setOwner] = useState(() => defaultOwner(botId, bots));
@@ -200,7 +188,6 @@ export function LoginSheet({
   );
 }
 
-/** The login's fields one by one, or a 1Password item that fills them all. */
 function LoginSource({
   draft,
   existing,
@@ -255,7 +242,7 @@ function NameAndHosts({
   proposed: boolean;
   onChange: (next: Partial<Draft>) => void;
 }) {
-  const nameInvalid = draft.name !== "" && !NAME.test(draft.name);
+  const nameInvalid = draft.name !== "" && !validName(draft.name);
 
   return (
     <>
@@ -331,11 +318,6 @@ function LoginFields({
   secrets: Secrets;
   onChange: (next: Partial<Draft>) => void;
 }) {
-  const keep = (field: FieldSource) =>
-    field && field.passwordManager === null
-      ? "Keep the saved value"
-      : undefined;
-
   return (
     <>
       <SecretSourceField
@@ -343,14 +325,13 @@ function LoginFields({
         label="Username"
         concealed={false}
         {...secrets.username.field}
-        valuePlaceholder={keep(existing?.fields.username)}
-        valueDescription="Stored encrypted and never shown again."
+        valuePlaceholder={keepPlaceholder(existing?.fields.username)}
       />
       <SecretSourceField
         id="login-password"
         label="Password"
         {...secrets.password.field}
-        valuePlaceholder={keep(existing?.fields.password)}
+        valuePlaceholder={keepPlaceholder(existing?.fields.password)}
         valueDescription="Stored encrypted and never shown again. Desktop jobs fill it without seeing it."
       />
       <Field orientation="horizontal">
@@ -366,7 +347,7 @@ function LoginFields({
           id="login-code"
           label="One-time code secret"
           {...secrets.code.field}
-          valuePlaceholder={keep(existing?.fields.one_time_code)}
+          valuePlaceholder={keepPlaceholder(existing?.fields.one_time_code)}
           valueDescription="The setup key or otpauth:// URI from the site's two-factor setup. Crumble computes each code from it."
         />
       )}

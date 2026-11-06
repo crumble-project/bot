@@ -29,19 +29,13 @@ import { RedirectReturn } from "@/components/redirect-return";
 import {
   SecretSourceField,
   useSecretDraft,
-} from "@/components/secret-source-field";
+} from "@/features/password-managers/secret-source-field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import {
-  type Bot,
-  type McpServer,
-  botsQuery,
-  call,
-  mcpServersQuery,
-  queryClient,
-  send,
-} from "@/lib/api";
+import { type Bot, botsQuery, invalidateBots } from "@/features/bots/api";
+import { type McpServer, mcpServersQuery, mcpServerPath } from "./api";
+import { call, queryClient, send } from "@/lib/api";
 import {
   ConfirmDeleteContent,
   NewButton,
@@ -50,21 +44,21 @@ import {
   RowTile,
   Section,
   SectionEmpty,
-  WorkspacePage,
-} from "@/components/workspace";
-import { BotAvatar } from "@/features/bots/avatar";
+  Page,
+} from "@/components/page";
+import { BotAvatar } from "@/components/bot-avatar";
+import { SHARED, ownerItems } from "@/features/bots/queries";
+import { invalidateSecrets } from "@/features/password-managers/api";
+import { MAX_MCP_SERVER_NAME_CHARS } from "@crumble/server/contract/limits";
+import { MCP_OAUTH_WEB_PATH } from "@crumble/server/contract/mcp-oauth";
 
-const SHARED = "shared";
 const OAUTH_SERVER_KEY = "crumble.oauth.server";
-
-type OAuthStart = { authorizationUrl: string } | { authorized: true };
-
-const serverPath = (id: string) => `/v1/mcp-servers/${encodeURIComponent(id)}`;
 
 async function refresh() {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: mcpServersQuery.queryKey }),
-    queryClient.invalidateQueries({ queryKey: botsQuery.queryKey }),
+    invalidateBots(),
+    invalidateSecrets(),
   ]);
 }
 
@@ -86,7 +80,7 @@ function validUrl(value: string) {
 
 type Editing = { server: McpServer | null };
 
-function personalServers(bots: Bot[], list: McpServer[]) {
+function botServers(bots: Bot[], list: McpServer[]) {
   return bots.flatMap((bot) => {
     const own = list.filter((server) => server.agentId === bot.id);
 
@@ -96,11 +90,11 @@ function personalServers(bots: Bot[], list: McpServer[]) {
 
 function IntegrationSections({
   shared,
-  personal,
+  botOwn,
   onEdit,
 }: {
   shared: McpServer[];
-  personal: { bot: Bot; servers: McpServer[] }[];
+  botOwn: { bot: Bot; servers: McpServer[] }[];
   onEdit: (server: McpServer) => void;
 }) {
   return (
@@ -120,7 +114,7 @@ function IntegrationSections({
           />
         ))}
       </Section>
-      {personal.map(({ bot, servers: own }) => (
+      {botOwn.map(({ bot, servers: own }) => (
         <Section
           key={bot.id}
           title={bot.name}
@@ -155,7 +149,7 @@ export function IntegrationsPage() {
   );
 
   return (
-    <WorkspacePage
+    <Page
       title="Integrations"
       refreshing={bots.isFetching || servers.isFetching}
       onRefresh={() => void refresh()}
@@ -179,7 +173,7 @@ export function IntegrationsPage() {
       ) : (
         <IntegrationSections
           shared={list.filter((server) => server.agentId === null)}
-          personal={personalServers(bots.data ?? [], list)}
+          botOwn={botServers(bots.data ?? [], list)}
           onEdit={(server) => setEditing({ server })}
         />
       )}
@@ -190,17 +184,17 @@ export function IntegrationsPage() {
           onClose={() => setEditing(null)}
         />
       )}
-    </WorkspacePage>
+    </Page>
   );
 }
 
 function useServerActions(server: McpServer) {
   const signIn = useMutation({
     mutationFn: async () => {
-      const result = await call<OAuthStart, { redirectUri: string }>(
-        `${serverPath(server.id)}/oauth`,
+      const result = await call<"oauth">(
+        `${mcpServerPath(server.id)}/oauth`,
         "POST",
-        { redirectUri: `${location.origin}/oauth/callback` },
+        { redirectUri: `${location.origin}${MCP_OAUTH_WEB_PATH}` },
       );
 
       if ("authorizationUrl" in result) {
@@ -212,16 +206,53 @@ function useServerActions(server: McpServer) {
   });
 
   const signOut = useMutation({
-    mutationFn: () => send(`${serverPath(server.id)}/oauth`, "DELETE"),
+    mutationFn: () =>
+      send<"deleteOauth">(`${mcpServerPath(server.id)}/oauth`, "DELETE"),
     onSettled: refresh,
   });
 
   const remove = useMutation({
-    mutationFn: () => send(serverPath(server.id), "DELETE"),
+    mutationFn: () =>
+      send<"deleteMcpServer">(mcpServerPath(server.id), "DELETE"),
     onSettled: refresh,
   });
 
   return { signIn, signOut, remove };
+}
+
+function ServerMenu({
+  server,
+  signOut,
+  onEdit,
+  onDelete,
+}: {
+  server: McpServer;
+  signOut: ReturnType<typeof useServerActions>["signOut"];
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <RowMenu>
+      <DropdownMenuItem onClick={onEdit}>
+        <IconPencil />
+        Edit
+      </DropdownMenuItem>
+      {server.auth === "oauth" && (
+        <DropdownMenuItem
+          disabled={signOut.isPending}
+          onClick={() => signOut.mutate()}
+        >
+          <IconLogout />
+          Sign out
+        </DropdownMenuItem>
+      )}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem variant="destructive" onClick={onDelete}>
+        <IconTrash />
+        Delete
+      </DropdownMenuItem>
+    </RowMenu>
+  );
 }
 
 function ServerRow({
@@ -257,29 +288,12 @@ function ServerRow({
           Sign in
         </Button>
       )}
-      <RowMenu>
-        <DropdownMenuItem onClick={onEdit}>
-          <IconPencil />
-          Edit
-        </DropdownMenuItem>
-        {server.auth === "oauth" && (
-          <DropdownMenuItem
-            disabled={signOut.isPending}
-            onClick={() => signOut.mutate()}
-          >
-            <IconLogout />
-            Sign out
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          variant="destructive"
-          onClick={() => setDeleting(true)}
-        >
-          <IconTrash />
-          Delete
-        </DropdownMenuItem>
-      </RowMenu>
+      <ServerMenu
+        server={server}
+        signOut={signOut}
+        onEdit={onEdit}
+        onDelete={() => setDeleting(true)}
+      />
       <AlertDialog open={deleting} onOpenChange={setDeleting}>
         <ConfirmDeleteContent
           title={`Delete ${server.name}?`}
@@ -363,7 +377,6 @@ function oauthClientPatch(
     ...((clientId || server?.oauthClientId) && {
       oauthClientId: clientId || null,
     }),
-    // Without an app, its secret has no use; clearing the client ID removes it too.
     ...(clientId && clientSecret.changed
       ? { oauthClientSecret: clientSecret.input }
       : !clientId &&
@@ -396,8 +409,8 @@ function useSaveServer(
       const body = serverBody(draft, server, secrets);
 
       return server
-        ? send(serverPath(server.id), "PATCH", body)
-        : send("/v1/mcp-servers", "POST", {
+        ? send<"updateMcpServer">(mcpServerPath(server.id), "PATCH", body)
+        : send<"createMcpServer">("/v1/mcp-servers", "POST", {
             ...body,
             agentId: draft.owner === SHARED ? null : draft.owner,
           });
@@ -482,18 +495,13 @@ function ServerFields({
   patch,
   secrets,
 }: DraftFieldsProps & { bots: Bot[] }) {
-  const owners = [
-    { label: "Every bot (shared)", value: SHARED },
-    ...bots.map((bot) => ({ label: bot.name, value: bot.id })),
-  ];
-
   const urlInvalid = draft.url.trim() !== "" && !validUrl(draft.url.trim());
 
   return (
     <>
       <OwnerSelectField
         label="Available to"
-        owners={owners}
+        owners={ownerItems("Every bot (shared)", bots)}
         value={draft.owner}
         disabled={server !== null}
         onValueChange={(value) => patch({ owner: value ?? SHARED })}
@@ -502,7 +510,7 @@ function ServerFields({
         <FieldLabel htmlFor="mcp-name">Name</FieldLabel>
         <Input
           id="mcp-name"
-          maxLength={100}
+          maxLength={MAX_MCP_SERVER_NAME_CHARS}
           value={draft.name}
           onChange={(event) => patch({ name: event.target.value })}
         />
@@ -537,7 +545,7 @@ function ServerFields({
 }
 
 function OAuthAppFields({ server, draft, patch, secrets }: DraftFieldsProps) {
-  const callback = `${location.origin}/oauth/callback`;
+  const callback = `${location.origin}${MCP_OAUTH_WEB_PATH}`;
 
   return (
     <FieldSet>
@@ -576,7 +584,6 @@ function OAuthAppFields({ server, draft, patch, secrets }: DraftFieldsProps) {
   );
 }
 
-/** Finishes an MCP server's OAuth sign-in after the provider redirects back to the web UI. */
 function finishOAuth(
   params: URLSearchParams,
   navigate: UseNavigateResult<string>,
@@ -597,11 +604,15 @@ function finishOAuth(
       new Error("This sign-in link is incomplete or was already used."),
     );
 
-  return send(`${serverPath(serverId)}/oauth/callback`, "POST", {
-    code,
-    state,
-    ...(iss && { iss }),
-  }).then(async () => {
+  return send<"oauthCallback">(
+    `${mcpServerPath(serverId)}/oauth/callback`,
+    "POST",
+    {
+      code,
+      state,
+      ...(iss && { iss }),
+    },
+  ).then(async () => {
     await refresh();
     await navigate({ to: "/settings/integrations", replace: true });
   });

@@ -32,7 +32,16 @@ import {
   nativeModel,
   supportsAdaptiveThinking,
 } from "./catalog";
-import { Admission, type Block, type CapturedMessage } from "./relay";
+import {
+  ANTHROPIC_ORIGIN,
+  CRUMBLE_MCP_SERVER,
+  CRUMBLE_TOOL_PREFIX,
+  baseCliArgs,
+} from "./native";
+import { Admission } from "./relay";
+import type { CapturedMessage } from "./relay-capture";
+import { PROCESS_GZIP } from "./relay-gzip";
+import type { Block } from "./relay-request";
 import {
   childEnv,
   installHint,
@@ -43,10 +52,8 @@ import {
 } from "./setup";
 import { Match } from "effect";
 
-/** The Pi AI api id of the Claude Code adapter. */
 export const CLAUDE_CODE_API = "claude-code";
 
-const PREFIX = "mcp__crumble__";
 const INERT_MCP = join(import.meta.dir, "inert-mcp.ts");
 // A clean answer returns at the CLI's result event; a CLI that will not exit is killed after this.
 
@@ -65,11 +72,9 @@ const NATIVE_ERRORS = new Map([
 export type AdapterOptions = ClaudeCodeOptions & {
   /** Claude Code's working directory: stable, since the CLI writes it into every request's environment. */
   workDir: string;
-  /** Where the relay forwards. Tests point it at a loopback fixture. */
   upstream?: string;
   /** Wire qualification only: environment for the real CLI against a fixture upstream, such as a fixture API key. */
   fixtureEnv?: Record<string, string>;
-  /** The cached status, refreshed when it is stale or after an authentication failure. */
   status: () => Promise<ClaudeCodeStatus>;
   invalidateStatus: () => void;
 };
@@ -89,7 +94,6 @@ type NativeFrame = {
 
 type AssistantFields = Omit<NativeFrame["message"], "role" | "content">;
 
-/** A native session id that stays the same for every request of one conversation. */
 function conversationSessionId(system: string, frames: NativeFrame[]) {
   const digest = createHash("sha256")
     .update(JSON.stringify([system, frames[0]?.message ?? null]))
@@ -142,7 +146,7 @@ const jsonSchema = z.record(z.string(), z.json());
  * Anthropic's validator rejects top-level oneOf/allOf/anyOf and the null branch of nullable unions. The combinators
  * are advisory (Crumble re-validates arguments); nested unions other than nullable ones stay untouched.
  */
-export function normalizeInputSchema(schema: z.infer<typeof jsonSchema>) {
+function normalizeInputSchema(schema: z.infer<typeof jsonSchema>) {
   const normalized = stripNullable(schema);
 
   if (COMBINATORS.some((key) => key in normalized)) {
@@ -247,14 +251,13 @@ function assistantHistoryBlock(
     return item.thinking.trim() ? [{ type: "text", text: item.thinking }] : [];
   }
 
-  // A call outside the inventory replays as the model named it.
   const name = names.get(item.name);
 
   return [
     {
       type: "tool_use",
       id: item.id,
-      name: name === undefined ? item.name : `${PREFIX}${name}`,
+      name: name === undefined ? item.name : `${CRUMBLE_TOOL_PREFIX}${name}`,
       input: item.arguments,
     },
   ];
@@ -299,8 +302,20 @@ function historyContent(
   return [toolResultHistoryBlock(message)];
 }
 
-/** The system prompt and the conversation as stream-json frames, ending in the frame that queries. */
-export function prepareHistory(
+function assistantFields(
+  message: AssistantMessage,
+  model: Model<Api>,
+  index: number,
+): AssistantFields {
+  return {
+    id: message.responseId ?? `msg_replayed_${index}`,
+    type: "message",
+    model: message.responseModel ?? nativeModel(model.id),
+    stop_reason: nativeStop(message.stopReason),
+  };
+}
+
+function prepareHistory(
   context: TranscriptContext,
   model: Model<Api>,
   names: Map<string, string>,
@@ -331,12 +346,11 @@ export function prepareHistory(
     if (content.length === 0) continue;
 
     if (message.role === "assistant")
-      append("assistant", content, {
-        id: message.responseId ?? `msg_replayed_${frames.length}`,
-        type: "message",
-        model: message.responseModel ?? nativeModel(model.id),
-        stop_reason: nativeStop(message.stopReason),
-      });
+      append(
+        "assistant",
+        content,
+        assistantFields(message, model, frames.length),
+      );
     else append("user", content);
   }
 
@@ -352,7 +366,6 @@ export function prepareHistory(
 
 type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 
-/** Generation fields Claude Code applies from its private settings file, plus the effort for `--effort`. */
 function requestBody(
   model: Model<Api>,
   options: SimpleStreamOptions | undefined,
@@ -365,26 +378,34 @@ function requestBody(
 
   const reasoning = level === "off" ? undefined : level;
 
-  let effort: Effort | undefined;
-
-  if (reasoning === undefined) {
-    if (acceptsThinkingDisable(model.id)) {
-      body["thinking"] = { type: "disabled" };
-      // Clear-thinking context edits are invalid when thinking is disabled.
-      body["context_management"] = { edits: [] };
-    } else effort = "low";
-  } else {
-    // Routes without adaptive thinking 400 on the block; their default thinking plus the effort stand in.
-    if (supportsAdaptiveThinking(model.id))
-      body["thinking"] = { type: "adaptive", display: "summarized" };
-    effort = reasoning === "minimal" ? "low" : reasoning;
-  }
+  const effort = configureThinking(body, model.id, reasoning);
 
   if (effort) body["output_config"] = { effort };
 
   if (options?.maxTokens !== undefined) body["max_tokens"] = options.maxTokens;
 
   return { body, effort };
+}
+
+function configureThinking(
+  body: JsonObject,
+  modelId: string,
+  reasoning: Exclude<ReturnType<typeof clampThinkingLevel>, "off"> | undefined,
+): Effort | undefined {
+  if (reasoning === undefined) {
+    if (!acceptsThinkingDisable(modelId)) return "low";
+    body["thinking"] = { type: "disabled" };
+    // Clear-thinking context edits are invalid when thinking is disabled.
+    body["context_management"] = { edits: [] };
+
+    return undefined;
+  }
+
+  // Routes without adaptive thinking 400 on the block; their default thinking plus the effort stand in.
+  if (supportsAdaptiveThinking(modelId))
+    body["thinking"] = { type: "adaptive", display: "summarized" };
+
+  return reasoning === "minimal" ? "low" : reasoning;
 }
 
 type StreamJson = z.infer<typeof streamJson>;
@@ -423,7 +444,6 @@ const streamJson = z.looseObject({
     .optional(),
 });
 
-/** Reads the CLI's stdout one JSON line at a time, with a read-idle deadline. */
 class Lines {
   private readonly queue: (StreamJson | Error | null)[] = [];
   private waiting: (() => void) | undefined;
@@ -506,11 +526,12 @@ const exited = (child: ChildProcessWithoutNullStreams) =>
       );
 
 function piUsage(usage: CapturedMessage["usage"] | undefined): Usage {
-  const input = usage?.input_tokens ?? 0;
-  const output = usage?.output_tokens ?? 0;
-  const cacheRead = usage?.cache_read_input_tokens ?? 0;
-  const cacheWrite = usage?.cache_creation_input_tokens ?? 0;
-  const oneHour = usage?.cache_creation?.ephemeral_1h_input_tokens;
+  const source = usage ?? {};
+  const input = source.input_tokens ?? 0;
+  const output = source.output_tokens ?? 0;
+  const cacheRead = source.cache_read_input_tokens ?? 0;
+  const cacheWrite = source.cache_creation_input_tokens ?? 0;
+  const oneHour = source.cache_creation?.ephemeral_1h_input_tokens;
 
   const result: Usage = {
     input,
@@ -529,7 +550,6 @@ function piUsage(usage: CapturedMessage["usage"] | undefined): Usage {
 
 const toolInput = z.record(z.string(), z.json());
 
-/** Runs one model request through a fresh Claude Code process and streams it as Pi AI events. */
 export function streamClaudeCode(
   adapter: AdapterOptions,
   model: Model<Api>,
@@ -611,7 +631,7 @@ function prepareRequest(
   });
 
   body["tools"] = manifest.map((tool) => ({
-    name: `${PREFIX}${tool.name}`,
+    name: `${CRUMBLE_TOOL_PREFIX}${tool.name}`,
     description: tool.description,
     input_schema: tool.inputSchema,
   }));
@@ -621,6 +641,51 @@ function prepareRequest(
 
 type PreparedRequest = ReturnType<typeof prepareRequest>;
 
+function writeCliFiles(request: PreparedRequest, scratch: string) {
+  const { manifest, body, system } = request;
+  writeFileSync(join(scratch, "tools.json"), JSON.stringify(manifest));
+  // Settings apply env inside the process, avoiding the per-argument limit for large schemas.
+  writeFileSync(
+    join(scratch, "settings.json"),
+    JSON.stringify({ env: { CLAUDE_CODE_EXTRA_BODY: JSON.stringify(body) } }),
+  );
+  writeFileSync(join(scratch, "system.md"), system);
+}
+
+function cliArgs(model: Model<Api>, request: PreparedRequest, scratch: string) {
+  const { system, frames, effort } = request;
+
+  const mcp = {
+    mcpServers: {
+      [CRUMBLE_MCP_SERVER]: {
+        command: process.execPath,
+        args: [INERT_MCP, join(scratch, "tools.json")],
+      },
+    },
+  };
+
+  return [
+    ...baseCliArgs(nativeModel(model.id)),
+    "--include-partial-messages",
+    "--system-prompt-file",
+    join(scratch, "system.md"),
+    "--settings",
+    join(scratch, "settings.json"),
+    "--max-turns",
+    "1",
+    "--permission-mode",
+    "dontAsk",
+    "--mcp-config",
+    JSON.stringify(mcp),
+    // The CLI applies its own effort message, which overrides the request body's effort.
+    ...(effort ? ["--effort", effort] : []),
+    // One native session per conversation: the CLI names a per-session scratch directory near the top of every
+    // request, so a new id per spawn would move the cache prefix on every call.
+    "--session-id",
+    conversationSessionId(system, frames),
+  ];
+}
+
 function prepareCli(
   adapter: AdapterOptions,
   model: Model<Api>,
@@ -629,14 +694,7 @@ function prepareCli(
   scratch: string,
   admission: Admission,
 ) {
-  const { manifest, body, system, frames, effort } = request;
-  writeFileSync(join(scratch, "tools.json"), JSON.stringify(manifest));
-  // Settings apply env inside the process, avoiding the per-argument limit for large schemas.
-  writeFileSync(
-    join(scratch, "settings.json"),
-    JSON.stringify({ env: { CLAUDE_CODE_EXTRA_BODY: JSON.stringify(body) } }),
-  );
-  writeFileSync(join(scratch, "system.md"), system);
+  writeCliFiles(request, scratch);
   mkdirSync(adapter.workDir, { recursive: true, mode: 0o700 });
 
   const env = childEnv(adapter);
@@ -654,51 +712,7 @@ function prepareCli(
   if (options?.maxTokens !== undefined)
     env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = String(options.maxTokens);
 
-  const mcp = {
-    mcpServers: {
-      crumble: {
-        command: process.execPath,
-        args: [INERT_MCP, join(scratch, "tools.json")],
-      },
-    },
-  };
-
-  const args = [
-    "-p",
-    "--model",
-    nativeModel(model.id),
-    "--input-format",
-    "stream-json",
-    "--output-format",
-    "stream-json",
-    "--verbose",
-    "--include-partial-messages",
-    "--tools",
-    "",
-    "--system-prompt-file",
-    join(scratch, "system.md"),
-    "--settings",
-    join(scratch, "settings.json"),
-    "--setting-sources",
-    "",
-    "--strict-mcp-config",
-    "--disable-slash-commands",
-    "--max-turns",
-    "1",
-    "--permission-mode",
-    "dontAsk",
-    "--no-session-persistence",
-    "--mcp-config",
-    JSON.stringify(mcp),
-    // The CLI applies its own effort message, which overrides the request body's effort.
-    ...(effort ? ["--effort", effort] : []),
-    // One native session per conversation: the CLI names a per-session scratch directory near the top of every
-    // request, so a new id per spawn would move the cache prefix on every call.
-    "--session-id",
-    conversationSessionId(system, frames),
-  ];
-
-  return { env, args };
+  return { env, args: cliArgs(model, request, scratch) };
 }
 
 type Receive = () => Promise<StreamJson | null>;
@@ -984,16 +998,6 @@ function validateResponse(
   return captured;
 }
 
-function nativeResultFailed(
-  final: StreamJson | undefined,
-  fast: boolean,
-  exitCode: number | null,
-) {
-  return (
-    (!fast && exitCode !== 0) || final?.is_error || final?.subtype !== "success"
-  );
-}
-
 function singleResult(results: StreamJson[]) {
   if (results.length !== 1)
     throw new Error("Incomplete native response: one result required");
@@ -1001,15 +1005,31 @@ function singleResult(results: StreamJson[]) {
   return results[0];
 }
 
-const toolBoundary = (
+function classify(
+  result: StreamJson | undefined,
   captured: CapturedMessage,
-  final: StreamJson | undefined,
+): "clean" | "tool_boundary" | "refused" | "failed" {
+  // The CLI reports a refusal as an error of its own; the captured answer stands.
+  if (captured.stop_reason === "refusal") return "refused";
+
+  // One turn is all a request gets, so an answer that calls tools ends at the turn limit.
+  if (
+    result?.subtype === "error_max_turns" &&
+    captured.content.some((item) => item.type === "tool_use")
+  )
+    return "tool_boundary";
+
+  return result?.subtype === "success" && !result.is_error ? "clean" : "failed";
+}
+
+/** Whether the result ends the turn as a good one does; a fast return never saw the exit code. */
+const endedWell = (
+  outcome: ReturnType<typeof classify>,
   fast: boolean,
   exitCode: number | null,
 ) =>
-  captured.content.some((item) => item.type === "tool_use") &&
-  final?.subtype === "error_max_turns" &&
-  (fast || exitCode === 1);
+  (outcome === "clean" && (fast || exitCode === 0)) ||
+  (outcome === "tool_boundary" && (fast || exitCode === 1));
 
 function validateNativeResult(
   captured: CapturedMessage,
@@ -1019,17 +1039,16 @@ function validateNativeResult(
   stderrTail: () => string,
 ) {
   const { results, nativeError, nativeErrorCode, fast } = response;
+  const outcome = classify(results[0], captured);
   // A refusal or a denied recovery attempt makes the CLI report an error of its own; the first response stands.
-  const handled = denied > 0 || captured.stop_reason === "refusal";
+  const handled = denied > 0 || outcome === "refused";
 
   if (nativeError !== undefined && !handled)
     throw nativeFailure(nativeErrorCode, nativeError);
 
   const final = singleResult(results);
 
-  const boundary = toolBoundary(captured, final, fast, exitCode);
-
-  if (!boundary && !handled && nativeResultFailed(final, fast, exitCode))
+  if (!handled && !endedWell(outcome, fast, exitCode))
     throw new Error(
       `Native request failed: ${final?.subtype ?? "no result"}${stderrTail()}`,
     );
@@ -1050,7 +1069,10 @@ function thinkingBlock(item: NativeBlock): ThinkingContent {
 
 function toolCallBlock(item: NativeBlock, crumble: Map<string, string>) {
   // Built-ins are off, so any other name is the model's; Crumble answers an unknown name with an error.
-  const offered = (item.name ?? "").replace(new RegExp(`^${PREFIX}`), "");
+  const offered = (item.name ?? "").replace(
+    new RegExp(`^${CRUMBLE_TOOL_PREFIX}`),
+    "",
+  );
 
   const input = toolInput.safeParse(item.input ?? {});
 
@@ -1113,6 +1135,45 @@ function doneReason(
     : "stop";
 }
 
+function finishedMessage(
+  partial: AssistantMessage,
+  content: AssistantMessage["content"],
+  captured: CapturedMessage,
+) {
+  const message: AssistantMessage = {
+    ...partial,
+    content,
+    usage: piUsage(captured.usage),
+    stopReason: "stop",
+  };
+
+  if (captured.id) message.responseId = captured.id;
+
+  if (captured.model) message.responseModel = captured.model;
+
+  if (captured.stop_reason) message.rawStopReason = captured.stop_reason;
+
+  return message;
+}
+
+function pushToolCalls(
+  stream: AssistantMessageEventStream,
+  message: AssistantMessage,
+  calls: ToolCall[],
+) {
+  for (const call of calls) {
+    const contentIndex = message.content.indexOf(call);
+
+    stream.push({ type: "toolcall_start", contentIndex, partial: message });
+    stream.push({
+      type: "toolcall_end",
+      contentIndex,
+      toolCall: call,
+      partial: message,
+    });
+  }
+}
+
 function finishResponse(
   captured: CapturedMessage,
   crumble: Map<string, string>,
@@ -1135,30 +1196,9 @@ function finishResponse(
 
   const calls = content.filter((item) => item.type === "toolCall");
 
-  const message: AssistantMessage = {
-    ...partial,
-    content,
-    usage: piUsage(captured.usage),
-    stopReason: "stop",
-  };
+  const message = finishedMessage(partial, content, captured);
 
-  if (captured.id) message.responseId = captured.id;
-
-  if (captured.model) message.responseModel = captured.model;
-
-  if (captured.stop_reason) message.rawStopReason = captured.stop_reason;
-
-  for (const call of calls) {
-    const contentIndex = message.content.indexOf(call);
-
-    stream.push({ type: "toolcall_start", contentIndex, partial: message });
-    stream.push({
-      type: "toolcall_end",
-      contentIndex,
-      toolCall: call,
-      partial: message,
-    });
-  }
+  pushToolCalls(stream, message, calls);
 
   if (refused) {
     // A refusal is terminal: Pi AI's Anthropic adapter reports it as an error with the explanation.
@@ -1190,15 +1230,12 @@ function openAdmission(
   manifest: unknown[],
   timeoutMs: number,
 ) {
-  const admission = new Admission(
-    adapter.upstream ?? "https://api.anthropic.com",
-    timeoutMs,
-    frames.at(-1)?.message.content,
-  );
-
-  admission.oneShot = manifest.length === 0 && frames.length === 1;
-
-  return admission;
+  return new Admission(adapter.upstream ?? ANTHROPIC_ORIGIN, timeoutMs, {
+    queried: frames.at(-1)?.message.content,
+    oneShot: manifest.length === 0 && frames.length === 1,
+    env: adapter.env,
+    gzip: PROCESS_GZIP,
+  });
 }
 
 function stderrCollector() {
@@ -1238,6 +1275,124 @@ async function release(
   await admission.close();
 }
 
+function cliReceiver(
+  cli: ChildProcessWithoutNullStreams,
+  stderr: (chunk: string) => void,
+  timeoutMs: number,
+  signal: AbortSignal,
+): Receive {
+  cli.stderr.setEncoding("utf8").on("data", stderr);
+
+  const spawnError = new Promise<never>((_, reject) =>
+    cli.once("error", reject),
+  );
+
+  const lines = new Lines(cli);
+
+  return () => Promise.race([lines.next(timeoutMs, signal), spawnError]);
+}
+
+type NativeRequest = {
+  adapter: AdapterOptions;
+  model: Model<Api>;
+  options: SimpleStreamOptions | undefined;
+  request: PreparedRequest;
+  admission: Admission;
+  signal: AbortSignal;
+  scratch: string;
+  timeoutMs: number;
+  stream: AssistantMessageEventStream;
+  partial: AssistantMessage;
+  collected: ReturnType<typeof stderrCollector>;
+};
+
+/** What the abort listener and the cleanup in `run` must see as soon as `driveCli` changes it. */
+type CliHold = {
+  child: ChildProcessWithoutNullStreams | undefined;
+  handedOff: boolean;
+};
+
+async function replayAndReceive(
+  cli: ChildProcessWithoutNullStreams,
+  native: NativeRequest,
+) {
+  const { request, admission, signal, timeoutMs, stream, partial } = native;
+  const { stderr, stderrTail } = native.collected;
+  const receive = cliReceiver(cli, stderr, timeoutMs, signal);
+
+  await replayHistory(
+    request.frames,
+    stdinWriter(cli, signal),
+    receive,
+    cli,
+    signal,
+    stderrTail,
+  );
+
+  cli.stdin.end();
+
+  const incremental = new IncrementalResponse(stream, partial);
+  const response = await receiveResponse(receive, admission, incremental);
+
+  return { incremental, response };
+}
+
+async function driveCli(command: string, native: NativeRequest, hold: CliHold) {
+  const { adapter, model, options, request, admission } = native;
+  const { signal, scratch, stream, partial } = native;
+  const { stderrTail } = native.collected;
+
+  const { env, args } = prepareCli(
+    adapter,
+    model,
+    options,
+    request,
+    scratch,
+    admission,
+  );
+
+  if (signal.aborted) throw new Error("Claude request cancelled");
+
+  const cli = spawn(command, args, {
+    env,
+    cwd: adapter.workDir,
+    detached: true,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  hold.child = cli;
+
+  const { incremental, response } = await replayAndReceive(cli, native);
+  const { fast } = response;
+
+  let exitCode: number | null = null;
+
+  if (fast) {
+    hold.handedOff = true;
+    handOff(cli, admission);
+  } else {
+    exitCode = await exited(cli);
+  }
+
+  if (signal.aborted) throw new Error("Claude request cancelled");
+
+  const captured = validateResponse(
+    adapter,
+    admission,
+    response,
+    exitCode,
+    stderrTail,
+  );
+
+  finishResponse(
+    captured,
+    request.crumble,
+    incremental.streamed,
+    stream,
+    partial,
+  );
+}
+
 async function run(
   adapter: AdapterOptions,
   model: Model<Api>,
@@ -1249,92 +1404,44 @@ async function run(
   stream.push({ type: "start", partial });
   const command = await requireClaudeCommand(adapter);
   const request = prepareRequest(model, context, options);
-  const { frames, manifest, crumble } = request;
+  const { frames, manifest } = request;
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const admission = openAdmission(adapter, frames, manifest, timeoutMs);
   const signal = options?.signal ?? new AbortController().signal;
   const scratch = mkdtempSync(join(tmpdir(), "crumble-claude-"));
-  let child: ChildProcessWithoutNullStreams | undefined;
-  let handedOff = false;
-  const { stderr, stderrTail } = stderrCollector();
+  const hold: CliHold = { child: undefined, handedOff: false };
+  const collected = stderrCollector();
 
   const cancel = () => {
     admission.abort();
 
-    if (child) killTree(child);
+    if (hold.child) killTree(hold.child);
   };
 
   signal.addEventListener("abort", cancel, { once: true });
 
   try {
-    const { env, args } = prepareCli(
-      adapter,
-      model,
-      options,
-      request,
-      scratch,
-      admission,
+    await driveCli(
+      command,
+      {
+        adapter,
+        model,
+        options,
+        request,
+        admission,
+        signal,
+        scratch,
+        timeoutMs,
+        stream,
+        partial,
+        collected,
+      },
+      hold,
     );
-
-    if (signal.aborted) throw new Error("Claude request cancelled");
-    child = spawn(command, args, {
-      env,
-      cwd: adapter.workDir,
-      detached: true,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    const cli = child;
-
-    cli.stderr.setEncoding("utf8").on("data", stderr);
-
-    const spawnError = new Promise<never>((_, reject) =>
-      cli.once("error", reject),
-    );
-
-    const lines = new Lines(cli);
-
-    const receive = () =>
-      Promise.race([lines.next(timeoutMs, signal), spawnError]);
-
-    await replayHistory(
-      frames,
-      stdinWriter(cli, signal),
-      receive,
-      cli,
-      signal,
-      stderrTail,
-    );
-
-    cli.stdin.end();
-
-    const incremental = new IncrementalResponse(stream, partial);
-    const response = await receiveResponse(receive, admission, incremental);
-    const { fast } = response;
-
-    let exitCode: number | null = null;
-
-    if (fast) {
-      handedOff = true;
-      handOff(cli, admission);
-    } else {
-      exitCode = await exited(cli);
-    }
-
-    if (signal.aborted) throw new Error("Claude request cancelled");
-
-    const captured = validateResponse(
-      adapter,
-      admission,
-      response,
-      exitCode,
-      stderrTail,
-    );
-
-    finishResponse(captured, crumble, incremental.streamed, stream, partial);
   } finally {
     signal.removeEventListener("abort", cancel);
 
-    if (!handedOff) await release(child, admission);
+    if (!hold.handedOff) await release(hold.child, admission);
 
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -1357,15 +1464,9 @@ function fastEligible(
     nativeError === undefined &&
     admission.denied === 0 &&
     message !== undefined &&
-    message.stop_reason !== "refusal" &&
-    resultEndsCleanly(result, message)
+    endedWell(classify(result, message), true, null)
   );
 }
-
-const resultEndsCleanly = (result: StreamJson, message: CapturedMessage) =>
-  (result.subtype === "success" && !result.is_error) ||
-  (result.subtype === "error_max_turns" &&
-    message.content.some((item) => item.type === "tool_use"));
 
 /** Lets a finished CLI exit on its own, killing it after a grace period; the consumed admission stays up until then. */
 function handOff(child: ChildProcessWithoutNullStreams, admission: Admission) {
@@ -1377,7 +1478,6 @@ function handOff(child: ChildProcessWithoutNullStreams, admission: Admission) {
   });
 }
 
-/** Pi AI's `ProviderStreams` for Claude Code models. */
 export function claudeCodeStreams(adapter: AdapterOptions): ProviderStreams {
   return {
     stream: (model, context, options) =>

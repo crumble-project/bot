@@ -16,7 +16,7 @@ import {
   inIntentBar,
   judgeUsage,
 } from "../src/bot-desktop/intent-judge";
-import { providerModels } from "../src/providers/providers";
+import { hostModels } from "../src/providers/providers";
 import { z } from "zod";
 import { INTENT_CASES, type IntentCase } from "./intent-eval-cases";
 
@@ -31,7 +31,6 @@ type Result = {
   expected: { irreversible: boolean; inIntent: boolean };
   ms: number;
   inputTokens: number;
-  /** In $, priced as Crumble records it. */
   cost: number;
 };
 
@@ -43,7 +42,7 @@ const refs = args.filter(
   (arg, index) => !arg.startsWith("--") && index !== outAt + 1,
 );
 
-const models = providerModels();
+const models = hostModels(undefined, []);
 
 async function classifier(ref: string) {
   const [provider = "", ...rest] = ref.split("/");
@@ -66,7 +65,6 @@ const boolAnswer = z.object({
   probability: z.number(),
 });
 
-// A classifier result the eval can use: stopped normally, with both answers.
 const usable = z.object({
   stopReason: z.literal("stop"),
   answers: z.object({ irreversible: boolAnswer, in_intent: boolAnswer }),

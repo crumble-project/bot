@@ -1,35 +1,34 @@
 import {
   AgentRepository,
   type AgentPatch,
-} from "../../src/bots/agent-repository";
-import { ConversationRepository } from "../../src/bots/conversation-repository";
+} from "../../src/bot-store/agent-repository";
+import { duplicateAgent } from "../../src/bots/agent-duplicate";
+import { ConversationRepository } from "../../src/bot-store/conversation-repository";
 import {
   ExecutionRepository,
   type NewExecution,
-} from "../../src/bots/execution-repository";
+} from "../../src/bot-store/execution-repository";
 import {
   GroupChatRepository,
-  type GroupActivity,
+  type GroupProgress,
   type GroupMemberChange,
 } from "../../src/group-chats/group-chat-repository";
-import { ScheduleRepository } from "../../src/schedules/schedule-repository";
-import type { AttachmentInput } from "../../src/shared/attachments";
+import { ScheduleRepository } from "../../src/automations/schedule-repository";
+import type { AttachmentInput } from "../../src/shared/attachment-rules";
+import type { Agent, AgentInput } from "../../src/contract/agents";
+import type { Execution } from "../../src/shared/domain";
+import type { Schedule, ScheduleInput } from "../../src/contract/schedules";
+import type { Conversation } from "../../src/bot-store/conversation-repository";
 import type {
-  Agent,
-  AgentInput,
-  Conversation,
-  Execution,
   GroupChat,
   GroupChatInput,
   GroupMember,
   GroupTurn,
   GroupTurnStatus,
-  Schedule,
-  ScheduleInput,
-} from "../../src/shared/domain";
+} from "../../src/group-chats/group-chat-repository";
 import type { StoreRun } from "./store";
 
-export const botStore = (run: StoreRun) => ({
+const agentStore = (run: StoreRun) => ({
   getAgent: (agentId: string) => {
     return run(AgentRepository.use((r) => r.get(agentId)));
   },
@@ -43,9 +42,11 @@ export const botStore = (run: StoreRun) => ({
     return run(AgentRepository.use((r) => r.delete(agentId)));
   },
   duplicateAgent: (agentId: string, name?: string) => {
-    return run(AgentRepository.use((r) => r.duplicate(agentId, name)));
+    return run(duplicateAgent(agentId, name));
   },
+});
 
+const conversationStore = (run: StoreRun) => ({
   listConversations: (
     agentId?: string,
     includeArchived = false,
@@ -75,6 +76,9 @@ export const botStore = (run: StoreRun) => ({
       ConversationRepository.use((r) => r.setArchived(conversationId, false)),
     );
   },
+});
+
+const scheduleStore = (run: StoreRun) => ({
   getSchedule: (scheduleId: string) => {
     return run(ScheduleRepository.use((r) => r.get(scheduleId)));
   },
@@ -85,7 +89,10 @@ export const botStore = (run: StoreRun) => ({
   ): Schedule => {
     return run(
       ScheduleRepository.use((r) =>
-        r.create(input, scheduleId, createdByAgentId),
+        r.create(input, input.runAt, {
+          ...(scheduleId && { id: scheduleId }),
+          createdByAgentId: createdByAgentId ?? null,
+        }),
       ),
     );
   },
@@ -94,11 +101,12 @@ export const botStore = (run: StoreRun) => ({
       ScheduleRepository.use((r) => r.updateNextRunAt(scheduleId, nextRunAt)),
     );
   },
+});
 
+const executionStore = (run: StoreRun) => ({
   listExecutions: (agentId?: string): Execution[] => {
     return run(ExecutionRepository.use((r) => r.list(agentId)));
   },
-  /** Uploads waiting for admission; cleared once Pi holds them, so they are not stored twice. */
   executionAttachments: (executionId: string): AttachmentInput[] => {
     return run(ExecutionRepository.use((r) => r.attachments(executionId)));
   },
@@ -116,6 +124,9 @@ export const botStore = (run: StoreRun) => ({
   updateExecution: (executionId: string, patch: Partial<Execution>) => {
     return run(ExecutionRepository.use((r) => r.update(executionId, patch)));
   },
+});
+
+const groupChatStore = (run: StoreRun) => ({
   listGroupChats: (): GroupChat[] => {
     return run(GroupChatRepository.use((r) => r.list));
   },
@@ -125,7 +136,6 @@ export const botStore = (run: StoreRun) => ({
   createGroupChat: (input: GroupChatInput, groupId?: string): GroupChat => {
     return run(GroupChatRepository.use((r) => r.create(input, groupId)));
   },
-  /** Replaces name and members; members that stay keep their place in the join order. */
   updateGroupChat: (groupId: string, input: GroupChatInput) => {
     return run(GroupChatRepository.use((r) => r.update(groupId, input)));
   },
@@ -142,10 +152,10 @@ export const botStore = (run: StoreRun) => ({
   ) => {
     run(GroupChatRepository.use((r) => r.setMember(groupId, agentId, change)));
   },
-  groupActivity: (groupId: string): GroupActivity => {
+  groupActivity: (groupId: string): GroupProgress => {
     return run(GroupChatRepository.use((r) => r.activity(groupId)));
   },
-  setGroupActivity: (groupId: string, change: Partial<GroupActivity>) => {
+  setGroupActivity: (groupId: string, change: Partial<GroupProgress>) => {
     run(GroupChatRepository.use((r) => r.setActivity(groupId, change)));
   },
   createGroupTurn: (turn: Omit<GroupTurn, "createdAt">): GroupTurn => {
@@ -160,7 +170,6 @@ export const botStore = (run: StoreRun) => ({
   ) => {
     run(GroupChatRepository.use((r) => r.updateTurn(executionId, change)));
   },
-  /** The member's unsettled turn in the group; there is at most one. */
   activeGroupTurn: (groupId: string, agentId: string) => {
     return run(GroupChatRepository.use((r) => r.activeTurn(groupId, agentId)));
   },
@@ -169,4 +178,12 @@ export const botStore = (run: StoreRun) => ({
   ): GroupTurn[] => {
     return run(GroupChatRepository.use((r) => r.listTurns(filter)));
   },
+});
+
+export const botStore = (run: StoreRun) => ({
+  ...agentStore(run),
+  ...conversationStore(run),
+  ...scheduleStore(run),
+  ...executionStore(run),
+  ...groupChatStore(run),
 });

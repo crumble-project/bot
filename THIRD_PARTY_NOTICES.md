@@ -2,7 +2,7 @@
 
 ## Open Bot Avatar
 
-Web avatars use `open-bot-avatar` 0.1.2, by Dominik Scholz, under the MIT License. The generation prompt in `apps/web/features/avatars/generate-avatar-prompt.txt` is copied from `DominikScholz/open-bot-avatar`, commit `386cd20258ae48f2e75345ce3c05e046e04d6ad7`, `skills/generate-avatar/references/system-prompt.md`.
+Web avatars use `open-bot-avatar` 0.2.0, by Dominik Scholz, under the MIT License. The generation prompt in `apps/web/features/avatars/generate-avatar-prompt.txt` is copied from `DominikScholz/open-bot-avatar`, commit `386cd20258ae48f2e75345ce3c05e046e04d6ad7`, `skills/generate-avatar/references/system-prompt.md`.
 
 ```text
 MIT License

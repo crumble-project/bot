@@ -5,7 +5,7 @@ import {
   until,
   SETTLE_MS,
   SETTLING_TEST_MS,
-} from "./jobs-test-support";
+} from "../../test/support/jobs";
 
 test(
   "waiting jobs start one at a time when the screen frees up",
@@ -20,7 +20,6 @@ test(
     gates.release("a");
     await until(() => gates.started.length === 2);
     await Bun.sleep(SETTLE_MS);
-    // Only one of b and c holds the screen.
     expect(gates.started).toHaveLength(2);
 
     const second = gates.started[1]!;

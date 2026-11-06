@@ -3,9 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Store } from "../../test/support/store";
-import { standaloneBots } from "../bots/bots";
+import { standaloneBots } from "../bots/bots-test-support";
 import { coordinationExtension } from "./coordination";
-import { standaloneMessaging } from "./bot-messaging";
+import { standaloneMessaging } from "./bot-messaging-test-support";
+import type { Agent } from "../contract/agents";
 
 const dirs: string[] = [];
 
@@ -38,13 +39,16 @@ function setup() {
     recordBotMessage: async () => {},
     openChat: async (agent: { id: string }) =>
       `${agent.id}:${++conversationNumber}`,
+    prepareInput: async (_agent: Agent, text: string) => ({
+      modelContent: text,
+      data: { text },
+    }),
     submit: async (
       _agent: { id: string },
       _conversation: string,
       _prompt: string,
       requestId: string,
     ) => `submission:${requestId}`,
-    // Delegated work stays running so recursion checks see it in flight.
     wait: () => new Promise(() => {}),
     response: async () => ["result"],
   };

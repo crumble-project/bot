@@ -16,6 +16,8 @@ export const INVITE_HEADER = "x-crumble-invite";
 
 export const { useSession } = authClient;
 
+export const useIsAdmin = () => useSession().data?.user.role === "admin";
+
 /**
  * Whether this page can use passkeys. Browsers only offer WebAuthn in a secure
  * context, and an IP address can't be a passkey's site.
@@ -32,7 +34,6 @@ const DISMISSED = new Set([
   "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY",
 ]);
 
-/** Whether a passkey call succeeded: false when the prompt was dismissed, and throws on any other error. */
 export function passkeyDone(result: {
   error: { code?: string | undefined; message?: string | undefined } | null;
 }) {

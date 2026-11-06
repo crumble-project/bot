@@ -1,13 +1,18 @@
 import type { JsonValue } from "@earendil-works/chord";
 import { z } from "zod";
-import type { Agent, LearnedChange } from "../shared/domain";
-import type { BotCommunication, TranscriptMessage } from "../bots/transcript";
+import type { BotCommunication } from "../contract/api-responses";
+import type { ACTIVITY_KINDS } from "../shared/domain";
+import type { Agent } from "../contract/agents";
+import type { LearnedChange } from "../contract/skills";
+import {
+  toolBlocks,
+  type TranscriptMessage,
+  type TranscriptPage,
+} from "../transcript/transcript";
+import { isMcpTool } from "../contract/tools";
+import { parseEntryId } from "../shared/entry-ids";
 
-export type ActivityKind =
-  | "tool-call"
-  | "tool-result"
-  | "mcp-call"
-  | "bot-message";
+export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
 export type ActivityDetail = JsonValue | BotCommunication;
 
@@ -23,7 +28,6 @@ export type OperationalActivity = {
   details: ActivityDetails;
 };
 
-const jsonValue: z.ZodType<JsonValue> = z.json();
 const toolDetailsInput = z.object({ calls: z.unknown().optional() });
 
 const nestedCallInput = z.object({
@@ -34,18 +38,6 @@ const nestedCallInput = z.object({
   durationMs: z.unknown().optional(),
   error: z.unknown().optional(),
 });
-
-const blockInput = z.object({
-  type: z.unknown().optional(),
-  id: z.unknown().optional(),
-  name: z.unknown().optional(),
-  arguments: z.unknown().optional(),
-  toolCallId: z.unknown().optional(),
-  content: z.unknown().optional(),
-  isError: z.unknown().optional(),
-});
-
-const isMcpTool = (name: string) => /^(mcp(?:[_:/-]|$))/i.test(name);
 
 type ActivityAgent = Pick<Agent, "id" | "name">;
 
@@ -160,24 +152,31 @@ function nestedCallEvents(agent: ActivityAgent, message: TranscriptMessage) {
   });
 }
 
-function blockEvent(
+function blockEvents(
   agent: ActivityAgent,
   message: TranscriptMessage,
-  block: z.infer<typeof blockInput>,
-  type: string,
-  index: number,
 ): OperationalActivity[] {
-  const id = `${agent.id}:${message.id}:block-${index}`;
+  return toolBlocks(message).flatMap((block) => {
+    const id = `${agent.id}:${message.id}:block-${block.index}`;
 
-  if (type === "toolCall") {
-    const name = z.string().safeParse(block.name).data;
+    if (block.type === "toolResult") {
+      const details = {
+        toolCallId: block.toolCallId,
+        content: block.content,
+        isError: block.isError,
+      } satisfies ActivityDetails;
+
+      return [activityOf(agent, message, id, "tool-result", details)];
+    }
+
+    const { name } = block;
 
     if (name === undefined) return [];
 
     const details = {
-      id: z.string().safeParse(block.id).data,
+      id: block.id,
       name,
-      arguments: jsonValue.safeParse(block.arguments).data,
+      arguments: block.arguments,
     } satisfies ActivityDetails;
 
     return [
@@ -189,31 +188,9 @@ function blockEvent(
         details,
       ),
     ];
-  }
-
-  if (type !== "toolResult") return [];
-
-  const details = {
-    toolCallId: z.string().safeParse(block.toolCallId).data,
-    content: jsonValue.safeParse(block.content).data,
-    isError: z.boolean().safeParse(block.isError).data,
-  } satisfies ActivityDetails;
-
-  return [activityOf(agent, message, id, "tool-result", details)];
-}
-
-function blockEvents(agent: ActivityAgent, message: TranscriptMessage) {
-  const blocks = z.array(z.unknown()).safeParse(message.blocks).data;
-
-  return (blocks ?? []).flatMap((rawBlock, index) => {
-    const block = blockInput.safeParse(rawBlock).data;
-    const type = z.string().safeParse(block?.type).data;
-
-    return block && type ? blockEvent(agent, message, block, type, index) : [];
   });
 }
 
-/** Converts durable transcript messages into the operational events shown in Activity. */
 export function operationalActivity(
   agent: ActivityAgent,
   messages: TranscriptMessage[],
@@ -223,19 +200,6 @@ export function operationalActivity(
     ...nestedCallEvents(agent, message),
     ...blockEvents(agent, message),
   ]);
-}
-
-export function sortActivity(items: OperationalActivity[]) {
-  return items.sort((a, b) => {
-    const timestamp = (b.timestamp ?? 0) - (a.timestamp ?? 0);
-
-    if (timestamp) return timestamp;
-
-    const entry = (id: string) =>
-      Number(id.slice(id.lastIndexOf(":") + 1)) || 0;
-
-    return entry(b.entryId) - entry(a.entryId) || b.id.localeCompare(a.id);
-  });
 }
 
 export type ChangeActivity = {
@@ -251,8 +215,7 @@ export type FeedItem = OperationalActivity | ChangeActivity;
 
 type Key = { t: number; e: number; id: string };
 
-const entryNumber = (entryId: string) =>
-  Number(entryId.slice(entryId.lastIndexOf(":") + 1)) || 0;
+const entryNumber = (entryId: string) => parseEntryId(entryId) || 0;
 
 function keyOf(item: FeedItem): Key {
   return {
@@ -262,17 +225,13 @@ function keyOf(item: FeedItem): Key {
   };
 }
 
-/** Positive when `a` is newer than `b`, in the order sortActivity uses. */
 function compareKeys(a: Key, b: Key) {
   return a.t - b.t || a.e - b.e || a.id.localeCompare(b.id);
 }
 
 const cursorInput = z.object({
-  /** The last item returned; transcript items resume strictly after it. */
   k: z.object({ t: z.number(), e: z.number(), id: z.string() }).nullable(),
-  /** Per bot, the history `before` to resume from; false once its transcript is exhausted. */
   h: z.record(z.string(), z.union([z.string(), z.null(), z.literal(false)])),
-  /** The last change returned; changes resume after it in the store's order. */
   c: z.string().nullable(),
 });
 
@@ -291,13 +250,6 @@ export function decodeCursor(value: string): Cursor | null {
 const encodeCursor = (cursor: Cursor) =>
   Buffer.from(JSON.stringify(cursor)).toString("base64url");
 
-type HistoryPage = {
-  messages: TranscriptMessage[];
-  hasMore: boolean;
-  oldestEntryId: string | null;
-};
-
-// Bounded per bot and request, so a text-heavy transcript keeps the feed a cheap read.
 const HISTORY_PAGES = 5;
 const HISTORY_PAGE_SIZE = 200;
 
@@ -307,8 +259,7 @@ type ActivityPageOptions<A extends Pick<Agent, "id" | "name">> = {
     agent: A,
     before: string | undefined,
     limit: number,
-  ) => Promise<HistoryPage>;
-  /** Changes newest first in the store's order, after the change `before`. */
+  ) => Promise<TranscriptPage>;
   changes: (limit: number, before: string | undefined) => LearnedChange[];
   agentName: (id: string) => string | null;
   limit: number;
@@ -352,7 +303,7 @@ function sortedQueue(items: FeedItem[], tags: (string | null)[]) {
   };
 }
 
-async function readHistoryPages<A extends Pick<Agent, "id" | "name">>(
+async function readTranscriptPages<A extends Pick<Agent, "id" | "name">>(
   agent: A,
   start: string | null | undefined,
   options: ActivityPageOptions<A>,
@@ -361,7 +312,7 @@ async function readHistoryPages<A extends Pick<Agent, "id" | "name">>(
   let before = start ?? undefined;
   const items: FeedItem[] = [];
   const tags: (string | null)[] = [];
-  let page: HistoryPage | null = null;
+  let page: TranscriptPage | null = null;
 
   for (let index = 0; index < HISTORY_PAGES; index++) {
     page = await options.history(agent, before, HISTORY_PAGE_SIZE);
@@ -385,10 +336,13 @@ async function agentActivityQueue<A extends Pick<Agent, "id" | "name">>(
   start: string | null | undefined,
   options: ActivityPageOptions<A>,
 ) {
-  const { items, tags, page } = await readHistoryPages(agent, start, options);
+  const { items, tags, page } = await readTranscriptPages(
+    agent,
+    start,
+    options,
+  );
 
   const more = Boolean(page?.hasMore && page.oldestEntryId);
-  // Unread history is older than the oldest message read, so nothing older may be returned yet.
   const floor = more && page ? oldestMessageKey(page.messages) : null;
 
   const queue = sortedQueue(items, tags);
@@ -502,10 +456,6 @@ function nextCursor(
   };
 }
 
-/**
- * One page of the activity feed: every bot's operational activity and the skill and memory changes, newest first.
- * Each source is merged as a queue, so a page is a prefix of every source and the cursor resumes each one exactly.
- */
 export async function activityPage<A extends Pick<Agent, "id" | "name">>(
   options: ActivityPageOptions<A>,
 ) {

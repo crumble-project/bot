@@ -15,26 +15,21 @@ import type {
   loginPrompt,
   loginSessionResponse,
 } from "../contract/api-responses";
-import { Context, Effect, Layer, ManagedRuntime, Predicate } from "effect";
-import type { ProviderContribution } from "../plugins/plugins";
-import { ProviderCredentialRepository } from "./provider-credential-repository";
-import { appErrors } from "../shared/app-errors";
+import { Context, Effect, Layer, Predicate } from "effect";
+import { REMOTE_HINTS } from "./provider-hints";
 import { SettingsRepository } from "../shared/settings-repository";
-import type { Runner } from "../shared/runner";
 import {
   ProviderCredentials,
   type ProviderCredentialStore,
 } from "./provider-credentials";
 import { ProviderModels } from "./providers";
-import type { Secrets } from "../password-managers/secrets";
-import type { SecretInput } from "../shared/domain";
+import type { SecretInput } from "../contract/secrets";
 import {
   InvalidInput,
   NotFound,
   Conflict,
   Gone,
   Unavailable,
-  type AppError,
 } from "../shared/errors";
 
 export type LoginSession = z.output<typeof loginSessionResponse>;
@@ -55,18 +50,6 @@ const MAX_ENDED = 64;
 const MAX_ACTIVE = 16;
 const MAX_EVENTS = 32;
 const MAX_EVENT_BYTES = 8192;
-
-/** Installed-library limits that matter when the owner's browser is on another machine. */
-const REMOTE_HINTS = new Map([
-  [
-    "openai",
-    "After signing in, your browser opens a page on 127.0.0.1 that may not load. Copy that page's full address and paste it here. The server needs its internal port 1455 free; it does not need to be published.",
-  ],
-  [
-    "radius",
-    "Browser sign-in only works with a browser on the server's machine. From another device, choose device code.",
-  ],
-]);
 
 const FAILURES = {
   provider_failure: "The provider could not complete sign-in. Try again.",
@@ -96,7 +79,6 @@ type Session = {
   timer?: ReturnType<typeof setTimeout>;
 };
 
-/** Sign-in methods a provider can run interactively; ambient-only auth has none. */
 export function loginMethods(provider: Provider): LoginMethod[] {
   const { apiKey, oauth } = provider.auth;
 
@@ -116,6 +98,19 @@ export function loginMethods(provider: Provider): LoginMethod[] {
   ];
 }
 
+export type ProviderSignInsAccess = Pick<
+  SignInSessions,
+  | "models"
+  | "start"
+  | "get"
+  | "answer"
+  | "cancel"
+  | "setApiKey"
+  | "signOut"
+  | "activeLoginId"
+  | "status"
+>;
+
 /**
  * Relays Pi AI login flows to clients. Sessions live in memory only: a restart ends them, while saved credentials stay
  * encrypted in the database. Raw provider errors never leave this module, because Pi AI can put token responses into
@@ -123,30 +118,7 @@ export function loginMethods(provider: Provider): LoginMethod[] {
  */
 export class ProviderSignIns extends Context.Service<
   ProviderSignIns,
-  {
-    readonly models: Models;
-    readonly start: (
-      providerId: string,
-      method: AuthType,
-    ) => Effect.Effect<LoginSession, AppError>;
-    readonly get: (sessionId: string) => Effect.Effect<LoginSession, AppError>;
-    readonly answer: (
-      sessionId: string,
-      promptId: string,
-      value: string,
-    ) => Effect.Effect<LoginSession, AppError>;
-    readonly cancel: (
-      sessionId: string,
-    ) => Effect.Effect<LoginSession, AppError>;
-    /** Replaces the saved credential with an API key; a pending sign-in for the provider can no longer save its result. */
-    readonly setApiKey: (
-      providerId: string,
-      key: SecretInput,
-    ) => Effect.Effect<void, AppError>;
-    /** Removes the saved credential. The provider's grant and any ambient credential stay as they are. */
-    readonly signOut: (providerId: string) => Effect.Effect<void>;
-    readonly activeLoginId: (providerId: string) => string | null;
-  }
+  ProviderSignInsAccess
 >()("crumble/providers/ProviderSignIns") {
   static readonly layer = Layer.effect(
     ProviderSignIns,
@@ -165,68 +137,12 @@ export class ProviderSignIns extends Context.Service<
         return created;
       };
 
-      const sessions = yield* Effect.acquireRelease(
+      return yield* Effect.acquireRelease(
         Effect.sync(() => new SignInSessions(deviceId, credentials, models)),
         (signIns) => Effect.promise(() => signIns.close()),
       );
-
-      return ProviderSignIns.of({
-        models,
-        start: (providerId, method) =>
-          appErrors(Effect.try(() => sessions.start(providerId, method))),
-        get: (sessionId) =>
-          appErrors(Effect.try(() => sessions.get(sessionId))),
-        answer: (sessionId, promptId, value) =>
-          appErrors(
-            Effect.try(() => sessions.answer(sessionId, promptId, value)),
-          ),
-        cancel: (sessionId) =>
-          appErrors(Effect.try(() => sessions.cancel(sessionId))),
-        setApiKey: (providerId, key) =>
-          appErrors(
-            Effect.tryPromise({
-              try: () => sessions.setApiKey(providerId, key),
-              catch: (error) => error,
-            }),
-          ),
-        signOut: (providerId) =>
-          Effect.promise(() => sessions.signOut(providerId)),
-        activeLoginId: (providerId) => sessions.activeLoginId(providerId),
-      });
     }),
   );
-}
-
-/** Sign-ins for code outside Effect, such as the HTTP handlers. */
-export type ProviderSignInsAccess = {
-  readonly models: Models;
-  start(providerId: string, method: AuthType): LoginSession;
-  get(sessionId: string): LoginSession;
-  answer(sessionId: string, promptId: string, value: string): LoginSession;
-  cancel(sessionId: string): LoginSession;
-  setApiKey(providerId: string, key: SecretInput): Promise<void>;
-  signOut(providerId: string): Promise<void>;
-  activeLoginId(providerId: string): string | null;
-};
-
-export function providerSignInsAccess(
-  runtime: Runner<ProviderSignIns>,
-): ProviderSignInsAccess {
-  const signIns = runtime.runSync(ProviderSignIns.use(Effect.succeed));
-
-  return {
-    models: signIns.models,
-    start: (providerId, method) =>
-      runtime.runSync(signIns.start(providerId, method)),
-    get: (sessionId) => runtime.runSync(signIns.get(sessionId)),
-    answer: (sessionId, promptId, value) =>
-      runtime.runSync(signIns.answer(sessionId, promptId, value)),
-    cancel: (sessionId) => runtime.runSync(signIns.cancel(sessionId)),
-    setApiKey: (providerId, key) =>
-      runtime.runPromise(signIns.setApiKey(providerId, key)),
-    signOut: (providerId) => runtime.runPromise(signIns.signOut(providerId)),
-    activeLoginId: signIns.activeLoginId,
-  };
 }
 
 class SignInSessions {
@@ -295,6 +211,10 @@ class SignInSessions {
 
   activeLoginId(providerId: string) {
     return this.active.get(providerId)?.id ?? null;
+  }
+
+  status(providerId: string) {
+    return this.credentials.status(providerId);
   }
 
   async close() {
@@ -458,7 +378,6 @@ class SignInSessions {
         () => this.end(session, "succeeded"),
       );
 
-      // Only the clock can reject a session that is still pending.
       if (!committed) this.end(session, "expired");
     } catch {
       this.fail(session, "storage_failure");
@@ -648,7 +567,6 @@ function abortable<T>(operation: Promise<T>, signal: AbortSignal) {
   });
 }
 
-/** Whether a login failed because the provider's callback port is already taken. */
 export function isPortConflict(error: Error): boolean {
   return (
     selfPortConflict(error) ||
@@ -713,27 +631,4 @@ function trimEvents(events: LoginEvent[]) {
 
     events.splice(index === -1 ? 0 : index, 1);
   }
-}
-
-/** Sign-ins over the credentials and settings `core` reaches, for an API that runs without an account. */
-type StandaloneSignInServices =
-  | ProviderCredentialRepository
-  | ProviderCredentials
-  | SettingsRepository
-  | Secrets;
-
-export function standaloneSignIns(
-  core: Runner<StandaloneSignInServices>,
-  contributions?: readonly ProviderContribution[],
-): ProviderSignInsAccess {
-  const context = core.runSync(Effect.context<StandaloneSignInServices>());
-
-  return providerSignInsAccess(
-    ManagedRuntime.make(
-      ProviderSignIns.layer.pipe(
-        Layer.provide(ProviderModels.layer(contributions)),
-        Layer.provide(Layer.succeedContext(context)),
-      ),
-    ),
-  );
 }

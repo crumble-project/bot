@@ -14,6 +14,38 @@ export type GatewayReceiptInput = typeof gatewayReceipts.$inferInsert;
 export const GATEWAY_RECEIPT_TTL_MS = 24 * 60 * 60 * 1000;
 export const GATEWAY_HISTORY_RETENTION_MS = 30 * GATEWAY_RECEIPT_TTL_MS;
 
+function receiptUpdate(
+  receipt: GatewayReceipt,
+  terminal: boolean,
+  finishedAt: number | null,
+) {
+  return terminal
+    ? {
+        ...receipt,
+        text: "",
+        chunks: null,
+        sent: [],
+        nextAttemptAt: null,
+        finishedAt,
+      }
+    : receipt;
+}
+
+function sentMessageRows(
+  receipt: GatewayReceipt,
+  botId: string,
+  expiresAt: number | null,
+) {
+  return receipt.sent.map((externalMessageId) => ({
+    adapterId: receipt.adapterId,
+    channelId: receipt.channelId,
+    externalMessageId,
+    receiptMessageId: receipt.messageId,
+    botId,
+    expiresAt,
+  }));
+}
+
 export class GatewayRepository extends Context.Service<
   GatewayRepository,
   {
@@ -81,18 +113,7 @@ export class GatewayRepository extends Context.Service<
           Effect.gen(function* () {
             yield* tx
               .update(gatewayReceipts)
-              .set(
-                terminal
-                  ? {
-                      ...receipt,
-                      text: "",
-                      chunks: null,
-                      sent: [],
-                      nextAttemptAt: null,
-                      finishedAt,
-                    }
-                  : receipt,
-              )
+              .set(receiptUpdate(receipt, terminal, finishedAt))
               .where(
                 and(
                   eq(gatewayReceipts.adapterId, receipt.adapterId),
@@ -103,16 +124,7 @@ export class GatewayRepository extends Context.Service<
             if (receipt.botId && receipt.sent.length) {
               yield* tx
                 .insert(gatewaySentMessages)
-                .values(
-                  receipt.sent.map((externalMessageId) => ({
-                    adapterId: receipt.adapterId,
-                    channelId: receipt.channelId,
-                    externalMessageId,
-                    receiptMessageId: receipt.messageId,
-                    botId: receipt.botId!,
-                    expiresAt,
-                  })),
-                )
+                .values(sentMessageRows(receipt, receipt.botId, expiresAt))
                 .onConflictDoNothing();
             }
 

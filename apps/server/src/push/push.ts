@@ -7,18 +7,18 @@ import {
   Option,
   Queue,
   Schedule,
-  Schema,
   Semaphore,
 } from "effect";
+import { REPLY_ORIGIN } from "../contract/reply-event";
 import type { Runner } from "../shared/runner";
 import { BotActivity } from "../bots/bot-activity";
-import type { ReplyActivity } from "../bots/bots";
 import {
   canonicalReplyEvent,
-  ReplyPushEvent,
-  type PushDevice,
-  type PushDeviceInput,
-} from "./push-model";
+  replyEvent,
+  type ReplyActivity,
+  type ReplyEvent,
+} from "../contract/reply-event";
+import type { PushDevice, PushDeviceInput } from "./push-model";
 import { PushRepository, type PendingDelivery } from "./push-repository";
 import { PushTransports, type PushTransport } from "./push-transports";
 
@@ -31,29 +31,71 @@ const MAX_ATTEMPTS = 7;
 
 const MAX_BACKOFF_MS = 300_000;
 
-const decodeEvent = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(ReplyPushEvent),
-);
+const decodeEvent = (json: string) =>
+  Effect.try(() => replyEvent.parse(JSON.parse(json)));
 
-/** Notifies the owner's devices of replies, through the persisted outbox. */
+type PushDeliveries = PushRepository["Service"];
+
+const settleRejectedDelivery = Effect.fnUntraced(function* (
+  repository: PushDeliveries,
+  row: PendingDelivery,
+  device: PushDevice,
+) {
+  const current = yield* repository.getDevice(device.installationId);
+
+  if (Option.isNone(current))
+    return yield* repository.removeDelivery(
+      row.outboxId,
+      device.installationId,
+    );
+
+  // A token that rotated since the send gets the delivery again; the old one is disabled.
+  if (current.value.token !== device.token)
+    return yield* repository.requeueDelivery(
+      row.outboxId,
+      device.installationId,
+    );
+
+  yield* repository.disableIfToken(device.installationId, device.token);
+  yield* repository.removeDelivery(row.outboxId, device.installationId);
+});
+
+const retryDelivery = Effect.fnUntraced(function* (
+  repository: PushDeliveries,
+  row: PendingDelivery,
+  device: PushDevice,
+) {
+  const now = yield* Clock.currentTimeMillis;
+
+  if (row.attempts >= MAX_ATTEMPTS || row.expiresAt <= now)
+    return yield* repository.removeDelivery(
+      row.outboxId,
+      device.installationId,
+    );
+
+  yield* repository.markRetry(
+    row.outboxId,
+    device.installationId,
+    row.attempts + 1,
+    now + Math.min(MAX_BACKOFF_MS, 1000 * 2 ** row.attempts),
+  );
+});
+
 export class Push extends Context.Service<
   Push,
   {
     readonly serverId: string;
-    /** Which transports this server is configured for. */
     readonly transports: { readonly apns: boolean; readonly fcm: boolean };
     readonly device: (
       installationId: string,
       input: PushDeviceInput,
     ) => Effect.Effect<PushRegistration>;
     readonly remove: (installationId: string) => Effect.Effect<void>;
-    /** False when the device is not registered. */
     readonly presence: (
       installationId: string,
       active: boolean,
       agentId: string | null,
     ) => Effect.Effect<boolean>;
-    /** Queues a reply for every enabled device. */
     readonly enqueue: (activity: ReplyActivity) => Effect.Effect<void>;
     /** One delivery pass over what is due; passes run one at a time and finish once started. */
     readonly drain: Effect.Effect<void>;
@@ -67,12 +109,11 @@ export class Push extends Context.Service<
       const serverId = yield* repository.serverId;
       const passes = yield* Semaphore.make(1);
 
-      /** One delivery attempt, settled in the outbox; every failure kind decides its own outcome. */
       const send = Effect.fn("Push.send")(function* (
         transport: PushTransport,
         row: PendingDelivery,
         device: PushDevice,
-        event: ReplyPushEvent,
+        event: ReplyEvent,
       ) {
         const terminal = Effect.gen(function* () {
           yield* repository.removeDelivery(row.outboxId, device.installationId);
@@ -90,51 +131,9 @@ export class Push extends Context.Service<
           ),
           Effect.catchTags({
             PermanentRejection: () =>
-              Effect.gen(function* () {
-                const current = yield* repository.getDevice(
-                  device.installationId,
-                );
-
-                if (Option.isNone(current))
-                  return yield* repository.removeDelivery(
-                    row.outboxId,
-                    device.installationId,
-                  );
-
-                // A token that rotated since the send gets the delivery again; the old one is disabled.
-                if (current.value.token !== device.token)
-                  return yield* repository.requeueDelivery(
-                    row.outboxId,
-                    device.installationId,
-                  );
-
-                yield* repository.disableIfToken(
-                  device.installationId,
-                  device.token,
-                );
-                yield* repository.removeDelivery(
-                  row.outboxId,
-                  device.installationId,
-                );
-              }),
+              settleRejectedDelivery(repository, row, device),
             TerminalResponse: () => terminal,
-            TemporaryFailure: () =>
-              Effect.gen(function* () {
-                const now = yield* Clock.currentTimeMillis;
-
-                if (row.attempts >= MAX_ATTEMPTS || row.expiresAt <= now)
-                  return yield* repository.removeDelivery(
-                    row.outboxId,
-                    device.installationId,
-                  );
-
-                yield* repository.markRetry(
-                  row.outboxId,
-                  device.installationId,
-                  row.attempts + 1,
-                  now + Math.min(MAX_BACKOFF_MS, 1000 * 2 ** row.attempts),
-                );
-              }),
+            TemporaryFailure: () => retryDelivery(repository, row, device),
           }),
         );
       });
@@ -166,11 +165,7 @@ export class Push extends Context.Service<
 
           const transport = transports[device.transport];
 
-          if (
-            suppressed ||
-            !transport ||
-            (transport.canSend && !transport.canSend(device))
-          ) {
+          if (suppressed || !transport || !transport.canSend(device)) {
             yield* repository.markDelivered(
               row.outboxId,
               device.installationId,
@@ -202,9 +197,7 @@ export class Push extends Context.Service<
         return {
           serverId,
           remoteDelivery:
-            input.enabled &&
-            !!transport &&
-            (!transport.canSend || transport.canSend(input)),
+            input.enabled && !!transport && transport.canSend(input),
         };
       });
 
@@ -239,10 +232,6 @@ export class Push extends Context.Service<
   }
 }
 
-/**
- * Delivers the owner's replies as they finish and polls for retries that come due; when each retry is due stays
- * in the outbox. Closing stops both and writes replies still in memory to the outbox before `Push` makes its last pass.
- */
 export const PushDelivery = Layer.effectDiscard(
   Effect.gen(function* () {
     const push = yield* Push;
@@ -264,7 +253,7 @@ export const PushDelivery = Layer.effectDiscard(
     yield* Effect.acquireRelease(
       Effect.sync(() =>
         activity.subscribe((event) => {
-          if (event.type === "reply" && event.origin !== "bot")
+          if (event.type === "reply" && event.origin !== REPLY_ORIGIN.bot)
             Queue.offerUnsafe(replies, event);
         }),
       ),
@@ -294,5 +283,4 @@ export const PushDelivery = Layer.effectDiscard(
   }),
 );
 
-/** Runs push effects from code outside Effect, such as HTTP handlers. */
 export type PushRuntime = Runner<Push>;

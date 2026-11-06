@@ -1,24 +1,49 @@
+import type { groupChatInput } from "../contract/group-chats";
 import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { z } from "zod";
-import type {
-  GroupChat,
-  GroupChatInput,
-  GroupMember,
-  GroupTurn,
-  GroupTurnStatus,
-} from "../shared/domain";
 import { ProductDatabase } from "../shared/product-database";
 import { nowIso } from "../shared/time";
 import { groupChats, groupMembers, groupTurns } from "./schema";
 
-/** Owner messages, by entry number, whose first bot answer has not notified, with the bots they woke. */
+export type GroupChatInput = z.infer<typeof groupChatInput>;
+
+export type GroupChat = GroupChatInput & {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const GROUP_TURN_BUDGET = 8;
+
+export type GroupMember = {
+  groupId: string;
+  agentId: string;
+  conversationId: string | null;
+  cursor: number;
+  pending: boolean;
+  pendingBotStarted: boolean;
+  summary: string | null;
+  joinedAt: string;
+};
+
+export type GroupTurnStatus = "running" | "posting" | "settled";
+
+export type GroupTurn = {
+  executionId: string;
+  groupId: string;
+  agentId: string;
+  through: number;
+  botStarted: boolean;
+  status: GroupTurnStatus;
+  createdAt: string;
+};
+
 const awaitingAnswers = z.record(z.string(), z.array(z.string()));
 
-export type GroupActivity = {
+export type GroupProgress = {
   botTurns: number;
   paused: boolean;
-  /** Owner messages, by entry number, whose first bot answer has not notified yet, with the bots they woke. */
   awaitingAnswers: Record<string, string[]>;
 };
 
@@ -39,7 +64,6 @@ const turnOf = (row: typeof groupTurns.$inferSelect): GroupTurn => ({
   createdAt: row.createdAt,
 });
 
-/** Group chats, their members' progress through the shared transcript, and their turns. */
 export class GroupChatRepository extends Context.Service<
   GroupChatRepository,
   {
@@ -65,10 +89,10 @@ export class GroupChatRepository extends Context.Service<
       agentId: string,
       change: GroupMemberChange,
     ) => Effect.Effect<void>;
-    readonly activity: (groupId: string) => Effect.Effect<GroupActivity>;
+    readonly activity: (groupId: string) => Effect.Effect<GroupProgress>;
     readonly setActivity: (
       groupId: string,
-      change: Partial<GroupActivity>,
+      change: Partial<GroupProgress>,
     ) => Effect.Effect<void>;
     readonly createTurn: (
       turn: Omit<GroupTurn, "createdAt">,
@@ -180,6 +204,7 @@ export class GroupChatRepository extends Context.Service<
         if (!current) return null;
         const at = yield* nowIso;
         const kept = new Set(input.memberIds);
+        const currentMembers = new Set(current.memberIds);
 
         yield* db.transaction(() =>
           Effect.gen(function* () {
@@ -201,9 +226,7 @@ export class GroupChatRepository extends Context.Service<
 
             yield* insertMembers(
               groupId,
-              input.memberIds.filter(
-                (agentId) => !current.memberIds.includes(agentId),
-              ),
+              input.memberIds.filter((agentId) => !currentMembers.has(agentId)),
               at,
             );
           }),
@@ -288,7 +311,7 @@ export class GroupChatRepository extends Context.Service<
           .from(groupChats)
           .where(eq(groupChats.id, groupId));
 
-        const state: GroupActivity = {
+        const state: GroupProgress = {
           botTurns: row?.botTurns ?? 0,
           paused: row?.paused ?? false,
           awaitingAnswers:
@@ -300,7 +323,7 @@ export class GroupChatRepository extends Context.Service<
       }, Effect.orDie);
 
       const setActivity = Effect.fn("GroupChatRepository.setActivity")(
-        function* (groupId: string, change: Partial<GroupActivity>) {
+        function* (groupId: string, change: Partial<GroupProgress>) {
           const next = { ...(yield* activity(groupId)), ...change };
 
           yield* db

@@ -1,7 +1,7 @@
 import type { z } from "zod";
-import { memoryInput, routes } from "../contract/api-contract";
+import { routes, type memoryInput } from "../contract/api-contract";
 import type { Register } from "../contract/route";
-import type { BotsAccess } from "../bots/bots";
+import type { BotLookup } from "../bot-ports/bot-lookup";
 import { NotFound } from "../shared/errors";
 import type { Runner } from "../shared/runner";
 import { MemoryRepository } from "./memory-repository";
@@ -12,12 +12,10 @@ type Exec = Runner<Services>["runSync"];
 
 type MemoryRoutesOptions = {
   register: Register;
-  service: BotsAccess;
-  /** Runs the repository effects the memory routes read and write. */
+  service: BotLookup;
   run: Runner<Services>;
 };
 
-/** The memory, which must belong to the bot or, with `null`, to every bot. */
 const memoryOf = (exec: Exec, agentId: string | null, memoryId: string) => {
   const memory = exec(MemoryRepository.use((r) => r.get(memoryId)));
 
@@ -47,7 +45,6 @@ const updateMemory = (
 const deleteMemory = (exec: Exec, memoryId: string) =>
   exec(MemoryRepository.use((r) => r.delete(memoryId)));
 
-/** The memories a bot remembers for itself alone. */
 const registerBotMemoryRoutes = (options: MemoryRoutesOptions) => {
   const { register, service } = options;
   const exec: Exec = (effect) => options.run.runSync(effect);
@@ -64,21 +61,14 @@ const registerBotMemoryRoutes = (options: MemoryRoutesOptions) => {
     service.agent(c.req.param("id"));
 
     return c.json(
-      createMemory(
-        exec,
-        c.req.param("id"),
-        memoryInput.parse(await c.req.json()),
-      ),
+      createMemory(exec, c.req.param("id"), c.req.valid("json")),
       201,
     );
   });
   register(routes.updateAgentMemory, async (c) => {
     const memory = memoryOf(exec, c.req.param("id"), c.req.param("memoryId"));
 
-    return c.json(
-      updateMemory(exec, memory.id, memoryInput.parse(await c.req.json())),
-      200,
-    );
+    return c.json(updateMemory(exec, memory.id, c.req.valid("json")), 200);
   });
   register(routes.deleteAgentMemory, (c) => {
     deleteMemory(
@@ -90,7 +80,6 @@ const registerBotMemoryRoutes = (options: MemoryRoutesOptions) => {
   });
 };
 
-/** The memories every bot may read. */
 const registerSharedMemoryRoutes = (options: MemoryRoutesOptions) => {
   const { register } = options;
   const exec: Exec = (effect) => options.run.runSync(effect);
@@ -99,18 +88,12 @@ const registerSharedMemoryRoutes = (options: MemoryRoutesOptions) => {
     c.json(exec(MemoryRepository.use((r) => r.list(null))), 200),
   );
   register(routes.createMemory, async (c) =>
-    c.json(
-      createMemory(exec, null, memoryInput.parse(await c.req.json())),
-      201,
-    ),
+    c.json(createMemory(exec, null, c.req.valid("json")), 201),
   );
   register(routes.updateMemory, async (c) => {
     const memory = memoryOf(exec, null, c.req.param("id"));
 
-    return c.json(
-      updateMemory(exec, memory.id, memoryInput.parse(await c.req.json())),
-      200,
-    );
+    return c.json(updateMemory(exec, memory.id, c.req.valid("json")), 200);
   });
   register(routes.deleteMemory, (c) => {
     deleteMemory(exec, memoryOf(exec, null, c.req.param("id")).id);
@@ -119,7 +102,6 @@ const registerSharedMemoryRoutes = (options: MemoryRoutesOptions) => {
   });
 };
 
-/** The memory routes, in the order the contract document lists them. */
 export function registerMemoryRoutes(options: MemoryRoutesOptions) {
   registerBotMemoryRoutes(options);
   registerSharedMemoryRoutes(options);

@@ -8,9 +8,9 @@ import {
   text,
   type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
-import { agents } from "../bots/schema";
+import { z } from "zod";
+import { agents } from "../bot-store/schema";
 
-/** The secrets a bot can be given for named hosts: credentials and logins. */
 export const BOT_SECRET_KINDS = ["credential", "login"] as const;
 
 export type BotSecretKind = (typeof BOT_SECRET_KINDS)[number];
@@ -23,20 +23,32 @@ const agentId = () =>
     .notNull()
     .references(() => agents.id, { onDelete: "cascade" });
 
+export const hostBoundSecret = () => ({
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  hosts: text("hosts").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  lastUsedAt: text("last_used_at"),
+});
+
+const hostList = z.array(z.string());
+
+export const parseHosts = (hosts: string) => hostList.parse(JSON.parse(hosts));
+
 const kindCheck = (name: string, column: AnySQLiteColumn) =>
   check(name, sql`${column} IN ('credential', 'login')`);
 
-/** A bot's request for a credential or login, waiting for the owner; one per bot, kind, and name. */
 export const botSecretRequests = sqliteTable(
   "bot_secret_requests",
   {
     agentId: agentId(),
     kind: kind(),
     name: text("name").notNull(),
-    /** A JSON list. */
     hosts: text("hosts").notNull(),
     reason: text("reason").notNull(),
-    /** Logins only: the site asks for a one-time code too. */
     oneTimeCode: integer("one_time_code", { mode: "boolean" })
       .notNull()
       .default(false),
@@ -48,7 +60,6 @@ export const botSecretRequests = sqliteTable(
   ],
 );
 
-/** Each use of a credential or login; `detail` holds what the kind records, as JSON. */
 export const botSecretUses = sqliteTable(
   "bot_secret_uses",
   {
@@ -58,7 +69,6 @@ export const botSecretUses = sqliteTable(
     name: text("name").notNull(),
     at: text("at").notNull(),
     host: text("host").notNull(),
-    /** Why the value couldn't be read from its password manager; nothing was sent or typed. */
     error: text("error"),
     detail: text("detail").notNull(),
   },

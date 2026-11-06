@@ -1,3 +1,5 @@
+import type { ReplyEvent } from "../contract/reply-event";
+import { PUSH_TTL_SECONDS } from "../shared/push-devices";
 import { existsSync, readFileSync } from "node:fs";
 import { createHash, createPrivateKey, createSign } from "node:crypto";
 import { connect } from "node:http2";
@@ -8,22 +10,18 @@ import {
   type PushDevice,
   type PushDeviceInput,
   type PushTransportName,
-  type ReplyPushEvent,
 } from "./push-model";
 
-/** The provider rejected the device's token; the device is disabled unless its token has rotated since. */
 export class PermanentRejection extends Schema.TaggedError<PermanentRejection>()(
   "PermanentRejection",
   { message: Schema.String },
 ) {}
 
-/** The provider refused this notification for good; retrying cannot deliver it. */
 export class TerminalResponse extends Schema.TaggedError<TerminalResponse>()(
   "TerminalResponse",
   { message: Schema.String },
 ) {}
 
-/** Any other send failure; the outbox retries it with persisted backoff until it expires. */
 export class TemporaryFailure extends Schema.TaggedError<TemporaryFailure>()(
   "TemporaryFailure",
   { message: Schema.String },
@@ -34,22 +32,19 @@ export type SendFailure =
   | TerminalResponse
   | TemporaryFailure;
 
-/** Sends notifications to one provider; a send fails with what retrying it can achieve. */
 export type PushTransport = {
   readonly send: (
     device: PushDevice,
-    event: ReplyPushEvent,
+    event: ReplyEvent,
   ) => Effect.Effect<"delivered" | "expired", SendFailure>;
-  readonly canSend?: (device: PushDeviceInput) => boolean;
+  readonly canSend: (device: PushDeviceInput) => boolean;
 };
 
-/** The server's push configuration is incomplete or invalid. */
 export class PushConfigError extends Schema.TaggedError<PushConfigError>()(
   "PushConfigError",
   { message: Schema.String },
 ) {}
 
-/** The transports this server can deliver through, configured from its environment. */
 export class PushTransports extends Context.Service<
   PushTransports,
   Record<PushTransportName, PushTransport | undefined>
@@ -95,7 +90,6 @@ const apnsTopics = (allowedTopics: string) =>
       .filter(Boolean),
   );
 
-/** The APNs settings the environment names; `undefined` when it names none. */
 export const loadApnsSettings = Effect.fnUntraced(function* (
   env: Record<string, string | undefined>,
 ): Effect.fn.Return<ApnsSettings | undefined, PushConfigError> {
@@ -129,7 +123,6 @@ export const loadApnsSettings = Effect.fnUntraced(function* (
   return { teamId, keyId, keyPath, topics };
 });
 
-/** The FCM service account the environment names; `undefined` when it names none. */
 export const loadFcmSettings = Effect.fnUntraced(function* (
   env: Record<string, string | undefined>,
 ): Effect.fn.Return<ServiceAccount | undefined, PushConfigError> {
@@ -170,7 +163,6 @@ const ApnsResponse = Schema.fromJsonString(
   Schema.Struct({ reason: Schema.optionalKey(Schema.String) }),
 );
 
-/** One APNs request; resolves with the HTTP status and Apple's `reason`, if the body names one. */
 function apnsRequest(
   host: string,
   headers: Record<string, string>,
@@ -225,7 +217,6 @@ function apnsRequest(
   ).finally(() => client.close());
 }
 
-/** The APNs host for the device's environment. */
 export const apnsHost = (environment: PushDevice["environment"]) =>
   environment === "development"
     ? "https://api.sandbox.push.apple.com"
@@ -247,7 +238,7 @@ export function apnsJwt(settings: ApnsSettings, seconds: number) {
 export function apnsHeaders(
   topic: string,
   device: PushDevice,
-  event: ReplyPushEvent,
+  event: ReplyEvent,
   jwt: string,
   seconds: number,
 ) {
@@ -258,7 +249,7 @@ export function apnsHeaders(
     "apns-topic": topic,
     "apns-push-type": "alert",
     "apns-priority": "10",
-    "apns-expiration": String(seconds + 86400),
+    "apns-expiration": String(seconds + PUSH_TTL_SECONDS),
     "apns-collapse-id": createHash("sha256")
       .update(`${event.serverId}:${event.agentId}`)
       .digest("hex")
@@ -267,8 +258,25 @@ export function apnsHeaders(
   };
 }
 
-/** The APNs alert payload: the shown notification plus the fields the app renders the answer from. */
-export function apnsPayload(event: ReplyPushEvent) {
+const replyFields = (event: ReplyEvent) => ({
+  type: event.type,
+  eventId: event.eventId,
+  serverId: event.serverId,
+  agentId: event.agentId,
+  agentName: event.agentName,
+  entryId: event.entryId,
+  origin: event.origin,
+  preview: event.preview,
+  createdAt: event.createdAt,
+  ...(event.groupId && {
+    groupId: event.groupId,
+    groupName: event.groupName,
+  }),
+  ...(event.jobName && { jobName: event.jobName }),
+  ...(event.waitingFor && { waitingFor: event.waitingFor }),
+});
+
+export function apnsPayload(event: ReplyEvent) {
   return {
     aps: {
       alert: {
@@ -277,20 +285,7 @@ export function apnsPayload(event: ReplyPushEvent) {
       },
       sound: "default",
     },
-    type: event.type,
-    eventId: event.eventId,
-    serverId: event.serverId,
-    agentId: event.agentId,
-    agentName: event.agentName,
-    entryId: event.entryId,
-    preview: event.preview,
-    origin: event.origin,
-    createdAt: event.createdAt,
-    ...(event.groupId && {
-      groupId: event.groupId,
-      groupName: event.groupName,
-    }),
-    ...(event.jobName && { jobName: event.jobName }),
+    ...replyFields(event),
   };
 }
 
@@ -300,7 +295,6 @@ const apnsRejectedTokens = new Set([
   "DeviceTokenNotForTopic",
 ]);
 
-/** How a retry should treat the response; `undefined` when the notification was accepted or expired. */
 export function classifyApnsResponse(
   status: number,
   reason: string | undefined,
@@ -330,13 +324,6 @@ function apnsTransport(settings: ApnsSettings): PushTransport {
   return {
     canSend: (device) => !!device.bundleId && topics.has(device.bundleId),
     send: Effect.fn("APNs.send")(function* (device, event) {
-      const topic = device.bundleId;
-
-      if (!topic || !topics.has(topic))
-        return yield* new TemporaryFailure({
-          message: "APNs bundle topic is not allowed",
-        });
-
       const seconds = Math.floor((yield* Clock.currentTimeMillis) / 1000);
       const jwt = apnsJwt(settings, seconds);
 
@@ -344,7 +331,7 @@ function apnsTransport(settings: ApnsSettings): PushTransport {
         try: () =>
           apnsRequest(
             apnsHost(device.environment),
-            apnsHeaders(topic, device, event, jwt, seconds),
+            apnsHeaders(device.bundleId!, device, event, jwt, seconds),
             JSON.stringify(apnsPayload(event)),
           ),
         catch: temporaryFailure,
@@ -373,40 +360,28 @@ const FcmError = Schema.Struct({
   ),
 });
 
-/** The FCM data payload: everything the app needs to render the answer itself. */
-export function fcmData(event: ReplyPushEvent) {
-  return {
-    type: event.type,
-    eventId: event.eventId,
-    serverId: event.serverId,
-    agentId: event.agentId,
-    agentName: event.agentName,
-    entryId: event.entryId ?? "",
-    origin: event.origin,
-    preview: event.preview,
-    createdAt: event.createdAt,
-    ...(event.groupId && {
-      groupId: event.groupId,
-      groupName: event.groupName ?? "",
-    }),
-    ...(event.jobName && { jobName: event.jobName }),
-  } satisfies Record<string, string>;
+/** The FCM data payload: everything the app needs to render the answer itself, as FCM's string values. */
+export function fcmData(event: ReplyEvent): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(replyFields(event)).map(([key, value]) => [
+      key,
+      value ?? "",
+    ]),
+  );
 }
 
-/** The FCM message body for one device. */
-export function fcmMessage(device: PushDevice, event: ReplyPushEvent) {
+export function fcmMessage(device: PushDevice, event: ReplyEvent) {
   return {
     message: {
       token: device.token,
       data: fcmData(event),
-      android: { priority: "HIGH", ttl: "86400s" },
+      android: { priority: "HIGH", ttl: `${PUSH_TTL_SECONDS}s` },
     },
   };
 }
 
 const fcmRejectedTokens = new Set(["UNREGISTERED", "SENDER_ID_MISMATCH"]);
 
-/** How a retry should treat the response; `undefined` when the message was accepted. */
 export function classifyFcmResponse(
   status: number,
   errorCode: string | undefined,
@@ -423,7 +398,6 @@ export function classifyFcmResponse(
   return undefined;
 }
 
-/** The error code the response body names; an unreadable body is classified from the status alone. */
 export const fcmErrorCode = (
   response: Response,
 ): Effect.Effect<string | undefined> =>
@@ -438,59 +412,64 @@ export const fcmErrorCode = (
         Effect.orElseSucceed(() => undefined),
       );
 
-function fcmTransport(account: ServiceAccount): PushTransport {
-  const accessToken = Effect.gen(function* () {
-    const seconds = Math.floor((yield* Clock.currentTimeMillis) / 1000);
-    const head = b64(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+function fcmAssertion(account: ServiceAccount, seconds: number) {
+  const head = b64(JSON.stringify({ alg: "RS256", typ: "JWT" }));
 
-    const claims = b64(
-      JSON.stringify({
-        iss: account.client_email,
-        scope: "https://www.googleapis.com/auth/firebase.messaging",
-        aud: "https://oauth2.googleapis.com/token",
-        iat: seconds,
-        exp: seconds + 3600,
-      }),
-    );
+  const claims = b64(
+    JSON.stringify({
+      iss: account.client_email,
+      scope: "https://www.googleapis.com/auth/firebase.messaging",
+      aud: "https://oauth2.googleapis.com/token",
+      iat: seconds,
+      exp: seconds + 3600,
+    }),
+  );
 
-    const signer = createSign("RSA-SHA256");
-    signer.update(`${head}.${claims}`);
-    signer.end();
-    const assertion = `${head}.${claims}.${b64(signer.sign(account.private_key))}`;
+  const signer = createSign("RSA-SHA256");
+  signer.update(`${head}.${claims}`);
+  signer.end();
 
-    const response = yield* Effect.tryPromise({
-      try: () =>
-        fetch("https://oauth2.googleapis.com/token", {
-          method: "POST",
-          headers: { "content-type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            assertion,
-          }),
-          signal: AbortSignal.timeout(15_000),
+  return `${head}.${claims}.${b64(signer.sign(account.private_key))}`;
+}
+
+const fcmAccessToken = Effect.fnUntraced(function* (account: ServiceAccount) {
+  const seconds = Math.floor((yield* Clock.currentTimeMillis) / 1000);
+  const assertion = fcmAssertion(account, seconds);
+
+  const response = yield* Effect.tryPromise({
+    try: () =>
+      fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+          assertion,
         }),
-      catch: temporaryFailure,
-    });
-
-    if (!response.ok)
-      return yield* new TemporaryFailure({
-        message: `FCM OAuth failure ${response.status}`,
-      });
-
-    const body = yield* Effect.tryPromise({
-      try: () => response.json(),
-      catch: temporaryFailure,
-    });
-
-    return (yield* Schema.decodeUnknownEffect(FcmToken)(body).pipe(
-      Effect.mapError(temporaryFailure),
-    )).access_token;
+        signal: AbortSignal.timeout(15_000),
+      }),
+    catch: temporaryFailure,
   });
 
+  if (!response.ok)
+    return yield* new TemporaryFailure({
+      message: `FCM OAuth failure ${response.status}`,
+    });
+
+  const body = yield* Effect.tryPromise({
+    try: () => response.json(),
+    catch: temporaryFailure,
+  });
+
+  return (yield* Schema.decodeUnknownEffect(FcmToken)(body).pipe(
+    Effect.mapError(temporaryFailure),
+  )).access_token;
+});
+
+function fcmTransport(account: ServiceAccount): PushTransport {
   return {
     canSend: () => true,
     send: Effect.fn("FCM.send")(function* (device, event) {
-      const token = yield* accessToken;
+      const token = yield* fcmAccessToken(account);
 
       const response = yield* Effect.tryPromise({
         try: () =>

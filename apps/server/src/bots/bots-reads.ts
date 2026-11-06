@@ -1,100 +1,79 @@
-import { Conflict } from "../shared/errors";
+import { pi } from "../shared/app-errors";
 import { Effect } from "effect";
 import type { Execution } from "../shared/domain";
-import { isGroupTurn, pi, type BotsContext } from "./bots-context";
-import type { botsLookup } from "./bots-lookup";
-import { eventRequest } from "../event-sources/event-payload";
-import { latestMessagePreview, type MessageOrigin } from "./transcript";
-import { JOB_QUESTION_REQUEST } from "./runtime";
+import type { BotsContext } from "./bots-context";
+import type { BotsLookup } from "./bots-lookup";
+import { DELETED_SOURCE } from "../event-sources/event-repository";
+import {
+  turnSource,
+  UNKNOWN_BOT_NAME,
+  UNKNOWN_SCHEDULE_NAME,
+  type InputOrigin,
+} from "../transcript/origins";
+import type { RuntimeWatch } from "./runtime";
+import {
+  latestMessagePreview,
+  type PageOptions,
+} from "../transcript/transcript";
+import type { JobKindName } from "../shared/job-kinds";
 
-type PageOptions = {
-  before?: string | undefined;
-  limit?: number | undefined;
-};
+export const botsReads = (context: BotsContext, lookup: BotsLookup) => {
+  const { agents, conversations, events, executions, runtime, schedules } =
+    context;
 
-/** Where a turn came from, as its transcript shows it: the owner, a group, a task, a credential, or another bot. */
-export const botsOrigin = (context: BotsContext) => {
-  const { agents, schedules, events } = context;
+  const { conversation, withAgent } = lookup;
 
-  const eventOrigin = Effect.fnUntraced(function* (run: {
-    eventId: string;
-    scheduleId: string;
-  }) {
-    const schedule = yield* schedules.get(run.scheduleId);
-    const event = yield* events.getEvent(run.eventId);
-    const source = event && (yield* events.getSource(event.sourceId));
+  const scheduleName = (scheduleId: string) =>
+    Effect.map(schedules.get(scheduleId), (schedule) => schedule?.name);
+
+  const eventOrigin = Effect.fnUntraced(function* (
+    source: Extract<ReturnType<typeof turnSource>, { kind: "event" }>,
+  ) {
+    const event = yield* events.eventWithSource(source.eventId);
 
     return {
-      kind: "event",
-      name: schedule?.name ?? "Automation",
-      source: source?.name ?? "Deleted source",
-    } satisfies MessageOrigin;
+      kind: "event" as const,
+      name: (yield* scheduleName(source.scheduleId)) ?? "Automation",
+      source: event?.sourceName ?? DELETED_SOURCE,
+    };
   });
 
-  const scriptOrigin = (subject: string) =>
-    Effect.map(schedules.get(subject), (schedule) => ({
-      kind: "script",
-      name: schedule?.name ?? "Script task",
-    }));
-
-  const botOrigin = (subject: string) =>
-    Effect.map(agents.get(subject), (source) => ({
-      kind: "bot",
-      agentId: subject,
-      name: source?.name ?? "Another bot",
-    }));
-
-  // Request IDs of the form `<prefix>:<subject>` name where a turn came from.
-  const prefixed = new Map<
-    string,
-    (subject: string) => Effect.Effect<MessageOrigin>
-  >([
-    ["script", scriptOrigin],
-    ["delegate", botOrigin],
-    [JOB_QUESTION_REQUEST, botOrigin],
-    [
-      "credential",
-      (subject) => Effect.succeed({ kind: "credential", name: subject }),
-    ],
-    ["bot-request", () => Effect.succeed({ kind: "bot_request" })],
-    ["gateway", (subject) => Effect.succeed({ kind: "owner", via: subject })],
-  ]);
-
-  const owner: MessageOrigin = { kind: "owner" };
-
-  const origin = (execution: Execution): Effect.Effect<MessageOrigin> =>
+  const origin = (execution: Execution): Effect.Effect<InputOrigin> =>
     Effect.gen(function* () {
-      if (isGroupTurn(execution)) return { kind: "group" };
-      const run = eventRequest(execution.requestId);
+      const source = turnSource(execution);
 
-      if (run) return yield* eventOrigin(run);
+      switch (source.kind) {
+        case "event":
+          return yield* eventOrigin(source);
 
-      if (execution.scheduleId) {
-        const schedule = yield* schedules.get(execution.scheduleId);
+        case "task":
+        case "script":
+          return {
+            kind: source.kind,
+            name:
+              (yield* scheduleName(source.scheduleId)) ??
+              (source.kind === "task"
+                ? UNKNOWN_SCHEDULE_NAME
+                : "Deleted script automation"),
+          };
+        case "bot": {
+          const bot = yield* agents.get(source.agentId);
 
-        return { kind: "task", name: schedule?.name ?? "Scheduled task" };
+          return {
+            kind: "bot",
+            agentId: source.agentId,
+            name: bot?.name ?? UNKNOWN_BOT_NAME,
+          };
+        }
+
+        default:
+          return source;
       }
-
-      const [prefix = "", subject] = execution.requestId.split(":");
-      const read = subject ? prefixed.get(prefix) : undefined;
-
-      return read && subject ? yield* read(subject) : owner;
     });
-
-  return { origin };
-};
-
-/** A chat's transcript, with the error of its latest execution when that one failed. */
-export const botsSnapshot = (
-  context: BotsContext,
-  lookup: ReturnType<typeof botsLookup>,
-) => {
-  const { executions, runtime } = context;
-  const { conversation } = lookup;
 
   const snapshot = Effect.fn("Bots.snapshot")(function* (
     conversationId: string,
-    options: { limit?: number | undefined },
+    options: { limit?: number | undefined } = {},
   ) {
     const { agent: owner, conversation: found } =
       yield* conversation(conversationId);
@@ -103,9 +82,7 @@ export const botsSnapshot = (
       runtime.snapshot(owner, conversationId, options),
     );
 
-    const latest = (yield* executions.list(owner.id)).find(
-      (execution) => execution.conversationId === conversationId,
-    );
+    const latest = yield* executions.latestIn(conversationId);
 
     return {
       ...read,
@@ -114,13 +91,6 @@ export const botsSnapshot = (
       error: latest?.status === "failed" ? latest.error : null,
     };
   });
-
-  return { snapshot };
-};
-
-/** Sidebar summaries from durable history, without opening a chat. */
-export const botsAgentPreviews = (context: BotsContext) => {
-  const { agents, conversations, runtime } = context;
 
   const agentPreviews = Effect.gen(function* () {
     return yield* Effect.forEach(
@@ -143,97 +113,33 @@ export const botsAgentPreviews = (context: BotsContext) => {
     );
   });
 
-  return { agentPreviews };
-};
-
-/** The runtime's own reads: a chat's history and the jobs a bot started from it. */
-export const botsRuntimeReads = (
-  context: BotsContext,
-  lookup: ReturnType<typeof botsLookup>,
-) => {
-  const { runtime } = context;
-  const { agent } = lookup;
-
-  const history = (agentId: string, options: PageOptions) =>
-    agent(agentId).pipe(
-      Effect.flatMap((owner) => pi(() => runtime.history(owner, options))),
-    );
-
-  const codingJobs = (agentId: string) =>
-    agent(agentId).pipe(
-      Effect.flatMap((owner) => pi(() => runtime.codingJobs(owner))),
-    );
-
-  const codingJobHistory = (
-    agentId: string,
-    name: string,
-    options: PageOptions,
-  ) =>
-    agent(agentId).pipe(
-      Effect.flatMap((owner) =>
-        pi(() => runtime.codingJobHistory(owner, name, options)),
-      ),
-    );
-
-  const answerCodingJob = (
-    agentId: string,
-    answer: { name: string; questionId: string; text: string; by?: string },
-  ) =>
-    agent(agentId).pipe(
-      Effect.flatMap((owner) =>
-        pi(() => runtime.answerCodingJob(owner, answer)),
-      ),
-      Effect.flatMap((answered) =>
-        answered
-          ? Effect.void
-          : Effect.fail(
-              new Conflict({
-                message: "The job no longer waits on this question",
-              }),
-            ),
-      ),
-    );
-
-  const desktopJobs = (agentId: string) =>
-    agent(agentId).pipe(
-      Effect.flatMap((owner) => pi(() => runtime.desktopJobs(owner))),
-    );
-
-  const desktopJobHistory = (
-    agentId: string,
-    name: string,
-    options: PageOptions,
-  ) =>
-    agent(agentId).pipe(
-      Effect.flatMap((owner) =>
-        pi(() => runtime.desktopJobHistory(owner, name, options)),
-      ),
-    );
-
   return {
-    history,
-    codingJobs,
-    codingJobHistory,
-    answerCodingJob,
-    desktopJobs,
-    desktopJobHistory,
-  };
-};
-
-/** Everything the bots read back for a caller: transcripts, jobs, previews, and where a turn came from. */
-export const botsReads = (
-  context: BotsContext,
-  lookup: ReturnType<typeof botsLookup>,
-) => {
-  const { snapshot } = botsSnapshot(context, lookup);
-
-  return {
-    snapshot: (
+    origin,
+    snapshot,
+    agentPreviews,
+    history: (agentId: string, options: PageOptions) =>
+      withAgent(agentId, (owner) => runtime.history(owner, options)),
+    jobs: (agentId: string, kind: JobKindName) =>
+      withAgent(agentId, (owner) => runtime.jobs(owner, kind)),
+    jobHistory: (
+      agentId: string,
+      kind: JobKindName,
+      name: string,
+      options: PageOptions,
+    ) =>
+      withAgent(agentId, (owner) =>
+        runtime.jobHistory(owner, kind, name, options),
+      ),
+    attachment: (agentId: string, entryId: string, index: number) =>
+      withAgent(agentId, (owner) => runtime.attachment(owner, entryId, index)),
+    watch: (
+      agentId: string,
       conversationId: string,
-      options: { limit?: number | undefined } = {},
-    ) => snapshot(conversationId, options),
-    ...botsOrigin(context),
-    ...botsAgentPreviews(context),
-    ...botsRuntimeReads(context, lookup),
+      callback: RuntimeWatch,
+      options: { limit?: number | undefined },
+    ) =>
+      withAgent(agentId, (owner) =>
+        runtime.watch(owner, conversationId, callback, options),
+      ),
   };
 };

@@ -6,7 +6,6 @@ import {
 } from "better-auth";
 import { Schema } from "effect";
 
-/** The header an email sign-up sends its invite token in. */
 export const INVITE_HEADER = "x-crumble-invite";
 
 const MODEL = "invite";
@@ -27,7 +26,6 @@ const decodeInvites = Schema.decodeUnknownSync(Schema.Array(Invite));
 const hashOf = (token: string) =>
   createHash("sha256").update(token).digest("hex");
 
-/** One-time sign-up links an admin hands out while sign-up is closed; only the token's hash is stored. */
 export function invites<O extends BetterAuthOptions>(base: DBAdapter<O>) {
   // Inside a sign-up's transaction, queries must join it: SQLite would wait on the transaction forever.
   const db = () => getCurrentAdapter(base);
@@ -60,7 +58,6 @@ export function invites<O extends BetterAuthOptions>(base: DBAdapter<O>) {
       return { id: created.id, token };
     },
 
-    /** Invites not yet used or revoked, newest first. */
     async pending() {
       return decodeInvites(
         await (
@@ -84,10 +81,8 @@ export function invites<O extends BetterAuthOptions>(base: DBAdapter<O>) {
       return revoked !== null;
     },
 
-    /** Whether the token names an invite that can still be used. */
     isOpen: async (token: string) => (await open(token)) !== undefined,
 
-    /** Uses up the invite; false when it is unknown, used, or revoked. */
     async consume(token: string) {
       const invite = await open(token);
 
@@ -103,7 +98,6 @@ export function invites<O extends BetterAuthOptions>(base: DBAdapter<O>) {
       return true;
     },
 
-    /** Records who signed up with the invite, once their user exists. */
     async attribute(token: string, userId: string) {
       await (
         await db()

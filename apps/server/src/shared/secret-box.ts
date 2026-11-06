@@ -106,7 +106,6 @@ function writeSecret(path: string, data: string | Buffer) {
 
 type KeyFiles = { dataDir: string; keyPath: string; wrappedPath: string };
 
-/** The account's key without a master key: `.secret.key`, created on first start. */
 function plainKey(keyPath: string, exists: boolean) {
   if (exists) {
     restrict(keyPath);
@@ -120,7 +119,6 @@ function plainKey(keyPath: string, exists: boolean) {
   return fresh;
 }
 
-/** Deletes `.secret.key` once the wrapped key is on disk. */
 function removePlainKey({ dataDir, keyPath }: KeyFiles) {
   syncDirectory(dataDir);
   rmSync(keyPath);
@@ -143,7 +141,6 @@ function unwrapExisting(
   return unwrapped;
 }
 
-/** Wraps the plain key, or a new one, and checks the wrapped file reads back the same. */
 function wrapNew(
   masterKey: Buffer,
   { wrappedPath }: KeyFiles,
@@ -160,7 +157,6 @@ function wrapNew(
   return accountKey;
 }
 
-/** The account's key with a master key: from `.secret.key.wrapped`, wrapping and deleting a plain `.secret.key`. */
 function wrappedKey(
   files: KeyFiles,
   masterKey: Buffer,
@@ -186,11 +182,9 @@ export class SecretBox extends Context.Service<
   {
     readonly encrypt: (value: string) => string;
     readonly decrypt: (packed: string) => string;
-    /** Decrypts a secret's stored value; one read from a password manager has none, and reading it here is a defect. */
     readonly decryptStored: (packed: string | null) => string;
   }
 >()("crumble/shared/SecretBox") {
-  /** `encrypted` holds the tables with values sealed by this key; any rows there stop a new key from replacing a lost one. */
   static layer(
     dataDir: string,
     encrypted: readonly SQLiteTable[],
